@@ -23,6 +23,12 @@
 # http://localhost:9464/metrics); force the pm2 path with
 # BASELINE_METRICS_DISABLE=1.
 #
+# `--addon-diff` mode (#612): for each addon listed under
+# `ngdpbase.addons.*.enabled: true` in the running install's custom config,
+# disable it one-at-a-time, restart the server, and emit a per-addon
+# memory/route delta table. Restart cost: ~30s per addon + 1 (slow). The
+# original config is restored on EXIT (Ctrl-C safe; do not kill -9).
+#
 # When --compare is set, the script appends a "Drift vs <previous>" section
 # to the new baseline file AND prints the same table to stdout. Exits
 # non-zero if any threshold trips:
@@ -71,6 +77,7 @@ BASE_URL="http://localhost:${PORT}"
 
 DO_COLD_START=0
 DO_COMPARE=0
+DO_ADDON_DIFF=0
 COMPARE_FILE=""
 
 while [[ $# -gt 0 ]]; do
@@ -89,6 +96,10 @@ while [[ $# -gt 0 ]]; do
         shift
       fi
       ;;
+    --addon-diff)
+      DO_ADDON_DIFF=1
+      shift
+      ;;
     *)
       echo "Unknown argument: $1" >&2
       exit 2
@@ -106,6 +117,261 @@ echo "Version:   v${VERSION}"
 echo "Instance:  $INSTANCE_NAME (port $PORT)"
 echo "Output:    $OUT_FILE"
 echo
+
+# Common ROUTES list — referenced from both the regular snapshot and the
+# addon-diff mode. Unauthenticated, so /edit/* and /admin are excluded.
+ROUTES=("/" "/view/Welcome" "/search?q=test" "/login")
+
+# ── Per-addon overhead diff (#612) ────────────────────────────────────────────
+
+if [[ "$DO_ADDON_DIFF" -eq 1 ]]; then
+  echo "→ Mode: --addon-diff (per-addon overhead measurement)"
+
+  CONFIG_PATH="${FAST_STORAGE:-./data}/config/app-custom-config.json"
+  if [[ ! -f "$CONFIG_PATH" ]]; then
+    echo "❌ Custom config not found: $CONFIG_PATH" >&2
+    echo "   Set FAST_STORAGE in .env or pass it via env, then retry." >&2
+    exit 2
+  fi
+  if ! jq -e . "$CONFIG_PATH" >/dev/null 2>&1; then
+    echo "❌ Custom config is not valid JSON: $CONFIG_PATH" >&2
+    exit 2
+  fi
+
+  # Enumerate enabled addons (bash 3.2 compatible — no mapfile)
+  ENABLED_KEYS=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && ENABLED_KEYS+=("$line")
+  done < <(jq -r 'to_entries[] | select(.key | startswith("ngdpbase.addons.")) | select(.key | endswith(".enabled")) | select(.value == true) | .key' "$CONFIG_PATH")
+
+  if [[ "${#ENABLED_KEYS[@]}" -eq 0 ]]; then
+    echo "ℹ️  No enabled addons found in $CONFIG_PATH — nothing to measure"
+    exit 0
+  fi
+
+  ADDON_NAMES_PREVIEW=""
+  for k in "${ENABLED_KEYS[@]}"; do
+    n=$(echo "$k" | sed -E 's/ngdpbase\.addons\.([^.]+)\.enabled/\1/')
+    ADDON_NAMES_PREVIEW+="$n "
+  done
+
+  echo "  Enabled addons: ${#ENABLED_KEYS[@]} (${ADDON_NAMES_PREVIEW% })"
+  echo "  This will restart the server $((${#ENABLED_KEYS[@]} + 1)) times. Estimated runtime: ~$(((${#ENABLED_KEYS[@]} + 1) * 35))s minimum."
+  echo "  Ctrl-C is safe — config is restored via EXIT trap. Don't kill -9."
+  echo
+
+  # Backup config + EXIT trap (always runs, even on Ctrl-C)
+  CONFIG_BACKUP=$(mktemp)
+  cp "$CONFIG_PATH" "$CONFIG_BACKUP"
+  trap '
+    rc=$?
+    if [[ -f "$CONFIG_BACKUP" ]]; then
+      echo
+      echo "→ Restoring original config: $CONFIG_PATH"
+      cp "$CONFIG_BACKUP" "$CONFIG_PATH"
+      rm -f "$CONFIG_BACKUP"
+      echo "→ Restarting server to clean state"
+      ./server.sh restart >/dev/null 2>&1 || true
+    fi
+    exit $rc
+  ' EXIT
+
+  # ── Helpers (telemetry-first memory; mean-of-10 route timing; restart) ──
+
+  measure_memory_mb_inline() {
+    local payload rss bytes
+    payload=$(curl -sS --max-time 5 "${BASELINE_METRICS_URL:-http://localhost:9464/metrics}" 2>/dev/null || true)
+    if [[ -n "$payload" && "$payload" == *"_process_resident_memory_bytes"* ]]; then
+      rss=$(echo "$payload" | awk '/^[^#]/ && $1 ~ /_process_resident_memory_bytes$/ { print $2; exit }')
+      if [[ -n "$rss" ]]; then
+        awk -v b="$rss" 'BEGIN { printf "%.1f", b / 1024 / 1024 }'
+        return
+      fi
+    fi
+    bytes=$(npx pm2 jlist 2>/dev/null \
+      | jq -r --arg name "$INSTANCE_NAME" '.[] | select(.name == $name) | .monit.memory' \
+      | head -1)
+    awk -v b="${bytes:-0}" 'BEGIN { printf "%.1f", b / 1024 / 1024 }'
+  }
+
+  measure_route_ms_inline() {
+    local route="$1"
+    local total=0 samples=0 ms
+    for _ in {1..10}; do
+      ms=$(curl -sSL -o /dev/null -w '%{time_total}' --max-time 10 "${BASE_URL}${route}" 2>/dev/null \
+        | awk '{ printf "%d", $1 * 1000 }')
+      if [[ -n "$ms" ]]; then
+        total=$((total + ms))
+        samples=$((samples + 1))
+      fi
+    done
+    if [[ "$samples" -gt 0 ]]; then
+      echo $((total / samples))
+    else
+      echo "-"
+    fi
+  }
+
+  # Detects a NEW engine-ready marker by counting before/after.
+  restart_and_wait_inline() {
+    local pm2_out="${FAST_STORAGE:-./data}/logs/pm2-out.log"
+    local before_count after_count
+    before_count=$(grep -c '✅ ngdpbase Engine initialized successfully' "$pm2_out" 2>/dev/null || echo 0)
+    ./server.sh restart >/dev/null 2>&1 || true
+    for _ in {1..90}; do
+      sleep 1
+      after_count=$(grep -c '✅ ngdpbase Engine initialized successfully' "$pm2_out" 2>/dev/null || echo 0)
+      if [[ "$after_count" -gt "$before_count" ]]; then
+        # Marker seen — verify route responds before returning
+        for _ in {1..15}; do
+          if curl -sS -o /dev/null --max-time 2 "${BASE_URL}/" 2>/dev/null; then
+            return 0
+          fi
+          sleep 1
+        done
+        return 0
+      fi
+    done
+    return 1
+  }
+
+  # ── Snapshot 1: all addons enabled (baseline) ──────────────────────────
+
+  total_iterations=$((${#ENABLED_KEYS[@]} + 1))
+  echo "→ [1/${total_iterations}] Measuring baseline (all addons enabled)…"
+  ALL_MEM=$(measure_memory_mb_inline)
+  ALL_TIMES=()
+  for route in "${ROUTES[@]}"; do
+    ALL_TIMES+=("$(measure_route_ms_inline "$route")")
+  done
+  echo "  memory: ${ALL_MEM} MB, routes: ${ALL_TIMES[*]} ms"
+
+  # ── Per-addon iterations ────────────────────────────────────────────────
+
+  ADDON_NAMES=()
+  ADDON_MEM_DELTAS=()
+  ADDON_ROUTE_DELTAS=()  # comma-packed strings, one per addon
+
+  iter=2
+  for key in "${ENABLED_KEYS[@]}"; do
+    addon_name=$(echo "$key" | sed -E 's/ngdpbase\.addons\.([^.]+)\.enabled/\1/')
+    echo "→ [${iter}/${total_iterations}] Disabling ${addon_name}…"
+    iter=$((iter + 1))
+
+    TMP=$(mktemp)
+    if ! jq --arg k "$key" '.[$k] = false' "$CONFIG_BACKUP" > "$TMP"; then
+      echo "  ❌ jq failed to modify config; skipping ${addon_name}" >&2
+      rm -f "$TMP"
+      ADDON_NAMES+=("$addon_name")
+      ADDON_MEM_DELTAS+=("err")
+      ADDON_ROUTE_DELTAS+=("err,err,err,err")
+      continue
+    fi
+    mv "$TMP" "$CONFIG_PATH"
+
+    if ! restart_and_wait_inline; then
+      echo "  ❌ Server failed to come up cleanly within timeout — skipping ${addon_name}" >&2
+      ADDON_NAMES+=("$addon_name")
+      ADDON_MEM_DELTAS+=("err")
+      ADDON_ROUTE_DELTAS+=("err,err,err,err")
+      continue
+    fi
+
+    sleep 3  # let caches settle
+    DIS_MEM=$(measure_memory_mb_inline)
+    DIS_TIMES=()
+    for route in "${ROUTES[@]}"; do
+      DIS_TIMES+=("$(measure_route_ms_inline "$route")")
+    done
+
+    mem_delta=$(awk -v a="$ALL_MEM" -v b="$DIS_MEM" 'BEGIN { printf "%+.1f", a - b }')
+    route_delta_str=""
+    for j in "${!ROUTES[@]}"; do
+      if [[ "${ALL_TIMES[$j]}" != "-" && "${DIS_TIMES[$j]}" != "-" ]]; then
+        d=$((ALL_TIMES[j] - DIS_TIMES[j]))
+        if [[ "$d" -ge 0 ]]; then
+          route_delta_str+="+${d},"
+        else
+          route_delta_str+="${d},"
+        fi
+      else
+        route_delta_str+="-,"
+      fi
+    done
+
+    ADDON_NAMES+=("$addon_name")
+    ADDON_MEM_DELTAS+=("$mem_delta")
+    ADDON_ROUTE_DELTAS+=("${route_delta_str%,}")
+
+    echo "  Δmem: ${mem_delta} MB, Δroutes: ${route_delta_str%,} ms"
+  done
+
+  # ── Write addon-diff baseline file ──────────────────────────────────────
+
+  ADDON_OUT_FILE="${OUT_FILE%.md}-addondiff.md"
+  if [[ -f "$ADDON_OUT_FILE" ]]; then
+    j=2
+    while [[ -f "${OUT_FILE%.md}-addondiff-r${j}.md" ]]; do
+      j=$((j + 1))
+    done
+    ADDON_OUT_FILE="${OUT_FILE%.md}-addondiff-r${j}.md"
+  fi
+
+  {
+    echo "# Per-addon overhead — v${VERSION}"
+    echo
+    echo "Captured ${TODAY} on instance \`${INSTANCE_NAME}\` (port ${PORT})."
+    echo
+    echo "## Baseline (all addons enabled)"
+    echo
+    echo "| Metric | Value |"
+    echo "| --- | --- |"
+    echo "| Resident memory | ${ALL_MEM} MB |"
+    for j in "${!ROUTES[@]}"; do
+      echo "| \`${ROUTES[$j]}\` | ${ALL_TIMES[$j]} ms |"
+    done
+    echo
+    echo "## Per-addon delta"
+    echo
+    echo "Each row reflects the cost of having that addon enabled, computed as (all-enabled metric) − (this-addon-disabled metric). Positive values mean the addon adds that much overhead."
+    echo
+
+    header="| Addon | Memory Δ |"
+    sep="| --- | --- |"
+    for route in "${ROUTES[@]}"; do
+      header+=" \`${route}\` Δ |"
+      sep+=" --- |"
+    done
+    echo "$header"
+    echo "$sep"
+
+    for k in "${!ADDON_NAMES[@]}"; do
+      printf "| %s | %s MB |" "${ADDON_NAMES[$k]}" "${ADDON_MEM_DELTAS[$k]}"
+      IFS=',' read -ra deltas <<< "${ADDON_ROUTE_DELTAS[$k]}"
+      for d in "${deltas[@]}"; do
+        if [[ "$d" == "err" || "$d" == "-" ]]; then
+          printf " %s |" "$d"
+        else
+          printf " %s ms |" "$d"
+        fi
+      done
+      echo
+    done
+
+    echo
+    echo "## Methodology"
+    echo
+    echo "Generated by \`scripts/baseline-profile.sh --addon-diff\` (#612). For each addon listed under \`ngdpbase.addons.*.enabled\` in the running install's custom config: (1) capture a baseline with all addons enabled; (2) for each addon, write a config copy with that single addon disabled, restart via \`./server.sh restart\`, wait for the engine-ready marker in \`pm2-out.log\` plus a successful HTTP probe, and re-measure; (3) restore the original config and restart cleanly via an EXIT trap. Memory uses the same telemetry-first / pm2-fallback path as the standard baseline. Route times are the mean of 10 curl iterations. Run-to-run noise can blur small deltas (~5 MB / ~5 ms); large addons (e.g. elasticsearch) should dominate."
+  } > "$ADDON_OUT_FILE"
+
+  echo
+  echo "✅ Addon-diff baseline written to: $ADDON_OUT_FILE"
+  echo
+  cat "$ADDON_OUT_FILE"
+
+  # EXIT trap fires here — restores config + final restart.
+  exit 0
+fi
 
 # ── Cold-start timing (optional) ──────────────────────────────────────────────
 
@@ -217,10 +483,8 @@ echo "→ Pages on disk:   ${PAGE_COUNT}"
 echo "→ Sampling response times (10 iterations per route)…"
 
 # Parallel arrays — macOS bash 3.2 has no associative arrays.
-# Routes are chosen for unauthenticated access. /edit/* and admin routes are
-# excluded because they 302 to /login; their timings would reflect login page
-# render, not the actual feature.
-ROUTES=("/" "/view/Welcome" "/search?q=test" "/login")
+# ROUTES is defined at the top so addon-diff mode can reuse it. Routes are
+# unauthenticated only — /edit/* and admin routes 302 to /login.
 ROUTE_TIMES=()
 for route in "${ROUTES[@]}"; do
   total=0

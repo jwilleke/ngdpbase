@@ -27,6 +27,7 @@
     "test:baseline": "./scripts/baseline-profile.sh",
     "test:baseline:cold": "./scripts/baseline-profile.sh --cold-start",
     "test:baseline:compare": "./scripts/baseline-profile.sh --compare",
+    "test:baseline:addondiff": "./scripts/baseline-profile.sh --addon-diff",
     "smoke": "./scripts/smoke-test.sh",
     "prepare": "husky install || echo 'Husky not installed'",
     "version": "echo $npm_package_version",
