@@ -2,6 +2,34 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-04-02
+
+- Agent: Claude
+- Subject: #612 — first live `--addon-diff` run against jimstest, plus `FAST_STORAGE` env-var fix discovered during the run
+- Current Issue: #612 (in review — implementation works, data quality questionable)
+- Work Done:
+  - **Pre-run sanity**: clean `./server.sh restart` of jimstest + full `npm test` (5230/5230 pass, 9.5s) before triggering the live addon-diff
+  - **Bug discovered + fixed (cae4e7e3)**: script wasn't reading `FAST_STORAGE` from `.env`; relied on the caller's shell env to have it exported. `npm run` doesn't source `.env`, so `--addon-diff` failed with `❌ Custom config not found: ./data/config/app-custom-config.json` on the first invocation. Patched the script to grep `FAST_STORAGE` and `SLOW_STORAGE` from `.env` the same way `PORT` was already being read. Side effect: the regular snapshot path's `Pages on disk` counter was silently using `./data/pages` (118 seed fixtures) instead of `${FAST_STORAGE}/pages` (~17K live pages); now corrected as well
+  - **Live run completed end-to-end**: 5 addons (template, calendar, elasticsearch, journal, forms), 6 restarts (1 baseline + 5 iterations + 1 trap-fired restore), ~3.5 min wall-clock. EXIT trap fired correctly — config restored to all-true, server back online, HTTP 302 from `/` confirms healthy state
+  - **Output captured (ddf31317)**: `docs/performance/baseline-v3.8.0-2026-05-04-addondiff.md` committed as the first live capture of the methodology
+  - **Honest assessment posted to #612**: the script works functionally but the **single-pass memory data is too noisy for decision-making**. Absolute memory across 6 snapshots ranged 1491-3581 MB (2 GB variance). Negative deltas for template (-163 MB) and elasticsearch (-270 MB) are noise artifacts; forms's +1820 MB is not credible. Sum of positives exceeds baseline. Cool-down (3 s) is too short; lunr rebuild + lazy GC dominate. Three forward options surfaced in the comment: (A) accept as directional-only, (B) add `--runs N` averaging mode, (C) drop memory measurement and keep route-times-only
+- Testing:
+  - `bash -n` syntax check after FAST_STORAGE patch: clean
+  - End-to-end live run: completed, EXIT trap verified, config restored, server healthy
+  - `npm test`: 5230/5230 pass
+- Commits:
+  - cae4e7e3 (`fix(#612): read FAST_STORAGE/SLOW_STORAGE from .env in baseline-profile.sh`)
+  - ddf31317 (`docs(#612): first live --addon-diff capture for v3.8.0`)
+- Files Modified:
+  - scripts/baseline-profile.sh (+13 lines: FAST_STORAGE / SLOW_STORAGE .env read fallback)
+  - docs/performance/baseline-v3.8.0-2026-05-04-addondiff.md (new — first live capture)
+- GH issues:
+  - #612 → labelled `in review`. Comment posted with live findings + honest assessment + three forward options. Awaiting user decision on whether to fold in averaging (Option B) before closing
+- Notes:
+  - **Methodology doc was off**: predicted "~5 MB noise floor", observed ~2 GB. The script's value isn't zero — it does correctly identify "calendar and forms are not free, elasticsearch+lunr dwarfs everything" — but it can't rank addons by memory cost in a single pass. Update to the methodology doc (raise the noise-floor estimate, document the observed range) is a small follow-up
+  - **Route timings were better-behaved**: `/search` ranged 248-269 ms (~10% spread), much tighter than memory. If a follow-up keeps only route-time deltas, the data is decision-useful as-is
+  - **The FAST_STORAGE bug was latent**: the regular snapshot path was silently producing wrong page counts for months. Worth back-checking which historical baselines under `docs/performance/baseline-v*.md` have the wrong page count — probably all of them prior to v3.8.0 since the FAST_STORAGE-aware logic was added as part of #611's pages-on-disk fix and assumed the caller env had it set
+
 ## 2026-05-04-01
 
 - Agent: Claude
