@@ -444,11 +444,34 @@ if [[ "${BASELINE_METRICS_DISABLE:-0}" != "1" ]]; then
 fi
 
 # Pull a metric value where the metric name ends with the given suffix.
-# Skips comment lines (# HELP / # TYPE). Returns empty string if not found.
+# Skips comment lines (# HELP / # TYPE). Handles OTel-style label suffixes
+# (`{otel_scope_name="...",...}`) — for labeled lines, the value is the
+# whitespace-separated token after the closing `}`; for bare lines it's $2.
+# Returns empty string if not found.
 get_metric() {
   local suffix="$1"
-  echo "$METRICS_PAYLOAD" \
-    | awk -v suffix="$suffix" '/^[^#]/ && $1 ~ suffix"$" { print $2; exit }'
+  # Here-string instead of `echo | awk` — when the metric is found early
+  # and awk exits, a long-running `echo` pipe races SIGPIPE under
+  # `set -o pipefail`. The here-string buffers the payload via a temp.
+  awk -v suffix="$suffix" '
+      /^[^#]/ {
+        line = $0
+        # Strip {…} labels and capture both the metric name and the value
+        # that follows. Robust to spaces inside label values.
+        if (match(line, /\{[^}]*\}/) > 0) {
+          name = substr(line, 1, RSTART - 1)
+          rest = substr(line, RSTART + RLENGTH)
+          # rest starts with whitespace + value (+ optional timestamp)
+          sub(/^[ \t]+/, "", rest)
+          split(rest, parts, /[ \t]+/)
+          value = parts[1]
+        } else {
+          name = $1
+          value = $2
+        }
+        if (name ~ suffix"$") { print value; exit }
+      }
+    ' <<< "$METRICS_PAYLOAD"
 }
 
 if [[ "$MEM_SOURCE" == "telemetry" ]]; then
@@ -643,8 +666,14 @@ echo "✅ Baseline written to: $OUT_FILE"
 
 if [[ "$DO_COMPARE" -eq 1 ]]; then
   if [[ -z "$COMPARE_FILE" ]]; then
-    # Auto-detect: most recent baseline file other than the one we just wrote.
-    COMPARE_FILE=$(ls -t "$OUT_DIR"/baseline-v*.md 2>/dev/null | grep -v "^${OUT_FILE}$" | head -1)
+    # Auto-detect: most recent baseline file other than the one we just
+    # wrote. Skip *-addondiff*.md files — those are addon-overhead captures
+    # taken under disturbed conditions (server restarted N times) and are
+    # not comparable to the steady-state per-release baselines.
+    COMPARE_FILE=$(ls -t "$OUT_DIR"/baseline-v*.md 2>/dev/null \
+      | grep -v "^${OUT_FILE}$" \
+      | grep -v -- '-addondiff' \
+      | head -1)
   fi
 
   if [[ -z "$COMPARE_FILE" || ! -f "$COMPARE_FILE" ]]; then
