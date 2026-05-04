@@ -12,3 +12,6 @@ exports/
 
 # Ignore private development notes
 private/
+
+# Auto-generated performance baselines (single-paragraph methodology by design)
+docs/performance/baseline-*.md
