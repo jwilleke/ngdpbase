@@ -2,6 +2,39 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-04-01
+
+- Agent: Claude
+- Subject: #612 — `--addon-diff` mode in `scripts/baseline-profile.sh` for per-addon overhead measurement. Plus `[BUG] #642` filed on the divergent `ngdpbase.base-url` vs `ngdpbase.baseURL` config keys
+- Current Issue: #612 (in flight — implementation committed, live run not yet executed)
+- Work Done:
+  - **#612 implementation (b569b3dd)**: `--addon-diff` flag in `scripts/baseline-profile.sh`. For each addon listed under `ngdpbase.addons.*.enabled: true` in the running install's custom config, the script disables it one-at-a-time, restarts the server via `./server.sh restart`, waits for the engine-ready marker plus a successful HTTP probe, re-measures memory + 4 route timings, and records the delta. Captures a single "all enabled" baseline up front so each iteration is a one-addon-removed delta against the same reference. Restores the original config and does a clean restart on EXIT (works for clean exits, errors, and Ctrl-C). Writes `baseline-v<V>-<DATE>-addondiff.md` with the baseline + per-addon delta table
+  - **`npm run test:baseline:addondiff`** added for parity with the other `test:baseline:*` scripts
+  - **Memory measurement** reuses the telemetry-first / pm2-fallback path from #610
+  - **Estimated runtime + warning** printed up front so a multi-minute run isn't mistaken for a hang. `[i/N]` progress markers per iteration. Cost: ~35s per restart × (N+1) restarts; for jimstest's 5 addons that's ~3–5 min
+  - **Issue #642 [BUG] filed**: audit of every site that touches `ngdpbase.base-url`, `ngdpbase.baseURL`, and `ngdpbase.auth.magic-link.base-url`. Discovered the camelCase form is read only by the forms addon while everything else (template variables, RenderingManager, install service, env-var override) reads kebab-case. jimstest's custom config sets the camelCase form, which is silently a no-op for everything except forms. Three-phase fix proposed (unify on kebab-case + migration shim + magic-link fallback chain to baseURL)
+  - **`docs/performance/issue-612-addon-diff-mode.md` created** documenting the methodology, runtime cost, output shape, safety contract, and known limitations (notably: only enumerates from custom config today, not from merged effective config including defaults)
+  - **#610 + #613 labelled `in review`** rather than left bare-OPEN per the workflow rule. They're not closed because the telemetry-on (#610) and valid-cred login (#613) end-to-end paths weren't exercised in dev — those will be closed once a release-time run confirms them
+- Testing:
+  - `bash -n` syntax check on the modified script: clean
+  - `jq` round-trip validated against jimstest's actual custom config (676-line file → 679 lines after jq pretty-print, no semantic diff, valid JSON)
+  - **Live `--addon-diff` run not yet executed** — implementation is in git so the user can either trigger it or fold in the merged-default-config fix first. Restarting jimstest 6× is real impact and should be deliberate
+- Commits:
+  - b569b3dd (`feat(#612): --addon-diff mode in baseline-profile.sh`)
+- Files Modified:
+  - scripts/baseline-profile.sh (+268 / -4: arg parsing, ROUTES hoist, `--addon-diff` self-contained block with measure_memory_mb_inline / measure_route_ms_inline / restart_and_wait_inline helpers, EXIT trap config-restore + restart, markdown writer)
+  - package.json (`test:baseline:addondiff` entry)
+  - docs/performance/issue-612-addon-diff-mode.md (new — methodology + safety + known-limitations doc)
+- GH issues:
+  - #612 still OPEN — implementation committed but live run pending; comment with implementation summary still TODO once user signs off on running it
+  - #642 NEW (`[BUG] Two divergent base-url config keys`) — full audit + 3-phase fix proposal
+  - #610 → labelled `in review` (not closed; telemetry-on path needs end-to-end confirmation)
+  - #613 → labelled `in review` (not closed; valid-cred login path needs end-to-end confirmation)
+- Notes:
+  - **Open question raised by user**: should `--addon-diff` enumerate from the merged effective config (defaults + custom) rather than custom-only? Documented as known limitation #1; the fix is small (~20 lines of jq merge) but not yet folded in. Today the script works correctly for jimstest because all 5 of its addons are set in custom; it would silently skip a sister install whose addons are enabled via defaults
+  - **Magic-link config gap on jimstest** flagged separately: jimstest's custom config sets `ngdpbase.baseURL` (camelCase) but core code reads `ngdpbase.base-url` (kebab). Quick fix is one line in the custom config; systemic fix is in #642
+  - Performance-labelled issues remaining open: `#259` (the original baseline-profile umbrella), plus `#612` (this one, pending live run)
+
 ## 2026-05-03-18
 
 - Agent: Claude
