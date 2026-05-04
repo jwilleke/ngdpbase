@@ -73,6 +73,19 @@ fi
 PORT=$(grep -E '^PORT=' .env 2>/dev/null | head -1 | cut -d= -f2 || echo "3000")
 BASE_URL="http://localhost:${PORT}"
 
+# Read FAST_STORAGE / SLOW_STORAGE from .env if not already in the env. The
+# rest of the script consults `${FAST_STORAGE:-./data}` which silently falls
+# through to repo-local `./data` (just seed fixtures) when these aren't set —
+# fine for memory + route timings, but addon-diff needs the live config path.
+if [[ -z "${FAST_STORAGE:-}" ]]; then
+  FAST_STORAGE=$(grep -E '^FAST_STORAGE=' .env 2>/dev/null | head -1 | cut -d= -f2- || true)
+  [[ -n "$FAST_STORAGE" ]] && export FAST_STORAGE
+fi
+if [[ -z "${SLOW_STORAGE:-}" ]]; then
+  SLOW_STORAGE=$(grep -E '^SLOW_STORAGE=' .env 2>/dev/null | head -1 | cut -d= -f2- || true)
+  [[ -n "$SLOW_STORAGE" ]] && export SLOW_STORAGE
+fi
+
 # ── Argument parsing ─────────────────────────────────────────────────────────
 
 DO_COLD_START=0
