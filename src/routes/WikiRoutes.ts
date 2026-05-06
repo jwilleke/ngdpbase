@@ -4357,6 +4357,8 @@ ${panes}
           slug: string; title: string; date: string; preview?: string
         }>;
       };
+      const addonsManager = this.engine.getManager('AddonsManager');
+      const journalEnabled = addonsManager?.isEnabled?.('journal') ?? false;
       const entries = journalManager?.listByAuthor
         ? journalManager.listByAuthor(currentUser.username, { limit: 1000, offset: 0 })
         : [];
@@ -4374,6 +4376,7 @@ ${panes}
         icon: 'fa-book',
         items,
         listKind: 'journal',
+        journalEnabled,
         emptyMessage: journalManager
           ? 'You haven\'t made any journal entries yet.'
           : 'Journal addon is not enabled on this install.'

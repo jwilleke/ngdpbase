@@ -246,6 +246,12 @@
                                 <i class="fas fa-ellipsis-h"></i> More
                             </button>
                             <ul class="dropdown-menu dropdown-menu-end">
+                                <% if (typeof listKind !== 'undefined' && listKind === 'journal' && typeof journalEnabled !== 'undefined' && journalEnabled && typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated) { %>
+                                    <li><a class="dropdown-item" href="/api/journal/new">
+                                        <i class="fas fa-plus"></i> Journal Entry
+                                    </a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                <% } %>
                                 <% if (typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated && currentUser.roles && (currentUser.roles.includes('admin') || currentUser.roles.includes('editor') || currentUser.roles.includes('contributor'))) { %>
                                     <li><a class="dropdown-item" href="/create">
                                         <i class="fas fa-plus"></i> Create New Page
