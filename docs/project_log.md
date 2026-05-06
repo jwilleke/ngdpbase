@@ -47,6 +47,28 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - src/routes/WikiRoutes.ts
   - views/header.ejs
 
+## 2026-05-06-03
+
+- Agent: Claude
+- Subject: Move bulk-import test scripts off `/Volumes/jims/...` to the autofs `/mnt/tank/jims/...` path
+- Current Issue: none
+- Work Done:
+  - Audited the codebase for hardcoded tank-share paths after the new SMB mount setup (Login Items + autofs both live)
+  - Found 3 occurrences of `/Volumes/jims/data/systems/wikis/images/` in 2 dev/test scripts: `scripts/test-bulk-import.ts` (1) and `scripts/test-mcp-bulk-upload.ts` (2)
+  - Swapped them to `/mnt/tank/jims/data/systems/wikis/images/` — same SMB share, but the autofs path is deterministic (no `-1` collision suffix risk if a stale Login-Items mount lingers)
+  - Verified `/mnt/tank/jims/data/systems/wikis/images/` is reachable with 436 entries via autofs trigger
+- Audit results (no changes needed):
+  - `.env` references only local disks (`/Volumes/hd2/...`, `/Volumes/hd2A/...`) — no tank dependency
+  - `config/app-default-config.json` and `data/config/*.json` — no tank paths at all
+  - Test fixtures with `/Volumes/jims/old-nas/...` in `BasicAttachmentProvider.diskFallback.test.ts` are *intentionally stale* paths that test the preflight failure mode — left alone
+- Known gap (not addressed):
+  - `src/utils/PathPreflight.ts:13` only checks `/Volumes/<X>/...` paths on darwin; it does not check `/mnt/tank/<share>/...`. If a manager is configured with a `/mnt/tank/...` path and tank is unreachable, the smbfs `soft` mount option silently swallows the error instead of producing a clear preflight warning. Worth filing as a follow-up issue if the autofs path becomes the recommended config target
+- Commits: b2632b24 (chore: bulk-import scripts → /mnt/tank)
+- Files Modified:
+  - docs/project_log.md (this entry)
+  - scripts/test-bulk-import.ts
+  - scripts/test-mcp-bulk-upload.ts
+
 ## 2026-05-04-02
 
 - Agent: Claude
