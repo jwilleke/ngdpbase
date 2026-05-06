@@ -69,6 +69,26 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - scripts/test-bulk-import.ts
   - scripts/test-mcp-bulk-upload.ts
 
+## 2026-05-06-04
+
+- Agent: Claude
+- Subject: Cross-site update + full test sweep across all four ngdpbase deployments after merging session 2026-05-06-03 commits
+- Current Issue: none (verification pass; #622 referenced as a data point only)
+- Work Done:
+  - Filed feature issue #645 documenting the `PathPreflight` gap for `/mnt/tank/<share>/...` autofs paths (low priority — no manager configs target tank yet)
+  - Per-site workflow on all 4 deployments (sequential, to avoid resource contention): `git pull` → `./server.sh stop` → `npm run build` → `./server.sh start` → health check → `npm test` → `npm run test:e2e`
+  - Site 1 — fairways-base (port 2121, `./data`): build clean, vitest 200 files / 5230 tests pass, playwright 72 pass (25.1s)
+  - Site 2 — ngdpbase-veg / ve-geology (port 3333, `./data`): build clean, vitest 200 files pass, playwright 72 pass (20.8s)
+  - Site 3 — ngdpbase / jimstest (port 3000, `/Volumes/hd2/jimstest-wiki/data`): build clean, vitest 200 files pass, playwright 72 pass (2.7m — ~7× slower than the others, likely SLOW_STORAGE I/O against the larger real-data volume)
+  - Site 4 — ngdp-temp-builds/ngdpbase (port 3001, local `./data`): build clean, vitest 200 files pass, playwright 72 pass (20.8s)
+  - All 4 PM2 processes confirmed `online` post-test
+- Notable observations (no bugs filed):
+  - The known intermittent timeout in `WikiRoutes.coverage3.test.ts "returns 401 when user is not authenticated"` (issue #622) did not reproduce in any of the four runs — left open per "one clean run doesn't disprove an intermittent"
+  - jimstest E2E is dramatically slower than the other 3 deployments — same test count, same outcomes; data-volume I/O is the most likely cause. Worth a future profile pass if it gets in the way
+- Commits: none this session block (verification only — no code changes)
+- Files Modified:
+  - docs/project_log.md (this entry)
+
 ## 2026-05-04-02
 
 - Agent: Claude
