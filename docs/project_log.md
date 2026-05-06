@@ -2,6 +2,51 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-06-01
+
+- Agent: Claude
+- Subject: macOS SMB → AutoFS migration plan for `tank.local` shares (workstation infra, not ngdpbase code — logged here at user's request)
+- Current Issue: none (workstation hygiene)
+- Root Cause Diagnosed:
+  - **Login Item `jims`** was auto-mounting `smb://timemachine@tank.local/jims` at `/Volumes/jims` every login (registered as a macOS Background Task by Finder's "Reconnect at Login" checkbox). That's what created the `/Volumes/jims-1` collision suffix, not AutoFS
+  - **`/etc/auto_smb/shares`** was a previous AutoFS attempt — broken (5 shares all pointed at the same path `/Volumes/jims`) and not wired into `/etc/auto_master`, so deadcode but worth removing
+  - **`/Volumes/jims` empty stub** kept getting recreated by the Login Item racing whatever held the old mount
+- Plan (4 batches):
+  - **Batch 1 — clean up existing mess**: unmount `/Volumes/jims-1`, `/Volumes/mjs`, `/Volumes/molly`; remove `/Volumes/jims` stub; wipe `/etc/auto_smb/`. GUI step: remove `jims` Login Item from System Settings → General → Login Items (both "Open at Login" and "Allow in the Background")
+  - **Batch 2 — install AutoFS config**: `/etc/synthetic.conf` (creates `/mnt` at boot), `/etc/auto_tank` (indirect map for 6 shares), `/etc/auto_master` (adds `/mnt/tank auto_tank -nosuid`)
+  - **Batch 3 — reboot**: required because `synthetic.conf` only takes effect at boot
+  - **Batch 4 — verify**: `cd /mnt/tank/jims` triggers mount-on-demand; same for the other 5 shares
+- Target Layout:
+  - `/mnt/tank/{family,jims,mjs,molly,public,shared}` — matches the Linux box's layout
+  - All shares mount as user `timemachine` against `tank.local` (credentials already in keychain from prior Finder mounts)
+  - Mount-on-access, idle unmount, no more `-1` suffix collisions
+- Status:
+  - Batch 1 terminal commands: **DONE** — `/Volumes/` now clean (only local disks `hd`, `hd2`, `hd2A`, `local_backup` remain); `/etc/auto_smb/` removed
+  - Batch 1 GUI step (Login Item removal): **pending user confirmation**
+  - Batch 2: **not started** — waiting on Login Item confirmation before writing `/etc/synthetic.conf`, `/etc/auto_tank`, `/etc/auto_master`
+- Notes:
+  - User is running each `sudo` command in a separate terminal and pasting output back; one-line-at-a-time cadence (some `sudo umount` invocations hang on stale SMB mounts — `sudo diskutil unmount force` is the reliable form)
+  - Share list confirmed: `family, jims, mjs, molly, public, shared` (from Linux `ls` output, overrides the broken `auto_smb/shares` which referenced `Personal-Drive` instead of `molly`/`public`)
+
+## 2026-05-06-02
+
+- Agent: Claude
+- Subject: Workstation infra — Login Items auto-mount for tank shares + new `docs/macos-smb-mounts.md`; bundled pre-existing journal-dropdown WIP and a lockfile version sync at user request
+- Current Issue: none (workstation hygiene; journal-dropdown work was not tied to an open issue)
+- Work Done:
+  - Confirmed `ls /mnt/tank` returns the six expected shares — autofs config from session 2026-05-06-01 is fully active in the live `mount` table, reconciling that entry's stale "Batch 2: not started" status note
+  - User added macOS Login Items entries for tank shares (System Settings → General → Login Items → Open at Login) so the SMB volumes reconnect at login without a manual Finder Cmd+K
+  - Updated tank-topology memory note with the Login Items setup and the recovery path if Login Items are lost (macOS update / keychain reset)
+  - Wrote `docs/macos-smb-mounts.md` documenting both coexisting mount paths (autofs `/mnt/tank/<share>` + Login Items `/Volumes/<share>`), the multi-homed tank routing trap, verbatim `/etc/auto_master` + `/etc/auto_tank` contents, full rebuild recipe, and a symptom→fix table for the silent-fail modes that the smbfs `soft` option hides
+  - Committed alongside (not authored this session, present in working tree at session start): journal-dropdown gating in `WikiRoutes.ts` + `header.ejs` (separate `feat` commit) and `package-lock.json` version sync to 3.9.0 (separate `chore` commit)
+- Commits: 59bc7d32 (chore: lockfile sync), 30a36d2c (feat: journal dropdown gate), 4897584a (docs: SMB mounts)
+- Files Modified:
+  - docs/macos-smb-mounts.md (new)
+  - docs/project_log.md (this entry)
+  - package-lock.json
+  - src/routes/WikiRoutes.ts
+  - views/header.ejs
+
 ## 2026-05-04-02
 
 - Agent: Claude
