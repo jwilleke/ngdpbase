@@ -114,13 +114,13 @@ async function testMCPBulkUpload() {
     // Step 4: Call the bulk upload tool with limit pattern
     // We'll use a pattern that matches only 5 specific files
     console.log('\n3. Calling ngdpbase_bulk_upload_attachments...');
-    console.log('   Directory: /Volumes/jims/data/systems/wikis/images/');
+    console.log('   Directory: /mnt/tank/jims/data/systems/wikis/images/');
     console.log('   Pattern: * (all files)');
 
     const uploadResponse = await sendRequest('tools/call', {
       name: 'ngdpbase_bulk_upload_attachments',
       arguments: {
-        directory: '/Volumes/jims/data/systems/wikis/images/',
+        directory: '/mnt/tank/jims/data/systems/wikis/images/',
         pattern: '*',
         recursive: false
       }

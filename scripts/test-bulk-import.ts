@@ -25,7 +25,7 @@ function getMimeType(filename) {
 }
 
 async function testBulkImport() {
-  const sourceDir = '/Volumes/jims/data/systems/wikis/images/';
+  const sourceDir = '/mnt/tank/jims/data/systems/wikis/images/';
   const limit = 5;
 
   console.log('=== Bulk Attachment Import Test ===\n');
