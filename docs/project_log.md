@@ -2,6 +2,37 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-07-04
+
+- Agent: Claude
+- Subject: #642 Iteration 3 (final) — magic-link derives baseUrl from canonical config + refuse-to-register security check; #642 CLOSED
+- Current Issue: #642 (CLOSED — all 3 iterations shipped)
+- Tests: 5254/5254 vitest pass (was 5252); AuthManager.test.ts +2 tests for refuse-to-register
+- Work Done:
+  - Added public `ConfigurationManager.isBaseUrlExplicit()` — returns true if `ngdpbase.application.base-url` is set in customConfig (after Iteration 1 migration shim) OR via `NGDPBASE_BASE_URL` env var. `assertBaseUrlConfigured()` refactored to call this accessor (no behavior change)
+  - `AuthManager.initialize()` magic-link registration: dropped read of `ngdpbase.auth.magic-link.base-url`; added security check that calls `configManager.isBaseUrlExplicit()` before registering MagicLinkAuthProvider. If false, logs clear error and skips registration (token-in-URL is a credential; emitting magic links pointing at unconfigured localhost leaks credentials)
+  - `MagicLinkAuthProvider`: dropped `baseUrl` from `MagicLinkConfig`; `initiate()` resolves baseUrl from `engine.getManager('ConfigurationManager').getBaseURL()` at runtime. AuthManager-level gating ensures this always returns the operator-configured value
+  - `WikiRoutes.ts:3795-3799` magic-link initiate handler simplified — removed manual `localhost:${port}` baseUrl computation; just calls `authManager.initiate('magic-link', { email, redirect })`
+  - `AuthInitiateContext.baseUrl` field removed from the type — no callers set it anymore
+  - `config/app-default-config.json`: removed `ngdpbase.auth.magic-link.base-url` key entirely. **No migration shim** for this key — operators who previously set it can simply remove it; the canonical `ngdpbase.application.base-url` is the single source of truth
+  - Comment on the magic-link section in default config updated to note the verify-link host is derived from `application.base-url` (#642)
+  - 2 new tests in `AuthManager.test.ts`: refuse-to-register when base-url implicit; register when enabled AND explicit. Updated `mockConfigManager` to expose `isBaseUrlExplicit()` (defaults true; per-test override exercises refuse path)
+  - SEMVER **minor** bump 3.9.3 → 3.10.0 (config-key removal is user-visible)
+  - Live verified on jimstest: server restarts cleanly on 3.10.0; magic-link disabled in jimstest's config (default) so the security check isn't exercised live, but unit tests cover both branches; Iteration 2 invariant continues to pass; homepage returns 302
+  - Posted final completion comment on #642 with summary across all three iterations and closed the issue
+- Commits: 4830e979 (feat: #642 Iteration 3, closes #642)
+- Files Modified:
+  - CHANGELOG.md
+  - config/app-default-config.json
+  - docs/project_log.md (this entry)
+  - package.json, package-lock.json
+  - src/managers/AuthManager.ts
+  - src/managers/ConfigurationManager.ts
+  - src/managers/**tests**/AuthManager.test.ts
+  - src/providers/BaseAuthProvider.ts
+  - src/providers/MagicLinkAuthProvider.ts
+  - src/routes/WikiRoutes.ts
+
 ## 2026-05-07-03
 
 - Agent: Claude
@@ -37,7 +68,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - package.json, package-lock.json
   - src/app.ts
   - src/managers/ConfigurationManager.ts
-  - src/managers/__tests__/ConfigurationManager.test.ts
+  - src/managers/**tests**/ConfigurationManager.test.ts
   - src/services/InstallService.ts
 
 ## 2026-05-07-02
@@ -70,7 +101,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - docs/project_log.md (this entry)
   - package.json, package-lock.json
   - src/managers/ConfigurationManager.ts, OrganizationManager.ts, VariableManager.ts
-  - src/managers/__tests__/ConfigurationManager.test.ts
+  - src/managers/**tests**/ConfigurationManager.test.ts
   - src/services/InstallService.ts
   - src/types/Config.ts
 
@@ -99,8 +130,8 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - src/managers/RoleManager.ts
   - src/managers/PersonManager.ts
   - src/managers/OrganizationManager.ts
-  - src/managers/__tests__/MetricsManager.test.ts
-  - src/managers/__tests__/identityCaches.test.ts
+  - src/managers/**tests**/MetricsManager.test.ts
+  - src/managers/**tests**/identityCaches.test.ts
   - docs/project_log.md (this entry)
 
 ## 2026-05-06-01
@@ -109,22 +140,22 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: macOS SMB → AutoFS migration plan for `tank.local` shares (workstation infra, not ngdpbase code — logged here at user's request)
 - Current Issue: none (workstation hygiene)
 - Root Cause Diagnosed:
-  - __Login Item `jims`__ was auto-mounting `smb://timemachine@tank.local/jims` at `/Volumes/jims` every login (registered as a macOS Background Task by Finder's "Reconnect at Login" checkbox). That's what created the `/Volumes/jims-1` collision suffix, not AutoFS
-  - __`/etc/auto_smb/shares`__ was a previous AutoFS attempt — broken (5 shares all pointed at the same path `/Volumes/jims`) and not wired into `/etc/auto_master`, so deadcode but worth removing
-  - __`/Volumes/jims` empty stub__ kept getting recreated by the Login Item racing whatever held the old mount
+  - **Login Item `jims`** was auto-mounting `smb://timemachine@tank.local/jims` at `/Volumes/jims` every login (registered as a macOS Background Task by Finder's "Reconnect at Login" checkbox). That's what created the `/Volumes/jims-1` collision suffix, not AutoFS
+  - **`/etc/auto_smb/shares`** was a previous AutoFS attempt — broken (5 shares all pointed at the same path `/Volumes/jims`) and not wired into `/etc/auto_master`, so deadcode but worth removing
+  - **`/Volumes/jims` empty stub** kept getting recreated by the Login Item racing whatever held the old mount
 - Plan (4 batches):
-  - __Batch 1 — clean up existing mess__: unmount `/Volumes/jims-1`, `/Volumes/mjs`, `/Volumes/molly`; remove `/Volumes/jims` stub; wipe `/etc/auto_smb/`. GUI step: remove `jims` Login Item from System Settings → General → Login Items (both "Open at Login" and "Allow in the Background")
-  - __Batch 2 — install AutoFS config__: `/etc/synthetic.conf` (creates `/mnt` at boot), `/etc/auto_tank` (indirect map for 6 shares), `/etc/auto_master` (adds `/mnt/tank auto_tank -nosuid`)
-  - __Batch 3 — reboot__: required because `synthetic.conf` only takes effect at boot
-  - __Batch 4 — verify__: `cd /mnt/tank/jims` triggers mount-on-demand; same for the other 5 shares
+  - **Batch 1 — clean up existing mess**: unmount `/Volumes/jims-1`, `/Volumes/mjs`, `/Volumes/molly`; remove `/Volumes/jims` stub; wipe `/etc/auto_smb/`. GUI step: remove `jims` Login Item from System Settings → General → Login Items (both "Open at Login" and "Allow in the Background")
+  - **Batch 2 — install AutoFS config**: `/etc/synthetic.conf` (creates `/mnt` at boot), `/etc/auto_tank` (indirect map for 6 shares), `/etc/auto_master` (adds `/mnt/tank auto_tank -nosuid`)
+  - **Batch 3 — reboot**: required because `synthetic.conf` only takes effect at boot
+  - **Batch 4 — verify**: `cd /mnt/tank/jims` triggers mount-on-demand; same for the other 5 shares
 - Target Layout:
   - `/mnt/tank/{family,jims,mjs,molly,public,shared}` — matches the Linux box's layout
   - All shares mount as user `timemachine` against `tank.local` (credentials already in keychain from prior Finder mounts)
   - Mount-on-access, idle unmount, no more `-1` suffix collisions
 - Status:
-  - Batch 1 terminal commands: __DONE__ — `/Volumes/` now clean (only local disks `hd`, `hd2`, `hd2A`, `local_backup` remain); `/etc/auto_smb/` removed
-  - Batch 1 GUI step (Login Item removal): __pending user confirmation__
-  - Batch 2: __not started__ — waiting on Login Item confirmation before writing `/etc/synthetic.conf`, `/etc/auto_tank`, `/etc/auto_master`
+  - Batch 1 terminal commands: **DONE** — `/Volumes/` now clean (only local disks `hd`, `hd2`, `hd2A`, `local_backup` remain); `/etc/auto_smb/` removed
+  - Batch 1 GUI step (Login Item removal): **pending user confirmation**
+  - Batch 2: **not started** — waiting on Login Item confirmation before writing `/etc/synthetic.conf`, `/etc/auto_tank`, `/etc/auto_master`
 - Notes:
   - User is running each `sudo` command in a separate terminal and pasting output back; one-line-at-a-time cadence (some `sudo umount` invocations hang on stale SMB mounts — `sudo diskutil unmount force` is the reliable form)
   - Share list confirmed: `family, jims, mjs, molly, public, shared` (from Linux `ls` output, overrides the broken `auto_smb/shares` which referenced `Personal-Drive` instead of `molly`/`public`)
@@ -196,11 +227,11 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: #612 — first live `--addon-diff` run against jimstest, plus `FAST_STORAGE` env-var fix discovered during the run
 - Current Issue: #612 (in review — implementation works, data quality questionable)
 - Work Done:
-  - __Pre-run sanity__: clean `./server.sh restart` of jimstest + full `npm test` (5230/5230 pass, 9.5s) before triggering the live addon-diff
-  - __Bug discovered + fixed (cae4e7e3)__: script wasn't reading `FAST_STORAGE` from `.env`; relied on the caller's shell env to have it exported. `npm run` doesn't source `.env`, so `--addon-diff` failed with `❌ Custom config not found: ./data/config/app-custom-config.json` on the first invocation. Patched the script to grep `FAST_STORAGE` and `SLOW_STORAGE` from `.env` the same way `PORT` was already being read. Side effect: the regular snapshot path's `Pages on disk` counter was silently using `./data/pages` (118 seed fixtures) instead of `${FAST_STORAGE}/pages` (~17K live pages); now corrected as well
-  - __Live run completed end-to-end__: 5 addons (template, calendar, elasticsearch, journal, forms), 6 restarts (1 baseline + 5 iterations + 1 trap-fired restore), ~3.5 min wall-clock. EXIT trap fired correctly — config restored to all-true, server back online, HTTP 302 from `/` confirms healthy state
-  - __Output captured (ddf31317)__: `docs/performance/baseline-v3.8.0-2026-05-04-addondiff.md` committed as the first live capture of the methodology
-  - __Honest assessment posted to #612__: the script works functionally but the __single-pass memory data is too noisy for decision-making__. Absolute memory across 6 snapshots ranged 1491-3581 MB (2 GB variance). Negative deltas for template (-163 MB) and elasticsearch (-270 MB) are noise artifacts; forms's +1820 MB is not credible. Sum of positives exceeds baseline. Cool-down (3 s) is too short; lunr rebuild + lazy GC dominate. Three forward options surfaced in the comment: (A) accept as directional-only, (B) add `--runs N` averaging mode, (C) drop memory measurement and keep route-times-only
+  - **Pre-run sanity**: clean `./server.sh restart` of jimstest + full `npm test` (5230/5230 pass, 9.5s) before triggering the live addon-diff
+  - **Bug discovered + fixed (cae4e7e3)**: script wasn't reading `FAST_STORAGE` from `.env`; relied on the caller's shell env to have it exported. `npm run` doesn't source `.env`, so `--addon-diff` failed with `❌ Custom config not found: ./data/config/app-custom-config.json` on the first invocation. Patched the script to grep `FAST_STORAGE` and `SLOW_STORAGE` from `.env` the same way `PORT` was already being read. Side effect: the regular snapshot path's `Pages on disk` counter was silently using `./data/pages` (118 seed fixtures) instead of `${FAST_STORAGE}/pages` (~17K live pages); now corrected as well
+  - **Live run completed end-to-end**: 5 addons (template, calendar, elasticsearch, journal, forms), 6 restarts (1 baseline + 5 iterations + 1 trap-fired restore), ~3.5 min wall-clock. EXIT trap fired correctly — config restored to all-true, server back online, HTTP 302 from `/` confirms healthy state
+  - **Output captured (ddf31317)**: `docs/performance/baseline-v3.8.0-2026-05-04-addondiff.md` committed as the first live capture of the methodology
+  - **Honest assessment posted to #612**: the script works functionally but the **single-pass memory data is too noisy for decision-making**. Absolute memory across 6 snapshots ranged 1491-3581 MB (2 GB variance). Negative deltas for template (-163 MB) and elasticsearch (-270 MB) are noise artifacts; forms's +1820 MB is not credible. Sum of positives exceeds baseline. Cool-down (3 s) is too short; lunr rebuild + lazy GC dominate. Three forward options surfaced in the comment: (A) accept as directional-only, (B) add `--runs N` averaging mode, (C) drop memory measurement and keep route-times-only
 - Testing:
   - `bash -n` syntax check after FAST_STORAGE patch: clean
   - End-to-end live run: completed, EXIT trap verified, config restored, server healthy
@@ -214,9 +245,9 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - GH issues:
   - #612 → labelled `in review`. Comment posted with live findings + honest assessment + three forward options. Awaiting user decision on whether to fold in averaging (Option B) before closing
 - Notes:
-  - __Methodology doc was off__: predicted "~5 MB noise floor", observed ~2 GB. The script's value isn't zero — it does correctly identify "calendar and forms are not free, elasticsearch+lunr dwarfs everything" — but it can't rank addons by memory cost in a single pass. Update to the methodology doc (raise the noise-floor estimate, document the observed range) is a small follow-up
-  - __Route timings were better-behaved__: `/search` ranged 248-269 ms (~10% spread), much tighter than memory. If a follow-up keeps only route-time deltas, the data is decision-useful as-is
-  - __The FAST_STORAGE bug was latent__: the regular snapshot path was silently producing wrong page counts for months. Worth back-checking which historical baselines under `docs/performance/baseline-v*.md` have the wrong page count — probably all of them prior to v3.8.0 since the FAST_STORAGE-aware logic was added as part of #611's pages-on-disk fix and assumed the caller env had it set
+  - **Methodology doc was off**: predicted "~5 MB noise floor", observed ~2 GB. The script's value isn't zero — it does correctly identify "calendar and forms are not free, elasticsearch+lunr dwarfs everything" — but it can't rank addons by memory cost in a single pass. Update to the methodology doc (raise the noise-floor estimate, document the observed range) is a small follow-up
+  - **Route timings were better-behaved**: `/search` ranged 248-269 ms (~10% spread), much tighter than memory. If a follow-up keeps only route-time deltas, the data is decision-useful as-is
+  - **The FAST_STORAGE bug was latent**: the regular snapshot path was silently producing wrong page counts for months. Worth back-checking which historical baselines under `docs/performance/baseline-v*.md` have the wrong page count — probably all of them prior to v3.8.0 since the FAST_STORAGE-aware logic was added as part of #611's pages-on-disk fix and assumed the caller env had it set
 
 ## 2026-05-04-01
 
@@ -224,17 +255,17 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: #612 — `--addon-diff` mode in `scripts/baseline-profile.sh` for per-addon overhead measurement. Plus `[BUG] #642` filed on the divergent `ngdpbase.base-url` vs `ngdpbase.baseURL` config keys
 - Current Issue: #612 (in flight — implementation committed, live run not yet executed)
 - Work Done:
-  - __#612 implementation (b569b3dd)__: `--addon-diff` flag in `scripts/baseline-profile.sh`. For each addon listed under `ngdpbase.addons.*.enabled: true` in the running install's custom config, the script disables it one-at-a-time, restarts the server via `./server.sh restart`, waits for the engine-ready marker plus a successful HTTP probe, re-measures memory + 4 route timings, and records the delta. Captures a single "all enabled" baseline up front so each iteration is a one-addon-removed delta against the same reference. Restores the original config and does a clean restart on EXIT (works for clean exits, errors, and Ctrl-C). Writes `baseline-v<V>-<DATE>-addondiff.md` with the baseline + per-addon delta table
-  - __`npm run test:baseline:addondiff`__ added for parity with the other `test:baseline:*` scripts
-  - __Memory measurement__ reuses the telemetry-first / pm2-fallback path from #610
-  - __Estimated runtime + warning__ printed up front so a multi-minute run isn't mistaken for a hang. `[i/N]` progress markers per iteration. Cost: ~35s per restart × (N+1) restarts; for jimstest's 5 addons that's ~3–5 min
-  - __Issue #642 [BUG] filed__: audit of every site that touches `ngdpbase.base-url`, `ngdpbase.baseURL`, and `ngdpbase.auth.magic-link.base-url`. Discovered the camelCase form is read only by the forms addon while everything else (template variables, RenderingManager, install service, env-var override) reads kebab-case. jimstest's custom config sets the camelCase form, which is silently a no-op for everything except forms. Three-phase fix proposed (unify on kebab-case + migration shim + magic-link fallback chain to baseURL)
-  - __`docs/performance/issue-612-addon-diff-mode.md` created__ documenting the methodology, runtime cost, output shape, safety contract, and known limitations (notably: only enumerates from custom config today, not from merged effective config including defaults)
-  - __#610 + #613 labelled `in review`__ rather than left bare-OPEN per the workflow rule. They're not closed because the telemetry-on (#610) and valid-cred login (#613) end-to-end paths weren't exercised in dev — those will be closed once a release-time run confirms them
+  - **#612 implementation (b569b3dd)**: `--addon-diff` flag in `scripts/baseline-profile.sh`. For each addon listed under `ngdpbase.addons.*.enabled: true` in the running install's custom config, the script disables it one-at-a-time, restarts the server via `./server.sh restart`, waits for the engine-ready marker plus a successful HTTP probe, re-measures memory + 4 route timings, and records the delta. Captures a single "all enabled" baseline up front so each iteration is a one-addon-removed delta against the same reference. Restores the original config and does a clean restart on EXIT (works for clean exits, errors, and Ctrl-C). Writes `baseline-v<V>-<DATE>-addondiff.md` with the baseline + per-addon delta table
+  - **`npm run test:baseline:addondiff`** added for parity with the other `test:baseline:*` scripts
+  - **Memory measurement** reuses the telemetry-first / pm2-fallback path from #610
+  - **Estimated runtime + warning** printed up front so a multi-minute run isn't mistaken for a hang. `[i/N]` progress markers per iteration. Cost: ~35s per restart × (N+1) restarts; for jimstest's 5 addons that's ~3–5 min
+  - **Issue #642 [BUG] filed**: audit of every site that touches `ngdpbase.base-url`, `ngdpbase.baseURL`, and `ngdpbase.auth.magic-link.base-url`. Discovered the camelCase form is read only by the forms addon while everything else (template variables, RenderingManager, install service, env-var override) reads kebab-case. jimstest's custom config sets the camelCase form, which is silently a no-op for everything except forms. Three-phase fix proposed (unify on kebab-case + migration shim + magic-link fallback chain to baseURL)
+  - **`docs/performance/issue-612-addon-diff-mode.md` created** documenting the methodology, runtime cost, output shape, safety contract, and known limitations (notably: only enumerates from custom config today, not from merged effective config including defaults)
+  - **#610 + #613 labelled `in review`** rather than left bare-OPEN per the workflow rule. They're not closed because the telemetry-on (#610) and valid-cred login (#613) end-to-end paths weren't exercised in dev — those will be closed once a release-time run confirms them
 - Testing:
   - `bash -n` syntax check on the modified script: clean
   - `jq` round-trip validated against jimstest's actual custom config (676-line file → 679 lines after jq pretty-print, no semantic diff, valid JSON)
-  - __Live `--addon-diff` run not yet executed__ — implementation is in git so the user can either trigger it or fold in the merged-default-config fix first. Restarting jimstest 6× is real impact and should be deliberate
+  - **Live `--addon-diff` run not yet executed** — implementation is in git so the user can either trigger it or fold in the merged-default-config fix first. Restarting jimstest 6× is real impact and should be deliberate
 - Commits:
   - b569b3dd (`feat(#612): --addon-diff mode in baseline-profile.sh`)
 - Files Modified:
@@ -247,8 +278,8 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - #610 → labelled `in review` (not closed; telemetry-on path needs end-to-end confirmation)
   - #613 → labelled `in review` (not closed; valid-cred login path needs end-to-end confirmation)
 - Notes:
-  - __Open question raised by user__: should `--addon-diff` enumerate from the merged effective config (defaults + custom) rather than custom-only? Documented as known limitation #1; the fix is small (~20 lines of jq merge) but not yet folded in. Today the script works correctly for jimstest because all 5 of its addons are set in custom; it would silently skip a sister install whose addons are enabled via defaults
-  - __Magic-link config gap on jimstest__ flagged separately: jimstest's custom config sets `ngdpbase.baseURL` (camelCase) but core code reads `ngdpbase.base-url` (kebab). Quick fix is one line in the custom config; systemic fix is in #642
+  - **Open question raised by user**: should `--addon-diff` enumerate from the merged effective config (defaults + custom) rather than custom-only? Documented as known limitation #1; the fix is small (~20 lines of jq merge) but not yet folded in. Today the script works correctly for jimstest because all 5 of its addons are set in custom; it would silently skip a sister install whose addons are enabled via defaults
+  - **Magic-link config gap on jimstest** flagged separately: jimstest's custom config sets `ngdpbase.baseURL` (camelCase) but core code reads `ngdpbase.base-url` (kebab). Quick fix is one line in the custom config; systemic fix is in #642
   - Performance-labelled issues remaining open: `#259` (the original baseline-profile umbrella), plus `#612` (this one, pending live run)
 
 ## 2026-05-03-18
@@ -257,9 +288,9 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: #610 — memory observable gauges in MetricsManager + telemetry-aware baseline-profile.sh
 - Current Issue: #610
 - Work Done:
-  - __Part 1 (MetricsManager)__: 5 new observable gauges for process memory (`_process_resident_memory_bytes`, `_process_heap_total_bytes`, `_process_heap_used_bytes`, `_process_external_memory_bytes`, `_process_array_buffers_bytes`). Registered via a single `meter.addBatchObservableCallback` so `process.memoryUsage()` is called once per scrape regardless of gauge count
-  - __Part 2 (baseline-profile.sh)__: now prefers `/metrics` when reachable. Reads RSS + heap + engine init duration from the Prometheus text format via an awk parser keyed on metric-name suffix. Falls back to `pm2 jlist` silently when telemetry is off (default). New env vars: `BASELINE_METRICS_URL` (override endpoint, default `http://localhost:9464/metrics`), `BASELINE_METRICS_DISABLE=1` (force pm2 path)
-  - __Part 3 (engine init from /metrics)__: folded into Part 2 — the markdown report adds an `Engine init duration (mean from telemetry)` row when telemetry is the source. Computed from `_sum / _count` rather than true p95 — for one-shot histograms (engine init runs once per process) the two are equivalent and bucket interpolation in awk would be overkill
+  - **Part 1 (MetricsManager)**: 5 new observable gauges for process memory (`_process_resident_memory_bytes`, `_process_heap_total_bytes`, `_process_heap_used_bytes`, `_process_external_memory_bytes`, `_process_array_buffers_bytes`). Registered via a single `meter.addBatchObservableCallback` so `process.memoryUsage()` is called once per scrape regardless of gauge count
+  - **Part 2 (baseline-profile.sh)**: now prefers `/metrics` when reachable. Reads RSS + heap + engine init duration from the Prometheus text format via an awk parser keyed on metric-name suffix. Falls back to `pm2 jlist` silently when telemetry is off (default). New env vars: `BASELINE_METRICS_URL` (override endpoint, default `http://localhost:9464/metrics`), `BASELINE_METRICS_DISABLE=1` (force pm2 path)
+  - **Part 3 (engine init from /metrics)**: folded into Part 2 — the markdown report adds an `Engine init duration (mean from telemetry)` row when telemetry is the source. Computed from `_sum / _count` rather than true p95 — for one-shot histograms (engine init runs once per process) the two are equivalent and bucket interpolation in awk would be overkill
   - Markdown additions when sourced from telemetry: `Memory source`, `Heap used`, `Heap total`, `Engine init duration (mean from telemetry)`
   - Methodology section + script header doc updated to describe the new env-var contract
   - Mock OpenTelemetry meter in `MetricsManager.test.ts` extended with `createObservableGauge` + `addBatchObservableCallback`. Two new tests added: gauge name assertions, batch-callback semantics (one `process.memoryUsage()` call → 5 observe() calls, each with the right metric value)
@@ -273,12 +304,12 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Commits: feca8178 (`feat(#610): memory observable in MetricsManager + telemetry-aware baseline`)
 - Files Modified:
   - src/managers/MetricsManager.ts (+45 / -1: 5 ObservableGauge fields, 5 createObservableGauge calls in createInstruments(), batch callback)
-  - src/managers/__tests__/MetricsManager.test.ts (+50 / -2: mock extensions + 2 new tests)
+  - src/managers/**tests**/MetricsManager.test.ts (+50 / -2: mock extensions + 2 new tests)
   - scripts/baseline-profile.sh (+89 / -6: telemetry detection block, awk get_metric helper, fallback path, markdown additions, header doc update)
 - GH issues:
   - #610 — comment with implementation summary (Parts 1/2/3)
 - Notes:
-  - __Unrelated edit detected__: `config/app-default-config.json` had `ngdpbase.auth.magic-link.enabled` flipped from `false` → `true` (user IDE-side, not part of #610). Left it uncommitted for the user to handle separately
+  - **Unrelated edit detected**: `config/app-default-config.json` had `ngdpbase.auth.magic-link.enabled` flipped from `false` → `true` (user IDE-side, not part of #610). Left it uncommitted for the user to handle separately
   - One performance-labelled issue remains: `#612` (per-addon overhead diff) — the bigger of the two outstanding. `#259` is also still open under the performance label
   - Worth noting that `--compare` drift section will compare numbers from whichever source produced each baseline. If a release straddles a telemetry config flip, the absolute memory number will jump by whatever the gap is between RSS-via-pm2 and RSS-via-telemetry (should be ~equal but may differ slightly due to measurement timing)
 
@@ -313,12 +344,12 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: #611 — `scripts/baseline-profile.sh --compare` mode for release-to-release regression detection. Plus two adjacent fixes folded in (don't-clobber + Pages-on-disk count)
 - Current Issue: #611 (closed completed)
 - Work Done:
-  - __#611 main feature (9dcc8f87)__: `--compare [FILE]` flag added to `scripts/baseline-profile.sh`. Captures the new baseline as before, then auto-detects the most recent prior baseline in `docs/performance/` (or accepts an explicit file path), parses memory + per-route timings from both, appends a "## Drift vs <previous>" section to the new file and prints the same table to stdout. Exits non-zero when any threshold trips, so `/semver` halts before tagging on regression
-  - __Threshold env vars__ (override defaults): `BASELINE_MEM_DELTA_PCT=25`, `BASELINE_RT_DELTA_PCT=50`, `BASELINE_RT_DELTA_MS=50` (route % AND ms thresholds must BOTH trip to flag — avoids 1ms-on-already-fast-route false positives)
-  - __New npm script__ `test:baseline:compare`
-  - __Don't-clobber fix__: same-day same-version re-runs (development of `--compare`, or repeated `/semver` invocations) used to silently overwrite the canonical release-time capture with whatever cold-cache state the server was in. The script now suffixes the new file with `-r2.md`, `-r3.md` etc. when an existing file matches the v+date filename
-  - __Pages-on-disk count fix__: was reading in-repo `data/pages` (104 seed fixtures) instead of live `${SLOW_STORAGE}/pages` (17,063 actual on jimstest). Caught during historical perf review across v3.3.7 → v3.8.0 — every release reported the same 104. Fixed to use `${SLOW_STORAGE:-./data}/pages`, excludes `versions/` subdirs from count
-  - __`/semver` Step 5a__ now calls `npm run test:baseline:compare` (was plain `npm run test:baseline`). Step 5b updated to describe handling the script's exit code (acknowledge in release report, ask user before tagging on regression). Previous inline shell snippet for the diff is gone — the script owns the logic now
+  - **#611 main feature (9dcc8f87)**: `--compare [FILE]` flag added to `scripts/baseline-profile.sh`. Captures the new baseline as before, then auto-detects the most recent prior baseline in `docs/performance/` (or accepts an explicit file path), parses memory + per-route timings from both, appends a "## Drift vs <previous>" section to the new file and prints the same table to stdout. Exits non-zero when any threshold trips, so `/semver` halts before tagging on regression
+  - **Threshold env vars** (override defaults): `BASELINE_MEM_DELTA_PCT=25`, `BASELINE_RT_DELTA_PCT=50`, `BASELINE_RT_DELTA_MS=50` (route % AND ms thresholds must BOTH trip to flag — avoids 1ms-on-already-fast-route false positives)
+  - **New npm script** `test:baseline:compare`
+  - **Don't-clobber fix**: same-day same-version re-runs (development of `--compare`, or repeated `/semver` invocations) used to silently overwrite the canonical release-time capture with whatever cold-cache state the server was in. The script now suffixes the new file with `-r2.md`, `-r3.md` etc. when an existing file matches the v+date filename
+  - **Pages-on-disk count fix**: was reading in-repo `data/pages` (104 seed fixtures) instead of live `${SLOW_STORAGE}/pages` (17,063 actual on jimstest). Caught during historical perf review across v3.3.7 → v3.8.0 — every release reported the same 104. Fixed to use `${SLOW_STORAGE:-./data}/pages`, excludes `versions/` subdirs from count
+  - **`/semver` Step 5a** now calls `npm run test:baseline:compare` (was plain `npm run test:baseline`). Step 5b updated to describe handling the script's exit code (acknowledge in release report, ask user before tagging on regression). Previous inline shell snippet for the diff is gone — the script owns the logic now
 - Testing:
   - Local smoke: `--compare` correctly emits the Drift table with deltas and percentages; auto-detected the v3.7.0 → v3.8.0 baseline pair on first run
   - Don't-clobber path: re-running on same v+date correctly produced `-r2.md` instead of overwriting; `-r3.md` etc. iterate as expected
@@ -341,11 +372,11 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: Cut v3.8.0 release; added release-to-release perf diff + cross-reference to `/othersites` in `.claude/commands/semver.md`
 - Current Issue: none (release + workflow improvements)
 - Work Done:
-  - __v3.8.0 release (e3b1af5d, tag v3.8.0)__: 9 commits since v3.7.0. `npm run build` + 5228/5228 unit + 72/72 E2E + version bump + baseline capture (`docs/performance/baseline-v3.8.0-2026-05-03.md`) + tag + GitHub release. Propagated to all three sister sites via `/othersites` (Fairways / ve-geology / temp-builds): each 5228/5228 unit + 72/72 E2E + 302 smoke. ve-geology hit one #622 transient on first run; retry clean. No bugs filed
-  - __Historical perf summary__: walked the 10 baseline files (v3.3.7 → v3.8.0). Memory stable at ~3.4–3.7 GB since v3.4.0 (the v3.3.7 / v3.5.4 outliers are cold-cache snapshot artefacts, not real regressions). Latencies steady on always-warm routes (`/view/Welcome` 15-19ms, `/login` 15-17ms). `/search?q=test` is bimodal (~130ms hot / ~250ms cold-Lunr-index). No version-correlated regressions across the series. Caveat: the `Pages on disk` metric is misleading — it counts `data/pages` in the repo (104) instead of `$SLOW_STORAGE/pages` (17,063 actual). Worth fixing in `scripts/baseline-profile.sh` next time
-  - __`.claude/commands/semver.md` updates__ — two commits to integrate the perf-diff insight back into the release workflow:
-    - __2e1d2ed8__ — added "Step 5b: Compute and surface the release-to-release perf diff". After capturing the new baseline, find the previous baseline file, parse memory + 4 route timings from each, compute absolute + relative deltas, render an inline markdown table to the user. Flag regression candidates with ⚠️ when memory >+500MB OR (any route >+50% relative AND >+50ms absolute). Don't auto-rollback — measurement noise is real per the historical series. Step 9 (Report) updated to re-include the diff table. Partial substitute for #611 (open: `baseline-profile.sh: --compare mode`); once that ships, Step 5b can shrink to "run `npm run test:baseline:compare`"
-    - __adf4ecc4__ — Step 8 now references `.claude/commands/othersites.md` by path and inlines the current install list (jimstest / fairways / ve-geology / temp-builds with paths and ports), plus documents the dirty-working-tree resolution pattern that worked across v3.7.0 + v3.8.0 propagations (`git checkout -- <file>` for known-identical local diffs)
+  - **v3.8.0 release (e3b1af5d, tag v3.8.0)**: 9 commits since v3.7.0. `npm run build` + 5228/5228 unit + 72/72 E2E + version bump + baseline capture (`docs/performance/baseline-v3.8.0-2026-05-03.md`) + tag + GitHub release. Propagated to all three sister sites via `/othersites` (Fairways / ve-geology / temp-builds): each 5228/5228 unit + 72/72 E2E + 302 smoke. ve-geology hit one #622 transient on first run; retry clean. No bugs filed
+  - **Historical perf summary**: walked the 10 baseline files (v3.3.7 → v3.8.0). Memory stable at ~3.4–3.7 GB since v3.4.0 (the v3.3.7 / v3.5.4 outliers are cold-cache snapshot artefacts, not real regressions). Latencies steady on always-warm routes (`/view/Welcome` 15-19ms, `/login` 15-17ms). `/search?q=test` is bimodal (~130ms hot / ~250ms cold-Lunr-index). No version-correlated regressions across the series. Caveat: the `Pages on disk` metric is misleading — it counts `data/pages` in the repo (104) instead of `$SLOW_STORAGE/pages` (17,063 actual). Worth fixing in `scripts/baseline-profile.sh` next time
+  - **`.claude/commands/semver.md` updates** — two commits to integrate the perf-diff insight back into the release workflow:
+    - **2e1d2ed8** — added "Step 5b: Compute and surface the release-to-release perf diff". After capturing the new baseline, find the previous baseline file, parse memory + 4 route timings from each, compute absolute + relative deltas, render an inline markdown table to the user. Flag regression candidates with ⚠️ when memory >+500MB OR (any route >+50% relative AND >+50ms absolute). Don't auto-rollback — measurement noise is real per the historical series. Step 9 (Report) updated to re-include the diff table. Partial substitute for #611 (open: `baseline-profile.sh: --compare mode`); once that ships, Step 5b can shrink to "run `npm run test:baseline:compare`"
+    - **adf4ecc4** — Step 8 now references `.claude/commands/othersites.md` by path and inlines the current install list (jimstest / fairways / ve-geology / temp-builds with paths and ports), plus documents the dirty-working-tree resolution pattern that worked across v3.7.0 + v3.8.0 propagations (`git checkout -- <file>` for known-identical local diffs)
 - Testing:
   - Release path: build clean, `npm test` 5228/5228, `npm run test:e2e` 72/72
   - Sister-site propagation: 5228 + 72 on each of the three; ve-geology hit one #622 transient on first try, retry clean
@@ -356,7 +387,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - adf4ecc4 (`docs(semver): reference .claude/commands/othersites.md by path in Step 8 + document the install list inline`)
 - Files Modified:
   - package.json + config/app-default-config.json + CHANGELOG.md (3.7.0 → 3.8.0)
-  - __NEW__ docs/performance/baseline-v3.8.0-2026-05-03.md
+  - **NEW** docs/performance/baseline-v3.8.0-2026-05-03.md
   - .claude/commands/semver.md (Step 5b + Step 8 cross-reference + Step 9 update)
 - GH issues:
   - #611 still open — `baseline-profile.sh: --compare mode` is the proper home for the diff logic. Step 5b in semver.md is the working substitute until the script learns the flag itself
@@ -370,11 +401,11 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: #640 Phase 2 (the easy two) — `/my/edits` (recent edits by user) + `/my/shared` (audience-shared pages). Profile card now has six rows
 - Current Issue: #640 (still closed; Phase 2 adds onto the closed-completed work)
 - Work Done:
-  - __Phase 2 triage__: investigated all four nice-to-haves. Two feasible without new data plumbing (`/my/edits`, `/my/shared` — both ride on existing pageIndex denormalisations). Two deferred (`/my/comments` needs CommentsManager.listByAuthor which doesn't exist; `/my/attachments` needs uploader tracking which isn't in the current data model)
-  - __API__: New `PagesScanOptions` type. `PageProvider.getPagesByEditor(username, options)` — match by pageIndex.editor (or metadata.editor in FileSystemProvider's base impl). `PageProvider.getPagesSharedWith(principals, options)` — match where pageIndex.audienceRoles overlaps principals; __excludes__ pages owned by any principal so they don't double-count with /my/pages. PageManager forwards both
-  - __Routes__: `/my/edits` and `/my/shared`. Both reuse `views/my-list.ejs` with `listKind='pages'`. Anonymous → 302 redirect to /login
-  - __Profile card__: two new rows ("Pages I've Edited", "Pages Shared With Me") with count badges. `getMyContributionsCounts()` now computes 6 counts in one call (was 4)
-  - __Tests__: +7 in `VersioningFileProvider.pagesByCreator.test.ts` covering both new methods (empty inputs, match by editor / audience, limit, owner-exclusion logic for shared, no-audience-anywhere case)
+  - **Phase 2 triage**: investigated all four nice-to-haves. Two feasible without new data plumbing (`/my/edits`, `/my/shared` — both ride on existing pageIndex denormalisations). Two deferred (`/my/comments` needs CommentsManager.listByAuthor which doesn't exist; `/my/attachments` needs uploader tracking which isn't in the current data model)
+  - **API**: New `PagesScanOptions` type. `PageProvider.getPagesByEditor(username, options)` — match by pageIndex.editor (or metadata.editor in FileSystemProvider's base impl). `PageProvider.getPagesSharedWith(principals, options)` — match where pageIndex.audienceRoles overlaps principals; **excludes** pages owned by any principal so they don't double-count with /my/pages. PageManager forwards both
+  - **Routes**: `/my/edits` and `/my/shared`. Both reuse `views/my-list.ejs` with `listKind='pages'`. Anonymous → 302 redirect to /login
+  - **Profile card**: two new rows ("Pages I've Edited", "Pages Shared With Me") with count badges. `getMyContributionsCounts()` now computes 6 counts in one call (was 4)
+  - **Tests**: +7 in `VersioningFileProvider.pagesByCreator.test.ts` covering both new methods (empty inputs, match by editor / audience, limit, owner-exclusion logic for shared, no-audience-anywhere case)
 - Testing:
   - typecheck: clean
   - vitest: 5228/5228 (was 5212; +16 from Phase 1's pagesByCreator + 7 new in this commit, minus minor balance from refactor)
@@ -387,7 +418,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - src/managers/PageManager.ts (forwarders)
   - src/routes/WikiRoutes.ts (2 new handlers + getMyContributionsCounts updated to 6 counts + 2 new route registrations)
   - views/profile.ejs (2 new card rows)
-  - src/providers/__tests__/VersioningFileProvider.pagesByCreator.test.ts (+7 tests)
+  - src/providers/**tests**/VersioningFileProvider.pagesByCreator.test.ts (+7 tests)
 - GH issues:
   - #640 still closed (Phase 1 closed it via trailer; Phase 2 is additive enhancement)
 - Notes:
@@ -400,11 +431,11 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: #640 Phase 1 — "My Contributions" card on /profile + 4 list routes (private pages, pages I authored, journal entries, my links). API foundation `pageManager.getPagesByCreator()`
 - Current Issue: #640 (closed completed)
 - Work Done:
-  - __API foundation__: New `GetPagesByCreatorOptions` type, `PageProvider.getPagesByCreator(username, options)` interface method. Implemented in VersioningFileProvider (rich pageIndex match by `author` OR `creator`) and FileSystemProvider (pageCache + metadata fallback for installs without versioning). Forwarded through PageManager. Visibility filter intentionally skipped — by definition the caller is asking about their own pages; route handler responsible for "user can only ask about themselves"
-  - __Routes__: `/my/pages` (all user-authored), `/my/private` (author AND isPrivate), `/my/journal` (delegates to JournalDataManager.listByAuthor; graceful "addon not enabled" message when absent), `/my/links` (user.preferences['nav.pinnedPages']). All redirect anonymous → `/login?redirect=<path>`
-  - __Shared view__ `views/my-list.ejs` renders three list shapes via a `listKind` switch: `pages` (table with Last Modified / Editor / Visibility cols), `journal` (list-group with date + preview), `links` (list-group with pin date)
-  - __Profile card__ in `views/profile.ejs` between Permissions and User Preferences. Four list-group rows with `<i>` icon + label + count badge linking to the corresponding `/my/*` route. Counts computed by new `getMyContributionsCounts(username, user)` helper which calls all four sub-counts in one shot. Sub-count failures fall back to `undefined` so one broken manager doesn't break the whole card
-  - __Tests__: New `VersioningFileProvider.pagesByCreator.test.ts` — 9 cases (empty inputs, author match, creator match for denormalised private pages, onlyPrivate filter, default lastModified-desc sort, title-asc sort, limit, no-visibility-filter on own private pages)
+  - **API foundation**: New `GetPagesByCreatorOptions` type, `PageProvider.getPagesByCreator(username, options)` interface method. Implemented in VersioningFileProvider (rich pageIndex match by `author` OR `creator`) and FileSystemProvider (pageCache + metadata fallback for installs without versioning). Forwarded through PageManager. Visibility filter intentionally skipped — by definition the caller is asking about their own pages; route handler responsible for "user can only ask about themselves"
+  - **Routes**: `/my/pages` (all user-authored), `/my/private` (author AND isPrivate), `/my/journal` (delegates to JournalDataManager.listByAuthor; graceful "addon not enabled" message when absent), `/my/links` (user.preferences['nav.pinnedPages']). All redirect anonymous → `/login?redirect=<path>`
+  - **Shared view** `views/my-list.ejs` renders three list shapes via a `listKind` switch: `pages` (table with Last Modified / Editor / Visibility cols), `journal` (list-group with date + preview), `links` (list-group with pin date)
+  - **Profile card** in `views/profile.ejs` between Permissions and User Preferences. Four list-group rows with `<i>` icon + label + count badge linking to the corresponding `/my/*` route. Counts computed by new `getMyContributionsCounts(username, user)` helper which calls all four sub-counts in one shot. Sub-count failures fall back to `undefined` so one broken manager doesn't break the whole card
+  - **Tests**: New `VersioningFileProvider.pagesByCreator.test.ts` — 9 cases (empty inputs, author match, creator match for denormalised private pages, onlyPrivate filter, default lastModified-desc sort, title-asc sort, limit, no-visibility-filter on own private pages)
 - Testing:
   - typecheck: clean
   - vitest: 5212/5212 (modulo one #622 transient on first attempt; retry clean)
@@ -417,8 +448,8 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - src/managers/PageManager.ts (forwarder)
   - src/routes/WikiRoutes.ts (4 handlers + counts helper + route registrations + profilePage wiring)
   - views/profile.ejs (My Contributions card)
-  - __NEW__ views/my-list.ejs (~80 lines, shared list view)
-  - __NEW__ src/providers/__tests__/VersioningFileProvider.pagesByCreator.test.ts (9 tests)
+  - **NEW** views/my-list.ejs (~80 lines, shared list view)
+  - **NEW** src/providers/**tests**/VersioningFileProvider.pagesByCreator.test.ts (9 tests)
 - GH issues:
   - #640 closed completed (auto via commit trailer)
 - Notes:
@@ -431,16 +462,16 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: #622 mock-leak audit — restructured routes.test.ts to establish mock defaults in beforeEach instead of afterEach; eliminates the mock-leak class of #622 flakes for that file
 - Current Issue: #622 (open — timeout-class still dominant, mock-leak class fixed for routes.test.ts)
 - Work Done:
-  - __Audit__: walked the open `mockResolvedValue(false|null)` denial sites across `routes.test.ts` + `WikiRoutes.coverage*.test.ts` (~240 in-test mock flips after filtering out fixture initializers). Verified that all 16 `coverage*.test.ts` files use a `resetMocks()` helper called from `beforeEach` — correct pattern, no fix needed
-  - __routes.test.ts restructure (c4965e2f)__: the entire mock-default restore block (~80 lines) was running in `afterEach`. Two consequences: (1) the FIRST test in the file ran with whatever `vi.mock()` initialized (often `vi.fn()` returning undefined — undefined-mock leak); (2) tests that flipped a mock to a denial value bled forward until afterEach finally restored. Refactored: extracted the body as `establishMockDefaults()`, called from `beforeEach` BEFORE every test. `afterEach` reduced to just `vi.clearAllMocks()` for call-history. Eliminates the mock-leak class of #622 flakes for this file
-  - __Verification__: 8 consecutive full-suite runs after the fix. 6 clean, 2 transient. The 2 flakes are consistent with the timeout-class (cold-pool / supertest race) — the dominant remaining cause per the experiment doc. Mock-leak class no longer reproduces in routes.test.ts
+  - **Audit**: walked the open `mockResolvedValue(false|null)` denial sites across `routes.test.ts` + `WikiRoutes.coverage*.test.ts` (~240 in-test mock flips after filtering out fixture initializers). Verified that all 16 `coverage*.test.ts` files use a `resetMocks()` helper called from `beforeEach` — correct pattern, no fix needed
+  - **routes.test.ts restructure (c4965e2f)**: the entire mock-default restore block (~80 lines) was running in `afterEach`. Two consequences: (1) the FIRST test in the file ran with whatever `vi.mock()` initialized (often `vi.fn()` returning undefined — undefined-mock leak); (2) tests that flipped a mock to a denial value bled forward until afterEach finally restored. Refactored: extracted the body as `establishMockDefaults()`, called from `beforeEach` BEFORE every test. `afterEach` reduced to just `vi.clearAllMocks()` for call-history. Eliminates the mock-leak class of #622 flakes for this file
+  - **Verification**: 8 consecutive full-suite runs after the fix. 6 clean, 2 transient. The 2 flakes are consistent with the timeout-class (cold-pool / supertest race) — the dominant remaining cause per the experiment doc. Mock-leak class no longer reproduces in routes.test.ts
 - Testing:
   - typecheck: clean
   - vitest routes.test.ts isolated: 48/48
   - vitest full suite: 5212/5212 (modulo timeout-class transient on ~25% of runs in this verification batch — consistent with prior baseline; no regression)
 - Commits: c4965e2f (`test(#622): move routes.test.ts mock-default restoration from afterEach to beforeEach`)
 - Files Modified:
-  - src/routes/__tests__/routes.test.ts (afterEach → beforeEach restructure; new `establishMockDefaults()` helper)
+  - src/routes/**tests**/routes.test.ts (afterEach → beforeEach restructure; new `establishMockDefaults()` helper)
 - GH issues:
   - #622 open — comment posted explaining: mock-leak class closed for routes.test.ts, timeout-class still dominant. Issue stays as tracking ticket for the deeper timeout investigation
 - Notes:
@@ -453,28 +484,28 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: Shipped #636/#637 (perf), #629 Pass 1+2 (ParseContext refactor), #632 (deprecated ACLManager API removal); cut v3.7.0 release; fixed #619 (CI); shipped #639 Slice E (cleanup); audited open issues and closed #608. Plus back-filled this log per `/session-commit` workflow reminder.
 - Current Issue: #629 (closed), #632 (closed), #636 (closed), #637 (closed), #608 (closed), #619 (closed), #639 (closed Slice E); #622 (open — updated with current observations); v3.7.0 released.
 - Work Done:
-  - __#636 + #637 — WikiContext perf optimizations (d769da60)__: Per-request memoization of `hasPermission(action)` / `canAccess(action)` keyed on action / `${action}:${pageName}`; Promise-level cache so concurrent callers share one in-flight evaluation. Plus `UserManager.hasPermission` accepts pre-resolved `UserContext` (skips `provider.getUser` + `resolveUserRoles` when caller already has session-resolved roles). WikiContext / ApiContext / ParseContext all updated to pass `userContext` through. Combined effect: hot-path access-control overhead from "lookup roles + iterate policies, every call" → "one policy iteration per unique action per request, no redundant lookups". +7 tests; full suite 5223/5223
-  - __#629 Pass 1 — ParseContext wikiContext reference (5f3df903)__: Added `WikiContextLike` structural interface in ParseContext.ts; nested options gained optional `wikiContext` field. Duplicated readonly fields became delegating getters with snapshot fallback. `WikiContext.toParseOptions()` includes `wikiContext: this`. `clone()` preserves the reference. Live binding verified — mutating wikiContext is visible through ParseContext getters. +5 tests; full suite 5228/5228
-  - __#629 Pass 2 — sweep + remove getters (e5da6640)__:
+  - **#636 + #637 — WikiContext perf optimizations (d769da60)**: Per-request memoization of `hasPermission(action)` / `canAccess(action)` keyed on action / `${action}:${pageName}`; Promise-level cache so concurrent callers share one in-flight evaluation. Plus `UserManager.hasPermission` accepts pre-resolved `UserContext` (skips `provider.getUser` + `resolveUserRoles` when caller already has session-resolved roles). WikiContext / ApiContext / ParseContext all updated to pass `userContext` through. Combined effect: hot-path access-control overhead from "lookup roles + iterate policies, every call" → "one policy iteration per unique action per request, no redundant lookups". +7 tests; full suite 5223/5223
+  - **#629 Pass 1 — ParseContext wikiContext reference (5f3df903)**: Added `WikiContextLike` structural interface in ParseContext.ts; nested options gained optional `wikiContext` field. Duplicated readonly fields became delegating getters with snapshot fallback. `WikiContext.toParseOptions()` includes `wikiContext: this`. `clone()` preserves the reference. Live binding verified — mutating wikiContext is visible through ParseContext getters. +5 tests; full suite 5228/5228
+  - **#629 Pass 2 — sweep + remove getters (e5da6640)**:
     - ~50 consumer call sites across 13 files migrated to read user/page-data via `ctx.wikiContext?.X` instead of the duplicate getters
     - Removed `pageName`/`userContext`/`pageMetadata` getters and `hasRole`/`hasPermission`/`canAccess`/`getPrincipals` methods from ParseContext
     - Kept `userName` as a one-line derivation helper, plus `requestInfo` snapshot
     - `wikiContext` is now non-nullable — synthesized stub from PageContext when no real WikiContext provided (test fixtures); stub delegates `hasPermission`/`canAccess` to engine's UserManager / ACLManager so legacy tests still get policy-evaluated answers
     - Resolved long-standing TODO in BaseFilter.ts + BaseSyntaxHandler.ts: their local `interface ParseContext { pageName?: string; ... }` stubs were silently shielding consumer code from typecheck — replaced with `export type { ParseContext }` from the real class
     - Live server smoke: home / view/Welcome / view/SandBox all 200. Full suite 5229/5229
-  - __#632 — drop deprecated 4-arg ACLManager.checkPagePermission (4f4ae99e)__: Three remaining call sites in WikiRoutes (LeftMenu, Footer, adminDashboard) migrated to canonical `checkPagePermissionWithContext`. The deprecated method only ran tier 2 (PolicyEvaluator); canonical runs full 3-tier (private user-keyword → frontmatter audience → global policies). Side-effect upgrade: LeftMenu/Footer now correctly honor private + audience. Method removed (~70 LOC) along with `IACLManager.checkPagePermission` interface declaration. Tests for the deprecated method (12 in ACLManager.test.ts + 1 in policy-system.test.ts) deleted/migrated. Net -197 lines. Full suite 5218/5218
-  - __v3.7.0 release (2a0f1ee6)__: 28 commits since v3.6.0 covering #634, #635, #638, #626, #639 A-D, #641, #636, #637, #629 Pass 1+2, #632. `npm run build` + `npm test` (5218/5218 after #622 transient retry) + `npm run test:e2e` (72/72) + version bump via `dist/src/utils/version.js minor` + baseline profile capture (`docs/performance/baseline-v3.7.0-2026-05-03.md`) + tag + GitHub release with auto-generated notes. __Sister sites propagated__ via `/othersites`: each had local diffs (`package-lock.json` + the migrated required-pages file from prior session) — discarded with `git checkout` then `git pull --ff-only`. All four sites: 5218/5218 unit + 72/72 E2E + 302 smoke. Release URL: <https://github.com/jwilleke/ngdpbase/releases/tag/v3.7.0>
-  - __#619 — unbreak CI (a000eb14)__: Three bugs in `.github/workflows/ci.yml` — (1) smoke test referenced `ngdpbase.applicationName` (camelCase), canonical key is `ngdpbase.application-name`; (2) E2E seed step ran `node scripts/seed-e2e-test-data.js` but file is `.ts`, switched to `npx tsx`; (3) WikiEngine init step used `require('./src/WikiEngine')` in ESM project, rewrote as `node --input-type=module` with dynamic import of built output. All three verified locally. __Workflow currently disabled (`disabled_manually`)__ — almost certainly because it was failing on every run; user needs to re-enable manually
-  - __#622 update__: Posted current observations after v3.7.0. The flake is now visible in additional tests beyond the original `coverage3.test.ts:812` (also `coverage.test.ts`, `coverage5.test.ts`, `routes.test.ts`). Two distinct symptom classes identified: timeout (original) and status-mismatch (new — caused by mock state leaking between tests). Concrete example caught + fixed in 4f4ae99e: `mockACLManager.checkPagePermissionWithContext` not in global beforeEach reset. Suggested next step: audit `mockResolvedValue` calls in `routes.test.ts` + `coverage*.test.ts`, convert one-shot denials to `mockResolvedValueOnce`
-  - __Open-issue audit + #608 closure__: Walked the open-issue list to identify finished work. Closed __#608 (RecentChangesPlugin perf)__ — fixed by #635 (`pageManager.getRecentChanges()` API). Live measurement on jimstest (17,063-page dataset): page with 4 plugin invocations renders __1.4s first / 20ms warm__. Pre-#635 was N×getPage + N×fs.stat per render. No other open issues turned out to be already-finished
-  - __#639 Slice E — cleanup (2c8b6b84)__:
+  - **#632 — drop deprecated 4-arg ACLManager.checkPagePermission (4f4ae99e)**: Three remaining call sites in WikiRoutes (LeftMenu, Footer, adminDashboard) migrated to canonical `checkPagePermissionWithContext`. The deprecated method only ran tier 2 (PolicyEvaluator); canonical runs full 3-tier (private user-keyword → frontmatter audience → global policies). Side-effect upgrade: LeftMenu/Footer now correctly honor private + audience. Method removed (~70 LOC) along with `IACLManager.checkPagePermission` interface declaration. Tests for the deprecated method (12 in ACLManager.test.ts + 1 in policy-system.test.ts) deleted/migrated. Net -197 lines. Full suite 5218/5218
+  - **v3.7.0 release (2a0f1ee6)**: 28 commits since v3.6.0 covering #634, #635, #638, #626, #639 A-D, #641, #636, #637, #629 Pass 1+2, #632. `npm run build` + `npm test` (5218/5218 after #622 transient retry) + `npm run test:e2e` (72/72) + version bump via `dist/src/utils/version.js minor` + baseline profile capture (`docs/performance/baseline-v3.7.0-2026-05-03.md`) + tag + GitHub release with auto-generated notes. **Sister sites propagated** via `/othersites`: each had local diffs (`package-lock.json` + the migrated required-pages file from prior session) — discarded with `git checkout` then `git pull --ff-only`. All four sites: 5218/5218 unit + 72/72 E2E + 302 smoke. Release URL: <https://github.com/jwilleke/ngdpbase/releases/tag/v3.7.0>
+  - **#619 — unbreak CI (a000eb14)**: Three bugs in `.github/workflows/ci.yml` — (1) smoke test referenced `ngdpbase.applicationName` (camelCase), canonical key is `ngdpbase.application-name`; (2) E2E seed step ran `node scripts/seed-e2e-test-data.js` but file is `.ts`, switched to `npx tsx`; (3) WikiEngine init step used `require('./src/WikiEngine')` in ESM project, rewrote as `node --input-type=module` with dynamic import of built output. All three verified locally. **Workflow currently disabled (`disabled_manually`)** — almost certainly because it was failing on every run; user needs to re-enable manually
+  - **#622 update**: Posted current observations after v3.7.0. The flake is now visible in additional tests beyond the original `coverage3.test.ts:812` (also `coverage.test.ts`, `coverage5.test.ts`, `routes.test.ts`). Two distinct symptom classes identified: timeout (original) and status-mismatch (new — caused by mock state leaking between tests). Concrete example caught + fixed in 4f4ae99e: `mockACLManager.checkPagePermissionWithContext` not in global beforeEach reset. Suggested next step: audit `mockResolvedValue` calls in `routes.test.ts` + `coverage*.test.ts`, convert one-shot denials to `mockResolvedValueOnce`
+  - **Open-issue audit + #608 closure**: Walked the open-issue list to identify finished work. Closed **#608 (RecentChangesPlugin perf)** — fixed by #635 (`pageManager.getRecentChanges()` API). Live measurement on jimstest (17,063-page dataset): page with 4 plugin invocations renders **1.4s first / 20ms warm**. Pre-#635 was N×getPage + N×fs.stat per render. No other open issues turned out to be already-finished
+  - **#639 Slice E — cleanup (2c8b6b84)**:
     - Dropped `userKeywords.includes('private')` back-compat fallbacks from 6 read sites (ACLManager / Lunr / ES / VersioningFileProvider pageIndex / FileSystemProvider getRecentChanges / MediaManager)
     - Save handler simplified — `wantsPrivate` now reads only `metadata.private === true`; `userKeywordDefs` lookup gone; defensive strip of `'private'` from user-keywords array kept as cheap insurance
     - Removed `private` entry from `ngdpbase.user-keywords` config vocabulary in `app-default-config.json`
     - `metadata['system-location'] === 'private'` kept as defensive read (it's a different field — storage hint set by PageManager, not a duplicate)
     - Tests removed: 4 ACLManager Tier-0-user-keyword + 1 MediaManager back-compat + 1 LunrSearchProvider back-compat. Full suite 5212/5212. Net -68 lines
     - Closes #639 — full lifecycle done (A: read fallback → B: write normalization → C: UI checkbox → D: migration script + applied to 4 sites → E: cleanup)
-  - __Memory updates__: Added `feedback_session_commit_workflow.md` capturing the user's reminder that every code commit must be followed by a project_log entry + GH issue comment + log push, per `/.claude/commands/session-commit.md`, even when `/session-commit` isn't explicitly invoked. Indexed in MEMORY.md
+  - **Memory updates**: Added `feedback_session_commit_workflow.md` capturing the user's reminder that every code commit must be followed by a project_log entry + GH issue comment + log push, per `/.claude/commands/session-commit.md`, even when `/session-commit` isn't explicitly invoked. Indexed in MEMORY.md
 - Testing:
   - typecheck: clean across all changes
   - eslint: clean
@@ -504,23 +535,23 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - src/providers/{Lunr,Elasticsearch}SearchProvider.ts (#639 Slice E)
   - src/providers/{Versioning,File}SystemProvider.ts (#639 Slice E + #629 Pass 2 sweep)
   - src/routes/WikiRoutes.ts (#632 migration)
-  - src/routes/__tests__/routes.test.ts (#632 mock + #622 reset)
-  - src/managers/__tests__/{ACLManager,UserManager,MediaManager,PageManager,policy-system}.test.ts (Slice E updates + #637 fast-path tests)
-  - src/context/__tests__/{WikiContext,ApiContext}.test.ts (#636 memoization tests + #637 signature tests)
-  - src/parsers/context/__tests__/ParseContext.test.ts (#629 Pass 2 — wikiContext.X migration; +5 stub-delegation tests)
-  - src/providers/__tests__/LunrSearchProvider.privateFilter.test.ts (#639 Slice E)
+  - src/routes/**tests**/routes.test.ts (#632 mock + #622 reset)
+  - src/managers/**tests**/{ACLManager,UserManager,MediaManager,PageManager,policy-system}.test.ts (Slice E updates + #637 fast-path tests)
+  - src/context/**tests**/{WikiContext,ApiContext}.test.ts (#636 memoization tests + #637 signature tests)
+  - src/parsers/context/**tests**/ParseContext.test.ts (#629 Pass 2 — wikiContext.X migration; +5 stub-delegation tests)
+  - src/providers/**tests**/LunrSearchProvider.privateFilter.test.ts (#639 Slice E)
   - config/app-default-config.json (#639 Slice E — removed private user-keyword)
   - .github/workflows/ci.yml (#619 fixes)
   - package.json + CHANGELOG.md (3.6.0 → 3.7.0 bump)
-  - __NEW__ docs/performance/baseline-v3.7.0-2026-05-03.md (release baseline)
+  - **NEW** docs/performance/baseline-v3.7.0-2026-05-03.md (release baseline)
 - GH issues:
-  - __Closed__: #608 (fixed by #635); #629 (Pass 1+2 done); #632 (deprecated method removed); #636 (memoization shipped); #637 (fast path shipped); #619 (CI fixes shipped, workflow re-enable is manual); #639 (Slice E completes the lifecycle)
-  - __Updated__: #622 (current observations across this session)
-  - __Open follow-ups still on the board__: #640 (My Contributions card — not started); #622 (deeper investigation pending); #634 closed earlier; #635 closed earlier; #641 closed earlier
+  - **Closed**: #608 (fixed by #635); #629 (Pass 1+2 done); #632 (deprecated method removed); #636 (memoization shipped); #637 (fast path shipped); #619 (CI fixes shipped, workflow re-enable is manual); #639 (Slice E completes the lifecycle)
+  - **Updated**: #622 (current observations across this session)
+  - **Open follow-ups still on the board**: #640 (My Contributions card — not started); #622 (deeper investigation pending); #634 closed earlier; #635 closed earlier; #641 closed earlier
 - Notes:
-  - __#619 CI workflow stays disabled__ until user re-enables. Code fix is verified locally; needs a CI run to confirm green there
-  - __#622 mock-leak class__ — fixing one instance (the #632 commit's beforeEach reset) suggests a tractable audit across `routes.test.ts` and `coverage*.test.ts` would reduce flake rate. Estimated 30 min if attacked
-  - __`/session-commit` workflow reminder__ from user mid-session: every code commit needs a project_log entry. New memory `feedback_session_commit_workflow.md` codifies this. This entry is the back-fill for d769da60 / 5f3df903 / e5da6640 / 4f4ae99e / 2a0f1ee6 / a000eb14 / 2c8b6b84 — seven code commits squashed into one log entry rather than seven separate ones (the work happened as one continuous session)
+  - **#619 CI workflow stays disabled** until user re-enables. Code fix is verified locally; needs a CI run to confirm green there
+  - **#622 mock-leak class** — fixing one instance (the #632 commit's beforeEach reset) suggests a tractable audit across `routes.test.ts` and `coverage*.test.ts` would reduce flake rate. Estimated 30 min if attacked
+  - **`/session-commit` workflow reminder** from user mid-session: every code commit needs a project_log entry. New memory `feedback_session_commit_workflow.md` codifies this. This entry is the back-fill for d769da60 / 5f3df903 / e5da6640 / 4f4ae99e / 2a0f1ee6 / a000eb14 / 2c8b6b84 — seven code commits squashed into one log entry rather than seven separate ones (the work happened as one continuous session)
 
 ## 2026-05-03-10
 
@@ -528,13 +559,13 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: Propagated #634/#638/#639 across sister sites via /othersites; ran migrate-private on all four sites; filed and resolved #641 (malformed JSPWiki YAML frontmatter on jimstest)
 - Current Issue: #641 (closed completed)
 - Work Done:
-  - __`/othersites` propagation__: pulled+built+restarted+tested fairways-base (port 2121), ngdpbase-veg (3333), ngdp-temp-builds/ngdpbase (3001). Each site: 5204/5204 unit tests pass + 72/72 Playwright E2E pass + 302 smoke check. No bugs filed — propagation was clean
-  - __migrate-private applied across all four sites__ (jimstest + 3 sister sites): total 12 pages migrated (jimstest 6 [5 jim, 1 molly] + each sister site 2 [1 page + 1 required-pages]). The shared required-pages file `2586c69b-...` migrated identically on every site. Sister sites smoke-checked 302 post-migration; warm caches still serve the legacy shape until restart, which is fine because Slice A's read fallbacks cover both shapes
-  - __#641 filed__: 56 jimstest pages had malformed YAML frontmatter from JSPWiki imports — survived on warm in-memory cache but would 404 on cold restart. Two patterns identified: Pattern 1 (no closing `---` fence, ~48 pages) and Pattern 2 (JSPWiki ACL/plugin markup leaked inside frontmatter, ~8 pages — `[{ALLOW ...}]` single-line and `[{If group='Admin' ... <div>...</div>}]` multi-line)
-  - __#641 repair script (971ba680)__: `scripts/repair-jspwiki-frontmatter.ts` + `npm run repair:frontmatter[:dry]`. Pattern 1 strategy: walk lines after opening `---`, find longest prefix that `yaml.load()` accepts AND has a `title` field, insert closing `---` after it. Pattern 2 strategy: scan frontmatter for JSPWiki markup; track unbalanced `[{` until matching `}]` to handle multi-line spans. Pattern 2 falls through to Pattern 1 when its repair doesn't parse — important edge case for `AdminsPage` which has a `---` inside a fenced code block in the body that masquerades as a closing fence
-  - __#641 applied to jimstest__: 49 pattern 1 + 7 pattern 2 = __56 repaired, 0 unrepaired__. Migrate-private dry-run on jimstest now reports 0 errors (was 56). Smoke-checked SandBox / CSSStripedText / AdminsPage / JSW Private — all 200. Sister sites are clean (no malformed pages there); JSPWiki imports were jimstest-specific
-  - __#641 closed completed (option 3)__: data fix is the complete fix. JSPWiki imports were the only known source of malformed YAML and the import isn't running anymore. Read-path resilience hardening (graceful YAMLException degradation in `FileSystemProvider.getPage` / `refreshPageList`) is intentionally not pursued — root cause was upstream and is gone. If a future import or hand-edit ever produces malformed frontmatter again, the repair script is here
-  - __Seed page migrated (a1a9e869)__: the `migrate:private` run on this repo's `required-pages/` touched `2586c69b-...md` (the seed "Private Pages" documentation page that ships with new installs). Committed so fresh installs don't need a migration
+  - **`/othersites` propagation**: pulled+built+restarted+tested fairways-base (port 2121), ngdpbase-veg (3333), ngdp-temp-builds/ngdpbase (3001). Each site: 5204/5204 unit tests pass + 72/72 Playwright E2E pass + 302 smoke check. No bugs filed — propagation was clean
+  - **migrate-private applied across all four sites** (jimstest + 3 sister sites): total 12 pages migrated (jimstest 6 [5 jim, 1 molly] + each sister site 2 [1 page + 1 required-pages]). The shared required-pages file `2586c69b-...` migrated identically on every site. Sister sites smoke-checked 302 post-migration; warm caches still serve the legacy shape until restart, which is fine because Slice A's read fallbacks cover both shapes
+  - **#641 filed**: 56 jimstest pages had malformed YAML frontmatter from JSPWiki imports — survived on warm in-memory cache but would 404 on cold restart. Two patterns identified: Pattern 1 (no closing `---` fence, ~48 pages) and Pattern 2 (JSPWiki ACL/plugin markup leaked inside frontmatter, ~8 pages — `[{ALLOW ...}]` single-line and `[{If group='Admin' ... <div>...</div>}]` multi-line)
+  - **#641 repair script (971ba680)**: `scripts/repair-jspwiki-frontmatter.ts` + `npm run repair:frontmatter[:dry]`. Pattern 1 strategy: walk lines after opening `---`, find longest prefix that `yaml.load()` accepts AND has a `title` field, insert closing `---` after it. Pattern 2 strategy: scan frontmatter for JSPWiki markup; track unbalanced `[{` until matching `}]` to handle multi-line spans. Pattern 2 falls through to Pattern 1 when its repair doesn't parse — important edge case for `AdminsPage` which has a `---` inside a fenced code block in the body that masquerades as a closing fence
+  - **#641 applied to jimstest**: 49 pattern 1 + 7 pattern 2 = **56 repaired, 0 unrepaired**. Migrate-private dry-run on jimstest now reports 0 errors (was 56). Smoke-checked SandBox / CSSStripedText / AdminsPage / JSW Private — all 200. Sister sites are clean (no malformed pages there); JSPWiki imports were jimstest-specific
+  - **#641 closed completed (option 3)**: data fix is the complete fix. JSPWiki imports were the only known source of malformed YAML and the import isn't running anymore. Read-path resilience hardening (graceful YAMLException degradation in `FileSystemProvider.getPage` / `refreshPageList`) is intentionally not pursued — root cause was upstream and is gone. If a future import or hand-edit ever produces malformed frontmatter again, the repair script is here
+  - **Seed page migrated (a1a9e869)**: the `migrate:private` run on this repo's `required-pages/` touched `2586c69b-...md` (the seed "Private Pages" documentation page that ships with new installs). Committed so fresh installs don't need a migration
 - Testing:
   - typecheck: clean (npm run build clean across all four sites)
   - eslint: clean
@@ -545,19 +576,19 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - 971ba680 (`feat(#641): repair script for malformed JSPWiki frontmatter`)
   - a1a9e869 (`chore(#639): migrate seed required-pages "Private Pages" doc to top-level private: true`)
 - Files Modified:
-  - __NEW__ scripts/repair-jspwiki-frontmatter.ts (~190 lines)
-  - __NEW__ scripts/__tests__/repair-jspwiki-frontmatter.test.ts (12 cases)
+  - **NEW** scripts/repair-jspwiki-frontmatter.ts (~190 lines)
+  - **NEW** scripts/**tests**/repair-jspwiki-frontmatter.test.ts (12 cases)
   - package.json (`repair:frontmatter` + `repair:frontmatter:dry` npm scripts)
   - required-pages/2586c69b-a604-4fcd-95a4-591ca45deacb.md (seed page migrated to new shape)
-  - __DATA-ONLY (not committed; in `$SLOW_STORAGE`)__: 6 jimstest pages migrated to top-level `private: true`; 56 jimstest pages had frontmatter repaired; 2 pages on each of fairways/ve-geology/temp-builds migrated
+  - **DATA-ONLY (not committed; in `$SLOW_STORAGE`)**: 6 jimstest pages migrated to top-level `private: true`; 56 jimstest pages had frontmatter repaired; 2 pages on each of fairways/ve-geology/temp-builds migrated
 - GH issues:
   - #641 closed completed — repair script shipped, applied to jimstest, sister sites clean
   - #639 open — Slices A/B/C/D done; only Slice E (drop fallback + remove from vocab) remains, gated on a release or two of soak time
   - #640 still open — "My Contributions" profile card (filed previous session)
 - Notes:
-  - __Sister-site servers still have warm caches with legacy shape data__. The Slice A read fallbacks cover this, so views still work. A controlled restart (stop server → delete page-index.json → start) on each site would force the index to rebuild from the new frontmatter shape; not strictly necessary, but cleaner. User did not request this
-  - __Page-index.json drift__: same as above — the index entries' `isPrivate` field is now slightly mismatched with the file's `user-keywords` for the migrated pages. Slice A's read code handles this; index will catch up on next save of each page. No user-visible impact
-  - __Deeper resilience question deferred__: the FileSystemProvider try/catch path that silently skipped 56 pages on cold start is still there. We chose option 3 (data fix is sufficient). If JSPWiki imports ever resume or another batch upload produces malformed YAML, those pages will silently disappear from the wiki the same way. Worth re-opening if the import ever resumes
+  - **Sister-site servers still have warm caches with legacy shape data**. The Slice A read fallbacks cover this, so views still work. A controlled restart (stop server → delete page-index.json → start) on each site would force the index to rebuild from the new frontmatter shape; not strictly necessary, but cleaner. User did not request this
+  - **Page-index.json drift**: same as above — the index entries' `isPrivate` field is now slightly mismatched with the file's `user-keywords` for the migrated pages. Slice A's read code handles this; index will catch up on next save of each page. No user-visible impact
+  - **Deeper resilience question deferred**: the FileSystemProvider try/catch path that silently skipped 56 pages on cold start is still there. We chose option 3 (data fix is sufficient). If JSPWiki imports ever resume or another batch upload produces malformed YAML, those pages will silently disappear from the wiki the same way. Worth re-opening if the import ever resumes
 
 ## 2026-05-03-09
 
@@ -565,25 +596,25 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: Shipped Slices C + D of #639 (edit-UI Private checkbox + explicit migration script); filed #640 (My Contributions profile card)
 - Current Issue: #639 (open — Slices A/B/C/D done; only E remains); #640 (filed)
 - Work Done:
-  - __#639 Slice C — edit UI (13391fc5)__:
+  - **#639 Slice C — edit UI (13391fc5)**:
     - Added a "Private" row to `views/edit.ejs` (col-md-3, peer of audience / author-lock). Reflects either source: `metadata.private === true` OR legacy `selectedUserKeywords.includes('private')`. Mirrors the Author Lock pattern with a `private-present=1` hidden field so unchecking sends a deliberate false
     - Filtered the literal `'private'` out of the user-keywords dropdown render so it can no longer be set as a free-form tag
-    - Updated the audience hint text from "the __private__ keyword overrides..." to "the __Private__ setting above overrides..."
+    - Updated the audience hint text from "the **private** keyword overrides..." to "the **Private** setting above overrides..."
     - `WikiRoutes.editPage` reads `req.body.private` + `req.body['private-present']` mirroring Author Lock parsing; falls back to existing top-level field OR legacy keyword when not present in the form post; forwards `private: true` into `buildNewPageMetadata` (Slice B's normalisation handles the rest)
     - Required-page guard now checks both signals (`privateFlag || userKeywordsArray.includes('private')`) so admins can't accidentally mark a required page private regardless of UI path
     - `create.ejs` intentionally not touched — that form has no Author Lock or Audience controls; new pages can be marked private after creation via edit
     - Verification: EJS template compiles clean (`ejs.compile`), TypeScript clean, vitest 5196/5196 deterministic green
-  - __#639 Slice C layout follow-up (a189146f)__: User asked to move the Private checkbox up next to Author Lock instead of its own row. Moved into BOTH branches of the admin/non-admin split — admin row gets System Category (col-md-4) + Author Lock (col-md-2) + Private (col-md-2); non-admin row gets System Category readonly (col-md-4) + Private (col-md-2). Non-admin authors retain Private control (no regression from initial Slice C). Removed the standalone row block. State computation extracted to a single precomputed pair of locals at the top of the row so the same control renders cleanly in either branch
-  - __#639 Slice D — explicit migration script (fc7866bf)__:
+  - **#639 Slice C layout follow-up (a189146f)**: User asked to move the Private checkbox up next to Author Lock instead of its own row. Moved into BOTH branches of the admin/non-admin split — admin row gets System Category (col-md-4) + Author Lock (col-md-2) + Private (col-md-2); non-admin row gets System Category readonly (col-md-4) + Private (col-md-2). Non-admin authors retain Private control (no regression from initial Slice C). Removed the standalone row block. State computation extracted to a single precomputed pair of locals at the top of the row so the same control renders cleanly in either branch
+  - **#639 Slice D — explicit migration script (fc7866bf)**:
     - `scripts/migrate-private-field.ts` + `npm run migrate:private[:dry]` entries
     - Walks `.md` files under `$SLOW_STORAGE/pages` and `required-pages/`. For any page with `'private'` in user-keywords, rewrites frontmatter: sets `private: true` at top level, removes the keyword (drops field entirely if empty)
     - Skips `versions/` subdirectories (versioning storage — rewriting them would break version diffs)
     - Page-index.json deliberately untouched — Slice A's read fallbacks make every consumer correct against either shape, and the index catches up on next save. Hard re-sync option (stop server → delete index → restart) documented in script header
     - Pure `transformFrontmatter()` extracted as a string-in/string-out function so it's testable without filesystem mocking. 8 test cases: keyword-only migration, drop empty user-keywords field, already-migrated detection, non-private detection, both-signals (transitional), case-insensitive keyword match, bare frontmatter, idempotency
-    - __Bug surfaced and fixed__: gray-matter caches its parsed `data` object by input string and reuses the same reference. The transform was mutating that cache, so two test cases with identical fixtures poisoned each other (test 8 saw test 2's mutations and reported `'already'` instead of `'migrated'`). Fixed by cloning data before mutation. Worth being aware of for future scripts that touch gray-matter
+    - **Bug surfaced and fixed**: gray-matter caches its parsed `data` object by input string and reuses the same reference. The transform was mutating that cache, so two test cases with identical fixtures poisoned each other (test 8 saw test 2's mutations and reported `'already'` instead of `'migrated'`). Fixed by cloning data before mutation. Worth being aware of for future scripts that touch gray-matter
     - `vitest.config.ts` `include` extended with `scripts/**/__tests__/**/*.ts` so future migration scripts can be tested in place
     - Dry-run against live jimstest data: 6 pages would migrate (5 jim, 1 molly, 1 required-pages), 1 already migrated, 17,533 non-private, 56 pre-existing malformed-YAML pages gracefully skipped (separate concern, not introduced by this script)
-  - __#640 filed__: `[FEATURE] Add a "My Contributions" card to /profile linking to private pages, pages created, journal, MyLinks`. New profile card with link rows + counts to surface user-owned content. Phase 1: Private Pages, Pages Created, Journal Entries, My Links. Phase 2 (nice-to-have, marked `(?)`): Comments, Attachments uploaded, Audience-shared pages, Recent edits by me. Sketches an API surface (`pageManager.getPagesByCreator`) that builds on the #635 `getRecentChanges` pattern. Linked to sibling work (#634/#635/#639) as foundational
+  - **#640 filed**: `[FEATURE] Add a "My Contributions" card to /profile linking to private pages, pages created, journal, MyLinks`. New profile card with link rows + counts to surface user-owned content. Phase 1: Private Pages, Pages Created, Journal Entries, My Links. Phase 2 (nice-to-have, marked `(?)`): Comments, Attachments uploaded, Audience-shared pages, Recent edits by me. Sketches an API surface (`pageManager.getPagesByCreator`) that builds on the #635 `getRecentChanges` pattern. Linked to sibling work (#634/#635/#639) as foundational
 - Testing:
   - typecheck: clean across all changes
   - eslint: clean
@@ -598,16 +629,16 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Files Modified:
   - views/edit.ejs (#639 Slice C — Private checkbox + audience hint update; layout follow-up)
   - src/routes/WikiRoutes.ts (#639 Slice C — editPage reads private + private-present; required-page guard checks both signals)
-  - __NEW__ scripts/migrate-private-field.ts (#639 Slice D — migration script; ~190 lines)
-  - __NEW__ scripts/__tests__/migrate-private-field.test.ts (#639 Slice D — 8 cases)
+  - **NEW** scripts/migrate-private-field.ts (#639 Slice D — migration script; ~190 lines)
+  - **NEW** scripts/**tests**/migrate-private-field.test.ts (#639 Slice D — 8 cases)
   - package.json (#639 Slice D — `migrate:private` + `migrate:private:dry` npm scripts)
   - vitest.config.ts (#639 Slice D — include `scripts/**/__tests__/**`)
 - GH issues:
   - #639 open — Slices A/B/C/D done; only Slice E remains (drop read fallback + remove `private` from `app-default-config.json` user-keywords vocabulary). Slice E should wait until D has been applied to all live datasets AND we've waited a release or two for any external authoring tools to stop writing the legacy shape
   - #640 filed (open) — "My Contributions" profile card. Phase 1 (private/created/journal/MyLinks) is straightforward given the foundational APIs from #635
 - Notes:
-  - __The 56 malformed-YAML pages on jimstest__ surfaced during the Slice D dry-run. Their frontmatter doesn't parse with strict YAML rules (mostly missing colons / multi-line key issues), but they presumably load in production (gray-matter has fallback paths or wider tolerance somewhere). Worth filing as a separate `[BUG]` issue if these aren't already known
-  - __`/othersites` not yet run for this session's commits__ (8e72be2d through fc7866bf). Sister sites (Fairways, ve-geology, temp-builds) need propagation before Slice E can be considered
+  - **The 56 malformed-YAML pages on jimstest** surfaced during the Slice D dry-run. Their frontmatter doesn't parse with strict YAML rules (mostly missing colons / multi-line key issues), but they presumably load in production (gray-matter has fallback paths or wider tolerance somewhere). Worth filing as a separate `[BUG]` issue if these aren't already known
+  - **`/othersites` not yet run for this session's commits** (8e72be2d through fc7866bf). Sister sites (Fairways, ve-geology, temp-builds) need propagation before Slice E can be considered
 
 ## 2026-05-03-08
 
@@ -615,8 +646,8 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: Closed #634 (MediaManager → pageManager.getPageMetadata, drops pageIndex coupling); shipped Slices A + B of #639 (`private` as top-level frontmatter field with back-compat fallback + save-handler normalization)
 - Current Issue: #634 (closed completed); #639 (open — Slices A + B done; C, D, E remain)
 - Work Done:
-  - __#634 closed__: `MediaManager.checkPrivatePageAccess` no longer reaches into `provider.pageIndex`. The 8-line block with `as unknown as ProviderWithIndex` cast and `pageIndex.pages[uuid]` lookup is gone. New path reads `system-location` and `author` from frontmatter via `pageManager.getPageMetadata(pageName)`. Audit confirmed the two values stay in lockstep (pageIndex.creator is derived from metadata.author at write time; metadata.author is immutable per PageManager.savePageWithContext). Did NOT migrate to `wikiContext.canAccess('view')` — MediaManager's freshly-constructed WikiContext doesn't carry pageMetadata, so canAccess would skip tier-0/tier-1 and fall through to PolicyEvaluator with no page context. Documented as a future cleanup. Added 8 focused tests
-  - __#639 Slice A — read path with back-compat fallback (cee1eceb)__:
+  - **#634 closed**: `MediaManager.checkPrivatePageAccess` no longer reaches into `provider.pageIndex`. The 8-line block with `as unknown as ProviderWithIndex` cast and `pageIndex.pages[uuid]` lookup is gone. New path reads `system-location` and `author` from frontmatter via `pageManager.getPageMetadata(pageName)`. Audit confirmed the two values stay in lockstep (pageIndex.creator is derived from metadata.author at write time; metadata.author is immutable per PageManager.savePageWithContext). Did NOT migrate to `wikiContext.canAccess('view')` — MediaManager's freshly-constructed WikiContext doesn't carry pageMetadata, so canAccess would skip tier-0/tier-1 and fall through to PolicyEvaluator with no page context. Documented as a future cleanup. Added 8 focused tests
+  - **#639 Slice A — read path with back-compat fallback (cee1eceb)**:
     - Added `private?: boolean` to `PageFrontmatter` (peer of `audience` / `author-lock`)
     - Updated 6 read sites to prefer top-level `private` while still falling back to legacy signals (`user-keywords: [private]` and/or `system-location: 'private'`):
       - `ACLManager.checkPagePermissionWithContext` tier 0
@@ -627,12 +658,12 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
       - `MediaManager.checkPrivatePageAccess` (the one #634 just touched)
     - Picked Option B (back-compat read fallback) over Option A (strict cutover). Rationale: low risk, zero existing-behavior change, no migration script needed yet
     - 14 new tests across ACLManager (7), MediaManager (2), LunrSearchProvider (5)
-  - __#639 Slice B — write path with implicit migration (37f80ec2)__:
+  - **#639 Slice B — write path with implicit migration (37f80ec2)**:
     - `PageManager.savePageWithContext` now normalizes privacy on every save: detects privacy from EITHER `metadata.private === true` OR a `user-keywords` entry whose config has `storageLocation: 'private'`; writes `private: true` at top level; emits `system-location: 'private'` (unchanged contract with provider's storage routing); strips the literal `'private'` entry from `user-keywords` array — but only when it was present, so non-private pages don't gain spurious empty `user-keywords: []` arrays
     - Required pages: `wantsPrivate` forced false; any incoming `private: true` is stripped (destructure-and-conditional-spread pattern)
-    - __Implicit migration for free__: every existing private page auto-migrates to the new shape on its next save. Slice D (explicit migration script) becomes optional — pages convert over a long deprecation window
+    - **Implicit migration for free**: every existing private page auto-migrates to the new shape on its next save. Slice D (explicit migration script) becomes optional — pages convert over a long deprecation window
     - 6 new PageManager tests covering: top-level shape, legacy keyword shape (migration path), both-signals-present, non-private (no fields added), explicit `private:false` clean strip, untouched user-keywords arrays
-  - __Misstep — labeled #639 `in review` then unlabeled it__: After Slice A landed, applied `in review` label per memory pattern, then realized that's wrong for a multi-slice issue where only 1 of 5 slices is done. The label means "work attempted, awaiting confirmation"; this issue's work is *partially* attempted across multiple commits over multiple sessions. Removed the label; #639 stays plain `enhancement`. Worth noting for the workflow memory: "in review" presumes single-commit work — multi-slice issues need a different signal (or just stay unlabeled until all slices ship)
+  - **Misstep — labeled #639 `in review` then unlabeled it**: After Slice A landed, applied `in review` label per memory pattern, then realized that's wrong for a multi-slice issue where only 1 of 5 slices is done. The label means "work attempted, awaiting confirmation"; this issue's work is *partially* attempted across multiple commits over multiple sessions. Removed the label; #639 stays plain `enhancement`. Worth noting for the workflow memory: "in review" presumes single-commit work — multi-slice issues need a different signal (or just stay unlabeled until all slices ship)
 - Testing:
   - typecheck: clean across all changes
   - eslint: clean (one fix mid-Slice-A test for `WikiEngine` intersection-type lint warning — restructured to a separate cast variable)
@@ -643,17 +674,17 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - 37f80ec2 (`feat(#639): Slice B — save handler writes top-level "private" and strips legacy keyword`)
 - Files Modified:
   - src/managers/MediaManager.ts (#634 + #639 Slice A back-compat fallback)
-  - src/managers/__tests__/MediaManager.test.ts (#634 + #639 — net +10 tests)
+  - src/managers/**tests**/MediaManager.test.ts (#634 + #639 — net +10 tests)
   - src/types/Page.ts (#639 Slice A — `private?: boolean` field)
   - src/managers/ACLManager.ts (#639 Slice A — tier 0 fallback)
-  - src/managers/__tests__/ACLManager.test.ts (#639 Slice A — 7 tests)
+  - src/managers/**tests**/ACLManager.test.ts (#639 Slice A — 7 tests)
   - src/providers/LunrSearchProvider.ts (#639 Slice A — buildDocumentFromPageData fallback)
   - src/providers/ElasticsearchSearchProvider.ts (#639 Slice A — same)
   - src/providers/VersioningFileProvider.ts (#639 Slice A — pageIndex.isPrivate fallback)
   - src/providers/FileSystemProvider.ts (#639 Slice A — getRecentChanges fallback)
-  - src/providers/__tests__/LunrSearchProvider.privateFilter.test.ts (#639 Slice A — 5 tests)
+  - src/providers/**tests**/LunrSearchProvider.privateFilter.test.ts (#639 Slice A — 5 tests)
   - src/managers/PageManager.ts (#639 Slice B — save normalization)
-  - src/managers/__tests__/PageManager.test.ts (#639 Slice B — 6 tests)
+  - src/managers/**tests**/PageManager.test.ts (#639 Slice B — 6 tests)
 - GH issues:
   - #634 closed completed
   - #639 open — Slices A + B done; remaining: C (edit UI checkbox), D (optional migration — may be unnecessary given Slice B's implicit-migration behavior), E (cleanup — drop fallback + remove `private` from `app-default-config.json` user-keywords vocabulary)
@@ -664,16 +695,16 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: Closed two AuthorLocked search-filter bugs (#627 + #628) as wontfix with explicit code markers; shipped #635 — `pageManager.getRecentChanges()` API + visibility filter; filed #639 — relocate `private` from user-keywords to top-level frontmatter
 - Current Issue: #627 (closed wontfix), #628 (closed wontfix), #635 (closed completed), #639 (filed)
 - Work Done:
-  - __#639 filed__ — `[FEATURE] Move 'private' from user-keywords array to top-level frontmatter field`. Schema proposal: promote `private` to a peer of `author-lock` / `audience`; remove from user-keywords vocabulary. Captures the three-way overload (user-keywords, system-location, search denormalization), recommends Option B back-compat read fallback for migration, lists every touch point (ACLManager tier-0, both search providers, save handlers, edit UI, config vocabulary). Filed because the same drift pattern (#626, #635) keeps surfacing — fixing the schema would close the bug class at the root
-  - __#627 + #628 closed wontfix (Reading A)__ — AuthorLocked is an *edit* constraint parallel to git branch protection; locked pages are still freely readable. Search filters by *read* access, so AuthorLocked has no place in either search filter. Decision recorded directly in code (commit c2f25e88) at `LunrSearchProvider.search()` (just after the private-page filter block) and `ElasticsearchSearchProvider._wrapWithPrivacy` doc comment so a future audit grep sees the explicit decision instead of re-flagging the gap
-  - __#635 implemented (Slices 1 + 2 bundled per user direction)__:
-    - __Types__ — added `RecentChangesOptions` and `RecentChangeEntry` to `src/types/Provider.ts`; `getRecentChanges(options?)` now part of the `PageProvider` interface
-    - __`FileSystemProvider.getRecentChanges`__ — base implementation reading from in-memory `pageCache` + each entry's metadata (`lastModified`, `system-location`, `user-keywords`, `audience`, `creator`/`author`). Provides a working impl for any consumer using FileSystemProvider standalone
-    - __`VersioningFileProvider.getRecentChanges`__ — overrides with the rich pageIndex-backed version. The `pageIndex` already denormalizes `lastModified`, `editor`, `currentVersion`, `hasVersions`, `isPrivate`, `audienceRoles`, `creator` — so this is O(1) per page on cheap in-memory state. No extra I/O
-    - __`PageManager.getRecentChanges`__ — thin forwarder to the active provider
-    - __`RecentChangesPlugin` v2.0.0__ — migrated to call `pageManager.getRecentChanges({ since, principals, includeAll })`. Drops `loadPageIndex()` (was reading `data/page-index.json` directly off disk), drops `pageManager.getPage()` per page, drops `fs.stat()` per page. Builds principals from `userContext.username` + `userContext.roles`; uses `WikiContext.userHasRole(userContext, 'admin')` for the `includeAll` admin bypass. Closes the privacy leak (private pages were previously listed in recent-changes regardless of viewer)
-    - __Visibility rule__ — provider-layer filter using cheap denormalized signals only (creator + audienceRoles). Does NOT consult tier-2 PolicyEvaluator per page (would be O(N) policy evaluations per render). Mirrors `MediaManager.checkPrivatePageAccess` and the search-provider audience filters. Tradeoff documented in the docstring on the new method
-  - __Tests__:
+  - **#639 filed** — `[FEATURE] Move 'private' from user-keywords array to top-level frontmatter field`. Schema proposal: promote `private` to a peer of `author-lock` / `audience`; remove from user-keywords vocabulary. Captures the three-way overload (user-keywords, system-location, search denormalization), recommends Option B back-compat read fallback for migration, lists every touch point (ACLManager tier-0, both search providers, save handlers, edit UI, config vocabulary). Filed because the same drift pattern (#626, #635) keeps surfacing — fixing the schema would close the bug class at the root
+  - **#627 + #628 closed wontfix (Reading A)** — AuthorLocked is an *edit* constraint parallel to git branch protection; locked pages are still freely readable. Search filters by *read* access, so AuthorLocked has no place in either search filter. Decision recorded directly in code (commit c2f25e88) at `LunrSearchProvider.search()` (just after the private-page filter block) and `ElasticsearchSearchProvider._wrapWithPrivacy` doc comment so a future audit grep sees the explicit decision instead of re-flagging the gap
+  - **#635 implemented (Slices 1 + 2 bundled per user direction)**:
+    - **Types** — added `RecentChangesOptions` and `RecentChangeEntry` to `src/types/Provider.ts`; `getRecentChanges(options?)` now part of the `PageProvider` interface
+    - **`FileSystemProvider.getRecentChanges`** — base implementation reading from in-memory `pageCache` + each entry's metadata (`lastModified`, `system-location`, `user-keywords`, `audience`, `creator`/`author`). Provides a working impl for any consumer using FileSystemProvider standalone
+    - **`VersioningFileProvider.getRecentChanges`** — overrides with the rich pageIndex-backed version. The `pageIndex` already denormalizes `lastModified`, `editor`, `currentVersion`, `hasVersions`, `isPrivate`, `audienceRoles`, `creator` — so this is O(1) per page on cheap in-memory state. No extra I/O
+    - **`PageManager.getRecentChanges`** — thin forwarder to the active provider
+    - **`RecentChangesPlugin` v2.0.0** — migrated to call `pageManager.getRecentChanges({ since, principals, includeAll })`. Drops `loadPageIndex()` (was reading `data/page-index.json` directly off disk), drops `pageManager.getPage()` per page, drops `fs.stat()` per page. Builds principals from `userContext.username` + `userContext.roles`; uses `WikiContext.userHasRole(userContext, 'admin')` for the `includeAll` admin bypass. Closes the privacy leak (private pages were previously listed in recent-changes regardless of viewer)
+    - **Visibility rule** — provider-layer filter using cheap denormalized signals only (creator + audienceRoles). Does NOT consult tier-2 PolicyEvaluator per page (would be O(N) policy evaluations per render). Mirrors `MediaManager.checkPrivatePageAccess` and the search-provider audience filters. Tradeoff documented in the docstring on the new method
+  - **Tests**:
     - Plugin test (`src/plugins/__tests__/RecentChangesPlugin.test.ts`) rewritten against the new mock surface — replaces the fs.stat-based fixture with direct mocking of `pageManager.getRecentChanges`. New cases for principals forwarding, admin includeAll bypass, anonymous principals
     - New focused provider test (`src/providers/__tests__/VersioningFileProvider.recentChanges.test.ts`) — 11 cases covering sort, limit, since cutoff, missing-lastModified handling, anonymous denial, non-creator denial, creator visibility, audience-by-username, audience-by-role, includeAll bypass, field preservation. Constructs a provider with synthetic pageIndex injected (no full bootstrap) so the filter logic is testable in isolation
 - Testing:
@@ -689,8 +720,8 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - src/providers/VersioningFileProvider.ts (#635 — override using pageIndex)
   - src/managers/PageManager.ts (#635 — getRecentChanges forwarder)
   - src/plugins/RecentChangesPlugin.ts (#635 — v2.0.0 rewrite; disk reads + fs.stat removed)
-  - src/plugins/__tests__/RecentChangesPlugin.test.ts (#635 — rewritten against new API)
-  - __NEW__ src/providers/__tests__/VersioningFileProvider.recentChanges.test.ts (#635 — 11 focused cases)
+  - src/plugins/**tests**/RecentChangesPlugin.test.ts (#635 — rewritten against new API)
+  - **NEW** src/providers/**tests**/VersioningFileProvider.recentChanges.test.ts (#635 — 11 focused cases)
 - GH issues:
   - #627 closed wontfix
   - #628 closed wontfix
@@ -703,12 +734,12 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: #626 A1-A3 — denormalize frontmatter audience onto LunrDocument and filter at search time; mirror ElasticsearchSearchProvider semantics. Filed #639 to relocate `private` from user-keywords array to top-level frontmatter
 - Current Issue: #626 (audience drift fix landed); #639 (new feature request filed)
 - Work Done:
-  - __#626 A1 — `LunrDocument` shape__: added `audience?: string[]` field alongside the existing `isPrivate` / `creator`. Field is optional and undefined when no audience is set
-  - __#626 A2 — `buildDocumentFromPageData`__: now reads `metadata['audience']` via the existing `toStrArr()` helper (handles string-or-array input from frontmatter) and stores `audience.length > 0 ? audience : undefined`. Populated unconditionally — mirrors ElasticsearchSearchProvider, which always denormalizes audience even on public pages
-  - __Cold-path consolidation__: `buildIndex` had two doc-construction paths — a hot path that called `buildDocumentFromPageData` and a cold path that inlined ~35 lines of partial doc shape, omitting `isPrivate`, `creator`, and `audience`. Cold path now collapsed to a single `documents[pageName] = this.buildDocumentFromPageData(pageName, pageData)` so both paths produce identical shapes. Eliminates a class of latent drift bugs where private/audience fields were silently missing on rebuild
-  - __#626 A3 — search-time filter__: in `search()`, the per-result private-page check now reads `wikiContext?.getPrincipals?.() ?? []` and computes `inAudience = Array.isArray(doc.audience) && principals.some(p => doc.audience!.includes(p))`. Final access rule is unchanged in intent: `if (!isAdmin && !isCreator && !inAudience) return null`. Brings Lunr in line with the ES audience semantics that already shipped
-  - __Test fixture extension__ — `LunrSearchProvider.privateFilter.test.ts` `makeDoc` helper now accepts `audience?: string[]`. New `describe('frontmatter audience (#626)')` block covers: audience-by-username (bob in `[bob, carol]` → page visible), audience-by-role (dave with role `editor`, page audience `[editor]` → visible), no-match denial (eve, no roles match → page hidden), admin bypasses audience entirely, creator still bypasses audience for their own pages
-  - __#639 filed__ — `[FEATURE] Move 'private' from user-keywords array to top-level frontmatter field`. Schema proposal: promote `private` from a `user-keywords[]` entry to a peer of `author-lock` / `audience`. Captures the three-way overload problem (user-keywords array, system-location hint, search-doc denormalization), both migration strategies (recommends Option B back-compat read fallback for one or two minor releases), all touch points (ACLManager tier-0, both search providers, save handlers, edit UI, config vocabulary), and links to siblings #626/#635/#625
+  - **#626 A1 — `LunrDocument` shape**: added `audience?: string[]` field alongside the existing `isPrivate` / `creator`. Field is optional and undefined when no audience is set
+  - **#626 A2 — `buildDocumentFromPageData`**: now reads `metadata['audience']` via the existing `toStrArr()` helper (handles string-or-array input from frontmatter) and stores `audience.length > 0 ? audience : undefined`. Populated unconditionally — mirrors ElasticsearchSearchProvider, which always denormalizes audience even on public pages
+  - **Cold-path consolidation**: `buildIndex` had two doc-construction paths — a hot path that called `buildDocumentFromPageData` and a cold path that inlined ~35 lines of partial doc shape, omitting `isPrivate`, `creator`, and `audience`. Cold path now collapsed to a single `documents[pageName] = this.buildDocumentFromPageData(pageName, pageData)` so both paths produce identical shapes. Eliminates a class of latent drift bugs where private/audience fields were silently missing on rebuild
+  - **#626 A3 — search-time filter**: in `search()`, the per-result private-page check now reads `wikiContext?.getPrincipals?.() ?? []` and computes `inAudience = Array.isArray(doc.audience) && principals.some(p => doc.audience!.includes(p))`. Final access rule is unchanged in intent: `if (!isAdmin && !isCreator && !inAudience) return null`. Brings Lunr in line with the ES audience semantics that already shipped
+  - **Test fixture extension** — `LunrSearchProvider.privateFilter.test.ts` `makeDoc` helper now accepts `audience?: string[]`. New `describe('frontmatter audience (#626)')` block covers: audience-by-username (bob in `[bob, carol]` → page visible), audience-by-role (dave with role `editor`, page audience `[editor]` → visible), no-match denial (eve, no roles match → page hidden), admin bypasses audience entirely, creator still bypasses audience for their own pages
+  - **#639 filed** — `[FEATURE] Move 'private' from user-keywords array to top-level frontmatter field`. Schema proposal: promote `private` from a `user-keywords[]` entry to a peer of `author-lock` / `audience`. Captures the three-way overload problem (user-keywords array, system-location hint, search-doc denormalization), both migration strategies (recommends Option B back-compat read fallback for one or two minor releases), all touch points (ACLManager tier-0, both search providers, save handlers, edit UI, config vocabulary), and links to siblings #626/#635/#625
 - Testing:
   - typecheck: clean
   - eslint: clean
@@ -716,7 +747,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Commits: 665144e4 (`fix(#626): denormalize frontmatter audience onto LunrDocument and filter at search time`)
 - Files Modified:
   - src/providers/LunrSearchProvider.ts (audience field on LunrDocument; buildDocumentFromPageData reads metadata.audience; cold-path consolidation; search filter checks principals against doc.audience)
-  - src/providers/__tests__/LunrSearchProvider.privateFilter.test.ts (audience option on makeDoc helper; 5 new tests in #626 describe block)
+  - src/providers/**tests**/LunrSearchProvider.privateFilter.test.ts (audience option on makeDoc helper; 5 new tests in #626 describe block)
 - GH issues:
   - #626 — closing ready (drift class fixed; matches ES semantics)
   - #639 — new feature filed (relocate `private` to top-level frontmatter)
@@ -727,26 +758,26 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: #638 — extract shared `createMockWikiContext` fixture for WikiRoutes tests. 18 of 19 test files migrated. -319 net lines. Pre-work for the C → A plan (privacy bugs next)
 - Current Issue: #638 (open, fix landed); pre-work for #626 + #635
 - Work Done:
-  - __Audited mock-factory variations__ across the 19 affected test files. Catalog: 16 vi.mock-based files with same core shape but variations in `renderMarkdown` return value (`'<p>Rendered</p>'` vs `'<p>ok</p>'` vs `'<p>Rendered content</p>'`), `toParseOptions` shape (`{}` vs structured `{pageContext, engine}`), and one outlier (`routes.test.ts`) with eagerly-resolved manager refs and an inline `mockUserManager` declared inside the `vi.mock('../../WikiEngine')` factory body. 2 spyOn-based files (`assetSearch`, `authorLock`) with their own duck-typed objects
-  - __Created__ `src/routes/__tests__/__fixtures__/createMockWikiContext.ts` (~125 lines) — canonical `createMockWikiContext(options, deps)` factory + `MOCK_WIKI_CONTEXT_CONSTANTS` static enum. Deps: `engine`, `fallbackUserContext` (re-evaluated per construction so `let mockUserContext = ...; mockUserContext = beforeEach()` patterns work), `mockUserManager` for `hasPermission` delegation, `resolveManagers: true` flag for the routes.test.ts-style eager manager refs. Override knobs: `renderMarkdownReturn`, `toParseOptionsReturn` for tests that asserted on specific return values
-  - __Solved vi.mock hoisting issue__ — `vi.mock` factories are hoisted above imports, so importing `createMockWikiContext` at the top of a test file doesn't work. Used the async factory pattern with dynamic import: `vi.mock('../../context/WikiContext', async () => { const { createMockWikiContext } = await import('./__fixtures__/createMockWikiContext'); ... })`. Async vi.mock factories run lazily, by which time the dynamic import resolves cleanly
-  - __Migrated 16 vi.mock-based files__ (WikiRoutes.coverage{,2-16}.test.ts) via a Node migration script. Each file's `vi.mock('../../context/WikiContext', () => {...})` block (~30 lines) replaced with the shorter async-import form (~13 lines). Script detected per-file variations (renderMd / toParseOptions shape) and passed appropriate override options
-  - __Migrated 2 spyOn-based files__ (`WikiRoutes.assetSearch.test.ts`, `WikiRoutes.authorLock.test.ts`) — their `routes.createWikiContext = vi.fn(...)` stubs now call the shared `createMockWikiContext({...})` directly. Each shrunk from ~10 lines of duck-typed object literal to a single function call
-  - __Left routes.test.ts on its original mock__ — its structure (eager manager refs from engine.getManager + a `mockUserManager` const declared INSIDE the `vi.mock('../../WikiEngine')` factory body, not at module scope) doesn't fit the shared fixture cleanly. The migration produced 31/48 test failures (silent 500s in viewPage handler). Reverting routes.test.ts to its original form restored 5152/5152. Documented as a known exception in the issue body and commit message
-  - __`vitest.config.ts` exclude update__ — added `**/__tests__/__fixtures__/**` so the new fixture file isn't picked up as a test (vitest's default include is `src/**/__tests__/**/*.ts` which would otherwise scan it)
-  - __Determinism check__ — ran the full vitest suite 5 times. 4 of 5 runs passed 5152/5152. 1 transient flake in run 3 (unrelated to these changes — same `coverage10` `Media handlers > GET /media/keyword/nature returns 200` `socket hang up` we've seen all session, #622-class cold-start race). Subsequent run was clean
+  - **Audited mock-factory variations** across the 19 affected test files. Catalog: 16 vi.mock-based files with same core shape but variations in `renderMarkdown` return value (`'<p>Rendered</p>'` vs `'<p>ok</p>'` vs `'<p>Rendered content</p>'`), `toParseOptions` shape (`{}` vs structured `{pageContext, engine}`), and one outlier (`routes.test.ts`) with eagerly-resolved manager refs and an inline `mockUserManager` declared inside the `vi.mock('../../WikiEngine')` factory body. 2 spyOn-based files (`assetSearch`, `authorLock`) with their own duck-typed objects
+  - **Created** `src/routes/__tests__/__fixtures__/createMockWikiContext.ts` (~125 lines) — canonical `createMockWikiContext(options, deps)` factory + `MOCK_WIKI_CONTEXT_CONSTANTS` static enum. Deps: `engine`, `fallbackUserContext` (re-evaluated per construction so `let mockUserContext = ...; mockUserContext = beforeEach()` patterns work), `mockUserManager` for `hasPermission` delegation, `resolveManagers: true` flag for the routes.test.ts-style eager manager refs. Override knobs: `renderMarkdownReturn`, `toParseOptionsReturn` for tests that asserted on specific return values
+  - **Solved vi.mock hoisting issue** — `vi.mock` factories are hoisted above imports, so importing `createMockWikiContext` at the top of a test file doesn't work. Used the async factory pattern with dynamic import: `vi.mock('../../context/WikiContext', async () => { const { createMockWikiContext } = await import('./__fixtures__/createMockWikiContext'); ... })`. Async vi.mock factories run lazily, by which time the dynamic import resolves cleanly
+  - **Migrated 16 vi.mock-based files** (WikiRoutes.coverage{,2-16}.test.ts) via a Node migration script. Each file's `vi.mock('../../context/WikiContext', () => {...})` block (~30 lines) replaced with the shorter async-import form (~13 lines). Script detected per-file variations (renderMd / toParseOptions shape) and passed appropriate override options
+  - **Migrated 2 spyOn-based files** (`WikiRoutes.assetSearch.test.ts`, `WikiRoutes.authorLock.test.ts`) — their `routes.createWikiContext = vi.fn(...)` stubs now call the shared `createMockWikiContext({...})` directly. Each shrunk from ~10 lines of duck-typed object literal to a single function call
+  - **Left routes.test.ts on its original mock** — its structure (eager manager refs from engine.getManager + a `mockUserManager` const declared INSIDE the `vi.mock('../../WikiEngine')` factory body, not at module scope) doesn't fit the shared fixture cleanly. The migration produced 31/48 test failures (silent 500s in viewPage handler). Reverting routes.test.ts to its original form restored 5152/5152. Documented as a known exception in the issue body and commit message
+  - **`vitest.config.ts` exclude update** — added `**/__tests__/__fixtures__/**` so the new fixture file isn't picked up as a test (vitest's default include is `src/**/__tests__/**/*.ts` which would otherwise scan it)
+  - **Determinism check** — ran the full vitest suite 5 times. 4 of 5 runs passed 5152/5152. 1 transient flake in run 3 (unrelated to these changes — same `coverage10` `Media handlers > GET /media/keyword/nature returns 200` `socket hang up` we've seen all session, #622-class cold-start race). Subsequent run was clean
 - Testing:
   - typecheck: clean
   - eslint: clean
   - vitest: 5152/5152 deterministic green (modulo the unrelated transient)
 - Commits: 3925f0b3 (`refactor(#638): extract shared createMockWikiContext fixture for WikiRoutes tests`)
 - Files Modified:
-  - __NEW__ src/routes/__tests__/__fixtures__/createMockWikiContext.ts (~125 lines, canonical fixture)
-  - vitest.config.ts (exclude __fixtures__)
-  - src/routes/__tests__/WikiRoutes.coverage{,2-16}.test.ts (16 files, vi.mock-based)
-  - src/routes/__tests__/WikiRoutes.assetSearch.test.ts (spyOn-based)
-  - src/routes/__tests__/WikiRoutes.authorLock.test.ts (spyOn-based)
-  - __Net__: -319 lines (-492 removed, +173 added across 19 files)
+  - **NEW** src/routes/**tests**/**fixtures**/createMockWikiContext.ts (~125 lines, canonical fixture)
+  - vitest.config.ts (exclude **fixtures**)
+  - src/routes/**tests**/WikiRoutes.coverage{,2-16}.test.ts (16 files, vi.mock-based)
+  - src/routes/**tests**/WikiRoutes.assetSearch.test.ts (spyOn-based)
+  - src/routes/**tests**/WikiRoutes.authorLock.test.ts (spyOn-based)
+  - **Net**: -319 lines (-492 removed, +173 added across 19 files)
 
 ## 2026-05-03-04
 
@@ -754,14 +785,14 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: Discussion of provider-level structural caches → 5 GitHub issues filed (#634, #635, #636, #637, #638). No code or repo-tracked doc changes; working notes captured in gitignored `private/2026-05-03-temp-discussion.md`
 - Current Issue: #634, #635, #636, #637, #638 (all newly filed); #626, #627, #628 referenced as already-tracked sibling
 - Work Done:
-  - __Mapped consumers of each Layer-2 cache__ (the "Source-of-truth in-memory" caches from `CacheManager-Complete-Guide.md#provider-level-structural-caches`). For each cache (`FileSystemProvider.pageCache`, `VersioningFileProvider.pageIndex`, `LunrSearchProvider.documents/searchIndex`, ES cluster, `MarkupParser` parse-result cache, `ThemeManager` cache, `UserManager`/`RoleManager` records, `ConfigurationManager`/`PolicyManager`) — listed who reads it and whether through the canonical manager API or via direct provider reach. Identified two direct-reach exceptions worth tracking
-  - __Filed #634__ — `[FEATURE] MediaManager.checkPrivatePageAccess reaches into provider.pageIndex directly — migrate to pageManager.getPageMetadata`. `src/managers/MediaManager.ts:411-418` casts `getCurrentPageProvider() as ProviderWithIndex` and reads `pageIndex.pages[uuid]` for `entry.location`/`entry.creator`. Couples MediaManager to `VersioningFileProvider`. Migration path: read `system-location` and `author` frontmatter via `pageManager.getPageMetadata(pageName)`, or potentially collapse the whole method to `wikiContext.canAccess('view')` if tier-0 semantics align
-  - __Filed #635__ — `[FEATURE] RecentChangesPlugin reads data/page-index.json directly off disk — add pageManager.getRecentChanges() API`. `src/plugins/RecentChangesPlugin.ts:70-77, 193-196` reads the JSON file directly via `fs.readFile`. Three problems: (1) couples plugin to file-based providers; (2) bypasses the in-memory `pageIndex` already loaded; (3) __privacy leak__ — plugin can't honor frontmatter audience / private user-keywords, exposing private page titles in recent-changes lists. Proposed: add `getRecentChanges({limit, since, includePrivate, username})` to `IPageProvider` and `PageManager`; each provider implements against its own data
-  - __Brainstormed 7 optimization candidates__ (memoize hasPermission/canAccess, per-action policy index, single role-resolve per session, pre-warm render cache on save, search-index audience denorm — already #626/#627/#628, lazy themeInfo path resolution, shared mock fixture). User picked top 3 to file
-  - __Filed #636__ — `[FEATURE] Memoize wikiContext.hasPermission / canAccess per request to avoid repeat policy evaluation`. Cache method results on the WikiContext instance keyed by `action` (hasPermission) or `action:pageName` (canAccess). Lifetime = request. Mirror on ParseContext. Caches the __promise__ to handle concurrent calls correctly. Eliminates redundant PolicyEvaluator iterations for handlers that check the same permission multiple times (wiki:If conditions, multi-step admin handlers)
-  - __Filed #637__ — `[FEATURE] Resolve user roles once per session, not per UserManager.hasPermission call`. `UserManager.hasPermission(username, action)` calls `resolveUserRoles(username)` and `provider.getUser(username)` on every invocation, even though the session middleware already resolved roles into `req.userContext.roles` at session-build time. Proposed: accept `string | UserContext` overload; callers with a resolved userContext pass it in; existing username-only callers (background jobs, tools) keep working. Complementary to #636 — that one cuts call count, this one cuts per-call cost
-  - __Filed #638__ — `[FEATURE] Extract shared createMockWikiContext fixture for WikiRoutes test files`. Maintenance lever. 19 test files currently each define their own slightly-different WikiContext mock factory. Every WikiContext API addition (#625, #630, #633) required ~17 mock-factory edits. Two specific bugs caught us during #625: closure-variable mismatch (`userContext` referenced as closure but only defined as a property), and inconsistent `hasPermission` defaults across files. Solution: shared `src/routes/__tests__/__fixtures__/createMockWikiContext.ts` with one canonical factory; test files import + use it
-  - __Captured discussion in `private/2026-05-03-temp-discussion.md`__ (gitignored — local working notes). Includes the full consumer map, the two-layer cache framing, the 7 optimization candidates with priority order, and pointers to what's filed where. Promote anything durable to `docs/` later; otherwise the temp file can be cleaned up after the optimizations are filed-or-declined
+  - **Mapped consumers of each Layer-2 cache** (the "Source-of-truth in-memory" caches from `CacheManager-Complete-Guide.md#provider-level-structural-caches`). For each cache (`FileSystemProvider.pageCache`, `VersioningFileProvider.pageIndex`, `LunrSearchProvider.documents/searchIndex`, ES cluster, `MarkupParser` parse-result cache, `ThemeManager` cache, `UserManager`/`RoleManager` records, `ConfigurationManager`/`PolicyManager`) — listed who reads it and whether through the canonical manager API or via direct provider reach. Identified two direct-reach exceptions worth tracking
+  - **Filed #634** — `[FEATURE] MediaManager.checkPrivatePageAccess reaches into provider.pageIndex directly — migrate to pageManager.getPageMetadata`. `src/managers/MediaManager.ts:411-418` casts `getCurrentPageProvider() as ProviderWithIndex` and reads `pageIndex.pages[uuid]` for `entry.location`/`entry.creator`. Couples MediaManager to `VersioningFileProvider`. Migration path: read `system-location` and `author` frontmatter via `pageManager.getPageMetadata(pageName)`, or potentially collapse the whole method to `wikiContext.canAccess('view')` if tier-0 semantics align
+  - **Filed #635** — `[FEATURE] RecentChangesPlugin reads data/page-index.json directly off disk — add pageManager.getRecentChanges() API`. `src/plugins/RecentChangesPlugin.ts:70-77, 193-196` reads the JSON file directly via `fs.readFile`. Three problems: (1) couples plugin to file-based providers; (2) bypasses the in-memory `pageIndex` already loaded; (3) **privacy leak** — plugin can't honor frontmatter audience / private user-keywords, exposing private page titles in recent-changes lists. Proposed: add `getRecentChanges({limit, since, includePrivate, username})` to `IPageProvider` and `PageManager`; each provider implements against its own data
+  - **Brainstormed 7 optimization candidates** (memoize hasPermission/canAccess, per-action policy index, single role-resolve per session, pre-warm render cache on save, search-index audience denorm — already #626/#627/#628, lazy themeInfo path resolution, shared mock fixture). User picked top 3 to file
+  - **Filed #636** — `[FEATURE] Memoize wikiContext.hasPermission / canAccess per request to avoid repeat policy evaluation`. Cache method results on the WikiContext instance keyed by `action` (hasPermission) or `action:pageName` (canAccess). Lifetime = request. Mirror on ParseContext. Caches the **promise** to handle concurrent calls correctly. Eliminates redundant PolicyEvaluator iterations for handlers that check the same permission multiple times (wiki:If conditions, multi-step admin handlers)
+  - **Filed #637** — `[FEATURE] Resolve user roles once per session, not per UserManager.hasPermission call`. `UserManager.hasPermission(username, action)` calls `resolveUserRoles(username)` and `provider.getUser(username)` on every invocation, even though the session middleware already resolved roles into `req.userContext.roles` at session-build time. Proposed: accept `string | UserContext` overload; callers with a resolved userContext pass it in; existing username-only callers (background jobs, tools) keep working. Complementary to #636 — that one cuts call count, this one cuts per-call cost
+  - **Filed #638** — `[FEATURE] Extract shared createMockWikiContext fixture for WikiRoutes test files`. Maintenance lever. 19 test files currently each define their own slightly-different WikiContext mock factory. Every WikiContext API addition (#625, #630, #633) required ~17 mock-factory edits. Two specific bugs caught us during #625: closure-variable mismatch (`userContext` referenced as closure but only defined as a property), and inconsistent `hasPermission` defaults across files. Solution: shared `src/routes/__tests__/__fixtures__/createMockWikiContext.ts` with one canonical factory; test files import + use it
+  - **Captured discussion in `private/2026-05-03-temp-discussion.md`** (gitignored — local working notes). Includes the full consumer map, the two-layer cache framing, the 7 optimization candidates with priority order, and pointers to what's filed where. Promote anything durable to `docs/` later; otherwise the temp file can be cleaned up after the optimizations are filed-or-declined
 - Testing:
   - No code changes; nothing to test
   - All filed issues link to relevant source line numbers and reference companion issues
@@ -774,10 +805,10 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: Refresh access-control + caching documentation to current code state (post-v3.6.0). New `Access-Control.md` operational guide. `Cache-System.md` folded into `CacheManager-Complete-Guide.md` + `CacheManager.md`. Updates to `WikiContext-Complete-Guide.md` and `Current-Rendering-Pipeline.md`
 - Current Issue: none directly (post-#625 documentation pass; cross-links several open issues #626-#633)
 - Work Done:
-  - __New__ `docs/architecture/Access-Control.md` (~370 lines) — operational guide for the four access methods (`hasRole` / `hasPermission` / `canAccess` / `getPrincipals`) across WikiContext, ParseContext, ApiContext. Covers: the four methods + static `userHasRole` helper, the two evaluation engines (UserManager → PolicyEvaluator for global, ACLManager 3-tier for per-page), the 3-tier ACL evaluator details (private user-keyword → frontmatter audience → global policies), the ESLint guard, common patterns (admin gate, multi-role, per-page, hot-path middleware, plugins, API guards, search-provider audience filter), anti-patterns, permissions catalog from `app-default-config.json`, per-request performance characteristics (in-memory cache hit vs cold-cache disk fallback), sibling open issues (#622, #626-#633)
-  - __Updated__ `docs/WikiContext-Complete-Guide.md` to v2.0.0 — added a full "Access-control methods" section with the four methods + static helper; new top-level "Lazy theme resolution (v3.6.0)" section explaining construction-time vs first-read split; rewrote Example 3 to use the new methods (was using inline `userContext.roles.includes('admin')` which is now ESLint-blocked); ACLManager integration section prefers `wikiContext.canAccess`; test counts updated (12 → 35 in `WikiContext.test.ts`); expanded performance table; cross-links to Access-Control.md; expanded Related Issues with #625/#609/#630/#633/#629/#631/#632
-  - __Updated__ `docs/architecture/Current-Rendering-Pipeline.md` — refreshed status header to 2026-05-03; added access-method gating to the request-flow diagram; component-status table gained 4 new rows (WikiContext access methods, lazy theme, ParseContext mirror, ESLint rule); new "Access-control gating" section showing where each check sits in the pipeline (route handler vs middleware vs plugin vs search); cross-link to Access-Control.md
-  - __Reorganized caching docs.__ Deleted `docs/architecture/Cache-System.md`. Folded content into `docs/managers/CacheManager-Complete-Guide.md` (now v2.0.0) and `docs/managers/CacheManager.md`
+  - **New** `docs/architecture/Access-Control.md` (~370 lines) — operational guide for the four access methods (`hasRole` / `hasPermission` / `canAccess` / `getPrincipals`) across WikiContext, ParseContext, ApiContext. Covers: the four methods + static `userHasRole` helper, the two evaluation engines (UserManager → PolicyEvaluator for global, ACLManager 3-tier for per-page), the 3-tier ACL evaluator details (private user-keyword → frontmatter audience → global policies), the ESLint guard, common patterns (admin gate, multi-role, per-page, hot-path middleware, plugins, API guards, search-provider audience filter), anti-patterns, permissions catalog from `app-default-config.json`, per-request performance characteristics (in-memory cache hit vs cold-cache disk fallback), sibling open issues (#622, #626-#633)
+  - **Updated** `docs/WikiContext-Complete-Guide.md` to v2.0.0 — added a full "Access-control methods" section with the four methods + static helper; new top-level "Lazy theme resolution (v3.6.0)" section explaining construction-time vs first-read split; rewrote Example 3 to use the new methods (was using inline `userContext.roles.includes('admin')` which is now ESLint-blocked); ACLManager integration section prefers `wikiContext.canAccess`; test counts updated (12 → 35 in `WikiContext.test.ts`); expanded performance table; cross-links to Access-Control.md; expanded Related Issues with #625/#609/#630/#633/#629/#631/#632
+  - **Updated** `docs/architecture/Current-Rendering-Pipeline.md` — refreshed status header to 2026-05-03; added access-method gating to the request-flow diagram; component-status table gained 4 new rows (WikiContext access methods, lazy theme, ParseContext mirror, ESLint rule); new "Access-control gating" section showing where each check sits in the pipeline (route handler vs middleware vs plugin vs search); cross-link to Access-Control.md
+  - **Reorganized caching docs.** Deleted `docs/architecture/Cache-System.md`. Folded content into `docs/managers/CacheManager-Complete-Guide.md` (now v2.0.0) and `docs/managers/CacheManager.md`
   - `CacheManager-Complete-Guide.md` updates: TOC expanded from 11 to 14 sections; new "Two cache layers in ngdpbase" section explicitly framing CacheManager-managed regions (TTL-based, opportunistic) vs provider-level structural caches (process-lifetime, write-through, source-of-truth); side-by-side comparison table; new "Admin API" section with `/api/admin/cache/stats` + `/api/admin/cache/clear[/:region]` response shapes and curl examples
   - New "Provider-level structural caches" section with full inventory: FileSystemProvider's pageCache/contentCache/uuidIndex/titleIndex; VersioningFileProvider's pageIndex (data/page-index.json); LunrSearchProvider documents/searchIndex (data/search-index/documents.json); ElasticsearchSearchProvider's ES cluster index; MarkupParser parse-result cache; engine-wide ThemeManager cache (#625); UserManager/RoleManager records; ConfigurationManager / PolicyManager — each with type, persistence, populate/invalidate semantics. ASCII diagram showing the two layers side by side. Module path `.js` → `.ts`
   - `CacheManager.md` (quick reference): added "Two cache layers" callout in Overview; new "Admin API" section with the three endpoints; "Related Documentation" expanded with cross-links to Access-Control.md, WikiContext-Complete-Guide.md, Current-Rendering-Pipeline.md; module path `.js` → `.ts`
@@ -802,15 +833,15 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: Fix #630 + #633 — `ApiContext.hasPermission` and `ParseContext.hasPermission` both delegate to canonical `UserManager.hasPermission` → `PolicyEvaluator` path. Closes the security-adjacent correctness siblings of #625
 - Current Issue: #630 (open, fix landed); #633 (open, fix landed)
 - Work Done:
-  - __Diagnosed both divergences.__ `ApiContext.hasPermission` (#630) read `ngdpbase.roles.definitions` directly from `ConfigurationManager`, missing anonymous/authenticated role expansion (`'anonymous'/'All'`, `'Authenticated'/'All'`), deny policies, resource patterns, and over-granting in deny-policy scenarios. `ParseContext.hasPermission` (#633) called `policyManager.checkPermission(...)` which __doesn't exist on the `PolicyManager` class__ — the local interface declared it but the actual class never implemented it. Calls threw `TypeError` at runtime; the fallback path read `userContext.permissions?.includes(...)` directly. Both paths bypassed `PolicyEvaluator`
-  - __Fix shape.__ Both contexts now delegate to `UserManager.hasPermission` (canonical PolicyEvaluator-backed path that `WikiContext.hasPermission` already uses post-#625). `ApiContext.hasPermission` and `requirePermission` are now async. `ParseContext.hasPermission` becomes single-arg async; the deprecated two-arg `hasPermission(permission, resource)` shape is gone — was dead code anyway because PolicyManager.checkPermission didn't exist
-  - __`canAccess(action)` added to ParseContext__ — for resource-aware checks. Synthesizes a minimal WikiContext-shape from ParseContext fields (pageName, originalContent, userContext, pageMetadata) and delegates to `ACLManager.checkPagePermissionWithContext`. Mirrors the `WikiContext.canAccess` shape from #625
-  - __WikiTagHandler updated.__ Local `WikiTagParseContext` interface updated for new method shapes. `evaluateCondition`'s `hasPermission:X` syntax now uses `context.canAccess(X)` so wiki:If permission checks evaluate against the current page's full 3-tier ACL.
-  - __`checkIncludePermission` rewritten__ to use `ACLManager.checkPagePermissionWithContext` for both anonymous and authenticated paths (replacing the broken `policyManager.checkPermission` call). Tier-0 / tier-1 of the included page are skipped because the function doesn't fetch the included page's content/metadata; falls through to tier-2 (PolicyEvaluator). Future enhancement could fetch the included page's metadata for full tier-0/1 evaluation. Removed the unused local `PolicyManager` interface from both `WikiTagHandler.ts` and `ParseContext.ts`
-  - __WikiEngine type tweak.__ ParseContext's local `WikiEngine` interface gained generic `getManager<T = unknown>(name: string): T | undefined` so manager-cast call sites work cleanly (`engine.getManager<UserManagerLike>('UserManager')`)
-  - __Production-side `await` updates.__ WikiRoutes.ts `apiUsersSearch`'s two ApiContext permission calls (`ctx.requirePermission('search-user')`, `ctx.hasPermission('user-read')`) now `await`
-  - __Test fixtures rewritten.__ `ApiContext.test.ts` was testing the ConfigurationManager-direct implementation (mocking `roles.definitions`); rewrote to test the contract (delegate to `UserManager.hasPermission`). All permission-check assertions are now async. `WikiTagHandler.test.ts` — `MockPolicyManager` replaced with `MockACLManager.checkPagePermissionWithContext`; `MockUserManager` gained a real `hasPermission` method so `ParseContext.hasPermission` delegation works in tests; "should prevent unauthorized includes" mocks ACLManager (was mocking PolicyManager)
-  - __Determinism verification.__ 3/3 consecutive full-suite vitest runs pass at 5152/5152. One transient `socket hang up` in `WikiRoutes.coverage10.test.ts > GET /media/keyword/nature` recovered on re-run — looked HTTP-flaky (supertest cold-start, probably #622-class), not introduced by this fix. tsc clean, eslint clean
+  - **Diagnosed both divergences.** `ApiContext.hasPermission` (#630) read `ngdpbase.roles.definitions` directly from `ConfigurationManager`, missing anonymous/authenticated role expansion (`'anonymous'/'All'`, `'Authenticated'/'All'`), deny policies, resource patterns, and over-granting in deny-policy scenarios. `ParseContext.hasPermission` (#633) called `policyManager.checkPermission(...)` which **doesn't exist on the `PolicyManager` class** — the local interface declared it but the actual class never implemented it. Calls threw `TypeError` at runtime; the fallback path read `userContext.permissions?.includes(...)` directly. Both paths bypassed `PolicyEvaluator`
+  - **Fix shape.** Both contexts now delegate to `UserManager.hasPermission` (canonical PolicyEvaluator-backed path that `WikiContext.hasPermission` already uses post-#625). `ApiContext.hasPermission` and `requirePermission` are now async. `ParseContext.hasPermission` becomes single-arg async; the deprecated two-arg `hasPermission(permission, resource)` shape is gone — was dead code anyway because PolicyManager.checkPermission didn't exist
+  - **`canAccess(action)` added to ParseContext** — for resource-aware checks. Synthesizes a minimal WikiContext-shape from ParseContext fields (pageName, originalContent, userContext, pageMetadata) and delegates to `ACLManager.checkPagePermissionWithContext`. Mirrors the `WikiContext.canAccess` shape from #625
+  - **WikiTagHandler updated.** Local `WikiTagParseContext` interface updated for new method shapes. `evaluateCondition`'s `hasPermission:X` syntax now uses `context.canAccess(X)` so wiki:If permission checks evaluate against the current page's full 3-tier ACL.
+  - **`checkIncludePermission` rewritten** to use `ACLManager.checkPagePermissionWithContext` for both anonymous and authenticated paths (replacing the broken `policyManager.checkPermission` call). Tier-0 / tier-1 of the included page are skipped because the function doesn't fetch the included page's content/metadata; falls through to tier-2 (PolicyEvaluator). Future enhancement could fetch the included page's metadata for full tier-0/1 evaluation. Removed the unused local `PolicyManager` interface from both `WikiTagHandler.ts` and `ParseContext.ts`
+  - **WikiEngine type tweak.** ParseContext's local `WikiEngine` interface gained generic `getManager<T = unknown>(name: string): T | undefined` so manager-cast call sites work cleanly (`engine.getManager<UserManagerLike>('UserManager')`)
+  - **Production-side `await` updates.** WikiRoutes.ts `apiUsersSearch`'s two ApiContext permission calls (`ctx.requirePermission('search-user')`, `ctx.hasPermission('user-read')`) now `await`
+  - **Test fixtures rewritten.** `ApiContext.test.ts` was testing the ConfigurationManager-direct implementation (mocking `roles.definitions`); rewrote to test the contract (delegate to `UserManager.hasPermission`). All permission-check assertions are now async. `WikiTagHandler.test.ts` — `MockPolicyManager` replaced with `MockACLManager.checkPagePermissionWithContext`; `MockUserManager` gained a real `hasPermission` method so `ParseContext.hasPermission` delegation works in tests; "should prevent unauthorized includes" mocks ACLManager (was mocking PolicyManager)
+  - **Determinism verification.** 3/3 consecutive full-suite vitest runs pass at 5152/5152. One transient `socket hang up` in `WikiRoutes.coverage10.test.ts > GET /media/keyword/nature` recovered on re-run — looked HTTP-flaky (supertest cold-start, probably #622-class), not introduced by this fix. tsc clean, eslint clean
 - Testing:
   - typecheck: clean
   - eslint: 0 errors
@@ -818,19 +849,19 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Commits: 85a0cae0 (`fix(#630, #633): ApiContext + ParseContext hasPermission delegate to UserManager`)
 - Files Modified:
   - src/context/ApiContext.ts (hasPermission + requirePermission async, delegate to UserManager)
-  - src/context/__tests__/ApiContext.test.ts (rewritten to test contract not implementation)
+  - src/context/**tests**/ApiContext.test.ts (rewritten to test contract not implementation)
   - src/parsers/context/ParseContext.ts (single-arg async hasPermission; new canAccess; generic getManager<T>; removed unused PolicyManager interface)
   - src/parsers/handlers/WikiTagHandler.ts (canAccess for hasPermission:X syntax; ACLManager-based checkIncludePermission; removed unused PolicyManager interface)
-  - src/parsers/handlers/__tests__/WikiTagHandler.test.ts (MockACLManager replaces MockPolicyManager; MockUserManager.hasPermission)
+  - src/parsers/handlers/**tests**/WikiTagHandler.test.ts (MockACLManager replaces MockPolicyManager; MockUserManager.hasPermission)
   - src/routes/WikiRoutes.ts (apiUsersSearch awaits ApiContext calls)
 
 ## 2026-05-03-01
 
 - Agent: Claude
-- Subject: Cut __v3.6.0__ release — #625 (WikiContext consolidation, all 8 steps) and #609 (test-isolation flake fix) shipped. Release pipeline ran clean for the first time since #625 work began
+- Subject: Cut **v3.6.0** release — #625 (WikiContext consolidation, all 8 steps) and #609 (test-isolation flake fix) shipped. Release pipeline ran clean for the first time since #625 work began
 - Current Issue: #625 (open, shipped in v3.6.0); #609 (open, shipped in v3.6.0)
 - Work Done:
-  - __`/semver minor` (3.5.4 → 3.6.0)__, full pipeline ran clean:
+  - **`/semver minor` (3.5.4 → 3.6.0)**, full pipeline ran clean:
     - Step 1: working tree clean, on master, in sync with origin
     - Step 2/3: 7 commits since v3.5.4 (2 features, 1 fix, 4 docs)
     - Step 4: `npm run build` clean; `npm test` 5153/5153 pass; `npm run test:e2e` 72/72 pass (chromium-maintenance suite end-to-end exercises admin auth, asset search, location plugin, footnotes, comments, navigation)
@@ -838,8 +869,8 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
     - Step 5a: `npm run test:baseline` — wrote `docs/performance/baseline-v3.6.0-2026-05-02.md` (3424.4 MB resident, 104 pages on disk, 10-iteration response-time samples for `/`, `/view/Welcome`, `/search?q=test`, `/login`)
     - Step 6: release commit 4f82f23c (`chore: release v3.6.0`), annotated tag `v3.6.0` created, both pushed to origin
     - Step 7: `gh release create v3.6.0 --generate-notes --notes-start-tag v3.5.4` → published at <https://github.com/jwilleke/ngdpbase/releases/tag/v3.6.0>
-  - __Sister-install propagation via `/othersites`__ — pulled v3.6.0, stopped, rebuilt, restarted on all 3 sister installs (fairways-base port 2121, ngdpbase-veg port 3333, ngdp-temp-builds/ngdpbase port 3001). Restarted jimstest (port 3000) on the new build. All 4 installs serving HTTP 302 (login redirect, expected unauth behavior). vitest on each: jimstest 5153/5153, fairways 5153/5153, ngdpbase-veg 5153/5153, ngdp-temp-builds 5152/5153 on first run (deterministic on re-run — looked like a transient #622-class cold-start race, not introduced by this release; second run: 5153/5153)
-  - __v3.6.0 ships:__
+  - **Sister-install propagation via `/othersites`** — pulled v3.6.0, stopped, rebuilt, restarted on all 3 sister installs (fairways-base port 2121, ngdpbase-veg port 3333, ngdp-temp-builds/ngdpbase port 3001). Restarted jimstest (port 3000) on the new build. All 4 installs serving HTTP 302 (login redirect, expected unauth behavior). vitest on each: jimstest 5153/5153, fairways 5153/5153, ngdpbase-veg 5153/5153, ngdp-temp-builds 5152/5153 on first run (deterministic on re-run — looked like a transient #622-class cold-start race, not introduced by this release; second run: 5153/5153)
+  - **v3.6.0 ships:**
     - `feat(#625)` phase 1 — WikiContext methods + static helper + ParseContext mirror + Categories A/B/D sweeps + ThemeManager cache (commit 8509e222)
     - `feat(#625)` phase 2 — Category C sweep (~80 sites) + ESLint guard + true lazy theme resolution (commit 37c4c6e6)
     - `fix(#609)` — `adminCreateOrganization` 403-test deterministic + handler Step 7 catch-up (commit 2d1460a6)
@@ -861,17 +892,17 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: Fix #609 — `adminCreateOrganization` 403-path test made deterministic + Step 7 catch-up. Suite now reliably green (5153/5153). Unblocks v3.6.0 release
 - Current Issue: #609 (open, fix landed); also closes the v3.6.0 gate
 - Work Done:
-  - __Root cause analysis.__ Test `WikiRoutes.coverage10.test.ts > POST /admin/organizations (adminCreateOrganization) > "returns 403 when user is not admin"` sets `mockUserContext.isAdmin = false` but the handler doesn't read `.isAdmin` (that field is broken — the original #625 trigger). Handler gates on `userManager.hasPermission(...)` which defaults to `true` from `beforeEach`. Without explicit override, the test could only pass via mock-state leakage from a prior test that set `hasPermission.mockResolvedValue(false)`. Order-dependent: passes in isolation only when nothing pollutes; fails in full-suite runs after a polluting test runs first
-  - __Test fix__ — added the missing `mockUserManager.hasPermission.mockResolvedValue(false)` to the failing test. Now deterministically exercises the 403 path. Mirrors the pattern used by every other "returns 403 when user lacks X permission" test in the same file (lines 571, 598, 616, 631, 675, 701, 715)
-  - __Handler migration (Step 7 catch-up)__ — `adminCreateOrganization` was missed by #625's Category C sweep because its variable was named `userContext` not `currentUser` (my Step 7 regex was `userManager.hasPermission(currentUser.username, ...)`). Migrated to `wikiContext.hasPermission('admin-system')` for consistency with the rest of WikiRoutes
-  - __Determinism verification.__ Ran the full vitest suite 5 times consecutively. Result: 5/5 deterministic green at 5153/5153. First time the full suite has been reliably clean in this session — every other passing run had the 1 #609 flake firing
+  - **Root cause analysis.** Test `WikiRoutes.coverage10.test.ts > POST /admin/organizations (adminCreateOrganization) > "returns 403 when user is not admin"` sets `mockUserContext.isAdmin = false` but the handler doesn't read `.isAdmin` (that field is broken — the original #625 trigger). Handler gates on `userManager.hasPermission(...)` which defaults to `true` from `beforeEach`. Without explicit override, the test could only pass via mock-state leakage from a prior test that set `hasPermission.mockResolvedValue(false)`. Order-dependent: passes in isolation only when nothing pollutes; fails in full-suite runs after a polluting test runs first
+  - **Test fix** — added the missing `mockUserManager.hasPermission.mockResolvedValue(false)` to the failing test. Now deterministically exercises the 403 path. Mirrors the pattern used by every other "returns 403 when user lacks X permission" test in the same file (lines 571, 598, 616, 631, 675, 701, 715)
+  - **Handler migration (Step 7 catch-up)** — `adminCreateOrganization` was missed by #625's Category C sweep because its variable was named `userContext` not `currentUser` (my Step 7 regex was `userManager.hasPermission(currentUser.username, ...)`). Migrated to `wikiContext.hasPermission('admin-system')` for consistency with the rest of WikiRoutes
+  - **Determinism verification.** Ran the full vitest suite 5 times consecutively. Result: 5/5 deterministic green at 5153/5153. First time the full suite has been reliably clean in this session — every other passing run had the 1 #609 flake firing
 - Testing:
   - typecheck: clean
-  - vitest: __5153/5153 pass, 5/5 consecutive runs deterministic green__
+  - vitest: **5153/5153 pass, 5/5 consecutive runs deterministic green**
 - Commits: 2d1460a6 (`fix(#609): make adminCreateOrganization 403-test deterministic + Step 7 catch-up`)
 - Files Modified:
   - src/routes/WikiRoutes.ts (adminCreateOrganization migrated to wikiContext.hasPermission)
-  - src/routes/__tests__/WikiRoutes.coverage10.test.ts (explicit hasPermission mock in the 403-path test)
+  - src/routes/**tests**/WikiRoutes.coverage10.test.ts (explicit hasPermission mock in the 403-path test)
 
 ## 2026-05-02-08
 
@@ -882,7 +913,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - Pushed master (commits 37c4c6e6 + e4aa9ff3 from session 07) to origin
   - Propagated to all 3 sister installs via `/othersites`: `git pull && server.sh stop && npm run build && server.sh start` on fairways-base (port 2121), ngdpbase-veg (port 3333), ngdp-temp-builds/ngdpbase (port 3001). All 4 installs (jimstest 3000 + the three sisters) responding HTTP 302 (login redirect, expected unauth behavior). vitest 5152/5153 pass on every install — same identical result, same single failure (#609's `coverage10 > adminCreateOrganization` flake). Determinism across installs confirms it's order-dependent within a vitest run, not environment-specific
   - Playwright E2E: 72/72 pass on jimstest (chromium-maintenance suite end-to-end exercises admin auth, asset search, location plugin, footnotes, comments, navigation)
-  - __Attempted `/semver minor` (3.5.4 → 3.6.0).__ Stopped at Step 4 (test gate) because of the same #609 flake. The flake is pre-existing on master (verified via `git stash` against the previous tag), tracked, and not a regression — but the semver skill's "must pass" rule is strict. v3.6.0 release deferred pending decision on whether to release with the flake noted (similar to #622's band-aided release pattern) or wait for #609 to be properly fixed
+  - **Attempted `/semver minor` (3.5.4 → 3.6.0).** Stopped at Step 4 (test gate) because of the same #609 flake. The flake is pre-existing on master (verified via `git stash` against the previous tag), tracked, and not a regression — but the semver skill's "must pass" rule is strict. v3.6.0 release deferred pending decision on whether to release with the flake noted (similar to #622's band-aided release pattern) or wait for #609 to be properly fixed
   - Confirmed #609 status post-#625: same single test fails deterministically in full-suite runs across all 4 installs at master tip; passes in isolation. #625's WikiContext consolidation didn't introduce or fix it. Detailed comment on #609 with the suggested `mockUserManager.hasPermission` reset in `beforeEach` for the `POST /admin/organizations` describe block
 - Testing:
   - typecheck: clean
@@ -895,19 +926,19 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 ## 2026-05-02-07
 
 - Agent: Claude
-- Subject: #625 phase 2 (final) — Category C sweep (~80 sites) + ESLint guard + true lazy theme resolution. __All 8 planned steps complete.__ Reopened #609 (sibling test-isolation flake in coverage10).
+- Subject: #625 phase 2 (final) — Category C sweep (~80 sites) + ESLint guard + true lazy theme resolution. **All 8 planned steps complete.** Reopened #609 (sibling test-isolation flake in coverage10).
 - Current Issue: #625 (open, all 8 steps landed); reopened #609
 - Work Done:
-  - __Step 7 — Category C sweep (~80 sites in `WikiRoutes.ts`).__ Migrated `userManager.hasPermission(currentUser.username, 'X')` to `wikiContext.hasPermission('X')`. Where handlers needed a wikiContext built, replaced `const currentUser = req.userContext;` with `const wikiContext = this.createWikiContext(req); const currentUser = wikiContext.userContext;`. Unused `userManager` declarations removed where the swap left them dead. Audit handlers (`adminAuditLogs`, `adminAuditLogsApi`, `adminAuditLogDetails`, `adminAuditExport`) given a wikiContext alongside their existing `userManager.getCurrentUser` calls. `adminEvents` (sync handler) migrated.
-  - __Residual multi-role checks (7 sites).__ Picked up multi-role chained `.includes(...)` boolean expressions missed in prior sweeps: `checkPrivatePageAccess`, `adminAttachments`, `adminAttachmentsApi`, `assetSearch`, `browseAttachmentsApi`, `adminDeleteAttachmentFromBrowser`. All collapsed to `wikiContext.hasRole('admin', 'editor', 'contributor')` style calls
-  - __True lazy theme resolution.__ Step 1's `getThemeManager` cache wasn't enough on its own — `createWikiContext` still called `configManager.getProperty('ngdpbase.theme.active')` per request. After Category C made `createWikiContext` ubiquitous (called in nearly every handler), tests using `mockConfigManager.getProperty.mockImplementationOnce` queued for keyword/consolidation checks broke because `createWikiContext` consumed the queued value for theme lookup. Fix: `WikiContext.activeTheme` and `WikiContext.themeInfo` are now lazy getters that resolve on first access and cache on the instance. Permission-only callers (most callers post-#625) never trigger `ConfigurationManager.getProperty` or `ThemeManager` construction. `createWikiContext` simplified to just `new WikiContext(engine, {req fields})`
-  - __Step 8 — ESLint rule (`no-restricted-syntax`) preventing reintroduction.__ Added three AST selectors in `eslint.config.mjs`:
+  - **Step 7 — Category C sweep (~80 sites in `WikiRoutes.ts`).** Migrated `userManager.hasPermission(currentUser.username, 'X')` to `wikiContext.hasPermission('X')`. Where handlers needed a wikiContext built, replaced `const currentUser = req.userContext;` with `const wikiContext = this.createWikiContext(req); const currentUser = wikiContext.userContext;`. Unused `userManager` declarations removed where the swap left them dead. Audit handlers (`adminAuditLogs`, `adminAuditLogsApi`, `adminAuditLogDetails`, `adminAuditExport`) given a wikiContext alongside their existing `userManager.getCurrentUser` calls. `adminEvents` (sync handler) migrated.
+  - **Residual multi-role checks (7 sites).** Picked up multi-role chained `.includes(...)` boolean expressions missed in prior sweeps: `checkPrivatePageAccess`, `adminAttachments`, `adminAttachmentsApi`, `assetSearch`, `browseAttachmentsApi`, `adminDeleteAttachmentFromBrowser`. All collapsed to `wikiContext.hasRole('admin', 'editor', 'contributor')` style calls
+  - **True lazy theme resolution.** Step 1's `getThemeManager` cache wasn't enough on its own — `createWikiContext` still called `configManager.getProperty('ngdpbase.theme.active')` per request. After Category C made `createWikiContext` ubiquitous (called in nearly every handler), tests using `mockConfigManager.getProperty.mockImplementationOnce` queued for keyword/consolidation checks broke because `createWikiContext` consumed the queued value for theme lookup. Fix: `WikiContext.activeTheme` and `WikiContext.themeInfo` are now lazy getters that resolve on first access and cache on the instance. Permission-only callers (most callers post-#625) never trigger `ConfigurationManager.getProperty` or `ThemeManager` construction. `createWikiContext` simplified to just `new WikiContext(engine, {req fields})`
+  - **Step 8 — ESLint rule (`no-restricted-syntax`) preventing reintroduction.** Added three AST selectors in `eslint.config.mjs`:
     - `MemberExpression[property.name='isAdmin']` — catches `.isAdmin` reads (the original broken pattern)
     - `CallExpression` matching `*.roles.includes(...)` — catches role-name permission patterns
     - Same for `.roles?.includes(...)` (optional-chaining variant)
     Each violation's message points to the canonical migration: `wikiContext.hasRole(...)` / `parseContext.hasRole(...)` / `WikiContext.userHasRole(userContext, ...)`. Rule disabled in test files (legitimate fixture mocks). Two `eslint-disable-next-line` annotations: `ApiContext.ts:hasRole` (canonical implementation) and `WikiRoutes.ts:adminUpdateUser` (form-data validation, not a permission check on the caller)
-  - __Test fixture migration.__ 17 `WikiRoutes` test files: WikiContext mock factories now declare `const userContext = ...` (was missing — closure references in mocked `hasPermission` were undefined) and the mocked `hasPermission` delegates to `mockUserManager.hasPermission` so existing test setups (`mockUserManager.hasPermission.mockResolvedValue(false)`) continue to work without per-test refactors. `WikiRoutes.assetSearch.test.ts` — `createWikiContext` stub forwards userContext from request. `WikiContext.test.ts` — `toParseOptions` test updated for lazy `themeInfo`
-  - __Reopened #609.__ Pre-existing test-isolation flake `coverage10.test.ts > adminCreateOrganization > "returns 403 when user is not admin"` (passes in isolation, fails in full suite). Same class as #609's original `coverage13` flake (mock-state leakage between tests) but in a different file with a different mock (`mockUserManager.hasPermission` not properly reset). Detailed comment explains the symptom and the suggested `beforeEach` reset
+  - **Test fixture migration.** 17 `WikiRoutes` test files: WikiContext mock factories now declare `const userContext = ...` (was missing — closure references in mocked `hasPermission` were undefined) and the mocked `hasPermission` delegates to `mockUserManager.hasPermission` so existing test setups (`mockUserManager.hasPermission.mockResolvedValue(false)`) continue to work without per-test refactors. `WikiRoutes.assetSearch.test.ts` — `createWikiContext` stub forwards userContext from request. `WikiContext.test.ts` — `toParseOptions` test updated for lazy `themeInfo`
+  - **Reopened #609.** Pre-existing test-isolation flake `coverage10.test.ts > adminCreateOrganization > "returns 403 when user is not admin"` (passes in isolation, fails in full suite). Same class as #609's original `coverage13` flake (mock-state leakage between tests) but in a different file with a different mock (`mockUserManager.hasPermission` not properly reset). Detailed comment explains the symptom and the suggested `beforeEach` reset
 - Testing:
   - typecheck: clean
   - eslint: 0 errors, 139 warnings (all pre-existing)
@@ -917,11 +948,11 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - eslint.config.mjs (no-restricted-syntax rule + test-file exemption)
   - src/context/ApiContext.ts (eslint-disable on canonical hasRole)
   - src/context/WikiContext.ts (lazy activeTheme/themeInfo getters)
-  - src/context/__tests__/WikiContext.test.ts (toParseOptions expectation update)
+  - src/context/**tests**/WikiContext.test.ts (toParseOptions expectation update)
   - src/routes/WikiRoutes.ts (~80 hasPermission migrations + 7 multi-role sweeps + createWikiContext simplification)
-  - src/routes/__tests__/WikiRoutes.assetSearch.test.ts (createWikiContext stub forwards userContext)
-  - src/routes/__tests__/WikiRoutes.coverage{,2-16}.test.ts (17 files: mock factory declares userContext + hasPermission delegates to mockUserManager)
-  - src/routes/__tests__/routes.test.ts (same mock factory update)
+  - src/routes/**tests**/WikiRoutes.assetSearch.test.ts (createWikiContext stub forwards userContext)
+  - src/routes/**tests**/WikiRoutes.coverage{,2-16}.test.ts (17 files: mock factory declares userContext + hasPermission delegates to mockUserManager)
+  - src/routes/**tests**/routes.test.ts (same mock factory update)
 
 ## 2026-05-02-06
 
@@ -929,23 +960,23 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: #625 phase 1 — `WikiContext.hasRole/hasPermission/canAccess/getPrincipals` + sweep Categories A, B, D + `ThemeManager` lazy cache. 6 of 8 planned steps done
 - Current Issue: #625 (open, ~75% complete); siblings filed during planning: #626, #627, #628, #629, #630, #631, #632, #633
 - Work Done:
-  - __Planning__ — categorised the ~15 inline `userContext.roles.includes('admin')` consumer sites listed in #625 into A (have WikiContext), B (need to build one), C (~26 `userManager.hasPermission(currentUser.username, ...)` sites that also migrate), D (parser-pipeline sites). Discovered `ParseContext` has a live engine reference at `:142` — what looked like an architectural fork is a one-line API mirror. Surfaced six sibling issues that don't belong in #625's scope but came out of the audit
-  - __Step 1 — Lazy theme resolution.__ Added a single-entry cached factory `getThemeManager(activeTheme, themesDir)` to `src/managers/ThemeManager.ts`. Three call sites in `WikiRoutes.ts` (`createWikiContext`, `getCommonTemplateData`, `adminSettings`) migrated from `new ThemeManager(...)` to `getThemeManager(...)`. Cache key includes `themesDir` so multi-instance setups don't collide; theme-name normalisation moved up so empty/falsy input doesn't create a separate cache entry. `ThemeManager.cache.test.ts` covers cache hit, cache miss on theme/dir change, explicit clear, normalisation
-  - __Step 2 — WikiContext methods.__ Added `hasRole(...names)`, `hasPermission(action)`, `canAccess(action)`, `getPrincipals()` instance methods to `src/context/WikiContext.ts` plus a static `WikiContext.userHasRole(userContext, ...names)` helper for hot-path callers (maintenance middleware, `/metrics`, parser-pipeline plugins) that don't carry a full WikiContext. The static helper is the canonical migration target wherever the lint rule (Step 8) flags `userContext.roles.includes(...)` and constructing a WikiContext is wrong (per-request middleware) or impossible (PluginContext duck-types). Instance `hasRole` delegates to the static. Tests cover 22 assertions across the four methods
-  - __Step 3 — ParseContext mirror.__ Extended `hasRole(role)` to `hasRole(...names)` (backward-compatible — single-arg form still works); added `getPrincipals()`. Skipped `canAccess` (no Category D consumer needs it; ACLManager's strict local WikiContext shape would require synthesising a fake context) and left existing `hasPermission(permission, resource)` alone — its config-direct evaluation path diverges from the canonical `UserManager.hasPermission` → `PolicyEvaluator` route, sibling to #630 (ApiContext) and now tracked as __#633__. New `ParseContext.test.ts` covers 12 assertions
-  - __Step 4 — Category A sweep (5 sites).__ `WikiRoutes.ts:2153` (editPage author-lock), `WikiRoutes.ts:2564` (savePage author-lock), `WikiRoutes.ts:7249-50` (asset search redundant role/username unpack), `MediaManager.ts:421-424` (`checkPrivatePageAccess`), `LunrSearchProvider.ts:399-402` and `ElasticsearchSearchProvider.ts:677-687` (search-time privacy filters) — all swapped onto `wikiContext.hasRole(...)` / `wikiContext.getPrincipals()`. `SearchWikiContext` duck-type in `BaseSearchProvider.ts` extended with optional `hasRole?` / `getPrincipals?` so providers can call the methods without casting. Provider test fixtures (`LunrSearchProvider.privateFilter.test.ts` admin/non-creator/etc. WikiContext literals + `ElasticsearchSearchProvider.test.ts` audience filter) updated to expose the methods. `ElasticsearchSearchProvider._buildPrivacyFilter` collapsed from 6 lines to 1
-  - __Step 5 — Category B sweep (6 sites).__ `app.ts:378/:387/:409` (maintenance middleware admin gate, maintenance template `isAdmin` field, `/metrics` admin check) — all use `WikiContext.userHasRole(req.userContext, 'admin')` so the per-request middleware path doesn't pay for a full WikiContext construction. `WikiRoutes.ts:4476/:4661/:7144` (deleteComment, deleteFootnote, browseAttachments) — all use `this.createWikiContext(req)` + `wikiContext.hasRole(...)`. `browseAttachments` multi-role check collapsed from a 4-line chained `.includes()` boolean to `wikiContext.hasRole('admin', 'editor', 'contributor')`. Pre-empted by the Step 1 lazy theme refactor — without it the maintenance middleware would have paid the fs-I/O cost on every request
-  - __Step 6 — Category D sweep (4 plugin/variable sites).__ `CommentsPlugin.ts:85`, `FootnotesPlugin.ts:150-152` (renderFootnoteListHtml — both `isEditor` multi-role and `isAdmin`), `FootnotesPlugin.ts:273-274` (plugin execute), `ConfigAccessorPlugin.ts:1714` (authmethods admin gate) — all use `WikiContext.userHasRole(...)`. `VariableManager.ts:138` (`${userroles}` variable) deliberately left alone — it exposes role names as display data, not a permission check; the planned ESLint rule (Step 8) should match `.includes(...)` patterns, not bare `.roles` reads
-  - __Test fixture migration.__ 17 `WikiRoutes.coverage*.test.ts` + `WikiRoutes.authorLock.test.ts` + `WikiRoutes.coverage.test.ts` + `routes.test.ts` mocks extended with `hasRole`/`hasPermission`/`canAccess`/`getPrincipals` that derive from the closured `userContext` (so admin-path tests still flip on roles correctly). Without this, the Step 4/5/6 swaps would crash route tests with `wikiContext.hasRole is not a function` against the minimal duck-type mocks the suite already had
-  - __Sibling issues filed during planning__ (out of #625's scope, all linked from the issue body):
-    - __#626__ — LunrSearchProvider ignores frontmatter `audience` (drift from ES; concrete bug)
-    - __#627__ — Lunr does not evaluate `AuthorLocked` (open design question A vs B captured)
-    - __#628__ — ES does not evaluate `AuthorLocked` (matched pair to #627; design call should be made jointly)
-    - __#629__ — Collapse ParseContext's user/page-data redundancy by holding a WikiContext reference instead of duplicating fields
-    - __#630__ — ApiContext.hasPermission diverges from UserManager.hasPermission (reads `ngdpbase.roles.definitions` directly; bypasses anonymous/authenticated role expansion, deny policies, resource patterns). Over-grants in the deny-policy case
-    - __#631__ — Service / non-request principal model (`WikiContext.system()` + `WikiContext.forUser(username)` factories for background jobs / schedulers / async writers)
-    - __#632__ — Migrate the 3 remaining callers off the deprecated 4-arg `aclManager.checkPagePermission` (LeftMenu / Footer / adminDashboard) to `checkPagePermissionWithContext` so the deprecated method can be deleted
-    - __#633__ — ParseContext.hasPermission divergence (parallel to #630; uses `PolicyManager.checkPermission` then falls back to `userContext.permissions?.includes(...)`)
+  - **Planning** — categorised the ~15 inline `userContext.roles.includes('admin')` consumer sites listed in #625 into A (have WikiContext), B (need to build one), C (~26 `userManager.hasPermission(currentUser.username, ...)` sites that also migrate), D (parser-pipeline sites). Discovered `ParseContext` has a live engine reference at `:142` — what looked like an architectural fork is a one-line API mirror. Surfaced six sibling issues that don't belong in #625's scope but came out of the audit
+  - **Step 1 — Lazy theme resolution.** Added a single-entry cached factory `getThemeManager(activeTheme, themesDir)` to `src/managers/ThemeManager.ts`. Three call sites in `WikiRoutes.ts` (`createWikiContext`, `getCommonTemplateData`, `adminSettings`) migrated from `new ThemeManager(...)` to `getThemeManager(...)`. Cache key includes `themesDir` so multi-instance setups don't collide; theme-name normalisation moved up so empty/falsy input doesn't create a separate cache entry. `ThemeManager.cache.test.ts` covers cache hit, cache miss on theme/dir change, explicit clear, normalisation
+  - **Step 2 — WikiContext methods.** Added `hasRole(...names)`, `hasPermission(action)`, `canAccess(action)`, `getPrincipals()` instance methods to `src/context/WikiContext.ts` plus a static `WikiContext.userHasRole(userContext, ...names)` helper for hot-path callers (maintenance middleware, `/metrics`, parser-pipeline plugins) that don't carry a full WikiContext. The static helper is the canonical migration target wherever the lint rule (Step 8) flags `userContext.roles.includes(...)` and constructing a WikiContext is wrong (per-request middleware) or impossible (PluginContext duck-types). Instance `hasRole` delegates to the static. Tests cover 22 assertions across the four methods
+  - **Step 3 — ParseContext mirror.** Extended `hasRole(role)` to `hasRole(...names)` (backward-compatible — single-arg form still works); added `getPrincipals()`. Skipped `canAccess` (no Category D consumer needs it; ACLManager's strict local WikiContext shape would require synthesising a fake context) and left existing `hasPermission(permission, resource)` alone — its config-direct evaluation path diverges from the canonical `UserManager.hasPermission` → `PolicyEvaluator` route, sibling to #630 (ApiContext) and now tracked as **#633**. New `ParseContext.test.ts` covers 12 assertions
+  - **Step 4 — Category A sweep (5 sites).** `WikiRoutes.ts:2153` (editPage author-lock), `WikiRoutes.ts:2564` (savePage author-lock), `WikiRoutes.ts:7249-50` (asset search redundant role/username unpack), `MediaManager.ts:421-424` (`checkPrivatePageAccess`), `LunrSearchProvider.ts:399-402` and `ElasticsearchSearchProvider.ts:677-687` (search-time privacy filters) — all swapped onto `wikiContext.hasRole(...)` / `wikiContext.getPrincipals()`. `SearchWikiContext` duck-type in `BaseSearchProvider.ts` extended with optional `hasRole?` / `getPrincipals?` so providers can call the methods without casting. Provider test fixtures (`LunrSearchProvider.privateFilter.test.ts` admin/non-creator/etc. WikiContext literals + `ElasticsearchSearchProvider.test.ts` audience filter) updated to expose the methods. `ElasticsearchSearchProvider._buildPrivacyFilter` collapsed from 6 lines to 1
+  - **Step 5 — Category B sweep (6 sites).** `app.ts:378/:387/:409` (maintenance middleware admin gate, maintenance template `isAdmin` field, `/metrics` admin check) — all use `WikiContext.userHasRole(req.userContext, 'admin')` so the per-request middleware path doesn't pay for a full WikiContext construction. `WikiRoutes.ts:4476/:4661/:7144` (deleteComment, deleteFootnote, browseAttachments) — all use `this.createWikiContext(req)` + `wikiContext.hasRole(...)`. `browseAttachments` multi-role check collapsed from a 4-line chained `.includes()` boolean to `wikiContext.hasRole('admin', 'editor', 'contributor')`. Pre-empted by the Step 1 lazy theme refactor — without it the maintenance middleware would have paid the fs-I/O cost on every request
+  - **Step 6 — Category D sweep (4 plugin/variable sites).** `CommentsPlugin.ts:85`, `FootnotesPlugin.ts:150-152` (renderFootnoteListHtml — both `isEditor` multi-role and `isAdmin`), `FootnotesPlugin.ts:273-274` (plugin execute), `ConfigAccessorPlugin.ts:1714` (authmethods admin gate) — all use `WikiContext.userHasRole(...)`. `VariableManager.ts:138` (`${userroles}` variable) deliberately left alone — it exposes role names as display data, not a permission check; the planned ESLint rule (Step 8) should match `.includes(...)` patterns, not bare `.roles` reads
+  - **Test fixture migration.** 17 `WikiRoutes.coverage*.test.ts` + `WikiRoutes.authorLock.test.ts` + `WikiRoutes.coverage.test.ts` + `routes.test.ts` mocks extended with `hasRole`/`hasPermission`/`canAccess`/`getPrincipals` that derive from the closured `userContext` (so admin-path tests still flip on roles correctly). Without this, the Step 4/5/6 swaps would crash route tests with `wikiContext.hasRole is not a function` against the minimal duck-type mocks the suite already had
+  - **Sibling issues filed during planning** (out of #625's scope, all linked from the issue body):
+    - **#626** — LunrSearchProvider ignores frontmatter `audience` (drift from ES; concrete bug)
+    - **#627** — Lunr does not evaluate `AuthorLocked` (open design question A vs B captured)
+    - **#628** — ES does not evaluate `AuthorLocked` (matched pair to #627; design call should be made jointly)
+    - **#629** — Collapse ParseContext's user/page-data redundancy by holding a WikiContext reference instead of duplicating fields
+    - **#630** — ApiContext.hasPermission diverges from UserManager.hasPermission (reads `ngdpbase.roles.definitions` directly; bypasses anonymous/authenticated role expansion, deny policies, resource patterns). Over-grants in the deny-policy case
+    - **#631** — Service / non-request principal model (`WikiContext.system()` + `WikiContext.forUser(username)` factories for background jobs / schedulers / async writers)
+    - **#632** — Migrate the 3 remaining callers off the deprecated 4-arg `aclManager.checkPagePermission` (LeftMenu / Footer / adminDashboard) to `checkPagePermissionWithContext` so the deprecated method can be deleted
+    - **#633** — ParseContext.hasPermission divergence (parallel to #630; uses `PolicyManager.checkPermission` then falls back to `userContext.permissions?.includes(...)`)
 - Testing:
   - typecheck: clean
   - vitest: 5152/5153 pass (196 files). The 1 remaining failure is pre-existing on master (`coverage10.test.ts > adminCreateOrganization > returns 403 when user is not admin` — flaky in full-suite runs only; passes when run in isolation)
@@ -961,11 +992,11 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - src/routes/WikiRoutes.ts (Step 1 ThemeManager imports + Step 4 + Step 5 sweeps)
   - src/app.ts (maintenance middleware + /metrics use WikiContext.userHasRole)
   - src/plugins/CommentsPlugin.ts, src/plugins/FootnotesPlugin.ts, src/plugins/ConfigAccessorPlugin.ts (Category D)
-  - src/context/__tests__/WikiContext.test.ts (22 new assertions across 4 methods + static)
-  - src/parsers/context/__tests__/ParseContext.test.ts (new file, 12 tests)
-  - src/managers/__tests__/ThemeManager.cache.test.ts (new file, 6 tests)
-  - src/providers/__tests__/LunrSearchProvider.privateFilter.test.ts, src/providers/__tests__/ElasticsearchSearchProvider.test.ts (fixture extension)
-  - src/routes/__tests__/WikiRoutes.coverage{2-16}.test.ts (15 files), src/routes/__tests__/WikiRoutes.authorLock.test.ts, src/routes/__tests__/WikiRoutes.coverage.test.ts, src/routes/__tests__/routes.test.ts (mock WikiContext extension)
+  - src/context/**tests**/WikiContext.test.ts (22 new assertions across 4 methods + static)
+  - src/parsers/context/**tests**/ParseContext.test.ts (new file, 12 tests)
+  - src/managers/**tests**/ThemeManager.cache.test.ts (new file, 6 tests)
+  - src/providers/**tests**/LunrSearchProvider.privateFilter.test.ts, src/providers/**tests**/ElasticsearchSearchProvider.test.ts (fixture extension)
+  - src/routes/**tests**/WikiRoutes.coverage{2-16}.test.ts (15 files), src/routes/**tests**/WikiRoutes.authorLock.test.ts, src/routes/**tests**/WikiRoutes.coverage.test.ts, src/routes/**tests**/routes.test.ts (mock WikiContext extension)
 
 ## 2026-05-02-05
 
@@ -973,10 +1004,10 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: Bug bash — #622 (vitest flake band-aid) + #623 (Back to Dashboard consistency) + #624 (/admin/organizations rewire) → v3.5.2
 - Current Issue: #622 (open, band-aid landed); #623 (closed); #624 (closed)
 - Work Done:
-  - __#622__ — Investigated the recurring `WikiRoutes.coverage3.test.ts > "returns 401 when user is not authenticated"` 20s-timeout flake. Confirmed it's parallel-pool startup contention, not a test-logic bug: the test passes in ~290ms when its file runs in isolation; ran the full suite 5x cold, run 1 hit the flake (21s total, one test consuming the full 20s timeout), runs 2-5 settled inside 10s deterministically. Band-aid: bumped `testTimeout` 20000 → 30000 in `vitest.config.ts` with a comment pointing at the issue. Restores deterministic CI signal without disabling tests. Issue stays open for proper investigation (likely vitest worker-pool / Node module-load behavior — candidates worth trying are `pool: 'forks'` vs `'threads'`, `maxWorkers: 4`).
-  - __#623__ — Standardized the back-navigation button across all 23 non-dashboard admin pages. 17 already had the canonical `Back to Dashboard` button; 6 didn't. Updated `admin-addons`/`admin-backup`/`admin-calendar`/`admin-journal` (relabelled "Admin" → "Back to Dashboard" and bumped `btn-sm` → `btn-secondary` for size consistency); `admin-diff` (added button alongside the existing breadcrumb); `admin-user-edit` (added "Back to Dashboard" alongside the existing "Back to Users" parent-nav button)
-  - __#624 backend__ — Rewired `/admin/organizations` from phantom `SchemaManager` methods onto `OrganizationManager` (the canonical store since #617). Five admin route handlers (list/create/read/update/delete) and the `/schema/organization/:identifier` endpoint all swapped; hardcoded fallback in the list view removed. New `findOrganizationByName` route helper iterates `list()` and matches by lowercased `name`. New `IOrganizationManager` interface; `ISchemaManager` lost its phantom org methods; `engine.getManager('OrganizationManager')` is now typed
-  - __#624 frontend__ — `admin-organizations.ejs`: replaced the Edit modal placeholder paragraph with the full set of fields mirroring `createOrganizationModal` (with `editOrg*` IDs and a separate `editContactPointsContainer`); replaced the `editOrganization()` console.log stub with a real handler that reads the org JSON-LD from the button's `data-org`, populates every field, and shows the modal; replaced the `deleteOrganization()` console.log stub with a real DELETE call; added an `editOrganizationForm` submit handler that builds the JSON-LD patch (same shaping rules as create) and PUTs to the rewired route
+  - **#622** — Investigated the recurring `WikiRoutes.coverage3.test.ts > "returns 401 when user is not authenticated"` 20s-timeout flake. Confirmed it's parallel-pool startup contention, not a test-logic bug: the test passes in ~290ms when its file runs in isolation; ran the full suite 5x cold, run 1 hit the flake (21s total, one test consuming the full 20s timeout), runs 2-5 settled inside 10s deterministically. Band-aid: bumped `testTimeout` 20000 → 30000 in `vitest.config.ts` with a comment pointing at the issue. Restores deterministic CI signal without disabling tests. Issue stays open for proper investigation (likely vitest worker-pool / Node module-load behavior — candidates worth trying are `pool: 'forks'` vs `'threads'`, `maxWorkers: 4`).
+  - **#623** — Standardized the back-navigation button across all 23 non-dashboard admin pages. 17 already had the canonical `Back to Dashboard` button; 6 didn't. Updated `admin-addons`/`admin-backup`/`admin-calendar`/`admin-journal` (relabelled "Admin" → "Back to Dashboard" and bumped `btn-sm` → `btn-secondary` for size consistency); `admin-diff` (added button alongside the existing breadcrumb); `admin-user-edit` (added "Back to Dashboard" alongside the existing "Back to Users" parent-nav button)
+  - **#624 backend** — Rewired `/admin/organizations` from phantom `SchemaManager` methods onto `OrganizationManager` (the canonical store since #617). Five admin route handlers (list/create/read/update/delete) and the `/schema/organization/:identifier` endpoint all swapped; hardcoded fallback in the list view removed. New `findOrganizationByName` route helper iterates `list()` and matches by lowercased `name`. New `IOrganizationManager` interface; `ISchemaManager` lost its phantom org methods; `engine.getManager('OrganizationManager')` is now typed
+  - **#624 frontend** — `admin-organizations.ejs`: replaced the Edit modal placeholder paragraph with the full set of fields mirroring `createOrganizationModal` (with `editOrg*` IDs and a separate `editContactPointsContainer`); replaced the `editOrganization()` console.log stub with a real handler that reads the org JSON-LD from the button's `data-org`, populates every field, and shows the modal; replaced the `deleteOrganization()` console.log stub with a real DELETE call; added an `editOrganizationForm` submit handler that builds the JSON-LD patch (same shaping rules as create) and PUTs to the rewired route
   - Tests: `WikiRoutes.coverage10.test.ts` and `routes.test.ts` now mock `OrganizationManager` instead of phantom `SchemaManager` org methods. The `GET /schema/organization/:identifier` admin test now mocks `OrganizationManager.list()` and the route's `findOrganizationByName` matches by lowercased `name`
   - Cut v3.5.2 (patch — three bug fixes). Performance baseline captured. Propagated to all four installs (jimstest already on it from the rebuild; fairways-base / ngdpbase-veg / ngdp-temp-builds via standard `git pull && server.sh stop && npm run build && server.sh start`). `/admin/organizations` returns HTTP 403 (auth required, not 500 EJS error) on every install
   - Closed #623 and #624 with detailed summary comments. #622 stays open with the investigation comment + band-aid status
@@ -991,7 +1022,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - views/admin-addons.ejs, views/admin-backup.ejs, views/admin-calendar.ejs, views/admin-journal.ejs, views/admin-diff.ejs, views/admin-user-edit.ejs (Back to Dashboard)
   - src/routes/WikiRoutes.ts (org-CRUD rewire + IOrganizationManager interface + findOrganizationByName helper)
   - views/admin-organizations.ejs (Edit modal body + editOrganization/deleteOrganization/edit-form-submit handlers)
-  - src/routes/__tests__/WikiRoutes.coverage10.test.ts, src/routes/__tests__/routes.test.ts (mockOrganizationManager added)
+  - src/routes/**tests**/WikiRoutes.coverage10.test.ts, src/routes/**tests**/routes.test.ts (mockOrganizationManager added)
   - package.json, config/app-default-config.json, CHANGELOG.md (v3.5.2 bump)
   - docs/performance/baseline-v3.5.2-2026-05-02.md (new)
 
@@ -1015,8 +1046,8 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Commits: 322c4270 (`fix(#617): attach RoleManager-resolved roles to User records on render`), 476085d2 (`chore: release v3.5.1`)
 - Files Modified:
   - src/routes/WikiRoutes.ts (3 render sites enriched, IUserManager gained resolveUserRoles)
-  - src/routes/__tests__/WikiRoutes.coverage4/5/11/14.test.ts (mock UserManager updated)
-  - src/routes/__tests__/routes.test.ts (mock UserManager updated)
+  - src/routes/**tests**/WikiRoutes.coverage4/5/11/14.test.ts (mock UserManager updated)
+  - src/routes/**tests**/routes.test.ts (mock UserManager updated)
   - package.json, config/app-default-config.json, CHANGELOG.md (v3.5.1 bump)
   - docs/performance/baseline-v3.5.1-2026-05-02.md (new)
 
@@ -1042,7 +1073,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Commits: 5fe6263e (`feat(#617): drop User.roles[]; RoleManager is single source of truth (iteration 3b)`), 8ed606eb (`chore: release v3.5.0`)
 - Files Modified:
   - src/managers/UserManager.ts (mirror→direct writes, external-user gap closed, fallback dropped)
-  - src/managers/__tests__/UserManager.{test,searchUsers,roleMirror,resolveUserRoles}.test.ts
+  - src/managers/**tests**/UserManager.{test,searchUsers,roleMirror,resolveUserRoles}.test.ts
   - src/routes/WikiRoutes.ts (line 1218 swap + IUserManager.hasRole)
   - src/types/User.ts, src/types/guards.ts (User.roles optional, guard relaxed)
   - scripts/strip-user-roles.ts (new)
@@ -1070,7 +1101,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Files Modified:
   - src/managers/UserManager.ts (resolveUserRoles helper + 2 swap sites)
   - src/app.ts (session middleware swap + userManager type widening)
-  - src/managers/__tests__/UserManager.resolveUserRoles.test.ts (new — 8 tests)
+  - src/managers/**tests**/UserManager.resolveUserRoles.test.ts (new — 8 tests)
 
 ## 2026-05-02-01
 
@@ -1091,7 +1122,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Commits: fd90ec2d (`feat(#617): wire UserManager role mirror to RoleManager (iteration 2)`)
 - Files Modified:
   - src/managers/UserManager.ts (4 mirror helpers + 6 wire sites + RoleCatalogEntry type)
-  - src/managers/__tests__/UserManager.roleMirror.test.ts (new — 12 tests)
+  - src/managers/**tests**/UserManager.roleMirror.test.ts (new — 12 tests)
   - scripts/backfill-roles-from-users.ts (new)
 
 ## 2026-05-01-07
@@ -1119,7 +1150,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - src/types/RoleProvider.ts (new — provider interface)
   - src/providers/FileRoleProvider.ts (new — JSON-file-per-(org,role) storage)
   - src/managers/RoleManager.ts (new — CRUD wrapper)
-  - src/managers/__tests__/RoleManager.test.ts (new — 11 tests)
+  - src/managers/**tests**/RoleManager.test.ts (new — 11 tests)
 
 ## 2026-05-01-06
 
@@ -1213,12 +1244,12 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - config/app-default-config.json (in-flight strip of 9 org-metadata keys)
   - docs/planning/OrganizationRole-plannig.md (10 corrections)
   - src/managers/OrganizationManager.ts (data required, readSeedFromConfig removed, dead URL fallback removed, filenameFromOrg helper)
-  - src/managers/__tests__/OrganizationManager.test.ts (round-trip test rewritten, 3 new uniqueness tests)
+  - src/managers/**tests**/OrganizationManager.test.ts (round-trip test rewritten, 3 new uniqueness tests)
   - src/providers/FileOrganizationProvider.ts (uniqueness guards, filenameFromOrg helper, local slugify removed)
   - src/services/InstallService.ts (in-flight metadata strip + #seedOrganizationFromConfigIfNamed removed + filenameFromOrg helper + tightened type)
   - src/types/Config.ts (in-flight strip of 9 typed entries)
   - src/utils/orgFilename.ts (new — shared URL-first filename helper)
-  - src/utils/__tests__/orgFilename.test.ts (new — 13 unit tests)
+  - src/utils/**tests**/orgFilename.test.ts (new — 13 unit tests)
 
 ## 2026-05-01-02
 
@@ -1248,7 +1279,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - docs/performance/baseline-v3.4.0-2026-05-01.md (new baseline)
   - package.json (version bump)
   - src/managers/PageManager.ts (fs-extra default import)
-  - src/managers/__tests__/OrganizationManager.test.ts (round-trip test)
+  - src/managers/**tests**/OrganizationManager.test.ts (round-trip test)
   - src/parsers/handlers/LinkParserHandler.ts (fs-extra default import)
   - src/providers/FileAuditProvider.ts (fs-extra default import)
   - src/services/InstallService.ts (#seedOrganizationFromConfigIfNamed + fs-extra default import)
@@ -1285,9 +1316,9 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - src/managers/AddonsManager.ts
   - src/managers/OrganizationManager.ts (new)
   - src/managers/PersonManager.ts (new)
-  - src/managers/__tests__/AddonsManager.disableCascade.test.ts (new)
-  - src/managers/__tests__/OrganizationManager.test.ts (new)
-  - src/managers/__tests__/PersonManager.test.ts (new)
+  - src/managers/**tests**/AddonsManager.disableCascade.test.ts (new)
+  - src/managers/**tests**/OrganizationManager.test.ts (new)
+  - src/managers/**tests**/PersonManager.test.ts (new)
   - src/providers/FileOrganizationProvider.ts (new)
   - src/providers/FilePersonProvider.ts (new)
   - src/routes/InstallRoutes.ts
@@ -1342,18 +1373,18 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Commits: f631959f, 5c634d8b, a10c8f12
 - Files Modified:
   - src/parsers/filters/ValidationFilter.ts
-  - src/parsers/filters/__tests__/ValidationFilter.markupRules.test.ts (new)
+  - src/parsers/filters/**tests**/ValidationFilter.markupRules.test.ts (new)
   - src/parsers/filters/BaseFilter.ts
   - src/parsers/filters/SecurityFilter.ts
   - src/parsers/filters/FilterChain.ts
-  - src/parsers/filters/__tests__/FilterChain.phase.test.ts (new)
+  - src/parsers/filters/**tests**/FilterChain.phase.test.ts (new)
   - src/parsers/MarkupParser.ts
-  - src/parsers/__tests__/MarkupParser.filterChain.test.ts
+  - src/parsers/**tests**/MarkupParser.filterChain.test.ts
   - src/routes/WikiRoutes.ts
-  - src/routes/__tests__/WikiRoutes.coverage16.test.ts
+  - src/routes/**tests**/WikiRoutes.coverage16.test.ts
   - src/plugins/FootnotesPlugin.ts
   - src/plugins/CommentsPlugin.ts
-  - src/plugins/__tests__/CommentsPlugin.renderListHtml.test.ts (new)
+  - src/plugins/**tests**/CommentsPlugin.renderListHtml.test.ts (new)
 
 ## 2026-04-30-04
 
@@ -1372,7 +1403,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - Editor frontend (views/edit.ejs): converted submit handler from standard form POST to fetch; renders structured 400 errors in a new #validation-errors-banner; preserves user content on error
   - Aligned MarkupParser hardcoded filter defaults with app-default-config.json — Security and Spam now default false (was true) so tests behave like production
   - Lowered ValidationFilter hardcoded defaults: minWordCount 5→0, maxLineLength 10000→0 — those rules don't register without explicit operator opt-in
-  - New tests: src/parsers/__tests__/MarkupParser.filterChain.test.ts (4 tests — process called once per parse, malformed style produces warning, clean content doesn't, getFilterChain stable); src/parsers/filters/__tests__/FilterChain.collectErrors.test.ts (7 tests — empty content, no filters, opt-in/opt-out, multi-filter aggregation, disabled filters, throw-resilience)
+  - New tests: src/parsers/**tests**/MarkupParser.filterChain.test.ts (4 tests — process called once per parse, malformed style produces warning, clean content doesn't, getFilterChain stable); src/parsers/filters/**tests**/FilterChain.collectErrors.test.ts (7 tests — empty content, no filters, opt-in/opt-out, multi-filter aggregation, disabled filters, throw-resilience)
   - Updated tests: MarkupParser-InlineStyles.test.ts now enables filters in mock and asserts new rule name [malformedInlineStyle]; MarkupParser-EndToEnd.test.ts mock disables Security/Spam to match production defaults and the filter-count assertion adjusted from >=3 to >=1
   - Closed #596; filed #614 (SecurityFilter needs post-Showdown call site), #615 (FilterChain stats admin endpoint), #616 (first concrete severity:'error' save-blocking rule)
 - Testing:
@@ -1386,10 +1417,10 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - src/parsers/filters/ValidationFilter.ts
   - src/managers/ValidationManager.ts
   - src/routes/WikiRoutes.ts
-  - src/parsers/__tests__/MarkupParser-EndToEnd.test.ts
-  - src/parsers/__tests__/MarkupParser-InlineStyles.test.ts
-  - src/parsers/__tests__/MarkupParser.filterChain.test.ts (new)
-  - src/parsers/filters/__tests__/FilterChain.collectErrors.test.ts (new)
+  - src/parsers/**tests**/MarkupParser-EndToEnd.test.ts
+  - src/parsers/**tests**/MarkupParser-InlineStyles.test.ts
+  - src/parsers/**tests**/MarkupParser.filterChain.test.ts (new)
+  - src/parsers/filters/**tests**/FilterChain.collectErrors.test.ts (new)
   - views/edit.ejs
 
 ## 2026-04-30-03
@@ -1417,7 +1448,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - src/managers/ACLManager.ts
   - src/managers/FootnoteManager.ts
   - src/managers/CommentManager.ts
-  - src/managers/__tests__/BaseManager.preflight.test.ts (new)
+  - src/managers/**tests**/BaseManager.preflight.test.ts (new)
 
 ## 2026-04-30-02
 
@@ -1429,11 +1460,11 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - Moved vi.mock('../../../dist/src/context/ApiContext', ...) call from inside makeContext() (line 48) to top of file immediately after imports; preserved { virtual: true } since the mocked path lives in dist/ which may not exist when tests run from source
   - Removed the now-redundant nested call from makeContext()
 - Testing:
-  - addons/forms/__tests__/api.test.ts: 11/11 pass
+  - addons/forms/**tests**/api.test.ts: 11/11 pass
   - Full suite: 180/180 files, 4996/4996 tests pass; vi.mock hoist warning no longer printed
 - Commits: c4412933
 - Files Modified:
-  - addons/forms/__tests__/api.test.ts
+  - addons/forms/**tests**/api.test.ts
 
 ## 2026-04-30-01
 
@@ -1458,7 +1489,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - src/managers/BackupManager.ts
   - src/routes/WikiRoutes.ts
   - src/utils/PathPreflight.ts (new)
-  - src/utils/__tests__/PathPreflight.test.ts (new)
+  - src/utils/**tests**/PathPreflight.test.ts (new)
   - views/media-item.ejs
   - views/search-results.ejs
 
@@ -1585,7 +1616,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Commits: 699b30f8
 - Files Modified:
   - src/parsers/MarkupParser.ts
-  - src/parsers/__tests__/MarkupParser-InlineStyles.test.ts
+  - src/parsers/**tests**/MarkupParser-InlineStyles.test.ts
 
 ## 2026-04-27-08
 
@@ -1630,19 +1661,19 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - Also committed previously untracked batches 4–12 (created in prior sessions)
 - Commits: 5b7eb9b6
 - Files Modified:
-  - src/routes/__tests__/WikiRoutes.coverage4.test.ts
-  - src/routes/__tests__/WikiRoutes.coverage5.test.ts
-  - src/routes/__tests__/WikiRoutes.coverage6.test.ts
-  - src/routes/__tests__/WikiRoutes.coverage7.test.ts
-  - src/routes/__tests__/WikiRoutes.coverage8.test.ts
-  - src/routes/__tests__/WikiRoutes.coverage9.test.ts
-  - src/routes/__tests__/WikiRoutes.coverage10.test.ts
-  - src/routes/__tests__/WikiRoutes.coverage11.test.ts
-  - src/routes/__tests__/WikiRoutes.coverage12.test.ts
-  - src/routes/__tests__/WikiRoutes.coverage13.test.ts
-  - src/routes/__tests__/WikiRoutes.coverage14.test.ts
-  - src/routes/__tests__/WikiRoutes.coverage15.test.ts
-  - src/routes/__tests__/WikiRoutes.coverage16.test.ts
+  - src/routes/**tests**/WikiRoutes.coverage4.test.ts
+  - src/routes/**tests**/WikiRoutes.coverage5.test.ts
+  - src/routes/**tests**/WikiRoutes.coverage6.test.ts
+  - src/routes/**tests**/WikiRoutes.coverage7.test.ts
+  - src/routes/**tests**/WikiRoutes.coverage8.test.ts
+  - src/routes/**tests**/WikiRoutes.coverage9.test.ts
+  - src/routes/**tests**/WikiRoutes.coverage10.test.ts
+  - src/routes/**tests**/WikiRoutes.coverage11.test.ts
+  - src/routes/**tests**/WikiRoutes.coverage12.test.ts
+  - src/routes/**tests**/WikiRoutes.coverage13.test.ts
+  - src/routes/**tests**/WikiRoutes.coverage14.test.ts
+  - src/routes/**tests**/WikiRoutes.coverage15.test.ts
+  - src/routes/**tests**/WikiRoutes.coverage16.test.ts
 
 ## 2026-04-27-05
 
@@ -1655,8 +1686,8 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - All 4482 tests pass (up from 4456)
 - Commits: bf343612
 - Files Modified:
-  - src/managers/__tests__/BackupManager.test.ts
-  - src/managers/__tests__/RenderingManager.test.ts
+  - src/managers/**tests**/BackupManager.test.ts
+  - src/managers/**tests**/RenderingManager.test.ts
 
 ## 2026-04-27-04
 
@@ -1670,8 +1701,8 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - All 4456 tests pass (up from 4403)
 - Commits: 3ad1854c
 - Files Modified:
-  - src/managers/__tests__/ACLManager.test.ts
-  - src/managers/__tests__/SearchManager.test.ts
+  - src/managers/**tests**/ACLManager.test.ts
+  - src/managers/**tests**/SearchManager.test.ts
 
 ## 2026-04-27-03
 
@@ -1702,10 +1733,10 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - All 4403 tests pass
 - Commits: dd0696b3
 - Files Modified:
-  - src/routes/__tests__/WikiRoutes.coverage2.test.ts
-  - src/routes/__tests__/WikiRoutes.coverage3.test.ts
-  - src/utils/__tests__/imageTransform.test.ts
-  - src/managers/__tests__/ACLManager.test.ts
+  - src/routes/**tests**/WikiRoutes.coverage2.test.ts
+  - src/routes/**tests**/WikiRoutes.coverage3.test.ts
+  - src/utils/**tests**/imageTransform.test.ts
+  - src/managers/**tests**/ACLManager.test.ts
 
 ## 2026-04-27-01
 
@@ -1725,7 +1756,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - ARCHITECTURE.md
   - docs/architecture/MANAGERS-OVERVIEW.md
   - docs/demo/technical.md
-  - src/routes/__tests__/WikiRoutes.coverage.test.ts
+  - src/routes/**tests**/WikiRoutes.coverage.test.ts
 
 ## 2026-04-26-01
 
@@ -1741,9 +1772,9 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - Assessed `docs/demo/technical.md` — no changes needed (manager count 30 and 4 addons already correct)
 - Commits: 087ab7b3
 - Files Modified:
-  - src/types/__tests__/guards.test.ts
-  - src/managers/__tests__/UserManager.test.ts
-  - src/managers/__tests__/UserManager.searchUsers.test.ts
+  - src/types/**tests**/guards.test.ts
+  - src/managers/**tests**/UserManager.test.ts
+  - src/managers/**tests**/UserManager.searchUsers.test.ts
   - ARCHITECTURE.md
   - README.md
 
@@ -1760,10 +1791,10 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - Current coverage after this session: ~59.65% statements / ~52.59% branches (up from 58.99%/51.89%)
 - Commits: 60b3a09b
 - Files Modified:
-  - src/utils/__tests__/SchemaGenerator.test.ts (new)
-  - src/providers/__tests__/NodeCacheProvider.test.ts (new)
-  - src/managers/__tests__/PageManager.test.ts
-  - src/managers/__tests__/BackgroundJobManager.test.ts
+  - src/utils/**tests**/SchemaGenerator.test.ts (new)
+  - src/providers/**tests**/NodeCacheProvider.test.ts (new)
+  - src/managers/**tests**/PageManager.test.ts
+  - src/managers/**tests**/BackgroundJobManager.test.ts
 
 ## 2026-04-24-09
 
@@ -1792,8 +1823,8 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - SearchManager coverage ~31%→~50%, RenderingManager ~38%→~46%
 - Commits: 11fcbfed
 - Files Modified:
-  - src/managers/__tests__/SearchManager.test.ts
-  - src/managers/__tests__/RenderingManager.test.ts
+  - src/managers/**tests**/SearchManager.test.ts
+  - src/managers/**tests**/RenderingManager.test.ts
 
 ## 2026-04-24-07
 
@@ -1809,10 +1840,10 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - Overall coverage improved: 45.88%→47.02% statements
 - Commits: 0dd5280d
 - Files Modified:
-  - src/managers/__tests__/FootnoteManager.test.ts (new)
-  - src/managers/__tests__/CacheManager.test.ts (new)
-  - src/managers/__tests__/BackupManager.test.ts (new)
-  - src/managers/__tests__/ACLManager.test.ts
+  - src/managers/**tests**/FootnoteManager.test.ts (new)
+  - src/managers/**tests**/CacheManager.test.ts (new)
+  - src/managers/**tests**/BackupManager.test.ts (new)
+  - src/managers/**tests**/ACLManager.test.ts
 
 ## 2026-04-24-06
 
@@ -1828,9 +1859,9 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Commits: 3b83852c
 - Files Modified:
   - src/managers/PageManager.ts
-  - src/managers/__tests__/PageManager.test.ts
+  - src/managers/**tests**/PageManager.test.ts
   - src/providers/VersioningFileProvider.ts
-  - src/providers/__tests__/VersioningFileProvider.test.ts
+  - src/providers/**tests**/VersioningFileProvider.test.ts
 
 ## 2026-04-24-05
 
@@ -1850,9 +1881,9 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - src/types/Provider.ts
   - src/providers/BasePageProvider.ts
   - src/providers/FileSystemProvider.ts
-  - src/providers/__tests__/FileSystemProvider.test.ts
+  - src/providers/**tests**/FileSystemProvider.test.ts
   - src/managers/PageManager.ts
-  - src/managers/__tests__/PageManager.test.ts
+  - src/managers/**tests**/PageManager.test.ts
   - src/routes/WikiRoutes.ts
 
 ## 2026-04-24-04
@@ -2078,8 +2109,8 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - All 118 test files, 3050 tests now pass
 - Commits: ed4c0d48 (feat commit from prior session continuation)
 - Files Modified:
-  - addons/forms/__tests__/FormsPlugin.test.ts
-  - src/routes/__tests__/routes.test.ts
+  - addons/forms/**tests**/FormsPlugin.test.ts
+  - src/routes/**tests**/routes.test.ts
 
 ## 2026-04-23-11
 
@@ -2229,7 +2260,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - addons/forms/views/forms-admin.ejs
   - addons/forms/index.ts
   - addons/forms/index.js
-  - addons/forms/__tests__/builder.test.ts (new)
+  - addons/forms/**tests**/builder.test.ts (new)
   - src/managers/AddonsManager.ts
   - src/routes/WikiRoutes.ts
   - views/admin-dashboard.ejs
@@ -2261,9 +2292,9 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - addons/forms/plugins/FormsPlugin.js
   - addons/forms/managers/FormsDataManager.ts
   - addons/forms/managers/FormsDataManager.js
-  - addons/forms/__tests__/FormsDataManager.test.ts (new)
-  - addons/forms/__tests__/FormsPlugin.test.ts (new)
-  - addons/forms/__tests__/api.test.ts (new)
+  - addons/forms/**tests**/FormsDataManager.test.ts (new)
+  - addons/forms/**tests**/FormsPlugin.test.ts (new)
+  - addons/forms/**tests**/api.test.ts (new)
   - required-pages/bb03859d-eb3f-449e-b78b-7fef30082098.md (new)
   - required-pages/a4f9c2e1-7b3d-4a85-9e6f-1c2d3b4a5e6f.md
   - addons/forms/pages/af15d030-3676-4a67-8b21-0d844dacb51a.md (new)
@@ -2439,7 +2470,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Commits: 85d46523
 - Files Modified:
   - src/managers/NotificationManager.ts
-  - src/managers/__tests__/NotificationManager.test.ts
+  - src/managers/**tests**/NotificationManager.test.ts
   - config/app-default-config.json
   - /Volumes/hd2/jimstest-wiki/data/config/app-custom-config.json
 
@@ -2491,7 +2522,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Commits: 51a18f46
 - Files Modified:
   - src/routes/WikiRoutes.ts
-  - src/routes/__tests__/WikiRoutes.titleValidation.test.ts
+  - src/routes/**tests**/WikiRoutes.titleValidation.test.ts
 
 ## 2026-04-22-06
 
@@ -2514,7 +2545,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Files Modified:
   - src/managers/ACLManager.ts
   - src/managers/PageManager.ts
-  - src/managers/__tests__/ACLManager.test.ts
+  - src/managers/**tests**/ACLManager.test.ts
   - src/providers/BasePageProvider.ts
   - src/providers/FileSystemProvider.ts
   - src/providers/LunrSearchProvider.ts
@@ -2917,7 +2948,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - config/app-default-config.json
   - src/WikiEngine.ts
   - src/context/WikiContext.ts
-  - src/context/__tests__/WikiContext.test.ts
+  - src/context/**tests**/WikiContext.test.ts
   - src/managers/CommentManager.ts (new)
   - src/parsers/context/ParseContext.ts
   - src/parsers/handlers/PluginSyntaxHandler.ts
@@ -3131,7 +3162,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Commits: 124c34ff
 - Files Modified:
   - src/managers/ImportManager.ts
-  - src/managers/__tests__/ImportManager.test.ts
+  - src/managers/**tests**/ImportManager.test.ts
 
 ## 2026-04-19-10
 
@@ -3277,7 +3308,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Commits: a82f6494, 3b124759
 - Files Modified:
   - src/parsers/MarkupParser.ts
-  - src/parsers/__tests__/MarkupParser-EndToEnd.test.ts
+  - src/parsers/**tests**/MarkupParser-EndToEnd.test.ts
   - required-pages/ff2c3a6d-fdfc-479f-90e3-585dc2b3abd0.md (CounterPlugin)
 
 ## 2026-04-19-01
@@ -3331,7 +3362,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Commits: 7e75c7b5
 - Files Modified:
   - src/plugins/UserLookupPlugin.ts
-  - src/plugins/__tests__/UserLookupPlugin.test.ts
+  - src/plugins/**tests**/UserLookupPlugin.test.ts
 
 ## 2026-04-18-20
 
@@ -3348,9 +3379,9 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Commits: 00ca3fc3
 - Files Modified:
   - src/context/ApiContext.ts
-  - src/context/__tests__/ApiContext.test.ts
+  - src/context/**tests**/ApiContext.test.ts
   - src/managers/UserManager.ts
-  - src/managers/__tests__/UserManager.searchUsers.test.ts
+  - src/managers/**tests**/UserManager.searchUsers.test.ts
   - src/routes/WikiRoutes.ts
 
 ## 2026-04-18-19
@@ -3370,7 +3401,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Commits: 91ecf3a0
 - Files Modified:
   - src/managers/AddonsManager.ts
-  - src/managers/__tests__/AddonsManager.test.ts
+  - src/managers/**tests**/AddonsManager.test.ts
   - addons/journal/index.ts
   - addons/calendar/index.ts
   - addons/journal/config/default-config.json
@@ -3543,24 +3574,24 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Subject: TypeScript migration (#186) — eslint-disable reduction 17→9; WikiEngine/ES/SchemaGenerator any cleanup
 - Current Issue: #186
 - Work Done:
-  - Removed 28 redundant no-require-imports inline disable comments from test files (rule already off via eslint.config.mjs override for __/__tests__/__/*.ts)
+  - Removed 28 redundant no-require-imports inline disable comments from test files (rule already off via eslint.config.mjs override for **/**tests**/**/*.ts)
   - WikiEngine.ts: initialize() return type Promise<any> → Promise<void>; getManager<T=any> → T=unknown (2 disables removed)
   - ElasticsearchSearchProvider.ts: bulk body ops as any[] → object[] at both buildIndex and restore call sites (2 disables removed)
   - WikiRoutes.ts: SchemaGenerator.generateOrganizationSchema/generatePersonSchema as any → as Record<string,unknown> (2 disables removed)
   - Total source eslint-disable count: 17 → 9 (6 file-level + 3 inline index signatures — all genuinely architectural)
 - Commits: f7148cbb, 08979b54
 - Files Modified:
-  - src/managers/__tests__/PluginManager.test.ts
-  - src/managers/__tests__/PluginManager.registerPlugins.test.ts
-  - src/managers/__tests__/MetricsManager.test.ts
-  - src/managers/__tests__/AssetManager.test.ts
-  - src/parsers/__tests__/MarkupParser.test.ts
-  - src/parsers/handlers/__tests__/WikiTagHandler.test.ts
-  - src/parsers/handlers/__tests__/PluginSyntaxHandler.test.ts
-  - src/providers/__tests__/BasicAttachmentProvider.diskFallback.test.ts
-  - src/utils/__tests__/testUtils.ts
-  - src/routes/__tests__/routes.test.ts
-  - src/routes/__tests__/maintenance-mode.test.ts
+  - src/managers/**tests**/PluginManager.test.ts
+  - src/managers/**tests**/PluginManager.registerPlugins.test.ts
+  - src/managers/**tests**/MetricsManager.test.ts
+  - src/managers/**tests**/AssetManager.test.ts
+  - src/parsers/**tests**/MarkupParser.test.ts
+  - src/parsers/handlers/**tests**/WikiTagHandler.test.ts
+  - src/parsers/handlers/**tests**/PluginSyntaxHandler.test.ts
+  - src/providers/**tests**/BasicAttachmentProvider.diskFallback.test.ts
+  - src/utils/**tests**/testUtils.ts
+  - src/routes/**tests**/routes.test.ts
+  - src/routes/**tests**/maintenance-mode.test.ts
   - src/types/WikiEngine.ts
   - src/providers/ElasticsearchSearchProvider.ts
   - src/routes/WikiRoutes.ts
@@ -3685,8 +3716,8 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - Converted 18 scripts/*.js → scripts/*.ts with proper ESM top-level imports
   - Updated package.json npm scripts: node scripts/*.js → tsx scripts/*.ts
   - Converted 10 tests/e2e/*.spec.js → *.spec.ts and tests/e2e/fixtures/*.js →*.ts
-  - Converted addons/elasticsearch/__tests__/Sist2AssetProvider.test.js → .ts
-  - Added scripts/__/*.ts and tests/e2e/__/*.ts to tsconfig.test.json include
+  - Converted addons/elasticsearch/**tests**/Sist2AssetProvider.test.js → .ts
+  - Added scripts/**/*.ts and tests/e2e/**/*.ts to tsconfig.test.json include
   - Removed stale plugins/**/*.ts from tsconfig.test.json (moved to src/plugins/ in #538)
   - Added ESLint override block for scripts/ and tests/e2e/ relaxing type-safety rules (same pattern as test file overrides)
   - Fixed comma syntax error introduced in eslint.config.mjs when adding override block
@@ -3725,7 +3756,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - tests/e2e/pages.spec.ts (renamed from .js)
   - tests/e2e/search.spec.ts (renamed from .js)
   - tests/e2e/startup-maintenance.spec.ts (renamed from .js)
-  - addons/elasticsearch/__tests__/Sist2AssetProvider.test.ts (renamed from .js)
+  - addons/elasticsearch/**tests**/Sist2AssetProvider.test.ts (renamed from .js)
   - package.json
   - tsconfig.test.json
   - eslint.config.mjs
@@ -3739,8 +3770,8 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - Confirmed PM2 does not support TypeScript ecosystem config natively — ecosystem.config.js stays as-is
   - Converted playwright.config.js → playwright.config.ts (Playwright supports TS config natively); updated testMatch/testIgnore patterns to match .js and .ts e2e specs; added playwright.config.ts to tsconfig.test.json include
   - Created GitHub issue #538 to track plugins/ → src/plugins/ move
-  - Moved all 22 plugin source files from plugins/ → src/plugins/ and 12 test files from plugins/__tests__/*.js → src/plugins/__tests__/*.ts (converted to TypeScript in the same step)
-  - Updated tsconfig.json: replaced plugins/__/*.ts include with src/plugins/__/*.ts
+  - Moved all 22 plugin source files from plugins/ → src/plugins/ and 12 test files from plugins/**tests**/*.js → src/plugins/**tests**/*.ts (converted to TypeScript in the same step)
+  - Updated tsconfig.json: replaced plugins/**/*.ts include with src/plugins/**/*.ts
   - Updated config/app-default-config.json: plugin search path ./dist/plugins → ./dist/src/plugins
   - Fixed import paths in moved files: ../src/ → ../ and ../../src/ → ../../ throughout
   - Fixed PluginManager.test.ts: hardcoded plugins/ path updated to dist/src/plugins
@@ -3752,8 +3783,8 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - tsconfig.json
   - config/app-default-config.json
   - src/plugins/*.ts (22 files moved from plugins/)
-  - src/plugins/__tests__/*.ts (12 files moved+converted from plugins/__tests__/)
-  - src/managers/__tests__/PluginManager.test.ts
+  - src/plugins/**tests**/*.ts (12 files moved+converted from plugins/**tests**/)
+  - src/managers/**tests**/PluginManager.test.ts
 
 ## 2026-04-18-05
 
@@ -3763,7 +3794,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Work Done:
   - Fixed stale app.js references: playwright.config.js now launches `node dist/src/app.js`, scripts/smoke-test.sh checks src/*.ts source and dist/src/*.js compiled output, src/app.ts comment updated to not imply PM2-only launch
   - Rewrote scripts/smoke-test.sh from scratch — old version checked for src/WikiEngine.js and app.js that no longer exist after TypeScript migration
-  - Converted all 97 src/**/__tests__/*.js test files to TypeScript: require() → import at file scope; inline require() inside test bodies kept as require() (CJS dynamic pattern); template-literal require() inside writeFile strings preserved
+  - Converted all 97 src/**/**tests**/*.js test files to TypeScript: require() → import at file scope; inline require() inside test bodies kept as require() (CJS dynamic pattern); template-literal require() inside writeFile strings preserved
   - Converted jest.setup.js → jest.setup.ts with typed mock provider factory and typed MockPageNameMatcher class
   - Created tsconfig.test.json at root with strict: false for test-file flexibility (matches pattern already used for journal addon tests)
   - Updated Jest config in package.json: preset ts-jest (not js-with-ts), inline transform config pointing to tsconfig.test.json, diagnostics.warnOnly: true for incremental type tightening, testMatch and collectCoverageFrom cleaned to .ts only
@@ -3779,7 +3810,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - tsconfig.test.json (new)
   - eslint.config.mjs
   - package.json
-  - src/**/__tests__/*.ts (97 files renamed from .js)
+  - src/**/**tests**/*.ts (97 files renamed from .js)
 
 ## 2026-04-18-04
 
@@ -3811,14 +3842,14 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Current Issue: #511
 - Work Done:
   - Added 29 unit tests for JournalDataManager covering load/save/corrupt-index, indexEntry/removeEntry upsert, listByAuthor (sort, tag/mood filter, pagination), computeStreak (today, gap, dedup, cross-author isolation), getOnThisDay, getMoodFacets, getTagFacets, toMarqueeText
-  - Added addons/journal/tsconfig.test.json so __tests__ dir is covered by type-aware linting
+  - Added addons/journal/tsconfig.test.json so **tests** dir is covered by type-aware linting
   - Added addons/journal/tsconfig.test.json to eslint.config.mjs parserOptions.project
   - Updated docs/platform/addon-architecture.md: corrected journal row (was "none planned"; now reflects full JournalDataManager + JournalTemplateManager implementation)
   - Updated docs/platform/page-overrides.md: corrected description — sidebar renders empty with logger.warn when LeftMenu missing; no hardcoded fallback
   - Added docs/platform/addon-development-guide.md section 4b: documents getLeftMenu helper pattern addon routes must use to populate site nav
 - Commits: 6464ff97, 409df7c4
 - Files Modified:
-  - addons/journal/managers/__tests__/JournalDataManager.test.ts (new)
+  - addons/journal/managers/**tests**/JournalDataManager.test.ts (new)
   - addons/journal/tsconfig.test.json (new)
   - eslint.config.mjs
   - docs/platform/addon-architecture.md
@@ -4003,7 +4034,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Work Done:
   - git pull + npm run build + server restart for all three instances (fairways-base port 2121, ngdpbase-veg port 3333, ngdpbase port 3000)
   - ngdpbase-veg pulled 36 files of changes; ngdpbase and fairways-base were already current
-  - Fixed fairways-base pre-existing tsconfig bugs: changed module/moduleResolution from NodeNext to commonjs/node (codebase has no .js extensions on relative imports), changed rootDir from ./src to . (output now lands in dist/src/ as ecosystem.config.js expects), added test file excludes (**/*.test.ts, __/__tests__/__)
+  - Fixed fairways-base pre-existing tsconfig bugs: changed module/moduleResolution from NodeNext to commonjs/node (codebase has no .js extensions on relative imports), changed rootDir from ./src to . (output now lands in dist/src/ as ecosystem.config.js expects), added test file excludes (**/*.test.ts, **/**tests**/**)
   - Committed and pushed tsconfig fix to fairways-base chore/template-sync (78ce5381)
 - Commits: 78ce5381 (fairways-base)
 - Files Modified:
@@ -4080,8 +4111,8 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Files Modified:
   - src/parsers/data/emoji-map.ts
   - src/parsers/MarkupParser.ts
-  - src/parsers/__tests__/MarkupParser-Emoji.test.js
-  - src/parsers/__tests__/emoji-map.test.js
+  - src/parsers/**tests**/MarkupParser-Emoji.test.js
+  - src/parsers/**tests**/emoji-map.test.js
   - public/js/emoji-autocomplete.js
   - views/_emoji-picker.ejs
   - views/edit.ejs
@@ -4102,8 +4133,8 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Files Modified:
   - src/routes/WikiRoutes.ts
   - src/parsers/MarkupParser.ts
-  - src/parsers/__tests__/MarkupParser-EndToEnd.test.js
-  - src/parsers/__tests__/MarkupParser-MergePipeline.test.js
+  - src/parsers/**tests**/MarkupParser-EndToEnd.test.js
+  - src/parsers/**tests**/MarkupParser-MergePipeline.test.js
 
 ## 2026-04-16-02
 
@@ -4142,7 +4173,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Files Modified:
   - package.json
   - src/parsers/MarkupParser.ts
-  - src/parsers/__tests__/MarkupParser-EndToEnd.test.js
+  - src/parsers/**tests**/MarkupParser-EndToEnd.test.js
 
 ## 2026-04-14-17
 
@@ -4227,7 +4258,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - src/providers/FileSystemProvider.ts
   - src/managers/PageManager.ts
   - src/types/Provider.ts
-  - src/providers/__tests__/ElasticsearchSearchProvider.test.js
+  - src/providers/**tests**/ElasticsearchSearchProvider.test.js
 
 ## 2026-04-13-13
 
@@ -4291,9 +4322,9 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Commits: f6c07de7 (routes fix + v3.3.3), 6828a25d (#507 TaggingService)
 - Files Modified:
   - src/utils/TaggingService.ts (new)
-  - src/utils/__tests__/TaggingService.test.js (new)
+  - src/utils/**tests**/TaggingService.test.js (new)
   - src/providers/ElasticsearchSearchProvider.ts
-  - src/providers/__tests__/ElasticsearchSearchProvider.test.js
+  - src/providers/**tests**/ElasticsearchSearchProvider.test.js
   - src/routes/WikiRoutes.ts
   - config/app-default-config.json
   - /Volumes/hd2/ngdp-temp-builds/ngdpbase/data/config/app-custom-config.json
@@ -4310,7 +4341,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Work Done:
   - src/types/Catalog.ts: new CatalogTerm + CatalogProvider interfaces
   - src/managers/CatalogManager.ts: new CatalogManager + DefaultCatalogProvider + AICatalogProvider scaffold
-  - src/managers/__tests__/CatalogManager.test.js: 15 unit tests
+  - src/managers/**tests**/CatalogManager.test.js: 15 unit tests
   - config/app-default-config.json: populate system-keywords (draft/review/published + 9 subjects); add catalog.ai.* config keys
   - src/WikiEngine.ts: register CatalogManager after ConfigurationManager
   - src/types/WikiEngine.ts: add CatalogManager to ManagerName union
@@ -4321,7 +4352,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Files Modified:
   - src/types/Catalog.ts
   - src/managers/CatalogManager.ts
-  - src/managers/__tests__/CatalogManager.test.js
+  - src/managers/**tests**/CatalogManager.test.js
   - config/app-default-config.json
   - src/WikiEngine.ts
   - src/types/WikiEngine.ts
@@ -4607,7 +4638,7 @@ source as the application itself:
 Handles relative `FAST_STORAGE` paths (resolved relative to `$SCRIPT_DIR` / `__dirname`).
 Supports both kebab-case (`application-name`) and camelCase (`applicationName`) config key variants.
 
-__Result__ — all three instances now start with correct, unique PM2 names:
+**Result** — all three instances now start with correct, unique PM2 names:
 
 | Instance | Port | PM2 name |
 |----------|------|----------|
@@ -4679,9 +4710,9 @@ required at runtime by the addon's compiled requires.
 
 ### Fix — Addon routes ran before session middleware (`7b6c7382`)
 
-__Root cause__: `WikiEngine.initialize()` called `addonsManager.initialize()` (which registers Express routes) before `app.ts` added `express-session` and the `userContext` middleware. Every request to an addon route ran before `req.session` or `req.userContext` was populated, so `ApiContext.from()` always returned an unauthenticated context — 401 on every authenticated request.
+**Root cause**: `WikiEngine.initialize()` called `addonsManager.initialize()` (which registers Express routes) before `app.ts` added `express-session` and the `userContext` middleware. Every request to an addon route ran before `req.session` or `req.userContext` was populated, so `ApiContext.from()` always returned an unauthenticated context — 401 on every authenticated request.
 
-__Fix__:
+**Fix**:
 
 - `WikiEngine.initialize()` now creates and registers `AddonsManager` but defers `addonsManager.initialize()` (the part that calls `addon.register()` and mounts routes)
 - New `engine.initializeAddons(): Promise<void>` method added to `WikiEngine` and its type interface
@@ -4713,7 +4744,7 @@ CONFIDENTIAL reservations correctly stripped from anonymous `.ics` feed.
 
 Complete implementation of all remaining phases for #464.
 
-__Phase 2 — CalendarDataManager extensions__ (`b404500b`)
+**Phase 2 — CalendarDataManager extensions** (`b404500b`)
 
 - Extends `BaseManager` (constructor: `engine, dataPath`)
 - RFC 5545 fields added: `location`, `status`, `class`, `transp`, `dtstamp`, `organizer`, `rrule`
@@ -4725,25 +4756,25 @@ __Phase 2 — CalendarDataManager extensions__ (`b404500b`)
 - `toFullCalendar()` — translate to FullCalendar EventInput
 - `toMarqueeText()` — BaseManager override; never exposes CONFIDENTIAL events
 
-__Phase 3 — routes/api.ts__ (`06427344`)
+**Phase 3 — routes/api.ts** (`06427344`)
 
 - All GET routes: `toFullCalendar() + stripPrivate()` per caller's ApiContext
 - POST/PUT/DELETE: `requireAuthenticated() + requireRole(admin, clubhouse-manager)`
 - `GET /api/calendar/:calendarId/feed.ics` — ts-ics RFC 5545 export (CONFIDENTIAL excluded)
 - tsconfig: include `src/types/**/*.d.ts` for express type augmentations
 
-__Phase 4 — reservations route__ (`1ff07c68`)
+**Phase 4 — reservations route** (`1ff07c68`)
 
 - `POST /api/calendar/reservations` — auth, conflict→409, CLASS: CONFIDENTIAL, email notification
 - `DELETE /api/calendar/reservations/:id` — owner/manager/admin only
 - `CalendarConfig.ts` — typed per-calendar config interface
 
-__Phase 5 — admin__ (`440cec30`)
+**Phase 5 — admin** (`440cec30`)
 
 - `GET /admin/calendar` — role-gated management dashboard
 - `views/admin-calendar.ejs` — per-calendar cards with reservation private columns, CRUD modals
 
-__Phase 7+8 — modal + wiring__ (`c03a6ffb`)
+**Phase 7+8 — modal + wiring** (`c03a6ffb`)
 
 - `CalendarPlugin` `modal='true'` param — wires `dateClick`/`eventClick` to modal
 - `public/js/calendar-modal.js` — vanilla JS Bootstrap 5 create/edit/delete modal
@@ -4778,13 +4809,13 @@ __Phase 7+8 — modal + wiring__ (`c03a6ffb`)
 
 Extended planning session for #464 (Calendar addon: reservations, events management, upcoming events marquee). Key decisions reached:
 
-- __Language__: Convert calendar addon from JavaScript → TypeScript (AddonsManager already supports `index.ts`)
-- __iCalendar__: `ts-ics` (MIT) for RFC 5545 compliance — parse + generate `.ics`
-- __RFC 5545__: Add missing fields (`location`, `status`, `class`, `transp`, `dtstamp`, `organizer`); `_private` maps to `CLASS: CONFIDENTIAL` + `X-PRIVATE-*` extended properties
-- __Storage__: JSON per-calendar file (`data/calendar/<calendarId>.json`) + `.ics` generated on demand
-- __N-calendar__: Config-driven — each calendar has `workflow` (`reservation`|`managed`) and `visibility` (`public`|`authenticated`|`private`)
-- __Upcoming Events__: No new plugin — `CalendarDataManager` extends `BaseManager` and overrides `toMarqueeText()` for use with existing `MarqueePlugin`
-- __Date utils__: `date-fns` (MIT) for conflict detection (`areIntervalsOverlapping`) and formatting
+- **Language**: Convert calendar addon from JavaScript → TypeScript (AddonsManager already supports `index.ts`)
+- **iCalendar**: `ts-ics` (MIT) for RFC 5545 compliance — parse + generate `.ics`
+- **RFC 5545**: Add missing fields (`location`, `status`, `class`, `transp`, `dtstamp`, `organizer`); `_private` maps to `CLASS: CONFIDENTIAL` + `X-PRIVATE-*` extended properties
+- **Storage**: JSON per-calendar file (`data/calendar/<calendarId>.json`) + `.ics` generated on demand
+- **N-calendar**: Config-driven — each calendar has `workflow` (`reservation`|`managed`) and `visibility` (`public`|`authenticated`|`private`)
+- **Upcoming Events**: No new plugin — `CalendarDataManager` extends `BaseManager` and overrides `toMarqueeText()` for use with existing `MarqueePlugin`
+- **Date utils**: `date-fns` (MIT) for conflict detection (`areIntervalsOverlapping`) and formatting
 
 Identified #488 (ApiContext) as a prerequisite. Plan documented in jwilleke/ngdpbase#464.
 
@@ -4974,12 +5005,12 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Files Modified:
   - src/parsers/MarkupParser.ts
   - src/parsers/handlers/BaseSyntaxHandler.ts
-  - src/parsers/__tests__/MarkupParser.test.js
-  - src/parsers/__tests__/MarkupParser-Config.test.js
-  - src/parsers/__tests__/MarkupParser-ModularConfig.test.js
-  - src/parsers/__tests__/MarkupParser-Comprehensive.test.js
-  - src/parsers/__tests__/MarkupParser-Performance.test.js
-  - src/managers/__tests__/PluginManager.registerPlugin.test.js
+  - src/parsers/**tests**/MarkupParser.test.js
+  - src/parsers/**tests**/MarkupParser-Config.test.js
+  - src/parsers/**tests**/MarkupParser-ModularConfig.test.js
+  - src/parsers/**tests**/MarkupParser-Comprehensive.test.js
+  - src/parsers/**tests**/MarkupParser-Performance.test.js
+  - src/managers/**tests**/PluginManager.registerPlugin.test.js
   - src/routes/WikiRoutes.ts
 
 ## 2026-04-07-04
@@ -5003,8 +5034,8 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - src/managers/UserManager.ts
   - src/managers/ACLManager.ts
   - src/routes/WikiRoutes.ts
-  - src/__tests__/UserManager.test.js
-  - src/routes/__tests__/routes.test.js
+  - src/**tests**/UserManager.test.js
+  - src/routes/**tests**/routes.test.js
 
 ## 2026-04-07-03
 
@@ -5031,8 +5062,8 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - src/managers/UserManager.ts
   - src/managers/ACLManager.ts
   - src/routes/WikiRoutes.ts
-  - src/__tests__/UserManager.test.js
-  - src/routes/__tests__/routes.test.js
+  - src/**tests**/UserManager.test.js
+  - src/routes/**tests**/routes.test.js
 
 ## 2026-04-07-02
 
@@ -5105,9 +5136,9 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - src/routes/WikiRoutes.ts
   - views/login.ejs
   - data/config/app-custom-config.json
-  - src/managers/__tests__/UserManager.createUserPage.test.js
-  - src/routes/__tests__/WikiRoutes.authorLock.test.js
-  - src/routes/__tests__/WikiRoutes.titleValidation.test.js
+  - src/managers/**tests**/UserManager.createUserPage.test.js
+  - src/routes/**tests**/WikiRoutes.authorLock.test.js
+  - src/routes/**tests**/WikiRoutes.titleValidation.test.js
   - required-pages/02ed956a-b212-4486-bd34-9785a7efe978.md
 
 ## 2026-04-06-06
@@ -5131,7 +5162,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - src/routes/WikiRoutes.ts
   - src/managers/UserManager.ts
   - src/parsers/dom/Tokenizer.ts
-  - src/parsers/dom/__tests__/Tokenizer.test.js
+  - src/parsers/dom/**tests**/Tokenizer.test.js
   - required-pages/02ed956a-b212-4486-bd34-9785a7efe978.md
   - data/pages/1c769ef7-d766-46e2-860c-83673ff5c8a3.md
 
@@ -5241,7 +5272,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: 892965ae 19a90508 aca21a04 ad5a7b82 267da48e
 - Files Modified:
   - plugins/MarqueePlugin.ts
-  - plugins/__tests__/MarqueePlugin.test.js
+  - plugins/**tests**/MarqueePlugin.test.js
   - docs/plugins/MarqueePlugin.md
   - required-pages/654a0565-a16f-46aa-b1ec-8f2dc0adc592.md
   - required-pages/f1f41a47-8d0d-4d46-a5e2-6208ba42e4a0.md
@@ -5273,7 +5304,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - plugins/types.ts
   - src/managers/PluginManager.ts
   - plugins/MarqueePlugin.ts
-  - plugins/__tests__/MarqueePlugin.test.js
+  - plugins/**tests**/MarqueePlugin.test.js
   - src/utils/managerUtils.ts (new)
   - src/managers/BaseManager.ts
   - ve-geology: addons/ve-geology/managers/HansDataManager.js
@@ -5297,7 +5328,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: f8e5e6ce
 - Files Modified:
   - src/managers/AddonsManager.ts
-  - src/managers/__tests__/AddonsManager.test.js
+  - src/managers/**tests**/AddonsManager.test.js
   - docs/platform/addon-development-guide.md
   - addons/calendar/ (7 files, new)
   - docs/plugins/CalendarPlugin.md
@@ -5321,7 +5352,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: 6f4a9997 267da48e
 - Files Modified:
   - plugins/SlideshowPlugin.ts
-  - plugins/__tests__/SlideshowPlugin.test.js
+  - plugins/**tests**/SlideshowPlugin.test.js
   - docs/plugins/SlideshowPlugin.md
   - required-pages/f1f41a47-8d0d-4d46-a5e2-6208ba42e4a0.md
   - package.json / package-lock.json
@@ -5375,7 +5406,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - src/providers/VersioningFileProvider.ts
   - src/routes/WikiRoutes.ts
   - views/edit.ejs
-  - src/managers/__tests__/ACLManager.test.js
+  - src/managers/**tests**/ACLManager.test.js
   - package.json
   - config/app-default-config.json
   - CHANGELOG.md
@@ -5401,10 +5432,10 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Files Modified:
   - src/WikiEngine.ts
   - src/managers/EmailManager.ts
-  - src/managers/__tests__/EmailManager.test.js
-  - src/providers/__tests__/GoogleOIDCProvider.test.js (new)
+  - src/managers/**tests**/EmailManager.test.js
+  - src/providers/**tests**/GoogleOIDCProvider.test.js (new)
   - src/managers/PageManager.ts
-  - src/managers/__tests__/PageManager.seedRequiredPages.test.js (new)
+  - src/managers/**tests**/PageManager.seedRequiredPages.test.js (new)
   - views/_media-card.ejs (new)
   - views/search-results.ejs
   - views/media-search.ejs
@@ -5432,8 +5463,8 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - src/WikiEngine.ts
   - src/managers/AuthManager.ts
   - src/managers/EmailManager.ts (new)
-  - src/managers/__tests__/AuthManager.test.js
-  - src/managers/__tests__/EmailManager.test.js (new)
+  - src/managers/**tests**/AuthManager.test.js
+  - src/managers/**tests**/EmailManager.test.js (new)
   - docs/admin/email-setup.md (new)
   - docs/planning/email-manager-plan.md (new)
 
@@ -5451,7 +5482,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: 537c9b13
 - Files Modified:
   - src/providers/VersioningFileProvider.ts
-  - src/providers/__tests__/VersioningFileProvider.test.js
+  - src/providers/**tests**/VersioningFileProvider.test.js
 
 ## 2026-04-05-01
 
@@ -5467,7 +5498,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Expanded "Seed Wiki Pages" section in `docs/platform/addon-development-guide.md`: when seeding runs, UUID validation behavior, idempotency, auto-set fields table, conflict behavior, admin reseed note (not yet implemented; workaround: delete `{uuid}.md` + restart)
 - Commits: 67b4bcee
 - Files Modified:
-  - src/managers/__tests__/AddonsManager.test.js
+  - src/managers/**tests**/AddonsManager.test.js
   - docs/platform/addon-development-guide.md
 
 ## 2026-04-04-04
@@ -5753,7 +5784,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 
 ### Testing Results
 
-- __92 suites passed, 0 failed__
+- **92 suites passed, 0 failed**
 - 2388 passed, 11 skipped, 0 failed
 - Skipped tests: individual `test.skip` items documenting real limitations (deprecated WikiStyleHandler, changed pipeline internals, emoji handling edge cases) — intentionally preserved
 
@@ -5921,7 +5952,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Closed #238
 - Commits: 2347f76
 - Files Modified:
-  - src/utils/__tests__/pluginFormatters.test.js (new)
+  - src/utils/**tests**/pluginFormatters.test.js (new)
   - plugins/MediaGallery.ts
   - plugins/MediaSearch.ts
 
@@ -6053,8 +6084,8 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - WikiRoutes.privatePageAccess.test.js: 8 tests covering serveAttachment() — anonymous 403, non-creator 403, creator 200, admin 200, public attachment bypasses check, pageName resolved from mentions/pageName/fallback
 - Commits: af8f75d
 - Files Modified:
-  - src/providers/__tests__/LunrSearchProvider.privateFilter.test.js (new)
-  - src/routes/__tests__/WikiRoutes.privatePageAccess.test.js (new)
+  - src/providers/**tests**/LunrSearchProvider.privateFilter.test.js (new)
+  - src/routes/**tests**/WikiRoutes.privatePageAccess.test.js (new)
 
 ## 2026-03-25-11
 
@@ -6079,7 +6110,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - src/managers/BackgroundJobManager.ts (new)
   - src/WikiEngine.ts
   - src/routes/WikiRoutes.ts
-  - src/routes/__tests__/routes.test.js
+  - src/routes/**tests**/routes.test.js
   - views/admin-dashboard.ejs
   - views/admin-media.ejs
 
@@ -6104,7 +6135,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: 39c4a2e
 - Files Modified:
   - src/managers/AssetService.ts
-  - src/managers/__tests__/AssetService.test.js
+  - src/managers/**tests**/AssetService.test.js
   - src/routes/WikiRoutes.ts
   - views/edit.ejs
 
@@ -6476,7 +6507,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: TBD
 - Files Modified:
   - src/context/WikiContext.ts
-  - src/context/__tests__/WikiContext.test.js
+  - src/context/**tests**/WikiContext.test.js
   - src/routes/WikiRoutes.ts
   - views/profile.ejs
   - docs/GLOSSARY.md
@@ -6640,7 +6671,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: 5f70cd5
 - Files Modified:
   - src/utils/SectionUtils.ts (new)
-  - src/utils/__tests__/SectionUtils.test.js (new)
+  - src/utils/**tests**/SectionUtils.test.js (new)
   - src/routes/WikiRoutes.ts
   - views/view.ejs
   - views/edit.ejs
@@ -6718,9 +6749,9 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - VersioningFileProvider-Maintenance: kept describe.skip with comment on API mismatch
 - Commits: 22a8138
 - Files Modified:
-  - src/parsers/__tests__/MarkupParser-*.test.js (7 files)
-  - src/providers/__tests__/VersioningFileProvider*.test.js (2 files)
-  - src/utils/__tests__/VersioningMigration.test.js
+  - src/parsers/**tests**/MarkupParser-*.test.js (7 files)
+  - src/providers/**tests**/VersioningFileProvider*.test.js (2 files)
+  - src/utils/**tests**/VersioningMigration.test.js
 
 ---
 
@@ -6864,7 +6895,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: ffb5b8f
 - Files Modified:
   - plugins/SessionsPlugin.ts
-  - plugins/__tests__/SessionsPlugin.test.js
+  - plugins/**tests**/SessionsPlugin.test.js
   - src/routes/WikiRoutes.ts
 
 ---
@@ -6883,7 +6914,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: 5d13ffe
 - Files Modified:
   - plugins/IndexPlugin.ts
-  - plugins/__tests__/IndexPlugin.test.js
+  - plugins/**tests**/IndexPlugin.test.js
   - docs/providers/FileSystemMediaProvider.md
 
 ---
@@ -6948,7 +6979,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: TBD
 - Files Modified:
   - src/utils/version.ts
-  - src/utils/__tests__/version.test.js
+  - src/utils/**tests**/version.test.js
 
 ---
 
@@ -6988,7 +7019,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - src/managers/PluginManager.ts
   - src/types/WikiEngine.ts
   - app.js
-  - src/managers/__tests__/PluginManager.registerPlugin.test.js
+  - src/managers/**tests**/PluginManager.registerPlugin.test.js
 
 ---
 
@@ -7303,7 +7334,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Files Modified:
   - app.js
   - src/providers/FileSystemMediaProvider.ts
-  - src/providers/__tests__/FileSystemMediaProvider.extractYear.test.js
+  - src/providers/**tests**/FileSystemMediaProvider.extractYear.test.js
 
 ---
 
@@ -7331,7 +7362,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - src/providers/BaseMediaProvider.ts
   - src/managers/MediaManager.ts
   - config/app-default-config.json
-  - src/providers/__tests__/FileSystemMediaProvider.extractYear.test.js
+  - src/providers/**tests**/FileSystemMediaProvider.extractYear.test.js
   - docs/managers/MediaManager.md
   - docs/managers/MediaManager-Complete-Guide.md
   - required-pages/d14ef7c7-299a-4729-a457-452679569ca9.md
@@ -7347,9 +7378,9 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Testing:
   - npm test: 75 suites passed, 1915 tests passed
 - Work Done:
-  - __ACL flood fix__: Removed `logAccessDecision → NotificationManager` forwarding in `ACLManager.ts`. Access decisions are audit-log entries (info/warn via logger) only — they fired on every page view and flooded the notification UI
-  - __Wrong count fix__: Dashboard route sliced to 10 for display but passed `notifications.length` (always ≤10) as count. Now tracks `totalNotificationCount` from the full array, passes it to template separately; EJS uses `totalNotificationCount` for the "View All" button
-  - __Missing folder notification__: Added `missingFolders?: string[]` to `ScanResult`; `FileSystemMediaProvider.scan()` collects skipped folder paths; `MediaManager.scanFolders()` calls `NotificationManager.addNotification()` for each missing folder as a `warning` level system notification
+  - **ACL flood fix**: Removed `logAccessDecision → NotificationManager` forwarding in `ACLManager.ts`. Access decisions are audit-log entries (info/warn via logger) only — they fired on every page view and flooded the notification UI
+  - **Wrong count fix**: Dashboard route sliced to 10 for display but passed `notifications.length` (always ≤10) as count. Now tracks `totalNotificationCount` from the full array, passes it to template separately; EJS uses `totalNotificationCount` for the "View All" button
+  - **Missing folder notification**: Added `missingFolders?: string[]` to `ScanResult`; `FileSystemMediaProvider.scan()` collects skipped folder paths; `MediaManager.scanFolders()` calls `NotificationManager.addNotification()` for each missing folder as a `warning` level system notification
   - Bumped SEMVER patch to 1.6.3
 - Commits: TBD
 - Files Modified:
@@ -7598,7 +7629,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: TBD
 - Files Modified:
   - src/utils/PageNameMatcher.ts
-  - src/utils/__tests__/PageNameMatcher.test.js
+  - src/utils/**tests**/PageNameMatcher.test.js
 
 ---
 
@@ -7941,7 +7972,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: 04c891a
 - Files Modified:
   - src/providers/BasicAttachmentProvider.ts
-  - src/providers/__tests__/BasicAttachmentProvider.diskFallback.test.js
+  - src/providers/**tests**/BasicAttachmentProvider.diskFallback.test.js
 
 ---
 
@@ -8087,7 +8118,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - src/providers/BasicAttachmentProvider.ts
   - src/managers/AttachmentManager.ts
   - src/routes/WikiRoutes.ts
-  - src/routes/__tests__/WikiRoutes.attachments.test.js
+  - src/routes/**tests**/WikiRoutes.attachments.test.js
 
 ## 2026-03-08-01
 
@@ -8174,7 +8205,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - All 8 write queue tests now pass without a build step
 - Commits: bfd2eff
 - Files Modified:
-  - src/providers/__tests__/VersioningFileProvider-WriteQueue.test.js
+  - src/providers/**tests**/VersioningFileProvider-WriteQueue.test.js
 
 ## 2026-03-07-04
 
@@ -8211,7 +8242,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Files Modified:
   - src/utils/LocaleUtils.ts
   - src/managers/VariableManager.ts
-  - src/utils/__tests__/LocaleUtils.test.js
+  - src/utils/**tests**/LocaleUtils.test.js
 
 ---
 
@@ -8228,7 +8259,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Closed #307 (already fixed by ce1282d — no code change needed)
 - Commits: 24dd96a
 - Files Modified:
-  - src/parsers/__tests__/MarkupParser.test.js
+  - src/parsers/**tests**/MarkupParser.test.js
 
 ---
 
@@ -8249,7 +8280,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Files Modified:
   - src/managers/ValidationManager.ts
   - src/managers/PageManager.ts
-  - src/managers/__tests__/ValidationManager.test.js
+  - src/managers/**tests**/ValidationManager.test.js
 
 ---
 
@@ -8294,12 +8325,12 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - plugins/renderImage.ts (new)
   - plugins/AttachPlugin.ts
   - plugins/ImagePlugin.ts
-  - plugins/__tests__/AttachPlugin.test.js (new)
-  - plugins/__tests__/ImagePlugin.test.js
+  - plugins/**tests**/AttachPlugin.test.js (new)
+  - plugins/**tests**/ImagePlugin.test.js
   - src/managers/AttachmentManager.ts
-  - src/managers/__tests__/AttachmentManager.resolveAttachmentSrc.test.js (new)
+  - src/managers/**tests**/AttachmentManager.resolveAttachmentSrc.test.js (new)
   - src/providers/BasicAttachmentProvider.ts
-  - src/providers/__tests__/BasicAttachmentProvider.diskFallback.test.js (new)
+  - src/providers/**tests**/BasicAttachmentProvider.diskFallback.test.js (new)
 
 ---
 
@@ -8541,7 +8572,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 
 - Files Modified:
   - src/managers/ValidationManager.ts — UNICODE_MAP + updated generateSlug()
-  - src/managers/__tests__/ValidationManager.test.js — 4 new tests
+  - src/managers/**tests**/ValidationManager.test.js — 4 new tests
   - /Volumes/hd2A/jimstest-wiki/data/pages/[Aβ uuid].md — slug: abeta
 
 - Issues Closed:
@@ -8582,7 +8613,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Used mockRejectedValueOnce (not mockRejectedValue) to prevent mock bleed between tests
 
 - Files Modified:
-  - src/routes/__tests__/routes.test.js - 3 new 409 tests for duplicate page scenarios
+  - src/routes/**tests**/routes.test.js - 3 new 409 tests for duplicate page scenarios
 
 - Issues Closed:
   - #280 - [BUG] More than one page with same name?
@@ -8715,7 +8746,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: 13bd25b
 - Files Modified:
   - src/managers/RenderingManager.ts
-  - src/managers/__tests__/RenderingManager.test.js
+  - src/managers/**tests**/RenderingManager.test.js
 
 ---
 
@@ -8733,8 +8764,8 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Added afterEach/afterAll cleanup to remove ./data/ after these tests complete
 - Commits: 30817a3
 - Files Modified:
-  - src/__tests__/WikiEngine.test.js
-  - src/managers/__tests__/policy-system.test.js
+  - src/**tests**/WikiEngine.test.js
+  - src/managers/**tests**/policy-system.test.js
 
 ---
 
@@ -8758,8 +8789,8 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - .gitignore
   - config/app-default-config.json
   - package.json
-  - src/routes/__tests__/WikiRoutes-isRequiredPage.test.js
-  - src/routes/__tests__/routes.test.js
+  - src/routes/**tests**/WikiRoutes-isRequiredPage.test.js
+  - src/routes/**tests**/routes.test.js
 
 ---
 
@@ -8880,7 +8911,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - src/utils/pluginFormatters.ts
   - src/context/WikiContext.ts
   - src/managers/RenderingManager.ts
-  - plugins/__tests__/UndefinedPagesPlugin.test.js (new)
+  - plugins/**tests**/UndefinedPagesPlugin.test.js (new)
   - docs/project_log.md
   - docs/plugins/UndefinedPagesPlugin.md
 
@@ -9160,16 +9191,16 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Testing:
   - Not run (adopt UUID still pending; NAS intermittently flaky this session)
 - Work Done:
-  - __Fix 1 — WikiRoutes.ts adopt UUID handler__: Added fallback to check `required-pages/{liveUuid}.md` if not found on NAS. Always removes stale required-pages copy. Calls `provider.renamePageInIndex(liveUuid, sourceUuid)` after adopt to keep page-index.json current.
-  - __Fix 2 — VersioningFileProvider.ts stale UUID check__: Changed `canUseFastInitialization()` from sampling first 10 entries to `entries.some(e => uuidPattern.test(e.uuid))`. Fixes false-positive stale detection due to V8 integer-key sorting.
-  - __Fix 3 — VersioningFileProvider.ts renamePageInIndex()__: New public method to rename page-index.json entries after adopt UUID.
-  - __Fix 4 — VersioningFileProvider.ts fast init metadata-only__: Rewrote `initializeFromIndex()` to build caches from index data without any NAS file reads. Eliminated `loadPageFromIndexEntry()` (was reading all 14K pages from NAS). Result: 14534 pages cached in 13ms (was 20+ min hang).
-  - __Fix 5 — VersioningFileProvider.ts double file read__: `canUseFastInitialization()` now stores parsed index to `this.pageIndex`; `initializeFromIndex()` uses it directly — eliminates second `readFile` of the 3.7MB index which was hanging the startup.
-  - __Fix 6 — VersioningFileProvider.ts slug in index__: Added `slug?: string` to `PageIndexEntry`; `savePage()` now passes slug to `updatePageInIndex()`. Fast init populates `slugIndex` from index without NAS reads.
-  - __Fix 7 — SearchManager.ts background index build__: Changed `buildSearchIndex()` call in `initialize()` from `await` to fire-and-forget (`.catch()` only). Prevents NAS hang during search index rebuild from blocking engine initialization.
+  - **Fix 1 — WikiRoutes.ts adopt UUID handler**: Added fallback to check `required-pages/{liveUuid}.md` if not found on NAS. Always removes stale required-pages copy. Calls `provider.renamePageInIndex(liveUuid, sourceUuid)` after adopt to keep page-index.json current.
+  - **Fix 2 — VersioningFileProvider.ts stale UUID check**: Changed `canUseFastInitialization()` from sampling first 10 entries to `entries.some(e => uuidPattern.test(e.uuid))`. Fixes false-positive stale detection due to V8 integer-key sorting.
+  - **Fix 3 — VersioningFileProvider.ts renamePageInIndex()**: New public method to rename page-index.json entries after adopt UUID.
+  - **Fix 4 — VersioningFileProvider.ts fast init metadata-only**: Rewrote `initializeFromIndex()` to build caches from index data without any NAS file reads. Eliminated `loadPageFromIndexEntry()` (was reading all 14K pages from NAS). Result: 14534 pages cached in 13ms (was 20+ min hang).
+  - **Fix 5 — VersioningFileProvider.ts double file read**: `canUseFastInitialization()` now stores parsed index to `this.pageIndex`; `initializeFromIndex()` uses it directly — eliminates second `readFile` of the 3.7MB index which was hanging the startup.
+  - **Fix 6 — VersioningFileProvider.ts slug in index**: Added `slug?: string` to `PageIndexEntry`; `savePage()` now passes slug to `updatePageInIndex()`. Fast init populates `slugIndex` from index without NAS reads.
+  - **Fix 7 — SearchManager.ts background index build**: Changed `buildSearchIndex()` call in `initialize()` from `await` to fire-and-forget (`.catch()` only). Prevents NAS hang during search index rebuild from blocking engine initialization.
   - Result: Server now initializes in ~42–47 seconds (was hanging for 20+ min or never completing).
   - Note: Must use `server.sh start` (not `npx pm2 start` directly) — server.sh sources .env which sets INSTANCE_DATA_FOLDER; bypassing it causes install screen to appear and wrong data paths.
-  - __Fix 8 — VersioningFileProvider.ts required-pages scan in fast init__: After loading index entries, `initializeFromIndex()` now scans the local `required-pages/` directory for `.md` files not already in `uuidIndex`. Reads frontmatter (title, uuid, slug) and adds to all caches. Fixes 404 on Welcome, Footer, and other system pages after fast init was introduced. 61 pages loaded in <1ms (local I/O, not NAS). Log: `Loaded 61 additional required-pages not in index`.
+  - **Fix 8 — VersioningFileProvider.ts required-pages scan in fast init**: After loading index entries, `initializeFromIndex()` now scans the local `required-pages/` directory for `.md` files not already in `uuidIndex`. Reads frontmatter (title, uuid, slug) and adds to all caches. Fixes 404 on Welcome, Footer, and other system pages after fast init was introduced. 61 pages loaded in <1ms (local I/O, not NAS). Log: `Loaded 61 additional required-pages not in index`.
 - Commits: 34b42b8
 - Files Modified:
   - src/routes/WikiRoutes.ts
@@ -9360,7 +9391,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Remaining 303 skipped: VersioningFileProvider API mismatch, MarkupParser output format mismatches, timing-dependent performance tests, intentional emoji limitation
 - Commits: 19869e6
 - Files Modified:
-  - src/managers/__tests__/RenderingManager.test.js
+  - src/managers/**tests**/RenderingManager.test.js
   - tests/e2e/search.spec.js
   - tests/e2e/pages.spec.js
 
@@ -9426,7 +9457,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - src/managers/SchemaManager.ts
   - src/managers/ACLManager.ts
   - src/routes/WikiRoutes.ts
-  - src/managers/__tests__/SchemaManager.test.js
+  - src/managers/**tests**/SchemaManager.test.js
 
 ---
 
@@ -9447,7 +9478,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: 8ebe265
 - Files Modified:
   - src/providers/FileSystemProvider.ts
-  - src/providers/__tests__/FileSystemProvider.test.js
+  - src/providers/**tests**/FileSystemProvider.test.js
   - src/routes/WikiRoutes.ts
 
 ---
@@ -9469,7 +9500,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: 332eb92
 - Files Modified:
   - src/utils/PageNameMatcher.ts
-  - src/utils/__tests__/PageNameMatcher.test.js
+  - src/utils/**tests**/PageNameMatcher.test.js
   - src/parsers/LinkParser.ts
   - src/providers/FileSystemProvider.ts
   - src/parsers/dom/handlers/DOMLinkHandler.ts
@@ -9548,7 +9579,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - data/config/app-test-config.json (deleted from git)
   - server.sh
   - src/managers/ConfigurationManager.ts
-  - src/managers/__tests__/ConfigurationManager.test.js
+  - src/managers/**tests**/ConfigurationManager.test.js
   - src/managers/ImportManager.ts
   - src/utils/version.ts
   - docs/INSTALLATION/Startup-Process.md
@@ -9597,7 +9628,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: 6b5d973
 - Files Modified:
   - src/managers/MetricsManager.ts
-  - src/managers/__tests__/MetricsManager.test.js
+  - src/managers/**tests**/MetricsManager.test.js
   - config/app-default-config.json
   - data/config/app-custom-config.json
   - docs/admin/Telemetry.md
@@ -9621,7 +9652,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Updated Telemetry.md to document dynamic prefix behavior
 - Files Modified:
   - src/managers/MetricsManager.ts
-  - src/managers/__tests__/MetricsManager.test.js
+  - src/managers/**tests**/MetricsManager.test.js
   - docs/admin/Telemetry.md
   - docs/project_log.md
 
@@ -9671,7 +9702,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: bb0b11b, 8a51d67
 - Files Modified:
   - src/managers/MetricsManager.ts (new)
-  - src/managers/__tests__/MetricsManager.test.js (new)
+  - src/managers/**tests**/MetricsManager.test.js (new)
   - src/WikiEngine.ts
   - src/routes/WikiRoutes.ts
   - src/providers/LunrSearchProvider.ts
@@ -9712,7 +9743,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Added chromium-maintenance project to playwright.config.js (runs after all other tests to avoid global state interference)
 - Commits: 73b6bb6
 - Files Modified:
-  - src/providers/__tests__/VersioningFileProvider-WriteQueue.test.js (new)
+  - src/providers/**tests**/VersioningFileProvider-WriteQueue.test.js (new)
   - tests/e2e/admin-maintenance.spec.js (new)
   - tests/e2e/startup-maintenance.spec.js (new)
   - playwright.config.js
@@ -9880,7 +9911,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Files Created:
   - required-pages/e67d5e25-76d4-43fb-bce0-6f7675654f17.md
 - Files Modified:
-  - src/converters/__tests__/JSPWikiConverter.test.js
+  - src/converters/**tests**/JSPWikiConverter.test.js
 
 ## 2026-02-11-02
 
@@ -9976,7 +10007,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Build successful
 - Files Created:
   - plugins/LocationPlugin.ts
-  - plugins/__tests__/LocationPlugin.test.js
+  - plugins/**tests**/LocationPlugin.test.js
   - public/css/plugins/location.css
   - docs/plugins/LocationPlugin.md
   - tests/e2e/location-plugin.spec.js
@@ -10026,8 +10057,8 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - src/routes/WikiRoutes.ts (8 conversions)
   - src/managers/UserManager.ts (2 conversions to pageExists)
   - src/managers/ImportManager.ts (2 conversions)
-  - src/routes/__tests__/WikiRoutes-isRequiredPage.test.js (mock updates)
-  - src/routes/__tests__/routes.test.js (mock updates)
+  - src/routes/**tests**/WikiRoutes-isRequiredPage.test.js (mock updates)
+  - src/routes/**tests**/routes.test.js (mock updates)
 
 ## 2026-02-09-03
 
@@ -10169,7 +10200,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Files Modified:
   - src/providers/LunrSearchProvider.ts
   - src/routes/WikiRoutes.ts
-  - src/routes/__tests__/routes.test.js
+  - src/routes/**tests**/routes.test.js
   - docs/TODO.md
 - Closes: #247
 
@@ -10196,7 +10227,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Files Modified:
   - src/managers/RenderingManager.ts
   - src/routes/WikiRoutes.ts
-  - src/routes/__tests__/routes.test.js
+  - src/routes/**tests**/routes.test.js
   - config/app-default-config.json
 - Closes: #245
 
@@ -10224,7 +10255,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - src/providers/FileSystemProvider.ts
   - src/managers/ImportManager.ts
   - src/routes/WikiRoutes.ts
-  - src/routes/__tests__/routes.test.js
+  - src/routes/**tests**/routes.test.js
   - views/header.ejs
   - views/view.ejs
 - Closes: #246
@@ -10249,7 +10280,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: 070b070
 - Files Modified:
   - src/managers/ConfigurationManager.ts
-  - src/managers/__tests__/ConfigurationManager.test.js
+  - src/managers/**tests**/ConfigurationManager.test.js
 - Closes: #244
 
 ## 2026-02-08-06
@@ -10334,7 +10365,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: ebc9224
 - Files Modified:
   - src/converters/JSPWikiConverter.ts
-  - src/converters/__tests__/JSPWikiConverter.test.js
+  - src/converters/**tests**/JSPWikiConverter.test.js
   - src/parsers/MarkupParser.ts
 - Closes: #235
 
@@ -10380,7 +10411,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: 3aa4b31
 - Files Modified:
   - src/converters/JSPWikiConverter.ts
-  - src/converters/__tests__/JSPWikiConverter.test.js
+  - src/converters/**tests**/JSPWikiConverter.test.js
 
 ## 2026-02-07-01
 
@@ -10401,7 +10432,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: cd176aa
 - Files Modified:
   - src/converters/JSPWikiConverter.ts
-  - src/converters/__tests__/JSPWikiConverter.test.js
+  - src/converters/**tests**/JSPWikiConverter.test.js
 
 ## 2026-02-06-25
 
@@ -10439,7 +10470,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - src/routes/WikiRoutes.ts
   - src/managers/RenderingManager.ts
   - views/create.ejs
-  - src/routes/__tests__/WikiRoutes-buildNewPageMetadata.test.js (new)
+  - src/routes/**tests**/WikiRoutes-buildNewPageMetadata.test.js (new)
   - docs/admin/Versioning-Deployment-Guide.md
   - docs/INSTALLATION/INSTALL-TESTING.md
   - docs/managers/PolicyManager.md
@@ -10472,7 +10503,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: dba49d0, 43e9c30, (pending)
 - Files Modified:
   - plugins/ImagePlugin.ts
-  - plugins/__tests__/ImagePlugin.test.js
+  - plugins/**tests**/ImagePlugin.test.js
   - src/managers/AttachmentManager.ts
   - src/providers/BaseAttachmentProvider.ts
   - src/providers/BasicAttachmentProvider.ts
@@ -10532,9 +10563,9 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - package.json
   - config/app-default-config.json
   - src/converters/JSPWikiConverter.ts
-  - src/converters/__tests__/JSPWikiConverter.test.js
+  - src/converters/**tests**/JSPWikiConverter.test.js
   - src/managers/ImportManager.ts
-  - src/managers/__tests__/ImportManager.test.js
+  - src/managers/**tests**/ImportManager.test.js
   - src/managers/ValidationManager.ts
   - src/parsers/MarkupParser.ts
   - src/parsers/handlers/JSPWikiPreprocessor.ts
@@ -10567,7 +10598,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - package.json
   - config/app-default-config.json
   - src/converters/JSPWikiConverter.ts
-  - src/converters/__tests__/JSPWikiConverter.test.js
+  - src/converters/**tests**/JSPWikiConverter.test.js
   - src/parsers/MarkupParser.ts
   - src/parsers/handlers/JSPWikiPreprocessor.ts
 
@@ -10614,8 +10645,8 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Files Modified:
   - src/managers/ImportManager.ts
   - src/converters/JSPWikiConverter.ts
-  - src/managers/__tests__/ImportManager.test.js
-  - src/converters/__tests__/JSPWikiConverter.test.js
+  - src/managers/**tests**/ImportManager.test.js
+  - src/converters/**tests**/JSPWikiConverter.test.js
   - docs/TODO.md
   - docs/project_log.md
 
@@ -10789,7 +10820,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: 2c853f8
 - Files Modified:
   - src/converters/HtmlConverter.ts (new)
-  - src/converters/__tests__/HtmlConverter.test.js (new)
+  - src/converters/**tests**/HtmlConverter.test.js (new)
   - src/managers/ImportManager.ts
   - src/routes/WikiRoutes.ts
   - views/admin-import.ejs
@@ -11006,7 +11037,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: (see below)
 - Files Modified:
   - src/converters/JSPWikiConverter.ts
-  - src/converters/__tests__/JSPWikiConverter.test.js
+  - src/converters/**tests**/JSPWikiConverter.test.js
 
 ---
 
@@ -11079,7 +11110,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Created `src/converters/IContentConverter.ts` - interface for extensible format converters
   - Created `src/converters/JSPWikiConverter.ts` - converts JSPWiki syntax to Markdown
     - Headings (!!! → #, !! → ##, ! → ###)
-    - Emphasis (__bold__ → __bold__, ''italic'' → *italic*)
+    - Emphasis (**bold** → **bold**, ''italic'' → *italic*)
     - Lists (* → -, # → 1.)
     - Code blocks ({{{ }}} → ``` ```)
     - Links, footnotes, definition lists, horizontal rules
@@ -11121,22 +11152,22 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Build: Successful
   - Server: Restarted and running on port 3000
 - Work Done:
-  - __Issue #220 - Page rename 404 bug__: Fixed slugIndex not being updated in FileSystemProvider.savePage() and deletePage()
-  - __Issue #221 - Log files missing__:
+  - **Issue #220 - Page rename 404 bug**: Fixed slugIndex not being updated in FileSystemProvider.savePage() and deletePage()
+  - **Issue #221 - Log files missing**:
     - Fixed logger.ts default path from `./logs` to `./data/logs`
     - Added `reconfigureLogger()` function for runtime config updates
     - Added reconfigureLogger call in WikiEngine after ConfigurationManager initializes
     - Fixed audit-config.json and docker/.env.example log paths
-  - __Issue #217 - Remove deprecated config property__:
+  - **Issue #217 - Remove deprecated config property**:
     - Removed `'ngdpbase.install.completed'` from InstallConfig interface
     - Updated test mocks in FileSystemProvider.test.js and PageManager-Storage.test.js
     - Updated documentation to reference `.install-complete` marker file
-  - __Issue #222 - Broken Search Page__:
+  - **Issue #222 - Broken Search Page**:
     - Fixed template bug: keywords checkbox checked wrong variable (userKeywordsList vs userKeywords)
     - Implemented searchIn field filtering in LunrSearchProvider using Lunr field-specific queries
     - Added searchIn and maxResults to SearchCriteria interface
     - Added 4 new tests for searchIn functionality
-  - __Logger export fixes__ (post-test discovery):
+  - **Logger export fixes** (post-test discovery):
     - Removed manual `module.exports` overwriting TypeScript named exports
     - Added `reconfigureLogger` to Jest mock in jest.setup.js
     - Fixed app.js to use `.default` for CommonJS import of ESM default export
@@ -11149,9 +11180,9 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - src/WikiEngine.ts
   - src/types/Config.ts
   - src/services/InstallService.ts
-  - src/managers/__tests__/PageManager-Storage.test.js
-  - src/managers/__tests__/SearchManager.test.js
-  - src/providers/__tests__/FileSystemProvider.test.js
+  - src/managers/**tests**/PageManager-Storage.test.js
+  - src/managers/**tests**/SearchManager.test.js
+  - src/providers/**tests**/FileSystemProvider.test.js
   - views/search-results.ejs
   - config/audit/audit-config.json
   - docker/.env.example
@@ -11378,11 +11409,11 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - config/app-default-config.json
   - config/app-custom-config.example (renamed from .json.example)
   - src/managers/ConfigurationManager.ts
-  - src/managers/__tests__/ConfigurationManager.test.js
-  - src/managers/__tests__/PageManager-Storage.test.js
+  - src/managers/**tests**/ConfigurationManager.test.js
+  - src/managers/**tests**/PageManager-Storage.test.js
   - src/services/InstallService.ts
   - src/providers/FileSystemProvider.ts
-  - src/providers/__tests__/FileSystemProvider.test.js
+  - src/providers/**tests**/FileSystemProvider.test.js
   - data/config/*.json (moved from config/)
 
 ---
@@ -11495,10 +11526,10 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - src/providers/FileUserProvider.ts
   - src/managers/BackupManager.ts
   - src/managers/NotificationManager.ts
-  - src/managers/__tests__/ConfigurationManager.test.js (new)
-  - src/providers/__tests__/FileSystemProvider.test.js
-  - src/managers/__tests__/NotificationManager.test.js
-  - src/managers/__tests__/PageManager-Storage.test.js
+  - src/managers/**tests**/ConfigurationManager.test.js (new)
+  - src/providers/**tests**/FileSystemProvider.test.js
+  - src/managers/**tests**/NotificationManager.test.js
+  - src/managers/**tests**/PageManager-Storage.test.js
 
 ---
 
@@ -11581,7 +11612,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Commits: b94778e
 - Files Modified:
   - src/managers/AddonsManager.ts (new)
-  - src/managers/__tests__/AddonsManager.test.js (new)
+  - src/managers/**tests**/AddonsManager.test.js (new)
   - src/WikiEngine.ts
   - config/app-default-config.json
   - addons/.gitkeep (new)
@@ -11980,7 +12011,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - src/routes/WikiRoutes.ts
   - src/utils/SchemaGenerator.ts
   - src/utils/VersioningMigration.ts
-  - src/__tests__/UserManager.test.js
+  - src/**tests**/UserManager.test.js
 
 ---
 
@@ -12092,13 +12123,13 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Updated issue #147 (strict mode status)
 - Commits: 893bd6c
 - Files Modified:
-  - plugins/__tests__/AllPlugins.test.js
+  - plugins/**tests**/AllPlugins.test.js
   - src/parsers/MarkupParser.ts
-  - src/parsers/dom/__tests__/DOMParser.test.js
-  - src/parsers/dom/handlers/__tests__/DOMLinkHandler.test.js
-  - src/parsers/dom/handlers/__tests__/DOMPluginHandler.test.js
-  - src/parsers/dom/handlers/__tests__/DOMVariableHandler.test.js
-  - src/parsers/handlers/__tests__/HandlerRegistry.test.js
+  - src/parsers/dom/**tests**/DOMParser.test.js
+  - src/parsers/dom/handlers/**tests**/DOMLinkHandler.test.js
+  - src/parsers/dom/handlers/**tests**/DOMPluginHandler.test.js
+  - src/parsers/dom/handlers/**tests**/DOMVariableHandler.test.js
+  - src/parsers/handlers/**tests**/HandlerRegistry.test.js
 - Related Issues: #180, #204, #147
 
 ---
@@ -12184,7 +12215,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Files Modified:
   - src/managers/PageManager.ts
   - src/types/Provider.ts
-  - src/managers/__tests__/PageManager.test.js
+  - src/managers/**tests**/PageManager.test.js
 - Related Issues: #184, #139
 
 ---
@@ -12801,8 +12832,8 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - app.js
   - plugins/ConfigAccessorPlugin.ts
   - plugins/SessionsPlugin.ts
-  - plugins/__tests__/CounterPlugin.test.js
-  - plugins/__tests__/SessionsPlugin.test.js
+  - plugins/**tests**/CounterPlugin.test.js
+  - plugins/**tests**/SessionsPlugin.test.js
 
 ---
 
@@ -12858,8 +12889,8 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Files Modified:
   - plugins/ConfigAccessorPlugin.ts (complete rewrite)
   - plugins/SessionsPlugin.ts (removed node-fetch)
-  - plugins/__tests__/CounterPlugin.test.js (removed console.warn expectation)
-  - plugins/__tests__/SessionsPlugin.test.js (copy types.ts for imports)
+  - plugins/**tests**/CounterPlugin.test.js (removed console.warn expectation)
+  - plugins/**tests**/SessionsPlugin.test.js (copy types.ts for imports)
   - All other plugin .ts files (ESLint auto-fixes from pre-commit)
   - src/legacy/ (DELETED - 3 files)
 
@@ -13298,7 +13329,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - `6ab57b9` fix: Resolve flaky maintenance-middleware tests causing CI failures
   - `164fd70` fix: Use tsx in CI smoke tests for TypeScript file resolution
 - Files Modified:
-  - src/routes/__tests__/maintenance-middleware.test.js
+  - src/routes/**tests**/maintenance-middleware.test.js
   - .github/workflows/ci.yml
   - .github/workflows/ci-passing-tests.yml
 
@@ -13417,27 +13448,27 @@ New `ApiContext` class — lightweight typed request context for API route handl
 ## 2025-12-27-14
 
 - Agent: Claude Code (Opus 4.5)
-- Subject: __Phase 6 Documentation & ESLint Cleanup__
+- Subject: **Phase 6 Documentation & ESLint Cleanup**
 - Issues: #147 (closed), #139 (EPIC updated)
 - Key Decision:
-  - __Fixed ESLint errors properly__ - No file-level disables, only line-specific where necessary
-  - __TSDoc conventions added__ - Documentation standard for TypeScript codebase
-  - __Cross-linked documentation__ - CODE_STANDARDS.md ↔ TypeScript-Style-Guide.md
+  - **Fixed ESLint errors properly** - No file-level disables, only line-specific where necessary
+  - **TSDoc conventions added** - Documentation standard for TypeScript codebase
+  - **Cross-linked documentation** - CODE_STANDARDS.md ↔ TypeScript-Style-Guide.md
 - Work Done:
-  - __ESLint Errors Fixed Properly:__
+  - **ESLint Errors Fixed Properly:**
     - CacheManager.ts - fixed unsafe type assertions and removed unnecessary disables
     - DOMBuilder.ts - removed unused imports (LinkedomNode, LinkedomText, LinkedomComment)
     - DOMLinkHandler.ts - removed unused imports, added targeted disables
     - UserManager.ts - prefixed unused interface with underscore
-  - __Documentation Created:__
+  - **Documentation Created:**
     - docs/TypeScript-Style-Guide.md with TSDoc conventions and examples
     - CONTRIBUTING.md updated with TypeScript guidelines section
     - README.md updated with TypeScript commands
-  - __Documentation Cross-Links Added:__
+  - **Documentation Cross-Links Added:**
     - CODE_STANDARDS.md references TypeScript Style Guide for detailed patterns
     - Comments section updated to reference TSDoc
     - TypeScript Style Guide references CODE_STANDARDS.md for general standards
-  - __GitHub Issues Updated:__
+  - **GitHub Issues Updated:**
     - Closed Phase 6 issue #147 with completion comment
     - Updated EPIC #139 with progress
 - Commits: 2493755, 7c3e765, d8949da, 2e4ae3f, 049426b
@@ -13460,51 +13491,51 @@ New `ApiContext` class — lightweight typed request context for API route handl
 ## 2025-12-27-13
 
 - Agent: Claude Code (Opus 4.5)
-- Subject: __Phase 6 COMPLETE - TypeScript strict mode migration finished__
+- Subject: **Phase 6 COMPLETE - TypeScript strict mode migration finished**
 - Issues: Milestone 4 (Phase 6: Enable strict TypeScript)
 - Key Decision:
-  - __Zero TypeScript errors achieved__ - All 224 errors eliminated
-  - __Type safety patterns established__ - LinkedomElement types, manager casts, CommonJS compatibility
-  - __Backward compatibility maintained__ - All 1,380 tests passing
+  - **Zero TypeScript errors achieved** - All 224 errors eliminated
+  - **Type safety patterns established** - LinkedomElement types, manager casts, CommonJS compatibility
+  - **Backward compatibility maintained** - All 1,380 tests passing
 - Work Done:
-  - __TypeScript Error Reduction: 224 → 0 errors__ 🎉
-  - __WikiDocument/DOM Types Enhanced:__
+  - **TypeScript Error Reduction: 224 → 0 errors** 🎉
+  - **WikiDocument/DOM Types Enhanced:**
     - Added `tagName`, `nodeType`, `remove()` to LinkedomElement interface
     - Added `nodeType` to LinkedomText and LinkedomComment interfaces
     - Exported types for use across codebase
-  - __DOMPluginHandler.ts Fixed (8 errors):__
+  - **DOMPluginHandler.ts Fixed (8 errors):**
     - Converted for...of loops to index-based (LinkedomNodeList compatibility)
     - Changed return type from Element to LinkedomElement
     - Updated filter functions to use LinkedomNode types
-  - __DOMVariableHandler.ts Fixed (3 errors):__
+  - **DOMVariableHandler.ts Fixed (3 errors):**
     - Same for...of loop conversions
     - Return type and import updates
-  - __Manager getManager Calls Fixed (10 files):__
+  - **Manager getManager Calls Fixed (10 files):**
     - ACLManager, PageManager, PolicyEvaluator, PolicyManager, UserManager
     - Changed `getManager<T>()` to `getManager() as T | undefined`
-  - __CacheManager.ts Fixed (3 errors):__
+  - **CacheManager.ts Fixed (3 errors):**
     - Added ICacheAdapter import and cast for RegionCache
     - Fixed CacheStats type compatibility
-  - __DOMParser Token Type Fixed:__
+  - **DOMParser Token Type Fixed:**
     - Added index signature to Tokenizer.Token interface
-  - __HandlerRegistry/MarkupParser Export Fixed:__
+  - **HandlerRegistry/MarkupParser Export Fixed:**
     - Added named export for HandlerRegistry class
-  - __FilterChain.ts Fixed:__
+  - **FilterChain.ts Fixed:**
     - Used `isEnabled()` method instead of protected `enabled` property
-  - __BaseSyntaxHandler.ts Fixed:__
+  - **BaseSyntaxHandler.ts Fixed:**
     - Added `priority` to clone() overrides type
-  - __VersioningFileProvider.ts Fixed:__
+  - **VersioningFileProvider.ts Fixed:**
     - Added `async` to createVersionDirectories()
-  - __ParseContext.ts Fixed:__
+  - **ParseContext.ts Fixed:**
     - Added named export for class
-  - __UserManager Session Types Fixed:__
+  - **UserManager Session Types Fixed:**
     - Updated to use UserSession type from types/User.ts
     - Fixed Provider interface signature
-  - __SchemaGenerator.ts Fixed:__
+  - **SchemaGenerator.ts Fixed:**
     - Added `repository` to SchemaOptions interface
-  - __sessionUtils.ts Fixed:__
+  - **sessionUtils.ts Fixed:**
     - Added engine parameter casts for manager instantiation
-  - __Utility Scripts Fixed (CommonJS compatibility):__
+  - **Utility Scripts Fixed (CommonJS compatibility):**
     - version.ts, standardize-categories.ts
     - Replaced import.meta with require.main === module
     - Added getErrors() getter to CategoryStandardizer
@@ -13524,7 +13555,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - src/types/Provider.ts
   - src/routes/WikiRoutes.ts
   - src/utils/SchemaGenerator.ts, sessionUtils.ts, version.ts, standardize-categories.ts
-- __Next Steps:__
+- **Next Steps:**
   - Phase 6 is complete!
   - Ready to proceed with Phase 7 or other planned work
 
@@ -13536,34 +13567,34 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Subject: Phase 6b - Continue TypeScript strict mode migration
 - Issues: Milestone 4 (Phase 6: Enable strict TypeScript)
 - Key Decision:
-  - __Manager interface consistency__ - All managers now extend BaseManager with uniform backup/restore signatures
-  - __Migration approach__ - Using `any` type for engine parameter during migration
-  - __ESLint disables__ - Added per-file disables for TypeScript-related rules during migration period
+  - **Manager interface consistency** - All managers now extend BaseManager with uniform backup/restore signatures
+  - **Migration approach** - Using `any` type for engine parameter during migration
+  - **ESLint disables** - Added per-file disables for TypeScript-related rules during migration period
 - Work Done:
-  - __TypeScript Error Reduction: 226 → 214 errors__
-  - __BackupManager Refactoring:__
+  - **TypeScript Error Reduction: 226 → 214 errors**
+  - **BackupManager Refactoring:**
     - Renamed `backup()` → `createBackup()` (file operations)
     - Renamed `restore()` → `restoreFromFile()` (file operations)
     - Added proper `backup()` → `Promise<BackupData>` conforming to BaseManager
     - Added `restoreState()` for BackupManager's own state
-  - __ConfigurationManager Refactoring:__
+  - **ConfigurationManager Refactoring:**
     - Now extends BaseManager (was standalone class)
     - Added proper `backup()` and `restore()` methods
     - Added `reload()` method for configuration refresh
-  - __SearchManager:__
+  - **SearchManager:**
     - Removed local BackupData interface (uses BaseManager's)
     - Fixed backup() to include `managerName` field
-  - __BaseManager Updates:__
+  - **BaseManager Updates:**
     - Engine type changed to `any` for migration flexibility
     - Added `no-unsafe-assignment` ESLint disable
-  - __WikiEngine.ts:__
+  - **WikiEngine.ts:**
     - `initialize()` now returns `Promise<void>` (matches Engine base)
     - Removed `return this;` at end of initialize
-  - __Manager Constructor Updates:__
+  - **Manager Constructor Updates:**
     - All managers now accept `any` for engine parameter
     - Files: ACLManager, AuditManager, PageManager, PolicyEvaluator, PolicyManager,
       PolicyValidator, RenderingManager, SearchManager, TemplateManager, UserManager, MarkupParser
-  - __ESLint Disables Added:__
+  - **ESLint Disables Added:**
     - PolicyManager, PolicyValidator, TemplateManager, UserManager, PageManager, MarkupParser
 - Test Status:
   - All 1,380 tests passing ✅
@@ -13589,17 +13620,17 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Subject: Phase 6a - Remove @ts-nocheck from WikiRoutes and fix type errors properly
 - Issues: Milestone 4 (Phase 6: Enable strict TypeScript)
 - Key Decision:
-  - __Removed @ts-nocheck__ from WikiRoutes.ts - proper type safety achieved
-  - __User feedback addressed__ - No more deferred type fixes with compiler directives
+  - **Removed @ts-nocheck** from WikiRoutes.ts - proper type safety achieved
+  - **User feedback addressed** - No more deferred type fixes with compiler directives
   - Fixed WikiContext readonly content property by creating new context with content
   - Extended type definitions to match actual implementations
 - Work Done:
-  - __WikiRoutes.ts Type Fixes (23 errors → 0):__
+  - **WikiRoutes.ts Type Fixes (23 errors → 0):**
     - Added proper type annotations: WikiContextOptions, SystemCategoryConfig, ProfileUpdateData, PageMetadata
     - Fixed readonly content property: create new WikiContext instead of mutating
     - Fixed templateData typing: initialized with leftMenu and footer properties
     - Type assertions for system category config loops
-  - __Type Definition Updates:__
+  - **Type Definition Updates:**
     - WikiEngine.ts: Added logger and startTime optional properties
     - WikiEngine class: Now implements IWikiEngine interface
     - Provider.ts: Fixed getAllUsers return type to Map<string, User>
@@ -13607,7 +13638,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - UserManager.ts: Added displayName and isExternal to UserContext interface
     - express.d.ts: New file for Express Request/Session type extensions
     - types/index.ts: Removed duplicate/undefined type exports
-  - __TypeScript Error Reduction:__
+  - **TypeScript Error Reduction:**
     - Started: ~1148 errors (with strict mode enabled)
     - WikiRoutes.ts: 0 errors (fixed all 23)
     - Remaining: 253 errors (in DOM/versioning utilities, non-blocking)
@@ -13632,12 +13663,12 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Subject: Phase 5 COMPLETE - WikiRoutes TypeScript Conversion (5,565 lines)
 - Issues: #146 (Phase 5: Convert Routes to TypeScript), Milestone 4
 - Key Decision:
-  - __Phase 5 COMPLETE__ - All routes converted to TypeScript
-  - __Phased migration strategy__ - Use @ts-nocheck now, fix in Phase 6
+  - **Phase 5 COMPLETE** - All routes converted to TypeScript
+  - **Phased migration strategy** - Use @ts-nocheck now, fix in Phase 6
   - Largest single file conversion: 5,565 lines
   - Fixed bug: this.getCurrentUser() → userManager.getCurrentUser()
 - Work Done:
-  - __Converted WikiRoutes.js → WikiRoutes.ts (5,565 lines):__
+  - **Converted WikiRoutes.js → WikiRoutes.ts (5,565 lines):**
     - Added 7 comprehensive TypeScript interfaces:
       - WikiEngine (with config support)
       - UserContext (authentication/session data)
@@ -13655,21 +13686,21 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - Added type annotations to method signatures
     - Private engine property with WikiEngine type
     - Both ES6 default export and CommonJS module.exports
-  - __Bug Fix Found During Conversion:__
+  - **Bug Fix Found During Conversion:**
     - Line 4708, 4745, 4793, 4826: Fixed `this.getCurrentUser(req)`
     - Changed to `userManager.getCurrentUser(req)`
     - Original code called non-existent method on WikiRoutes class
     - Now properly delegates to UserManager
-  - __Phased Migration Strategy:__
+  - **Phased Migration Strategy:**
     - Added @ts-nocheck directive (temporary)
     - Added 14 ESLint disable directives (temporary)
     - Will be removed in Phase 6 strict mode
     - Recommended TypeScript migration pattern
-  - __Phase 5 Summary - Routes Conversion:__
+  - **Phase 5 Summary - Routes Conversion:**
     - InstallRoutes.ts: 293 lines ✅
     - WikiRoutes.ts: 5,565 lines ✅
     - Total: 5,858 lines of route code converted
-    - __Phase 5: 100% COMPLETE__ ✅
+    - **Phase 5: 100% COMPLETE** ✅
 - Test Status:
   - All 153 route tests passing ✅ (9 test suites)
   - All 1,380 tests passing ✅ (58 test suites)
@@ -13680,8 +13711,8 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - src/routes/WikiRoutes.js → src/routes/WikiRoutes.ts (renamed, 5,565 lines)
   - docs/project_log.md
 - Migration Progress:
-  - __Phase 5: COMPLETE__ ✅ (Routes & Controllers: 2/2 files, 5,858 lines)
-  - __Overall TypeScript Migration: ~54% complete__ (86/160 files)
+  - **Phase 5: COMPLETE** ✅ (Routes & Controllers: 2/2 files, 5,858 lines)
+  - **Overall TypeScript Migration: ~54% complete** (86/160 files)
   - Routes conversion complete: InstallRoutes.ts + WikiRoutes.ts
 - Next Steps - Phase 6:
   - Enable strict mode in tsconfig.json
@@ -13702,12 +13733,12 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Subject: Issue #185 Cleanup Complete + InstallRoutes TypeScript Conversion
 - Issues: #185 (Remove legacy pipeline), #146 (Phase 5: Convert Routes to TypeScript)
 - Key Decision:
-  - __Fully removed all deprecated parser tests__ (13 tests deleted)
-  - __Closed Issue #185__ with complete legacy pipeline removal
-  - __Converted InstallRoutes to TypeScript__ (Phase 5 progress)
+  - **Fully removed all deprecated parser tests** (13 tests deleted)
+  - **Closed Issue #185** with complete legacy pipeline removal
+  - **Converted InstallRoutes to TypeScript** (Phase 5 progress)
   - All 1,380 tests passing (down from 1,393)
 - Work Done:
-  - __Removed 13 Deprecated Tests:__
+  - **Removed 13 Deprecated Tests:**
     - 2 tests from MarkupParser.test.js Initialization section (phase init, phase sorting)
     - 1 commented assertion removed (phaseMetrics)
     - 2 tests from MarkupParser.test.js Error Handling (phase errors, critical failure)
@@ -13715,11 +13746,11 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - 2 tests from HTML Cleanup section (entire describe block removed)
     - 3 tests from MarkupParser-Performance.test.js (performance alerts)
     - 3 tests from Metrics Collection describe block (entire block removed)
-  - __Issue #185 Closure:__
+  - **Issue #185 Closure:**
     - Added final comment documenting all 13 deprecated tests removed
     - Confirmed test count reduction: 1,701 → 1,688 total (13 removed)
     - Passing tests: 1,393 → 1,380 (13 deprecated tests successfully removed)
-  - __Converted InstallRoutes.ts (293 lines):__
+  - **Converted InstallRoutes.ts (293 lines):**
     - Added 6 comprehensive TypeScript interfaces:
       - InstallSessionData - Session data extensions
       - InstallFormData - Complete installation form structure
@@ -13738,7 +13769,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
       - @typescript-eslint/no-redundant-type-constituents
       - no-console
     - Both ES6 and CommonJS exports for compatibility
-  - __Documentation Updates:__
+  - **Documentation Updates:**
     - Updated docs/testing/Testing-Summary.md:
       - Changed test count from 1393 → 1380 passing
       - Changed total tests from 1701 → 1688
@@ -13757,15 +13788,15 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Zero ESLint errors
 - Commits: a6f8d98
 - Files Modified:
-  - src/parsers/__tests__/MarkupParser.test.js (removed 8 deprecated tests)
-  - src/parsers/__tests__/MarkupParser-Performance.test.js (removed 5 deprecated tests, 1 describe block)
+  - src/parsers/**tests**/MarkupParser.test.js (removed 8 deprecated tests)
+  - src/parsers/**tests**/MarkupParser-Performance.test.js (removed 5 deprecated tests, 1 describe block)
   - src/routes/InstallRoutes.js → src/routes/InstallRoutes.ts (renamed, 293 lines)
   - docs/testing/Testing-Summary.md (updated test counts, fixed formatting)
   - docs/testing/Complete-Testing-Guide.md (updated date, fixed formatting)
   - docs/project_log.md
 - Migration Progress:
-  - __Routes: 1/2 (50% complete)__ - InstallRoutes.ts ✅, WikiRoutes.js remaining (5,497 lines)
-  - __Overall TypeScript Migration: ~53% complete__ (85/160 files)
+  - **Routes: 1/2 (50% complete)** - InstallRoutes.ts ✅, WikiRoutes.js remaining (5,497 lines)
+  - **Overall TypeScript Migration: ~53% complete** (85/160 files)
   - Phase 5 in progress - Routes conversion
 - Next Steps:
   - Convert WikiRoutes.js to TypeScript (large file: 5,497 lines)
@@ -13780,16 +13811,16 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Subject: Parser Phase 6 Complete - MarkupParser Legacy Removal & TypeScript Conversion
 - Issues: #185 (Remove legacy 7-phase pipeline), #139 (TypeScript Migration Epic)
 - Key Decision:
-  - __Removed deprecated 7-phase legacy parser pipeline__ (~430 lines)
-  - __Converted MarkupParser to TypeScript__ (1,723 lines)
+  - **Removed deprecated 7-phase legacy parser pipeline** (~430 lines)
+  - **Converted MarkupParser to TypeScript** (1,723 lines)
   - DOM extraction pipeline is now the ONLY parser (no fallback)
   - All 1,380 tests passing (321 legacy tests appropriately skipped)
 - Work Done:
-  - __Created GitHub Issue #185:__
+  - **Created GitHub Issue #185:**
     - Documented deprecation of 7-phase legacy pipeline
     - Explained extraction pipeline benefits (fixes heading bug #110, #93)
     - Detailed components being removed
-  - __Removed Legacy 7-Phase Pipeline:__
+  - **Removed Legacy 7-Phase Pipeline:**
     - Removed 8 phase methods (phaseDOMParsing through phasePostProcessing)
     - Removed initializePhases() and executePhase() infrastructure
     - Removed legacy helper methods (processJSPWikiSyntax, protectGeneratedHtml, applyTableClasses, cleanupHtml)
@@ -13797,38 +13828,38 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - Updated parse() to call parseWithDOMExtraction() directly (no fallback)
     - Skipped 11 legacy phase-related tests with deprecation comments
     - Total reduction: ~430 lines
-  - __Converted MarkupParser.ts (1,723 lines):__
-    - __15+ comprehensive type interfaces:__
+  - **Converted MarkupParser.ts (1,723 lines):**
+    - **15+ comprehensive type interfaces:**
       - MarkupParserConfig - Complete configuration structure
       - ExtractedElement - JSPWiki syntax elements (variable, plugin, link, escaped)
       - ExtractionResult - Pre-extraction pipeline results (sanitized, elements, uuid)
       - ExtendedMetrics - Enhanced metrics with computed properties
       - ParserMetrics, PhaseMetrics, CacheMetrics, PerformanceMonitor
       - Additional config interfaces for handlers, filters, cache, performance
-    - __Type Safety Improvements:__
+    - **Type Safety Improvements:**
       - Full type annotations for all methods and properties
       - Explicit boolean return type for isInitialized() matching BaseManager
       - Type-safe DOM handler integration with any casts for compatibility
       - Type-safe metrics collection and performance monitoring
-    - __Import Structure:__
+    - **Import Structure:**
       - Converted all imports to ES6 syntax
       - Used type-only imports for unused types (ParseContext, WikiDocument, BaseSyntaxHandler)
       - Named import for HandlerRegistry (added named export to HandlerRegistry.ts)
-    - __ESLint Configuration:__
+    - **ESLint Configuration:**
       - Added eslint-disable directives for necessary dynamic code patterns
       - Disabled rules: no-unsafe-*, no-require-imports, explicit-function-return-type, no-console
       - Zero ESLint errors (4 minor warnings about unused directives)
-  - __HandlerRegistry Export Updates:__
+  - **HandlerRegistry Export Updates:**
     - Added named exports: `export { HandlerRegistry, HandlerRegistrationError }`
     - Maintains both named and default exports for compatibility
     - Enables both `import HandlerRegistry` and `import { HandlerRegistry }`
-  - __Test Updates:__
+  - **Test Updates:**
     - Skipped 11 legacy phase tests in MarkupParser.test.js and MarkupParser-Performance.test.js
     - Added deprecation comments referencing Issue #185
     - Updated 2 configuration tests to expect HandlerRegistry default values
     - HandlerRegistry.config is private, so removed configureHandlerRegistry() method
     - All 1,380 tests passing (321 skipped legacy tests)
-  - __CommonJS Compatibility:__
+  - **CommonJS Compatibility:**
     - Added module.exports for Jest compatibility
     - Both ES6 and CommonJS exports supported
 - Test Status:
@@ -13840,13 +13871,13 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Files Modified:
   - src/parsers/MarkupParser.js → src/parsers/MarkupParser.ts (renamed, 1,723 lines)
   - src/parsers/handlers/HandlerRegistry.ts (added named exports)
-  - src/parsers/__tests__/MarkupParser.test.js (skipped legacy tests)
-  - src/parsers/__tests__/MarkupParser-Performance.test.js (skipped legacy tests, updated config expectations)
-  - src/parsers/__tests__/MarkupParser-Config.test.js (updated config expectations)
+  - src/parsers/**tests**/MarkupParser.test.js (skipped legacy tests)
+  - src/parsers/**tests**/MarkupParser-Performance.test.js (skipped legacy tests, updated config expectations)
+  - src/parsers/**tests**/MarkupParser-Config.test.js (updated config expectations)
   - docs/project_log.md
 - Migration Progress:
-  - __Parsers: 14/36 (39% complete)__ - up from 13/36 (36%)
-  - __Overall project: 84/160 (52.5% complete)__ - up from 83/160 (52%)
+  - **Parsers: 14/36 (39% complete)** - up from 13/36 (36%)
+  - **Overall project: 84/160 (52.5% complete)** - up from 83/160 (52%)
   - ✅ Phase 6 Complete: MarkupParser.ts converted
 - Next Steps: Phase 7 - Convert remaining parser filters and handlers
 
@@ -13858,40 +13889,40 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Subject: Parser Phase 5 Complete - Tokenizer TypeScript Conversion
 - Issues: #139 (TypeScript Migration Epic)
 - Key Decision:
-  - __Phase 5 Complete!__ All 3 DOM parsers now converted to TypeScript
+  - **Phase 5 Complete!** All 3 DOM parsers now converted to TypeScript
   - Converted Tokenizer (final and largest DOM parser at 910 lines)
   - All 78 Tokenizer tests passing with zero regressions
 - Work Done:
-  - __Converted Tokenizer.ts (979 lines):__
+  - **Converted Tokenizer.ts (979 lines):**
     - 5 comprehensive interfaces (TokenType enum, TokenMetadata, PositionInfo, Token, PushbackItem)
     - Character-by-character parsing with position tracking
     - 15 token parsing methods covering all JSPWiki syntax
     - Pushback buffer for complex token recognition
     - Lookahead support via peekChar() and peekAhead()
     - 18 distinct token types (TEXT, ESCAPED, VARIABLE, PLUGIN, etc.)
-  - __Type Safety Improvements:__
+  - **Type Safety Improvements:**
     - Full typing for tokenize() pipeline returning Token[]
     - Type-safe position tracking (line, column, character position)
     - Pushback buffer with state preservation
     - Token metadata with type-specific fields
     - Enum-based token type system
-  - __ESLint Compliance:__
+  - **ESLint Compliance:**
     - Auto-fixed 8 unnecessary type assertions
     - Removed 2 unused variables
     - Zero errors/warnings in final code
-  - __Testing:__
+  - **Testing:**
     - All 78 Tokenizer tests passing (100%) - 2 test files
     - All 1,393 tests passing (100%)
     - 100% backward compatibility maintained
-  - __Architecture Note:__
+  - **Architecture Note:**
     - Tokenizer is a reference implementation (not actively used in production)
     - Current pipeline uses MarkupParser.extractJSPWikiSyntax() (regex-based, faster)
     - Kept for educational value and JSPWiki syntax documentation
-  - __Phase 5 Summary:__
+  - **Phase 5 Summary:**
     - DOMParser.ts (471 lines) - Session 2025-12-27-05
     - DOMBuilder.ts (574 lines) - Session 2025-12-27-06
     - Tokenizer.ts (979 lines) - Session 2025-12-27-07 ✅ COMPLETE
-  - __Parser Migration Progress:__
+  - **Parser Migration Progress:**
     - Parsers: 13/36 (36% complete, up from 33%)
     - Overall project: ~52% complete (83/160 files)
 - Test Status:
@@ -13915,30 +13946,30 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Converted DOMBuilder (token-to-DOM conversion)
   - All 27 DOMBuilder tests passing with zero regressions
 - Work Done:
-  - __Converted DOMBuilder.ts (574 lines):__
+  - **Converted DOMBuilder.ts (574 lines):**
     - 4 comprehensive interfaces (TokenMetadata, Token, TableContext, ListStackItem)
     - Complete token-to-DOM conversion pipeline
     - 15 token handler methods (text, escaped, variable, plugin, etc.)
     - Context management for paragraphs, lists, and tables
     - Proper nesting and formatting handling
-  - __Type Safety Improvements:__
+  - **Type Safety Improvements:**
     - Full typing for buildFromTokens() pipeline
     - Type-safe token processing with metadata extraction
     - Proper null checking for optional contexts
     - Type-safe list stack management with proper nesting
-  - __ESLint Compliance:__
+  - **ESLint Compliance:**
     - Auto-fixed 51 indentation errors (switch case statements)
     - Auto-fixed 17 unnecessary type assertions
     - Zero errors/warnings in final code
-  - __Testing:__
+  - **Testing:**
     - All 27 DOMBuilder tests passing (100%)
     - All 1,393 tests passing (100%)
     - 100% backward compatibility maintained
-  - __Architecture Note:__
+  - **Architecture Note:**
     - DOMBuilder is a reference implementation (not actively used in production)
     - Kept for educational value and token-to-DOM conversion patterns
     - Current pipeline uses direct DOM node creation from extracted elements
-  - __Parser Migration Progress:__
+  - **Parser Migration Progress:**
     - Parsers: 12/36 (33% complete, up from 31%)
     - Overall project: ~51% complete (82/160 files)
 - Test Status:
@@ -13962,31 +13993,31 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Converted DOMParser (reference implementation for token-based parsing)
   - All 50 DOMParser tests passing with zero regressions
 - Work Done:
-  - __Converted DOMParser.ts (471 lines):__
+  - **Converted DOMParser.ts (471 lines):**
     - 10 comprehensive interfaces (DOMParserOptions, ParseStatistics, ExtendedStatistics, ValidationResult, ErrorInfo, WarningInfo, Token, RenderContext, and ParseError class)
     - Complete parsing pipeline (Tokenizer → DOMBuilder)
     - Error handling with position tracking and graceful degradation
     - Validation with detailed error/warning reporting
     - Statistics collection (total parses, success rate, average time)
-  - __Type Safety Improvements:__
+  - **Type Safety Improvements:**
     - Full typing for parse() pipeline with WikiDocument return type
     - Type-safe error handling with ParseError class extending Error
     - Optional callbacks for errors and warnings
     - Validation result with typed errors/warnings arrays
     - Statistics with computed values (averageParseTime, successRate)
-  - __ESLint Compliance:__
+  - **ESLint Compliance:**
     - Auto-fixed 5 unused directive warnings
     - Removed 3 unnecessary type assertions
     - Zero errors/warnings in final code
-  - __Testing:__
+  - **Testing:**
     - All 50 DOMParser tests passing (100%)
     - All 1,393 tests passing (100%)
     - 100% backward compatibility maintained
-  - __Architecture Note:__
+  - **Architecture Note:**
     - DOMParser is a reference implementation (not actively used in production)
     - Current pipeline uses MarkupParser.parseWithDOMExtraction()
     - Kept for educational value and token-based parsing approach
-  - __Parser Migration Progress:__
+  - **Parser Migration Progress:**
     - Parsers: 11/36 (31% complete, up from 28%)
     - Overall project: ~50% complete (81/160 files)
 - Test Status:
@@ -14006,36 +14037,36 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Subject: Parser Phase 4 Complete - DOMLinkHandler TypeScript Conversion
 - Issues: #139 (TypeScript Migration Epic)
 - Key Decision:
-  - __Phase 4 Complete__: All 3 DOM handlers now converted to TypeScript
+  - **Phase 4 Complete**: All 3 DOM handlers now converted to TypeScript
   - Converted DOMLinkHandler (final and largest DOM handler at 611 lines)
   - All 36 DOMLinkHandler tests passing with zero regressions
 - Work Done:
-  - __Converted DOMLinkHandler.ts (808 lines):__
+  - **Converted DOMLinkHandler.ts (808 lines):**
     - 10 comprehensive interfaces (LinkInfo, InterWikiSite, LinkStatistics, LinkTypeStats, ExtractedLinkElement, RenderContext, PageManager, ConfigurationManager, WikiEngine, LinkType)
     - DOM-based link processing with WikiDocument queries
     - Fuzzy page name matching integration with PageNameMatcher
     - InterWiki link resolution with configuration support
     - Link type determination (internal, external, interwiki, email, anchor)
     - Statistics collection for link usage analysis
-  - __Type Safety Improvements:__
+  - **Type Safety Improvements:**
     - Full typing for all link processing methods (processInternalLink, processExternalLink, processInterWikiLink, processEmailLink, processAnchorLink)
     - Type-safe page existence checking with fuzzy matching
     - ExtractedLinkElement support for Phase 2 extraction-based parsing
     - Comprehensive link statistics interface
-  - __ESLint Compliance:__
+  - **ESLint Compliance:**
     - Applied @typescript-eslint/require-await disables for async methods without await
     - Targeted @typescript-eslint/no-unsafe-* disables for linkedom DOM operations
     - Auto-fixed 7 unused directive warnings
     - Zero errors/warnings in final code
-  - __Testing:__
+  - **Testing:**
     - All 36 DOMLinkHandler tests passing (100%)
     - All 1,393 tests passing (100%)
     - 100% backward compatibility maintained
-  - __Phase 4 Summary:__
+  - **Phase 4 Summary:**
     - DOMVariableHandler.ts (370 lines) - Session 2025-12-27-02
     - DOMPluginHandler.ts (576 lines) - Session 2025-12-27-03
     - DOMLinkHandler.ts (808 lines) - Session 2025-12-27-04 ✅ COMPLETE
-  - __Parser Migration Progress:__
+  - **Parser Migration Progress:**
     - Parsers: 10/36 (28% complete, up from 25%)
     - Overall project: ~49% complete (80/160 files)
 - Test Status:
@@ -14059,25 +14090,25 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Converted DOMPluginHandler (plugin execution system)
   - All 38 DOMPluginHandler tests passing with zero regressions
 - Work Done:
-  - __Converted DOMPluginHandler.ts (576 lines):__
+  - **Converted DOMPluginHandler.ts (576 lines):**
     - 7 comprehensive interfaces (PluginContext, PluginInfo, ExtractedPluginElement, PluginInstanceInfo, PluginStatistics, PluginManager, RenderingManager)
     - DOM-based plugin execution with WikiDocument queries
     - Integration with PluginManager for dynamic plugin execution
     - Intelligent unwrapping of single-root plugin output
     - Statistics tracking for plugin usage analysis
-  - __Type Safety Improvements:__
+  - **Type Safety Improvements:**
     - Proper typing for async processPlugins() and executePlugin() methods
     - Type-safe parameter parsing with quoted value support
     - ExtractedPluginElement support for Phase 2 extraction-based parsing
     - Comprehensive plugin context with link graph integration
-  - __ESLint Compliance:__
+  - **ESLint Compliance:**
     - Auto-fixed 12 warnings (unused directives)
     - Zero errors/warnings in final code
-  - __Testing:__
+  - **Testing:**
     - All 38 DOMPluginHandler tests passing (100%)
     - All 1,393 tests passing (100%)
     - 100% backward compatibility maintained
-  - __Parser Migration Progress:__
+  - **Parser Migration Progress:**
     - Parsers: 9/36 (25% complete, up from 22%)
 - Test Status:
   - DOMPluginHandler: All 38 tests passing ✅
@@ -14100,25 +14131,25 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Converted DOMVariableHandler (first of 3 DOM handlers)
   - All 27 DOMVariableHandler tests passing with zero regressions
 - Work Done:
-  - __Converted DOMVariableHandler.ts (370 lines):__
+  - **Converted DOMVariableHandler.ts (370 lines):**
     - 7 comprehensive interfaces (VariableContext, VariableHandler, ExtractedElement, VariableInfo, VariableStatistics, VariableManager, WikiEngine)
     - DOM-based variable expansion with WikiDocument queries
     - Integration with VariableManager for dynamic variable resolution
     - Statistics tracking for variable usage analysis
-  - __Type Safety Improvements:__
+  - **Type Safety Improvements:**
     - Proper typing for async processVariables() method
     - Type-safe variable resolution with context normalization
     - ExtractedElement support for Phase 2 extraction-based parsing
     - Comprehensive statistics interface
-  - __ESLint Compliance:__
+  - **ESLint Compliance:**
     - Added targeted disable comments for linkedom's untyped DOM methods
     - Explained unsafe boundaries with WikiDocument.querySelectorAll()
     - Zero errors/warnings in final code
-  - __Testing:__
+  - **Testing:**
     - All 27 DOMVariableHandler tests passing (100%)
     - All 1,393 tests passing (100%)
     - 100% backward compatibility maintained
-  - __Parser Migration Progress:__
+  - **Parser Migration Progress:**
     - Updated /tmp/typescript_migration_status.md: 48% complete (77/160 files)
     - Parsers: 8/36 (22% complete, up from 19%)
 - Test Status:
@@ -14143,23 +14174,23 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Converted LinkParser (centralized link parsing system)
   - All 53 LinkParser tests passing with zero regressions
 - Work Done:
-  - __Converted LinkParser.ts (724 lines):__
+  - **Converted LinkParser.ts (724 lines):**
     - 11 comprehensive interfaces (LinkParserOptions, DefaultClasses, UrlPatterns, SecurityOptions, InterWikiSiteConfig, LinkAttributes, ParserContext, ParserStats, LinkData, LinkInfo, LinkType)
     - LinkParser class with full type safety for all link types
     - Link class with proper typing
     - Security-focused attribute validation and XSS prevention
     - Support for internal, external, InterWiki, email, and anchor links
-  - __Type Safety Improvements:__
+  - **Type Safety Improvements:**
     - Proper typing for all public methods (parseLinks, findLinks, parseAttributes, generateLinkHtml, determineLinkType)
     - Type-safe link generation methods for each link type
     - Comprehensive security validation with typed configurations
     - PageNameMatcher integration with fuzzy matching
-  - __ESLint Compliance:__
+  - **ESLint Compliance:**
     - Fixed 24 ESLint errors (unused parameters, console warnings, indentation, type assertions)
     - Used underscore prefix for unused context parameters (_context)
     - Added eslint-disable comments for intentional console.warn statements
     - Zero errors/warnings in final code
-  - __Testing:__
+  - **Testing:**
     - All 53 LinkParser tests passing (100%)
     - All 1,393 tests passing (100%)
     - 100% backward compatibility maintained
@@ -14184,11 +14215,11 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Converted registry components (HandlerRegistry and FilterChain)
   - Fixed ESLint issues using proper accessor methods for protected properties
 - Work Done:
-  - __Converted HandlerRegistry.ts (572 lines):__
+  - **Converted HandlerRegistry.ts (572 lines):**
     - 13 comprehensive interfaces
     - Dependency resolution with topological sorting
     - Circular dependency detection and pattern conflict detection
-  - __Converted FilterChain.ts (635 lines):__
+  - **Converted FilterChain.ts (635 lines):**
     - 18 comprehensive interfaces
     - Sequential and parallel execution modes
     - Performance monitoring with alert thresholds
@@ -14244,15 +14275,15 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Subject: Version Utility Converted to TypeScript
 - Issues: #139 (TypeScript Migration Epic)
 - Key Decision: Continue utilities conversion with version.ts
-- Issue #139 Status: 🔄 __IN PROGRESS__ - Utilities 7/17 (41%) - Overall 42%
+- Issue #139 Status: 🔄 **IN PROGRESS** - Utilities 7/17 (41%) - Overall 42%
 - Work Done:
-  - __Converted version.ts (262 lines):__
+  - **Converted version.ts (262 lines):**
     - Semantic version management CLI tool
     - ES modules with import/export
     - Added interfaces: PackageJson, VersionComponents, VersionIncrementType
     - Proper shebang for ES modules (#!<boltExport path="/usr/bin/env node">)
     - Fixed 27 ESLint errors (indentation, template literal with never type)
-  - __All 1,393 tests passing__
+  - **All 1,393 tests passing**
 - Commits: [pending]
 - Files Modified:
   - src/utils/version.ts (converted from .js)
@@ -14266,24 +14297,24 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Subject: WikiEngine Converted to TypeScript - Core Infrastructure 100% Complete! 🎉
 - Issues: #139 (TypeScript Migration Epic)
 - Key Decision: Convert WikiEngine.js to complete core infrastructure before moving to parsers
-- Issue #139 Status: 🔄 __IN PROGRESS__ - Core Infrastructure 100% Complete (42% overall: 60/144 files)
+- Issue #139 Status: 🔄 **IN PROGRESS** - Core Infrastructure 100% Complete (42% overall: 60/144 files)
 - Work Done:
-  - __Converted WikiEngine.ts (339 lines):__
+  - **Converted WikiEngine.ts (339 lines):**
     - Main application orchestrator
     - Initializes all 21 managers in dependency order
     - Type-safe manager initialization with local variables
     - Generic type support for manager accessors
     - Proper typing for WikiContext integration
     - Factory method: createDefault(overrides: WikiConfig)
-  - __ESLint Compliance:__
+  - **ESLint Compliance:**
     - Removed unnecessary type assertions (!operator)
     - Fixed unsafe any returns with proper type casting
     - Zero errors/warnings
-  - __Testing:__
+  - **Testing:**
     - All 1,393 tests passing (100%)
     - 100% backward compatibility
     - TypeScript engine works seamlessly with JavaScript tests
-  - __Core Infrastructure Complete:__
+  - **Core Infrastructure Complete:**
     - ✅ WikiContext.ts (333 lines)
     - ✅ Engine.ts (201 lines)
     - ✅ WikiEngine.ts (339 lines) - NEW!
@@ -14302,29 +14333,29 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Subject: Phase 1 Core Infrastructure - TypeScript Migration Complete
 - Issues: #139 (TypeScript Migration Epic)
 - Key Decision: Complete Phase 1 core infrastructure before proceeding to parsers or WikiEngine
-- Issue #139 Status: 🔄 __IN PROGRESS__ - Phase 1 Complete (41% overall: 59/144 files)
+- Issue #139 Status: 🔄 **IN PROGRESS** - Phase 1 Complete (41% overall: 59/144 files)
 - Work Done:
-  - __Converted WikiContext.js to TypeScript:__
+  - **Converted WikiContext.js to TypeScript:**
     - Created src/context/WikiContext.ts (333 lines)
     - Added 6 type interfaces (WikiContextOptions, RequestInfo, UserContext, PageContext, ParseOptions, ContextTypes)
     - Fixed express-session typing for sessionID property
     - All request/response handling properly typed
-  - __Converted Engine.js to TypeScript:__
+  - **Converted Engine.js to TypeScript:**
     - Created src/core/Engine.ts (201 lines)
     - Abstract base class for WikiEngine
     - Generic type support: getManager<T>(name): T | undefined
     - Manager registry with proper typing
-  - __Converted Cache Adapters to TypeScript (4 files):__
+  - **Converted Cache Adapters to TypeScript (4 files):**
     - Created src/cache/ICacheAdapter.ts (96 lines) - Abstract interface with CacheStats
     - Created src/cache/NodeCacheAdapter.ts (330 lines) - node-cache implementation
     - Created src/cache/NullCacheAdapter.ts (52 lines) - No-op implementation for testing
     - Created src/cache/RegionCache.ts (248 lines) - Namespaced cache wrapper
-  - __Testing & Quality:__
+  - **Testing & Quality:**
     - All 1,393 tests passing (100%)
     - 31 cache-specific tests passing
     - Zero ESLint errors/warnings
     - 100% backward compatibility maintained
-  - __Migration Progress:__
+  - **Migration Progress:**
     - Core: 2/4 (50%) - NEW: WikiContext, Engine
     - Cache: 4/4 (100%) - COMPLETE: All cache adapters
     - Overall: 59/144 files (41% complete, up from 37%)
@@ -14343,16 +14374,16 @@ New `ApiContext` class — lightweight typed request context for API route handl
 ## 2025-12-26-05
 
 - Agent: Claude Code (Sonnet 4.5)
-- Subject: RenderingManager Converted to TypeScript - Issue #145 🎉 __100% COMPLETE!__
+- Subject: RenderingManager Converted to TypeScript - Issue #145 🎉 **100% COMPLETE!**
 - Issues: #145 (Convert Managers to TypeScript), #139 (TypeScript Migration Epic)
 - Key Decision: Convert RenderingManager as twenty-first and FINAL manager (largest manager at 1297 lines!)
 - Work Done:
-  - __Converted RenderingManager.js to TypeScript:__
+  - **Converted RenderingManager.js to TypeScript:**
     - Created src/managers/RenderingManager.ts (1397 lines - LARGEST manager!)
     - Added 9 type interfaces for rendering system
     - All 42 public methods have explicit return types
     - Dual parser system (MarkupParser + Legacy Showdown) fully typed
-  - __Type Safety Improvements (RenderingManager):__
+  - **Type Safety Improvements (RenderingManager):**
     - initialize(config): Promise<void>
     - getParser(): MarkupParser | null
     - loadRenderingConfiguration(): Promise<void>
@@ -14386,7 +14417,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - renderWikiLinks(content): string
     - renderPlugins(content, pageName): Promise<string>
     - textToHTML(context, content): Promise<string>
-  - __New Type Interfaces (RenderingManager):__
+  - **New Type Interfaces (RenderingManager):**
     - RenderingConfig (parser selection and configuration)
     - TableParams (JSPWiki table parameters)
     - TableMetadata (extended table metadata)
@@ -14396,25 +14427,25 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - PerformanceComparison (performance metrics)
     - LinkGraph (link graph structure)
     - MarkupParser (parser interface)
-  - __Code Quality:__
+  - **Code Quality:**
     - Fixed deprecated substr() calls → substring()
     - Fixed expandAllVariables references → expandSystemVariable/expandSystemVariables
     - Added ESLint disable comments for ConfigurationManager access
     - Added ESLint disable comments for dynamic require statements
     - Fixed engine.startTime access with proper unsafe annotations
     - Proper typing for all method parameters (42 methods)
-  - __Verified no regressions:__
+  - **Verified no regressions:**
     - All 1,393 tests passing
     - Full backward compatibility
     - RenderingManager.test.js passing with TypeScript version
 - Impact:
   - ✅ RenderingManager is now type-safe
   - ✅ Largest manager converted successfully (1297 lines!)
-  - ✅ 🎉🎉🎉 __100% COMPLETION ACHIEVED!__ All 21 managers converted! 🎉🎉🎉
+  - ✅ 🎉🎉🎉 **100% COMPLETION ACHIEVED!** All 21 managers converted! 🎉🎉🎉
   - ✅ JavaScript code can still import and use RenderingManager
   - ✅ Dual parser system (advanced + legacy) fully typed
   - ✅ Link graph and wiki link processing typed
-  - ✅ __Issue #145 COMPLETE__ - All manager TypeScript conversions finished!
+  - ✅ **Issue #145 COMPLETE** - All manager TypeScript conversions finished!
 - Commits: b0648b3
 - Files Created:
   - src/managers/RenderingManager.ts (1397 lines)
@@ -14423,7 +14454,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - ✅ All managers converted!
   - Consider converting remaining infrastructure (utilities, parsers, routes)
   - Issue #145 can be closed as COMPLETE
-- Issue #145 Status: ✅ __COMPLETED__ - All 21 managers converted (100% complete) 🎉🎉🎉
+- Issue #145 Status: ✅ **COMPLETED** - All 21 managers converted (100% complete) 🎉🎉🎉
 - Note: The "23 managers" count included 2 legacy files (PageManager.legacy.js, PageManagerUuid.js) that don't require conversion. All 21 active managers are now TypeScript!
 
 ---
@@ -14435,12 +14466,12 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Issues: #145 (Convert Managers to TypeScript), #139 (TypeScript Migration Epic)
 - Key Decision: Convert SearchManager as twentieth manager (87% milestone reached)
 - Work Done:
-  - __Converted SearchManager.js to TypeScript:__
+  - **Converted SearchManager.js to TypeScript:**
     - Created src/managers/SearchManager.ts (701 lines)
     - Added 10 type interfaces for search system
     - All 28 public methods have explicit return types
     - Provider-based search architecture fully typed
-  - __Type Safety Improvements (SearchManager):__
+  - **Type Safety Improvements (SearchManager):**
     - initialize(config): Promise<void>
     - buildSearchIndex(): Promise<void>
     - searchWithContext(wikiContext, query, options): Promise<SearchResult[]>
@@ -14467,7 +14498,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - backup(): Promise<BackupData>
     - restore(backupData): Promise<void>
     - shutdown(): Promise<void>
-  - __New Type Interfaces (SearchManager):__
+  - **New Type Interfaces (SearchManager):**
     - SearchResult (search result structure)
     - SearchOptions (basic search options)
     - AdvancedSearchOptions (advanced search options)
@@ -14477,19 +14508,19 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - BackupData (backup data structure)
     - WikiContext (context interface)
     - BaseSearchProvider (provider interface with all 17 required methods)
-  - __Code Quality:__
+  - **Code Quality:**
     - Provider pattern with pluggable search backends
     - Full-text indexing with metadata support
     - WikiContext integration for user tracking
     - Comprehensive search capabilities (basic, advanced, similarity, autocomplete)
     - Backup and restore functionality
-  - __Verified no regressions:__
+  - **Verified no regressions:**
     - All 1,393 tests passing
     - Full backward compatibility
 - Impact:
   - ✅ SearchManager is now type-safe
   - ✅ Search system fully typed with comprehensive interfaces
-  - ✅ 🎉 __87% MILESTONE ACHIEVED__ - 3 managers remaining!
+  - ✅ 🎉 **87% MILESTONE ACHIEVED** - 3 managers remaining!
   - ✅ JavaScript code can still import and use SearchManager
 - Commits: 889dd68
 - Files Created:
@@ -14498,7 +14529,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Next Steps:
   - Continue with remaining 3 managers: RenderingManager (1297 lines - the largest!), plus 2 others
   - 87% complete - approaching 90% milestone!
-- Issue #145 Status: __IN PROGRESS__ - 20 of 23 managers converted (87% complete) 🎉
+- Issue #145 Status: **IN PROGRESS** - 20 of 23 managers converted (87% complete) 🎉
 
 ---
 
@@ -14509,12 +14540,12 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Issues: #145 (Convert Managers to TypeScript), #139 (TypeScript Migration Epic)
 - Key Decision: Convert PolicyValidator as nineteenth manager (83% milestone reached)
 - Work Done:
-  - __Converted PolicyValidator.js to TypeScript:__
+  - **Converted PolicyValidator.js to TypeScript:**
     - Created src/managers/PolicyValidator.ts (663 lines)
     - Added 16 type interfaces for policy validation system
     - All 19 public methods have explicit return types
     - Comprehensive policy schema validation fully typed
-  - __Type Safety Improvements (PolicyValidator):__
+  - **Type Safety Improvements (PolicyValidator):**
     - initialize(config): Promise<void>
     - loadPolicySchema(): Promise<void>
     - validatePolicy(policy): ValidationResult
@@ -14535,7 +14566,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - validateAndSavePolicy(policy): Promise<PolicySaveResult>
     - clearCache(): void
     - getStatistics(): ValidationStatistics
-  - __New Type Interfaces (PolicyValidator):__
+  - **New Type Interfaces (PolicyValidator):**
     - SubjectType, ResourceType, ActionType (type enumerations)
     - PolicyEffect, ConditionOperator, ConditionType (enumerations)
     - PolicySubject (subject definition)
@@ -14551,19 +14582,19 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - PolicySaveResult (policy save result)
     - ValidationStatistics (statistics structure)
     - PolicySchema (JSON Schema definition)
-  - __Code Quality:__
+  - **Code Quality:**
     - JSON Schema validation with Ajv
     - Business logic and semantic validation
     - Conflict detection between policies
     - Validation caching for performance
     - Comprehensive error and warning generation
-  - __Verified no regressions:__
+  - **Verified no regressions:**
     - All 1,393 tests passing
     - Full backward compatibility
 - Impact:
   - ✅ PolicyValidator is now type-safe
   - ✅ Policy validation system fully typed with comprehensive interfaces
-  - ✅ 🎉 __83% MILESTONE ACHIEVED__ - 4 managers remaining!
+  - ✅ 🎉 **83% MILESTONE ACHIEVED** - 4 managers remaining!
   - ✅ JavaScript code can still import and use PolicyValidator
 - Commits: bb26176
 - Files Created:
@@ -14572,7 +14603,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Next Steps:
   - Continue with remaining 4 managers: SearchManager (701 lines), RenderingManager (1297 lines - largest!)
   - 83% complete - approaching final milestone!
-- Issue #145 Status: __IN PROGRESS__ - 19 of 23 managers converted (83% complete) 🎉
+- Issue #145 Status: **IN PROGRESS** - 19 of 23 managers converted (83% complete) 🎉
 
 ---
 
@@ -14583,12 +14614,12 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Issues: #145 (Convert Managers to TypeScript), #139 (TypeScript Migration Epic)
 - Key Decision: Convert AuditManager as eighteenth manager (78% milestone reached)
 - Work Done:
-  - __Converted AuditManager.js to TypeScript:__
+  - **Converted AuditManager.js to TypeScript:**
     - Created src/managers/AuditManager.ts (558 lines)
     - Added 11 type interfaces for audit system
     - All 11 public methods have explicit return types
     - Provider-based architecture fully typed
-  - __Type Safety Improvements (AuditManager):__
+  - **Type Safety Improvements (AuditManager):**
     - initialize(config): Promise<void>
     - logAuditEvent(auditEvent): Promise<string>
     - logAccessDecision(context, result, reason, policy): Promise<string>
@@ -14601,7 +14632,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - flushAuditQueue(): Promise<void>
     - cleanupOldLogs(): Promise<void>
     - shutdown(): Promise<void>
-  - __New Type Interfaces (AuditManager):__
+  - **New Type Interfaces (AuditManager):**
     - AuditEvent (base audit event structure)
     - AuditUser (user information for audit events)
     - AccessContext (context for access control decisions)
@@ -14613,19 +14644,19 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - AuditSearchResults (search results structure)
     - AuditStats (statistics structure)
     - BaseAuditProvider (provider interface)
-  - __Code Quality:__
+  - **Code Quality:**
     - Provider pattern with pluggable audit storage
     - Comprehensive audit trail for security monitoring
     - Type-safe event logging with severity levels
     - Access control decision tracking
     - Authentication and security event logging
-  - __Verified no regressions:__
+  - **Verified no regressions:**
     - All 1,393 tests passing
     - Full backward compatibility
 - Impact:
   - ✅ AuditManager is now type-safe
   - ✅ Audit system fully typed with comprehensive interfaces
-  - ✅ 🎉 __78% MILESTONE ACHIEVED__ - 5 managers remaining!
+  - ✅ 🎉 **78% MILESTONE ACHIEVED** - 5 managers remaining!
   - ✅ JavaScript code can still import and use AuditManager
 - Commits: 7f2669a
 - Files Created:
@@ -14634,7 +14665,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Next Steps:
   - Continue with remaining 5 managers: PolicyValidator (663 lines), SearchManager (701 lines), RenderingManager (1297 lines - largest!)
   - 78% complete - nearing 80% milestone!
-- Issue #145 Status: __IN PROGRESS__ - 18 of 23 managers converted (78% complete) 🎉
+- Issue #145 Status: **IN PROGRESS** - 18 of 23 managers converted (78% complete) 🎉
 
 ---
 
@@ -14645,12 +14676,12 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Issues: #145 (Convert Managers to TypeScript), #139 (TypeScript Migration Epic)
 - Key Decision: Convert TemplateManager as seventeenth manager (74% milestone reached)
 - Work Done:
-  - __Converted TemplateManager.js to TypeScript:__
+  - **Converted TemplateManager.js to TypeScript:**
     - Created src/managers/TemplateManager.ts (513 lines)
     - Added 7 type interfaces for template system
     - All 15 methods have explicit return types
     - Template and theme management fully typed
-  - __Type Safety Improvements (TemplateManager):__
+  - **Type Safety Improvements (TemplateManager):**
     - initialize(config): Promise<void>
     - loadTemplates(): Promise<void>
     - loadThemes(): Promise<void>
@@ -14665,7 +14696,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - createTemplate(templateName, content): Promise<void>
     - createTheme(themeName, content): Promise<void>
     - suggestTemplates(pageName, category): string[]
-  - __New Type Interfaces (TemplateManager):__
+  - **New Type Interfaces (TemplateManager):**
     - TemplateConfig (initialization configuration)
     - Template (template object structure)
     - Theme (theme object structure)
@@ -14673,19 +14704,19 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - DefaultTemplateVariables (default variables)
     - TemplateMap (template name to template object mapping)
     - ThemeMap (theme name to theme object mapping)
-  - __Code Quality:__
+  - **Code Quality:**
     - Type-safe template variable substitution
     - Template and theme loading with proper typing
     - Default template creation for pages
     - Template suggestion system based on page name/category
     - Proper error handling for missing templates
-  - __Verified no regressions:__
+  - **Verified no regressions:**
     - All 1,393 tests passing
     - Full backward compatibility
 - Impact:
   - ✅ TemplateManager is now type-safe
   - ✅ Template and theme system fully typed with proper interfaces
-  - ✅ 🎉 __74% MILESTONE ACHIEVED__ - 6 managers remaining!
+  - ✅ 🎉 **74% MILESTONE ACHIEVED** - 6 managers remaining!
   - ✅ JavaScript code can still import and use TemplateManager
 - Commits: 192fc30
 - Files Created:
@@ -14694,7 +14725,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Next Steps:
   - Continue with remaining 6 managers: AuditManager (558 lines), PolicyValidator (663 lines), SearchManager (701 lines), RenderingManager (1297 lines - largest!)
   - 74% complete - excellent progress toward 100%
-- Issue #145 Status: __IN PROGRESS__ - 17 of 23 managers converted (74% complete) 🎉
+- Issue #145 Status: **IN PROGRESS** - 17 of 23 managers converted (74% complete) 🎉
 
 ---
 
@@ -14705,12 +14736,12 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Issues: #145 (Convert Managers to TypeScript), #139 (TypeScript Migration Epic)
 - Key Decision: Convert ValidationManager as sixteenth manager (70% milestone reached)
 - Work Done:
-  - __Converted ValidationManager.js to TypeScript:__
+  - **Converted ValidationManager.js to TypeScript:**
     - Created src/managers/ValidationManager.ts (623 lines)
     - Added 10 type interfaces for validation system
     - All 17 methods have explicit return types
     - UUID-based filename validation
-  - __Type Safety Improvements (ValidationManager):__
+  - **Type Safety Improvements (ValidationManager):**
     - initialize(config): Promise<void>
     - loadSystemCategories(configManager): void
     - getCategoryConfig(label): CategoryConfig | null
@@ -14727,7 +14758,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - generateFilename(metadata): string
     - validateExistingFile(filePath, fileData): PageValidationResult
     - generateFixSuggestions(filename, metadata): FixSuggestions
-  - __New Type Interfaces (ValidationManager):__
+  - **New Type Interfaces (ValidationManager):**
     - ValidationResult (basic validation result)
     - MetadataValidationResult (with warnings)
     - PageValidationResult (comprehensive validation)
@@ -14738,19 +14769,19 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - FileData (gray-matter file data)
     - FixSuggestions (auto-fix suggestions)
     - PageMetadata (page metadata structure)
-  - __Code Quality:__
+  - **Code Quality:**
     - Type-safe UUID validation using uuid package
     - System category management from configuration
     - Comprehensive metadata validation
     - Auto-fix suggestions for validation issues
     - Proper error handling
-  - __Verified no regressions:__
+  - **Verified no regressions:**
     - All 1,393 tests passing
     - Full backward compatibility
 - Impact:
   - ✅ ValidationManager is now type-safe
   - ✅ Validation system fully typed with proper interfaces
-  - ✅ 🎉 __70% MILESTONE ACHIEVED__ - 7 managers remaining!
+  - ✅ 🎉 **70% MILESTONE ACHIEVED** - 7 managers remaining!
   - ✅ JavaScript code can still import and use ValidationManager
 - Commits: 59b0fff
 - Files Created:
@@ -14759,7 +14790,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Next Steps:
   - Continue with remaining 7 managers: TemplateManager, AuditManager, PolicyValidator, SearchManager, RenderingManager
   - 70% complete - strong momentum toward 100%
-- Issue #145 Status: __IN PROGRESS__ - 16 of 23 managers converted (70% complete) 🎉
+- Issue #145 Status: **IN PROGRESS** - 16 of 23 managers converted (70% complete) 🎉
 
 ---
 
@@ -14770,12 +14801,12 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Issues: #145 (Convert Managers to TypeScript), #139 (TypeScript Migration Epic)
 - Key Decision: Convert AttachmentManager as fifteenth manager (65% milestone)
 - Work Done:
-  - __Converted AttachmentManager.js to TypeScript:__
+  - **Converted AttachmentManager.js to TypeScript:**
     - Created src/managers/AttachmentManager.ts (626 lines)
     - Added 8 type interfaces for attachment system
     - All 19 methods have explicit return types
     - Private methods converted from # to private keyword
-  - __Type Safety Improvements (AttachmentManager):__
+  - **Type Safety Improvements (AttachmentManager):**
     - initialize(config): Promise<void>
     - getCurrentAttachmentProvider(): BaseAttachmentProvider | null
     - checkPermission(action, userContext): Promise<boolean> [private]
@@ -14796,7 +14827,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - shutdown(): Promise<void>
     - normalizeProviderName(providerName): string [private]
     - formatSize(bytes): string [private]
-  - __New Type Interfaces (AttachmentManager):__
+  - **New Type Interfaces (AttachmentManager):**
     - BaseAttachmentProvider (provider interface)
     - FileInfo (file information)
     - UploadOptions (upload configuration)
@@ -14805,12 +14836,12 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - Mention (WebPage reference)
     - AttachmentMetadata (attachment metadata)
     - AttachmentBackupData (backup data structure)
-  - __Code Quality:__
+  - **Code Quality:**
     - Provider pattern with pluggable attachment storage
     - Permission checking for authenticated users
     - Attachment-to-page relationship tracking
     - Proper backup/restore support
-  - __Verified no regressions:__
+  - **Verified no regressions:**
     - All 1,393 tests passing
     - Full backward compatibility
 - Impact:
@@ -14825,7 +14856,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Next Steps:
   - Continue with ValidationManager next
   - Then TemplateManager, AuditManager, PolicyValidator, SearchManager, RenderingManager
-- Issue #145 Status: __IN PROGRESS__ - 15 of 23 managers converted (65% complete)
+- Issue #145 Status: **IN PROGRESS** - 15 of 23 managers converted (65% complete)
 
 ---
 
@@ -14836,12 +14867,12 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Issues: #145 (Convert Managers to TypeScript), #139 (TypeScript Migration Epic)
 - Key Decision: Convert ExportManager as fourteenth manager (60% milestone reached)
 - Work Done:
-  - __Converted ExportManager.js to TypeScript:__
+  - **Converted ExportManager.js to TypeScript:**
     - Created src/managers/ExportManager.ts (464 lines)
     - Added 6 type interfaces for export functionality
     - All 8 methods have explicit return types
     - HTML and Markdown export capabilities
-  - __Type Safety Improvements (ExportManager):__
+  - **Type Safety Improvements (ExportManager):**
     - initialize(config): Promise<void>
     - exportPageToHtml(pageName, user): Promise<string>
     - exportPagesToHtml(pageNames, user): Promise<string>
@@ -14850,18 +14881,18 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - getExports(): Promise<ExportFileInfo[]>
     - deleteExport(filename): Promise<void>
     - getFormattedTimestamp(user): string
-  - __New Type Interfaces (ExportManager):__
+  - **New Type Interfaces (ExportManager):**
     - ExportFileInfo (export file metadata)
     - ExportConfig (export configuration)
     - UserPreferences (user locale preferences)
     - ExportUser (user object for exports)
     - PageForExport (page structure for exports)
-  - __Code Quality:__
+  - **Code Quality:**
     - Type-safe HTML/Markdown generation
     - Locale-aware timestamp formatting
     - Export file management with metadata
     - Proper error handling
-  - __Verified no regressions:__
+  - **Verified no regressions:**
     - All 1,393 tests passing
     - Full backward compatibility
 - Impact:
@@ -14876,7 +14907,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Next Steps:
   - Continue with remaining 9 managers
   - Consider AttachmentManager, ValidationManager, or TemplateManager next
-- Issue #145 Status: __IN PROGRESS__ - 14 of 23 managers converted (60% complete)
+- Issue #145 Status: **IN PROGRESS** - 14 of 23 managers converted (60% complete)
 
 ---
 
@@ -14887,12 +14918,12 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Issues: #145 (Convert Managers to TypeScript), #139 (TypeScript Migration Epic)
 - Key Decision: Convert BackupManager as thirteenth manager
 - Work Done:
-  - __Converted BackupManager.js to TypeScript:__
+  - **Converted BackupManager.js to TypeScript:**
     - Created src/managers/BackupManager.ts (467 lines)
     - Added 5 type interfaces for backup/restore operations
     - All 9 methods have explicit return types
     - Private methods properly marked (validateBackupData, cleanupOldBackups)
-  - __Type Safety Improvements (BackupManager):__
+  - **Type Safety Improvements (BackupManager):**
     - initialize(config): Promise<void>
     - backup(options): Promise<string>
     - restore(backupPath, options): Promise<RestoreResults>
@@ -14900,18 +14931,18 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - listBackups(): Promise<BackupFileInfo[]>
     - cleanupOldBackups(): Promise<void> [private]
     - getLatestBackup(): Promise<string | null>
-  - __New Type Interfaces (BackupManager):__
+  - **New Type Interfaces (BackupManager):**
     - BackupOptions (backup configuration)
     - RestoreOptions (restore configuration)
     - BackupData (backup data structure)
     - RestoreResults (restore operation results)
     - BackupFileInfo (backup file metadata)
-  - __Code Quality:__
+  - **Code Quality:**
     - Type-safe backup orchestration across all managers
     - Gzip compression/decompression support
     - Comprehensive error handling for individual manager failures
     - Automatic cleanup of old backups
-  - __Verified no regressions:__
+  - **Verified no regressions:**
     - All 1,393 tests passing
     - Full backward compatibility
 - Impact:
@@ -14926,7 +14957,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Next Steps:
   - Continue with ExportManager next
   - Then AttachmentManager, ValidationManager, TemplateManager
-- Issue #145 Status: __IN PROGRESS__ - 13 of 23 managers converted (56% complete)
+- Issue #145 Status: **IN PROGRESS** - 13 of 23 managers converted (56% complete)
 
 ---
 
@@ -14937,12 +14968,12 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Issues: #145 (Convert Managers to TypeScript), #139 (TypeScript Migration Epic)
 - Key Decision: Convert PluginManager as twelfth manager, surpassing 50% completion
 - Work Done:
-  - __Converted PluginManager.js to TypeScript:__
+  - **Converted PluginManager.js to TypeScript:**
     - Created src/managers/PluginManager.ts (366 lines)
     - Added 4 type interfaces for plugin system
     - All 9 methods have explicit return types
     - Secure plugin loading with path validation
-  - __Type Safety Improvements (PluginManager):__
+  - **Type Safety Improvements (PluginManager):**
     - initialize(): Promise<void>
     - registerPlugins(): Promise<void>
     - loadPlugin(pluginPath): Promise<void>
@@ -14951,23 +14982,23 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - getPluginNames(): string[]
     - getPluginInfo(pluginName): PluginInfo | null
     - hasPlugin(pluginName): boolean
-  - __New Type Interfaces (PluginManager):__
+  - **New Type Interfaces (PluginManager):**
     - Plugin (plugin object with execute method)
     - PluginContext (context passed to plugins during execution)
     - PluginParams (plugin parameter object)
     - PluginInfo (plugin metadata)
-  - __Code Quality:__
+  - **Code Quality:**
     - Type-safe plugin discovery from configured search paths
     - Secure path validation (allowed roots only)
     - JSPWiki-compatible plugin naming support
     - Proper error handling and logging
-  - __Verified no regressions:__
+  - **Verified no regressions:**
     - All 1,393 tests passing
     - Full backward compatibility
 - Impact:
   - ✅ PluginManager is now type-safe
   - ✅ Plugin system fully typed with proper interfaces
-  - ✅ 🎉 __50% MILESTONE ACHIEVED__ - Over halfway done!
+  - ✅ 🎉 **50% MILESTONE ACHIEVED** - Over halfway done!
   - ✅ JavaScript code can still import and use PluginManager
 - Commits: b97ff2d
 - Files Created:
@@ -14976,7 +15007,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Next Steps:
   - Continue with remaining 11 managers
   - Consider BackupManager, ExportManager, or ValidationManager next
-- Issue #145 Status: __IN PROGRESS__ - 12 of 23 managers converted (52% complete) 🎉
+- Issue #145 Status: **IN PROGRESS** - 12 of 23 managers converted (52% complete) 🎉
 
 ---
 
@@ -14987,27 +15018,27 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Issues: #145 (Convert Managers to TypeScript), #139 (TypeScript Migration Epic)
 - Key Decision: Convert VariableManager and CacheManager as tenth and eleventh managers
 - Work Done:
-  - __Converted VariableManager.js to TypeScript:__
+  - **Converted VariableManager.js to TypeScript:**
     - Created src/managers/VariableManager.ts (367 lines)
     - Added 3 type interfaces for variable handling
     - All 6 public methods have explicit return types
     - Private methods properly marked (registerCoreVariables, getBrowserInfo)
-  - __Type Safety Improvements (VariableManager):__
+  - **Type Safety Improvements (VariableManager):**
     - initialize(): Promise<void>
     - registerVariable(name, handler): void
     - expandVariables(content, context): string
     - getVariable(varName, context): string
     - getDebugInfo(): VariableDebugInfo
-  - __New Type Interfaces (VariableManager):__
+  - **New Type Interfaces (VariableManager):**
     - VariableHandler (function type for handlers)
     - VariableContext (contextual information for variables)
     - VariableDebugInfo (debug information structure)
-  - __Converted CacheManager.js to TypeScript:__
+  - **Converted CacheManager.js to TypeScript:**
     - Created src/managers/CacheManager.ts (405 lines)
     - Added 4 type interfaces for cache operations
     - All 14 methods have explicit return types
     - Private methods properly marked (loadProvider, normalizeProviderName)
-  - __Type Safety Improvements (CacheManager):__
+  - **Type Safety Improvements (CacheManager):**
     - initialize(config): Promise<void>
     - region(region): RegionCache
     - get(key): Promise<unknown>
@@ -15022,18 +15053,18 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - flushAll(): Promise<void>
     - shutdown(): Promise<void>
     - static getCacheForManager(engine, region): RegionCache
-  - __New Type Interfaces (CacheManager):__
+  - **New Type Interfaces (CacheManager):**
     - CacheOptions (options for set operations)
     - CacheConfig (cache configuration)
     - CacheStats (cache statistics)
     - BaseCacheProvider (provider interface)
-  - __Code Quality:__
+  - **Code Quality:**
     - Proper error type narrowing
     - Type-safe Map operations
     - Added eslint-disable for engine typing (no WikiEngine type yet)
     - Added eslint-disable for dynamic require (provider loading)
     - Added type annotation for replace callback parameter
-  - __Verified no regressions:__
+  - **Verified no regressions:**
     - All 1,393 tests passing
     - Full backward compatibility
 - Impact:
@@ -15050,7 +15081,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Next Steps:
   - Continue with remaining 12 managers
   - Consider converting PluginManager, BackupManager, or TemplateManager next
-- Issue #145 Status: __IN PROGRESS__ - 11 of 23 managers converted (48% complete)
+- Issue #145 Status: **IN PROGRESS** - 11 of 23 managers converted (48% complete)
 
 ---
 
@@ -15061,12 +15092,12 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Issues: #145 (Convert Managers to TypeScript), #139 (TypeScript Migration Epic)
 - Key Decision: Convert NotificationManager and SchemaManager as eighth and ninth managers
 - Work Done:
-  - __Converted NotificationManager.js to TypeScript:__
+  - **Converted NotificationManager.js to TypeScript:**
     - Created src/managers/NotificationManager.ts (449 lines)
     - Added 5 type interfaces for notifications
     - All 13 methods have explicit return types
     - Private methods properly marked (loadNotifications, saveNotifications)
-  - __Type Safety Improvements (NotificationManager):__
+  - **Type Safety Improvements (NotificationManager):**
     - initialize(config): Promise<void>
     - createNotification(notification): Promise<string>
     - addNotification(notification): Promise<string>
@@ -15078,27 +15109,27 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - clearAllActive(): Promise<number>
     - getStats(): NotificationStats
     - shutdown(): Promise<void>
-  - __New Type Interfaces (NotificationManager):__
+  - **New Type Interfaces (NotificationManager):**
     - Notification (id, type, title, message, level, targetUsers, createdAt, expiresAt, dismissedBy)
     - NotificationInput (input for createNotification)
     - NotificationStats (total, active, expired, byType, byLevel)
     - MaintenanceConfig (extensible config object)
     - NotificationsData (storage structure)
-  - __Converted SchemaManager.js to TypeScript:__
+  - **Converted SchemaManager.js to TypeScript:**
     - Created src/managers/SchemaManager.ts (96 lines)
     - Added JSONSchema type
     - All 3 methods have explicit return types
-  - __Type Safety Improvements (SchemaManager):__
+  - **Type Safety Improvements (SchemaManager):**
     - initialize(): Promise<void>
     - getSchema(name): JSONSchema | undefined
     - getAllSchemaNames(): string[]
-  - __New Type Interfaces (SchemaManager):__
+  - **New Type Interfaces (SchemaManager):**
     - JSONSchema (Record<string, unknown>)
-  - __Code Quality:__
+  - **Code Quality:**
     - Proper error type narrowing with NodeJS.ErrnoException
     - Type-safe Map operations
     - Proper null checks and optional chaining
-  - __Verified no regressions:__
+  - **Verified no regressions:**
     - All 1,393 tests passing
     - Full backward compatibility
 - Impact:
@@ -15114,7 +15145,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Next Steps:
   - Continue with remaining 14 managers
   - Consider converting managers in dependency order (e.g., RenderingManager, SearchManager)
-- Issue #145 Status: __IN PROGRESS__ - 9 of 23 managers converted (39% complete)
+- Issue #145 Status: **IN PROGRESS** - 9 of 23 managers converted (39% complete)
 
 ---
 
@@ -15125,31 +15156,31 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Issues: #145 (Convert Managers to TypeScript), #139 (TypeScript Migration Epic)
 - Key Decision: Convert PolicyEvaluator as seventh manager (small, used by ACLManager)
 - Work Done:
-  - __Converted PolicyEvaluator.js to TypeScript:__
+  - **Converted PolicyEvaluator.js to TypeScript:**
     - Created src/managers/PolicyEvaluator.ts (293 lines)
     - Added 6 type interfaces for policy evaluation
     - All 6 methods have explicit return types
     - Private policyManager reference properly typed
-  - __Type Safety Improvements:__
+  - **Type Safety Improvements:**
     - initialize(): Promise<void>
     - evaluateAccess(context): Promise<EvaluationResult>
     - matches(policy, context): boolean
     - matchesSubject(subjects, userContext): boolean
     - matchesResource(resources, pageName): boolean
     - matchesAction(actions, action): boolean
-  - __New Type Interfaces:__
+  - **New Type Interfaces:**
     - UserContext (username, roles, extensible)
     - PolicySubject (type, value)
     - PolicyResource (type, pattern)
     - Policy (id, effect, subjects, resources, actions, priority)
     - AccessContext (pageName, action, userContext)
     - EvaluationResult (hasDecision, allowed, reason, policyName)
-  - __Code Quality:__
+  - **Code Quality:**
     - Type guards for policy matching logic
     - Proper null checks and optional chaining
     - Added eslint-disable comments for async methods without await (API compatibility)
     - Added eslint-disable for micromatch library (lacks TypeScript types)
-  - __Verified no regressions:__
+  - **Verified no regressions:**
     - All 1,393 tests passing
     - Full backward compatibility
 - Impact:
@@ -15164,7 +15195,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Convert NotificationManager.js to TypeScript (mentioned in linting warnings)
   - Convert SchemaManager.js to TypeScript (mentioned in linting warnings)
   - Continue with remaining 16 managers
-- Issue #145 Status: __IN PROGRESS__ - 7 of 23 managers converted (30% complete)
+- Issue #145 Status: **IN PROGRESS** - 7 of 23 managers converted (30% complete)
 
 ---
 
@@ -15175,21 +15206,21 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Issues: #145 (Convert Managers to TypeScript), #139 (TypeScript Migration Epic)
 - Key Decision: Convert PolicyManager as sixth manager (small, used by ACLManager)
 - Work Done:
-  - __Converted PolicyManager.js to TypeScript:__
+  - **Converted PolicyManager.js to TypeScript:**
     - Created src/managers/PolicyManager.ts (118 lines)
     - Added Policy interface for policy objects
     - All 3 methods have explicit return types
     - Private policies map properly typed
-  - __Type Safety Improvements:__
+  - **Type Safety Improvements:**
     - initialize(): Promise<void>
     - getPolicy(id): Policy | undefined
     - getAllPolicies(): Policy[] (sorted by priority)
-  - __New Type Interfaces:__
+  - **New Type Interfaces:**
     - Policy (id, priority, extensible properties)
-  - __Code Quality:__
+  - **Code Quality:**
     - Type guards for policy validation
     - Proper null checks and type assertions
-  - __Verified no regressions:__
+  - **Verified no regressions:**
     - All 1,393 tests passing
     - Full backward compatibility
 - Impact:
@@ -15203,7 +15234,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Next Steps:
   - Convert PolicyEvaluator.js to TypeScript (used by ACLManager)
   - Continue with remaining 17 managers
-- Issue #145 Status: __IN PROGRESS__ - 6 of 23 managers converted (26% complete)
+- Issue #145 Status: **IN PROGRESS** - 6 of 23 managers converted (26% complete)
 
 ---
 
@@ -15214,13 +15245,13 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Issues: #145 (Convert Managers to TypeScript), #139 (TypeScript Migration Epic)
 - Key Decision: Convert ACLManager as fifth manager (permissions & access control)
 - Work Done:
-  - __Converted ACLManager.js to TypeScript:__
+  - **Converted ACLManager.js to TypeScript:**
     - Created src/managers/ACLManager.ts (795 lines)
     - Added comprehensive type annotations for all 20+ methods
     - Created 10 new type interfaces for ACL operations
     - All permission checking methods properly typed
     - Context-aware permission checking fully typed
-  - __Type Safety Improvements:__
+  - **Type Safety Improvements:**
     - checkPagePermissionWithContext(WikiContext, action): Promise<boolean>
     - checkPagePermission(...): Promise<boolean> (deprecated but typed)
     - parsePageACL(content): Map<string, Set<string>>
@@ -15230,18 +15261,18 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - checkEnhancedTimeRestrictions(user, context): Promise<PermissionResult>
     - checkHolidayRestrictions(currentDate, config): Promise<PermissionResult>
     - logAccessDecision(...): void (overloaded signatures)
-  - __New Type Interfaces:__
+  - **New Type Interfaces:**
     - WikiContext (minimal, shared with PageManager)
     - UserContext (user identity and roles)
     - AccessPolicy, PermissionResult
     - MaintenanceConfig, BusinessHoursConfig
     - HolidayConfig, SchedulesConfig
     - ContextConfig, AccessDecisionLog
-  - __Code Quality:__
+  - **Code Quality:**
     - Private methods properly marked (notify, parseACL, etc.)
     - All context-aware checks fully typed
     - Proper eslint-disable comments for untyped manager interactions
-  - __Verified no regressions:__
+  - **Verified no regressions:**
     - All 1,393 tests passing
     - ACLManager.test.js passing
     - Full backward compatibility
@@ -15257,7 +15288,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Next Steps:
   - Continue with remaining 18 managers
   - Week 2 goal: 3 more managers (total 8 of 23)
-- Issue #145 Status: __IN PROGRESS__ - 5 of 23 managers converted (22% complete)
+- Issue #145 Status: **IN PROGRESS** - 5 of 23 managers converted (22% complete)
 
 ---
 
@@ -15268,13 +15299,13 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Issues: #145 (Convert Managers to TypeScript), #139 (TypeScript Migration Epic)
 - Key Decision: Convert UserManager as fourth manager (authentication/authorization)
 - Work Done:
-  - __Converted UserManager.js to TypeScript:__
+  - **Converted UserManager.js to TypeScript:**
     - Created src/managers/UserManager.ts (1,265 lines - largest conversion so far!)
     - Added comprehensive type annotations for all 40+ methods
     - Created 8 new type interfaces for user operations
     - All proxy methods properly typed with UserProvider interface
     - Express middleware methods typed with Request/Response/NextFunction
-  - __Type Safety Improvements:__
+  - **Type Safety Improvements:**
     - authenticateUser(): Promise<(Omit<User, 'password'> & { isAuthenticated: boolean }) | null>
     - createUser(UserCreateInput): Promise<Omit<User, 'password'>>
     - updateUser(username, UserUpdateInput): Promise<User>
@@ -15282,18 +15313,18 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - getUserPermissions(username): Promise<string[]>
     - All session management properly typed
     - All role management properly typed
-  - __New Type Interfaces:__
+  - **New Type Interfaces:**
     - UserCreateInput, UserUpdateInput
     - ExternalUserData (OAuth/JWT)
     - UserContext (permission evaluation)
     - RoleCreateData, SessionData
     - ProviderInfo, UserProviderConstructor
-  - __Code Quality:__
+  - **Code Quality:**
     - Replaced all console.* with logger methods
     - Fixed unused variable warnings (_pwd)
     - Deprecated async methods converted to sync
     - Proper eslint-disable comments for unavoidable unsafe operations
-  - __Verified no regressions:__
+  - **Verified no regressions:**
     - All 1,393 tests passing
     - UserManager.test.js passing
     - Full backward compatibility
@@ -15310,7 +15341,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Next Steps:
   - Convert ACLManager.js to TypeScript (permissions)
   - Continue with remaining 19 managers
-- Issue #145 Status: __IN PROGRESS__ - 4 of 23 managers converted (17% complete)
+- Issue #145 Status: **IN PROGRESS** - 4 of 23 managers converted (17% complete)
 
 ---
 
@@ -15321,27 +15352,27 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Issues: #145 (Convert Managers to TypeScript), #139 (TypeScript Migration Epic)
 - Key Decision: Convert PageManager as third manager (core wiki functionality)
 - Work Done:
-  - __Converted PageManager.js to TypeScript:__
+  - **Converted PageManager.js to TypeScript:**
     - Created src/managers/PageManager.ts (539 lines)
     - Added comprehensive type annotations for all 24+ methods
     - Created WikiContext minimal interface (TODO: full conversion later)
     - Created ProviderInfo interface for getProviderInfo()
     - Created ProviderConstructor interface for dynamic loading
     - All proxy methods properly typed with PageProvider interface
-  - __Type Safety Improvements:__
+  - **Type Safety Improvements:**
     - getPage(): Promise<WikiPage | null>
     - getPageContent(): Promise<string>
     - getPageMetadata(): Promise<PageFrontmatter | null>
     - savePage/savePageWithContext: Partial<PageFrontmatter>
     - backup/restore: Record<string, unknown>
     - ConfigurationManager: getManager<ConfigurationManager>()
-  - __Linting Compliance:__
+  - **Linting Compliance:**
     - Import logger from TypeScript module (not from .js)
     - Use Record<string, unknown> instead of any where possible
     - Add eslint-disable comments for unavoidable any usage
     - Type-only import for ConfigurationManager
     - Handle dynamic require() with proper typing
-  - __Verified no regressions:__
+  - **Verified no regressions:**
     - All 1,392 tests passing
     - PageManager.test.js passing
     - PageManager-Storage.test.js passing
@@ -15359,7 +15390,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Convert UserManager.js to TypeScript (authentication)
   - Convert ACLManager.js to TypeScript (permissions)
   - Continue with remaining 20 managers
-- Issue #145 Status: __IN PROGRESS__ - 3 of 23 managers converted (13% complete)
+- Issue #145 Status: **IN PROGRESS** - 3 of 23 managers converted (13% complete)
 
 ---
 
@@ -15370,18 +15401,18 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Issues: #145 (Convert Managers to TypeScript), #139 (TypeScript Migration Epic)
 - Key Decision: Convert ConfigurationManager as second manager (most widely used)
 - Work Done:
-  - __Converted ConfigurationManager.js to TypeScript:__
+  - **Converted ConfigurationManager.js to TypeScript:**
     - Created src/managers/ConfigurationManager.ts (695 lines, up from 628)
     - Added comprehensive type annotations for all 24+ methods
     - Used existing WikiConfig type from types/Config.ts
     - Replaced all console.log/warn/error with logger methods
     - All class properties properly typed (WikiConfig, WikiEngine, etc.)
-  - __Type Safety Improvements:__
+  - **Type Safety Improvements:**
     - getProperty() properly typed with WikiConfig keys
     - All getter methods have explicit return types (string, number, boolean, etc.)
     - Private methods marked with TypeScript private keyword
     - Configuration loading properly typed with Promise<void>
-  - __Key Methods Typed:__
+  - **Key Methods Typed:**
     - getApplicationName(): string
     - getServerPort(): number
     - getSessionSecret(): string
@@ -15389,7 +15420,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - backup(): Promise<Record<string, any>>
     - restore(backupData): Promise<void>
     - Plus 20+ configuration getter methods
-  - __Verified no regressions:__
+  - **Verified no regressions:**
     - All 1,393 tests passing
     - JavaScript code can still import and use ConfigurationManager
 - Impact:
@@ -15409,7 +15440,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Convert UserManager.js to TypeScript (authentication)
   - Convert ACLManager.js to TypeScript (permissions)
   - Continue with remaining 20 managers
-- Issue #145 Status: __IN PROGRESS__ - 2 of 23 managers converted (9% complete)
+- Issue #145 Status: **IN PROGRESS** - 2 of 23 managers converted (9% complete)
 
 ---
 
@@ -15420,20 +15451,20 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Issues: #145 (Convert Managers to TypeScript), #139 (TypeScript Migration Epic)
 - Key Decision: Start Phase 4 with BaseManager as foundation for all other managers
 - Work Done:
-  - __Converted BaseManager.js to TypeScript:__
+  - **Converted BaseManager.js to TypeScript:**
     - Created src/managers/BaseManager.ts (172 lines)
     - Added proper type annotations for all methods
     - Created BackupData interface for backup/restore operations
     - Maintains backward compatibility with JavaScript managers
-  - __Created WikiEngine type definitions:__
+  - **Created WikiEngine type definitions:**
     - Created src/types/WikiEngine.ts with WikiEngine interface
     - Defined ManagerRegistry type for manager lookup
     - Provides proper typing for getManager<T>() method
-  - __Updated type system:__
+  - **Updated type system:**
     - Provider.ts: Changed engine from 'any' to 'WikiEngine'
     - index.ts: Exported WikiEngine and ManagerRegistry types
     - All providers now have properly typed engine reference
-  - __Verified no regressions:__
+  - **Verified no regressions:**
     - All 1,393 tests passing
     - JavaScript managers can still extend TypeScript BaseManager
     - Build system working (TypeScript compiles successfully)
@@ -15456,7 +15487,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Convert PageManager.js to TypeScript (core functionality)
   - Convert UserManager.js to TypeScript (authentication)
   - Continue with remaining 19 managers
-- Issue #145 Status: __IN PROGRESS__ - 1 of 23 managers converted (4% complete)
+- Issue #145 Status: **IN PROGRESS** - 1 of 23 managers converted (4% complete)
 
 ---
 
@@ -15482,10 +15513,10 @@ New `ApiContext` class — lightweight typed request context for API route handl
     - Issue #145: Added context about linting errors, prioritized manager list
   - Verified all tests still passing after Phases 1-3 (1,393 tests passed)
 - Analysis Results:
-  - __Root Cause:__ TypeScript providers import JavaScript managers (no types)
-  - __Impact:__ ~800 unsafe operation errors in .ts files using managers
-  - __Solution:__ Convert 23 managers to TypeScript (Issue #145)
-  - __Priority Managers:__ BaseManager, ConfigurationManager, WikiEngine, UserManager, PageManager
+  - **Root Cause:** TypeScript providers import JavaScript managers (no types)
+  - **Impact:** ~800 unsafe operation errors in .ts files using managers
+  - **Solution:** Convert 23 managers to TypeScript (Issue #145)
+  - **Priority Managers:** BaseManager, ConfigurationManager, WikiEngine, UserManager, PageManager
 - Next Steps:
   - Focus on Issue #145: [Phase 4] Convert Managers to TypeScript
   - Start with core managers: BaseManager → ConfigurationManager → WikiEngine
@@ -15543,7 +15574,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Phase 2: Convert require() to ES6 imports (~20 errors)
   - Phase 3: Fix critical type safety in logger.ts and sessionUtils.ts (~100 errors)
   - Phase 4: Fix unsafe operations in provider implementations (~600 errors)
-- Issue #184 Status: __OPEN__ - Phase 1 complete (102 fixes), 967 problems remain
+- Issue #184 Status: **OPEN** - Phase 1 complete (102 fixes), 967 problems remain
 
 ---
 
@@ -15598,8 +15629,8 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - `docs/project_log.md` - updated with session details
 - Files Created:
   - `.lintstagedrc.json` - lint-staged configuration
-- Issue #183 Status: __OPEN__ - 2,741 markdown errors remain (real quality issues needing manual fixes)
-- Issue #184 Status: __OPEN__ - Systematic fix plan created, implementation not started
+- Issue #183 Status: **OPEN** - 2,741 markdown errors remain (real quality issues needing manual fixes)
+- Issue #184 Status: **OPEN** - Systematic fix plan created, implementation not started
 
 ---
 
@@ -15650,7 +15681,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Files Modified:
   - docs/Developer-Documentation.md
   - docs/project_log.md
-- Issue #178 Status: __COMPLETE__ ✅
+- Issue #178 Status: **COMPLETE** ✅
   - Managers: 21/21 (100%) - quick reference + complete guide
   - Plugins: 12/12 (100%) - developer docs + user docs with examples
   - Providers: 4/4 (100%) - quick reference + complete guide
@@ -15665,7 +15696,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Issue: #178 Documentation Explosion
 - Key Decision: Create both quick references AND complete guides for all providers (two-file pattern)
 - Work Done:
-  __Quick References (Session 1):__
+  **Quick References (Session 1):**
   - Created FileSystemProvider.md (~200 lines)
     - UUID-based file naming, title lookup, plural matching
     - Installation-aware loading (required-pages)
@@ -15681,7 +15712,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Reorganized BasicAttachmentProvider.md into two-file pattern
     - Renamed existing to BasicAttachmentProvider-Complete-Guide.md
     - Created new quick reference (~250 lines)
-  __Complete Guides (Session 2):__
+  **Complete Guides (Session 2):**
   - Created FileSystemProvider-Complete-Guide.md (~650 lines)
     - Architecture, component relationships, data flow
     - Caching system (pageCache, titleIndex, uuidIndex, slugIndex)
@@ -15732,17 +15763,17 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Work Done:
   - Cleaned up temporary test directories (25 test-pages-* folders)
   - Verified PageManager-Storage.test.js passing (20 tests)
-  __Managers (21 total - 100% complete):__
+  **Managers (21 total - 100% complete):**
   - Created RenderingManager.md quick reference (~170 lines)
   - Created BackupManager.md quick reference (~180 lines)
   - Created CacheManager.md quick reference (~200 lines)
   - Created SearchManager.md quick reference (~220 lines)
   - All 21 managers now have two-file documentation (quick + complete)
-  __Plugins (12 total - 100% complete):__
+  **Plugins (12 total - 100% complete):**
   - Created RecentChangesPlugin user documentation (~100 lines)
   - Created VariablesPlugin user documentation (~95 lines)
   - All 12 plugins now have user-facing docs with examples
-  __Developer Index:__
+  **Developer Index:**
   - Created Developer-Documentation.md comprehensive index (~290 lines)
   - Updated DOCUMENTATION.md with link to developer index
   - Indexed all 21 managers and 12 plugins
@@ -15814,7 +15845,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Pass Rate: 100% of executed tests
 - Commits: 6849960
 - Files Modified:
-  - src/managers/__tests__/PageManager-Storage.test.js (complete rewrite)
+  - src/managers/**tests**/PageManager-Storage.test.js (complete rewrite)
   - docs/testing/Testing-Summary.md
   - docs/testing/Complete-Testing-Guide.md
   - docs/project_log.md
@@ -15852,14 +15883,14 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Pass Rate: 100% of executed tests
 - Commits: 958f014, a6334cc, 6bbd682
 - Files Modified:
-  - src/managers/__tests__/NotificationManager.test.js
-  - src/managers/__tests__/PageManager-Storage.test.js
-  - src/parsers/__tests__/MarkupParser.test.js
-  - src/parsers/__tests__/MarkupParser-Performance.test.js
-  - src/parsers/__tests__/MarkupParser-Config.test.js
-  - src/parsers/__tests__/MarkupParser-*.test.js (6 variant files)
-  - src/providers/__tests__/VersioningFileProvider*.test.js
-  - src/utils/__tests__/VersioningMigration.test.js
+  - src/managers/**tests**/NotificationManager.test.js
+  - src/managers/**tests**/PageManager-Storage.test.js
+  - src/parsers/**tests**/MarkupParser.test.js
+  - src/parsers/**tests**/MarkupParser-Performance.test.js
+  - src/parsers/**tests**/MarkupParser-Config.test.js
+  - src/parsers/**tests**/MarkupParser-*.test.js (6 variant files)
+  - src/providers/**tests**/VersioningFileProvider*.test.js
+  - src/utils/**tests**/VersioningMigration.test.js
   - docs/testing/Testing-Summary.md
 
 ---
@@ -16025,11 +16056,11 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Tests Fixed: 5 test suites (30 individual tests)
 - Remaining Failures: Pre-existing issues (VersioningFileProvider, MarkupParser, NotificationManager)
 - Files Modified:
-  - src/managers/__tests__/SchemaManager.test.js
-  - src/managers/__tests__/PluginManager.test.js
-  - src/managers/__tests__/PluginManager.registerPlugins.test.js
-  - plugins/__tests__/SessionsPlugin.test.js
-  - plugins/__tests__/AllPlugins.test.js
+  - src/managers/**tests**/SchemaManager.test.js
+  - src/managers/**tests**/PluginManager.test.js
+  - src/managers/**tests**/PluginManager.registerPlugins.test.js
+  - plugins/**tests**/SessionsPlugin.test.js
+  - plugins/**tests**/AllPlugins.test.js
   - docs/project_log.md
 
 ---
@@ -16051,7 +16082,7 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - Updated docs/testing/Complete-Testing-Guide.md with comprehensive E2E section
   - Updated docs/testing/Testing-Summary.md with E2E overview
 - Test Results (Current):
-  - __17 passed, 9 failed, 2 skipped__
+  - **17 passed, 9 failed, 2 skipped**
   - Passing: auth setup, login form, credentials, session, protected routes, admin dashboard, navigation, user management, home page, wiki navigation, breadcrumbs, search results
   - Failing: mostly search page selectors and missing features (config section)
 - Test Credentials:
@@ -16120,9 +16151,9 @@ New `ApiContext` class — lightweight typed request context for API route handl
   - config/ConfigBridge.js
   - config/DigitalDocumentPermissionConfig.js
   - config/legacy/ (entire folder)
-  - src/parsers/__tests__/MarkupParser-Integration.test.js
-  - src/parsers/__tests__/MarkupParser-DOM-Integration.test.js
-  - src/parsers/__tests__/MarkupParser-DOM-Integration.test.js.bak
+  - src/parsers/**tests**/MarkupParser-Integration.test.js
+  - src/parsers/**tests**/MarkupParser-DOM-Integration.test.js
+  - src/parsers/**tests**/MarkupParser-DOM-Integration.test.js.bak
 
 ---
 
@@ -16132,8 +16163,8 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Subject: Fix Issue #167 - Multiple PM2 Daemons and PIDs (Root Cause)
 - Issue: #167
 - Work Done:
-  - __Root cause identified__: Multiple PM2 daemons can spawn and persist in `~/.pm2/`
-  - __Bug fixed__: Double `npx --no -- npx --no --` on line 93 (was `npx --no -- npx --no -- pm2 start`)
+  - **Root cause identified**: Multiple PM2 daemons can spawn and persist in `~/.pm2/`
+  - **Bug fixed**: Double `npx --no -- npx --no --` on line 93 (was `npx --no -- npx --no -- pm2 start`)
   - Added `ensure_single_pm2_daemon()` function - detects/kills multiple PM2 daemons
   - Added `kill_all_ngdpbase()` function - comprehensive process cleanup
   - Improved `start` command:
@@ -16214,13 +16245,13 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Subject: Bug Fixes - Required Pages & ReferringPagesPlugin
 - Issues Closed: #172, #174
 - Work Done:
-  - __Issue #174__: Fixed required-pages showing in operating wiki
+  - **Issue #174**: Fixed required-pages showing in operating wiki
     - Modified FileSystemProvider to only load from required-pages during installation
     - Added `installationComplete` flag checked from `ngdpbase.install.completed` config
     - Updated VersioningFileProvider to match parent behavior
     - Fixed RenderingManager.getTotalPagesCount() to use provider cache
     - Extended WikiRoutes.isRequiredPage() to protect system/documentation pages (Admin-only edit)
-  - __Issue #172__: Fixed ReferringPagesPlugin not showing plural-linked pages
+  - **Issue #172**: Fixed ReferringPagesPlugin not showing plural-linked pages
     - Root cause: buildLinkGraph() stored links literally without resolving plurals
     - Fix: Added pageNameMatcher.findMatch() when building link graph
     - Result: "Contextual Variables" (links to `[Plugins]`) now appears on "Plugin" page
@@ -16398,11 +16429,11 @@ New `ApiContext` class — lightweight typed request context for API route handl
 - Files Modified:
   - .github/workflows/ci-passing-tests.yml (new)
   - docs/testing/KNOWN-TEST-ISSUES.md
-  - src/managers/__tests__/ExportManager.test.js
-  - src/parsers/handlers/__tests__/PluginSyntaxHandler.test.js
-  - src/routes/__tests__/WikiRoutes.attachments.test.js
-  - src/routes/__tests__/WikiRoutes.schema.test.js
-  - src/routes/__tests__/maintenance-mode.test.js
+  - src/managers/**tests**/ExportManager.test.js
+  - src/parsers/handlers/**tests**/PluginSyntaxHandler.test.js
+  - src/routes/**tests**/WikiRoutes.attachments.test.js
+  - src/routes/**tests**/WikiRoutes.schema.test.js
+  - src/routes/**tests**/maintenance-mode.test.js
 - Next Steps: Continue fixing remaining 26 failing test suites (Option C)
 
 ## 2025-12-08-02
@@ -17721,8 +17752,8 @@ Subject: AGENTS.md implementation and project_log.md creation
 - Updated `TemplateManager.ts` documentation/category template descriptions: `'Wiki Documentation (Documentation and Hints for this Wiki)'` → `'User Documentation (Documentation and Hints for this Site)'`
 - Fixed `[Wiki Documentation]` links in 7 live data pages and 8 `required-pages/` source files
 - Root cause identified: `required-pages/` directory in repo is loaded at startup and overwrites `data/pages/` — edits to `data/pages/` alone are not sufficient
-- __IN PROGRESS__: two `required-pages/` files still need updating (`4c0c0fa8` title/heading, `4a266851` brand string); `required-pages/` files need committing and synced to live
-- __DEFERRED__: user requests — (1) LeftMenu editable by any admin role, not just system admin; (2) system-category page edits should warn user and offer keep-or-overwrite from GitHub
+- **IN PROGRESS**: two `required-pages/` files still need updating (`4c0c0fa8` title/heading, `4a266851` brand string); `required-pages/` files need committing and synced to live
+- **DEFERRED**: user requests — (1) LeftMenu editable by any admin role, not just system admin; (2) system-category page edits should warn user and offer keep-or-overwrite from GitHub
 
 - Files Modified:
   - `src/routes/WikiRoutes.ts`
