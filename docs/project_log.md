@@ -2,6 +2,27 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-07-05
+
+- Agent: Claude
+- Subject: Cross-site sweep — pull/build/restart/test all 4 ngdpbase deployments after pushing today's #620 + #642 work
+- Current Issue: none (verification pass; #620 and #642 already closed)
+- Tests: 5256/5256 vitest + 72/72 playwright on every site; no failures, no flakes, no bugs filed
+- Work Done:
+  - Per-site workflow on all 4 deployments (sequential, to avoid resource contention): `git pull` → `./server.sh stop` → `npm run build` → `./server.sh start` → health check → `npm test` → `npm run test:e2e`
+  - Site 1 — fairways-base "The Fairways" (port 2121, `./data`): build clean, vitest 200 files / 5256 tests pass, playwright 72 pass (26.3s)
+  - Site 2 — ngdpbase-veg "ve-geology" (port 3333, `./data`): build clean, vitest 200 files / 5256 tests pass, playwright 72 pass (20.3s)
+  - Site 3 — ngdpbase "jimstest" (port 3000, `/Volumes/hd2/jimstest-wiki/data`): already on 3.10.0 from session 2026-05-07-04; vitest already passed earlier today; playwright 72 pass (2.7m — same SLOW_STORAGE I/O cost as session 2026-05-06-04)
+  - Site 4 — ngdp-temp-builds (port 3001, `/Volumes/hd2/ngdp-temp-builds/ngdpbase/data`): build clean, vitest 200 files / 5256 tests pass, playwright 72 pass (21.5s)
+  - All 4 PM2 processes confirmed `online` and running v3.10.0 post-test
+- Notable observations:
+  - The known intermittent `WikiRoutes.coverage3.test.ts` "401 when not authenticated" timeout (#622) did not reproduce on any of the 4 sites today
+  - jimstest E2E remains ~7× slower than the other sites — same test count, same outcomes; SLOW_STORAGE I/O is the cause; left as-is per the prior session note
+  - The #642 migration shim fired correctly on jimstest (whose custom config still uses the legacy camelCase key); the other three sites had no legacy keys to migrate
+- Commits: none this session block (verification only — no code changes)
+- Files Modified:
+  - docs/project_log.md (this entry)
+
 ## 2026-05-07-04
 
 - Agent: Claude
