@@ -2,6 +2,44 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-07-03
+
+- Agent: Claude
+- Subject: #642 Iteration 2 — startup invariant for `ngdpbase.application.base-url` + delete `app-custom-config.example` + remove `copyExampleConfigs()` install path
+- Current Issue: #642 (in progress; Iteration 3 — magic-link cleanup — still open)
+- Tests: 5252/5252 vitest pass (was 5246); ConfigurationManager.test.ts 35 → 41 tests
+- Work Done:
+  - Discovered before deletion that `app-custom-config.example` was deeper than just a doc artifact: `InstallService.copyExampleConfigs()` reads `*.example` files and writes them to `INSTANCE_DATA_FOLDER/config/` as `*.json` during both wizard install and headless install; `docker/Dockerfile:80` actively `COPY`s the file into the image; 5 docs files document it as the bootstrap template
+  - Asked user before tearing down code path; user chose "delete + remove code path" option
+  - Deleted `config/app-custom-config.example`
+  - Removed `InstallService.copyExampleConfigs()` method entirely; removed its call sites from `#writeCustomConfig()` (wizard path) and `processHeadlessInstallation()` (headless path); updated headless doc-comment to note operators must provide their own `app-custom-config.json` via volume mount / k8s ConfigMap or rely on env-var overrides
+  - Removed `HeadlessInstallResult.steps.configsCopied` field (always 0 now); removed corresponding "Configs copied" log line in `src/app.ts`
+  - Removed `COPY` line from `docker/Dockerfile`; updated inline config-locations comment block
+  - Updated 5 docs files (installation-system.md ×4 sites, startup-process.md, ConfigurationManager-Complete-Guide.md, issue-612-addon-diff-mode.md) to remove all references to the deleted file and method
+  - Added `ConfigurationManager.assertBaseUrlConfigured()` private method called from `initialize()` after `loadConfigurations()`. Logic: if `.install-complete` exists at `INSTANCE_DATA_FOLDER` AND `ngdpbase.application.base-url` is not explicitly set in customConfig AND `NGDPBASE_BASE_URL` env var is unset → throw fatal with clear message naming customConfig path, env var, canonical key, and #642
+  - Pre-install path (no `.install-complete`) is a no-op so install flow can complete normally
+  - Iteration 1 migration shim satisfies the invariant for legacy configs since it writes the canonical key into customConfig before the invariant runs
+  - 6 new tests cover: pre-install no-throw, post-install + explicit custom no-throw, post-install + env var no-throw, post-install + migrated legacy key no-throw (proves shim+invariant interplay), post-install + missing key throws with #642 message, post-install + empty-of-base-url custom config throws
+  - SEMVER patch bump 3.9.2 → 3.9.3; CHANGELOG entry; lockfile sync; full rebuild; `./server.sh restart` on jimstest
+  - Live verified on jimstest: server started cleanly on 3.9.3 (jimstest's custom config still uses camelCase, migration shim populates canonical key, invariant sees it as explicitly set, no throw); homepage returns 302 (login redirect)
+  - Posted Iteration 2 completion comment on #642 with the full migration → invariant interplay
+- Commits: b1fe1980 (feat: #642 Iteration 2)
+- Files Modified:
+  - CHANGELOG.md
+  - config/app-custom-config.example (DELETED)
+  - config/app-default-config.json
+  - docker/Dockerfile
+  - docs/installation/installation-system.md
+  - docs/installation/startup-process.md
+  - docs/managers/ConfigurationManager-Complete-Guide.md
+  - docs/performance/issue-612-addon-diff-mode.md
+  - docs/project_log.md (this entry)
+  - package.json, package-lock.json
+  - src/app.ts
+  - src/managers/ConfigurationManager.ts
+  - src/managers/__tests__/ConfigurationManager.test.ts
+  - src/services/InstallService.ts
+
 ## 2026-05-07-02
 
 - Agent: Claude
