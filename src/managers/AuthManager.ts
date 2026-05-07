@@ -67,17 +67,23 @@ class AuthManager extends BaseManager {
       const emailManager = this.engine.getManager<EmailManager>('EmailManager');
       if (!emailManager) {
         logger.error('[AuthManager] EmailManager not available — magic-link provider not registered');
+      } else if (!configManager.isBaseUrlExplicit()) {
+        // #642 Iteration 3: refuse to register if base-url is the unconfigured default.
+        // Magic-link tokens are credentials embedded in URLs — emitting them
+        // pointing at the localhost default leaks the credential to anyone
+        // who can intercept the email.
+        logger.error(
+          '[AuthManager] Magic-link provider NOT registered: ngdpbase.application.base-url ' +
+          'is not explicitly configured. Set it in custom config or via NGDPBASE_BASE_URL ' +
+          'before enabling magic-link auth. (#642)'
+        );
       } else {
         const ttlMinutes = configManager.getProperty(
           'ngdpbase.auth.magic-link.ttl-minutes', 15
         ) as number;
-        const baseUrl = (configManager.getProperty(
-          'ngdpbase.auth.magic-link.base-url', ''
-        ) as string).replace(/\/$/, '');
 
         this.providers.set('magic-link', new MagicLinkAuthProvider(this.engine, {
           ttlMs: ttlMinutes * 60_000,
-          baseUrl,
           mailProvider: emailManager
         }));
         logger.info(`[AuthManager] Registered provider: magic-link (transport=${emailManager.getProviderName()}, ttl=${ttlMinutes}min)`);

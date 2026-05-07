@@ -14,14 +14,16 @@
 
 /**
  * Context passed to initiate() for challenge-based auth flows.
+ *
+ * Note: providers that emit absolute URLs (magic-link verify links,
+ * OAuth callbacks) read the canonical base URL from ConfigurationManager
+ * at runtime — callers don't pass it in (#642 Iteration 3).
  */
 export interface AuthInitiateContext {
   /** Email address (magic link) */
   email?: string;
   /** URL to redirect to after successful authentication */
   redirect?: string;
-  /** Public base URL of this instance, used to build verify links */
-  baseUrl?: string;
 }
 
 /**

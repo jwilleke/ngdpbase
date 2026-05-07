@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.10.0] - 2026-05-07
+
+### Changed
+
+- **#642** Iteration 3 (final): magic-link auth now derives its verify-link host from `ConfigurationManager.getBaseURL()` at runtime instead of reading a separate config key. New `ConfigurationManager.isBaseUrlExplicit()` accessor. `AuthManager.initialize()` refuses to register the magic-link provider unless `ngdpbase.application.base-url` is explicitly configured (via custom config or `NGDPBASE_BASE_URL`) — magic-link tokens are credentials embedded in URLs, so emitting them pointing at the unconfigured localhost default would leak credentials. `WikiRoutes` magic-link initiate handler simplified — no longer computes its own baseUrl. `AuthInitiateContext.baseUrl` field removed (no longer used).
+
+### Removed
+
+- `ngdpbase.auth.magic-link.base-url` config key (#642) — magic-link host is now derived from the canonical `ngdpbase.application.base-url` at runtime. **No migration shim** for this key — operators that previously set it can simply remove it; the canonical key is the single source of truth.
+- `MagicLinkConfig.baseUrl` field (#642) — the provider reads it from the engine at runtime.
+- `AuthInitiateContext.baseUrl` field (#642) — providers derive base URL from config, callers don't pass it in.
+
+This closes #642. All three iterations shipped: canonical key + migration shim (3.9.2), startup invariant + delete example file (3.9.3), magic-link cleanup + security check (3.10.0).
+
 ## [3.9.3] - 2026-05-07
 
 ### Changed

@@ -3790,13 +3790,12 @@ ${panes}
     try {
       const { email, redirect = '/' } = req.body;
       const authManager = this.engine.getManager('AuthManager');
-      const configManager = this.engine.getManager('ConfigurationManager');
 
       if (authManager?.isEnabled('magic-link')) {
-        const port = configManager?.getProperty('ngdpbase.server.port', 3000) as number;
-        const configuredBase = configManager?.getProperty('ngdpbase.auth.magic-link.base-url', '');
-        const baseUrl = configuredBase?.trim() || `http://localhost:${port}`;
-        await authManager.initiate('magic-link', { email, redirect, baseUrl });
+        // #642 Iteration 3: provider derives baseUrl from
+        // ConfigurationManager.getBaseURL() at runtime. The provider is
+        // only registered when base-url is explicitly configured.
+        await authManager.initiate('magic-link', { email, redirect });
       }
 
       // Always redirect with success — never reveal whether email exists

@@ -22,6 +22,7 @@ import type {
   AuthResult
 } from './BaseAuthProvider.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
+import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import type UserManager from '../managers/UserManager.js';
 import type { MailProvider } from '../mail/MailProvider.js';
 import logger from '../utils/logger.js';
@@ -35,7 +36,6 @@ interface TokenEntry {
 
 export interface MagicLinkConfig {
   ttlMs: number;
-  baseUrl: string;
   mailProvider: MailProvider;
 }
 
@@ -93,7 +93,12 @@ export class MagicLinkAuthProvider implements AuthProvider {
 
       this.rateLimitMap.set(email, Date.now());
 
-      const baseUrl = (context.baseUrl || this.config.baseUrl || '').replace(/\/$/, '');
+      // #642 Iteration 3: derive baseUrl from canonical config at runtime.
+      // AuthManager.initialize() already refused to register this provider
+      // unless ngdpbase.application.base-url is explicit, so getBaseURL()
+      // here always returns the operator-configured value.
+      const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+      const baseUrl = (configManager?.getBaseURL() ?? '').replace(/\/$/, '');
       const verifyUrl = `${baseUrl}/auth/magic-link/verify?token=${token}`;
       const ttlMinutes = Math.round(this.config.ttlMs / 60_000);
 

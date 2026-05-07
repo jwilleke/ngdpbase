@@ -106,13 +106,30 @@ class ConfigurationManager extends BaseManager {
   }
 
   /**
+   * #642: returns true if `ngdpbase.application.base-url` was explicitly
+   * configured (in customConfig or via the NGDPBASE_BASE_URL env var), as
+   * opposed to falling through to the default. Consumers that need to emit
+   * absolute URLs to outside parties (magic-link auth, schema.org @ids,
+   * email templates) read this to decide whether the configured base URL
+   * is trustworthy or whether they should bail out / disable themselves.
+   *
+   * The migration shim in `migrateLegacyBaseUrl()` writes the canonical key
+   * into customConfig before this is called, so legacy `ngdpbase.base-url`
+   * and `ngdpbase.baseURL` configs return true here too.
+   */
+  isBaseUrlExplicit(): boolean {
+    const explicitlySetInCustom = !!this.customConfig
+      && 'ngdpbase.application.base-url' in this.customConfig;
+    const explicitlySetInEnv = !!process.env.NGDPBASE_BASE_URL;
+    return explicitlySetInCustom || explicitlySetInEnv;
+  }
+
+  /**
    * #642: post-install startup invariant. Once `.install-complete` exists,
-   * the operator must have explicitly configured `ngdpbase.application.base-url`
-   * — either in the custom config, via the `NGDPBASE_BASE_URL` env var, or
-   * (for legacy installs) under one of the migrated keys handled in
-   * `migrateLegacyBaseUrl()`. Falling back to the default localhost URL
-   * silently emits broken absolute URLs (template variables, magic-link
-   * emails, org @ids), so we refuse to start instead.
+   * the operator must have explicitly configured `ngdpbase.application.base-url`.
+   * Falling back to the default localhost URL silently emits broken
+   * absolute URLs (template variables, magic-link emails, org @ids), so we
+   * refuse to start instead.
    *
    * Pre-install (`.install-complete` absent), the default is fine — the
    * install flow will set the value before completing.
@@ -122,10 +139,7 @@ class ConfigurationManager extends BaseManager {
     const installComplete = await fs.pathExists(installCompletePath);
     if (!installComplete) return;
 
-    const explicitlySetInCustom = !!this.customConfig
-      && 'ngdpbase.application.base-url' in this.customConfig;
-    const explicitlySetInEnv = !!process.env.NGDPBASE_BASE_URL;
-    if (explicitlySetInCustom || explicitlySetInEnv) return;
+    if (this.isBaseUrlExplicit()) return;
 
     throw new Error(
       `[ConfigurationManager] Refusing to start: install is complete (${installCompletePath} exists) ` +

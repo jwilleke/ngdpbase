@@ -10,12 +10,16 @@ describe('AuthManager', () => {
       const values = {
         'ngdpbase.auth.magic-link.enabled': overrides.magicLinkEnabled ?? false,
         'ngdpbase.auth.magic-link.ttl-minutes': 15,
-        'ngdpbase.auth.magic-link.base-url': '',
         'ngdpbase.auth.required-factors': overrides.requiredFactors ?? ['password'],
         ...overrides.properties
       };
       return values[key] ?? defaultValue;
-    })
+    }),
+    // #642 Iteration 3: AuthManager checks this before registering magic-link.
+    // Defaults to true so existing tests behave as before; override per-test
+    // to exercise the refuse-to-register path.
+    isBaseUrlExplicit: vi.fn().mockReturnValue(overrides.baseUrlExplicit ?? true),
+    getBaseURL: vi.fn().mockReturnValue('https://wiki.example.com')
   });
 
   const makeMockEmailManager = () => ({
@@ -59,6 +63,23 @@ describe('AuthManager', () => {
 
     test('registers magic-link when enabled', async () => {
       const cm = makeConfigManager({ magicLinkEnabled: true });
+      const manager = new AuthManager(makeEngine(cm));
+      await manager.initialize();
+
+      expect(manager.isEnabled('magic-link')).toBe(true);
+    });
+
+    // #642 Iteration 3: refuse-to-register security check
+    test('refuses to register magic-link when application.base-url is implicit', async () => {
+      const cm = makeConfigManager({ magicLinkEnabled: true, baseUrlExplicit: false });
+      const manager = new AuthManager(makeEngine(cm));
+      await manager.initialize();
+
+      expect(manager.isEnabled('magic-link')).toBe(false);
+    });
+
+    test('registers magic-link when enabled AND base-url is explicit', async () => {
+      const cm = makeConfigManager({ magicLinkEnabled: true, baseUrlExplicit: true });
       const manager = new AuthManager(makeEngine(cm));
       await manager.initialize();
 
