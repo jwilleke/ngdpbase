@@ -2,6 +2,40 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-07-02
+
+- Agent: Claude
+- Subject: #642 Iteration 1 — unify base-url onto canonical `ngdpbase.application.base-url` with migration shim
+- Current Issue: #642 (in progress; Iterations 2 + 3 still open)
+- Tests: 5246/5246 vitest pass (was 5238); ConfigurationManager.test.ts 27 → 35 tests
+- Work Done:
+  - Discussed and settled 9 design decisions on the issue thread before writing code (canonical key naming, migration shim approach, install validation already-present, magic-link is core not addon, security check at startup, etc.)
+  - Posted decisions + 3-iteration plan as a comment on #642 before starting Iteration 1
+  - Renamed canonical key in 6 core read sites: `Config.ts` typed contract, `ConfigurationManager.getBaseURL()` accessor + env-var override (`NGDPBASE_BASE_URL` → canonical), `VariableManager` `${baseurl}` template variable, `OrganizationManager` org @id fallback, `InstallService` install-form persistence, `app-default-config.json` default
+  - Migration shim added in `ConfigurationManager.loadConfigurations()` operating on customConfig before merge: copies legacy `ngdpbase.base-url` or `ngdpbase.baseURL` into canonical key with deprecation warning naming the file path; precedence canonical > kebab > camel; legacy keys removed from customConfig after migration
+  - Fixed `addons/forms/routes/api.ts:99` (the only consumer of camelCase) to use canonical key
+  - Fixed `docker/k8s/configmap.yaml` (canonical key) and noticed + fixed unrelated `applicationName` → `application-name` while in the same edit
+  - Updated `docker/Dockerfile:175` comment, `config/app-custom-config.example`, 8 docs files (`config/README.md`, `docs/managers/ConfigurationManager*.md`, `docs/installation/*.md`, `docs/plugins/ConfigAccessorPlugin.md`)
+  - 8 new tests cover: canonical accessor, kebab → canonical migration, camel → canonical migration, precedence with all three keys present, kebab > camel precedence, deprecation log assertion, env-var override, default localhost fallback
+  - Live verified on jimstest: deprecation warning fired on startup as designed; jimstest's custom config still sets camelCase but is correctly migrated at load time. `getBaseURL()` now returns `https://jimstest.nerdsbythehour.com` instead of localhost default
+  - SEMVER patch bump 3.9.1 → 3.9.2; CHANGELOG entry; lockfile sync; full rebuild; `./server.sh restart` on jimstest
+  - Posted Iteration 1 completion comment on #642 with live-verification log line
+- Commits: a269bd7d (feat: #642 Iteration 1)
+- Files Modified:
+  - CHANGELOG.md
+  - addons/forms/routes/api.ts
+  - config/README.md, app-custom-config.example, app-default-config.json
+  - docker/Dockerfile, docker/k8s/configmap.yaml
+  - docs/installation/install-testing.md, installation-system.md, installation-testing-results.md, startup-process.md
+  - docs/managers/ConfigurationManager-Complete-Guide.md, ConfigurationManager.md
+  - docs/plugins/ConfigAccessorPlugin.md
+  - docs/project_log.md (this entry)
+  - package.json, package-lock.json
+  - src/managers/ConfigurationManager.ts, OrganizationManager.ts, VariableManager.ts
+  - src/managers/__tests__/ConfigurationManager.test.ts
+  - src/services/InstallService.ts
+  - src/types/Config.ts
+
 ## 2026-05-07-01
 
 - Agent: Claude
