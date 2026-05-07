@@ -66,6 +66,12 @@ COPY --from=builder /app/views ./views
 # Copy public assets
 COPY --from=builder /app/public ./public
 
+# Copy themes (core CSS variables, default/flatly/fairways/volcano theme dirs).
+# Required at runtime — the page header references /themes/core.css and
+# /themes/<active>/theme.css. Without this, the runtime falls back to a
+# regenerated default.css and any non-default theme returns 404.
+COPY --from=builder /app/themes ./themes
+
 # Copy required-pages (system templates)
 COPY --from=builder /app/required-pages ./required-pages
 
