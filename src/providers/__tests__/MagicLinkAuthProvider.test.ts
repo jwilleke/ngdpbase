@@ -7,6 +7,7 @@ describe('MagicLinkAuthProvider', () => {
   let mockEngine;
   let mockUserManager;
   let mockMailProvider;
+  let mockConfigManager;
 
   beforeEach(() => {
     mockMailProvider = { send: vi.fn().mockResolvedValue(undefined) };
@@ -15,16 +16,21 @@ describe('MagicLinkAuthProvider', () => {
       getUserByEmail: vi.fn()
     };
 
+    // #642 Iteration 3: provider derives baseUrl from getBaseURL() at runtime.
+    mockConfigManager = {
+      getBaseURL: vi.fn().mockReturnValue('https://wiki.example.com')
+    };
+
     mockEngine = {
       getManager: vi.fn((name) => {
         if (name === 'UserManager') return mockUserManager;
+        if (name === 'ConfigurationManager') return mockConfigManager;
         return null;
       })
     };
 
     provider = new MagicLinkAuthProvider(mockEngine, {
       ttlMs: 15 * 60 * 1000,
-      baseUrl: 'http://localhost:3000',
       mailProvider: mockMailProvider
     });
   });
@@ -38,8 +44,35 @@ describe('MagicLinkAuthProvider', () => {
       expect(mockMailProvider.send).toHaveBeenCalledTimes(1);
       const msg = mockMailProvider.send.mock.calls[0][0];
       expect(msg.to).toBe('alice@example.com');
-      expect(msg.text).toContain('/auth/magic-link/verify?token=');
+      // #642 Iteration 3: verify URL host comes from getBaseURL(), not a config field.
+      expect(msg.text).toContain('https://wiki.example.com/auth/magic-link/verify?token=');
       expect(provider.getTokenCount()).toBe(1);
+    });
+
+    test('verify URL host comes from ConfigurationManager.getBaseURL() at runtime (#642)', async () => {
+      mockUserManager.getUserByEmail.mockResolvedValue({ username: 'alice', email: 'alice@example.com' });
+      // Change the mocked baseURL between calls — runtime derivation should pick it up.
+      mockConfigManager.getBaseURL.mockReturnValue('https://first.example.com');
+      await provider.initiate({ email: 'alice@example.com' });
+      mockConfigManager.getBaseURL.mockReturnValue('https://second.example.com');
+      await provider.initiate({ email: 'bob@example.com' });
+
+      const firstUrl = mockMailProvider.send.mock.calls[0][0].text;
+      const secondUrl = mockMailProvider.send.mock.calls[1][0].text;
+      expect(firstUrl).toContain('https://first.example.com/auth/magic-link/verify?token=');
+      expect(secondUrl).toContain('https://second.example.com/auth/magic-link/verify?token=');
+    });
+
+    test('strips trailing slash from baseURL', async () => {
+      mockUserManager.getUserByEmail.mockResolvedValue({ username: 'alice', email: 'alice@example.com' });
+      mockConfigManager.getBaseURL.mockReturnValue('https://wiki.example.com/');
+
+      await provider.initiate({ email: 'alice@example.com' });
+
+      const msg = mockMailProvider.send.mock.calls[0][0];
+      // No double slash before /auth/...
+      expect(msg.text).toContain('https://wiki.example.com/auth/magic-link/verify?token=');
+      expect(msg.text).not.toContain('https://wiki.example.com//auth/');
     });
 
     test('silent no-op when email not registered', async () => {
@@ -101,7 +134,6 @@ describe('MagicLinkAuthProvider', () => {
       // Create provider with 0ms TTL so token is instantly expired
       const shortProvider = new MagicLinkAuthProvider(mockEngine, {
         ttlMs: 0,
-        baseUrl: 'http://localhost:3000',
         mailProvider: mockMailProvider
       });
       await shortProvider.initiate({ email: 'alice@example.com' });
