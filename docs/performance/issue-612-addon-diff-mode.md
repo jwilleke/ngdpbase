@@ -58,7 +58,7 @@ The script prints a runtime estimate up front so a long run isn't mistaken for a
 
 - **Original config is backed up** to a `mktemp` file before any modification.
 - **EXIT trap** restores the backup and runs a final `./server.sh restart` regardless of how the script exits — clean exit, error, or **Ctrl-C**.
-- **Do not `kill -9`** the script. SIGKILL bypasses the trap; the config will be left in a modified state. Recovery in that case: copy any sibling `baseline-v*-addondiff*.md` (which contains the original addon settings in the "all enabled" baseline) or reconstruct from git/`app-custom-config.example`.
+- **Do not `kill -9`** the script. SIGKILL bypasses the trap; the config will be left in a modified state. Recovery in that case: copy any sibling `baseline-v*-addondiff*.md` (which contains the original addon settings in the "all enabled" baseline) or restore the custom config from git history.
 
 ## How to interpret the numbers
 

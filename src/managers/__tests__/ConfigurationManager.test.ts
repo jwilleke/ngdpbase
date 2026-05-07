@@ -761,4 +761,94 @@ describe('ConfigurationManager', () => {
       expect(cm.getBaseURL()).toBe('http://localhost:3000');
     });
   });
+
+  // #642 Iteration 2: post-install startup invariant. Refuse to start if
+  // the install is complete but no one has explicitly set
+  // ngdpbase.application.base-url (custom config or env var). Pre-install
+  // is fine — the install flow will set the value before completing.
+  describe('base-url startup invariant (#642 Iteration 2)', () => {
+    const writeCustom = async (custom: Record<string, unknown>) => {
+      const instanceConfigDir = path.join(tempDir, 'data', 'config');
+      await fs.ensureDir(instanceConfigDir);
+      await fs.writeJson(
+        path.join(instanceConfigDir, 'app-custom-config.json'),
+        custom,
+        { spaces: 2 }
+      );
+    };
+
+    const writeDefault = async () => {
+      await fs.writeJson(
+        path.join(tempDir, 'config', 'app-default-config.json'),
+        {
+          'ngdpbase.application-name': 'TestWiki',
+          'ngdpbase.application.base-url': 'http://localhost:3000'
+        },
+        { spaces: 2 }
+      );
+    };
+
+    const markInstallComplete = async () => {
+      await fs.ensureDir(path.join(tempDir, 'data'));
+      await fs.writeFile(path.join(tempDir, 'data', '.install-complete'), '');
+    };
+
+    test('pre-install (no .install-complete) does not throw even if base-url unset', async () => {
+      await writeDefault();
+      // No custom config, no install-complete marker
+
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+
+    test('post-install with explicit custom base-url does not throw', async () => {
+      await writeDefault();
+      await writeCustom({ 'ngdpbase.application.base-url': 'https://wiki.example.com' });
+      await markInstallComplete();
+
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+
+    test('post-install with NGDPBASE_BASE_URL env var does not throw', async () => {
+      await writeDefault();
+      await markInstallComplete();
+      process.env.NGDPBASE_BASE_URL = 'https://wiki.example.com';
+
+      try {
+        const cm = new ConfigurationManager(mockEngine);
+        await expect(cm.initialize()).resolves.not.toThrow();
+      } finally {
+        delete process.env.NGDPBASE_BASE_URL;
+      }
+    });
+
+    test('post-install with migrated legacy key does not throw (shim sets canonical)', async () => {
+      await writeDefault();
+      await writeCustom({ 'ngdpbase.baseURL': 'https://legacy.example.com' });
+      await markInstallComplete();
+
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+      expect(cm.getBaseURL()).toBe('https://legacy.example.com');
+    });
+
+    test('post-install without any explicit base-url throws fatal error', async () => {
+      await writeDefault();
+      // No custom config — only the default localhost
+      await markInstallComplete();
+
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).rejects.toThrow(/Refusing to start.*application\.base-url.*#642/s);
+    });
+
+    test('post-install with empty-object custom config (no base-url key) throws', async () => {
+      await writeDefault();
+      await writeCustom({ 'ngdpbase.application-name': 'OnlyAppName' });
+      await markInstallComplete();
+
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).rejects.toThrow(/Refusing to start/);
+    });
+  });
 });

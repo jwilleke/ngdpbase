@@ -96,12 +96,44 @@ class ConfigurationManager extends BaseManager {
     await super.initialize(config);
     try {
       await this.loadConfigurations();
+      await this.assertBaseUrlConfigured();
       logger.info(`ConfigurationManager initialized for environment: ${this.environment}`);
       logger.info(`Loaded configs: default + ${this.customConfig && Object.keys(this.customConfig).length > 0 ? 'custom' : 'no custom'}`);
     } catch (error) {
       logger.error('Failed to initialize ConfigurationManager:', error);
       throw error;
     }
+  }
+
+  /**
+   * #642: post-install startup invariant. Once `.install-complete` exists,
+   * the operator must have explicitly configured `ngdpbase.application.base-url`
+   * — either in the custom config, via the `NGDPBASE_BASE_URL` env var, or
+   * (for legacy installs) under one of the migrated keys handled in
+   * `migrateLegacyBaseUrl()`. Falling back to the default localhost URL
+   * silently emits broken absolute URLs (template variables, magic-link
+   * emails, org @ids), so we refuse to start instead.
+   *
+   * Pre-install (`.install-complete` absent), the default is fine — the
+   * install flow will set the value before completing.
+   */
+  private async assertBaseUrlConfigured(): Promise<void> {
+    const installCompletePath = path.join(this.getInstanceDataFolder(), '.install-complete');
+    const installComplete = await fs.pathExists(installCompletePath);
+    if (!installComplete) return;
+
+    const explicitlySetInCustom = !!this.customConfig
+      && 'ngdpbase.application.base-url' in this.customConfig;
+    const explicitlySetInEnv = !!process.env.NGDPBASE_BASE_URL;
+    if (explicitlySetInCustom || explicitlySetInEnv) return;
+
+    throw new Error(
+      `[ConfigurationManager] Refusing to start: install is complete (${installCompletePath} exists) ` +
+      'but \'ngdpbase.application.base-url\' is not explicitly configured. ' +
+      `Set it in ${this.customConfigPath} or export NGDPBASE_BASE_URL. ` +
+      'Falling back to the default \'http://localhost:3000\' would silently emit broken ' +
+      'absolute URLs (template variables, magic-link emails, organization @ids). (#642)'
+    );
   }
 
   /**

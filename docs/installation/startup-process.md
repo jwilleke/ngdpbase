@@ -250,7 +250,6 @@ Separate from the startup maintenance gate, admins can enable maintenance mode a
 | File | Purpose |
 | ---- | ------- |
 | `config/app-default-config.json` | Base defaults with all properties. Never modify directly. |
-| `config/app-custom-config.example` | Template for creating a custom config |
 | `.env.example` | Template showing available environment variables |
 
 ### In the Instance Data Folder

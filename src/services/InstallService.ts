@@ -141,7 +141,6 @@ interface HeadlessInstallResult {
   message?: string;
   error?: string;
   steps: {
-    configsCopied: number;
     pagesCopied: number;
     markerCreated: boolean;
   };
@@ -596,7 +595,6 @@ class InstallService {
    * Process headless installation for Docker/K8s automated deployments
    *
    * When HEADLESS_INSTALL=true environment variable is set:
-   * - Copies example configs to data/config/ if not present
    * - Copies required pages to data/pages/ if empty
    * - Seeds the install's anchor Organization from
    *   `ngdpbase.application.organization.*` config (#617) when one is named
@@ -608,22 +606,23 @@ class InstallService {
    * Note: WikiEngine creates default admin (admin/admin123) automatically.
    * User is prompted to change password on first login (existing behavior).
    *
+   * Custom config: the operator must provide
+   * `INSTANCE_DATA_FOLDER/config/app-custom-config.json` (e.g., via a Docker
+   * volume mount or k8s ConfigMap) before the headless boot, OR rely on env-var
+   * overrides such as `NGDPBASE_BASE_URL` (#642). The headless flow no longer
+   * seeds a template config — there is no `*.example` file to copy.
+   *
    * @async
    * @returns Result with success status and details of steps performed
    */
   async processHeadlessInstallation(): Promise<HeadlessInstallResult> {
     const steps = {
-      configsCopied: 0,
       pagesCopied: 0,
       markerCreated: false
     };
 
     try {
       logger.info('[InstallService] Starting headless installation...');
-
-      // Step 1: Copy example configs to instance config directory
-      steps.configsCopied = await this.copyExampleConfigs();
-      logger.info(`[InstallService] Copied ${steps.configsCopied} example config(s)`);
 
       // Step 2: Copy required pages to pages directory
       const pagesResult = await this.createPagesFolder();
@@ -757,46 +756,6 @@ class InstallService {
   }
 
   /**
-   * Copy example config files to instance config directory
-   * Copies config/*.example files to INSTANCE_DATA_FOLDER/config/ (with .json extension)
-   * Example: app-custom-config.example → app-custom-config.json
-   *
-   * @returns Number of files copied
-   */
-  async copyExampleConfigs(): Promise<number> {
-    const sourceDir = path.join(process.cwd(), 'config');
-    const targetDir = this.getInstanceConfigDir();
-
-    // Ensure target directory exists
-    await fs.ensureDir(targetDir);
-
-    let copiedCount = 0;
-    try {
-      const files = await fs.readdir(sourceDir);
-      const exampleFiles = files.filter(f => f.endsWith('.example'));
-
-      for (const exampleFile of exampleFiles) {
-        // Replace .example with .json for target filename
-        // e.g., app-custom-config.example → app-custom-config.json
-        const targetFileName = exampleFile.replace('.example', '.json');
-        const sourcePath = path.join(sourceDir, exampleFile);
-        const targetPath = path.join(targetDir, targetFileName);
-
-        // Only copy if target doesn't exist
-        if (!await fs.pathExists(targetPath)) {
-          await fs.copy(sourcePath, targetPath);
-          logger.info(`[InstallService] Copied ${exampleFile} to ${targetPath}`);
-          copiedCount++;
-        }
-      }
-    } catch (error) {
-      logger.error('[InstallService] Failed to copy example configs:', error);
-    }
-
-    return copiedCount;
-  }
-
-  /**
    * Write custom configuration file
    *
    * @private
@@ -806,9 +765,7 @@ class InstallService {
     const instanceConfigDir = this.getInstanceConfigDir();
     const customConfigPath = path.join(instanceConfigDir, 'app-custom-config.json');
 
-    // Ensure config directory exists and copy example configs if needed
     await fs.ensureDir(instanceConfigDir);
-    await this.copyExampleConfigs();
 
     // Read existing custom config or start fresh
     let customConfig: Record<string, unknown> = {};

@@ -27,11 +27,11 @@ The ConfigurationManager follows JSPWiki's configuration patterns with Docker/Ku
 
 ```text
 config/                                    # In codebase (read-only)
-├── app-default-config.json               # Base defaults (required)
-└── app-custom-config.example             # Template for custom config
+└── app-default-config.json               # Base defaults (required)
 
 INSTANCE_DATA_FOLDER/config/               # Instance-specific (default: ./data/config/)
 └── {INSTANCE_CONFIG_FILE}                # Custom overrides (default: app-custom-config.json)
+                                          # Written from install-form data; no template (#642)
 ```
 
 **Environment Variables:**

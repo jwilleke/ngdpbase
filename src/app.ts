@@ -206,7 +206,6 @@ void (async (): Promise<void> => {
 
             if (result.success) {
               console.log('✅ Headless installation completed successfully');
-              console.log(`   - Configs copied: ${String(result.steps.configsCopied)}`);
               console.log(`   - Pages copied: ${String(result.steps.pagesCopied)}`);
               next(); return;
             } else {

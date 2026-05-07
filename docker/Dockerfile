@@ -77,7 +77,6 @@ COPY --from=builder /app/resources ./resources
 
 # Copy default configuration
 COPY --from=builder /app/config/app-default-config.json ./config/
-COPY --from=builder /app/config/app-custom-config.example ./config/
 
 # Create data directories with proper permissions
 # All instance-specific data is consolidated under /app/data
@@ -139,8 +138,8 @@ CMD ["node", "dist/src/app.js"]
 #
 # CONFIG FILE LOCATIONS:
 # - /app/config/app-default-config.json (in image - base defaults, read-only)
-# - /app/config/app-custom-config.example (in image - template)
-# - /app/data/config/{INSTANCE_CONFIG_FILE} (volume - instance overrides)
+# - /app/data/config/{INSTANCE_CONFIG_FILE} (volume - instance overrides; provided by operator
+#   via volume mount or k8s ConfigMap, OR via env-var overrides like NGDPBASE_BASE_URL)
 #
 # ConfigurationManager loads (two-tier merge):
 # 1. config/app-default-config.json (required - in image, read-only)

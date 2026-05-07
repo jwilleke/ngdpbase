@@ -47,8 +47,7 @@ File: `src/services/InstallService.ts` (860+ lines)
 Core service handling:
 
 - Form data validation
-- Example config copying (`copyExampleConfigs()`)
-- Config file generation (path from `INSTANCE_CONFIG_FILE` env var, default: `./data/config/app-custom-config.json`)
+- Config file generation (path from `INSTANCE_CONFIG_FILE` env var, default: `./data/config/app-custom-config.json`) — written from install-form data; no template file is copied (#642)
 - Organization JSON creation (Schema.org compliant)
 - Admin user password update with secure hashing
 - Startup pages copying mechanism
@@ -67,7 +66,6 @@ Key Methods:
 - `resetInstallation()` - Clears partial state
 - `createPagesFolder()` - Recovery: recreate pages folder
 - `detectMissingPagesOnly()` - Recovery: detect missing pages
-- `copyExampleConfigs()` - Copies `config/*.example` to `./data/config/*.json`
 - `getInstanceConfigDir()` - Returns resolved instance config directory
 - `getInstallCompleteFilePath()` - Returns path to `.install-complete` marker
 
@@ -107,8 +105,7 @@ Success Page: `views/install-success.ejs` (100+ lines)
 **Configuration Files:**
 
 - `config/app-default-config.json` — base defaults shipped with the codebase (read-only)
-- `config/app-custom-config.example` — template copied to instance config dir during install
-- `./data/config/app-custom-config.json` — instance-specific overrides (path controlled by `INSTANCE_CONFIG_FILE`)
+- `./data/config/app-custom-config.json` — instance-specific overrides (path controlled by `INSTANCE_CONFIG_FILE`); written from install-form data, no template copied (#642)
 
 **Configuration Load Order (ConfigurationManager):**
 
@@ -239,7 +236,6 @@ The Docker image (`docker/Dockerfile`) is designed for instance data separation:
 **Build-time:**
 
 - Copies `config/app-default-config.json` to `/app/config/` (base defaults)
-- Copies `config/app-custom-config.example` to `/app/config/` (template)
 - Creates `/app/data/` directory structure with subdirectories
 
 **Runtime:**
@@ -247,7 +243,7 @@ The Docker image (`docker/Dockerfile`) is designed for instance data separation:
 - Sets `FAST_STORAGE=/app/data` and `SLOW_STORAGE=/app/data`
 - Volume mount: `/app/data` for persistent instance data
 - Installation wizard runs on first access (no `.install-complete` file)
-- `copyExampleConfigs()` copies template to `/app/data/config/app-custom-config.json`
+- Wizard writes `/app/data/config/app-custom-config.json` from form data (#642 — no template file is copied)
 
 **docker-compose.yml usage:**
 
@@ -316,14 +312,10 @@ User fills form:
     ↓
 Submit → InstallService.processInstallation()
     ↓
-Step 1: copyExampleConfigs()
-  - Copies config/*.example → ./data/config/*.json
-  - Example: app-custom-config.example → app-custom-config.json
+Step 1: #writeCustomConfig()
+  - Writes ./data/config/app-custom-config.json from install-form data
     ↓
-Step 2: #writeCustomConfig()
-  - Writes ./data/config/app-custom-config.json
-    ↓
-Step 3: #writeOrganizationData()
+Step 2: #writeOrganizationData()
   - Writes ngdpbase.user.provider.storagedir/organizations.json
     (default: FAST_STORAGE/users/organizations.json)
     ↓
@@ -401,7 +393,6 @@ Scenarios Supported:
 ### Configuration Files
 
 - `config/app-default-config.json` - Base defaults (in codebase)
-- `config/app-custom-config.example` - Template copied during install
 
 ### Docker/Kubernetes Files
 

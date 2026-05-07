@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.9.3] - 2026-05-07
+
+### Changed
+
+- **#642** Iteration 2: hardening. Added startup invariant in `ConfigurationManager` that refuses to start when `.install-complete` exists but `ngdpbase.application.base-url` is not explicitly set in custom config or via `NGDPBASE_BASE_URL`. Deleted `config/app-custom-config.example` and removed the `copyExampleConfigs()` install path that consumed it — install now writes the custom config from the form data alone. Dockerfile no longer copies the template; headless install docs updated to note operators must provide their own config or env-var overrides.
+
+### Removed
+
+- `config/app-custom-config.example` (#642) — was the source of the camelCase key spread; superseded by the install form, k8s ConfigMaps, and env-var overrides.
+- `InstallService.copyExampleConfigs()` (#642) — no longer needed.
+- `HeadlessInstallResult.steps.configsCopied` field (#642) — always 0 now that example copying is gone.
+
 ## [3.9.2] - 2026-05-07
 
 ### Changed
