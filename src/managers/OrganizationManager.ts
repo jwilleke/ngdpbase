@@ -224,7 +224,7 @@ class OrganizationManager extends BaseManager {
     }
 
     const id = data.orgUrl
-      || (configManager.getProperty('ngdpbase.base-url', '') as string)
+      || (configManager.getProperty('ngdpbase.application.base-url', '') as string)
       || `urn:ngdpbase:org:${slugify(data.orgName)}`;
 
     const org: Organization = {

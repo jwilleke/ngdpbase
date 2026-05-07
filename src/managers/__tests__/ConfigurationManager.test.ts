@@ -634,4 +634,131 @@ describe('ConfigurationManager', () => {
       expect(newConfigManager.getProperty('ngdpbase.logging.level')).toBe('error');
     });
   });
+
+  // #642: canonical key migration. Custom configs may set legacy
+  // `ngdpbase.base-url` (kebab) or `ngdpbase.baseURL` (camel); both must
+  // be migrated to `ngdpbase.application.base-url` at load time so all
+  // downstream readers see one canonical key.
+  describe('base-url canonical key migration (#642)', () => {
+    const writeCustom = async (custom: Record<string, unknown>) => {
+      const instanceConfigDir = path.join(tempDir, 'data', 'config');
+      await fs.ensureDir(instanceConfigDir);
+      await fs.writeJson(
+        path.join(instanceConfigDir, 'app-custom-config.json'),
+        custom,
+        { spaces: 2 }
+      );
+    };
+
+    const writeDefault = async (extra: Record<string, unknown> = {}) => {
+      await fs.writeJson(
+        path.join(tempDir, 'config', 'app-default-config.json'),
+        {
+          'ngdpbase.application-name': 'TestWiki',
+          'ngdpbase.application.base-url': 'http://localhost:3000',
+          ...extra
+        },
+        { spaces: 2 }
+      );
+    };
+
+    test('getBaseURL() returns canonical key value', async () => {
+      await writeDefault();
+      await writeCustom({ 'ngdpbase.application.base-url': 'https://canonical.example.com' });
+
+      const cm = new ConfigurationManager(mockEngine);
+      await cm.initialize();
+
+      expect(cm.getBaseURL()).toBe('https://canonical.example.com');
+    });
+
+    test('legacy ngdpbase.base-url is migrated to canonical key', async () => {
+      await writeDefault();
+      await writeCustom({ 'ngdpbase.base-url': 'https://legacy-kebab.example.com' });
+
+      const cm = new ConfigurationManager(mockEngine);
+      await cm.initialize();
+
+      expect(cm.getBaseURL()).toBe('https://legacy-kebab.example.com');
+      // Sentinel default proves the key is genuinely absent from merged config.
+      expect(cm.getProperty('ngdpbase.base-url', '__missing__')).toBe('__missing__');
+    });
+
+    test('legacy ngdpbase.baseURL (camelCase) is migrated to canonical key', async () => {
+      await writeDefault();
+      await writeCustom({ 'ngdpbase.baseURL': 'https://legacy-camel.example.com' });
+
+      const cm = new ConfigurationManager(mockEngine);
+      await cm.initialize();
+
+      expect(cm.getBaseURL()).toBe('https://legacy-camel.example.com');
+      expect(cm.getProperty('ngdpbase.baseURL', '__missing__')).toBe('__missing__');
+    });
+
+    test('canonical key wins when both canonical and legacy are set', async () => {
+      await writeDefault();
+      await writeCustom({
+        'ngdpbase.application.base-url': 'https://canonical.example.com',
+        'ngdpbase.base-url': 'https://legacy-kebab.example.com',
+        'ngdpbase.baseURL': 'https://legacy-camel.example.com'
+      });
+
+      const cm = new ConfigurationManager(mockEngine);
+      await cm.initialize();
+
+      expect(cm.getBaseURL()).toBe('https://canonical.example.com');
+    });
+
+    test('kebab-case legacy wins over camelCase legacy when both present and canonical absent', async () => {
+      await writeDefault();
+      await writeCustom({
+        'ngdpbase.base-url': 'https://legacy-kebab.example.com',
+        'ngdpbase.baseURL': 'https://legacy-camel.example.com'
+      });
+
+      const cm = new ConfigurationManager(mockEngine);
+      await cm.initialize();
+
+      expect(cm.getBaseURL()).toBe('https://legacy-kebab.example.com');
+    });
+
+    test('migration logs a deprecation warning', async () => {
+      const logger = (await import('../../utils/logger')).default;
+      const warnSpy = vi.spyOn(logger, 'warn');
+
+      await writeDefault();
+      await writeCustom({ 'ngdpbase.baseURL': 'https://legacy.example.com' });
+
+      const cm = new ConfigurationManager(mockEngine);
+      await cm.initialize();
+
+      const deprecationCalls = warnSpy.mock.calls.filter((args: unknown[]) =>
+        typeof args[0] === 'string' && args[0].includes('DEPRECATED') && args[0].includes('#642')
+      );
+      expect(deprecationCalls.length).toBeGreaterThan(0);
+      warnSpy.mockRestore();
+    });
+
+    test('NGDPBASE_BASE_URL env var overrides canonical key', async () => {
+      await writeDefault();
+      await writeCustom({ 'ngdpbase.application.base-url': 'https://config.example.com' });
+      process.env.NGDPBASE_BASE_URL = 'https://env.example.com';
+
+      const cm = new ConfigurationManager(mockEngine);
+      await cm.initialize();
+
+      expect(cm.getBaseURL()).toBe('https://env.example.com');
+      delete process.env.NGDPBASE_BASE_URL;
+    });
+
+    test('default localhost:3000 returned when nothing is set', async () => {
+      await writeDefault();
+      // No custom config
+
+      const cm = new ConfigurationManager(mockEngine);
+      await cm.initialize();
+
+      expect(cm.getBaseURL()).toBe('http://localhost:3000');
+    });
+  });
 });

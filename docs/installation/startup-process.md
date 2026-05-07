@@ -70,7 +70,7 @@ These environment variables override the corresponding config file properties at
 
 | Environment Variable       | Config Property              | Default     |
 | -------------------------- | ---------------------------- | ----------- |
-| `NGDPBASE_BASE_URL`         | `ngdpbase.base-url`            | (from config) |
+| `NGDPBASE_BASE_URL`         | `ngdpbase.application.base-url`            | (from config) |
 | `NGDPBASE_HOSTNAME`         | `ngdpbase.hostname`           | (from config) |
 | `NGDPBASE_HOST`             | `ngdpbase.server.host`        | `localhost` |
 | `NGDPBASE_PORT`             | `ngdpbase.server.port`        | `3000`      |

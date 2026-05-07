@@ -97,7 +97,7 @@ Result in development: `port = 8080` (custom wins)
 ### Application
 
 - `ngdpbase.application-name` - Site name
-- `ngdpbase.base-url` - Base URL for the wiki
+- `ngdpbase.application.base-url` - Base URL for the wiki
 - `ngdpbase.port` - HTTP port (default: 3000)
 
 ### Logging

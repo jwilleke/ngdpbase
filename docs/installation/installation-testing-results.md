@@ -245,7 +245,7 @@ Sample pages copied:
 ```json
 {
   "ngdpbase.application-name": "TestWiki",
-  "ngdpbase.base-url": "http://localhost:3000",
+  "ngdpbase.application.base-url": "http://localhost:3000",
   "ngdpbase.session.secret": "[generated random hex]",
   "ngdpbase.install.organization.name": "TestOrg",
   "ngdpbase.install.organization.legal-name": "",

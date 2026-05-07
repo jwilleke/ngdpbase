@@ -96,7 +96,7 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
         if (emailManager?.isEnabled() && submitterEmail) {
           const subject = `[Submitted] ${form.title}`;
           const cm = engine.getManager<import('../../../dist/src/managers/ConfigurationManager.js').default>('ConfigurationManager');
-          const baseUrl = (cm?.getProperty('ngdpbase.baseURL', '') as string).replace(/\/$/, '');
+          const baseUrl = (cm?.getProperty('ngdpbase.application.base-url', '') as string).replace(/\/$/, '');
 
           // Build detail lines from submission data for fields with values
           const data = submission.data as Record<string, string>;

@@ -57,7 +57,7 @@ Contains all default configuration properties. This file should not be modified 
 {
   "ngdpbase.application-name": "ngdpbase",
   "ngdpbase.version": "1.3.2",
-  "ngdpbase.base-url": "http://localhost:3000",
+  "ngdpbase.application.base-url": "http://localhost:3000",
   "ngdpbase.server.port": 3000,
   "ngdpbase.server.host": "localhost",
   "ngdpbase.session.secret": "ngdpbase-session-secret-change-in-production",
@@ -78,7 +78,7 @@ Contains custom overrides for default properties. Created by installation wizard
 {
   "_comment": "This file overrides values from app-default-config.json",
   "ngdpbase.application-name": "My Custom Wiki",
-  "ngdpbase.base-url": "https://wiki.mycompany.com",
+  "ngdpbase.application.base-url": "https://wiki.mycompany.com",
   "ngdpbase.server.port": 8080,
   "ngdpbase.front-page": "CustomHomePage"
 }
@@ -194,7 +194,7 @@ Gets custom override properties from app-custom-config.json.
 
 ```javascript
 getApplicationName()    // ngdpbase.application-name
-getBaseURL()           // ngdpbase.base-url
+getBaseURL()           // ngdpbase.application.base-url
 getFrontPage()         // ngdpbase.front-page
 getEncoding()          // ngdpbase.encoding
 ```
@@ -231,7 +231,7 @@ getRSSConfig()         // Complete RSS configuration object
 {
   "ngdpbase.application-name": "ngdpbase",
   "ngdpbase.version": "1.3.2",
-  "ngdpbase.base-url": "http://localhost:3000",
+  "ngdpbase.application.base-url": "http://localhost:3000",
   "ngdpbase.encoding": "UTF-8",
   "ngdpbase.front-page": "Welcome",
   "ngdpbase.templateDir": "default"
@@ -380,7 +380,7 @@ File: `./data/config/app-custom-config.json`
 ```json
 {
   "ngdpbase.server.port": 3000,
-  "ngdpbase.base-url": "http://localhost:3000",
+  "ngdpbase.application.base-url": "http://localhost:3000",
   "ngdpbase.session.secure": false
 }
 ```
@@ -392,7 +392,7 @@ File: `INSTANCE_DATA_FOLDER/config/app-custom-config.json`
 ```json
 {
   "ngdpbase.server.port": 80,
-  "ngdpbase.base-url": "https://wiki.mycompany.com",
+  "ngdpbase.application.base-url": "https://wiki.mycompany.com",
   "ngdpbase.session.secure": true,
   "ngdpbase.session.secret": "production-secret-key-change-this"
 }

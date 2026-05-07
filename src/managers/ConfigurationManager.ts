@@ -150,6 +150,11 @@ class ConfigurationManager extends BaseManager {
       logger.info(`Loaded custom config: ${this.customConfigPath}`);
     }
 
+    // #642: migrate legacy base-url keys into the canonical
+    // ngdpbase.application.base-url. Operates on customConfig before the
+    // merge so user intent wins over default.
+    this.migrateLegacyBaseUrl();
+
     // Merge configurations with deep-merge for object-type properties
     this.mergedConfig = this.deepMergeConfigs(this.defaultConfig, this.customConfig);
 
@@ -157,6 +162,46 @@ class ConfigurationManager extends BaseManager {
     if (this.environment === 'development' && !this.customConfig?.['ngdpbase.logging.level']) {
       this.mergedConfig['ngdpbase.logging.level'] = 'debug';
     }
+  }
+
+  /**
+   * #642: One-shot migration shim. If the custom config sets either of the
+   * legacy keys `ngdpbase.base-url` or `ngdpbase.baseURL`, copy the value
+   * into the canonical `ngdpbase.application.base-url` (unless that key is
+   * already set explicitly), then drop the legacy keys. Logs a deprecation
+   * warning so operators see they should update their custom config.
+   *
+   * Precedence when multiple legacy keys are present:
+   *   custom application.base-url  >  custom base-url  >  custom baseURL
+   */
+  private migrateLegacyBaseUrl(): void {
+    if (!this.customConfig) return;
+
+    const canonical = 'ngdpbase.application.base-url';
+    const legacyKebab = 'ngdpbase.base-url';
+    const legacyCamel = 'ngdpbase.baseURL';
+
+    const hasCanonical = canonical in this.customConfig;
+    const kebabValue = this.customConfig[legacyKebab];
+    const camelValue = this.customConfig[legacyCamel];
+
+    if (!hasCanonical && (kebabValue !== undefined || camelValue !== undefined)) {
+      const migratedValue = (kebabValue !== undefined ? kebabValue : camelValue) as string;
+      const migratedFrom = kebabValue !== undefined ? legacyKebab : legacyCamel;
+      this.customConfig[canonical] = migratedValue;
+      logger.warn(
+        `[ConfigurationManager] DEPRECATED: '${migratedFrom}' in custom config has been migrated to '${canonical}'. ` +
+        `Update ${this.customConfigPath} to use '${canonical}' directly. (#642)`
+      );
+    } else if (hasCanonical && (kebabValue !== undefined || camelValue !== undefined)) {
+      logger.warn(
+        `[ConfigurationManager] DEPRECATED: legacy base-url keys present alongside '${canonical}'. ` +
+        `Canonical key wins; remove legacy keys from ${this.customConfigPath}. (#642)`
+      );
+    }
+
+    delete this.customConfig[legacyKebab];
+    delete this.customConfig[legacyCamel];
   }
 
   /**
@@ -335,7 +380,7 @@ class ConfigurationManager extends BaseManager {
     // Allows dynamic configuration without editing config files
     // Used especially for headless installation mode (HEADLESS_INSTALL=true)
     const envOverrides: { [key: string]: string | undefined } = {
-      'ngdpbase.base-url': process.env.NGDPBASE_BASE_URL,
+      'ngdpbase.application.base-url': process.env.NGDPBASE_BASE_URL,
       'ngdpbase.hostname': process.env.NGDPBASE_HOSTNAME,
       'ngdpbase.server.host': process.env.NGDPBASE_HOST,
       'ngdpbase.server.port': process.env.NGDPBASE_PORT,
@@ -473,7 +518,7 @@ class ConfigurationManager extends BaseManager {
    * @returns {string} Base URL (defaults to 'http://localhost:3000')
    */
   getBaseURL(): string {
-    return this.getProperty('ngdpbase.base-url', 'http://localhost:3000') as string;
+    return this.getProperty('ngdpbase.application.base-url', 'http://localhost:3000') as string;
   }
 
   /**

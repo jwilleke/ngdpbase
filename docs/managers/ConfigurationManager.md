@@ -65,7 +65,7 @@ await configManager.setProperty('ngdpbase.application-name', 'My Wiki');
 | Method | Returns | Config Key |
 | -------- | --------- | ------------ |
 | `getApplicationName()` | `string` | `ngdpbase.application-name` |
-| `getBaseURL()` | `string` | `ngdpbase.base-url` |
+| `getBaseURL()` | `string` | `ngdpbase.application.base-url` |
 | `getFrontPage()` | `string` | `ngdpbase.front-page` |
 | `getServerPort()` | `number` | `ngdpbase.server.port` |
 | `getServerHost()` | `string` | `ngdpbase.server.host` |
@@ -99,7 +99,7 @@ For Docker/Traefik/Kubernetes deployments:
 | --- | --- |
 | `INSTANCE_DATA_FOLDER` | Base path for all instance data (default: `./data`) |
 | `INSTANCE_CONFIG_FILE` | Config filename to load (default: `app-custom-config.json`) |
-| `NGDPBASE_BASE_URL` | Overrides `ngdpbase.base-url` |
+| `NGDPBASE_BASE_URL` | Overrides `ngdpbase.application.base-url` |
 | `NGDPBASE_HOSTNAME` | Overrides `ngdpbase.hostname` |
 | `NGDPBASE_HOST` | Overrides `ngdpbase.server.host` |
 | `NGDPBASE_PORT` | Overrides `ngdpbase.server.port` |

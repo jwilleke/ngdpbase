@@ -826,7 +826,7 @@ class InstallService {
     // the pointer to that file.
     const installationProperties: Record<string, unknown> = {
       'ngdpbase.application-name': data.applicationName,
-      'ngdpbase.base-url': data.baseURL,
+      'ngdpbase.application.base-url': data.baseURL,
       'ngdpbase.session.secret': data.sessionSecret || crypto.randomBytes(32).toString('hex'),
       'ngdpbase.application.organization.file': filenameFromOrg({ url: data.orgUrl, name: data.orgName })
     };

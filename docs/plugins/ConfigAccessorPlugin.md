@@ -440,7 +440,7 @@ returns: { indexPath: './index', ... }
 
 - `ngdpbase.server.port` - Server port number
 - `ngdpbase.server.host` - Server hostname
-- `ngdpbase.base-url` - Base URL for the wiki
+- `ngdpbase.application.base-url` - Base URL for the wiki
 
 ### Application Configuration
 

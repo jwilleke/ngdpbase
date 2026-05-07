@@ -11,7 +11,7 @@
     "_comment_server": "Server configuration",
     "ngdpbase.server.port": 3000,
     "ngdpbase.server.host": "localhost",
-    "ngdpbase.baseURL": "http://localhost:3000",
+    "ngdpbase.application.base-url": "http://localhost:3000",
 
     "_comment_debugging": "Enable debug logging",
     "ngdpbase.logging.debug.session": true,

@@ -172,5 +172,5 @@ CMD ["node", "dist/src/app.js"]
 # Common properties to override:
 # - ngdpbase.server.port: Server port (default: 3000)
 # - ngdpbase.server.host: Server host (default: 0.0.0.0 for Docker)
-# - ngdpbase.baseURL: Base URL for the wiki
+# - ngdpbase.application.base-url: Base URL for the wiki
 # - ngdpbase.session.secret: Session secret (MUST change in production!)

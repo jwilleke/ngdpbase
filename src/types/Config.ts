@@ -25,8 +25,8 @@ export interface WikiConfig {
   /** Application version */
   'ngdpbase.version': string;
 
-  /** Base URL */
-  'ngdpbase.base-url': string;
+  /** Base URL — public-facing URL of this wiki (used for template variables, magic-link emails, org @id fallback). */
+  'ngdpbase.application.base-url': string;
 
   /** Character encoding */
   'ngdpbase.encoding': string;

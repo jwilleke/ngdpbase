@@ -122,7 +122,7 @@ class VariableManager extends BaseManager {
       return configManager?.getProperty('ngdpbase.version', '1.0.0') as string ?? '1.0.0';
     });
     this.registerVariable('baseurl', (_context) => {
-      return configManager?.getProperty('ngdpbase.base-url', 'http://localhost:3000') as string ?? 'http://localhost:3000';
+      return configManager?.getProperty('ngdpbase.application.base-url', 'http://localhost:3000') as string ?? 'http://localhost:3000';
     });
 
     // Page context - ParseContext has pageName directly

@@ -145,7 +145,7 @@ These override the corresponding config file properties at runtime:
 
 | Environment Variable | Config Property | Description | Default |
 | --- | --- | --- | --- |
-| `NGDPBASE_BASE_URL` | `ngdpbase.base-url` | Base URL for the wiki (e.g., `https://wiki.example.com`) | (empty) |
+| `NGDPBASE_BASE_URL` | `ngdpbase.application.base-url` | Base URL for the wiki (e.g., `https://wiki.example.com`) | (empty) |
 | `NGDPBASE_HOSTNAME` | `ngdpbase.hostname` | Server hostname | (from config) |
 | `NGDPBASE_HOST` | `ngdpbase.server.host` | Server bind address | `localhost` |
 | `NGDPBASE_PORT` | `ngdpbase.server.port` | Server port | `3000` |
@@ -291,7 +291,7 @@ data:
   app-custom-config.json: |
     {
       "ngdpbase.application-name": "My Wiki",
-      "ngdpbase.base-url": "https://wiki.example.com"
+      "ngdpbase.application.base-url": "https://wiki.example.com"
     }
 ```
 

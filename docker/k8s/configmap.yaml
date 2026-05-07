@@ -37,8 +37,8 @@ data:
     {
       "ngdpbase.server.host": "0.0.0.0",
       "ngdpbase.server.port": 3000,
-      "ngdpbase.baseURL": "https://wiki.example.com",
-      "ngdpbase.applicationName": "My Wiki",
+      "ngdpbase.application.base-url": "https://wiki.example.com",
+      "ngdpbase.application-name": "My Wiki",
       "ngdpbase.session.secure": true,
       "ngdpbase.session.sameSite": "lax"
     }
