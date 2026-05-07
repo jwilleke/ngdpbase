@@ -15,6 +15,10 @@ interface UserManagerLike {
   getUser(username: string): Promise<Omit<User, 'password'> | undefined>;
 }
 
+interface MetricsManagerLike {
+  recordCacheLookup(attributes: { manager: string; cache: string; result: 'hit' | 'miss' }): void;
+}
+
 /**
  * PersonManager — canonical core record for persons (#617).
  *
@@ -34,6 +38,9 @@ class PersonManager extends BaseManager {
   // getById callers). Lazily populated; cleared on any write.
   private byIdentifierCache = new Map<string, Person | null>();
   private byIdCache = new Map<string, Person | null>();
+
+  // Lazily-resolved MetricsManager reference (#620 hit/miss telemetry).
+  private metricsRef: MetricsManagerLike | null | undefined = undefined;
 
   constructor(engine: WikiEngine) {
     super(engine);
@@ -84,8 +91,10 @@ class PersonManager extends BaseManager {
 
   async getById(id: string): Promise<Person | null> {
     if (this.byIdCache.has(id)) {
+      this.getMetrics()?.recordCacheLookup({ manager: 'PersonManager', cache: 'byId', result: 'hit' });
       return this.byIdCache.get(id) ?? null;
     }
+    this.getMetrics()?.recordCacheLookup({ manager: 'PersonManager', cache: 'byId', result: 'miss' });
     const person = await this.requireProvider().getById(id);
     this.byIdCache.set(id, person);
     return person;
@@ -93,8 +102,10 @@ class PersonManager extends BaseManager {
 
   async getByIdentifier(identifier: string): Promise<Person | null> {
     if (this.byIdentifierCache.has(identifier)) {
+      this.getMetrics()?.recordCacheLookup({ manager: 'PersonManager', cache: 'byIdentifier', result: 'hit' });
       return this.byIdentifierCache.get(identifier) ?? null;
     }
+    this.getMetrics()?.recordCacheLookup({ manager: 'PersonManager', cache: 'byIdentifier', result: 'miss' });
     const person = await this.requireProvider().getByIdentifier(identifier);
     this.byIdentifierCache.set(identifier, person);
     return person;
@@ -157,6 +168,13 @@ class PersonManager extends BaseManager {
       throw new Error('PersonManager: no provider available (initialization failed or storage path unavailable)');
     }
     return this.provider;
+  }
+
+  private getMetrics(): MetricsManagerLike | null {
+    if (this.metricsRef === undefined) {
+      this.metricsRef = this.engine.getManager<MetricsManagerLike>('MetricsManager') ?? null;
+    }
+    return this.metricsRef;
   }
 
   private normalizeProviderName(providerName: string): string {

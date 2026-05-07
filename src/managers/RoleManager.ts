@@ -9,6 +9,10 @@ interface RoleProviderConstructor {
   new (engine: WikiEngine): RoleProvider;
 }
 
+interface MetricsManagerLike {
+  recordCacheLookup(attributes: { manager: string; cache: string; result: 'hit' | 'miss' }): void;
+}
+
 /**
  * RoleManager — canonical core record for OrganizationRole bindings (#617
  * follow-up).
@@ -33,6 +37,10 @@ class RoleManager extends BaseManager {
   // process scope — multi-process scaling needs a cache bus (see #620).
   private memberCache = new Map<string, Role[]>();
   private byOrgPositionCache = new Map<string, Role | null>();
+
+  // Lazily-resolved MetricsManager reference (#620 hit/miss telemetry).
+  // `undefined` = not yet looked up; `null` = looked up, not available.
+  private metricsRef: MetricsManagerLike | null | undefined = undefined;
 
   constructor(engine: WikiEngine) {
     super(engine);
@@ -89,8 +97,10 @@ class RoleManager extends BaseManager {
   async getByOrgAndPosition(organizationId: string, namedPosition: string): Promise<Role | null> {
     const key = `${organizationId}\0${namedPosition}`;
     if (this.byOrgPositionCache.has(key)) {
+      this.getMetrics()?.recordCacheLookup({ manager: 'RoleManager', cache: 'byOrgPosition', result: 'hit' });
       return this.byOrgPositionCache.get(key) ?? null;
     }
+    this.getMetrics()?.recordCacheLookup({ manager: 'RoleManager', cache: 'byOrgPosition', result: 'miss' });
     const role = await this.requireProvider().getByOrgAndPosition(organizationId, namedPosition);
     this.byOrgPositionCache.set(key, role);
     return role;
@@ -98,7 +108,11 @@ class RoleManager extends BaseManager {
 
   async listByMember(personId: string): Promise<Role[]> {
     const cached = this.memberCache.get(personId);
-    if (cached) return cached;
+    if (cached) {
+      this.getMetrics()?.recordCacheLookup({ manager: 'RoleManager', cache: 'memberCache', result: 'hit' });
+      return cached;
+    }
+    this.getMetrics()?.recordCacheLookup({ manager: 'RoleManager', cache: 'memberCache', result: 'miss' });
     const fresh = await this.requireProvider().listByMember(personId);
     this.memberCache.set(personId, fresh);
     return fresh;
@@ -142,6 +156,13 @@ class RoleManager extends BaseManager {
       throw new Error('RoleManager: no provider available (initialization failed or storage path unavailable)');
     }
     return this.provider;
+  }
+
+  private getMetrics(): MetricsManagerLike | null {
+    if (this.metricsRef === undefined) {
+      this.metricsRef = this.engine.getManager<MetricsManagerLike>('MetricsManager') ?? null;
+    }
+    return this.metricsRef;
   }
 
   private normalizeProviderName(providerName: string): string {

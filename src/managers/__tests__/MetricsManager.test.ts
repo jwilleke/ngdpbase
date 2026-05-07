@@ -155,8 +155,8 @@ describe('MetricsManager', () => {
       await manager.initialize();
       expect(manager.isEnabled()).toBe(true);
 
-      // Should create counters and histograms
-      expect(mockMeter.createCounter).toHaveBeenCalledTimes(7);
+      // Should create counters and histograms (counter #8 is cache_lookups_total — #620)
+      expect(mockMeter.createCounter).toHaveBeenCalledTimes(8);
       expect(mockMeter.createHistogram).toHaveBeenCalledTimes(7);
     });
 
@@ -171,6 +171,7 @@ describe('MetricsManager', () => {
       expect(counterNames).toContain('ngdpbase_page_index_saves_total');
       expect(counterNames).toContain('ngdpbase_login_attempts_total');
       expect(counterNames).toContain('ngdpbase_http_requests_total');
+      expect(counterNames).toContain('ngdpbase_cache_lookups_total');
     });
 
     test('should create histograms with correct names', async () => {

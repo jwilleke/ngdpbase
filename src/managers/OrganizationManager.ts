@@ -12,6 +12,10 @@ interface OrganizationProviderConstructor {
   new (engine: WikiEngine): OrganizationProvider;
 }
 
+interface MetricsManagerLike {
+  recordCacheLookup(attributes: { manager: string; cache: string; result: 'hit' | 'miss' }): void;
+}
+
 /**
  * Subset of install-form data this manager needs to seed the anchor org.
  * Kept narrow so InstallService and tests can pass plain objects without
@@ -54,6 +58,9 @@ class OrganizationManager extends BaseManager {
   private installOrgCache: { value: Organization | null; valid: boolean } = { value: null, valid: false };
   private byIdCache = new Map<string, Organization | null>();
   private byFileCache = new Map<string, Organization | null>();
+
+  // Lazily-resolved MetricsManager reference (#620 hit/miss telemetry).
+  private metricsRef: MetricsManagerLike | null | undefined = undefined;
 
   constructor(engine: WikiEngine) {
     super(engine);
@@ -123,7 +130,11 @@ class OrganizationManager extends BaseManager {
 
   /** Return the install's anchor org, or null if no `.file` is configured. */
   async getInstallOrg(): Promise<Organization | null> {
-    if (this.installOrgCache.valid) return this.installOrgCache.value;
+    if (this.installOrgCache.valid) {
+      this.getMetrics()?.recordCacheLookup({ manager: 'OrganizationManager', cache: 'installOrg', result: 'hit' });
+      return this.installOrgCache.value;
+    }
+    this.getMetrics()?.recordCacheLookup({ manager: 'OrganizationManager', cache: 'installOrg', result: 'miss' });
     const provider = this.requireProvider();
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     const filename = configManager?.getProperty('ngdpbase.application.organization.file', '') as string;
@@ -134,8 +145,10 @@ class OrganizationManager extends BaseManager {
 
   async getById(id: string): Promise<Organization | null> {
     if (this.byIdCache.has(id)) {
+      this.getMetrics()?.recordCacheLookup({ manager: 'OrganizationManager', cache: 'byId', result: 'hit' });
       return this.byIdCache.get(id) ?? null;
     }
+    this.getMetrics()?.recordCacheLookup({ manager: 'OrganizationManager', cache: 'byId', result: 'miss' });
     const org = await this.requireProvider().getById(id);
     this.byIdCache.set(id, org);
     return org;
@@ -143,8 +156,10 @@ class OrganizationManager extends BaseManager {
 
   async getByFile(filename: string): Promise<Organization | null> {
     if (this.byFileCache.has(filename)) {
+      this.getMetrics()?.recordCacheLookup({ manager: 'OrganizationManager', cache: 'byFile', result: 'hit' });
       return this.byFileCache.get(filename) ?? null;
     }
+    this.getMetrics()?.recordCacheLookup({ manager: 'OrganizationManager', cache: 'byFile', result: 'miss' });
     const org = await this.requireProvider().getByFile(filename);
     this.byFileCache.set(filename, org);
     return org;
@@ -245,6 +260,13 @@ class OrganizationManager extends BaseManager {
       throw new Error('OrganizationManager: no provider available (initialization failed or storage path unavailable)');
     }
     return this.provider;
+  }
+
+  private getMetrics(): MetricsManagerLike | null {
+    if (this.metricsRef === undefined) {
+      this.metricsRef = this.engine.getManager<MetricsManagerLike>('MetricsManager') ?? null;
+    }
+    return this.metricsRef;
   }
 
   private normalizeProviderName(providerName: string): string {

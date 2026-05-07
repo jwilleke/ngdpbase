@@ -38,6 +38,7 @@ class MetricsManager extends BaseManager {
   private pageIndexSavesTotal: Counter | null = null;
   private loginAttemptsTotal: Counter | null = null;
   private httpRequestsTotal: Counter | null = null;
+  private cacheLookupsTotal: Counter | null = null;
 
   // Histograms
   private pageViewDuration: Histogram | null = null;
@@ -163,6 +164,13 @@ class MetricsManager extends BaseManager {
     this.httpRequestsTotal = this.meter.createCounter(`${this.prefix}_http_requests_total`, {
       description: 'Total number of HTTP requests'
     });
+    // #620: identity-cache hit/miss telemetry. Attributes:
+    //   manager — RoleManager | PersonManager | OrganizationManager
+    //   cache   — short cache key name (memberCache, byIdentifier, ...)
+    //   result  — 'hit' | 'miss'
+    this.cacheLookupsTotal = this.meter.createCounter(`${this.prefix}_cache_lookups_total`, {
+      description: 'Identity-manager cache lookups (hit/miss) — see #620'
+    });
 
     // Histograms
     this.pageViewDuration = this.meter.createHistogram(`${this.prefix}_page_view_duration_ms`, {
@@ -277,6 +285,14 @@ class MetricsManager extends BaseManager {
   recordHttpRequest(durationMs: number, attributes: { method: string; route: string; status: string }): void {
     this.httpRequestsTotal?.add(1, attributes);
     this.httpRequestDuration?.record(durationMs, attributes);
+  }
+
+  /**
+   * Record an identity-manager cache lookup (#620). Cardinality is bounded —
+   * 7 caches × 2 results = 14 series — so attributes are safe.
+   */
+  recordCacheLookup(attributes: { manager: string; cache: string; result: 'hit' | 'miss' }): void {
+    this.cacheLookupsTotal?.add(1, attributes);
   }
 
   /**

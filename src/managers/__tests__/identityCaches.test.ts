@@ -413,4 +413,225 @@ describe('Identity manager caches (#620 Option B)', () => {
       expect(provider.getById).toHaveBeenCalledTimes(2);
     });
   });
+
+  // #620 hit/miss telemetry — verify each cache lookup records a single
+  // recordCacheLookup() call with the correct {manager, cache, result}
+  // attributes. Stubbed MetricsManager swaps in for the real one via the
+  // engine.getManager() mock.
+  describe('cache telemetry (#620)', () => {
+    const stubMetrics = () => ({
+      recordCacheLookup: vi.fn()
+    });
+
+    test('RoleManager.listByMember records hit and miss', async () => {
+      const metrics = stubMetrics();
+      const configManager = makeConfig({
+        'ngdpbase.application.roles.storagedir': path.join(tmpDir, 'roles')
+      });
+      const engine = {
+        getManager: vi.fn((name: string) => {
+          if (name === 'ConfigurationManager') return configManager;
+          if (name === 'MetricsManager') return metrics;
+          return null;
+        })
+      };
+      const manager = new RoleManager(engine);
+      await manager.initialize();
+      (manager).provider = {
+        listByMember: vi.fn(async () => []),
+        initialize: vi.fn(async () => {}),
+        list: vi.fn(async () => [])
+      };
+
+      await manager.listByMember(PERSON_A); // miss
+      await manager.listByMember(PERSON_A); // hit
+
+      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'RoleManager', cache: 'memberCache', result: 'miss' });
+      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'RoleManager', cache: 'memberCache', result: 'hit' });
+      expect(metrics.recordCacheLookup).toHaveBeenCalledTimes(2);
+    });
+
+    test('RoleManager.getByOrgAndPosition records hit and miss', async () => {
+      const metrics = stubMetrics();
+      const configManager = makeConfig({
+        'ngdpbase.application.roles.storagedir': path.join(tmpDir, 'roles')
+      });
+      const engine = {
+        getManager: vi.fn((name: string) => {
+          if (name === 'ConfigurationManager') return configManager;
+          if (name === 'MetricsManager') return metrics;
+          return null;
+        })
+      };
+      const manager = new RoleManager(engine);
+      await manager.initialize();
+      (manager).provider = {
+        getByOrgAndPosition: vi.fn(async () => null),
+        initialize: vi.fn(async () => {}),
+        list: vi.fn(async () => [])
+      };
+
+      await manager.getByOrgAndPosition(ORG_ID, 'admin'); // miss
+      await manager.getByOrgAndPosition(ORG_ID, 'admin'); // hit
+
+      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'RoleManager', cache: 'byOrgPosition', result: 'miss' });
+      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'RoleManager', cache: 'byOrgPosition', result: 'hit' });
+    });
+
+    test('PersonManager.getByIdentifier records hit and miss', async () => {
+      const metrics = stubMetrics();
+      const configManager = makeConfig({
+        'ngdpbase.application.persons.storagedir': path.join(tmpDir, 'persons')
+      });
+      const engine = {
+        getManager: vi.fn((name: string) => {
+          if (name === 'ConfigurationManager') return configManager;
+          if (name === 'MetricsManager') return metrics;
+          return null;
+        })
+      };
+      const manager = new PersonManager(engine);
+      await manager.initialize();
+      (manager).provider = {
+        getByIdentifier: vi.fn(async () => null),
+        initialize: vi.fn(async () => {}),
+        list: vi.fn(async () => [])
+      };
+
+      await manager.getByIdentifier('alice'); // miss
+      await manager.getByIdentifier('alice'); // hit
+
+      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'PersonManager', cache: 'byIdentifier', result: 'miss' });
+      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'PersonManager', cache: 'byIdentifier', result: 'hit' });
+    });
+
+    test('PersonManager.getById records hit and miss', async () => {
+      const metrics = stubMetrics();
+      const configManager = makeConfig({
+        'ngdpbase.application.persons.storagedir': path.join(tmpDir, 'persons')
+      });
+      const engine = {
+        getManager: vi.fn((name: string) => {
+          if (name === 'ConfigurationManager') return configManager;
+          if (name === 'MetricsManager') return metrics;
+          return null;
+        })
+      };
+      const manager = new PersonManager(engine);
+      await manager.initialize();
+      (manager).provider = {
+        getById: vi.fn(async () => null),
+        initialize: vi.fn(async () => {}),
+        list: vi.fn(async () => [])
+      };
+
+      await manager.getById(PERSON_A); // miss
+      await manager.getById(PERSON_A); // hit
+
+      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'PersonManager', cache: 'byId', result: 'miss' });
+      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'PersonManager', cache: 'byId', result: 'hit' });
+    });
+
+    test('OrganizationManager.getInstallOrg records hit and miss', async () => {
+      const metrics = stubMetrics();
+      const configManager = makeConfig({
+        'ngdpbase.application.organization.storagedir': path.join(tmpDir, 'organizations'),
+        'ngdpbase.application.organization.file': 'anchor.json'
+      });
+      const engine = {
+        getManager: vi.fn((name: string) => {
+          if (name === 'ConfigurationManager') return configManager;
+          if (name === 'MetricsManager') return metrics;
+          return null;
+        })
+      };
+      const manager = new OrganizationManager(engine);
+      await manager.initialize();
+      (manager).provider = {
+        getByFile: vi.fn(async () => ({ '@id': ORG_ID, '@type': 'Organization', name: 'Anchor' })),
+        initialize: vi.fn(async () => {}),
+        list: vi.fn(async () => [])
+      };
+
+      await manager.getInstallOrg(); // miss
+      await manager.getInstallOrg(); // hit
+
+      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'OrganizationManager', cache: 'installOrg', result: 'miss' });
+      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'OrganizationManager', cache: 'installOrg', result: 'hit' });
+    });
+
+    test('OrganizationManager.getById records hit and miss', async () => {
+      const metrics = stubMetrics();
+      const configManager = makeConfig({
+        'ngdpbase.application.organization.storagedir': path.join(tmpDir, 'organizations')
+      });
+      const engine = {
+        getManager: vi.fn((name: string) => {
+          if (name === 'ConfigurationManager') return configManager;
+          if (name === 'MetricsManager') return metrics;
+          return null;
+        })
+      };
+      const manager = new OrganizationManager(engine);
+      await manager.initialize();
+      (manager).provider = {
+        getById: vi.fn(async () => null),
+        initialize: vi.fn(async () => {}),
+        list: vi.fn(async () => [])
+      };
+
+      await manager.getById(ORG_ID); // miss
+      await manager.getById(ORG_ID); // hit
+
+      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'OrganizationManager', cache: 'byId', result: 'miss' });
+      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'OrganizationManager', cache: 'byId', result: 'hit' });
+    });
+
+    test('OrganizationManager.getByFile records hit and miss', async () => {
+      const metrics = stubMetrics();
+      const configManager = makeConfig({
+        'ngdpbase.application.organization.storagedir': path.join(tmpDir, 'organizations')
+      });
+      const engine = {
+        getManager: vi.fn((name: string) => {
+          if (name === 'ConfigurationManager') return configManager;
+          if (name === 'MetricsManager') return metrics;
+          return null;
+        })
+      };
+      const manager = new OrganizationManager(engine);
+      await manager.initialize();
+      (manager).provider = {
+        getByFile: vi.fn(async () => null),
+        initialize: vi.fn(async () => {}),
+        list: vi.fn(async () => [])
+      };
+
+      await manager.getByFile('anchor.json'); // miss
+      await manager.getByFile('anchor.json'); // hit
+
+      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'OrganizationManager', cache: 'byFile', result: 'miss' });
+      expect(metrics.recordCacheLookup).toHaveBeenCalledWith({ manager: 'OrganizationManager', cache: 'byFile', result: 'hit' });
+    });
+
+    test('telemetry is a no-op when MetricsManager is not registered', async () => {
+      const configManager = makeConfig({
+        'ngdpbase.application.persons.storagedir': path.join(tmpDir, 'persons')
+      });
+      const engine = {
+        getManager: vi.fn((name: string) => name === 'ConfigurationManager' ? configManager : null)
+      };
+      const manager = new PersonManager(engine);
+      await manager.initialize();
+      (manager).provider = {
+        getByIdentifier: vi.fn(async () => null),
+        initialize: vi.fn(async () => {}),
+        list: vi.fn(async () => [])
+      };
+
+      // Should not throw — getMetrics() resolves to null and the optional chain no-ops.
+      await expect(manager.getByIdentifier('alice')).resolves.toBeNull();
+      await expect(manager.getByIdentifier('alice')).resolves.toBeNull();
+    });
+  });
 });
