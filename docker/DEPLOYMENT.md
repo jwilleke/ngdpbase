@@ -2,6 +2,8 @@
 
 Guide for deploying ngdpbase to various environments.
 
+> **For headless / containerized deploys** (Docker, Kubernetes), also read [`HEADLESS-DEPLOYMENT-NOTES.md`](./HEADLESS-DEPLOYMENT-NOTES.md). It captures gotchas — anchor Organization JSON-LD, theme/front-page/page-provider config, addons-path array form, Alpine `ndots:5` DNS, `npm ci --omit=dev` + husky, addon UUID validation — that aren't obvious from the default config alone.
+
 ## Table of Contents
 
 - [Local Deployment](#local-deployment)
