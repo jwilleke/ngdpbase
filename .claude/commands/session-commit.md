@@ -23,7 +23,7 @@ Run these in parallel:
 
 ### Step 3: Update project log
 
-Append a new session log entry to `docs/project_log.md` using this exact format:
+Append a new session log entry to `docs/project_log.md` using this format:
 
 ```
 ### yyyy-MM-dd-##
@@ -31,6 +31,7 @@ Append a new session log entry to `docs/project_log.md` using this exact format:
 - Agent: [Claude/Gemini/Other]
 - Subject: [Brief description of the session's work]
 - Current Issue: [GitHub issue number if applicable, or "none"]
+- Tests Failed Test Passed (If any)
 - Work Done:
   - [task 1]
   - [task 2]
@@ -49,6 +50,8 @@ Rules for the log entry:
 - For Files Modified, list every file that was changed in this session
 
 ### Step 4: Update GitHub issues
+
+Perform /semver pathc or minor (If approppriate)
 
 For each related open GitHub issue:
 
