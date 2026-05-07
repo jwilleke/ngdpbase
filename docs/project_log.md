@@ -2,6 +2,28 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-07-06
+
+- Agent: Claude Opus 4.7
+- Subject: Document headless-deployment gotchas discovered during the geohazardwatch (`jwilleke/geohazardwatch`) k3s rollout
+- Current Issue: none (docs only)
+- Work Done:
+  - Added `docker/HEADLESS-DEPLOYMENT-NOTES.md` capturing eight real gotchas hit during the rollout, each with symptom / root cause / fix:
+    1. Anchor `Organization` JSON-LD must be pre-supplied (`InstallService` does not seed it; without it `applyRoleDiff` silently skips role assignment and admin resolves to `Anonymous|All`)
+    2. `createDefaultAdmin` only runs when `users.size === 0` — must delete `users.json` to force re-creation
+    3. `theme.active`, `front-page`, `page.provider` are not auto-set by addons — operator must declare in `app-custom-config.json`
+    4. `addons-manager.addons-path` as a string REPLACES the default; use array form to scan multiple dirs
+    5. Alpine musl + k8s `ndots:5` breaks external DNS via `getaddrinfo`; fix with pod `dnsConfig.options.ndots: "1"`
+    6. `npm ci --omit=dev` triggers `prepare` lifecycle which fails on missing husky devDep — add `--ignore-scripts`
+    7. `AddonsManager` validates seed page UUIDs strictly against UUID v4 regex; placeholder UUIDs are silently skipped
+    8. `SESSION_SECRET` must be stable across pod restarts or sessions don't survive
+  - Added link callouts from `docker/DEPLOYMENT.md` and `docker/k8s/README.md`.
+- Files Modified:
+  - `docker/HEADLESS-DEPLOYMENT-NOTES.md` (new)
+  - `docker/DEPLOYMENT.md`
+  - `docker/k8s/README.md`
+  - `docs/project_log.md` (this file)
+
 ## 2026-05-07-05
 
 - Agent: Claude

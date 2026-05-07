@@ -2,6 +2,8 @@
 
 Deploy ngdpbase to Kubernetes.
 
+> **Before you deploy:** read [`../HEADLESS-DEPLOYMENT-NOTES.md`](../HEADLESS-DEPLOYMENT-NOTES.md) — it captures real gotchas hit during a production rollout (anchor Organization, theme/front-page/page-provider config, Alpine `ndots:5` DNS, husky `prepare` script, addon UUID validation). The "Recommended deploy order" at the bottom is the short version of this README plus those gotchas.
+
 ## Quick Start
 
 ```bash
