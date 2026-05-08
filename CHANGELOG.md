@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.10.3] - 2026-05-08
+
+### Added
+
+- **`ngdpbase.application.registration`** (boolean, default `true`) — operator
+  switch to disable self-registration. When `false`:
+  - `GET /register` and `POST /register` return HTTP 404
+  - The header's "Register" button is replaced by a "Request access" link
+    pointing at the wiki page named by
+    `ngdpbase.application.registration.redirect-page` (default
+    slug: `request-access`). Operators control that page's content via the
+    wiki UI — drop in a `[{Form …}]` plugin invocation, contact text, etc.
+  - OIDC auto-provisioning of brand-new users (`GoogleOIDCProvider`) is
+    rejected — the existing `ngdpbase.auth.google-oidc.auto-provision` key
+    is overridden when application-level registration is off
+  - Login for existing users (password / magic-link / OIDC) is unaffected
+  - Admin-driven user creation via `POST /admin/users` is unaffected — gated
+    by the `user-create` permission, not this flag
+- **`ngdpbase.application.registration.redirect-page`** (string, default
+  `"request-access"`) — wiki slug the header button links to when
+  registration is disabled.
+
+### Changed
+
+- `getCommonTemplateData()` now exposes `allowRegistration` (boolean) and
+  `registrationRedirectPage` (string) to all views; `views/header.ejs`
+  branches on the former to choose between Register and Request access.
+
 ## [3.10.2] - 2026-05-07
 
 ## [3.10.1] - 2026-05-07

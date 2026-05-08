@@ -323,6 +323,37 @@ describe('GoogleOIDCProvider', () => {
       expect(result).toBeNull();
     });
 
+    test('rejects new OIDC user when ngdpbase.application.registration is false', async () => {
+      // Engine that exposes a ConfigurationManager flipping the registration flag off.
+      const configManager = {
+        getProperty: vi.fn((key, defaultValue) =>
+          key === 'ngdpbase.application.registration' ? false : defaultValue
+        )
+      };
+      const engineWithConfig = {
+        getManager: vi.fn((name) => {
+          if (name === 'UserManager') return userManager;
+          if (name === 'ConfigurationManager') return configManager;
+          return null;
+        })
+      };
+      const p = new GoogleOIDCProvider(engineWithConfig, defaultConfig);
+      // own state nonce
+      let ownNonce;
+      mockGenerateAuthUrl.mockImplementation((params) => {
+        ownNonce = params.state;
+        return 'https://google.com/...';
+      });
+      p.generateAuthUrl('/');
+
+      userManager.getUserByEmail.mockResolvedValue(undefined);
+      userManager.getUser.mockResolvedValue(undefined);
+
+      const result = await p.verify({ token: 'code', state: ownNonce });
+      expect(result).toBeNull();
+      expect(userManager.createUser).not.toHaveBeenCalled();
+    });
+
     test('normalises email to lowercase', async () => {
       mockVerifyIdToken.mockResolvedValue({
         getPayload: () => ({ email: 'User@Example.COM', name: 'Test' })

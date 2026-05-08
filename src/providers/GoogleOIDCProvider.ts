@@ -24,6 +24,7 @@ import type {
 } from './BaseAuthProvider.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type UserManager from '../managers/UserManager.js';
+import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import logger from '../utils/logger.js';
 
 export interface GoogleOIDCConfig {
@@ -186,6 +187,22 @@ export class GoogleOIDCProvider implements AuthProvider {
     // Auto-provision new user
     if (!this.config.autoProvision) {
       logger.info(`[GoogleOIDCProvider] Auto-provision disabled — rejecting unknown email: ${email}`);
+      return null;
+    }
+
+    // `ngdpbase.application.registration: false` is an override — when self-
+    // registration is disabled at the application level, no path can create a
+    // new account, regardless of `auth.google-oidc.auto-provision`. Existing
+    // OIDC users (matched above) still log in normally.
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const allowReg = (configManager?.getProperty(
+      'ngdpbase.application.registration',
+      true
+    ) as boolean | undefined) ?? true;
+    if (!allowReg) {
+      logger.info(
+        `[GoogleOIDCProvider] Registration disabled — rejecting new OIDC user: ${email}`
+      );
       return null;
     }
 

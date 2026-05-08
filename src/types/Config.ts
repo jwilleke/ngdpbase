@@ -34,6 +34,20 @@ export interface WikiConfig {
   /** Front page name */
   'ngdpbase.front-page': string;
 
+  /**
+   * Self-registration toggle. When false, /register is unavailable,
+   * the header button shows "Request access" linking to the redirect
+   * page, and OIDC auto-provisioning of brand-new users is rejected.
+   * Login for existing users is unaffected. Default: true.
+   */
+  'ngdpbase.application.registration': boolean;
+
+  /**
+   * Wiki page slug to redirect to when registration is disabled.
+   * Operators control the page content via the wiki UI. Default: "request-access".
+   */
+  'ngdpbase.application.registration.redirect-page': string;
+
   /** Server port */
   'ngdpbase.server.port': number;
 
