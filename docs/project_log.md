@@ -2,6 +2,20 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-08-02
+
+- Agent: Claude Opus 4.7
+- Subject: Follow-up issue + agent memory after the registration lock-down rollout
+- Current Issue: filed #656; related to closed-PR #654 and earlier #651 / #655
+- Tests: none (no code changes)
+- Work Done:
+  - Operator stated a forward-looking preference: never use the term "wiki" in new code, config keys, URL paths, page slugs, docs, or UI for ngdpbase-derived projects (geohazardwatch and any future site). Existing/legacy uses (`/wiki/<slug>` URLs, `WikiRoutes`, `WikiContext`, `WikiEngine`) tolerated; not propagated.
+  - Saved that as an agent feedback memory at `~/.claude/projects/-Volumes-hd2A-workspaces-github-ngdpbase-veg/memory/feedback_no_wiki_terminology.md` so future sessions inherit the preference.
+  - Filed `#656` (`[FEATURE] Make page URL prefix configurable (currently hard-coded /wiki/)`). Proposes a single config key `ngdpbase.routes.page-prefix` (default `"/wiki"` for back-compat). Audit list of touchpoints — route registration in `WikiRoutes.ts`, WikiLink rendering in the LinkParser, EJS views, redirects — and acceptance scenarios for `/page`, `/article`, `/p`, `/`. Rationale: `geohazardwatch.com` brand is not a wiki and after #654 the site can't be edited by visitors anyway, so the URL prefix actively misleads.
+- Commits: none (no code changes; new memory file lives outside the repo, new GH issue is a github.com artifact)
+- Files Modified:
+  - `docs/project_log.md` (this file)
+
 ## 2026-05-08-01
 
 - Agent: Claude Opus 4.7
