@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.10.6] - 2026-05-08
+
+### Added
+
+- **`Contact Us`** required page (slug `contact-us`, system-category
+  `documentation`) — generic operator-overridable copy referencing the
+  `[{$applicationname}]` placeholder. Closes the redlinked `[Contact Us]`
+  link from the v3.10.4 `request-access` page so visitors who follow it
+  reach a real destination instead of an unresolved page-link.
+  Iteration 1 of #658 — the `/contact` route, config keys
+  (`ngdpbase.application.contact.{enabled,page,recipient}`), recipient
+  resolution, and form mechanism are deferred to iterations 2 and 3.
+
 ## [3.10.5] - 2026-05-08
 
 ### Fixed

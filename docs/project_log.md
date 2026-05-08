@@ -2,6 +2,26 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-08-05
+
+- Agent: Claude Opus 4.7
+- Subject: #658 Iteration 1 (v3.10.6) — ship `Contact Us` required page so the `[Contact Us]` redlink from `request-access` resolves
+- Current Issue: #658 (in progress; iteration 1 of 3)
+- Tests: build clean (no code changes); manual verification post-restart of `/view/contact-us` and the `[Contact Us]` link resolution from `/view/request-access`
+- Work Done:
+  - Operator approved a 3-iteration slicing of #658 (per `[Small Iterations]` memory): It1 = page only (this), It2 = GET /contact + 3 config keys + recipient helper + view + state matrix, It3 = POST + mail send + rate limit + honeypot + doc note.
+  - Created `required-pages/c0a01d19-4558-482d-a485-a94ed3ff1729.md` — slug `contact-us`, title `Contact Us`, system-category `documentation`. Generic operator-overridable copy: "If you need to reach the administrators of **[{$applicationname}]** — to request access, report an issue, or ask a question — please use the contact channel published for this site." No links to the not-yet-shipped `/contact` route; copy stands on its own until It2.
+  - SEMVER **patch** bump 3.10.5 → 3.10.6 via `src/utils/version.ts`.
+  - Pre-flight scope-escalation note: earlier this session I misread "file slice 2 (#658)" as "start implementing" and began creating this same page + bumping version. Hook denied the action ("scope escalation beyond the user's request"); I reverted the half-written page. After the operator explicitly said "start implementing #658", I proposed iteration slicing via AskUserQuestion before touching code — operator selected the 3-iteration plan and approved starting It1 immediately.
+- Commits: (this commit) `feat: Contact Us required page (v3.10.6, #658 iteration 1)`
+- Files Modified:
+  - `required-pages/c0a01d19-4558-482d-a485-a94ed3ff1729.md` (new)
+  - `package.json` (3.10.5 → 3.10.6)
+  - `package-lock.json`
+  - `config/app-default-config.json` (`ngdpbase.version` → 3.10.6)
+  - `CHANGELOG.md`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-08-04
 
 - Agent: Claude Opus 4.7
