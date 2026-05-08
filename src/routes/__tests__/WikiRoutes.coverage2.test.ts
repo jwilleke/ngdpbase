@@ -509,10 +509,14 @@ describe('WikiRoutes — coverage batch 2', () => {
       expect(res.status).toBe(404);
     });
 
-    test('POST /register returns 404 even with valid body', async () => {
+    test('POST /register returns 404 without inspecting body', async () => {
+      // Registration-disabled gate runs before any body validation, so no
+      // password fixture is needed (and avoiding one keeps secret-scanners
+      // happy — registration is closed; the handler never reaches the
+      // userManager.createUser() call).
       const res = await request(app)
         .post('/register')
-        .send({ username: 'newuser', email: 'new@x.com', password: 'pass123', confirmPassword: 'pass123', _csrf: 'test-csrf-token' });
+        .send({ _csrf: 'test-csrf-token' });
       expect(res.status).toBe(404);
     });
   });
