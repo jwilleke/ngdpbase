@@ -8,7 +8,16 @@
                     <h4 class="mb-0">Contact</h4>
                 </div>
                 <div class="card-body">
-                    <% if (state === 'not-configured') { %>
+                    <% if (typeof submitted !== 'undefined' && submitted) { %>
+                        <div class="alert alert-success" role="alert">
+                            <h5 class="alert-heading">Message sent</h5>
+                            <p class="mb-0">
+                                Thanks — your message has been delivered to the administrators of
+                                <strong><%= typeof applicationname !== 'undefined' ? applicationname : 'this site' %></strong>.
+                                We typically respond within a few days.
+                            </p>
+                        </div>
+                    <% } else if (state === 'not-configured') { %>
                         <div class="alert alert-warning" role="alert">
                             <h5 class="alert-heading">Contact form is not configured</h5>
                             <p class="mb-0">
@@ -23,31 +32,41 @@
                             feature dormant).
                         </p>
                     <% } else { %>
-                        <div class="alert alert-info" role="alert">
-                            <strong>Form preview.</strong>
-                            Submission is not yet wired up — coming in #658 iteration 3.
-                            For now, this page shows the contact form layout only.
-                        </div>
+                        <% if (typeof formError !== 'undefined' && formError) { %>
+                            <div class="alert alert-danger" role="alert"><%= formError %></div>
+                        <% } %>
 
-                        <div class="mb-3">
-                            <label for="contact-name" class="form-label">Your name</label>
-                            <input type="text" class="form-control" id="contact-name" disabled>
-                        </div>
-                        <div class="mb-3">
-                            <label for="contact-email" class="form-label">Your email</label>
-                            <input type="email" class="form-control" id="contact-email" disabled>
-                        </div>
-                        <div class="mb-3">
-                            <label for="contact-subject" class="form-label">Subject</label>
-                            <input type="text" class="form-control" id="contact-subject" disabled>
-                        </div>
-                        <div class="mb-3">
-                            <label for="contact-message" class="form-label">Message</label>
-                            <textarea class="form-control" id="contact-message" rows="5" disabled></textarea>
-                        </div>
-                        <button type="button" class="btn btn-primary" disabled>
-                            <i class="fas fa-paper-plane"></i> Send (disabled until iteration 3)
-                        </button>
+                        <form action="/contact" method="POST" autocomplete="on">
+                            <input type="hidden" name="_csrfToken" value="<%= typeof csrfToken !== 'undefined' && csrfToken ? csrfToken : '' %>">
+                            <%# Honeypot: bots fill every field; humans never see this. %>
+                            <div aria-hidden="true" style="position:absolute;left:-10000px;top:auto;width:1px;height:1px;overflow:hidden;">
+                                <label for="contact-website">Website (leave blank)</label>
+                                <input type="text" id="contact-website" name="_website" tabindex="-1" autocomplete="off">
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="contact-name" class="form-label">Your name</label>
+                                <input type="text" class="form-control" id="contact-name" name="name" required maxlength="100"
+                                       value="<%= typeof formValues !== 'undefined' && formValues.name ? formValues.name : '' %>">
+                            </div>
+                            <div class="mb-3">
+                                <label for="contact-email" class="form-label">Your email</label>
+                                <input type="email" class="form-control" id="contact-email" name="email" required maxlength="254"
+                                       value="<%= typeof formValues !== 'undefined' && formValues.email ? formValues.email : '' %>">
+                            </div>
+                            <div class="mb-3">
+                                <label for="contact-subject" class="form-label">Subject <span class="text-muted small">(optional)</span></label>
+                                <input type="text" class="form-control" id="contact-subject" name="subject" maxlength="200"
+                                       value="<%= typeof formValues !== 'undefined' && formValues.subject ? formValues.subject : '' %>">
+                            </div>
+                            <div class="mb-3">
+                                <label for="contact-message" class="form-label">Message</label>
+                                <textarea class="form-control" id="contact-message" name="message" rows="5" required maxlength="5000"><%= typeof formValues !== 'undefined' && formValues.message ? formValues.message : '' %></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-paper-plane"></i> Send
+                            </button>
+                        </form>
                     <% } %>
                 </div>
             </div>

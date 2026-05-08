@@ -11,7 +11,7 @@
 import express from 'express';
 import request from 'supertest';
 import path from 'path';
-import WikiRoutes from '../WikiRoutes';
+import WikiRoutes, { contactRateLimiter } from '../WikiRoutes';
 
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
@@ -91,6 +91,11 @@ const mockUserManager = {
   getContactRecipient: recipientResolver
 };
 
+const mockEmailManager = {
+  sendTo: vi.fn().mockResolvedValue(undefined),
+  isEnabled: vi.fn().mockReturnValue(true)
+};
+
 vi.mock('../../WikiEngine', () => {
   const MockEngine = vi.fn().mockImplementation(function () {
     return {
@@ -124,6 +129,7 @@ vi.mock('../../WikiEngine', () => {
           AddonsManager: {
             getRegisteredStylesheets: vi.fn().mockReturnValue([])
           },
+          EmailManager: mockEmailManager,
           MarkupParser: { invalidateHandlerCache: vi.fn().mockResolvedValue(undefined) },
           FootnoteManager: { isEnabled: vi.fn().mockReturnValue(false) }
         };
@@ -277,3 +283,149 @@ describe('WikiRoutes — GET /contact (#658 iteration 2)', () => {
     expect(res.text).not.toContain('admin@example.com');
   });
 });
+
+// ─── POST /contact (#658 iteration 3) ───────────────────────────────────────
+describe('WikiRoutes — POST /contact (#658 iteration 3)', () => {
+  let app: express.Application;
+
+  const validBody = {
+    name: 'Alice Smith',
+    email: 'alice@example.com',
+    subject: 'Hello',
+    message: 'Hi there, I would like to request access.'
+  };
+
+  beforeEach(async () => {
+    mockUserContext = { ...adminUser };
+    configState.enabled = true;
+    configState.page = '';
+    configState.recipient = '';
+    recipientResolver.mockClear();
+    mockEmailManager.sendTo.mockClear();
+    mockEmailManager.isEnabled.mockReturnValue(true);
+    recipientResolver.mockImplementation(async (override: string) => {
+      const trimmed = (override ?? '').trim();
+      if (trimmed) return trimmed;
+      return 'admin@example.com'; // default: recipient resolves
+    });
+
+    app = buildApp();
+    const { default: WikiEngine } = await import('../../WikiEngine');
+    const engine = new WikiEngine();
+    const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+    routes.registerRoutes(app);
+
+    // Reset module-scope rate limiter between tests so we don't trip
+    // ourselves up across cases.
+    contactRateLimiter.reset();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    mockUserContext = null;
+  });
+
+  test('returns 404 when contact.enabled is false', async () => {
+    configState.enabled = false;
+    const res = await request(app).post('/contact').send(validBody);
+    expect(res.status).toBe(404);
+    expect(mockEmailManager.sendTo).not.toHaveBeenCalled();
+  });
+
+  test('returns 405 when contact.page is set (operator-redirected)', async () => {
+    configState.page = 'support';
+    const res = await request(app).post('/contact').send(validBody);
+    expect(res.status).toBe(405);
+    expect(mockEmailManager.sendTo).not.toHaveBeenCalled();
+  });
+
+  test('happy path sends mail and renders submitted state', async () => {
+    const res = await request(app).post('/contact').send(validBody);
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('data-state="submitted"');
+    expect(mockEmailManager.sendTo).toHaveBeenCalledTimes(1);
+    const [to, subject, text] = mockEmailManager.sendTo.mock.calls[0];
+    expect(to).toBe('admin@example.com');
+    expect(subject).toBe('Hello');
+    expect(text).toContain('From: Alice Smith <alice@example.com>');
+    expect(text).toContain('Hi there, I would like to request access.');
+  });
+
+  test('uses default subject when subject field is omitted', async () => {
+    const { subject: _omit, ...bodyNoSubject } = validBody;
+    const res = await request(app).post('/contact').send(bodyNoSubject);
+    expect(res.status).toBe(200);
+    const [, subject] = mockEmailManager.sendTo.mock.calls[0];
+    expect(subject).toBe('Contact form submission from Alice Smith');
+  });
+
+  test('honeypot filled → silent 200 success, mail NOT sent', async () => {
+    const res = await request(app).post('/contact').send({ ...validBody, _website: 'spam.com' });
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('data-state="submitted"');
+    expect(mockEmailManager.sendTo).not.toHaveBeenCalled();
+  });
+
+  test('rejects missing name with form re-render + error', async () => {
+    const res = await request(app).post('/contact').send({ ...validBody, name: '' });
+    expect(res.status).toBe(400);
+    expect(res.text).toContain('data-state="form"');
+    expect(mockEmailManager.sendTo).not.toHaveBeenCalled();
+  });
+
+  test('rejects missing email', async () => {
+    const res = await request(app).post('/contact').send({ ...validBody, email: '' });
+    expect(res.status).toBe(400);
+    expect(mockEmailManager.sendTo).not.toHaveBeenCalled();
+  });
+
+  test('rejects malformed email', async () => {
+    const res = await request(app).post('/contact').send({ ...validBody, email: 'not-an-email' });
+    expect(res.status).toBe(400);
+    expect(mockEmailManager.sendTo).not.toHaveBeenCalled();
+  });
+
+  test('rejects missing message', async () => {
+    const res = await request(app).post('/contact').send({ ...validBody, message: '' });
+    expect(res.status).toBe(400);
+    expect(mockEmailManager.sendTo).not.toHaveBeenCalled();
+  });
+
+  test('rejects over-long message (>5000 chars)', async () => {
+    const res = await request(app).post('/contact').send({ ...validBody, message: 'x'.repeat(5001) });
+    expect(res.status).toBe(400);
+    expect(mockEmailManager.sendTo).not.toHaveBeenCalled();
+  });
+
+  test('renders not-configured when recipient is null (no admin with real email)', async () => {
+    recipientResolver.mockImplementation(async () => null);
+    const res = await request(app).post('/contact').send(validBody);
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('data-state="not-configured"');
+    expect(mockEmailManager.sendTo).not.toHaveBeenCalled();
+  });
+
+  test('renders form with error when EmailManager.sendTo throws', async () => {
+    mockEmailManager.sendTo.mockRejectedValueOnce(new Error('SMTP unavailable'));
+    const res = await request(app).post('/contact').send(validBody);
+    expect(res.status).toBe(400);
+    expect(res.text).toContain('data-state="form"');
+  });
+
+  test('returns 429 after 5 successful submissions from the same IP within 15 min', async () => {
+    for (let i = 0; i < 5; i++) {
+      const ok = await request(app).post('/contact').send(validBody);
+      expect(ok.status).toBe(200);
+    }
+    const tooMany = await request(app).post('/contact').send(validBody);
+    expect(tooMany.status).toBe(429);
+    expect(tooMany.headers['retry-after']).toBeDefined();
+    expect(mockEmailManager.sendTo).toHaveBeenCalledTimes(5);
+  });
+
+  test('does NOT include the recipient email in any response body', async () => {
+    const res = await request(app).post('/contact').send(validBody);
+    expect(res.text).not.toContain('admin@example.com');
+  });
+});
+

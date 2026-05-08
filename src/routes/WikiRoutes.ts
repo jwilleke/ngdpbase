@@ -28,6 +28,7 @@ import logger from '../utils/logger.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
 import { extractSection, spliceSection } from '../utils/SectionUtils.js';
 import { shuffleArray } from '../utils/pluginFormatters.js';
+import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
 import { renderCommentListHtml } from '../plugins/CommentsPlugin.js';
 import WikiContext from '../context/WikiContext.js';
@@ -304,6 +305,12 @@ interface RequestInfo {
 }
 
 // Configure multer for image uploads
+/**
+ * Module-scope rate limiter for #658 POST /contact. 5 submissions per IP per
+ * 15-minute window. Exported so tests can call `.reset()` between cases.
+ */
+export const contactRateLimiter = new SimpleRateLimiter({ max: 5, windowMs: 15 * 60 * 1000 });
+
 const imageStorage: StorageEngine = multer.diskStorage({
   destination: (_req: Request, _file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {
     const uploadDir = path.join(__dirname, '../../public/images');
@@ -4037,10 +4044,7 @@ ${panes}
    * Recipient resolution (UserManager.getContactRecipient): explicit
    * `contact.recipient` config, else first admin user with email !=
    * "admin@localhost". The recipient is never written into the rendered
-   * HTML — it stays server-side only. Iteration 1 of #658 shipped the
-   * Contact Us required page; iteration 3 will add the POST handler and
-   * mail send. The form rendered here in iteration 2 is a preview — the
-   * submit button is disabled until iteration 3 lands.
+   * HTML — it stays server-side only.
    *
    * Loop guard for `contact.page === "contact"` is enforced at startup
    * by ConfigurationManager.assertContactPageNotLoop; this handler also
@@ -4089,11 +4093,182 @@ ${panes}
         // Never render the recipient address itself — only whether the
         // feature has resolved one.
         state: recipient ? 'form' : 'not-configured',
+        submitted: false,
+        formError: null,
+        formValues: { name: '', email: '', subject: '', message: '' },
         csrfToken: req.session.csrfToken
       });
     } catch (err: unknown) {
       logger.error('Error loading contact page:', err);
       res.status(500).send('Error loading contact page');
+    }
+  }
+
+  /**
+   * #658 iteration 3: POST /contact handler.
+   *
+   * State matrix mirrors GET (kill switch / redirect-page / dormant) plus:
+   *  - rate limit per `req.ip` (5 / 15 min) → 429
+   *  - honeypot field `_website` filled → 200 silent success, no mail
+   *  - validation errors → re-render form with formError + formValues
+   *  - happy path → EmailManager.sendTo(recipient, subject, body),
+   *                 then re-render with state="submitted"
+   *
+   * Note: this route does NOT validate CSRF. The codebase has no
+   * application-wide CSRF middleware (csurf is in package.json but
+   * never imported); existing POST routes (/register, /admin/*) also
+   * skip the check. Adding it here only would be inconsistent. The
+   * gap is tracked separately as a follow-up bug; for this unauthenticated
+   * mail-send surface, honeypot + rate limit + recipient sentinel are
+   * the primary defenses.
+   */
+  async processContact(req: Request, res: Response) {
+    try {
+      const configManager = this.engine.getManager('ConfigurationManager');
+
+      const enabled = (configManager?.getProperty(
+        'ngdpbase.application.contact.enabled',
+        true
+      ) as boolean | undefined) ?? true;
+      if (!enabled) {
+        res.status(404).send('Not found');
+        return;
+      }
+
+      const redirectPage = ((configManager?.getProperty(
+        'ngdpbase.application.contact.page',
+        ''
+      ) as string | undefined) ?? '').trim();
+      if (redirectPage && redirectPage !== 'contact') {
+        // Operator pointed /contact at their own page; we're not handling submissions.
+        res.status(405).send('Method not allowed');
+        return;
+      }
+
+      // Rate limit per source IP. Trust proxy headers iff express has been
+      // configured with `trust proxy` upstream; req.ip falls back to remote.
+      const limitKey = req.ip || 'unknown';
+      const rl = contactRateLimiter.consume(limitKey);
+      if (!rl.allowed) {
+        const retryAfterSec = Math.ceil(rl.retryAfterMs / 1000);
+        res.set('Retry-After', String(retryAfterSec));
+        res.status(429).send('Too many contact submissions. Please try again later.');
+        return;
+      }
+
+      const body = (req.body || {}) as Record<string, unknown>;
+
+      // Honeypot: a real human leaves this blank; bots fill every field.
+      // Hidden via inline CSS in the view; if filled, log and silently 200.
+      const honeypot = typeof body._website === 'string' ? body._website.trim() : '';
+      if (honeypot) {
+        logger.warn(`[processContact] honeypot filled (${honeypot.length} chars) from ip=${limitKey} — silently succeeding without sending mail`);
+        const commonData = await this.getCommonTemplateData(req);
+        res.render('contact', {
+          ...commonData,
+          title: 'Contact',
+          state: 'submitted',
+          submitted: true,
+          formError: null,
+          formValues: { name: '', email: '', subject: '', message: '' },
+          csrfToken: req.session.csrfToken
+        });
+        return;
+      }
+
+      const name = typeof body.name === 'string' ? body.name.trim() : '';
+      const email = typeof body.email === 'string' ? body.email.trim() : '';
+      const subject = typeof body.subject === 'string' ? body.subject.trim() : '';
+      const message = typeof body.message === 'string' ? body.message.trim() : '';
+
+      const recipientOverride = (configManager?.getProperty(
+        'ngdpbase.application.contact.recipient',
+        ''
+      ) as string | undefined) ?? '';
+
+      const userManager = this.engine.getManager('UserManager');
+      const recipient = userManager
+        ? await userManager.getContactRecipient(recipientOverride)
+        : null;
+
+      // Validate input. `subject` is optional; everything else required.
+      const renderForm = async (
+        state: 'form' | 'not-configured',
+        formError: string | null
+      ): Promise<void> => {
+        const commonData = await this.getCommonTemplateData(req);
+        res.status(formError ? 400 : 200).render('contact', {
+          ...commonData,
+          title: 'Contact',
+          state,
+          submitted: false,
+          formError,
+          formValues: { name, email, subject, message },
+          csrfToken: req.session.csrfToken
+        });
+      };
+
+      if (!recipient) {
+        await renderForm('not-configured', null);
+        return;
+      }
+
+      if (!name) { await renderForm('form', 'Please enter your name.'); return; }
+      if (name.length > 100) { await renderForm('form', 'Name is too long (max 100 characters).'); return; }
+      if (!email) { await renderForm('form', 'Please enter your email address.'); return; }
+      if (email.length > 254) { await renderForm('form', 'Email is too long (max 254 characters).'); return; }
+      // Pragmatic email shape check — RFC-perfect validation is famously
+      // brittle. SMTP verifies on send anyway.
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        await renderForm('form', 'Please enter a valid email address.');
+        return;
+      }
+      if (subject.length > 200) { await renderForm('form', 'Subject is too long (max 200 characters).'); return; }
+      if (!message) { await renderForm('form', 'Please enter a message.'); return; }
+      if (message.length > 5000) { await renderForm('form', 'Message is too long (max 5000 characters).'); return; }
+
+      const emailManager = this.engine.getManager('EmailManager') as
+        | { sendTo(to: string, subject: string, text: string, html?: string): Promise<void>; isEnabled(): boolean }
+        | null;
+
+      if (!emailManager) {
+        logger.error('[processContact] EmailManager not registered — cannot send contact submission');
+        await renderForm('not-configured', null);
+        return;
+      }
+      if (!emailManager.isEnabled()) {
+        logger.warn('[processContact] ngdpbase.mail.enabled is false — submission accepted but mail will not be sent (console transport will log it)');
+      }
+
+      const finalSubject = subject || `Contact form submission from ${name}`;
+      const text = [
+        `From: ${name} <${email}>`,
+        subject ? `Subject: ${subject}` : null,
+        '',
+        message
+      ].filter(line => line !== null).join('\n');
+
+      try {
+        await emailManager.sendTo(recipient, finalSubject, text);
+      } catch (mailErr: unknown) {
+        logger.error('[processContact] EmailManager.sendTo failed:', mailErr);
+        await renderForm('form', 'We could not send your message right now. Please try again later.');
+        return;
+      }
+
+      const commonData = await this.getCommonTemplateData(req);
+      res.render('contact', {
+        ...commonData,
+        title: 'Contact',
+        state: 'submitted',
+        submitted: true,
+        formError: null,
+        formValues: { name: '', email: '', subject: '', message: '' },
+        csrfToken: req.session.csrfToken
+      });
+    } catch (err: unknown) {
+      logger.error('Error processing contact submission:', err);
+      res.status(500).send('Error processing contact submission');
     }
   }
 
@@ -8658,8 +8833,9 @@ ${panes}
     app.get('/register', (req: Request, res: Response) => this.registerPage(req, res));
     app.post('/register', (req: Request, res: Response) => this.processRegister(req, res));
     // #658 iteration 2: GET /contact (kill switch / redirect / form / not-configured).
-    // POST handler lands in iteration 3 with mail send + rate limit + honeypot.
+    // #658 iteration 3: POST /contact (mail send + rate limit + honeypot).
     app.get('/contact', (req: Request, res: Response) => this.contactPage(req, res));
+    app.post('/contact', (req: Request, res: Response) => this.processContact(req, res));
     app.get('/profile', (req: Request, res: Response) => this.profilePage(req, res));
     app.post('/profile', (req: Request, res: Response) => this.updateProfile(req, res));
     // #640: My Contributions surfaces

@@ -2,6 +2,44 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-08-07
+
+- Agent: Claude Opus 4.7
+- Subject: #658 Iteration 3 (v3.11.1 — closes #658) — POST /contact + mail send + rate limit + honeypot + doc note; filed #663 for the CSRF gap discovered during this work
+- Current Issue: #658 (closed, all 3 iterations shipped); #663 (filed — separate CSRF middleware gap)
+- Tests: 14 new POST tests + 7 rate-limiter tests = 21 new tests; full sweep on managers/utils/routes test dirs (1690 tests) all green; live verification of form render, validation 400, happy-path 200, rate limit 429
+- Work Done:
+  - Operator approved iteration 3 with no further sub-slicing. Implemented the full POST handler pipeline: kill switch → 405-on-redirect → per-IP rate limit (429) → honeypot silent success → recipient resolution → input validation → mail send via `EmailManager.sendTo()` → submitted state render.
+  - Created `src/utils/SimpleRateLimiter.ts` — minimal in-memory per-key rate limiter, 90 lines including JSDoc. Module-scope per pod (not cross-replica). Considered `express-rate-limit` but adding a new dep for one endpoint felt like overkill. Documented the per-pod limitation in `docker/HEADLESS-DEPLOYMENT-NOTES.md` §9 with guidance to run a real WAF/proxy upstream for distributed deployments. 7 unit tests in `src/utils/__tests__/SimpleRateLimiter.test.ts`.
+  - Added `processContact()` handler to `src/routes/WikiRoutes.ts` (placed adjacent to `contactPage`). 130 lines including the explanatory JSDoc on the CSRF skip. Validation rules: name 1-100, email 1-254 + `[^@\s]+@[^@\s]+\.[^@\s]+` shape, optional subject ≤200, message 1-5000. On validation failure, re-renders the form with `formError` + `formValues` (preserving input) and HTTP 400. Honeypot field name `_website` — the form hides the input via inline absolute-positioning so screen readers can still narrate it (more accessible than `display: none`).
+  - Added module-scope `export const contactRateLimiter = new SimpleRateLimiter({ max: 5, windowMs: 15 * 60 * 1000 })`. Exporting (rather than module-private) so tests can `.reset()` between cases — module-scope state is intentional for the production behavior but inconvenient for test isolation.
+  - Updated `views/contact.ejs` — replaced the form-preview shell with a working `<form action="/contact" method="POST">`. Added honeypot input, real submit button, value-preserving form fields (`value="<%= formValues.name %>"` etc.), and a new `submitted` state branch ("Message sent") for the success render. CSRF token field included (`<input type="hidden" name="_csrfToken" value="<%= csrfToken %>">`) but currently emits empty since `req.session.csrfToken` is never set anywhere in the codebase — see #663.
+  - Added `app.post('/contact', ...)` route registration in `registerRoutes()`.
+  - Updated GET handler `contactPage()` to also pass `submitted: false`, `formError: null`, and an empty `formValues` template object so the view's branching logic works on first GET (not just on POST re-render).
+  - **CSRF decision:** the codebase has `csurf` in `package.json` (^1.11.0) but it is never imported. `req.session.csrfToken` is referenced in templates and route handlers (33 places) but never assigned anywhere. So existing POST routes (`/register`, `/admin/*`, etc.) accept any same-origin cookie-bearing request without CSRF check. Adding CSRF only to `/contact` would be inconsistent and misleading. Skipped CSRF for #658 It3, matching house style; filed `#663` `[BUG] No app-wide CSRF middleware` to track the gap for app-wide remediation. The `/contact` POST gets honeypot + rate limit + recipient sentinel as primary defenses, which are appropriate for an unauthenticated mail-send surface.
+  - Test changes in `src/routes/__tests__/WikiRoutes.contact.test.ts`: added `mockEmailManager` + a second describe block "POST /contact (#658 iteration 3)" with 14 cases. Critical detail: the rate limiter is module-scope, so I had to export it and call `.reset()` in `beforeEach`. First attempt used a dynamic import that didn't expose the named export and broke the previously-passing GET tests (socket hangup). Consolidated to a named static import + reset, all 23 tests pass.
+  - Added `docker/HEADLESS-DEPLOYMENT-NOTES.md` §9 — operator guide for the contact feature: dormant-recipient symptom + 2 fix paths (real admin email vs. explicit `contact.recipient`), mail transport requirement, override path, rate-limit per-pod note.
+  - **Live verification on jimstest:3000 v3.11.1:** GET /contact renders working form (no banner, no `disabled` attrs, real submit button); POST with empty message → HTTP 400; POST with valid body → HTTP 200 + submitted view; rate limit kicks in at the right count (429 + Retry-After header set).
+  - **SEMVER decision:** patch 3.11.0 → 3.11.1, NOT minor 3.12.0. Reasoning: the `/contact` endpoint surface was conceptually announced in 3.11.0 (with the form preview); It3 completes the wiring without adding new config keys, new routes outside what was already planned, or breaking changes. "Patch" signals "this is the working version of the form previewed in 3.11.0" more accurately than minor would.
+  - Filed `#663` for the CSRF gap discovered during this work. Cross-referenced from CHANGELOG `[3.11.1]` Known Limitation section.
+- #658 iteration tracking — **all three iterations shipped**:
+  - ✅ It1 (v3.10.6): `Contact Us` required page only
+  - ✅ It2 (v3.11.0): GET /contact + 3 config keys + recipient helper + view + state matrix + loop guard + tests
+  - ✅ It3 (v3.11.1, this): POST /contact + mail send + rate limit + honeypot + doc note + tests
+- Commits: (this commit) `feat: POST /contact (mail send, rate limit, honeypot) — closes #658 (v3.11.1)`
+- Files Modified:
+  - `src/routes/WikiRoutes.ts` (POST handler + module-scope rate limiter export + import + GET handler template-var additions + route registration)
+  - `views/contact.ejs` (full rewrite of form branch + new submitted branch)
+  - `src/utils/SimpleRateLimiter.ts` (new)
+  - `src/utils/__tests__/SimpleRateLimiter.test.ts` (new — 7 tests)
+  - `src/routes/__tests__/WikiRoutes.contact.test.ts` (added mockEmailManager + EmailManager wiring + POST describe block + 14 tests)
+  - `docker/HEADLESS-DEPLOYMENT-NOTES.md` (§9 added)
+  - `package.json` (3.11.0 → 3.11.1)
+  - `package-lock.json`
+  - `config/app-default-config.json` (`ngdpbase.version` → 3.11.1)
+  - `CHANGELOG.md`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-08-06
 
 - Agent: Claude Opus 4.7

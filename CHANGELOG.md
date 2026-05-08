@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.11.1] - 2026-05-08
+
+### Added
+
+- **`POST /contact`** handler (#658 iteration 3 — closes #658) — wires up
+  the form preview shipped in 3.11.0. Pipeline:
+  - kill switch check (`contact.enabled = false` → 404)
+  - operator-redirect check (`contact.page` set → 405)
+  - per-IP rate limit (5 submissions / 15-minute rolling window) → 429
+  - honeypot (`_website` field; bots fill, humans don't) → 200 silent
+    success without sending mail
+  - input validation (name 1-100, email 1-254 + format, optional subject
+    ≤200, message 1-5000) — re-renders form with error on failure (HTTP 400)
+  - recipient resolution via `UserManager.getContactRecipient` — null →
+    render not-configured branch (no mail, no leak)
+  - mail send via existing `EmailManager.sendTo()` → 200 with success view
+- **`SimpleRateLimiter`** (`src/utils/SimpleRateLimiter.ts`) — minimal
+  in-memory per-key rate limiter, ~80 lines. Module-scope per pod;
+  distributed deployments get per-replica counters, not a shared budget.
+  Documented in `docker/HEADLESS-DEPLOYMENT-NOTES.md` §9 with guidance to
+  run a real WAF / proxy upstream for cross-replica protection.
+  7 unit tests in `src/utils/__tests__/SimpleRateLimiter.test.ts`.
+- **`views/contact.ejs`** updated — submit button enabled, "iteration 3
+  coming" banner removed, real `<form action="/contact" method="POST">`
+  with required fields, honeypot input, value-preserving form re-render
+  on validation error, success view ("Message sent — we typically respond
+  within a few days") for `state: 'submitted'`.
+- 14 new POST tests in `src/routes/__tests__/WikiRoutes.contact.test.ts`
+  covering kill switch, redirect, happy path, default-subject fallback,
+  honeypot silent success, all validation paths, dormant recipient,
+  EmailManager failure, rate limit (429 + Retry-After), and the
+  "recipient never appears in response body" invariant.
+- `docker/HEADLESS-DEPLOYMENT-NOTES.md` §9 — operator guide for
+  activating the contact feature: set admin email off the install-default
+  sentinel OR set `contact.recipient` explicitly; configure
+  `ngdpbase.mail.*` for actual delivery; `contact.page` override path.
+
+### Known limitation
+
+- POST `/contact` does **not** validate CSRF tokens. The codebase has no
+  app-wide CSRF middleware (`csurf` is in `package.json` but never
+  imported); existing POST routes (`/register`, `/admin/*`) also skip
+  the check. Adding it only for `/contact` would be inconsistent. The
+  honeypot + rate limit + recipient sentinel cover the realistic abuse
+  cases for this unauthenticated form. The CSRF gap is tracked as #663
+  and affects all POST routes equally.
+
 ## [3.11.0] - 2026-05-08
 
 ### Added

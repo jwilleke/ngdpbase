@@ -196,6 +196,32 @@ Generate once: `openssl rand -base64 32`. Rotate when needed; rotation invalidat
 
 ---
 
+## 9. `/contact` form is dormant until admin email or `contact.recipient` is set
+
+**Symptom:** A fresh deploy renders `GET /contact` as a "Contact form is not configured" page even with `ngdpbase.application.contact.enabled: true` (the default). Visitors who use the **Request access** button (when `application.registration: false`) and then click `[Contact Us]` reach the contact page but cannot submit.
+
+**Root cause:** `processContact` resolves the recipient via `UserManager.getContactRecipient(override)`. When `ngdpbase.application.contact.recipient` is empty (default), the helper falls through to "first user with the `admin` role whose email is non-empty AND not the install-default sentinel `admin@localhost`." On a fresh deploy, the only admin user has the sentinel email — so the helper returns `null` and the form renders the not-configured branch instead of mailing into a black hole. (#658)
+
+**Two fixes — operator chooses:**
+
+1. **Set the admin email to a real address.** Log in as admin → Profile → change email to a routable address (the corporate alias, the operator's mailbox, a dedicated `admin@<your-domain>`, etc.). The contact form activates on the next request.
+
+2. **Set `ngdpbase.application.contact.recipient` explicitly** in `app-custom-config.json` (or via ConfigMap):
+
+   ```json
+   "ngdpbase.application.contact.recipient": "support@your-domain.com"
+   ```
+
+   This wins over the admin-email lookup; takes a single email or a comma-separated list / distribution alias. Use this when you want the contact mailbox decoupled from the admin user identity.
+
+**Also required for actual mail delivery:** `ngdpbase.mail.*` must be configured (`enabled: true`, `provider: smtp`, valid `smtp.host` / `from` / credentials). With `provider: console` (default), submissions are accepted by `/contact` and the email is printed to the server log only — useful for testing, not production.
+
+**Optional override:** set `ngdpbase.application.contact.page` to a slug (e.g. `support`) and `/contact` 302-redirects to `/view/<slug>` instead of rendering the built-in form. Useful for pointing at your own support page or external service. Cannot equal `"contact"` — rejected at startup with a clear error.
+
+**Rate limit:** `/contact` POST is rate-limited to 5 submissions per IP per 15-minute window. Module-scope per pod — distributed deployments get per-replica counters, not a shared budget. For stronger protection across replicas, run a real rate-limit proxy (Cloudflare, Nginx, dedicated WAF) in front.
+
+---
+
 ## Recommended deploy order
 
 For a clean first deploy under HEADLESS_INSTALL=true:
