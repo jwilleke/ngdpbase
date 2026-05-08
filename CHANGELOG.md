@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.10.4] - 2026-05-08
+
+### Fixed
+
+- Default `ngdpbase.application.registration.redirect-page` slug `request-access`
+  pointed at no shipped page. Added `required-pages/<uuid>.md` (slug
+  `request-access`, title "Request access") with generic operator-overridable
+  copy referencing `[Contact Us]`. Fresh installs now have a working header
+  **Request access** button when registration lockdown is on; existing
+  installs can pick up the page via re-install or by seeding manually.
+  Fixes #657 (introduced by #654 in 3.10.3).
+
 ## [3.10.3] - 2026-05-08
 
 ### Added

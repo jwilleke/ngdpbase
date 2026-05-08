@@ -2,6 +2,36 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-08-03
+
+- Agent: Claude Opus 4.7
+- Subject: Ship `request-access` required page — close the broken-default introduced by v3.10.3 #654 (slice 1 of registration-lockdown follow-up)
+- Current Issue: filed and fixed #657; slice 2 (`/contact` form + `Contact Us` page) tracked separately as a new `[FEATURE]` issue
+- Tests: build clean (`tsc && build:addons`); no test changes (content-only)
+- Work Done:
+  - Confirmed gap: `ngdpbase.application.registration.redirect-page` defaulted to `"request-access"` in v3.10.3 but no `required-pages/*.md` shipped with that slug. Every operator flipping `registration: false` got header **Request access** → 404 unless they seeded their own page (geohazardwatch did this in their addon — `addons/ve-geology/pages/ve-geology-request-access.md`).
+  - Discussed scope with operator; agreed split (slice 1 patch + slice 2 feature) over a single bigger change. Closed #656 (URL prefix configurable) as won't fix during scoping.
+  - Filed `#657` `[BUG] v3.10.3 default registration.redirect-page slug 'request-access' points at non-existent page` and shipped the fix in the same release.
+  - Created `required-pages/519febcc-b640-4a0e-a495-4c4db655484b.md` — slug `request-access`, system-category `documentation`, title "Request access". Generic operator-overridable copy: "Account registration is currently closed. If you'd like an account on **[{$applicationname}]**, please [Contact Us]…". The `[Contact Us]` link redlinks until slice 2 ships the `/contact` form route + `Contact Us` page.
+  - Substituted the operator's draft `[{$pagename}]` → `[{$applicationname}]` per AGENTS.md ("Application name → `[{$applicationname}]` not a hardcoded name") — `$pagename` would render as "Request access" which doesn't read; `$applicationname` resolves to the site brand (e.g., "geohazardwatch").
+  - SEMVER **patch** bump 3.10.3 → 3.10.4 via `src/utils/version.ts` (per AGENTS.md). Note: `scripts/version.ts` is broken under Node ESM (`__dirname is not defined`); `src/utils/version.ts` is the working canonical script. Worth filing as a separate cleanup if not already known.
+  - CHANGELOG `[3.10.4]` Fixed entry calls out the bug, the fix, and the existing-install caveat.
+  - Decided slice 2 design (covered in chat, captured here for the issue body):
+    - 3 new config keys: `ngdpbase.application.contact.enabled` (default `true`), `ngdpbase.application.contact.page` (default `""` — slug-only redirect override; mirrors `registration.redirect-page` shape), `ngdpbase.application.contact.recipient` (default `""`)
+    - Recipient resolution: `contact.recipient` if non-empty; else first user with `admin` role whose email is non-empty AND not the install-default sentinel `admin@localhost`; else feature dormant ("Contact form is not configured" rendered, never silent)
+    - Form mechanism: hard-coded EJS view + dedicated `/contact` GET/POST (NOT WikiFormHandler-on-an-editable-page — security-adjacent surface, want server-controlled)
+    - Loop-protection: `contact.page` cannot equal `"contact"` (reject at config load with clear startup error)
+    - Startup log warning when `registration: false` AND contact unconfigured (the trap state). No admin dashboard banner — out of scope, would need a notification subsystem; doc note in `HEADLESS-DEPLOYMENT-NOTES.md` is the right channel
+    - Email never rendered to client — resolved server-side per request, never `mailto:`
+- Commits: (this commit) `feat: ship request-access required page (closes #657)`
+- Files Modified:
+  - `required-pages/519febcc-b640-4a0e-a495-4c4db655484b.md` (new)
+  - `package.json` (3.10.3 → 3.10.4)
+  - `package-lock.json`
+  - `config/app-default-config.json` (`ngdpbase.version` → 3.10.4)
+  - `CHANGELOG.md`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-08-02
 
 - Agent: Claude Opus 4.7
