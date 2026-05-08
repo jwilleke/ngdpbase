@@ -525,6 +525,15 @@ class WikiRoutes {
     const addonsManager = this.engine.getManager('AddonsManager');
     const addonStylesheets: string[] = addonsManager?.getRegisteredStylesheets?.() ?? [];
 
+    const allowRegistration = (configManager?.getProperty(
+      'ngdpbase.application.registration',
+      true
+    ) as boolean) ?? true;
+    const registrationRedirectPage = (configManager?.getProperty(
+      'ngdpbase.application.registration.redirect-page',
+      'request-access'
+    )) || 'request-access';
+
     const templateData: {
       currentUser: UserContext | null;
       user: UserContext | null;
@@ -541,6 +550,8 @@ class WikiRoutes {
       themeFontUrls: string[];
       addonStylesheets: string[];
       capabilities: Record<string, boolean>;
+      allowRegistration: boolean;
+      registrationRedirectPage: string;
       leftMenu?: string;
       footer?: string;
     } = {
@@ -566,7 +577,9 @@ class WikiRoutes {
       locationCssPath: themePaths.locationCssPath,
       themeFontUrls: themePaths.fontUrls,
       addonStylesheets,
-      capabilities: this.engine.getCapabilities?.() ?? {}
+      capabilities: this.engine.getCapabilities?.() ?? {},
+      allowRegistration,
+      registrationRedirectPage
     };
 
     // Load LeftMenu — prefer 'left-menu-content' page (instance/addon override) over 'LeftMenu'
@@ -4014,9 +4027,24 @@ ${panes}
 
   /**
    * Registration page
+   *
+   * Returns 404 when self-registration is disabled
+   * (`ngdpbase.application.registration: false`). Operators who lock down
+   * registration repurpose the header button to a "Request access" wiki page
+   * — see `getCommonTemplateData()` and `views/header.ejs`.
    */
   async registerPage(req: Request, res: Response) {
     try {
+      const configManager = this.engine.getManager('ConfigurationManager');
+      const allowReg = (configManager?.getProperty(
+        'ngdpbase.application.registration',
+        true
+      ) as boolean | undefined) ?? true;
+      if (!allowReg) {
+        res.status(404).send('Not found');
+        return;
+      }
+
       const commonData = await this.getCommonTemplateData(req);
 
       res.render('register', {
@@ -4033,9 +4061,24 @@ ${panes}
 
   /**
    * Process registration
+   *
+   * Returns 404 when self-registration is disabled
+   * (`ngdpbase.application.registration: false`). Defence in depth — the GET
+   * route also 404s, but rejecting the POST keeps the flag honest if the
+   * route is somehow reachable (test harness, future refactor).
    */
   async processRegister(req: Request, res: Response) {
     try {
+      const configManager = this.engine.getManager('ConfigurationManager');
+      const allowReg = (configManager?.getProperty(
+        'ngdpbase.application.registration',
+        true
+      ) as boolean | undefined) ?? true;
+      if (!allowReg) {
+        res.status(404).send('Not found');
+        return;
+      }
+
       const { username, email, displayName, password, confirmPassword } =
         req.body;
       const userManager = this.engine.getManager('UserManager');

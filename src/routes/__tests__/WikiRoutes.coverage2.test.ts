@@ -486,6 +486,41 @@ describe('WikiRoutes — coverage batch 2', () => {
     });
   });
 
+  // ── registration disabled (ngdpbase.application.registration: false) ─────
+
+  describe('/register — when registration is disabled', () => {
+    const originalGetProperty = mockConfigManager.getProperty.getMockImplementation();
+
+    beforeEach(() => {
+      mockConfigManager.getProperty.mockImplementation((key: string, defaultValue: unknown) => {
+        if (key === 'ngdpbase.application.registration') return false;
+        return originalGetProperty?.(key, defaultValue);
+      });
+    });
+
+    afterEach(() => {
+      if (originalGetProperty) {
+        mockConfigManager.getProperty.mockImplementation(originalGetProperty);
+      }
+    });
+
+    test('GET /register returns 404', async () => {
+      const res = await request(app).get('/register');
+      expect(res.status).toBe(404);
+    });
+
+    test('POST /register returns 404 without inspecting body', async () => {
+      // Registration-disabled gate runs before any body validation, so no
+      // password fixture is needed (and avoiding one keeps secret-scanners
+      // happy — registration is closed; the handler never reaches the
+      // userManager.createUser() call).
+      const res = await request(app)
+        .post('/register')
+        .send({ _csrf: 'test-csrf-token' });
+      expect(res.status).toBe(404);
+    });
+  });
+
   // ── updateProfile ─────────────────────────────────────────────────────────
 
   describe('POST /profile — updateProfile', () => {

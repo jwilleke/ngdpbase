@@ -128,7 +128,11 @@
                     </div>
                 <% } else { %>
                     <a class="btn btn-outline-primary btn-sm me-2" href="/login?redirect=<%= encodeURIComponent(typeof pageName !== 'undefined' && pageName ? `/view/${pageName}` : '/') %>"><i class="fas fa-sign-in-alt"></i> Login</a>
-                    <a class="btn btn-primary btn-sm" href="/register"><i class="fas fa-user-plus"></i> Register</a>
+                    <% if (typeof allowRegistration === 'undefined' || allowRegistration) { %>
+                        <a class="btn btn-primary btn-sm" href="/register"><i class="fas fa-user-plus"></i> Register</a>
+                    <% } else { %>
+                        <a class="btn btn-outline-primary btn-sm" href="/wiki/<%= typeof registrationRedirectPage !== 'undefined' && registrationRedirectPage ? registrationRedirectPage : 'request-access' %>"><i class="fas fa-user-plus"></i> Request access</a>
+                    <% } %>
                 <% } %>
             </div>
         </div>
