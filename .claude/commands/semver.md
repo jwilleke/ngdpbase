@@ -95,11 +95,23 @@ Run sequentially:
 - `git push origin master` — push the commit first.
 - `git push origin v<next>` — then the tag, so the release commit is reachable on the default branch.
 
-### Step 7: Create the GitHub release
+### Step 7: Create the GitHub release (conditional)
+
+**Auto-release rule:**
+
+- **`minor` or `major`** — always create the GitHub release. New feature surface or breaking change deserves a visible release entry every time.
+- **`patch`** — skip the GitHub release unless the user explicitly asked for one in this turn (or in an earlier turn of the same session). Patch chains shipped without releases can be consolidated later via the `/release` skill — see `.claude/commands/release.md`.
+- **When in doubt or when the user asks** — create the release.
+
+When creating:
 
 - `gh release create v<next> --title "v<next>" --generate-notes --notes-start-tag v<previous>`
   - `--generate-notes` autogenerates from merged PRs and commits in the range.
   - `--notes-start-tag` makes the range explicit so notes don't accidentally span multiple releases.
+
+When skipping (patch with no explicit request):
+
+- Push the tag (Step 6 already did this) and report in Step 9 that the release entry was deferred. Mention that `/release` can publish it later if needed.
 
 ### Step 8: Update sister installs
 

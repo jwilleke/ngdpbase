@@ -264,3 +264,7 @@ search-index/
 
 # Test results (generated)
 test-results/
+
+# Release-notes scratch file used by .claude/commands/release.md
+.release-notes.tmp
+.release-notes-*.tmp
