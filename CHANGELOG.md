@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.10.5] - 2026-05-08
+
+### Fixed
+
+- `views/header.ejs` — replaced two hardcoded `/wiki/<slug>` URLs with the
+  canonical `/view/<slug>`:
+  - Line 134 (added by #654, v3.10.3): the **Request access** button rendered
+    when `ngdpbase.application.registration: false`
+  - Line 374 (added by #537): pinned-page links in the My Links sidebar
+  Both were regressions against the #364 migration ("Renamed /wiki/ URL path
+  to /view/ across all source, views, plugins, tests"). The legacy
+  `/wiki/:page` route still 301-redirects to `/view/:page`
+  (`WikiRoutes.ts:8566-8569`), so existing bookmarks and external links keep
+  working. Per AGENTS.md ("Never Use the Word 'Wiki'") and the operator's
+  documented preference, the canonical `/view/` path is the only one that
+  should appear in newly-written or recently-added user-facing surface area.
+
 ## [3.10.4] - 2026-05-08
 
 ### Fixed

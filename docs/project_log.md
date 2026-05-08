@@ -2,6 +2,34 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-08-04
+
+- Agent: Claude Opus 4.7
+- Subject: v3.10.5 — `views/header.ejs` `/wiki/` → `/view/` (regression cleanup); record no-wiki rule in this repo's auto-memory
+- Current Issue: none directly (cleanup of #654 and #537 hardcodes); reinforces AGENTS.md "Never Use the Word 'Wiki'" rule
+- Tests: build clean (`tsc && build:addons`); manual verification of `/view/request-access` (canonical) and `/wiki/request-access` (back-compat redirect) post-restart
+- Work Done:
+  - Operator pointed out that v3.10.4 (shipped earlier this session) propagated the legacy `/wiki/<slug>` URL hardcode rather than the canonical `/view/<slug>`. Two hardcodes in `views/header.ejs`:
+    - Line 134 — added by #654 (v3.10.3) — the **Request access** button rendered when `ngdpbase.application.registration: false`
+    - Line 374 — added by #537 commit `a1acfb75` (2026-04-19) — pinned-page links in the My Links sidebar
+  - Both were regressions against the #364 migration ("Renamed /wiki/ URL path to /view/ across all source, views, plugins, tests" — see project_log entry at line 7176). The legacy `/wiki/:page` route still 301-redirects to `/view/:page` (`WikiRoutes.ts:8566-8569`), so external bookmarks survive.
+  - Operator reinforced: this rule is documented in AGENTS.md ("Never Use the Word 'Wiki'") — applies to user-facing labels, URLs, and rendered content. The Request access button is a system-rendered label; it should never have shipped pointing at `/wiki/`. Memory miss on my part — I had not previously recorded the no-wiki preference in this repo's auto-memory (it was only recorded in the `ngdpbase-veg` agent's memory dir per session 2026-05-08-02).
+  - Saved `~/.claude/projects/-Volumes-hd2A-workspaces-github-ngdpbase/memory/feedback_no_wiki_terminology.md` with the full rule (tolerated legacy uses + canonical/forbidden uses + cross-reference to AGENTS.md and the `-veg` memory). Future sessions in this repo inherit it.
+  - Edits: `views/header.ejs:134` `/wiki/` → `/view/`; `views/header.ejs:374` `/wiki/` → `/view/`. SEMVER **patch** bump 3.10.4 → 3.10.5 via `src/utils/version.ts`.
+  - Build clean. Restarted via `./server.sh` (per memory). Verified:
+    - `GET /view/request-access` → 200 (canonical, served by `viewPage`)
+    - `GET /wiki/request-access` → 301 redirect to `/view/request-access`, then 200 (back-compat path still works)
+- Commits: (this commit) `fix: replace hardcoded /wiki/ URLs in header.ejs with canonical /view/ (v3.10.5)`
+- Files Modified:
+  - `views/header.ejs` (lines 134, 374)
+  - `package.json` (3.10.4 → 3.10.5)
+  - `package-lock.json`
+  - `config/app-default-config.json` (`ngdpbase.version` → 3.10.5)
+  - `CHANGELOG.md`
+  - `docs/project_log.md` (this entry)
+  - `~/.claude/projects/-Volumes-hd2A-workspaces-github-ngdpbase/memory/feedback_no_wiki_terminology.md` (new — outside repo)
+  - `~/.claude/projects/-Volumes-hd2A-workspaces-github-ngdpbase/memory/MEMORY.md` (index pointer added — outside repo)
+
 ## 2026-05-08-03
 
 - Agent: Claude Opus 4.7

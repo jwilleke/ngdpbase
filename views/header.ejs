@@ -131,7 +131,7 @@
                     <% if (typeof allowRegistration === 'undefined' || allowRegistration) { %>
                         <a class="btn btn-primary btn-sm" href="/register"><i class="fas fa-user-plus"></i> Register</a>
                     <% } else { %>
-                        <a class="btn btn-outline-primary btn-sm" href="/wiki/<%= typeof registrationRedirectPage !== 'undefined' && registrationRedirectPage ? registrationRedirectPage : 'request-access' %>"><i class="fas fa-user-plus"></i> Request access</a>
+                        <a class="btn btn-outline-primary btn-sm" href="/view/<%= typeof registrationRedirectPage !== 'undefined' && registrationRedirectPage ? registrationRedirectPage : 'request-access' %>"><i class="fas fa-user-plus"></i> Request access</a>
                     <% } %>
                 <% } %>
             </div>
@@ -371,7 +371,7 @@
                         <ul class="list-unstyled mb-0">
                           <% _tmplPinned.forEach(function(p) { %>
                           <li class="d-flex align-items-center gap-1 py-0">
-                            <a href="/wiki/<%= encodeURIComponent(p.pageName) %>" class="flex-grow-1 text-truncate small"><i class="fas fa-bookmark me-1"></i><%= p.title || p.pageName %></a>
+                            <a href="/view/<%= encodeURIComponent(p.pageName) %>" class="flex-grow-1 text-truncate small"><i class="fas fa-bookmark me-1"></i><%= p.title || p.pageName %></a>
                             <button type="button" class="btn btn-link btn-sm p-0 text-muted" title="Remove" onclick="removePinnedPage('<%= p.pageName.replace(/'/g, "\\'") %>')">&times;</button>
                           </li>
                           <% }); %>
