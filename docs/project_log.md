@@ -2,6 +2,29 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-08-09
+
+- Agent: Claude Opus 4.7
+- Subject: `/othersites` propagation — pull/build/restart/test all 4 ngdpbase deployments after today's v3.10.3 → v3.11.2 work
+- Current Issue: none (verification pass; no bugs filed)
+- Tests: 21,216 unit (4 × 5304) + 288 e2e (4 × 72) = **21,504 tests across 4 sites, zero failures**
+- Work Done:
+  - Per-site sequential workflow (matching the precedent from session 2026-05-07-05 to avoid resource contention): `git pull` → `./server.sh stop` → `npm run build` → `./server.sh start` → `npm test` → `npm run test:e2e`
+  - **Site 1 — jimstest** (port 3000, current cwd, `/Volumes/hd2/jimstest-wiki/data` SLOW_STORAGE): already at v3.11.2 from this session's bumps; vitest 203 files / 5304 tests pass; playwright 72 pass (2.7m — same SLOW_STORAGE I/O cost as prior runs). Restarted at end to sync PM2's version label from `3.11.0` (start-time stale) to `3.11.2`.
+  - **Site 2 — fairways-base** "The Fairways" (port 2121, `./data`): pulled v3.10.2 → v3.11.2; build clean; vitest 5304 pass; playwright 72 pass (25.1s).
+  - **Site 3 — ngdpbase-veg** "ve-geology" (port 3333, `./data`): pulled v3.10.2 (was actually at `7b69cd74`) → v3.11.2; build clean; vitest 5304 pass; playwright 72 pass (24.1s).
+  - **Site 4 — ngdp-temp-builds** "ngdpbase temp build" (port 3001, `/Volumes/hd2/ngdp-temp-builds/ngdpbase/data`): pulled v3.10.2 → v3.11.2; build clean; vitest 5304 pass; playwright 72 pass (21.4s). Note: `/Volumes/hd2/ngdp-temp-builds/` contains an Elasticsearch tarball + one ngdpbase install; only the install needed updating.
+  - All four PM2 processes confirmed `online` at v3.11.2 post-test.
+  - Today's six-tag patch chain (v3.10.3 minor → v3.10.4 → v3.10.5 → v3.10.6 → v3.11.0 minor → v3.11.1 → v3.11.2) propagated cleanly to all sister sites with no working-tree conflicts on any of them — only the new `request-access` and `Contact Us` required-pages files appeared as untracked-then-tracked (boot scanner picks them up automatically per `VersioningFileProvider.ts:455-504`), the deleted `scripts/version.ts`, and the new test files.
+  - No regressions, no flaky tests, no bugs filed.
+- Notable observations:
+  - The known intermittent `WikiRoutes.coverage3.test.ts` "401 when not authenticated" timeout (#622) did not reproduce on any of the 4 sites today.
+  - jimstest E2E remains ~7× slower than the other sites (2.7m vs ~25s) — same test count, same outcomes; SLOW_STORAGE I/O is the cause; left as-is per prior session note.
+  - All test runs were tight: 5304 vitest tests in ~9s, e2e in 21-25s on local-data sites. No churn from today's contact-endpoint additions.
+- Commits: none this session block (verification only — no code changes)
+- Files Modified:
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-08-08
 
 - Agent: Claude Opus 4.7
