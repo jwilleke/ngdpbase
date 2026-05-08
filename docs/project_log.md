@@ -2,6 +2,38 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-08-01
+
+- Agent: Claude Opus 4.7
+- Subject: `ngdpbase.application.registration` flag — operator switch to lock down self-registration (v3.10.3)
+- Current Issue: PR #654 (merged); follow-up doc issue #655 filed
+- Tests: 64 passed in touched files; full `tsc --noEmit` clean
+- Work Done:
+  - Added boolean config key `ngdpbase.application.registration` (default `true`) and companion `ngdpbase.application.registration.redirect-page` (default `"request-access"`) in `config/app-default-config.json` with explanatory comment.
+  - Added type entries in `src/types/Config.ts`.
+  - Gated `registerPage()` and `processRegister()` in `src/routes/WikiRoutes.ts` to return HTTP 404 when the flag is `false`.
+  - Plumbed `allowRegistration` and `registrationRedirectPage` through `getCommonTemplateData()` so all views can branch on the flag.
+  - Switched `views/header.ejs` to render either "Register" → `/register` or "Request access" → `/wiki/<redirect-page>` based on `allowRegistration`.
+  - Gated Google OIDC auto-provisioning in `src/providers/GoogleOIDCProvider.ts`: when registration is off, brand-new users are rejected; existing OIDC users continue to log in normally.
+  - Audited other auto-creation paths: `MagicLinkAuthProvider` already returns silently for unknown emails (safe by design); admin POST `/admin/users` is gated by the `user-create` permission (correctly NOT covered by this flag); `UserManager.createOrUpdateExternalUser` has no current callers.
+  - Added vitest cases (`WikiRoutes.coverage2.test.ts` + `GoogleOIDCProvider.test.ts`): GET 404, POST 404, OIDC rejects new user.
+  - GitGuardian followup: removed a `'pass123'` fixture in the new POST test that triggered the secret scanner; route 404s before reading the body so no fixture is needed.
+  - Bumped `package.json`, `config/app-default-config.json` `ngdpbase.version` to `3.10.3`. CHANGELOG `[3.10.3]` entry under Added/Changed.
+  - Tagged and published `v3.10.3` to `ghcr.io/jwilleke/ngdpbase:3.10.3` (Docker Build and Push run `25547238779` green).
+  - Filed `#655` as a follow-up: documentation for `.env`-style `envFrom` ConfigMap/Secret pattern in k8s deploy docs.
+- Commits: `0a10e336` (squash-merged), `7d256c4e` (GitGuardian fixup pre-merge)
+- Files Modified:
+  - `config/app-default-config.json`
+  - `src/types/Config.ts`
+  - `src/routes/WikiRoutes.ts`
+  - `src/providers/GoogleOIDCProvider.ts`
+  - `views/header.ejs`
+  - `src/routes/__tests__/WikiRoutes.coverage2.test.ts`
+  - `src/providers/__tests__/GoogleOIDCProvider.test.ts`
+  - `CHANGELOG.md`
+  - `package.json`
+  - `docs/project_log.md` (this file)
+
 ## 2026-05-07-06
 
 - Agent: Claude Opus 4.7
