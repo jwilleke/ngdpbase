@@ -55,7 +55,13 @@ Write the curated body to a temp file (`.release-notes.tmp` in repo root, gitign
 - `gh release create <tag> --title "<tag> — <one-line summary>" --notes-file <file>` (curated path), OR
 - `gh release create <tag> --title "<tag>" --generate-notes --notes-start-tag <previous>` (auto path)
 
-The release will be marked Latest automatically if `<tag>` is the highest semver in published releases.
+**Latest-flag gotcha:** GitHub picks the "Latest" release by **most-recent publish time**, not by semver. Backfilling an older tag (e.g. publishing v3.10.3 today when v3.11.2 is already out) will take the Latest crown away from the head release. After backfilling any release that isn't itself the current head, restore Latest:
+
+```bash
+gh release edit <current-head-tag> --latest
+```
+
+Verify with `gh release list --limit 3` — the head should show "Latest" in the second column.
 
 ### Step 5: Verify and report
 
