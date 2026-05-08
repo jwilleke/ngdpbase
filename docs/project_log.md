@@ -2,6 +2,27 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-08-08
+
+- Agent: Claude Opus 4.7
+- Subject: v3.11.2 — fix #659, remove duplicate broken `scripts/version.ts`, point `npm run version:*` at canonical `src/utils/version.ts` (Option B)
+- Current Issue: #659 (closed)
+- Tests: build/test impact = none; manual verification of `npm run version:show` and `npm run version:patch` (the latter performed the actual 3.11.1 → 3.11.2 bump)
+- Work Done:
+  - Operator picked Option B from #659. Updated `package.json` `version:*` scripts (5 entries) from `tsx scripts/version.ts` → `tsx src/utils/version.ts`. Deleted `scripts/version.ts` (242 lines, broken under ESM since `package.json` declares `"type": "module"` but the file used CJS-style `__dirname`).
+  - AGENTS.md unchanged — line 121 already says "src/utils/version.ts to perform SEMVER updates"; the drift was the npm scripts pointing elsewhere.
+  - Verified `npm run version:show` works (prints current version cleanly instead of crashing). Bumped 3.11.1 → 3.11.2 via `npm run version:patch` — exercising the previously-broken path end-to-end as the verification step.
+  - One canonical version script remains: `src/utils/version.ts`. Working canonical location, npm shortcuts and AGENTS.md now agree.
+  - Note: `csurf` (`^1.11.0`) is still in `package.json` dependencies but never imported — that's the separate gap tracked by #663, untouched here.
+- Commits: (this commit) `fix: point npm run version:* at canonical src/utils/version.ts; remove broken scripts/version.ts (closes #659, v3.11.2)`
+- Files Modified:
+  - `package.json` (5 `version:*` script entries; version 3.11.1 → 3.11.2)
+  - `package-lock.json`
+  - `config/app-default-config.json` (`ngdpbase.version` → 3.11.2)
+  - `scripts/version.ts` (deleted)
+  - `CHANGELOG.md`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-08-07
 
 - Agent: Claude Opus 4.7

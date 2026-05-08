@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.11.2] - 2026-05-08
+
+### Fixed
+
+- **`npm run version:*` shortcuts** (#659) — pointed `version:show` /
+  `version:patch` / `version:minor` / `version:major` / `version:help`
+  in `package.json` at the working `src/utils/version.ts` (canonical per
+  `AGENTS.md`) instead of the duplicate `scripts/version.ts`, which used
+  CJS-style `__dirname` and crashed under ESM (`"type": "module"`) with
+  `ReferenceError: __dirname is not defined in ES module scope`.
+- Deleted `scripts/version.ts` so there is one and only one version
+  script: `src/utils/version.ts`. AGENTS.md unchanged — already pointed
+  at the canonical location. Workaround `npx tsx src/utils/version.ts
+  <bump>` is no longer needed; the npm shortcuts work directly.
+
 ## [3.11.1] - 2026-05-08
 
 ### Added
