@@ -116,6 +116,7 @@ interface IUserManager {
   authenticateUser(username: string, password: string): Promise<unknown>;
   getSession(req: Request): Promise<unknown>;
   searchUsers(query: string, options?: { role?: string; limit?: number; activeOnly?: boolean }): Promise<{ username: string; displayName?: string; email?: string; roles?: string[]; [key: string]: unknown }[]>;
+  getContactRecipient(recipientOverride: string): Promise<string | null>;
 }
 
 interface IConfigManager {
@@ -4022,6 +4023,77 @@ ${panes}
     } catch (err: unknown) {
       if (err instanceof ApiError) { res.status(err.status).json({ error: err.message }); return; }
       res.status(500).json({ error: getErrorMessage(err) });
+    }
+  }
+
+  /**
+   * #658: GET /contact handler. State matrix:
+   *
+   * - contact.enabled = false             → 404 (kill switch)
+   * - contact.page = "<slug>"             → 302 → /view/<slug>
+   * - contact.page = "" + recipient ok    → render form view (state: "form")
+   * - contact.page = "" + recipient null  → render not-configured view
+   *
+   * Recipient resolution (UserManager.getContactRecipient): explicit
+   * `contact.recipient` config, else first admin user with email !=
+   * "admin@localhost". The recipient is never written into the rendered
+   * HTML — it stays server-side only. Iteration 1 of #658 shipped the
+   * Contact Us required page; iteration 3 will add the POST handler and
+   * mail send. The form rendered here in iteration 2 is a preview — the
+   * submit button is disabled until iteration 3 lands.
+   *
+   * Loop guard for `contact.page === "contact"` is enforced at startup
+   * by ConfigurationManager.assertContactPageNotLoop; this handler also
+   * defends in depth.
+   */
+  async contactPage(req: Request, res: Response) {
+    try {
+      const configManager = this.engine.getManager('ConfigurationManager');
+
+      const enabled = (configManager?.getProperty(
+        'ngdpbase.application.contact.enabled',
+        true
+      ) as boolean | undefined) ?? true;
+      if (!enabled) {
+        res.status(404).send('Not found');
+        return;
+      }
+
+      const redirectPage = ((configManager?.getProperty(
+        'ngdpbase.application.contact.page',
+        ''
+      ) as string | undefined) ?? '').trim();
+      if (redirectPage && redirectPage !== 'contact') {
+        res.redirect(302, `/view/${encodeURIComponent(redirectPage)}`);
+        return;
+      }
+      if (redirectPage === 'contact') {
+        // Defence in depth — startup invariant should have prevented this.
+        logger.warn('[contactPage] contact.page === "contact" would create a redirect loop; ignoring');
+      }
+
+      const recipientOverride = (configManager?.getProperty(
+        'ngdpbase.application.contact.recipient',
+        ''
+      ) as string | undefined) ?? '';
+
+      const userManager = this.engine.getManager('UserManager');
+      const recipient = userManager
+        ? await userManager.getContactRecipient(recipientOverride)
+        : null;
+
+      const commonData = await this.getCommonTemplateData(req);
+      res.render('contact', {
+        ...commonData,
+        title: 'Contact',
+        // Never render the recipient address itself — only whether the
+        // feature has resolved one.
+        state: recipient ? 'form' : 'not-configured',
+        csrfToken: req.session.csrfToken
+      });
+    } catch (err: unknown) {
+      logger.error('Error loading contact page:', err);
+      res.status(500).send('Error loading contact page');
     }
   }
 
@@ -8585,6 +8657,9 @@ ${panes}
     app.post('/logout', (req: Request, res: Response) => this.processLogout(req, res));
     app.get('/register', (req: Request, res: Response) => this.registerPage(req, res));
     app.post('/register', (req: Request, res: Response) => this.processRegister(req, res));
+    // #658 iteration 2: GET /contact (kill switch / redirect / form / not-configured).
+    // POST handler lands in iteration 3 with mail send + rate limit + honeypot.
+    app.get('/contact', (req: Request, res: Response) => this.contactPage(req, res));
     app.get('/profile', (req: Request, res: Response) => this.profilePage(req, res));
     app.post('/profile', (req: Request, res: Response) => this.updateProfile(req, res));
     // #640: My Contributions surfaces

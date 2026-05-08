@@ -2,6 +2,42 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-08-06
+
+- Agent: Claude Opus 4.7
+- Subject: #658 Iteration 2 (v3.11.0) — `GET /contact` route + 3 config keys + `getContactRecipient()` helper + state matrix view + startup loop guard
+- Current Issue: #658 (in progress; iteration 2 of 3)
+- Tests: 24 new tests across 3 files; full ConfigurationManager (45) and UserManager (101) suites green; live verification on jimstest:3000
+- Work Done:
+  - Added 3 config keys to `config/app-default-config.json` under `ngdpbase.application.contact.*` (`enabled`, `page`, `recipient`) with a single `_comment_application_contact` block summarizing the state matrix and recipient resolution rule. Mirrored entries added to `src/types/Config.ts` with full JSDoc for each key.
+  - Added `UserManager.getContactRecipient(recipientOverride)` (lines 956-980 of `src/managers/UserManager.ts`). Sentinel rule: trimmed override wins; else first user with `admin` role whose email is non-empty AND not `admin@localhost`; else `null` (caller renders "not configured", never silent). Resolves through `hasRole()` (RoleManager-backed, post-#617). 11 unit tests in `src/managers/__tests__/UserManager.getContactRecipient.test.ts` covering override-trim, override-empty, override-whitespace, sentinel skip, missing-email skip, no-admins, override-wins-over-sentinel.
+  - Added startup loop guard `ConfigurationManager.assertContactPageNotLoop()` called from `initialize()` after `assertBaseUrlConfigured()`. Refuses to start if `contact.page` (trimmed) equals `"contact"` with a clear error message citing #658. Mirrors the `assertBaseUrlConfigured()` precedent from #642 Iteration 2. 4 tests in `ConfigurationManager.test.ts` (`describe('contact.page loop guard (#658 Iteration 2)')`).
+  - Added `WikiRoutes.contactPage()` handler (placed adjacent to `registerPage`) implementing the full state matrix: 404 on kill switch / 302 on redirect-page / form-render on resolved recipient / not-configured on dormant. The handler also defends-in-depth against `contact.page === "contact"` falling through (logger.warn, ignore the redirect) — startup invariant should prevent this case but the runtime check keeps `/contact` honest if config reload paths bypass init validation. Added route registration `app.get('/contact', ...)` after the `/register` POST in `registerRoutes()`.
+  - Added `getContactRecipient` to the `IUserManager` interface in `WikiRoutes.ts` (the local interface — UserManager imports through the manager surface). Without this, `tsc --noEmit` failed with TS2339.
+  - Created `views/contact.ejs` — single view branching on `state` (`form` | `not-configured`). The form branch renders the layout (name / email / subject / message inputs + send button) all `disabled`, with an `alert-info` banner: "Form preview. Submission is not yet wired up — coming in #658 iteration 3." The not-configured branch shows a clear message to visitors ("…not yet configured a contact recipient. Please reach out through whatever other channel has been established for this site.") plus an `<em>For administrators:</em>` instruction block explaining how to activate the feature (`contact.recipient` config OR change admin email off `admin@localhost`).
+  - Added 9 route tests in `src/routes/__tests__/WikiRoutes.contact.test.ts` covering: `enabled=false` → 404; `page="support"` → 302 to `/view/support`; URL-encoding of slug with spaces; whitespace-trim of `page`; `page="contact"` defense-in-depth (200 + no Location header); recipient-resolves → form view; recipient-null → not-configured view; override passed to helper; resolved recipient never appears in response body. The tests stub `res.render` to encode `data-state` into the HTML for assertions.
+  - **Live verification:** `npm run build` clean; `./server.sh restart` brought jimstest:3000 up on 3.11.0; `GET /contact` rendered the form preview state (state="form" — jimstest's admin email is real, not the sentinel, so the recipient resolves). Did not exercise the redirect/kill-switch live; unit tests cover those.
+  - SEMVER **minor** bump 3.10.6 → 3.11.0 (new route surface + 3 config keys, additive).
+- Iteration tracking on #658:
+  - ✅ It1 (v3.10.6): Contact Us required page only.
+  - ✅ It2 (v3.11.0, this): GET /contact + config keys + helper + view + state matrix + loop guard + tests.
+  - ⏳ It3 (next): POST /contact + mail send + CSRF + honeypot + rate limit + integration tests + `HEADLESS-DEPLOYMENT-NOTES.md` doc note.
+- Commits: (this commit) `feat: GET /contact route + recipient resolution + state matrix (v3.11.0, #658 iteration 2)`
+- Files Modified:
+  - `config/app-default-config.json` (3 new keys + comment)
+  - `src/types/Config.ts` (3 new type entries with JSDoc)
+  - `src/managers/UserManager.ts` (`getContactRecipient` method)
+  - `src/managers/ConfigurationManager.ts` (`assertContactPageNotLoop` invariant + call from `initialize`)
+  - `src/routes/WikiRoutes.ts` (handler + route registration + `IUserManager` interface entry)
+  - `views/contact.ejs` (new)
+  - `src/managers/__tests__/UserManager.getContactRecipient.test.ts` (new — 11 tests)
+  - `src/managers/__tests__/ConfigurationManager.test.ts` (4 new tests in new describe block)
+  - `src/routes/__tests__/WikiRoutes.contact.test.ts` (new — 9 tests)
+  - `package.json` (3.10.6 → 3.11.0)
+  - `package-lock.json`
+  - `CHANGELOG.md`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-08-05
 
 - Agent: Claude Opus 4.7

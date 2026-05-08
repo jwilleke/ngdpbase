@@ -1,0 +1,58 @@
+<%- include('header', { pageName: '' }) %>
+
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card mt-5">
+                <div class="card-header">
+                    <h4 class="mb-0">Contact</h4>
+                </div>
+                <div class="card-body">
+                    <% if (state === 'not-configured') { %>
+                        <div class="alert alert-warning" role="alert">
+                            <h5 class="alert-heading">Contact form is not configured</h5>
+                            <p class="mb-0">
+                                The administrators of <strong><%= typeof applicationname !== 'undefined' ? applicationname : 'this site' %></strong> have not yet configured a contact recipient.
+                                Please reach out through whatever other channel has been established for this site.
+                            </p>
+                        </div>
+                        <p class="text-muted small mb-0">
+                            <em>For administrators:</em> set <code>ngdpbase.application.contact.recipient</code> in
+                            <code>app-custom-config.json</code>, or update the primary admin user's email to a
+                            routable address (the install-default <code>admin@localhost</code> keeps the contact
+                            feature dormant).
+                        </p>
+                    <% } else { %>
+                        <div class="alert alert-info" role="alert">
+                            <strong>Form preview.</strong>
+                            Submission is not yet wired up — coming in #658 iteration 3.
+                            For now, this page shows the contact form layout only.
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="contact-name" class="form-label">Your name</label>
+                            <input type="text" class="form-control" id="contact-name" disabled>
+                        </div>
+                        <div class="mb-3">
+                            <label for="contact-email" class="form-label">Your email</label>
+                            <input type="email" class="form-control" id="contact-email" disabled>
+                        </div>
+                        <div class="mb-3">
+                            <label for="contact-subject" class="form-label">Subject</label>
+                            <input type="text" class="form-control" id="contact-subject" disabled>
+                        </div>
+                        <div class="mb-3">
+                            <label for="contact-message" class="form-label">Message</label>
+                            <textarea class="form-control" id="contact-message" rows="5" disabled></textarea>
+                        </div>
+                        <button type="button" class="btn btn-primary" disabled>
+                            <i class="fas fa-paper-plane"></i> Send (disabled until iteration 3)
+                        </button>
+                    <% } %>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('footer') %>

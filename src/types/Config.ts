@@ -43,10 +43,33 @@ export interface WikiConfig {
   'ngdpbase.application.registration': boolean;
 
   /**
-   * Wiki page slug to redirect to when registration is disabled.
-   * Operators control the page content via the wiki UI. Default: "request-access".
+   * Page slug to link to when registration is disabled. Operators control
+   * the page content via the system UI. Default: "request-access".
    */
   'ngdpbase.application.registration.redirect-page': string;
+
+  /**
+   * Contact endpoint kill switch (#658). When false, /contact returns 404.
+   * Default: true.
+   */
+  'ngdpbase.application.contact.enabled': boolean;
+
+  /**
+   * Optional override page slug for /contact (#658). When non-empty,
+   * /contact 302-redirects to /view/<slug> instead of rendering the
+   * built-in form. Cannot equal "contact" — redirect loop, rejected at
+   * startup. Default: "" (use built-in form).
+   */
+  'ngdpbase.application.contact.page': string;
+
+  /**
+   * Optional explicit recipient address (or comma-separated list / alias)
+   * for /contact submissions (#658). When empty, recipient is resolved at
+   * request time to the email of the first user with the admin role whose
+   * email is not the install-default sentinel "admin@localhost". Email is
+   * never rendered to clients. Default: "".
+   */
+  'ngdpbase.application.contact.recipient': string;
 
   /** Server port */
   'ngdpbase.server.port': number;

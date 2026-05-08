@@ -97,6 +97,7 @@ class ConfigurationManager extends BaseManager {
     try {
       await this.loadConfigurations();
       await this.assertBaseUrlConfigured();
+      this.assertContactPageNotLoop();
       logger.info(`ConfigurationManager initialized for environment: ${this.environment}`);
       logger.info(`Loaded configs: default + ${this.customConfig && Object.keys(this.customConfig).length > 0 ? 'custom' : 'no custom'}`);
     } catch (error) {
@@ -148,6 +149,27 @@ class ConfigurationManager extends BaseManager {
       'Falling back to the default \'http://localhost:3000\' would silently emit broken ' +
       'absolute URLs (template variables, magic-link emails, organization @ids). (#642)'
     );
+  }
+
+  /**
+   * #658: refuse to start if `ngdpbase.application.contact.page` is set to
+   * `"contact"` — that would make /contact 302-redirect to /view/contact,
+   * which (because /view/contact does not exist) ends as a 404 anyway, but
+   * earlier intermediate routing or future renames could turn it into an
+   * actual redirect loop. Reject explicitly so operators see a clear error
+   * instead of a runtime surprise.
+   */
+  private assertContactPageNotLoop(): void {
+    const raw = this.getProperty('ngdpbase.application.contact.page', '') as string;
+    const trimmed = (raw ?? '').trim();
+    if (trimmed === 'contact') {
+      throw new Error(
+        '[ConfigurationManager] Refusing to start: ' +
+        '\'ngdpbase.application.contact.page\' is set to "contact" — that would ' +
+        'make /contact redirect to itself. Set it to a different page slug, or ' +
+        'leave it empty to use the built-in /contact form. (#658)'
+      );
+    }
   }
 
   /**

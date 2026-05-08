@@ -851,4 +851,45 @@ describe('ConfigurationManager', () => {
       await expect(cm.initialize()).rejects.toThrow(/Refusing to start/);
     });
   });
+
+  describe('contact.page loop guard (#658 Iteration 2)', () => {
+    const writeContactDefault = async (extra: Record<string, unknown> = {}) => {
+      await fs.writeJson(
+        path.join(tempDir, 'config', 'app-default-config.json'),
+        {
+          'ngdpbase.application-name': 'TestWiki',
+          'ngdpbase.application.base-url': 'http://localhost:3000',
+          'ngdpbase.application.contact.enabled': true,
+          'ngdpbase.application.contact.page': '',
+          'ngdpbase.application.contact.recipient': '',
+          ...extra
+        },
+        { spaces: 2 }
+      );
+    };
+
+    test('contact.page = "" does not throw', async () => {
+      await writeContactDefault();
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+
+    test('contact.page = "support" does not throw', async () => {
+      await writeContactDefault({ 'ngdpbase.application.contact.page': 'support' });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+
+    test('contact.page = "contact" throws fatal startup error', async () => {
+      await writeContactDefault({ 'ngdpbase.application.contact.page': 'contact' });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).rejects.toThrow(/Refusing to start.*contact\.page.*"contact".*#658/s);
+    });
+
+    test('contact.page = "  contact  " (whitespace-padded) throws — trimmed before comparison', async () => {
+      await writeContactDefault({ 'ngdpbase.application.contact.page': '  contact  ' });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).rejects.toThrow(/Refusing to start.*contact\.page/s);
+    });
+  });
 });

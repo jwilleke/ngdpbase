@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.11.0] - 2026-05-08
+
+### Added
+
+- **`GET /contact`** route (#658 iteration 2) — built-in contact endpoint with
+  a four-state behavior matrix:
+  - `contact.enabled = false` → 404 (kill switch)
+  - `contact.page = "<slug>"` → 302 → `/view/<slug>` (operator-owned override)
+  - `contact.page = ""` + recipient resolved → render form preview view
+  - `contact.page = ""` + no routable admin email → render
+    "Contact form is not configured" view
+- Three new config keys, all under `ngdpbase.application.contact.*`:
+  - **`ngdpbase.application.contact.enabled`** (boolean, default `true`) —
+    kill switch.
+  - **`ngdpbase.application.contact.page`** (string, default `""`) — slug to
+    redirect `/contact` to instead of rendering the built-in form. Cannot
+    equal `"contact"` — a redirect loop, rejected at startup with a clear
+    error message (`ConfigurationManager.assertContactPageNotLoop`).
+  - **`ngdpbase.application.contact.recipient`** (string, default `""`) —
+    explicit recipient address (or list/alias). When empty, recipient is
+    resolved at request time to the first user with the `admin` role whose
+    email is non-empty AND not the install-default sentinel
+    `admin@localhost`. The sentinel rule keeps the contact feature dormant
+    on fresh installs that haven't set a real admin email yet, instead of
+    mailing into a black hole. The resolved address is **never rendered to
+    clients** — server-side only.
+- **`UserManager.getContactRecipient(override)`** — recipient resolution
+  helper (11 unit tests in
+  `src/managers/__tests__/UserManager.getContactRecipient.test.ts`).
+- **`views/contact.ejs`** — branches on `state` (`form` | `not-configured`).
+  In iteration 2 the form view shows the field layout with the submit button
+  disabled and a banner ("Submission is not yet wired up — coming in #658
+  iteration 3"). The actual POST handler, mail send, rate limit, honeypot,
+  and CSRF wiring land in iteration 3.
+- 9 route tests in `src/routes/__tests__/WikiRoutes.contact.test.ts` cover
+  the full state matrix and the "recipient not rendered to client" invariant.
+- 4 startup-invariant tests in `ConfigurationManager.test.ts` for the
+  `contact.page === "contact"` loop guard (including whitespace-trim).
+
+### Changed
+
+- `ConfigurationManager.initialize()` now calls
+  `assertContactPageNotLoop()` after `assertBaseUrlConfigured()` —
+  refuses to start if `contact.page` is set to `"contact"`.
+
 ## [3.10.6] - 2026-05-08
 
 ### Added

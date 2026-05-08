@@ -954,6 +954,32 @@ class UserManager extends BaseManager {
   }
 
   /**
+   * #658: resolve the recipient address for /contact submissions.
+   *
+   * 1. Trimmed `recipientOverride` (from `ngdpbase.application.contact.recipient`)
+   *    if non-empty — used verbatim, may be a list or alias.
+   * 2. Else: first user with the `admin` role whose email is non-empty AND
+   *    not the install-default sentinel `admin@localhost`. The sentinel
+   *    keeps the contact feature dormant on fresh installs that haven't
+   *    set a real admin email yet, instead of mailing into a black hole.
+   * 3. Else: `null` — caller must render "Contact form is not configured"
+   *    rather than attempting to send.
+   *
+   * The returned address is server-side only; never render it to clients.
+   */
+  async getContactRecipient(recipientOverride: string): Promise<string | null> {
+    const trimmed = (recipientOverride ?? '').trim();
+    if (trimmed) return trimmed;
+
+    const all = await this.getUsers();
+    for (const u of all) {
+      if (!u.email || u.email === 'admin@localhost') continue;
+      if (await this.hasRole(u.username, 'admin')) return u.email;
+    }
+    return null;
+  }
+
+  /**
    * Search users by username, displayName, or email (case-insensitive substring).
    * Optionally filter by role and active status.
    */
