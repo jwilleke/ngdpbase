@@ -14,12 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Default `ngdpbase.application.registration.redirect-page` slug `request-access`
   pointed at no shipped page. Added `required-pages/<uuid>.md` (slug
   `request-access`, title "Request access") with generic operator-overridable
-  copy referencing `[Contact Us]`. The page is auto-loaded on the next server
-  restart by `VersioningFileProvider`'s required-pages scanner — no re-install
-  or manual seed needed. Operators that already shipped their own page titled
-  "Request access" (e.g., via an addon) keep theirs: the scanner skips on
-  title collision (`VersioningFileProvider.ts:480`), so operator content
-  always wins. Fixes #657 (introduced by #654 in 3.10.3).
+  copy referencing `[Contact Us]`. Existing installs pick up the new page on
+  the next `./server.sh restart` — `VersioningFileProvider`'s boot scanner
+  auto-loads required-pages whose UUID is not yet in the index. For ongoing
+  required-page changes (modifications, title drift, UUID conflicts), admins
+  can review and selectively sync via `/admin/required-pages` — the
+  comparison UI shows per-page `new` / `modified` / `current` / `uuid-mismatch`
+  status, supports force-sync, reconciliation, and addon-page diffing, and
+  skips pages with `user-modified: true` so operator edits are preserved.
+  Operators that already shipped their own page titled "Request access" keep
+  theirs: the boot scanner skips on title collision
+  (`VersioningFileProvider.ts:480`). Fixes #657 (introduced by #654 in 3.10.3).
 
 ## [3.10.3] - 2026-05-08
 
