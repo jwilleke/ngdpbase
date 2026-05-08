@@ -1,6 +1,6 @@
 # Addon System Architecture
 
-Internal reference for the ngdpbase addon subsystem. Covers load order, manager contracts, config resolution, type setup, and integration points. For build-your-own-addon instructions, see [`addon-development-guide.md`](./addon-development-guide.md).
+Internal reference for the ngdpbase addon subsystem. Covers load order, manager contracts, config resolution, type setup, and integration points. For build-your-own-addon instructions, see [`addon-development-guide.md`](./addon-development-guide.md). For the slug-naming rules every addon must follow (and what breaks if you rename one), see [`addon-identity-contract.md`](./addon-identity-contract.md).
 
 ---
 
