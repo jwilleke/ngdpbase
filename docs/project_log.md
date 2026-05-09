@@ -2,6 +2,39 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-09-06
+
+- Agent: Claude Opus 4.7
+- Subject: Node floor bump 18/20 → 24 across runtime + GitHub Actions checkout/setup-node v4 → v5; resolves the 2026-06-02 GHA deprecation cliff and modernizes the EOL'd app runtime in one cleanup
+- Current Issue: none — driven by the operator noting GHA deprecation warnings on every workflow run plus Node 20 EOL (April 2026)
+- Tests: 5311 unit tests pass locally on Node v24.11.1
+- Work Done:
+  - Surveyed every Node-version source-of-truth in the repo before changing anything: `package.json` engines (root + 4 addons), `SETUP.md`, `docker/Dockerfile` ARG, `docker-build.yml` DOCKER_NODE_VERSION env, three CI workflow matrices, plus all `actions/setup-node` standalone `node-version:` lines. No `.nvmrc` exists; not adding one this pass.
+  - Disambiguated two unrelated Node concerns up-front: (1) the GHA *runner* internally executing actions on Node 20 (forced to 24 by 2026-06-02 — fixed by bumping action versions), separate from (2) our app's Node runtime (fixed by bumping engines + Dockerfile). The deprecation only forces #1; #2 is a separate maintenance decision driven by Node 20 EOL.
+  - **GHA action bumps:** `actions/checkout@v4 → @v5` and `actions/setup-node@v4 → @v5` across all four workflow files (`ci.yml`, `ci-passing-tests.yml`, `docker-build.yml`, `showdown-patch-check.yml`) via single sed pass — 19 references total. The v5 releases run on Node 24 internally, closing the 2026-06-02 cliff.
+  - **App runtime bump:** root `engines.node`: `>=18.0.0` → `>=24.0.0`; root `engines.npm`: `>=9.0.0` → `>=11.0.0` (Node 24's default npm). Four bundled addons' `engines.node`: `>=18` → `>=24`. `SETUP.md` prerequisite line: `Node.js v18+` → `Node.js v24+` with EOL notes for 18 and 20. `docker/Dockerfile`'s `ARG NODE_VERSION=20` → `=24`. `docker-build.yml`'s `DOCKER_NODE_VERSION: '20'` → `'24'`. CI matrices `[18.x, 20.x]` / `[20.x]` collapsed to `[24.x]` — one rung saves a few minutes per CI push. Standalone `setup-node` `node-version: 20.x` lines and the `if: matrix.node-version == '20.x'` guard all bumped to `24.x` via the same sed pass.
+  - Verified: `npm install` clean (lockfile only updated the engines block); `npm test` clean — 5311 tests pass on Node 24. The repo is already developed on Node 24.11.1 locally.
+- Out of scope (worth noting):
+  - Did NOT bump `codecov/codecov-action@v4`, `actions/upload-artifact@v4`, `docker/setup-qemu-action@v3`, `docker/setup-buildx-action@v3`, `docker/login-action@v3`, `docker/metadata-action@v5`, `docker/build-push-action@v5`, or `aquasecurity/trivy-action@master`. These weren't named in the 2026-06-02 deprecation warning the operator surfaced; Renovate will handle them on its normal cadence.
+  - Did NOT add an `.nvmrc`. Mentioned earlier as a small bonus; can ride along with another change if useful.
+  - Sister-site propagation (`/othersites`) is out of band: each PM2-managed host (jimstest, fairways-base, ngdpbase-veg, ngdp-temp-builds) needs Node 24 actually installed before pulling the new `engines` floor — `npm install` would warn (or error under `engine-strict`) on Node 20 hosts. Operator's call when to do that propagation pass.
+- Commits:
+  - `4c027b60` chore: bump Node floor to 24, GitHub Actions to v5
+- Files Modified:
+  - `.github/workflows/ci.yml`
+  - `.github/workflows/ci-passing-tests.yml`
+  - `.github/workflows/docker-build.yml`
+  - `.github/workflows/showdown-patch-check.yml`
+  - `SETUP.md`
+  - `addons/calendar/package.json`
+  - `addons/elasticsearch/package.json`
+  - `addons/forms/package.json`
+  - `addons/journal/package.json`
+  - `docker/Dockerfile`
+  - `package.json`
+  - `package-lock.json`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-09-05
 
 - Agent: Claude Opus 4.7
