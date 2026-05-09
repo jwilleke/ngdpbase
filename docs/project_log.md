@@ -2,6 +2,27 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-09-07
+
+- Agent: Claude Opus 4.7
+- Subject: Light propagation pass — `git pull && npm install` only on the three sister-site working copies so they pick up today's `engines.node >= 24.0.0` floor
+- Current Issue: none — verification + propagation pass; no bugs filed
+- Tests: not run — engines metadata only, no source changed since the running processes (already on Node 24.11.1 via the shared nvm install) restarted earlier today
+- Work Done:
+  - Confirmed pre-flight: every running PM2 process (jimstest, fairways-base, ngdpbase-veg as "GeoHazardWatch", ngdp-temp-builds) is already executing on `/Users/jim/.nvm/versions/node/v24.11.1/bin/node`. The four sister "sites" share one nvm install on this Mac and the same pm2 daemon, so the Node 24 bump from session 2026-05-09-06 was already in effect at runtime — only the persisted `engines` metadata in each working-copy `package.json` needed catching up.
+  - Per-site sequential workflow: `git pull --ff-only` → `npm install`. Each site had a drifted `package-lock.json` from prior propagation passes; followed the `/othersites` skill's documented pattern (`git checkout -- package-lock.json` → re-pull → `npm install`) to discard the known-identical-to-master lockfile drift before pulling.
+  - **Site 2 — fairways-base** (port 2121): pulled `ce4c126e..d08b0a8f`, npm install clean, `engines.node` now `>=24.0.0`. Untracked `docs/planning/plan-addon-accounting.md` left alone.
+  - **Site 3 — ngdpbase-veg** (port 3333, "GeoHazardWatch"): pulled `ce4c126e..d08b0a8f`, npm install clean, `engines.node` now `>=24.0.0`.
+  - **Site 4 — ngdp-temp-builds** (port 3001): pulled `ce4c126e..d08b0a8f`, npm install clean, `engines.node` now `>=24.0.0`.
+  - Did NOT run `npm run build` / `./server.sh restart` / `npm test` / `npm run test:e2e` on the sister sites this pass — engines bump is metadata-only; no source code changed since the last full propagation in 2026-05-09-03 plus the doc-only changes in 2026-05-09-04 and 2026-05-09-05. The running processes are already on Node 24 and don't need to be cycled.
+  - `npm audit` per site shows the same single moderate (`showdown` ReDoS, tracked by #599). No new vulnerabilities introduced by the engine bump.
+- Notable observations:
+  - The `package-lock.json` drift on every sister site is the same recurring pattern — each prior `npm install` writes the lockfile back with identical content but a different metadata hash; nothing functional. Could be silenced by committing the lockfile post-install on each site, but the sites don't push to a remote, so it'd just re-drift on the next install. Living with it.
+  - The Mac-level Node version manager is **nvm** (`~/.nvm`), already aliased `default → 24` (`24.11.1`). Available LTS labels: `lts/krypton → v24.11.1` (current), `lts/jod → v22.21.1` (uninstalled), `lts/iron → v20.19.6` (uninstalled). One-host story for all four sites — no per-site Node management needed.
+- Commits: none this session (verification + propagation only — no code changes in this repo)
+- Files Modified:
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-09-06
 
 - Agent: Claude Opus 4.7
