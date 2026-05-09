@@ -155,6 +155,16 @@ ngdpbase uses a **hierarchical configuration system** with three layers (later o
 
 **Note:** Properties starting with `_` are treated as comments and ignored.
 
+### Operator Guides
+
+For deploy-time and runtime operator topics see `docs/admin/`:
+
+- [Self-Registration](./docs/admin/Self-Registration.md) — disable the public `/register` form
+- [Email Setup](./docs/admin/email-setup.md) — outbound mail (magic-link login, contact form)
+- [Backups](./docs/admin/Backups.md) — backup configuration
+- [Telemetry](./docs/admin/Telemetry.md) — metrics and observability
+- [Versioning Deployment Guide](./docs/admin/Versioning-Deployment-Guide.md) — page-versioning storage layout
+
 ## Project Structure
 
 ```bash

@@ -130,6 +130,14 @@ PORT=3000            # Server port (default: 3000)
 
 See [docs/architecture/](./docs/architecture/) for configuration system details.
 
+### Common operator topics
+
+- [docs/admin/Self-Registration.md](./docs/admin/Self-Registration.md) — disable the public `/register` form and route visitors to a "Request access" page (any deploy mode)
+- [docs/admin/email-setup.md](./docs/admin/email-setup.md) — outbound mail (magic-link login, contact form)
+- [docs/admin/Backups.md](./docs/admin/Backups.md) — backup configuration
+- [docs/admin/Telemetry.md](./docs/admin/Telemetry.md) — metrics and observability
+- [docs/admin/Versioning-Deployment-Guide.md](./docs/admin/Versioning-Deployment-Guide.md) — page-versioning storage layout
+
 ## Server Management
 
 ### Start Server
