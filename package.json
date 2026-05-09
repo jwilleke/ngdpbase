@@ -157,7 +157,8 @@
     "cookie": "^0.7.0",
     "hono": "^4.12.18",
     "follow-redirects": "^1.16.0",
-    "basic-ftp": "^5.3.1"
+    "basic-ftp": "^5.3.1",
+    "fast-uri": "^3.1.2"
   },
   "engines": {
     "node": ">=18.0.0",
