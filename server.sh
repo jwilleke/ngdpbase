@@ -463,6 +463,27 @@ case "${1:-}" in
     fi
     ;;
 
+  upgrade-pm2)
+    # Reload the running PM2 daemon onto the version installed in node_modules.
+    # Wraps `pm2 update` (save → kill → respawn → resurrect) so apps registered
+    # by OTHER repos under this user's daemon survive the swap. Prefer this over
+    # `unlock` whenever you've just bumped the pm2 dep.
+    #
+    # `pm2 update` is idempotent — safe to run when versions already match
+    # (will simply save, kill, respawn, restore at the same version).
+    PM2_BIN="$SCRIPT_DIR/node_modules/.bin/pm2"
+    if [ ! -x "$PM2_BIN" ]; then
+      echo "❌ pm2 not found in node_modules. Run 'npm install' first."
+      exit 1
+    fi
+    LOCAL_PM2=$("$PM2_BIN" --version 2>/dev/null | tail -1)
+    echo "🔄 Upgrading PM2 daemon to local pm2 $LOCAL_PM2..."
+    echo "   (preserves apps registered by other repos sharing this user's daemon)"
+    "$PM2_BIN" update
+    NEW_PM2=$("$PM2_BIN" --version 2>/dev/null | tail -1)
+    echo "✅ Daemon now running pm2 $NEW_PM2"
+    ;;
+
   unlock)
     echo "🔓 Unlocking server (nuclear cleanup)..."
 
@@ -549,7 +570,7 @@ case "${1:-}" in
   *)
     echo "ngdpbase Server Management"
     echo ""
-    echo "Usage: $0 {setup|start|stop|restart|status|logs|env|unlock} [environment]"
+    echo "Usage: $0 {setup|start|stop|restart|status|logs|env|upgrade-pm2|unlock} [environment]"
     echo ""
     echo "Commands:"
     echo "  setup        - Fresh-clone setup: install deps, build, and start"
@@ -566,8 +587,13 @@ case "${1:-}" in
     echo "                 • Node processes"
     echo "  logs [n]     - Show server logs (n = line count, default: 50)"
     echo "  env          - Show current environment and available configs"
+    echo "  upgrade-pm2  - Reload the PM2 daemon onto the version in node_modules"
+    echo "                 (pm2 update — save/kill/respawn/resurrect, preserves siblings)"
+    echo "                 Use after bumping the pm2 dep instead of unlock."
     echo "  unlock       - Force unlock server (clears PM2, kills processes, removes locks)"
-    echo "                 Use if server crashed or stuck"
+    echo "                 Use if server crashed or stuck — NUCLEAR; kills sibling apps"
+    echo "                 sharing this user's PM2 daemon. Prefer upgrade-pm2 for routine"
+    echo "                 daemon-binary upgrades."
     echo ""
     echo "Process Management:"
     echo "  • Single instance guaranteed via .ngdpbase.pid lock"
