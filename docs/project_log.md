@@ -2,6 +2,30 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-09-03
+
+- Agent: Claude Opus 4.7
+- Subject: `/othersites` propagation pass for v3.11.3 (security release) — pull/build/start/test all 4 sites; resolves the unlock-orphans from session 2026-05-09-02
+- Current Issue: none (verification + propagation pass; no bugs filed)
+- Tests: **21,532 total (4 × 5311 unit + 4 × 72 E2E), zero failures across 4 sites**
+- Work Done:
+  - Pre-flight discovered all 3 sister sites were OFFLINE before propagation: fairways-base, ngdpbase-veg, and ngdp-temp-builds were all stopped (no pm2 entries, ports unreachable). The shared per-user pm2 daemon had only `jimstest` (running on the freshly-bumped v7.0.1 binary from earlier in this session).
+  - Per-site sequential workflow (matching 2026-05-08-09 to avoid resource contention): `git pull --ff-only` → `./server.sh stop` (no-op for the offline sites) → `npm install` → `npm run build` → `./server.sh start` → `npm test` → `PORT=<port> npm run test:e2e`.
+  - **Site 1 — jimstest** (port 3000): already on disk at v3.11.3 from this session's `/semver patch`; restart was needed so the running PM2 process picked up the new build. Vitest 5311 pass, Playwright 72 pass (2.7m on SLOW_STORAGE — expected per memory).
+  - **Site 2 — fairways-base "The Fairways"** (port 2121): 1 untracked file (`docs/planning/plan-addon-accounting.md`) left alone. Pulled v3.11.2 → v3.11.3. Vitest 5311 pass, Playwright 72 pass (27s).
+  - **Site 3 — ngdpbase-veg "ve-geology"** (port 3333): Had a local uncommitted diff on `themes/core.css` adding the `.plugin-placement-*` CSS rules — IDENTICAL byte-for-byte to what `f07fd940 feat(plugins): placement contract` had merged upstream. Per the `/othersites` skill guidance for "known-identical-to-master files": `git checkout -- themes/core.css` then re-pull. Pulled v3.11.2 → v3.11.3. Vitest 5311 pass, Playwright 72 pass (21s).
+  - **Site 4 — ngdp-temp-builds** "ngdpbase temp build" (port 3001, `/Volumes/hd2/ngdp-temp-builds/ngdpbase`, FAST/SLOW_STORAGE both at `/Volumes/hd2/ngdp-temp-builds/ngdpbase/data`): pulled v3.11.2 → v3.11.3. Vitest 5311 pass, Playwright 72 pass (21s).
+  - All 4 PM2 processes confirmed `online` at v3.11.3 post-test, all 4 ports return HTTP 302 (login redirect) on `/`.
+- Notable observations:
+  - The unlock-orphan apps from session 2026-05-09-02 (`ngdpbase temp build` and `GeoHazardWatch`) are both resurrected. **`GeoHazardWatch` is not a separate project** — it's the `ngdpbase.application-name` from `ngdpbase-veg`'s custom config (`data/config/app-custom-config.json`). The `ecosystem.config.js` `readAppName()` priority puts custom config above `.env PROJECT_NAME`, so PM2 displays "GeoHazardWatch" while `.env` says PROJECT_NAME="ve-geology" — both refer to the same process (PID 78541 on port 3333).
+  - All 3 sister sites started against an in-memory pm2 daemon (7.0.1) that was newer than each site's local pm2 binary (6.0.14, pre-`npm install`). PM2 emitted "In-memory PM2 is out-of-date, do: $ pm2 update" warnings during `./server.sh stop` — harmless; once each site ran `npm install`, the local binary aligned to 7.0.1.
+  - The known intermittent `WikiRoutes.coverage3.test.ts` "401 when not authenticated" timeout (#622) did not reproduce on any of the 4 sites today.
+  - jimstest E2E remains ~7× slower than other sites (2.7m vs ~21–27s) — same SLOW_STORAGE I/O cost as prior runs.
+  - Today's two-stage security work (fast-uri override at v3.11.2.1-equivalent, pm2 v7 bump and override cleanup at v3.11.3) propagated cleanly to all sister sites in one pass — no per-site fixes required, no bugs filed.
+- Commits: none this session block (verification + propagation only — no code changes)
+- Files Modified:
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-09-02
 
 - Agent: Claude Opus 4.7
