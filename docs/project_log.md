@@ -2,6 +2,34 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-09-08
+
+- Agent: Claude Opus 4.7
+- Subject: App-wide CSRF middleware (#663) — closes the gap where csurf was a dead dep, no middleware validated tokens, and `req.session.csrfToken` was never assigned. Surfaced during #658 iteration 3.
+- Current Issue: #663 (open until reviewed; the fix is ready)
+- Tests: 5324 vitest unit tests pass (13 new, in `src/middleware/__tests__/csrf.test.ts`); 72 Playwright E2E tests pass; live smoke on jimstest verified GET → token issued, POST without token → 403, POST with token → 302.
+- Work Done:
+  - Surveyed code before designing: 74 state-changing routes (`app.post|put|delete|patch`) all in `WikiRoutes.ts` (issue body listed ~7 examples; actual count is ~10× higher). 18 EJS templates already had `<input type="hidden" name="_csrf" value="<%= csrfToken %>">` — they were just rendering empty because the session token was never set. 13 templates with `<form>` had no `_csrf` reference at all; 10+ templates ran client-side `fetch()` to state-changing endpoints. Issue body said field name was `_csrfToken`; actual is `_csrf`. csurf is officially DEPRECATED and archived per `npm view csurf`.
+  - Decided **custom session-bound middleware** over `csrf-csrf` because the existing 34 source references and the issue body itself assume session-bound, the result is ~50 LOC with no new dep, and it slots cleanly into the existing express-session + cookie-parser stack. csrf-csrf would have meant rewriting the template-plumbing for double-submit-cookie semantics.
+  - Wrote `src/middleware/csrf.ts`: issues 32-byte hex token on first contact with any session that doesn't have one; SAFE_METHODS (GET/HEAD/OPTIONS) pass through; POST/PUT/DELETE/PATCH require token via `X-CSRF-Token` header OR `_csrf` body field; mismatch → 403 + `logger.warn`; comparison uses `crypto.timingSafeEqual` after a length-equal guard.
+  - Hit a session-file-store race during E2E: parallel browser contexts ran the form-submit POST faster than the file-store write completed, so the POST hit before the session file landed on disk → server creates a fresh session with a different token → 403. Fixed by forcing `req.session.save()` synchronously in the middleware before `next()` on first-issue path. Pay the latency cost once per session; cheap thereafter (if-guard skips).
+  - Test helper at `src/middleware/__tests__/__fixtures__/csrfTestHelpers.ts` (under `__fixtures__/` per the #638 convention so vitest doesn't try to execute the helper as a test). Exports `TEST_CSRF_TOKEN`, `csrfTestSessionFields`, `csrfTestHeaders`, `csrfTestBodyField` — keeps the token + names in one place across future route tests.
+  - 13 unit tests in `csrf.test.ts` covering token issuance, idempotent existing-token handling, safe-method passthrough, header/body validation, same-length-but-different rejection, missing-side cases, and `generateCsrfToken` properties.
+  - Wired the middleware in `src/app.ts:393-401` between userContext middleware and route registration. Addons inherit protection automatically.
+  - Template plumbing: added `<meta name="csrf-token" content="<%= csrfToken %>">` and `<script src="/js/csrf.js">` to `views/header.ejs`. New `public/js/csrf.js` exposes `window.csrfFetch()` (auto-injects `X-CSRF-Token` on non-safe methods) and `window.getCsrfToken()`. Bulk-replaced 22 inline `fetch(` calls across 9 view templates + `public/js/my-links.js` with `csrfFetch(`. Added `<input type="hidden" name="_csrf" value="<%= csrfToken %>">` to 8 forms that were missing it (admin-backup ×2, admin-import, admin-settings ×2, edit-backup, install ×2). `getCommonTemplateData()` in `WikiRoutes.ts` now populates `csrfToken` so every template using the common-data stream gets it; `installRoutes.ts` adds it to its standalone install render call.
+  - E2E `tests/e2e/fixtures/helpers.ts` `deletePage()` cleanup helper updated to fetch the token from `/login`'s meta tag (not `page.evaluate(...)` since `afterAll` cleanup pages are often at `about:blank`) and pass `X-CSRF-Token`. Otherwise afterAll cleanup orphans test pages with 403 warnings.
+- Notable observations to flag for follow-up (NOT fixed in this PR):
+  - **Existing route tests bypass the middleware.** They build their own express app inline and inline-mock `req.session`, so adding `csrfMiddleware` to the production app didn't break them — but it also didn't extend test coverage to the CSRF path. The new unit tests in `src/middleware/__tests__/csrf.test.ts` do cover it. Long-term, route tests should mirror the production middleware stack so the CSRF path is exercised end-to-end. Out of scope here; worth a separate audit.
+  - The middleware is enforce-mode by default. No "observe-only" mode, no env-gated bypass. Tests that need to bypass CSRF should either include the middleware AND use the test helper (correct path) or build their own app without it (current pattern). No `NODE_ENV=test` shortcut was added — keeps the production code path the same as the test code path.
+  - 6 of the 14 templates with `<form>` and no `_csrf` reference are GET-only forms (`media-search`, `search-results`, `page-history`, `header`, `export`, `admin-roles`/etc per a method-attribute audit) — those don't need `_csrf` because GET is a safe method. The other 5 (`admin-backup`, `admin-import`, `admin-settings`, `edit-backup`, `install`) had real POST forms missing the field; all 8 of those were fixed.
+- Commits:
+  - `95c78217` chore: catch up addon lockfiles to engines.node >=24 (drift from session 2026-05-09-06)
+  - `09dc0c36` feat(security): app-wide CSRF middleware (#663)
+- Files Modified:
+  - new: `src/middleware/csrf.ts`, `src/middleware/__tests__/csrf.test.ts`, `src/middleware/__tests__/__fixtures__/csrfTestHelpers.ts`, `public/js/csrf.js`
+  - modified: `src/app.ts`, `src/routes/WikiRoutes.ts`, `src/routes/InstallRoutes.ts`, `tests/e2e/fixtures/helpers.ts`, `public/js/my-links.js`, `views/header.ejs`, `views/admin-backup.ejs`, `views/admin-import.ejs`, `views/admin-settings.ejs`, `views/edit-backup.ejs`, `views/install.ejs`, `views/admin-attachments.ejs`, `views/admin-configuration.ejs`, `views/admin-dashboard.ejs`, `views/admin-keywords.ejs`, `views/admin-media.ejs`, `views/admin-organizations.ejs`, `views/admin-policies.ejs`, `views/admin-required-pages.ejs`, `views/admin-validation-report.ejs`, `views/edit.ejs`, `views/_asset-picker.ejs`, `addons/{calendar,elasticsearch,forms,journal}/package-lock.json`
+  - this entry in `docs/project_log.md`
+
 ## 2026-05-09-07
 
 - Agent: Claude Opus 4.7
