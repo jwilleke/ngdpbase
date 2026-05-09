@@ -2,6 +2,26 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-09-01
+
+- Agent: Claude Opus 4.7
+- Subject: Dependabot triage — override `fast-uri` to `^3.1.2` to patch CVE-2026-6321 (path traversal) and CVE-2026-6322 (host confusion); lockfile sync from earlier 3.10.0→3.11.2 drift
+- Current Issue: none — alerts are tracked by Dependabot directly (#102, #103); no GH tracker issue exists for either
+- Tests: not run — change is an override on a transitive `ajv → fast-uri` dep, no source code touched
+- Work Done:
+  - Diagnosed three open Dependabot alerts: #102 (`fast-uri` <= 3.1.0, high, path traversal via `%2F`/`%2E` decoded before dot-segment removal), #103 (`fast-uri` <= 3.1.1, high, authority confusion via `%40`/`%3A`), #96 (`showdown` <= 2.1.0, medium, ReDoS — no upstream patch, already tracked by #599).
+  - Confirmed `fast-uri` is purely transitive: `ngdpbase → ajv@8.18.0 → fast-uri@3.1.0`. `ajv@8.20.0` (latest) still declares `^3.0.1` so a plain `npm update ajv` would not deterministically pull 3.1.2.
+  - Added `"fast-uri": "^3.1.2"` to the existing `overrides` block in `package.json` (same pattern already used for `cookie`, `hono`, `follow-redirects`, `basic-ftp`, `gray-matter→js-yaml`). `npm install` resolved `fast-uri@3.1.2` in the lockfile. `npm ls fast-uri` verified.
+  - Earlier in this session: committed a stale `package-lock.json` version drift (3.10.0 → 3.11.2 catching up to `package.json`) as `787c8056` before the override work. That drift was harmless but had been sitting unstaged across recent release activity.
+  - Remaining `npm audit` items not addressed here: `showdown` (no upstream fix, #599 is the tracker) and `pm2` ReDoS (separate, requires `pm2@7.0.1` breaking change — out of scope for this commit).
+- Commits:
+  - `787c8056` chore: sync package-lock.json to 3.11.2
+  - `9d592895` chore(deps): override fast-uri to ^3.1.2 to patch CVE-2026-6321 and CVE-2026-6322
+- Files Modified:
+  - `package.json` (overrides block — added fast-uri)
+  - `package-lock.json` (resolved fast-uri 3.1.0 → 3.1.2; earlier 3.10.0 → 3.11.2 sync)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-08-09
 
 - Agent: Claude Opus 4.7
