@@ -389,8 +389,18 @@ void (async (): Promise<void> => {
     });
   });
 
-  // 6b. Initialize addons NOW — after session + userContext middleware — so addon
-  //     route handlers can read req.session and req.userContext normally.
+  // 6b. CSRF middleware (#663) — issues a per-session token and validates it
+  //     on every state-changing request. Must run AFTER session + userContext
+  //     so it can read req.session, and BEFORE any route registration.
+  //     Templates surface the token via getCommonTemplateData() as `csrfToken`;
+  //     forms render `<input name="_csrf" value="<%= csrfToken %>">`;
+  //     JS-driven fetches submit it via the `X-CSRF-Token` header.
+  const { csrfMiddleware } = await import('./middleware/csrf.js');
+  app.use(csrfMiddleware);
+
+  // 6c. Initialize addons NOW — after session + userContext + CSRF middleware
+  //     — so addon route handlers can read req.session and req.userContext
+  //     normally and inherit CSRF protection on their own POST routes.
   await engine.initializeAddons();
 
   // 7. Register Routes

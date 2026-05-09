@@ -468,7 +468,7 @@ async function showDiff(uuid, title, liveUuid = '') {
     try {
         const apiParams = new URLSearchParams({ uuid, source: 'required' });
         if (liveUuid) apiParams.set('liveUuid', liveUuid);
-        const response = await fetch(`/api/admin/diff?${apiParams}`, {
+        const response = await csrfFetch(`/api/admin/diff?${apiParams}`, {
             headers: { 'X-CSRF-Token': CSRF_TOKEN }
         });
         const result = await response.json();
@@ -569,7 +569,7 @@ async function doSync(uuids, statusMsg, force = false) {
     showToast(statusMsg);
 
     try {
-        const response = await fetch('/admin/required-pages/sync', {
+        const response = await csrfFetch('/admin/required-pages/sync', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -629,7 +629,7 @@ function reconcileAllMismatches() {
 async function doReconcile(items, statusMsg) {
     showToast(statusMsg);
     try {
-        const response = await fetch('/admin/required-pages/sync', {
+        const response = await csrfFetch('/admin/required-pages/sync', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -678,7 +678,7 @@ function adoptUuidAll() {
 async function doAdoptUuid(items, statusMsg) {
     showToast(statusMsg);
     try {
-        const response = await fetch('/admin/required-pages/sync', {
+        const response = await csrfFetch('/admin/required-pages/sync', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -715,7 +715,7 @@ async function pushToSourceOne(uuid, title) {
     )) return;
     showToast(`Pushing "${title}" to source…`);
     try {
-        const response = await fetch('/admin/required-pages/sync', {
+        const response = await csrfFetch('/admin/required-pages/sync', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

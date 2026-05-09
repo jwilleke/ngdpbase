@@ -489,7 +489,7 @@ async function confirmRestart() {
     }
 
     try {
-        const response = await fetch('/admin/restart', {
+        const response = await csrfFetch('/admin/restart', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
@@ -519,7 +519,7 @@ async function clearCache() {
         button.disabled = true;
         button.textContent = 'Clearing...';
 
-        const response = await fetch('/api/admin/cache/clear', {
+        const response = await csrfFetch('/api/admin/cache/clear', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
@@ -561,7 +561,7 @@ async function reindexPages() {
 
         const csrfToken = document.querySelector('input[name="_csrf"]')?.value || '<%= csrfToken %>';
 
-        const enqueueRes = await fetch('/api/admin/jobs/pages.reindex/enqueue', {
+        const enqueueRes = await csrfFetch('/api/admin/jobs/pages.reindex/enqueue', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'CSRF-Token': csrfToken }
         });
@@ -598,7 +598,7 @@ async function pollJobStatus(runId, intervalMs = 1500, maxWaitMs = 600000) {
     const deadline = Date.now() + maxWaitMs;
     while (Date.now() < deadline) {
         await new Promise(r => setTimeout(r, intervalMs));
-        const res = await fetch(`/api/admin/jobs/${runId}/status`);
+        const res = await csrfFetch(`/api/admin/jobs/${runId}/status`);
         if (!res.ok) throw new Error('Status check failed');
         const run = await res.json();
         if (run.status === 'completed' || run.status === 'failed') return run;
@@ -644,7 +644,7 @@ async function dashboardMediaRescan() {
     status.style.display = 'none';
     try {
         const csrfToken = document.querySelector('input[name="_csrf"]')?.value || '<%= csrfToken %>';
-        const enqueueRes = await fetch('/api/admin/jobs/media.rescan/enqueue', {
+        const enqueueRes = await csrfFetch('/api/admin/jobs/media.rescan/enqueue', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'CSRF-Token': csrfToken }
         });
@@ -676,7 +676,7 @@ async function dashboardMediaRebuild() {
     status.style.display = 'none';
     try {
         const csrfToken = document.querySelector('input[name="_csrf"]')?.value || '<%= csrfToken %>';
-        const enqueueRes = await fetch('/api/admin/jobs/media.rebuild/enqueue', {
+        const enqueueRes = await csrfFetch('/api/admin/jobs/media.rebuild/enqueue', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'CSRF-Token': csrfToken }
         });
@@ -701,7 +701,7 @@ async function dashboardMediaRebuild() {
 // Check for updates on page load (non-blocking)
 (async function() {
     try {
-        const resp = await fetch('/api/check-updates');
+        const resp = await csrfFetch('/api/check-updates');
         if (!resp.ok) return;
         const data = await resp.json();
         const el = document.getElementById('update-check-result');

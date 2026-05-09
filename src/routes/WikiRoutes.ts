@@ -560,12 +560,14 @@ class WikiRoutes {
       capabilities: Record<string, boolean>;
       allowRegistration: boolean;
       registrationRedirectPage: string;
+      csrfToken: string;
       leftMenu?: string;
       footer?: string;
     } = {
       currentUser: userContext,
       user: userContext,       // alias
       userContext: userContext, // used by page-history.ejs and other templates
+      csrfToken: req.session?.csrfToken || '', // #663: token for header meta + form _csrf inputs
       appName: configManager?.getProperty(
         'ngdpbase.application-name',
         'ngdpbase'

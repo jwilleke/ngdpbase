@@ -5,7 +5,7 @@
 
 async function addPinnedPage(pageName, title) {
   try {
-    const res = await fetch('/api/user/pinned-pages', {
+    const res = await csrfFetch('/api/user/pinned-pages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pageName, title: title || pageName }),
@@ -25,7 +25,7 @@ async function addPinnedPage(pageName, title) {
 
 async function removePinnedPage(pageName) {
   try {
-    const res = await fetch('/api/user/pinned-pages/' + encodeURIComponent(pageName), {
+    const res = await csrfFetch('/api/user/pinned-pages/' + encodeURIComponent(pageName), {
       method: 'DELETE',
       credentials: 'same-origin'
     });

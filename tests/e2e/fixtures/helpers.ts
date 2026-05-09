@@ -17,8 +17,24 @@ const TEST_PAGE_PREFIX = 'NGDPBASE-test';
  * @param {string} pageName
  */
 async function deletePage(page, pageName) {
+  // CSRF middleware (#663) requires the X-CSRF-Token header on state-changing
+  // requests. Fetch /login (a stable page with the meta tag) to grab the
+  // session token via page.request — this preserves the cookie jar that
+  // page.request.post will use a moment later. We don't navigate the page
+  // itself because afterAll cleanup helpers often run on freshly-opened
+  // pages still at about:blank.
+  let csrfToken = '';
+  try {
+    const tokenRes = await page.request.get('/login');
+    const html = await tokenRes.text();
+    const match = html.match(/<meta name="csrf-token" content="([^"]+)"/);
+    if (match) csrfToken = match[1];
+  } catch {
+    // network blip — fall through with empty token; resulting 403 surfaces
+    // as the same warn this branch always handled.
+  }
   const response = await page.request.post(`/delete/${encodeURIComponent(pageName)}`, {
-    headers: { 'Accept': 'application/json' }
+    headers: { 'Accept': 'application/json', 'X-CSRF-Token': csrfToken }
   });
   // 200 = deleted, 404 = already gone — both are acceptable
   if (response.status() !== 200 && response.status() !== 404) {

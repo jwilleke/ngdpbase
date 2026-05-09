@@ -251,7 +251,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
             }
 
-            fetch('/admin/configuration', {
+            csrfFetch('/admin/configuration', {
                 method: 'POST',
                 headers: {
                     'Accept': 'application/json',

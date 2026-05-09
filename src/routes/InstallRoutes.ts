@@ -145,7 +145,8 @@ class InstallRoutes {
             warning: partialState.isPartial ?
               'Installation is incomplete from a previous attempt. Complete the form below to finish the setup.' : null
           },
-          partialInstallation: partialState
+          partialInstallation: partialState,
+          csrfToken: req.session.csrfToken || ''
         });
 
         // Clear session data

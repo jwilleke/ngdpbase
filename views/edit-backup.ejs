@@ -6,6 +6,7 @@
             <h1>Edit <%= pageName %></h1>
             
             <form action="/save/<%= pageName %>" method="POST">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                 <!-- Page Title -->
                 <div class="form-group mb-3">
                     <label for="title" style="font-weight:bold;">Page Title:</label>

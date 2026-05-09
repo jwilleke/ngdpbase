@@ -55,6 +55,7 @@
             </div>
 
             <form method="POST" action="/admin/backup/create">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                 <button type="submit" class="btn btn-primary">
                     <i class="fas fa-database"></i> Create &amp; Download Backup
                 </button>
@@ -116,6 +117,7 @@
             <div class="collapse mt-3" id="autoBackupConfig">
                 <div class="card card-body border-secondary">
                     <form method="POST" action="/admin/backup/config">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 
                         <div class="mb-3">
                             <div class="form-check form-switch">

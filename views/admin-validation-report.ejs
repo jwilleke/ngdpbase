@@ -215,7 +215,7 @@ document.addEventListener('DOMContentLoaded', function() {
       fixAllBtn.innerHTML = '🔄 Fixing...';
       
       try {
-        const response = await fetch('/admin/fix-files', {
+        const response = await csrfFetch('/admin/fix-files', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'

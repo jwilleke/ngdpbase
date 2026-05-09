@@ -272,7 +272,7 @@
         let text = content.value;
         
         // Make an API call to get properly rendered content with user variables
-        fetch('/api/preview', {
+        csrfFetch('/api/preview', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -358,7 +358,7 @@
         const formData = new FormData(form);
         let response;
         try {
-            response = await fetch(form.action, {
+            response = await csrfFetch(form.action, {
                 method: 'POST',
                 body: formData,
                 redirect: 'manual', // we want to inspect 302s instead of auto-following

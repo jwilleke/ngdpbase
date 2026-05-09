@@ -219,7 +219,7 @@ var _apInitSource = typeof assetPickerInitSource  !== 'undefined' ? assetPickerI
             if (pathPfx) params.set('pathPrefix', pathPfx);
             if (inclHiddenEl && inclHiddenEl.checked) params.set('includeHidden', 'true');
 
-            var resp = await fetch('/api/assets/search?' + params.toString());
+            var resp = await csrfFetch('/api/assets/search?' + params.toString());
             if (!resp.ok) throw new Error('Search failed (' + resp.status + ')');
             var data = await resp.json();
 

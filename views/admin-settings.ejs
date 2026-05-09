@@ -85,6 +85,7 @@
                         <!-- Left: editable general settings -->
                         <div class="col-md-6 border-end">
                             <form method="POST" action="/admin/settings/general">
+                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                                 <div class="mb-3">
                                     <label for="maxFileSizeMB" class="form-label">Maximum File Upload Size (MB)</label>
                                     <input type="number" class="form-control" id="maxFileSizeMB" name="maxFileSizeMB"
@@ -118,6 +119,7 @@
                             <div class="mb-3">
                                 <label for="themeSelect" class="form-label">Site Theme</label>
                                 <form method="POST" action="/admin/settings/theme" class="d-flex gap-2 align-items-center flex-wrap">
+                                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                                     <select class="form-select" id="themeSelect" name="theme" style="max-width: 180px;">
                                         <% settings.availableThemes.forEach(function(t) { %>
                                         <option value="<%= t %>" <%= t === settings.activeTheme ? 'selected' : '' %>><%= t %></option>

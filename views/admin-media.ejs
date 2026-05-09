@@ -103,7 +103,7 @@ async function pollJobStatus(runId, intervalMs = 1500, maxWaitMs = 600000, onPro
     const deadline = Date.now() + maxWaitMs;
     while (Date.now() < deadline) {
         await new Promise(r => setTimeout(r, intervalMs));
-        const res = await fetch(`/api/admin/jobs/${runId}/status`);
+        const res = await csrfFetch(`/api/admin/jobs/${runId}/status`);
         if (!res.ok) throw new Error('Status check failed');
         const run = await res.json();
         if (onProgress && run.progress) onProgress(run.progress);
@@ -119,7 +119,7 @@ document.getElementById('rescan-btn')?.addEventListener('click', async function 
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting…';
     status.style.display = 'none';
     try {
-        const enqueueRes = await fetch('/api/admin/jobs/media.rescan/enqueue', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+        const enqueueRes = await csrfFetch('/api/admin/jobs/media.rescan/enqueue', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
         const { runId } = await enqueueRes.json();
         if (!runId) throw new Error('Failed to start rescan job');
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scanning…';
@@ -148,7 +148,7 @@ document.getElementById('rebuild-btn')?.addEventListener('click', async function
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting…';
     status.style.display = 'none';
     try {
-        const enqueueRes = await fetch('/api/admin/jobs/media.rebuild/enqueue', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+        const enqueueRes = await csrfFetch('/api/admin/jobs/media.rebuild/enqueue', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
         const { runId } = await enqueueRes.json();
         if (!runId) throw new Error('Failed to start rebuild job');
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Rebuilding…';

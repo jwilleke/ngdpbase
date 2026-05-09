@@ -476,7 +476,7 @@ function viewOrganizationSchema(identifier) {
 async function deleteOrganization(identifier, name) {
     if (!confirm(`Are you sure you want to delete the organization "${name}"?`)) return;
     try {
-        const response = await fetch(`/admin/organizations/${encodeURIComponent(identifier)}`, {
+        const response = await csrfFetch(`/admin/organizations/${encodeURIComponent(identifier)}`, {
             method: 'DELETE',
             headers: { 'Accept': 'application/json' }
         });
@@ -550,7 +550,7 @@ document.getElementById('createOrganizationForm').addEventListener('submit', asy
     orgData.contactPoint = contactPoints;
 
     try {
-        const response = await fetch('/admin/organizations', {
+        const response = await csrfFetch('/admin/organizations', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -622,7 +622,7 @@ document.getElementById('editOrganizationForm').addEventListener('submit', async
     orgData.contactPoint = contactPoints;
 
     try {
-        const response = await fetch(`/admin/organizations/${encodeURIComponent(identifier)}`, {
+        const response = await csrfFetch(`/admin/organizations/${encodeURIComponent(identifier)}`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',

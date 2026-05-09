@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
     <title><% if (typeof pageName !== 'undefined' && pageName) { %><%= pageName %> | <% } %><%= typeof applicationName !== 'undefined' ? applicationName : 'ngdpbase' %></title>
     <% var _fp = typeof faviconPath !== 'undefined' ? faviconPath : '/favicon.ico'; %>
     <link rel="icon" type="<%= _fp.endsWith('.svg') ? 'image/svg+xml' : (_fp.endsWith('.png') ? 'image/png' : 'image/x-icon') %>" href="<%= _fp %>">
@@ -22,6 +23,9 @@
     <% if (typeof addonStylesheets !== 'undefined' && addonStylesheets && addonStylesheets.length) { %>
     <% addonStylesheets.forEach(function(url) { %><link rel="stylesheet" href="<%= url %>">
     <% }); %><% } %>
+
+    <!-- CSRF token helpers (#663) — must load before any script that does fetch -->
+    <script src="/js/csrf.js"></script>
 
     <!-- User Preferences Script -->
     <script src="/js/user-preferences.js"></script>
@@ -450,7 +454,7 @@
         // Use requestAnimationFrame to ensure DOM is fully updated before fetching
         requestAnimationFrame(() => {
             // Fetch page metadata from the API
-            fetch(`/api/page-metadata/${encodeURIComponent(currentPage)}`)
+            csrfFetch(`/api/page-metadata/${encodeURIComponent(currentPage)}`)
                 .then(response => {
                     if (!response.ok) {
                         throw new Error('API not available');
@@ -912,7 +916,7 @@
         showPageStatsModal(decodedPage, null, true);
 
         requestAnimationFrame(() => {
-            fetch(`/api/page-metadata/${encodeURIComponent(currentPage)}`)
+            csrfFetch(`/api/page-metadata/${encodeURIComponent(currentPage)}`)
                 .then(response => {
                     if (!response.ok) throw new Error('API not available');
                     return response.json();
@@ -1038,7 +1042,7 @@
         }
         
         // Fetch the raw markdown content
-        fetch(`/api/page-source/${encodeURIComponent(currentPage)}`)
+        csrfFetch(`/api/page-source/${encodeURIComponent(currentPage)}`)
             .then(response => {
                 if (!response.ok) {
                     throw new Error('Failed to fetch page source');
@@ -1238,7 +1242,7 @@
     // Persist display.theme server-side so it survives page navigation (#379)
     function persistThemeServer(mode) {
         if (!userAuthenticated) return;
-        fetch('/api/user/display-theme', {
+        csrfFetch('/api/user/display-theme', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ theme: mode }),
@@ -1550,7 +1554,7 @@ function deletePageFromNavbar() {
             const pageName = decodeURIComponent(path.replace('/edit/', ''));
 
             // Use POST request as required by the route
-            fetch('/delete/' + encodeURIComponent(pageName), {
+            csrfFetch('/delete/' + encodeURIComponent(pageName), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1668,7 +1672,7 @@ async function uploadAttachmentFile(uploadUrl) {
     statusDiv.innerHTML = '<div class="alert alert-info">Uploading...</div>';
 
     try {
-        const response = await fetch(uploadUrl, { method: 'POST', body: formData });
+        const response = await csrfFetch(uploadUrl, { method: 'POST', body: formData });
         const result = await response.json();
 
         if (result.success) {

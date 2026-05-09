@@ -101,6 +101,7 @@
               <small class="text-muted">
                 Just fill in the form again and submit to complete the installation.
                 If you want to start over, you can <form method="POST" action="/install/reset" class="d-inline">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                 <button type="submit" class="btn btn-link btn-sm p-0 text-decoration-none"
                         onclick="return confirm('This will remove all partial installation data (backups will be created). Continue?')">
                   reset the installation</button>
@@ -118,6 +119,7 @@
       <% } %>
 
       <form method="POST" action="/install" id="installForm">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 
         <!-- Basic Configuration -->
         <div class="section-header">

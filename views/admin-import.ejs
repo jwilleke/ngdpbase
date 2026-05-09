@@ -98,6 +98,7 @@
                 </div>
                 <div class="card-body">
                     <form id="import-form" method="post" action="/admin/import/preview">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                         <div class="mb-3">
                             <label for="sourceDir" class="form-label">Source Path</label>
                             <input type="text" class="form-control" id="sourceDir" name="sourceDir"
@@ -269,7 +270,7 @@ document.addEventListener('DOMContentLoaded', function() {
         data.generateUUIDs = formData.has('generateUUIDs');
 
         try {
-            const response = await fetch('/admin/import/preview', {
+            const response = await csrfFetch('/admin/import/preview', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
@@ -318,7 +319,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         try {
             // Use fetch with streaming for SSE-like behavior via POST
-            const response = await fetch('/admin/import/execute/stream', {
+            const response = await csrfFetch('/admin/import/execute/stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(currentPreviewData)
@@ -484,7 +485,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const data = Object.fromEntries(formData.entries());
 
         try {
-            const response = await fetch('/admin/import/url/preview', {
+            const response = await csrfFetch('/admin/import/url/preview', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
@@ -516,7 +517,7 @@ document.addEventListener('DOMContentLoaded', function() {
         urlExecuteBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Importing...';
 
         try {
-            const response = await fetch('/admin/import/url/execute', {
+            const response = await csrfFetch('/admin/import/url/execute', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(urlPreviewData)

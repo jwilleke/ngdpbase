@@ -306,7 +306,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!confirm('Delete attachment "' + name + '"? This cannot be undone.')) return;
 
         try {
-            var response = await fetch('/admin/attachments/' + encodeURIComponent(id), {
+            var response = await csrfFetch('/admin/attachments/' + encodeURIComponent(id), {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' }
             });
