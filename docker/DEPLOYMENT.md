@@ -4,6 +4,19 @@ Guide for deploying ngdpbase to various environments.
 
 > **For headless / containerized deploys** (Docker, Kubernetes), also read [`HEADLESS-DEPLOYMENT-NOTES.md`](./HEADLESS-DEPLOYMENT-NOTES.md). It captures gotchas — anchor Organization JSON-LD, theme/front-page/page-provider config, addons-path array form, Alpine `ndots:5` DNS, `npm ci --omit=dev` + husky, addon UUID validation — that aren't obvious from the default config alone.
 
+## Published Image
+
+ngdpbase publishes a container image to `ghcr.io/jwilleke/ngdpbase:<version>` on every tagged release. The publish is automated by `.github/workflows/docker-build.yml`, which builds from `docker/Dockerfile`, runs smoke tests, and runs a Trivy CVE scan against the resulting image. Tags published per release: `<major>.<minor>.<patch>`, `<major>.<minor>`, `<major>`, and `latest` (default branch only).
+
+This image is the single canonical container artifact for ngdpbase. It's intended for:
+
+- **Container deployments** — `docker run`, `docker-compose`, Kubernetes manifests pulling the image directly.
+- **Downstream domain-addon images** that layer on top using `FROM ghcr.io/jwilleke/ngdpbase:<version>` and add their own addon code (e.g. [`jwilleke/geohazardwatch`](https://github.com/jwilleke/geohazardwatch)). These consumers should add a [Renovate](https://docs.renovatebot.com/) (or Dependabot) annotation so the `FROM` tag auto-bumps when ngdpbase ships a new version — see [`docs/platform/addon-development-guide.md`](../docs/platform/addon-development-guide.md) for the recipe.
+
+It is **not** consumed by host-deployed instances managed via `./server.sh` and PM2 (jimstest, fairways-base, ngdpbase-veg, ngdp-temp-builds, etc.). Those run from a git checkout against Node directly; they pull source on every release, build locally with `npm run build`, and never touch the image. Sister-site working copies do contain `.github/workflows/docker-build.yml` because it's tracked in upstream master, but the workflow only fires in the canonical `jwilleke/ngdpbase` repo — clones never trigger it.
+
+Net effect: exactly **one** image build per ngdpbase release, regardless of how many sister-site clones exist.
+
 ## Table of Contents
 
 - [Local Deployment](#local-deployment)

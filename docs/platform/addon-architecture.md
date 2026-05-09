@@ -4,6 +4,26 @@ Internal reference for the ngdpbase addon subsystem. Covers load order, manager 
 
 ---
 
+## Distribution Models
+
+ngdpbase recognises three ways an addon can reach a running instance. The slug, the module contract, and the load sequence are identical across all three — only the source of the addon directory differs.
+
+| Model | Lives at | Cadence | Status |
+|---|---|---|---|
+| **bundled** | `addons/<slug>/` inside the ngdpbase repo | Ships with each ngdpbase release | Implemented |
+| **drop-in** | Any directory listed in the `ngdpbase.managers.addons-manager.addons-path` config (e.g. `/opt/external-addons/addons/<slug>/`) | Independent repo, deployed at install/restart time | Implemented |
+| **packaged** | `node_modules/<scope>/<slug>-addon/` via `npm install` | Independent repo, npm-versioned and lockfile-pinned | Not implemented — `AddonsManager.scanAddonsDirectory()` only scans configured directory paths today; supporting `node_modules` would mean a new loader path or pointing `addons-path` at `node_modules/<scope>/`. No active driver, kept here as a documented option. |
+
+Pick a model by how the addon is owned and shipped:
+
+- **bundled** — the addon is part of the platform's release surface (e.g. `forms`, `calendar`, `elasticsearch`, `journal`). Versioned with ngdpbase. Always available.
+- **drop-in** — the addon has its own repo and release cadence, and the operator drops it onto the filesystem at deployment time. The current model for `geohazardwatch`-style domain addons. No build-system coupling to ngdpbase.
+- **packaged** — same independent ownership as drop-in, but distributed as an npm package and pinned via the consumer's `package.json`. The right model for container deployments where reproducibility matters: one `npm install <pkg>@<version>` line in the generated Dockerfile, no cross-repo build context.
+
+The platform makes no trust distinction between models. A `type: 'domain'` addon (see §3) can be bundled, drop-in, or packaged.
+
+---
+
 ## 1. Initialization Order
 
 Addons load **after** Express session and user-context middleware, so `req.session` and `req.userContext` are available in all addon route handlers.

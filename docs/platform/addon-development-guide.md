@@ -617,6 +617,109 @@ Keep core PRs self-contained — no add-on-specific code in the core repo.
 
 ---
 
+## 12. Shipping Your Addon as a Container Image
+
+This section is for addon authors whose addon lives in **its own repo** (drop-in distribution model — see [`addon-architecture.md` § Distribution Models](./addon-architecture.md#distribution-models)) and who want to ship their site as a container. It does not apply to bundled addons, which are baked into the upstream `ghcr.io/jwilleke/ngdpbase` image automatically.
+
+### What ngdpbase publishes for you
+
+On every `v*` tag, `.github/workflows/docker-build.yml` in `jwilleke/ngdpbase` builds and pushes a container image:
+
+| Tag | Example | Stability |
+|---|---|---|
+| `<major>.<minor>.<patch>` | `ghcr.io/jwilleke/ngdpbase:3.11.3` | Pinned to a specific release — recommended for production |
+| `<major>.<minor>` | `ghcr.io/jwilleke/ngdpbase:3.11` | Floats with patch releases — picks up CVE patches automatically |
+| `<major>` | `ghcr.io/jwilleke/ngdpbase:3` | Floats with minor releases — features land without you opting in |
+| `latest` | `ghcr.io/jwilleke/ngdpbase:latest` | Default-branch tip — fine for evaluation, never for production |
+
+The image is the only container artifact ngdpbase produces. There is no published Dockerfile template, no codegen, no platform-side hook system. You consume the image via `FROM` in your own Dockerfile.
+
+### Recommended Dockerfile pattern
+
+Layer your addon on top of the published ngdpbase image. Example from [`jwilleke/geohazardwatch/Dockerfile`](https://github.com/jwilleke/geohazardwatch/blob/main/Dockerfile):
+
+```dockerfile
+# renovate: datasource=docker depName=ghcr.io/jwilleke/ngdpbase
+ARG NGDPBASE_VERSION=3.11.3
+FROM ghcr.io/jwilleke/ngdpbase:${NGDPBASE_VERSION}
+
+LABEL org.opencontainers.image.title="my-addon-site"
+LABEL org.opencontainers.image.source="https://github.com/<you>/<your-addon-repo>"
+
+WORKDIR /opt/<slug>
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
+
+COPY addons ./addons
+
+WORKDIR /app
+```
+
+Key points:
+
+- The `# renovate: datasource=docker depName=...` annotation on the line above `ARG` is what makes the auto-bump (next section) work. Without it Renovate ignores the ARG.
+- `--ignore-scripts` skips `prepare` (husky). Husky is a devDependency, not present under `--omit=dev`, and the missing `husky` binary would crash `npm ci` with exit 127 in the runtime container.
+- `WORKDIR /app` at the end matches ngdpbase's working directory so the inherited `CMD` and `ENTRYPOINT` from the base image still resolve correctly.
+- The addon code is mounted into the runtime via `addons-path` config (typically supplied through a Kubernetes ConfigMap or a `-v /opt/<slug>:/opt/<slug>` bind mount, plus `"ngdpbase.managers.addons-manager.addons-path": ["/opt/<slug>/addons"]` in the instance config).
+
+### Auto-bump with Renovate
+
+Without automation, the `ARG NGDPBASE_VERSION` default rots. ngdpbase ships `v3.11.3` → your image still pulls `v3.10.3` → your container is missing CVE patches.
+
+Add `renovate.json` to your addon repo:
+
+```json
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "packageRules": [
+    {
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/jwilleke/ngdpbase"],
+      "automerge": false,
+      "labels": ["dependencies", "ngdpbase-bump"],
+      "commitMessageTopic": "ngdpbase",
+      "groupName": "ngdpbase upstream"
+    }
+  ]
+}
+```
+
+Enable Renovate on the repo (GitHub App or self-hosted). On every ngdpbase release, Renovate opens a PR that:
+
+1. Bumps the `ARG NGDPBASE_VERSION=...` default in your Dockerfile.
+2. Includes the upstream changelog/release notes from `ghcr.io/jwilleke/ngdpbase`'s OCI labels.
+3. Triggers your CI to rebuild the image against the new base.
+
+Reviewer merges → CI publishes a fresh combined image → your container is current. This is the **deterministic method for container deployment builds** referenced in [#668](https://github.com/jwilleke/ngdpbase/issues/668): the platform handles publishing, Renovate handles propagation, no codegen required on either side.
+
+If you prefer Dependabot, the equivalent `.github/dependabot.yml` entry is:
+
+```yaml
+version: 2
+updates:
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "daily"
+```
+
+Renovate is recommended over Dependabot here because Renovate's `datasource=docker` annotation in the Dockerfile lets it find the ARG without the file being a literal `FROM image:tag` line — Dependabot only inspects literal `FROM` lines and won't pick up an ARG-driven version.
+
+### What lives where
+
+| Concern | Where it's owned |
+|---|---|
+| Building/publishing the ngdpbase image | `jwilleke/ngdpbase` (`.github/workflows/docker-build.yml`) — fully automated |
+| Building/publishing the combined addon-site image | Your addon repo (your own Dockerfile + your own CI workflow) |
+| Bumping the `FROM` version | Renovate/Dependabot in your addon repo — fully automated |
+| Runtime addon registration | `addons-path` config on the deployed instance (ConfigMap, `.env`, etc.) |
+
+ngdpbase does not need to know your addon exists. Your addon repo does not need to know how ngdpbase is built. The only contract between them is: ngdpbase publishes images at `ghcr.io/jwilleke/ngdpbase:<version>`; you consume them with `FROM`.
+
+---
+
 ## Related
 
 | Resource | Contents |

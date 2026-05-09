@@ -4,7 +4,7 @@
 
 An addon picks a single short identifier — a slug — and that slug is wired into more than a dozen places. They all have to agree, because ngdpbase resolves config keys, mount paths, and capability flags by exact-string match. Picking the slug carelessly, or renaming it later, is a coordinated change across runtime, build, config, and content.
 
-This doc lists every place an addon's slug appears, what it's used for, and what breaks if any of them drift.
+This doc lists every place an addon's slug appears, what it's used for, and what breaks if any of them drift. The rules apply identically whether the addon is **bundled** (in `addons/`), **drop-in** (under a configured `addons-path`), or **packaged** (an npm dependency under `node_modules/`); see [`addon-architecture.md` § Distribution Models](./addon-architecture.md#distribution-models). Examples below show the bundled path because it's the most common, but the slug requirements are the same for the other two models.
 
 ---
 
