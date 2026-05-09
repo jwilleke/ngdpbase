@@ -1375,3 +1375,34 @@ table[data-zebra] tbody tr.zebra-hover,
 .strike {
   text-decoration: line-through;
 }
+
+/* ── Plugin placement ─────────────────────────────────────────────────────
+ * Cross-addon placement contract. Plugins combine these classes with their
+ * own (e.g. `<div class="volcano-infobox plugin-placement-right">`) so that
+ * placement is consistent platform-wide. See
+ * src/utils/pluginFormatters.ts → parsePlacementParam / placementClass.
+ */
+
+.plugin-placement-right {
+  float: right;
+  clear: right;
+  margin: 0 0 1rem 1.5rem;
+}
+
+.plugin-placement-left {
+  float: left;
+  clear: left;
+  margin: 0 1.5rem 1rem 0;
+}
+
+.plugin-placement-block {
+  display: block;
+  clear: both;
+  margin: 1rem 0;
+}
+
+.plugin-placement-inline {
+  display: inline-block;
+  vertical-align: top;
+  margin: 0.25rem;
+}

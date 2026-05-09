@@ -315,6 +315,48 @@ export function parseBoolParam(value: string | number | boolean | undefined, def
 }
 
 // ---------------------------------------------------------------------------
+// Plugin placement
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a plugin's rendered output should sit in the page flow.
+ *
+ *   - 'right'  — float right; surrounding text wraps on the left (Wikipedia infobox).
+ *   - 'left'   — float left; surrounding text wraps on the right.
+ *   - 'block'  — full-width block element below the caption text. No float.
+ *   - 'inline' — inline-block; sits next to other inline content.
+ *
+ * Plugins combine `placementClass(placement)` with their own classes, e.g.
+ * `<div class="volcano-infobox plugin-placement-right">…</div>`. The
+ * `.plugin-placement-*` CSS lives in ngdpbase core.css so every plugin gets a
+ * consistent contract whether or not its addon stylesheet has loaded.
+ */
+export type Placement = 'right' | 'left' | 'block' | 'inline';
+
+const VALID_PLACEMENTS: ReadonlySet<string> = new Set(['right', 'left', 'block', 'inline']);
+
+/**
+ * Parse a `placement=` plugin parameter to a validated `Placement` value.
+ * Falls back to `defaultPlacement` for missing or unrecognised values.
+ */
+export function parsePlacementParam(
+  value: string | undefined,
+  defaultPlacement: Placement = 'right'
+): Placement {
+  if (value === undefined || value === null || value === '') return defaultPlacement;
+  const v = String(value).toLowerCase().trim();
+  return VALID_PLACEMENTS.has(v) ? (v as Placement) : defaultPlacement;
+}
+
+/**
+ * Return the CSS class name for a given placement value.
+ * Always returns `plugin-placement-<placement>`.
+ */
+export function placementClass(placement: Placement): string {
+  return `plugin-placement-${placement}`;
+}
+
+// ---------------------------------------------------------------------------
 // Text / content helpers
 // ---------------------------------------------------------------------------
 

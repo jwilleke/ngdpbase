@@ -24,7 +24,9 @@ import {
   parsePageParam,
   parsePageSizeParam,
   applyPagination,
-  formatPaginationLinks
+  formatPaginationLinks,
+  parsePlacementParam,
+  placementClass
 } from '../pluginFormatters';
 
 // ---------------------------------------------------------------------------
@@ -453,5 +455,53 @@ describe('formatPaginationLinks', () => {
     const out = formatPaginationLinks(2, 4, 'P', 'p');
     expect(out).toContain('p=1');
     expect(out).toContain('p=3');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parsePlacementParam
+// ---------------------------------------------------------------------------
+
+describe('parsePlacementParam', () => {
+  test('returns default (right) when undefined', () => {
+    expect(parsePlacementParam(undefined)).toBe('right');
+  });
+
+  test('returns default when empty string', () => {
+    expect(parsePlacementParam('')).toBe('right');
+  });
+
+  test('honours an explicit default', () => {
+    expect(parsePlacementParam(undefined, 'block')).toBe('block');
+  });
+
+  test('accepts each valid placement', () => {
+    expect(parsePlacementParam('right')).toBe('right');
+    expect(parsePlacementParam('left')).toBe('left');
+    expect(parsePlacementParam('block')).toBe('block');
+    expect(parsePlacementParam('inline')).toBe('inline');
+  });
+
+  test('is case-insensitive and trims whitespace', () => {
+    expect(parsePlacementParam('  Right  ')).toBe('right');
+    expect(parsePlacementParam('BLOCK')).toBe('block');
+  });
+
+  test('falls back to default for unrecognised values', () => {
+    expect(parsePlacementParam('center')).toBe('right');
+    expect(parsePlacementParam('top', 'block')).toBe('block');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// placementClass
+// ---------------------------------------------------------------------------
+
+describe('placementClass', () => {
+  test('returns plugin-placement-<placement> for every variant', () => {
+    expect(placementClass('right')).toBe('plugin-placement-right');
+    expect(placementClass('left')).toBe('plugin-placement-left');
+    expect(placementClass('block')).toBe('plugin-placement-block');
+    expect(placementClass('inline')).toBe('plugin-placement-inline');
   });
 });
