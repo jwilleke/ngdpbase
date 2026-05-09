@@ -2,6 +2,30 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-09-02
+
+- Agent: Claude Opus 4.7
+- Subject: Bump `pm2` `^6.0.13` → `^7.0.1` to patch CVE-2025-5891 (ReDoS in `lib/tools/Config.js`) plus three pm2-internal command-injection fixes
+- Current Issue: none — surfaced by `npm audit` (not Dependabot, which only flagged the fast-uri pair earlier today)
+- Tests: 5311 unit tests pass post-bump (203 files, 9.29s); E2E + sister-site propagation NOT yet run — see "Deferred" below
+- Work Done:
+  - Confirmed real-world exposure for ngdpbase is essentially nil: pm2's vulnerable Config.js parser is reachable only with attacker-controlled config strings; our usage (`server.sh` CLI calls, `ecosystem.config.js` static config, `WikiRoutes.ts:6869,6891` admin-only restart endpoint gated by `admin-system` permission) gives no untrusted input path. Matches the LOW CVSS 4.3 (A:L only) rating. Bumped anyway because v7 also lands three command-injection hardenings in pm2 itself and trims the supply chain materially.
+  - Edited `package.json` `pm2: "^6.0.13"` → `"^7.0.1"`. `npm install` reported `added 1 package, removed 42 packages, changed 6 packages` — pm2 v7 internalized `pm2-axon`, `pm2-axon-rpc`, `pm2-io-bpm`, `pm2-io-agent`, `fclone`, `multimeter`, `charm`; replaced `needle` → native `fetch`, `enquirer`/`promptly` → built-in prompt, `mkdirp` → native `fs.mkdirSync`, `source-map-support` → `process.setSourceMapsEnabled()`, `sprintf-js` → template literals.
+  - Verified API surface: every pm2 CLI command we call (`list`, `show`, `start ecosystem.config.cjs`, `stop`, `delete`, `restart`, `jlist`, `logs`, `kill`, `flush`, `pid`) and every `ecosystem.config.js` field (`name`, `script`, `cwd`, `env*`, `*_file`, `instances`, `exec_mode`, `autorestart`, `watch`, `max_memory_restart`, `min_uptime`, `max_restarts`, `restart_delay`) is unchanged in v7. Engines: pm2 v7 requires Node ≥ 18 — `package.json` already declares `"node": ">=18.0.0"`, no-op.
+  - `npm audit` post-bump: 3 → 2 vulnerabilities. The pm2 ReDoS is gone. Remaining are showdown medium + showdown-footnotes (both already tracked by #599, no upstream patch).
+  - `npm ls`: pm2@7.0.1; transitively `proxy-agent` upgraded 6.4.0 → 6.5.0; `basic-ftp` still 5.3.1 and `follow-redirects` still 1.16.0 (matching our existing `overrides` exactly — those overrides are now redundant since pm2 v7 resolves to the same safe versions natively, but left in place as defense-in-depth; cleanup is a separate trivial task).
+- Deferred:
+  - Server restart (`./server.sh stop && ./server.sh start`) on this site (jimstest, port 3000) — requires operator confirmation since it touches a live deployment.
+  - Sister-site propagation via `/othersites` to fairways-base (2121), ngdpbase-veg (3333), ngdp-temp-builds (3001) — same pattern as session 2026-05-08-09.
+  - E2E run (Playwright, 72 tests) — typically run as part of the propagation pass.
+  - Optional cleanup: remove `basic-ftp` and `follow-redirects` from `overrides` block in `package.json` (now redundant with pm2 v7's transitive resolution).
+- Commits:
+  - `0c949424` chore(deps): bump pm2 ^6.0.13 → ^7.0.1 (CVE-2025-5891 ReDoS in Config.js)
+- Files Modified:
+  - `package.json` (pm2 dep range)
+  - `package-lock.json` (pm2 7.0.1, proxy-agent 6.5.0; 42 transitive packages removed)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-09-01
 
 - Agent: Claude Opus 4.7
