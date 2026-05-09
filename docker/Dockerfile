@@ -8,7 +8,7 @@
 # Expected image size: ~400-500MB (down from ~2.2GB single-stage)
 
 # Build arguments
-ARG NODE_VERSION=20
+ARG NODE_VERSION=24
 
 # =============================================================================
 # Stage 1: Builder

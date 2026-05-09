@@ -4,7 +4,7 @@ Quick setup instructions for getting ngdpbase running locally or in production.
 
 ## Prerequisites
 
-- **Node.js v18+** - [Download](https://nodejs.org/)
+- **Node.js v24+** - [Download](https://nodejs.org/) (Node 18 EOL April 2025; Node 20 EOL April 2026)
 - **npm** - Included with Node.js
 - **PM2** (for production) - `npm install -g pm2`
 - **Git** - For version control
