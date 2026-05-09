@@ -2,6 +2,29 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-09-05
+
+- Agent: Claude Opus 4.7
+- Subject: New `docs/admin/Self-Registration.md` operator guide for the `ngdpbase.application.registration` flag, plus operator-guide cross-links from README.md and SETUP.md
+- Current Issue: none — surfaced as a gap during a question about whether the flag was documented; no tracking issue exists
+- Tests: not run — doc-only change, no source touched
+- Work Done:
+  - Confirmed by code search that `ngdpbase.application.registration` (live since v3.10.3) was previously only documented as an inline `_comment_application_registration` field in `config/app-default-config.json`. SETUP.md, README.md, and `docker/DEPLOYMENT.md` did not mention it. No `docs/operator*` or `docs/configuration*` directory existed; the right home was the existing `docs/admin/` subdir which already holds `Backups.md`, `email-setup.md`, `Telemetry.md`, `Versioning-Deployment-Guide.md`, etc.
+  - Read the actual gating code before writing anything to avoid documenting behavior that doesn't exist: `WikiRoutes.ts:4290-4293,4324-4327` (both GET and POST `/register` return 404 when the flag is off), `views/header.ejs:131-134` (Register button → Request access link with configurable redirect-page slug), `GoogleOIDCProvider.ts:198-205` (new OIDC users rejected, existing OIDC users still log in normally).
+  - New `docs/admin/Self-Registration.md` covering: what the flag does (effects table), what is NOT affected (login, admin-created users, existing OIDC users), the two config keys with defaults, minimal example to disable, custom redirect-page recipe, guidance on the seeded `request-access` wiki page (plain instructions / embedded `[{Form …}]` plugin / external link), a verification table operators run after rollout, and Related links pointing back at the inline default-config comment plus the relevant source files. Mode-agnostic — applies to host/PM2, Docker, Kubernetes, dev-server alike per the operator's correction.
+  - Cross-linked the new guide from `SETUP.md` § Configuration ("Common operator topics" subsection) and `README.md` § Configuration ("Operator Guides" subsection). Both subsections also surface the four other existing `docs/admin/` guides so they're findable from the two main entry points; until now, most readers wouldn't have known `docs/admin/` existed.
+  - Lint clean (`npx markdownlint`), no lines over the 300-char limit.
+- Notable observations:
+  - The `ngdpbase.application.contact.recipient` resolution rule (described in `docker/HEADLESS-DEPLOYMENT-NOTES.md` re: #658) is what kicks in if an operator drops a `[{Form …}]` plugin onto the `request-access` page — referenced from the new doc but not duplicated.
+  - No matching open GH issue. The flag's existence pre-dates the documentation gap by several releases (v3.10.3 → today's v3.11.3); this is a backfill, not a feature ask.
+- Commits:
+  - `a97c8bb5` docs(admin): self-registration lockdown guide + operator-guide cross-links
+- Files Modified:
+  - `docs/admin/Self-Registration.md` (new file, 130 lines)
+  - `SETUP.md` (Common operator topics subsection added under § Configuration)
+  - `README.md` (Operator Guides subsection added under § Configuration)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-09-04
 
 - Agent: Claude Opus 4.7
