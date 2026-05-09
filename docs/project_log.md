@@ -2,6 +2,37 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-09-04
+
+- Agent: Claude Opus 4.7
+- Subject: #668 design discussion — landed on "no platform-side codegen, image+Renovate is the contract"; documented terminology and the consumer-side recipe; opened companion PR on geohazardwatch
+- Current Issue: #668 (open — keeping open until docs PR merges; companion `jwilleke/geohazardwatch#30` opened)
+- Tests: not relevant — pure docs + a one-line Dockerfile change in a separate repo
+- Work Done:
+  - Read the issue properly and fact-checked the existing build pipeline before designing anything: `.github/workflows/docker-build.yml` ALREADY publishes `ghcr.io/jwilleke/ngdpbase:<version>` on every `v*` tag (smoke tests + Trivy scan); v3.11.3 was published this morning, 14 min after the tag landed. The platform side of "deterministic container builds" is therefore already done — the actual itch is consumer-side ARG drift in `jwilleke/geohazardwatch/Dockerfile` (`ARG NGDPBASE_VERSION=3.10.3`, three minor versions stale).
+  - Walked the operator through three candidate models in conversation (platform-emitted template, instance-side Dockerfile generation, consumer-pulls-Dockerfile-source) and converged on the simplest: **keep the existing FROM-the-prebuilt-image pattern; close the drift gap with Renovate annotations on the consumer side.** No `version.ts` hooks, no template emission, no `ngdpbase.application.container.deployment` config key.
+  - Locked in distribution-model terminology — `bundled` (in `addons/<slug>/`), `drop-in` (any directory under `addons-path`), `packaged` (npm — documented as "not implemented" since `AddonsManager.scanAddonsDirectory()` only walks configured directory paths today; no active driver). Earlier in the conversation I'd written "Planned (#668)" for `packaged`; corrected.
+  - Posted the decision summary as a comment on #668: <https://github.com/jwilleke/ngdpbase/issues/668#issuecomment-4412158679>.
+  - Added a "Published Image" section to `docker/DEPLOYMENT.md` explaining the four tag forms (`<v>`, `<major>.<minor>`, `<major>`, `latest`), who consumes the image (container deployers + downstream domain-addon images), and the often-confused point that host-deployed sister sites (jimstest, fairways-base, ngdpbase-veg, ngdp-temp-builds) neither trigger image builds nor consume the image — exactly one image build per ngdpbase release, regardless of how many clones exist.
+  - Added a "§ 12. Shipping Your Addon as a Container Image" section to `docs/platform/addon-development-guide.md`: recommended Dockerfile pattern with the `# renovate: datasource=docker depName=...` annotation, full `renovate.json` recipe, Dependabot equivalent and why Renovate is preferred (ARG-aware annotation; Dependabot only inspects literal `FROM` lines), and a "what-lives-where" contract table.
+  - One-line clarification in `addon-identity-contract.md` that slug rules apply across all three distribution models.
+  - **Companion PR on geohazardwatch (PR #30):** added `# renovate: datasource=docker depName=ghcr.io/jwilleke/ngdpbase` above the `ARG NGDPBASE_VERSION` line in geohazardwatch's `Dockerfile` and bumped the ARG default from `3.10.3` → `3.11.3`. Confirmed during investigation that geohazardwatch's `renovate.json` already has the right `packageRules` for the ngdpbase base image (auto-merge on minor/patch, manual review on major) — what's been missing is the annotation that lets Renovate's dockerfile manager *find* an ARG-driven `FROM` version. Last hand-bump on this ARG should be this one.
+- Side findings worth noting (not acted on):
+  - `jwilleke/geohazardwatch` does NOT declare `type: 'domain'` in any `package.json` `ngdpbase` manifest block. There's no inner `addons/geohazardwatch/package.json` at all and the repo-level `package.json` has no `ngdpbase` block. So `AddonsManager` is loading it as the default `additive` even though architecturally it IS the site identity. The `domainAddonName` enforcement at `AddonsManager.ts:633-643` therefore never trips. Worth a separate fix in geohazardwatch (add an inner `addons/geohazardwatch/package.json` with `"ngdpbase": { "type": "domain" }`) but out of scope for #668.
+  - "GeoHazardWatch" appearing in PM2's process list earlier today (session 2026-05-09-02) is the `ngdpbase.application-name` set in ngdpbase-veg's custom config, not a separate project. `ecosystem.config.js`'s `readAppName()` priority puts custom config above `.env PROJECT_NAME=ve-geology`. Already noted in 2026-05-09-03; reaffirmed here because it interacts with the geohazardwatch addon naming.
+- Commits:
+  - `3cd1015a` chore: sync package-lock.json to 3.11.3
+  - `4788c30d` docs(platform): addon distribution models + container-deployment contract (#668)
+- Files Modified:
+  - `docker/DEPLOYMENT.md` (new "Published Image" section)
+  - `docs/platform/addon-architecture.md` (new "Distribution Models" section)
+  - `docs/platform/addon-development-guide.md` (new "§ 12. Shipping Your Addon as a Container Image" section)
+  - `docs/platform/addon-identity-contract.md` (one-line clarification)
+  - `package-lock.json` (3.11.2 → 3.11.3 sync)
+  - `docs/project_log.md` (this entry)
+- External commits (NOT in this repo):
+  - `jwilleke/geohazardwatch@334dfa2` — chore: enable Renovate auto-bump for ngdpbase ARG; bump 3.10.3 → 3.11.3 (PR #30)
+
 ## 2026-05-09-03
 
 - Agent: Claude Opus 4.7
