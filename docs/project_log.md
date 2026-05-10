@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-10-09
+
+- Agent: Claude Opus 4.7
+- Subject: same-day cross-repo follow-ups after the morning #672 ship — distribution-model doc tweak, v3.13.1 tag push, filed #673, plus a stretch of operator-driven cross-repo work (geohazardwatch.com outage triage, Flux PAT rotation, source-of-truth migration) that landed in `geohazardwatch` and `mj-infra-flux` repos respectively.
+- Current Issue: #672 (closed); #673 (filed); #669 (verified resolved on prod, awaits operator decision on closing); #671 (long-running, deepened with corrected-diagnosis comment).
+- Tests: 5385 vitest unit tests still pass; `tsc --noEmit` clean. No new test work in this slice — code change was a one-paragraph doc lead-in only.
+- Work Done:
+  - **`docs/platform/addon-architecture.md`** — added a one-paragraph TL;DR under the H1 naming all three distribution models (`bundled` / `drop-in` / `packaged`). Operator had asked "which three are there?" — names were already locked in by #668 but only visible after scrolling; this surfaces them above the fold without changing the (good) existing table. Lint-clean per the repo's `MD013.line_length: 900`.
+  - **Filed #673** `[FEATURE] Implement 'packaged' addon distribution model (npm install)` — captures the gap between "documented" and "implemented" for the third distribution model. Two design options sketched (separate `node_modules:` scanner vs. extending `addons-path` syntax), trade-offs, touch-points, and test plan. Medium priority.
+  - **Tagged `v3.13.1`** on commit `8913996a` and pushed; `docker-build.yml` workflow ran successfully and published `ghcr.io/jwilleke/ngdpbase:3.13.1`. The `assertConfiguredAddonsExist` invariant from the morning is now available for downstream image bumps.
+  - Investigated **`geohazardwatch.com` outage** symptoms (`MarqueePlugin: fetch target 'HansDataManager.toMarqueeText()' not found` + `Plugin 'VolcanoMap' not found`). Traced root cause to a cross-repo addon-rename gap: the `geohazardwatch` addon was renamed from `ve-geology` → `geohazardwatch` in `jwilleke/geohazardwatch@fe8c4d3` (shipped in v1.2.0), but `jwilleke/mj-infra-flux/apps/production/geohazardwatch/configmap.yaml` still had `ngdpbase.addons.ve-geology.enabled: true`. AddonsManager silently treated the on-disk addon as disabled, plugins/managers never registered. Posted corrected diagnosis as `ngdpbase#671` comment; this exact failure mode is what `assertConfiguredAddonsExist` (this morning's #672 fix) was designed to catch — silent-misconfig now becomes loud-startup-error in v3.13.1+.
+  - Drove fix in `mj-infra-flux@3bed418` (configmap rename); pod restart restored prod. Then drove `geohazardwatch.com` source-of-truth migration: removed the read-only ConfigMap overlay so `app-custom-config.json` lives entirely on the persistent NAS-share volume, accessible identically from operator's Mac (`/Volumes/jims/...`), the deploy host (`/mnt/tank/...`), and the in-pod `/admin/configuration` UI Save (`/app/data/...`) — which now actually persists across pod restarts (it didn't before; writes failed EROFS on the read-only mount). Cleaned up legacy `ve-geology` directory + dataPath override on the persistent volume. Dropped the stale `app-custom-config.json` data key from the cluster ConfigMap entirely. Per-repo project_log entries cover those changes in detail.
+  - Side outcome of the same session: filed `geohazardwatch#35` (addon-rename downstream-config checklist + `addon-rename-detector.yml` CI), filed `mj-infra-flux#70` (Flux ImageUpdateAutomation push fail since SOPS migration), drove `mj-infra-flux#70` to resolution by walking the operator through PAT rotation + SOPS re-encryption, then shipped `pat-health-check.yml` workflow on `mj-infra-flux` to catch this exact recurrence proactively.
+- Commits: `d0b141ba` (this repo) + tag `v3.13.1`; cross-repo: `mj-infra-flux@{3bed418, aca4fdc, dccfd0f, 43cfabd, 840b87c, 2c69fe3}`, `geohazardwatch@e721636`. See those repos' own project_log entries for details.
+- Files Modified:
+  - `docs/platform/addon-architecture.md` (one-paragraph TL;DR added)
+  - this entry in `docs/project_log.md`
+
 ## 2026-05-10-08
 
 - Agent: Claude Opus 4.7
