@@ -4194,35 +4194,70 @@ ${panes}
         return;
       }
 
+      // #670 Phase E: anti-spam defenses are individually toggleable and
+      // tunable. honeypot.enabled and rate-limit.enabled gate the two
+      // mechanisms; rate-limit max/window come from config too. Defaults
+      // preserve the pre-3.13 hard-coded values (5 / 15 min, both on).
+      const honeypotEnabled = (configManager?.getProperty(
+        'ngdpbase.mail.honeypot.enabled',
+        true
+      ) as boolean | undefined) ?? true;
+      const rateLimitEnabled = (configManager?.getProperty(
+        'ngdpbase.mail.rate-limit.enabled',
+        true
+      ) as boolean | undefined) ?? true;
+      const rateLimitMax = (configManager?.getProperty(
+        'ngdpbase.mail.rate-limit.max-submissions',
+        5
+      ) as number | undefined) ?? 5;
+      const rateLimitWindowMin = (configManager?.getProperty(
+        'ngdpbase.mail.rate-limit.window-minutes',
+        15
+      ) as number | undefined) ?? 15;
+
+      // Apply current config to the module-scope limiter. Cheap; existing
+      // bucket state is preserved by configure() — operators tightening or
+      // loosening the limit don't have to wait out the old window.
+      contactRateLimiter.configure({
+        max: rateLimitMax,
+        windowMs: rateLimitWindowMin * 60 * 1000
+      });
+
       // Rate limit per source IP. Trust proxy headers iff express has been
       // configured with `trust proxy` upstream; req.ip falls back to remote.
       const limitKey = req.ip || 'unknown';
-      const rl = contactRateLimiter.consume(limitKey);
-      if (!rl.allowed) {
-        const retryAfterSec = Math.ceil(rl.retryAfterMs / 1000);
-        res.set('Retry-After', String(retryAfterSec));
-        res.status(429).send('Too many contact submissions. Please try again later.');
-        return;
+      if (rateLimitEnabled) {
+        const rl = contactRateLimiter.consume(limitKey);
+        if (!rl.allowed) {
+          const retryAfterSec = Math.ceil(rl.retryAfterMs / 1000);
+          res.set('Retry-After', String(retryAfterSec));
+          res.status(429).send('Too many contact submissions. Please try again later.');
+          return;
+        }
       }
 
       const body = (req.body || {}) as Record<string, unknown>;
 
       // Honeypot: a real human leaves this blank; bots fill every field.
       // Hidden via inline CSS in the view; if filled, log and silently 200.
-      const honeypot = typeof body._website === 'string' ? body._website.trim() : '';
-      if (honeypot) {
-        logger.warn(`[processContact] honeypot filled (${honeypot.length} chars) from ip=${limitKey} — silently succeeding without sending mail`);
-        const commonData = await this.getCommonTemplateData(req);
-        res.render('contact', {
-          ...commonData,
-          title: 'Contact',
-          state: 'submitted',
-          submitted: true,
-          formError: null,
-          formValues: { name: '', email: '', subject: '', message: '' },
-          csrfToken: req.session.csrfToken
-        });
-        return;
+      // When honeypot.enabled=false (Phase E), the field is ignored — the
+      // bot's submission proceeds through normal validation + send.
+      if (honeypotEnabled) {
+        const honeypot = typeof body._website === 'string' ? body._website.trim() : '';
+        if (honeypot) {
+          logger.warn(`[processContact] honeypot filled (${honeypot.length} chars) from ip=${limitKey} — silently succeeding without sending mail`);
+          const commonData = await this.getCommonTemplateData(req);
+          res.render('contact', {
+            ...commonData,
+            title: 'Contact',
+            state: 'submitted',
+            submitted: true,
+            formError: null,
+            formValues: { name: '', email: '', subject: '', message: '' },
+            csrfToken: req.session.csrfToken
+          });
+          return;
+        }
       }
 
       const name = typeof body.name === 'string' ? body.name.trim() : '';

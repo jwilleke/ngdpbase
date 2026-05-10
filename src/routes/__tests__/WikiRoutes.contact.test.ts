@@ -53,6 +53,10 @@ const configState: {
   recipient: string;
   persistEnabled: boolean;
   persistPath: string;
+  honeypotEnabled: boolean;
+  rateLimitEnabled: boolean;
+  rateLimitMax: number;
+  rateLimitWindowMinutes: number;
 } = {
   enabled: true,
   page: '',
@@ -62,7 +66,13 @@ const configState: {
   // cwd. Phase C-specific tests opt in by setting persistEnabled=true and
   // pointing persistPath at a per-test tmp file.
   persistEnabled: false,
-  persistPath: ''
+  persistPath: '',
+  // #670 Phase E: anti-spam defaults match production defaults so existing
+  // tests behave identically. Phase E-specific tests flip these.
+  honeypotEnabled: true,
+  rateLimitEnabled: true,
+  rateLimitMax: 5,
+  rateLimitWindowMinutes: 15
 };
 
 const mockConfigManager = {
@@ -73,6 +83,10 @@ const mockConfigManager = {
       'ngdpbase.application.contact.recipient': configState.recipient,
       'ngdpbase.application.contact.persist.enabled': configState.persistEnabled,
       'ngdpbase.application.contact.persist.path': configState.persistPath,
+      'ngdpbase.mail.honeypot.enabled': configState.honeypotEnabled,
+      'ngdpbase.mail.rate-limit.enabled': configState.rateLimitEnabled,
+      'ngdpbase.mail.rate-limit.max-submissions': configState.rateLimitMax,
+      'ngdpbase.mail.rate-limit.window-minutes': configState.rateLimitWindowMinutes,
       'ngdpbase.front-page': 'Welcome',
       'ngdpbase.theme.active': 'default',
       'ngdpbase.application-name': 'ngdpbase'
@@ -219,6 +233,10 @@ describe('WikiRoutes — GET /contact (#658 iteration 2)', () => {
     configState.recipient = '';
     configState.persistEnabled = false;
     configState.persistPath = '';
+    configState.honeypotEnabled = true;
+    configState.rateLimitEnabled = true;
+    configState.rateLimitMax = 5;
+    configState.rateLimitWindowMinutes = 15;
     recipientResolver.mockClear();
     recipientResolver.mockImplementation(async (override: string) => {
       const trimmed = (override ?? '').trim();
@@ -324,6 +342,10 @@ describe('WikiRoutes — POST /contact (#658 iteration 3)', () => {
     configState.recipient = '';
     configState.persistEnabled = false;
     configState.persistPath = '';
+    configState.honeypotEnabled = true;
+    configState.rateLimitEnabled = true;
+    configState.rateLimitMax = 5;
+    configState.rateLimitWindowMinutes = 15;
     recipientResolver.mockClear();
     mockEmailManager.sendTo.mockClear();
     mockEmailManager.isEnabled.mockReturnValue(true);
@@ -480,6 +502,10 @@ describe('WikiRoutes — /contact mail-disabled honesty (#670 Phase B)', () => {
     configState.recipient = '';
     configState.persistEnabled = false;
     configState.persistPath = '';
+    configState.honeypotEnabled = true;
+    configState.rateLimitEnabled = true;
+    configState.rateLimitMax = 5;
+    configState.rateLimitWindowMinutes = 15;
     recipientResolver.mockReset();
     mockEmailManager.sendTo.mockClear();
     mockEmailManager.isEnabled.mockReturnValue(true);
@@ -728,4 +754,138 @@ describe('WikiRoutes — POST /contact submission persistence (#670 Phase C)', (
     expect(lines[0].recipient).toBe('admin@example.com');
   });
 });
+
+
+// ─── Configurable anti-spam (#670 Phase E) ──────────────────────────────────
+//
+// Honeypot and rate-limit are now individually toggleable + tunable via
+// `ngdpbase.mail.{honeypot,rate-limit}.*` config keys. Defaults preserve
+// pre-3.13 behaviour (both on; 5 / 15 min). These tests verify each toggle
+// flips the corresponding behaviour and the tunable values take effect.
+describe('WikiRoutes — POST /contact configurable anti-spam (#670 Phase E)', () => {
+  let app: express.Application;
+
+  const validBody = {
+    name: 'Alice Smith',
+    email: 'alice@example.com',
+    subject: 'Hello',
+    message: 'Hi there.'
+  };
+
+  beforeEach(async () => {
+    mockUserContext = { ...adminUser };
+    configState.enabled = true;
+    configState.page = '';
+    configState.recipient = '';
+    configState.persistEnabled = false;
+    configState.persistPath = '';
+    configState.honeypotEnabled = true;
+    configState.rateLimitEnabled = true;
+    configState.rateLimitMax = 5;
+    configState.rateLimitWindowMinutes = 15;
+
+    recipientResolver.mockReset();
+    mockEmailManager.sendTo.mockReset();
+    mockEmailManager.sendTo.mockResolvedValue(undefined);
+    mockEmailManager.isEnabled.mockReturnValue(true);
+    recipientResolver.mockImplementation(async (override: string) => {
+      const trimmed = (override ?? '').trim();
+      if (trimmed) return trimmed;
+      return 'admin@example.com';
+    });
+
+    app = buildApp();
+    const { default: WikiEngine } = await import('../../WikiEngine');
+    const engine = new WikiEngine();
+    const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+    routes.registerRoutes(app);
+
+    contactRateLimiter.reset();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    mockUserContext = null;
+  });
+
+  // ── honeypot toggle ──────────────────────────────────────────────────────
+  test('honeypot.enabled=true (default): filled _website triggers silent success, sendTo NOT called', async () => {
+    const res = await request(app)
+      .post('/contact')
+      .send({ ...validBody, _website: 'http://spam.example.com' });
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('data-state="submitted"');
+    expect(mockEmailManager.sendTo).not.toHaveBeenCalled();
+  });
+
+  test('honeypot.enabled=false: filled _website is ignored, submission proceeds normally', async () => {
+    configState.honeypotEnabled = false;
+    const res = await request(app)
+      .post('/contact')
+      .send({ ...validBody, _website: 'http://spam.example.com' });
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('data-state="submitted"');
+    // sendTo IS called — the bot succeeds at submitting (operator's choice).
+    expect(mockEmailManager.sendTo).toHaveBeenCalledTimes(1);
+  });
+
+  // ── rate-limit toggle ────────────────────────────────────────────────────
+  test('rate-limit.enabled=true (default): 6th rapid submission returns 429', async () => {
+    for (let i = 0; i < 5; i++) {
+      const ok = await request(app).post('/contact').send(validBody);
+      expect(ok.status).toBe(200);
+    }
+    const tooMany = await request(app).post('/contact').send(validBody);
+    expect(tooMany.status).toBe(429);
+    expect(tooMany.headers['retry-after']).toBeDefined();
+  });
+
+  test('rate-limit.enabled=false: 10 rapid submissions all return 200', async () => {
+    configState.rateLimitEnabled = false;
+    for (let i = 0; i < 10; i++) {
+      const res = await request(app).post('/contact').send(validBody);
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('data-state="submitted"');
+    }
+    expect(mockEmailManager.sendTo).toHaveBeenCalledTimes(10);
+  });
+
+  // ── rate-limit max-submissions tuning ────────────────────────────────────
+  test('rate-limit.max-submissions=2: 3rd submission returns 429', async () => {
+    configState.rateLimitMax = 2;
+    const r1 = await request(app).post('/contact').send(validBody);
+    expect(r1.status).toBe(200);
+    const r2 = await request(app).post('/contact').send(validBody);
+    expect(r2.status).toBe(200);
+    const r3 = await request(app).post('/contact').send(validBody);
+    expect(r3.status).toBe(429);
+    expect(mockEmailManager.sendTo).toHaveBeenCalledTimes(2);
+  });
+
+  test('rate-limit.max-submissions=10: 6th-9th submissions still succeed (loosened limit)', async () => {
+    configState.rateLimitMax = 10;
+    for (let i = 0; i < 9; i++) {
+      const res = await request(app).post('/contact').send(validBody);
+      expect(res.status).toBe(200);
+    }
+    expect(mockEmailManager.sendTo).toHaveBeenCalledTimes(9);
+  });
+
+  // ── rate-limit Retry-After reflects window-minutes config ────────────────
+  test('rate-limit.window-minutes=30: Retry-After header reflects the longer window', async () => {
+    configState.rateLimitMax = 1;
+    configState.rateLimitWindowMinutes = 30;
+    await request(app).post('/contact').send(validBody);
+    const denied = await request(app).post('/contact').send(validBody);
+    expect(denied.status).toBe(429);
+    const retryAfter = parseInt(denied.headers['retry-after'], 10);
+    // Window is 30 min = 1800 seconds. Retry-After should be ~1800 (minus
+    // some elapsed ms between the two requests). Allow a generous 60s slack
+    // to absorb test machine variance without being meaninglessly loose.
+    expect(retryAfter).toBeGreaterThan(1740);
+    expect(retryAfter).toBeLessThanOrEqual(1800);
+  });
+});
+
+
 

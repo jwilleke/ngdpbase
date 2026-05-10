@@ -4,7 +4,7 @@ ngdpbase ships a built-in `/contact` route that operators can use as a zero-auth
 
 The form is server-rendered, posts back to `/contact`, validates inputs, defends against bot spam (honeypot + per-IP rate limit), resolves a recipient (explicit config or first-admin fallback), and delivers via the existing `EmailManager`. When mail is unconfigured the form renders a "not configured" state instead, so visitors don't get a misleading success.
 
-This doc covers the current shipping behaviour as of **v3.12.1**. The feature originally landed in #658 (v3.11.0 GET preview, v3.11.1 closed the form-and-send loop). Subsequent improvements ship under the umbrella issue #670 in five phases (A–E); see the *Roadmap* section at the end for what's done vs planned.
+This doc covers the current shipping behaviour as of **v3.13.0**. The feature originally landed in #658 (v3.11.0 GET preview, v3.11.1 closed the form-and-send loop). Subsequent improvements ship under the umbrella issue #670 in five phases (A–E); see the *Roadmap* section at the end for what's done vs planned.
 
 ---
 
@@ -355,10 +355,45 @@ jq -c "select(.ts > \"$(date -u -v-24H +%Y-%m-%dT%H:%M:%SZ)\")" /path/to/data/co
 
 ### What's in place
 
-- **Honeypot field `_website`** — hidden via inline CSS in `views/contact.ejs` (positioned `-10000px` off-screen, `tabindex="-1"`, `aria-hidden`). Bots that scrape and fill every field are caught; the request returns the success view but no mail is sent (rate-limit budget is still consumed). Logged at warn level.
-- **Per-IP rate limit** — 5 submissions per IP per 15-minute rolling window, enforced by `SimpleRateLimiter`. Module-scope counter; distributed deployments get per-replica budgets, not a shared one. Run a real WAF or proxy upstream if you need cross-replica enforcement. Phase E of #670 will move these settings (max submissions, window, on/off) to config under `ngdpbase.mail.{honeypot,rate-limit}.*`.
+- **Honeypot field `_website`** — hidden via inline CSS in `views/contact.ejs` (positioned `-10000px` off-screen, `tabindex="-1"`, `aria-hidden`). Bots that scrape and fill every field are caught; the request returns the success view but no mail is sent (rate-limit budget is still consumed). Logged at warn level. Toggleable via `ngdpbase.mail.honeypot.enabled` (#670 Phase E, v3.13.0); default `true`.
+- **Per-IP rate limit** — default 5 submissions per IP per 15-minute rolling window, enforced by `SimpleRateLimiter`. Module-scope counter; distributed deployments get per-replica budgets, not a shared one. Run a real WAF or proxy upstream if you need cross-replica enforcement. Toggleable + tunable via `ngdpbase.mail.rate-limit.{enabled,max-submissions,window-minutes}` (#670 Phase E, v3.13.0).
 - **Recipient sentinel** — install-default `admin@localhost` is excluded from auto-resolution, so a freshly installed dormant instance can't be turned into an open mail relay just by enabling `/contact`. The form renders "not configured" until an admin sets a real email or `contact.recipient` is set explicitly.
 - **No HTML emails** — `EmailManager.sendTo` is called with plain-text body only; the subject prefix and from-address are server-controlled. Visitor-supplied HTML in the message field is delivered verbatim as text.
+
+### Tuning (#670 Phase E, v3.13.0)
+
+The honeypot and rate-limit defenses are individually toggleable and tunable via `ngdpbase.mail.*` config keys. The keys live under `mail.*` rather than `application.contact.*` because they're scoped to "mail-bearing public forms" — today only `/contact`, but future forms (re-enabled `/register`, magic-link request, password-reset, subscription) will read the same flags.
+
+| Key | Default | Description |
+|---|---|---|
+| `ngdpbase.mail.honeypot.enabled` | `true` | Reject submissions where the hidden `_website` field was filled. Set `false` to disable the check entirely (e.g., if a different anti-bot layer upstream is doing the work). |
+| `ngdpbase.mail.rate-limit.enabled` | `true` | Apply per-IP rate limiting. Set `false` to disable (e.g., if a WAF/proxy upstream is throttling). |
+| `ngdpbase.mail.rate-limit.max-submissions` | `5` | Max submissions per IP per window before the 429 trips. |
+| `ngdpbase.mail.rate-limit.window-minutes` | `15` | Window length. |
+
+The rate limiter's `configure()` method preserves existing bucket counters when config is reapplied — operators tightening or loosening the limit don't have to wait out the old window for it to take effect. Shrinking `window-minutes` may cause in-flight buckets to be treated as expired on the next consume, which is the desired semantics.
+
+#### Example — disable honeypot, loosen rate limit (relying on upstream WAF)
+
+```json
+{
+  "ngdpbase.mail.honeypot.enabled": false,
+  "ngdpbase.mail.rate-limit.enabled": true,
+  "ngdpbase.mail.rate-limit.max-submissions": 50,
+  "ngdpbase.mail.rate-limit.window-minutes": 60
+}
+```
+
+#### Example — tighten everything for a high-spam deploy
+
+```json
+{
+  "ngdpbase.mail.honeypot.enabled": true,
+  "ngdpbase.mail.rate-limit.enabled": true,
+  "ngdpbase.mail.rate-limit.max-submissions": 3,
+  "ngdpbase.mail.rate-limit.window-minutes": 60
+}
+```
 
 ### Known gap: CSRF
 
@@ -413,7 +448,7 @@ These aren't bugs you need to work around — they're current-state limitations 
 | `mail.enabled = false` returns "Message sent" to the visitor | **Fixed in v3.11.5** | #670 Phase B — both handlers now render "not configured" and log at error level when `EmailManager` is unregistered or `mail.enabled = false` |
 | Submissions are email-only (not persisted) | **Fixed in v3.12.0** | #670 Phase C — every legitimate POST is appended to `data/contact-submissions.log` (JSONL); see *Submission persistence* above |
 | Recipient list pass-through is undocumented and unvalidated | **Fixed in v3.12.1** | #670 Phase D — startup invariant in `ConfigurationManager.assertContactRecipientWellFormed`; *Recipient patterns* doc section above |
-| Anti-spam settings are hard-coded | Fix planned | #670 Phase E — config under `ngdpbase.mail.{honeypot,rate-limit}.*` |
+| Anti-spam settings are hard-coded | **Fixed in v3.13.0** | #670 Phase E — config under `ngdpbase.mail.{honeypot,rate-limit}.*`; see *Tuning* under *Security & abuse defenses* |
 | No CSRF validation on `POST /contact` | Codebase-wide gap, not route-specific | Tracked separately |
 | Rate limit is per-replica, not shared | Architectural | Run a WAF / proxy upstream; per `docker/HEADLESS-DEPLOYMENT-NOTES.md` §9 |
 | `contact-us` *page* is incorrectly tagged `system-category: documentation` | Cosmetic — wrong filter bucket in admin views | One-line fix to `required-pages/c0a01d19-…md`; not blocking |
@@ -432,7 +467,7 @@ Tracked as one umbrella `[FEATURE]` issue with five phases:
 | B | Mail-disabled UX honesty (render "not configured", log at error) | **Shipped v3.11.5** |
 | C | Submission persistence to `data/contact-submissions.log` (JSONL) | **Shipped v3.12.0** |
 | D | Recipient list validation at startup + docs for inline-CSV vs distribution-list patterns | **Shipped v3.12.1** |
-| E | Configurable anti-spam under `ngdpbase.mail.{honeypot,rate-limit}.*` | Planned |
+| E | Configurable anti-spam under `ngdpbase.mail.{honeypot,rate-limit}.*` | **Shipped v3.13.0** |
 
 This doc is updated as each phase merges.
 
@@ -450,7 +485,7 @@ This doc is updated as each phase merges.
 - `src/managers/EmailManager.ts` — the mail dispatch layer; `console` and `smtp` providers; `isEnabled()` reads `ngdpbase.mail.enabled`.
 - `src/managers/ConfigurationManager.ts` `assertContactPageNotLoop` — the `contact.page = "contact"` redirect-loop guard.
 - `src/managers/ConfigurationManager.ts` `assertContactRecipientWellFormed` — the recipient-shape startup invariant (#670 Phase D).
-- `src/utils/SimpleRateLimiter.ts` — the rate limiter used by this route (and a few others).
+- `src/utils/SimpleRateLimiter.ts` — the rate limiter used by this route (and a few others); `configure()` lets `processContact` apply current `mail.rate-limit.*` config without resetting in-flight bucket state (#670 Phase E).
 - `src/utils/ContactSubmissionLog.ts` — the JSONL writer (#670 Phase C); append-only, best-effort, never throws.
 - `views/contact.ejs` — the form template, including the `_website` honeypot field.
 - `views/footer.ejs` — the footer view; renders the `/contact` link when `contactAvailable && contactFooterEnabled`.

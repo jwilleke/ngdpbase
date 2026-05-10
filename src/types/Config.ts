@@ -95,6 +95,35 @@ export interface WikiConfig {
    */
   'ngdpbase.application.contact.persist.path': string;
 
+  /**
+   * Anti-spam: enable the honeypot field on mail-bearing public forms
+   * (#670 Phase E). Today only `/contact` uses this; future mail-bearing
+   * public forms (re-enabled `/register`, magic-link request, etc.) should
+   * read the same flag. When false, the hidden `_website` field is no
+   * longer silently rejected — bots that fill it succeed normally. Default:
+   * true.
+   */
+  'ngdpbase.mail.honeypot.enabled': boolean;
+
+  /**
+   * Anti-spam: enable per-IP rate limiting on mail-bearing public forms
+   * (#670 Phase E). When false, no submissions are 429'd; the rate-limiter
+   * counter is not consumed. Default: true.
+   */
+  'ngdpbase.mail.rate-limit.enabled': boolean;
+
+  /**
+   * Anti-spam: max submissions per IP per `window-minutes` window before
+   * the 429 trips (#670 Phase E). Default: 5.
+   */
+  'ngdpbase.mail.rate-limit.max-submissions': number;
+
+  /**
+   * Anti-spam: rate-limit window length in minutes (#670 Phase E).
+   * Default: 15.
+   */
+  'ngdpbase.mail.rate-limit.window-minutes': number;
+
   /** Server port */
   'ngdpbase.server.port': number;
 

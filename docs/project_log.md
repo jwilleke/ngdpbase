@@ -2,6 +2,27 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-10-05
+
+- Agent: Claude Opus 4.7
+- Subject: #670 Phase E (v3.13.0) — configurable anti-spam under `ngdpbase.mail.{honeypot,rate-limit}.*`. Closes umbrella issue #670 (all five phases shipped this same day).
+- Current Issue: #670 (umbrella; A–E all shipped; close after this commit)
+- Tests: 5372 vitest unit tests pass (10 new — 7 in `WikiRoutes.contact.test.ts` covering both toggles + max-submissions tuning + `Retry-After` window length, 3 in `SimpleRateLimiter.test.ts` for `configure()`); `tsc --noEmit` clean; markdownlint clean.
+- Work Done:
+  - Added `SimpleRateLimiter.configure(opts)` (~10 LOC) for runtime reconfiguration without resetting in-flight bucket state. Existing counters keep accruing under the new options. Shrinking `windowMs` causes in-flight buckets to be treated as expired on the next consume — desired semantics so operators tightening the limit don't have to wait out the old window.
+  - Four new config keys under `ngdpbase.mail.*` (cross-form scope, not contact-specific): `honeypot.enabled`, `rate-limit.enabled`, `rate-limit.max-submissions`, `rate-limit.window-minutes`. Defaults `true / true / 5 / 15` preserve pre-3.13 behaviour exactly.
+  - In `processContact`: read all four keys at the top of the handler, call `contactRateLimiter.configure(...)` to apply current config, gate each defense on its `enabled` toggle. The `configure` call is cheap and runs on every POST — config changes take effect immediately on the next request without app restart.
+  - Decided to keep the namespace under `ngdpbase.mail.*` rather than `ngdpbase.application.contact.*` because future mail-bearing public forms (re-enabled `/register`, magic-link request, password-reset, subscription forms) should reuse the same defenses, not duplicate them per-form. Documented this rationale in the new `_comment_mail_anti_spam` block.
+  - Decided to KEEP the hidden `_website` field in `views/contact.ejs` regardless of whether honeypot is enabled. Conditional rendering would require plumbing `honeypotEnabled` through `getCommonTemplateData`, and a stray hidden field in the HTML costs nothing. The server-side check is what matters.
+  - Updated `docs/admin/Contact-Us.md` *Security & abuse defenses*: added a *Tuning* subsection with the four-key matrix and two worked examples (loosen for WAF-backed deploys, tighten for high-spam ones); flipped *Known limitations* Phase E from "Fix planned" to "Fixed in v3.13.0"; *Roadmap* tick. With Phase E shipped, all five phases of the original review are complete and the doc is the operator-facing source of truth for the contact mechanism.
+  - Updated test scaffolding `configState` to handle the four new keys; default values match production so existing 37 contact tests still pass unchanged. Added Phase E describe block (7 new tests) that opts in by flipping individual flags. Test-data-destruction guard from Phase C still in effect — persistence remains OFF by default in the file.
+  - SEMVER **minor** bump 3.12.1 → 3.13.0 (new feature surface), via `src/utils/version.ts`.
+  - With this commit, issue #670 closes — all five phases (A=footer link, B=mail-disabled UX honesty, C=submission persistence, D=recipient list validation, E=configurable anti-spam) are shipped within the same day. Total scope across phases: 8 new config keys, 1 new util module, 1 new admin doc, ~50 new tests, two version-minor bumps and three patch bumps.
+- Commits: (this commit) `feat: configurable /contact anti-spam under mail.{honeypot,rate-limit}.* (v3.13.0, #670 Phase E — closes #670)`
+- Files Modified:
+  - modified: `src/utils/SimpleRateLimiter.ts` (configure method), `src/utils/__tests__/SimpleRateLimiter.test.ts` (3 new tests), `src/routes/WikiRoutes.ts` (processContact reads new keys, calls configure, gates each defense), `src/routes/__tests__/WikiRoutes.contact.test.ts` (configState extended, beforeEach resets, Phase E describe — 7 tests), `src/types/Config.ts` (4 new key entries), `config/app-default-config.json` (4 new keys + new `_comment_mail_anti_spam`, version bump), `docs/admin/Contact-Us.md` (*Tuning* subsection + table updates + roadmap tick), `package.json` (version bump 3.12.1 → 3.13.0), `CHANGELOG.md`
+  - this entry in `docs/project_log.md`
+
 ## 2026-05-10-04
 
 - Agent: Claude Opus 4.7

@@ -42,6 +42,20 @@ export class SimpleRateLimiter {
   constructor(private opts: RateLimiterOptions) {}
 
   /**
+   * Replace the options at runtime. Existing buckets are preserved — their
+   * counters keep accruing under the new options. Used by `/contact` (#670
+   * Phase E) to reflect operator config changes without restarting the app.
+   *
+   * Shrinking `windowMs` may cause in-flight buckets to be treated as expired
+   * on the next consume (their `windowStart` is now older than the new
+   * window); that's the desired semantics — operators tightening the limiter
+   * shouldn't need to wait out the old window.
+   */
+  configure(opts: RateLimiterOptions): void {
+    this.opts = opts;
+  }
+
+  /**
    * Record an event under `key` and return whether it should be allowed.
    *
    * - When the current window has expired, the counter resets to 1 and the

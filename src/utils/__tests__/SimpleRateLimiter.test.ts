@@ -59,4 +59,39 @@ describe('SimpleRateLimiter', () => {
     const denied = rl.consume('a', 3000);
     expect(denied.retryAfterMs).toBe(7000);
   });
+
+  // ── configure() — runtime reconfiguration (#670 Phase E) ────────────────
+  test('configure() updates max — subsequent consumes use the new threshold', () => {
+    const rl = new SimpleRateLimiter({ max: 2, windowMs: 10_000 });
+    expect(rl.consume('a', 0).allowed).toBe(true);
+    expect(rl.consume('a', 100).allowed).toBe(true);
+    expect(rl.consume('a', 200).allowed).toBe(false); // hit max=2
+
+    // Loosen to max=5: existing bucket count=3 should now be under threshold,
+    // so further consumes are allowed until count exceeds 5.
+    rl.configure({ max: 5, windowMs: 10_000 });
+    expect(rl.consume('a', 300).allowed).toBe(true); // count=4
+    expect(rl.consume('a', 400).allowed).toBe(true); // count=5
+    expect(rl.consume('a', 500).allowed).toBe(false); // count=6
+  });
+
+  test('configure() updates windowMs — shrinking causes existing buckets to expire on next consume', () => {
+    const rl = new SimpleRateLimiter({ max: 1, windowMs: 10_000 });
+    rl.consume('a', 0); // bucket: count=1, windowStart=0
+    expect(rl.consume('a', 5000).allowed).toBe(false); // within original window
+
+    // Shrink windowMs to 1000: at t=5000, bucket's windowStart=0 is older
+    // than 1000ms, so it's treated as expired and resets on next consume.
+    rl.configure({ max: 1, windowMs: 1000 });
+    expect(rl.consume('a', 5000).allowed).toBe(true); // fresh window
+  });
+
+  test('configure() preserves existing bucket counters (does not call reset)', () => {
+    const rl = new SimpleRateLimiter({ max: 2, windowMs: 10_000 });
+    rl.consume('a', 0);
+    rl.consume('a', 100);
+    // Same opts — should leave counter untouched.
+    rl.configure({ max: 2, windowMs: 10_000 });
+    expect(rl.consume('a', 200).allowed).toBe(false); // still at max
+  });
 });

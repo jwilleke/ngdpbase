@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.13.0] - 2026-05-10
+
+### Added
+
+- **Configurable anti-spam for `/contact`** (#670 Phase E — closes #670) — the honeypot field and per-IP rate limit are now individually toggleable and tunable via four new config keys under `ngdpbase.mail.*`. Defaults preserve pre-3.13 behaviour (both on, 5 submissions / 15-minute window). The keys live under `mail.*` rather than `application.contact.*` because they're scoped to "mail-bearing public forms" — today only `/contact`, but future forms (re-enabled `/register`, magic-link request, password-reset, subscription) will read the same flags.
+- **`ngdpbase.mail.honeypot.enabled`** (boolean, default `true`) — when `false`, the hidden `_website` field is no longer silently rejected; bots that fill it succeed normally. Useful when an upstream WAF or anti-bot layer is doing the work and you don't need a second check.
+- **`ngdpbase.mail.rate-limit.enabled`** (boolean, default `true`) — when `false`, no submissions are 429'd; the rate-limiter counter is not consumed. Useful when a WAF / proxy upstream is throttling.
+- **`ngdpbase.mail.rate-limit.max-submissions`** (number, default `5`) — max submissions per IP per `window-minutes` window before the 429 trips.
+- **`ngdpbase.mail.rate-limit.window-minutes`** (number, default `15`) — rate-limit window length in minutes.
+- **`SimpleRateLimiter.configure(opts)`** — runtime reconfiguration without resetting in-flight bucket state. Existing per-IP counters keep accruing under the new options. Shrinking `windowMs` may cause in-flight buckets to be treated as expired on the next consume — desired semantics so operators tightening the limiter don't have to wait out the old window.
+- 7 new integration tests in `src/routes/__tests__/WikiRoutes.contact.test.ts` covering both toggles (default-on / explicitly-off), max-submissions tuning (`max=2` vs `max=10`), and `Retry-After` reflecting `window-minutes`. 3 new unit tests in `src/utils/__tests__/SimpleRateLimiter.test.ts` for `configure()` (max update, windowMs shrink, state preservation).
+
+### Changed
+
+- `src/routes/WikiRoutes.ts` `processContact` — reads the four new keys at the top of the handler, calls `contactRateLimiter.configure(...)` so config changes take effect on the next POST without restart, and gates each defense on its `enabled` toggle.
+- `_comment_application_contact` in `config/app-default-config.json` left as-is; new `_comment_mail_anti_spam` block above the `mail.honeypot.*` / `mail.rate-limit.*` keys explains the cross-form scope.
+- `docs/admin/Contact-Us.md` *Security & abuse defenses* section gains a *Tuning* subsection with the four-key matrix and two worked examples (loosen for WAF-backed deploys, tighten for high-spam ones); *Known limitations* table flips Phase E from "Fix planned" to "Fixed in v3.13.0"; *Roadmap* tick. With Phase E shipped, all five phases of the original review are complete.
+
+### Notes
+
+- This is Phase E of #670 — the umbrella issue is now closed (all five phases shipped). Future mail-bearing public forms should read the same `ngdpbase.mail.{honeypot,rate-limit}.*` keys rather than introducing per-form duplicates.
+
 ## [3.12.1] - 2026-05-10
 
 ### Added
