@@ -2,6 +2,28 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-10-07
+
+- Agent: Claude Opus 4.7
+- Subject: docs follow-up — bring `Self-Registration.md` current with what #670 actually shipped (Phases A–E). Operator-noticed staleness in the *Routing to /contact route* section after asking "is it updated and current?".
+- Current Issue: none (cleanup follow-up to #670 closure)
+- Tests: not run — docs-only. markdownlint clean.
+- Work Done:
+  - Operator question prompted an audit of the doc against the post-#670 state. Found four staleness items, all in the *Routing to /contact route* section (everything else in the doc was already current):
+    1. **Stale future-tense forecast** at the bottom of the section ("A future change may add a first-class config option to point the registration button straight at the `/contact` route without an intermediate page") — that future is past. #670 Phase A (v3.11.4) solved the same operator need from the other end via a footer link to `/contact` rather than rebuilding the registration button. The forecast was authored mid-session before Phase A landed.
+    2. **Incomplete config table** — listed only 3 of the now 5 `contact.*` keys (missing `footer.enabled`, `persist.enabled`, `persist.path` from Phases A and C; also doesn't surface the `mail.{honeypot,rate-limit}.*` anti-spam keys from Phase E).
+    3. **Missing footer-link composition note** — with registration locked AND `/contact` fully available, visitors now have TWO discoverable paths (header `Request access` button → page chain, AND footer `Contact` link → `/contact` directly). The doc only described the first.
+    4. **Missing mail-dependency reminder** — Phase B made `mail.enabled=false` render "not configured" instead of the form. Operators building a `request-access → contact-us → /contact` chain need to know mail must be configured for the chain to actually deliver.
+  - Fixes:
+    - **#1 + #3** Replaced the stale forecast with a new *Two paths after #670 Phase A* subsection documenting the header-button page-chain AND the footer Contact link as the two reachable paths. Made explicit that the header button is NOT being re-pointed — the footer link covers the discoverability need from a different angle, and the page chain remains useful for operators who want curated landing copy before the form.
+    - **#2** Trimmed the *Routing to /contact route* config table to the two keys directly relevant to registration composition (`contact.enabled` + `contact.recipient`); cross-linked to `Contact-Us.md` for the full surface (footer toggle, persistence, anti-spam, state matrix, recipient patterns). Avoids duplication — `Contact-Us.md` is the canonical source.
+    - **#4** Added a `> Mail must be working.` callout block referencing #670 Phase B and pointing at `email-setup.md`. Explicit about what visitors see when mail isn't configured (the warning page, not the form).
+  - Wrote new content unwrapped (per `feedback_no_markdown_wrap.md`); the surrounding pre-existing wrapped prose stays as-is. The doc is now mixed-style — newer sections unwrapped, older sections wrapped — which honestly reflects the file's history. A future hygiene pass could unwrap the rest if asked.
+- Commits: (this commit) `docs: bring Self-Registration.md current with #670 Phases A-E`
+- Files Modified:
+  - modified: `docs/admin/Self-Registration.md` (*Routing to /contact route* section rewrite — table trim + cross-link + mail-must-be-working callout + new *Two paths after #670 Phase A* subsection replacing the stale forecast)
+  - this entry in `docs/project_log.md`
+
 ## 2026-05-10-06
 
 - Agent: Claude Opus 4.7

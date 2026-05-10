@@ -112,20 +112,18 @@ admin → navigate → Edit). Edit history, ACLs, and reverts all work as usual.
 
 ## Routing to the `/contact` route
 
-Separately from the seeded pages, ngdpbase also ships a built-in `/contact`
-*route* (added in v3.11.0, issue #658). This is a different mechanism with its
-own config keys:
+Separately from the seeded pages, ngdpbase also ships a built-in `/contact` *route* (originally #658, extended through #670). The keys most relevant to registration composition:
 
 | Key | Default | Description |
 |---|---|---|
 | `ngdpbase.application.contact.enabled` | `true` | Master toggle. `false` → `/contact` returns 404. |
-| `ngdpbase.application.contact.page` | `""` | If set to a slug, `/contact` 302-redirects to `/view/<slug>` (operator-owned page). If empty, `/contact` renders the built-in form view. |
-| `ngdpbase.application.contact.recipient` | `""` | Email recipient(s). Empty resolves at request time to the first admin user whose email isn't the install-default sentinel. |
+| `ngdpbase.application.contact.recipient` | `""` | Empty resolves at request time to the first admin user whose email isn't the install-default sentinel `admin@localhost`. Accepts a single address or an inline CSV. |
 
-The `/contact` route does **not** automatically wire to the registration
-redirect button. To send the **Request access** button at `/contact` directly,
-the simplest option today is to point the registration redirect at a page that
-itself links or redirects to `/contact`:
+For the full `/contact` configuration surface — footer-link toggle, JSONL submission persistence, anti-spam (honeypot + per-IP rate limit), state matrix, recipient patterns — see [`Contact-Us.md`](./Contact-Us.md). What follows here is just the part that interacts with the registration toggle.
+
+> **Mail must be working.** Since #670 Phase B (v3.11.5), `/contact` renders "not configured" rather than the form when `ngdpbase.mail.enabled` is `false` or no recipient resolves. If you build a registration → page-chain → `/contact` flow but mail isn't configured, visitors land on the warning page, not the form. See [`email-setup.md`](./email-setup.md).
+
+The `/contact` route does **not** automatically wire to the registration redirect button. To send the **Request access** button at `/contact` directly, the simplest option is to point the registration redirect at a page that itself links to `/contact`:
 
 ```json
 {
@@ -134,11 +132,16 @@ itself links or redirects to `/contact`:
 }
 ```
 
-…and then edit the `contact-us` page to include a prominent link to
-`/contact` (or a meta-refresh).
+…and then edit the `contact-us` page to include a prominent link to `/contact` (or a meta-refresh).
 
-A future change may add a first-class config option to point the registration
-button straight at the `/contact` route without an intermediate page.
+### Two paths after #670 Phase A
+
+With #670 Phase A (v3.11.4), `/contact` got its own footer link rendered on every page when the contact feature is fully available (`contact.enabled` + `mail.enabled` + a recipient resolves). With both the footer link and a locked registration, visitors now have two paths:
+
+- **Header *Request access* button** → seeded page chain (`/view/request-access` → `[Contact Us]` link → `/view/contact-us`). Operator-curated copy; can include calls-to-action other than mail.
+- **Footer *Contact* link** → `/contact` directly. Built-in form, immediate submission.
+
+The header button still hard-codes `/view/<slug>` and is not being re-pointed at the `/contact` route. That's a deliberate design choice, not a planned change — the footer link covers the discoverability need from a different angle, and the page-chain remains useful for operators who want a curated landing page before the form.
 
 ---
 
