@@ -2,6 +2,30 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-10-14
+
+- Agent: Claude Opus 4.7
+- Subject: Fixed two seeded-content drifts on `required-pages/519febcc-…md` (the `request-access` page): `system-category` was `documentation` (cosmetic-but-wrong filter bucket) and the body's `[Contact Us]` link resolved to `/view/Contact%20Us` rather than the form route `/contact`. Operator caught both reading live page metadata on geohazardwatch.com.
+- Current Issue: none — small content fix, no GH issue filed (the `Contact-Us.md` Known Limitations table already tracked one half of this).
+- Tests: 5385 vitest tests pass (no test file touched — pure content edit; type-check clean).
+- Work Done:
+  - Operator pasted page metadata from geohazardwatch.com showing `Category: documentation` and noted "IS NOT System Category: documentation (Should be system I think). Should have the [Contact Us|/contact]". Both observations correct.
+  - Cross-checked seeded-page conventions: `grep ^system-category required-pages/*.md | sort | uniq -c` shows `system-category: system` is used for chrome/scaffolding pages (LeftMenu, Privacy Notice, Markdown Cheat Sheet) — exactly the bucket `request-access` belongs in. The `documentation` bucket is for user-authored docs about how to *use* the platform; `request-access` is install scaffolding, not how-to.
+  - Cross-checked JSPWiki link-with-target syntax — `[Display Text|/path]` is in active use across `required-pages/*.md` (e.g., `[User Profile|/profile]`, `[Admin → Backup Management|/admin/backup]`). Standard pattern, no new mechanism needed.
+  - Edits to `required-pages/519febcc-b640-4a0e-a495-4c4db655484b.md`: `system-category: documentation` → `system: system`; `[Contact Us]` → `[Contact Us|/contact]`; bumped frontmatter `lastModified` 2026-05-08 → 2026-05-10.
+  - Updated `docs/admin/Contact-Us.md` *Known limitations* row that documented the composition-gap with `ngdpbase.application.registration: false`. The row previously said "edit the seeded `request-access` or `contact-us` page to include a JSPWiki-style link to `/contact`" — that's done at the seed level now, so the row is rewritten to reflect current state and to redirect operators who customise the page.
+  - Did NOT touch the seeded `contact-us` page (UUID `c0a01d19-…`) which has the same `system-category: documentation` mistag per Contact-Us.md *Known limitations*. That row of the table is still accurate; deferred to a separate small commit if/when the operator wants both fixed together. Per small-iterations preference: didn't bundle.
+  - Did NOT yet update the live persistent copy at `/mnt/tank/jims/data/systems/geohazardwatch/pages/...` on the NAS share. The seeded fix only affects new ngdpbase deployments; existing instances (including geohazardwatch.com) retain whatever copy is on their persistent volume. Operator to confirm whether to also edit the live persistent file, or fix via admin UI.
+- Commits: pending — about to commit + push.
+- Files Modified:
+  - `required-pages/519febcc-b640-4a0e-a495-4c4db655484b.md` (system-category + link target + lastModified)
+  - `docs/admin/Contact-Us.md` (one row in *Known limitations* table updated)
+  - `CHANGELOG.md` (new `[Unreleased] / Fixed` bullet)
+  - `docs/project_log.md` (this entry)
+- Follow-ups:
+  - Fix the same `system-category: documentation` mistag on the seeded `contact-us` page (`required-pages/c0a01d19-…md`) — already documented in `Known Limitations`, one-line fix when operator wants it.
+  - Edit the live persistent `request-access` page on the geohazardwatch NAS share so the fix appears in production *now*, not just on the next fresh deploy. Awaiting operator OK.
+
 ## 2026-05-10-13
 
 - Agent: Claude Opus 4.7

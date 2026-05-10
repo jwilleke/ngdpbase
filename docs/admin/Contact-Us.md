@@ -453,7 +453,7 @@ These aren't bugs you need to work around — they're current-state limitations 
 | Rate limit is per-replica, not shared | Architectural | Run a WAF / proxy upstream; per `docker/HEADLESS-DEPLOYMENT-NOTES.md` §9 |
 | `contact-us` *page* is incorrectly tagged `system-category: documentation` | Cosmetic — wrong filter bucket in admin views | One-line fix to `required-pages/c0a01d19-…md`; not blocking |
 | Recipient resolver returns the *first* admin in load order | Not alphabetical; multi-admin sites get an arbitrary primary | Set `contact.recipient` explicitly to be deterministic |
-| Composition with `ngdpbase.application.registration: false` requires authoring an intermediate page that links to `/contact` | The "Request access" header button can't directly point at `/contact` because `views/header.ejs` hard-codes `/view/<slug>` | Edit the seeded `request-access` or `contact-us` page to include a JSPWiki-style link to `/contact`, or wait for a future PR that adds a `redirect-url` config |
+| Composition with `ngdpbase.application.registration: false` requires the intermediate `request-access` page to link to `/contact` rather than directly wiring the header button | The "Request access" header button can't directly point at `/contact` because `views/header.ejs` hard-codes `/view/<slug>` | The seeded `request-access` page now contains `[Contact Us|/contact]` (fixed in v3.13.x). Operators who customise the page should keep that link or substitute their own contact path. A future PR could add a `redirect-url` config to skip the intermediate page entirely. |
 
 ---
 
