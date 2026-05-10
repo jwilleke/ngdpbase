@@ -2,6 +2,30 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-10-10
+
+- Agent: Claude Opus 4.7
+- Subject: Capture lost cross-repo context for SMTP wiring on geohazardwatch.com `/contact` form. No code changes — exploratory + workflow-defining session that produced #676 and a memory entry for cross-repo coordination.
+- Current Issue: #676 filed (filed in this repo, by intent — see workflow note below).
+- Tests: none — no code touched.
+- Work Done:
+  - Operator opened the session reporting that >1 hour of prior work attempting to wire Gmail SMTP for the `/contact` form on geohazardwatch.com had vanished without a trace. Verified across `mj-infra-flux` git log, `~/.bash_history` on `deby`, today's Claude session JSONL transcript at `~/.claude/projects/-home-jim-Documents-mj-infra-flux/c1fac234-….jsonl`, the `mj-infra-flux` open-issues list, both Mac- and deby-side checkouts, and the `.crush/` state — **no email/SMTP/MX artifact anywhere**. Either the prior session was in a different tool/window that didn't persist, or it stayed in pure-discussion territory without producing a commit, log entry, or issue.
+  - Goal restated by operator: the `/contact` form should send mail via Gmail SMTP using the `jwilleke@gmail.com` app password already stored in SOPS in `mj-infra-flux` (used today by alertmanager), targeting `admin@geohazardwatch.com`, which Cloudflare Email Routing forwards to the real inbox. All puzzle pieces exist; only the operator-side configuration plumbing is missing.
+  - Read the relevant ngdpbase code/docs to verify the wiring shape end-to-end before filing the issue: `src/managers/EmailManager.ts` (SMTP provider selection at `:51`, password read at `:56`, no env-var fallback), `src/managers/ConfigurationManager.ts` `getProperty` env-var allowlist (~`:608`, covers only base-url/hostname/server/session/app-name — `mail.*` keys are config-file-only today), `docs/admin/email-setup.md`, `docs/admin/Contact-Us.md` (full state matrix, recipient resolution, audit log shape).
+  - Identified the most likely gotcha that ate the prior hour: **Gmail SMTP silently rewrites the `From:` header** to the authenticated account (`jwilleke@gmail.com`) unless an alternate alias is verified under *Send mail as*. Setting `mail.from: "<noreply@geohazardwatch.com>"` *appears* to work but Gmail rewrites it. Recommendation in #676: use `jwilleke@gmail.com` as `From:` for the first cut; alias verification is a follow-up.
+  - Filed **#676** (`[FEATURE] Wire SMTP outbound for /contact form on geohazardwatch.com`) capturing: the goal, where the password lives (option a — inline into the persistent `app-custom-config.json` since that file is the source of truth as of mj-infra-flux@840b87c — vs option b, add env-var override in ngdpbase + mount SOPS Secret), the Gmail rewriting gotcha, the verification checklist, and explicit out-of-scope items (env-var support, `replyTo`, alias verification, alternate relays, full SPF/DKIM/DMARC).
+  - Established a workflow rule, captured to memory (`feedback_cross_repo_coordination.md`): **all multi-repo / multi-instance work — geohazardwatch, mj-infra-flux, any future satellite repo — gets its log entry and GH issue in `jwilleke/ngdpbase`, not in the satellite repo.** Operator's exact reasoning: "WAY too much context is lost moving from one repo to another." This is *the* upstream code repo; it survives infrastructure churn; consolidating issues + log entries here is the cheapest insurance against the kind of context-loss that triggered this session. Cross-link satellite-repo commits into ngdpbase log entries instead of duplicating entries on both sides.
+  - Did NOT attempt the wiring this session — operator wanted the lost context durably captured first. Implementation path is in #676 and is straightforward (edit one persistent JSON file on `deby`, rollout-restart the deploy, verify via curl + inbox).
+- Commits: none yet — log + memory updates pending commit; issue #676 already filed.
+- Files Modified:
+  - `docs/project_log.md` (this entry)
+  - `~/.claude/projects/-Volumes-hd2A-workspaces-github-ngdpbase/memory/feedback_cross_repo_coordination.md` (new, type=feedback)
+  - `~/.claude/projects/-Volumes-hd2A-workspaces-github-ngdpbase/memory/MEMORY.md` (added index pointer)
+- Follow-ups:
+  - Execute the option (a) wiring described in #676 — single edit of `/mnt/tank/jims/data/systems/geohazardwatch/config/app-custom-config.json` on `deby`, rollout, verify, then close #676.
+  - If a separate desire to keep the password out of the NAS-side config file emerges, file a follow-up issue for ngdpbase env-var support of `ngdpbase.mail.provider.smtp.{user,pass}` (option b in #676).
+  - Consider adding `replyTo` support in `EmailManager.sendTo` so admins can reply directly to visitors instead of having to copy the email out of the message body — separate small ngdpbase code change, would land here.
+
 ## 2026-05-10-09
 
 - Agent: Claude Opus 4.7
