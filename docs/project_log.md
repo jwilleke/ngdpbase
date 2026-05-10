@@ -2,6 +2,28 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-10-11
+
+- Agent: Claude Opus 4.7
+- Subject: Executed option (a) of #676 — wired Gmail SMTP into the geohazardwatch.com `/contact` form and verified end-to-end on the Gmail leg. No ngdpbase code change; all work in `app-custom-config.json` on the persistent NAS volume + a kubectl rollout-restart.
+- Current Issue: #676 (verified working — server-side; pending operator inbox-delivery confirmation before close).
+- Tests: end-to-end live-cluster verification only — `[EmailManager] Initialized provider=smtp enabled=true from=GeoHazardWatch Contact <jwilleke@gmail.com>` on boot; `GET /contact` → 200 form view; `POST /contact` → 200 + "Message sent"; `[NodemailerMailProvider] Sent email to admin@geohazardwatch.com: SMTP wiring verified (#676)`. No unit tests — config-only change.
+- Work Done:
+  - Operator hand-edited the persistent `app-custom-config.json` at `/mnt/tank/jims/data/systems/geohazardwatch/config/app-custom-config.json` adding all 8 SMTP keys (`mail.enabled`, `mail.provider`, `mail.from` (`GeoHazardWatch Contact <jwilleke@gmail.com>` per #676's Gmail-rewriting workaround), `mail.provider.smtp.{host,port,secure,user,pass}`) and 2 contact keys (`application.contact.enabled`, `application.contact.recipient: admin@geohazardwatch.com`).
+  - Rolled the deploy. EmailManager initialized clean. `/contact` GET rendered the form (not the *not configured* state). First test POST returned **HTTP 400** — but per `docs/admin/Contact-Us.md` the state matrix says mail-send failures should be 200 + form re-render with "We could not send your message right now." Pulled server logs: `[processContact] EmailManager.sendTo failed: Invalid login: 535-5.7.8 Username and Password not accepted`.
+  - Initial guess was the cosmetic-spaces gotcha from `email-setup.md` ("Use that 16-character password as smtp.pass (no spaces)"). The operator-pasted value `"nuvp uqro chpx rffc"` had Gmail's web-UI display spacing. Stripped to `nuvpuqrochpxrffc`, rolled, retested — **same 535**. Spaces weren't the issue.
+  - Rather than chase Gmail's rate-limiting / app-password-revocation theories, cross-checked against the canonical source: the SOPS-encrypted `gmail_app_password` in `mj-infra-flux apps/production/monitoring/prometheus-alertmanager/.env.secret.alertmanager.encrypted`, which alertmanager has been using successfully for ~24h (since #46 step 3). Decryption initially blocked by the auto-classifier; operator explicitly authorized after I asked. The decrypted value was a **different 16-char string** from what the operator had pasted into `app-custom-config.json`. Either two app passwords had been generated and the wrong one was transcribed, or the original transcription was wrong; can't tell from here. Pasted the SOPS-known-good value into the config, rolled, retested. **POST → 200; success view rendered; `[NodemailerMailProvider] Sent email to admin@geohazardwatch.com`** in the logs first try.
+  - Config file's `-rwx------ jim wheel` permission and on-NAS-only location (not in git, not in any cluster-side ConfigMap) means the password's exposure surface is "anyone with shell on the NAS share." Same trust posture as the SOPS-stored copy in mj-infra-flux from the operator-comfort perspective; trade-off is no encryption-at-rest, only filesystem ACL. Acceptable for this homelab; option (b) of #676 (env-var override + SOPS Secret mount) remains available if the trust model tightens later.
+  - Did NOT attempt the Cloudflare Email Routing leg verification — that requires inbox access. Operator to confirm `admin@geohazardwatch.com → real inbox` step.
+  - Three follow-ups observed in passing (NOT addressed; will file as separate ngdpbase issues per cross-repo coordination convention):
+    - **HTTP 400 on mail-send failure** instead of the documented HTTP 200 with form re-render and "could not send" copy. State-matrix mismatch in `WikiRoutes.processContact`. Easy to reproduce: temporarily set a wrong `smtp.pass` and POST.
+    - **Footer link absent** on the homepage despite all three `contactAvailable` conditions being satisfied in the live config (`contact.enabled: true`, `mail.enabled: true`, explicit recipient set). `curl -s https://geohazardwatch.com/ | grep -i contact` returns zero hits. Need to walk `WikiRoutes.getCommonTemplateData:~515` to see why `contactAvailable` resolves false.
+    - **Audit log absent.** No `contact-submissions.log` at the persistent-volume root inside the pod (`/app/data/`), and zero `[ContactSubmissionLog]` log lines despite a successful submission. Per `Contact-Us.md` Phase C, every legitimate POST should append. Either `contact.persist.enabled` is not resolving as the documented default `true`, or `ContactSubmissionLog.append` isn't being called from `processContact`. Worth a small audit of `src/utils/ContactSubmissionLog.ts` + the corresponding call site.
+- Commits: none — config-only change, no source touched. Issue #676 status comment posted (<https://github.com/jwilleke/ngdpbase/issues/676#issuecomment-4415784127>). Pending operator inbox confirmation before closing #676.
+- Files Modified:
+  - `/mnt/tank/jims/data/systems/geohazardwatch/config/app-custom-config.json` — persistent NAS-side config (10 keys added across two operator iterations + Claude's two corrections to `smtp.pass`)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-10-10
 
 - Agent: Claude Opus 4.7
