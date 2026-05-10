@@ -29,6 +29,7 @@ import LocaleUtils from '../utils/LocaleUtils.js';
 import { extractSection, spliceSection } from '../utils/SectionUtils.js';
 import { shuffleArray } from '../utils/pluginFormatters.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
+import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../utils/ContactSubmissionLog.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
 import { renderCommentListHtml } from '../plugins/CommentsPlugin.js';
 import WikiContext from '../context/WikiContext.js';
@@ -130,6 +131,7 @@ interface IConfigManager {
   getDefaultProperties(): unknown;
   getAllProperties(): unknown;
   getResolvedDataPath(key: string, defaultValue?: string): string;
+  getInstanceDataFolder?(): string;
   resetToDefaults(): Promise<void> | void;
   getFencedCodeTags?(): Set<string>;
 }
@@ -4264,17 +4266,58 @@ ${panes}
         });
       };
 
+      // #670 Phase C: persist every legitimate POST attempt to a JSONL audit
+      // log so `mail-failed` and `mail-disabled` outcomes survive the loss of
+      // mail delivery. Honeypot- and rate-limit-rejected submissions are NOT
+      // logged — they're already in the warn/429 paths and would inflate the
+      // audit file. Best-effort — failures here never block the response.
+      const persistSubmission = async (
+        mailResult: MailResult,
+        recipientForLog: string | null
+      ): Promise<void> => {
+        const persistEnabled = (configManager?.getProperty(
+          'ngdpbase.application.contact.persist.enabled',
+          true
+        ) as boolean | undefined) ?? true;
+        if (!persistEnabled) return;
+
+        const persistPathOverride = ((configManager?.getProperty(
+          'ngdpbase.application.contact.persist.path',
+          ''
+        ) as string | undefined) ?? '').trim();
+        const dataFolder = configManager?.getInstanceDataFolder?.() ?? './data';
+        const filePath = persistPathOverride || path.join(dataFolder, 'contact-submissions.log');
+
+        const entry: SubmissionEntry = {
+          ts: new Date().toISOString(),
+          ip: req.ip ?? null,
+          userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
+          referer: typeof req.headers.referer === 'string' ? req.headers.referer : null,
+          name,
+          email,
+          subject,
+          message,
+          recipient: recipientForLog,
+          mailResult
+        };
+
+        await new ContactSubmissionLog(filePath).append(entry);
+      };
+
       if (!emailManager) {
         logger.error('[processContact] EmailManager not registered — rejecting submission with not-configured view');
+        await persistSubmission('mail-disabled', null);
         await renderForm('not-configured', null);
         return;
       }
       if (!emailManager.isEnabled()) {
         logger.error('[processContact] ngdpbase.mail.enabled is false — rejecting submission with not-configured view (was previously a silent drop)');
+        await persistSubmission('mail-disabled', null);
         await renderForm('not-configured', null);
         return;
       }
       if (!recipient) {
+        await persistSubmission('no-recipient', null);
         await renderForm('not-configured', null);
         return;
       }
@@ -4297,6 +4340,7 @@ ${panes}
       // refactors don't accidentally call sendTo on a disabled provider.
       if (!mailReady) {
         logger.error('[processContact] mailReady invariant violated post-validation — rejecting');
+        await persistSubmission('mail-disabled', null);
         await renderForm('not-configured', null);
         return;
       }
@@ -4313,9 +4357,12 @@ ${panes}
         await emailManager.sendTo(recipient, finalSubject, text);
       } catch (mailErr: unknown) {
         logger.error('[processContact] EmailManager.sendTo failed:', mailErr);
+        await persistSubmission('mail-failed', recipient);
         await renderForm('form', 'We could not send your message right now. Please try again later.');
         return;
       }
+
+      await persistSubmission('sent', recipient);
 
       const commonData = await this.getCommonTemplateData(req);
       res.render('contact', {

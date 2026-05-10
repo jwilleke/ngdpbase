@@ -2,6 +2,27 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-10-03
+
+- Agent: Claude Opus 4.7
+- Subject: #670 Phase C (v3.12.0) — submission persistence. Every legitimate POST /contact submission now appends a JSON line to a JSONL audit log, surviving mail failure. Honeypot + rate-limit + validation rejections deliberately NOT persisted, keeping the log file useful as an "every real attempt" record.
+- Current Issue: #670 (umbrella; Phases A–C done, D–E remain)
+- Tests: 5352 vitest unit tests pass (15 new — 6 in `src/utils/__tests__/ContactSubmissionLog.test.ts` for the writer itself; 9 in `WikiRoutes.contact.test.ts` for the integration covering each `mailResult` path, no-persist invariants for honeypot/rate-limit/validation, persist.enabled=false opt-out, and the recipient-in-log-but-not-in-response invariant); `tsc --noEmit` clean; markdownlint clean.
+- Work Done:
+  - New `src/utils/ContactSubmissionLog.ts` — minimal append-only JSONL writer (~70 LOC). `append(entry)` creates the parent dir if missing then `fs.appendFile`. Errors are logged at error level via the main app logger and swallowed — persistence must never block the visitor-facing response. Exports `MailResult` type (`'sent' | 'mail-failed' | 'mail-disabled' | 'no-recipient'`) and `SubmissionEntry` interface.
+  - Two new config keys: `ngdpbase.application.contact.persist.enabled` (default `true`) and `ngdpbase.application.contact.persist.path` (default `''` → resolves to `{instanceDataFolder}/contact-submissions.log`). Type entries in `Config.ts`; entries + extended `_comment_application_contact` in `app-default-config.json`.
+  - `processContact` integration: added an inline `persistSubmission(mailResult, recipientForLog)` closure that reads the persist toggles + path, builds the entry from `req.ip`/`req.headers`/parsed body/recipient, and calls the writer. Wired into the four legitimate-attempt branches: `EmailManager` unregistered → `mail-disabled`; `mail.enabled=false` → `mail-disabled`; recipient null → `no-recipient`; sendTo throws → `mail-failed`; sendTo success → `sent`. Plus the post-validation `mailReady` defense-in-depth path → `mail-disabled` (should never fire under normal flow).
+  - **Test-data-destruction guard caught and applied during scaffolding work**: per the project's `[Test Data Destruction Bug]` memory, persistence-on-by-default would have made every existing pre-Phase-C test write to `./data/contact-submissions.log` in the cwd. Resolved by adding `persistEnabled: false` and `persistPath: ''` to the test file's `configState`, defaulting to OFF in the shared `beforeEach`s, and explicitly opting in (with a `os.tmpdir()` path) only in the new Phase C describe block. Also added a `getInstanceDataFolder` mock returning `'/tmp/ngdpbase-test-data-folder-do-not-write'` as a defensive belt-and-suspenders fallback so even a misconfigured test wouldn't write under `./data`. Per-test cleanup is bounded to its tmp tree (`logPath.startsWith(os.tmpdir())` guard) — never recurses into a real data dir.
+  - Decided NOT to persist honeypot-triggered submissions even though the original Phase C spec mentioned `mailResult: "honeypot"` as a possible value. Rationale: honeypot triggers are already in the warn log; logging them again would inflate the audit file (bots flood honeypots). Kept "every legitimate attempt" semantics. The four `mailResult` values cover every persisted path; honeypot rejections are explicitly excluded with a doc note.
+  - Decided NOT to add log rotation in v1. Operators expecting volume rotate externally (logrotate, etc.). Documented in `Contact-Us.md` *Operational notes*.
+  - Updated `docs/admin/Contact-Us.md`: new *Submission persistence* section (truth table, entry shape, path resolution, disabling instructions, operational notes, jq recipes); *Configuration* table extended with the two new keys; *What it is not* note flipped from "nothing is persisted" to "submissions go to email and to a local JSONL audit log"; *Known limitations* table flips Phase C from "Fix planned" to "Fixed in v3.12.0"; *Roadmap* tick.
+  - SEMVER **minor** bump 3.11.5 → 3.12.0 (new feature surface), via `src/utils/version.ts`.
+- Commits: (this commit) `feat: persist /contact submissions to JSONL audit log (v3.12.0, #670 Phase C)`
+- Files Modified:
+  - new: `src/utils/ContactSubmissionLog.ts`, `src/utils/__tests__/ContactSubmissionLog.test.ts`
+  - modified: `src/routes/WikiRoutes.ts` (import, IConfigManager interface, processContact persistSubmission helper + 5 call sites), `src/routes/__tests__/WikiRoutes.contact.test.ts` (new os/fsPromises imports, configState extended, getInstanceDataFolder mock, Phase C describe block — 9 tests), `src/types/Config.ts` (two new key entries), `config/app-default-config.json` (two new keys + extended `_comment_application_contact`, version bump), `docs/admin/Contact-Us.md` (new *Submission persistence* section + table updates + roadmap tick), `package.json` (version bump 3.11.5 → 3.12.0), `CHANGELOG.md`
+  - this entry in `docs/project_log.md`
+
 ## 2026-05-10-02
 
 - Agent: Claude Opus 4.7

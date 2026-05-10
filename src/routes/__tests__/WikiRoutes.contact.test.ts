@@ -11,6 +11,8 @@
 import express from 'express';
 import request from 'supertest';
 import path from 'path';
+import os from 'os';
+import { promises as fsPromises } from 'fs';
 import WikiRoutes, { contactRateLimiter } from '../WikiRoutes';
 
 vi.mock('../../utils/LocaleUtils', () => {
@@ -49,7 +51,19 @@ const configState: {
   enabled: boolean;
   page: string;
   recipient: string;
-} = { enabled: true, page: '', recipient: '' };
+  persistEnabled: boolean;
+  persistPath: string;
+} = {
+  enabled: true,
+  page: '',
+  recipient: '',
+  // #670 Phase C: persistence is OFF by default in this test file so existing
+  // tests don't accidentally create `./data/contact-submissions.log` in the
+  // cwd. Phase C-specific tests opt in by setting persistEnabled=true and
+  // pointing persistPath at a per-test tmp file.
+  persistEnabled: false,
+  persistPath: ''
+};
 
 const mockConfigManager = {
   getProperty: vi.fn((key: string, defaultValue: unknown) => {
@@ -57,6 +71,8 @@ const mockConfigManager = {
       'ngdpbase.application.contact.enabled': configState.enabled,
       'ngdpbase.application.contact.page': configState.page,
       'ngdpbase.application.contact.recipient': configState.recipient,
+      'ngdpbase.application.contact.persist.enabled': configState.persistEnabled,
+      'ngdpbase.application.contact.persist.path': configState.persistPath,
       'ngdpbase.front-page': 'Welcome',
       'ngdpbase.theme.active': 'default',
       'ngdpbase.application-name': 'ngdpbase'
@@ -68,6 +84,10 @@ const mockConfigManager = {
   getDefaultProperties: vi.fn().mockReturnValue({ 'ngdpbase.version': '3.11.0' }),
   getCustomProperties: vi.fn().mockReturnValue({}),
   getResolvedDataPath: vi.fn((_k: string, def: string) => def),
+  // #670 Phase C: persistence resolves the data folder via this method when
+  // `persist.path` is empty. Tests should always supply persistPath when
+  // persistEnabled is true so this fallback is never exercised in tests.
+  getInstanceDataFolder: vi.fn(() => '/tmp/ngdpbase-test-data-folder-do-not-write'),
   setProperty: vi.fn().mockResolvedValue(undefined)
 };
 
@@ -197,6 +217,8 @@ describe('WikiRoutes — GET /contact (#658 iteration 2)', () => {
     configState.enabled = true;
     configState.page = '';
     configState.recipient = '';
+    configState.persistEnabled = false;
+    configState.persistPath = '';
     recipientResolver.mockClear();
     recipientResolver.mockImplementation(async (override: string) => {
       const trimmed = (override ?? '').trim();
@@ -300,6 +322,8 @@ describe('WikiRoutes — POST /contact (#658 iteration 3)', () => {
     configState.enabled = true;
     configState.page = '';
     configState.recipient = '';
+    configState.persistEnabled = false;
+    configState.persistPath = '';
     recipientResolver.mockClear();
     mockEmailManager.sendTo.mockClear();
     mockEmailManager.isEnabled.mockReturnValue(true);
@@ -454,6 +478,8 @@ describe('WikiRoutes — /contact mail-disabled honesty (#670 Phase B)', () => {
     configState.enabled = true;
     configState.page = '';
     configState.recipient = '';
+    configState.persistEnabled = false;
+    configState.persistPath = '';
     recipientResolver.mockReset();
     mockEmailManager.sendTo.mockClear();
     mockEmailManager.isEnabled.mockReturnValue(true);
@@ -514,6 +540,192 @@ describe('WikiRoutes — /contact mail-disabled honesty (#670 Phase B)', () => {
     expect(res.status).toBe(200);
     expect(res.text).toContain('data-state="submitted"');
     expect(mockEmailManager.sendTo).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+// ─── Submission persistence (#670 Phase C) ──────────────────────────────────
+//
+// JSONL audit log of every legitimate POST /contact submission. Honeypot- and
+// rate-limit-rejected submissions are NOT persisted (they're already in the
+// warn / 429 paths). Validation errors are NOT persisted (visitor mistakes,
+// not attempted communications). The four mailResult values map to:
+//   sent           — EmailManager.sendTo succeeded
+//   mail-failed    — sendTo threw
+//   mail-disabled  — EmailManager unregistered OR mail.enabled=false
+//   no-recipient   — recipient resolver returned null
+describe('WikiRoutes — POST /contact submission persistence (#670 Phase C)', () => {
+  let app: express.Application;
+  let logPath: string;
+
+  const validBody = {
+    name: 'Alice Smith',
+    email: 'alice@example.com',
+    subject: 'Hello',
+    message: 'Hi there.'
+  };
+
+  beforeEach(async () => {
+    mockUserContext = { ...adminUser };
+    configState.enabled = true;
+    configState.page = '';
+    configState.recipient = '';
+    // Phase C: opt in to persistence with a per-test tmp file.
+    const tmpDir = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'contact-log-test-'));
+    logPath = path.join(tmpDir, 'contact-submissions.log');
+    configState.persistEnabled = true;
+    configState.persistPath = logPath;
+
+    recipientResolver.mockReset();
+    mockEmailManager.sendTo.mockReset();
+    mockEmailManager.sendTo.mockResolvedValue(undefined);
+    mockEmailManager.isEnabled.mockReturnValue(true);
+    recipientResolver.mockImplementation(async (override: string) => {
+      const trimmed = (override ?? '').trim();
+      if (trimmed) return trimmed;
+      return 'admin@example.com';
+    });
+
+    app = buildApp();
+    const { default: WikiEngine } = await import('../../WikiEngine');
+    const engine = new WikiEngine();
+    const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+    routes.registerRoutes(app);
+
+    contactRateLimiter.reset();
+  });
+
+  afterEach(async () => {
+    vi.clearAllMocks();
+    mockUserContext = null;
+    // Cleanup only the per-test tmp tree; never touch real ./data.
+    if (logPath && logPath.startsWith(os.tmpdir())) {
+      await fsPromises.rm(path.dirname(logPath), { recursive: true, force: true });
+    }
+  });
+
+  async function readLogLines(): Promise<Record<string, unknown>[]> {
+    try {
+      const content = await fsPromises.readFile(logPath, 'utf8');
+      return content.trim().split('\n').filter(l => l.length > 0).map(l => JSON.parse(l));
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') return [];
+      throw err;
+    }
+  }
+
+  // ── happy path → mailResult: 'sent' ──────────────────────────────────────
+  test('persists one entry with mailResult="sent" on a successful submission', async () => {
+    const res = await request(app).post('/contact').send(validBody);
+    expect(res.status).toBe(200);
+
+    const lines = await readLogLines();
+    expect(lines.length).toBe(1);
+    expect(lines[0].mailResult).toBe('sent');
+    expect(lines[0].name).toBe('Alice Smith');
+    expect(lines[0].email).toBe('alice@example.com');
+    expect(lines[0].subject).toBe('Hello');
+    expect(lines[0].message).toBe('Hi there.');
+    expect(lines[0].recipient).toBe('admin@example.com');
+    expect(typeof lines[0].ts).toBe('string');
+    expect(new Date(lines[0].ts as string).toString()).not.toBe('Invalid Date');
+  });
+
+  // ── sendTo throws → mailResult: 'mail-failed' ─────────────────────────────
+  test('persists mailResult="mail-failed" when EmailManager.sendTo throws', async () => {
+    mockEmailManager.sendTo.mockRejectedValueOnce(new Error('SMTP relay refused'));
+    const res = await request(app).post('/contact').send(validBody);
+    // renderForm uses 400 when formError is non-null — pre-existing behaviour
+    // shared with validation errors. Phase C didn't change the response code.
+    expect(res.status).toBe(400);
+
+    const lines = await readLogLines();
+    expect(lines.length).toBe(1);
+    expect(lines[0].mailResult).toBe('mail-failed');
+    expect(lines[0].recipient).toBe('admin@example.com'); // recipient WAS resolved
+    expect(lines[0].name).toBe('Alice Smith');
+  });
+
+  // ── mail.enabled=false → mailResult: 'mail-disabled' ─────────────────────
+  test('persists mailResult="mail-disabled" when mail.enabled=false', async () => {
+    mockEmailManager.isEnabled.mockReturnValue(false);
+    const res = await request(app).post('/contact').send(validBody);
+    expect(res.status).toBe(200);
+
+    const lines = await readLogLines();
+    expect(lines.length).toBe(1);
+    expect(lines[0].mailResult).toBe('mail-disabled');
+    expect(lines[0].recipient).toBeNull(); // resolver short-circuited or value irrelevant
+    expect(mockEmailManager.sendTo).not.toHaveBeenCalled();
+  });
+
+  // ── recipient resolver → null → mailResult: 'no-recipient' ───────────────
+  test('persists mailResult="no-recipient" when no admin email resolves', async () => {
+    recipientResolver.mockImplementation(async () => null);
+    const res = await request(app).post('/contact').send(validBody);
+    expect(res.status).toBe(200);
+
+    const lines = await readLogLines();
+    expect(lines.length).toBe(1);
+    expect(lines[0].mailResult).toBe('no-recipient');
+    expect(lines[0].recipient).toBeNull();
+    expect(mockEmailManager.sendTo).not.toHaveBeenCalled();
+  });
+
+  // ── honeypot triggered → NOT persisted ───────────────────────────────────
+  test('does NOT persist when honeypot field is filled (silent success)', async () => {
+    const res = await request(app).post('/contact').send({ ...validBody, _website: 'http://spam.example.com' });
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('data-state="submitted"');
+
+    const lines = await readLogLines();
+    expect(lines.length).toBe(0);
+  });
+
+  // ── rate-limited (429) → NOT persisted (the 429 itself isn't a submission) ──
+  test('does NOT persist the 6th rate-limited submission from the same IP', async () => {
+    // First 5 succeed, are persisted as "sent".
+    for (let i = 0; i < 5; i++) {
+      await request(app).post('/contact').send(validBody);
+    }
+    let lines = await readLogLines();
+    expect(lines.length).toBe(5);
+    expect(lines.every(l => l.mailResult === 'sent')).toBe(true);
+
+    // 6th gets 429 — must NOT add a 6th line.
+    const tooMany = await request(app).post('/contact').send(validBody);
+    expect(tooMany.status).toBe(429);
+    lines = await readLogLines();
+    expect(lines.length).toBe(5); // unchanged
+  });
+
+  // ── validation errors → NOT persisted (visitor mistake, not a contact attempt) ──
+  test('does NOT persist when input fails validation', async () => {
+    const res = await request(app).post('/contact').send({ ...validBody, name: '' });
+    expect(res.status).toBe(400);
+
+    const lines = await readLogLines();
+    expect(lines.length).toBe(0);
+  });
+
+  // ── persist.enabled=false → no file written ───────────────────────────────
+  test('does NOT write the log file when persist.enabled=false', async () => {
+    configState.persistEnabled = false;
+    const res = await request(app).post('/contact').send(validBody);
+    expect(res.status).toBe(200);
+
+    // File should not exist at all.
+    await expect(fsPromises.stat(logPath)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  // ── recipient address is in the log file but never in the response body ──
+  test('recipient appears in the log file but NOT in the response body', async () => {
+    const res = await request(app).post('/contact').send(validBody);
+    expect(res.text).not.toContain('admin@example.com');
+
+    const lines = await readLogLines();
+    expect(lines[0].recipient).toBe('admin@example.com');
   });
 });
 

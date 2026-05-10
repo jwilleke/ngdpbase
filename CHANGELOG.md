@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.12.0] - 2026-05-10
+
+### Added
+
+- **Submission persistence for `/contact`** (#670 Phase C) — every legitimate `POST /contact` submission is now appended to a JSONL audit log, regardless of whether mail delivery succeeds. Survives mail failure, captures attempts on misconfigured deploys, and gives operators a durable record. Honeypot- and rate-limit-rejected submissions are NOT persisted (they're already in the warn log and would inflate the audit file); validation errors are NOT persisted (visitor mistakes, not attempted communications).
+- **`ContactSubmissionLog`** (`src/utils/ContactSubmissionLog.ts`) — minimal append-only JSONL writer. Creates the parent directory if missing; failures to append are logged at error level but do NOT throw. Best-effort — persistence must not block the visitor-facing response. 6 unit tests in `src/utils/__tests__/ContactSubmissionLog.test.ts`.
+- **`ngdpbase.application.contact.persist.enabled`** (boolean, default `true`) — toggle for persistence. Set to `false` to disable the audit log entirely (e.g., privacy concerns).
+- **`ngdpbase.application.contact.persist.path`** (string, default `""`) — override the log file path. Empty defaults to `{instanceDataFolder}/contact-submissions.log` (resolves under `FAST_STORAGE` / `INSTANCE_DATA_FOLDER` / `./data`). Set to an absolute path to send the log to a mounted log volume off the data tree.
+- **Audit entry shape** — one JSON object per line:
+
+  ```json
+  {
+    "ts": "2026-05-10T12:34:56.789Z",
+    "ip": "198.51.100.7",
+    "userAgent": "Mozilla/...",
+    "referer": "/view/contact-us",
+    "name": "Alice",
+    "email": "alice@example.com",
+    "subject": "Hello",
+    "message": "...",
+    "recipient": "ops@example.com",
+    "mailResult": "sent"
+  }
+  ```
+
+- **Four `mailResult` values** — `"sent"` (sendTo succeeded), `"mail-failed"` (sendTo threw), `"mail-disabled"` (EmailManager unregistered or `mail.enabled=false`), `"no-recipient"` (resolver returned null). The recipient address is only present in the log file — never rendered to clients.
+- 9 new integration tests in `src/routes/__tests__/WikiRoutes.contact.test.ts` covering each `mailResult` path, the no-persist-on-honeypot/rate-limit/validation invariants, the `persist.enabled=false` opt-out, and the recipient-in-log-but-not-in-response invariant.
+
+### Changed
+
+- `src/routes/WikiRoutes.ts` `processContact` — added an inline `persistSubmission(mailResult, recipient)` closure called from each branch that represents a legitimate submission attempt.
+- `_comment_application_contact` in `config/app-default-config.json` extended to describe the two new `persist.*` keys.
+- `docs/admin/Contact-Us.md` updated: new *Submission persistence* section; *Known limitations* table flips Phase C from "Fix planned" to "Fixed in v3.12.0"; Phase C ticked in *Roadmap*.
+
+### Notes
+
+- This is Phase C of #670. No log rotation in v1 — operators who expect significant volume should rotate externally (logrotate, etc.). Phase D (recipient list validation) and Phase E (configurable anti-spam) remain.
+
 ## [3.11.5] - 2026-05-10
 
 ### Fixed

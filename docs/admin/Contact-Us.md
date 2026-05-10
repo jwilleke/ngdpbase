@@ -4,7 +4,7 @@ ngdpbase ships a built-in `/contact` route that operators can use as a zero-auth
 
 The form is server-rendered, posts back to `/contact`, validates inputs, defends against bot spam (honeypot + per-IP rate limit), resolves a recipient (explicit config or first-admin fallback), and delivers via the existing `EmailManager`. When mail is unconfigured the form renders a "not configured" state instead, so visitors don't get a misleading success.
 
-This doc covers the current shipping behaviour as of **v3.11.5**. The feature originally landed in #658 (v3.11.0 GET preview, v3.11.1 closed the form-and-send loop). Subsequent improvements ship under the umbrella issue #670 in five phases (A–E); see the *Roadmap* section at the end for what's done vs planned.
+This doc covers the current shipping behaviour as of **v3.12.0**. The feature originally landed in #658 (v3.11.0 GET preview, v3.11.1 closed the form-and-send loop). Subsequent improvements ship under the umbrella issue #670 in five phases (A–E); see the *Roadmap* section at the end for what's done vs planned.
 
 ---
 
@@ -17,7 +17,7 @@ This doc covers the current shipping behaviour as of **v3.11.5**. The feature or
 
 What it is **not**:
 
-- It is not a ticketing system. Submissions go to email; nothing is persisted server-side (Phase C of #670 will add a JSONL audit log).
+- It is not a ticketing system. Submissions go to email and to a local JSONL audit log (added in v3.12.0); there is no inbox, no thread, no reply tracking.
 - It is not the same thing as the seeded `contact-us` *wiki page*. That page is a static text page at `/view/contact-us` that operators can edit. The `/contact` *route* is the form. They share a name but are independent.
 
 ---
@@ -72,6 +72,8 @@ Four keys, all in your instance config at `$FAST_STORAGE/config/app-custom-confi
 | `ngdpbase.application.contact.page` | `""` | Empty → use the built-in form. Set to a page slug → `GET /contact` 302-redirects to `/view/<slug>`; `POST /contact` returns **405 Method Not Allowed**. |
 | `ngdpbase.application.contact.recipient` | `""` | Empty → resolve at request time to the first admin user whose email isn't the install-default sentinel `admin@localhost`. Set to an email (or an SMTP-accepted comma-separated list) → use that verbatim. |
 | `ngdpbase.application.contact.footer.enabled` | `true` | Render a "Contact" link in the page footer when `contactAvailable` is true (#670 Phase A). Set `false` to keep `/contact` reachable without advertising it. |
+| `ngdpbase.application.contact.persist.enabled` | `true` | Append every legitimate `POST /contact` submission to a JSONL audit log (#670 Phase C, v3.12.0). Set `false` to disable persistence entirely. |
+| `ngdpbase.application.contact.persist.path` | `""` | Override the audit log path. Empty → `{instanceDataFolder}/contact-submissions.log` (resolves under `FAST_STORAGE` / `INSTANCE_DATA_FOLDER` / `./data`). Set to an absolute path to send the log to a mounted log volume off the data tree. |
 
 ### Minimal example — built-in form, default recipient resolution, footer link on
 
@@ -191,6 +193,104 @@ For SMTP setup details (host, port, auth, From: address, custom-domain SPF/DKIM/
 
 ---
 
+## Submission persistence (audit log)
+
+Since v3.12.0 (#670 Phase C), every legitimate `POST /contact` submission is appended to a JSONL audit log. The log is the source of truth that survives mail failure: if SMTP rejects, if the upstream relay is down, if mail is misconfigured, the submission is still captured locally so an operator can recover it.
+
+### What is and isn't logged
+
+| Outcome | Persisted? | `mailResult` value |
+|---|---|---|
+| `EmailManager.sendTo` succeeded | yes | `"sent"` |
+| `EmailManager.sendTo` threw | yes | `"mail-failed"` |
+| `EmailManager` not registered | yes | `"mail-disabled"` |
+| `ngdpbase.mail.enabled = false` | yes | `"mail-disabled"` |
+| Recipient resolver returned null | yes | `"no-recipient"` |
+| Honeypot field `_website` non-empty | **no** — visitor sees silent success; warn log records it |
+| Per-IP rate limit (429) | **no** — rejected before any per-submission processing |
+| Field validation error (400) | **no** — visitor mistake, not an attempted communication |
+
+The four `mailResult` values cover every legitimate submission path. Honeypot, rate-limit, and validation rejections are deliberately excluded so the log file stays useful — operators can ack each entry as a real attempted contact.
+
+### Entry shape
+
+One JSON object per line:
+
+```json
+{
+  "ts": "2026-05-10T12:34:56.789Z",
+  "ip": "198.51.100.7",
+  "userAgent": "Mozilla/5.0 (test)",
+  "referer": "/view/contact-us",
+  "name": "Alice",
+  "email": "alice@example.com",
+  "subject": "Hello",
+  "message": "Hi there.",
+  "recipient": "ops@example.com",
+  "mailResult": "sent"
+}
+```
+
+Notes:
+
+- `ts` is ISO 8601 UTC, captured at write time.
+- `ip` comes from `req.ip`; falls back to `null` if Express can't resolve it. Trust depends on whether `trust proxy` is configured upstream.
+- `recipient` is `null` for `mail-disabled` and `no-recipient` outcomes (the address either wasn't resolved or didn't exist). For `sent` and `mail-failed`, it's the resolved address.
+- The recipient address appears in the **log file** but never in the **response body** — there's an explicit test for that invariant.
+
+### Path resolution
+
+Default: `{instanceDataFolder}/contact-submissions.log`. The instance data folder resolves in this priority order (per `ConfigurationManager`):
+
+1. `FAST_STORAGE` env var, if set
+2. `INSTANCE_DATA_FOLDER` env var, if set
+3. `./data` (cwd)
+
+Set `ngdpbase.application.contact.persist.path` to an absolute path to override — useful for sending the log off the data volume to a mounted log directory:
+
+```json
+{
+  "ngdpbase.application.contact.persist.path": "/var/log/ngdpbase/contact-submissions.log"
+}
+```
+
+### Disabling persistence
+
+For privacy-sensitive deploys, set:
+
+```json
+{
+  "ngdpbase.application.contact.persist.enabled": false
+}
+```
+
+The form continues to work normally; nothing is written to disk. Note that this also removes the recovery path for `mail-failed` submissions — there is no other record of the visitor's message, since no mail was delivered.
+
+### Operational notes
+
+- **No log rotation in v1.** The file grows monotonically. Operators who expect significant submission volume should rotate externally (logrotate, etc.) — see the [logrotate(8) man page](https://linux.die.net/man/8/logrotate) for the typical pattern.
+- **Best-effort writes.** A failure to append is logged at error level via the main app logger but does NOT throw. Persistence must never block the response on the visitor-facing path.
+- **Append-only.** The writer never truncates or rewrites the file. Existing entries are preserved across restarts.
+- **No inbox UI.** There's no admin route for browsing the log today. Operators read it directly via `tail`, `jq`, or grep.
+- **GDPR / right to erasure.** Submissions contain visitor-supplied PII (name, email, message body, IP, user-agent). If a visitor invokes deletion rights, operators must remove the relevant lines from the log file by hand — there's no built-in scrubber.
+
+### Reading the log
+
+JSONL plays nicely with `jq`:
+
+```sh
+# Last 10 entries
+tail -n 10 /path/to/data/contact-submissions.log | jq .
+
+# All mail-failed entries — these are the ones to recover
+jq -c 'select(.mailResult == "mail-failed")' /path/to/data/contact-submissions.log
+
+# Submissions in the last 24 hours
+jq -c "select(.ts > \"$(date -u -v-24H +%Y-%m-%dT%H:%M:%SZ)\")" /path/to/data/contact-submissions.log
+```
+
+---
+
 ## Security & abuse defenses
 
 ### What's in place
@@ -251,7 +351,7 @@ These aren't bugs you need to work around — they're current-state limitations 
 | Limitation | Status | Tracking |
 |---|---|---|
 | `mail.enabled = false` returns "Message sent" to the visitor | **Fixed in v3.11.5** | #670 Phase B — both handlers now render "not configured" and log at error level when `EmailManager` is unregistered or `mail.enabled = false` |
-| Submissions are email-only (not persisted) | Fix planned | #670 Phase C — append to `data/contact-submissions.log` (JSONL) |
+| Submissions are email-only (not persisted) | **Fixed in v3.12.0** | #670 Phase C — every legitimate POST is appended to `data/contact-submissions.log` (JSONL); see *Submission persistence* above |
 | Recipient list pass-through is undocumented and unvalidated | Fix planned | #670 Phase D — startup invariant + doc update |
 | Anti-spam settings are hard-coded | Fix planned | #670 Phase E — config under `ngdpbase.mail.{honeypot,rate-limit}.*` |
 | No CSRF validation on `POST /contact` | Codebase-wide gap, not route-specific | Tracked separately |
@@ -270,7 +370,7 @@ Tracked as one umbrella `[FEATURE]` issue with five phases:
 |---|---|---|
 | A | Footer link to `/contact`, `contactAvailable` plumbing, `contact.footer.enabled` toggle | **Shipped v3.11.4** |
 | B | Mail-disabled UX honesty (render "not configured", log at error) | **Shipped v3.11.5** |
-| C | Submission persistence to `data/contact-submissions.log` (JSONL) | Planned |
+| C | Submission persistence to `data/contact-submissions.log` (JSONL) | **Shipped v3.12.0** |
 | D | Recipient list validation at startup + docs for inline-CSV vs distribution-list patterns | Planned |
 | E | Configurable anti-spam under `ngdpbase.mail.{honeypot,rate-limit}.*` | Planned |
 
@@ -290,6 +390,7 @@ This doc is updated as each phase merges.
 - `src/managers/EmailManager.ts` — the mail dispatch layer; `console` and `smtp` providers; `isEnabled()` reads `ngdpbase.mail.enabled`.
 - `src/managers/ConfigurationManager.ts` `assertContactPageNotLoop` — the `contact.page = "contact"` redirect-loop guard.
 - `src/utils/SimpleRateLimiter.ts` — the rate limiter used by this route (and a few others).
+- `src/utils/ContactSubmissionLog.ts` — the JSONL writer (#670 Phase C); append-only, best-effort, never throws.
 - `views/contact.ejs` — the form template, including the `_website` honeypot field.
 - `views/footer.ejs` — the footer view; renders the `/contact` link when `contactAvailable && contactFooterEnabled`.
 - Issue **#658** — the original `/contact` feature; closed in v3.11.1.

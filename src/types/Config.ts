@@ -79,6 +79,22 @@ export interface WikiConfig {
    */
   'ngdpbase.application.contact.footer.enabled': boolean;
 
+  /**
+   * Persist every legitimate POST /contact submission (#670 Phase C) as a
+   * JSONL audit log. Honeypot-triggered and rate-limited submissions are
+   * NOT persisted. When false, no file is written; the form still works.
+   * Default: true.
+   */
+  'ngdpbase.application.contact.persist.enabled': boolean;
+
+  /**
+   * Override path for the JSONL audit log (#670 Phase C). When empty,
+   * defaults to `{instanceDataFolder}/contact-submissions.log`. Operators
+   * who want to send the log somewhere off the data volume (e.g., a
+   * mounted log directory) can set an absolute path here. Default: "".
+   */
+  'ngdpbase.application.contact.persist.path': string;
+
   /** Server port */
   'ngdpbase.server.port': number;
 
