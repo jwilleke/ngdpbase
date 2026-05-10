@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-10-06
+
+- Agent: Claude Opus 4.7
+- Subject: docs cleanup — commit `Self-Registration.md` updates that had been sitting dirty in the working tree across the entire #670 Phases A–E session. Pure docs, no version bump.
+- Current Issue: none (cleanup of in-tree drift from the same chat session that produced #670)
+- Tests: not run — docs-only change. markdownlint clean on the file.
+- Work Done:
+  - The Self-Registration.md edits were authored mid-session well before #670 was filed, while clarifying for the operator how the registration toggle composes with the new `/contact` route. Three additions:
+    1. *Note on the URL shape* in the *Custom redirect page* section — makes explicit that the header **Request access** button always renders as `/view/<slug>` and the slug is a *page* lookup, not a route. So `redirect-page: "contact"` lands on `/view/contact` (a page), not the `/contact` *route*.
+    2. New *Seeded pages: `request-access` and `contact-us`* section replacing the old single-page section. Documents both required pages with a small table, the default visitor flow (button → `request-access` → `[Contact Us]` link → `contact-us`), and a *Common shapes* mini-list with the "skip the intermediate page" config recipe.
+    3. New *Routing to the `/contact` route* section covering the `/contact` route (#658) and explaining that today the bridge from the registration redirect to the `/contact` route requires authoring a wiki page that links to it. Notes that a future change might add a first-class `redirect-url` config — which #670 ended up not adding (Phase A landed footer-link discoverability instead, which serves the same operator need from the other end).
+  - These changes were deliberately KEPT OUT of the Phase A–E commits to avoid scope creep — Phase A was about the footer-link plumbing, not docs; etc. Doc-cleanup commit landed separately so each Phase commit is auditable as "code change + same-phase docs only."
+  - Memory miss noted but not corrected here: the additions were authored before I had the `feedback_no_markdown_wrap.md` rule saved, and they propagate ~80-char prose wrap from the rest of the file. Not unwrapping retroactively because the user explicitly asked for "cleanup" (commit the drift), not "rewrite". The whole file could be unwrapped in a future hygiene pass; not in scope here.
+- Commits: (this commit) `docs: clarify how registration toggle composes with /contact route`
+- Files Modified:
+  - modified: `docs/admin/Self-Registration.md`
+  - this entry in `docs/project_log.md`
+
 ## 2026-05-10-05
 
 - Agent: Claude Opus 4.7
