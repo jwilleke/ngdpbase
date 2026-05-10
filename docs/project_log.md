@@ -2,6 +2,23 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-10-04
+
+- Agent: Claude Opus 4.7
+- Subject: #670 Phase D (v3.12.1) — recipient list validation at startup + docs for inline-CSV vs distribution-list patterns. Tiny startup invariant + a doc section, no UX change.
+- Current Issue: #670 (umbrella; Phases A–D done, Phase E remains)
+- Tests: 5372 vitest unit tests pass (10 new in `ConfigurationManager.test.ts` covering empty/whitespace, single-address, multi-CSV happy paths, plus malformed-segment / no-`@` / no-TLD / trailing-comma / mixed-spacing edge cases and the operator-facing error message copy); `tsc --noEmit` clean; markdownlint clean.
+- Work Done:
+  - New `ConfigurationManager.assertContactRecipientWellFormed` (~25 LOC) wired into `initialize()` alongside the existing `assertContactPageNotLoop` and `assertBaseUrlConfigured`. Splits `ngdpbase.application.contact.recipient` on `,`, trims each segment, regex-checks the shape using the same `/^[^\s@]+@[^\s@]+\.[^\s@]+$/` the form uses post-validation. Empty / whitespace-only is a no-op (recipient resolves at request time from the admin list). Trailing-comma cases (e.g. `"a@b.com,"`) and whitespace-only segments are flagged as malformed because they usually indicate edit accidents.
+  - Error message points operators at all three valid options (single address, inline CSV, empty) with worked examples, so the fix is obvious from the error itself. Includes the offending segment(s) in JSON-quoted form for unambiguous identification.
+  - Doc work: new *Recipient patterns* section in `docs/admin/Contact-Us.md` between *Configuration* and *State matrix*. Three subsections — Pattern 1 (single address / distribution list), Pattern 2 (inline CSV), Pattern 3 (empty / first-admin auto-resolve) — plus a decision matrix matching deployment shape to recommended pattern, and a *Startup validation* subsection quoting the actual error message. *Recipient resolution* section (further down) updated to reference the new section and note that segments are pre-validated. *Known limitations* table flips Phase D from "Fix planned" to "Fixed in v3.12.1". *Roadmap* tick. *Related* list extended with the new invariant method.
+  - `_comment_application_contact` in `config/app-default-config.json` extended to describe both recipient patterns and the new startup invariant in one paragraph.
+  - SEMVER **patch** bump 3.12.0 → 3.12.1 (no breaking changes; a typo that previously surfaced at first-submission time now surfaces at boot — strictly improvement, not regression).
+- Commits: (this commit) `feat: validate contact.recipient at startup + document patterns (v3.12.1, #670 Phase D)`
+- Files Modified:
+  - modified: `src/managers/ConfigurationManager.ts` (assertContactRecipientWellFormed + initialize() call), `src/managers/__tests__/ConfigurationManager.test.ts` (new Phase D describe — 10 tests), `config/app-default-config.json` (extended `_comment_application_contact` + version bump), `docs/admin/Contact-Us.md` (new *Recipient patterns* section + table updates + roadmap tick), `package.json` (version bump 3.12.0 → 3.12.1), `CHANGELOG.md`
+  - this entry in `docs/project_log.md`
+
 ## 2026-05-10-03
 
 - Agent: Claude Opus 4.7

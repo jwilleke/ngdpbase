@@ -98,6 +98,7 @@ class ConfigurationManager extends BaseManager {
       await this.loadConfigurations();
       await this.assertBaseUrlConfigured();
       this.assertContactPageNotLoop();
+      this.assertContactRecipientWellFormed();
       logger.info(`ConfigurationManager initialized for environment: ${this.environment}`);
       logger.info(`Loaded configs: default + ${this.customConfig && Object.keys(this.customConfig).length > 0 ? 'custom' : 'no custom'}`);
     } catch (error) {
@@ -168,6 +169,46 @@ class ConfigurationManager extends BaseManager {
         '\'ngdpbase.application.contact.page\' is set to "contact" — that would ' +
         'make /contact redirect to itself. Set it to a different page slug, or ' +
         'leave it empty to use the built-in /contact form. (#658)'
+      );
+    }
+  }
+
+  /**
+   * #670 Phase D: refuse to start if `ngdpbase.application.contact.recipient`
+   * contains a malformed address. The string accepts two patterns:
+   *
+   *   inline CSV         "alice@example.com, bob@example.com"
+   *   distribution list  "admins@example.com"
+   *
+   * The single-address form is just a degenerate CSV. We split on `,`, trim
+   * each segment, regex-check the shape, and throw if any segment fails. The
+   * regex is the same pragmatic shape check the form uses post-validation —
+   * not RFC-perfect; SMTP verifies the rest on send.
+   *
+   * Empty config is fine (recipient resolves at request time from the admin
+   * list — see UserManager.getContactRecipient). Whitespace-only segments
+   * (e.g., trailing comma "a@b, ") are treated as malformed because they
+   * usually indicate a typo.
+   */
+  private assertContactRecipientWellFormed(): void {
+    const raw = this.getProperty('ngdpbase.application.contact.recipient', '') as string;
+    const trimmed = (raw ?? '').trim();
+    if (trimmed === '') return;
+
+    // Same pragmatic shape check as src/routes/WikiRoutes.ts processContact validation.
+    const emailShape = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const segments = trimmed.split(',').map(s => s.trim());
+    const malformed = segments.filter(s => s === '' || !emailShape.test(s));
+
+    if (malformed.length > 0) {
+      throw new Error(
+        '[ConfigurationManager] Refusing to start: ' +
+        '\'ngdpbase.application.contact.recipient\' contains malformed address(es): ' +
+        malformed.map(s => JSON.stringify(s)).join(', ') + '. ' +
+        'Use a single address ("admins@example.com"), an inline CSV ' +
+        '("alice@example.com, bob@example.com"), or leave the key empty to ' +
+        'auto-resolve to the first admin user with a non-default email. ' +
+        '(#670 Phase D)'
       );
     }
   }

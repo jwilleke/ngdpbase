@@ -892,4 +892,84 @@ describe('ConfigurationManager', () => {
       await expect(cm.initialize()).rejects.toThrow(/Refusing to start.*contact\.page/s);
     });
   });
+
+  describe('contact.recipient well-formed guard (#670 Phase D)', () => {
+    const writeContactDefault = async (recipient: string) => {
+      await fs.writeJson(
+        path.join(tempDir, 'config', 'app-default-config.json'),
+        {
+          'ngdpbase.application-name': 'TestWiki',
+          'ngdpbase.application.base-url': 'http://localhost:3000',
+          'ngdpbase.application.contact.enabled': true,
+          'ngdpbase.application.contact.page': '',
+          'ngdpbase.application.contact.recipient': recipient
+        },
+        { spaces: 2 }
+      );
+    };
+
+    // ── empty / whitespace — no validation needed ────────────────────────
+    test('empty recipient does not throw (resolves at request time from admin list)', async () => {
+      await writeContactDefault('');
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+
+    test('whitespace-only recipient does not throw (treated as empty)', async () => {
+      await writeContactDefault('   ');
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+
+    // ── single-address (distribution-list pattern) ───────────────────────
+    test('single well-formed address does not throw', async () => {
+      await writeContactDefault('admins@example.com');
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+
+    // ── inline CSV pattern ───────────────────────────────────────────────
+    test('two well-formed addresses (CSV) does not throw', async () => {
+      await writeContactDefault('alice@example.com, bob@example.com');
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+
+    test('three well-formed addresses with mixed spacing does not throw', async () => {
+      await writeContactDefault('alice@example.com,bob@example.com ,  carol@example.com');
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+
+    // ── malformed entries throw ──────────────────────────────────────────
+    test('single malformed address (no @) throws', async () => {
+      await writeContactDefault('not-an-email');
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).rejects.toThrow(/Refusing to start.*contact\.recipient.*not-an-email.*#670/s);
+    });
+
+    test('single malformed address (no TLD) throws', async () => {
+      await writeContactDefault('alice@localhost');
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).rejects.toThrow(/Refusing to start.*contact\.recipient.*alice@localhost.*#670/s);
+    });
+
+    test('CSV with one malformed segment throws and identifies the offender', async () => {
+      await writeContactDefault('alice@example.com, oops, bob@example.com');
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).rejects.toThrow(/Refusing to start.*contact\.recipient.*oops.*#670/s);
+    });
+
+    test('trailing comma (empty segment) throws', async () => {
+      await writeContactDefault('alice@example.com,');
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).rejects.toThrow(/Refusing to start.*contact\.recipient.*#670/s);
+    });
+
+    test('error message points operators at the inline-CSV / single-address / empty options', async () => {
+      await writeContactDefault('garbage');
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).rejects.toThrow(/inline CSV.*single address.*auto-resolve|admins@example\.com|alice@example\.com/s);
+    });
+  });
 });

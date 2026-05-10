@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.12.1] - 2026-05-10
+
+### Added
+
+- **Recipient list validation at startup** (#670 Phase D) — `ConfigurationManager.assertContactRecipientWellFormed` runs at boot and refuses to start if any segment of `ngdpbase.application.contact.recipient` is malformed. Splits on `,`, trims each segment, regex-checks the shape (`/^[^\s@]+@[^\s@]+\.[^\s@]+$/` — same pragmatic check the form uses), and throws a clear error identifying the malformed segment(s) and pointing operators at the inline-CSV / single-address / empty options. Empty / whitespace-only `recipient` is a no-op (resolves at request time from the admin list, as before).
+- **New *Recipient patterns* section** in `docs/admin/Contact-Us.md` documenting the three operator-facing patterns (single address / inline CSV / empty), including a decision matrix and a worked example of the startup error message. Both inline-CSV and distribution-list patterns are explicitly supported and explained.
+- 10 new tests in `src/managers/__tests__/ConfigurationManager.test.ts` covering empty/whitespace recipients, single addresses, multi-address CSVs (with mixed spacing), various malformed shapes (no `@`, no TLD, garbage segment, trailing comma), and the error message's operator-facing copy.
+
+### Changed
+
+- `_comment_application_contact` in `config/app-default-config.json` extended to describe both recipient patterns and the new startup invariant.
+
+### Notes
+
+- This is Phase D of #670. Pre-3.12.1 operators with valid recipients see no change; pre-3.12.1 operators with a typo see a clear startup error rather than a runtime surprise on the next contact submission. Phase E (configurable anti-spam under `ngdpbase.mail.{honeypot,rate-limit}.*`) is the only remaining slice.
+
 ## [3.12.0] - 2026-05-10
 
 ### Added

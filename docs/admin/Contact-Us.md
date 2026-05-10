@@ -4,7 +4,7 @@ ngdpbase ships a built-in `/contact` route that operators can use as a zero-auth
 
 The form is server-rendered, posts back to `/contact`, validates inputs, defends against bot spam (honeypot + per-IP rate limit), resolves a recipient (explicit config or first-admin fallback), and delivers via the existing `EmailManager`. When mail is unconfigured the form renders a "not configured" state instead, so visitors don't get a misleading success.
 
-This doc covers the current shipping behaviour as of **v3.12.0**. The feature originally landed in #658 (v3.11.0 GET preview, v3.11.1 closed the form-and-send loop). Subsequent improvements ship under the umbrella issue #670 in five phases (A–E); see the *Roadmap* section at the end for what's done vs planned.
+This doc covers the current shipping behaviour as of **v3.12.1**. The feature originally landed in #658 (v3.11.0 GET preview, v3.11.1 closed the form-and-send loop). Subsequent improvements ship under the umbrella issue #670 in five phases (A–E); see the *Roadmap* section at the end for what's done vs planned.
 
 ---
 
@@ -70,7 +70,7 @@ Four keys, all in your instance config at `$FAST_STORAGE/config/app-custom-confi
 |---|---|---|
 | `ngdpbase.application.contact.enabled` | `true` | Master kill switch. `false` → both `GET` and `POST` return 404. |
 | `ngdpbase.application.contact.page` | `""` | Empty → use the built-in form. Set to a page slug → `GET /contact` 302-redirects to `/view/<slug>`; `POST /contact` returns **405 Method Not Allowed**. |
-| `ngdpbase.application.contact.recipient` | `""` | Empty → resolve at request time to the first admin user whose email isn't the install-default sentinel `admin@localhost`. Set to an email (or an SMTP-accepted comma-separated list) → use that verbatim. |
+| `ngdpbase.application.contact.recipient` | `""` | Empty → resolve at request time to the first admin user whose email isn't the install-default sentinel `admin@localhost`. Set to a single address or an inline CSV → use verbatim. Each address is regex-checked at startup (#670 Phase D); a malformed segment refuses to start. See *Recipient patterns* below. |
 | `ngdpbase.application.contact.footer.enabled` | `true` | Render a "Contact" link in the page footer when `contactAvailable` is true (#670 Phase A). Set `false` to keep `/contact` reachable without advertising it. |
 | `ngdpbase.application.contact.persist.enabled` | `true` | Append every legitimate `POST /contact` submission to a JSONL audit log (#670 Phase C, v3.12.0). Set `false` to disable persistence entirely. |
 | `ngdpbase.application.contact.persist.path` | `""` | Override the audit log path. Empty → `{instanceDataFolder}/contact-submissions.log` (resolves under `FAST_STORAGE` / `INSTANCE_DATA_FOLDER` / `./data`). Set to an absolute path to send the log to a mounted log volume off the data tree. |
@@ -121,6 +121,64 @@ Useful during a soft launch, or when you want `/contact` reachable from a specif
 
 ---
 
+## Recipient patterns
+
+`ngdpbase.application.contact.recipient` is a single config string, but it accepts two patterns. Both work today and are equivalently supported by `EmailManager` / Nodemailer / SMTP. Pick the one that matches your operational shape.
+
+### Pattern 1 — single address (distribution-list pattern)
+
+Point the config at one address, typically a mailing list managed on the mail-server side (Google Group, Postfix alias, mailman, etc.):
+
+```json
+"ngdpbase.application.contact.recipient": "admins@example.com"
+```
+
+ngdpbase sees one address; the mail server handles fan-out. Adding or removing admins doesn't require an ngdpbase config change — you just edit the list on the mail-server side.
+
+### Pattern 2 — inline CSV
+
+List multiple addresses directly in the config string, separated by commas:
+
+```json
+"ngdpbase.application.contact.recipient": "alice@example.com, bob@example.com, carol@example.com"
+```
+
+ngdpbase passes the string verbatim to `EmailManager.sendTo()` and ultimately to Nodemailer, which accepts comma-separated `to:` headers (per RFC 5322). The mail server delivers a single message to all recipients. Whitespace around commas is tolerated.
+
+### Pattern 3 — empty (resolves at request time)
+
+Leave `contact.recipient` empty:
+
+```json
+"ngdpbase.application.contact.recipient": ""
+```
+
+`UserManager.getContactRecipient()` then iterates users at request time and returns the first admin with a non-sentinel email. This is the install default — useful for fresh deploys before an operator picks an explicit address. See *Recipient resolution* further down for the resolver semantics.
+
+### Decision matrix
+
+| If you have… | Use |
+|---|---|
+| 1 admin, stable | a single address — no list infrastructure needed |
+| 2–5 admins, mostly stable | inline CSV — simplest for small teams, no extra infra |
+| Many admins / frequent rotation / want CC/BCC control | a distribution list address — manage on the mail server, point ngdpbase at one address |
+| Fresh install, no admin picked yet | leave empty — resolves to first admin automatically |
+
+### Startup validation (#670 Phase D, v3.12.1)
+
+`ConfigurationManager.assertContactRecipientWellFormed` runs at boot and refuses to start if any segment of `contact.recipient` is malformed:
+
+```
+[ConfigurationManager] Refusing to start: 'ngdpbase.application.contact.recipient'
+contains malformed address(es): "oops". Use a single address ("admins@example.com"),
+an inline CSV ("alice@example.com, bob@example.com"), or leave the key empty to
+auto-resolve to the first admin user with a non-default email. (#670 Phase D)
+```
+
+The check splits on `,`, trims each segment, and applies the same pragmatic shape check the form uses (`/^[^\s@]+@[^\s@]+\.[^\s@]+$/`). It's not RFC-perfect — SMTP verifies the rest at send time — but it catches typos that would otherwise only surface when a visitor tries to send something. Trailing-comma cases (e.g., `"a@b.com,"`) and whitespace-only segments are flagged as malformed because they usually indicate edit accidents.
+
+---
+
 ## State matrix
 
 The handlers mirror each other on the front-of-pipeline checks; submission adds rate limit, honeypot, validation, and mail send.
@@ -156,9 +214,11 @@ The mail / recipient checks now run **before** field validation, so a misconfigu
 
 ## Recipient resolution
 
+See *Recipient patterns* above for the three operator-facing patterns. This section covers the underlying resolver behaviour.
+
 `UserManager.getContactRecipient(recipientOverride)`:
 
-1. **If the override is non-empty** (after trim), return it as-is. Multi-recipient strings (e.g. `"ops@example.com, alerts@example.com"`) are passed through to `EmailManager.sendTo` and ultimately to the SMTP transport — Nodemailer accepts comma-separated `to:` headers, so this works in practice. Phase D of #670 will add startup validation of each address in the list. If you need fine-grained control (CC, BCC, per-category routing), it's not in this resolver — wire it yourself or file an issue.
+1. **If the override is non-empty** (after trim), return it as-is. Each address segment was already validated at startup (since v3.12.1, #670 Phase D); the resolver does not re-parse. If you need fine-grained control (CC, BCC, per-category routing), it's not in this resolver — wire it yourself or file an issue.
 2. **Otherwise** iterate users in `getUsers()` order. For each user where `email` is non-empty AND `email !== "admin@localhost"` AND the user has the `admin` role, return their email. **First match wins.** "First" here means the iteration order returned by `UserManager.getUsers()`, which is filesystem-load order — predictable but not guaranteed alphabetical.
 3. **If no admin with a real email exists**, return `null`. The handler renders the "not configured" view in that case; no mail is attempted.
 
@@ -352,7 +412,7 @@ These aren't bugs you need to work around — they're current-state limitations 
 |---|---|---|
 | `mail.enabled = false` returns "Message sent" to the visitor | **Fixed in v3.11.5** | #670 Phase B — both handlers now render "not configured" and log at error level when `EmailManager` is unregistered or `mail.enabled = false` |
 | Submissions are email-only (not persisted) | **Fixed in v3.12.0** | #670 Phase C — every legitimate POST is appended to `data/contact-submissions.log` (JSONL); see *Submission persistence* above |
-| Recipient list pass-through is undocumented and unvalidated | Fix planned | #670 Phase D — startup invariant + doc update |
+| Recipient list pass-through is undocumented and unvalidated | **Fixed in v3.12.1** | #670 Phase D — startup invariant in `ConfigurationManager.assertContactRecipientWellFormed`; *Recipient patterns* doc section above |
 | Anti-spam settings are hard-coded | Fix planned | #670 Phase E — config under `ngdpbase.mail.{honeypot,rate-limit}.*` |
 | No CSRF validation on `POST /contact` | Codebase-wide gap, not route-specific | Tracked separately |
 | Rate limit is per-replica, not shared | Architectural | Run a WAF / proxy upstream; per `docker/HEADLESS-DEPLOYMENT-NOTES.md` §9 |
@@ -371,7 +431,7 @@ Tracked as one umbrella `[FEATURE]` issue with five phases:
 | A | Footer link to `/contact`, `contactAvailable` plumbing, `contact.footer.enabled` toggle | **Shipped v3.11.4** |
 | B | Mail-disabled UX honesty (render "not configured", log at error) | **Shipped v3.11.5** |
 | C | Submission persistence to `data/contact-submissions.log` (JSONL) | **Shipped v3.12.0** |
-| D | Recipient list validation at startup + docs for inline-CSV vs distribution-list patterns | Planned |
+| D | Recipient list validation at startup + docs for inline-CSV vs distribution-list patterns | **Shipped v3.12.1** |
 | E | Configurable anti-spam under `ngdpbase.mail.{honeypot,rate-limit}.*` | Planned |
 
 This doc is updated as each phase merges.
@@ -389,6 +449,7 @@ This doc is updated as each phase merges.
 - `src/managers/UserManager.ts` `getContactRecipient` — the recipient resolver.
 - `src/managers/EmailManager.ts` — the mail dispatch layer; `console` and `smtp` providers; `isEnabled()` reads `ngdpbase.mail.enabled`.
 - `src/managers/ConfigurationManager.ts` `assertContactPageNotLoop` — the `contact.page = "contact"` redirect-loop guard.
+- `src/managers/ConfigurationManager.ts` `assertContactRecipientWellFormed` — the recipient-shape startup invariant (#670 Phase D).
 - `src/utils/SimpleRateLimiter.ts` — the rate limiter used by this route (and a few others).
 - `src/utils/ContactSubmissionLog.ts` — the JSONL writer (#670 Phase C); append-only, best-effort, never throws.
 - `views/contact.ejs` — the form template, including the `_website` honeypot field.
