@@ -4117,13 +4117,29 @@ ${panes}
         ? await userManager.getContactRecipient(recipientOverride)
         : null;
 
+      // #670 Phase B: mail must be enabled for the form to render. If mail is
+      // off, surface "not configured" rather than the form so visitors don't
+      // submit a message that would be silently dropped. Logged at error level
+      // because a public form pretending to work is an operator-visible bug.
+      const emailManager = this.engine.getManager('EmailManager') as
+        | { isEnabled(): boolean }
+        | null;
+      const mailEnabled = emailManager?.isEnabled?.() ?? false;
+      if (!emailManager) {
+        logger.error('[contactPage] EmailManager not registered — rendering not-configured view; mail subsystem is unavailable');
+      } else if (!mailEnabled) {
+        logger.error('[contactPage] ngdpbase.mail.enabled is false — rendering not-configured view; visitors cannot submit until mail is configured');
+      }
+
+      const fullyAvailable = !!recipient && mailEnabled && !!emailManager;
+
       const commonData = await this.getCommonTemplateData(req);
       res.render('contact', {
         ...commonData,
         title: 'Contact',
         // Never render the recipient address itself — only whether the
         // feature has resolved one.
-        state: recipient ? 'form' : 'not-configured',
+        state: fullyAvailable ? 'form' : 'not-configured',
         submitted: false,
         formError: null,
         formValues: { name: '', email: '', subject: '', message: '' },
@@ -4222,6 +4238,15 @@ ${panes}
         ? await userManager.getContactRecipient(recipientOverride)
         : null;
 
+      // #670 Phase B: resolve EmailManager up-front so a mail-disabled deploy
+      // surfaces "not configured" rather than accepting a submission that
+      // would never ship. Logged at error level — the previous "warn + proceed"
+      // path lied to visitors when mail was off.
+      const emailManager = this.engine.getManager('EmailManager') as
+        | { sendTo(to: string, subject: string, text: string, html?: string): Promise<void>; isEnabled(): boolean }
+        | null;
+      const mailReady = !!emailManager && emailManager.isEnabled();
+
       // Validate input. `subject` is optional; everything else required.
       const renderForm = async (
         state: 'form' | 'not-configured',
@@ -4239,6 +4264,16 @@ ${panes}
         });
       };
 
+      if (!emailManager) {
+        logger.error('[processContact] EmailManager not registered — rejecting submission with not-configured view');
+        await renderForm('not-configured', null);
+        return;
+      }
+      if (!emailManager.isEnabled()) {
+        logger.error('[processContact] ngdpbase.mail.enabled is false — rejecting submission with not-configured view (was previously a silent drop)');
+        await renderForm('not-configured', null);
+        return;
+      }
       if (!recipient) {
         await renderForm('not-configured', null);
         return;
@@ -4258,17 +4293,12 @@ ${panes}
       if (!message) { await renderForm('form', 'Please enter a message.'); return; }
       if (message.length > 5000) { await renderForm('form', 'Message is too long (max 5000 characters).'); return; }
 
-      const emailManager = this.engine.getManager('EmailManager') as
-        | { sendTo(to: string, subject: string, text: string, html?: string): Promise<void>; isEnabled(): boolean }
-        | null;
-
-      if (!emailManager) {
-        logger.error('[processContact] EmailManager not registered — cannot send contact submission');
+      // mailReady was checked above; we keep this assertion path so future
+      // refactors don't accidentally call sendTo on a disabled provider.
+      if (!mailReady) {
+        logger.error('[processContact] mailReady invariant violated post-validation — rejecting');
         await renderForm('not-configured', null);
         return;
-      }
-      if (!emailManager.isEnabled()) {
-        logger.warn('[processContact] ngdpbase.mail.enabled is false — submission accepted but mail will not be sent (console transport will log it)');
       }
 
       const finalSubject = subject || `Contact form submission from ${name}`;

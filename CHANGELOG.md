@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.11.5] - 2026-05-10
+
+### Fixed
+
+- **Mail-disabled UX honesty** (#670 Phase B) — the `/contact` form no longer renders or accepts submissions when mail is unavailable. Closes a silent-fail bug where misconfigured production deploys returned "Message sent" to visitors while the server log warned no mail was sent. Both `GET /contact` and `POST /contact` now check `EmailManager` early:
+  - `EmailManager` is not registered → render `state: 'not-configured'` and log at **error** level (was: GET rendered the form anyway; POST rendered not-configured but only after validation).
+  - `ngdpbase.mail.enabled = false` → render `state: 'not-configured'` and log at **error** level (was: GET rendered the form; POST proceeded to call `sendTo` with a `console`-provider warning, then rendered "Message sent").
+  - Recipient null (existing behaviour, unchanged) → render `state: 'not-configured'`.
+- POST `/contact` short-circuits the mail check **before** field validation, so a misconfigured deploy returns the not-configured view immediately rather than after the visitor's input is parsed and validated. The post-validation `mailReady` invariant guard is kept as defense-in-depth — it should never fire under the new flow.
+
+### Changed
+
+- `views/contact.ejs` admin hint on the not-configured view extended to mention the `ngdpbase.mail.enabled: true` requirement alongside the existing recipient guidance, and points at `docs/admin/email-setup.md`.
+- `docs/admin/Contact-Us.md` updated: state-matrix tables now reflect the mail-disabled branch; *Mail dependency* section rewritten to describe the new behaviour; Phase B ticked in *Roadmap*.
+
+### Notes
+
+- This is Phase B of #670. Phases C–E remain (submission persistence, recipient list validation, configurable anti-spam).
+
 ## [3.11.4] - 2026-05-10
 
 ### Added

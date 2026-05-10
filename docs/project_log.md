@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-10-02
+
+- Agent: Claude Opus 4.7
+- Subject: #670 Phase B (v3.11.5) — mail-disabled UX honesty. `/contact` GET and POST now both render `state: 'not-configured'` and log at error level when `EmailManager` is unregistered or `mail.enabled = false`. Closes the silent-drop bug where misconfigured production returned "Message sent" while dropping submissions.
+- Current Issue: #670 (umbrella; Phase B done, Phases C–E remain)
+- Tests: 5337 vitest unit tests pass (5 new in `WikiRoutes.contact.test.ts` covering the Phase B branch — GET mail-off → not-configured, POST mail-off → not-configured + sendTo NOT called, regression guard for happy path); `tsc --noEmit` clean; markdownlint clean.
+- Work Done:
+  - GET `contactPage`: resolved `EmailManager` and its `isEnabled()` state up-front, computed `fullyAvailable = !!recipient && mailEnabled && !!emailManager`, and gated `state: 'form'` on that. Distinct error log lines for "EmailManager not registered" vs "mail.enabled is false" so operators can disambiguate.
+  - POST `processContact`: hoisted the EmailManager + mail-enabled check **above** the recipient resolution and field validation. Misconfigured deploys now short-circuit to `not-configured` immediately rather than parsing visitor input. Kept the post-validation `mailReady` guard as defense-in-depth — it should not fire under the new flow but exists in case a future refactor moves the call sites.
+  - Bumped the `mail.enabled = false` log line from `warn` → `error` because a public form pretending to work is operator-visible by definition. Removed the misleading "console transport will log it" copy from the warn message — that path is no longer taken (we reject before sendTo).
+  - Extended the `views/contact.ejs` not-configured admin hint to mention the `ngdpbase.mail.enabled: true` requirement alongside the existing recipient guidance, and pointed at `docs/admin/email-setup.md`. The visitor-facing copy was generalised from "have not yet configured a contact recipient" → "have not yet configured the contact form" since we now surface this state for both recipient-null AND mail-disabled cases.
+  - Updated `docs/admin/Contact-Us.md`: state-matrix tables now reflect the mail/EmailManager checks (5-column table for GET, two new rows for POST); *Mail dependency* section rewritten to describe the new behaviour and quote the new error-level log lines; Phase B ticked in *Roadmap*; *Known limitations* table flipped Phase B from "Fix planned" to "Fixed in v3.11.5".
+  - Did NOT collapse the double-resolver-call from Phase A in this slice. `getCommonTemplateData` still does its own recipient resolution for the footer-link gate, and `contactPage`/`processContact` do their own for state. Per "Small Iterations" memory, that's a follow-up — Phase B's scope is the UX-honesty fix, not refactoring out the redundancy. Total cost: one extra `getContactRecipient()` call per `/contact` request, both calls going to the same UserManager method against the same data.
+- Commits: (this commit) `fix: /contact mail-disabled UX honesty (v3.11.5, #670 Phase B)`
+- Files Modified:
+  - modified: `src/routes/WikiRoutes.ts` (GET + POST handlers), `src/routes/__tests__/WikiRoutes.contact.test.ts` (new Phase B describe block — 5 tests), `views/contact.ejs` (not-configured admin hint), `docs/admin/Contact-Us.md` (state matrices + Mail dependency rewrite + Roadmap), `package.json`, `config/app-default-config.json` (version bump 3.11.4 → 3.11.5), `CHANGELOG.md`
+  - this entry in `docs/project_log.md`
+
 ## 2026-05-10-01
 
 - Agent: Claude Opus 4.7

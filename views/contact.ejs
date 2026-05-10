@@ -21,15 +21,18 @@
                         <div class="alert alert-warning" role="alert">
                             <h5 class="alert-heading">Contact form is not configured</h5>
                             <p class="mb-0">
-                                The administrators of <strong><%= typeof applicationname !== 'undefined' ? applicationname : 'this site' %></strong> have not yet configured a contact recipient.
+                                The administrators of <strong><%= typeof applicationname !== 'undefined' ? applicationname : 'this site' %></strong> have not yet configured the contact form.
                                 Please reach out through whatever other channel has been established for this site.
                             </p>
                         </div>
                         <p class="text-muted small mb-0">
-                            <em>For administrators:</em> set <code>ngdpbase.application.contact.recipient</code> in
-                            <code>app-custom-config.json</code>, or update the primary admin user's email to a
-                            routable address (the install-default <code>admin@localhost</code> keeps the contact
-                            feature dormant).
+                            <em>For administrators:</em> the form renders only when <strong>both</strong> mail
+                            is enabled (<code>ngdpbase.mail.enabled: true</code> with a working provider — see
+                            <code>docs/admin/email-setup.md</code>) <strong>and</strong> a recipient resolves
+                            (set <code>ngdpbase.application.contact.recipient</code> in <code>app-custom-config.json</code>,
+                            or update the primary admin user's email to a routable address — the install-default
+                            <code>admin@localhost</code> keeps the contact feature dormant). The server log will
+                            tell you which one is missing.
                         </p>
                     <% } else { %>
                         <% if (typeof formError !== 'undefined' && formError) { %>

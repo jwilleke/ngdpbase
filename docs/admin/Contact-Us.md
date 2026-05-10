@@ -4,7 +4,7 @@ ngdpbase ships a built-in `/contact` route that operators can use as a zero-auth
 
 The form is server-rendered, posts back to `/contact`, validates inputs, defends against bot spam (honeypot + per-IP rate limit), resolves a recipient (explicit config or first-admin fallback), and delivers via the existing `EmailManager`. When mail is unconfigured the form renders a "not configured" state instead, so visitors don't get a misleading success.
 
-This doc covers the current shipping behaviour as of **v3.11.4**. The feature originally landed in #658 (v3.11.0 GET preview, v3.11.1 closed the form-and-send loop). Subsequent improvements ship under the umbrella issue #670 in five phases (A–E); see the *Roadmap* section at the end for what's done vs planned.
+This doc covers the current shipping behaviour as of **v3.11.5**. The feature originally landed in #658 (v3.11.0 GET preview, v3.11.1 closed the form-and-send loop). Subsequent improvements ship under the umbrella issue #670 in five phases (A–E); see the *Roadmap* section at the end for what's done vs planned.
 
 ---
 
@@ -125,12 +125,14 @@ The handlers mirror each other on the front-of-pipeline checks; submission adds 
 
 ### `GET /contact`
 
-| `enabled` | `page` | `recipient` resolves | Result |
-|---|---|---|---|
-| `false` | * | * | **404** Not found |
-| `true` | `<slug>` (≠ "contact") | * | **302** → `/view/<slug>` |
-| `true` | `""` | yes | **200** form view (`state: "form"`) |
-| `true` | `""` | no | **200** "not configured" view (`state: "not-configured"`) |
+| `enabled` | `page` | `mail.enabled` | `EmailManager` | `recipient` resolves | Result |
+|---|---|---|---|---|---|
+| `false` | * | * | * | * | **404** Not found |
+| `true` | `<slug>` (≠ "contact") | * | * | * | **302** → `/view/<slug>` |
+| `true` | `""` | * | not registered | * | **200** "not configured" (logged at error) |
+| `true` | `""` | `false` | registered | * | **200** "not configured" (logged at error) |
+| `true` | `""` | `true` | registered | no | **200** "not configured" |
+| `true` | `""` | `true` | registered | yes | **200** form view (`state: "form"`) |
 
 ### `POST /contact`
 
@@ -140,9 +142,13 @@ The handlers mirror each other on the front-of-pipeline checks; submission adds 
 | `page = "<slug>"` (≠ "contact") | **405** Method Not Allowed | continue |
 | Per-IP rate limit (5 / 15-min rolling) | **429** + `Retry-After` header | continue |
 | Honeypot field `_website` non-empty | **200** silent success view, **no mail** sent (logged) | continue |
-| Recipient resolves | continue | render "not configured" view |
+| `EmailManager` is registered | render "not configured" (logged at error) | continue |
+| `mail.enabled = true` | render "not configured" (logged at error) | continue |
+| Recipient resolves | render "not configured" view | continue |
 | Field validation (name 1–100, email 1–254 + shape, subject ≤200, message 1–5000) | **400** + form re-render with error + preserved values | continue |
 | `EmailManager.sendTo` | **200** form re-render with "We could not send your message right now." | **200** success view (`state: "submitted"`) |
+
+The mail / recipient checks now run **before** field validation, so a misconfigured deploy short-circuits to "not configured" without parsing the visitor's input. This is a behaviour change in v3.11.5 (#670 Phase B) — earlier versions accepted submissions and silently dropped them when mail was disabled.
 
 ---
 
@@ -167,14 +173,19 @@ The `/contact` POST handler delegates mail send to `EmailManager.sendTo(recipien
 | `console` (default) | Prints the message body to the server log; nothing is delivered. | Local development, tests. |
 | `smtp` | Sends via Nodemailer to a configured SMTP relay. | Production. |
 
-If `ngdpbase.mail.enabled` is `false`, `processContact` logs:
+If `ngdpbase.mail.enabled` is `false`, both `GET /contact` and `POST /contact` render the **"not configured"** view rather than the form, and log at error level (#670 Phase B, v3.11.5):
 
 ```
-[processContact] ngdpbase.mail.enabled is false — submission accepted but mail
-will not be sent (console transport will log it)
+[contactPage] ngdpbase.mail.enabled is false — rendering not-configured view;
+visitors cannot submit until mail is configured
+
+[processContact] ngdpbase.mail.enabled is false — rejecting submission with
+not-configured view (was previously a silent drop)
 ```
 
-…and still proceeds to the success view. **This is a known UX bug being fixed in Phase B of #670** — see *Known limitations and design gaps*. Until that ships, verify the mail path end-to-end before announcing the form. See *Verifying the setup* below.
+The form is suppressed entirely; visitors see the operator-facing "please use whatever other channel" copy. The previous behaviour (return "Message sent" while silently dropping the submission) is gone. POST checks the mail subsystem **before** field validation, so a misconfigured deploy short-circuits without parsing input.
+
+`EmailManager` not being registered at all is treated identically — both handlers render "not configured" and log at error.
 
 For SMTP setup details (host, port, auth, From: address, custom-domain SPF/DKIM/DMARC), see [`email-setup.md`](./email-setup.md).
 
@@ -239,7 +250,7 @@ These aren't bugs you need to work around — they're current-state limitations 
 
 | Limitation | Status | Tracking |
 |---|---|---|
-| `mail.enabled = false` returns "Message sent" to the visitor | Fix planned | #670 Phase B — render "not configured" instead, log at error level |
+| `mail.enabled = false` returns "Message sent" to the visitor | **Fixed in v3.11.5** | #670 Phase B — both handlers now render "not configured" and log at error level when `EmailManager` is unregistered or `mail.enabled = false` |
 | Submissions are email-only (not persisted) | Fix planned | #670 Phase C — append to `data/contact-submissions.log` (JSONL) |
 | Recipient list pass-through is undocumented and unvalidated | Fix planned | #670 Phase D — startup invariant + doc update |
 | Anti-spam settings are hard-coded | Fix planned | #670 Phase E — config under `ngdpbase.mail.{honeypot,rate-limit}.*` |
@@ -258,7 +269,7 @@ Tracked as one umbrella `[FEATURE]` issue with five phases:
 | Phase | Description | Status |
 |---|---|---|
 | A | Footer link to `/contact`, `contactAvailable` plumbing, `contact.footer.enabled` toggle | **Shipped v3.11.4** |
-| B | Mail-disabled UX honesty (render "not configured", log at error) | Planned |
+| B | Mail-disabled UX honesty (render "not configured", log at error) | **Shipped v3.11.5** |
 | C | Submission persistence to `data/contact-submissions.log` (JSONL) | Planned |
 | D | Recipient list validation at startup + docs for inline-CSV vs distribution-list patterns | Planned |
 | E | Configurable anti-spam under `ngdpbase.mail.{honeypot,rate-limit}.*` | Planned |

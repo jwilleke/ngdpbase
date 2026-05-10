@@ -429,3 +429,91 @@ describe('WikiRoutes — POST /contact (#658 iteration 3)', () => {
   });
 });
 
+
+// ─── Mail-disabled UX honesty (#670 Phase B) ────────────────────────────────
+//
+// Before Phase B: GET rendered the form whenever a recipient resolved (even
+// with mail.enabled=false), and POST proceeded to call sendTo while logging a
+// warning. Visitors saw "Message sent" but no mail left the box — silent drop.
+//
+// After Phase B: both handlers render `state: 'not-configured'` whenever
+// EmailManager is unregistered or `isEnabled()` returns false. POST never
+// calls sendTo on a disabled provider. Logs are bumped to error level.
+describe('WikiRoutes — /contact mail-disabled honesty (#670 Phase B)', () => {
+  let app: express.Application;
+
+  const validBody = {
+    name: 'Alice Smith',
+    email: 'alice@example.com',
+    subject: 'Hello',
+    message: 'Hi there, I would like to request access.'
+  };
+
+  beforeEach(async () => {
+    mockUserContext = { ...adminUser };
+    configState.enabled = true;
+    configState.page = '';
+    configState.recipient = '';
+    recipientResolver.mockReset();
+    mockEmailManager.sendTo.mockClear();
+    mockEmailManager.isEnabled.mockReturnValue(true);
+    recipientResolver.mockImplementation(async (override: string) => {
+      const trimmed = (override ?? '').trim();
+      if (trimmed) return trimmed;
+      return 'admin@example.com'; // default: recipient resolves
+    });
+
+    app = buildApp();
+    const { default: WikiEngine } = await import('../../WikiEngine');
+    const engine = new WikiEngine();
+    const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+    routes.registerRoutes(app);
+
+    contactRateLimiter.reset();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    mockUserContext = null;
+  });
+
+  // ── GET ──────────────────────────────────────────────────────────────────
+  test('GET /contact renders not-configured when mail.enabled is false (recipient still resolves)', async () => {
+    mockEmailManager.isEnabled.mockReturnValue(false);
+    const res = await request(app).get('/contact');
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('data-state="not-configured"');
+  });
+
+  test('GET /contact renders form when mail.enabled flips back to true', async () => {
+    mockEmailManager.isEnabled.mockReturnValue(true);
+    const res = await request(app).get('/contact');
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('data-state="form"');
+  });
+
+  // ── POST ─────────────────────────────────────────────────────────────────
+  test('POST /contact rejects with not-configured when mail.enabled is false — sendTo NOT called', async () => {
+    mockEmailManager.isEnabled.mockReturnValue(false);
+    const res = await request(app).post('/contact').send(validBody);
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('data-state="not-configured"');
+    expect(mockEmailManager.sendTo).not.toHaveBeenCalled();
+  });
+
+  test('POST /contact does NOT show "submitted" success when mail.enabled is false', async () => {
+    mockEmailManager.isEnabled.mockReturnValue(false);
+    const res = await request(app).post('/contact').send(validBody);
+    expect(res.text).not.toContain('data-state="submitted"');
+  });
+
+  // ── happy path regression guard ──────────────────────────────────────────
+  test('POST /contact still works end-to-end when mail.enabled is true (regression guard)', async () => {
+    mockEmailManager.isEnabled.mockReturnValue(true);
+    const res = await request(app).post('/contact').send(validBody);
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('data-state="submitted"');
+    expect(mockEmailManager.sendTo).toHaveBeenCalledTimes(1);
+  });
+});
+
