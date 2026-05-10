@@ -972,4 +972,196 @@ describe('ConfigurationManager', () => {
       await expect(cm.initialize()).rejects.toThrow(/inline CSV.*single address.*auto-resolve|admins@example\.com|alice@example\.com/s);
     });
   });
+
+  describe('configured-addons-exist guard (#672)', () => {
+    /**
+     * Helper: write a default config that enables/disables specific addon
+     * IDs and points addons-path at a list of directories. The caller is
+     * expected to have already populated those directories (see
+     * `seedAddonDir` below) before calling `cm.initialize()`.
+     */
+    const writeAddonDefault = async (extra: Record<string, unknown>) => {
+      await fs.writeJson(
+        path.join(tempDir, 'config', 'app-default-config.json'),
+        {
+          'ngdpbase.application-name': 'TestWiki',
+          'ngdpbase.application.base-url': 'http://localhost:3000',
+          'ngdpbase.application.contact.enabled': true,
+          'ngdpbase.application.contact.page': '',
+          'ngdpbase.application.contact.recipient': '',
+          ...extra
+        },
+        { spaces: 2 }
+      );
+    };
+
+    /**
+     * Create an addon directory structure that the invariant will
+     * recognise: `<root>/<name>/index.js` (file content irrelevant —
+     * the invariant only checks existence, not module load).
+     */
+    const seedAddonDir = async (root: string, name: string) => {
+      const dir = path.join(root, name);
+      await fs.ensureDir(dir);
+      await fs.writeFile(path.join(dir, 'index.js'), '// stub addon');
+    };
+
+    // ── no-op cases ──────────────────────────────────────────────────────
+    test('empty config (no addons.*.enabled keys) does not throw', async () => {
+      await writeAddonDefault({});
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+
+    test('enabled key matches a discovered directory does not throw', async () => {
+      const addonsRoot = path.join(tempDir, 'addons');
+      await seedAddonDir(addonsRoot, 'calendar');
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': addonsRoot,
+        'ngdpbase.addons.calendar.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+
+    test('enabled: false for a non-existent addon is harmless (only true triggers)', async () => {
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': path.join(tempDir, 'addons'),
+        'ngdpbase.addons.does-not-exist.enabled': false
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+
+    test('addons-path entry that does not exist on disk is silently skipped', async () => {
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': path.join(tempDir, 'no-such-dir')
+        // no enabled keys → still no-op
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+
+    test('multiple addons-path entries: all are searched before deciding "not found"', async () => {
+      const a = path.join(tempDir, 'addons-a');
+      const b = path.join(tempDir, 'addons-b');
+      await seedAddonDir(a, 'calendar');
+      await seedAddonDir(b, 'forms');
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': [a, b],
+        'ngdpbase.addons.calendar.enabled': true,
+        'ngdpbase.addons.forms.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+
+    // ── failure cases ────────────────────────────────────────────────────
+    test('enabled key with no matching directory throws and identifies the bad id', async () => {
+      const addonsRoot = path.join(tempDir, 'addons');
+      await seedAddonDir(addonsRoot, 'calendar');
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': addonsRoot,
+        'ngdpbase.addons.does-not-exist.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).rejects.toThrow(/Refusing to start.*does-not-exist.*#672/s);
+    });
+
+    test('error lists discovered addons so operator can pick the right name', async () => {
+      const addonsRoot = path.join(tempDir, 'addons');
+      await seedAddonDir(addonsRoot, 'calendar');
+      await seedAddonDir(addonsRoot, 'forms');
+      await seedAddonDir(addonsRoot, 'journal');
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': addonsRoot,
+        'ngdpbase.addons.does-not-exist.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).rejects.toThrow(/Available addons.*calendar.*forms.*journal/s);
+    });
+
+    test('did-you-mean suggestion fires for typos within edit distance 2', async () => {
+      const addonsRoot = path.join(tempDir, 'addons');
+      await seedAddonDir(addonsRoot, 'calendar');
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': addonsRoot,
+        'ngdpbase.addons.calandar.enabled': true  // typo: "calandar" vs "calendar"
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).rejects.toThrow(/did you mean "calendar"/);
+    });
+
+    test('did-you-mean is omitted for very different names (rename case)', async () => {
+      // The geohazardwatch.com outage scenario: ve-geology vs geohazardwatch
+      // are far apart (Levenshtein > 2). No suggestion offered, but the
+      // available-addons list still tells the operator the new name.
+      const addonsRoot = path.join(tempDir, 'addons');
+      await seedAddonDir(addonsRoot, 'geohazardwatch');
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': addonsRoot,
+        'ngdpbase.addons.ve-geology.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).rejects.toThrow(/Refusing to start.*ve-geology/);
+      await expect(cm.initialize()).rejects.not.toThrow(/did you mean/);
+    });
+
+    test('multiple unknown enabled keys: error lists all of them', async () => {
+      const addonsRoot = path.join(tempDir, 'addons');
+      await seedAddonDir(addonsRoot, 'calendar');
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': addonsRoot,
+        'ngdpbase.addons.foo.enabled': true,
+        'ngdpbase.addons.bar.enabled': true,
+        'ngdpbase.addons.baz.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).rejects.toThrow(/foo.*bar.*baz/s);
+    });
+
+    test('directory without index.js or index.ts is not considered an addon', async () => {
+      // An empty directory under addons-path shouldn't count as a discovered
+      // addon. Catches the case where `addons/<x>/` exists but the addon
+      // hasn't been built / its index file was deleted.
+      const addonsRoot = path.join(tempDir, 'addons');
+      await fs.ensureDir(path.join(addonsRoot, 'incomplete-addon')); // no index.js
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': addonsRoot,
+        'ngdpbase.addons.incomplete-addon.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).rejects.toThrow(/incomplete-addon/);
+    });
+
+    test('"shared" directory is excluded from discovery (reserved name)', async () => {
+      // AddonsManager.scanAddonsDirectory() skips an entry named "shared"
+      // (line 273); the invariant must do the same so a `shared/` folder
+      // doesn't accidentally satisfy `ngdpbase.addons.shared.enabled`.
+      const addonsRoot = path.join(tempDir, 'addons');
+      await seedAddonDir(addonsRoot, 'shared');
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': addonsRoot,
+        'ngdpbase.addons.shared.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).rejects.toThrow(/shared/);
+    });
+
+    test('hidden directories (dotfiles) are excluded from discovery — even when an enabled key tries to match', async () => {
+      // AddonsManager.scanAddonsDirectory() skips entries starting with "."
+      // (line 267); the invariant must do the same. If an operator creates
+      // an addon dir at `.hidden/` and tries to enable it under the key
+      // `ngdpbase.addons.hidden.enabled`, the invariant should reject —
+      // the dotfile is not a valid addon identity.
+      const addonsRoot = path.join(tempDir, 'addons');
+      await seedAddonDir(addonsRoot, '.hidden');
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': addonsRoot,
+        'ngdpbase.addons.hidden.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).rejects.toThrow(/hidden/);
+    });
+  });
 });

@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.13.1] - 2026-05-10
+
+### Added
+
+- **`assertConfiguredAddonsExist` startup invariant** (#672, closes #672) — `ConfigurationManager.initialize()` now refuses to start if any `ngdpbase.addons.<id>.enabled = true` key references an `<id>` that has no matching addon directory in any configured `addons-path`. Mirrors `AddonsManager.scanAddonsDirectory()` discovery semantics (directory name + `index.js` or `index.ts` present), but without importing the modules — boot-time speed. Catches the silent-misconfig failure mode that caused the 2026-05-10 `geohazardwatch.com` outage (#671), where the deploy configmap had `ngdpbase.addons.ve-geology.enabled = true` but the on-disk addon was renamed to `geohazardwatch`.
+- **Did-you-mean suggestions** for typo-class misconfigs — Levenshtein-distance match (≤ 2) against discovered addon names. The error message reads:
+
+  ```
+  [ConfigurationManager] Refusing to start: 'ngdpbase.addons.<id>.enabled = true'
+  references unknown addon(s): "calandar" (did you mean "calendar"?). Available
+  addons in ["./addons"]: calendar, elasticsearch, forms, journal. Either rename
+  the config key to match a discovered addon, or remove the enabled key. (#672)
+  ```
+
+  Rename-class misconfigs (e.g., `"ve-geology"` → `"geohazardwatch"`, edit distance > 2) won't get a "did you mean" hint, but the *Available addons* list still tells the operator the right new name.
+
+- 13 new tests in `src/managers/__tests__/ConfigurationManager.test.ts` covering happy paths (empty config, single match, multiple addons-path entries, `enabled: false` ignored), failure paths (typo with suggestion, rename without suggestion, multiple bad keys, dotfile/`shared`/no-index excluded from discovery), and the error message structure.
+
+### Notes
+
+- This is the safety-net for #671's class of bug: addon-rename refactors that update the source repo's directory but leave a downstream config repo's `ngdpbase.addons.<old-id>.enabled` key stale. Prior to this invariant, AddonsManager silently treated such configs as "addon disabled" — a misconfigured pod would boot fine, register no addon plugins/managers, and only surface the failure when a page using the addon was rendered (often hours later, via a user complaint).
+- Patch bump because behaviour changes only on already-broken configs (a startup failure replaces a silent-and-broken runtime). Operators with valid configs see no change.
+- Same shape as the existing startup invariants: `assertBaseUrlConfigured` (#642), `assertContactPageNotLoop` (#658), `assertContactRecipientWellFormed` (#670 Phase D).
+- See `jwilleke/geohazardwatch#35` for the complementary dev-time check (CONTRIBUTING.md checklist + optional CI rename-detector). The two issues attack the same failure class from different ends — dev-time checklist prevents the bad commit, runtime invariant catches it on next boot.
+
 ## [3.13.0] - 2026-05-10
 
 ### Added

@@ -2,6 +2,25 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-10-08
+
+- Agent: Claude Opus 4.7
+- Subject: #672 (v3.13.1) — `assertConfiguredAddonsExist` startup invariant. Refuses to start if `ngdpbase.addons.<id>.enabled = true` references an addon directory that doesn't exist. Closes the silent-misconfig class of bug that caused today's `geohazardwatch.com` outage (#671).
+- Current Issue: #672 (closed by this commit; complementary dev-time fix lives in `jwilleke/geohazardwatch#35`)
+- Tests: 5385 vitest unit tests pass (was 5372, +13 new); `tsc --noEmit` clean.
+- Work Done:
+  - New `ConfigurationManager.assertConfiguredAddonsExist` (~50 LOC) wired into `initialize()` after the existing three invariants (`assertBaseUrlConfigured`, `assertContactPageNotLoop`, `assertContactRecipientWellFormed`). Same pattern as #670 Phase D.
+  - Discovery mirrors `AddonsManager.scanAddonsDirectory()` exactly — same directory-name + `index.{js,ts}` rules, same skip-list (`shared/`, dotfiles). No module-load at this stage; cheap synchronous fs scan only. The invariant runs at config-init time, well before AddonsManager itself starts up.
+  - Did-you-mean suggestion via Levenshtein distance ≤ 2. Catches typo-class misconfigs (`calandar` → `calendar`); silent on rename-class (`ve-geology` → `geohazardwatch`, edit distance ~14) but the error always lists every discovered addon name so the operator can pick the right one.
+  - Considered alternative: actually import each addon's module to compare its `name:` field against the directory name. Rejected as too expensive for boot (would mean N async imports of arbitrary user code at config-init, before any other manager is up). Documented the false-positive case in code comments — an addon whose directory name differs from its module's `name:` field would be flagged here, but that's rare in practice; both Phase A's geohazardwatch addon and the four bundled addons (calendar, elasticsearch, forms, journal) keep directory == name.
+  - 13 new tests covering: empty config, single match, multiple paths, `enabled: false` ignored, missing-but-enabled throws, typo with suggestion, rename without suggestion, multiple bad keys identified, no-index dirs excluded, `shared/` excluded, dotfiles excluded.
+  - Decided to ship as patch (3.13.0 → 3.13.1) rather than minor: the change makes invalid configs FAIL LOUD, which is strictly an improvement over silent-broken-runtime. Operators with valid configs see no change. Same call as #670 Phase D's patch bump.
+  - Did NOT bundle the geohazardwatch-side dev-time check (CONTRIBUTING.md checklist + CI rename-detector) into this commit — that lives in `jwilleke/geohazardwatch#35` for separate scoping. The two attacks the same failure class from different ends: dev-time prevents the bad commit, runtime catches it on next boot.
+- Commits: (this commit) `feat(config): refuse to start when an enabled addon ID has no matching directory (v3.13.1, #672)`
+- Files Modified:
+  - modified: `src/managers/ConfigurationManager.ts` (new method + initialize() call), `src/managers/__tests__/ConfigurationManager.test.ts` (13 new tests in a new describe block), `package.json` (3.13.0 → 3.13.1), `config/app-default-config.json` (`ngdpbase.version` bump), `CHANGELOG.md`
+  - this entry in `docs/project_log.md`
+
 ## 2026-05-10-07
 
 - Agent: Claude Opus 4.7

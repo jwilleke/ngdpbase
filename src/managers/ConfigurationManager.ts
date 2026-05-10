@@ -99,6 +99,7 @@ class ConfigurationManager extends BaseManager {
       await this.assertBaseUrlConfigured();
       this.assertContactPageNotLoop();
       this.assertContactRecipientWellFormed();
+      this.assertConfiguredAddonsExist();
       logger.info(`ConfigurationManager initialized for environment: ${this.environment}`);
       logger.info(`Loaded configs: default + ${this.customConfig && Object.keys(this.customConfig).length > 0 ? 'custom' : 'no custom'}`);
     } catch (error) {
@@ -211,6 +212,121 @@ class ConfigurationManager extends BaseManager {
         '(#670 Phase D)'
       );
     }
+  }
+
+  /**
+   * #672: refuse to start if any `ngdpbase.addons.<id>.enabled = true` key
+   * references an `<id>` that has no matching addon directory in any
+   * configured `addons-path`. The discovery logic mirrors what
+   * `AddonsManager.scanAddonsDirectory()` does at runtime — directory name
+   * + `index.js` or `index.ts` present — but without importing the modules
+   * (boot-time speed; `ConfigurationManager.initialize()` runs before any
+   * managers).
+   *
+   * Catches the failure mode that caused the 2026-05-10 geohazardwatch.com
+   * outage: the deploy configmap had `ngdpbase.addons.ve-geology.enabled =
+   * true` but the on-disk addon was renamed to `geohazardwatch`, so
+   * `AddonsManager` silently treated the addon as disabled and registered
+   * none of its plugins/managers.
+   *
+   * False-positive consideration: an addon whose directory name differs
+   * from its module's `name:` field would be flagged here as "missing"
+   * even though it'd register at runtime. This is rare in practice (the
+   * directory name is the conventional identity); when it does happen,
+   * either rename the directory to match the module, or remove the
+   * `enabled` key (the addon will load by directory name anyway since the
+   * registration check is on the module's `name` field).
+   */
+  private assertConfiguredAddonsExist(): void {
+    if (!this.mergedConfig) return;
+
+    // 1. Find all enabled-true addon keys.
+    const enabledIds: string[] = [];
+    for (const [key, value] of Object.entries(this.mergedConfig as Record<string, unknown>)) {
+      const m = /^ngdpbase\.addons\.([^.]+)\.enabled$/.exec(key);
+      if (m && value === true) enabledIds.push(m[1]);
+    }
+    if (enabledIds.length === 0) return;
+
+    // 2. Resolve addons-path (string or string[]; default './addons') —
+    // matching AddonsManager.initialize() lines 210-219.
+    const raw = this.getProperty('ngdpbase.managers.addons-manager.addons-path', './addons');
+    const paths = Array.isArray(raw) ? (raw as string[]) : [raw as string];
+    const resolvedPaths = paths.map(p => path.resolve(p));
+
+    // 3. Enumerate addon directories. Directory name + index.{js,ts} must
+    // be present, matching AddonsManager.scanAddonsDirectory() lines
+    // 263-287. No module loading at this stage.
+    const knownAddons = new Set<string>();
+    for (const dirPath of resolvedPaths) {
+      if (!fs.existsSync(dirPath)) continue;
+      let stat;
+      try { stat = fs.statSync(dirPath); } catch { continue; }
+      if (!stat.isDirectory()) continue;
+      let entries;
+      try { entries = fs.readdirSync(dirPath, { withFileTypes: true }); } catch { continue; }
+      for (const entry of entries) {
+        if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'shared') continue;
+        const indexJs = path.join(dirPath, entry.name, 'index.js');
+        const indexTs = path.join(dirPath, entry.name, 'index.ts');
+        if (fs.existsSync(indexJs) || fs.existsSync(indexTs)) {
+          knownAddons.add(entry.name);
+        }
+      }
+    }
+
+    // 4. Diff. Any enabled id without a matching directory is a misconfig.
+    const unknown = enabledIds.filter(id => !knownAddons.has(id));
+    if (unknown.length === 0) return;
+
+    // 5. Build error with did-you-mean suggestions for likely typos.
+    const known = Array.from(knownAddons).sort();
+    const suggestions = unknown.map(id => {
+      const guess = this.findClosestAddonName(id, known);
+      return guess ? `"${id}" (did you mean "${guess}"?)` : `"${id}"`;
+    });
+
+    throw new Error(
+      '[ConfigurationManager] Refusing to start: ' +
+      `'ngdpbase.addons.<id>.enabled = true' references unknown addon(s): ${suggestions.join(', ')}. ` +
+      `Available addons in [${resolvedPaths.map(p => `"${p}"`).join(', ')}]: ` +
+      `${known.length ? known.join(', ') : '(none discovered)'}. ` +
+      'Either rename the config key to match a discovered addon, or remove the enabled key. (#672)'
+    );
+  }
+
+  /**
+   * Levenshtein-distance-based suggestion. Returns the closest candidate
+   * within edit distance 2, or null if no candidate is close enough.
+   * Used by `assertConfiguredAddonsExist` for did-you-mean error hints
+   * on typo-class misconfigs (rename-class misconfigs like
+   * "ve-geology" → "geohazardwatch" are too far apart and will return
+   * null, which is fine — the error message still lists every available
+   * addon so the operator can pick the right one).
+   */
+  private findClosestAddonName(input: string, candidates: string[]): string | null {
+    const dist = (a: string, b: string): number => {
+      if (a === b) return 0;
+      if (!a.length) return b.length;
+      if (!b.length) return a.length;
+      const dp: number[][] = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+      for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+      for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+      for (let i = 1; i <= a.length; i++) {
+        for (let j = 1; j <= b.length; j++) {
+          const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+          dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+        }
+      }
+      return dp[a.length][b.length];
+    };
+    let best: string | null = null;
+    let bestDist = 3;
+    for (const c of candidates) {
+      const d = dist(input, c);
+      if (d < bestDist) { best = c; bestDist = d; }
+    }
+    return best;
   }
 
   /**
