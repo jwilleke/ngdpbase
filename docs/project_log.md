@@ -2,6 +2,28 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-10-12
+
+- Agent: Claude Opus 4.7
+- Subject: Fixed #677 — `POST /contact` now returns HTTP 200 (not 400) on `EmailManager.sendTo` failure, matching the documented state matrix and the Phase B UX-honesty intent (#670).
+- Current Issue: #677 (closed).
+- Tests: full suite — 206 files / 5385 tests pass; `tsc --noEmit` clean. Two existing assertions in `src/routes/__tests__/WikiRoutes.contact.test.ts` flipped from `toBe(400)` → `toBe(200)` (lines 457 and 667). One of those tests previously carried an explicit comment documenting the buggy 400 as deferred behaviour — the deferral ends here.
+- Work Done:
+  - Confirmed root cause from #677's issue body by reading `src/routes/WikiRoutes.ts` `processContact` (~`:4174`): the `renderForm` helper inferred HTTP status from "is `formError` non-null" — correct heuristic for client-side validation errors (which keep 400) but wrong for the `mail-failed` branch (line 4396) which passes a non-null `formError` string but represents a server-side relay failure.
+  - Minimal fix: added an optional `httpStatus?: number` parameter to `renderForm`, defaulting to the existing `formError ? 400 : 200` heuristic. The mail-failed call site now passes `200` explicitly; every other call site is unchanged. Validation errors still return 400; not-configured paths still return 200; the only behaviour delta is the mail-failed branch.
+  - Updated both test assertions that were locking in the buggy 400 behaviour. The longer-form test (line 662) had a comment that read *"renderForm uses 400 when formError is non-null — pre-existing behaviour shared with validation errors. Phase C didn't change the response code."* — replaced with a comment that explains the new (correct) semantics: visitor input was fine, the server just could not relay (#677). The shorter form test (line 454) got a one-line comment.
+  - Added a CHANGELOG `Unreleased → Fixed` entry; deferred version bump and release per the operator's small-iterations preference (likely batch with #678 and #679 if those are also fixed soon, otherwise file separately).
+  - Did NOT touch `docs/admin/Contact-Us.md` — the state matrix there has always said 200; the implementation was the lie. No doc change needed.
+- Commits: pending — about to commit + push + comment-then-close #677.
+- Files Modified:
+  - `src/routes/WikiRoutes.ts` (one signature change + one call-site override + comment block update on `renderForm`)
+  - `src/routes/__tests__/WikiRoutes.contact.test.ts` (two `expect(res.status).toBe(400)` → `200` flips + comment updates)
+  - `CHANGELOG.md` (new `[Unreleased] / Fixed` entry)
+  - `docs/project_log.md` (this entry)
+- Follow-ups:
+  - #678 and #679 still open and queued; this fix doesn't touch either. Both are likely independent of #677 (different code paths) so order doesn't matter.
+  - Consider a `/semver patch` once one or both of #678/#679 also land, to ship a tight v3.13.2 covering the three observed-during-#676-verification fixes.
+
 ## 2026-05-10-11
 
 - Agent: Claude Opus 4.7

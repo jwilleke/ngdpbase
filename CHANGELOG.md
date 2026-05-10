@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **`POST /contact` returns HTTP 200 (not 400) on `EmailManager.sendTo` failure** (#677). Mail-send failure is a server-side relay problem, not a client validation error — the response now matches the documented state matrix in `docs/admin/Contact-Us.md` and the Phase B (#670) UX-honesty intent: visitor sees the form re-rendered with "We could not send your message right now." and an HTTP 200, instead of a misleading 400 that suggested the visitor's input was at fault. `renderForm` in `src/routes/WikiRoutes.ts` `processContact` gains an optional `httpStatus` override (default still derives from `formError`); the mail-failed call site passes `200` explicitly. Two existing tests in `src/routes/__tests__/WikiRoutes.contact.test.ts` updated from `toBe(400)` → `toBe(200)` (one of them carried a comment that explicitly documented the buggy behaviour as deferred — the deferral ends with this fix).
+
+---
+
 ## [3.13.1] - 2026-05-10
 
 ### Added

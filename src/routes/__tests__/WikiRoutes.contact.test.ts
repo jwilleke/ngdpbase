@@ -454,7 +454,8 @@ describe('WikiRoutes — POST /contact (#658 iteration 3)', () => {
   test('renders form with error when EmailManager.sendTo throws', async () => {
     mockEmailManager.sendTo.mockRejectedValueOnce(new Error('SMTP unavailable'));
     const res = await request(app).post('/contact').send(validBody);
-    expect(res.status).toBe(400);
+    // 200 — server-side mail failure, not a client validation error (#677).
+    expect(res.status).toBe(200);
     expect(res.text).toContain('data-state="form"');
   });
 
@@ -662,9 +663,10 @@ describe('WikiRoutes — POST /contact submission persistence (#670 Phase C)', (
   test('persists mailResult="mail-failed" when EmailManager.sendTo throws', async () => {
     mockEmailManager.sendTo.mockRejectedValueOnce(new Error('SMTP relay refused'));
     const res = await request(app).post('/contact').send(validBody);
-    // renderForm uses 400 when formError is non-null — pre-existing behaviour
-    // shared with validation errors. Phase C didn't change the response code.
-    expect(res.status).toBe(400);
+    // Mail-send failure returns 200 with the form re-rendered and a
+    // "could not send" notice — visitor input was fine, the server just
+    // could not relay. Distinct from validation errors which return 400 (#677).
+    expect(res.status).toBe(200);
 
     const lines = await readLogLines();
     expect(lines.length).toBe(1);

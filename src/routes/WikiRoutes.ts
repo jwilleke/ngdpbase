@@ -4285,12 +4285,18 @@ ${panes}
       const mailReady = !!emailManager && emailManager.isEnabled();
 
       // Validate input. `subject` is optional; everything else required.
+      // httpStatus defaults to the formError heuristic — non-null formError is
+      // a client-side validation failure, so 400. The mail-send-failure path
+      // overrides to 200: the visitor's input was fine, the server just could
+      // not relay the message (#677).
       const renderForm = async (
         state: 'form' | 'not-configured',
-        formError: string | null
+        formError: string | null,
+        httpStatus?: number
       ): Promise<void> => {
+        const status = httpStatus ?? (formError ? 400 : 200);
         const commonData = await this.getCommonTemplateData(req);
-        res.status(formError ? 400 : 200).render('contact', {
+        res.status(status).render('contact', {
           ...commonData,
           title: 'Contact',
           state,
@@ -4393,7 +4399,7 @@ ${panes}
       } catch (mailErr: unknown) {
         logger.error('[processContact] EmailManager.sendTo failed:', mailErr);
         await persistSubmission('mail-failed', recipient);
-        await renderForm('form', 'We could not send your message right now. Please try again later.');
+        await renderForm('form', 'We could not send your message right now. Please try again later.', 200);
         return;
       }
 
