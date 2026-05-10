@@ -542,6 +542,31 @@ class WikiRoutes {
       'request-access'
     )) || 'request-access';
 
+    // #670 Phase A: derive `contactAvailable` once per render so the footer
+    // link, future header chrome, and page bodies all read the same answer.
+    // Short-circuits — only iterates users when both contact + mail are on.
+    const contactEnabled = (configManager?.getProperty(
+      'ngdpbase.application.contact.enabled',
+      true
+    ) as boolean) ?? true;
+    const contactFooterEnabled = (configManager?.getProperty(
+      'ngdpbase.application.contact.footer.enabled',
+      true
+    ) as boolean) ?? true;
+    const emailManager = this.engine.getManager('EmailManager') as
+      | { isEnabled(): boolean }
+      | null;
+    const mailEnabled = emailManager?.isEnabled?.() ?? false;
+    let contactAvailable = false;
+    if (contactEnabled && mailEnabled && userManager) {
+      const recipientOverride = (configManager?.getProperty(
+        'ngdpbase.application.contact.recipient',
+        ''
+      )) ?? '';
+      const recipient = await userManager.getContactRecipient(recipientOverride);
+      contactAvailable = !!recipient;
+    }
+
     const templateData: {
       currentUser: UserContext | null;
       user: UserContext | null;
@@ -560,6 +585,8 @@ class WikiRoutes {
       capabilities: Record<string, boolean>;
       allowRegistration: boolean;
       registrationRedirectPage: string;
+      contactAvailable: boolean;
+      contactFooterEnabled: boolean;
       csrfToken: string;
       leftMenu?: string;
       footer?: string;
@@ -589,7 +616,9 @@ class WikiRoutes {
       addonStylesheets,
       capabilities: this.engine.getCapabilities?.() ?? {},
       allowRegistration,
-      registrationRedirectPage
+      registrationRedirectPage,
+      contactAvailable,
+      contactFooterEnabled
     };
 
     // Load LeftMenu — prefer 'left-menu-content' page (instance/addon override) over 'LeftMenu'

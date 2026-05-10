@@ -5,7 +5,14 @@
                     <%- footer %>
                 </div>
             <% } %>
-            
+
+            <!-- #670 Phase A: Contact link in the footer when contact is fully available -->
+            <% if (typeof contactAvailable !== 'undefined' && contactAvailable && (typeof contactFooterEnabled === 'undefined' || contactFooterEnabled)) { %>
+                <div class="footer-contact mt-3 pt-2 border-top text-center small text-muted">
+                    <a href="/contact"><i class="fas fa-envelope"></i> Contact</a>
+                </div>
+            <% } %>
+
             </main>
         </div>
     </div>

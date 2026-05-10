@@ -71,6 +71,14 @@ export interface WikiConfig {
    */
   'ngdpbase.application.contact.recipient': string;
 
+  /**
+   * Render a footer link to /contact on every page when the contact feature
+   * is fully available (`contact.enabled` + `mail.enabled` + a recipient
+   * resolves). When false, /contact still works but is not advertised in
+   * the footer (#670 Phase A). Default: true.
+   */
+  'ngdpbase.application.contact.footer.enabled': boolean;
+
   /** Server port */
   'ngdpbase.server.port': number;
 

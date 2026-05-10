@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.11.4] - 2026-05-10
+
+### Added
+
+- **Footer link to `/contact`** (#670 Phase A) — every page now renders a "Contact" link in the footer when the contact feature is fully available, i.e. `ngdpbase.application.contact.enabled = true` AND `ngdpbase.mail.enabled = true` AND a recipient resolves (explicit `contact.recipient` or first admin user with a non-sentinel email). When any of those is false, the link is suppressed — no advertised path that leads to a misconfigured form.
+- **`ngdpbase.application.contact.footer.enabled`** config key (default `true`). Lets operators keep `/contact` reachable without advertising it in the footer (e.g., during a soft launch).
+- **`contactAvailable` and `contactFooterEnabled`** plumbed through `WikiRoutes.getCommonTemplateData` so the footer view and any future header/menu chrome read the same single-source-of-truth boolean. The recipient resolver is only called when both `contact.enabled` and `mail.enabled` are true (short-circuit), so dormant deploys pay no per-render cost.
+- New section in `docs/admin/Contact-Us.md` documenting the footer link, the `contactAvailable` derivation, and the new config key.
+
+### Changed
+
+- `views/footer.ejs` gains a `contactAvailable && contactFooterEnabled`-gated block rendering `<a href="/contact"><i class="fas fa-envelope"></i> Contact</a>`.
+- `_comment_application_contact` in `config/app-default-config.json` extended to describe the new `footer.enabled` key.
+
+### Notes
+
+- This is Phase A of #670. Phase B (mail-disabled UX honesty), Phase C (submission persistence to JSONL), Phase D (recipient list validation), and Phase E (configurable anti-spam under `ngdpbase.mail.{honeypot,rate-limit}.*`) ship in subsequent patches/minor.
+
 ## [3.11.3] - 2026-05-09
 
 ## [3.11.2] - 2026-05-08

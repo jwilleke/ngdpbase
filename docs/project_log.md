@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-10-01
+
+- Agent: Claude Opus 4.7
+- Subject: #670 Phase A (v3.11.4) — footer link to `/contact`, `contactAvailable` plumbing, `contact.footer.enabled` toggle. Addresses the #1 design gap from the operator review (no app-default link to `/contact`).
+- Current Issue: #670 (umbrella; Phase A done, Phases B–E remain)
+- Tests: 5332 vitest unit tests pass (8 new in `src/routes/__tests__/WikiRoutes.contactAvailable.test.ts`); existing 23 contact tests in `WikiRoutes.contact.test.ts` unchanged and still pass; `tsc --noEmit` clean; markdownlint clean on `Contact-Us.md`.
+- Work Done:
+  - Filed umbrella issue #670 [FEATURE] capturing five phases (A=footer link, B=mail-disabled UX honesty, C=submission persistence to JSONL, D=recipient list validation, E=configurable anti-spam under `ngdpbase.mail.{honeypot,rate-limit}.*`). Slicing was negotiated in chat after a longer review session that also produced the new `docs/admin/Contact-Us.md` admin guide. Operator confirmed: one umbrella issue with five phases, body checkboxes updated as each phase merges.
+  - Phase A scope (this commit): plumb a single derived `contactAvailable` boolean through `getCommonTemplateData` so the footer view (and any future header/menu chrome) reads the same single-source-of-truth answer; render the footer link gated on `contactAvailable && contactFooterEnabled`; add `ngdpbase.application.contact.footer.enabled` (default `true`) so operators can keep `/contact` reachable without advertising it. Recipient resolver short-circuited when either `contact.enabled` or `mail.enabled` is false, so dormant deploys pay no per-render cost.
+  - Caught and fixed an MD038 false positive in the Known-limitations table caused by `|` inside a JSPWiki-style code-span link (`` `[Send us a message|/contact]` ``) colliding with the table-cell separator. Rephrased the cell to use plain prose ("a JSPWiki-style link to `/contact`") rather than escape-fight markdownlint.
+  - **Memory miss caught mid-session and fixed**: I had been hard-wrapping `*.md` prose at ~80 chars when writing `Contact-Us.md` initially. Operator pointed out this was a new development; the repo's `.markdownlint.json` sets `MD013.line_length: 900` (effectively "do not wrap"). Saved `~/.claude/projects/-Volumes-hd2A-workspaces-github-ngdpbase/memory/feedback_no_markdown_wrap.md` so future sessions in this repo read the lint config first and stop wrapping. `Contact-Us.md` was rewritten unwrapped as part of this same commit.
+  - Did NOT bundle Phase B's mail-disabled UX fix into Phase A even though `getCommonTemplateData` now has all the info to gate `contactPage` state on `contactAvailable` instead of its own recipient resolution. Per the "Small Iterations" memory, that scope belongs in its own slice. The double-resolver-call cost (once in `getCommonTemplateData`, once in `contactPage`) is accepted as an interim cost; Phase B will collapse it.
+- Commits: (this commit) `feat: footer link to /contact + contactAvailable plumbing (v3.11.4, #670 Phase A)`
+- Files Modified:
+  - new: `docs/admin/Contact-Us.md` (filed earlier in same session, then unwrapped + extended for Phase A), `src/routes/__tests__/WikiRoutes.contactAvailable.test.ts`
+  - modified: `src/routes/WikiRoutes.ts` (extended `getCommonTemplateData`), `src/types/Config.ts` (new key entry), `config/app-default-config.json` (new key + extended `_comment_application_contact`, version bump), `views/footer.ejs` (link block), `package.json` (version bump 3.11.3 → 3.11.4), `package-lock.json`, `CHANGELOG.md` (v3.11.4 entry)
+  - this entry in `docs/project_log.md`
+
 ## 2026-05-09-08
 
 - Agent: Claude Opus 4.7
