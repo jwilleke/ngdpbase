@@ -2,6 +2,33 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-11-02
+
+- Agent: Claude Opus 4.7
+- Subject: Continued the #680 thread to resolution. Diagnosed that the existing Renovate wiring in geohazardwatch was correct in config but not running because the Renovate GitHub App was never installed. Tried the Mend hosted-Renovate path; hit "this organization is not onboarded" 404 on the dashboard. Switched to **self-hosted Renovate** via a new GitHub Action workflow in the geohazardwatch repo — no Mend dependency, runs on infrastructure the operator already controls. Closes the auto-rebuild loop described in #680 once the operator adds a `RENOVATE_TOKEN` repo secret.
+- Current Issue: #680 (resolution landed in satellite; pending one observed end-to-end Renovate run before close).
+- Tests: none — pure satellite-side wiring; nothing to test in this repo.
+- Work Done:
+  - **Verified #680's intent was already half-implemented.** `geohazardwatch/renovate.json` has the exact `auto-merge minor + patch` rule for `ghcr.io/jwilleke/ngdpbase` that the subscriber-pattern refinement of #680 envisions. The Dockerfile already has the matching `# renovate: datasource=docker depName=ghcr.io/jwilleke/ngdpbase` annotation. So the spec was already in code form — just nothing actuating it.
+  - **Identified the missing piece.** No Renovate PRs have ever opened against `jwilleke/geohazardwatch` (all PRs in history are operator-authored). The Renovate GitHub App is not installed on the account. The config without the App is inert.
+  - **Mend hosted-Renovate path tried first.** Operator hit a 404 on the Mend dashboard ("this organization is not onboarded") when attempting to navigate the post-install flow. Free-for-public-repos in theory, but the onboarding UX requires creating a Mend account and explicit org-onboarding via `developer.mend.io`. Operator chose not to pursue.
+  - **Self-hosted Renovate via GitHub Actions chosen as Path 2.** Better alignment with #681's "least rigid, modify the respective repository" principle — keeps the auto-rebuild loop fully under operator control with no third-party hosted-service dependency.
+  - **Satellite commit landed**: `jwilleke/geohazardwatch@9268969 chore: self-hosted Renovate via GitHub Action (closes jwilleke/ngdpbase#680)`. Three files:
+    - `.github/workflows/renovate.yml` — new. 6-hour cron + `workflow_dispatch`. Uses `renovatebot/github-action@v40` and the existing `renovate.json`. Header comment documents the required `RENOVATE_TOKEN` PAT scopes (Contents + Pull requests + **Workflows**, the last being critical so auto-merged commits trigger `auto-tag.yml`).
+    - `renovate.json` — removed the global `"schedule": ["before 6am on monday"]` so the 6-hour cron has windows to act on. Per-rule schedules (e.g. `lockFileMaintenance`) preserved.
+    - `CHANGELOG.md` — `[Unreleased]` entry documenting the new workflow and the schedule relaxation.
+  - **Rebase friction.** Auto-tag had already pushed `df1d65b chore: release v1.2.6` to origin from earlier in the session, so my local `4ecf545` needed a rebase. Stashed a leftover `.claude/commands/check-todos.md` mod, rebased clean, dropped stash. Final commit hash post-rebase: `9268969`.
+  - **#680 updated with resolution comment.** Captures the Mend-vs-self-hosted decision, the satellite commit reference, and the pending operator action (add `RENOVATE_TOKEN` secret with the right scopes). Issue stays open until one Renovate run is observed end-to-end.
+- Commits: none in this repo. Satellite: `jwilleke/geohazardwatch@9268969`.
+- Files Modified: none in this repo. Satellite cross-referenced above.
+- Follow-ups:
+  - **Operator action:** create `RENOVATE_TOKEN` PAT (Contents + Pull requests + Workflows on `jwilleke/geohazardwatch`) and add as a repo secret. Or reuse `RELEASE_PAT` if scopes match. Workflow stays dormant until this lands.
+  - **Verification:** once the secret is in place, trigger the workflow manually from the Actions tab (`workflow_dispatch`). Expect Renovate to open a Dockerfile bump PR for `ngdpbase 3.13.1 → 3.13.2` and auto-merge it. Then `auto-tag.yml` cuts `v1.2.7`, `publish-image.yml` builds, fluxcdbot bumps mj-infra-flux, pod rolls. End-to-end automated; close #680 after first successful run.
+  - **#680's body** still describes the publisher pattern from the original filing. Body update or close-and-pin-comment-as-spec is a clean-up worth doing in a future session.
+  - **#671 and #674** still pending the scope-tension pass against #681.
+  - **Three deployment-doc stubs** still TODO content.
+  - **#682 Levers 1 + 2** (geohazardwatch ships its own `docker-compose.yml` + README `Quick try`) still pending.
+
 ## 2026-05-11-01
 
 - Agent: Claude Opus 4.7
