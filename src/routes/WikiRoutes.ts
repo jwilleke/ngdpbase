@@ -4163,13 +4163,11 @@ ${panes}
    *  - happy path → EmailManager.sendTo(recipient, subject, body),
    *                 then re-render with state="submitted"
    *
-   * Note: this route does NOT validate CSRF. The codebase has no
-   * application-wide CSRF middleware (csurf is in package.json but
-   * never imported); existing POST routes (/register, /admin/*) also
-   * skip the check. Adding it here only would be inconsistent. The
-   * gap is tracked separately as a follow-up bug; for this unauthenticated
-   * mail-send surface, honeypot + rate limit + recipient sentinel are
-   * the primary defenses.
+   * CSRF: validated by the app-wide csrf middleware (`src/middleware/csrf.ts`,
+   * wired in `src/app.ts`) before this handler runs. For this unauthenticated
+   * mail-send surface, honeypot + rate limit + recipient sentinel remain the
+   * primary anti-abuse defenses (CSRF protects against forged authenticated
+   * requests, not raw spam).
    */
   async processContact(req: Request, res: Response) {
     try {
