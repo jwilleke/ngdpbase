@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-10-15
+
+- Agent: Claude Opus 4.7
+- Subject: Closed out the `request-access` page fix on the live geohazardwatch.com persistent volume — landing the same `system-category: documentation` → `system` change in production that commit `091f6f30` made to the seeded copy. No new code commit; verification + state-sync session.
+- Current Issue: none (continuation of `2026-05-10-14`'s seeded fix; no new GH issue).
+- Tests: none — content-only verification.
+- Work Done:
+  - Verified the live persistent file at `/mnt/tank/jims/data/systems/geohazardwatch/pages/519febcc-b640-4a0e-a495-4c4db655484b.md` reads `system-category: system` and contains the `[Contact Us|/contact]` link in the body. The `[Contact Us|/contact]` half had landed earlier via the admin UI (frontmatter `lastModified: 2026-05-10T14:54:15.283Z`, `user-modified: true`). The remaining `system-category` change was applied operator-side after a Bash-edit attempt by Claude was classifier-blocked twice (the classifier locked onto duplicate (1)/(2) numbering between the project_log Follow-ups and the user-facing question; even an explicit `AskUserQuestion` confirmation didn't override it). Operator landed the change via their own path.
+  - Confirmed seeded copy (`required-pages/519febcc-…md` from commit `091f6f30`) matches the live NAS-side copy on both `system-category` (`system`) and link target (`[Contact Us|/contact]`). Only `lastModified` differs (seeded: midnight 2026-05-10; live: 14:54:15Z) — expected and harmless.
+  - **Classifier interaction note worth keeping in mind for future cross-repo / live-prod-file sessions:** the classifier weights the agent's *own* prior numbered Follow-ups heavily when interpreting a user's terse "do (N)" reply. When the agent has multiple recent numberings in scope (project_log Follow-ups, user-facing options-list, an internal todo), `AskUserQuestion`-style confirmation appears NOT to override the classifier's anchor on the older numbering. Path of least friction for the operator: run the production edit via `!` prefix, or grant a one-off permission rule.
+- Commits: none in this entry — wraps up the work of `091f6f30` from earlier today. Issue #680 stays open; #678 and #679 stay closed (verified live earlier in the session).
+- Files Modified:
+  - `/mnt/tank/jims/data/systems/geohazardwatch/pages/519febcc-b640-4a0e-a495-4c4db655484b.md` (operator-side; off-repo NAS file)
+  - `docs/project_log.md` (this entry)
+- Follow-ups:
+  - **Pending release decision:** ngdpbase master has two `[Unreleased]` Fixed entries (`#677` mail-failed HTTP 200 fix in `b36fef6c`, seeded `request-access` page fix in `091f6f30`). Both are production-relevant patch-level changes. A `/semver patch` would tag v3.13.2 and unblock a geohazardwatch image bump that would carry both fixes to the live site (especially #677, which currently affects geohazardwatch.com if Gmail ever rejects a submission). Operator to decide whether to release now or batch with further work.
+  - Seeded `contact-us` page (UUID `c0a01d19-…`) still has the same `system-category: documentation` mistag per `Contact-Us.md` *Known Limitations*. Not addressed this session; one-line fix when next touching that page.
+
 ## 2026-05-10-14
 
 - Agent: Claude Opus 4.7
