@@ -2,6 +2,50 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-11-01
+
+- Agent: Claude Opus 4.7
+- Subject: Long session — shipped ngdpbase v3.13.2 via `/semver patch`, ran `/othersites` across four sister installs (caught a real `#672` invariant trip on jimstest), manually bumped the geohazardwatch satellite to v1.2.6 inheriting v3.13.2 (full chain end-to-end verified live), then wrote and reconciled a project-scope deployment doc (`docs/platform/Deployment.md` hub + three deeper stubs under `docs/platform/deployment/`). Filed three new feature issues (#680 refined, #681, #682). No fresh commits this entry — the work was all committed inline; this entry rolls up the unlogged tail since `2026-05-10-15`.
+- Current Issue: #680 (refined to subscriber pattern via comment), #681 (hub + stubs landed, reconciled with reality), #682 (filed; no implementation yet).
+- Tests: full vitest suite green at v3.13.2 (5385 tests). Sister installs each ran 5385 unit + 72 E2E green after pulling v3.13.2 — see /othersites notes below. ngdpbase E2E was skipped during `/semver` per operator direction; ran clean on each sister site during `/othersites`.
+- Work Done:
+  - **v3.13.2 release** (`86ec8196`). `/semver patch` from `3.13.1`. Two production-relevant fixes plus docs churn: #677 mail-failed HTTP 200 (b36fef6c), and the seeded `request-access` page fix (091f6f30). Perf baseline captured (`docs/performance/baseline-v3.13.2-2026-05-11.md`); memory delta vs the v3.11.3 reference (+138.6%) flagged but explained as cumulative dev-server state across three unreleased intermediate versions, not a real regression. Route timings within thresholds. GitHub Release entry deferred per the patch default. Tag pushed; image published to GHCR.
+  - **`/othersites` across 4 sister installs.** All four pulled v3.13.2, rebuilt, restarted, and passed 5385 unit + 72 E2E:
+    - `fairways-base` (port 2121, "The Fairways") — clean.
+    - `ngdpbase-veg` (port 3333, "ve-geology") — one flaky unit test on first run (server-boot race), passed on rerun; E2E clean.
+    - `ngdpbase` (jimstest, port 3000) — **#672 invariant caught a real misconfig.** Persistent config at `/Volumes/hd2/jimstest-wiki/data/config/app-custom-config.json:608` had `ngdpbase.addons.template.enabled = true` referencing a non-existent addon. ngdpbase v3.13.2 refused to start. Removed the line (operator-authorized, classifier required explicit user response); server came up clean. First real-world validation of `#672`'s startup invariant. No code bug — exactly the failure mode v3.13.1 was designed to catch.
+    - `ngdp-temp-builds/ngdpbase` (port 3001) — clean.
+  - **geohazardwatch v1.2.6 bump and live verification.** Manually bumped `NGDPBASE_VERSION` 3.13.1 → 3.13.2 in `geohazardwatch/Dockerfile` (commit `25375dc`). Push triggered `auto-tag.yml` → cut `v1.2.6` (auto-tag claims the patch bump, ignoring the operator's local 1.2.5→1.2.4 attempt — known interaction documented in entry `2026-05-10-13`) → `publish-image.yml` → `ghcr.io/jwilleke/geohazardwatch:1.2.6` published. Forced flux reconcile (image policy + update + source + apps Kustomization, operator-authorized). mj-infra-flux's ImageUpdateAutomation pushed `e373b86 bump geohazardwatch to 1.2.6`. Pod rolled. Verified live: `kubectl exec deploy/geohazardwatch -- node -e ...` confirms `ngdpbase=3.13.2 geohazardwatch=1.2.6`. `POST /contact` end-to-end smoke test returned HTTP 200; mail dispatched via Gmail SMTP; audit log appended. #677 fix is now in production.
+  - **`docs/platform/Deployment.md` — three iterations to a clean hub:**
+    - Iteration 1 (`57b0acb5`): added the operator's seed stub with typo-corrected content (`Deployent.md` → `Deployment.md`, `appllication` → `application`, `flaxibilities` → `flexibilities`, `LogoGeoHazardWatch` → `GeoHazardWatch`).
+    - Iteration 2 (`c77c8ba2`): expanded into a project-scope hub. Producer/demo/deployer boundary; what ngdpbase ships vs doesn't ship; three deployment shapes side-by-side with cake-style requirement lists; opinionated framing — Direct install first, Docker Compose next, Kubernetes for ops teams. Plus three deeper stubs under `docs/platform/deployment/` (`direct-install.md`, `docker-compose.md`, `kubernetes.md`) following a shared template (Requirements → Steps → Verifying / Updating / Backup / Troubleshooting).
+    - Iteration 3 (`a6759f19`): reality-reconciliation pass. First cut overstated "doesn't ship" by claiming no k8s manifests and no Docker Compose files; the repo actually ships starter `docker/Dockerfile`, `docker/docker-compose.yml`, `docker/docker-compose-traefik.yml`, plain k8s manifests under `docker/k8s/`, helper scripts, and operator docs. Hub corrected to list these as starter artifacts (fork-and-adapt, not blessed templates); "does not ship" tightened to genuine omissions (Helm chart, Kustomize bases, GitOps reference repo, opinionated production compose stack, reusable downstream workflows, registries other than GHCR). Per-shape sections now link the actual shipped files.
+  - **Issue framing pass driven by the new principle in `Deployment.md`:**
+    - **#680** — refined via comment from publisher pattern (repository_dispatch from ngdpbase, satellite-name-coupled) to subscriber pattern (satellites listen for ngdpbase Release events independently; patches stay quiet, minor/major auto-fire, `/release` on a patch tag opts that patch in). Zero ngdpbase code; all implementation lands in the consuming satellite. Issue body still describes original spec; refinement is in comments.
+    - **#681** — filed as the canonical deployment-options issue; two commits and several comments capture the hub + stubs + reality-reconciliation.
+    - **#682** — filed as the "Domain Addon Deployment" follow-on. Captures three levers: Lever 1 (satellite ships its own `docker-compose.yml`, recommended); Lever 2 (satellite README `Quick try` `docker run` one-liner); Lever 3 (platform behaviour change in ngdpbase's `AddonsManager` — auto-enable bundled addons discovered in non-default addons-path directories, with operator override preserved). Cross-linked to #672, #675, #680, #681.
+  - **Discussion threads not closed:** #671 (auto-deployments to Docker from Instances — scope tension with the platform/operator boundary now codified in #681), #674 (canonical k8s manifest templates — directly contradicted by the "what ngdpbase ships" reality-reconciliation in `a6759f19`; should be re-scoped or closed). Both noted but deferred per small-iterations preference.
+- Commits: `b36fef6c` (#677 fix), `091f6f30` (request-access seed), `810b8011` (log session 2026-05-10-15), `86ec8196` (release v3.13.2), `57b0acb5` (Deployment.md seed), `c77c8ba2` (Deployment.md hub + stubs, #681), `a6759f19` (Deployment.md reality-reconciliation, #681). Plus `geohazardwatch@25375dc` (NGDPBASE_VERSION bump, off-repo) and `mj-infra-flux@e373b86` (image-automation bump to 1.2.6, off-repo).
+- Files Modified (this repo only — satellite-repo commits cross-linked above):
+  - `src/routes/WikiRoutes.ts` (renderForm httpStatus override for #677)
+  - `src/routes/__tests__/WikiRoutes.contact.test.ts` (two 400→200 assertion flips for #677)
+  - `required-pages/519febcc-b640-4a0e-a495-4c4db655484b.md` (seeded request-access page fix)
+  - `docs/admin/Contact-Us.md` (Known Limitations row reconciled)
+  - `CHANGELOG.md` (Unreleased entries → [3.13.2] - 2026-05-11 via version.ts)
+  - `package.json`, `config/app-default-config.json` (version 3.13.1 → 3.13.2 via version.ts)
+  - `docs/performance/baseline-v3.13.2-2026-05-11.md` (new — release-time perf baseline)
+  - `docs/platform/Deployment.md` (new, then expanded, then reconciled — three iterations)
+  - `docs/platform/deployment/direct-install.md` (new stub)
+  - `docs/platform/deployment/docker-compose.md` (new stub, then reality-reconciled)
+  - `docs/platform/deployment/kubernetes.md` (new stub, then reality-reconciled)
+  - `docs/project_log.md` (entries 2026-05-10-10 through -15 plus this entry)
+- Follow-ups:
+  - **#682 Levers 1 + 2** — ship a `docker-compose.yml` and a `Quick try` README section in the geohazardwatch repo. Smallest deliverable that closes the biggest UX gap for the simple-operator deploy path. ~30 min work in the satellite repo.
+  - **#682 Lever 3** — auto-enable bundled addons in non-default `addons-path` directories. Platform behaviour change; deserves its own implementation issue and design review. Pairs naturally with the `#672` startup invariant code path.
+  - **Three deployment-doc stubs** under `docs/platform/deployment/` need Steps + Verifying + Updating + Backup + Troubleshooting content. Direct install first (highest-priority audience), Kubernetes last.
+  - **#680 body update** to make the subscriber-pattern refinement authoritative rather than buried in comments. Operator-side decision: close-and-re-file in geohazardwatch, or keep in ngdpbase as the tracking issue with the implementation in the satellite.
+  - **#671 and #674** — re-scope or close per #681's principle. Both have explicit scope tension with the deployment-options framework now in place.
+
 ## 2026-05-10-15
 
 - Agent: Claude Opus 4.7
