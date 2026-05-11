@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Planned
+
+- Future enhancements
+
+## [3.13.2] - 2026-05-11
+
 ### Fixed
 
 - **Seeded `request-access` page now categorised as `system` (was `documentation`) and links to `/contact`** for the contact path. The page is registration-closed UX scaffolding, not user-authored documentation, so `system` is the correct filter bucket for admin views (matches LeftMenu, Privacy Notice, Markdown Cheat Sheet). The body's `[Contact Us]` link previously resolved to `/view/Contact%20Us` (the seeded text page); it now uses JSPWiki's link-with-target syntax `[Contact Us|/contact]` so visitors who want access land on the form route. Updates the corresponding row in `docs/admin/Contact-Us.md` *Known limitations* — the composition gap with `ngdpbase.application.registration: false` is now closed at the seed level. New deployments inherit the fix; existing instances retain whatever copy lives on their persistent volume.
