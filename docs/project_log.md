@@ -2,6 +2,30 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-11-03
+
+- Agent: Claude Opus 4.7
+- Subject: Cleanup pass — rewrote #680's issue body to reflect the final subscriber-pattern + self-hosted-Renovate state (was still describing the original publisher-pattern proposal); posted fate-decision comments on #671 and #674 against #681's principles; shipped #682 Levers 1 + 2 in geohazardwatch (`docker-compose.yml` at repo root + README "Quick try" / "Deploy your own" sections). No ngdpbase commits — work was issue-side (body rewrite, comments) + satellite-side (`jwilleke/geohazardwatch@8fe871f`).
+- Current Issue: #680 (body rewrite), #671 (close recommended), #674 (close recommended), #682 (Levers 1+2 done; Lever 3 outstanding).
+- Tests: none — no code touched in this repo.
+- Work Done:
+  - **#680 body rewrite.** The original issue body filed earlier today described the publisher pattern (ngdpbase emits `repository_dispatch` to the satellite). The subscriber-pattern decision and self-hosted-Renovate resolution lived only in comments. Replaced the body with a clean spec covering: the gap being closed, the resolution (self-hosted Renovate in `jwilleke/geohazardwatch@9268969`), why subscriber over publisher (#681 principle), pending operator action (`RENOVATE_TOKEN` secret with Contents + PR + Workflows scopes), and the verification path. Old design-journey comments preserved untouched.
+  - **#671 fate-decision comment.** The original confusion in the issue body (*"I am lost as to what is done now and how to fix it"*) about the relationship between ngdpbase, ngdpbase-veg, geohazardwatch, and geohazardwatch.com is substantively resolved by #681 (architecture clarified in `docs/platform/Deployment.md`) and #680 (auto-deploy implemented). Recommended close. Leaving open for operator decision.
+  - **#674 fate-decision comment.** The proposal (Kustomize base + overlays + Flux templates in `docker/k8s/`) directly contradicts #681's reality-reconciled "what ngdpbase does not ship" list (no Helm chart, no Kustomize bases, no GitOps reference repo). The pain point it addressed (*"every k8s deployment of ngdpbase reinvents its own manifest set"*) is real but theoretical for the current consumer count of one. Recommended close as superseded by #681. Leaving open for operator decision. Comment notes the proposal is well-thought-out and worth re-litigating if a second real k8s deployment shows up.
+  - **#682 Levers 1 + 2 landed in `jwilleke/geohazardwatch@8fe871f`.** Two files added, one updated:
+    - `docker-compose.yml` at the repo root — pulls the published `ghcr.io/jwilleke/geohazardwatch` image (no local build needed), named volume `ghw-data` for persistent storage, port 3000 (override via `HOST_PORT`), health check, environment defaults that work out of the box. Simple-guy deploy is now `git clone && docker compose up -d`. Zero file editing.
+    - `README.md` — added "Quick try (30 seconds)" with a `docker run --rm` one-liner at the very top, then "Deploy your own" using the new compose file. The pre-existing developer-oriented install instructions moved under "Develop the addon" since they're addon-author-facing, not operator-facing. Order of sections now matches audience priority: peek → deploy → develop.
+    - `CHANGELOG.md` — `[Unreleased]` bullets for the new compose file and README restructure, cross-referencing #682.
+  - **#682 Lever 3** (auto-enable bundled addons in non-default `addons-path` directories) explicitly left as a platform-side follow-up. Deserves its own design pass and a separate implementation issue. Not blocking the simple-guy deploy experience — the addon enable can still be wired in custom config today.
+  - **Net "deploy your own" UX delta**: the simple-guy path went from *"find ngdpbase's docker-compose.yml in a different repo, copy it locally, edit the `image:` line to point at the geohazardwatch image, author a minimal `app-custom-config.json` with the addon-enable flag, get the volume mount paths right, then `docker compose up -d`"* to *"`git clone && docker compose up -d`"*. Meaningful improvement at zero ngdpbase cost.
+- Commits: none in this repo. Satellite: `jwilleke/geohazardwatch@8fe871f`.
+- Files Modified: none in this repo. Satellite cross-referenced above.
+- Follow-ups:
+  - **#682 Lever 3** — file as a separate ngdpbase issue (or convert #682 itself into the Lever 3 tracking issue now that Levers 1+2 are done). Platform behaviour change: auto-enable addons discovered in non-default `addons-path` directories, with explicit operator override preserved.
+  - **#680 verification** — operator adds `RENOVATE_TOKEN` secret, triggers the workflow manually from the Actions tab, observes first auto-merged PR + cascade, closes #680.
+  - **#671 + #674** — close per the recommendations in the fate comments. Operator action.
+  - **Three deployment-doc stubs** under `docs/platform/deployment/` still need full Steps + Verifying + Updating + Backup + Troubleshooting content. Direct install first per audience priority.
+
 ## 2026-05-11-02
 
 - Agent: Claude Opus 4.7
