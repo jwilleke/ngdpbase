@@ -8,24 +8,30 @@ This is **not** a step-by-step deployment manual. Each shape links to its own de
 
 ## What ngdpbase ships
 
-ngdpbase's responsibility ends at the **build container step**:
+ngdpbase's primary responsibility is the **build container step** — produce a versioned image, push it to GHCR, sign off. Alongside the image, the repo also ships **starter artifacts** for the three deployment shapes documented below. They're examples, not templates anyone is required to use:
 
 - A versioned source release on GitHub (`vX.Y.Z` tag + release notes).
 - A container image published to GHCR (`ghcr.io/jwilleke/ngdpbase:X.Y.Z`).
+- A reference [`docker/Dockerfile`](../../docker/Dockerfile) that builds the published image. Operators building their own derivative image can `FROM ghcr.io/jwilleke/ngdpbase:X.Y.Z` instead of forking this one.
+- Starter Docker Compose files: [`docker/docker-compose.yml`](../../docker/docker-compose.yml) (plain single-host) and [`docker/docker-compose-traefik.yml`](../../docker/docker-compose-traefik.yml) (with a Traefik reverse-proxy sidecar for HTTPS).
+- Starter plain Kubernetes manifests under [`docker/k8s/`](../../docker/k8s/) — `configmap.yaml`, `deployment.yaml`, `ingress.yaml`, `pvc.yaml`, `service.yaml`, plus a `secrets.yaml.example`. Plain manifests only; no Kustomize bases, no Helm chart.
+- Helper scripts: [`docker/build-image.sh`](../../docker/build-image.sh), [`docker/deploy-remote.sh`](../../docker/deploy-remote.sh), [`docker/docker-setup.sh`](../../docker/docker-setup.sh).
 - The documented addon API and config keys.
-- This deployments doc, plus the deeper guides linked below.
+- Operator docs in [`docker/`](../../docker/) (`DEPLOYMENT.md`, `DOCKER.md`, `TRAEFIK-DEPLOYMENT.md`, `HEADLESS-DEPLOYMENT-NOTES.md`, `k8s/README.md`) and this deployments doc plus the deeper guides linked below.
+
+The starter artifacts are intentionally minimal. Forking and adapting them is expected. Treat them as a working seed, not the blessed deployment.
 
 ## What ngdpbase does not ship
 
 ngdpbase deliberately does **not** publish:
 
-- Kubernetes manifests, Helm charts, or Kustomize bases.
-- A reference GitOps repository.
-- Docker Compose files for production setups.
-- Reusable GitHub Actions workflows for deployment.
+- A Helm chart or Kustomize bases. (Plain `kubectl apply`-able manifests only.)
+- A reference GitOps repository or a published image-automation workflow.
+- An opinionated production-ready Docker Compose stack with TLS, observability, log shipping, backups, etc. baked in. The shipped compose files are deliberately stripped-down starters.
+- Reusable GitHub Actions workflows for downstream consumers to import.
 - Image registries other than GHCR.
 
-These are operator concerns. The goal is to keep ngdpbase flexible — any operator can wire it into the tools and patterns their organization already uses, without inheriting an opinion from the platform.
+These are operator concerns. The goal is to keep ngdpbase flexible — any operator can wire it into the tools and patterns their organization already uses, without inheriting more opinion than necessary from the platform.
 
 ## The reference demo: GeoHazardWatch
 
@@ -54,14 +60,14 @@ If you have these, you're ready. See [direct install →](./deployment/direct-in
 
 ### Docker Compose — easiest way to try ngdpbase
 
-Run ngdpbase in a container on a single machine with `docker compose up`. Good for evaluating the platform, homelab setups, and small single-host production deployments.
+Run ngdpbase in a container on a single machine with `docker compose up`. Good for evaluating the platform, homelab setups, and small single-host production deployments. The repo ships two starter compose files in [`docker/`](../../docker/): `docker-compose.yml` (plain) and `docker-compose-traefik.yml` (with Traefik in front for HTTPS).
 
 #### Requirements
 
 - A computer with Docker installed (Docker Desktop on Mac/Windows, Docker Engine on Linux).
 - A few GB of free disk.
 - A free network port.
-- (Optional) A reverse proxy for HTTPS.
+- (Optional) A reverse proxy for HTTPS — or use the bundled Traefik variant.
 
 If you don't have Docker installed (or don't want to install it), look at **Direct install** instead. It's simpler.
 
@@ -69,7 +75,7 @@ See [docker compose →](./deployment/docker-compose.md).
 
 ### Kubernetes — for ops teams running clusters
 
-Run ngdpbase as a workload on an existing Kubernetes cluster. Appropriate when you're already running other services on K8s and have the operational tooling and habits to support it. **Most small organizations don't need this** — Direct install or Docker Compose is almost always simpler and cheaper.
+Run ngdpbase as a workload on an existing Kubernetes cluster. Appropriate when you're already running other services on K8s and have the operational tooling and habits to support it. **Most small organizations don't need this** — Direct install or Docker Compose is almost always simpler and cheaper. The repo ships plain starter manifests in [`docker/k8s/`](../../docker/k8s/) (`configmap.yaml`, `deployment.yaml`, `ingress.yaml`, `pvc.yaml`, `service.yaml`) plus a `secrets.yaml.example`. Copy, adapt to your namespace and ingress / TLS / storage choices, then `kubectl apply`.
 
 #### Requirements
 

@@ -20,26 +20,32 @@ If any line above is a question rather than a yes, look at the easier modes firs
 
 ## What ngdpbase does and doesn't give you here
 
-ngdpbase ships the container image and the configuration contract. It does **not** ship:
+ngdpbase ships:
+
+- The container image and the configuration contract.
+- **Plain starter manifests** under [`docker/k8s/`](../../../docker/k8s/) — `configmap.yaml`, `deployment.yaml`, `ingress.yaml`, `pvc.yaml`, `service.yaml`, and `secrets.yaml.example`. They're `kubectl apply`-able as-is for a minimal install, but they're starters — expect to edit them for your namespace, storage class, ingress class, and TLS source.
+
+ngdpbase does **not** ship:
 
 - A Helm chart.
-- Kustomize bases.
+- Kustomize bases or overlays.
 - A reference GitOps repo.
-- An operator/CRD.
+- An operator / CRD.
+- Image-update automation manifests.
 
-The deployment is yours to author. The project's own reference cluster uses [mj-infra-flux](https://github.com/jwilleke/mj-infra-flux) (Flux + Kustomize), but that repo is a working example, not a template anyone is expected to copy. Use the tools your organization already knows.
+The deployment is yours to author on top of those starters. The project's own reference cluster uses [mj-infra-flux](https://github.com/jwilleke/mj-infra-flux) (Flux + Kustomize), but that repo is a working example, not a template anyone is expected to copy. Use the tools your organization already knows.
 
 ## Steps
 
 > **TODO** — sketch of the section structure:
 >
 > 1. Pick image: `ghcr.io/jwilleke/ngdpbase:X.Y.Z` directly, or a wrapper image you build with your addons baked in.
-> 2. Author the workload — Deployment + Service + Ingress + PersistentVolumeClaim + ConfigMap for `app-custom-config.json`.
+> 2. Copy [`docker/k8s/*.yaml`](../../../docker/k8s/) into your manifests directory and edit for your namespace, storage class, ingress, and TLS source.
 > 3. Mount the persistent volume at the configured data directory (`/app/data` by default, or wherever your `INSTANCE_DATA_FOLDER` env var points).
 > 4. Configure ingress + TLS.
 > 5. Apply via your usual tool — `kubectl apply`, `flux reconcile`, ArgoCD sync, etc.
 >
-> A minimal annotated example manifest set will live in this doc as a starting point — not a template to deploy as-is.
+> See also [`docker/k8s/README.md`](../../../docker/k8s/README.md) for the operational notes that exist today.
 
 ## GitOps and image automation
 

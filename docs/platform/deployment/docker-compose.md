@@ -19,14 +19,14 @@ If you don't have Docker installed and don't want to install it, the **Direct in
 
 > **TODO** — full walkthrough. The shape of the section will be:
 >
-> 1. Pull the published image (`docker pull ghcr.io/jwilleke/ngdpbase:latest`) — no build required for the platform itself.
-> 2. Author a minimal `docker-compose.yml` with one service, one volume for the data directory, and one port mapping.
-> 3. Author a minimal `app-custom-config.json` (or rely on defaults).
+> 1. Copy [`docker/docker-compose.yml`](../../../docker/docker-compose.yml) from the repo (or `docker-compose-traefik.yml` if you want HTTPS via Traefik baked in).
+> 2. Author a minimal `app-custom-config.json` (or rely on defaults).
+> 3. Adjust port mapping, volume host paths, and any env-var overrides for your machine.
 > 4. `docker compose up -d`.
-> 5. Open `http://localhost:3000` and confirm the front page renders.
-> 6. Optional: drop in a reverse-proxy service (Caddy or nginx) in the same compose file for HTTPS.
+> 5. Open the configured host port and confirm the front page renders.
+> 6. Optional: replace Traefik with Caddy or nginx if you prefer a different reverse-proxy.
 
-A reference `docker-compose.yml` will live in this doc so an operator can copy-paste-modify.
+See also [`docker/DOCKER.md`](../../../docker/DOCKER.md) and [`docker/TRAEFIK-DEPLOYMENT.md`](../../../docker/TRAEFIK-DEPLOYMENT.md) for the operational notes that exist today; this doc will distill them into a small-org-friendly tutorial.
 
 ## Adding addons
 
