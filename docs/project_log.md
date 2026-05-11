@@ -2,6 +2,25 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-11-04
+
+- Agent: Claude Opus 4.7
+- Subject: TODO triage + clearing the two top-of-list security items. Ran `/check-todos` → priorities snapshot covering Dependabot (3 open), in-review (1), 11 open BUGs, recent carryover. Merged PR #683 (`@opentelemetry/exporter-prometheus` 0.215.0 → 0.217.0) → auto-resolved Dependabot alerts #104 + #105 (both high severity). Closed #663 (app-wide CSRF middleware) — fix already shipped in `09dc0c36`, sitting "in review" with all tests + live smoke green. Landed the tiny follow-up from #663's impl comment: removed dead `csurf` dep from `package.json` + lock (never imported; the shipped CSRF middleware is custom session-bound, not csurf). Also fixed a stale `WikiRoutes.processContact()` comment that still claimed no CSRF middleware existed.
+- Current Issue: #663 (closed); #683 (merged).
+- Tests: `npx tsc --noEmit` clean post-removal (the single pre-existing `connection` deprecation diagnostic on `WikiRoutes.ts:5637` is unrelated). pre-commit hook ran `eslint --fix` on the modified TS file with no issues.
+- Work Done:
+  - **PR #683 merged** (`a5207fb8` squash) — Dependabot bump of `@opentelemetry/exporter-prometheus` 0.215.0 → 0.217.0. GHSA "Prometheus exporter process crash via malformed HTTP request" high-severity alerts #104 and #105 auto-closed. Branch deleted.
+  - **#663 closed** — fix shipped in `09dc0c36 feat(security): app-wide CSRF middleware (#663)` and was sitting in "in review" with author's own "can close once reviewed" comment. 5324/5324 vitest + 72/72 Playwright + live smoke on jimstest already documented in the implementation comment. Close comment cross-references the three flagged follow-ups (dead-dep removal — done in this session; route-test middleware-stack audit — open; headless install POST audit — open).
+  - **Dead `csurf` dep removed** in `3fba1316 chore(deps): remove dead csurf dep (#663 follow-up)`. `npm uninstall csurf` dropped 9 packages total (csurf + 8 transitive: tsscmp, rndm, toidentifier, statuses, setprototypeof, http-errors, depd, csrf). `package-lock.json` shrank by 99 lines.
+  - **Stale comment fix** on `src/routes/WikiRoutes.ts:4156-4170` (the `processContact()` doc-comment). Originally written during #658 iteration 3 when no app-wide CSRF existed, it still said *"this route does NOT validate CSRF. The codebase has no application-wide CSRF middleware (csurf is in package.json but never imported)"*. Updated to correctly describe the app-wide protection as active and note that honeypot + rate limit + recipient sentinel remain the anti-spam defenses (CSRF protects against forged authenticated requests, not raw spam — different threat models).
+  - **Dependabot state after this session**: 1 open alert (#96 showdown ReDoS, medium severity), tracked in `#599`, no upstream patch available. Two high-severity alerts resolved.
+- Commits: `a5207fb8` (PR #683 squash-merge), `3fba1316` (csurf removal).
+- Files Modified: `package.json`, `package-lock.json`, `src/routes/WikiRoutes.ts`.
+- Follow-ups:
+  - **#663 carryover** still open: (a) route-test infrastructure audit — route tests build inline express apps without the production middleware stack so CSRF isn't exercised end-to-end there; (b) `HEADLESS_INSTALL=true` POST audit — those flows weren't checked for token-bearing POSTs. Both worth their own issues if/when picked up.
+  - **#599 showdown ReDoS** remains open with no upstream patch — mitigation only. No change this session.
+  - Carryover from 2026-05-11-01..03 unchanged: #680 awaiting operator `RENOVATE_TOKEN` secret + first observed Renovate run before close; #671 + #674 awaiting operator close per fate-decision comments; #682 Lever 3 needs its own issue or repurpose #682; three deployment-doc stubs under `docs/platform/deployment/` still need full content.
+
 ## 2026-05-11-03
 
 - Agent: Claude Opus 4.7
