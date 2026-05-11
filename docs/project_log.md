@@ -16,8 +16,12 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - **Dependabot state after this session**: 1 open alert (#96 showdown ReDoS, medium severity), tracked in `#599`, no upstream patch available. Two high-severity alerts resolved.
 - Commits: `a5207fb8` (PR #683 squash-merge), `3fba1316` (csurf removal).
 - Files Modified: `package.json`, `package-lock.json`, `src/routes/WikiRoutes.ts`.
+- Audit pass on the two remaining #663 follow-ups (after the csurf removal):
+  - **Route-test middleware-stack gap** — confirmed real. 22 route test files build `express()` inline with only `express.json()` + `express.urlencoded()`; zero matches for `csrfMiddleware`/`generateCsrfToken`/`csrf.ts` across any route test. Only csrf-adjacent string is `csrfToken: 'test-csrf-token'` as a template-data prop in `WikiRoutes.contact.test.ts:212` — not a middleware exercise. Compensated by 13 dedicated `csrf.test.ts` unit tests + 72 Playwright E2E tests that traverse the production stack. Not a security gap; pure unit-test-layer regression risk. Filed as **#684** (`enhancement, testing`).
+  - **`HEADLESS_INSTALL=true` POST audit** — verified clean. Only 4 source references (`app.ts:187,204` + two doc comments). `processHeadlessInstallation()` (`InstallService.ts:618-665`) does no outbound HTTP — only filesystem ops (`createPagesFolder()` + `markHeadlessInstallationComplete()`). The install-check middleware sits at `app.ts:189`, *before* the CSRF middleware at `app.ts:398`, so headless install never traverses the CSRF path. Implementation-comment caveat was speculative. No issue needed.
+  - Posted cross-reference comment on closed **#663** linking #684 + recording the HEADLESS audit result for future readers.
 - Follow-ups:
-  - **#663 carryover** still open: (a) route-test infrastructure audit — route tests build inline express apps without the production middleware stack so CSRF isn't exercised end-to-end there; (b) `HEADLESS_INSTALL=true` POST audit — those flows weren't checked for token-bearing POSTs. Both worth their own issues if/when picked up.
+  - **#684** filed (route-test infra hardening). Low priority — E2E compensates; pick up opportunistically.
   - **#599 showdown ReDoS** remains open with no upstream patch — mitigation only. No change this session.
   - Carryover from 2026-05-11-01..03 unchanged: #680 awaiting operator `RENOVATE_TOKEN` secret + first observed Renovate run before close; #671 + #674 awaiting operator close per fate-decision comments; #682 Lever 3 needs its own issue or repurpose #682; three deployment-doc stubs under `docs/platform/deployment/` still need full content.
 
