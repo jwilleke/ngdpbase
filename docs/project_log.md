@@ -2,6 +2,22 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-12-02
+
+- Agent: Claude Opus 4.7
+- Subject: `/check-todos` snapshot → operator picked `geohazardwatch#41` (auto-tag.yml has no rebase-on-conflict) → fix landed as PR #44 on `jwilleke/geohazardwatch`. The race bit live yesterday during the simultaneous merge of `geohazardwatch#37` + `#38`; v1.2.8 tag pushed but pointed at an orphan release commit, `main` stayed at v1.2.7, manual cherry-pick recovery in `9bc992e`. Issue body included a self-correcting fix sketch; implementation matched it including the post-correction (drop annotated tag → rebase → re-create tag) since the tag points at a specific SHA that rebase rewrites.
+- Current Issue: `jwilleke/geohazardwatch#41` (PR open).
+- Tests: pre-commit ran eslint + markdownlint clean on the workflow file; hard to repro the race deterministically in CI, so test plan is operator-driven (merge a no-op `package.json` PR to fire the workflow → confirm happy path still works → optionally try a back-to-back merge to exercise the rebase loop).
+- Work Done:
+  - **Verified no conflict with `docs/platform/addon-development-guide.md` §12.** The guide establishes one contract for satellite repos: every `v*` tag triggers `publish-image.yml` and Renovate auto-bumps `FROM` in downstream Dockerfiles. The fix preserves the contract exactly (same tag format, same trigger paths, same `--follow-tags` push) and actively strengthens §12's prescribed Renovate auto-merge workflow, since Renovate's concurrent merges were the trigger for the race.
+  - **`geohazardwatch/.github/workflows/auto-tag.yml`** — replaced the single `git push --follow-tags origin main` with a two-attempt rebase loop. On rejection, `git fetch origin main` → `git tag -d v${VERSION}` → `git rebase origin/main` → re-create annotated tag → retry. Fails loudly after the second attempt rather than masking. `actions/checkout` was already `fetch-depth: 0` so rebase has full history.
+  - **PR #44 opened on `jwilleke/geohazardwatch`** — title `fix(auto-tag): rebase on origin/main and retry when push is non-fast-forward`. Body summarises the live incident, links to recovery commit, includes diff and test plan, `Closes #41`.
+  - **Commented on `geohazardwatch#41`** linking PR #44.
+- Commits: geohazardwatch `6640872` (on branch `fix/auto-tag-rebase-on-conflict`); no ngdpbase code changes — only this project log entry.
+- Files Modified:
+  - `geohazardwatch/.github/workflows/auto-tag.yml`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-12-01
 
 - Agent: Claude Opus 4.7
