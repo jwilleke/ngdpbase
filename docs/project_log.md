@@ -6,7 +6,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 
 - Agent: Claude Opus 4.7
 - Subject: `/check-todos` → operator picked the `/attachments/browse` BUG pair (#605, #606). Traced both with an Explore agent — confirmed they are independent, not a shared root cause. Landed the smallest fix first: `/search` page handler now threads `sort`/`order` through to `AssetService.search()`, matching the validation in `/api/assets/search`. #606 left untouched pending an operator pick between its three sub-bullets (sort field `DateTimeOriginal` vs `dateCreated`, Newest/Oldest result-set divergence, click-to-open broken).
-- Current Issue: `#605` (closed by this commit).
+- Current Issue: `#605` (auto-closed by `Closes #605` in the commit message → re-opened with `in review` label per the issue-workflow convention since no test exercises the path and no live smoke was done yet).
 - Tests: `npx tsc --noEmit` clean. No existing test covers `searchPages`'s attachment-tab path; not adding one in this slice (route-test infra hardening already filed as #684). Pre-commit hook ran lint-staged.
 - Work Done:
   - **Trace confirmed root cause divergence at one site.** `WikiRoutes.ts:3209` (`searchPages` attachment tab) was calling `assetService.search()` with only `{ query, types: ['attachment'], pageSize: 500, wikiContext }`. `WikiRoutes.ts:8009` (`assetSearch` JSON API used by `/attachments/browse`) was calling the same backend with sort/order/mimeCategory/dateField/dateFrom/dateTo/year/year/includeHidden/pathPrefix/mime/extension threaded through. Same backend, totally different inputs → different responses for the same logical query. The operator's DRY complaint is real.
