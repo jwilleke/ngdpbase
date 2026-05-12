@@ -383,20 +383,26 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
         var isMedia  = asset.providerId === 'media-library';
         var thumb;
 
+        // #698: every thumb branch lays out into the same 110px-tall box so
+        // cards in a result row keep consistent height regardless of whether
+        // the asset has an image thumbnail, a fallback icon, or an avatar.
+        // The image branches use `height:110px` (was `max-height`) plus
+        // `object-fit:cover`; icon branches use a flex-centered 110px div.
+        var AP_THUMB_BOX = 'd-flex align-items-center justify-content-center" style="height:110px;';
         if (isPage) {
-            thumb = '<div class="text-center text-primary py-3"><i class="fas fa-file-alt fa-2x"></i></div>';
+            thumb = '<div class="text-center text-primary ' + AP_THUMB_BOX + '"><i class="fas fa-file-alt fa-2x"></i></div>';
         } else if (isUser) {
             // #694: user card — avatar if present, fa-user fallback otherwise.
             thumb = asset.thumbnailUrl
-                ? '<img src="' + _esc(asset.thumbnailUrl) + '" class="img-fluid rounded-circle mb-1" style="max-height:110px;width:110px;object-fit:cover;" loading="lazy" alt="">'
-                : '<div class="text-center text-secondary py-3"><i class="fas fa-user fa-2x"></i></div>';
+                ? '<img src="' + _esc(asset.thumbnailUrl) + '" class="img-fluid rounded-circle mb-1" style="height:110px;width:110px;object-fit:cover;" loading="lazy" alt="">'
+                : '<div class="text-center text-secondary ' + AP_THUMB_BOX + '"><i class="fas fa-user fa-2x"></i></div>';
         } else if (isMedia && asset.thumbnailUrl) {
-            thumb = '<img src="' + _esc(asset.thumbnailUrl) + '" class="img-fluid rounded mb-1" style="max-height:110px;object-fit:cover;width:100%;" loading="lazy" alt="" itemprop="thumbnailUrl">';
+            thumb = '<img src="' + _esc(asset.thumbnailUrl) + '" class="img-fluid rounded mb-1" style="height:110px;object-fit:cover;width:100%;" loading="lazy" alt="" itemprop="thumbnailUrl">';
         } else if (isImage && asset.url) {
-            thumb = '<img src="' + _esc(asset.url) + '" class="img-fluid rounded mb-1" style="max-height:110px;object-fit:cover;width:100%;" loading="lazy" alt="" itemprop="url">';
+            thumb = '<img src="' + _esc(asset.url) + '" class="img-fluid rounded mb-1" style="height:110px;object-fit:cover;width:100%;" loading="lazy" alt="" itemprop="url">';
         } else {
             var icon = isMedia ? 'fa-photo-video' : _apMimeIcon(asset.encodingFormat);
-            thumb = '<div class="text-center text-muted py-3"><i class="fas ' + icon + ' fa-2x"></i></div>';
+            thumb = '<div class="text-center text-muted ' + AP_THUMB_BOX + '"><i class="fas ' + icon + ' fa-2x"></i></div>';
         }
 
         // #606: wrap the thumbnail in a link to asset.url so clicking opens
