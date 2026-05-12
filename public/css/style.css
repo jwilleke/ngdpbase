@@ -1217,9 +1217,16 @@ main p, main div, main span, main li {
 }
 
 /* Dropdowns */
+/*
+ * #687: explicit opaque background + shadow + border. Previously the rule
+ * relied on var(--card-bg) which resolves to var(--bs-body-bg) — exactly
+ * the same color as the page body — making the dropdown blend visually
+ * with content behind it and look transparent.
+ */
 .dropdown-menu {
-    background-color: var(--card-bg);
-    border-color: var(--border-color);
+    background-color: var(--card-bg, #ffffff);
+    border: 1px solid var(--border-color, #dee2e6);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
 }
 
 .dropdown-item {

@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Authenticated user dropdown no longer visually transparent** (#687). The `.dropdown-menu` rule in `public/css/style.css` set `background-color: var(--card-bg)`, which resolves to `var(--bs-body-bg)` — exactly the same color as the page body the dropdown sits over. With no shadow and a thin border, the dropdown looked like part of the page rather than a floating menu, creating confusion about clickable items "behind" it. Added explicit `border: 1px solid var(--border-color)` and a Bootstrap-standard `box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15)` so the dropdown is visually delineated regardless of theme. Background remains theme-driven via `var(--card-bg, #ffffff)` so light/dark themes still inherit the right base color; the shadow + border provide the contrast.
+
 - **"Using FormPlugin" page no longer 404s — removed duplicate `required-pages/a4f9c2e1-…md` copy** (#653). The forms addon's `addons/forms/pages/af15d030-…md` is the canonical "Using FormPlugin" doc; a stale duplicate had been left in `required-pages/` with a different UUID and divergent content, both claiming `title: Using FormPlugin`.
 - The title collision broke link resolution from the Form Definition Reference page (which renders `[Using FormPlugin]` markup) — visitors clicking the link got "Not Found". Removing the `required-pages/` duplicate leaves the forms addon's version as the only source of truth for new installs.
 - Migration for existing instances: the duplicate may still exist in operator data (was seeded from required-pages on first install). Delete with `rm "$SLOW_STORAGE/pages/a4f9c2e1-7b3d-4a85-9e6f-1c2d3b4a5e6f.md"` and restart.
