@@ -11,35 +11,36 @@ test.describe('Search', () => {
   test.use({ storageState: './tests/e2e/.auth/user.json' });
 
   test.describe('Search Page', () => {
+    // #693 slice 3: /search now renders the asset-picker UI. Search runs
+    // client-side via /api/assets/search rather than a form submit.
     test('should display search interface', async ({ page }) => {
       await page.goto('/search');
       await page.waitForLoadState('domcontentloaded');
 
-      // Should have search input - the actual input is #query with name="q"
-      const searchInput = page.locator('#query, input[name="q"]');
-      await expect(searchInput.first()).toBeVisible({ timeout: 10000 });
+      // Asset-picker query input
+      const searchInput = page.locator('#ap-query');
+      await expect(searchInput).toBeVisible({ timeout: 10000 });
     });
 
     test('should perform basic text search', async ({ page }) => {
       await page.goto('/search');
       await page.waitForLoadState('domcontentloaded');
 
-      // Enter search query - use the actual search input id
-      const searchInput = page.locator('#query, input[name="q"]');
-      await searchInput.first().waitFor({ state: 'visible', timeout: 10000 });
-      await searchInput.first().fill('test');
+      const searchInput = page.locator('#ap-query');
+      await searchInput.waitFor({ state: 'visible', timeout: 10000 });
+      await searchInput.fill('test');
 
-      // Submit search
-      const searchButton = page.locator('button[type="submit"]');
-      await searchButton.first().click();
+      // Trigger the JS-driven search
+      await page.locator('#ap-search-btn').click();
 
-      await page.waitForLoadState('domcontentloaded');
+      // The picker replaces #ap-results' innerHTML when a search runs — the
+      // initial #ap-placeholder element gets cleared. Detect that as the
+      // "search ran at all" signal (covers result-cards, "No assets found",
+      // and error states equally).
+      await expect(page.locator('#ap-placeholder')).toHaveCount(0, { timeout: 10000 });
 
-      // Should show results or "no results" message
-      const hasResults = await page.locator('.search-result, .result-item, .list-group-item, tr').count() > 0;
-      const hasNoResults = await page.locator('text=/no results|not found|nothing found|0 result/i').count() > 0;
-
-      expect(hasResults || hasNoResults).toBe(true);
+      // Picker shell still on /search (no server error redirected away).
+      expect(page.url()).toContain('/search');
     });
   });
 
@@ -65,13 +66,13 @@ test.describe('Search', () => {
       await page.goto('/search?q=test');
       await page.waitForLoadState('domcontentloaded');
 
-      // Results should contain links
-      const resultLinks = page.locator('.search-result a, .result a, .search-item a');
+      // Asset-picker result cards each wrap their thumb in an anchor.
+      // Only assert link shape when results exist; not all queries return rows.
+      await page.waitForTimeout(2000); // allow client-side fetch to settle
+      const resultLinks = page.locator('#ap-results .card a[href]');
 
       if (await resultLinks.count() > 0) {
-        // Verify links are clickable
-        const firstLink = resultLinks.first();
-        await expect(firstLink).toHaveAttribute('href');
+        await expect(resultLinks.first()).toHaveAttribute('href', /.+/);
       }
     });
 
@@ -79,7 +80,6 @@ test.describe('Search', () => {
       await page.goto('/search?q=');
       await page.waitForLoadState('domcontentloaded');
 
-      // Should not show error, just empty state or prompt
       const hasError = await page.locator('.error-500').count() > 0 ||
         await page.getByText(/server error/i).count() > 0;
       expect(hasError).toBe(false);
@@ -89,25 +89,21 @@ test.describe('Search', () => {
       await page.goto('/search');
       await page.waitForLoadState('domcontentloaded');
 
-      // Use the actual search input id
-      const searchInput = page.locator('#query, input[name="q"]');
-      await searchInput.first().waitFor({ state: 'visible', timeout: 10000 });
-      await searchInput.first().fill('test & "special" <chars>');
+      const searchInput = page.locator('#ap-query');
+      await searchInput.waitFor({ state: 'visible', timeout: 10000 });
+      await searchInput.fill('test & "special" <chars>');
 
-      // Submit with button
-      const searchButton = page.locator('button[type="submit"]');
-      await searchButton.first().click();
-      await page.waitForLoadState('domcontentloaded');
+      await page.locator('#ap-search-btn').click();
+      await page.waitForTimeout(2000); // client-side render
 
-      // Should not cause server error - check for error page elements, not text in search results
+      // No 500 page; the picker shell stayed on /search
       const hasErrorPage = await page.locator('.error-500, .error-page, [data-error="500"]').count() > 0;
       const hasErrorTitle = await page.locator('h1:has-text("Error"), h1:has-text("500")').count() > 0;
-      const hasSearchResults = await page.locator('h1:has-text("Search")').count() > 0;
+      const hasSearchHeading = await page.locator('h1:has-text("Search")').count() > 0;
 
-      // Either no error page elements, or we're on a valid search page
       expect(hasErrorPage).toBe(false);
       expect(hasErrorTitle).toBe(false);
-      expect(hasSearchResults).toBe(true);
+      expect(hasSearchHeading).toBe(true);
     });
   });
 
