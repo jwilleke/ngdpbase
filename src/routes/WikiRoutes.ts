@@ -7939,8 +7939,19 @@ ${panes}
         if (!userManager?.searchUsers) {
           return res.status(503).json({ success: false, error: 'UserManager unavailable' });
         }
-        const canSearchUsers = await wikiContext.hasPermission('search-user');
-        if (!canSearchUsers) {
+        // Auth gate: any authenticated user can search; anonymous viewers
+        // silently get empty results (operator decision on #694 — the picker
+        // surface is intentionally more permissive than /api/users/search,
+        // which keeps its `search-user` permission gate for the dedicated
+        // user-management surface).
+        const username = wikiContext.userContext?.username;
+        const isAuthenticated = Boolean(
+          wikiContext.userContext?.authenticated
+          && username
+          && username !== 'anonymous'
+          && username !== 'asserted'
+        );
+        if (!isAuthenticated) {
           return res.json({ success: true, results: [], total: 0, hasMore: false });
         }
         // UserManager.searchUsers caps at its own `limit` option; oversample

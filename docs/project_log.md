@@ -2,6 +2,25 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-12-14
+
+- Agent: Claude Opus 4.7
+- Subject: Operator smoke caught that `/search?q=jim` → source=Users returned "No assets found" when logged in as molly. Root cause: my slice 1 (#694) gated the new `types=user` branch on `wikiContext.hasPermission('search-user')`, but that permission is only granted to `admin` and `user-admin` roles by default. Editor/contributor/reader users (the typical asset-picker audience) all hit the empty-result path. **First-pass reflex was to grant `search-user` to editor + contributor in `config/app-default-config.json` — operator vetoed, established a rule that default-config changes require approval, and clarified the actual intent: gate on authentication, not permission.** Saved that rule to memory ([feedback_config_default_changes.md]).
+- Current Issue: #694 (still in review — auth gate now matches operator intent).
+- Tests: 39/39 in `WikiRoutes.assetSearch.test.ts` (was 37; +2 from splitting the deny test into anon-no-context, anon-named-anonymous, and authenticated-without-permission cases). Full suite 5452/5452 passing. `npx tsc --noEmit` clean.
+- Work Done:
+  - **`WikiRoutes.assetSearch` types=user auth gate swapped.** `hasPermission('search-user')` → an inline `isAuthenticated` check (`userContext.authenticated === true` AND `username` is not `'anonymous'` / `'asserted'`). Matches the existing convention used in `MyContributionsPlugin` and at `WikiRoutes.ts:3880`. Anonymous viewers continue to get the empty-result silent-fail per the operator's explicit ask; authenticated users at any role now get search results.
+  - **`/api/users/search` left alone.** Operator scoped this to the picker surface only. The dedicated user-management API at `/api/users/search` keeps its `search-user` permission gate for callers like UserLookupPlugin.
+  - **PII model: full response always.** Operator decision — every authenticated viewer sees displayName + profilePage URL + avatar URL. No `user-read` strip, because the picker UX needs the full card to render correctly and (per operator) profilePage is intentionally public-readable wiki content anyway.
+  - **Tests updated.** Replaced the single "lacks search-user permission" test with three new ones: anon-with-null-context, anon-with-username-anonymous, and authenticated-reader-without-permission. The last reproduces the molly smoke-test scenario. All other types=user tests that expect results now use a `makeAuthedReq()` helper that sets a `{ authenticated: true, username: 'molly', roles: ['reader'] }` userContext.
+  - **Reverted unauthorized `config/app-default-config.json` change.** Memory entry added so future fix attempts don't reach for the same shortcut.
+- Commits: pending.
+- Files Modified:
+  - `src/routes/WikiRoutes.ts` (+12/-3 in types=user branch — replaced permission check with auth check)
+  - `src/routes/__tests__/WikiRoutes.assetSearch.test.ts` (+~50 — split deny test into 3, added molly-case test, added makeAuthedReq helper)
+  - `docs/project_log.md` (this entry)
+- Memory: [feedback_config_default_changes.md] added — never modify `config/app-default-config.json` defaults without explicit operator approval.
+
 ## 2026-05-12-13
 
 - Agent: Claude Opus 4.7

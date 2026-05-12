@@ -523,6 +523,14 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       return routes;
     }
 
+    // Operator decision on #694: any authenticated user can search users via
+    // the picker surface (no `search-user` permission required). The fixture
+    // below is the default for tests that expect results back.
+    const authedUser = { authenticated: true, username: 'molly', roles: ['reader'] };
+    function makeAuthedReq(overrides = {}) {
+      return makeReq({ userContext: authedUser, ...overrides });
+    }
+
     it('returns 503 when UserManager is unavailable', async () => {
       const routes = makeRoutesWithUsers(makeAssetService(), null);
       const req = makeReq({ query: { types: 'user', q: 'alice' } });
@@ -534,11 +542,10 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false }));
     });
 
-    it('returns empty results when caller lacks search-user permission', async () => {
-      const deny = { hasPermission: vi.fn().mockResolvedValue(false) };
+    it('returns empty results for anonymous viewer (no userContext)', async () => {
       const userManager = makeUserManager([{ username: 'alice' }]);
-      const routes = makeRoutesWithUsers(makeAssetService(), userManager, deny);
-      const req = makeReq({ query: { types: 'user', q: 'alice' } });
+      const routes = makeRoutesWithUsers(makeAssetService(), userManager);
+      const req = makeReq({ userContext: null, query: { types: 'user', q: 'alice' } });
       const res = makeRes();
 
       await routes.assetSearch(req, res);
@@ -547,12 +554,45 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       expect(userManager.searchUsers).not.toHaveBeenCalled();
     });
 
+    it('returns empty results for anonymous viewer (username="anonymous")', async () => {
+      const userManager = makeUserManager([{ username: 'alice' }]);
+      const routes = makeRoutesWithUsers(makeAssetService(), userManager);
+      const req = makeReq({
+        userContext: { authenticated: false, username: 'anonymous', roles: [] },
+        query: { types: 'user', q: 'alice' }
+      });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(res.json).toHaveBeenCalledWith({ success: true, results: [], total: 0, hasMore: false });
+      expect(userManager.searchUsers).not.toHaveBeenCalled();
+    });
+
+    it('returns results for authenticated user WITHOUT search-user permission (the molly case)', async () => {
+      // Operator's smoke-test scenario: molly is authenticated as a regular
+      // reader-role user; she does NOT have the `search-user` permission in
+      // the default config. She should still get search results in the picker.
+      const userManager = makeUserManager([{ username: 'jim', displayName: 'Jim' }]);
+      const routes = makeRoutesWithUsers(makeAssetService(), userManager);
+      const req = makeAuthedReq({ query: { types: 'user', q: 'jim' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(userManager.searchUsers).toHaveBeenCalledWith('jim', expect.objectContaining({ activeOnly: true }));
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.success).toBe(true);
+      expect(payload.total).toBe(1);
+      expect(payload.results[0].id).toBe('jim');
+    });
+
     it('converts a User record into the expected AssetRecord shape', async () => {
       const userManager = makeUserManager([
         { username: 'alice', displayName: 'Alice Wonderland', email: 'a@example.com', profilePage: 'Alice Wonderland', avatar: '/uploads/alice.png' }
       ]);
       const routes = makeRoutesWithUsers(makeAssetService(), userManager);
-      const req = makeReq({ query: { types: 'user', q: 'alice' } });
+      const req = makeAuthedReq({ query: { types: 'user', q: 'alice' } });
       const res = makeRes();
 
       await routes.assetSearch(req, res);
@@ -579,7 +619,7 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
         { username: 'bob' }     // no profilePage, no displayName
       ]);
       const routes = makeRoutesWithUsers(makeAssetService(), userManager);
-      const req = makeReq({ query: { types: 'user' } });
+      const req = makeAuthedReq({ query: { types: 'user' } });
       const res = makeRes();
 
       await routes.assetSearch(req, res);
@@ -593,7 +633,7 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
     it('forwards activeOnly=true to UserManager.searchUsers (skips deactivated users)', async () => {
       const userManager = makeUserManager([]);
       const routes = makeRoutesWithUsers(makeAssetService(), userManager);
-      const req = makeReq({ query: { types: 'user', q: 'foo' } });
+      const req = makeAuthedReq({ query: { types: 'user', q: 'foo' } });
       const res = makeRes();
 
       await routes.assetSearch(req, res);
@@ -605,7 +645,7 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       const allUsers = Array.from({ length: 60 }, (_, i) => ({ username: `u${i}`, displayName: `User ${i}` }));
       const userManager = makeUserManager(allUsers);
       const routes = makeRoutesWithUsers(makeAssetService(), userManager);
-      const req = makeReq({ query: { types: 'user', offset: '10', pageSize: '5' } });
+      const req = makeAuthedReq({ query: { types: 'user', offset: '10', pageSize: '5' } });
       const res = makeRes();
 
       await routes.assetSearch(req, res);
@@ -622,7 +662,7 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       const service = makeAssetService();
       const userManager = makeUserManager([]);
       const routes = makeRoutesWithUsers(service, userManager);
-      const req = makeReq({ query: { types: 'user' } });
+      const req = makeAuthedReq({ query: { types: 'user' } });
       const res = makeRes();
 
       await routes.assetSearch(req, res);
