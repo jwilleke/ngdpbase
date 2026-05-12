@@ -2,6 +2,26 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-12-07
+
+- Agent: Claude Opus 4.7
+- Subject: Planning session — operator's #605 follow-up comment pushed past the backend-response fix into a deeper "why two interfaces at all" question. After a chat-paced one-question-at-a-time walk through the decision tree, the multi-step body of work is now scoped under EPIC #693 with two deferred follow-up FEATUREs filed (#691, #692). No code changed this session; #605 closed pointing at the EPIC.
+- Current Issue: #605 (closed), EPIC #693 (open), #691 + #692 (open follow-ups).
+- Tests: none — planning only.
+- Work Done:
+  - **Walked the architecture mismatch with the operator's screenshots.** Initially mis-claimed pagination "mechanism is shared" because both templates reference `WikiPagination`; operator screenshotted the two pagination styles side-by-side. Re-traced: `search-results.ejs`'s **media tab** has its own hand-written `<ul class="pagination pagination-sm">` blocks (compact `< Page X of Y >` form, lines 343–360 / 373–391) that bypass the shared `WikiPagination.renderNav` helper. The pages tab in `search-results.ejs` uses the helper. `_asset-picker.ejs` uses the helper. The divergence is the bespoke media-tab markup.
+  - **Decisions captured.** Target UI: asset-picker (`views/_asset-picker.ejs`) wins as the canonical search interface, since `/attachments/browse` already uses it and the operator's read is "better display." Canonical URL: `/search` (matches user intent verb; `/attachments/browse` 302s in once the swap lands). Swap ordering: structural-first (skip the pagination-only slice in `search-results.ejs` — that file gets deleted by the swap, so any fix to it is throwaway work). Users sequencing: users-first (add Users as a fifth source type in asset-picker NOW; it lives at `/attachments/browse` immediately and is inherited by `/search` after the swap). Regression tolerance for the swap: URL-PARAMS-ONLY (backend parity for Pages search so bookmarked `/search?category=foo&keywords=bar` URLs still return correct results; UI controls for those filters deferred to follow-up #691).
+  - **Click-through URL settled from the code, no operator question needed.** Each user has a `profilePage` field on their UserManager record (defaults to `displayName`). That's a regular wiki page rendered at `/view/<pageName>` like any other content. So a user card in the asset-picker clicks through to `/view/<encodeURIComponent(user.profilePage)>` — no need for a `/users/<username>` route. Admin-role variant (extra info / different click target) noted as a future hook; the card-render code will be factored cleanly so adding it later is a localized change.
+  - **EPIC #693 filed** — title `Unify /search and /attachments/browse under asset-picker UI; add Users source type`. Body documents the four-step implementation plan (Users-first → Pages backend parity → swap → deferred filter UI), acceptance criteria, and background context. Labels: `epic`, `enhancement`, `UI`.
+  - **Two deferred FEATUREs filed** so the EPIC has actual sub-issue numbers to reference instead of TBD placeholders:
+    - **#691** — surface page-specific filter UI (category / keywords / searchIn) in asset-picker when source=Pages. Low priority — URL params work after the swap; this is just the controls.
+    - **#692** — fix the "search interface morphs when you select Pages" complaint. Three approach options sketched (disable + dim / swap inline / animate). Low priority — UX polish, no functional impact.
+  - **#605 closed.** Backend response divergence (its literal original scope) was fixed in `f001b572`. The unification work the operator's comment escalated to lives under #693 now. Close comment points at the EPIC; re-open path documented if backend fix turns out incomplete on smoke.
+  - **Process-side lesson worth logging:** when an operator screenshots a UI divergence, look at the screenshots before generalizing from grep results. The initial "mechanism is shared" claim came from seeing both templates reference `WikiPagination` without verifying what each call actually produces. The operator's "they are OBVIOUSLY different" pushback was the right correction.
+- Commits: pending — only this project_log entry.
+- Files Modified:
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-12-06
 
 - Agent: Claude Opus 4.7
