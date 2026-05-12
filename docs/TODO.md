@@ -34,7 +34,6 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote â€
 
 | # | Title |
 |---|---|
-| #667 | vitest globals missing from tsconfig types â†’ 171 TS errors in tests |
 | #662 | Invalid system-category "User Pages" |
 | #661 | Profile Page (/profile) |
 | #660 | Agent and ./docs documentation |
@@ -44,6 +43,8 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote â€
 | #606 | /attachments/browse sort order |
 | #605 | /attachments/browse vs /search inconsistency |
 | #599 | showdown ReDoS â€” no upstream patch (mitigation only) |
+
+*#667 (vitest globals â†’ 171 TS errors) closed 2026-05-12 via project-references fix in `0f09bd48`.*
 
 ## Operator-decision carryover
 
