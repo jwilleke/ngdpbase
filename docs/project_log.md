@@ -2,6 +2,26 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-12-16
+
+- Agent: Claude Opus 4.7
+- Subject: `#665` — new `InsertPlugin` for embedding a wiki page (or one section of it) into another page. Page-transclusion feature. Five design questions answered up front by the operator (chat-paced one-at-a-time): viewer's ACL with a visible placeholder when the page can't be read; no recursion (nested `[{Insert}]` is stripped before render); both heading-text and `?section=N` URL-style indices supported; nested non-Insert plugins do render; subtle attribution link below the inserted block. Full scope shipped in one slice.
+- Current Issue: `#665` (in review).
+- Tests: 25 new in `src/plugins/__tests__/InsertPlugin.test.ts`. Full vitest 5477/5477 (was 5452). `npx tsc --noEmit` clean.
+- Work Done:
+  - **`src/plugins/InsertPlugin.ts`** (new, ~230 lines). SimplePlugin pattern. Accepts `page='Pagename'` for the full-page form and `pagesection='Pagename#Heading'` or `pagesection='Pagename?section=N'` for sectional inserts. `?section=` takes precedence when both `?section=` and `#` appear in the same target (the URL form is the unambiguous one).
+  - **Target parsing** factored into a `parseTarget()` helper that returns `{ pageName, sectionIndex?, sectionHeading? }`. Section index is 0-based to match `SectionUtils.extractSection()` and the editor's `?section=N` URL convention.
+  - **ACL** — simplified: only the `private: true` frontmatter flag is honoured. Owner (`author` or `creator` matches viewer's username) or `admin` role passes; everyone else gets a `<div class="alert alert-info insert-plugin-placeholder">Insert: page not visible <code>Pagename</code></div>` placeholder. Frontmatter audience and global-policy evaluation are NOT consulted — documented as a known simplification; full ACL parity is a follow-up if needed.
+  - **No-recursion guard** — content is regex-stripped of any `[{Insert ...}]` syntax before being handed to `RenderingManager.renderMarkdown`. Replaced with an HTML comment so the placement is still discoverable in the rendered source. Other plugin syntax (Image, Counter, etc.) passes through unchanged.
+  - **Render path** — `RenderingManager.renderMarkdown(content, hostPageName, userContext)`. Inserted content renders in the **host page's** name context, so relative links resolve consistently. Fallback when RenderingManager is unavailable: escaped `<pre>` so the host page still renders cleanly without HTML injection.
+  - **Attribution** rendered as `<div class="insert-plugin-attribution small text-muted mt-1">↪ from <a href="/view/Pagename">Pagename</a></div>` (with `(section: <label>)` appended when a section was requested — heading text or `#N` for index-based).
+  - **Tests cover:** metadata sanity; empty-target paths; full-page render; private-page ACL (non-owner placeholder, owner renders, admin renders, creator-field also recognised); section-by-index (extraction, attribution label, out-of-range placeholder); section-by-heading (case-insensitive match, attribution label, unknown-heading placeholder); no-recursion strip (Insert removed, non-Insert plugins preserved); attribution URL encoding + HTML escaping of pagename; graceful degradation (PageManager unavailable, page not found, getPage throw, RenderingManager unavailable, renderMarkdown throw); precedence (`?section=` over `#` when both appear).
+- Commits: pending.
+- Files Modified:
+  - `src/plugins/InsertPlugin.ts` (new, ~230 lines)
+  - `src/plugins/__tests__/InsertPlugin.test.ts` (new, ~280 lines, 25 tests)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-12-15
 
 - Agent: Claude Opus 4.7
