@@ -35,7 +35,6 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 | # | Title |
 |---|---|
 | #660 | Agent and ./docs documentation |
-| #653 | 'Using FormPlugin' page missing |
 | #650 | Change Author of some pages |
 | #622 | WikiRoutes.coverage3.test.ts intermittent timeout |
 | #606 | /attachments/browse sort order |
@@ -45,6 +44,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 *#667 (vitest globals → 171 TS errors) closed 2026-05-12 via project-references fix in `0f09bd48`.*
 *#662 (Invalid system-category "User Pages") closed 2026-05-12 via UserManager fix in `dbdd0f52` — existing user pages on disk may still carry the legacy value; see CHANGELOG for the migration one-liner.*
 *#661 (Profile Page metadata: description + badge + author-lock) closed 2026-05-12 via `bf846015` — both create and rename paths now carry the three fields.*
+*#653 ('Using FormPlugin' page missing) closed 2026-05-12 via `9d12e121` — removed duplicate `required-pages/a4f9c2e1` doc that title-collided with the forms addon's canonical `af15d030`.*
 
 ## Operator-decision carryover
 
