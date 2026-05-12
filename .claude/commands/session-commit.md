@@ -66,3 +66,7 @@ For each related open GitHub issue:
 - Ask the user if they want to push to remote
 
 If no GitHub issues are related to the current work, skip Step 4 and note "none" for Current Issue in the log.
+
+### Step 6: /check-todos
+
+Follow /check-todos

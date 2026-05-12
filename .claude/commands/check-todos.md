@@ -43,13 +43,12 @@ Use `/check-todos` to see what work needs to be done and prioritize. Output shou
 
 ## Output sections
 
-1. **Δ since the previous check** — short list of what's resolved/filed/landed since last run
-2. **Security / Dependabot** — open alerts table
-3. **Open PRs** — ngdpbase + satellites
-4. **In Review** — issues with the `in review` label
-5. **Open BUGS** — ngdpbase, count + top by issue # / recency
-6. **Sister-site top priorities (combined table)** — geohazardwatch only today; expand if more separate satellites emerge
-7. **Operator-action carryover** — items awaiting yes/no/close decisions
-8. **Notable feature backlog** — recently filed, biggest scope, or close to ready
-9. **docs/TODO.md staleness check** — flag if the file's `lastModified` is older than ~2 weeks
-10. **Recommended next moves** — 2-4 concrete next actions
+- **Security / Dependabot** — open alerts table
+- **Open PRs** — ngdpbase + satellites
+- **In Review** — issues with the `in review` label
+- **Open BUGS** — ngdpbase, count + top by issue # / recency
+- **Sister-site top priorities (combined table)** — geohazardwatch only today; expand if more separate satellites emerge
+- **Operator-action carryover** — items awaiting yes/no/close decisions
+- **Notable feature backlog** — recently filed, biggest scope, or close to ready
+- **docs/TODO.md staleness check** — flag if the file's `lastModified` is older than ~2 weeks
+- **Recommended next moves** — 2-4 concrete next actions
