@@ -2,7 +2,7 @@
 
 Complete index of ngdpbase developer documentation
 
-Last Updated: 2026-04-02
+Last Updated: 2026-05-12
 
 ---
 
@@ -11,7 +11,7 @@ Last Updated: 2026-04-02
 | Category | Count | Description |
 | ---------- | ------- | ------------- |
 | [Managers](#managers) | 24 | Core system managers (quick reference + complete guides) |
-| [Plugins](#plugins) | 12 | Plugin documentation (developer + user guides) |
+| [Plugins](#plugins) | 13 | Plugin documentation (developer + user guides) |
 | [Providers](#providers) | 7 | Storage and service providers (quick reference + guides + implementation guide) |
 | [Architecture](#architecture) | 15+ | System design and patterns |
 | [Testing](#testing) | 3 | Testing guides and strategies |
@@ -91,6 +91,7 @@ Plugin implementation guides for developers (in docs/plugins/):
 | [CurrentTimePlugin](plugins/CurrentTimePlugin.md) | Display current date/time with formatting |
 | [ImagePlugin](plugins/ImagePlugin.md) | Inline images with options |
 | [IndexPlugin](plugins/IndexPlugin.md) | Alphabetical page listing |
+| [InsertPlugin](plugins/InsertPlugin.md) | Embed another page (or one section of it) into the current page |
 | [RecentChangesPlugin](plugins/RecentChangesPlugin.md) | Recent page changes display |
 | [ReferringPagesPlugin](plugins/ReferringPagesPlugin.md) | Show backlinks to current page |
 | [SearchPlugin](plugins/SearchPlugin.md) | Embedded search functionality |
@@ -103,20 +104,21 @@ Plugin implementation guides for developers (in docs/plugins/):
 
 End-user plugin guides (in required-pages/ with `system-category: documentation`):
 
-All 12 plugins have user-facing documentation with examples:
+All 13 plugins have user-facing documentation with examples:
 
 - ConfigAccessorPlugin - Access configuration values
 - CounterPlugin - Page visit counter
 - CurrentTimePlugin - Display formatted time
 - ImagePlugin - Inline images
 - IndexPlugin - Alphabetical page listing
-- RecentChangesPlugin - Recent page changes ✨ **New**
+- InsertPlugin - Embed another page or section ✨ **New**
+- RecentChangesPlugin - Recent page changes
 - ReferringPagesPlugin - Show backlinks
 - SearchPlugin - Search functionality
 - SessionsPlugin - Active sessions count
 - TotalPagesPlugin - Total page count
 - UptimePlugin - Server uptime
-- VariablesPlugin - System variables ✨ **New**
+- VariablesPlugin - System variables
 
 ---
 

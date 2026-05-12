@@ -2,6 +2,25 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-12-17
+
+- Agent: Claude Opus 4.7
+- Subject: Documentation for `InsertPlugin` (#665) per the operator's policy that every plugin gets a dev-side reference in `docs/plugins/` and a user-facing "Using \<Plugin\>" page in `required-pages/`. Conventions followed: `docs/Developer-Documentation.md` (developer index, markdown tables fine because GitHub-only) and `docs/proper-documentation-pages.md` (end-user pages use ngdpbase table syntax, "Using \<Feature\>" title pattern, no `## More Information` footer, no "wiki" terminology).
+- Current Issue: `#665` (in review).
+- Tests: none — documentation only. No code touched.
+- Work Done:
+  - **`docs/plugins/InsertPlugin.md`** (new, ~115 lines) — developer technical reference following the same shape as `MyLinksPlugin.md`: short overview, three usage forms, parameter table, ACL behaviour, no-recursion guard explanation, render-path notes, attribution-block source, file map, and a "Known Limitations" section listing the simplified `private`-only ACL evaluation as an explicit deferral.
+  - **`required-pages/ad98220f-3780-4315-a7e1-ed598d5d870b.md`** (new "Using InsertPlugin", ~85 lines) — end-user guide following the conventions doc: frontmatter with `system-category: documentation` + `slug: using-insertplugin`, ngdpbase `%%table-striped` syntax for tables (not markdown tables, which `required-pages/` rejects), the three usage forms in `wiki`-tagged code blocks (live `[[{Insert...}]` examples not used because the render is context-dependent — needs an actual target page that exists on every install), examples for each form, what-happens-when-things-go-wrong table, and a Notes section. No `## More Information` footer; cross-reference to [Plugins] inline in the opening paragraph instead.
+  - **`docs/Developer-Documentation.md`** updated: added `InsertPlugin` row to the developer-doc table, added it to the user-doc list with the `✨ **New**` marker, bumped the count from `12` → `13`, refreshed the `Last Updated` date.
+  - **UUID for the required page** generated fresh with `crypto.randomUUID()` so it doesn't collide with any existing UUID-named file in `required-pages/`.
+  - **Convention nuances honoured** in the user-facing page: no "wiki" word in the prose, `pages/markup/plugins` vocabulary throughout, the `Using <Name>Plugin` title pattern, lowercase-hyphenated slug, `user-keywords` including the synonyms a reader might search for (Plugins, Insert, Embed, Transclude, Sections).
+- Commits: pending.
+- Files Modified:
+  - `docs/plugins/InsertPlugin.md` (new, ~115 lines)
+  - `required-pages/ad98220f-3780-4315-a7e1-ed598d5d870b.md` (new, ~85 lines)
+  - `docs/Developer-Documentation.md` (+3 lines: dev table row, user list bullet, count bump)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-12-16
 
 - Agent: Claude Opus 4.7
