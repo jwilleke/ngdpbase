@@ -2,6 +2,22 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-12-01
+
+- Agent: Claude Opus 4.7
+- Subject: `/session-commit` wrap-up of three small file edits that accumulated alongside the larger 2026-05-11-04 work (which captured the day's bulk: PR merges, issue closes, framework filings, six BUG fixes, satellite cleanup, Renovate verification + miss-then-correct loop). This entry covers just the trailing skill-doc tweaks + a config-description fix that the operator made while the larger work was in flight.
+- Current Issue: none directly; touches conventions from `#364` (no-wiki terminology).
+- Tests: none — no source code changed.
+- Work Done:
+  - **`/check-todos` skill format tightened.** Numbered → bulleted output sections. Numbers had implied a fixed ordering that I was already re-arranging per run; bullets reflect actual usage.
+  - **`/session-commit` skill extended.** New Step 6 runs `/check-todos` at the end of the workflow, so a session-commit naturally surfaces a fresh priorities snapshot without a separate invocation.
+  - **`config/app-default-config.json`** — `general` system-category's description: `"General wiki pages"` → `"General User pages"`. Aligns with the no-`wiki`-in-user-facing-content convention from `#364` migration. The string surfaces in admin UI dropdowns. No behavioural change.
+- Commits: `06a050d4` (skills), `25882ac2` (config).
+- Files Modified:
+  - `.claude/commands/check-todos.md`
+  - `.claude/commands/session-commit.md`
+  - `config/app-default-config.json`
+
 ## 2026-05-11-04
 
 - Agent: Claude Opus 4.7
