@@ -62,7 +62,6 @@ Top items across the sister-site issue trackers. Excludes Dependency Dashboard n
 | Repo | # | Type | Title | Notes |
 |---|---|---|---|---|
 | geohazardwatch | [#41](https://github.com/jwilleke/geohazardwatch/issues/41) | bug | auto-tag.yml has no rebase-on-conflict | Hit live during today's #37+#38 PR merges. Fix sketched. Pattern applies to any auto-tag consumer. |
-| geohazardwatch | [#39](https://github.com/jwilleke/geohazardwatch/issues/39) | maintenance | Dependency Dashboard still open despite preset removal | Closed it 2026-05-11; observed open again 2026-05-12 with no reopen reason. Investigate: did Renovate cron resurrect it before the config change took effect? One-time cleanup or persistent. |
 | geohazardwatch | [#7](https://github.com/jwilleke/geohazardwatch/issues/7) | enhancement | Import: VolcanoDiscovery RSS | Flagged as the suggested first reference consumer for the ngdpbase #685 data-ingestion framework. |
 | geohazardwatch | [#4](https://github.com/jwilleke/geohazardwatch/issues/4), [#5](https://github.com/jwilleke/geohazardwatch/issues/5), [#6](https://github.com/jwilleke/geohazardwatch/issues/6), [#13](https://github.com/jwilleke/geohazardwatch/issues/13), [#36](https://github.com/jwilleke/geohazardwatch/issues/36) | enhancement | Other data-source imports | All cross-referenced to ngdpbase #685. Can ship bespoke or wait for framework. |
 
