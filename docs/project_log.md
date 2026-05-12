@@ -2,6 +2,31 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-12-18
+
+- Agent: Claude Opus 4.7
+- Subject: Operator flagged that `#661`, `#662`, `#697`, `#701` are all related — they share the "manage a user's profile page lifecycle" surface. Coordinated fix piece one: add a dedicated `user-profile` system-category. New user profile pages live in this category instead of `general`; pages with `system-category: user-profile` get a `(Profile)` badge in the page-title header alongside `(System)` and `(Documentation)`. Operator approved the `config/app-default-config.json` change explicitly per the standing approval rule.
+- Current Issue: ties into `#661` (already closed; badge data was being written but had no UI), `#662` (still open; existing `User Pages` pages will need separate handling — operator chose to skip migration logic for this slice; only 3 affected users on their instance), `#701` (same root cause as #662; new error report on `/save/Molly`).
+- Tests: 5477/5477 passing. `npx tsc --noEmit` clean. One existing test updated (`UserManager.createUserPage.test.ts` — its `system-category: "general"` assertion swapped to `user-profile`).
+- Work Done:
+  - **`config/app-default-config.json`** — added a sixth `user-profile` entry to `ngdpbase.system-category`. `storageLocation: "regular"`, `default: false`, `enabled: true`. Operator approved the change after the earlier vetoed reflex; logged under [feedback_config_default_changes.md].
+  - **`src/managers/UserManager.ts`** `createUserPage` — sets new profile pages to `system-category: user-profile` (was `general` since `dbdd0f52`).
+  - **`src/routes/WikiRoutes.ts`** profile-rename path — the metadata save during `/profile` displayName change now also writes `'system-category': 'user-profile'` so renames don't silently leave the page in a stale category.
+  - **`views/header.ejs`** page-title area — added a `(Profile)` badge branch beside `(System)` and `(Documentation)`. Uses `bg-success` so it visually differs from the other category badges. Same `font-size:0.6em; vertical-align:middle` styling for consistency. Title attribute `User profile page`.
+  - **Test updated.** `UserManager.createUserPage.test.ts`: header doc comment + the `system-category: "general"` assertion swapped to `user-profile`.
+  - **NOT done in this slice** (explicit operator scope decision):
+    - No migration logic for legacy `"User Pages"` frontmatter on existing pages. Three users on the operator's instance; they'll handle those manually. `#662` / `#701` stay open.
+    - No badge wiring driven by the per-page `badge` frontmatter field that `#661` added — it remains stored but unused. The new badge is system-category-driven instead, which is the cleaner architecture.
+    - No `/create` form Private + Author-lock UI (`#697`) — separate UI scope, not in this slice.
+- Commits: pending.
+- Files Modified:
+  - `config/app-default-config.json` (+7 lines: new category entry)
+  - `src/managers/UserManager.ts` (+1/-1: category string)
+  - `src/routes/WikiRoutes.ts` (+1: category in profile-rename save)
+  - `views/header.ejs` (+2: new badge branch)
+  - `src/managers/__tests__/UserManager.createUserPage.test.ts` (+2/-2: assertion update)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-12-17
 
 - Agent: Claude Opus 4.7

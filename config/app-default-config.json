@@ -579,6 +579,13 @@
       "default": false,
       "storageLocation": "regular",
       "enabled": true
+    },
+    "user-profile": {
+      "label": "user-profile",
+      "description": "User profile pages",
+      "default": false,
+      "storageLocation": "regular",
+      "enabled": true
     }
   },
   "_comment_system_keywords": "System keyword definitions for controlled vocabulary (operator-curated; subject + workflow terms)",

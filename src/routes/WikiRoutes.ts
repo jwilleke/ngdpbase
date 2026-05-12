@@ -4806,6 +4806,7 @@ ${panes}
               await pageManager.savePage(newPageName, content, {
                 ...meta,
                 title: newPageName,
+                'system-category': 'user-profile',
                 'author-lock': true,
                 description: `${displayName}'s profile page`,
                 badge: `Profile ${displayName}`
