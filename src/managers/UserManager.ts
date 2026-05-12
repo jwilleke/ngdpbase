@@ -760,7 +760,9 @@ class UserManager extends BaseManager {
         'system-category': 'general',
         created: user.createdAt,
         author: user.username,
-        'author-lock': true
+        'author-lock': true,
+        description: `${user.displayName}'s profile page`,
+        badge: `Profile ${user.displayName}`
       });
 
       // Save the user page

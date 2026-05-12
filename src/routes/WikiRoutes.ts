@@ -4934,7 +4934,17 @@ ${panes}
             const page = await pageManager.getPage(oldPageName);
             if (page) {
               const { content, ...meta } = page;
-              await pageManager.savePage(newPageName, content, { ...meta, title: newPageName });
+              // #661: re-apply / back-fill profile-page metadata on rename so
+              // the renamed page carries author-lock + description + badge
+              // regardless of how the original was created.
+              const displayName = currentUser.displayName ?? currentUser.username ?? '';
+              await pageManager.savePage(newPageName, content, {
+                ...meta,
+                title: newPageName,
+                'author-lock': true,
+                description: `${displayName}'s profile page`,
+                badge: `Profile ${displayName}`
+              });
               await pageManager.deletePage(oldPageName);
             }
           } catch (renameErr: unknown) {

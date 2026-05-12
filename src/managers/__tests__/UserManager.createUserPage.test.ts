@@ -5,6 +5,8 @@
  * - Has the title "Profile: {displayName}"
  * - Has author-lock: true in its metadata
  * - Has system-category: "general" (per #662 — was "User Pages" which is not a valid category)
+ * - Has description: "{displayName}'s profile page" (#661)
+ * - Has badge: "Profile {displayName}" (#661)
  * - Has the page author set to the user's username
  * - Is saved via PageManager.savePage()
  * - Returns false (gracefully) when required managers are unavailable
@@ -140,6 +142,20 @@ describe('UserManager.createUserPage()', () => {
 
     const savedMetadata = pageManager.savePage.mock.calls[0][2];
     expect(savedMetadata['system-category']).toBe('general');
+  });
+
+  test('metadata includes description with displayName (#661)', async () => {
+    await userManager.createUserPage(TEST_USER);
+
+    const savedMetadata = pageManager.savePage.mock.calls[0][2];
+    expect(savedMetadata.description).toBe("Jane Smith's profile page");
+  });
+
+  test('metadata includes badge "Profile {displayName}" (#661)', async () => {
+    await userManager.createUserPage(TEST_USER);
+
+    const savedMetadata = pageManager.savePage.mock.calls[0][2];
+    expect(savedMetadata.badge).toBe('Profile Jane Smith');
   });
 
   test('metadata author is set to user.username (not displayName)', async () => {
