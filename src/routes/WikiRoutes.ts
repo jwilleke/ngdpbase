@@ -7964,31 +7964,94 @@ ${panes}
       const offset = Math.max(parseInt(req.query.offset as string, 10) || 0, 0);
 
       // Pages are a separate data source — handled directly via PageManager
+      // or SearchManager.advancedSearchWithContext (slice 2 of #693, #695).
+      // The substring-match path is preserved for the no-filter case so the
+      // common "show all pages" usage stays cheap; any of {query, category,
+      // keywords, systemKeywords} switches to the advanced-search path so
+      // the URL surface matches what /search supports today.
       if (typesParam === 'page') {
         const pageManager = this.engine.getManager('PageManager');
         if (!pageManager) {
           return res.status(503).json({ success: false, error: 'PageManager unavailable' });
         }
-        const allPages = await pageManager.getAllPages();
-        const qLower = query.toLowerCase();
-        const filtered = qLower
-          ? allPages.filter((p: string) => p.toLowerCase().includes(qLower))
-          : allPages;
-        const total = filtered.length;
-        const slice = filtered.slice(offset, offset + pageSize);
-        const results = (slice).map((pageName: string) => ({
+
+        // Normalise array-vs-string for repeated query params (mirrors
+        // WikiRoutes.searchPages' parsing).
+        const rawCategories = req.query.category;
+        const categories = (Array.isArray(rawCategories)
+          ? rawCategories.filter((c): c is string => typeof c === 'string')
+          : typeof rawCategories === 'string' ? [rawCategories] : []
+        ).filter(c => c.trim() !== '');
+
+        const rawKeywords = req.query.keywords;
+        const userKeywords = (Array.isArray(rawKeywords)
+          ? rawKeywords.filter((k): k is string => typeof k === 'string')
+          : typeof rawKeywords === 'string' ? [rawKeywords] : []
+        ).filter(k => k.trim() !== '');
+
+        const rawSystemKeywords = req.query.systemKeywords;
+        const systemKeywords = (Array.isArray(rawSystemKeywords)
+          ? rawSystemKeywords.filter((k): k is string => typeof k === 'string')
+          : typeof rawSystemKeywords === 'string' ? [rawSystemKeywords] : []
+        ).filter(k => k.trim() !== '');
+
+        const rawSearchIn = req.query.searchIn;
+        let searchIn = (Array.isArray(rawSearchIn)
+          ? rawSearchIn.filter((s): s is string => typeof s === 'string')
+          : typeof rawSearchIn === 'string' ? [rawSearchIn] : ['all']
+        ).filter(s => s.trim() !== '');
+        if (searchIn.length === 0) searchIn = ['all'];
+
+        const hasFilter = !!query || categories.length > 0 || userKeywords.length > 0 || systemKeywords.length > 0;
+
+        // Helper to project a page-name or SearchResult into the AssetRecord
+        // shape the asset-picker consumes. Canonical /view/ URL per the no-wiki
+        // convention; the previous /wiki/<page> form was legacy.
+        const toAssetRecord = (pageName: string, title?: string, excerpt?: string, kw?: string[]) => ({
           id: pageName,
           providerId: 'page',
           filename: pageName,
-          name: pageName,
-          description: pageName,
-          keywords: [],
+          name: title || pageName,
+          description: excerpt || title || pageName,
+          keywords: kw ?? [],
           encodingFormat: 'text/wiki',
-          url: '/wiki/' + encodeURIComponent(pageName),
+          url: '/view/' + encodeURIComponent(pageName),
           mentions: [],
           metadata: {},
           insertSnippet: '[' + pageName + ']'
-        }));
+        });
+
+        let all: ReturnType<typeof toAssetRecord>[];
+        if (hasFilter) {
+          const searchManager = this.engine.getManager('SearchManager') as {
+            advancedSearchWithContext?: (ctx: unknown, opts: Record<string, unknown>) => Promise<Array<{
+              name: string; title?: string; excerpt?: string; userKeywords?: string[];
+            }>>;
+          };
+          if (!searchManager?.advancedSearchWithContext) {
+            return res.status(503).json({ success: false, error: 'SearchManager unavailable' });
+          }
+          // Oversample so offset/pageSize slicing has enough rows. maxResults
+          // is interpreted by the provider as a hard cap, so it must cover the
+          // whole window the caller might paginate to.
+          const fetchLimit = Math.max(200, offset + pageSize);
+          const hits = await searchManager.advancedSearchWithContext(wikiContext, {
+            query,
+            categories,
+            userKeywords,
+            systemKeywords,
+            searchIn,
+            maxResults: fetchLimit
+          });
+          all = hits.map(h => toAssetRecord(h.name, h.title, h.excerpt, h.userKeywords));
+        } else {
+          // Empty query, no filters — return all pages (cheap path).
+          const allNames = await pageManager.getAllPages();
+          all = allNames.map((pageName: string) => toAssetRecord(pageName));
+        }
+
+        const total = all.length;
+        const results = all.slice(offset, offset + pageSize);
         return res.json({ success: true, results, total, hasMore: offset + pageSize < total });
       }
 

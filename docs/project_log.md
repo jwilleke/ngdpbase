@@ -2,6 +2,25 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-12-10
+
+- Agent: Claude Opus 4.7
+- Subject: EPIC #693 slice 2 — backend parity for Pages search in `/api/assets/search`. The substring-match-on-page-name path was preserved for the no-filter case (cheap); any of `q` / `category` / `keywords` / `systemKeywords` switches to `SearchManager.advancedSearchWithContext` with `searchIn` defaulting to `['all']` per the existing `/search` handler's contract. Sub-issue #695 filed and labelled `in review`.
+- Current Issue: #695 (in review), EPIC #693 (slice 2 of 3 code-complete).
+- Tests: 14 new in `WikiRoutes.assetSearch.test.ts` covering the `types === 'page'` branch (503 when PageManager unavailable, fallback to `getAllPages` for no-filter case, `/view/` URL canonical form, advancedSearchWithContext routing for query, single-value and multi-value `category` param threading, `keywords` → `userKeywords`, `systemKeywords` threading, `searchIn` defaults to `['all']` and explicit value, 503 when SearchManager unavailable for filtered queries, `SearchResult.title`/`excerpt`/`userKeywords` map to AssetRecord `name`/`description`/`keywords`, offset/pageSize slicing, no fall-through to `AssetService.search`). 35/35 in the file; full suite 5430/5430.
+- Work Done:
+  - **`WikiRoutes.assetSearch` page-branch upgrade.** Replaced the inline `getAllPages().filter(substring)` with a two-path implementation: no-filter case still hits `pageManager.getAllPages()` (cheap, returns all page names); any of `query` / `categories` / `userKeywords` / `systemKeywords` switches to `SearchManager.advancedSearchWithContext(wikiContext, {...})` with `searchIn` defaulting to `['all']`.
+  - **Param parsing mirrors `WikiRoutes.searchPages`** for array-vs-string normalisation of `category`, `keywords`, `systemKeywords`, `searchIn`. Repeated query params like `?category=A&category=B` produce string arrays as expected; single values get wrapped.
+  - **URL canonicalised to `/view/`** in the new `toAssetRecord()` helper (the previous `/wiki/<page>` form was legacy; `#364` migration already deprecated it). Visible change for callers of `/api/assets/search?types=page` — but both URLs resolve to the same content via 302, so no functional regression.
+  - **Pagination model matches the Users branch from slice 1**: oversample `Math.max(200, offset + pageSize)` as `maxResults`, slice locally. Keeps the AssetRecord shape stable across types.
+  - **`SearchManager` 503 path** — when filters are set but `SearchManager` is unregistered (degraded deployment), return 503 rather than silently falling back to an unfiltered list (which would mask the configuration problem).
+  - **`SearchResult` field passthrough.** `title` → `AssetRecord.name`; `excerpt` → `description`; `userKeywords` → `keywords`. Page cards in the asset-picker now show titles and excerpts when available, not just page names.
+- Commits: pending.
+- Files Modified:
+  - `src/routes/WikiRoutes.ts` (+72/-15 around line 7967)
+  - `src/routes/__tests__/WikiRoutes.assetSearch.test.ts` (+~190 — 14 new tests + helper functions)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-12-09
 
 - Agent: Claude Opus 4.7

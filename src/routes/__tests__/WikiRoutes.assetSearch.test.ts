@@ -236,6 +236,235 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // #693 slice 2 — Pages backend parity (#695)
+  // ---------------------------------------------------------------------------
+  describe('types=page branch', () => {
+    function makePageManager(allPages: string[] = ['Page A', 'Page B', 'Page C']) {
+      return { getAllPages: vi.fn().mockResolvedValue(allPages) };
+    }
+
+    function makeSearchManager(hits: Array<{ name: string; title?: string; excerpt?: string; userKeywords?: string[] }> = []) {
+      return { advancedSearchWithContext: vi.fn().mockResolvedValue(hits) };
+    }
+
+    function makeRoutesWithPages(assetService, pageManager, searchManager?) {
+      const engine = {
+        getManager: vi.fn((name: string) => {
+          if (name === 'AssetService') return assetService;
+          if (name === 'PageManager') return pageManager;
+          if (name === 'SearchManager') return searchManager;
+          return null;
+        })
+      };
+      const routes = new WikiRoutes(engine);
+      routes.createWikiContext = vi.fn((req: Request) =>
+        createMockWikiContext(
+          { userContext: (req as { userContext?: unknown }).userContext as never },
+          { engine }
+        )
+      );
+      return routes;
+    }
+
+    it('returns 503 when PageManager is unavailable', async () => {
+      const routes = makeRoutesWithPages(makeAssetService(), null);
+      const req = makeReq({ query: { types: 'page' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(503);
+    });
+
+    it('falls back to PageManager.getAllPages when no query or filters are set', async () => {
+      const pageManager = makePageManager(['Welcome', 'About', 'Contact']);
+      const routes = makeRoutesWithPages(makeAssetService(), pageManager);
+      const req = makeReq({ query: { types: 'page' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(pageManager.getAllPages).toHaveBeenCalled();
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.total).toBe(3);
+      expect(payload.results[0]).toEqual(expect.objectContaining({
+        id: 'Welcome',
+        providerId: 'page',
+        url: '/view/Welcome'
+      }));
+    });
+
+    it('uses /view/ (not /wiki/) for the page URL', async () => {
+      const pageManager = makePageManager(['Some Page']);
+      const routes = makeRoutesWithPages(makeAssetService(), pageManager);
+      const req = makeReq({ query: { types: 'page' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.results[0].url).toBe('/view/Some%20Page');
+      expect(payload.results[0].url).not.toContain('/wiki/');
+    });
+
+    it('routes through SearchManager.advancedSearchWithContext when query is set', async () => {
+      const search = makeSearchManager([{ name: 'Beach Day', title: 'Beach Day', excerpt: 'A sunny afternoon' }]);
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
+      const req = makeReq({ query: { types: 'page', q: 'beach' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(search.advancedSearchWithContext).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ query: 'beach', categories: [], userKeywords: [], systemKeywords: [], searchIn: ['all'] })
+      );
+    });
+
+    it('threads category param (single value) to advancedSearchWithContext', async () => {
+      const search = makeSearchManager();
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
+      const req = makeReq({ query: { types: 'page', category: 'Documentation' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(search.advancedSearchWithContext).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ categories: ['Documentation'] })
+      );
+    });
+
+    it('threads category param (multiple values) to advancedSearchWithContext', async () => {
+      const search = makeSearchManager();
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
+      const req = makeReq({ query: { types: 'page', category: ['Documentation', 'Tutorial'] } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(search.advancedSearchWithContext).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ categories: ['Documentation', 'Tutorial'] })
+      );
+    });
+
+    it('threads keywords as userKeywords to advancedSearchWithContext', async () => {
+      const search = makeSearchManager();
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
+      const req = makeReq({ query: { types: 'page', keywords: ['foo', 'bar'] } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(search.advancedSearchWithContext).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ userKeywords: ['foo', 'bar'] })
+      );
+    });
+
+    it('threads systemKeywords to advancedSearchWithContext', async () => {
+      const search = makeSearchManager();
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
+      const req = makeReq({ query: { types: 'page', systemKeywords: 'todo' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(search.advancedSearchWithContext).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ systemKeywords: ['todo'] })
+      );
+    });
+
+    it('defaults searchIn to ["all"] when not provided', async () => {
+      const search = makeSearchManager();
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
+      const req = makeReq({ query: { types: 'page', q: 'x' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(search.advancedSearchWithContext).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ searchIn: ['all'] })
+      );
+    });
+
+    it('threads explicit searchIn value', async () => {
+      const search = makeSearchManager();
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
+      const req = makeReq({ query: { types: 'page', q: 'x', searchIn: 'title' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(search.advancedSearchWithContext).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ searchIn: ['title'] })
+      );
+    });
+
+    it('returns 503 when SearchManager is unavailable and filters require it', async () => {
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), null);
+      const req = makeReq({ query: { types: 'page', q: 'beach' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(503);
+    });
+
+    it('maps SearchResult.title and excerpt into AssetRecord.name and description', async () => {
+      const search = makeSearchManager([
+        { name: 'Beach', title: 'A Day at the Beach', excerpt: 'sand and waves', userKeywords: ['ocean', 'summer'] }
+      ]);
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
+      const req = makeReq({ query: { types: 'page', q: 'beach' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.results[0]).toEqual(expect.objectContaining({
+        id: 'Beach',
+        name: 'A Day at the Beach',
+        description: 'sand and waves',
+        keywords: ['ocean', 'summer'],
+        url: '/view/Beach'
+      }));
+    });
+
+    it('respects offset and pageSize on the search-result slice', async () => {
+      const hits = Array.from({ length: 60 }, (_, i) => ({ name: `Page${i}` }));
+      const search = makeSearchManager(hits);
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
+      const req = makeReq({ query: { types: 'page', q: 'x', offset: '10', pageSize: '5' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.total).toBe(60);
+      expect(payload.results).toHaveLength(5);
+      expect(payload.results[0].id).toBe('Page10');
+      expect(payload.results[4].id).toBe('Page14');
+      expect(payload.hasMore).toBe(true);
+    });
+
+    it('does NOT route through AssetService.search when types=page', async () => {
+      const service = makeAssetService();
+      const routes = makeRoutesWithPages(service, makePageManager());
+      const req = makeReq({ query: { types: 'page' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(service.search).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // #693 slice 1 — Users source type (#694)
   // ---------------------------------------------------------------------------
   describe('types=user branch', () => {
