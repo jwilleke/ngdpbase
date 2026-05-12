@@ -49,11 +49,9 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote â€
 
 Items awaiting a yes/no/close from the operator. Not blocking other work.
 
-| # | Decision needed |
-|---|---|
-| #671 | Close as recommended per #681 fate comment? (auto-deploy concerns now covered by #680) |
-| #674 | Close as recommended per #681 fate comment? (Kustomize/Flux templates contradict "what ngdpbase doesn't ship") |
-| #682 | Split Lever 3 to its own issue, or repurpose #682 itself? Title currently misrepresents shipped state (Levers 1+2 done) |
+*Carryover cleared 2026-05-12: #671 closed (resolved by #680+#681), #674 closed (superseded by #681), #682 closed with Lever 3 lifted to #686.*
+
+No items awaiting decision.
 
 ## Sister-site top priorities â€” combined table
 
