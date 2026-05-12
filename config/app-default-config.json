@@ -547,7 +547,7 @@
   "ngdpbase.system-category": {
     "general": {
       "label": "general",
-      "description": "General wiki pages",
+      "description": "General User pages",
       "default": true,
       "storageLocation": "regular",
       "enabled": true
