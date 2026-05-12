@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Auto-created user profile pages now use `system-category: "general"` instead of the invalid `"User Pages"`** (#662). `UserManager.createUserPage()` was hardcoding `'User Pages'` as the category when seeding a profile page for a new user. `"User Pages"` is not in the configured set of valid categories (`general`, `system`, `documentation`, `developer`, `addon`).
+- Any subsequent save of that profile page through the `/edit` UI returned **HTTP 400** with *"Invalid system-category: 'User Pages'. Valid categories are: addon, documentation, general, system"*. New profile pages now get `general`, which matches both the config's literal description ("General User pages") and the validator's silent-fallback default.
+- Migration for existing instances: user pages already on disk still carry the legacy `'User Pages'` value. Either change the dropdown to `general` on next save, or one-liner across the storage dir: `find "$SLOW_STORAGE/pages" -name '*.md' -exec sed -i '' "s/^system-category: 'User Pages'$/system-category: 'general'/" {} +`
+
 - **Test files no longer surface "Cannot find name 'describe'/'test'/'expect'" diagnostics in the IDE or in `tsc -b tsconfig.test.json`** (#667). `tsconfig.test.json` already had `"types": ["vitest/globals", "node"]`, but the TypeScript language server doesn't route test files there without a project-references link.
 - Fixed by adding `composite: true` to `tsconfig.test.json` and `references: [{ path: "./tsconfig.test.json" }]` to `tsconfig.json`. Composite mode requires declaration emit, sent to a new gitignored `.tsbuildtest/` directory (`emitDeclarationOnly: true` skips JS emit). Test config `include` also narrowed to test-file patterns only (was overlapping with the main project's `src/**/*.ts`).
 - No runtime change; `npm run build` and `npm run typecheck` still behave identically. Verified: `npx vitest run src/utils/__tests__/pluginFormatters.test.ts` → 79/79 pass; `tsc -b tsconfig.test.json | grep "Cannot find name '(describe|test|expect|...)'"` → 0 matches.

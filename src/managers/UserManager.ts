@@ -757,7 +757,7 @@ class UserManager extends BaseManager {
 
       const metadata = validationManager.generateValidMetadata(profileTitle, {
         'user-keywords': ['user-page', user.displayName.toLowerCase().replace(/\s+/g, '-')],
-        'system-category': 'User Pages',
+        'system-category': 'general',
         created: user.createdAt,
         author: user.username,
         'author-lock': true

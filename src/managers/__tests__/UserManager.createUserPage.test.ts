@@ -4,7 +4,7 @@
  * Verifies that when a new user account is created, the profile page:
  * - Has the title "Profile: {displayName}"
  * - Has author-lock: true in its metadata
- * - Has system-category: "User Pages"
+ * - Has system-category: "general" (per #662 — was "User Pages" which is not a valid category)
  * - Has the page author set to the user's username
  * - Is saved via PageManager.savePage()
  * - Returns false (gracefully) when required managers are unavailable
@@ -135,11 +135,11 @@ describe('UserManager.createUserPage()', () => {
     expect(savedMetadata['author-lock']).toBe(true);
   });
 
-  test('metadata includes system-category: "User Pages"', async () => {
+  test('metadata includes system-category: "general"', async () => {
     await userManager.createUserPage(TEST_USER);
 
     const savedMetadata = pageManager.savePage.mock.calls[0][2];
-    expect(savedMetadata['system-category']).toBe('User Pages');
+    expect(savedMetadata['system-category']).toBe('general');
   });
 
   test('metadata author is set to user.username (not displayName)', async () => {
