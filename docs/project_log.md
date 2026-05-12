@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-12-19
+
+- Agent: Claude Opus 4.7
+- Subject: Operator-proposed refactor: make page-title badges data-driven from `config/app-default-config.json` (single source of truth) instead of hardcoded if/else branches in `views/header.ejs`. Each `ngdpbase.system-category` entry gets an optional `page-badge: { color, label, title }` block. Categories without the block render no badge (`general`, `developer`). Explicit operator approval given for the config change. Also caught and surfaced (but not fixed): one existing `required-pages/89d076df-…` file with `system-category: developer` — operator's rule says `developer` should never appear on disk, so that's a misclassified data file.
+- Current Issue: refactor only — no specific issue number.
+- Tests: 5477/5477 passing. `npx tsc --noEmit` clean.
+- Work Done:
+  - **`config/app-default-config.json`** — added `page-badge` block to four `ngdpbase.system-category` entries: `system` (`bg-secondary` "System"), `documentation` (`bg-info text-dark` "Documentation"), `addon` (`bg-primary` "Addon"), `user-profile` (`bg-success` "Profile"). Each block has `color`, `label`, `title`. Two entries deliberately have NO `page-badge` block: `general` (default, no badge needed) and `developer` (never on disk per operator's spec).
+  - **`WikiRoutes.getCommonTemplateData`** — exposes `systemCategoryDefs` to every render (it's a common template context). Reads from `configManager.getProperty('ngdpbase.system-category', {})`. Added an optional `systemCategoryDefs?: Record<string, unknown>` field to the local `templateData` type annotation to satisfy TS (the broader `TemplateData` interface already has `[key: string]: any` but the local type annotation in `getCommonTemplateData` is narrower).
+  - **`views/header.ejs`** page-title area — replaced the four-branch if/else chain with a single data-driven block. Reads `systemCategoryDefs[_sysCat]` → `page-badge` → renders `<span class="badge <%= color %>" title="<%= title %>">(<%= label %>)</span>`. Future categories with a `page-badge` block render automatically; categories without it stay unbranded. Operators can re-color a badge by editing the config — no code change required.
+  - **Outlier surfaced**: `required-pages/89d076df-7d15-4348-94f4-f2a4899a5926.md` (Red Link Test) carries `system-category: developer`. Operator's rule is that `developer` is reserved for `docs/` markdown on GitHub, never for platform pages on disk. The file appears to be a misclassified data leftover; needs reclassification to `documentation` or deletion. **Not fixed in this slice** — operator decision pending.
+- Commits: pending.
+- Files Modified:
+  - `config/app-default-config.json` (+24 lines: page-badge blocks on four categories)
+  - `src/routes/WikiRoutes.ts` (+2: type annotation field; +6: systemCategoryDefs assignment in getCommonTemplateData)
+  - `views/header.ejs` (−10/+10: replaced if/else chain with data-driven block)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-12-18
 
 - Agent: Claude Opus 4.7

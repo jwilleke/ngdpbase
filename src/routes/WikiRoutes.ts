@@ -592,6 +592,7 @@ class WikiRoutes {
       csrfToken: string;
       leftMenu?: string;
       footer?: string;
+      systemCategoryDefs?: Record<string, unknown>;
     } = {
       currentUser: userContext,
       user: userContext,       // alias
@@ -710,6 +711,13 @@ class WikiRoutes {
       });
       templateData.footer = '';
     }
+
+    // Expose the system-category catalog so templates (header.ejs) can render
+    // the (System) / (Documentation) / (Addon) / (Profile) badges from config
+    // instead of hardcoding category names. Each entry's optional `page-badge`
+    // block carries { color, label, title } — categories without it (e.g.
+    // `general`, `developer`) render no badge.
+    templateData.systemCategoryDefs = (configManager?.getProperty('ngdpbase.system-category', {}) as Record<string, unknown>) ?? {};
 
     return templateData;
   }

@@ -183,6 +183,13 @@
                       const _sysCat  = (typeof metadata !== 'undefined' && metadata && metadata['system-category'])
                                         ? String(metadata['system-category']).toLowerCase() : '';
                       const _isPriv  = (typeof pageIsPrivate !== 'undefined') ? pageIsPrivate : false;
+                      // Category-driven badge config — single source of truth in
+                      // ngdpbase.system-category[<name>].page-badge. Categories
+                      // without a page-badge block render no badge (general,
+                      // developer).
+                      const _catDef  = (typeof systemCategoryDefs !== 'undefined' && systemCategoryDefs && _sysCat)
+                                        ? systemCategoryDefs[_sysCat] : null;
+                      const _catBadge = (_catDef && typeof _catDef === 'object' && _catDef['page-badge']) ? _catDef['page-badge'] : null;
                     %>
                     <% if (_navTitle) { %>
                         <h5 class="mb-0 text-truncate">
@@ -190,12 +197,8 @@
                             <% if (_isPriv) { %>
                                 <span class="badge bg-warning text-dark ms-1" style="font-size:0.6em;vertical-align:middle;" title="Private page">(Private)</span>
                             <% } %>
-                            <% if (_sysCat === 'system') { %>
-                                <span class="badge bg-secondary ms-1" style="font-size:0.6em;vertical-align:middle;" title="System page">(System)</span>
-                            <% } else if (_sysCat === 'documentation') { %>
-                                <span class="badge bg-info text-dark ms-1" style="font-size:0.6em;vertical-align:middle;" title="Documentation page">(Documentation)</span>
-                            <% } else if (_sysCat === 'user-profile') { %>
-                                <span class="badge bg-success ms-1" style="font-size:0.6em;vertical-align:middle;" title="User profile page">(Profile)</span>
+                            <% if (_catBadge) { %>
+                                <span class="badge <%= _catBadge.color %> ms-1" style="font-size:0.6em;vertical-align:middle;" title="<%= _catBadge.title %>">(<%= _catBadge.label %>)</span>
                             <% } %>
                         </h5>
                     <% } %>
