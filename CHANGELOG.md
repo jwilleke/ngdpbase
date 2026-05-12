@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **"Using FormPlugin" page no longer 404s — removed duplicate `required-pages/a4f9c2e1-…md` copy** (#653). The forms addon's `addons/forms/pages/af15d030-…md` is the canonical "Using FormPlugin" doc; a stale duplicate had been left in `required-pages/` with a different UUID and divergent content, both claiming `title: Using FormPlugin`.
+- The title collision broke link resolution from the Form Definition Reference page (which renders `[Using FormPlugin]` markup) — visitors clicking the link got "Not Found". Removing the `required-pages/` duplicate leaves the forms addon's version as the only source of truth for new installs.
+- Migration for existing instances: the duplicate may still exist in operator data (was seeded from required-pages on first install). Delete with `rm "$SLOW_STORAGE/pages/a4f9c2e1-7b3d-4a85-9e6f-1c2d3b4a5e6f.md"` and restart.
+- Follow-up worth a separate issue: `Form Definition Reference` (`bb03859d`) is also a forms-addon doc but still lives in `required-pages/` — should migrate to `addons/forms/pages/` so the whole forms doc set lives with the addon.
+
 - **Profile pages now carry `description`, `badge`, and `author-lock` metadata on both create and rename** (#661). `UserManager.createUserPage()` now writes `description: "{displayName}'s profile page"` and `badge: "Profile {displayName}"` alongside the pre-existing `author-lock: true`. The `/profile` rename path in `WikiRoutes.updateProfile` re-applies these three fields on the renamed page, so a profile page that was originally manually created (or had its metadata stripped) gets back-filled correctly when the user changes their `profilePage` setting. Two new tests in `UserManager.createUserPage.test.ts` cover the new fields.
 
 - **Auto-created user profile pages now use `system-category: "general"` instead of the invalid `"User Pages"`** (#662). `UserManager.createUserPage()` was hardcoding `'User Pages'` as the category when seeding a profile page for a new user. `"User Pages"` is not in the configured set of valid categories (`general`, `system`, `documentation`, `developer`, `addon`).
