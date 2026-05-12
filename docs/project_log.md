@@ -2,6 +2,22 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-12-13
+
+- Agent: Claude Opus 4.7
+- Subject: EPIC #693 smoke-test follow-ups. Operator left feedback while I was compiling+restarting. **#696 (slice 3, the swap) CLOSED — "Seems fine except for #698"**. Two new bugs filed by operator (#698 card sizing, #695 reopen for "q input gone" complaint). Slice 1 #694 also reopened with two prongs: card sizing (same as #698) + 1,000-user scaling concern. Addressed: #698/#694 card sizing fix shipped + restarted; #699 filed for the user-scaling worry; #695 commented asking for screenshot since I can't reproduce from the rendered HTML.
+- Current Issue: #694 + #698 in review pending re-smoke. #695 awaiting operator clarification. EPIC #693 — 1/3 slices closed (#696), 2/3 in review (#694, #695).
+- Tests: no new tests this slice — template-only fix with no test infrastructure for visual CSS. Server compiled (`npm run build`) and restarted via `./server.sh restart` so the live instance now reflects all of today's slices.
+- Work Done:
+  - **Compile + restart, finally.** Operator caught that I'd been telling them to smoke-test but never compiled+restarted the server — they were testing against the pre-swap code running on jimstest. `npm run build` → fresh `dist/`; `./server.sh restart` → PM2 process `jimstest` (id 21, PID 70077 after the post-fix restart). Now confirmed: `/` 302, `/search` 200, `/attachments/browse` 302→/search.
+  - **#698 + card-sizing half of #694 fix.** `_apCard()` in `views/_asset-picker.ejs` had two thumb sizes — image branches at `max-height:110px` (could be short for narrow images) and icon-fallback branches at `<div class="py-3">` (~50px). Cards in the same row equalised via Bootstrap `h-100` but the thumb subsection still varied, producing inconsistent visual heights. Fix: every thumb branch now lays out into the same 110px-tall box — image variants switched from `max-height:110px` to fixed `height:110px` with `object-fit:cover`; icon variants switched from `py-3` padding to flex-centered 110px div via a `AP_THUMB_BOX` string constant. EJS template change only; no recompile needed, just restart.
+  - **#699 filed** for the operator's "what about 1,000s of users?" scaling concern on #694. Root cause: `UserManager.searchUsers` caps internally at the requested `limit` (200 in my call), and `total` in the response is `fetched.length`, so pagination silently truncates. Three resolution paths sketched in the issue (honest total / surface the cap / real users search index). Low priority for installations under 200 users.
+  - **#695 left awaiting screenshot.** Operator complaint at 12:31Z that the q input "is just gone" when switching from 'All Media' to 'Pages' — can't reproduce from the rendered HTML (`<input id="ap-query">` is present, `_apUpdateControls()` only hides four other elements). Posted a comment listing three diagnostic possibilities (pre-restart code on jminim4 / narrow viewport / DevTools check) before chasing a phantom.
+- Commits: `c3cdbebc` (fix), this log entry pending.
+- Files Modified:
+  - `views/_asset-picker.ejs` (+12/-6 in `_apCard`)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-12-12
 
 - Agent: Claude Opus 4.7
