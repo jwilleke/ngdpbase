@@ -53,6 +53,9 @@
     "**/*.test.ts",
     "**/__tests__/**"
   ],
+  "references": [
+    { "path": "./tsconfig.test.json" }
+  ],
   "ts-node": {
     "esm": true,
     "compilerOptions": {

@@ -1,28 +1,32 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "composite": true,
+    "emitDeclarationOnly": true,
+    "declaration": true,
+    "outDir": "./.tsbuildtest",
+    "tsBuildInfoFile": "./.tsbuildtest/.tsbuildinfo",
     "strict": false,
     "noImplicitAny": false,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noImplicitReturns": false,
     "checkJs": false,
-    "declaration": false,
     "declarationMap": false,
     "sourceMap": true,
     "types": ["vitest/globals", "node"]
   },
   "include": [
-    "src/**/*.ts",
-    "src/**/*.js",
+    "src/**/*.test.ts",
     "src/**/__tests__/**/*.ts",
     "src/**/__tests__/**/*.js",
     "addons/**/__tests__/**/*.ts",
+    "addons/**/*.test.ts",
+    "scripts/**/__tests__/**/*.ts",
+    "tests/e2e/**/*.ts",
     "vitest.setup.ts",
     "vitest.config.ts",
-    "playwright.config.ts",
-    "scripts/**/*.ts",
-    "tests/e2e/**/*.ts"
+    "playwright.config.ts"
   ],
   "exclude": [
     "node_modules",

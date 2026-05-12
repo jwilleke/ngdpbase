@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Test files no longer surface "Cannot find name 'describe'/'test'/'expect'" diagnostics in the IDE or in `tsc -b tsconfig.test.json`** (#667). `tsconfig.test.json` already had `"types": ["vitest/globals", "node"]`, but the TypeScript language server doesn't route test files there without a project-references link.
+- Fixed by adding `composite: true` to `tsconfig.test.json` and `references: [{ path: "./tsconfig.test.json" }]` to `tsconfig.json`. Composite mode requires declaration emit, sent to a new gitignored `.tsbuildtest/` directory (`emitDeclarationOnly: true` skips JS emit). Test config `include` also narrowed to test-file patterns only (was overlapping with the main project's `src/**/*.ts`).
+- No runtime change; `npm run build` and `npm run typecheck` still behave identically. Verified: `npx vitest run src/utils/__tests__/pluginFormatters.test.ts` → 79/79 pass; `tsc -b tsconfig.test.json | grep "Cannot find name '(describe|test|expect|...)'"` → 0 matches.
+
 ### Planned
 
 - Future enhancements
