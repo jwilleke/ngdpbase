@@ -19,6 +19,10 @@
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
 import { escapeHtml, formatAsCount, resolveUserParam } from '../utils/pluginFormatters.js';
 
+interface UserManagerLike {
+  getUser?: (username: string) => Promise<{ username: string } | undefined | null>;
+}
+
 interface UserContext {
   username?: string;
   authenticated?: boolean;
@@ -82,6 +86,26 @@ const MyContributionsPlugin: SimplePlugin = {
     if (!target) return '';
 
     const isSelfView = viewerAuth && target === viewerName;
+
+    // Existence check for explicit-username targets so non-existent users
+    // surface as a visible warning instead of an empty card with zero
+    // counts (operator feedback on #688). The self-view path skips the
+    // check — the viewer must exist to have a session.
+    if (!isSelfView) {
+      const userManager = ctx.engine?.getManager('UserManager') as UserManagerLike | undefined;
+      if (userManager?.getUser) {
+        try {
+          const user = await userManager.getUser(target);
+          if (!user) {
+            return renderNotFound(target);
+          }
+        } catch (err) {
+          ctx.engine?.logger?.error?.('[MyContributionsPlugin] user-existence check failed:', err);
+          // Soft-fail: render the card anyway rather than erroring on a
+          // transient UserManager problem.
+        }
+      }
+    }
 
     const counts = await getContributionCounts(ctx, target, isSelfView ? viewer : undefined);
 
@@ -190,6 +214,14 @@ function renderCard(target: string, counts: ContributionCounts, isSelfView: bool
     ].join('\n');
   }).join('\n');
 
+  // Empty-state hint when every count is zero or undefined — distinguishes
+  // "user exists with no activity" from "card is broken" (operator feedback
+  // on #688). The badges still render so the layout stays consistent.
+  const hasAnyContribution = rows.some(r => typeof r.value === 'number' && r.value > 0);
+  const emptyHint = hasAnyContribution
+    ? ''
+    : '    <div class="card-footer text-muted small text-center">No contributions yet.</div>';
+
   return [
     '<div class="card my-contributions-plugin">',
     '  <div class="card-header">',
@@ -200,6 +232,15 @@ function renderCard(target: string, counts: ContributionCounts, isSelfView: bool
     items,
     '    </ul>',
     '  </div>',
+    emptyHint,
+    '</div>'
+  ].filter(Boolean).join('\n');
+}
+
+function renderNotFound(target: string): string {
+  return [
+    '<div class="alert alert-warning my-contributions-plugin" role="alert">',
+    `  <i class="fas fa-exclamation-triangle"></i> User <strong>${escapeHtml(target)}</strong> not found.`,
     '</div>'
   ].join('\n');
 }

@@ -20,6 +20,7 @@ function makeContext(opts: {
   preferences?: Record<string, unknown>;
   pageManager?: Record<string, (...args: unknown[]) => unknown>;
   journalManager?: Record<string, (...args: unknown[]) => unknown>;
+  userManager?: Record<string, (...args: unknown[]) => unknown> | null;
 } = {}) {
   const managers: Record<string, unknown> = {
     PageManager: opts.pageManager ?? {
@@ -29,7 +30,14 @@ function makeContext(opts: {
     },
     JournalDataManager: opts.journalManager ?? {
       countByAuthor: vi.fn().mockReturnValue(7)
-    }
+    },
+    // Default: every queried user exists. Pass userManager: null to skip
+    // registration (simulates older deployments without UserManager).
+    UserManager: opts.userManager === null
+      ? undefined
+      : (opts.userManager ?? {
+        getUser: vi.fn().mockImplementation(async (u: string) => ({ username: u }))
+      })
   };
 
   return {
@@ -163,6 +171,96 @@ describe('MyContributionsPlugin', () => {
       const ctx = makeContext({ username: 'alice', pageManager: {} });
       const result = await MyContributionsPlugin.execute!(ctx, {}) as string;
       expect(result).toContain('&ndash;');
+    });
+  });
+
+  describe('user-existence check (operator feedback on #688)', () => {
+    test('renders not-found alert when target user does not exist', async () => {
+      const ctx = makeContext({
+        username: 'bob',
+        userManager: { getUser: vi.fn().mockResolvedValue(undefined) }
+      });
+      const result = await MyContributionsPlugin.execute!(ctx, { username: 'alice' }) as string;
+      expect(result).toContain('alert-warning');
+      expect(result).toContain('not found');
+      expect(result).toContain('<strong>alice</strong>');
+      expect(result).not.toContain('Pages Authored');
+    });
+
+    test('escapes HTML in not-found alert username', async () => {
+      const ctx = makeContext({
+        username: 'bob',
+        userManager: { getUser: vi.fn().mockResolvedValue(undefined) }
+      });
+      const result = await MyContributionsPlugin.execute!(ctx, { username: '<script>x</script>' }) as string;
+      expect(result).not.toContain('<script>x</script>');
+      expect(result).toContain('&lt;script&gt;');
+    });
+
+    test('skips existence check for self-view (viewer always exists)', async () => {
+      const userManager = { getUser: vi.fn().mockResolvedValue(undefined) };
+      const ctx = makeContext({ username: 'alice', userManager });
+      const result = await MyContributionsPlugin.execute!(ctx, {}) as string;
+      expect(userManager.getUser).not.toHaveBeenCalled();
+      expect(result).toContain('My Contributions');
+    });
+
+    test('skips existence check when $currentUser resolves to self', async () => {
+      const userManager = { getUser: vi.fn().mockResolvedValue(undefined) };
+      const ctx = makeContext({ username: 'alice', userManager });
+      const result = await MyContributionsPlugin.execute!(ctx, { username: '$currentUser' }) as string;
+      expect(userManager.getUser).not.toHaveBeenCalled();
+      expect(result).toContain('My Contributions');
+    });
+
+    test('soft-fails on UserManager throw — still renders card', async () => {
+      const ctx = makeContext({
+        username: 'bob',
+        userManager: { getUser: vi.fn().mockRejectedValue(new Error('db down')) }
+      });
+      const result = await MyContributionsPlugin.execute!(ctx, { username: 'alice' }) as string;
+      expect(result).not.toContain('alert-warning');
+      expect(result).toContain('Contributions');
+      expect(result).toContain('alice');
+    });
+
+    test('skips existence check when UserManager is absent', async () => {
+      const ctx = makeContext({ username: 'bob', userManager: null });
+      const result = await MyContributionsPlugin.execute!(ctx, { username: 'alice' }) as string;
+      expect(result).toContain('Contributions');
+      expect(result).toContain('alice');
+      expect(result).not.toContain('not found');
+    });
+  });
+
+  describe('empty-state hint (operator feedback on #688 — molly case)', () => {
+    test('shows "No contributions yet" footer when all counts are zero', async () => {
+      const ctx = makeContext({
+        username: 'bob',
+        pageManager: {
+          getPagesByCreator: vi.fn().mockResolvedValue([]),
+          getPagesByEditor:  vi.fn().mockResolvedValue([]),
+          getPagesSharedWith: vi.fn().mockResolvedValue([])
+        },
+        journalManager: { countByAuthor: vi.fn().mockReturnValue(0) }
+      });
+      const result = await MyContributionsPlugin.execute!(ctx, { username: 'molly' }) as string;
+      expect(result).toContain('No contributions yet');
+      expect(result).toContain('molly');
+    });
+
+    test('omits empty-state footer when any count is non-zero', async () => {
+      const ctx = makeContext({
+        username: 'bob',
+        pageManager: {
+          getPagesByCreator: vi.fn().mockResolvedValue([]),
+          getPagesByEditor:  vi.fn().mockResolvedValue([{}]),
+          getPagesSharedWith: vi.fn().mockResolvedValue([])
+        },
+        journalManager: { countByAuthor: vi.fn().mockReturnValue(0) }
+      });
+      const result = await MyContributionsPlugin.execute!(ctx, { username: 'molly' }) as string;
+      expect(result).not.toContain('No contributions yet');
     });
   });
 

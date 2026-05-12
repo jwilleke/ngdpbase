@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-12-09
+
+- Agent: Claude Opus 4.7
+- Subject: `#688` operator-feedback iteration on `MyContributionsPlugin`. Smoke testing surfaced two real issues — explicit non-existent username silently rendered a 0-count card (operator wanted an error); existent user with no contributions "shows nothing" (the zero-count card was rendering but read as broken because every row was a 0/dash with no acknowledgement of the empty state). Both addressed in a single follow-up.
+- Current Issue: #688 (in review — earlier card-render fix + this UX/correctness pass).
+- Tests: 8 new in `MyContributionsPlugin.test.ts` (22/22 in file; full suite 5416/5416 on retry after a known #622 flake in `WikiRoutes.coverage3.test.ts` on the first run). `npx tsc --noEmit` clean.
+- Work Done:
+  - **User-existence check.** New `UserManager.getUser(target)` call before the counts fetch when target is not the viewer. Self-view path skips it (the viewer must exist to have a session). Non-existent target → render `<div class="alert alert-warning">User <strong>{target}</strong> not found.</div>` via new `renderNotFound()` helper. `UserManager` throw → soft-fail and render the card anyway (transient DB issue shouldn't block content).
+  - **`UserManager` absence handled cleanly** — when `engine.getManager('UserManager')` returns undefined (older deployments, mocked engines), the existence check is skipped entirely and the plugin behaves as before. No new hard dependency.
+  - **Empty-state hint.** When all counts are zero or undefined, `renderCard()` appends a `<div class="card-footer text-muted small text-center">No contributions yet.</div>` so the molly case ("user exists, no activity") reads as a legitimate state instead of a broken render. Card structure stays identical when any count is non-zero — backward-compatible for the common path.
+  - **Plugin type tightening.** New `UserManagerLike` interface alongside the existing `PageManagerLike` / `JournalManagerLike` shapes. Keeps the duplication with `WikiRoutes.getMyContributionsCounts` consistent in style.
+  - **Tests covering both fixes:** not-found alert; HTML escaping in not-found alert username; self-view skips the existence check; `$currentUser` → self-view skips the check; soft-fail on `UserManager.getUser` throw; skip when UserManager is absent; empty-state footer when all counts zero; empty-state footer omitted when any count is non-zero.
+- Commits: pending — single commit covering plugin edits + tests + this log entry.
+- Files Modified:
+  - `src/plugins/MyContributionsPlugin.ts` (+44/-7)
+  - `src/plugins/__tests__/MyContributionsPlugin.test.ts` (+~95 — 8 new tests + makeContext now wires UserManager by default)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-12-08
 
 - Agent: Claude Opus 4.7
