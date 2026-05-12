@@ -2,6 +2,21 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-12-15
+
+- Agent: Claude Opus 4.7
+- Subject: `#692` — UX polish on the asset-picker control row when source is page or user. Operator picked the "Disable + dim" approach (option 1 of the three sketched in the issue body). Replaced the existing `display:none` morph in `_apUpdateControls()` with a disable-controls + `opacity:0.5` + `title` tooltip pattern. Layout no longer jumps when the source dropdown changes; the user can see what filters exist for other source types and gets a "Not applicable to pages/users" hint on hover.
+- Current Issue: `#692` (in review). EPIC `#693` still gated on `#695` operator clarification.
+- Tests: no automated tests touched (`_asset-picker.ejs` has no JS-state test infrastructure; existing route tests don't render this template's runtime). Manual verification: live HTML still contains the new function; runtime state observable in browser.
+- Work Done:
+  - **`views/_asset-picker.ejs` `_apUpdateControls()` rewritten.** Local helper `_apApply(wrapperEl, controls, defaultTitle)` now centralises the toggle: sets `wrapperEl.style.opacity` to `'0.5'` and `wrapperEl.title` to `'Not applicable to pages'` / `'Not applicable to users'` when the source is page/user; resets to defaults otherwise. Each form control inside the wrapper gets `disabled = isPageOrUser`. Source-label string ("pages" / "users" / "this source") computed once so the tooltip is specific.
+  - **Upload button gets its original title restored** when re-enabled — passes `'Upload Attachment'` as the default-title fallback so cycling source dropdown values doesn't strip the existing hover hint.
+  - **No reflow.** The four wrappers stay in the layout grid. Controls dim instead of vanishing. Operator's morph complaint resolved.
+- Commits: pending.
+- Files Modified:
+  - `views/_asset-picker.ejs` (+22/-7 in the `_apUpdateControls` block)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-12-14
 
 - Agent: Claude Opus 4.7

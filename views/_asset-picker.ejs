@@ -178,20 +178,32 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
         }
     });
 
-    // Show/hide controls depending on source type
+    // #692 — when source is page or user, file-type / sort / upload / the
+    // advanced filter row don't apply. Disable + dim with a tooltip rather
+    // than hide, so the layout doesn't jump and the user can see what
+    // controls exist for other source types.
     var mimeColEl    = document.getElementById('ap-mime-col');
     var sortColEl    = document.getElementById('ap-sort-col');
     var uploadBtnEl  = document.getElementById('ap-upload-btn');
     var advancedRow  = document.getElementById('ap-advanced-row');
     function _apUpdateControls() {
-        // Page and User sources share the same control set: file-type, sort,
-        // upload, and advanced filters don't apply to either. (Tracked for
-        // UX polish in #692.)
         var isPageOrUser = srcEl.value === 'page' || srcEl.value === 'user';
-        if (mimeColEl)   mimeColEl.style.display   = isPageOrUser ? 'none' : '';
-        if (sortColEl)   sortColEl.style.display    = isPageOrUser ? 'none' : '';
-        if (uploadBtnEl) uploadBtnEl.style.display  = isPageOrUser ? 'none' : '';
-        if (advancedRow) advancedRow.style.display  = isPageOrUser ? 'none' : '';
+        var sourceLabel = srcEl.value === 'page' ? 'pages' : srcEl.value === 'user' ? 'users' : 'this source';
+        var notApplicable = 'Not applicable to ' + sourceLabel;
+        function _apApply(wrapperEl, controls, defaultTitle) {
+            if (wrapperEl) {
+                wrapperEl.style.opacity = isPageOrUser ? '0.5' : '';
+                wrapperEl.title = isPageOrUser ? notApplicable : (defaultTitle || '');
+            }
+            controls.forEach(function (el) {
+                if (el) el.disabled = isPageOrUser;
+            });
+        }
+        _apApply(mimeColEl, [mimeEl]);
+        _apApply(sortColEl, [sortEl]);
+        // The wrapper IS the upload button; restore its original title when re-enabled.
+        _apApply(uploadBtnEl, [uploadBtnEl], 'Upload Attachment');
+        _apApply(advancedRow, [dateFromEl, dateToEl, dateFieldEl, pathPrefixEl, inclHiddenEl]);
     }
     _apUpdateControls();
 
