@@ -17,6 +17,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 - Files Modified:
   - `geohazardwatch/.github/workflows/auto-tag.yml`
   - `docs/project_log.md` (this entry)
+- Outcome: PR #44 squash-merged at 08:35:12Z as `aeea89c8`. `geohazardwatch#41` auto-closed at 08:35:14Z via the `Closes #41` keyword. CI + Addon rename detector green on the merge commit. Auto-tag correctly did NOT fire on this merge — `.github/workflows/auto-tag.yml` is not in auto-tag.yml's trigger paths (`addons/**`, `Dockerfile`, `package.json`, `package-lock.json`), so a workflow-only change rightly doesn't produce a version bump. Local + remote branch deleted. First merge-via-CLI block of the day surfaced a missing `workflow` scope on the existing `gh` PAT; operator added it via `gh auth refresh -h github.com -s workflow` for next time, then merged this one in the web UI.
 
 ## 2026-05-12-01
 
