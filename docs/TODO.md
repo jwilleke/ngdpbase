@@ -34,7 +34,6 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote â€
 
 | # | Title |
 |---|---|
-| #662 | Invalid system-category "User Pages" |
 | #661 | Profile Page (/profile) |
 | #660 | Agent and ./docs documentation |
 | #653 | 'Using FormPlugin' page missing |
@@ -45,6 +44,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote â€
 | #599 | showdown ReDoS â€” no upstream patch (mitigation only) |
 
 *#667 (vitest globals â†’ 171 TS errors) closed 2026-05-12 via project-references fix in `0f09bd48`.*
+*#662 (Invalid system-category "User Pages") closed 2026-05-12 via UserManager fix in `dbdd0f52` â€” existing user pages on disk may still carry the legacy value; see CHANGELOG for the migration one-liner.*
 
 ## Operator-decision carryover
 
