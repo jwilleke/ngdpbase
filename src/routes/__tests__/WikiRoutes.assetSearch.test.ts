@@ -462,6 +462,33 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
 
       expect(service.search).not.toHaveBeenCalled();
     });
+
+    // #696 slice 3: anonymous viewers can search pages (per-page ACL handled
+    // by SearchManager via wikiContext). Restores the open /search behaviour
+    // after that URL started rendering the asset-picker UI.
+    it('allows anonymous viewer for types=page (no editor role required)', async () => {
+      const pageManager = makePageManager(['Welcome']);
+      const routes = makeRoutesWithPages(makeAssetService(), pageManager);
+      const req = makeReq({ userContext: null, query: { types: 'page' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(res.status).not.toHaveBeenCalledWith(403);
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.success).toBe(true);
+      expect(payload.results[0].id).toBe('Welcome');
+    });
+
+    it('still requires editor role for types=attachment (anon → 403)', async () => {
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager());
+      const req = makeReq({ userContext: null, query: { types: 'attachment' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+    });
   });
 
   // ---------------------------------------------------------------------------

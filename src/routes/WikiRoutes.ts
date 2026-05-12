@@ -3079,218 +3079,76 @@ ${panes}
     }
   }
 
+  /**
+   * GET /search — unified search/browse surface (#693 slice 3 of unification).
+   *
+   * Renders the asset-picker UI shell (`views/browse-attachments.ejs`) and
+   * threads URL params through as initial picker state. The picker JS then
+   * calls `/api/assets/search` on load to populate results. All server-side
+   * result rendering moved to that JSON API; this handler is intentionally
+   * minimal.
+   *
+   * Legacy param aliases honoured so bookmarked URLs continue to work:
+   *   tab=attachments|media|pages|users → types=attachment|media|page|user
+   *   attachmentQuery / mediaQuery      → q
+   *   mimeType                          → mimeCategory
+   *
+   * Page-search filters (category / keywords / systemKeywords / searchIn)
+   * thread through to `/api/assets/search?types=page` (UI controls deferred
+   * to #691; the params still apply at the API level).
+   */
   async searchPages(req: Request, res: Response) {
     try {
-      const query = (req.query.q as string) || '';
+      // Helpers (local to keep the rewrite self-contained).
+      const firstString = (val: unknown): string =>
+        Array.isArray(val) ? (typeof val[0] === 'string' ? val[0] : '')
+          : typeof val === 'string' ? val
+            : '';
+      const queryParamArray = (val: unknown): string[] => {
+        const arr = Array.isArray(val)
+          ? val.filter((v): v is string => typeof v === 'string')
+          : typeof val === 'string' ? [val] : [];
+        return arr.filter(s => s.trim() !== '');
+      };
 
-      // Create WikiContext as single source of truth for this operation
-      const wikiContext = this.createWikiContext(req, {
-        context: WikiContext.CONTEXT.NONE,
-        response: res
-      });
+      const initQuery = firstString(req.query.q)
+        || firstString(req.query.attachmentQuery)
+        || firstString(req.query.mediaQuery)
+        || '';
 
-      // Handle multiple categories and keywords
-      const rawCategories = req.query.category;
-      let categories: string[] = Array.isArray(rawCategories)
-        ? rawCategories.filter((c): c is string => typeof c === 'string')
-        : typeof rawCategories === 'string' ? [rawCategories] : [];
-      categories = categories.filter((cat: string) => cat.trim() !== '');
+      const legacyTab = firstString(req.query.tab);
+      const explicitTypes = firstString(req.query.types);
+      const initSource = explicitTypes
+        || (legacyTab === 'attachments' ? 'attachment'
+          : legacyTab === 'media' ? 'media'
+            : legacyTab === 'pages' || legacyTab === 'page' ? 'page'
+              : legacyTab === 'users' || legacyTab === 'user' ? 'user'
+                : '');
 
-      const rawKeywords = req.query.keywords;
-      let userKeywords: string[] = Array.isArray(rawKeywords)
-        ? rawKeywords.filter((k): k is string => typeof k === 'string')
-        : typeof rawKeywords === 'string' ? [rawKeywords] : [];
-      userKeywords = userKeywords.filter((kw: string) => kw.trim() !== '');
+      const initMime = firstString(req.query.mimeCategory)
+        || firstString(req.query.mimeType)
+        || '';
 
-      const rawSystemKeywords = req.query.systemKeywords;
-      let systemKeywords: string[] = Array.isArray(rawSystemKeywords)
-        ? rawSystemKeywords.filter((k): k is string => typeof k === 'string')
-        : typeof rawSystemKeywords === 'string' ? [rawSystemKeywords] : [];
-      systemKeywords = systemKeywords.filter((kw: string) => kw.trim() !== '');
+      const initFilters = {
+        category:       queryParamArray(req.query.category),
+        keywords:       queryParamArray(req.query.keywords),
+        systemKeywords: queryParamArray(req.query.systemKeywords),
+        searchIn:       queryParamArray(req.query.searchIn)
+      };
 
-      // Handle multiple searchIn values
-      const rawSearchIn = req.query.searchIn;
-      let searchIn: string[] = Array.isArray(rawSearchIn)
-        ? rawSearchIn.filter((s): s is string => typeof s === 'string')
-        : typeof rawSearchIn === 'string' ? [rawSearchIn] : ['all'];
-      searchIn = searchIn.filter((si: string) => si.trim() !== '');
-      if (searchIn.length === 0) searchIn = ['all'];
-
-      const searchManager = this.engine.getManager('SearchManager');
-
-      // Get common template data (includes theme paths, user, pages, etc.)
       const commonData = await this.getCommonTemplateData(req);
 
-      let results: unknown[] = [];
-      let searchType = 'text';
-
-      // Determine whether the search form was submitted (q present, or filters selected)
-      const submitted = 'q' in req.query || categories.length > 0 || userKeywords.length > 0 || systemKeywords.length > 0;
-
-      if (submitted) {
-        if (!query.trim() && categories.length === 0 && userKeywords.length === 0 && systemKeywords.length === 0) {
-          // Empty query, no filters — return all indexed pages
-          results = await searchManager.getAllDocuments();
-          searchType = 'all';
-        } else if (systemKeywords.length > 0 && !query.trim() && categories.length === 0 && userKeywords.length === 0) {
-          // System keywords-only search (#509)
-          results = await (searchManager.searchBySystemKeywordsList
-            ? searchManager.searchBySystemKeywordsList(systemKeywords)
-            : []);
-          searchType = 'systemKeywords';
-        } else if (categories.length > 0 && !query.trim() && userKeywords.length === 0 && systemKeywords.length === 0) {
-          // Category-only search
-          results = await (searchManager.searchByCategories
-            ? searchManager.searchByCategories(categories)
-            : searchManager.searchByCategory(categories[0]));
-          searchType = 'category';
-        } else if (userKeywords.length > 0 && !query.trim() && categories.length === 0 && systemKeywords.length === 0) {
-          // User keywords-only search
-          results = await (searchManager.searchByUserKeywordsList
-            ? searchManager.searchByUserKeywordsList(userKeywords)
-            : searchManager.searchByUserKeywords(userKeywords[0]));
-          searchType = 'keywords';
-        } else {
-          // Advanced search with multiple criteria using WikiContext
-          results = await searchManager.advancedSearchWithContext(wikiContext, {
-            query: query,
-            categories: categories,
-            userKeywords: userKeywords,
-            systemKeywords: systemKeywords,
-            searchIn: searchIn,
-            maxResults: 50
-          });
-          searchType = 'advanced';
-        }
-      }
-
-      // Pagination for page results
-      const pageSize = 25;
-      const pageParam = Math.max(1, parseInt(req.query.page as string) || 1);
-      const totalCount = results.length;
-      const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-      const currentPage = Math.min(pageParam, totalPages);
-      const pageOffset = (currentPage - 1) * pageSize;
-      results = results.slice(pageOffset, pageOffset + pageSize);
-
-      // Get available categories and keywords for dropdowns
-      // Ensure arrays are always returned (defensive handling)
-      const availableCats = this.getSystemCategories();
-      const systemCategories = Array.isArray(availableCats) ? availableCats : [];
-      const availableKws = this.getUserKeywordsWithDescriptions();
-      const userKeywordsList = Array.isArray(availableKws) ? availableKws : [];
-      // System keywords from index (#509) — only ES provider returns non-empty list
-      const availableSystemKeywords: string[] = searchManager.getAllSystemKeywords
-        ? await searchManager.getAllSystemKeywords()
-        : [];
-
-      // Get stats for search results (optional, fallback to empty if not available)
-      let stats: unknown = {};
-      if (searchManager.getStats) {
-        stats = searchManager.getStats();
-      }
-
-      // Handle asset tab searches via AssetService (DRY: single search path for attachments + media)
-      const searchTab = (req.query.tab as string) || '';
-      const attachmentQuery = (req.query.attachmentQuery as string) || '';
-      const mimeType = (req.query.mimeType as string) || '';
-      const mediaQuery = (req.query.mediaQuery as string) || '';
-      const mediaPageSize = 48;
-      const mediaPageParam = Math.max(1, parseInt(req.query.mediaPage as string) || 1);
-      const mediaOffset = (mediaPageParam - 1) * mediaPageSize;
-
-      const assetService = this.engine.getManager('AssetService');
-
-      let attachmentResults: Array<{ id: string; filename: string; encodingFormat: string; url: string; mentions?: string[] }> = [];
-      let mediaPage: { results: Array<{ id: string; filename: string; encodingFormat: string; url: string; thumbnailUrl?: string; dateCreated?: string; mentions?: string[]; isPrivate?: boolean }>; total: number; hasMore: boolean } = { results: [], total: 0, hasMore: false };
-
-      // Sort controls (#605): mirror /api/assets/search validation so the two
-      // endpoints respond identically to the same logical query. The /search
-      // page may not surface UI controls for every filter yet, but URL params
-      // must be honoured at the handler layer.
-      const assetSort = req.query.sort === 'caption' ? 'caption' as const : 'date' as const;
-      const assetOrder = req.query.order === 'desc' ? 'desc' as const : 'asc' as const;
-
-      if (searchTab === 'attachments' && assetService) {
-        try {
-          const page = await assetService.search({ query: attachmentQuery, types: ['attachment'], pageSize: 500, sort: assetSort, order: assetOrder, wikiContext });
-          attachmentResults = mimeType
-            ? page.results.filter((r: { encodingFormat: string }) => r.encodingFormat.toLowerCase().startsWith(mimeType.toLowerCase()))
-            : page.results;
-        } catch (attachErr) {
-          logger.warn('Error searching attachments via AssetService:', attachErr);
-        }
-      }
-
-      if (searchTab === 'media' && assetService) {
-        try {
-          mediaPage = await assetService.search({ query: mediaQuery, types: ['media'], pageSize: mediaPageSize, offset: mediaOffset, sort: assetSort, order: assetOrder, wikiContext });
-        } catch (mediaErr) {
-          logger.warn('Error searching media via AssetService:', mediaErr);
-        }
-      }
-
-      // #149 Phase 2: pre-resolve keyword URIs for microdata itemid attributes
-      // on search-results.ejs. Mirrors the page-view handler pattern above.
-      const searchKeywordUris: Record<string, string> = {};
-      const searchCatalogManager = this.engine.getManager('CatalogManager');
-      if (searchCatalogManager && typeof searchCatalogManager.resolveUri === 'function') {
-        const seen = new Set<string>();
-        for (const r of results) {
-          const md = (r as { metadata?: Record<string, unknown> }).metadata ?? {};
-          const allKws: string[] = [
-            ...((md.userKeywords as string[] | undefined) ?? []),
-            ...((md.systemKeywords as string[] | undefined) ?? []),
-            ...(typeof md.category === 'string' && md.category ? [md.category] : [])
-          ];
-          for (const kw of allKws) {
-            if (kw && !seen.has(kw)) {
-              seen.add(kw);
-              const uri = await searchCatalogManager.resolveUri(kw);
-              if (uri) searchKeywordUris[kw] = uri;
-            }
-          }
-        }
-      }
-
-      res.render('search-results', {
+      return res.render('browse-attachments', {
         ...commonData,
-        title: 'Search Results',
-        results: results,
-        keywordUris: searchKeywordUris,
-        count: results.length,
-        totalCount: totalCount,
-        currentPage: currentPage,
-        totalPages: totalPages,
-        pageSize: pageSize,
-        submitted: submitted,
-        query: query,
-        category: categories.length > 0 ? categories[0] : '', // Singular for template compat
-        categories: categories,
-        userKeywords: userKeywords,
-        systemKeywords: systemKeywords,
-        searchIn: searchIn,
-        searchType: searchType,
-        systemCategories: systemCategories,
-        userKeywordsList: userKeywordsList,
-        availableCategories: systemCategories,
-        availableKeywords: userKeywordsList,
-        availableSystemKeywords: availableSystemKeywords,
-        stats: stats,
-        // Asset tab search
-        searchTab: searchTab,
-        attachmentQuery: attachmentQuery,
-        mimeType: mimeType,
-        attachmentResults: attachmentResults,
-        mediaQuery: mediaQuery,
-        mediaPage: mediaPage,
-        mediaCurrentPage: mediaPageParam,
-        mediaOffset: mediaOffset,
-        mediaPageSize: mediaPageSize
+        title: 'Search',
+        assetPickerInitQuery:   initQuery,
+        assetPickerInitSource:  initSource,
+        assetPickerInitMime:    initMime,
+        assetPickerInitFilters: initFilters
       });
     } catch (err: unknown) {
-      logger.error('Error searching:', err);
-      res.status(500).send('Error performing search');
+      logger.error('Error rendering search page:', err);
+      return res.status(500).send('Error performing search');
     }
   }
 
@@ -7948,20 +7806,29 @@ ${panes}
   async assetSearch(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
-      if (!wikiContext.hasRole('admin', 'editor', 'contributor')) {
-        return res.status(403).json({ success: false, error: 'Access denied' });
-      }
-
-      const assetService = this.engine.getManager('AssetService');
-
-      if (!assetService) {
-        return res.status(503).json({ success: false, error: 'AssetService unavailable' });
-      }
 
       const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
       const typesParam = typeof req.query.types === 'string' ? req.query.types : '';
       const pageSize = Math.min(parseInt(req.query.pageSize as string, 10) || 48, 200);
       const offset = Math.max(parseInt(req.query.offset as string, 10) || 0, 0);
+
+      // Auth model (#696):
+      //   types=page  → anon allowed; SearchManager filters per-page ACL via
+      //                 wikiContext. Matches the previous /search behaviour.
+      //   types=user  → handled inside the user branch (search-user permission).
+      //   anything else (attachments, media, all-sources) → editor surface,
+      //                 keep the editor/contributor/admin gate.
+      const needsEditorRole = typesParam !== 'page' && typesParam !== 'user';
+      if (needsEditorRole && !wikiContext.hasRole('admin', 'editor', 'contributor')) {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+      }
+
+      const assetService = this.engine.getManager('AssetService');
+
+      // AssetService is only used by the fan-out (non-page, non-user) branches.
+      if (needsEditorRole && !assetService) {
+        return res.status(503).json({ success: false, error: 'AssetService unavailable' });
+      }
 
       // Pages are a separate data source — handled directly via PageManager
       // or SearchManager.advancedSearchWithContext (slice 2 of #693, #695).
@@ -9246,7 +9113,13 @@ ${panes}
     });
 
     // Non-admin attachment browser (editor/contributor access)
-    app.get('/attachments/browse', (req: Request, res: Response) => this.browseAttachments(req, res));
+    // #696: /attachments/browse is now an alias for /search (asset-picker UI
+    // is canonical there). 302 preserves the query string so any pre-swap
+    // bookmark like /attachments/browse?mimeCategory=image still resolves.
+    app.get('/attachments/browse', (req: Request, res: Response) => {
+      const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+      return res.redirect(302, '/search' + qs);
+    });
     app.get('/attachments/browse/api', (req: Request, res: Response) => this.browseAttachmentsApi(req, res));
 
     // Attachment routes

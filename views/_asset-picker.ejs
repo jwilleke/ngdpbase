@@ -1,19 +1,30 @@
 <%
 /*
- * _asset-picker.ejs — shared Browse Assets component
+ * _asset-picker.ejs — shared Browse Assets / Search component
  *
  * Expected locals:
- *   assetPickerMode       : 'page' | 'modal'
- *   assetPickerInsert     : true | false   (show Insert button vs Copy button)
- *   assetPickerPageName   : string | undefined  (wiki page context for upload)
- *   assetPickerInitQuery  : string | undefined  (pre-populate query on load)
- *   assetPickerInitSource : 'attachment' | 'media' | '' | undefined  (pre-select source filter)
+ *   assetPickerMode        : 'page' | 'modal'
+ *   assetPickerInsert      : true | false   (show Insert button vs Copy button)
+ *   assetPickerPageName    : string | undefined  (wiki page context for upload)
+ *   assetPickerInitQuery   : string | undefined  (pre-populate query on load)
+ *   assetPickerInitSource  : 'attachment' | 'media' | 'page' | 'user' | '' | undefined
+ *                            (pre-select source filter)
+ *   assetPickerInitMime    : 'image' | 'document' | 'other' | '' | undefined
+ *                            (pre-select mime category filter, attachments only)
+ *   assetPickerInitFilters : { category?: string[], keywords?: string[],
+ *                              systemKeywords?: string[], searchIn?: string[] } | undefined
+ *                            UI controls for these are tracked in #691; this slice (#696)
+ *                            just threads them through to /api/assets/search so bookmarked
+ *                            URLs like /search?category=foo continue returning filtered
+ *                            results.
  */
-var _apMode       = typeof assetPickerMode       !== 'undefined' ? assetPickerMode       : 'page';
-var _apInsert     = typeof assetPickerInsert      !== 'undefined' ? assetPickerInsert      : false;
-var _apPageName   = typeof assetPickerPageName    !== 'undefined' ? assetPickerPageName    : '';
-var _apInitQuery  = typeof assetPickerInitQuery   !== 'undefined' ? assetPickerInitQuery   : '';
-var _apInitSource = typeof assetPickerInitSource  !== 'undefined' ? assetPickerInitSource  : '';
+var _apMode        = typeof assetPickerMode        !== 'undefined' ? assetPickerMode        : 'page';
+var _apInsert      = typeof assetPickerInsert       !== 'undefined' ? assetPickerInsert       : false;
+var _apPageName    = typeof assetPickerPageName     !== 'undefined' ? assetPickerPageName     : '';
+var _apInitQuery   = typeof assetPickerInitQuery    !== 'undefined' ? assetPickerInitQuery    : '';
+var _apInitSource  = typeof assetPickerInitSource   !== 'undefined' ? assetPickerInitSource   : '';
+var _apInitMime    = typeof assetPickerInitMime     !== 'undefined' ? assetPickerInitMime     : '';
+var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPickerInitFilters ? assetPickerInitFilters : {};
 %>
 
 <!-- Controls bar -->
@@ -222,6 +233,23 @@ var _apInitSource = typeof assetPickerInitSource  !== 'undefined' ? assetPickerI
             var pathPfx = pathPrefixEl ? pathPrefixEl.value.trim() : '';
             if (pathPfx) params.set('pathPrefix', pathPfx);
             if (inclHiddenEl && inclHiddenEl.checked) params.set('includeHidden', 'true');
+
+            // #696: hidden page-source filters (category / keywords / etc.) seeded
+            // from URL params on init. No UI controls today (#691); we forward
+            // them on every search so bookmarked /search?category=foo URLs return
+            // filtered results. Filters apply regardless of source dropdown — if
+            // the user switches to Media, the page filters get ignored by the
+            // backend (Media branch doesn't read them). Acceptable for v1.
+            if (_apHiddenFilters) {
+                ['category', 'keywords', 'systemKeywords', 'searchIn'].forEach(function (key) {
+                    var vals = _apHiddenFilters[key];
+                    if (Array.isArray(vals)) {
+                        vals.forEach(function (v) { if (v) params.append(key, v); });
+                    } else if (typeof vals === 'string' && vals) {
+                        params.append(key, vals);
+                    }
+                });
+            }
 
             var resp = await csrfFetch('/api/assets/search?' + params.toString());
             if (!resp.ok) throw new Error('Search failed (' + resp.status + ')');
@@ -504,13 +532,20 @@ var _apInitSource = typeof assetPickerInitSource  !== 'undefined' ? assetPickerI
             .replace(/'/g, '&#39;');
     }
 
-    // Pre-populate query/source from caller (e.g. search page passing its query param)
+    // Pre-populate from caller (e.g. /search passing its URL params as init state)
     <% if (_apInitQuery) { %>
     qEl.value = <%- JSON.stringify(_apInitQuery) %>;
     <% } %>
     <% if (_apInitSource) { %>
     srcEl.value = <%- JSON.stringify(_apInitSource) %>;
+    _apUpdateControls();
     <% } %>
+    <% if (_apInitMime) { %>
+    if (mimeEl) mimeEl.value = <%- JSON.stringify(_apInitMime) %>;
+    <% } %>
+    // #696: hidden filters — no UI control today (#691). Read once on init
+    // and re-attached to every search URL in _apSearch.
+    var _apHiddenFilters = <%- JSON.stringify(_apInitFilters) %>;
 
     // Auto-load on init
     _apSearch(0);

@@ -578,16 +578,28 @@ describe('WikiRoutes — coverage batch 13', () => {
     });
   });
 
-  describe('GET /attachments/browse (browseAttachments)', () => {
-    test('returns 403 when user lacks editor/contributor role', async () => {
+  describe('GET /attachments/browse', () => {
+    // #696 (slice 3 of #693): /attachments/browse is now an alias for /search.
+    // The asset-picker UI lives at /search; this URL 302-redirects so any
+    // pre-swap bookmark continues to resolve. Auth happens at /search (which
+    // is open) and at /api/assets/search (which gates per-type).
+    test('302-redirects to /search regardless of role', async () => {
       mockUserContext = { ...adminUser, roles: ['viewer'] };
-      const res = await request(app).get('/attachments/browse');
-      expect(res.status).toBe(403);
+      const res = await request(app).get('/attachments/browse').redirects(0);
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe('/search');
     });
 
-    test('renders 200 for admin user', async () => {
-      const res = await request(app).get('/attachments/browse');
-      expect(res.status).toBe(200);
+    test('302-redirects to /search for admin user', async () => {
+      const res = await request(app).get('/attachments/browse').redirects(0);
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe('/search');
+    });
+
+    test('preserves query string on redirect', async () => {
+      const res = await request(app).get('/attachments/browse?q=foo&mimeCategory=image').redirects(0);
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe('/search?q=foo&mimeCategory=image');
     });
   });
 

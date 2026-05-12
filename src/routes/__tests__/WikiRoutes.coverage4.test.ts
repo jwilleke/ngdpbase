@@ -496,22 +496,33 @@ describe('WikiRoutes — coverage batch 4', () => {
   // ── GET /search ──────────────────────────────────────────────────────────────
 
   describe('GET /search', () => {
-    test('renders search page with no query', async () => {
+    // #696 (slice 3 of #693): /search now renders the asset-picker UI shell.
+    // Result rendering moved to /api/assets/search (client-side fetch by the
+    // picker JS). The handler is intentionally minimal — auth check via
+    // wikiContext + URL-param translation + EJS render.
+    test('renders 200 with no query', async () => {
       const res = await request(app).get('/search');
       expect(res.status).toBe(200);
     });
 
-    test('renders search results for text query', async () => {
-      mockSearchManager.advancedSearchWithContext.mockResolvedValue([{ pageName: 'TestPage', score: 1 }]);
+    test('renders 200 for text query', async () => {
       const res = await request(app).get('/search?q=test');
       expect(res.status).toBe(200);
-      expect(mockSearchManager.advancedSearchWithContext).toHaveBeenCalled();
     });
 
-    test('renders all documents when query is submitted with empty q', async () => {
+    test('renders 200 for empty submit (q=)', async () => {
       const res = await request(app).get('/search?q=');
       expect(res.status).toBe(200);
-      expect(mockSearchManager.getAllDocuments).toHaveBeenCalled();
+    });
+
+    test('does not call SearchManager from /search handler — moved to /api/assets/search', async () => {
+      // The picker JS calls /api/assets/search which then calls SearchManager;
+      // the /search handler itself should not invoke SearchManager directly.
+      mockSearchManager.advancedSearchWithContext.mockClear();
+      mockSearchManager.getAllDocuments.mockClear();
+      await request(app).get('/search?q=test');
+      expect(mockSearchManager.advancedSearchWithContext).not.toHaveBeenCalled();
+      expect(mockSearchManager.getAllDocuments).not.toHaveBeenCalled();
     });
   });
 

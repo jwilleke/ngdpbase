@@ -747,48 +747,30 @@ describe('WikiRoutes — additional coverage', () => {
   // ── searchPages ───────────────────────────────────────────────────────────
 
   describe('GET /search — searchPages', () => {
-    test('category-only search calls searchByCategories', async () => {
-      const res = await request(app).get('/search?category=general');
+    // #696 (slice 3 of #693): /search is now a minimal renderer that hands
+    // initial state to the asset-picker UI. The picker JS calls
+    // /api/assets/search to do the actual querying. So SearchManager is no
+    // longer called from this handler — see WikiRoutes.searchPages.test.ts
+    // for direct unit coverage of the URL-param → init-state translation.
+    test.each(['', '?q=hello', '?q=', '?category=general', '?keywords=foo', '?systemKeywords=bar'])(
+      'returns 200 and does not query SearchManager directly for /search%s',
+      async (qs) => {
+        mockSearchManager.advancedSearchWithContext.mockClear();
+        mockSearchManager.getAllDocuments.mockClear();
+        mockSearchManager.searchByCategories.mockClear();
+        mockSearchManager.searchByUserKeywordsList.mockClear();
+        mockSearchManager.searchBySystemKeywordsList.mockClear();
 
-      expect(res.status).toBe(200);
-      expect(mockSearchManager.searchByCategories).toHaveBeenCalledWith(['general']);
-    });
+        const res = await request(app).get('/search' + qs);
 
-    test('user-keyword-only search calls searchByUserKeywordsList', async () => {
-      const res = await request(app).get('/search?keywords=foo');
-
-      expect(res.status).toBe(200);
-      expect(mockSearchManager.searchByUserKeywordsList).toHaveBeenCalledWith(['foo']);
-    });
-
-    test('system-keyword-only search calls searchBySystemKeywordsList', async () => {
-      const res = await request(app).get('/search?systemKeywords=bar');
-
-      expect(res.status).toBe(200);
-      expect(mockSearchManager.searchBySystemKeywordsList).toHaveBeenCalledWith(['bar']);
-    });
-
-    test('text query triggers advancedSearchWithContext', async () => {
-      const res = await request(app).get('/search?q=hello');
-
-      expect(res.status).toBe(200);
-      expect(mockSearchManager.advancedSearchWithContext).toHaveBeenCalled();
-    });
-
-    test('empty submitted query returns all documents via getAllDocuments', async () => {
-      const res = await request(app).get('/search?q=');
-
-      expect(res.status).toBe(200);
-      expect(mockSearchManager.getAllDocuments).toHaveBeenCalled();
-    });
-
-    test('no query params renders search page without querying', async () => {
-      const res = await request(app).get('/search');
-
-      expect(res.status).toBe(200);
-      expect(mockSearchManager.advancedSearchWithContext).not.toHaveBeenCalled();
-      expect(mockSearchManager.getAllDocuments).not.toHaveBeenCalled();
-    });
+        expect(res.status).toBe(200);
+        expect(mockSearchManager.advancedSearchWithContext).not.toHaveBeenCalled();
+        expect(mockSearchManager.getAllDocuments).not.toHaveBeenCalled();
+        expect(mockSearchManager.searchByCategories).not.toHaveBeenCalled();
+        expect(mockSearchManager.searchByUserKeywordsList).not.toHaveBeenCalled();
+        expect(mockSearchManager.searchBySystemKeywordsList).not.toHaveBeenCalled();
+      }
+    );
   });
 
   // ── previewPage ───────────────────────────────────────────────────────────

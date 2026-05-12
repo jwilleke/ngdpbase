@@ -2,6 +2,33 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-12-11
+
+- Agent: Claude Opus 4.7
+- Subject: EPIC #693 slice 3 — the unification swap. `/search` now renders the asset-picker UI shell instead of `search-results.ejs`. `/attachments/browse` 302-redirects to `/search` preserving the query string. `views/search-results.ejs` deleted. The ~200-line `WikiRoutes.searchPages` handler reduced to a ~60-line minimal renderer: URL-param translation only, all result rendering moved to `/api/assets/search` (which the picker JS calls). Sub-issue #696 filed and labelled `in review`.
+- Current Issue: #696 (in review). EPIC #693 (open — all three implementation slices code-complete; epic closes after live smoke).
+- Tests: 16 new in `WikiRoutes.searchPages.test.ts` (direct unit tests for URL-param → init-state translation); 3 new in `WikiRoutes.assetSearch.test.ts` (anon allowed for types=page; types=attachment still 403 for anon); 3 new in `coverage13.test.ts` (302 redirect with query-string preservation); 6 in `coverage4.test.ts` and 6 in `coverage.test.ts` rewritten to assert SearchManager is NOT called from the new minimal handler. Full suite 5450/5450; `npx tsc --noEmit` clean.
+- Work Done:
+  - **`WikiRoutes.searchPages` rewritten as a minimal renderer.** Reads `q`, `types`, `category`, `keywords`, `systemKeywords`, `searchIn`, `mimeCategory` plus legacy aliases (`tab=attachments|media|pages|users` → `types=…`; `attachmentQuery`/`mediaQuery` → `q`; `mimeType` → `mimeCategory`). Renders `browse-attachments` template with `assetPickerInit{Query,Source,Mime,Filters}` locals. All server-side searching deleted from this handler.
+  - **`/attachments/browse` route → 302 redirect to `/search`** preserving query string. Old `browseAttachments` method left in place (unused; cleanup is a follow-up).
+  - **`/api/assets/search` auth model relaxed** so anonymous viewers can search pages (`types=page`). Per-page ACL is enforced inside `SearchManager.advancedSearchWithContext` via `wikiContext`. `types=user` keeps the `search-user` permission check from slice 1. `types=attachment|media|<unset>` still require editor/contributor/admin. Preserves the existing pre-swap `/search` behaviour for anon users (who could previously search public pages).
+  - **`_asset-picker.ejs` extended** with two new template locals: `assetPickerInitMime` (pre-select MIME filter) and `assetPickerInitFilters` (a `{category, keywords, systemKeywords, searchIn}` object). The filters have no UI controls (deferred to #691), but they're appended to every `/api/assets/search` URL via a new `_apHiddenFilters` JS path so bookmarked `/search?category=foo&keywords=bar` URLs return filtered results on initial load.
+  - **`browse-attachments.ejs` extended** to thread the four init params into the `_asset-picker` include. Page title now reads from the optional `title` local ("Search" by default).
+  - **`views/search-results.ejs` deleted** — the file the operator's screenshot 1 came from. Bespoke media-tab pagination (`<ul class="pagination pagination-sm">` with hand-written prev/Page X of Y/next) goes away with it; pagination is now uniformly the JS-driven `WikiPagination.renderNav` numbered form across all source types.
+  - **Test rewrites:** 14 broken tests (6 in coverage.test.ts; 4 in coverage4.test.ts; 2 in coverage13.test.ts; 2 in assetSearch.test.ts implicit) updated to match new behaviour. New `WikiRoutes.searchPages.test.ts` (16 tests) gives direct unit coverage of the URL-param translation — including all legacy aliases via `test.each`.
+- Commits: pending — one commit covering all the changes + this log entry. Diff will be larger than prior slices (multi-file refactor).
+- Files Modified:
+  - `src/routes/WikiRoutes.ts` (~−200/+80 around `searchPages`; +6 for the redirect; +12 for the relaxed auth)
+  - `views/_asset-picker.ejs` (+~30 across three edits — new locals, hidden-filters JS, init-state apply)
+  - `views/browse-attachments.ejs` (+~10 — title local + four new asset-picker locals)
+  - `views/search-results.ejs` (deleted, was ~520 lines)
+  - `src/routes/__tests__/WikiRoutes.searchPages.test.ts` (new, ~180 lines, 16 tests)
+  - `src/routes/__tests__/WikiRoutes.assetSearch.test.ts` (+~30 — 2 new anon-page tests)
+  - `src/routes/__tests__/WikiRoutes.coverage4.test.ts` (rewrote `/search` block)
+  - `src/routes/__tests__/WikiRoutes.coverage13.test.ts` (rewrote `/attachments/browse` block)
+  - `src/routes/__tests__/WikiRoutes.coverage.test.ts` (collapsed 6 tests → 1 `test.each`)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-12-10
 
 - Agent: Claude Opus 4.7
