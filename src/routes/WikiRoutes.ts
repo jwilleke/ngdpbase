@@ -3204,9 +3204,16 @@ ${panes}
       let attachmentResults: Array<{ id: string; filename: string; encodingFormat: string; url: string; mentions?: string[] }> = [];
       let mediaPage: { results: Array<{ id: string; filename: string; encodingFormat: string; url: string; thumbnailUrl?: string; dateCreated?: string; mentions?: string[]; isPrivate?: boolean }>; total: number; hasMore: boolean } = { results: [], total: 0, hasMore: false };
 
+      // Sort controls (#605): mirror /api/assets/search validation so the two
+      // endpoints respond identically to the same logical query. The /search
+      // page may not surface UI controls for every filter yet, but URL params
+      // must be honoured at the handler layer.
+      const assetSort = req.query.sort === 'caption' ? 'caption' as const : 'date' as const;
+      const assetOrder = req.query.order === 'desc' ? 'desc' as const : 'asc' as const;
+
       if (searchTab === 'attachments' && assetService) {
         try {
-          const page = await assetService.search({ query: attachmentQuery, types: ['attachment'], pageSize: 500, wikiContext });
+          const page = await assetService.search({ query: attachmentQuery, types: ['attachment'], pageSize: 500, sort: assetSort, order: assetOrder, wikiContext });
           attachmentResults = mimeType
             ? page.results.filter((r: { encodingFormat: string }) => r.encodingFormat.toLowerCase().startsWith(mimeType.toLowerCase()))
             : page.results;
@@ -3217,7 +3224,7 @@ ${panes}
 
       if (searchTab === 'media' && assetService) {
         try {
-          mediaPage = await assetService.search({ query: mediaQuery, types: ['media'], pageSize: mediaPageSize, offset: mediaOffset, wikiContext });
+          mediaPage = await assetService.search({ query: mediaQuery, types: ['media'], pageSize: mediaPageSize, offset: mediaOffset, sort: assetSort, order: assetOrder, wikiContext });
         } catch (mediaErr) {
           logger.warn('Error searching media via AssetService:', mediaErr);
         }
