@@ -2,6 +2,26 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-12-06
+
+- Agent: Claude Opus 4.7
+- Subject: `#688` — make `/profile`'s "My Contributions" card embeddable on a normal wiki page. New plugin `MyContributionsPlugin` invoked as `[{MyContributions}]` (viewing user, full 6-row card) or `[{MyContributions username='alice'}]` (specific user, reduced 3-row card). Reuses the shared helpers in `src/utils/pluginFormatters.ts` (`escapeHtml`, `formatAsCount`, `resolveUserParam`) per the formatters module's "all plugins should use these" mandate.
+- Current Issue: `#688` (in review — code complete, tested, not live-smoked).
+- Tests: 14 new plugin tests, 5401/5401 vitest passing, `npx tsc --noEmit` clean.
+- Work Done:
+  - **`src/plugins/MyContributionsPlugin.ts`** (~190 lines): new SimplePlugin. Parameter `username=` supports the standard `$currentUser` token via `resolveUserParam`. Anonymous viewer with no explicit username (or with `$currentUser` token) → empty output, matching `MyLinksPlugin`'s pattern.
+  - **Authorization model:**
+    - When target == viewing user → 6-row card with the same content and `/my/*` links as `/profile`'s "My Contributions" section.
+    - When target != viewing user → reduced 3-row card (Pages Authored / Journal Entries / Pages Edited). Private / Shared / Links rows omitted because they're viewer-specific (need viewer roles or that user's preferences) and the private/shared counts are policy-sensitive.
+  - **Data sources duplicated from `WikiRoutes.getMyContributionsCounts`** for v1: `PageManager.getPagesByCreator` (with `onlyPrivate` for self-view), `getPagesByEditor`, `getPagesSharedWith` (self-view only), `JournalDataManager.countByAuthor`, plus `nav.pinnedPages` from viewer preferences (self-view only). Refactor to a shared `UserContributionService` is the obvious cleanup once a second call site appears — flagged as a follow-up rather than bundled here.
+  - **`src/plugins/__tests__/MyContributionsPlugin.test.ts`** (14 tests): metadata sanity; anonymous behaviour (no param, `$currentUser` token, explicit username); self-view 6-row card; explicit-username-equal-to-viewer self-view; `$currentUser` token resolves to self-view; other-user 3-row reduced card; `/my/*` links present only on self-view; HTML escaping on user-supplied username; thousands-separator count formatting; `&ndash;` fallback for missing counts; graceful degradation when PageManager / a manager method fails.
+  - **One bug surfaced during test development:** double-escape on the header label when targeting another user — fixed by keeping `headerLabel` as plain text and letting the single `escapeHtml(headerLabel)` at template-insertion time do the work.
+- Commits: pending.
+- Files Modified:
+  - `src/plugins/MyContributionsPlugin.ts` (new, +190)
+  - `src/plugins/__tests__/MyContributionsPlugin.test.ts` (new, +170)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-12-05
 
 - Agent: Claude Opus 4.7
