@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Planned
+
+- Future enhancements
+
+## [3.13.3] - 2026-05-12
+
 ### Fixed
 
 - **Authenticated user dropdown no longer visually transparent** (#687). The `.dropdown-menu` rule in `public/css/style.css` set `background-color: var(--card-bg)`, which resolves to `var(--bs-body-bg)` — exactly the same color as the page body the dropdown sits over. With no shadow and a thin border, the dropdown looked like part of the page rather than a floating menu, creating confusion about clickable items "behind" it. Added explicit `border: 1px solid var(--border-color)` and a Bootstrap-standard `box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15)` so the dropdown is visually delineated regardless of theme. Background remains theme-driven via `var(--card-bg, #ffffff)` so light/dark themes still inherit the right base color; the shadow + border provide the contrast.
