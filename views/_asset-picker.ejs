@@ -200,7 +200,9 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
             });
         }
         _apApply(mimeColEl, [mimeEl]);
-        _apApply(sortColEl, [sortEl]);
+        // Sort dropdown intentionally NOT disabled for pages/users — they
+        // have sortable fields (lastModified / dateCreated / displayName).
+        // Backend sort wiring for those source types is tracked in #700.
         // The wrapper IS the upload button; restore its original title when re-enabled.
         _apApply(uploadBtnEl, [uploadBtnEl], 'Upload Attachment');
         _apApply(advancedRow, [dateFromEl, dateToEl, dateFieldEl, pathPrefixEl, inclHiddenEl]);
