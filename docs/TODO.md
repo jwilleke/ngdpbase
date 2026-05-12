@@ -45,6 +45,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 *#662 (Invalid system-category "User Pages") closed 2026-05-12 via UserManager fix in `dbdd0f52` — existing user pages on disk may still carry the legacy value; see CHANGELOG for the migration one-liner.*
 *#661 (Profile Page metadata: description + badge + author-lock) closed 2026-05-12 via `bf846015` — both create and rename paths now carry the three fields.*
 *#653 ('Using FormPlugin' page missing) closed 2026-05-12 via `9d12e121` — removed duplicate `required-pages/a4f9c2e1` doc that title-collided with the forms addon's canonical `af15d030`.*
+*#687 (Authenticated user dropdown transparent) — filed and closed same day 2026-05-12 via `70502a5a` — CSS shadow + border on `.dropdown-menu` to delineate it from the matching-color page body.*
 
 ## Operator-decision carryover
 
