@@ -2,6 +2,29 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-12-08
+
+- Agent: Claude Opus 4.7
+- Subject: EPIC #693 slice 1 — added **Users** as a fifth source type in the asset-picker (`views/_asset-picker.ejs`) plus a corresponding `types === 'user'` branch in `WikiRoutes.assetSearch`. Lives at `/attachments/browse` immediately; will be inherited by `/search` after the swap (slice 3). Sub-issue #694 filed and labelled `in review`.
+- Current Issue: #694 (in review), EPIC #693 (open — slice 1 of 3 implementation slices code-complete).
+- Tests: 7 new tests on `WikiRoutes.assetSearch.test.ts` covering the `types === 'user'` branch (503 when UserManager unavailable, empty results when `search-user` permission denied, `User` → `AssetRecord` shape conversion, profilePage → displayName → username URL fallback, `activeOnly=true` forwarded to UserManager, offset/pageSize slicing of oversampled fetch, no fall-through to `AssetService.search`). 21/21 in the assetSearch file; full suite 5408/5408. `npx tsc --noEmit` clean.
+- Work Done:
+  - **`WikiRoutes.assetSearch` — new `types === 'user'` branch** (+44/-0 around the existing `types === 'page'` precedent at line 7967).
+  - **Permission-gated** via `wikiContext.hasPermission('search-user')` to match the existing `/api/users/search` API surface. Denial degrades gracefully to `{ success: true, results: [], total: 0, hasMore: false }` rather than 403 — keeps the asset-picker UI behaviour consistent (a Users option that returns nothing for unauthorised viewers, not a hard error).
+  - **Data path:** calls `UserManager.searchUsers(query, { limit, activeOnly: true })`, oversamples `Math.max(200, offset + pageSize)` to match the existing pages branch's "fetch-then-slice" model. Converts each `User` to `AssetRecord` with `providerId: 'user'`, `encodingFormat: 'application/user'` (synthetic mime), `url: /view/<encodeURIComponent(profilePage || displayName || username)>` (canonical `/view/` per the no-wiki memory, not the legacy `/wiki/` the existing pages branch uses), `insertSnippet: [<pageName>]` (renders as a wiki link to the profile page).
+  - **`views/_asset-picker.ejs` — frontend** (+~28 lines across three edits):
+    - Source-dropdown: added `<option value="user">Users</option>` alongside the existing four.
+    - `_apUpdateControls()`: extended to treat `'user'` like `'page'` — hides MIME / sort / advanced filters / upload (none apply to users). Comment cross-references the morph follow-up #692 so the UX polish work is discoverable from the source.
+    - `_apCard()`: new branches for `asset.providerId === 'user'` — avatar `<img class="rounded-circle">` when `thumbnailUrl` present, `fa-user` icon fallback. Click-through wraps the avatar in `<a href={asset.url}>` (same-tab — internal content, like pages). New `bg-success` badge "user". Username small handle `@<username>` rendered below the display name when they differ — so two users with the same display name are still distinguishable.
+  - **No new AssetProvider class for v1** — inline branch matches the existing pages-branch precedent. Promotion to a real `UserAssetProvider` is a follow-up if a second call site emerges; flagged in the sub-issue body.
+  - **Permission gating chosen over UI hiding** — the dropdown shows the Users option to all editor/contributor/admin viewers; backend returns empty results if they lack `search-user`. Trade-off: an option that returns nothing is slightly worse UX than hiding it entirely, but it doesn't require threading server-side permission state into the EJS partial (which is included from two call sites today and will be three after slice 3). Cleaner separation; ~all editors should have `search-user` anyway.
+- Commits: pending — single commit covering backend + frontend + tests + this log entry.
+- Files Modified:
+  - `src/routes/WikiRoutes.ts` (+44/-0 at lines ~7995)
+  - `views/_asset-picker.ejs` (+~28 across three edits)
+  - `src/routes/__tests__/WikiRoutes.assetSearch.test.ts` (+~130 — 7 new tests)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-12-07
 
 - Agent: Claude Opus 4.7

@@ -29,6 +29,7 @@ var _apInitSource = typeof assetPickerInitSource  !== 'undefined' ? assetPickerI
             <option value="attachment">Attachments only</option>
             <option value="media">Media library only</option>
             <option value="page">Pages</option>
+            <option value="user">Users</option>
         </select>
     </div>
     <div class="col-auto" id="ap-mime-col">
@@ -172,11 +173,14 @@ var _apInitSource = typeof assetPickerInitSource  !== 'undefined' ? assetPickerI
     var uploadBtnEl  = document.getElementById('ap-upload-btn');
     var advancedRow  = document.getElementById('ap-advanced-row');
     function _apUpdateControls() {
-        var isPage = srcEl.value === 'page';
-        if (mimeColEl)   mimeColEl.style.display   = isPage ? 'none' : '';
-        if (sortColEl)   sortColEl.style.display    = isPage ? 'none' : '';
-        if (uploadBtnEl) uploadBtnEl.style.display  = isPage ? 'none' : '';
-        if (advancedRow) advancedRow.style.display  = isPage ? 'none' : '';
+        // Page and User sources share the same control set: file-type, sort,
+        // upload, and advanced filters don't apply to either. (Tracked for
+        // UX polish in #692.)
+        var isPageOrUser = srcEl.value === 'page' || srcEl.value === 'user';
+        if (mimeColEl)   mimeColEl.style.display   = isPageOrUser ? 'none' : '';
+        if (sortColEl)   sortColEl.style.display    = isPageOrUser ? 'none' : '';
+        if (uploadBtnEl) uploadBtnEl.style.display  = isPageOrUser ? 'none' : '';
+        if (advancedRow) advancedRow.style.display  = isPageOrUser ? 'none' : '';
     }
     _apUpdateControls();
 
@@ -346,12 +350,18 @@ var _apInitSource = typeof assetPickerInitSource  !== 'undefined' ? assetPickerI
 
     function _apCard(asset, idx) {
         var isPage   = asset.providerId === 'page';
-        var isImage  = !isPage && asset.encodingFormat && asset.encodingFormat.startsWith('image/');
+        var isUser   = asset.providerId === 'user';
+        var isImage  = !isPage && !isUser && asset.encodingFormat && asset.encodingFormat.startsWith('image/');
         var isMedia  = asset.providerId === 'media-library';
         var thumb;
 
         if (isPage) {
             thumb = '<div class="text-center text-primary py-3"><i class="fas fa-file-alt fa-2x"></i></div>';
+        } else if (isUser) {
+            // #694: user card — avatar if present, fa-user fallback otherwise.
+            thumb = asset.thumbnailUrl
+                ? '<img src="' + _esc(asset.thumbnailUrl) + '" class="img-fluid rounded-circle mb-1" style="max-height:110px;width:110px;object-fit:cover;" loading="lazy" alt="">'
+                : '<div class="text-center text-secondary py-3"><i class="fas fa-user fa-2x"></i></div>';
         } else if (isMedia && asset.thumbnailUrl) {
             thumb = '<img src="' + _esc(asset.thumbnailUrl) + '" class="img-fluid rounded mb-1" style="max-height:110px;object-fit:cover;width:100%;" loading="lazy" alt="" itemprop="thumbnailUrl">';
         } else if (isImage && asset.url) {
@@ -362,10 +372,11 @@ var _apInitSource = typeof assetPickerInitSource  !== 'undefined' ? assetPickerI
         }
 
         // #606: wrap the thumbnail in a link to asset.url so clicking opens
-        // it. Pages navigate same-tab; assets open in a new tab so the
-        // browse view isn't displaced.
+        // it. Pages and users navigate same-tab (they're internal content);
+        // assets open in a new tab so the browse view isn't displaced.
         if (asset.url) {
-            var linkAttrs = isPage
+            var sameTab = isPage || isUser;
+            var linkAttrs = sameTab
                 ? 'class="text-decoration-none d-block"'
                 : 'class="text-decoration-none d-block" target="_blank" rel="noopener noreferrer"';
             var linkTitle = ' title="Open ' + _esc(asset.filename || asset.description || asset.id) + '"';
@@ -374,9 +385,11 @@ var _apInitSource = typeof assetPickerInitSource  !== 'undefined' ? assetPickerI
 
         var badge = isPage
             ? '<span class="badge bg-primary">page</span>'
-            : isMedia
-                ? '<span class="badge bg-info text-dark">media</span>'
-                : '<span class="badge bg-secondary">attachment</span>';
+            : isUser
+                ? '<span class="badge bg-success">user</span>'
+                : isMedia
+                    ? '<span class="badge bg-info text-dark">media</span>'
+                    : '<span class="badge bg-secondary">attachment</span>';
         var yearStr = asset.dateCreated ? String(new Date(asset.dateCreated).getFullYear()) : '';
         var year  = yearStr ? '<small class="text-muted me-1" itemprop="dateCreated">' + _esc(yearStr) + '</small>' : '';
         var name  = asset.description || asset.filename || asset.id;
@@ -390,11 +403,18 @@ var _apInitSource = typeof assetPickerInitSource  !== 'undefined' ? assetPickerI
                 '<i class="fas fa-copy"></i> Copy</button>';
         }
 
+        // User cards include the username small under the displayName so two
+        // users with the same displayName can be told apart.
+        var userHandle = (isUser && asset.metadata && asset.metadata.username && asset.metadata.username !== name)
+            ? '<div class="small text-muted text-truncate">@' + _esc(asset.metadata.username) + '</div>'
+            : '';
+
         return '<div class="col-6 col-md-3 col-lg-2">' +
             '<div class="card h-100 border-0 shadow-sm" itemscope itemtype="https://schema.org/MediaObject">' +
                 '<div class="card-body p-2">' +
                     thumb +
                     '<div class="small text-truncate" title="' + _esc(name) + '" itemprop="name">' + _esc(name) + '</div>' +
+                    userHandle +
                     '<div class="mt-1">' + year + badge + '</div>' +
                 '</div>' +
                 '<div class="card-footer p-1 text-center">' + actionBtn + '</div>' +

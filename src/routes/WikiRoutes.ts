@@ -7992,6 +7992,53 @@ ${panes}
         return res.json({ success: true, results, total, hasMore: offset + pageSize < total });
       }
 
+      // Users — slice 1 of #693. Permission-gated since profile info is PII.
+      // Mirrors the pages branch above: oversample, slice locally, return
+      // AssetRecord shape so the asset-picker can render with no special-case
+      // changes beyond a new providerId branch in _apCard().
+      if (typesParam === 'user') {
+        const userManager = this.engine.getManager('UserManager') as {
+          searchUsers?: (q: string, opts?: { limit?: number; activeOnly?: boolean }) => Promise<Array<{
+            username: string;
+            displayName?: string;
+            email?: string;
+            profilePage?: string;
+            avatar?: string;
+          }>>;
+        };
+        if (!userManager?.searchUsers) {
+          return res.status(503).json({ success: false, error: 'UserManager unavailable' });
+        }
+        const canSearchUsers = await wikiContext.hasPermission('search-user');
+        if (!canSearchUsers) {
+          return res.json({ success: true, results: [], total: 0, hasMore: false });
+        }
+        // UserManager.searchUsers caps at its own `limit` option; oversample
+        // so the slice math below has enough rows to paginate through.
+        const fetchLimit = Math.max(200, offset + pageSize);
+        const fetched = await userManager.searchUsers(query, { limit: fetchLimit, activeOnly: true });
+        const total = fetched.length;
+        const slice = fetched.slice(offset, offset + pageSize);
+        const results = slice.map(u => {
+          const pageName = u.profilePage || u.displayName || u.username;
+          return {
+            id: u.username,
+            providerId: 'user',
+            filename: u.username,
+            name: u.displayName || u.username,
+            description: u.displayName || u.username,
+            keywords: [],
+            encodingFormat: 'application/user',
+            url: '/view/' + encodeURIComponent(pageName),
+            thumbnailUrl: u.avatar,
+            mentions: [],
+            metadata: { username: u.username },
+            insertSnippet: '[' + pageName + ']'
+          };
+        });
+        return res.json({ success: true, results, total, hasMore: offset + pageSize < total });
+      }
+
       const types = typesParam
         ? (typesParam.split(',').filter(t => t === 'attachment' || t === 'media'))
         : undefined;

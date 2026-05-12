@@ -234,4 +234,144 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false }));
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // #693 slice 1 — Users source type (#694)
+  // ---------------------------------------------------------------------------
+  describe('types=user branch', () => {
+    function makeUserManager(users: Array<{
+      username: string;
+      displayName?: string;
+      email?: string;
+      profilePage?: string;
+      avatar?: string;
+    }> = []) {
+      return { searchUsers: vi.fn().mockResolvedValue(users) };
+    }
+
+    function makeRoutesWithUsers(assetService, userManager, mockUserManager?) {
+      const engine = {
+        getManager: vi.fn((name: string) => {
+          if (name === 'AssetService') return assetService;
+          if (name === 'UserManager') return userManager;
+          return null;
+        })
+      };
+      const routes = new WikiRoutes(engine);
+      routes.createWikiContext = vi.fn((req: Request) =>
+        createMockWikiContext(
+          { userContext: (req as { userContext?: unknown }).userContext as never },
+          { engine, mockUserManager }
+        )
+      );
+      return routes;
+    }
+
+    it('returns 503 when UserManager is unavailable', async () => {
+      const routes = makeRoutesWithUsers(makeAssetService(), null);
+      const req = makeReq({ query: { types: 'user', q: 'alice' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false }));
+    });
+
+    it('returns empty results when caller lacks search-user permission', async () => {
+      const deny = { hasPermission: vi.fn().mockResolvedValue(false) };
+      const userManager = makeUserManager([{ username: 'alice' }]);
+      const routes = makeRoutesWithUsers(makeAssetService(), userManager, deny);
+      const req = makeReq({ query: { types: 'user', q: 'alice' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(res.json).toHaveBeenCalledWith({ success: true, results: [], total: 0, hasMore: false });
+      expect(userManager.searchUsers).not.toHaveBeenCalled();
+    });
+
+    it('converts a User record into the expected AssetRecord shape', async () => {
+      const userManager = makeUserManager([
+        { username: 'alice', displayName: 'Alice Wonderland', email: 'a@example.com', profilePage: 'Alice Wonderland', avatar: '/uploads/alice.png' }
+      ]);
+      const routes = makeRoutesWithUsers(makeAssetService(), userManager);
+      const req = makeReq({ query: { types: 'user', q: 'alice' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        success: true,
+        total: 1,
+        results: [expect.objectContaining({
+          id: 'alice',
+          providerId: 'user',
+          filename: 'alice',
+          name: 'Alice Wonderland',
+          encodingFormat: 'application/user',
+          url: '/view/Alice%20Wonderland',
+          thumbnailUrl: '/uploads/alice.png',
+          insertSnippet: '[Alice Wonderland]',
+          metadata: { username: 'alice' }
+        })]
+      }));
+    });
+
+    it('falls back through profilePage → displayName → username for the page-link URL', async () => {
+      const userManager = makeUserManager([
+        { username: 'bob' }     // no profilePage, no displayName
+      ]);
+      const routes = makeRoutesWithUsers(makeAssetService(), userManager);
+      const req = makeReq({ query: { types: 'user' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.results[0].url).toBe('/view/bob');
+      expect(payload.results[0].insertSnippet).toBe('[bob]');
+      expect(payload.results[0].name).toBe('bob');
+    });
+
+    it('forwards activeOnly=true to UserManager.searchUsers (skips deactivated users)', async () => {
+      const userManager = makeUserManager([]);
+      const routes = makeRoutesWithUsers(makeAssetService(), userManager);
+      const req = makeReq({ query: { types: 'user', q: 'foo' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(userManager.searchUsers).toHaveBeenCalledWith('foo', expect.objectContaining({ activeOnly: true }));
+    });
+
+    it('respects offset and pageSize when slicing oversampled fetch', async () => {
+      const allUsers = Array.from({ length: 60 }, (_, i) => ({ username: `u${i}`, displayName: `User ${i}` }));
+      const userManager = makeUserManager(allUsers);
+      const routes = makeRoutesWithUsers(makeAssetService(), userManager);
+      const req = makeReq({ query: { types: 'user', offset: '10', pageSize: '5' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.total).toBe(60);
+      expect(payload.results).toHaveLength(5);
+      expect(payload.results[0].id).toBe('u10');
+      expect(payload.results[4].id).toBe('u14');
+      expect(payload.hasMore).toBe(true);
+    });
+
+    it('does NOT route through AssetService.search when types=user', async () => {
+      const service = makeAssetService();
+      const userManager = makeUserManager([]);
+      const routes = makeRoutesWithUsers(service, userManager);
+      const req = makeReq({ query: { types: 'user' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(service.search).not.toHaveBeenCalled();
+    });
+  });
 });
