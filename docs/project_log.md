@@ -2,6 +2,20 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-12-12
+
+- Agent: Claude Opus 4.7
+- Subject: End-of-day rollup. Eleven per-slice entries above already cover the work in detail; this is the meta-closeout. Today's arc: geohazardwatch race fix → backend parity for `/attachments/browse` vs `/search` → click-to-open + EXIF date fallback → MyContributionsPlugin (filed, then operator-feedback iteration) → EPIC #693 planning chat → three implementation slices of the unification (Users, Pages parity, the swap). Twelve commits on master, 5 open follow-up issues filed (#691 #692 #694 #695 #696), 1 closed (#605), 1 EPIC opened (#693), 5 items in review awaiting operator smoke (#606 #688 #694 #695 #696 — also geohazardwatch #41 merged but unverified-in-prod).
+- Current Issue: end-of-session housekeeping only.
+- Tests: full vitest 5450/5450; `npx tsc --noEmit` clean across all commits today.
+- Work Done:
+  - **Housekeeping:** added missing `in review` label to #688 (operator-feedback iteration shipped but label wasn't refreshed).
+  - **No new code in this entry.** All twelve session entries above have their own per-slice commits + issue comments + log pushes per the standing session-commit workflow memory.
+  - **Pending operator decision:** `/semver minor` would be appropriate for today's body of work (new features: Users source type, MyContributionsPlugin, EPIC #693 unification arc, plus the deferred follow-ups #691/#692). Holding the version bump until operator confirms; recommend smoking the in-review pile first.
+- Commits: housekeeping log entry only (this).
+- Files Modified:
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-12-11
 
 - Agent: Claude Opus 4.7
