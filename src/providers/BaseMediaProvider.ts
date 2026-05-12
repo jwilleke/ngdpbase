@@ -35,6 +35,8 @@ export interface MediaItem {
   isPrivate?: boolean;
   /** Username of the content creator */
   creator?: string;
+  /** File modification time in epoch milliseconds — used as a sort fallback when EXIF DateTimeOriginal is absent (#606). */
+  mtime?: number;
   /** Structured metadata bag — EXIF, IPTC, XMP and custom fields */
   metadata?: AssetMetadata;
   /** Alternate-format paths for the same photo (e.g. the HEIC original when JPEG is primary) */
@@ -213,7 +215,15 @@ abstract class BaseMediaProvider implements AssetProvider {
 
     const name = typeof m['title'] === 'string' && m['title'] ? m['title'] : undefined;
 
-    const dateCreated = typeof m['dateTimeOriginal'] === 'string' ? m['dateTimeOriginal'] : undefined;
+    // #606: prefer EXIF DateTimeOriginal; fall back to file mtime so items
+    // without EXIF dates still sort coherently. Previously `dateCreated`
+    // could be undefined, which AssetManager._sort() treats as timestamp 0
+    // — clumping every undated item at one end of the list and producing
+    // different page slices for "Newest" vs "Oldest" at any pagination
+    // boundary.
+    const dateCreated = typeof m['dateTimeOriginal'] === 'string'
+      ? m['dateTimeOriginal']
+      : (typeof item.mtime === 'number' ? new Date(item.mtime).toISOString() : undefined);
 
     // EXIF/IPTC keywords → keywords
     const rawKeywords = m['keywords'];

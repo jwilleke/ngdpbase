@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-12-05
+
+- Agent: Claude Opus 4.7
+- Subject: Took the `DateTimeOriginal` sort-field sub-bullet of `#606`, traced it deeper than expected, and found that **the same one-line fix closes both remaining #606 sub-bullets** (sort field correctness AND the "Newest vs Oldest different result sets" symptom I'd previously assumed needed runtime repro). After the click-to-open fix in 2026-05-12-04, all three of #606's sub-bullets now have code fixes.
+- Current Issue: `#606` (still open with `in review` — full code coverage now exists for all three sub-bullets but no live smoke).
+- Tests: full vitest suite 5387/5387 passing. `npx tsc --noEmit` clean.
+- Work Done:
+  - **Trace confirmed EXIF infrastructure is already in place.** `exiftool-vendored` is installed; `FileSystemMediaProvider.processFile()` extracts `DateTimeOriginal` into `MediaIndexEntry.metadata.dateTimeOriginal` as a `"YYYY-MM-DD HH:MM:SS"` string. `BaseMediaProvider.toAssetRecord()` at line 216 already mapped `dateCreated = m['dateTimeOriginal']`. So when EXIF was present the sort worked correctly. The bug was confined to items WITHOUT EXIF dates.
+  - **Root cause for both remaining sub-bullets is one symptom: undefined `dateCreated`.** `AssetManager._sort()` treats undefined `dateCreated` as timestamp 0 (`r.dateCreated ? new Date(r.dateCreated).getTime() : 0`). Items without EXIF clumped at one extreme. At pagination boundary 48, "Newest" (desc) showed the 48 newest-dated items while "Oldest" (asc) showed mostly the undated clump — explaining why the result *sets* differed, not just the order. Not provider-health flapping, not pagination edge — just the undefined-→-0 collapse.
+  - **Fix in `BaseMediaProvider.ts`** (two edits, +12/-1):
+    - Added `mtime?: number` to the `MediaItem` interface. `FileSystemMediaProvider` already populates `mtime: stat.mtimeMs` on every `MediaIndexEntry` (which `extends MediaItem`), but the type-narrowed return of `searchItems()` dropped the field at compile time. Adding it to `MediaItem` makes runtime values type-visible without changing any existing population code.
+    - In `toAssetRecord()`, fall back from `m['dateTimeOriginal']` to `new Date(item.mtime).toISOString()` when EXIF date is missing. `dateCreated` is now never undefined for any media item (file mtime is always captured by stat). EXIF DateTimeOriginal stays the *preferred* field per the operator's "ALWAYS use DateTimeOriginal" requirement; mtime is the floor when EXIF isn't present.
+  - **Scope:** the proper wiring of `AssetQuery.dateField` ('mtime' | 'exif_datetime') through `_sort()` is still not done — `_sort` ignores the field and always picks `dateCreated`. That's deferred because the operator's actual symptom is fixed by giving `dateCreated` a sensible fallback. Future work: thread `dateField` through so callers can explicitly opt into mtime-only or exif-only sorting.
+- Commits: pending.
+- Files Modified:
+  - `src/providers/BaseMediaProvider.ts` (+12/-1)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-12-04
 
 - Agent: Claude Opus 4.7
