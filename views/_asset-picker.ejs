@@ -361,6 +361,17 @@ var _apInitSource = typeof assetPickerInitSource  !== 'undefined' ? assetPickerI
             thumb = '<div class="text-center text-muted py-3"><i class="fas ' + icon + ' fa-2x"></i></div>';
         }
 
+        // #606: wrap the thumbnail in a link to asset.url so clicking opens
+        // it. Pages navigate same-tab; assets open in a new tab so the
+        // browse view isn't displaced.
+        if (asset.url) {
+            var linkAttrs = isPage
+                ? 'class="text-decoration-none d-block"'
+                : 'class="text-decoration-none d-block" target="_blank" rel="noopener noreferrer"';
+            var linkTitle = ' title="Open ' + _esc(asset.filename || asset.description || asset.id) + '"';
+            thumb = '<a href="' + _esc(asset.url) + '" ' + linkAttrs + linkTitle + '>' + thumb + '</a>';
+        }
+
         var badge = isPage
             ? '<span class="badge bg-primary">page</span>'
             : isMedia

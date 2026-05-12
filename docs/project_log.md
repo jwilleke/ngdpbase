@@ -2,6 +2,21 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-12-04
+
+- Agent: Claude Opus 4.7
+- Subject: Took the smallest of `#606`'s three sub-bullets — "clicking does not open the image" on `/attachments/browse`. Tracing showed `_asset-picker.ejs` renders cards with the thumb as a bare `<img>` or `<div>` (no anchor); only the Copy/Insert button in `card-footer` had an onclick handler. Operator's expectation is that the thumb itself is the click target — that's what "clicking does not open the image" means. Other two sub-bullets (`DateTimeOriginal` sort field, Newest vs Oldest result-set divergence) left untouched.
+- Current Issue: `#606` (still open — partial fix; comment cross-references which sub-bullet is now done).
+- Tests: no test exercises `_asset-picker.ejs` or `_apCard` (grep clean). Pure EJS template change, no TypeScript involved; lint-staged ran markdownlint on the project log entry only.
+- Work Done:
+  - **`views/_asset-picker.ejs`** — after the thumb is constructed (one of four branches: page-icon, media-thumbnail, image-url, fallback-icon), wrap it in `<a href="asset.url">` when `asset.url` is present. For pages the link navigates same-tab; for assets (`!isPage`) it opens in a new tab via `target="_blank" rel="noopener noreferrer"` so the browse view isn't displaced. `text-decoration-none d-block` keeps the existing visual styling and gives the anchor block-level click area. Title attribute reads `Open <filename>` for hover affordance.
+  - **Card structure preserved.** The Copy/Insert button stays in `card-footer` outside the new anchor, so its onclick handler (`apAction(idx)`) remains intact. HTML5 allows `<a>` to wrap block content (interactive content model since HTML5), so wrapping the `<div>`-based icon thumbs is well-formed.
+  - **Three sub-bullets of #606 — only one addressed.** `DateTimeOriginal` sort field requires investigating whether EXIF is extracted at upload (BasicAttachmentProvider populates `dateCreated` from schema metadata or file mtime — EXIF may not even be available without a pipeline change). Newest-vs-Oldest result-set divergence needs runtime repro to confirm whether it's provider health flapping, pagination, or something else.
+- Commits: pending — single commit covering the EJS change + this log entry.
+- Files Modified:
+  - `views/_asset-picker.ejs` (+11/-0)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-12-03
 
 - Agent: Claude Opus 4.7
