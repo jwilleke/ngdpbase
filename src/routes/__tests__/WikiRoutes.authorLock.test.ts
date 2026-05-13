@@ -32,14 +32,15 @@ const PAGE_UUID   = 'uuid-locked-abc123';
 // Mock factories
 // ---------------------------------------------------------------------------
 
-function makePageData({ authorLock = true, author = PAGE_AUTHOR } = {}) {
+function makePageData({ authorLock = true, author = PAGE_AUTHOR, isPrivate = false } = {}) {
   return {
     content: '# Locked Page\n\nSome content.',
     metadata: {
       uuid:   PAGE_UUID,
       title:  PAGE_NAME,
       author,
-      ...(authorLock ? { 'author-lock': true } : {})
+      ...(authorLock ? { 'author-lock': true } : {}),
+      ...(isPrivate ? { private: true } : {})
     }
   };
 }
@@ -212,6 +213,35 @@ describe('WikiRoutes — author-lock enforcement in editPage()', () => {
       const res = createRes();
 
       await wikiRoutes.editPage(req, res);
+
+      expect(res.status).not.toHaveBeenCalledWith(403);
+    });
+  });
+
+  // ── Private bypass ──────────────────────────────────────────────────────
+
+  describe('when page is BOTH author-locked AND private', () => {
+    test('private bypasses author-lock; non-author non-admin not blocked by lock', async () => {
+      // Private is the higher-priority rule (admin + creator only) and is
+      // enforced upstream by ACLManager Tier 0 / checkPrivatePageAccess.
+      // The author-lock branch in editPage must skip when metadata.private
+      // is true so the two rules don't double-enforce.
+      //
+      // The test spy on checkPrivatePageAccess returns true, so a 403 here
+      // would mean the author-lock branch fired — which is what we're
+      // verifying does NOT happen when private is set.
+      const pageData    = makePageData({ authorLock: true, isPrivate: true });
+      const pageManager = makePageManager(pageData);
+      const engine      = makeEngine({ pageManager });
+      const wr          = new WikiRoutes(engine);
+
+      const user = { username: 'bob', roles: ['editor'], isAuthenticated: true };
+      installSpies(wr, user);
+
+      const req = createReq(user);
+      const res = createRes();
+
+      await wr.editPage(req, res);
 
       expect(res.status).not.toHaveBeenCalledWith(403);
     });

@@ -2208,8 +2208,13 @@ ${panes}
             );
           }
 
-          // Author-lock check: if set, only the page author and admins may edit
-          if (pageData.metadata?.['author-lock']) {
+          // Author-lock check: if set, only the page author and admins may edit.
+          // Private pages bypass this — `private: true` is the higher-priority
+          // rule (admin + creator only) and is already enforced upstream by
+          // ACLManager Tier 0 / checkPrivatePageAccess. Formalizing the
+          // supersedes relationship in code matches the documented model
+          // (see required-pages "Page Private" precedence table).
+          if (pageData.metadata?.['author-lock'] && pageData.metadata?.private !== true) {
             const isAdmin = wikiContext.hasRole('admin');
             const isAuthor = pageData.metadata?.author === currentUser.username;
             if (!isAdmin && !isAuthor) {

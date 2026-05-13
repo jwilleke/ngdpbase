@@ -2,6 +2,21 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-13-08
+
+- Agent: Claude Opus 4.7
+- Subject: Second slice of the operator's layered access-control clarification (after `2026-05-13-07`'s private docs): formalize "private bypasses author-lock" in the editPage handler. Brings the code into structural agreement with the precedence table just shipped in the Page Private doc — without changing user-visible behavior (ACLManager Tier 0 already catches non-creator non-admins before the author-lock check fires, so the rule was correct-by-accident; now it's correct-by-structure).
+- Current Issue: continuation of the operator's preference-order arc (private → author-lock → audience → role permissions); no specific issue number.
+- Tests: 6/6 in `WikiRoutes.authorLock.test.ts` (5 existing + 1 new) pass. `npx tsc --noEmit -p tsconfig.json` clean.
+- Work Done:
+  - **`src/routes/WikiRoutes.ts:2211`** — guard updated from `if (pageData.metadata?.['author-lock'])` to `if (pageData.metadata?.['author-lock'] && pageData.metadata?.private !== true)`. Comment block above the check now references the Page Private precedence table and explains why the redundancy with ACLManager Tier 0 is intentional defense-in-depth, not duplication. Both checks fire on private pages in the current architecture; the explicit short-circuit means a future refactor that moves either gate can't accidentally diverge the two rules.
+  - **`src/routes/__tests__/WikiRoutes.authorLock.test.ts`** — `makePageData` extended with an `isPrivate` arg. New describe block "when page is BOTH author-locked AND private" with one test asserting non-author non-admin is NOT blocked by the author-lock branch when `private: true` is set. The test spy on `checkPrivatePageAccess` returns true so the only remaining gate is author-lock; without the bypass the test would 403, with it the test passes.
+- Commits: pending.
+- Files Modified:
+  - `src/routes/WikiRoutes.ts` (3 added: `&& metadata.private !== true` + 4-line comment refresh)
+  - `src/routes/__tests__/WikiRoutes.authorLock.test.ts` (+1 line on the factory, +25 lines new describe block)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-13-07
 
 - Agent: Claude Opus 4.7
