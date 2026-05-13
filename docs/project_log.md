@@ -2,6 +2,31 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-13-18
+
+- Agent: Claude Opus 4.7
+- Subject: `/semver patch` release `v3.14.0 → v3.14.1` covering 31 commits since the last tag (today's #711/#712/#713 minimal fixes plus the entire six-slice access-control arc landed earlier). Patch defers the GitHub Release per the workflow (can publish later via `/release` if desired). `/othersites` propagation of the release tag across all four instances.
+- Current Issue: routine release; no specific issue.
+- Tests: 5504/5504 unit + 72/72 E2E on jimstest pre-flight. Each satellite instance ran 5504/5504 unit after the pull. E2E skipped on satellites — the propagated commit range only touches version-bump files and a perf-baseline doc, none of the conditional paths (`views/`, `public/`, `src/plugins/`, `addons/`, `tests/e2e/`).
+- Work Done:
+  - **Step 1–3** — working tree clean, on master, in sync with origin. Tagged commit `fff00de6`. 31 commits in range since `v3.14.0`.
+  - **Step 4** — `npm run build` clean. `npm test` 5504/5504. `npm run test:e2e` 72/72.
+  - **Step 5** — `node dist/src/utils/version.js patch` bumped `package.json` / `config/app-default-config.json` / `CHANGELOG.md` to `3.14.1`.
+  - **Step 5a** — `npm run test:baseline:compare` captured `docs/performance/baseline-v3.14.1-2026-05-13.md` and diffed against `baseline-v3.14.0-2026-05-12.md`. Memory +5.3% (well under the 25% threshold). `/` -80.5% (159ms → 31ms) and `/search?q=test` -87.0% (161ms → 21ms) — both look like cache warmup vs cold baseline rather than real wins, but neither is a regression. `/view/Welcome` and `/login` unchanged. Script exit 0; no regression flags.
+  - **Step 6** — release commit `f3049fef`, annotated tag `v3.14.1`, both pushed to origin.
+  - **Step 7** — GitHub release skipped per the patch-defers rule (operator didn't ask for explicit publish; `/release` can backfill later).
+  - **Step 8** — `/othersites` propagation results below. All four instances pulled to `f3049fef`, restarted on v3.14.1, unit tests green.
+- /othersites propagation:
+  - **fairways-base** (2121) — pulled `fff00de6 → f3049fef`, restart PID 20113, **5504/5504** unit
+  - **ngdpbase-veg** (3333) — pulled `fff00de6 → f3049fef`, restart PID 22532, **5504/5504** unit
+  - **ngdp-temp-builds** (3001) — pulled `fff00de6 → f3049fef`, restart PID 24670, **5504/5504** unit
+  - **jimstest** (3000) — pull no-op (this is the source), restart PID 26568, **5504/5504** unit
+- Commits: `f3049fef` (release).
+- Files Modified:
+  - `package.json`, `config/app-default-config.json`, `CHANGELOG.md` (version 3.14.0 → 3.14.1)
+  - `docs/performance/baseline-v3.14.1-2026-05-13.md` (new perf baseline)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-13-17
 
 - Agent: Claude Opus 4.7
