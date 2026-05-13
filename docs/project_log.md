@@ -2,6 +2,22 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-13-04
+
+- Agent: Claude Opus 4.7
+- Subject: Operator follow-up from `2026-05-13-03` — run the `migrate-user-pages-category` script against the other two operator instances (`fairways-base`, `ngdpbase-veg`). Verifies the script is portable and clears any latent `#701`-style data drift on those instances.
+- Current Issue: closes the open follow-up note in entry `2026-05-13-03`.
+- Tests: n/a — read-only verification (dry-run only, since preflight grep showed nothing to migrate).
+- Work Done:
+  - Preflight: `grep -rln 'User Pages'` against each instance's `data/pages` and `required-pages` directories returned no matches.
+  - Ran `tsx scripts/migrate-user-pages-category.ts --dry-run --data <inst>/data/pages --required <inst>/required-pages` from the jimstest checkout against each instance — no need to pull master into the satellite checkouts, the script accepts external paths.
+  - **fairways-base** (`PROJECT_NAME="The Fairways"`, port 2121): 0 migrated, 0 already correct, 395 other category, 0 errors.
+  - **ngdpbase-veg** (`PROJECT_NAME="ve-geology"`, port 3333): 0 migrated, 0 already correct, 218 other category, 0 errors.
+  - Conclusion: neither satellite ever created user-profile pages via the pre-`dbdd0f52` path, so neither has legacy `"User Pages"` frontmatter on disk. The script is correctly portable across instances (handled the `./data` relative-path .envs via explicit `--data` flag).
+- Commits: this log entry only.
+- Files Modified:
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-13-03
 
 - Agent: Claude Opus 4.7
