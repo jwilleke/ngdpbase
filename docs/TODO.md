@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-12T00:00:00.000Z'
+lastModified: '2026-05-13T00:00:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -34,24 +34,20 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 | # | Title |
 |---|---|
+| #701 | /save/Molly |
+| #699 | /api/assets/search?types=user — UserManager.searchUsers cap at 200 silently truncates |
+| #697 | /create |
+| #690 | /contact yields "Forbidden — invalid CSRF token" |
+| #662 | Invalid system-category "User Pages" (legacy data still carries it on disk) |
 | #660 | Agent and ./docs documentation |
-| #650 | Change Author of some pages |
 | #622 | WikiRoutes.coverage3.test.ts intermittent timeout |
-| #606 | /attachments/browse sort order |
-| #605 | /attachments/browse vs /search inconsistency |
 | #599 | showdown ReDoS — no upstream patch (mitigation only) |
 
-*#667 (vitest globals → 171 TS errors) closed 2026-05-12 via project-references fix in `0f09bd48`.*
-*#662 (Invalid system-category "User Pages") closed 2026-05-12 via UserManager fix in `dbdd0f52` — existing user pages on disk may still carry the legacy value; see CHANGELOG for the migration one-liner.*
-*#661 (Profile Page metadata: description + badge + author-lock) closed 2026-05-12 via `bf846015` — both create and rename paths now carry the three fields.*
-*#653 ('Using FormPlugin' page missing) closed 2026-05-12 via `9d12e121` — removed duplicate `required-pages/a4f9c2e1` doc that title-collided with the forms addon's canonical `af15d030`.*
-*#687 (Authenticated user dropdown transparent) — filed and closed same day 2026-05-12 via `70502a5a` — CSS shadow + border on `.dropdown-menu` to delineate it from the matching-color page body.*
+*#704 (protobufjs — 8 Dependabot alerts) closed 2026-05-13 via PRs #702 + #703 (`376ffbc4`, `f75347d8`). Open alert count 9 → 1.*
 
 ## Operator-decision carryover
 
 Items awaiting a yes/no/close from the operator. Not blocking other work.
-
-*Carryover cleared 2026-05-12: #671 closed (resolved by #680+#681), #674 closed (superseded by #681), #682 closed with Lever 3 lifted to #686.*
 
 No items awaiting decision.
 
@@ -61,7 +57,6 @@ Top items across the sister-site issue trackers. Excludes Dependency Dashboard n
 
 | Repo | # | Type | Title | Notes |
 |---|---|---|---|---|
-| geohazardwatch | [#41](https://github.com/jwilleke/geohazardwatch/issues/41) | bug | auto-tag.yml has no rebase-on-conflict | Hit live during today's #37+#38 PR merges. Fix sketched. Pattern applies to any auto-tag consumer. |
 | geohazardwatch | [#43](https://github.com/jwilleke/geohazardwatch/issues/43) | enhancement | Migrate eslint config to flat-config format | Prerequisite for eslint 9+/10 bumps. Renovate rule added to defer eslint majors until done. Low priority — eslint 8 still works. |
 | geohazardwatch | [#7](https://github.com/jwilleke/geohazardwatch/issues/7) | enhancement | Import: VolcanoDiscovery RSS | Flagged as the suggested first reference consumer for the ngdpbase #685 data-ingestion framework. |
 | geohazardwatch | [#4](https://github.com/jwilleke/geohazardwatch/issues/4), [#5](https://github.com/jwilleke/geohazardwatch/issues/5), [#6](https://github.com/jwilleke/geohazardwatch/issues/6), [#13](https://github.com/jwilleke/geohazardwatch/issues/13), [#36](https://github.com/jwilleke/geohazardwatch/issues/36) | enhancement | Other data-source imports | All cross-referenced to ngdpbase #685. Can ship bespoke or wait for framework. |
@@ -72,15 +67,19 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 
 | # | Topic | Priority hint |
 |---|---|---|
+| #707 | Typed footnote syntax + knowledge-graph reference index | Low — speculative; companion to #706 |
+| #706 | `knowledge-role` frontmatter field — opt-in page role | Low — speculative; design captured in `docs/planning/ideas/llm-wiki-pattern.md` |
+| #705 | Perf baseline: warm cache or median-of-N | Low — quality-of-life for benchmark accuracy |
+| #700 | Wire backend sort for `/api/assets/search?types=page` and `?types=user` | Medium — natural pair to #699 |
+| #691 | Surface page-specific filter UI in asset-picker (source=Pages) | Low |
+| #689 | Admin show/edit frontmatter | Low |
+| #686 | AddonsManager: auto-enable bundled addons in non-default addons-path dirs | Low — Lever 3 follow-up from the Domain Addon Deployment cluster |
 | #685 | Data-ingestion framework (platform addon) | Low / Future — 2-4 weeks platform work; unblocks bespoke ingestion in any satellite |
 | #684 | Route-test infra hardening | Low — E2E compensates; opportunistic |
-| #683 | (merged) `@opentelemetry/exporter-prometheus` bump | — |
-| #682 | Domain Addon Deployment — Lever 3 outstanding | See operator decision above |
 | #681 | Deployment options hub + per-mode guides | Body content complete; further iteration optional |
-| #680 | (closed) Self-hosted Renovate end-to-end | — |
 | #675 | Scaffolder + reference template for new addons | Low |
 | #673 | Packaged addon distribution model (npm install) | Low — affects how #685 ships |
-| #665 | Insert page into another page | Low |
+| #665 | Insert page into another page | `in review` — only item carrying the label |
 | #655 | `.env`-style env loading via ConfigMap/Secret in k8s docs | Low |
 
 ## How this file is maintained
