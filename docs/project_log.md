@@ -2,6 +2,20 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-13-16
+
+- Agent: Claude Opus 4.7
+- Subject: Resolve `#712` — drop the legacy `user-keywords: [private]` fallback in the `/save` handler's `existingPrivate` computation. The handler was the lone holdout still reading the dropped form; ACLManager dropped the parallel fallback in `#639` Slice E (v3.7.0).
+- Current Issue: `#712` (closed).
+- Tests: 5504/5504 unit tests pass. `npx tsc --noEmit -p tsconfig.json` clean. Build clean. jimstest restarted (PID 12505). No UI paths touched → E2E skipped per the session-commit conditional.
+- Work Done:
+  - **`src/routes/WikiRoutes.ts:2669–2680`** — `existingPrivate` was `metadata.private === true || user-keywords.includes('private')`. Replaced with the single canonical `metadata.private === true` read. Comment rewritten to describe the post-Slice-E reality and reference `#712`; the old comment's "fall back to the legacy user-keyword for unmigrated pages" claim was outdated since v3.7.0.
+  - **Defence-in-depth note**: `PageManager.savePageWithContext` already strips any stray `'private'` from `user-keywords` on every save (`PageManager.ts:466`), so dead legacy data can't reappear and slip past this read either.
+- Commits: `7794a496`.
+- Files Modified:
+  - `src/routes/WikiRoutes.ts` (~7 lines: simplified `existingPrivate` + comment refresh)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-13-15
 
 - Agent: Claude Opus 4.7
