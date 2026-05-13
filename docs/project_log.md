@@ -2,6 +2,22 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-13-19
+
+- Agent: Claude Opus 4.7
+- Subject: Resolve `#709` — opaque "Failed to add footnote" dialog. Root cause: all four footnote API handlers (`addFootnote`, `updateFootnote`, `deleteFootnote`, `getFootnotes` in `WikiRoutes.ts`) had catch blocks that returned a fixed string and discarded the underlying error reason. The client's existing `alert(d.error)` pattern just displayed whatever the server sent — so users saw an unhelpful generic message.
+- Current Issue: `#709` (closed).
+- Tests: 5505/5505 unit tests pass (was 5504, added one new test). `npx tsc --noEmit -p tsconfig.json` clean. Build clean. jimstest restarted (PID 30189). No UI files touched → E2E skipped per the session-commit conditional.
+- Work Done:
+  - **`src/routes/WikiRoutes.ts`** — four catch-block edits at the footnote handlers (lines 5163, 5252, 5286, 5334). Each now extracts `err.message` (or `String(err)` for non-Error throws) and includes it in the response body as `"Failed to <action> <resource>: <reason>"`. Same shape on all four for consistency.
+  - **`src/routes/__tests__/WikiRoutes.coverage12.test.ts`** — added one new test in the `POST /api/footnotes/:pageUuid (addFootnote)` describe block. Mocks `FootnoteManager.addFootnote` to reject with `new Error('page-not-found:uuid-1')`; asserts the 500 response body's `error` contains both the friendly prefix and the rejected message. 39/39 in this file (was 38).
+  - **No client change needed** — `src/plugins/FootnotesPlugin.ts:211` already does `alert(d.error || 'Failed')`. Server now sends real `d.error`; client renders it.
+- Commits: `cdb274c4`.
+- Files Modified:
+  - `src/routes/WikiRoutes.ts` (4 catch blocks, ~16 lines total)
+  - `src/routes/__tests__/WikiRoutes.coverage12.test.ts` (+15 lines: one new test)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-13-18
 
 - Agent: Claude Opus 4.7
