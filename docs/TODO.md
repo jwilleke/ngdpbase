@@ -36,7 +36,6 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 |---|---|
 | #713 | `_comment_roles` config drift — role schema contradicts comment |
 | #712 | /save handler reads legacy `user-keywords:[private]` after Slice E dropped it |
-| #711 | ACLManager Tier-0 reads `metadata.author` — contradicts Page Audience doc creator rule |
 | #709 | Add Footnote — Failed to add footnote |
 | #690 | /contact yields "Forbidden — invalid CSRF token" |
 | #662 | Invalid system-category "User Pages" (legacy data still carries it on disk) |
@@ -44,7 +43,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 | #622 | WikiRoutes.coverage3.test.ts intermittent timeout |
 | #599 | showdown ReDoS — no upstream patch (mitigation only) |
 
-*Closed 2026-05-13: #704 (protobufjs), #708 (/search default), #701 (/save/Molly migration script), #699 + #700 (asset-search capped flag + sort), #697 (/create Private + Author-lock toggles), #665 (insert page — operator close). Six-slice access-control arc finished today (private → author-lock → audience → role permissions docs); see project_log 2026-05-13-07 through -12 for the slice trail.*
+*Closed 2026-05-13: #704 (protobufjs), #708 (/search default), #701 (/save/Molly migration script), #699 + #700 (asset-search capped flag + sort), #697 (/create Private + Author-lock toggles), #665 (insert page — operator close), **#711 (ACLManager creator drift — minimal fix `7c52c4c2`; larger refactor parked as #714 epic)**. Six-slice access-control arc finished (private → author-lock → audience → role permissions docs); see project_log 2026-05-13-07 through -14 for the slice trail.*
 
 ## Operator-decision carryover
 
@@ -68,6 +67,7 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 
 | # | Topic | Priority hint |
 |---|---|---|
+| #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Medium — prototyped during #711 session, parked due to test-mock churn. WIP in `git stash@{0}`. |
 | #710 | Audience picker accepts usernames, not just roles | Low — UI gap with Page Audience doc |
 | #707 | Typed footnote syntax + knowledge-graph reference index | Low — speculative; companion to #706 |
 | #706 | `knowledge-role` frontmatter field — opt-in page role | Low — speculative; design captured in `docs/planning/ideas/llm-wiki-pattern.md` |
