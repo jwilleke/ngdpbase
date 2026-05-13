@@ -34,16 +34,14 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 | # | Title |
 |---|---|
-| #701 | /save/Molly |
-| #699 | /api/assets/search?types=user — UserManager.searchUsers cap at 200 silently truncates |
-| #697 | /create |
+| #709 | Add Footnote — Failed to add footnote |
 | #690 | /contact yields "Forbidden — invalid CSRF token" |
 | #662 | Invalid system-category "User Pages" (legacy data still carries it on disk) |
 | #660 | Agent and ./docs documentation |
 | #622 | WikiRoutes.coverage3.test.ts intermittent timeout |
 | #599 | showdown ReDoS — no upstream patch (mitigation only) |
 
-*#704 (protobufjs — 8 Dependabot alerts) closed 2026-05-13 via PRs #702 + #703 (`376ffbc4`, `f75347d8`). Open alert count 9 → 1.*
+*Closed 2026-05-13: #704 (protobufjs), #708 (/search default), #701 (/save/Molly migration script), #699 + #700 (asset-search capped flag + sort), #697 (/create Private + Author-lock toggles), #665 (insert page — operator close). Six-slice access-control arc finished today (private → author-lock → audience → role permissions docs); see project_log 2026-05-13-07 through -12 for the slice trail.*
 
 ## Operator-decision carryover
 
@@ -70,7 +68,6 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | #707 | Typed footnote syntax + knowledge-graph reference index | Low — speculative; companion to #706 |
 | #706 | `knowledge-role` frontmatter field — opt-in page role | Low — speculative; design captured in `docs/planning/ideas/llm-wiki-pattern.md` |
 | #705 | Perf baseline: warm cache or median-of-N | Low — quality-of-life for benchmark accuracy |
-| #700 | Wire backend sort for `/api/assets/search?types=page` and `?types=user` | Medium — natural pair to #699 |
 | #691 | Surface page-specific filter UI in asset-picker (source=Pages) | Low |
 | #689 | Admin show/edit frontmatter | Low |
 | #686 | AddonsManager: auto-enable bundled addons in non-default addons-path dirs | Low — Lever 3 follow-up from the Domain Addon Deployment cluster |
@@ -79,8 +76,16 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | #681 | Deployment options hub + per-mode guides | Body content complete; further iteration optional |
 | #675 | Scaffolder + reference template for new addons | Low |
 | #673 | Packaged addon distribution model (npm install) | Low — affects how #685 ships |
-| #665 | Insert page into another page | `in review` — only item carrying the label |
 | #655 | `.env`-style env loading via ConfigMap/Secret in k8s docs | Low |
+
+## Parked items from the access-control arc
+
+Surfaced during the six-slice access-control arc on 2026-05-13 but not pursued. Filed here so they're not lost; create issues when ready to tackle.
+
+- **Role-vs-username gap in audience UI** — both `views/create.ejs` and `views/edit.ejs` render role checkboxes only. The Page Audience doc promises both roles and usernames as valid audience entries. Either expand the picker (typeahead/username input) or narrow the doc.
+- **`metadata.author` vs page-index creator** at `src/managers/ACLManager.ts:323` — Page Audience doc states "access uses the page's **creator** as recorded in the page index, not the `author` frontmatter field". Code reads `wikiContext.pageMetadata?.author` — frontmatter, not page-index. Either the doc or the code is right; needs investigation.
+- **Legacy `user-keywords:[private]` scan in /save handler** at `src/routes/WikiRoutes.ts:2643–2645` — still reads the dropped form when computing `existingPrivate` for the Private checkbox state. ACLManager dropped the fallback in v3.7.0 / #639 Slice E; the /save handler didn't follow. Small clean-up.
+- **`_comment_roles` config drift** at `config/app-default-config.json:1242` — comment says "metadata only, permissions defined via policies below" but every role inline carries a `permissions[]` array, and the parallel `ngdpbase.access.policies` list mirrors the same data. Two source-of-truth lists; drift risk. Either fix the comment or eliminate one of the lists.
 
 ## How this file is maintained
 
