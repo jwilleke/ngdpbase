@@ -47,7 +47,14 @@
                         && selectedUserKeywords.some(kw => String(kw).toLowerCase() === 'private');
                     const _isPrivate = metadata.private === true || _legacyPrivateKeyword;
                 %>
-                <!-- System Category (Admin only) + Author Lock (Admin only) + Private + User Keywords -->
+                <%
+                    // Author Lock visibility: admin OR the page author may set/clear it.
+                    // The /save handler at WikiRoutes.ts:2627 already enforces this; this
+                    // is the UI half so authors can actually see the toggle.
+                    const _canEditAuthorLock = (user && user.roles && user.roles.includes('admin'))
+                        || (user && metadata.author && user.username === metadata.author);
+                %>
+                <!-- System Category (Admin only) + Author Lock (Admin or Author) + Private + User Keywords -->
                 <div class="row mb-3">
                     <% if (user && user.roles && user.roles.includes('admin')) { %>
                     <div class="col-md-4">
@@ -87,6 +94,18 @@
                         <input type="hidden" id="systemCategory" name="system-category" value="<%= metadata['system-category'] %>">
                         <input type="text" class="form-control" value="<%= metadata['system-category'] %>" readonly>
                     </div>
+                    <% if (_canEditAuthorLock) { %>
+                    <div class="col-md-2">
+                        <label style="font-weight:bold;">Author Lock: <%- include('_help-icon', { slug: 'author-lock', label: 'Author Lock' }) %></label>
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox" name="author-lock" id="authorLock" value="true" <%= metadata['author-lock'] ? 'checked' : '' %>>
+                            <label class="form-check-label" for="authorLock" title="Only the page author and admins can edit this page">
+                                <i class="fas fa-lock"></i> Locked
+                            </label>
+                        </div>
+                        <input type="hidden" name="author-lock-present" value="1">
+                    </div>
+                    <% } %>
                     <div class="col-md-2">
                         <label style="font-weight:bold;">Private: <%- include('_help-icon', { slug: 'page-private', label: 'Private Page' }) %></label>
                         <div class="form-check mt-2">

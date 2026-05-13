@@ -2,6 +2,20 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-13-09
+
+- Agent: Claude Opus 4.7
+- Subject: Third slice of the operator's layered access-control arc — widen Author Lock toggle visibility on `/edit` from "admin-only" to "admin OR the page author". UI half only; the `/save` handler at `WikiRoutes.ts:2627–2640` already permits both principals to flip the field, so the form was the missing piece.
+- Current Issue: continuation of the operator's preference-order arc (private → author-lock → audience → role permissions); no specific issue number.
+- Tests: 6/6 in `WikiRoutes.authorLock.test.ts` still pass (handler logic untouched; this slice is template-only). `npx tsc --noEmit -p tsconfig.json` clean. Template rendering isn't unit-tested in this codebase (verified by grep — no `edit.ejs` render tests exist; that's the established pattern, not a gap).
+- Work Done:
+  - **`views/edit.ejs`** — precomputed a `_canEditAuthorLock` flag at the top of the metadata-row block: `(user is admin) || (user is the page author per metadata.author)`. Same canonical-creator check the handler uses, so UI and handler can't diverge. The flag is used in the non-admin branch to render the Author Lock col-md-2 cell when the editor is the page author. The admin branch is unchanged — admins keep seeing the toggle as before. Section comment updated from "Author Lock (Admin only)" to "Author Lock (Admin or Author)" so the next reader doesn't get the wrong story from the markup adjacent to it.
+  - When the user is neither admin nor author, the layout stays at the original 4+2+6=12 columns (System Category | Private | User Keywords). When the user is the author, the layout matches the admin layout (4+2+2+6, wraps the keywords cell to a new row) — same total columns as admins see, so no visual oddity from the wider branch.
+- Commits: pending.
+- Files Modified:
+  - `views/edit.ejs` (+7 precompute lines + a 12-line Author Lock cell inside the non-admin branch + comment update; net ~21 added lines)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-13-08
 
 - Agent: Claude Opus 4.7
