@@ -2,6 +2,29 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-13-12
+
+- Agent: Claude Opus 4.7
+- Subject: Sixth and final slice of the operator's layered access-control arc — audit and rewrite the `Roles` and `Permissions` required-pages docs against the live config. Both pages were stubs that didn't reflect the actual production catalog; the rewrites now render the live catalog at view time via the existing `ConfigAccessorPlugin` markup so they can never go stale.
+- Current Issue: no specific issue; finishes the operator's preference-order arc.
+- Tests: docs-only; no test changes. `npx tsc --noEmit -p tsconfig.json` clean (no TS edits in this slice).
+- Audit Findings (before rewrite):
+  - **`Roles` doc** (`required-pages/6ce10b7e-…md`) was one sentence — `"Roles are a collection of Permissions which Grant an action to a Resource"`. Zero of the 7 live system roles (admin, user-admin, editor, contributor, reader, member, anonymous) appeared in it.
+  - **`Permissions` doc** (`required-pages/8b198cac-…md`) was a conceptual essay citing Merriam-Webster and an abstract Context/Resource/Action breakdown. Zero of the 17 live permissions (`page-read`, `page-edit`, …, `admin-roles`) appeared in it. The Context/Resource/Action model in the prose also contradicted the actual codebase's flat string-key permission model.
+  - **Broken/orphan link targets in the original docs**: `Trustor` / `Trustee` don't exist anywhere; `Grant` / `Privilege` / `Authorization` exist on jimstest's data dir only (not in required-pages, so red links on other instances). `Access Control` same situation.
+  - **Config-internal drift not addressed in this slice** (carryover): `_comment_roles` at line 1242 says "Role definitions - metadata only, permissions defined via policies below" but every role inline carries a `permissions[]` array. Parallel `ngdpbase.access.policies` list also mirrors the inline arrays. Two source-of-truth lists for the same data; drift risk. Filed conceptually here, deferred to a separate slice.
+- Work Done:
+  - **`required-pages/6ce10b7e-…md` (Roles)** — fully rewritten. Three sections: short intro defining a role as a bundle of permissions; "Live Role Catalog" using `[{ConfigAccessor type='roles'}]` to render `userManager.getRoles()` at view time; "How Roles Connect to Permissions" describing the two config locations (`ngdpbase.roles.definitions.*.permissions` and `ngdpbase.access.policies`); access-control three-tier flow with cross-links to `Page Private`, `Page Audience`, `Author Lock`. Audience frontmatter added (matching the other access-control docs).
+  - **`required-pages/8b198cac-…md` (Permissions)** — fully rewritten. Three rendered sections: short intro establishing the flat-string-key permission model and rejecting the old Context/Resource/Action triple framing; "Live Permissions Catalog" using `[{ConfigAccessor type='permissionsList'}]` to render the grouped table from `ngdpbase.permissions.definitions`; "Roles × Permissions Matrix" using `[{ConfigAccessor type='permissions'}]` for the assignment matrix. Cross-links to `Roles`, `Page Private`, `Page Audience`, `Author Lock`. Audience frontmatter added.
+  - Removed all dead `[Access Control]` / `[Trustor]` / `[Trustee]` links. Kept `[Grant]` / `[Privilege]` / `[Authorization]` deferred — those exist on this instance but not in canonical required-pages; addressing them is out of this slice's scope (would mean either creating new required-pages or dropping the links).
+  - **No code changes.** The `ConfigAccessorPlugin` already supports `roles`, `permissions`, and `permissionsList` types — confirmed at `src/plugins/ConfigAccessorPlugin.ts:1683/1686/1722`.
+- Commits: pending.
+- Files Modified:
+  - `required-pages/6ce10b7e-…md` (Roles — full rewrite, ~40 lines)
+  - `required-pages/8b198cac-…md` (Permissions — full rewrite, ~40 lines)
+  - `docs/project_log.md` (this entry)
+- Operator follow-up (manual): same pattern as the new Page Private doc — the rewrites aren't auto-seeded onto already-installed instances. Copy the two files to `$SLOW_STORAGE/pages/` on the running jimstest server, or trigger a required-pages reseed, to see them rendered.
+
 ## 2026-05-13-11
 
 - Agent: Claude Opus 4.7
