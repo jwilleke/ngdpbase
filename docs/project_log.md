@@ -2,6 +2,28 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-13-03
+
+- Agent: Claude Opus 4.7
+- Subject: Resolve `#701` (`/save/Molly` returning `Invalid system-category: "User Pages"`) by clearing the underlying legacy data. Wrote a one-shot migration script mirroring the `migrate-private-field.ts` pattern, dry-ran it, applied on this instance, and shipped the tooling so the operator's other two checkouts (`fairways-base`, `ngdpbase-veg`) can run it portably.
+- Current Issue: `#701` (this session); also clears the open follow-up from `#662` ("legacy data still carries it on disk").
+- Tests: 8/8 in new file `scripts/__tests__/migrate-user-pages-category.test.ts` pass. `npx tsc --noEmit -p tsconfig.json` clean across the repo.
+- Work Done:
+  - **Diagnosis.** `WikiRoutes.ts:1969–1980` validates `req.body['system-category']` against the configured set on every `/save`. The Molly page's frontmatter still carried the pre-`dbdd0f52` value `system-category: User Pages` — not in the canonical set (after the 2026-05-12 `user-profile` addition: `addon`, `documentation`, `general`, `system`, `user-profile`). Page-edit round-tripped the legacy value back through the validator → HTTP 400. Root cause is data-only; the code already fixed itself on 2026-05-12 but the operator explicitly deferred migration for "three users they'll handle manually." Live scan today found only one page still affected.
+  - **`scripts/migrate-user-pages-category.ts` (new).** Mirrors the `migrate-private-field.ts` pattern: pure exported `transformFrontmatter(raw)`, walks `$SLOW_STORAGE/pages` + `./required-pages`, skips `versions/` snapshots, supports `--dry-run` / `--data <path>` / `--required <path>`, exit codes 0/1/2. Normalizes case + trims whitespace for identification (so `"USER PAGES"`, `"User pages"`, quoted, padded all migrate); writes back via `matter.stringify` to preserve the rest of the frontmatter byte-clean.
+  - **`scripts/__tests__/migrate-user-pages-category.test.ts` (new).** Eight test cases: legacy → migrated; quoted legacy → migrated; case variants → migrated; surrounding whitespace → migrated; already canonical → `already`; other category → `other-category`; missing field → `other-category`; non-string value → `other-category`. All passing.
+  - **`package.json`** — added `migrate:user-pages-category` and `migrate:user-pages-category:dry` npm script entries alongside the existing `migrate:private*` ones.
+  - **Dry-run on jimstest:** identified exactly 1 page (`aebc23d0-2151-4165-889e-824d1112263f.md`, slug `molly`). 17,666 other pages untouched. 0 errors.
+  - **Applied on jimstest.** Single-line frontmatter diff: `system-category: User Pages` → `system-category: user-profile`. Confirmed via `diff` against a `/tmp/aebc23d0-before.md` backup. `data/page-index.json` will catch up on the next save of that page (which is exactly the action the user was attempting when the bug fired, so the fix unblocks itself).
+- Commits: pending in this slice.
+- Files Modified:
+  - `scripts/migrate-user-pages-category.ts` (new, ~120 lines)
+  - `scripts/__tests__/migrate-user-pages-category.test.ts` (new, ~110 lines)
+  - `package.json` (+2 npm script entries)
+  - `docs/project_log.md` (this entry)
+- Files Modified (live data, not in commit):
+  - `$SLOW_STORAGE/pages/aebc23d0-2151-4165-889e-824d1112263f.md` (one-line frontmatter rewrite)
+
 ## 2026-05-13-02
 
 - Agent: Claude Opus 4.7
