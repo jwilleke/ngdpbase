@@ -1,16 +1,57 @@
-We have other instances whcich need updated also.
-Each .env file can have the appname in it as
+# Other Sites
 
-- /Volumes/hd2A/workspaces/github/fairways-base (port 2121) ("The Fairways")
-- /Volumes/hd2A/workspaces/github/ngdpbase-veg (port 3333) ("ve-geology")
-- /Volumes/hd2A/workspaces/github/ngdpbase (port 3000) ("jimstest")
-- /Volumes/hd2/ngdp-temp-builds/ (ports in .env files)
+Run the operator's update + validation cycle across the locally-installed ngdpbase deployments. Validates that a master-branch commit propagates cleanly to every running instance.
 
-Please do git pull
-./server.sh stop
-npm run build
-./server.sh start
-pass all test on each site.
-Pass all E2E tests
+## Instances
 
-Resolve any issues and create any needed GH [BUG]s as required.
+| Path | Port | `PROJECT_NAME` | Notes |
+|---|---|---|---|
+| `/Volumes/hd2A/workspaces/github/fairways-base` | 2121 | `"The Fairways"` | Satellite checkout |
+| `/Volumes/hd2A/workspaces/github/ngdpbase-veg` | 3333 | `"ve-geology"` | Satellite checkout |
+| `/Volumes/hd2A/workspaces/github/ngdpbase` | 3000 | `"jimstest"` | This repo / primary dev instance |
+| `/Volumes/hd2/ngdp-temp-builds/ngdpbase` | 3001 | `"ngdpbase temp build"` | Throwaway build sandbox |
+
+All four are checkouts of `jwilleke/ngdpbase`. Each has its own `.env` with `PROJECT_NAME`, `PORT`, `FAST_STORAGE`, `SLOW_STORAGE`. Their issues land in `jwilleke/ngdpbase`, not in satellite repos (per `feedback_cross_repo_coordination`).
+
+The `geohazardwatch` repo is a separate satellite with its own tracker and is **not** part of `/othersites` scope today.
+
+## Mode
+
+`/othersites` runs in one of two modes — pick based on how it was invoked:
+
+- **Standalone (default)** — operator typed `/othersites` directly. Process **all four** instances.
+- **Satellite-only** — `/othersites` was invoked from `/session-commit` Step 5. `/session-commit` already validated jimstest on the current commit in its Step 3 pre-flight, so **skip jimstest** here. Process only the three satellite instances. Avoids double build+restart+test on the operator's working instance.
+
+If you're unsure which mode you're in, default to **standalone**. Redundant work is cheap; missed validation isn't.
+
+## Per-instance flow
+
+Process the in-scope instances **sequentially** (not parallel — disk and CPU contention degrades results, and concurrent `./server.sh` calls fight pm2). For each instance:
+
+1. **Check git state** — `git -C <path> status --short` (warn if there are uncommitted local changes that aren't expected operator work-in-progress)
+2. **`git pull --ff-only`** (fail loudly on non-fast-forward — never force)
+3. **`./server.sh stop`** (run from instance dir via `(cd <path> && ./server.sh stop)`)
+4. **`npm run build`** — must exit 0
+5. **`./server.sh start`** — wait for `✅ Server started` and the URL to print
+6. **`npm test`** — unit tests must end GREEN. Re-run any single intermittent failure once before treating it as a real regression
+7. **E2E — conditional** (matches `/session-commit` Step 3 policy). Run `npm run test:e2e` if and only if the commit range you're propagating touches any of:
+   - `views/**`
+   - `public/**`
+   - `src/plugins/**`
+   - `addons/**`
+   - `tests/e2e/**`
+
+   When in doubt, run E2E. When `/othersites` is invoked standalone without a specific commit reference, run E2E.
+
+## Failure handling
+
+- **Flake (passes on retry)** — note in `docs/project_log.md` under the same session entry. Add a datapoint comment to `#622` if the failure shape matches its pattern (cold-start vitest race, supertest socket hang up, full-suite-only failure that passes in isolation). Don't file a new `[BUG]` for one-off retries.
+- **Repeating flake** — if the same test fails across multiple instances or sessions, file a `[BUG]` using `--template bug_report.md` (per global CLAUDE.md). Cross-reference `#622` if the shape matches.
+- **Real regression** (test fails deterministically on retry) — stop propagation, diagnose, fix, push, restart `/othersites`. Do not file the failure as a `[BUG]` if a fix lands the same session — the fix commit is the durable trail.
+
+## Notes
+
+- `./server.sh` is the only sanctioned way to start/stop (per `feedback_server_restart`). Never use `pm2`, `kill`, or `node` directly.
+- The four servers normally run continuously via pm2; `./server.sh stop && start` cycles them cleanly without disturbing the others.
+- Path quoting: jimstest is `/Volumes/hd2A/...`; temp-builds is `/Volumes/hd2/...` (different volume — note the missing `A`).
+- After all instances are clean, log the run as a single project-log entry with a results table (one row per instance) plus a "Flakes seen" subsection.
