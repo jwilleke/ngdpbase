@@ -2,6 +2,28 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-13-01
+
+- Agent: Claude Opus 4.7
+- Subject: Multi-turn deep-dive exploring Karpathy's LLM-Wiki pattern (`gist:442a6bf555914893e9891c11519de94f`) and how its structural pieces could compose on top of ngdpbase. Started as broad brainstorm (vocabulary mapping, three-axis classification, substrate inventory), then operator pushed back on each piece with sharp questioning that surfaced real refinements — the role-vs-references distinction (a page IS a role, has references), the page-type-vs-knowledge-role separation (four axes not three), the structural-pieces-are-valuable-without-LLM honesty check, and finally the heterogeneous-sources insight (Karpathy's filesystem split → ngdpbase's AssetManager fan-out across pages / attachments / media / sist2-NAS / URLs). Captured as a planning document; no code changes.
+- Current Issue: none — exploratory planning. Specific slices can be lifted into [FEATURE]/[EPIC] issues later if/when the operator decides to ship parts.
+- Tests: none — docs only. No `npm test` / `tsc` / `vitest` run this session.
+- Work Done:
+  - **`docs/planning/ideas/llm-wiki-pattern.md` (new, 485 lines).** Final consolidated brainstorm capturing the full design exploration. Sections: Why this matters → Pattern at a glance → Substrate inventory (present / partial / missing) → Vocabulary mapping → Four-axis classification → Deep dive on `knowledge-role` (defaults, transitions, validation, guarantees, LLM ingest sequence, examples) → References across pages → Sources are heterogeneous (five tiers + AssetManager unification + sist2 as candidate provider + URL handling open question) → Seven-piece build plan → Explicit non-goals → Open design questions → Why this matters → Appendix with Karpathy's generic schema.
+  - **Intermediate brainstorm files (now removed):** `private/CLAUDE-llm-wiki.md` (originally Karpathy schema for a Japan-trip wiki, evolved as the working document during the session) and `private/Ideas/llm-wiki-pattern.md` (the first structured brainstorm pass). Both consolidated into the public planning doc and deleted to avoid drift.
+  - **Operator-pushback that shaped the result:**
+    - "Each page has one source?" — caught the conflation between role (exactly one) and references (many-to-many). Doc now separates classification axes from reference relationships explicitly.
+    - "Is that how Karpathy's system uses it?" — caught that I'd extended Karpathy's two-layer model (raw/wiki) into a three-role enum without acknowledging it. Doc now distinguishes "Karpathy as authored" from "the ngdpbase adaptation."
+    - "What are your overall thoughts. Is this of value?" — pushed me to give an honest assessment rather than enthusiasm. Result is a clear position: structural pieces are high-confidence platform improvements regardless of LLM; LLM-in-the-loop workflow is speculative and should wait for a real user asking.
+    - The heterogeneous-sources tier framing — operator's framing of their actual setup (ngdpbase pages, attachments, media library, sist2-NAS at `192.168.68.71:4090`, internet URLs) reshaped how citations point at sources. AssetManager fan-out is the unifying abstraction.
+- Commits: `cc3c8b47` (the planning doc); this log entry pending.
+- Files Modified:
+  - `docs/planning/ideas/llm-wiki-pattern.md` (new)
+  - `private/CLAUDE-llm-wiki.md` (deleted — consolidated into planning doc)
+  - `private/Ideas/llm-wiki-pattern.md` (deleted — consolidated into planning doc)
+  - `private/Ideas/` (empty dir removed)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-12-19
 
 - Agent: Claude Opus 4.7
