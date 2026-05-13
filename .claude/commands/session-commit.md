@@ -1,10 +1,22 @@
 # Session Commit
 
-Commit current work, update the project log, and update any related GitHub issues.
+Commit current work, validate on jimstest, decide a semver bump, propagate to the other instances, then update the project log and any related GitHub issues.
+
+## Order
+
+The high-level flow is:
+
+1. Gather context
+2. Create the commit
+3. **jimstest pre-flight** (build → restart → unit tests → E2E if UI-affecting)
+4. **Semver decision** (patch / minor / major / skip)
+5. **`/othersites` propagation** (pull + build + restart + tests on the satellite instances)
+6. Update project log
+7. Update GitHub issues
+8. Final commit and push
+9. `/check-todos`
 
 ## Steps
-
-Do all of the following:
 
 ### Step 1: Gather context
 
@@ -13,25 +25,69 @@ Run these in parallel:
 - `git status` to see all changed files
 - `git diff --stat` to see the scope of changes
 - `git log --oneline -5` to match commit message style
-- Check if there are any open GitHub issues related to this work: `gh issue list --state open --limit 20`
+- `gh issue list --state open --limit 20` to see related open issues
 
 ### Step 2: Create the commit
 
-- Stage all relevant changed files (not `.claude/settings.local.json` or other local-only files)
+- Stage all relevant changed files (skip `.claude/settings.local.json` and other local-only files)
 - Write a conventional commit message: `type(scope): description`
 - Commit the changes
 
-### Step 3: Update project log
+### Step 3: jimstest pre-flight (ALWAYS, before propagation)
+
+Always validate the just-committed work on jimstest (this repo, port 3000) **before** running `/othersites` or making a semver call. Catches build / test regressions on the operator's primary instance first.
+
+Run sequentially from the repo root:
+
+1. `npm run build` — must exit 0
+2. `./server.sh stop` then `./server.sh start` — server must come up cleanly (the script reports `✅ Server started` and the URL when ready)
+3. `npm test` — unit tests must end GREEN (210/210 files, 5500+/5500+ tests at time of writing). Re-run any single intermittent failure once before treating it as a real regression
+4. **E2E — conditional**. Run `npm run test:e2e` if and only if the commit's file list (per `git diff --stat HEAD~1`) touches any of:
+   - `views/**` (EJS templates)
+   - `public/**` (static assets / client JS)
+   - `src/plugins/**` (plugins that render content)
+   - `addons/**` (addon code, themes, templates)
+   - `tests/e2e/**` (the E2E tests themselves)
+
+   For pure refactor / handler-logic / docs / config commits that don't touch any UI-affecting path, skip E2E — unit tests are the gate. If unsure, run E2E anyway.
+
+If pre-flight fails: do **not** proceed to semver or `/othersites`. Diagnose, fix, amend or create a follow-up commit, then restart Step 3.
+
+### Step 4: Semver decision
+
+Decide whether this commit warrants a version bump:
+
+- **patch** (`/semver patch`) — bug fixes, small UI tweaks, internal refactors, doc updates that don't add features
+- **minor** (`/semver minor`) — new features, new addons, new public configuration, new public manager methods. Auto-publishes a GitHub Release.
+- **major** (`/semver major`) — breaking changes to public APIs / config schema / data on disk. Auto-publishes a GitHub Release.
+- **skip** — no version bump needed (very small docs-only / dev-only changes, or version was already bumped this session)
+
+Note the typical pattern: `/semver patch` defers publishing the release; `/semver minor|major` auto-publishes. See `feedback_release_workflow.md` in memory for the full rules.
+
+### Step 5: `/othersites` propagation
+
+Once jimstest pre-flight is green (and any semver bump has been pushed), run `/othersites` to propagate to the satellite instances:
+
+- `fairways-base` (port 2121, "The Fairways")
+- `ngdpbase-veg` (port 3333, "ve-geology")
+- `ngdp-temp-builds/ngdpbase` (port 3001, "ngdpbase temp build")
+- `geohazardwatch` (separate repo, if affected)
+
+`/othersites` runs the same `git pull` → `./server.sh stop` → `npm run build` → `./server.sh start` → `npm test` → `npm run test:e2e` cycle on each. Note that the current `/othersites` skill also includes jimstest in its instance list — invoking it after Step 3 will re-process jimstest, which is harmless but redundant. (If repetition becomes annoying, update `/othersites` to skip jimstest when called from this command.)
+
+If a satellite instance fails any step, fix or file a `[BUG]` (using `--template bug_report.md`) before continuing. Intermittent flakes that pass on retry can be noted in the project log rather than filed.
+
+### Step 6: Update project log
 
 Append a new session log entry to `docs/project_log.md` using this format:
 
 ```
-### yyyy-MM-dd-##
+## yyyy-MM-dd-##
 
 - Agent: [Claude/Gemini/Other]
 - Subject: [Brief description of the session's work]
 - Current Issue: [GitHub issue number if applicable, or "none"]
-- Tests Failed Test Passed (If any)
+- Tests: [unit pass count; E2E pass count if run; note any flakes]
 - Work Done:
   - [task 1]
   - [task 2]
@@ -42,6 +98,7 @@ Append a new session log entry to `docs/project_log.md` using this format:
 
 Rules for the log entry:
 
+- One `##` heading per entry, flat bullet list, **no** `###` subheadings (long-standing repo convention)
 - Use today's date for `yyyy-MM-dd`
 - Use `##` as an incrementing number if there are multiple entries for the same date (start at `01`)
 - For Agent, use the name of the AI agent (e.g., "Claude")
@@ -49,24 +106,22 @@ Rules for the log entry:
 - For Commits, use the short hash(es) from git log
 - For Files Modified, list every file that was changed in this session
 
-### Step 4: Update GitHub issues
-
-Perform /semver pathc or minor (If approppriate)
+### Step 7: Update GitHub issues
 
 For each related open GitHub issue:
 
 - Add a comment summarizing what was done and referencing the commit hash(es)
-- If the work fully resolves the issue, note that in the comment but do NOT close the issue (let the user decide)
 - Use `gh issue comment <number> --body "<comment>"` to post
+- If the work fully resolves the issue, note that in the comment but do NOT close it — let the operator decide (or rely on `Closes #N` in the commit message having auto-closed it on push)
 
-### Step 5: Final commit and push
+If no GitHub issues are related to the current work, skip this step and note "none" for Current Issue in the log.
+
+### Step 8: Final commit and push
 
 - Stage the updated `docs/project_log.md`
 - Commit with message: `docs: update project log for session yyyy-MM-dd-##`
-- Ask the user if they want to push to remote
+- Push to remote (the satellite instances' next `/othersites` run will pull this)
 
-If no GitHub issues are related to the current work, skip Step 4 and note "none" for Current Issue in the log.
+### Step 9: `/check-todos`
 
-### Step 6: /check-todos
-
-Follow refresh docs/TODO.md
+Refresh `docs/TODO.md` against live state if any items closed or were filed during this session.
