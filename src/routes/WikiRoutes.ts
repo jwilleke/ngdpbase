@@ -1881,6 +1881,12 @@ ${panes}
       const validationManager = this.engine.getManager('ValidationManager');
       const defaultCategory = validationManager?.getDefaultSystemCategory?.() || 'general';
 
+      // Build availableRoles for the audience picker (mirror edit handler at line 2316)
+      const rolesConfig = configManager
+        ? (configManager.getProperty('ngdpbase.roles.definitions', {}) as Record<string, { name: string; displayname: string; issystem?: boolean }>)
+        : {};
+      const availableRoles = Object.values(rolesConfig).filter(r => r.name && r.displayname);
+
       res.render('create', {
         ...commonData,
         title: 'Create New Page',
@@ -1890,6 +1896,7 @@ ${panes}
         userKeywords: userKeywords,
         maxUserKeywords: maxUserKeywords,
         defaultCategory: defaultCategory,
+        availableRoles: availableRoles,
         csrfToken: req.session.csrfToken
       });
     } catch (err: unknown) {
@@ -2089,6 +2096,15 @@ ${panes}
       const authorLockOnCreate = req.body['author-lock'] === 'true';
       const privateOnCreate = req.body['private'] === 'true';
 
+      // Audience (view access) — mirror the /save handler's parsing at line 2630.
+      const submittedAudience = req.body['audience'];
+      const audienceArray: string[] = (Array.isArray(submittedAudience)
+        ? submittedAudience.filter(Boolean)
+        : submittedAudience
+          ? [String(submittedAudience)]
+          : []
+      ).map(String);
+
       // Save the new page using WikiContext
       const metadata = this.buildNewPageMetadata(pageName, {
         'system-category': matchedCategory,
@@ -2096,7 +2112,8 @@ ${panes}
         'user-keywords': Array.isArray(userKeywords) ? userKeywords : userKeywords ? [userKeywords] : [],
         author: currentUser?.username || 'anonymous',
         ...(authorLockOnCreate ? { 'author-lock': true } : {}),
-        ...(privateOnCreate ? { private: true } : {})
+        ...(privateOnCreate ? { private: true } : {}),
+        ...(audienceArray.length ? { audience: audienceArray } : {})
       });
 
       await pageManager.savePageWithContext(wikiContext, metadata);

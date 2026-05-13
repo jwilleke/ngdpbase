@@ -2,6 +2,29 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-13-11
+
+- Agent: Claude Opus 4.7
+- Subject: Fifth slice of the operator's layered access-control arc — add the Audience (view-access) picker to `/create` so it matches the edit form. Closes the create/edit gap on per-page view-access controls; all three doc-described per-page rules (private, author-lock, audience) are now settable at page creation time, not only on first edit.
+- Current Issue: no specific issue; continuation of the operator's preference-order arc (private → author-lock → audience → role permissions). Operator picked "Match edit parity — role-checkbox audience picker, no username input" so this slice mirrors the existing edit.ejs audience UI exactly.
+- Tests: 25/25 in `WikiRoutes.coverage8.test.ts` (22 from the prior slice + 3 new for audience) pass. `npx tsc --noEmit -p tsconfig.json` clean.
+- Work Done:
+  - **`src/routes/WikiRoutes.ts:createPage`** (GET handler at line 1806) — now computes `availableRoles` from `ngdpbase.roles.definitions` and threads it through `res.render('create', {...})`. Same five-line computation the edit handler does at line 2316. Same filter rule (`r.name && r.displayname`) so any role missing either field is silently dropped — matches edit's tolerance.
+  - **`views/create.ejs`** — added a new Audience row immediately after the Author Lock + Private row. UI is a copy of `edit.ejs:156–189` with three deltas:
+    - No `checked` state evaluation (new pages start with no audience)
+    - Same `name="audience"` checkbox-array convention (server side already parses both single-value and array forms)
+    - Same "Private overrides audience" muted note
+    Wrapped in `<% if (availableRoles && availableRoles.length > 0) %>` so the section disappears cleanly when no roles are defined (or the handler stops passing them).
+  - **`views/create.ejs` script section** — added `updateSelectedAudienceText()` matching edit.ejs's pattern, plus a delegated `change` listener for `.audience-checkbox` and an initial call so the dropdown summary reflects the (initially empty) selection on first render.
+  - **`src/routes/WikiRoutes.ts:createPageFromTemplate`** — reads `req.body['audience']` using the same Array.isArray-OR-string parsing pattern the /save handler uses at line 2630. Spreads `{ audience: array }` into `buildNewPageMetadata` options when non-empty (mirrors line 2673 in /save). No-op when no checkbox was submitted, so non-audience-touching callers see no behaviour change.
+  - **Tests** — three new cases in coverage8: single audience value, multi-value array, absent (omitted from metadata). All assert via `mock.calls[0][1]` direct inspection. Existing `ValidationManager.generateValidMetadata` mock fix from the prior slice (`2026-05-13-10`) carries the `...options` spread, so audience reaches the metadata correctly.
+- Commits: pending.
+- Files Modified:
+  - `src/routes/WikiRoutes.ts` (+5 lines in createPage handler, +9 lines in createPageFromTemplate handler)
+  - `views/create.ejs` (+30 lines: Audience row + script updater)
+  - `src/routes/__tests__/WikiRoutes.coverage8.test.ts` (+55 lines: 3 audience tests)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-13-10
 
 - Agent: Claude Opus 4.7

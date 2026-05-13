@@ -574,6 +574,60 @@ describe('WikiRoutes — coverage batch 8', () => {
       expect(savedMetadata.private).toBe(true);
     });
 
+    test('audience: passes a single audience role through to saved metadata', async () => {
+      mockPageManager.getPage.mockImplementation((name: string) => {
+        if (['LeftMenu', 'Footer', 'left-menu-content', 'footer-content', 'AudPageA'].includes(name)) return Promise.resolve(null);
+        return Promise.resolve(existingPageData);
+      });
+      mockPageManager.savePageWithContext.mockClear();
+
+      const res = await request(app)
+        .post('/create')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ pageName: 'AudPageA', templateName: 'blank', 'system-category': 'general', audience: 'editor' });
+
+      expect(res.status).toBe(302);
+      const callArgs = mockPageManager.savePageWithContext.mock.calls[0];
+      const savedMetadata = callArgs[1] as Record<string, unknown>;
+      expect(savedMetadata.audience).toEqual(['editor']);
+    });
+
+    test('audience: passes multi-value audience array through to saved metadata', async () => {
+      mockPageManager.getPage.mockImplementation((name: string) => {
+        if (['LeftMenu', 'Footer', 'left-menu-content', 'footer-content', 'AudPageB'].includes(name)) return Promise.resolve(null);
+        return Promise.resolve(existingPageData);
+      });
+      mockPageManager.savePageWithContext.mockClear();
+
+      const res = await request(app)
+        .post('/create')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ pageName: 'AudPageB', templateName: 'blank', 'system-category': 'general', audience: ['editor', 'contributor'] });
+
+      expect(res.status).toBe(302);
+      const callArgs = mockPageManager.savePageWithContext.mock.calls[0];
+      const savedMetadata = callArgs[1] as Record<string, unknown>;
+      expect(savedMetadata.audience).toEqual(['editor', 'contributor']);
+    });
+
+    test('audience: omits audience from metadata when no checkboxes submitted', async () => {
+      mockPageManager.getPage.mockImplementation((name: string) => {
+        if (['LeftMenu', 'Footer', 'left-menu-content', 'footer-content', 'AudPageC'].includes(name)) return Promise.resolve(null);
+        return Promise.resolve(existingPageData);
+      });
+      mockPageManager.savePageWithContext.mockClear();
+
+      const res = await request(app)
+        .post('/create')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ pageName: 'AudPageC', templateName: 'blank', 'system-category': 'general' });
+
+      expect(res.status).toBe(302);
+      const callArgs = mockPageManager.savePageWithContext.mock.calls[0];
+      const savedMetadata = callArgs[1] as Record<string, unknown>;
+      expect(savedMetadata.audience).toBeUndefined();
+    });
+
     test('#697: omits author-lock and private from metadata when checkboxes absent', async () => {
       mockPageManager.getPage.mockImplementation((name: string) => {
         if (['LeftMenu', 'Footer', 'left-menu-content', 'footer-content', 'PlainNew'].includes(name)) return Promise.resolve(null);

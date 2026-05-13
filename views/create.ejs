@@ -92,6 +92,39 @@
                     </div>
                 </div>
 
+                <!-- Audience (view access) -->
+                <% if (typeof availableRoles !== 'undefined' && availableRoles && availableRoles.length > 0) { %>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label style="font-weight:bold;"><i class="fas fa-lock"></i> Audience (view access): <%- include('_help-icon', { slug: 'page-audience', label: 'Page Audience' }) %></label>
+                        <div class="dropdown">
+                            <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start" type="button" id="audienceDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                <span id="selectedAudienceText">Select audience...</span>
+                            </button>
+                            <ul class="dropdown-menu w-100" aria-labelledby="audienceDropdown">
+                                <% availableRoles.forEach(function(role) { %>
+                                    <li>
+                                        <div class="dropdown-item-checkbox px-3 py-2">
+                                            <div class="form-check">
+                                                <input class="form-check-input audience-checkbox" type="checkbox"
+                                                       name="audience" value="<%= role.name %>"
+                                                       data-label="<%= role.displayname %>"
+                                                       id="aud-<%= role.name %>">
+                                                <label class="form-check-label ms-2" for="aud-<%= role.name %>"><%= role.displayname %></label>
+                                            </div>
+                                        </div>
+                                    </li>
+                                <% }); %>
+                            </ul>
+                        </div>
+                        <small class="text-muted">
+                            Leave all unchecked = open access (global policies apply).
+                            The <strong>Private</strong> setting above overrides all audience settings.
+                        </small>
+                    </div>
+                </div>
+                <% } %>
+
                 <!-- Submit Buttons -->
                 <div class="d-flex gap-3 mb-3">
                     <button type="submit" class="btn btn-primary">Create Page</button>
@@ -141,9 +174,20 @@
         const text = checkedKeywords.length > 0 ? checkedKeywords.join(', ') : 'Select user keywords...';
         document.getElementById('selectedUserKeywordsText').textContent = text;
     }
-    
+
+    // Audience dropdown text updater (mirrors edit.ejs pattern)
+    function updateSelectedAudienceText() {
+        const checked = Array.from(document.querySelectorAll('.audience-checkbox:checked')).map(cb => cb.dataset.label || cb.value);
+        const el = document.getElementById('selectedAudienceText');
+        if (el) el.textContent = checked.length > 0 ? checked.join(', ') : 'Select audience...';
+    }
+    document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('audience-checkbox')) updateSelectedAudienceText();
+    });
+
     // Initialize dropdown text
     updateSelectedUserKeywordsText();
+    updateSelectedAudienceText();
 </script>
 
 <%- include('footer') %>
