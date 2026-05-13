@@ -2,6 +2,21 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-13-05
+
+- Agent: Claude Opus 4.7
+- Subject: Resolve `#708` (top-bar `/search` should default to pages). After `/search` was broadened in `#693` to be a unified browse surface (`browse-attachments.ejs` asset picker), the top-bar forms post `?q=…` with no source param, so the picker initialized to "All sources" instead of "Pages". Operator's intent: top-bar queries are page-searches; the dialog should reflect that.
+- Current Issue: `#708`.
+- Tests: 16/16 in `WikiRoutes.searchPages.test.ts` pass (no test changes needed — the handler already correctly translates `?types=page` → `assetPickerInitSource: 'page'`; this slice just adds the missing param in the forms).
+- Work Done:
+  - Added `<input type="hidden" name="types" value="page">` to both top-bar search forms in `views/header.ejs` — the desktop center form (line 94 area) and the mobile offcanvas form (line 320 area).
+  - Existing handler at `WikiRoutes.ts:3128` already reads `req.query.types` and threads it through to `assetPickerInitSource`. The `_asset-picker.ejs` source dropdown then renders with `Pages` pre-selected.
+  - Other entry points to `/search` (asset-picker links, sidebar deep links, bookmarks without explicit `types`) keep their existing all-sources default — the change is scoped to the top-bar forms by setting the value at the form level rather than defaulting in the handler.
+- Commits: pending.
+- Files Modified:
+  - `views/header.ejs` (+2 lines: one hidden input per form)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-13-04
 
 - Agent: Claude Opus 4.7
