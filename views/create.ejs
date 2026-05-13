@@ -70,6 +70,28 @@
                     </div>
                 </div>
 
+                <!-- Author Lock + Private (any creator may set these on their own new page) -->
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <label style="font-weight:bold;">Author Lock: <%- include('_help-icon', { slug: 'author-lock', label: 'Author Lock' }) %></label>
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox" name="author-lock" id="authorLock" value="true">
+                            <label class="form-check-label" for="authorLock" title="Only the page author and admins can edit this page">
+                                <i class="fas fa-lock"></i> Locked
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <label style="font-weight:bold;">Private: <%- include('_help-icon', { slug: 'page-private', label: 'Private Page' }) %></label>
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox" name="private" id="privateFlag" value="true">
+                            <label class="form-check-label" for="privateFlag" title="Only the page author and admins can view this page">
+                                <i class="fas fa-eye-slash"></i> Private
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Submit Buttons -->
                 <div class="d-flex gap-3 mb-3">
                     <button type="submit" class="btn btn-primary">Create Page</button>

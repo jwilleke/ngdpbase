@@ -2081,12 +2081,22 @@ ${panes}
         }
       }
 
+      // #697: thread the Private + Author-lock checkboxes from /create form
+      // through to the new page's metadata. Every authenticated creator may set
+      // these on their own new page (they are the page's future author/creator);
+      // the /save flow's stricter "admin or author" gate applies on subsequent
+      // edits.
+      const authorLockOnCreate = req.body['author-lock'] === 'true';
+      const privateOnCreate = req.body['private'] === 'true';
+
       // Save the new page using WikiContext
       const metadata = this.buildNewPageMetadata(pageName, {
         'system-category': matchedCategory,
         categories: categoriesArray,
         'user-keywords': Array.isArray(userKeywords) ? userKeywords : userKeywords ? [userKeywords] : [],
-        author: currentUser?.username || 'anonymous'
+        author: currentUser?.username || 'anonymous',
+        ...(authorLockOnCreate ? { 'author-lock': true } : {}),
+        ...(privateOnCreate ? { private: true } : {})
       });
 
       await pageManager.savePageWithContext(wikiContext, metadata);

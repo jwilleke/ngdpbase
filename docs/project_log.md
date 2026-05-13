@@ -2,6 +2,27 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-13-10
+
+- Agent: Claude Opus 4.7
+- Subject: Resolve `#697` — `/create` form provides no method to mark a new page as Private or Author-locked. After the preceding three slices set up the doc + code foundation (private docs, private-bypasses-author-lock, edit.ejs author-lock visibility widening), this slice closes the loop on the original bug by adding the two checkboxes to the create form and wiring them through `createPageFromTemplate` so the new page's frontmatter actually carries the values.
+- Current Issue: `#697`.
+- Tests: 22/22 in `WikiRoutes.coverage8.test.ts` (19 existing + 3 new) pass. `npx tsc --noEmit -p tsconfig.json` clean.
+- Work Done:
+  - **`views/create.ejs`** — added a new row between the Categories/Keywords row and the Submit buttons. Two `col-md-3` cells: Author Lock checkbox (`name="author-lock"`) and Private checkbox (`name="private"`). Mirrors edit.ejs styling (form-check + help-icon + Bootstrap icons + title attributes) but skips the `-present` hidden markers — /create has no existing-state-to-preserve semantics, the handler reads the literal checkbox values. Both toggles are unconditionally visible to any authenticated user with `page-create` permission, since the creator IS the future author and may set/unset both on their own new page (per operator clarification earlier in the session).
+  - **`src/routes/WikiRoutes.ts:createPageFromTemplate`** — reads `req.body['author-lock']` and `req.body['private']` as the literal strings `'true'`, and spreads them conditionally into the `buildNewPageMetadata(...)` options object using the same `...(flag ? { key: true } : {})` pattern the /save handler uses at line 2660. New pages now carry `'author-lock': true` and/or `private: true` in their frontmatter when the corresponding checkbox was submitted.
+  - **`src/routes/__tests__/WikiRoutes.coverage8.test.ts`** — three new tests under "POST /create (createPageFromTemplate)":
+    - "passes author-lock=true through to saved metadata when checkbox submitted"
+    - "passes private=true through to saved metadata when checkbox submitted"
+    - "omits author-lock and private from metadata when checkboxes absent"
+  - **Mock fix uncovered along the way**: the test file's `ValidationManager.generateValidMetadata` mock was hardcoded — it took a `title` arg and returned a fixed shape, silently dropping the `options` arg. Caused the first two tests to fail until the mock was updated to mirror the real implementation's `...options` spread (`ValidationManager.ts:714`). Comment added at the mock-site noting the gap. This is a latent test-infra issue not specific to this slice — any future code that depends on options reaching the metadata would have hit the same dead end.
+- Commits: pending.
+- Files Modified:
+  - `views/create.ejs` (+20 lines: new Author Lock + Private row)
+  - `src/routes/WikiRoutes.ts` (+9 lines in createPageFromTemplate)
+  - `src/routes/__tests__/WikiRoutes.coverage8.test.ts` (mock fix + 3 new tests, ~55 lines)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-13-09
 
 - Agent: Claude Opus 4.7

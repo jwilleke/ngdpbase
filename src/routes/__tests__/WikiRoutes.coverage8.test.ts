@@ -199,9 +199,13 @@ vi.mock('../../WikiEngine', () => {
           ValidationManager: {
             validateContent: vi.fn().mockResolvedValue({ isValid: true }),
             validateMetadata: vi.fn().mockResolvedValue({ isValid: true }),
-            generateValidMetadata: vi.fn().mockImplementation((title: string) => ({
+            // Mirror the real impl's spread pattern (ValidationManager.ts:714) so
+            // caller-supplied options like author-lock / private actually land in
+            // the returned metadata. Earlier hardcoded mock dropped options silently.
+            generateValidMetadata: vi.fn().mockImplementation((title: string, options: Record<string, unknown> = {}) => ({
               title, uuid: 'test-uuid-1', 'system-category': 'general', 'user-keywords': [],
-              author: 'testuser', created: new Date().toISOString(), modified: new Date().toISOString()
+              author: 'testuser', created: new Date().toISOString(), modified: new Date().toISOString(),
+              ...options
             }))
           },
           VariableManager: { expandVariables: vi.fn().mockReturnValue('') },
@@ -530,6 +534,63 @@ describe('WikiRoutes — coverage batch 8', () => {
         .set('x-csrf-token', 'test-csrf-token')
         .send({ pageName: 'AnotherPage', templateName: 'blank', 'system-category': 'general' });
       expect(res.status).toBe(403);
+    });
+
+    // ── #697: Private + Author-lock checkboxes wire through to metadata ────
+
+    test('#697: passes author-lock=true through to saved metadata when checkbox submitted', async () => {
+      mockPageManager.getPage.mockImplementation((name: string) => {
+        if (['LeftMenu', 'Footer', 'left-menu-content', 'footer-content', 'LockedNew'].includes(name)) return Promise.resolve(null);
+        return Promise.resolve(existingPageData);
+      });
+      mockPageManager.savePageWithContext.mockClear();
+
+      const res = await request(app)
+        .post('/create')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ pageName: 'LockedNew', templateName: 'blank', 'system-category': 'general', 'author-lock': 'true' });
+
+      expect(res.status).toBe(302);
+      const callArgs = mockPageManager.savePageWithContext.mock.calls[0];
+      const savedMetadata = callArgs[1] as Record<string, unknown>;
+      expect(savedMetadata['author-lock']).toBe(true);
+    });
+
+    test('#697: passes private=true through to saved metadata when checkbox submitted', async () => {
+      mockPageManager.getPage.mockImplementation((name: string) => {
+        if (['LeftMenu', 'Footer', 'left-menu-content', 'footer-content', 'PrivateNew'].includes(name)) return Promise.resolve(null);
+        return Promise.resolve(existingPageData);
+      });
+      mockPageManager.savePageWithContext.mockClear();
+
+      const res = await request(app)
+        .post('/create')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ pageName: 'PrivateNew', templateName: 'blank', 'system-category': 'general', private: 'true' });
+
+      expect(res.status).toBe(302);
+      const callArgs = mockPageManager.savePageWithContext.mock.calls[0];
+      const savedMetadata = callArgs[1] as Record<string, unknown>;
+      expect(savedMetadata.private).toBe(true);
+    });
+
+    test('#697: omits author-lock and private from metadata when checkboxes absent', async () => {
+      mockPageManager.getPage.mockImplementation((name: string) => {
+        if (['LeftMenu', 'Footer', 'left-menu-content', 'footer-content', 'PlainNew'].includes(name)) return Promise.resolve(null);
+        return Promise.resolve(existingPageData);
+      });
+      mockPageManager.savePageWithContext.mockClear();
+
+      const res = await request(app)
+        .post('/create')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ pageName: 'PlainNew', templateName: 'blank', 'system-category': 'general' });
+
+      expect(res.status).toBe(302);
+      const callArgs = mockPageManager.savePageWithContext.mock.calls[0];
+      const savedMetadata = callArgs[1] as Record<string, unknown>;
+      expect(savedMetadata['author-lock']).toBeUndefined();
+      expect(savedMetadata.private).toBeUndefined();
     });
   });
 
