@@ -34,6 +34,9 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 | # | Title |
 |---|---|
+| #713 | `_comment_roles` config drift — role schema contradicts comment |
+| #712 | /save handler reads legacy `user-keywords:[private]` after Slice E dropped it |
+| #711 | ACLManager Tier-0 reads `metadata.author` — contradicts Page Audience doc creator rule |
 | #709 | Add Footnote — Failed to add footnote |
 | #690 | /contact yields "Forbidden — invalid CSRF token" |
 | #662 | Invalid system-category "User Pages" (legacy data still carries it on disk) |
@@ -65,6 +68,7 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 
 | # | Topic | Priority hint |
 |---|---|---|
+| #710 | Audience picker accepts usernames, not just roles | Low — UI gap with Page Audience doc |
 | #707 | Typed footnote syntax + knowledge-graph reference index | Low — speculative; companion to #706 |
 | #706 | `knowledge-role` frontmatter field — opt-in page role | Low — speculative; design captured in `docs/planning/ideas/llm-wiki-pattern.md` |
 | #705 | Perf baseline: warm cache or median-of-N | Low — quality-of-life for benchmark accuracy |
@@ -78,14 +82,16 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | #673 | Packaged addon distribution model (npm install) | Low — affects how #685 ships |
 | #655 | `.env`-style env loading via ConfigMap/Secret in k8s docs | Low |
 
-## Parked items from the access-control arc
+## Access-control arc — follow-up issues filed 2026-05-13
 
-Surfaced during the six-slice access-control arc on 2026-05-13 but not pursued. Filed here so they're not lost; create issues when ready to tackle.
+The six-slice access-control arc surfaced four follow-up items, now tracked as issues:
 
-- **Role-vs-username gap in audience UI** — both `views/create.ejs` and `views/edit.ejs` render role checkboxes only. The Page Audience doc promises both roles and usernames as valid audience entries. Either expand the picker (typeahead/username input) or narrow the doc.
-- **`metadata.author` vs page-index creator** at `src/managers/ACLManager.ts:323` — Page Audience doc states "access uses the page's **creator** as recorded in the page index, not the `author` frontmatter field". Code reads `wikiContext.pageMetadata?.author` — frontmatter, not page-index. Either the doc or the code is right; needs investigation.
-- **Legacy `user-keywords:[private]` scan in /save handler** at `src/routes/WikiRoutes.ts:2643–2645` — still reads the dropped form when computing `existingPrivate` for the Private checkbox state. ACLManager dropped the fallback in v3.7.0 / #639 Slice E; the /save handler didn't follow. Small clean-up.
-- **`_comment_roles` config drift** at `config/app-default-config.json:1242` — comment says "metadata only, permissions defined via policies below" but every role inline carries a `permissions[]` array, and the parallel `ngdpbase.access.policies` list mirrors the same data. Two source-of-truth lists; drift risk. Either fix the comment or eliminate one of the lists.
+| # | Type | Topic |
+|---|---|---|
+| #710 | enhancement | Audience picker accepts usernames, not just roles (UI gap with Page Audience doc) |
+| #711 | bug | ACLManager Tier-0 reads `metadata.author` as creator — contradicts Page Audience doc |
+| #712 | bug | /save handler still reads legacy `user-keywords:[private]` fallback after #639 Slice E dropped it |
+| #713 | bug | `_comment_roles` in app-default-config.json contradicts role schema (says "metadata only", but roles carry `permissions[]`) |
 
 ## How this file is maintained
 
