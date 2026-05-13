@@ -20,6 +20,8 @@ interface WikiContext {
   userContext?: {
     username?: string;
   };
+  /** Used by checkPrivatePageAccess (#711) for the admin bypass. */
+  hasRole?(...roles: string[]): boolean;
 }
 
 /**
@@ -734,6 +736,62 @@ class PageManager extends BaseManager {
       throw new Error('PageManager: Provider not initialized');
     }
     return this.provider.getPagesSharedWith(principals, options);
+  }
+
+  /**
+   * Private-page access check using the page-index `creator` as the
+   * authoritative identity (#711).
+   *
+   * The Page Audience required-pages doc states: "access uses the page's
+   * **creator** as recorded in the page index, not the `author` frontmatter
+   * field. If the `author` field differs from the actual creator, the
+   * `author` field is ignored for access control purposes."
+   *
+   * Page-index `creator` is sticky (`VersioningFileProvider:1394–1396`
+   * preserves it across saves); frontmatter `author` is mutable. Reading
+   * the sticky source prevents an admin reassigning `author` from
+   * silently shifting private-page ownership.
+   *
+   * Returns:
+   *   - `null`  — page is not private; caller should fall through to the
+   *               next access tier
+   *   - `true`  — page is private AND user is admin OR the page-index creator
+   *   - `false` — page is private AND user is neither admin nor creator
+   *
+   * Used by ACLManager Tier 0 as the single source of truth for the
+   * private-access decision. Existing per-route checks (
+   * `WikiRoutes.checkPrivatePageAccess`, `MediaManager.checkPrivatePageAccess`
+   * ) are unaffected by this commit — they continue to use their own
+   * implementations until the broader access-control refactor lands as a
+   * separate epic.
+   */
+  async checkPrivatePageAccess(wikiContext: WikiContext, pageNameOrUuid: string): Promise<boolean | null> {
+    try {
+      if (!this.provider) return null;
+
+      const pageMetadata = await this.provider.getPageMetadata(pageNameOrUuid);
+      if (!pageMetadata?.uuid) return null;
+
+      const provider = this.provider as unknown as {
+        pageIndex?: { pages: Record<string, { location?: string; creator?: string }> }
+      };
+      const pageIndex = provider.pageIndex;
+      const entry = pageIndex?.pages[pageMetadata.uuid];
+
+      // Defensive: treat the page as private if EITHER signal says so.
+      const md = pageMetadata as Record<string, unknown>;
+      const isPrivate = (entry?.location === 'private') || (md.private === true);
+      if (!isPrivate) return null;
+
+      const username = wikiContext.userContext?.username;
+      if (!username) return false;
+      if (wikiContext.hasRole?.('admin')) return true;
+
+      // Page-index creator (sticky) — not frontmatter `author` (mutable).
+      return username === entry?.creator;
+    } catch {
+      return null;
+    }
   }
 
   async refreshPageList(): Promise<void> {

@@ -318,17 +318,37 @@ class ACLManager extends BaseManager {
     // #639 Slice E: top-level `private: true` is the canonical signal; the
     // user-keywords back-compat fallback was dropped after all datasets
     // migrated (Slices A–D, v3.7.0).
-    const isPrivate = wikiContext.pageMetadata?.private === true;
-    if (isPrivate) {
+    //
+    // #711: delegate the actual decision to PageManager.checkPrivatePageAccess
+    // when available. That helper reads the page-index `creator` (sticky)
+    // rather than `metadata.author` (mutable), matching the documented privacy
+    // semantics in the [Page Audience] required-pages doc — an admin who
+    // reassigns frontmatter `author` cannot shift private-page ownership.
+    // Falls back to the previous frontmatter-author check when the helper
+    // isn't available (test fixtures without a PageManager mock).
+    const pmForPrivate = this.engine.getManager<{
+      checkPrivatePageAccess?: (ctx: WikiContext, name: string) => Promise<boolean | null>;
+        }>('PageManager');
+    if (pmForPrivate?.checkPrivatePageAccess) {
+      const decision = await pmForPrivate.checkPrivatePageAccess(wikiContext, pageName);
+      if (decision !== null) {
+        const reason = decision ? 'private_match' : 'private_deny';
+        this.logAccessDecision({
+          user: userContext, pageName, action, allowed: decision, reason,
+          context: { wikiContext: wikiContext.context }
+        });
+        return decision;
+      }
+    } else if (wikiContext.pageMetadata?.private === true) {
+      // Fallback for legacy callers without a PageManager: use frontmatter
+      // `author` as the creator identity (the pre-#711 behaviour). This
+      // path only fires in tests; production always has a PageManager.
       const creator = (wikiContext.pageMetadata?.author) ?? '';
       const userRoles = userContext?.roles ?? [];
       const username  = userContext?.username ?? '';
       const allowed   = userRoles.includes('admin') || username === creator;
       this.logAccessDecision({
-        user: userContext,
-        pageName,
-        action,
-        allowed,
+        user: userContext, pageName, action, allowed,
         reason: allowed ? 'private_match' : 'private_deny',
         context: { wikiContext: wikiContext.context }
       });
