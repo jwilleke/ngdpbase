@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-13-13
+
+- Agent: Claude Opus 4.7
+- Subject: `/othersites` multi-instance update pass. Pull → stop → build → start → unit tests → E2E across all four operator instances: fairways-base (port 2121, "The Fairways"), ngdpbase-veg (port 3333, "ve-geology"), ngdp-temp-builds/ngdpbase (port 3001, "ngdpbase temp build"), and jimstest (port 3000, "jimstest", this repo). All instances were at `9bf1dbf5` (v3.14.0) before the pull and ended at master HEAD `26c166ae`.
+- Current Issue: routine sync; not a specific issue.
+- Tests: see results table below. All instances ended GREEN on every metric. Two intermittent flakes observed (different surfaces, both passed on retry); flagged for operator decision on whether to file [BUG]s.
+- Work Done:
+  - **fairways-base** — `git pull` (clean fast-forward), `./server.sh stop`, `npm run build`, `./server.sh start` (PID 39988, <http://localhost:2121>). Unit: 210/210 files, 5504/5504 tests. E2E: 72/72.
+  - **ngdpbase-veg** — `git pull` (clean fast-forward), `./server.sh stop`, `npm run build`, `./server.sh start` (PID 42627, <http://localhost:3333>). Unit: 210 files, 5503/5504 on first run (1 flake), 31/31 on isolated re-run of the flaky file. E2E: 72/72.
+  - **ngdp-temp-builds/ngdpbase** — `git pull` (clean fast-forward), `./server.sh stop`, `npm run build`, `./server.sh start` (PID 45268, <http://localhost:3001>). Unit: 5504/5504. E2E: 72/72.
+  - **jimstest (this repo)** — already in sync with origin (operator had pushed `55d95340 "update content"` for `.claude/commands/*` earlier in the session). `./server.sh stop`, `npm run build`, `./server.sh start` (PID 47911, <http://localhost:3000>). Unit: 5504/5504. E2E: 71/72 on first run (1 fail + 6 cascading skips), 72/72 on isolated re-run AND on full-suite re-run — confirmed flake.
+- Intermittent flakes (not deterministic; both passed on retry):
+  - **ngdpbase-veg unit**: `WikiRoutes.coverage15.test.ts > POST /save/:page (savePage) > handles user keyword submission` — `Error: socket hang up`. Likely a supertest port-reuse / timing issue during the full vitest run. Different file from open issue `#622` (`WikiRoutes.coverage3.test.ts` intermittent timeout) but same family of supertest-under-load fragility.
+  - **jimstest E2E**: `tests/e2e/pages.spec.ts:50:5 > Page Operations > Create Page > should create a new wiki page` (chromium). One failure caused 6 dependent tests in the same file to skip (Playwright cascading). Isolated re-run passed in 4.9s; full re-run passed 72/72. The "wiki page" naming in the test description is a leftover from the no-wiki-terminology migration; doc/test text, not behaviour.
+- Servers running after this session (per pm2):
+  - jimstest (3000, PID 47911), ngdpbase temp build (3001, PID 45268), fairways-base (2121, PID 39988), ngdpbase-veg (3333, PID 42627), GeoHazardWatch (separate, unchanged).
+- Operator follow-up: decide whether to file [BUG]s for either of the two intermittent flakes above. Both are environmental-noise candidates (supertest port reuse + Playwright cascading on first cold run) rather than regressions from the day's commits — the same commits landed cleanly across the other three instances' E2E runs and the other 3 unit runs.
+
 ## 2026-05-13-12
 
 - Agent: Claude Opus 4.7
