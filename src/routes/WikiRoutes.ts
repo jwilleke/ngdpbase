@@ -5160,7 +5160,9 @@ ${panes}
       return res.json({ success: true, footnotes });
     } catch (err: unknown) {
       logger.error('Error fetching footnotes:', err);
-      return res.status(500).json({ success: false, error: 'Failed to fetch footnotes' });
+      // #709 (same family): surface the underlying reason.
+      const reason = err instanceof Error ? err.message : String(err);
+      return res.status(500).json({ success: false, error: `Failed to fetch footnotes: ${reason}` });
     }
   }
 
@@ -5249,7 +5251,10 @@ ${panes}
       return res.json({ success: true, footnote });
     } catch (err: unknown) {
       logger.error('Error adding footnote:', err);
-      return res.status(500).json({ success: false, error: 'Failed to add footnote' });
+      // #709: surface the underlying reason so the client dialog shows
+      // something actionable instead of an opaque "Failed to add footnote".
+      const reason = err instanceof Error ? err.message : String(err);
+      return res.status(500).json({ success: false, error: `Failed to add footnote: ${reason}` });
     }
   }
 
@@ -5283,7 +5288,9 @@ ${panes}
       return res.json({ success: true, footnote });
     } catch (err: unknown) {
       logger.error('Error updating footnote:', err);
-      return res.status(500).json({ success: false, error: 'Failed to update footnote' });
+      // #709 (same family): surface the underlying reason.
+      const reason = err instanceof Error ? err.message : String(err);
+      return res.status(500).json({ success: false, error: `Failed to update footnote: ${reason}` });
     }
   }
 
@@ -5331,7 +5338,9 @@ ${panes}
       return res.json({ success: true });
     } catch (err: unknown) {
       logger.error('Error deleting footnote:', err);
-      return res.status(500).json({ success: false, error: 'Failed to delete footnote' });
+      // #709 (same family): surface the underlying reason.
+      const reason = err instanceof Error ? err.message : String(err);
+      return res.status(500).json({ success: false, error: `Failed to delete footnote: ${reason}` });
     }
   }
 

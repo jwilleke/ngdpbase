@@ -652,6 +652,20 @@ describe('WikiRoutes — coverage batch 12', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
     });
+
+    test('#709: 500 response includes the underlying error reason', async () => {
+      mockFootnoteManager.addFootnote.mockRejectedValueOnce(new Error('page-not-found:uuid-1'));
+      const res = await request(app)
+        .post('/api/footnotes/uuid-1')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ display: 'Note 1', url: 'http://example.com' });
+      expect(res.status).toBe(500);
+      expect(res.body.success).toBe(false);
+      // The client's `alert(d.error)` will now show something actionable instead
+      // of an opaque "Failed to add footnote".
+      expect(res.body.error).toContain('Failed to add footnote');
+      expect(res.body.error).toContain('page-not-found:uuid-1');
+    });
   });
 
   describe('PUT /api/footnotes/:pageUuid/:footnoteId (updateFootnote)', () => {
