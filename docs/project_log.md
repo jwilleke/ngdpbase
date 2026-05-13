@@ -2,6 +2,21 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-13-15
+
+- Agent: Claude Opus 4.7
+- Subject: `/othersites` standalone propagation pass after the `#711` minimal fix (`7c52c4c2`) and follow-up docs commits (`1a094383`, `1f31468b`). Standalone mode → all four instances. Commit range touches only `src/managers/*` and `docs/*`, no UI-affecting paths, so E2E was skipped per the conditional rule in `/othersites` Step 7.
+- Current Issue: routine sync; not a specific issue.
+- Tests: see results table. All four instances ended GREEN; one intermittent unit-test flake on jimstest (passed clean on isolated re-run, same family as `#622`).
+- Work Done:
+  - **fairways-base** (2121, "The Fairways") — `git pull` `55d95340 → 1f31468b`, `./server.sh stop`, `npm run build`, `./server.sh start` (PID 99039, <http://localhost:2121>). Unit: 5504/5504.
+  - **ngdpbase-veg** (3333, "ve-geology") — `git pull` `55d95340 → 1f31468b`, restart (PID 1834, <http://localhost:3333>). Unit: 5504/5504.
+  - **ngdp-temp-builds/ngdpbase** (3001, "ngdpbase temp build") — `git pull` `55d95340 → 1f31468b`, restart (PID 4089, <http://localhost:3001>). Unit: 5504/5504.
+  - **jimstest** (3000, this repo) — `git pull` no-op (already at HEAD from the `#711` fix session), restart (PID 6202, <http://localhost:3000>). Unit: 5503/5504 first run, 5504/5504 on immediate re-run — flake.
+- Flakes seen:
+  - **jimstest unit, full-suite first run** — one test of the 5504 transient-failed; the second `npm test` invocation passed 5504/5504 with no other changes. Pattern matches `#622` (cold-pool/supertest race during full-suite first run). Logging the datapoint on that issue rather than filing new.
+- Operator follow-up: bug-fix commit, so a `/semver patch` would be appropriate per `session-commit.md` Step 4 — operator's call on whether to publish or defer.
+
 ## 2026-05-13-14
 
 - Agent: Claude Opus 4.7
