@@ -2,6 +2,20 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-13-20
+
+- Agent: Claude Opus 4.7
+- Subject: `/othersites` satellite-only propagation of the `#709` footnote-error-surfacing fix (`cdb274c4`) plus its log commit (`d345b45c`). Operator phrased the invocation as "ship to satellites" → satellite-only mode (jimstest already at HEAD from the commit session above; skip the redundant cycle). E2E skipped per the conditional rule — propagated range only touches `src/routes/WikiRoutes.ts`, the corresponding test, `docs/`.
+- Current Issue: none (propagation).
+- Tests: 5505/5505 on each satellite. No flakes.
+- Propagation results:
+  - **fairways-base** (2121) — pulled `f3049fef → d345b45c`, restart PID 33164, **5505/5505** unit
+  - **ngdpbase-veg** (3333) — pulled `f3049fef → d345b45c`, restart PID 35307, **5505/5505** unit
+  - **ngdp-temp-builds** (3001) — pulled `f3049fef → d345b45c`, restart PID 37410, **5505/5505** unit
+- Commits: this log entry only.
+- Files Modified:
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-13-19
 
 - Agent: Claude Opus 4.7
