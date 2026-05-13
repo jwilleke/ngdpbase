@@ -69,4 +69,4 @@ If no GitHub issues are related to the current work, skip Step 4 and note "none"
 
 ### Step 6: /check-todos
 
-Follow /check-todos
+Follow refresh docs/TODO.md

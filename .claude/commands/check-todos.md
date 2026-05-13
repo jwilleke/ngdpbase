@@ -41,6 +41,10 @@ Out of scope (per operator clarification):
 
 Use `/check-todos` to see what work needs to be done and prioritize. Output should match the structure of `docs/TODO.md` for consistency, but read live from GitHub rather than the file — `TODO.md` is a curated snapshot that drifts.
 
+## Freshen TODO.md
+
+Fresshen docs/TODO.md
+
 ## Output sections
 
 - **Security / Dependabot** — open alerts table
