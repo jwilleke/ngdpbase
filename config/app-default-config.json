@@ -1239,7 +1239,7 @@
       "color": "#dc3545"
     }
   },
-  "_comment_roles": "Role definitions - metadata only, permissions defined via policies below (ALL LOWERCASE)",
+  "_comment_roles": "#713 — Role definitions serve TWO purposes that must stay in sync: (1) inline `permissions[]` arrays are read by ConfigAccessorPlugin to render the role×permission matrix on the Roles/Permissions required-pages (display only). (2) Runtime authorization decisions go through PolicyEvaluator.evaluateAccess(), which reads `ngdpbase.access.policies` below — NOT the inline arrays. Keep the two lists matched: editing one without the other introduces display-vs-enforcement drift. (ALL LOWERCASE)",
   "ngdpbase.roles.definitions": {
     "admin": {
       "name": "admin",
