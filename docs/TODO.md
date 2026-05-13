@@ -34,7 +34,6 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 | # | Title |
 |---|---|
-| #713 | `_comment_roles` config drift — role schema contradicts comment |
 | #709 | Add Footnote — Failed to add footnote |
 | #690 | /contact yields "Forbidden — invalid CSRF token" |
 | #662 | Invalid system-category "User Pages" (legacy data still carries it on disk) |

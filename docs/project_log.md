@@ -2,6 +2,23 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-13-17
+
+- Agent: Claude Opus 4.7
+- Subject: Resolve `#713` — the `_comment_roles` line in `config/app-default-config.json` claimed roles were "metadata only" but every role inline carries a `permissions[]` array. Audit showed the dual-list is **intentional, not drift**: inline arrays drive display, the policies block below drives enforcement. Rewrote the comment to describe both purposes honestly.
+- Current Issue: `#713` (closed).
+- Tests: 5504/5504 unit tests pass. Comment-only JSON edit; no schema change.
+- Audit findings:
+  - **Inline `role.permissions[]`** — read by `ConfigAccessorPlugin` (`src/plugins/ConfigAccessorPlugin.ts:300, 456`) to render the role×permission matrix on the **Roles** and **Permissions** required-pages docs. Display-only.
+  - **Runtime authorization** — `UserManager.hasPermission` at `src/managers/UserManager.ts:598` routes through `PolicyEvaluator.evaluateAccess`, which reads `ngdpbase.access.policies` below. Does NOT consult the inline arrays.
+  - Net: neither list is dead code; they serve different purposes. The pre-#713 comment misled the next reader. The new comment is explicit about the dual purpose AND the keep-in-sync responsibility.
+- Work Done:
+  - **`config/app-default-config.json:1242`** — `_comment_roles` rewritten. JSON re-validated via `node -e "JSON.parse(...)"`. Per `feedback_config_default_changes.md`, no schema change — comment-only.
+- Commits: `9f3b0fd5`.
+- Files Modified:
+  - `config/app-default-config.json` (1 line: comment-string rewrite)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-13-16
 
 - Agent: Claude Opus 4.7
