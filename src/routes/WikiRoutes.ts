@@ -2668,13 +2668,15 @@ ${panes}
 
       // #639 Slice C: resolve private — top-level frontmatter field (peer of
       // author-lock and audience). When the form posts `private-present=1` we
-      // honour the checkbox; otherwise preserve the existing value (or fall back
-      // to the legacy user-keyword for unmigrated pages). Slice B normalizes
-      // either source into the new shape on save, so even if a stray 'private'
-      // remains in userKeywordsArray it'll be stripped in PageManager.
-      const existingPrivate = existingPage?.metadata?.private === true
-        || (Array.isArray(existingPage?.metadata?.['user-keywords'])
-            && (existingPage.metadata['user-keywords']).some(kw => String(kw).toLowerCase() === 'private'));
+      // honour the checkbox; otherwise preserve the existing top-level value.
+      //
+      // #712: the legacy `user-keywords: [private]` fallback was removed here.
+      // ACLManager dropped its parallel fallback in #639 Slice E (v3.7.0) once
+      // all datasets had migrated; the /save handler was the lone holdout still
+      // honouring the legacy form. PageManager.savePageWithContext defensively
+      // strips any stray `'private'` from `user-keywords` on every save, so
+      // dead legacy data can't reappear and slip past this read.
+      const existingPrivate = existingPage?.metadata?.private === true;
       const privateFlag: boolean = req.body['private-present'] === '1'
         ? req.body['private'] === 'true'
         : existingPrivate;
