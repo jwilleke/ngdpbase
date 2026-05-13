@@ -2,6 +2,25 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-13-02
+
+- Agent: Claude Opus 4.7
+- Subject: Triage and resolve `#704` — 8 Dependabot alerts (4 high, 4 medium) against `protobufjs` / `@protobufjs/utf8` disclosed 2026-05-12 during the v3.14.0 release window. Confirmed Dependabot's two open bump PRs covered the full alert set, then merged both and verified auto-close.
+- Current Issue: `#704` (closed by this session).
+- Tests: none in this session — bumps were transitive-dep `package-lock.json`-only changes on a non-default code path (OTel metrics export). No local install/test run needed.
+- Work Done:
+  - Coverage check: cross-referenced `first_patched_version` from each alert against the Dependabot bump targets. `protobufjs` vulnerable `>=8.0.0,<=8.0.1` → patched `8.0.2`; PR #702 bumps to `8.2.0` (minor, semver-safe). `@protobufjs/utf8` vulnerable `<=1.1.0` → patched `1.1.1`; PR #703 bumps to `1.1.1`. All 8 alerts covered by these two PRs.
+  - Dependency chain: `@opentelemetry/exporter-metrics-otlp-http@0.215.0` → `@opentelemetry/otlp-transformer@0.215.0` → `protobufjs@8.0.1`. Transitive only — no direct dep, no `npm overrides` needed.
+  - PR #703 merged first (3-line lockfile diff, no rebase needed) — squash `376ffbc4`.
+  - PR #702 needed rebase after #703 landed (both touched `package-lock.json`); commented `@dependabot rebase`, waited for `mergeStateStatus: CLEAN`, then merged — squash `f75347d8`.
+  - Verified: open Dependabot alerts dropped from 9 to 1. Only #96 (`showdown` ReDoS, tracked under #599, no upstream patch) remains.
+  - Closed #704 with resolution comment listing both merge SHAs.
+  - Incidental: the v3.14.0 release commit (`9bf1dbf5`) only bumped `package.json` version, not the `package-lock.json` "version" field. Dependabot's rebase carried the lockfile version field forward to 3.14.0, so the local `M package-lock.json` drift auto-resolved on rebase — no separate fix-up commit needed.
+- Commits: `376ffbc4` (PR #703 squash), `f75347d8` (PR #702 squash); this log entry pending.
+- Files Modified:
+  - `package-lock.json` (via dependabot squash merges — not in this commit)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-13-01
 
 - Agent: Claude Opus 4.7
