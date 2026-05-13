@@ -2,6 +2,35 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-13-07
+
+- Agent: Claude Opus 4.7
+- Subject: Bundled "private docs" slice — first step on the operator's layered access-control clarification (preference order: private → author-lock → audience → role permissions). Adds a dedicated `Page Private` required-pages doc, sweeps five outdated text sites that still describe the dropped `user-keywords: [private]` mechanism, and cross-links the new doc from `Page Audience`. No code-behavior changes; pure docs + docstring/comment hygiene.
+- Current Issue: ties into the open conversation around `#697` but is not its fix; sets up the doc foundation before later slices touch the /create form, author-lock private-bypass, and audience UI.
+- Tests: n/a — docs-only. `npx tsc --noEmit -p tsconfig.json` clean (docstring/comment edits only on the TS side).
+- Work Done:
+  - **`required-pages/56729d1b-c843-43d6-8ace-3776e02d3834.md` (new — `Page Private`).** Mirrors `Author Lock` / `Page Audience` structure. Covers: what Private does (storage + access), how to set it (checkbox or `private: true` frontmatter; explicitly notes the `user-keywords: [private]` mechanism was removed in v3.7.0), who can set/remove (creator + admin), precedence table over Audience / `access` / Author Lock / global policies, creator-vs-author rule, what Private does NOT do (encrypt, hide from admins, attachments are not separately gated), and See Also links.
+  - **`required-pages/b03c0bad-…md` (Page Audience).** Rewrote "The `private` Keyword" section as "The `private` Flag" — replaces "Add `private` to User Keywords" guidance with the Private checkbox / `private: true` frontmatter approach. Updates the Private-vs-Audience table accordingly. Adds See Also link to `Page Private`.
+  - **`src/types/Page.ts` PageFrontmatter.`private` docstring (lines 64–72).** Rewrote to drop the "ACLManager / search providers fall back to scanning user-keywords for the literal 'private'" claim — that fallback was removed in #639 Slice E / v3.7.0. New text says `private` is the only source of truth and Tier-0 bypasses all other per-page rules.
+  - **`src/providers/VersioningFileProvider.ts:44`** comment changed from `/** True when user-keywords includes 'private' */` to a frontmatter-canonical phrasing pinned to #639 Slice E / v3.7.0.
+  - **`src/managers/ACLManager.ts:468–471`** comment that listed the 3-tier evaluator as `private user-keyword → frontmatter audience → global policies` updated to `private flag → frontmatter audience/access → global policies`.
+  - **`docs/WikiContext-Complete-Guide.md:549`** sentence about Tier 0 "handling `user-keywords: [private]` natively" rephrased to `private: true` frontmatter.
+  - **NOT in this slice** (deferred to next slices per operator's preference order):
+    - Code change for "private bypasses Author Lock" — `WikiRoutes.ts:2211–2224` author-lock check still independent of `metadata.private`. In practice the Tier-0 private gate at `ACLManager.ts:317` catches everyone first, so user-visible behavior is correct; formalizing the supersedes rule in code is a follow-up.
+    - `WikiRoutes.ts:2643–2645` `existingPrivate` save-handler still reads the legacy `user-keywords: [private]` form when computing prior state. Documented drift vs ACLManager's "Slice E removed the fallback" comment; left untouched to keep this slice purely docs.
+    - `#697` /create form work (Private + Author-lock checkboxes) — separate slice.
+    - Audience UI on /create — explicitly out of scope per operator decision earlier in the conversation.
+- Commits: pending.
+- Files Modified:
+  - `required-pages/56729d1b-c843-43d6-8ace-3776e02d3834.md` (new, ~60 lines)
+  - `required-pages/b03c0bad-0b72-49c7-8810-cd6e14149938.md` (rewrite of "The `private` Keyword" section)
+  - `src/types/Page.ts` (docstring lines 64–72)
+  - `src/providers/VersioningFileProvider.ts` (comment line 44)
+  - `src/managers/ACLManager.ts` (comment lines 468–471)
+  - `docs/WikiContext-Complete-Guide.md` (line 549)
+  - `docs/project_log.md` (this entry)
+- Operator follow-up (manual): the new required-pages doc isn't automatically seeded onto already-installed instances. To make it visible on the running jimstest server, copy `required-pages/56729d1b-c843-43d6-8ace-3776e02d3834.md` to `$SLOW_STORAGE/pages/` or trigger a required-pages reseed.
+
 ## 2026-05-13-06
 
 - Agent: Claude Opus 4.7

@@ -62,11 +62,14 @@ export interface PageFrontmatter {
   audience?: string[];
 
   /**
-   * Whether the page is private (visible only to creator + admins, gated by audience).
+   * Whether the page is private — accessible only to the page creator and admins.
    *
-   * #639: peer of `audience` and `author-lock`. Source of truth for the tier-0 ACL check.
-   * When unset, ACLManager / search providers fall back to scanning `user-keywords` for
-   * the literal `'private'` so existing pages keep working until they're migrated.
+   * Peer of `audience` and `author-lock`; canonical signal for ACLManager's tier-0
+   * private check. When true, all other per-page rules (audience, access, author-lock)
+   * are bypassed and the page is stored in a separate per-creator location.
+   *
+   * #639: top-level field added in Slice C; user-keywords back-compat scan dropped
+   * in Slice E (v3.7.0). All datasets migrated; this field is the only source of truth.
    */
   private?: boolean;
 

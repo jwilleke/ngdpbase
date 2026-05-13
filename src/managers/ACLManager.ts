@@ -467,8 +467,8 @@ class ACLManager extends BaseManager {
 
   // #632: deprecated `checkPagePermission(pageName, action, userContext, content)`
   // removed. All callers migrated to `checkPagePermissionWithContext(wikiContext, action)`,
-  // which runs the full 3-tier evaluator (private user-keyword → frontmatter
-  // audience → global policies). The old 4-arg form lacked tier 0 entirely.
+  // which runs the full 3-tier evaluator (private flag → frontmatter audience/access
+  // → global policies). The old 4-arg form lacked tier 0 entirely.
 
   /**
    * Perform standard ACL check (original logic)

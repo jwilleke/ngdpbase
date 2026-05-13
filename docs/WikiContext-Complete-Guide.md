@@ -546,7 +546,7 @@ app.use((req, res, next) => {
 });
 ```
 
-For the legacy private-page check pattern (admin-OR-creator on private pages), use `wikiContext.canAccess('view')` — ACLManager's tier 0 handles `user-keywords: [private]` natively.
+For the private-page check pattern (admin-OR-creator on private pages), use `wikiContext.canAccess('view')` — ACLManager's tier 0 handles `private: true` frontmatter natively (canonical since #639 Slice E / v3.7.0).
 
 See [Access-Control.md](architecture/Access-Control.md) for the full operational guide, including ParseContext / ApiContext patterns.
 

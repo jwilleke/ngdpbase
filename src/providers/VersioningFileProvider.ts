@@ -41,7 +41,7 @@ interface PageIndexEntry {
   hasVersions: boolean;
   /** Roles/usernames from front matter audience or access.view — for index-level access checks */
   audienceRoles?: string[];
-  /** True when user-keywords includes 'private' */
+  /** True when the page's frontmatter has `private: true` (canonical since #639 Slice E / v3.7.0) */
   isPrivate?: boolean;
 }
 
