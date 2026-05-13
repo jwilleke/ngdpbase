@@ -2,6 +2,23 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-13-14
+
+- Agent: Claude Opus 4.7
+- Subject: Resolve `#711` — ACLManager Tier 0 was reading `metadata.author` as the private-page "creator", contradicting the [Page Audience] doc which specifies the page-index `creator` (sticky) as authoritative. Fix is minimal: a new `PageManager.checkPrivatePageAccess` helper that reads page-index `creator`, and ACLManager Tier 0 delegating to it.
+- Current Issue: `#711` (closed); follow-up architectural refactor filed as `#714` [EPIC].
+- Tests: 5504/5504 unit tests pass. `npx tsc --noEmit -p tsconfig.json` clean. Build clean. Server restarted on jimstest (PID 94978). No UI files touched, E2E not run per session-commit conditional rule.
+- Work Done:
+  - **`src/managers/PageManager.ts`** — new method `checkPrivatePageAccess(wikiContext, pageNameOrUuid): Promise<boolean | null>`. Reads `metadata.uuid` → looks up `provider.pageIndex.pages[uuid]` → checks `entry.location === 'private'` OR `metadata.private === true` for the private gate. Identity check uses `entry.creator` (sticky page-index field, preserved across saves per `VersioningFileProvider:1394-1396`), not the mutable frontmatter `author`. Returns `null` when not private (fall through), `true` for admin or page-index creator, `false` otherwise. Local `WikiContext` interface widened with optional `hasRole(...)` for the admin bypass.
+  - **`src/managers/ACLManager.ts`** Tier 0 — delegates to `PageManager.checkPrivatePageAccess` when a PageManager is registered (production path). Falls back to the pre-#711 frontmatter-author check when a PageManager isn't available — only fires in legacy test fixtures that construct ACL directly with no PageManager mock; production always has one.
+  - **No other code touched.** `WikiRoutes.checkPrivatePageAccess`, `MediaManager.checkPrivatePageAccess`, the route-level author-lock branch at `WikiRoutes.ts:2211`, and the route handler call sites are all unchanged. They still work because Tier 0 in ACL now matches the doc; the duplicated helpers in WikiRoutes/MediaManager produce the same answer for the cases they care about.
+- Parked work — **filed as `#714` [EPIC]**: a unified-evaluator refactor was prototyped during this session — Tier 0.5 author-lock added to ACLManager; `wikiContext.canAccess(action, pageNameOverride?)` extended with optional pageName override; `ACLManager.canUserAccessPage` added for cross-page checks; route handlers migrated to `canAccess`; duplicated `checkPrivatePageAccess` helpers deleted; route-level author-lock branch deleted. The refactor worked on the source side — clean tsc, no runtime issues — but cascading test-mock updates across ~10 test files exceeded the time budget for what was supposed to be a `#711` bugfix. WIP saved as `git stash@{0}` ("wip: full single-evaluator refactor"); can be revived as the starting point for #714.
+- Commits: `7c52c4c2` (this slice).
+- Files Modified:
+  - `src/managers/PageManager.ts` (+60 lines: new helper + interface widening)
+  - `src/managers/ACLManager.ts` (~30 lines: Tier 0 delegation + fallback)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-13-13
 
 - Agent: Claude Opus 4.7
