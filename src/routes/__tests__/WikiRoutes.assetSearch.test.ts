@@ -489,6 +489,99 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
 
       expect(res.status).toHaveBeenCalledWith(403);
     });
+
+    // -----------------------------------------------------------------------
+    // #699 — capped flag when SearchManager saturates maxResults
+    // -----------------------------------------------------------------------
+    it('sets capped:true when hits.length >= fetchLimit (#699)', async () => {
+      // fetchLimit defaults to max(200, offset+pageSize). With offset=0,
+      // pageSize=48 the limit is 200. Saturating it should flag capped.
+      const search = makeSearchManager(Array.from({ length: 200 }, (_, i) => ({ name: `Page${i}` })));
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
+      const req = makeReq({ query: { types: 'page', q: 'foo' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.capped).toBe(true);
+    });
+
+    it('sets capped:false when hits.length < fetchLimit (#699)', async () => {
+      const search = makeSearchManager([{ name: 'Beach Day' }]);
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
+      const req = makeReq({ query: { types: 'page', q: 'beach' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.capped).toBe(false);
+    });
+
+    // -----------------------------------------------------------------------
+    // #700 — sort=caption / sort=date wired through the pages branch
+    // -----------------------------------------------------------------------
+    it('sort=caption&order=asc on cheap path orders page names A→Z (#700)', async () => {
+      const pageManager = makePageManager(['Charlie', 'Alpha', 'Bravo']);
+      const routes = makeRoutesWithPages(makeAssetService(), pageManager);
+      const req = makeReq({ query: { types: 'page', sort: 'caption', order: 'asc' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.results.map((r: { id: string }) => r.id)).toEqual(['Alpha', 'Bravo', 'Charlie']);
+    });
+
+    it('sort=caption&order=desc on cheap path orders page names Z→A (#700)', async () => {
+      const pageManager = makePageManager(['Alpha', 'Charlie', 'Bravo']);
+      const routes = makeRoutesWithPages(makeAssetService(), pageManager);
+      const req = makeReq({ query: { types: 'page', sort: 'caption', order: 'desc' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.results.map((r: { id: string }) => r.id)).toEqual(['Charlie', 'Bravo', 'Alpha']);
+    });
+
+    it('sort=date routes through SearchManager (cheap path skipped) (#700)', async () => {
+      // sort=date needs metadata.lastModified, so even with no query/filters
+      // the handler must go through SearchManager to get it.
+      const search = makeSearchManager([
+        { name: 'Old',    metadata: { lastModified: '2024-01-01' } } as never,
+        { name: 'Newest', metadata: { lastModified: '2026-05-01' } } as never,
+        { name: 'Middle', metadata: { lastModified: '2025-06-01' } } as never
+      ]);
+      const pageManager = makePageManager();
+      const routes = makeRoutesWithPages(makeAssetService(), pageManager, search);
+      const req = makeReq({ query: { types: 'page', sort: 'date', order: 'desc' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(search.advancedSearchWithContext).toHaveBeenCalled();
+      expect(pageManager.getAllPages).not.toHaveBeenCalled();
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.results.map((r: { id: string }) => r.id)).toEqual(['Newest', 'Middle', 'Old']);
+    });
+
+    it('no sort param keeps cheap getAllPages path AND preserves iteration order (#700)', async () => {
+      // Back-compat: callers that don't pass sort get the existing cheap path
+      // and the existing intrinsic ordering. Avoids a perf regression for the
+      // simple "list all pages" callers.
+      const pageManager = makePageManager(['Zebra', 'Alpha', 'Mango']);
+      const routes = makeRoutesWithPages(makeAssetService(), pageManager);
+      const req = makeReq({ query: { types: 'page' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(pageManager.getAllPages).toHaveBeenCalled();
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.results.map((r: { id: string }) => r.id)).toEqual(['Zebra', 'Alpha', 'Mango']);
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -550,7 +643,7 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
 
       await routes.assetSearch(req, res);
 
-      expect(res.json).toHaveBeenCalledWith({ success: true, results: [], total: 0, hasMore: false });
+      expect(res.json).toHaveBeenCalledWith({ success: true, results: [], total: 0, hasMore: false, capped: false });
       expect(userManager.searchUsers).not.toHaveBeenCalled();
     });
 
@@ -565,7 +658,7 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
 
       await routes.assetSearch(req, res);
 
-      expect(res.json).toHaveBeenCalledWith({ success: true, results: [], total: 0, hasMore: false });
+      expect(res.json).toHaveBeenCalledWith({ success: true, results: [], total: 0, hasMore: false, capped: false });
       expect(userManager.searchUsers).not.toHaveBeenCalled();
     });
 
@@ -668,6 +761,105 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       await routes.assetSearch(req, res);
 
       expect(service.search).not.toHaveBeenCalled();
+    });
+
+    // -----------------------------------------------------------------------
+    // #699 — capped flag when UserManager.searchUsers saturates its limit
+    // -----------------------------------------------------------------------
+    it('sets capped:true when fetched.length >= fetchLimit (#699)', async () => {
+      // fetchLimit defaults to max(200, offset+pageSize). With offset=0,
+      // pageSize=48 the limit is 200. Saturating it should flag capped.
+      const allUsers = Array.from({ length: 200 }, (_, i) => ({ username: `u${i}` }));
+      const userManager = makeUserManager(allUsers);
+      const routes = makeRoutesWithUsers(makeAssetService(), userManager);
+      const req = makeAuthedReq({ query: { types: 'user' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.capped).toBe(true);
+    });
+
+    it('sets capped:false when fetched.length < fetchLimit (#699)', async () => {
+      const userManager = makeUserManager(Array.from({ length: 5 }, (_, i) => ({ username: `u${i}` })));
+      const routes = makeRoutesWithUsers(makeAssetService(), userManager);
+      const req = makeAuthedReq({ query: { types: 'user' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.capped).toBe(false);
+    });
+
+    // -----------------------------------------------------------------------
+    // #700 — sort=caption / sort=date wired through the user branch
+    // -----------------------------------------------------------------------
+    it('sort=caption&order=asc orders by displayName A→Z (#700)', async () => {
+      const userManager = makeUserManager([
+        { username: 'c', displayName: 'Charlie' },
+        { username: 'a', displayName: 'Alice' },
+        { username: 'b', displayName: 'Bob' }
+      ]);
+      const routes = makeRoutesWithUsers(makeAssetService(), userManager);
+      const req = makeAuthedReq({ query: { types: 'user', sort: 'caption', order: 'asc' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.results.map((r: { id: string }) => r.id)).toEqual(['a', 'b', 'c']);
+    });
+
+    it('sort=caption&order=desc orders by displayName Z→A (#700)', async () => {
+      const userManager = makeUserManager([
+        { username: 'a', displayName: 'Alice' },
+        { username: 'c', displayName: 'Charlie' },
+        { username: 'b', displayName: 'Bob' }
+      ]);
+      const routes = makeRoutesWithUsers(makeAssetService(), userManager);
+      const req = makeAuthedReq({ query: { types: 'user', sort: 'caption', order: 'desc' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.results.map((r: { id: string }) => r.id)).toEqual(['c', 'b', 'a']);
+    });
+
+    it('sort=date&order=desc orders by createdAt newest-first (#700)', async () => {
+      const userManager = makeUserManager([
+        { username: 'old',    displayName: 'Old',    createdAt: '2024-01-01' },
+        { username: 'newest', displayName: 'Newest', createdAt: '2026-05-01' },
+        { username: 'middle', displayName: 'Middle', createdAt: '2025-06-01' }
+      ] as never);
+      const routes = makeRoutesWithUsers(makeAssetService(), userManager);
+      const req = makeAuthedReq({ query: { types: 'user', sort: 'date', order: 'desc' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.results.map((r: { id: string }) => r.id)).toEqual(['newest', 'middle', 'old']);
+    });
+
+    it('no sort param preserves UserManager iteration order (#700)', async () => {
+      // Back-compat: callers that don't pass sort should keep getting results
+      // in whatever order searchUsers returned them.
+      const userManager = makeUserManager([
+        { username: 'z' },
+        { username: 'a' },
+        { username: 'm' }
+      ]);
+      const routes = makeRoutesWithUsers(makeAssetService(), userManager);
+      const req = makeAuthedReq({ query: { types: 'user' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.results.map((r: { id: string }) => r.id)).toEqual(['z', 'a', 'm']);
     });
   });
 });

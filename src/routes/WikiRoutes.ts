@@ -7820,6 +7820,14 @@ ${panes}
       const typesParam = typeof req.query.types === 'string' ? req.query.types : '';
       const pageSize = Math.min(parseInt(req.query.pageSize as string, 10) || 48, 200);
       const offset = Math.max(parseInt(req.query.offset as string, 10) || 0, 0);
+      // Sort/order parsing — applies to all branches per #700. We track the
+      // tristate (undefined = caller didn't ask) because the pages branch has a
+      // cheap "list all" path that we only want to keep for callers that don't
+      // request a sort. The attachments/media branch below preserves its
+      // existing sort='date' default by coalescing further down.
+      const sortRaw = typeof req.query.sort === 'string' ? req.query.sort : '';
+      const sort: 'date' | 'caption' | undefined = sortRaw === 'caption' ? 'caption' : sortRaw === 'date' ? 'date' : undefined;
+      const order: 'asc' | 'desc' = req.query.order === 'desc' ? 'desc' : 'asc';
 
       // Auth model (#696):
       //   types=page  → anon allowed; SearchManager filters per-page ACL via
@@ -7879,11 +7887,18 @@ ${panes}
         if (searchIn.length === 0) searchIn = ['all'];
 
         const hasFilter = !!query || categories.length > 0 || userKeywords.length > 0 || systemKeywords.length > 0;
+        // #700: sort=date needs metadata.lastModified per row, which only the
+        // search-index path populates. Route through SearchManager for sort=date
+        // even when no other filter is set. When the caller didn't specify a
+        // sort at all (`sort === undefined`), keep the cheap getAllPages path —
+        // existing /api/assets/search?types=page callers that just want a flat
+        // page list shouldn't pay for a search index round-trip.
+        const useSearchPath = hasFilter || sort === 'date';
 
         // Helper to project a page-name or SearchResult into the AssetRecord
         // shape the asset-picker consumes. Canonical /view/ URL per the no-wiki
         // convention; the previous /wiki/<page> form was legacy.
-        const toAssetRecord = (pageName: string, title?: string, excerpt?: string, kw?: string[]) => ({
+        const toAssetRecord = (pageName: string, title?: string, excerpt?: string, kw?: string[], lastModified?: string) => ({
           id: pageName,
           providerId: 'page',
           filename: pageName,
@@ -7893,15 +7908,16 @@ ${panes}
           encodingFormat: 'text/wiki',
           url: '/view/' + encodeURIComponent(pageName),
           mentions: [],
-          metadata: {},
+          metadata: lastModified ? { lastModified } : {},
           insertSnippet: '[' + pageName + ']'
         });
 
         let all: ReturnType<typeof toAssetRecord>[];
-        if (hasFilter) {
+        let pagesCapped = false;
+        if (useSearchPath) {
           const searchManager = this.engine.getManager('SearchManager') as {
             advancedSearchWithContext?: (ctx: unknown, opts: Record<string, unknown>) => Promise<Array<{
-              name: string; title?: string; excerpt?: string; userKeywords?: string[];
+              name: string; title?: string; excerpt?: string; userKeywords?: string[]; metadata?: Record<string, unknown>;
             }>>;
           };
           if (!searchManager?.advancedSearchWithContext) {
@@ -7919,16 +7935,43 @@ ${panes}
             searchIn,
             maxResults: fetchLimit
           });
-          all = hits.map(h => toAssetRecord(h.name, h.title, h.excerpt, h.userKeywords));
+          // #699: detect cap saturation. Same trade-off as the user branch — when
+          // saturated we don't know the true match count, so conservatively flag capped.
+          pagesCapped = hits.length >= fetchLimit;
+          all = hits.map(h => {
+            const lm = typeof h.metadata?.lastModified === 'string' ? h.metadata.lastModified : undefined;
+            return toAssetRecord(h.name, h.title, h.excerpt, h.userKeywords, lm);
+          });
         } else {
-          // Empty query, no filters — return all pages (cheap path).
+          // Empty query, no filters, sort=caption — return all pages (cheap path).
           const allNames = await pageManager.getAllPages();
           all = allNames.map((pageName: string) => toAssetRecord(pageName));
         }
 
+        // #700: handler-side sort within the result window. Only fires when the
+        // caller explicitly asked for one — preserves the existing default
+        // ordering (search-score-desc for the filter path, provider-iteration
+        // order for the cheap path) for callers that don't pass `sort`.
+        // For the search path this orders the first-N-by-score rather than the
+        // globally newest/first — the issue accepts this trade-off; raising
+        // maxResults globally would hurt the common (filtered, top-N) case.
+        if (sort) {
+          const orderMul = order === 'desc' ? -1 : 1;
+          const pageSortKey = sort === 'caption'
+            ? (r: typeof all[number]) => r.name.toLowerCase()
+            : (r: typeof all[number]) => (typeof r.metadata.lastModified === 'string' ? r.metadata.lastModified : '');
+          all.sort((a, b) => {
+            const ka = pageSortKey(a);
+            const kb = pageSortKey(b);
+            if (ka < kb) return -1 * orderMul;
+            if (ka > kb) return 1 * orderMul;
+            return 0;
+          });
+        }
+
         const total = all.length;
         const results = all.slice(offset, offset + pageSize);
-        return res.json({ success: true, results, total, hasMore: offset + pageSize < total });
+        return res.json({ success: true, results, total, hasMore: offset + pageSize < total, capped: pagesCapped });
       }
 
       // Users — slice 1 of #693. Permission-gated since profile info is PII.
@@ -7943,6 +7986,7 @@ ${panes}
             email?: string;
             profilePage?: string;
             avatar?: string;
+            createdAt?: string;
           }>>;
         };
         if (!userManager?.searchUsers) {
@@ -7961,14 +8005,39 @@ ${panes}
           && username !== 'asserted'
         );
         if (!isAuthenticated) {
-          return res.json({ success: true, results: [], total: 0, hasMore: false });
+          return res.json({ success: true, results: [], total: 0, hasMore: false, capped: false });
         }
         // UserManager.searchUsers caps at its own `limit` option; oversample
         // so the slice math below has enough rows to paginate through.
         const fetchLimit = Math.max(200, offset + pageSize);
         const fetched = await userManager.searchUsers(query, { limit: fetchLimit, activeOnly: true });
-        const total = fetched.length;
-        const slice = fetched.slice(offset, offset + pageSize);
+        // #699: surface a `capped` flag when the cap may be hiding more matches.
+        // We can't tell from a saturated result alone whether the true match
+        // count is exactly fetchLimit or larger; conservatively treat saturation
+        // as capped and let the UI render "showing first N" when set.
+        const capped = fetched.length >= fetchLimit;
+        // #700: handler-side sort within the oversample window. Only fires when
+        // the caller explicitly asked for one; otherwise preserve UserManager's
+        // iteration order for back-compat with callers that don't pass `sort`.
+        // For corpora larger than fetchLimit this orders the first-N-by-
+        // iteration, not the globally newest/first — same trade-off as the
+        // pages branch above.
+        let sorted = fetched;
+        if (sort) {
+          const userSortKey = sort === 'caption'
+            ? (u: typeof fetched[number]) => (u.displayName ?? u.username).toLowerCase()
+            : (u: typeof fetched[number]) => u.createdAt ?? '';
+          const orderMul = order === 'desc' ? -1 : 1;
+          sorted = [...fetched].sort((a, b) => {
+            const ka = userSortKey(a);
+            const kb = userSortKey(b);
+            if (ka < kb) return -1 * orderMul;
+            if (ka > kb) return 1 * orderMul;
+            return 0;
+          });
+        }
+        const total = sorted.length;
+        const slice = sorted.slice(offset, offset + pageSize);
         const results = slice.map(u => {
           const pageName = u.profilePage || u.displayName || u.username;
           return {
@@ -7986,15 +8055,13 @@ ${panes}
             insertSnippet: '[' + pageName + ']'
           };
         });
-        return res.json({ success: true, results, total, hasMore: offset + pageSize < total });
+        return res.json({ success: true, results, total, hasMore: offset + pageSize < total, capped });
       }
 
       const types = typesParam
         ? (typesParam.split(',').filter(t => t === 'attachment' || t === 'media'))
         : undefined;
       const year = req.query.year ? parseInt(req.query.year as string, 10) || undefined : undefined;
-      const sort = req.query.sort === 'caption' ? 'caption' as const : 'date' as const;
-      const order = req.query.order === 'desc' ? 'desc' as const : 'asc' as const;
       const mimeCategoryRaw = req.query.mimeCategory as string;
       const mimeCategory = (['image', 'document', 'other'] as const).find(c => c === mimeCategoryRaw);
 
@@ -8011,7 +8078,9 @@ ${panes}
       const extension = typeof req.query.extension === 'string' && req.query.extension ? req.query.extension : undefined;
 
       const page = await assetService.search({
-        query, types, year, pageSize, offset, sort, order, mimeCategory, wikiContext, userRoles, username,
+        query, types, year, pageSize, offset,
+        sort: sort ?? 'date', order,
+        mimeCategory, wikiContext, userRoles, username,
         dateFrom, dateTo, dateField, includeHidden, pathPrefix, mime, extension
       });
 

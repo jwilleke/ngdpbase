@@ -2,6 +2,32 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-13-06
+
+- Agent: Claude Opus 4.7
+- Subject: Bundled fix for `#699` (UserManager.searchUsers cap silently truncates large user lists) and `#700` (wire backend sort for `/api/assets/search?types=page` and `?types=user`). Same handler (`WikiRoutes.assetSearch`), same `types=user` and `types=page` branches, same touchpoints — shipping them as one slice to avoid rebase churn and double-touching identical lines.
+- Current Issue: `#699` and `#700`.
+- Tests: 51/51 in `WikiRoutes.assetSearch.test.ts` (39 existing + 12 new) pass. 895/895 WikiRoutes tests pass on rerun (initial single flake matched the known-intermittent `#622`). `npx tsc --noEmit -p tsconfig.json` clean.
+- Work Done:
+  - **`WikiRoutes.assetSearch`** — refactored to handle sort/order at the top of the handler as a tristate (`'date' | 'caption' | undefined`); attachments/media branch coalesces `sort ?? 'date'` to preserve the existing AssetService default; pages/users branches sort only when the caller actually requested a sort (preserves the cheap `getAllPages` path and the existing iteration order for back-compat callers).
+  - **`#699` capped flag.**
+    - `types=user` branch: `const capped = fetched.length >= fetchLimit`; surfaced as `capped` in the JSON response alongside `success`/`results`/`total`/`hasMore`. Anonymous-viewer early-return path also returns `capped: false` so the response shape is uniform.
+    - `types=page` branch: same pattern using `hits.length >= fetchLimit` from the search path. The cheap `getAllPages` path returns `capped: false` (it isn't capped — `getAllPages` returns everything).
+    - The flag is conservative — when saturated we can't tell if true match count is exactly `fetchLimit` or larger, so we treat saturation as capped. UI can render "showing first N of many" when set.
+  - **`#700` sort wiring.**
+    - `types=user`: when `sort=caption`, key on `(displayName ?? username).toLowerCase()`; when `sort=date`, key on `createdAt`; apply `order` via sign multiplier. Local type for `searchUsers` widened to include `createdAt?: string`.
+    - `types=page`: extended `toAssetRecord` to accept `lastModified` and stash it in `metadata.lastModified`. Introduced `useSearchPath = hasFilter || sort === 'date'` so `sort=date` routes through `SearchManager.advancedSearchWithContext` even with no filters (the cheap `getAllPages` path returns just names — no metadata to sort by). LunrSearchProvider already populates `metadata.lastModified` in its SearchResult, so no provider change needed.
+    - Sort key for pages: `sort=caption` → `name.toLowerCase()`; `sort=date` → `metadata.lastModified || ''`.
+    - Trade-off documented in code comments: handler-side sort within the oversample window means we order the first-N-by-score/iteration rather than the globally newest/first. The issue explicitly accepts this for the short-term fix; the longer-term path is a real users index (cross-references `#525`).
+  - **Tests added** (`WikiRoutes.assetSearch.test.ts`):
+    - users branch: capped:true on saturation, capped:false below, sort=caption asc/desc, sort=date desc, no-sort preserves iteration order — 6 new tests
+    - pages branch: capped:true on saturation, capped:false below, sort=caption asc/desc on cheap path, sort=date routes through SearchManager, no-sort preserves cheap path — 6 new tests
+- Commits: pending.
+- Files Modified:
+  - `src/routes/WikiRoutes.ts` (~90 lines: handler-top sort/order parse, user branch sort+capped, page branch sort+capped + useSearchPath threading)
+  - `src/routes/__tests__/WikiRoutes.assetSearch.test.ts` (+12 tests, 1 existing-test assertion updated to include `capped: false`)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-13-05
 
 - Agent: Claude Opus 4.7
