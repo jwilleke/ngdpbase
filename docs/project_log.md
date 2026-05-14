@@ -2,6 +2,38 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-14-06
+
+- Agent: Claude Opus 4.7
+- Subject: `#660` initial pass — refresh `docs/Developer-Documentation.md` against reality, draft a frontmatter policy for `docs/`, and wire a lint hook that blocks future drift. Operator decisions: (1) tackle (a)+(b) this turn, defer (c) broader memory/discoverability fix; (2) docs/ stays GitHub-only — NOT wiki-ingested.
+- Current Issue: `#660` — comment posted; left open (mass-conversion and stub-creation deferred).
+- Tests: jimstest unchanged (no code touched). Each satellite 5507/5507 unit (E2E skipped — docs-only). New lint reports 0 errors, 97 warnings against current state.
+- Work Done:
+  - `docs/Developer-Documentation.md` — full refresh. Previously claimed "24/24 managers documented (100%)" — actually 24/37; same drift across plugins (13 claimed / 31 real) and providers (7 claimed / 28 real). Every src/managers/*.ts, src/plugins/*.ts (excluding `types.ts` + lowercase helpers), src/providers/*.ts now appears with per-row status (📘 Complete Guide / ✅ doc only / ⚠️ source-only). New "How to use this index (READ FIRST)" preamble spells out the agent workflow
+  - `docs/DOCUMENTATION-STANDARDS.md` — added optional `code:` frontmatter field (repo-relative path to source); "Where frontmatter is required" matrix (managers/plugins/providers required; architecture/admin/user-guide optional; project_log/TODO/CHANGELOG skip); "Do NOT use page-style frontmatter in docs/" section codifying the two-schema split with today's no-wiki-ingestion decision
+  - `scripts/check-docs-coverage.ts` — new (~165 lines). Walks src/ + docs/, parses frontmatter via `js-yaml`. Errors: source file not in index, `code:` field points to non-existent source. Warnings: source without doc page, doc without frontmatter/`code` field. Filters: skips `types.ts` and lowercase-leading helper files (`renderImage.ts`)
+  - `package.json` — added `lint:docs` script; wired into `lint` and `lint:ci`
+  - `.husky/pre-commit` — runs `npm run lint:docs --silent` after `npx lint-staged`, blocks on errors
+  - `tsconfig.json` — added `scripts/check-docs-coverage.ts` to `include` (so eslint type-checking can parse it; matches the pattern used for `scripts/migrate-user-pages-category.ts`)
+  - 3 sample frontmatter conversions: `docs/managers/PageManager.md`, `docs/plugins/SearchPlugin.md`, `docs/providers/FileSystemProvider.md`. Also fixed stale `.js` → `.ts` references in two of them
+  - Deferred (called out in the #660 comment): mass-conversion of the remaining ~50 doc files; stub creation for 45+ source-only modules; tightening warnings → errors after the conversion sweep; the broader agent/human memory fix beyond docs
+- Propagation results:
+  - **fairways-base** (2121) — pulled to `fd5c80f9`, **5507/5507** unit (no rebuild — docs+script only)
+  - **ngdpbase-veg** (3333) — pulled to `fd5c80f9`, **5507/5507** unit
+  - **ngdp-temp-builds** (3001) — pulled to `fd5c80f9`, **5507/5507** unit
+- Commits: `fd5c80f9`.
+- Files Modified:
+  - `docs/Developer-Documentation.md`
+  - `docs/DOCUMENTATION-STANDARDS.md`
+  - `docs/managers/PageManager.md`
+  - `docs/plugins/SearchPlugin.md`
+  - `docs/providers/FileSystemProvider.md`
+  - `scripts/check-docs-coverage.ts` (new)
+  - `package.json`
+  - `.husky/pre-commit`
+  - `tsconfig.json`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-14-05
 
 - Agent: Claude Opus 4.7
