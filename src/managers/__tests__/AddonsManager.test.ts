@@ -1154,4 +1154,74 @@ describe('AddonsManager', () => {
       expect(pageManager.savePage).not.toHaveBeenCalled();
     });
   });
+
+  // #718: getAddonConfig must deep-nest dotted keys so addons can read
+  // structured config (config.calendars.clubhouse.enabled) instead of
+  // flat-dot keys (config['calendars.clubhouse.enabled']) that nobody
+  // was actually parsing.
+  describe('getAddonConfig — deep-nest dotted keys (#718)', () => {
+    test('single-segment keys stay flat', () => {
+      const configManager = makeConfigManager({
+        allProperties: {
+          'ngdpbase.addons.calendar.enabled': true,
+          'ngdpbase.addons.calendar.dataPath': './data/calendar'
+        }
+      });
+      const manager = new AddonsManager(makeEngine(configManager));
+      const cfg = manager.getAddonConfig('calendar');
+      expect(cfg.enabled).toBe(true);
+      expect(cfg.dataPath).toBe('./data/calendar');
+    });
+
+    test('multi-segment keys nest into objects', () => {
+      const configManager = makeConfigManager({
+        allProperties: {
+          'ngdpbase.addons.calendar.calendars.clubhouse.enabled': true,
+          'ngdpbase.addons.calendar.calendars.clubhouse.workflow': 'reservation',
+          'ngdpbase.addons.calendar.calendars.clubhouse.visibility': 'authenticated'
+        }
+      });
+      const manager = new AddonsManager(makeEngine(configManager));
+      const cfg = manager.getAddonConfig('calendar');
+      expect(cfg.calendars).toEqual({
+        clubhouse: {
+          enabled: true,
+          workflow: 'reservation',
+          visibility: 'authenticated'
+        }
+      });
+    });
+
+    test('flat and nested keys coexist', () => {
+      const configManager = makeConfigManager({
+        allProperties: {
+          'ngdpbase.addons.calendar.dataPath': './data/calendar',
+          'ngdpbase.addons.calendar.clubhouse-manager-email': 'jim@example.com',
+          'ngdpbase.addons.calendar.calendars.clubhouse.enabled': true,
+          'ngdpbase.addons.calendar.calendars.clubhouse.workflow': 'reservation'
+        }
+      });
+      const manager = new AddonsManager(makeEngine(configManager));
+      const cfg = manager.getAddonConfig('calendar');
+      expect(cfg.dataPath).toBe('./data/calendar');
+      expect(cfg['clubhouse-manager-email']).toBe('jim@example.com');
+      expect(cfg.calendars).toEqual({
+        clubhouse: { enabled: true, workflow: 'reservation' }
+      });
+    });
+
+    test('only properties matching the addon prefix are included', () => {
+      const configManager = makeConfigManager({
+        allProperties: {
+          'ngdpbase.addons.calendar.dataPath': './data/calendar',
+          'ngdpbase.addons.forms.dataPath': './data/forms',
+          'ngdpbase.application-name': 'Test'
+        }
+      });
+      const manager = new AddonsManager(makeEngine(configManager));
+      const cfg = manager.getAddonConfig('calendar');
+      expect(cfg.dataPath).toBe('./data/calendar');
+      expect(Object.keys(cfg)).toEqual(['dataPath']);
+    });
+  });
 });

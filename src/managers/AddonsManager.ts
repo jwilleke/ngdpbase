@@ -415,15 +415,33 @@ class AddonsManager extends BaseManager {
     // Get addon-specific properties from config.
     // Config is stored as flat dot-notation keys, e.g.:
     //   "ngdpbase.addons.my-addon.dataPath": "./data/my-addon"
-    // Strip the prefix and expose short keys to the addon:
-    //   config.dataPath === "./data/my-addon"
+    //   "ngdpbase.addons.calendar.calendars.clubhouse.enabled": true
+    // Strip the addon prefix, then deep-nest the remaining dot-segments so
+    // single-segment keys stay flat (`config.dataPath`) and multi-segment
+    // keys become a nested object tree (`config.calendars.clubhouse.enabled`).
+    // The flat form alone would force every addon to reimplement key-walking;
+    // the nested form lets addons read structured config naturally (#718).
     const config: Record<string, unknown> = {};
     const prefix = `ngdpbase.addons.${addonName}.`;
     const allProps = configManager.getAllProperties();
 
+    const setDeep = (target: Record<string, unknown>, path: string, value: unknown): void => {
+      const segments = path.split('.');
+      let cursor: Record<string, unknown> = target;
+      for (let i = 0; i < segments.length - 1; i++) {
+        const seg = segments[i];
+        const next = cursor[seg];
+        if (typeof next !== 'object' || next === null || Array.isArray(next)) {
+          cursor[seg] = {};
+        }
+        cursor = cursor[seg] as Record<string, unknown>;
+      }
+      cursor[segments[segments.length - 1]] = value;
+    };
+
     for (const [key, value] of Object.entries(allProps)) {
       if (key.startsWith(prefix)) {
-        config[key.slice(prefix.length)] = value;
+        setDeep(config, key.slice(prefix.length), value);
       }
     }
 
