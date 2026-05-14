@@ -8,9 +8,9 @@ The high-level flow is:
 
 1. Gather context
 2. Create the commit
-3. **jimstest pre-flight** (build → restart → unit tests → E2E if UI-affecting)
+3. **jimstest pre-flight** (build → restart → unit tests → E2E if UI-affecting) — **ALWAYS runs**, regardless of semver outcome.
 4. **Semver decision** (patch / minor / major / skip)
-5. **`/othersites` propagation** (pull + build + restart + tests on the satellite instances)
+5. **`/othersites` propagation** (pull + build + restart + tests on the satellite instances) — **only when Step 4 was `minor` or `major`**. Skipped for `patch` and `skip`. Standalone `/othersites` invocations (typed by the operator outside this command) are unaffected and always run.
 6. Update project log
 7. Update GitHub issues
 8. Final commit and push
@@ -64,9 +64,15 @@ Decide whether this commit warrants a version bump:
 
 Note the typical pattern: `/semver patch` defers publishing the release; `/semver minor|major` auto-publishes. See `feedback_release_workflow.md` in memory for the full rules.
 
-### Step 5: `/othersites` propagation
+### Step 5: `/othersites` propagation (conditional)
 
-Once jimstest pre-flight is green (and any semver bump has been pushed), run `/othersites` to propagate to the satellite instances:
+Run `/othersites` **only if Step 4 was `minor` or `major`.** For `patch` releases or `skip` (no version bump), this step is **skipped entirely** — satellites stay on whatever release they last pulled and will catch up at the next minor/major. The rationale is that patch chains accumulate without churning every satellite restart; one consolidated propagation per minor is cheaper and lower-risk than per-patch propagation.
+
+This applies only to `/othersites` invoked **as a step of /session-commit**. The operator can still run `/othersites` standalone at any time (e.g. `/othersites` typed directly) and it will always propagate — that path is unaffected by this gate.
+
+Precondition for running: jimstest pre-flight (Step 3) must be green and any semver bump (Step 4) must already be pushed to origin. Satellites pull from origin, so the new tag has to exist there first.
+
+Targets:
 
 - `fairways-base` (port 2121, "The Fairways")
 - `ngdpbase-veg` (port 3333, "ve-geology")
