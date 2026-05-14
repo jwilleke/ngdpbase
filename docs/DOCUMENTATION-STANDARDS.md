@@ -36,10 +36,50 @@ relatedModules: ["Module1", "Module2"]
 
 | Field | Type | Description |
 | ------- | ------ | ------------- |
+| code | string | Repo-relative path to the implementing source file (e.g. `src/managers/PageManager.ts`). **Required for docs in `managers/`, `plugins/`, `providers/`** — see "Where frontmatter is required" below. |
 | relatedModules | array | Related modules for cross-referencing |
 | version | string | Module version if applicable |
 | author | string | Original author |
 | status | string | draft, review, stable, deprecated |
+
+### Where frontmatter is required (#660)
+
+The schema above is **required** for documentation that maps 1:1 to source modules:
+
+| Path | Required? | Why |
+| --- | --- | --- |
+| `docs/managers/*.md` | ✅ Required | Each file documents one `src/managers/*.ts`; the `code` field is what `docs/Developer-Documentation.md` uses to cross-check coverage. |
+| `docs/plugins/*.md` | ✅ Required | Same, for `src/plugins/*.ts`. |
+| `docs/providers/*.md` | ✅ Required | Same, for `src/providers/*.ts`. |
+| `docs/architecture/*.md`, `docs/admin/*.md`, `docs/user-guide/*.md` | ⚪ Optional | Cross-cutting docs that don't map to a single source file. Frontmatter encouraged but not enforced. |
+| `docs/project_log.md`, `docs/TODO.md`, `docs/CHANGELOG.md` | ⛔ Skip | Operational logs maintained by tooling/agents; adding frontmatter would just create churn. |
+
+The motivating problem (issue #660) is that AI agents and contributors keep writing duplicate code because they can't tell what already exists. Requiring `code:` in the doc files that map 1:1 to source gives us a machine-readable backstop: a lint or pre-commit hook can verify every `src/managers/*.ts` has a corresponding `docs/managers/*.md` whose `code:` field points back, and vice-versa.
+
+### Do NOT use page-style frontmatter in docs/
+
+ngdpbase has two distinct frontmatter schemas in the project. They are not interchangeable:
+
+| Schema | Where | Fields | Purpose |
+| --- | --- | --- | --- |
+| **Doc-style** (this file) | `docs/` | `name`, `description`, `dateModified`, `category`, `code` | GitHub-only metadata; consumed by lint/index tooling. Files render as raw markdown on GitHub. |
+| **Page-style** ([proper-documentation-pages.md](./proper-documentation-pages.md)) | `required-pages/`, addon `pages/`, user-authored pages on disk | `title`, `uuid`, `system-category`, `user-keywords`, `slug`, `lastModified`, `author` | Wiki-rendered pages served at `/view/<slug>`; indexed by SearchManager. |
+
+Do not put `title:`, `uuid:`, `system-category:`, or `slug:` in `docs/` files — those signal "this should be rendered by the wiki," which `docs/` files are not (per #660 decision, 2026-05-14). Use the doc-style schema only.
+
+### Example (manager doc)
+
+```yaml
+---
+name: PageManager
+description: Page CRUD and storage facade over the PageProvider registry
+dateModified: 2026-05-14
+category: managers
+code: src/managers/PageManager.ts
+relatedModules: [BaseManager, FileSystemProvider, VersioningFileProvider]
+status: stable
+---
+```
 
 ### Categories
 

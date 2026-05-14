@@ -1,1 +1,9 @@
 npx lint-staged
+
+# Docs coverage (#660) — fails only on hard errors:
+#   - source file in src/{managers,plugins,providers}/ not listed in
+#     docs/Developer-Documentation.md
+#   - doc file's `code:` frontmatter points to a non-existent source file
+# Warnings (missing doc pages, missing frontmatter) are reported but do
+# not block the commit. See docs/DOCUMENTATION-STANDARDS.md.
+npm run lint:docs --silent

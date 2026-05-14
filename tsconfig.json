@@ -45,6 +45,7 @@
     "src/**/*.js",
     "src/plugins/**/*.ts",
     "scripts/migrate-user-pages-category.ts",
+    "scripts/check-docs-coverage.ts",
     "mcp-server.ts"
   ],
   "exclude": [

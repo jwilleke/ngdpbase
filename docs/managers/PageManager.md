@@ -1,6 +1,16 @@
+---
+name: PageManager
+description: Page CRUD and storage facade over the PageProvider registry
+dateModified: 2026-05-14
+category: managers
+code: src/managers/PageManager.ts
+relatedModules: [BaseManager, FileSystemProvider, VersioningFileProvider]
+status: stable
+---
+
 # PageManager
 
-**Module:** `src/managers/PageManager.js`
+**Module:** `src/managers/PageManager.ts`
 **Extends:** [BaseManager](BaseManager.md)
 **Complete Guide:** [PageManager-Complete-Guide.md](PageManager-Complete-Guide.md)
 

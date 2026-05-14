@@ -1,8 +1,18 @@
+---
+name: FileSystemProvider
+description: UUID-based page storage on local disk with YAML frontmatter
+dateModified: 2026-05-14
+category: providers
+code: src/providers/FileSystemProvider.ts
+relatedModules: [BasePageProvider, PageManager, VersioningFileProvider]
+status: stable
+---
+
 # FileSystemProvider
 
 **Quick Reference** | [Complete Guide](FileSystemProvider-Complete-Guide.md)
 
-**Module:** `src/providers/FileSystemProvider.js`
+**Module:** `src/providers/FileSystemProvider.ts`
 **Type:** Page Storage Provider
 **Extends:** BasePageProvider
 **Status:** Production Ready

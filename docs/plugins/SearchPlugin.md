@@ -1,10 +1,12 @@
 ---
-name: "SearchPlugin"
-description: "Embeds search results directly in wiki pages"
-dateModified: "2026-03-06"
-category: "plugins"
-relatedModules: ["PluginManager", "SearchManager"]
-version: "2.0.0"
+name: SearchPlugin
+description: Embeds search results directly in pages via the [{Search ...}] markup
+dateModified: 2026-05-14
+category: plugins
+code: src/plugins/SearchPlugin.ts
+relatedModules: [PluginManager, SearchManager]
+version: 2.0.0
+status: stable
 ---
 
 # SearchPlugin
