@@ -2,6 +2,29 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-14-01
+
+- Agent: Claude Opus 4.7
+- Subject: `/check-todos` survey surfaced new Dependabot high-severity alert `#114` (`systeminformation` Linux command injection via NetworkManager profile names) and Dependabot PR `#715` (5.31.1 → 5.31.6). Merged the PR, `docs/TODO.md` freshened, then `/semver patch` cut `v3.14.2` (covering today's PR plus yesterday's `#709` footnote-error-surfacing fix that landed after `v3.14.1` was tagged). `/othersites` satellite-only propagation.
+- Current Issue: Dependabot alert `#114` (auto-closed by PR merge); no operator-facing issue.
+- Tests: jimstest 5505/5505 unit + 72/72 E2E pre-release. Each satellite 5505/5505 unit. No flakes.
+- Perf baseline: first capture flagged `/search?q=test` +571% (21→141ms). Re-run shifted the slow route to `/` (33→147ms) while `/search` settled at 136ms — classic cold-cache / single-sample first-hit variance. Tracked by `#705` (warm-cache or median-of-N for baseline script). Memory dropped 1.9GB between captures (GC). Both baselines kept in `docs/performance/` as a noise datapoint.
+- Work Done:
+  - Merged Dependabot PR `#715` (squash `3c24a9bc`), closing alert `#114`. All CI green pre-merge.
+  - Freshened `docs/TODO.md`: bumped `lastModified`, added the 2026-05-14 closed note, added open/closed state column to the access-control follow-up table (only `#710` still open).
+  - Cut `v3.14.2` patch release: `package.json` + `config/app-default-config.json` + `CHANGELOG.md` via `dist/src/utils/version.js`. Tag pushed; GitHub Release entry deferred per the patch rule.
+  - `/othersites` satellite-only (E2E skipped — no `views/`, `public/`, `src/plugins/`, `addons/`, `tests/e2e/` paths in the v3.14.1..v3.14.2 range): fairways-base, ngdpbase-veg, ngdp-temp-builds all pulled cleanly and tested green.
+- Propagation results:
+  - **fairways-base** (2121) — pulled to `424f8038`, restart PID 85029, **5505/5505** unit
+  - **ngdpbase-veg** (3333) — pulled to `424f8038`, restart PID 87189, **5505/5505** unit
+  - **ngdp-temp-builds** (3001) — pulled to `424f8038`, restart PID 89345, **5505/5505** unit
+- Commits: `62c9acff` (TODO freshen), `424f8038` (release v3.14.2).
+- Files Modified:
+  - `docs/TODO.md` (lastModified bump, closed-2026-05-14 note, ACL follow-up state column)
+  - `package.json`, `config/app-default-config.json`, `CHANGELOG.md` (version bump)
+  - `docs/performance/baseline-v3.14.2-2026-05-14.md`, `docs/performance/baseline-v3.14.2-2026-05-14-r2.md` (new)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-13-20
 
 - Agent: Claude Opus 4.7
