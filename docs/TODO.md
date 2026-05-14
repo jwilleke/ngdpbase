@@ -41,7 +41,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 *Closed 2026-05-13: #704 (protobufjs), #708 (/search default), #701 (/save/Molly migration script), #699 + #700 (asset-search capped flag + sort), #697 (/create Private + Author-lock toggles), #665 (insert page — operator close), **#711 (ACLManager creator drift — minimal fix `7c52c4c2`; larger refactor parked as #714 epic)**, #712 + #713 (access-control follow-ups). Six-slice access-control arc finished (private → author-lock → audience → role permissions docs); see project_log 2026-05-13-07 through -14 for the slice trail.*
 
-*Closed 2026-05-14: Dependabot PR #715 merged (`3c24a9bc`) bumping `systeminformation` 5.31.1 → 5.31.6, fixing high-severity alert #114 (Linux command injection via NetworkManager profile names). **#690 (`/contact` CSRF field-name mismatch, `1d9d2b91`)** — `views/contact.ejs` and `src/parsers/handlers/WikiFormHandler.ts` both emitted `_csrfToken` while csrf middleware reads `_csrf`; one-char fix in each, two test updates.*
+*Closed 2026-05-14: Dependabot PR #715 merged (`3c24a9bc`) bumping `systeminformation` 5.31.1 → 5.31.6, fixing high-severity alert #114 (Linux command injection via NetworkManager profile names). **#690 (`/contact` CSRF field-name mismatch, `1d9d2b91`)** — `views/contact.ejs` and `src/parsers/handlers/WikiFormHandler.ts` both emitted `_csrfToken` while csrf middleware reads `_csrf`; one-char fix in each, two test updates. **#710 (audience picker accepts usernames, `6e8fa1b0`)** — new vanilla typeahead widget + EJS partial alongside the existing role-checkbox dropdown in /edit and /create. Operator follow-up shipped on **#662** (`9b977473`): profile-rename flow now demotes the old page to general instead of hard-deleting (issue still open pending operator close — original repro is fixed by #661 + data cleanup).*
 
 ## Operator-decision carryover
 
@@ -66,7 +66,6 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | # | Topic | Priority hint |
 |---|---|---|
 | #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Medium — prototyped during #711 session, parked due to test-mock churn. WIP in `git stash@{0}`. |
-| #710 | Audience picker accepts usernames, not just roles | Low — UI gap with Page Audience doc |
 | #707 | Typed footnote syntax + knowledge-graph reference index | Low — speculative; companion to #706 |
 | #706 | `knowledge-role` frontmatter field — opt-in page role | Low — speculative; design captured in `docs/planning/ideas/llm-wiki-pattern.md` |
 | #705 | Perf baseline: warm cache or median-of-N | Low — quality-of-life for benchmark accuracy |

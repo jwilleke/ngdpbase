@@ -2,6 +2,31 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-14-04
+
+- Agent: Claude Opus 4.7
+- Subject: `#710` — Audience picker accepts usernames as well as roles. Operator chose option 1 from the issue body (typeahead alongside the role checkboxes) over the unified-picker or freeform-text alternatives. Reused `/api/assets/search?types=user` (the permissive auth-only endpoint from #694), not `/api/users/search` (search-user permission gate). Closes #710.
+- Current Issue: `#710` (closed).
+- Tests: jimstest 5507/5507 unit + 72/72 E2E. Each satellite 5507/5507 unit + 72/72 E2E. First E2E run had two failures (location-plugin flake + create-page broke because partial referenced `pageData` without a `typeof` guard); both resolved on second pass — added the guard to `_audience-typeahead.ejs` so /create renders cleanly when no `pageData` local is provided.
+- Work Done:
+  - `public/js/audience-typeahead.js` — new vanilla widget (~210 lines). Debounced fetch (200 ms, min 1 char), keyboard nav (Arrow/Enter/Esc), mouse hover/click, click-outside dismiss. Picked users render as removable chips with hidden `<input name="audience" value="<username>">` siblings, so the wire format is identical to the role-checkbox shape and `ACLManager.checkFrontmatterAccess` (`userRoles.includes(p) || username === p`) honours both with zero server-side changes
+  - Typeahead filters: skips already-picked usernames and any username that collides with a role name (operator picks the role checkbox in that case)
+  - `views/_audience-typeahead.ejs` — new partial. Server-side splits `pageData.metadata.audience` into role entries (handled by existing dropdown) and non-role entries (pre-rendered as chips). Safe `typeof pageData !== 'undefined'` guard for the /create case where no page data exists yet
+  - `views/edit.ejs` (line ~187) and `views/create.ejs` (line ~123) — added `<%- include('_audience-typeahead') %>` inside the existing `if (availableRoles && length > 0)` block, so the typeahead appears wherever the role dropdown does
+  - No server-side route or manager changes — wire format is the existing `name="audience"` multi-value array
+  - Semver skipped (bundled with next change per operator's session-02 decision)
+- Propagation results:
+  - **fairways-base** (2121) — pulled to `6e8fa1b0`, restart PID 30143, **5507/5507** unit + **72/72** E2E
+  - **ngdpbase-veg** (3333) — pulled to `6e8fa1b0`, restart PID 32606, **5507/5507** unit + **72/72** E2E
+  - **ngdp-temp-builds** (3001) — pulled to `6e8fa1b0`, restart PID 35123, **5507/5507** unit + **72/72** E2E
+- Commits: `6e8fa1b0`.
+- Files Modified:
+  - `public/js/audience-typeahead.js` (new)
+  - `views/_audience-typeahead.ejs` (new)
+  - `views/edit.ejs`
+  - `views/create.ejs`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-14-03
 
 - Agent: Claude Opus 4.7
