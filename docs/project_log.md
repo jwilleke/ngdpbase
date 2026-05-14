@@ -2,6 +2,26 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-14-13
+
+- Agent: Claude Opus 4.7
+- Subject: Fix `#719` — .mov files downloaded instead of playing inline in Chrome. Cause: Chrome won't decode `video/quicktime` MIME and falls back to download, even though most consumer .mov files are H.264/AAC inside a QuickTime container (codecs Chrome can decode). Fix: relabel response `Content-Type` from `video/quicktime` to `video/mp4` in both serving routes. Bitstream unchanged; only the container label differs.
+- Current Issue: `#719` (closed via `Closes #719` trailer + comment).
+- Tests: jimstest 5507/5507 unit. Each satellite 5507/5507 (ngdpbase-veg had one flake on first pass, clean on retry — #622 pattern). E2E skipped — change is in route handlers, not view/plugin/addon paths.
+- Work Done:
+  - `src/routes/WikiRoutes.ts` `serveAttachment` (line 3401): relabel quicktime/mov → mp4. Already had `Content-Disposition: inline`
+  - `src/routes/WikiRoutes.ts` `mediaFile` (line 11671): same relabel in both range-request (206) and full-file (200) branches. Also added explicit `Content-Disposition: inline` (was missing — relied on browser default)
+  - Verified live: `curl -sI /media/file/<mov-id>` → `Content-Type: video/mp4`, `Content-Disposition: inline`
+  - Files that are genuinely non-H.264 (ProRes, animation codecs) will show an inline player error instead of auto-downloading. Operator notified in #719 comment that those would need server-side transcoding (much heavier; out of scope)
+- Propagation results:
+  - **fairways-base** (2121) — pulled to `ccd426c5`, **5507/5507** unit
+  - **ngdpbase-veg** (3333) — pulled to `ccd426c5`, **5507/5507** unit (1 retry due to flake; clean second pass)
+  - **ngdp-temp-builds** (3001) — pulled to `ccd426c5`, **5507/5507** unit
+- Commits: `ccd426c5`.
+- Files Modified:
+  - `src/routes/WikiRoutes.ts`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-14-12
 
 - Agent: Claude Opus 4.7
