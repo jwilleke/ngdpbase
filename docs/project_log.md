@@ -2,6 +2,25 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-14-10
+
+- Agent: Claude Opus 4.7
+- Subject: Drafted The Fairways operator demo guide (`docs/demo/the-fairways-operator.md`) per the dev-notes ask, then fixed `#717` (dropdown transparency — same root cause as `#687` but landed in the wrong CSS file).
+- Current Issue: `#717` (closed via `Closes #717` trailer + comment).
+- Tests: jimstest 5507/5507 unit + 72/72 E2E. Each satellite 5507/5507 unit (E2E required for the #717 fix — themes/ is a UI surface even though not explicitly listed in the conditional E2E rule).
+- Work Done:
+  - `docs/demo/the-fairways-operator.md` (new, `8f883da6`) — ~30-min operator/admin walkthrough for a deployed Fairways site. 7 acts (orient, members, pages, audience-control, news/contact, calendar+forms addons, operations) + triage table + audience FAQ + starter checklist
+  - `themes/core.css` (`f80021d0`) — ported the #687 `.dropdown-menu` opaque-background + border + shadow fix from `public/css/style.css`. The original #687 fix landed in style.css, but main views load themes/core.css, so the fix was effectively missing where users actually see the dropdown. Generic rule covers every dropdown (user menu, audience picker, admin sub-menus). Side observation: admin-policies.ejs and admin-audit.ejs bypass the theme system and link /css/style.css directly — flagged in the #717 comment as a future follow-up
+- Propagation results:
+  - **fairways-base** (2121) — pulled to `f80021d0`, restart PID 78986, **5507/5507** unit
+  - **ngdpbase-veg** (3333) — pulled to `f80021d0`, restart PID 81147, **5507/5507** unit
+  - **ngdp-temp-builds** (3001) — pulled to `f80021d0`, restart PID 83221, **5507/5507** unit
+- Commits: `8f883da6` (Fairways demo guide), `f80021d0` (#717 fix).
+- Files Modified:
+  - `docs/demo/the-fairways-operator.md` (new)
+  - `themes/core.css`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-14-09
 
 - Agent: Claude Opus 4.7
