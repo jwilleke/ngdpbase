@@ -2,6 +2,33 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-14-08
+
+- Agent: Claude Opus 4.7
+- Subject: `#660` final piece for now — `docs/Developer-Documentation.md` is no longer hand-maintained. Tables auto-generated from frontmatter by `scripts/generate-docs-index.ts`, drift caught at pre-commit. Closes the loop on the original "index drifted from 24/24 claimed to 24/37 actual" failure that motivated #660.
+- Current Issue: `#660` — comment updated; still open (stub-creation work remains).
+- Tests: jimstest 5507/5507 unit (no code touched). Each satellite 5507/5507 unit. Idempotency check: running generator twice produces no diff.
+- Work Done:
+  - `scripts/generate-docs-index.ts` (new) — walks `docs/{managers,plugins,providers}/*.md` frontmatter (`description`, `code`) + `src/{managers,plugins,providers}/` inventory, computes status per row (📘 doc + complete guide / ✅ doc only / ⚠️ source only), rewrites five marker pairs in `docs/Developer-Documentation.md`: `quick-nav`, `managers-table`, `plugins-table`, `providers-table`, `doc-status`. Source-only rows show `_no doc page yet_`. `--check` mode exits 1 on drift
+  - `docs/Developer-Documentation.md` restructured to template form — hand-written preamble + per-section intro paragraphs + AUTO marker pairs around the generated tables. Drift-warning callout under Quick Navigation tells contributors not to hand-edit between markers
+  - `package.json` — new scripts `docs:index` (regenerate in place) and `docs:index:check` (exit 1 on drift)
+  - `.husky/pre-commit` — runs `npm run docs:index:check --silent` after `lint:docs`. Cheap (~200ms). Now: contributor edits a doc's frontmatter → runs `npm run docs:index` → table updates fall out → commit
+  - `scripts/fix-doc-descriptions.ts` extended with 9 more hand-written one-liners replacing truncated 200-char extracts (AuditManager, ValidationManager, VariableManager, RecentChangesPlugin, ConfigAccessorPlugin, CounterPlugin, LocationPlugin, VariablesPlugin, UserLookupPlugin)
+  - `tsconfig.json` — added `scripts/generate-docs-index.ts` to `include`
+  - Tradeoffs decided (per sketch in the conversation): source-only rows get `_no doc page yet_` (not JSDoc parsing, not omit); Quick-nav counts auto-update with Architecture/Testing/API rows hardcoded in the generator; Provider Type column dropped to match managers/plugins shape (filename encodes the category)
+- Propagation results:
+  - **fairways-base** (2121) — pulled to `dd299323`, **5507/5507** unit (E2E skipped — docs+scripts only)
+  - **ngdpbase-veg** (3333) — pulled to `dd299323`, **5507/5507** unit
+  - **ngdp-temp-builds** (3001) — pulled to `dd299323`, **5507/5507** unit
+- Commits: `dd299323`.
+- Files Modified:
+  - `scripts/generate-docs-index.ts` (new)
+  - `scripts/fix-doc-descriptions.ts` (extended)
+  - `docs/Developer-Documentation.md` (templated)
+  - 9 doc files updated with hand-written descriptions
+  - `package.json`, `tsconfig.json`, `.husky/pre-commit`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-14-07
 
 - Agent: Claude Opus 4.7
