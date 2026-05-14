@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-13T00:00:00.000Z'
+lastModified: '2026-05-14T00:00:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -40,7 +40,9 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 | #622 | WikiRoutes.coverage3.test.ts intermittent timeout |
 | #599 | showdown ReDoS — no upstream patch (mitigation only) |
 
-*Closed 2026-05-13: #704 (protobufjs), #708 (/search default), #701 (/save/Molly migration script), #699 + #700 (asset-search capped flag + sort), #697 (/create Private + Author-lock toggles), #665 (insert page — operator close), **#711 (ACLManager creator drift — minimal fix `7c52c4c2`; larger refactor parked as #714 epic)**. Six-slice access-control arc finished (private → author-lock → audience → role permissions docs); see project_log 2026-05-13-07 through -14 for the slice trail.*
+*Closed 2026-05-13: #704 (protobufjs), #708 (/search default), #701 (/save/Molly migration script), #699 + #700 (asset-search capped flag + sort), #697 (/create Private + Author-lock toggles), #665 (insert page — operator close), **#711 (ACLManager creator drift — minimal fix `7c52c4c2`; larger refactor parked as #714 epic)**, #712 + #713 (access-control follow-ups). Six-slice access-control arc finished (private → author-lock → audience → role permissions docs); see project_log 2026-05-13-07 through -14 for the slice trail.*
+
+*Closed 2026-05-14: Dependabot PR #715 merged (`3c24a9bc`) bumping `systeminformation` 5.31.1 → 5.31.6, fixing high-severity alert #114 (Linux command injection via NetworkManager profile names).*
 
 ## Operator-decision carryover
 
@@ -81,14 +83,14 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 
 ## Access-control arc — follow-up issues filed 2026-05-13
 
-The six-slice access-control arc surfaced four follow-up items, now tracked as issues:
+The six-slice access-control arc surfaced four follow-up items. As of 2026-05-14, three are closed and one remains open:
 
-| # | Type | Topic |
-|---|---|---|
-| #710 | enhancement | Audience picker accepts usernames, not just roles (UI gap with Page Audience doc) |
-| #711 | bug | ACLManager Tier-0 reads `metadata.author` as creator — contradicts Page Audience doc |
-| #712 | bug | /save handler still reads legacy `user-keywords:[private]` fallback after #639 Slice E dropped it |
-| #713 | bug | `_comment_roles` in app-default-config.json contradicts role schema (says "metadata only", but roles carry `permissions[]`) |
+| # | State | Type | Topic |
+|---|---|---|---|
+| #710 | open | enhancement | Audience picker accepts usernames, not just roles (UI gap with Page Audience doc) |
+| #711 | closed | bug | ACLManager Tier-0 creator drift — fixed `7c52c4c2`; larger refactor parked as #714 epic |
+| #712 | closed | bug | /save handler legacy `user-keywords:[private]` fallback removed |
+| #713 | closed | bug | `_comment_roles` schema doc corrected |
 
 ## How this file is maintained
 
