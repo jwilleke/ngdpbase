@@ -2,6 +2,21 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-14-12
+
+- Agent: Claude Opus 4.7
+- Subject: Demo-prep cleanup — operator polished `docs/demo/the-fairways-operator.md` (substituted real demo URL `http://jminim4:2121/`, formatting tweaks) and moved the page-based copy of the guide between instances.
+- Current Issue: none.
+- Tests: no code touched; no tests run. Markdown-only change.
+- Work Done:
+  - Operator edited `docs/demo/the-fairways-operator.md` in the IDE — substituted the placeholder localhost URL with the real demo URL (`http://jminim4:2121/`), tidied list/heading formatting, fixed a few `%%information` block edges. 96 insertions, 77 deletions
+  - Off-repo: Admin Demo page (originally created on jimstest as `b8538dc9-a8b8-4d86-912a-3be9c360da3d`) was copied to `/Volumes/hd2A/workspaces/github/fairways-base/data/pages/2b8f6520-44bc-47a1-8dc6-0fec439b7e9d.md` with a fresh UUID via `sed` (no slug conflict on Fairways). Refreshed `lastModified` so it surfaces in Fairways' Recent Changes. Fairways restarted (PID 4950) so the PageManager picks it up; `curl /view/admin-demo` → HTTP 200. This change is per-instance data, not platform code — not committed to git
+- Propagation: none (docs-only, no satellite churn beyond the Fairways data-copy already noted)
+- Commits: this entry's commit only.
+- Files Modified:
+  - `docs/demo/the-fairways-operator.md` (operator polish)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-14-11
 
 - Agent: Claude Opus 4.7
