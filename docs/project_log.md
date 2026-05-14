@@ -2,6 +2,26 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-14-11
+
+- Agent: Claude Opus 4.7
+- Subject: `#717` follow-up — the dropdown-background-color fix shipped earlier this session (`f80021d0`) didn't actually resolve the transparency the operator was seeing. Real root cause was `backdrop-filter: blur(10px)` on `.jspwiki-header` creating a stacking context that broke rendering of absolutely-positioned descendants. Operator-verified working after the new fix.
+- Current Issue: `#717` (already closed; comment posted clarifying the real cause for historical record).
+- Tests: jimstest 5507/5507 unit. Each satellite restarted cleanly; CSS-only change so no test impact.
+- Work Done:
+  - Investigation flow: operator reported "no change in jimstest or fairways" + "underlying items show through the dropdowns" after `f80021d0`. Checked served CSS (correct), checked variable resolution (resolved to opaque `#ffffff`), checked Bootstrap source-order (mine wins). Realized the Info/More dropdowns worked but the user dropdown didn't → the only structural difference was the parent container (navbar vs navigation). Found `backdrop-filter: blur(10px)` on `.jspwiki-header` (themes/core.css:59) — that's the smoking gun. backdrop-filter creates a stacking context that causes child rendering artifacts even with opaque background-colors set
+  - `themes/core.css` (`bc928843`) — removed the `backdrop-filter: blur(10px)` line from `.jspwiki-header`. Zero visual cost since `--navbar-bg` is fully opaque in every theme; blur had nothing to act on. Added a comment explaining the why so future contributors don't reintroduce it
+  - Implication for `#687`: that issue was also misdiagnosed. The dropdown-background-color fix is still worth keeping (it's correct defense for any future dropdown-on-translucent-parent case), but it wasn't what was making the user dropdown look transparent
+  - Updated #717 comment with the real cause for the record
+- Propagation results:
+  - **fairways-base** (2121) — pulled to `bc928843`, restart PID 86828; operator verified the fix works in the browser
+  - **ngdpbase-veg** (3333) — pulled and restarted
+  - **ngdp-temp-builds** (3001) — pulled and restarted
+- Commits: `bc928843`.
+- Files Modified:
+  - `themes/core.css` (removed backdrop-filter, added explanatory comment)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-14-10
 
 - Agent: Claude Opus 4.7
