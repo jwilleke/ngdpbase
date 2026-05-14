@@ -4840,20 +4840,36 @@ ${panes}
             }
             const page = await pageManager.getPage(oldPageName);
             if (page) {
-              const { content, ...meta } = page;
+              const content = page.content;
+              const oldMeta = (page.metadata ?? {}) as Record<string, unknown>;
+              const displayName = currentUser.displayName ?? currentUser.username ?? '';
               // #661: re-apply / back-fill profile-page metadata on rename so
               // the renamed page carries author-lock + description + badge
               // regardless of how the original was created.
-              const displayName = currentUser.displayName ?? currentUser.username ?? '';
+              //
+              // #662 follow-up: new profile page gets a fresh UUID + slug so
+              // it is a distinct entity from the old (now demoted) page;
+              // without this the conflict guard in PageManager.savePage trips.
+              const { uuid: _uuid, slug: _slug, created: _created, ...metaForNew } = oldMeta;
               await pageManager.savePage(newPageName, content, {
-                ...meta,
+                ...metaForNew,
                 title: newPageName,
                 'system-category': 'user-profile',
                 'author-lock': true,
                 description: `${displayName}'s profile page`,
                 badge: `Profile ${displayName}`
               });
-              await pageManager.deletePage(oldPageName);
+              // #662: demote the old profile page to system-category 'general'
+              // instead of hard-deleting it. Preserves the user's prior
+              // content as a regular page they can later edit or delete
+              // themselves. author-lock is preserved so write access stays
+              // with the original author. description/badge are profile-only
+              // and are stripped.
+              const { description: _description, badge: _badge, ...metaForOld } = oldMeta;
+              await pageManager.savePage(oldPageName, content, {
+                ...metaForOld,
+                'system-category': 'general'
+              });
             }
           } catch (renameErr: unknown) {
             logger.error('Error renaming profile page:', renameErr);

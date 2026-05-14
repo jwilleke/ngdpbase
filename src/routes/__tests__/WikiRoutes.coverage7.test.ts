@@ -603,6 +603,74 @@ describe('WikiRoutes — coverage batch 7', () => {
       expect(res.status).toBe(302);
       expect(res.headers.location).toContain('OAuth');
     });
+
+    // #662 follow-up: profile-page rename demotes old page to general rather
+    // than deleting it. Preserves the user's prior content as a regular page
+    // they can later edit or delete themselves. (Test mock nests fields
+    // under `metadata`; real WikiPage has `uuid`/`title` flat — UUID-
+    // preservation behavior is exercised against the provider, not asserted
+    // at this layer.)
+    test('rename profile page: demotes old page to system-category=general instead of deleting', async () => {
+      const oldProfilePage = {
+        title: 'OldName',
+        uuid: 'old-profile-uuid',
+        content: '# My old profile content',
+        metadata: {
+          title: 'OldName',
+          uuid: 'old-profile-uuid',
+          slug: 'oldname',
+          'system-category': 'user-profile',
+          'author-lock': true,
+          description: "Admin User's profile page",
+          badge: 'Profile Admin User',
+          author: 'adminuser'
+        },
+        filePath: '/data/pages/old-profile-uuid.md'
+      };
+      mockPageManager.getPage.mockImplementation((name: string) => {
+        if (name === 'OldName') return Promise.resolve(oldProfilePage);
+        return Promise.resolve(null);
+      });
+      mockPageManager.pageExists.mockReturnValue(false);
+
+      const res = await request(app)
+        .post('/profile')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({
+          profilePage: 'NewName',
+          originalProfilePage: 'OldName',
+          renameProfilePage: 'on'
+        });
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toContain('success');
+
+      // savePage called twice: new page (NewName) + demoted old page (OldName)
+      expect(mockPageManager.savePage).toHaveBeenCalledTimes(2);
+      const calls = mockPageManager.savePage.mock.calls;
+      const newSave = calls.find(c => c[0] === 'NewName');
+      const oldSave = calls.find(c => c[0] === 'OldName');
+      expect(newSave).toBeDefined();
+      expect(oldSave).toBeDefined();
+
+      // New page: full profile metadata; uuid/slug stripped so the provider
+      // mints fresh ones (avoids UUID collision with the still-present old).
+      expect(newSave?.[2]['system-category']).toBe('user-profile');
+      expect(newSave?.[2]['author-lock']).toBe(true);
+      expect(newSave?.[2].description).toBe("Admin User's profile page");
+      expect(newSave?.[2].badge).toBe('Profile Admin User');
+      expect(newSave?.[2].uuid).toBeUndefined();
+      expect(newSave?.[2].slug).toBeUndefined();
+
+      // Old page: demoted to general; profile-only fields stripped;
+      // author-lock preserved so write access stays with original author.
+      expect(oldSave?.[2]['system-category']).toBe('general');
+      expect(oldSave?.[2]['author-lock']).toBe(true);
+      expect(oldSave?.[2].description).toBeUndefined();
+      expect(oldSave?.[2].badge).toBeUndefined();
+
+      // Old page is NOT deleted — the whole point of the demote.
+      expect(mockPageManager.deletePage).not.toHaveBeenCalled();
+    });
   });
 
   // ── POST /preferences (updatePreferences) ───────────────────────────────────
