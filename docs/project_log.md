@@ -2,6 +2,28 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-14-05
+
+- Agent: Claude Opus 4.7
+- Subject: `/semver patch` release `v3.14.2 → v3.14.3` covering today's 3 fixes/features (#690 CSRF field name, #662 demote-not-delete, #710 audience username typeahead) plus 4 doc commits. Patch defers the GitHub Release per the workflow. `/othersites` propagation across all three satellite instances.
+- Current Issue: routine release; no specific issue.
+- Tests: jimstest 5507/5507 unit + 72/72 E2E pre-release (1 unit flake on first pass, passed cleanly on retry — #622 pattern). Each satellite 5507/5507 unit + 72/72 E2E. No real failures.
+- Perf baseline: script flagged memory +108% vs v3.14.2 r2 (1718 → 3581 MB). The r2 capture had been an anomalously low GC-just-fired reading at v3.14.2 cut time; v3.14.2 r1 was 3614 MB, so today's 3581 MB is essentially identical to r1. Routes all improved by 100ms+ (recovering from the cold-cache outliers that flagged at v3.14.2 cut). Operator confirmed noise; tracked by `#705` (warm-cache or median-of-N).
+- Work Done:
+  - `node dist/src/utils/version.js patch` bumped `package.json`, `config/app-default-config.json`, `CHANGELOG.md` from 3.14.2 → 3.14.3
+  - `npm run test:baseline:compare` captured `docs/performance/baseline-v3.14.3-2026-05-14.md` with drift section vs the previous baseline
+  - Tag pushed; GitHub Release deferred per the patch rule (can be backfilled via `/release` if needed)
+  - `/othersites` satellite propagation: E2E required since the v3.14.2..v3.14.3 range touches `views/` (audience partial + edit/create) and `public/` (audience-typeahead.js)
+- Propagation results:
+  - **fairways-base** (2121) — pulled to `350af162`, restart PID 42092, **5507/5507** unit + **72/72** E2E
+  - **ngdpbase-veg** (3333) — pulled to `350af162`, restart PID 44614, **5507/5507** unit + **72/72** E2E
+  - **ngdp-temp-builds** (3001) — pulled to `350af162`, restart PID 47103, **5507/5507** unit + **72/72** E2E
+- Commits: `350af162` (release v3.14.3).
+- Files Modified:
+  - `package.json`, `config/app-default-config.json`, `CHANGELOG.md` (version bump)
+  - `docs/performance/baseline-v3.14.3-2026-05-14.md` (new)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-14-04
 
 - Agent: Claude Opus 4.7
