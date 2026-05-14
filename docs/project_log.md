@@ -2,6 +2,28 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-14-09
+
+- Agent: Claude Opus 4.7
+- Subject: `/semver patch` release `v3.14.3 → v3.14.4` bundling the three-slice `#660` docs-discoverability arc (index refresh + frontmatter policy + lint hook; mass-conversion; auto-generated index). Patch defers the GitHub Release per the workflow. `/othersites` propagation.
+- Current Issue: routine release; no specific issue.
+- Tests: jimstest 5507/5507 unit + 72/72 E2E pre-release. Each satellite 5507/5507 (temp-builds had a 2-test flake on first pass, clean on retry — `#622` pattern).
+- Perf baseline: flagged `/` +118ms and `/search` +123ms vs v3.14.3, but v3.14.3's capture was an unusually warm-cache one (31ms / 21ms). Today's 149/144ms are right in the historical cold-cache range (v3.14.2 r1 had /search at 141ms; r2 had / at 147ms). Memory flat. Operator confirmed noise; tracked by `#705`.
+- Work Done:
+  - `node dist/src/utils/version.js patch` bumped to 3.14.4
+  - `npm run test:baseline:compare` wrote `docs/performance/baseline-v3.14.4-2026-05-14.md` with drift section
+  - Tag pushed; GitHub Release deferred per the patch rule
+  - `/othersites` satellite propagation: E2E skipped — the v3.14.3..v3.14.4 range only touches `docs/` and `scripts/`, none of the conditional paths
+- Propagation results:
+  - **fairways-base** (2121) — pulled to `1f9b016f`, **5507/5507** unit
+  - **ngdpbase-veg** (3333) — pulled to `1f9b016f`, **5507/5507** unit
+  - **ngdp-temp-builds** (3001) — pulled to `1f9b016f`, **5507/5507** unit (after 1 retry — 2-test flake on first pass)
+- Commits: `1f9b016f` (release v3.14.4).
+- Files Modified:
+  - `package.json`, `config/app-default-config.json`, `CHANGELOG.md` (version bump)
+  - `docs/performance/baseline-v3.14.4-2026-05-14.md` (new)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-14-08
 
 - Agent: Claude Opus 4.7
