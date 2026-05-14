@@ -2,6 +2,29 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-14-14
+
+- Agent: Claude Opus 4.7
+- Subject: Fix `#718` — `/addons/calendar/` showed "No calendars configured" on Fairways even though `ngdpbase.addons.calendar.calendars.clubhouse.*` was correctly set in `app-custom-config.json`. Also filed `#720`, `#721`, `#722` (asset-picker video/format/preview cluster) and commented on `#716` with the Page Card Summary analysis.
+- Current Issue: `#718` (closed via `Closes #718` trailer + comment).
+- Tests: jimstest 5511/5511 (5507 baseline + 4 new for `getAddonConfig` deep-nest). Each satellite 5511/5511.
+- Work Done:
+  - `src/managers/AddonsManager.ts` `getAddonConfig`: stripped-prefix keys now get deep-nested via a `setDeep` walk so multi-segment dotted paths become a real object tree. Single-segment keys stay flat exactly as before — no addon read the old flat-dot form, so backward-compatible. Calendar addon's `config.calendars.clubhouse.enabled` now resolves correctly
+  - `src/managers/__tests__/AddonsManager.test.ts`: new `getAddonConfig — deep-nest dotted keys (#718)` describe block with 4 cases (single-segment flat, multi-segment nests, flat + nested coexist, prefix-filtering excludes other addons)
+  - Filed `#720` — [FEATURE] format dropdown video/audio separation
+  - Filed `#721` — [FEATURE] asset-picker advanced filters (capture-date for video, collapse into disclosure)
+  - Filed `#722` — [FEATURE] video poster thumbnails (ffmpeg)
+  - Commented on `#716` (Page Card Summary) with backend + frontend technical analysis; left open
+- Propagation results:
+  - **fairways-base** (2121) — pulled to `52771a1c`, rebuild + restart PID 51231, **5511/5511** unit
+  - **ngdpbase-veg** (3333) — pulled to `52771a1c`, **5511/5511** unit
+  - **ngdp-temp-builds** (3001) — pulled to `52771a1c`, **5511/5511** unit
+- Commits: `52771a1c`.
+- Files Modified:
+  - `src/managers/AddonsManager.ts`
+  - `src/managers/__tests__/AddonsManager.test.ts`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-14-13
 
 - Agent: Claude Opus 4.7
