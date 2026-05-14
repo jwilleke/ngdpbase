@@ -2,6 +2,29 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-14-03
+
+- Agent: Claude Opus 4.7
+- Subject: `#662` verification — original repro (`Invalid system-category: "User Pages"` on `/edit/Molly` save) is fixed by combination of `8db7227d` (#661, added `user-profile` system-category) and manual data cleanup (0 of 17,544 pages now carry the legacy `User Pages` value; Molly's page now has `system-category: user-profile`). Shipped the operator's follow-up "demote-not-delete" change on the profile-page rename flow.
+- Current Issue: `#662` — comment posted with verification + fix summary; operator to close after review.
+- Tests: jimstest 5507/5507 unit (+1 new). Each satellite 5507/5507. E2E skipped (no view/plugin/addon paths in `9b977473`).
+- Work Done:
+  - Verified data state: scanned `/Volumes/hd2A/jimstest-wiki/data/pages` (17,544 .md files). Distinct `system-category` values: `general` (17390), `documentation` (107), `system` (19), `addon` (10), `user-profile` (1), `Documentation` (1, case-insensitive match OK), `developer` (1, **off-list**)
+  - Flagged the lingering `developer` page in the #662 comment: "Red Link Test" / slug `red-link-test` / UUID `89d076df-7d15-4348-94f4-f2a4899a5926` — one-page cleanup, not a code bug
+  - `src/routes/WikiRoutes.ts` — rewrote the profile-page rename flow at the `renameProfilePage === 'on'` branch (~line 4834). Replaces `deletePage(oldPageName)` with `savePage(oldPageName, …, { 'system-category': 'general' })` so the old page is preserved as a regular page. Drive-by: prior code spread `page` (whose `metadata` is nested) into `savePage`'s flat metadata arg — most frontmatter fields weren't actually carried over. Now reads `page.metadata` explicitly. New-page save strips `uuid`/`slug`/`created` so the provider mints fresh ones (avoids UUID collision with the still-present old page).
+  - `src/routes/__tests__/WikiRoutes.coverage7.test.ts` — new test in the `POST /profile (updateProfile)` describe block. Mocks `getPage('OldName')`, posts `renameProfilePage=on`, asserts `savePage` called twice (new + demoted old) with the expected metadata shape on each, and `deletePage` never called. This is the **first** test that exercises the `renameProfilePage` branch.
+  - `#662` comment outlines remaining items not addressed in this session: user-facing notice of old-Profile-Page status (UX); `docs/required-pages` profile documentation page. Suggested filing as a separate enhancement rather than keeping #662 open.
+  - Semver skipped (operator-bundled per session-02 decision).
+- Propagation results:
+  - **fairways-base** (2121) — pulled to `9b977473`, restart PID 15352, **5507/5507** unit
+  - **ngdpbase-veg** (3333) — pulled to `9b977473`, restart PID 17729, **5507/5507** unit
+  - **ngdp-temp-builds** (3001) — pulled to `9b977473`, restart PID 19869, **5507/5507** unit
+- Commits: `9b977473`.
+- Files Modified:
+  - `src/routes/WikiRoutes.ts`
+  - `src/routes/__tests__/WikiRoutes.coverage7.test.ts`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-14-02
 
 - Agent: Claude Opus 4.7

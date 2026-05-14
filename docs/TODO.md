@@ -34,7 +34,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 | # | Title |
 |---|---|
-| #662 | Invalid system-category "User Pages" (legacy data still carries it on disk) |
+| #662 | Invalid system-category "User Pages" — **original repro fixed**; awaiting operator close (`9b977473` demote-not-delete shipped, comment posted 2026-05-14) |
 | #660 | Agent and ./docs documentation |
 | #622 | WikiRoutes.coverage3.test.ts intermittent timeout |
 | #599 | showdown ReDoS — no upstream patch (mitigation only) |
