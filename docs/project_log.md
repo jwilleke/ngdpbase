@@ -2,6 +2,30 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-14-07
+
+- Agent: Claude Opus 4.7
+- Subject: `#660` mass-conversion follow-up — every doc in `docs/{managers,plugins,providers}/` now has the doc-style frontmatter required by the policy shipped in `fd5c80f9`. Lint warnings dropped 97 → 49.
+- Current Issue: `#660` — comment updated; left open (only the stub-creation work remains).
+- Tests: jimstest 5507/5507 unit (no code touched). Each satellite 5507/5507 unit (E2E skipped — docs+scripts only).
+- Work Done:
+  - `scripts/migrate-docs-frontmatter.ts` (new) — walks docs/{managers,plugins,providers}/, parses existing frontmatter via js-yaml, fills in missing `name`/`description`/`dateModified`/`category`/`code` fields. `code:` only set when `src/<category>/<Name>.ts` actually exists (skips Guide-suffix docs, plugin-formatters, CalendarPlugin which lives in addons/). Description inferred from the body's first non-header paragraph. Drive-by: rewrites stale `src/<cat>/<Name>.js` body references to `.ts` when the .ts file exists. Run with `--dry-run` to preview.
+  - `scripts/fix-doc-descriptions.ts` (new) — one-shot follow-up that replaces 27 auto-extracted descriptions where the extractor pulled noise ("Module: src/managers/Foo.js", "Quick Reference | Complete Guide", "Version: 1.3.2") with hand-written one-line summaries. Kept in scripts/ as a record of the choices made.
+  - 50 doc files touched: 39 received fresh frontmatter, 11 had `code:` backfilled into existing frontmatter. All managers/plugins/providers docs now pass the frontmatter portion of the lint.
+  - `tsconfig.json` — added both new scripts to `include` (eslint type-checking parity).
+  - Lint state: **0 errors, 49 warnings** (down from 97). All 49 are "source file has no doc page" — the deferred stub-creation work. None are frontmatter-shape issues anymore.
+- Propagation results:
+  - **fairways-base** (2121) — pulled to `8b15ffbc`, **5507/5507** unit
+  - **ngdpbase-veg** (3333) — pulled to `8b15ffbc`, **5507/5507** unit
+  - **ngdp-temp-builds** (3001) — pulled to `8b15ffbc`, **5507/5507** unit
+- Commits: `8b15ffbc`.
+- Files Modified:
+  - 50 doc files in `docs/{managers,plugins,providers}/`
+  - `scripts/migrate-docs-frontmatter.ts` (new)
+  - `scripts/fix-doc-descriptions.ts` (new)
+  - `tsconfig.json`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-14-06
 
 - Agent: Claude Opus 4.7

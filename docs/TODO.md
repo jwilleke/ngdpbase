@@ -35,7 +35,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 | # | Title |
 |---|---|
 | #662 | Invalid system-category "User Pages" — **original repro fixed**; awaiting operator close (`9b977473` demote-not-delete shipped, comment posted 2026-05-14) |
-| #660 | Agent and ./docs documentation — **initial pass shipped 2026-05-14** (`fd5c80f9`: index refresh + frontmatter policy + lint hook); awaiting mass-conversion and broader memory-fix follow-ups |
+| #660 | Agent and ./docs documentation — **initial pass + mass-conversion shipped 2026-05-14** (`fd5c80f9` + `8b15ffbc`: index refresh, frontmatter policy + lint hook, all 50 managers/plugins/providers docs now compliant); 49 lint warnings remain for source-only modules (stub-creation work) |
 | #622 | WikiRoutes.coverage3.test.ts intermittent timeout |
 | #599 | showdown ReDoS — no upstream patch (mitigation only) |
 
