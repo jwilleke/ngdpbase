@@ -48,6 +48,7 @@
     "scripts/check-docs-coverage.ts",
     "scripts/migrate-docs-frontmatter.ts",
     "scripts/fix-doc-descriptions.ts",
+    "scripts/generate-docs-index.ts",
     "mcp-server.ts"
   ],
   "exclude": [

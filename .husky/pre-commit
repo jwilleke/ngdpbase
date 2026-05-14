@@ -7,3 +7,9 @@ npx lint-staged
 # Warnings (missing doc pages, missing frontmatter) are reported but do
 # not block the commit. See docs/DOCUMENTATION-STANDARDS.md.
 npm run lint:docs --silent
+
+# Docs index drift (#660) — Developer-Documentation.md is regenerated from
+# frontmatter by `npm run docs:index`. If a doc was added/edited but the
+# index wasn't regenerated, this check fails and tells the user to run
+# the regenerator. Cheap (~200ms).
+npm run docs:index:check --silent

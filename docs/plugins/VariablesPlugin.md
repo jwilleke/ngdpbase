@@ -1,6 +1,6 @@
 ---
 name: VariablesPlugin
-description: The VariablesPlugin displays system and contextual variables available in the wiki, similar to the admin variables page.
+description: Displays the system + contextual variables available in the current render (admin/debugging aid)
 dateModified: '2026-05-14'
 category: plugins
 code: src/plugins/VariablesPlugin.ts

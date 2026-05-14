@@ -49,7 +49,17 @@ const DESCRIPTIONS: Record<string, string> = {
   'docs/providers/AssetProvider-Guide.md': 'Implementation guide for plugin authors building a new AssetProvider backend',
   'docs/providers/FileSystemMediaProvider.md': 'Read-only filesystem media library with EXIF parsing and keyword facets; the default MediaManager backend',
   'docs/providers/FileUserProvider.md': 'JSON-file user, role, and session storage — the default UserManager backend',
-  'docs/providers/VersioningFileProvider.md': 'File-based page storage with delta-compressed version history; the default PageManager backend'
+  'docs/providers/VersioningFileProvider.md': 'File-based page storage with delta-compressed version history; the default PageManager backend',
+  // Followup: replace remaining truncated 200-char extracts with concise one-liners
+  'docs/managers/AuditManager.md': 'Audit trail logging: security events, access decisions, policy evaluations, with pluggable Audit*Provider backends',
+  'docs/managers/ValidationManager.md': 'Central data-integrity enforcement: UUID-based naming, YAML frontmatter validation, slug-conflict detection',
+  'docs/managers/VariableManager.md': 'Variable expansion in content — `[{$pagename}]`, `[{$applicationname}]`, custom user variables (JSPWiki-compatible)',
+  'docs/plugins/RecentChangesPlugin.md': 'Lists recent page changes in chronological order for "what changed lately" feeds',
+  'docs/plugins/ConfigAccessorPlugin.md': 'Renders configuration values inside pages — roles, features, manager settings, arbitrary config properties',
+  'docs/plugins/CounterPlugin.md': 'Page-render-scoped counters: increment in place to number items or track invocations within a single render',
+  'docs/plugins/LocationPlugin.md': 'Renders a location as a map link or embedded map preview; supports multiple map providers + coordinates or place names',
+  'docs/plugins/VariablesPlugin.md': 'Displays the system + contextual variables available in the current render (admin/debugging aid)',
+  'docs/plugins/UserLookupPlugin.md': 'Searches users via the asset-search API and renders results as a sortable table (PII gated server-side)'
 };
 
 let changed = 0;

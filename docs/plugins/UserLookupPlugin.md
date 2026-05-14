@@ -1,6 +1,6 @@
 ---
 name: UserLookupPlugin
-description: Searches users and renders results as a sortable table. Permission gating is handled server-side by the API — callers without user-read permission receive only username and displayName.
+description: Searches users via the asset-search API and renders results as a sortable table (PII gated server-side)
 dateModified: '2026-05-14'
 category: plugins
 code: src/plugins/UserLookupPlugin.ts

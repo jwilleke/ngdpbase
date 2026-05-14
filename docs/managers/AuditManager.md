@@ -1,6 +1,6 @@
 ---
 name: AuditManager
-description: The AuditManager is responsible for audit trail logging and compliance monitoring in ngdpbase. It provides a centralized system for tracking security events, access decisions, policy evaluations, a…
+description: "Audit trail logging: security events, access decisions, policy evaluations, with pluggable Audit*Provider backends"
 dateModified: '2026-05-14'
 category: managers
 code: src/managers/AuditManager.ts

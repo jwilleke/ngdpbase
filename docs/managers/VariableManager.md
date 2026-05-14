@@ -1,6 +1,6 @@
 ---
 name: VariableManager
-description: The VariableManager is ngdpbase's central system for managing and expanding variables in content, similar to JSPWiki's DefaultVariableManager. It provides a comprehensive variable expansion system…
+description: "Variable expansion in content — `[{$pagename}]`, `[{$applicationname}]`, custom user variables (JSPWiki-compatible)"
 dateModified: '2026-05-14'
 category: managers
 code: src/managers/VariableManager.ts

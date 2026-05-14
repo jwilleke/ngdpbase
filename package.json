@@ -56,6 +56,8 @@
     "lint:md": "npx markdownlint \"**/*.md\" --ignore node_modules",
     "lint:md:fix": "npx markdownlint \"**/*.md\" --ignore node_modules --fix",
     "lint:docs": "tsx scripts/check-docs-coverage.ts",
+    "docs:index": "tsx scripts/generate-docs-index.ts",
+    "docs:index:check": "tsx scripts/generate-docs-index.ts --check",
     "lint": "npm run lint:code && npm run lint:md && npm run lint:docs",
     "lint:code": "eslint src/**/*.ts",
     "lint:fix": "npm run lint:code:fix && npm run lint:md:fix",
