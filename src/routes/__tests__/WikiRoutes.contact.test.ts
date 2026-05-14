@@ -324,6 +324,21 @@ describe('WikiRoutes — GET /contact (#658 iteration 2)', () => {
   });
 });
 
+// ─── template content invariants (#690 regression) ──────────────────────────
+// Route tests above stub res.render and never touch the actual EJS file, so
+// the original #690 bug (hidden field named `_csrfToken` instead of the
+// canonical `_csrf` the csrf middleware expects) escaped to production. This
+// block asserts the template content directly so the field name stays in sync
+// with src/middleware/csrf.ts.
+describe('views/contact.ejs — template content (#690)', () => {
+  test('hidden CSRF input uses canonical _csrf field name', async () => {
+    const ejsPath = path.join(__dirname, '../../../views/contact.ejs');
+    const content = await fsPromises.readFile(ejsPath, 'utf-8');
+    expect(content).toContain('name="_csrf"');
+    expect(content).not.toContain('name="_csrfToken"');
+  });
+});
+
 // ─── POST /contact (#658 iteration 3) ───────────────────────────────────────
 describe('WikiRoutes — POST /contact (#658 iteration 3)', () => {
   let app: express.Application;

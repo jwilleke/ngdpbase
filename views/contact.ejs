@@ -40,7 +40,7 @@
                         <% } %>
 
                         <form action="/contact" method="POST" autocomplete="on">
-                            <input type="hidden" name="_csrfToken" value="<%= typeof csrfToken !== 'undefined' && csrfToken ? csrfToken : '' %>">
+                            <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' && csrfToken ? csrfToken : '' %>">
                             <%# Honeypot: bots fill every field; humans never see this. %>
                             <div aria-hidden="true" style="position:absolute;left:-10000px;top:auto;width:1px;height:1px;overflow:hidden;">
                                 <label for="contact-website">Website (leave blank)</label>

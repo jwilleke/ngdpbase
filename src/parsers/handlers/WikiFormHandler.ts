@@ -281,7 +281,7 @@ class WikiFormHandler extends BaseSyntaxHandler {
 
     return `<form id="${formId}" name="${name}" action="${action}" method="${method}" class="${cssClass}">
   <input type="hidden" name="_formId" value="${formId}">
-  <input type="hidden" name="_csrfToken" value="${csrfToken}">
+  <input type="hidden" name="_csrf" value="${csrfToken}">
   <input type="hidden" name="_pageName" value="${context.wikiContext?.pageName}">`;
   }
 

@@ -53,10 +53,11 @@ describe('WikiFormHandler', () => {
   });
 
   describe('process() — FormOpen', () => {
-    test('[{FormOpen}] generates <form> tag', async () => {
+    test('[{FormOpen}] generates <form> tag with canonical _csrf field (#690)', async () => {
       const result = await run('[{FormOpen}]');
       expect(result).toContain('<form ');
-      expect(result).toContain('_csrfToken');
+      expect(result).toContain('name="_csrf"');
+      expect(result).not.toContain('name="_csrfToken"');
     });
 
     test('[{FormOpen action="save" method="POST"}] uses specified action', async () => {
