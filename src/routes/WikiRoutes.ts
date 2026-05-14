@@ -3401,10 +3401,23 @@ ${panes}
       const { buffer, metadata } = result;
 
       // Set headers
-      res.setHeader('Content-Type', String(metadata.encodingFormat ?? 'application/octet-stream'));
+      //
+      // #719: Chrome (and most non-Safari browsers) won't decode
+      // `video/quicktime` and falls back to download. The vast majority of
+      // .mov files from phones/cameras are H.264/AAC inside a QuickTime
+      // container — relabeling them as `video/mp4` lets Chrome play them
+      // inline. Bitstream is identical; only the MIME differs. Files that
+      // are genuinely incompatible (ProRes, etc.) will show a player error
+      // rather than download — same end state but a less surprising path.
+      const fileName = String(metadata.name ?? 'attachment');
+      const rawMime = String(metadata.encodingFormat ?? 'application/octet-stream');
+      const contentType = (rawMime === 'video/quicktime' || /\.mov$/i.test(fileName))
+        ? 'video/mp4'
+        : rawMime;
+      res.setHeader('Content-Type', contentType);
       res.setHeader(
         'Content-Disposition',
-        `inline; filename="${String(metadata.name ?? 'attachment')}"`
+        `inline; filename="${fileName}"`
       );
       res.setHeader('Content-Length', typeof metadata.contentSize === 'number' ? String(metadata.contentSize) : '');
 
@@ -11681,7 +11694,15 @@ ${description}
       }
 
       const filePath: string = item.filePath;
-      const mimeType: string = (item.mimeType) || 'application/octet-stream';
+      const rawMime: string = (item.mimeType) || 'application/octet-stream';
+      // #719: relabel video/quicktime (.mov) → video/mp4 so Chrome plays it
+      // inline. Same rationale as serveAttachment — the bitstream of most
+      // consumer .mov is H.264/AAC, which Chrome can decode; it just won't
+      // try when the MIME says video/quicktime. Genuinely incompatible
+      // files will show a player error rather than auto-download.
+      const mimeType: string = (rawMime === 'video/quicktime' || /\.mov$/i.test(filePath))
+        ? 'video/mp4'
+        : rawMime;
 
       // On-the-fly transcode for HEIC/RAW formats that browsers can't decode natively
       const TRANSCODE_MIMES = new Set([
@@ -11727,7 +11748,8 @@ ${description}
           'Content-Range': `bytes ${start}-${end}/${fileSize}`,
           'Accept-Ranges': 'bytes',
           'Content-Length': chunkSize,
-          'Content-Type': mimeType
+          'Content-Type': mimeType,
+          'Content-Disposition': 'inline'
         });
         fs.createReadStream(filePath, { start, end }).pipe(res);
         return;
@@ -11735,6 +11757,7 @@ ${description}
 
       res.writeHead(200, {
         'Accept-Ranges': 'bytes',
+        'Content-Disposition': 'inline',
         'Content-Length': fileSize,
         'Content-Type': mimeType
       });
