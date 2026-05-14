@@ -52,11 +52,18 @@ body {
 /* JSPWiki-inspired layout styles */
 
 /* JSPWiki Header Styles - GitHub-inspired */
+/*
+ * #717 follow-up: backdrop-filter was creating a stacking context that
+ * caused absolutely-positioned descendants (the authenticated-user
+ * dropdown panel) to render with transparency artifacts — page content
+ * behind the dropdown showed through even with an opaque background-color
+ * set on .dropdown-menu. The blur was a glassmorphism flourish but had no
+ * visible effect anyway since --navbar-bg is opaque. Removed.
+ */
 .jspwiki-header {
     background-color: var(--navbar-bg) !important;
     border-bottom: 1px solid var(--border-color);
     padding: 0.75rem 0;
-    backdrop-filter: blur(10px);
 }
 
 .jspwiki-header .navbar-brand {
