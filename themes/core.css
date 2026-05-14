@@ -846,6 +846,32 @@ main p, main div, main span, main li {
     text-align: center;
 }
 
+/*
+ * #717 (and #687 — same root cause, originally landed in
+ * public/css/style.css which isn't loaded by the main views): explicit
+ * opaque background + border + shadow for every dropdown panel. Bootstrap
+ * 5.3 sets `--bs-dropdown-bg: var(--bs-body-bg)`, so without this
+ * override the panel resolves to the same color as the page body it
+ * floats over and looks transparent. The authenticated-user dropdown in
+ * the top-right is the most common surface where this shows up; the rule
+ * is generic so any dropdown gets the same treatment (audience picker,
+ * /admin menus, etc.).
+ */
+.dropdown-menu {
+    background-color: var(--card-bg, #ffffff);
+    border: 1px solid var(--border-color, #dee2e6);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+.dropdown-item {
+    color: var(--text-primary);
+}
+
+.dropdown-item:hover {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
 /* Active navigation link styling */
 .navigation .nav-link.active {
     background-color: var(--link-color);
