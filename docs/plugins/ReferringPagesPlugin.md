@@ -1,10 +1,13 @@
 ---
-name: "ReferringPagesPlugin"
-description: "Lists pages that link to the current page"
-dateModified: "2025-12-18"
-category: "plugins"
-relatedModules: ["PluginManager", "LinkGraph"]
-version: "1.0.0"
+name: ReferringPagesPlugin
+description: Lists pages that link to the current page
+dateModified: '2025-12-18'
+category: plugins
+code: src/plugins/ReferringPagesPlugin.ts
+relatedModules:
+  - PluginManager
+  - LinkGraph
+version: 1.0.0
 ---
 
 # ReferringPagesPlugin

@@ -1,10 +1,13 @@
 ---
-name: "UptimePlugin"
-description: "Shows the server uptime in human-readable format"
-dateModified: "2025-12-18"
-category: "plugins"
-relatedModules: ["PluginManager", "WikiEngine"]
-version: "1.0.0"
+name: UptimePlugin
+description: Shows the server uptime in human-readable format
+dateModified: '2025-12-18'
+category: plugins
+code: src/plugins/UptimePlugin.ts
+relatedModules:
+  - PluginManager
+  - WikiEngine
+version: 1.0.0
 ---
 
 # UptimePlugin

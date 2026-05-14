@@ -1,3 +1,11 @@
+---
+name: MetricsManager
+description: "OpenTelemetry-backed metrics: route latency histograms, engine init timing, cache hit ratios"
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/MetricsManager.ts
+---
+
 # MetricsManager
 
 **Module:** `src/managers/MetricsManager.ts`

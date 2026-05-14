@@ -1,10 +1,14 @@
 ---
-name: "AttachPlugin"
-description: "Renders wiki attachments inline — images as clickable thumbnails, other files as download links"
-dateModified: "2026-03-25"
-category: "plugins"
-relatedModules: ["PluginManager", "AttachmentManager", "ConfigurationManager"]
-version: "1.0.0"
+name: AttachPlugin
+description: Renders wiki attachments inline — images as clickable thumbnails, other files as download links
+dateModified: '2026-03-25'
+category: plugins
+code: src/plugins/AttachPlugin.ts
+relatedModules:
+  - PluginManager
+  - AttachmentManager
+  - ConfigurationManager
+version: 1.0.0
 ---
 
 # AttachPlugin

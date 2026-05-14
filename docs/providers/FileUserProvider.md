@@ -1,8 +1,16 @@
+---
+name: FileUserProvider
+description: "JSON-file user, role, and session storage — the default UserManager backend"
+dateModified: '2026-05-14'
+category: providers
+code: src/providers/FileUserProvider.ts
+---
+
 # FileUserProvider
 
 **Quick Reference** | [Complete Guide](FileUserProvider-Complete-Guide.md)
 
-**Module:** `src/providers/FileUserProvider.js`
+**Module:** `src/providers/FileUserProvider.ts`
 **Type:** User Storage Provider
 **Extends:** BaseUserProvider
 **Status:** Production Ready

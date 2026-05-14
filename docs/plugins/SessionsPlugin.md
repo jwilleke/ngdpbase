@@ -1,10 +1,13 @@
 ---
-name: "SessionsPlugin"
-description: "Shows the number of active sessions"
-dateModified: "2025-12-18"
-category: "plugins"
-relatedModules: ["PluginManager", "ConfigurationManager"]
-version: "1.0.0"
+name: SessionsPlugin
+description: Shows the number of active sessions
+dateModified: '2025-12-18'
+category: plugins
+code: src/plugins/SessionsPlugin.ts
+relatedModules:
+  - PluginManager
+  - ConfigurationManager
+version: 1.0.0
 ---
 
 # SessionsPlugin

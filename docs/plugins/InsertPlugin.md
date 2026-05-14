@@ -1,3 +1,11 @@
+---
+name: InsertPlugin
+description: Embed another page's content (or one section of it) into the current page at render time.
+dateModified: '2026-05-14'
+category: plugins
+code: src/plugins/InsertPlugin.ts
+---
+
 # InsertPlugin
 
 Embed another page's content (or one section of it) into the current page at render time.

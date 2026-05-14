@@ -1,3 +1,10 @@
+---
+name: plugin-formatters
+description: Shared utility functions for plugin authors — consistent parameter parsing, HTML output, pagination, and date formatting across the platform.
+dateModified: '2026-05-14'
+category: plugins
+---
+
 # Plugin Formatters (`src/utils/pluginFormatters.ts`)
 
 Shared utility functions for plugin authors — consistent parameter parsing, HTML output, pagination, and date formatting across the platform.

@@ -1,3 +1,11 @@
+---
+name: MyLinksPlugin
+description: Renders the current user's pinned pages as a scrollable list in the sidebar.
+dateModified: '2026-05-14'
+category: plugins
+code: src/plugins/MyLinksPlugin.ts
+---
+
 # MyLinksPlugin
 
 Renders the current user's pinned pages as a scrollable list in the sidebar.

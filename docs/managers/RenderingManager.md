@@ -1,6 +1,14 @@
+---
+name: RenderingManager
+description: Markdown + JSPWiki-style markup rendering pipeline; orchestrates handlers and plugin invocation
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/RenderingManager.ts
+---
+
 # RenderingManager
 
-**Module:** `src/managers/RenderingManager.js`
+**Module:** `src/managers/RenderingManager.ts`
 **Extends:** [BaseManager](BaseManager.md)
 **Complete Guide:** [RenderingManager-Complete-Guide.md](RenderingManager-Complete-Guide.md)
 

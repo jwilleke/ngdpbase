@@ -1,3 +1,11 @@
+---
+name: RecentChangesPlugin
+description: The RecentChangesPlugin displays recent page changes in chronological order. It provides a convenient way to see what pages have been modified recently, helping users stay up-to-date with wiki acti…
+dateModified: '2026-05-14'
+category: plugins
+code: src/plugins/RecentChangesPlugin.ts
+---
+
 # RecentChangesPlugin
 
 The RecentChangesPlugin displays recent page changes in chronological order. It provides a convenient way to see what pages have been modified recently, helping users stay up-to-date with wiki activity.

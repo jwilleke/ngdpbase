@@ -1,3 +1,11 @@
+---
+name: ConfigAccessorPlugin
+description: The ConfigAccessorPlugin provides access to system configuration values including roles, features, manager settings, and any configuration property. This plugin is useful for displaying configurati…
+dateModified: '2026-05-14'
+category: plugins
+code: src/plugins/ConfigAccessorPlugin.ts
+---
+
 # ConfigAccessorPlugin
 
 The ConfigAccessorPlugin provides access to system configuration values including roles, features, manager settings, and any configuration property. This plugin is useful for displaying configuration information on wiki pages or embedding config values inline in text.

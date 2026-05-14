@@ -1,6 +1,14 @@
+---
+name: NotificationManager
+description: "System and per-user notifications — toast popups, persistent inbox, scheduled expiry"
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/NotificationManager.ts
+---
+
 # NotificationManager
 
-**Module:** `src/managers/NotificationManager.js`
+**Module:** `src/managers/NotificationManager.ts`
 **Extends:** [BaseManager](BaseManager.md)
 **Complete Guide:** [NotificationManager-Complete-Guide.md](NotificationManager-Complete-Guide.md)
 

@@ -1,10 +1,12 @@
 ---
-name: "CurrentTimePlugin"
-description: "Displays current date/time with customizable formatting"
-dateModified: "2025-12-18"
-category: "plugins"
-relatedModules: ["PluginManager"]
-version: "1.0.0"
+name: CurrentTimePlugin
+description: Displays current date/time with customizable formatting
+dateModified: '2025-12-18'
+category: plugins
+code: src/plugins/CurrentTimePlugin.ts
+relatedModules:
+  - PluginManager
+version: 1.0.0
 ---
 
 # CurrentTimePlugin

@@ -1,3 +1,11 @@
+---
+name: ElasticsearchSearchProvider
+description: Elasticsearch backend for SearchManager — full-text and (optionally) vector search over pages
+dateModified: '2026-05-14'
+category: providers
+code: src/providers/ElasticsearchSearchProvider.ts
+---
+
 # ElasticsearchSearchProvider
 
 **Quick Reference** | [Complete Guide](ElasticsearchSearchProvider-Complete-Guide.md)

@@ -1,10 +1,13 @@
 ---
-name: "ImagePlugin"
-description: "Inline image display with alignment and caption support"
-dateModified: "2026-03-25"
-category: "plugins"
-relatedModules: ["PluginManager", "ConfigurationManager"]
-version: "1.0.0"
+name: ImagePlugin
+description: Inline image display with alignment and caption support
+dateModified: '2026-03-25'
+category: plugins
+code: src/plugins/ImagePlugin.ts
+relatedModules:
+  - PluginManager
+  - ConfigurationManager
+version: 1.0.0
 ---
 
 # ImagePlugin

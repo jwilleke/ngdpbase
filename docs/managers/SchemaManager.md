@@ -1,6 +1,14 @@
+---
+name: SchemaManager
+description: "JSON Schema registration and validation for typed entities (Person, Organization, etc.)"
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/SchemaManager.ts
+---
+
 # SchemaManager
 
-**Module:** `src/managers/SchemaManager.js`
+**Module:** `src/managers/SchemaManager.ts`
 **Extends:** [BaseManager](BaseManager.md)
 **Complete Guide:** [SchemaManager-Complete-Guide.md](SchemaManager-Complete-Guide.md)
 

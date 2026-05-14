@@ -1,6 +1,14 @@
+---
+name: ExportManager
+description: Per-page export to HTML or Markdown with frontmatter stripping and link rewriting
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/ExportManager.ts
+---
+
 # ExportManager
 
-**Module:** `src/managers/ExportManager.js`
+**Module:** `src/managers/ExportManager.ts`
 **Extends:** [BaseManager](BaseManager.md)
 **Complete Guide:** [ExportManager-Complete-Guide.md](ExportManager-Complete-Guide.md)
 

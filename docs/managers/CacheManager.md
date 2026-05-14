@@ -1,3 +1,11 @@
+---
+name: CacheManager
+description: "Centralized cache facade with pluggable backends (NodeCache, Redis, Null) and named regions per consumer"
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/CacheManager.ts
+---
+
 # CacheManager
 
 **Module:** `src/managers/CacheManager.ts`

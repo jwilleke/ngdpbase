@@ -1,8 +1,16 @@
+---
+name: PolicyEvaluator
+description: Tier-2 of ACLManager — evaluates role/permission policies against principals and resources
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/PolicyEvaluator.ts
+---
+
 # PolicyEvaluator Documentation
 
 **Version:** 1.3.2
 **Last Updated:** 2025-10-11
-**Manager Path:** [src/managers/PolicyEvaluator.js](../../src/managers/PolicyEvaluator.js)
+**Manager Path:** [src/managers/PolicyEvaluator.ts](../../src/managers/PolicyEvaluator.ts)
 
 ---
 

@@ -1,8 +1,16 @@
+---
+name: BasicAttachmentProvider
+description: File-system attachment storage with SHA-256-content-addressed dedup and per-page listings
+dateModified: '2026-05-14'
+category: providers
+code: src/providers/BasicAttachmentProvider.ts
+---
+
 # BasicAttachmentProvider
 
 **Quick Reference** | [Complete Guide](BasicAttachmentProvider-Complete-Guide.md)
 
-**Module:** `src/providers/BasicAttachmentProvider.js`
+**Module:** `src/providers/BasicAttachmentProvider.ts`
 **Type:** Attachment Storage Provider
 **Extends:** BaseAttachmentProvider
 **Status:** Production Ready

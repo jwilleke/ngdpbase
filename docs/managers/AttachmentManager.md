@@ -1,6 +1,14 @@
+---
+name: AttachmentManager
+description: "File attachment CRUD: upload, lookup-by-filename, per-page attachment listings, SHA-256 deduplication"
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/AttachmentManager.ts
+---
+
 # AttachmentManager
 
-**Module:** `src/managers/AttachmentManager.js`
+**Module:** `src/managers/AttachmentManager.ts`
 **Extends:** [BaseManager](BaseManager.md)
 **Complete Guide:** [AttachmentManager-Complete-Guide.md](AttachmentManager-Complete-Guide.md)
 

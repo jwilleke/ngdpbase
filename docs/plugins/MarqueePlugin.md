@@ -1,10 +1,13 @@
 ---
-name: "MarqueePlugin"
-description: "CSS-based horizontally scrolling text banner"
-dateModified: "2026-04-06"
-category: "plugins"
-relatedModules: ["PluginManager", "BaseManager"]
-version: "1.1.0"
+name: MarqueePlugin
+description: CSS-based horizontally scrolling text banner
+dateModified: '2026-04-06'
+category: plugins
+code: src/plugins/MarqueePlugin.ts
+relatedModules:
+  - PluginManager
+  - BaseManager
+version: 1.1.0
 ---
 
 # MarqueePlugin

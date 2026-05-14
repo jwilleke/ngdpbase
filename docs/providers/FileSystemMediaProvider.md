@@ -1,3 +1,11 @@
+---
+name: FileSystemMediaProvider
+description: Read-only filesystem media library with EXIF parsing and keyword facets; the default MediaManager backend
+dateModified: '2026-05-14'
+category: providers
+code: src/providers/FileSystemMediaProvider.ts
+---
+
 # FileSystemMediaProvider
 
 **Quick Reference** | [MediaManager-Complete-Guide](../managers/MediaManager-Complete-Guide.md)

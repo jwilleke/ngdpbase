@@ -1,3 +1,11 @@
+---
+name: ValidationManager
+description: The ValidationManager is ngdpbase's central system for ensuring data integrity and consistency across the wiki's file-based storage. It enforces UUID-based naming conventions, validates YAML frontm…
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/ValidationManager.ts
+---
+
 # ValidationManager Documentation
 
 ## Overview
@@ -1156,7 +1164,7 @@ describe('ValidationManager', () => {
 
 ## Location
 
-**Source:** `src/managers/ValidationManager.js`
+**Source:** `src/managers/ValidationManager.ts`
 **Dependencies:**
 
 - `BaseManager` - Base manager class

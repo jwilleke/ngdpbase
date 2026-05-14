@@ -1,10 +1,12 @@
 ---
-name: "SlideshowPlugin"
-description: "Bootstrap 5 image carousel / slideshow"
-dateModified: "2026-04-05"
-category: "plugins"
-relatedModules: ["PluginManager"]
-version: "1.0.0"
+name: SlideshowPlugin
+description: Bootstrap 5 image carousel / slideshow
+dateModified: '2026-04-05'
+category: plugins
+code: src/plugins/SlideshowPlugin.ts
+relatedModules:
+  - PluginManager
+version: 1.0.0
 ---
 
 # SlideshowPlugin

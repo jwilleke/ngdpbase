@@ -1,10 +1,13 @@
 ---
-name: "TotalPagesPlugin"
-description: "Shows the total number of wiki pages"
-dateModified: "2025-12-18"
-category: "plugins"
-relatedModules: ["PluginManager", "PageManager"]
-version: "1.0.0"
+name: TotalPagesPlugin
+description: Shows the total number of wiki pages
+dateModified: '2025-12-18'
+category: plugins
+code: src/plugins/TotalPagesPlugin.ts
+relatedModules:
+  - PluginManager
+  - PageManager
+version: 1.0.0
 ---
 
 # TotalPagesPlugin

@@ -1,10 +1,14 @@
 ---
-name: "UndefinedPagesPlugin"
-description: "Lists pages that are linked to (RED-LINKs) but do not exist in the wiki"
-dateModified: "2026-02-25"
-category: "plugins"
-relatedModules: ["PluginManager", "PageManager", "RenderingManager"]
-version: "1.2.0"
+name: UndefinedPagesPlugin
+description: Lists pages that are linked to (RED-LINKs) but do not exist in the wiki
+dateModified: '2026-02-25'
+category: plugins
+code: src/plugins/UndefinedPagesPlugin.ts
+relatedModules:
+  - PluginManager
+  - PageManager
+  - RenderingManager
+version: 1.2.0
 ---
 
 # UndefinedPagesPlugin

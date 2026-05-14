@@ -1,8 +1,16 @@
+---
+name: PolicyManager
+description: Policy CRUD and lookup — manages the role/permission ruleset that PolicyEvaluator applies
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/PolicyManager.ts
+---
+
 # PolicyManager Documentation
 
 **Version:** 1.3.2
 **Last Updated:** 2025-10-11
-**Manager Path:** [src/managers/PolicyManager.js](../../src/managers/PolicyManager.js)
+**Manager Path:** [src/managers/PolicyManager.ts](../../src/managers/PolicyManager.ts)
 
 ---
 

@@ -1,3 +1,11 @@
+---
+name: AuditManager
+description: The AuditManager is responsible for audit trail logging and compliance monitoring in ngdpbase. It provides a centralized system for tracking security events, access decisions, policy evaluations, a…
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/AuditManager.ts
+---
+
 # AuditManager
 
 ## Overview
@@ -1285,7 +1293,7 @@ This will output detailed information about audit operations:
 - [BaseAuditProvider](../src/providers/BaseAuditProvider.js) - Base provider interface
 - [FileAuditProvider](../src/providers/FileAuditProvider.js) - File-based implementation
 - [NullAuditProvider](../src/providers/NullAuditProvider.js) - No-op implementation
-- [AuditManager](../src/managers/AuditManager.js) - Manager implementation
+- [AuditManager](../src/managers/AuditManager.ts) - Manager implementation
 - [GitHub Issue #102](https://github.com/jwilleke/ngdpbase/issues/102) - Configuration refactoring
 - [OWASP Logging Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html)
 - [NIST SP 800-92: Guide to Computer Security Log Management](https://csrc.nist.gov/publications/detail/sp/800-92/final)

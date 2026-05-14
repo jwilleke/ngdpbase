@@ -1,3 +1,11 @@
+---
+name: MediaManager
+description: Read-only external photo/video library (filesystem-backed) with EXIF indexing and keyword facets
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/MediaManager.ts
+---
+
 # MediaManager
 
 **Module:** `src/managers/MediaManager.ts`

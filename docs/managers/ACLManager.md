@@ -1,6 +1,14 @@
+---
+name: ACLManager
+description: "Per-page access control: private/author-lock/audience/role-policy evaluation via the canonical wikiContext.canAccess facade"
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/ACLManager.ts
+---
+
 # ACLManager
 
-**Module:** `src/managers/ACLManager.js`
+**Module:** `src/managers/ACLManager.ts`
 **Extends:** [BaseManager](BaseManager.md)
 **Complete Guide:** [ACLManager-Complete-Guide.md](ACLManager-Complete-Guide.md)
 

@@ -1,3 +1,11 @@
+---
+name: CounterPlugin
+description: The CounterPlugin maintains page-specific counters that increment each time they render. Unlike a persistent hit counter, this tracks counters within a single page render cycle, making it useful fo…
+dateModified: '2026-05-14'
+category: plugins
+code: src/plugins/CounterPlugin.ts
+---
+
 # CounterPlugin
 
 The CounterPlugin maintains page-specific counters that increment each time they render. Unlike a persistent hit counter, this tracks counters within a single page render cycle, making it useful for numbering items, tracking plugin invocations, or implementing conditional logic.

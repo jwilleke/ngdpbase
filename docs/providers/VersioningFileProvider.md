@@ -1,8 +1,16 @@
+---
+name: VersioningFileProvider
+description: File-based page storage with delta-compressed version history; the default PageManager backend
+dateModified: '2026-05-14'
+category: providers
+code: src/providers/VersioningFileProvider.ts
+---
+
 # VersioningFileProvider
 
 **Quick Reference** | [Complete Guide](VersioningFileProvider-Complete-Guide.md)
 
-**Module:** `src/providers/VersioningFileProvider.js`
+**Module:** `src/providers/VersioningFileProvider.ts`
 **Type:** Page Storage Provider with Versioning
 **Extends:** FileSystemProvider
 **Status:** Production Ready

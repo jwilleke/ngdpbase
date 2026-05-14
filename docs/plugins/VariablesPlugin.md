@@ -1,3 +1,11 @@
+---
+name: VariablesPlugin
+description: The VariablesPlugin displays system and contextual variables available in the wiki, similar to the admin variables page.
+dateModified: '2026-05-14'
+category: plugins
+code: src/plugins/VariablesPlugin.ts
+---
+
 # VariablesPlugin
 
 The VariablesPlugin displays system and contextual variables available in the wiki, similar to the admin variables page.

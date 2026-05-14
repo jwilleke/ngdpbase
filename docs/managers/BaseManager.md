@@ -1,6 +1,14 @@
+---
+name: BaseManager
+description: "Abstract base class for all managers — engine wiring, lifecycle hooks, config accessor pattern"
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/BaseManager.ts
+---
+
 # BaseManager
 
-**Module:** `src/managers/BaseManager.js`
+**Module:** `src/managers/BaseManager.ts`
 **Complete Guide:** [BaseManager-Complete-Guide.md](BaseManager-Complete-Guide.md)
 
 ---

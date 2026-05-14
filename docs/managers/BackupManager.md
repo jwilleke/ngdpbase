@@ -1,6 +1,14 @@
+---
+name: BackupManager
+description: "System-wide backup and restore — pages, attachments, config, search indices"
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/BackupManager.ts
+---
+
 # BackupManager
 
-**Module:** `src/managers/BackupManager.js`
+**Module:** `src/managers/BackupManager.ts`
 **Extends:** [BaseManager](BaseManager.md)
 **Complete Guide:** [BackupManager-Complete-Guide.md](BackupManager-Complete-Guide.md)
 

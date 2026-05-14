@@ -1,6 +1,14 @@
+---
+name: PluginManager
+description: "Plugin discovery, registration, and execution; resolves `[{PluginName ...}]` markup to handler output"
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/PluginManager.ts
+---
+
 # PluginManager
 
-**Module:** `src/managers/PluginManager.js`
+**Module:** `src/managers/PluginManager.ts`
 **Extends:** [BaseManager](BaseManager.md)
 **Complete Guide:** [PluginManager-Complete-Guide.md](PluginManager-Complete-Guide.md)
 

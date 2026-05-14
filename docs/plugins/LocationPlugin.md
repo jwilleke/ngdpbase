@@ -1,3 +1,11 @@
+---
+name: LocationPlugin
+description: The LocationPlugin displays locations with map links and optional embedded map previews. It supports multiple map providers and both location names and precise coordinates.
+dateModified: '2026-05-14'
+category: plugins
+code: src/plugins/LocationPlugin.ts
+---
+
 # LocationPlugin
 
 The LocationPlugin displays locations with map links and optional embedded map previews. It supports multiple map providers and both location names and precise coordinates.

@@ -1,3 +1,11 @@
+---
+name: ConfigurationManager
+description: Loads and merges app-default-config.json + app-custom-config.json; the single source of truth for runtime config
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/ConfigurationManager.ts
+---
+
 # ConfigurationManager
 
 **Module:** `src/managers/ConfigurationManager.ts`

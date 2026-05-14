@@ -1,6 +1,14 @@
+---
+name: SearchManager
+description: "Full-text page search with pluggable backends (Lunr in-process, Elasticsearch); also drives the asset-picker"
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/SearchManager.ts
+---
+
 # SearchManager
 
-**Module:** `src/managers/SearchManager.js`
+**Module:** `src/managers/SearchManager.ts`
 **Extends:** [BaseManager](BaseManager.md)
 **Complete Guide:** [SearchManager-Complete-Guide.md](SearchManager-Complete-Guide.md)
 

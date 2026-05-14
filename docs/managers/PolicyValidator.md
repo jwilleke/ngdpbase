@@ -1,8 +1,16 @@
+---
+name: PolicyValidator
+description: Schema validation for policy definitions; runs at startup to refuse malformed policies
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/PolicyValidator.ts
+---
+
 # PolicyValidator Documentation
 
 **Version:** 1.3.2
 **Last Updated:** 2025-10-11
-**Manager Path:** [src/managers/PolicyValidator.js](../../src/managers/PolicyValidator.js)
+**Manager Path:** [src/managers/PolicyValidator.ts](../../src/managers/PolicyValidator.ts)
 
 ---
 

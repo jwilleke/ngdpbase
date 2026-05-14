@@ -1,3 +1,11 @@
+---
+name: AssetService
+description: Unified DAM search facade over the AssetProvider registry; called by SearchManager and the asset-picker
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/AssetService.ts
+---
+
 # AssetService
 
 **Module:** `src/managers/AssetService.ts`

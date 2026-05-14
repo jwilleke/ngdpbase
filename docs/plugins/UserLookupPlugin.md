@@ -1,3 +1,11 @@
+---
+name: UserLookupPlugin
+description: Searches users and renders results as a sortable table. Permission gating is handled server-side by the API — callers without user-read permission receive only username and displayName.
+dateModified: '2026-05-14'
+category: plugins
+code: src/plugins/UserLookupPlugin.ts
+---
+
 # UserLookupPlugin
 
 Searches users and renders results as a sortable table. Permission gating is handled server-side by the API — callers without `user-read` permission receive only `username` and `displayName`.

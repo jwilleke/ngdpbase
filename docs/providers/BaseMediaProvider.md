@@ -1,3 +1,11 @@
+---
+name: BaseMediaProvider
+description: Abstract base class for asset/media providers — defines the AssetService-facing interface
+dateModified: '2026-05-14'
+category: providers
+code: src/providers/BaseMediaProvider.ts
+---
+
 # BaseMediaProvider
 
 **Quick Reference** | [MediaManager](../managers/MediaManager.md)

@@ -1,10 +1,13 @@
 ---
-name: "IndexPlugin"
-description: "Generates an alphabetical index of all wiki pages"
-dateModified: "2025-12-18"
-category: "plugins"
-relatedModules: ["PluginManager", "PageManager"]
-version: "1.0.0"
+name: IndexPlugin
+description: Generates an alphabetical index of all wiki pages
+dateModified: '2025-12-18'
+category: plugins
+code: src/plugins/IndexPlugin.ts
+relatedModules:
+  - PluginManager
+  - PageManager
+version: 1.0.0
 ---
 
 # IndexPlugin

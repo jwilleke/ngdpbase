@@ -1,6 +1,14 @@
+---
+name: TemplateManager
+description: Page templates for /create and theme-driven layout templates for /view
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/TemplateManager.ts
+---
+
 # TemplateManager
 
-**Module:** `src/managers/TemplateManager.js`
+**Module:** `src/managers/TemplateManager.ts`
 **Extends:** [BaseManager](BaseManager.md)
 **Complete Guide:** [TemplateManager-Complete-Guide.md](TemplateManager-Complete-Guide.md)
 

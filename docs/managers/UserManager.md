@@ -1,6 +1,14 @@
+---
+name: UserManager
+description: "User CRUD, sessions, authentication, profile-page binding, contact-recipient resolution"
+dateModified: '2026-05-14'
+category: managers
+code: src/managers/UserManager.ts
+---
+
 # UserManager
 
-**Module:** `src/managers/UserManager.js`
+**Module:** `src/managers/UserManager.ts`
 **Extends:** [BaseManager](BaseManager.md)
 **Complete Guide:** [UserManager-Complete-Guide.md](UserManager-Complete-Guide.md)
 
