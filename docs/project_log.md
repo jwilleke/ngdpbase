@@ -2,6 +2,31 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-14-02
+
+- Agent: Claude Opus 4.7
+- Subject: Resolve `#690` — `/contact` form returning "Forbidden — invalid CSRF token" on every submit. Root cause: `views/contact.ejs:43` emitted `<input name="_csrfToken">` while `src/middleware/csrf.ts:27` reads the submitted token from `_csrf`. The same one-character bug was latent in `src/parsers/handlers/WikiFormHandler.ts:284` (would break every user-defined `[{FormOpen}]` wiki form on submit). 24+ other EJS templates already use the canonical `_csrf` name.
+- Current Issue: `#690` (closed via `Closes #690` trailer + summary comment with commit hash).
+- Tests: jimstest 5506/5506 unit + 72/72 E2E. Each satellite 5506/5506 unit + 72/72 E2E. One vitest flake on temp-builds first pass; passed cleanly on retry (matches `#622` pattern — single-test intermittent timeout in `WikiRoutes.coverage3.test.ts`).
+- Work Done:
+  - `views/contact.ejs` — one-line edit: `_csrfToken` → `_csrf` (line 43)
+  - `src/parsers/handlers/WikiFormHandler.ts` — same one-line edit (line 284)
+  - `src/parsers/handlers/__tests__/WikiFormHandler.test.ts` — updated FormOpen test that was codifying the bug; now asserts `name="_csrf"` and that `name="_csrfToken"` is absent
+  - `src/routes/__tests__/WikiRoutes.contact.test.ts` — new template-content invariant in a dedicated `views/contact.ejs — template content (#690)` describe block. Reads the EJS file directly. Existing route tests stub `res.render`, so template-content bugs like #690 escape unless guarded this way
+  - Live smoke verified: `curl http://localhost:3000/contact | grep _csrf` returns `name="_csrf"` with a real session token
+  - Semver skipped (operator chose to bundle with next change rather than cut 3.14.3 within an hour of 3.14.2)
+- Propagation results:
+  - **fairways-base** (2121) — pulled to `1d9d2b91`, restart PID 1353, **5506/5506** unit + **72/72** E2E
+  - **ngdpbase-veg** (3333) — pulled to `1d9d2b91`, restart PID 3972, **5506/5506** unit + **72/72** E2E
+  - **ngdp-temp-builds** (3001) — pulled to `1d9d2b91`, restart PID 6535, **5506/5506** unit (after 1 retry; first run had 1 flake) + **72/72** E2E
+- Commits: `1d9d2b91`.
+- Files Modified:
+  - `views/contact.ejs`
+  - `src/parsers/handlers/WikiFormHandler.ts`
+  - `src/parsers/handlers/__tests__/WikiFormHandler.test.ts`
+  - `src/routes/__tests__/WikiRoutes.contact.test.ts`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-14-01
 
 - Agent: Claude Opus 4.7

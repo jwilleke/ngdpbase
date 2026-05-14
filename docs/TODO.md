@@ -34,7 +34,6 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 | # | Title |
 |---|---|
-| #690 | /contact yields "Forbidden — invalid CSRF token" |
 | #662 | Invalid system-category "User Pages" (legacy data still carries it on disk) |
 | #660 | Agent and ./docs documentation |
 | #622 | WikiRoutes.coverage3.test.ts intermittent timeout |
@@ -42,7 +41,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 *Closed 2026-05-13: #704 (protobufjs), #708 (/search default), #701 (/save/Molly migration script), #699 + #700 (asset-search capped flag + sort), #697 (/create Private + Author-lock toggles), #665 (insert page — operator close), **#711 (ACLManager creator drift — minimal fix `7c52c4c2`; larger refactor parked as #714 epic)**, #712 + #713 (access-control follow-ups). Six-slice access-control arc finished (private → author-lock → audience → role permissions docs); see project_log 2026-05-13-07 through -14 for the slice trail.*
 
-*Closed 2026-05-14: Dependabot PR #715 merged (`3c24a9bc`) bumping `systeminformation` 5.31.1 → 5.31.6, fixing high-severity alert #114 (Linux command injection via NetworkManager profile names).*
+*Closed 2026-05-14: Dependabot PR #715 merged (`3c24a9bc`) bumping `systeminformation` 5.31.1 → 5.31.6, fixing high-severity alert #114 (Linux command injection via NetworkManager profile names). **#690 (`/contact` CSRF field-name mismatch, `1d9d2b91`)** — `views/contact.ejs` and `src/parsers/handlers/WikiFormHandler.ts` both emitted `_csrfToken` while csrf middleware reads `_csrf`; one-char fix in each, two test updates.*
 
 ## Operator-decision carryover
 
