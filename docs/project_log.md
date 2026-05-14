@@ -2,6 +2,28 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-14-15
+
+- Agent: Claude Opus 4.7
+- Subject: `/semver patch` release `v3.14.4 → v3.14.5` bundling the four bug fixes shipped today (#717 dropdown transparency, #719 .mov inline play, #718 calendar config nesting) plus the Fairways operator demo guide and the session-commit policy update.
+- Current Issue: routine release; no specific issue.
+- Tests: jimstest 5511/5511 unit + 72/72 E2E pre-release. Each satellite 5511/5511 (fairways-base had a 2-test flake on first pass, clean on retry — #622 pattern).
+- Perf baseline: clean — no regression candidates flagged. `/` and `/search` recovered to 33ms and 23ms (from the v3.14.4 cold-cache values of 149/144ms). Memory +3% within threshold.
+- Work Done:
+  - `node dist/src/utils/version.js patch` → 3.14.5; CHANGELOG + app-default-config + package.json bumped in lockstep
+  - `npm run test:baseline:compare` captured `docs/performance/baseline-v3.14.5-2026-05-14.md`
+  - Tag pushed; GitHub Release deferred per the patch rule
+  - `/othersites` propagation per the (new in this session) policy: `/othersites` always runs when invoked directly or from `/semver`, but is gated to minor+ inside `/session-commit`
+- Propagation results:
+  - **fairways-base** (2121) — pulled to `e5db31f2`, **5511/5511** unit (1 retry due to 2-test flake; clean second pass)
+  - **ngdpbase-veg** (3333) — pulled to `e5db31f2`, **5511/5511** unit
+  - **ngdp-temp-builds** (3001) — pulled to `e5db31f2`, **5511/5511** unit
+- Commits: `e5db31f2` (release v3.14.5).
+- Files Modified:
+  - `package.json`, `config/app-default-config.json`, `CHANGELOG.md` (version bump)
+  - `docs/performance/baseline-v3.14.5-2026-05-14.md` (new)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-14-14
 
 - Agent: Claude Opus 4.7
