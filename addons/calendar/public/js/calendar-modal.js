@@ -121,7 +121,9 @@
     deleteBtn.addEventListener('click', function () {
       const id = document.getElementById('calModalEventId').value;
       if (!id || !confirm('Delete this event?')) return;
-      fetch('/api/calendar/events/' + id, { method: 'DELETE' })
+      // #727: DELETE is state-changing — needs the CSRF token (#663
+      // app-wide middleware). csrfFetch injects X-CSRF-Token.
+      (window.csrfFetch || fetch)('/api/calendar/events/' + id, { method: 'DELETE' })
         .then(function (r) {
           if (r.ok || r.status === 204) {
             bootstrap.Modal.getInstance(document.getElementById('calModal')).hide();

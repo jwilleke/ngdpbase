@@ -126,7 +126,9 @@ document.addEventListener('DOMContentLoaded', function () {
 <script>
 function deletePage(pageName) {
     if (confirm('Are you sure you want to delete this page?')) {
-        fetch(`/delete/${encodeURIComponent(pageName)}`, {
+        // #727: state-changing request must carry the CSRF token (#663
+        // app-wide middleware). csrfFetch injects X-CSRF-Token.
+        (window.csrfFetch || fetch)(`/delete/${encodeURIComponent(pageName)}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

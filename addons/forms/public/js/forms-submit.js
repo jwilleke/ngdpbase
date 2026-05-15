@@ -35,7 +35,10 @@
       result.innerHTML = '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Submitting…</div>';
 
       try {
-        const res = await fetch('/api/forms/submit/' + encodeURIComponent(formId), {
+        // #727: form submission is state-changing — needs the CSRF
+        // token (#663 app-wide middleware). csrfFetch injects
+        // X-CSRF-Token; without it the POST gets a text/plain 403.
+        const res = await (window.csrfFetch || fetch)('/api/forms/submit/' + encodeURIComponent(formId), {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify(data),

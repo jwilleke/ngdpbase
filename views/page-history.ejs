@@ -200,7 +200,9 @@ function restoreVersion(pageName, version) {
     return;
   }
 
-  fetch(`/api/page/${encodeURIComponent(pageName)}/restore/${version}`, {
+  // #727: version-restore is state-changing — needs the CSRF token
+  // (#663 app-wide middleware). csrfFetch injects X-CSRF-Token.
+  (window.csrfFetch || fetch)(`/api/page/${encodeURIComponent(pageName)}/restore/${version}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
