@@ -2,6 +2,29 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-15-01
+
+- Agent: Claude Opus 4.7
+- Subject: `/semver patch` release `v3.14.5 → v3.14.6` consolidating the 2026-05-15 CSRF arc + import fix. GitHub Release published. `/othersites` propagation across all 3 satellites (the forms-submit CSRF fix reaches The Fairways — clubhouse-reservation flow unblocked for the demo).
+- Current Issue: routine release; bundles #709, #727, #723.
+- Tests: jimstest 5522/5522 unit + 72/72 E2E pre-release. Each satellite 5522/5522 + 72/72. No flakes.
+- Perf baseline: clean — every metric improved vs v3.14.5 (memory -1.9%, all sampled routes -2..-3ms). No regression candidates.
+- Work Done:
+  - Bumped 3.14.5 → 3.14.6 via `dist/src/utils/version.js`; `docs/performance/baseline-v3.14.6-2026-05-15.md` captured
+  - Tag pushed; GitHub Release **published** (`--notes-start-tag v3.14.5`) — consistent with the session-established publish-every-release preference
+  - `/othersites`: fairways-base, ngdpbase-veg, ngdp-temp-builds — pull → stop → build → start → unit + E2E, all green
+  - jimstest restarted post-release (PID 63084, v3.14.6) — applying the `/semver` doesn't-cycle-the-server lesson
+- Release contents: #709 footnote CSRF (`aaa77539`), #727 High/Med/Low client-mutation CSRF fixes + CI guard (`c7aa7867`/`3be8bf58`/`f5dc4b8e`), #723 URL-import view link (`c4cbfa53`), docs/TODO freshens
+- Propagation results:
+  - **fairways-base** (2121) — pulled to `5d8a08a9`, **5522/5522** unit + **72/72** E2E
+  - **ngdpbase-veg** (3333) — pulled to `5d8a08a9`, **5522/5522** unit + **72/72** E2E
+  - **ngdp-temp-builds** (3001) — pulled to `5d8a08a9`, **5522/5522** unit + **72/72** E2E
+- Commits: `5d8a08a9` (release v3.14.6).
+- Files Modified:
+  - `package.json`, `config/app-default-config.json`, `CHANGELOG.md` (version bump)
+  - `docs/performance/baseline-v3.14.6-2026-05-15.md` (new)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-14-15
 
 - Agent: Claude Opus 4.7
