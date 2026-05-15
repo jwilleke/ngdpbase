@@ -199,7 +199,11 @@ function renderCrudScript(pageUuid: string): string {
     const note = form.querySelector('[name=note]').value.trim();
     const isEdit = !!editId;
     const target = isEdit ? '/api/footnotes/' + _uuid + '/' + editId : '/api/footnotes/' + _uuid;
-    fetch(target, {
+    // #709: state-changing requests must carry the CSRF token (#663
+    // app-wide middleware). Raw fetch() got a text/plain 403 that
+    // r.json() then choked on, surfacing only the opaque .catch()
+    // "Failed to add footnote." csrfFetch injects X-CSRF-Token.
+    (window.csrfFetch || fetch)(target, {
       method: isEdit ? 'PUT' : 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ display, url, note })
@@ -221,7 +225,8 @@ function renderCrudScript(pageUuid: string): string {
     if (delBtn) {
       const id = delBtn.dataset.id;
       if (!confirm('Delete footnote [' + id + ']?')) return;
-      fetch('/api/footnotes/' + _uuid + '/' + id, { method: 'DELETE' })
+      // #709: DELETE is state-changing — needs the CSRF token too.
+      (window.csrfFetch || fetch)('/api/footnotes/' + _uuid + '/' + id, { method: 'DELETE' })
         .then(r => r.json()).then(d => {
           if (d.success) return refreshList();
           alert(d.error || 'Failed');

@@ -93,6 +93,30 @@ describe('FootnotesPlugin', () => {
       expect(result).toContain('footnote-add-form');
     });
 
+    // #709: the CRUD script's state-changing requests MUST go through
+    // csrfFetch — the app-wide CSRF middleware (#663) rejects tokenless
+    // POST/PUT/DELETE with a text/plain 403 that the client's r.json()
+    // then chokes on, surfacing only the opaque "Failed to add footnote."
+    // Guards against a regression back to raw fetch() for mutations.
+    test('CRUD script uses csrfFetch for state-changing requests (#709)', async () => {
+      const fm = makeFootnoteManager([]);
+      const context = {
+        engine: makeEngine({ FootnoteManager: fm }),
+        pageName: 'TestPage',
+        pageMetadata: { uuid: 'abc-123' },
+        userContext: { isAuthenticated: true, username: 'alice', roles: ['editor'] }
+      };
+      const result = await FootnotesPlugin.execute(context, {});
+      // The add/edit (POST/PUT) and delete (DELETE) calls must use the
+      // csrfFetch wrapper.
+      expect(result).toContain('(window.csrfFetch || fetch)(target,');
+      expect(result).toContain("(window.csrfFetch || fetch)('/api/footnotes/' + _uuid + '/' + id, { method: 'DELETE' })");
+      // The only bare fetch( permitted in the CRUD script is the GET
+      // refreshList call (safe method, no token needed).
+      const bareFetchCount = (result.match(/[^.|]fetch\('\/api\/footnotes/g) || []).length;
+      expect(bareFetchCount).toBe(1); // exactly the refreshList GET
+    });
+
     test('noheader=true suppresses h2 heading', async () => {
       const fm = makeFootnoteManager([]);
       const context = {
