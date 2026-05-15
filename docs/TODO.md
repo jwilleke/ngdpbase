@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-14T00:00:00.000Z'
+lastModified: '2026-05-15T00:00:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -32,10 +32,16 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 ## Open BUGS (ngdpbase, by issue #)
 
+8 open as of 2026-05-15 (was 4 on 2026-05-14).
+
 | # | Title |
 |---|---|
-| #662 | Invalid system-category "User Pages" — **original repro fixed**; awaiting operator close (`9b977473` demote-not-delete shipped, comment posted 2026-05-14) |
-| #660 | Agent and ./docs documentation — **initial pass + mass-conversion shipped 2026-05-14** (`fd5c80f9` + `8b15ffbc`: index refresh, frontmatter policy + lint hook, all 50 managers/plugins/providers docs now compliant); 49 lint warnings remain for source-only modules (stub-creation work) |
+| #725 | mj-infra-flux fluxcdbot PAT canary blind — `FLUXCDBOT_PAT_HEALTHCHECK` unset + no-expiry PAT; operator-owned remediation (companion to #726) |
+| #724 | NGDPBASE-test-LocationTest-…-icon — **new 2026-05-15, untriaged** |
+| #723 | URL Import Pages shows only Error — **new 2026-05-15, untriaged** |
+| #716 | Page Card Summary — empty page result cards; technical analysis comment posted, self-contained UI work ready to pick up |
+| #709 | Add Footnote — Failed to add footnote — ⚠️ **REOPENED**: closed 2026-05-13 via `cdb274c4` but the fix was insufficient; needs re-investigation |
+| #660 | Agent and ./docs documentation — index refresh + frontmatter policy + lint + auto-gen index all shipped; 49 lint warnings remain for source-only modules (stub-creation work) |
 | #622 | WikiRoutes.coverage3.test.ts intermittent timeout |
 | #599 | showdown ReDoS — no upstream patch (mitigation only) |
 
@@ -45,9 +51,13 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 ## Operator-decision carryover
 
-Items awaiting a yes/no/close from the operator. Not blocking other work.
+Items awaiting a yes/no/close or operator-only action. Not blocking other work.
 
-No items awaiting decision.
+- ⚠️ **#709 reopened** — a shipped fix (`cdb274c4`) regressed or was insufficient; highest-attention triage item.
+- **#725 / #726** — operator-owned infra. Short-term: set `FLUXCDBOT_PAT_HEALTHCHECK` secret in `jwilleke/mj-infra-flux`. Durable: GitHub App migration for Flux image-automation git auth (no deadline — fluxcdbot is no-expiry and working).
+- **#723 / #724** — filed 2026-05-15, awaiting triage.
+
+*Resolved 2026-05-15: geohazardwatch lag closed — its `Dockerfile` `NGDPBASE_VERSION` bumped 3.13.2 → 3.14.5 (`be7390c`), new `geohazardwatch:1.2.11` image published, Flux auto-deployed; geohazardwatch.com confirmed serving ngdpbase 3.14.5. Root cause was the `ghcr.io/jwilleke/ngdpbase` package being private (Renovate couldn't enumerate tags); package made public so future bumps flow automatically. #662 closed by operator.*
 
 ## Sister-site top priorities — combined table
 
@@ -66,6 +76,10 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | # | Topic | Priority hint |
 |---|---|---|
 | #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Medium — prototyped during #711 session, parked due to test-mock churn. WIP in `git stash@{0}`. |
+| #726 | Migrate Flux image-automation git auth to a GitHub App | Low — hygiene/strategic; no deadline (fluxcdbot is no-expiry + working). Makes #725 canary obsolete. |
+| #722 | Video poster-frame thumbnails (ffmpeg) | Low — substantial; adds ffmpeg dep. Visible gap in every media-tile UI |
+| #721 | Asset-picker advanced filters: capture-date for video + collapse into disclosure | Low — backend gap (video `dateTimeOriginal` not indexed) + UI tidy |
+| #720 | Asset-picker format dropdown: separate Video/Audio from Other | Low — discovery friction; mirrors existing Images filter |
 | #707 | Typed footnote syntax + knowledge-graph reference index | Low — speculative; companion to #706 |
 | #706 | `knowledge-role` frontmatter field — opt-in page role | Low — speculative; design captured in `docs/planning/ideas/llm-wiki-pattern.md` |
 | #705 | Perf baseline: warm cache or median-of-N | Low — quality-of-life for benchmark accuracy |
@@ -81,11 +95,11 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 
 ## Access-control arc — follow-up issues filed 2026-05-13
 
-The six-slice access-control arc surfaced four follow-up items. As of 2026-05-14, three are closed and one remains open:
+The six-slice access-control arc surfaced four follow-up items. As of 2026-05-15, all four are closed:
 
 | # | State | Type | Topic |
 |---|---|---|---|
-| #710 | open | enhancement | Audience picker accepts usernames, not just roles (UI gap with Page Audience doc) |
+| #710 | closed | enhancement | Audience picker accepts usernames — shipped `6e8fa1b0` (2026-05-14): vanilla typeahead widget + EJS partial |
 | #711 | closed | bug | ACLManager Tier-0 creator drift — fixed `7c52c4c2`; larger refactor parked as #714 epic |
 | #712 | closed | bug | /save handler legacy `user-keywords:[private]` fallback removed |
 | #713 | closed | bug | `_comment_roles` schema doc corrected |
