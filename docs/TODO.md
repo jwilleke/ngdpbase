@@ -32,7 +32,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 ## Open BUGS (ngdpbase, by issue #)
 
-8 open as of 2026-05-15 (was 4 on 2026-05-14).
+7 open as of 2026-05-15 (intra-day: #709 + #727 closed since the morning refresh).
 
 | # | Title |
 |---|---|
@@ -40,7 +40,6 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 | #724 | NGDPBASE-test-LocationTest-…-icon — **new 2026-05-15, untriaged** |
 | #723 | URL Import Pages shows only Error — **new 2026-05-15, untriaged** |
 | #716 | Page Card Summary — empty page result cards; technical analysis comment posted, self-contained UI work ready to pick up |
-| #709 | Add Footnote — Failed to add footnote — ⚠️ **REOPENED**: closed 2026-05-13 via `cdb274c4` but the fix was insufficient; needs re-investigation |
 | #660 | Agent and ./docs documentation — index refresh + frontmatter policy + lint + auto-gen index all shipped; 49 lint warnings remain for source-only modules (stub-creation work) |
 | #622 | WikiRoutes.coverage3.test.ts intermittent timeout |
 | #599 | showdown ReDoS — no upstream patch (mitigation only) |
@@ -53,11 +52,12 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 Items awaiting a yes/no/close or operator-only action. Not blocking other work.
 
-- ⚠️ **#709 reopened** — a shipped fix (`cdb274c4`) regressed or was insufficient; highest-attention triage item.
 - **#725 / #726** — operator-owned infra. Short-term: set `FLUXCDBOT_PAT_HEALTHCHECK` secret in `jwilleke/mj-infra-flux`. Durable: GitHub App migration for Flux image-automation git auth (no deadline — fluxcdbot is no-expiry and working).
-- **#723 / #724** — filed 2026-05-15, awaiting triage.
+- **#723 / #724** — filed 2026-05-15, still awaiting triage (oldest untriaged bugs).
 
 *Resolved 2026-05-15: geohazardwatch lag closed — its `Dockerfile` `NGDPBASE_VERSION` bumped 3.13.2 → 3.14.5 (`be7390c`), new `geohazardwatch:1.2.11` image published, Flux auto-deployed; geohazardwatch.com confirmed serving ngdpbase 3.14.5. Root cause was the `ghcr.io/jwilleke/ngdpbase` package being private (Renovate couldn't enumerate tags); package made public so future bumps flow automatically. #662 closed by operator.*
+
+*Closed 2026-05-15 — CSRF arc: **#709** footnote add/edit/delete (`aaa77539`) — real cause was the client `.catch()` (tokenless mutation → text/plain 403 → `r.json()` throws); `cdb274c4` had only improved an unreached path. **#727** systemic sweep — all 9 tokenless client mutations fixed (`c7aa7867` High: page delete, version restore, addon form submit, calendar delete; `3be8bf58` Med/Low: admin user/role edit, comments, export ×2), regression-net test, **and a CI grep-guard `npm run lint:csrf`** (`f5dc4b8e`) wired into `lint`/`lint:ci`/pre-commit so new tokenless state-changing `fetch(` can't reach master. The #690 → WikiFormHandler → #709 → #727 root-cause class is now structurally closed.*
 
 ## Sister-site top priorities — combined table
 
