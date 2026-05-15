@@ -124,7 +124,10 @@ function ngdpSubmitComment(e, pageUuid) {
   const input = e.target.querySelector('.comment-input');
   const content = input.value.trim();
   if (!content) return;
-  fetch('/api/comments/' + pageUuid, {
+  // #727: comment add is state-changing — needs the CSRF token (#663
+  // app-wide middleware). csrfFetch injects X-CSRF-Token; without it
+  // the POST gets a text/plain 403 that r.json() then chokes on.
+  (window.csrfFetch || fetch)('/api/comments/' + pageUuid, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content })
@@ -135,7 +138,8 @@ function ngdpSubmitComment(e, pageUuid) {
 }
 function ngdpDeleteComment(pageUuid, commentId) {
   if (!confirm('Delete this comment?')) return;
-  fetch('/api/comments/' + pageUuid + '/' + commentId, {
+  // #727: comment delete is state-changing — needs the CSRF token.
+  (window.csrfFetch || fetch)('/api/comments/' + pageUuid + '/' + commentId, {
     method: 'DELETE'
   }).then(r => r.json()).then(data => {
     if (data.success) return ngdpRefreshCommentList(pageUuid);

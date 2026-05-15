@@ -147,7 +147,8 @@ document.querySelectorAll('.role-form').forEach(form => {
         };
         
         try {
-            const response = await fetch(`/admin/roles/${roleName}`, {
+            // #727: state-changing request needs the CSRF token (#663).
+            const response = await (window.csrfFetch || fetch)(`/admin/roles/${roleName}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

@@ -50,6 +50,36 @@ const SURFACES: Surface[] = [
     file: 'addons/calendar/public/js/calendar-modal.js',
     mustContain: "(window.csrfFetch || fetch)('/api/calendar/events/'",
     mustNotContain: ["fetch('/api/calendar/events/'"]
+  },
+  {
+    file: 'views/admin-user-edit.ejs',
+    mustContain: '(window.csrfFetch || fetch)(`/admin/users/${username}`',
+    mustNotContain: ['fetch(`/admin/users/${username}`']
+  },
+  {
+    file: 'views/admin-roles.ejs',
+    mustContain: '(window.csrfFetch || fetch)(`/admin/roles/${roleName}`',
+    mustNotContain: ['fetch(`/admin/roles/${roleName}`']
+  },
+  {
+    file: 'views/export.ejs',
+    mustContain: '(window.csrfFetch || fetch)(url, {',
+    mustNotContain: ['fetch(url, {']
+  },
+  {
+    file: 'views/exports.ejs',
+    mustContain: "(window.csrfFetch || fetch)(url, { method: 'DELETE' })",
+    mustNotContain: ["fetch(url, { method: 'DELETE' })"]
+  },
+  {
+    file: 'src/plugins/CommentsPlugin.ts',
+    mustContain: "(window.csrfFetch || fetch)('/api/comments/' + pageUuid,",
+    mustNotContain: ["fetch('/api/comments/' + pageUuid,"]
+  },
+  {
+    file: 'src/plugins/CommentsPlugin.ts',
+    mustContain: "(window.csrfFetch || fetch)('/api/comments/' + pageUuid + '/' + commentId,",
+    mustNotContain: ["fetch('/api/comments/' + pageUuid + '/' + commentId,"]
   }
 ];
 

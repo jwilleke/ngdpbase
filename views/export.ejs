@@ -117,7 +117,8 @@ document.getElementById('single-export-form').addEventListener('submit', async f
 
     const url = `/export/${format}/${encodeURIComponent(pageName)}`;
     try {
-        const response = await fetch(url, {
+        // #727: state-changing request needs the CSRF token (#663).
+        const response = await (window.csrfFetch || fetch)(url, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'

@@ -232,7 +232,8 @@
     }
 
     try {
-      const response = await fetch(`/admin/users/${username}`, {
+      // #727: state-changing request needs the CSRF token (#663).
+      const response = await (window.csrfFetch || fetch)(`/admin/users/${username}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updateData)

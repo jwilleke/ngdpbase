@@ -39,7 +39,8 @@
 
       if (confirm('Are you sure you want to delete this export?')) {
 
-        const res = await fetch(url, { method: 'DELETE' });
+        // #727: state-changing request needs the CSRF token (#663).
+        const res = await (window.csrfFetch || fetch)(url, { method: 'DELETE' });
 
         if (res.ok) {
           location.reload();
