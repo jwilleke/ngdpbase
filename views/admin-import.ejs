@@ -593,12 +593,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (result.success && result.file) {
             const title = result.file.metadata?.title || 'Untitled';
+            // #723: link to the served page route. Was `/${title}` — no
+            // /view/ prefix, so Express 404'd ("Cannot GET /<title>").
+            // Prefer the generated slug; fall back to the title (the
+            // /view/ route resolves titles via PageNameMatcher).
+            const slug = result.file.metadata?.slug;
+            const viewHref = '/view/' + encodeURIComponent(slug || title);
             body.innerHTML = `
                 <div class="alert alert-success mb-0">
                     <i class="fas fa-check-circle"></i>
                     Page "<strong>${escapeHtml(title)}</strong>" imported successfully!
                     <br><small class="text-muted">File: ${escapeHtml(result.file.targetPath)} (${Math.round(result.file.size / 1024)} KB)</small>
-                    <br><a href="/${encodeURIComponent(title)}" class="btn btn-sm btn-outline-primary mt-2">
+                    <br><a href="${escapeHtml(viewHref)}" class="btn btn-sm btn-outline-primary mt-2">
                         <i class="fas fa-external-link-alt"></i> View Page
                     </a>
                 </div>
