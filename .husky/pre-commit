@@ -13,3 +13,9 @@ npm run lint:docs --silent
 # index wasn't regenerated, this check fails and tells the user to run
 # the regenerator. Cheap (~200ms).
 npm run docs:index:check --silent
+
+# CSRF client-fetch guard (#727) — fails the commit if any client-surface
+# file issues a state-changing fetch() without the CSRF token (#663
+# middleware rejects those with an opaque text/plain 403). Genuine
+# server-side fetches can opt out with `// csrf-guard-ignore`. Cheap.
+npm run lint:csrf --silent
