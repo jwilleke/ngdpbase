@@ -2,6 +2,23 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-16-05
+
+- Agent: Claude Opus 4.7
+- Subject: `/semver minor` release `v3.14.6 → v3.15.0` — ships #730 `AppHealthPlugin` (built earlier this session) plus the #724 e2e-cleanup hardening and the 2026-05-16 docs/triage work. GitHub Release published; `/othersites` propagated to all three satellites.
+- Current Issue: #730 (shipped, closed); operator flagged + corrected a no-"wiki" naming violation pre-tag.
+- Tests: jimstest gate green — build OK, 5531/5531 unit, 72/72 E2E. Satellites: fairways-base 72/72, ngdpbase-veg 5531/5531 + 72/72, ngdp-temp-builds 5531/5531 + 72/72 (one E2E flake recovered on retry — see below).
+- Perf baseline: `docs/performance/baseline-v3.15.0-2026-05-16.md`. `/` 30→142ms and `/search?q=test` 21→137ms flagged (thresholds tripped, exit 1); memory improved −4.4%; `/view`/`/login` flat. Assessed as cold-cache measurement noise (matches the documented v3.14.4 149/144ms cold→warm pattern; the opt-in `AppHealthPlugin` cannot touch `/` or `/search`). Operator reviewed and chose "proceed now".
+- Work Done:
+  - Caught mid-`/semver` (operator-flagged): the new plugin had been built as `WikiHealthPlugin` — violates the no-"wiki" convention (#364). Renamed `WikiHealthPlugin → AppHealthPlugin` (identifier, `[{...}]` syntax, `app-health-*` CSS, doc page, Developer-Documentation row); de-"wiki"-ed the llm-wiki-pattern step-5 backlink note; removed the shipped #730 row from `TODO.md`; retitled #730 and posted a correction comment. Re-validated live (`[{AppHealthPlugin}]` → 1405 orphans / 18806 broken links). Commit `6bfb6646`.
+  - `/semver minor`: re-ran the full gate on the renamed code (green), bumped `3.15.0` via `version.ts`, captured + diffed the perf baseline, release commit + annotated tag, pushed, published the GitHub Release, propagated via `/othersites`.
+  - Flake handling: ngdp-temp-builds E2E hit `auth.spec.ts:93` `page.goto` 30s timeout under full-suite load (1 failed / 6 did-not-run / 65 passed); `auth.spec.ts` re-run in isolation 7/7 in 3.3s. Same commit 72/72 on the other three instances → #622-class concurrency flake; #622 datapoint added; release unaffected.
+- Commits: `6bfb6646` (rename), `7d987243` (release v3.15.0).
+- Files Modified:
+  - `src/plugins/AppHealthPlugin.ts` (← WikiHealthPlugin.ts), `src/plugins/__tests__/AppHealthPlugin.test.ts`, `docs/plugins/AppHealthPlugin.md`, `docs/Developer-Documentation.md`, `docs/planning/ideas/llm-wiki-pattern.md`, `TODO.md`
+  - `package.json`, `config/app-default-config.json`, `CHANGELOG.md`, `docs/performance/baseline-v3.15.0-2026-05-16.md` (release bump)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-16-04
 
 - Agent: Claude Opus 4.7
