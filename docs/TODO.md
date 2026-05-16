@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-15T00:00:00.000Z'
+lastModified: '2026-05-16T00:00:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -32,13 +32,11 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 ## Open BUGS (ngdpbase, by issue #)
 
-7 open as of 2026-05-15 (intra-day: #709 + #727 closed since the morning refresh).
+5 open as of 2026-05-16 (#725 + #723 closed since the 2026-05-15 refresh).
 
 | # | Title |
 |---|---|
-| #725 | mj-infra-flux fluxcdbot PAT canary blind — `FLUXCDBOT_PAT_HEALTHCHECK` unset + no-expiry PAT; operator-owned remediation (companion to #726) |
-| #724 | NGDPBASE-test-LocationTest-…-icon — **new 2026-05-15, untriaged** |
-| #723 | URL Import Pages shows only Error — **new 2026-05-15, untriaged** |
+| #724 | NGDPBASE-test-LocationTest-…-icon — **filed 2026-05-15, still untriaged (oldest untriaged bug)** |
 | #716 | Page Card Summary — empty page result cards; technical analysis comment posted, self-contained UI work ready to pick up |
 | #660 | Agent and ./docs documentation — index refresh + frontmatter policy + lint + auto-gen index all shipped; 49 lint warnings remain for source-only modules (stub-creation work) |
 | #622 | WikiRoutes.coverage3.test.ts intermittent timeout |
@@ -52,10 +50,11 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 Items awaiting a yes/no/close or operator-only action. Not blocking other work.
 
-- **#725 / #726** — operator-owned infra. Short-term: set `FLUXCDBOT_PAT_HEALTHCHECK` secret in `jwilleke/mj-infra-flux`. Durable: GitHub App migration for Flux image-automation git auth (no deadline — fluxcdbot is no-expiry and working).
-- **#723 / #724** — filed 2026-05-15, still awaiting triage (oldest untriaged bugs).
+- **#724** — filed 2026-05-15, still awaiting triage (now the oldest untriaged bug).
 
 *Resolved 2026-05-15: geohazardwatch lag closed — its `Dockerfile` `NGDPBASE_VERSION` bumped 3.13.2 → 3.14.5 (`be7390c`), new `geohazardwatch:1.2.11` image published, Flux auto-deployed; geohazardwatch.com confirmed serving ngdpbase 3.14.5. Root cause was the `ghcr.io/jwilleke/ngdpbase` package being private (Renovate couldn't enumerate tags); package made public so future bumps flow automatically. #662 closed by operator.*
+
+*Closed 2026-05-15 — infra: **#726** Flux image-automation git auth migrated from the no-expiry `fluxcdbot` PAT to a GitHub App, and **#725** PAT canary retired (companion). Cross-repo work in `jwilleke/mj-infra-flux`: rebuilt SOPS-age `flux-system-git-auth` secret with `githubApp*` keys (`e6c430e`), set `spec.provider: github` on the GitRepository + patched the live resource (`1e31ab2`), verified `GitRepository`/`Kustomization`/`ImageUpdateAutomation` all `READY=True`. Decommission: removed `pat-health-check.yml` (`3d66dd8c`), closed mj-infra-flux #71/#72, operator revoked the old fine-grained PAT. See project_log 2026-05-15-02.*
 
 *Closed 2026-05-15 — CSRF arc: **#709** footnote add/edit/delete (`aaa77539`) — real cause was the client `.catch()` (tokenless mutation → text/plain 403 → `r.json()` throws); `cdb274c4` had only improved an unreached path. **#727** systemic sweep — all 9 tokenless client mutations fixed (`c7aa7867` High: page delete, version restore, addon form submit, calendar delete; `3be8bf58` Med/Low: admin user/role edit, comments, export ×2), regression-net test, **and a CI grep-guard `npm run lint:csrf`** (`f5dc4b8e`) wired into `lint`/`lint:ci`/pre-commit so new tokenless state-changing `fetch(` can't reach master. The #690 → WikiFormHandler → #709 → #727 root-cause class is now structurally closed.*
 
@@ -76,7 +75,6 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | # | Topic | Priority hint |
 |---|---|---|
 | #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Medium — prototyped during #711 session, parked due to test-mock churn. WIP in `git stash@{0}`. |
-| #726 | Migrate Flux image-automation git auth to a GitHub App | Low — hygiene/strategic; no deadline (fluxcdbot is no-expiry + working). Makes #725 canary obsolete. |
 | #722 | Video poster-frame thumbnails (ffmpeg) | Low — substantial; adds ffmpeg dep. Visible gap in every media-tile UI |
 | #721 | Asset-picker advanced filters: capture-date for video + collapse into disclosure | Low — backend gap (video `dateTimeOriginal` not indexed) + UI tidy |
 | #720 | Asset-picker format dropdown: separate Video/Audio from Other | Low — discovery friction; mirrors existing Images filter |
