@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { TEST_PAGE_PREFIX, waitForPageReady, deletePage } from './fixtures/helpers';
+import { TEST_PAGE_PREFIX, waitForPageReady, deletePages } from './fixtures/helpers';
 
 /**
  * LocationPlugin E2E Tests
@@ -29,9 +29,7 @@ test.describe('LocationPlugin', () => {
     test.setTimeout(120000);
     const context = await browser.newContext({ storageState: './tests/e2e/.auth/user.json' });
     const p = await context.newPage();
-    for (const suffix of PAGE_SUFFIXES) {
-      await deletePage(p, `${testPageName}${suffix}`);
-    }
+    await deletePages(p, PAGE_SUFFIXES.map((suffix) => `${testPageName}${suffix}`));
     await context.close();
   });
 

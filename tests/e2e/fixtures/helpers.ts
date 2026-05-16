@@ -12,7 +12,14 @@ const TEST_PAGE_PREFIX = 'NGDPBASE-test';
 
 /**
  * Delete a wiki page via the HTTP delete route (requires admin auth).
- * Silently ignores 404 (page already gone).
+ *
+ * Hardened for #724: a cleanup failure MUST fail loudly, never be silently
+ * swallowed. The old `console.warn` path let test pages accumulate unnoticed
+ * in live storage for weeks (187 stale `NGDPBASE-test-*` pages were found in
+ * jimstest on 2026-05-16, from pre-fix runs whose 403s were swallowed).
+ *
+ * Throws if the CSRF token can't be obtained, the delete returns an
+ * unexpected status, or the page still resolves afterward.
  * @param {import('@playwright/test').Page} page
  * @param {string} pageName
  */
@@ -30,15 +37,58 @@ async function deletePage(page, pageName) {
     const match = html.match(/<meta name="csrf-token" content="([^"]+)"/);
     if (match) csrfToken = match[1];
   } catch {
-    // network blip — fall through with empty token; resulting 403 surfaces
-    // as the same warn this branch always handled.
+    // fall through — empty token is treated as a hard failure below
   }
+  // An empty token guarantees a 403 the route rejects; that exact path
+  // (token silently absent) was the original #724 root cause. Fail now
+  // instead of POSTing a request that will be swallowed as "acceptable".
+  if (!csrfToken) {
+    throw new Error(`[helpers] deletePage("${pageName}"): could not obtain CSRF token from /login`);
+  }
+
   const response = await page.request.post(`/delete/${encodeURIComponent(pageName)}`, {
-    headers: { 'Accept': 'application/json', 'X-CSRF-Token': csrfToken }
+    headers: { Accept: 'application/json', 'X-CSRF-Token': csrfToken }
   });
-  // 200 = deleted, 404 = already gone — both are acceptable
-  if (response.status() !== 200 && response.status() !== 404) {
-    console.warn(`[helpers] deletePage: unexpected status ${response.status()} for "${pageName}"`);
+  const status = response.status();
+  // 200 = deleted, 404 = already gone. Anything else (403/500/…) is a real
+  // failure — escalate instead of the old console.warn that hid it.
+  if (status !== 200 && status !== 404) {
+    throw new Error(`[helpers] deletePage("${pageName}"): unexpected delete status ${status}`);
+  }
+
+  // Source of truth: the page must actually be gone. A non-existent page
+  // returns 404 from /view/<name> (verified); anything else means the
+  // delete did not take effect and the page would silently linger.
+  const verify = await page.request.get(`/view/${encodeURIComponent(pageName)}`);
+  if (verify.status() !== 404) {
+    throw new Error(
+      `[helpers] deletePage("${pageName}"): page still resolves after delete ` +
+        `(delete status ${status}, /view status ${verify.status()})`
+    );
+  }
+}
+
+/**
+ * Delete many pages, attempting every one before surfacing failures.
+ * Use in afterAll cleanup so a single failure can't suppress the rest of
+ * the batch (which would leave even more pages lingering).
+ * @param {import('@playwright/test').Page} page
+ * @param {string[]} pageNames
+ */
+async function deletePages(page, pageNames) {
+  const failures = [];
+  for (const name of pageNames) {
+    try {
+      await deletePage(page, name);
+    } catch (err) {
+      failures.push(err instanceof Error ? err.message : String(err));
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(
+      `[helpers] deletePages: ${failures.length}/${pageNames.length} cleanup(s) failed:\n` +
+        failures.join('\n')
+    );
   }
 }
 
@@ -147,6 +197,7 @@ export {
   waitForPageReady,
   createPage,
   deletePage,
+  deletePages,
   navigateToPage,
   performSearch,
   getNotifications,
