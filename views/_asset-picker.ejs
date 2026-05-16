@@ -104,6 +104,14 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
 
     <!-- Results grid -->
     <div class="flex-grow-1">
+        <!-- #733: view-mode toggle at the top of the results (moved from the
+             pagination footer). Same IDs — Slice 2 JS wiring is unchanged. -->
+        <div class="d-flex justify-content-end mb-2">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Result view mode">
+                <button type="button" class="btn btn-outline-secondary" id="ap-view-list" title="List view"><i class="fas fa-list"></i></button>
+                <button type="button" class="btn btn-outline-secondary" id="ap-view-grid" title="Grid view"><i class="fas fa-th"></i></button>
+            </div>
+        </div>
         <div id="ap-results" class="row g-2<% if (_apMode === 'modal') { %> ap-modal-scroll<% } %>">
             <div class="col-12 text-center text-muted py-5" id="ap-placeholder">
                 <i class="fas fa-search fa-2x mb-2 d-block"></i>
@@ -116,10 +124,6 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
 <!-- Pagination footer -->
 <div class="d-flex flex-wrap justify-content-between align-items-center mt-3 gap-2">
     <small class="text-muted" id="ap-count"></small>
-    <div class="btn-group btn-group-sm" role="group" aria-label="Result view mode">
-        <button type="button" class="btn btn-outline-secondary" id="ap-view-list" title="List view"><i class="fas fa-list"></i></button>
-        <button type="button" class="btn btn-outline-secondary" id="ap-view-grid" title="Grid view"><i class="fas fa-th"></i></button>
-    </div>
     <nav aria-label="Asset browser pagination">
         <ul class="pagination pagination-sm mb-0" id="ap-pagination"></ul>
     </nav>
