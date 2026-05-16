@@ -7958,14 +7958,13 @@ ${panes}
         ).filter(s => s.trim() !== '');
         if (searchIn.length === 0) searchIn = ['all'];
 
-        const hasFilter = !!query || categories.length > 0 || userKeywords.length > 0 || systemKeywords.length > 0;
-        // #700: sort=date needs metadata.lastModified per row, which only the
-        // search-index path populates. Route through SearchManager for sort=date
-        // even when no other filter is set. When the caller didn't specify a
-        // sort at all (`sort === undefined`), keep the cheap getAllPages path —
-        // existing /api/assets/search?types=page callers that just want a flat
-        // page list shouldn't pay for a search index round-trip.
-        const useSearchPath = hasFilter || sort === 'date';
+        // #731 Slice 3: always use the SearchManager/index path for pages.
+        // Slice 1 made the no-text branch ACL-safe AND rich (title / excerpt /
+        // system-category / keywords / lastModified) and it is O(n) in-memory
+        // (no per-page I/O). The old cheap getAllPages() path is now strictly
+        // worse — names-only (the #716 empty rows) AND it returned private
+        // page names with no ACL filter. (#700's sort handling is preserved
+        // below; it now applies to the index path for every sort value.)
 
         // Helper to project a page-name or SearchResult into the AssetRecord
         // shape the asset-picker consumes. Canonical /view/ URL per the no-wiki
@@ -7989,7 +7988,7 @@ ${panes}
 
         let all: ReturnType<typeof toAssetRecord>[];
         let pagesCapped = false;
-        if (useSearchPath) {
+        {
           // #716/#731: the provider emits `snippet` (excerpt) and nests
           // userKeywords/systemCategory/lastModified under `metadata` — the
           // prior `excerpt`/`userKeywords` top-level read silently dropped
@@ -8026,10 +8025,6 @@ ${panes}
               : [];
             return toAssetRecord(h.name, h.title, h.snippet, kw, lm, md.systemCategory);
           });
-        } else {
-          // Empty query, no filters, sort=caption — return all pages (cheap path).
-          const allNames = await pageManager.getAllPages();
-          all = allNames.map((pageName: string) => toAssetRecord(pageName));
         }
 
         // #700: handler-side sort within the result window. Only fires when the

@@ -278,15 +278,17 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       expect(res.status).toHaveBeenCalledWith(503);
     });
 
-    it('falls back to PageManager.getAllPages when no query or filters are set', async () => {
-      const pageManager = makePageManager(['Welcome', 'About', 'Contact']);
-      const routes = makeRoutesWithPages(makeAssetService(), pageManager);
+    it('#731 Slice 3: no query/filters still returns pages via the ACL-safe index path (getAllPages NOT used)', async () => {
+      const pageManager = makePageManager(['unused']);
+      const search = makeSearchManager([{ name: 'Welcome' }, { name: 'About' }, { name: 'Contact' }]);
+      const routes = makeRoutesWithPages(makeAssetService(), pageManager, search);
       const req = makeReq({ query: { types: 'page' } });
       const res = makeRes();
 
       await routes.assetSearch(req, res);
 
-      expect(pageManager.getAllPages).toHaveBeenCalled();
+      expect(search.advancedSearchWithContext).toHaveBeenCalled();
+      expect(pageManager.getAllPages).not.toHaveBeenCalled();
       const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
       expect(payload.total).toBe(3);
       expect(payload.results[0]).toEqual(expect.objectContaining({
@@ -297,8 +299,8 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
     });
 
     it('uses /view/ (not /wiki/) for the page URL', async () => {
-      const pageManager = makePageManager(['Some Page']);
-      const routes = makeRoutesWithPages(makeAssetService(), pageManager);
+      const search = makeSearchManager([{ name: 'Some Page' }]);
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
       const req = makeReq({ query: { types: 'page' } });
       const res = makeRes();
 
@@ -475,8 +477,8 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
     // by SearchManager via wikiContext). Restores the open /search behaviour
     // after that URL started rendering the asset-picker UI.
     it('allows anonymous viewer for types=page (no editor role required)', async () => {
-      const pageManager = makePageManager(['Welcome']);
-      const routes = makeRoutesWithPages(makeAssetService(), pageManager);
+      const search = makeSearchManager([{ name: 'Welcome' }]);
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
       const req = makeReq({ userContext: null, query: { types: 'page' } });
       const res = makeRes();
 
@@ -530,9 +532,9 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
     // -----------------------------------------------------------------------
     // #700 — sort=caption / sort=date wired through the pages branch
     // -----------------------------------------------------------------------
-    it('sort=caption&order=asc on cheap path orders page names A→Z (#700)', async () => {
-      const pageManager = makePageManager(['Charlie', 'Alpha', 'Bravo']);
-      const routes = makeRoutesWithPages(makeAssetService(), pageManager);
+    it('sort=caption&order=asc orders page names A→Z (#700)', async () => {
+      const search = makeSearchManager([{ name: 'Charlie' }, { name: 'Alpha' }, { name: 'Bravo' }]);
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
       const req = makeReq({ query: { types: 'page', sort: 'caption', order: 'asc' } });
       const res = makeRes();
 
@@ -542,9 +544,9 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       expect(payload.results.map((r: { id: string }) => r.id)).toEqual(['Alpha', 'Bravo', 'Charlie']);
     });
 
-    it('sort=caption&order=desc on cheap path orders page names Z→A (#700)', async () => {
-      const pageManager = makePageManager(['Alpha', 'Charlie', 'Bravo']);
-      const routes = makeRoutesWithPages(makeAssetService(), pageManager);
+    it('sort=caption&order=desc orders page names Z→A (#700)', async () => {
+      const search = makeSearchManager([{ name: 'Alpha' }, { name: 'Charlie' }, { name: 'Bravo' }]);
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
       const req = makeReq({ query: { types: 'page', sort: 'caption', order: 'desc' } });
       const res = makeRes();
 
@@ -575,18 +577,18 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       expect(payload.results.map((r: { id: string }) => r.id)).toEqual(['Newest', 'Middle', 'Old']);
     });
 
-    it('no sort param keeps cheap getAllPages path AND preserves iteration order (#700)', async () => {
-      // Back-compat: callers that don't pass sort get the existing cheap path
-      // and the existing intrinsic ordering. Avoids a perf regression for the
-      // simple "list all pages" callers.
-      const pageManager = makePageManager(['Zebra', 'Alpha', 'Mango']);
-      const routes = makeRoutesWithPages(makeAssetService(), pageManager);
+    it('#731 Slice 3: no sort param preserves the index path iteration order (getAllPages NOT used) (#700)', async () => {
+      // No sort → the route does not reorder; results keep the order the
+      // SearchManager/index returned them in. getAllPages is never consulted.
+      const pageManager = makePageManager(['unused']);
+      const search = makeSearchManager([{ name: 'Zebra' }, { name: 'Alpha' }, { name: 'Mango' }]);
+      const routes = makeRoutesWithPages(makeAssetService(), pageManager, search);
       const req = makeReq({ query: { types: 'page' } });
       const res = makeRes();
 
       await routes.assetSearch(req, res);
 
-      expect(pageManager.getAllPages).toHaveBeenCalled();
+      expect(pageManager.getAllPages).not.toHaveBeenCalled();
       const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
       expect(payload.results.map((r: { id: string }) => r.id)).toEqual(['Zebra', 'Alpha', 'Mango']);
     });
