@@ -2,6 +2,22 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-16-06
+
+- Agent: Claude Opus 4.7
+- Subject: Gave `AppHealthPlugin` (#730) a discoverable surface — operator asked "is it implemented anywhere?"; it was registered/tested but not reachable by a non-developer.
+- Current Issue: #730 (follow-up; closed).
+- Tests: validated live on jimstest — required-pages sync `200` ("1 page synced"), `/view/app-health` `200` rendering the audit (`data-plugin="AppHealthPlugin"` present; the two literal `[{AppHealthPlugin …}]` are intentional inline-code param examples, not unrendered), `/admin` shows the App Health link. No unit/E2E impact (a seed page + an EJS link).
+- Work Done:
+  - New required page `required-pages/f496a567-fe2f-4384-97c9-dbe9fb032ab9.md` — title "App Health", slug `app-health`, `system-category: system`, body embeds `[{AppHealthPlugin}]` + param guidance. Fresh installs auto-seed via `seedRequiredPages`; existing installs pull it via `/admin/required-pages` sync.
+  - `views/admin-dashboard.ejs` — "App Health" entry (heartbeat icon) in the Administrative Tools card → `/view/app-health`.
+  - Seeded it into jimstest live storage via the selective `POST /admin/required-pages/sync` (`{uuids:[…],force:true}` — the endpoint is review-UI-driven, not a no-arg sync-all; an empty body 500s on `req.body.uuids`).
+  - #730 comment posted noting it is now implemented *and* reachable.
+- Commits: `bf9c27ea`.
+- Files Modified:
+  - `required-pages/f496a567-fe2f-4384-97c9-dbe9fb032ab9.md` (new), `views/admin-dashboard.ejs`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-16-05
 
 - Agent: Claude Opus 4.7
