@@ -99,7 +99,7 @@ export default tseslint.config(
   // ────────────────────────────────────────────────────────────────
   // Test file overrides — relax type-safety rules that fire on mock objects
   {
-    files: ["**/__tests__/**/*.ts", "**/*.test.ts", "jest.setup.ts"],
+    files: ["**/__tests__/**/*.ts", "**/*.test.ts"],
     rules: {
       "@typescript-eslint/no-unsafe-assignment": "off",
       "@typescript-eslint/no-unsafe-member-access": "off",
