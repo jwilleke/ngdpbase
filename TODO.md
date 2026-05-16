@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-16T00:00:00.000Z'
+lastModified: '2026-05-16T23:15:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -32,10 +32,11 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 ## Open BUGS (ngdpbase, by issue #)
 
-2 open as of 2026-05-16 (post-v3.16.0). Closed this session: #716 (subsumed by #731), #724 (`c2d25d77` + backlog), #622 (operationally resolved via runner retry `7328c0ae`), plus the #709/#727/#723/#717/#718/#719 arc. Neither remaining bug is an actionable defect.
+3 open as of 2026-05-16. #735 filed today (needs repro detail); #660/#599 are non-actionable carry-forwards.
 
 | # | Title |
 |---|---|
+| #735 | `/search` fails on Mobile — filed 2026-05-16; **body empty, needs repro detail** (device/OS/browser, exact failure, desktop comparison). Not yet actionable without repro |
 | #660 | Agent and ./docs documentation — tooling shipped; 49 doc-stub warnings remain for source-only modules (stub-creation backlog; cosmetic, non-blocking) |
 | #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); tracked by Dependabot #96 |
 
@@ -43,7 +44,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 Items awaiting a yes/no/close or operator-only action. Not blocking other work.
 
-- None open. All 2026-05-16 carryover (#716/#724/#622/#725/#730/#731/#705/#733) resolved + closed; nothing currently awaiting a yes/no/close.
+- **#735** — `[BUG] /search fails on Mobile` filed 2026-05-16 with an empty body. Awaiting operator repro detail (device/OS/browser, exact failure, desktop comparison) before it can be triaged or actioned.
 
 ## Sister-site top priorities — combined table
 
@@ -61,7 +62,7 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 
 | # | Topic | Priority hint |
 |---|---|---|
-| #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Medium — prototyped during #711 session, parked due to test-mock churn. WIP in `git stash@{0}`. |
+| #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Low — body reconciled with `master` 2026-05-16 (audit comment pinned); search-provider ACL now explicitly out-of-scope; `stash@{0}` is a reference, no longer `git stash pop`-clean. Refactor intentionally not started |
 | #728 | ngdp Compatible Markdown | Low — filed 2026-05-16; architecture; markdown-compat scoping |
 | #729 | Improvements to `[{Location}]` | Low — filed 2026-05-16; good-first-issue; Location plugin follow-ups |
 | #722 | Video poster-frame thumbnails (ffmpeg) | Low — substantial; adds ffmpeg dep. #731 shipped v3.16.0; this fills the video thumbnail cell in its list/card rows |
