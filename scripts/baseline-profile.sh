@@ -209,19 +209,39 @@ if [[ "$DO_ADDON_DIFF" -eq 1 ]]; then
 
   measure_route_ms_inline() {
     local route="$1"
-    local total=0 samples=0 ms
+    local ms
+    # #705: warm-up — N discarded hits so a cold cache / cold JIT on the
+    # first requests after a restart don't pollute the timed samples. The
+    # `/` false-flag clears at ~3; heavier routes (e.g. /search, lazy
+    # index/JIT init) need more, so 5.
+    for _ in {1..5}; do
+      curl -sSL -o /dev/null --max-time 10 "${BASE_URL}${route}" >/dev/null 2>&1 || true
+    done
+    # #705: collect N timed samples and report the MEDIAN, not the mean —
+    # robust to any single outlier (cold-start or transient), without
+    # touching the regression threshold semantics.
+    local samples=()
     for _ in {1..10}; do
       ms=$(curl -sSL -o /dev/null -w '%{time_total}' --max-time 10 "${BASE_URL}${route}" 2>/dev/null \
         | awk '{ printf "%d", $1 * 1000 }')
-      if [[ -n "$ms" ]]; then
-        total=$((total + ms))
-        samples=$((samples + 1))
-      fi
+      [[ -n "$ms" ]] && samples+=("$ms")
     done
-    if [[ "$samples" -gt 0 ]]; then
-      echo $((total / samples))
-    else
+    local n=${#samples[@]}
+    if [[ "$n" -eq 0 ]]; then
       echo "-"
+      return
+    fi
+    local sorted
+    sorted=$(printf '%s\n' "${samples[@]}" | sort -n)
+    if (( n % 2 == 1 )); then
+      # odd → middle element
+      echo "$sorted" | sed -n "$(( n / 2 + 1 ))p"
+    else
+      # even → mean of the two middle elements
+      local lo hi
+      lo=$(echo "$sorted" | sed -n "$(( n / 2 ))p")
+      hi=$(echo "$sorted" | sed -n "$(( n / 2 + 1 ))p")
+      echo $(( (lo + hi) / 2 ))
     fi
   }
 
