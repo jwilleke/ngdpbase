@@ -32,20 +32,20 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 ## Open BUGS (ngdpbase, by issue #)
 
-4 open as of 2026-05-16 (#724 closed — e2e cleanup hardened + 48-page backlog cleared).
+4 open as of 2026-05-16 (#724 closed — e2e cleanup hardened `c2d25d77` + 48-page backlog cleared).
 
 | # | Title |
 |---|---|
-| #716 | Page Card Summary — empty page result cards; technical analysis comment posted, self-contained UI work ready to pick up |
+| #716 | Page Card Summary — empty page result cards. Brainstormed 2026-05-16; **largely subsumed by #731** (list-view default shows page metadata natively). Narrowed to card-mode page enrichment, de-prioritized behind #731 |
 | #660 | Agent and ./docs documentation — index refresh + frontmatter policy + lint + auto-gen index all shipped; 49 lint warnings remain for source-only modules (stub-creation work) |
-| #622 | WikiRoutes.coverage3.test.ts intermittent timeout |
+| #622 | WikiRoutes.coverage3.test.ts intermittent timeout — deferred; recurs as a full-suite-concurrency timeout (2026-05-16 datapoint added from `WikiRoutes.contact.test.ts`) |
 | #599 | showdown ReDoS — no upstream patch (mitigation only) |
 
 ## Operator-decision carryover
 
 Items awaiting a yes/no/close or operator-only action. Not blocking other work.
 
-- None open. (#724 triaged, fixed `c2d25d77`, backlog cleared, and closed 2026-05-16.)
+- None open. (#724 triaged, fixed `c2d25d77`, backlog cleared, and closed 2026-05-16. No items currently awaiting a yes/no/close.)
 
 ## Sister-site top priorities — combined table
 
@@ -64,16 +64,17 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | # | Topic | Priority hint |
 |---|---|---|
 | #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Medium — prototyped during #711 session, parked due to test-mock churn. WIP in `git stash@{0}`. |
-| #722 | Video poster-frame thumbnails (ffmpeg) | Low — substantial; adds ffmpeg dep. Visible gap in every media-tile UI |
-| #721 | Asset-picker advanced filters: capture-date for video + collapse into disclosure | Low — backend gap (video `dateTimeOriginal` not indexed) + UI tidy |
-| #720 | Asset-picker format dropdown: separate Video/Audio from Other | Low — discovery friction; mirrors existing Images filter |
-| #730 | Wiki-health audit: deterministic data-quality lint (orphans / broken links / stale / missing-entity) | **Medium — value-certain.** Standalone wiki engineering, independent of #706/#707; lifted from llm-wiki-pattern step 5 (2026-05-16 brainstorm). The "keep the real" piece |
-| #729 | Improvements to `[{Location}]` | Low — filed 2026-05-16; Location plugin follow-ups |
-| #728 | ngdp Compatible Markdown | Low — filed 2026-05-16; markdown-compat scoping |
+| #730 | Wiki-health audit: deterministic data-quality lint (orphans / broken links / stale / missing-entity) | **Medium — value-certain.** Standalone wiki engineering; independent of #706/#707; lifted from llm-wiki-pattern step 5 (2026-05-16) |
+| #731 | Asset-picker / search: list view as default for all result types, card/grid toggle | Medium — operator-decided 2026-05-16; **subsumes #716**; soft-deps #722; parallel to #691/#720/#721 |
+| #728 | ngdp Compatible Markdown | Low — filed 2026-05-16; architecture; markdown-compat scoping |
+| #729 | Improvements to `[{Location}]` | Low — filed 2026-05-16; good-first-issue; Location plugin follow-ups |
+| #722 | Video poster-frame thumbnails (ffmpeg) | Low — substantial; adds ffmpeg dep. Feeds #731's list/card thumbnail cell |
+| #721 | Asset-picker advanced filters: capture-date for video + collapse into disclosure | Low — filter-input axis; backend video `dateTimeOriginal` indexing + UI tidy |
+| #720 | Asset-picker format dropdown: separate Video/Audio from Other | Low — filter-input axis; mirrors existing Images filter |
+| #691 | Asset-picker page filter UI (source=Pages) | Low — filter-input axis (page-side counterpart to #720/#721); complements #716/#731 |
 | #707 | Typed footnote + knowledge-graph reference index | Low — speculative; **depends on #706**; defer behind a named citation-heavy user (2026-05-16 brainstorm) |
 | #706 | `knowledge-role` frontmatter field — opt-in page role | Low — sharpened to field+enum+badge; **foundational, blocks #707**; design in `docs/planning/ideas/llm-wiki-pattern.md` |
 | #705 | Perf baseline: warm cache or median-of-N | Low — quality-of-life for benchmark accuracy |
-| #691 | Surface page-specific filter UI in asset-picker (source=Pages) | Low |
 | #689 | Admin show/edit frontmatter | Low |
 | #686 | AddonsManager: auto-enable bundled addons in non-default addons-path dirs | Low — Lever 3 follow-up from the Domain Addon Deployment cluster |
 | #685 | Data-ingestion framework (platform addon) | Low / Future — 2-4 weeks platform work; unblocks bespoke ingestion in any satellite |
