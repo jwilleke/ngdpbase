@@ -2,6 +2,31 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-16-18
+
+- Agent: Claude Opus 4.7
+- Subject: v3.16.1 release + /othersites propagation to all satellites.
+- Current Issue: none (release + propagation; #169/#170/#705/#732/#733 already closed).
+- Tests: every instance — unit 5555/5555 (214 files) + E2E 72/72. Zero flakes on any instance.
+- Work Done:
+  - Cut v3.16.1 (patch): 16 commits since v3.16.0 (#169/#170 provider extraction, #705 baseline, #732 ES ACL guards, #733 view-toggle, jest cleanup, docs). Gates: build + 5555 unit + 72 E2E. Tagged `v3.16.1`, pushed commit `04b754ef` + tag. GitHub release deferred (patch convention).
+  - Perf baseline v3.16.1 vs v3.16.0: no regressions. `/` -80.6% (144→28ms) and `/search` -83.5% (133→22ms) — #705 cold-cache fix vindicated; mem +2.0%, tiny routes ±2ms (noise).
+  - Standalone /othersites: propagated v3.16.1 (726b11fa → 04b754ef) to the three satellites; E2E required (range touches `views/_asset-picker.ejs` via #733). jimstest already at v3.16.1 from the release this session (not re-processed).
+- Propagation results:
+
+  | Instance | Port | Pulled to | Build | Unit | E2E |
+  | --- | --- | --- | --- | --- | --- |
+  | jimstest | 3000 | 04b754ef (release origin) | clean | 5555 | 72 |
+  | fairways-base | 2121 | 04b754ef | clean | 5555 | 72 |
+  | ngdpbase-veg | 3333 | 04b754ef | clean | 5555 | 72 |
+  | ngdp-temp-builds | 3001 | 04b754ef | clean | 5555 | 72 |
+
+- Flakes seen: none — all four instances green first run, no retries needed.
+- Notes: fairways-base has an untracked operator planning note (`docs/planning/plan-addon-accounting.md`) — left alone, did not block the ff-only pull.
+- Commits: `04b754ef` (release), plus this log entry.
+- Files Modified:
+  - docs/project_log.md
+
 ## 2026-05-16-17
 
 - Agent: Claude Opus 4.7
