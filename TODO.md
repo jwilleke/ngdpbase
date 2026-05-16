@@ -43,8 +43,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 Items awaiting a yes/no/close or operator-only action. Not blocking other work.
 
-- **#733** — title is just `[FEATURE]` with no description/body; looks like an accidental/placeholder issue. Operator to flesh out or close.
-- (All other 2026-05-16 carryover — #716/#724/#622/#725/#730/#731/#705 — resolved + closed.)
+- None open. All 2026-05-16 carryover (#716/#724/#622/#725/#730/#731/#705/#733) resolved + closed; nothing currently awaiting a yes/no/close.
 
 ## Sister-site top priorities — combined table
 
