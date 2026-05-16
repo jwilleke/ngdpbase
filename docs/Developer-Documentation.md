@@ -97,6 +97,7 @@ JSPWiki-style content plugins in `src/plugins/`. Each plugin renders `[{PluginNa
 <!-- AUTO:plugins-table BEGIN -->
 | Module | Doc status | Description |
 | --- | --- | --- |
+| AppHealthPlugin | ✅ [doc](plugins/AppHealthPlugin.md) | Deterministic app-health audit — lists orphan pages, broken/undefined links, and stale pages |
 | AttachmentsPlugin | ⚠️ [src/plugins/AttachmentsPlugin.ts](../src/plugins/AttachmentsPlugin.ts) | _no doc page yet_ |
 | AttachPlugin | ✅ [doc](plugins/AttachPlugin.md) | Renders wiki attachments inline — images as clickable thumbnails, other files as download links |
 | CalendarPlugin | ✅ [doc](plugins/CalendarPlugin.md) | Event calendar widget powered by FullCalendar — requires the calendar add-on |
@@ -131,7 +132,6 @@ JSPWiki-style content plugins in `src/plugins/`. Each plugin renders `[{PluginNa
 | UptimePlugin | ✅ [doc](plugins/UptimePlugin.md) | Shows the server uptime in human-readable format |
 | UserLookupPlugin | ✅ [doc](plugins/UserLookupPlugin.md) | Searches users via the asset-search API and renders results as a sortable table (PII gated server-side) |
 | VariablesPlugin | ✅ [doc](plugins/VariablesPlugin.md) | Displays the system + contextual variables available in the current render (admin/debugging aid) |
-| WikiHealthPlugin | ✅ [doc](plugins/WikiHealthPlugin.md) | Deterministic wiki-health audit — lists orphan pages, broken/undefined links, and stale pages |
 <!-- AUTO:plugins-table END -->
 
 Note: end-user documentation pages for plugins live in `required-pages/` with `system-category: documentation`, not in `docs/`. The CalendarPlugin docs at `docs/plugins/CalendarPlugin.md` describe an addon plugin; see addon documentation in `addons/calendar/`.

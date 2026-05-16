@@ -1,14 +1,14 @@
 ---
-name: WikiHealthPlugin
-description: "Deterministic wiki-health audit — lists orphan pages, broken/undefined links, and stale pages"
+name: AppHealthPlugin
+description: "Deterministic app-health audit — lists orphan pages, broken/undefined links, and stale pages"
 dateModified: '2026-05-16'
 category: plugins
-code: src/plugins/WikiHealthPlugin.ts
+code: src/plugins/AppHealthPlugin.ts
 ---
 
-# WikiHealthPlugin
+# AppHealthPlugin
 
-`WikiHealthPlugin` renders a deterministic **wiki-health audit** on any page. It surfaces data-quality issues that accumulate silently on a large wiki, using only data the platform already has — no LLM, no new index.
+`AppHealthPlugin` renders a deterministic **app-health audit** on any page. It surfaces data-quality issues that accumulate silently on a large instance, using only data the platform already has — no LLM, no new index.
 
 ## Overview
 
@@ -25,7 +25,7 @@ Section headers always show the **true total**; the per-section list is capped a
 ### Basic
 
 ```wiki
-[{WikiHealthPlugin}]
+[{AppHealthPlugin}]
 ```
 
 All three checks (orphans, broken, stale at 365 days), `sections` format.
@@ -33,7 +33,7 @@ All three checks (orphans, broken, stale at 365 days), `sections` format.
 ### One-line summary
 
 ```wiki
-[{WikiHealthPlugin format='count'}]
+[{AppHealthPlugin format='count'}]
 ```
 
 Renders e.g. `Orphans: 1405 · Broken links: 18806 · Stale: 0`.
@@ -41,14 +41,14 @@ Renders e.g. `Orphans: 1405 · Broken links: 18806 · Stale: 0`.
 ### Specific checks / tuned threshold
 
 ```wiki
-[{WikiHealthPlugin checks='orphans,broken'}]
-[{WikiHealthPlugin checks='stale' staleDays='30'}]
+[{AppHealthPlugin checks='orphans,broken'}]
+[{AppHealthPlugin checks='stale' staleDays='30'}]
 ```
 
 ### Filtering and caps
 
 ```wiki
-[{WikiHealthPlugin exclude='^(Main|LeftMenu)$' max='100'}]
+[{AppHealthPlugin exclude='^(Main|LeftMenu)$' max='100'}]
 ```
 
 ## Parameters

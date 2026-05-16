@@ -1,5 +1,5 @@
 /**
- * WikiHealthPlugin — deterministic wiki-health audit (#730)
+ * AppHealthPlugin — deterministic app-health audit (#730)
  *
  * Pure graph/text audits over data the platform already has — no LLM, no new
  * index. Composes the same sources existing plugins use:
@@ -13,11 +13,11 @@
  *   - stale    : existing pages not modified within `staleDays`
  *
  * Syntax:
- *   [{WikiHealthPlugin}]
- *   [{WikiHealthPlugin checks='orphans,broken'}]
- *   [{WikiHealthPlugin staleDays='180' max='100'}]
- *   [{WikiHealthPlugin format='count'}]
- *   [{WikiHealthPlugin exclude='^(Main|LeftMenu)$'}]
+ *   [{AppHealthPlugin}]
+ *   [{AppHealthPlugin checks='orphans,broken'}]
+ *   [{AppHealthPlugin staleDays='180' max='100'}]
+ *   [{AppHealthPlugin format='count'}]
+ *   [{AppHealthPlugin exclude='^(Main|LeftMenu)$'}]
  *
  * Parameters:
  *   checks    - csv subset of orphans,broken,stale (default: all three)
@@ -31,7 +31,7 @@
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
 import { parseMaxParam, escapeHtml } from '../utils/pluginFormatters.js';
 
-interface WikiHealthParams extends PluginParams {
+interface AppHealthParams extends PluginParams {
   checks?:    string;
   staleDays?: string | number;
   max?:       string | number;
@@ -78,13 +78,13 @@ function makeFilter(
 
 function section(title: string, pages: string[], hrefBase: string, max: number): string {
   const total = pages.length;
-  let html = `<div class="wiki-health-section"><h4>${escapeHtml(title)} (${total})</h4>`;
+  let html = `<div class="app-health-section"><h4>${escapeHtml(title)} (${total})</h4>`;
   if (total === 0) {
     html += '<p class="text-muted">None.</p></div>';
     return html;
   }
   const shown = max > 0 ? pages.slice(0, max) : pages;
-  html += '<ul class="wiki-health-list">';
+  html += '<ul class="app-health-list">';
   for (const p of shown) {
     const href = `${hrefBase}/${encodeURIComponent(p)}`;
     html += `<li><a href="${escapeHtml(href)}">${escapeHtml(p)}</a></li>`;
@@ -97,14 +97,14 @@ function section(title: string, pages: string[], hrefBase: string, max: number):
   return html;
 }
 
-const WikiHealthPlugin: SimplePlugin = {
-  name: 'WikiHealthPlugin',
-  description: 'Deterministic wiki-health audit: orphan pages, broken links, stale pages',
+const AppHealthPlugin: SimplePlugin = {
+  name: 'AppHealthPlugin',
+  description: 'Deterministic app-health audit: orphan pages, broken links, stale pages',
   author: 'ngdpbase',
   version: '1.0.0',
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
-    const opts = (params ?? {}) as WikiHealthParams;
+    const opts = (params ?? {}) as AppHealthParams;
     try {
       const pageManager = context.engine?.getManager?.('PageManager') as PageManager | undefined;
       if (!pageManager) {
@@ -185,10 +185,10 @@ const WikiHealthPlugin: SimplePlugin = {
         if (selected.includes('stale')) {
           parts.push(staleSkipped ? 'Stale: n/a' : `Stale: ${results.stale.length}`);
         }
-        return `<p class="wiki-health-count">${escapeHtml(parts.join(' · '))}</p>`;
+        return `<p class="app-health-count">${escapeHtml(parts.join(' · '))}</p>`;
       }
 
-      let html = '<div class="wiki-health-plugin">';
+      let html = '<div class="app-health-plugin">';
       if (selected.includes('orphans')) {
         html += section('Orphan pages', results.orphans, '/view', max);
       }
@@ -200,7 +200,7 @@ const WikiHealthPlugin: SimplePlugin = {
       if (selected.includes('stale')) {
         if (staleSkipped) {
           html +=
-            '<div class="wiki-health-section"><h4>Stale pages</h4>' +
+            '<div class="app-health-section"><h4>Stale pages</h4>' +
             `<p class="text-muted">Skipped (staleDays=${escapeHtml(staleDays)} or recent-changes unavailable).</p></div>`;
         } else {
           html += section(
@@ -215,9 +215,9 @@ const WikiHealthPlugin: SimplePlugin = {
       return html;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return `<p class="error">WikiHealthPlugin error: ${escapeHtml(msg)}</p>`;
+      return `<p class="error">AppHealthPlugin error: ${escapeHtml(msg)}</p>`;
     }
   }
 };
 
-export default WikiHealthPlugin;
+export default AppHealthPlugin;

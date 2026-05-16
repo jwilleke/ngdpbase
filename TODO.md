@@ -64,7 +64,6 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | # | Topic | Priority hint |
 |---|---|---|
 | #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Medium — prototyped during #711 session, parked due to test-mock churn. WIP in `git stash@{0}`. |
-| #730 | Wiki-health audit: deterministic data-quality lint (orphans / broken links / stale / missing-entity) | **Medium — value-certain.** Standalone wiki engineering; independent of #706/#707; lifted from llm-wiki-pattern step 5 (2026-05-16) |
 | #731 | Asset-picker / search: list view as default for all result types, card/grid toggle | Medium — operator-decided 2026-05-16; **subsumes #716**; soft-deps #722; parallel to #691/#720/#721 |
 | #728 | ngdp Compatible Markdown | Low — filed 2026-05-16; architecture; markdown-compat scoping |
 | #729 | Improvements to `[{Location}]` | Low — filed 2026-05-16; good-first-issue; Location plugin follow-ups |
