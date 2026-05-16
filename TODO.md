@@ -32,20 +32,18 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 ## Open BUGS (ngdpbase, by issue #)
 
-4 open as of 2026-05-16 (#724 closed — e2e cleanup hardened `c2d25d77` + 48-page backlog cleared).
+2 open as of 2026-05-16 (post-v3.16.0). Closed this session: #716 (subsumed by #731), #724 (`c2d25d77` + backlog), #622 (operationally resolved via runner retry `7328c0ae`), plus the #709/#727/#723/#717/#718/#719 arc. Neither remaining bug is an actionable defect.
 
 | # | Title |
 |---|---|
-| #716 | Page Card Summary — empty page result cards. Brainstormed 2026-05-16; **largely subsumed by #731** (list-view default shows page metadata natively). Narrowed to card-mode page enrichment, de-prioritized behind #731 |
-| #660 | Agent and ./docs documentation — index refresh + frontmatter policy + lint + auto-gen index all shipped; 49 lint warnings remain for source-only modules (stub-creation work) |
-| #622 | WikiRoutes.coverage3.test.ts intermittent timeout — deferred; recurs as a full-suite-concurrency timeout (2026-05-16 datapoint added from `WikiRoutes.contact.test.ts`) |
-| #599 | showdown ReDoS — no upstream patch (mitigation only) |
+| #660 | Agent and ./docs documentation — tooling shipped; 49 doc-stub warnings remain for source-only modules (stub-creation backlog; cosmetic, non-blocking) |
+| #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); tracked by Dependabot #96 |
 
 ## Operator-decision carryover
 
 Items awaiting a yes/no/close or operator-only action. Not blocking other work.
 
-- None open. (#724 triaged, fixed `c2d25d77`, backlog cleared, and closed 2026-05-16. No items currently awaiting a yes/no/close.)
+- None open. All 2026-05-16 carryover (#716/#724/#622/#725/#730/#731) resolved + closed; nothing currently awaiting a yes/no/close.
 
 ## Sister-site top priorities — combined table
 
@@ -64,16 +62,16 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | # | Topic | Priority hint |
 |---|---|---|
 | #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Medium — prototyped during #711 session, parked due to test-mock churn. WIP in `git stash@{0}`. |
-| #731 | Asset-picker / search: list view as default for all result types, card/grid toggle | Medium — operator-decided 2026-05-16; **subsumes #716**; soft-deps #722; parallel to #691/#720/#721 |
+| #705 | Perf baseline: warm `/` cache or median-of-N | **Medium — earned its keep:** the `/` cold-sample artifact false-flagged a regression on *every* release this session (v3.15.0/.1, v3.16.0). Fixing it removes recurring release friction |
+| #732 | Test parity: ElasticsearchSearchProvider no-query/browse-all ACL guard | Low — filed 2026-05-16 (#731 follow-up). ES verified correct; regression guard mirroring the Lunr no-query ACL tests. Not a security defect |
 | #728 | ngdp Compatible Markdown | Low — filed 2026-05-16; architecture; markdown-compat scoping |
 | #729 | Improvements to `[{Location}]` | Low — filed 2026-05-16; good-first-issue; Location plugin follow-ups |
-| #722 | Video poster-frame thumbnails (ffmpeg) | Low — substantial; adds ffmpeg dep. Feeds #731's list/card thumbnail cell |
+| #722 | Video poster-frame thumbnails (ffmpeg) | Low — substantial; adds ffmpeg dep. #731 shipped v3.16.0; this fills the video thumbnail cell in its list/card rows |
 | #721 | Asset-picker advanced filters: capture-date for video + collapse into disclosure | Low — filter-input axis; backend video `dateTimeOriginal` indexing + UI tidy |
-| #720 | Asset-picker format dropdown: separate Video/Audio from Other | Low — filter-input axis; mirrors existing Images filter |
-| #691 | Asset-picker page filter UI (source=Pages) | Low — filter-input axis (page-side counterpart to #720/#721); complements #716/#731 |
+| #720 | Asset-picker format dropdown: separate Video/Audio from Other | Low — filter-input axis; smallest standalone asset-picker win; mirrors existing Images filter |
+| #691 | Asset-picker page filter UI (source=Pages) | Low — filter-input axis; #716/#731 (presentation) shipped v3.16.0; the remaining page filter-input piece |
 | #707 | Typed footnote + knowledge-graph reference index | Low — speculative; **depends on #706**; defer behind a named citation-heavy user (2026-05-16 brainstorm) |
 | #706 | `knowledge-role` frontmatter field — opt-in page role | Low — sharpened to field+enum+badge; **foundational, blocks #707**; design in `docs/planning/ideas/llm-wiki-pattern.md` |
-| #705 | Perf baseline: warm cache or median-of-N | Low — quality-of-life for benchmark accuracy |
 | #689 | Admin show/edit frontmatter | Low |
 | #686 | AddonsManager: auto-enable bundled addons in non-default addons-path dirs | Low — Lever 3 follow-up from the Domain Addon Deployment cluster |
 | #685 | Data-ingestion framework (platform addon) | Low / Future — 2-4 weeks platform work; unblocks bespoke ingestion in any satellite |
