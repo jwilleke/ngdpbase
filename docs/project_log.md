@@ -2,6 +2,23 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-16-09
+
+- Agent: Claude Opus 4.7
+- Subject: #731 Slice 1 — asset-search page-result enrichment + closing a private-page leak (foundation for the list-view feature).
+- Current Issue: #731 (Slice 1 of 3 shipped); fixes #716 root cause; security fix.
+- Tests: full suite 5537/5537 (was 5531: contract test updated + 6 new ACL guards). typecheck/build green. Live on jimstest: filtered page rows now carry excerpt + systemCategory; no-query ACL path functioning.
+- Work Done:
+  - Investigated the 3-layer page-search path (route → SearchManager → LunrSearchProvider). Found two coupled defects feeding #716/#731's empty rows.
+  - **Field-mapping bug:** route read `h.excerpt`/`h.userKeywords` but the provider emits `h.snippet` + nested `metadata.{userKeywords,systemCategory,lastModified}`. Route now reads the real shape; `toAssetRecord` carries `systemCategory`.
+  - **Security — private-page leak:** `SearchManager.advancedSearchWithContext` never passed `wikiContext` to the provider; `LunrSearchProvider`'s no-text `advancedSearch` branch (browse-all / category-only / keyword-only) built from the raw documents map with no private filter. Added `isDocVisible()` (admin/creator/frontmatter-audience, mirroring the text path), threaded `wikiContext` through SearchManager, and ACL-filtered the no-text branch + the text path.
+  - Updated the assetSearch contract test to the corrected provider shape (it had encoded the buggy contract); added 6 `LunrSearchProvider` no-query ACL guards (anon/non-creator excluded; creator/admin/audience included; category-only path filtered).
+- Commits: `e80d41e9`.
+- Files Modified:
+  - `src/managers/SearchManager.ts`, `src/providers/LunrSearchProvider.ts`, `src/routes/WikiRoutes.ts`
+  - `src/routes/__tests__/WikiRoutes.assetSearch.test.ts`, `src/providers/__tests__/LunrSearchProvider.privateFilter.test.ts`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-16-08
 
 - Agent: Claude Opus 4.7
