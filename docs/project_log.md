@@ -2,6 +2,23 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-16-02
+
+- Agent: Claude Opus 4.7
+- Subject: Triaged and fixed #724 (E2E test pages lingering in live storage). Root-caused, hardened the cleanup helper to fail loudly, validated, and prepared the stale-backlog cleanup.
+- Current Issue: #724 (left open pending backlog clearance); #622 unrelated.
+- Tests: `location-plugin.spec.ts` 11/11 green against jimstest, twice (before and after the fix), 0 leftovers from each run — confirms current cleanup works and the new verify-and-throw raises no false failures.
+- Work Done:
+  - Triaged #724: empirically established pages are stored as `<uuid>.md` (earlier filename globs were false negatives); `resolvePageInfo` resolves uuid → slug → title (case-insensitive), so `/delete/<title>` *does* resolve. Real cause: pre-CSRF-arc `deletePage()` POSTed without a valid token → 403 → silently `console.warn`'d as acceptable, accumulating pages. The #663/#690/#709/#727 CSRF work incidentally fixed token acquisition; current cleanup works, but the silent-swallow left a latent recurrence risk + a stale backlog.
+  - Hardened `tests/e2e/fixtures/helpers.ts`: `deletePage()` throws on missing CSRF token, unexpected delete status, or if `GET /view/<page>` still resolves post-delete (source-of-truth verification). Added `deletePages()` (attempt-all then aggregate-throw so one failure can't suppress the batch). `location-plugin.spec.ts` afterAll switched to `deletePages()`. `pages.spec.ts` single-delete covered by the same hardened helper.
+  - Verified `/view/<nonexistent>` → 404 and `/view/<title|slug>` → 200, making the post-delete existence check reliable.
+  - Built a one-off, dry-run-default backlog cleanup (`/tmp/cleanup-724.mjs`, not committed) that deletes only pages whose frontmatter `title` starts with the exact `NGDPBASE-test-` e2e prefix, via the authenticated app delete route (keeps search/uuid/slug indices + version dirs consistent — never `rm`). Dry-run: 48 stale pages on jimstest, all timestamped e2e artifacts. Execution pending operator go-ahead.
+  - Posted triage + fix comments on #724; left issue open until backlog cleared.
+- Commits: `c2d25d77` (fix(e2e): #724 deletePage fails loudly + verifies deletion).
+- Files Modified:
+  - `tests/e2e/fixtures/helpers.ts`, `tests/e2e/location-plugin.spec.ts`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-16-01
 
 - Agent: Claude Opus 4.7
