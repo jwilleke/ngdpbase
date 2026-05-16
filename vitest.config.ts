@@ -62,6 +62,15 @@ export default defineConfig({
     // and `maxWorkers: 2/4/6` all still reproduced it occasionally. Pool
     // config doesn't deterministically fix it; only this timeout does.
     testTimeout: 30000,
+    // #622: self-heal the proven full-suite-concurrency flake. Affected
+    // supertest route tests (coverage3/coverage15/contact …) hang or
+    // "socket hang up" ~25-40% of cold full-suite runs and pass on every
+    // isolated re-run (11 datapoints over many releases). `retry` re-runs
+    // ONLY the failed test: a flake clears, a real regression fails the
+    // original plus all retries (vitest greens a test only if a retry
+    // succeeds) — so signal integrity is preserved and a genuine bug still
+    // fails the suite. Codifies the manual "re-run once" release practice.
+    retry: 2,
     // #622 perf tuning: on a 14-core machine vitest's default of 7 workers
     // (half-cpus) over-provisions and inflates per-component overhead
     // (transform / import / setup). Capping at 4 cuts those phases by ~3x

@@ -34,8 +34,13 @@ export default defineConfig({
   // Fail the build on CI if you accidentally left test.only in the source code
   forbidOnly: !!process.env.CI,
 
-  // Retry on CI only
-  retries: process.env.CI ? 2 : 0,
+  // #622: the E2E analog of the unit full-suite-concurrency flake — under
+  // the full parallel run, page.goto/waitForURL occasionally hit the 30s
+  // timeout and pass on an isolated re-run. Local was `0`, so the local
+  // release gate (run outside CI) had no self-heal and a single nav-timeout
+  // aborted the whole gate. 1 local retry clears a flake; a real break
+  // still fails both attempts. CI stays at 2.
+  retries: process.env.CI ? 2 : 1,
 
   // Opt out of parallel tests on CI for stability
   workers: process.env.CI ? 1 : undefined,
