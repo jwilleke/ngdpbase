@@ -1,11 +1,10 @@
 import BaseManager, { BackupData as BaseBackupData } from './BaseManager.js';
-import fs from 'fs-extra';
-import path from 'path';
 import zlib from 'zlib';
 import { promisify } from 'util';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
+import type BaseBackupProvider from '../providers/BaseBackupProvider.js';
 
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
@@ -105,6 +104,10 @@ class BackupManager extends BaseManager {
   private autoBackupEnabled: boolean;
   private autoBackupTime: string;   // HH:MM
   private autoBackupDays: string;   // "daily" | "monthly" | "Mon,Wed,..."
+  // #170: storage target is delegated to a BackupProvider (default
+  // FileBackupProvider). Orchestration/serialization stays in this manager.
+  private provider: BaseBackupProvider | null;
+  private providerClass: string;
 
   /**
    * Creates a new BackupManager instance
@@ -121,6 +124,46 @@ class BackupManager extends BaseManager {
     this.autoBackupEnabled = false;
     this.autoBackupTime = '02:00';
     this.autoBackupDays = 'daily';
+    this.provider = null;
+    this.providerClass = 'FileBackupProvider';
+  }
+
+  /** Normalize a config provider name to its PascalCase class name. */
+  private normalizeProviderName(providerName: string): string {
+    if (/^[A-Z]/.test(providerName)) return providerName;
+    const known: Record<string, string> = {
+      filebackupprovider: 'FileBackupProvider'
+    };
+    return known[providerName.toLowerCase()]
+      ?? providerName
+        .split(/[-_]/)
+        .map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
+        .join('');
+  }
+
+  /**
+   * Load the configured backup storage provider (#170). Mirrors the
+   * dynamic-import + fallback pattern used by AuditManager / SearchManager.
+   * Falls back to FileBackupProvider on any load error so backups never
+   * silently lose their storage target.
+   */
+  private async loadProvider(): Promise<void> {
+    type BackupProviderConstructor = new (engine: WikiEngine) => BaseBackupProvider;
+    try {
+      const mod = await import(/* @vite-ignore */ `../providers/${this.providerClass}.js`) as { default: BackupProviderConstructor };
+      this.provider = new mod.default(this.engine);
+      await this.provider.initialize();
+    } catch (error) {
+      logger.error(`Failed to load backup provider ${this.providerClass}:`, error);
+      if (this.providerClass !== 'FileBackupProvider') {
+        logger.warn('Falling back to FileBackupProvider');
+        const mod = await import('../providers/FileBackupProvider.js') as unknown as { default: BackupProviderConstructor };
+        this.provider = new mod.default(this.engine);
+        await this.provider.initialize();
+      } else {
+        throw error;
+      }
+    }
   }
 
   /**
@@ -151,9 +194,17 @@ class BackupManager extends BaseManager {
     this.autoBackupTime = configManager.getProperty('ngdpbase.backup.auto-backup-time') as string ?? '02:00';
     this.autoBackupDays = configManager.getProperty('ngdpbase.backup.auto-backup-days') as string ?? 'daily';
 
+    // #170: resolve the storage provider name (lowercase config -> PascalCase
+    // class), e.g. filebackupprovider -> FileBackupProvider.
+    const providerName = configManager.getProperty(
+      'ngdpbase.backup.provider', 'filebackupprovider'
+    ) as string;
+    this.providerClass = this.normalizeProviderName(providerName);
+
     // Preflight: if the configured path lives on a volume that is not mounted,
     // log a clear warning and disable backups for this session rather than
-    // letting fs.ensureDir() crash engine init with an opaque EACCES.
+    // letting the provider's ensureContainer() crash engine init with an
+    // opaque EACCES.
     const preflight = this.preflightConfiguredPath(
       'ngdpbase.backup.directory',
       this.backupDirectory
@@ -162,12 +213,13 @@ class BackupManager extends BaseManager {
       logger.warn('   Backups are DISABLED for this session.');
       this.autoBackupEnabled = false;
       this.backupDirectory = '';
+      this.provider = null;
       logger.info('✅ BackupManager initialized (degraded — backups disabled)');
       return;
     }
 
-    // Ensure backup directory exists
-    await fs.ensureDir(this.backupDirectory);
+    // #170: load the storage provider — it owns ensuring the container exists.
+    await this.loadProvider();
 
     // Start scheduler if auto-backup is enabled
     if (this.autoBackupEnabled) {
@@ -230,14 +282,13 @@ class BackupManager extends BaseManager {
     logger.info('🔄 Starting backup operation...');
 
     try {
-      if (!this.backupDirectory) {
+      if (!this.backupDirectory || !this.provider) {
         throw new Error('Backup directory not initialized');
       }
 
       // Generate filename with timestamp
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const filename = options.filename || `${timestamp}-ngdpbase-backup.json.gz`;
-      const backupPath = path.join(this.backupDirectory, filename);
 
       // Collect backup data from all managers
       const backupData: BackupData = {
@@ -293,9 +344,8 @@ class BackupManager extends BaseManager {
         logger.info(`🗜️  Compressed size: ${(compressed.length / 1024).toFixed(2)} KB (${((compressed.length / jsonData.length) * 100).toFixed(1)}% of original)`);
       }
 
-      // Write to file
-
-      await fs.writeFile(backupPath, finalData);
+      // Write via the storage provider (#170)
+      const backupPath = await this.provider.writeBackup(filename, finalData);
 
       const duration = Date.now() - startTime;
       logger.info(`✅ Backup completed successfully in ${duration}ms`);
@@ -331,15 +381,17 @@ class BackupManager extends BaseManager {
     logger.info(`🔄 Starting restore operation from: ${backupPath}`);
 
     try {
-      // Verify backup file exists
+      if (!this.provider) {
+        throw new Error('Backup provider not initialized');
+      }
 
-      if (!(await fs.pathExists(backupPath))) {
+      // Verify backup file exists
+      if (!(await this.provider.backupExists(backupPath))) {
         throw new Error(`Backup file not found: ${backupPath}`);
       }
 
-      // Read backup file
-
-      const fileData = await fs.readFile(backupPath);
+      // Read backup file via the storage provider (#170)
+      const fileData = await this.provider.readBackup(backupPath);
 
       logger.info(`📁 Read backup file: ${(fileData.length / 1024).toFixed(2)} KB`);
 
@@ -447,32 +499,26 @@ class BackupManager extends BaseManager {
    */
   async listBackups(): Promise<BackupFileInfo[]> {
     try {
-      if (!this.backupDirectory) {
+      if (!this.backupDirectory || !this.provider) {
         return [];
       }
 
-      const files = await fs.readdir(this.backupDirectory);
-
-      const backupFiles = files.filter((f: string) => {
-        // Support both old format (ngdpbase-backup-{timestamp}) and new format ({timestamp}-ngdpbase-backup)
-        return (f.startsWith('ngdpbase-backup-') || f.endsWith('-ngdpbase-backup.json.gz')) && f.endsWith('.json.gz');
-      });
-
-      const backupDir = this.backupDirectory;
-      const backups = await Promise.all(
-        backupFiles.map(async (filename: string) => {
-          const filePath = path.join(backupDir, filename);
-          const stats = await fs.stat(filePath);
-
-          return {
-            filename,
-            path: filePath,
-            size: stats.size,
-            created: stats.birthtime,
-            modified: stats.mtime
-          };
-        })
-      );
+      // Storage listing comes from the provider (#170); the backup-naming
+      // convention stays this manager's concern.
+      const objects = await this.provider.listBackupObjects();
+      const backups = objects
+        .filter(o =>
+          // Support both old format (ngdpbase-backup-{timestamp}) and new format ({timestamp}-ngdpbase-backup)
+          (o.filename.startsWith('ngdpbase-backup-') || o.filename.endsWith('-ngdpbase-backup.json.gz'))
+          && o.filename.endsWith('.json.gz')
+        )
+        .map(o => ({
+          filename: o.filename,
+          path: o.path,
+          size: o.size,
+          created: o.created,
+          modified: o.modified
+        }));
 
       // Sort by creation time, newest first
       backups.sort((a: BackupFileInfo, b: BackupFileInfo) => b.created.getTime() - a.created.getTime());
@@ -502,7 +548,7 @@ class BackupManager extends BaseManager {
       logger.info(`🗑️  Cleaning up ${toDelete.length} old backups`);
 
       for (const backup of toDelete) {
-        await fs.remove(backup.path);
+        await this.provider?.removeBackup(backup.path);
         logger.info(`🗑️  Deleted: ${backup.filename}`);
       }
     } catch (error) {
@@ -564,7 +610,8 @@ class BackupManager extends BaseManager {
     if (config.directory !== undefined) {
       await configManager.setProperty('ngdpbase.backup.directory', config.directory);
       this.backupDirectory = config.directory;
-      await fs.ensureDir(this.backupDirectory);
+      // #170: re-point the storage provider at the new directory.
+      await this.provider?.setBackupDirectory(config.directory);
     }
 
     // Restart scheduler with updated settings
