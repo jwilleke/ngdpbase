@@ -116,11 +116,26 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
 <!-- Pagination footer -->
 <div class="d-flex flex-wrap justify-content-between align-items-center mt-3 gap-2">
     <small class="text-muted" id="ap-count"></small>
+    <div class="btn-group btn-group-sm" role="group" aria-label="Result view mode">
+        <button type="button" class="btn btn-outline-secondary" id="ap-view-list" title="List view"><i class="fas fa-list"></i></button>
+        <button type="button" class="btn btn-outline-secondary" id="ap-view-grid" title="Grid view"><i class="fas fa-th"></i></button>
+    </div>
     <nav aria-label="Asset browser pagination">
         <ul class="pagination pagination-sm mb-0" id="ap-pagination"></ul>
     </nav>
 </div>
 
+<style>
+/* #731: list view is the default for all result types; grid is one toggle away. */
+.ap-list { display: flex; flex-direction: column; gap: .5rem; }
+.ap-row { display: flex; align-items: flex-start; gap: .75rem; }
+.ap-row-thumb { flex: 0 0 56px; width: 56px; height: 56px; display: flex;
+    align-items: center; justify-content: center; overflow: hidden;
+    border-radius: .25rem; background: var(--bs-tertiary-bg, #f1f3f5); }
+.ap-row-thumb img { width: 56px; height: 56px; object-fit: cover; }
+.ap-row-body { flex: 1 1 auto; min-width: 0; }
+.ap-row-act { flex: 0 0 auto; }
+</style>
 <% if (_apMode === 'modal') { %>
 <style>
 .ap-modal-scroll { max-height: 55vh; overflow-y: auto; }
@@ -151,6 +166,26 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
     var resEl        = document.getElementById('ap-results');
     var cntEl        = document.getElementById('ap-count');
     var pagEl        = document.getElementById('ap-pagination');
+    var listBtn      = document.getElementById('ap-view-list');
+    var gridBtn      = document.getElementById('ap-view-grid');
+
+    // #731: list is the default layout for ALL result types; grid stays one
+    // toggle away. The choice is persisted per browser. Toggling re-renders
+    // the current results in place — no refetch, no navigation.
+    var AP_MODAL = <%- _apMode === 'modal' ? 'true' : 'false' %>;
+    var _apView = (function () {
+        try { return localStorage.getItem('ap-view') === 'grid' ? 'grid' : 'list'; }
+        catch (e) { return 'list'; }
+    })();
+    function _apSetView(v) {
+        _apView = (v === 'grid') ? 'grid' : 'list';
+        try { localStorage.setItem('ap-view', _apView); } catch (e) { /* private mode */ }
+        if (listBtn) listBtn.classList.toggle('active', _apView === 'list');
+        if (gridBtn) gridBtn.classList.toggle('active', _apView === 'grid');
+        _apRenderResults();
+    }
+    if (listBtn) listBtn.addEventListener('click', function () { _apSetView('list'); });
+    if (gridBtn) gridBtn.addEventListener('click', function () { _apSetView('grid'); });
 
     // Wire controls
     qEl.addEventListener('input', function () {
@@ -288,9 +323,7 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
             cntEl.textContent = _apTotal.toLocaleString() + ' result' + (_apTotal !== 1 ? 's' : '') +
                 (_apTotal > AP_PAGE_SIZE ? ' \u00b7 showing ' + start + '\u2013' + end : '');
 
-            resEl.innerHTML = data.results.map(function (asset, idx) {
-                return _apCard(asset, idx);
-            }).join('');
+            _apRenderResults();
 
             if (totalPages > 1) {
                 WikiPagination.renderNav(pagEl, page + 1, totalPages, function (oneBased) {
@@ -388,6 +421,85 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
         if (mime.includes('word') ||
             mime.includes('document'))                       return 'fa-file-word';
         return 'fa-file';
+    }
+
+    // #731: render the current page of results in the active view. Called
+    // after a fetch AND on toggle (no refetch). Sets the container class so
+    // grid keeps Bootstrap's row/col layout and list uses the flex stack.
+    function _apRenderResults() {
+        if (!_apItems || !_apItems.length) return;
+        var modalCls = AP_MODAL ? ' ap-modal-scroll' : '';
+        if (_apView === 'grid') {
+            resEl.className = 'row g-2' + modalCls;
+            resEl.innerHTML = _apItems.map(function (a, i) { return _apCard(a, i); }).join('');
+        } else {
+            resEl.className = 'ap-list' + modalCls;
+            resEl.innerHTML = _apItems.map(function (a, i) { return _apRow(a, i); }).join('');
+        }
+    }
+
+    // #731: one list row. Pages show title + excerpt + category/keyword
+    // chips (chips are display-only in v1 — non-links can't break the modal;
+    // interactive in-place filtering is a tracked follow-up). Image assets
+    // get a thumbnail; video/other get a type icon (poster frames pend #722).
+    function _apRow(asset, idx) {
+        var isPage  = asset.providerId === 'page';
+        var isUser  = asset.providerId === 'user';
+        var isImage = !isPage && !isUser && asset.encodingFormat && asset.encodingFormat.startsWith('image/');
+        var isMedia = asset.providerId === 'media-library';
+
+        var thumbInner;
+        if (isUser && asset.thumbnailUrl)         thumbInner = '<img src="' + _esc(asset.thumbnailUrl) + '" loading="lazy" alt="">';
+        else if (isMedia && asset.thumbnailUrl)   thumbInner = '<img src="' + _esc(asset.thumbnailUrl) + '" loading="lazy" alt="">';
+        else if (isImage && asset.url)            thumbInner = '<img src="' + _esc(asset.url) + '" loading="lazy" alt="">';
+        else {
+            var ic = isPage ? 'fa-file-alt' : isUser ? 'fa-user'
+                : isMedia ? 'fa-photo-video' : _apMimeIcon(asset.encodingFormat);
+            thumbInner = '<i class="fas ' + ic + ' fa-lg text-muted"></i>';
+        }
+
+        // Pages: name = title, description = excerpt (Slice 1). Other assets
+        // keep the historical label = description||filename||id.
+        var label = isPage ? (asset.name || asset.id) : (asset.description || asset.filename || asset.id);
+        var titleHtml = asset.url
+            ? '<a href="' + _esc(asset.url) + '" class="text-decoration-none fw-semibold text-truncate"' +
+              ((isPage || isUser) ? '' : ' target="_blank" rel="noopener noreferrer"') + '>' + _esc(label) + '</a>'
+            : '<span class="fw-semibold text-truncate">' + _esc(label) + '</span>';
+
+        var badge = isPage ? '<span class="badge bg-primary">page</span>'
+            : isUser ? '<span class="badge bg-success">user</span>'
+            : isMedia ? '<span class="badge bg-info text-dark">media</span>'
+            : '<span class="badge bg-secondary">attachment</span>';
+
+        var md = asset.metadata || {};
+        var cat = md.systemCategory
+            ? '<span class="badge bg-light text-dark border me-1">' + _esc(md.systemCategory) + '</span>' : '';
+        var kws = Array.isArray(asset.keywords)
+            ? asset.keywords.slice(0, 6).map(function (k) {
+                return '<span class="badge bg-light text-dark border me-1">' + _esc(k) + '</span>'; }).join('')
+            : '';
+        var chips = (cat || kws) ? '<div class="mt-1">' + cat + kws + '</div>' : '';
+
+        var yearStr = asset.dateCreated ? String(new Date(asset.dateCreated).getFullYear()) : '';
+        var lm = (typeof md.lastModified === 'string') ? md.lastModified.slice(0, 10) : '';
+        var metaBits = [yearStr, lm].filter(Boolean).map(_esc).join(' · ');
+        var meta = metaBits ? '<div class="mt-1"><small class="text-muted">' + metaBits + '</small></div>' : '';
+
+        var excerpt = (isPage && asset.description && asset.description !== label)
+            ? '<div class="small text-muted text-truncate">' + _esc(asset.description) + '</div>' : '';
+
+        var actionBtn = _apInsert
+            ? '<button type="button" class="btn btn-sm btn-primary" onclick="apAction(' + idx + ')" title="' + _esc(asset.insertSnippet) + '"><i class="fas fa-code"></i> Insert</button>'
+            : '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="apAction(' + idx + ')" title="Copy wiki syntax"><i class="fas fa-copy"></i> Copy</button>';
+
+        return '<div class="ap-row border rounded shadow-sm p-2">' +
+            '<div class="ap-row-thumb">' + thumbInner + '</div>' +
+            '<div class="ap-row-body">' +
+                '<div class="d-flex align-items-center gap-2 flex-wrap">' + titleHtml + badge + '</div>' +
+                chips + excerpt + meta +
+            '</div>' +
+            '<div class="ap-row-act align-self-center">' + actionBtn + '</div>' +
+        '</div>';
     }
 
     function _apCard(asset, idx) {
@@ -566,6 +678,11 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
     // #696: hidden filters — no UI control today (#691). Read once on init
     // and re-attached to every search URL in _apSearch.
     var _apHiddenFilters = <%- JSON.stringify(_apInitFilters) %>;
+
+    // #731: reflect the persisted view on the toggle buttons before first
+    // fetch (render is a no-op until results arrive; _apSearch then renders
+    // through _apRenderResults honouring _apView).
+    _apSetView(_apView);
 
     // Auto-load on init
     _apSearch(0);
