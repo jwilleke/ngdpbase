@@ -62,7 +62,6 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | # | Topic | Priority hint |
 |---|---|---|
 | #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Medium — prototyped during #711 session, parked due to test-mock churn. WIP in `git stash@{0}`. |
-| #734 | Warm the search subsystem at server-ready (cold `/search` ~150ms) | Low — #705 follow-up (`/` half fixed `41e3cf7e`). `/search` cold cost is lazy index/JIT init, not warm-up-fixable; warm-server `/semver` path already clean. Benchmark accuracy + post-deploy first-query nicety. Not a regression |
 | #728 | ngdp Compatible Markdown | Low — filed 2026-05-16; architecture; markdown-compat scoping |
 | #729 | Improvements to `[{Location}]` | Low — filed 2026-05-16; good-first-issue; Location plugin follow-ups |
 | #722 | Video poster-frame thumbnails (ffmpeg) | Low — substantial; adds ffmpeg dep. #731 shipped v3.16.0; this fills the video thumbnail cell in its list/card rows |

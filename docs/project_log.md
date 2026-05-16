@@ -2,6 +2,21 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-16-16
+
+- Agent: Claude Opus 4.7
+- Subject: #734 — investigated cold `/search`; closed wontfix-by-design (operator decision D).
+- Current Issue: #734 (closed, no code change).
+- Tests: n/a — investigation + decision only.
+- Work Done:
+  - Root-caused cold `/search` (~150ms, ~15 req post-restart): `SearchManager.ts:218` deliberately fires `buildSearchIndex()` fire-and-forget ("don't block engine initialization"); `rebuildLunrFromDocuments` is a synchronous event-loop-blocking `lunr()` over ~17k docs. Early `/search` races the still-building/JIT-cold index. `search()` does not lazy-build (returns empty if index null) — the cost is the background build contending with early requests.
+  - Surfaced the genuine tradeoff (await-at-boot = whole-server unavailable for seconds on the 17.5k corpus, reverting a deliberate decision) with 4 options. Operator chose **D — accept by design**: the non-blocking-boot decision is correct for a large corpus; `/semver`'s real path already measures the warm server (#705); issue was Low / "not a regression".
+  - Closed #734 wontfix-by-design with the durable rationale comment (incl. the low-risk option-C path documented for if a real post-deploy SLO complaint ever arises). Removed its `TODO.md` row.
+- Commits: none (decision/close only).
+- Files Modified:
+  - `TODO.md`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-16-15
 
 - Agent: Claude Opus 4.7
