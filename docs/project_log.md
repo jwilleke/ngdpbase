@@ -2,6 +2,23 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-16-07
+
+- Agent: Claude Opus 4.7
+- Subject: `/semver patch` release `v3.15.0 → v3.15.1` — ships the App Health discoverable surface (seed page + admin link) so #730's `AppHealthPlugin` is reachable everywhere. Propagated to all three satellites, including the required-pages sync so the page is live (not just present).
+- Current Issue: #730 (surface follow-up); #622 (two flake datapoints added).
+- Tests: jimstest gate — build OK, then full-suite hit two #622-class flakes (unit `WikiRoutes.contact.test.ts` "socket hang up"; E2E `location-plugin.spec.ts:398` `page.waitForURL` 30s timeout, 8 did-not-run). Isolated re-runs clean: contact 45/45, location-plugin 11/11. Operator pre-authorized "proceed if both pass". Satellites: fairways-base / ngdpbase-veg / ngdp-temp-builds each 5531/5531 unit + 72/72 E2E, no flakes.
+- Perf baseline: `docs/performance/baseline-v3.15.1-2026-05-16.md` — clean, exit 0. Vindicates the v3.15.0 cold-cache call: `/` recovered 142→28 ms (−80%), `/search` 137→143 ms (noise), memory −0.5%. No thresholds tripped.
+- Work Done:
+  - Confirmed the two gate failures were #622-class full-suite-concurrency flakes (release content — a seed page + an EJS link — cannot touch the contact route or Location plugin); #622 datapoint added.
+  - `/semver patch`: bumped `3.15.1` via `version.ts`, baseline+diff (clean), release commit + annotated tag `v3.15.1`, pushed commit + tag.
+  - GitHub Release **deferred** per the patch rule (operator asked for propagation, not a release; `/release` can consolidate the v3.15.x chain later).
+  - `/othersites`: all three satellites pulled to `v3.15.1`, rebuilt, restarted, unit + E2E green; then ran the selective `POST /admin/required-pages/sync` (`{uuids:[f496a567…],force:true}`) on each so `/view/app-health` is live (seeding only auto-happens on fresh installs). Verified `/view/app-health` 200 + renders the audit on every instance.
+- Commits: `46e5a3f0` (release v3.15.1). (Surface itself was `bf9c27ea` in 2026-05-16-06.)
+- Files Modified:
+  - `package.json`, `config/app-default-config.json`, `CHANGELOG.md`, `docs/performance/baseline-v3.15.1-2026-05-16.md` (release bump)
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-16-06
 
 - Agent: Claude Opus 4.7
