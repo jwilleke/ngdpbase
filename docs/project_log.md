@@ -2,6 +2,23 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-16-08
+
+- Agent: Claude Opus 4.7
+- Subject: #622 operationally resolved — codified the manual "re-run the flake once" rule into the test runners so the full-suite-concurrency flake stops taxing every release.
+- Current Issue: #622 (fix shipped; recommended for operator close — left open per the close-ownership norm).
+- Tests: full vitest suite 5531/5531 with `retry: 2` loaded; Playwright config parses (`--list` exit 0); no config type errors.
+- Work Done:
+  - Reviewed the full #622 history (11 prior comments + `docs/performance/issue-622-vitest-pool-tuning.md`): band-aids (30s timeout, `pool:forks`/`maxWorkers:4`, mock-leak fixes) cut frequency but never made the pipeline self-healing — it blocked the v3.15.1 gate twice on 2026-05-16.
+  - `vitest.config.ts`: added `retry: 2` (was none).
+  - `playwright.config.ts`: local `retries` `0 → 1` (CI unchanged at `2`) — the local release gate runs outside CI and previously had zero E2E retries, so a single nav-timeout aborted the whole gate.
+  - Rationale documented in-config and on #622: the runner greens a test only on a successful retry, so a real regression fails the original + all retries (no masking); retried tests report as flaky (a genuinely new flake stays visible). Codifies the existing `/semver`/`/othersites` manual re-run policy.
+  - #622 comment posted recommending close as operationally resolved (underlying cold-start Node/vitest/supertest interaction is a known accepted `deferred` characteristic per prior investigation).
+- Commits: `7328c0ae`.
+- Files Modified:
+  - `vitest.config.ts`, `playwright.config.ts`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-16-07
 
 - Agent: Claude Opus 4.7
