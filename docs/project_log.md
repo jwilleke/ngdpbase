@@ -2,6 +2,26 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-16-04
+
+- Agent: Claude Opus 4.7
+- Subject: LLM-wiki-pattern brainstorm (#706/#707 + the published Karpathy-wiki-pattern page + `docs/planning/ideas/llm-wiki-pattern.md`); strategic value assessment; sharpened #706, set the #706→#707 dependency, and lifted the deterministic lint out as standalone #730.
+- Current Issue: #706, #707, #730 (all open; planning/triage only — no code).
+- Tests: jimstest pre-flight green — `npm run build` OK, 5522/5522 unit (211 files). E2E not re-run (only code change this session, `c2d25d77`, is `tests/e2e/**`-only and was already E2E-validated 11/11 twice in earlier entries).
+- Work Done:
+  - Reviewed #706, #707, the jminim4 published `Karpathy-wiki-pattern` page (render of the local doc), and the full 485-line `docs/planning/ideas/llm-wiki-pattern.md`.
+  - Strategic assessment (operator gut-check "real value vs chasing"): concluded the value-certain piece is the deterministic lint (step 5) + the classification axis as its input; the typed-citation/reference-index/LLM-ingest layer (#707+) is speculative and should wait for a named user. Captured the "keep the real, drop the chase" split.
+  - #706: identified it was over-scoped (its reference-index/validation bits required #707 → circular). Sharpened to field+enum+badge; prepended a dependency/scope banner to the issue body; posted analysis comment. **#706 now cleanly blocks #707, no back-edge.**
+  - #707: prepended a "Depends on #706" banner; posted analysis comment (recommended the `[{Cite …}]` plugin syntax over the footnote-extension form, flagged the immutability/version-pin coupling and the index-drift risk, recommended deferring behind real demand).
+  - Filed **#730** — "[FEATURE] Wiki-health audit: deterministic data-quality lint" — reframed as standalone wiki engineering (no LLM-wiki framing), explicitly independent of #706/#707, justified with in-session evidence (17,552 pages; 48 orphans found incidentally in #724; #660 doc-stub backlog).
+  - Backlinked planning-doc step 5 → #730 (`e60bb72a`).
+  - Issue comments were posted in real time during the work (per the comment-on-decision rule); no additional Step 7 comments owed.
+- Semver: skip — docs/planning/issue-triage + test-infra-only fix; no runtime/API/config change, no prior bump this session.
+- Commits: `e60bb72a` (planning-doc → #730 link). GitHub-only artifacts: #706/#707 body banners + analysis comments, #730 filed.
+- Files Modified:
+  - `docs/planning/ideas/llm-wiki-pattern.md`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-16-03
 
 - Agent: Claude Opus 4.7
