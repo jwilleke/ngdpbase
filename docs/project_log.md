@@ -2,6 +2,19 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-16-03
+
+- Agent: Claude Opus 4.7
+- Subject: Executed the #724 stale-page backlog cleanup (operator-approved) and closed #724.
+- Current Issue: #724 (now closed).
+- Tests: n/a — data cleanup via authenticated app delete route; per-page `GET /view` verification.
+- Work Done:
+  - Ran the one-off `/tmp/cleanup-724.mjs --delete` (operator "go"): 48 stale `NGDPBASE-test-*` pages deleted via `POST /delete/<slug>` + `GET /view` verify each. Result 48/48 confirmed gone; independent re-verify (`grep '^title: NGDPBASE-test-'`) = 0 remaining in jimstest.
+  - Closed #724 with resolution summary (code fix `c2d25d77` + backlog cleared). Cleanup was jimstest-only; satellites self-heal on next E2E via the hardened `deletePages()` path.
+- Commits: none (data-only operation; code fix was `c2d25d77` in 2026-05-16-02).
+- Files Modified:
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-16-02
 
 - Agent: Claude Opus 4.7
