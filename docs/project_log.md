@@ -2,6 +2,21 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-16-15
+
+- Agent: Claude Opus 4.7
+- Subject: #732 — added ES no-query/browse-all ACL regression guards (parity with #731 Slice 1's Lunr guards); closed.
+- Current Issue: #732 (closed).
+- Tests: tsc OK; `ElasticsearchSearchProvider.test.ts` 33/33 (+3); full suite 5540/5540. No behaviour change.
+- Work Done:
+  - Confirmed the existing ES test already covered the authed no-query case ('private page filter allows audience members'); added the 3 parity gaps to `ElasticsearchSearchProvider.test.ts`: anon `match_all` → public-only filter + no `audience` escape hatch; authed → `should:[isPrivate:false, terms:{audience}]` + `minimum_should_match:1` + `must=match_all`; category-only (no text query) still privacy-filtered (the #731 broader-leak class).
+  - Noted in-file that ES's in-query ACL model collapses Lunr's creator/admin/audience cases, so this mirrors the *intent* of the 6 Lunr guards, not 1:1.
+  - Closed #732; removed its row from `TODO.md`.
+- Commits: `e230fd9f`.
+- Files Modified:
+  - `src/providers/__tests__/ElasticsearchSearchProvider.test.ts`, `TODO.md`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-16-14
 
 - Agent: Claude Opus 4.7
