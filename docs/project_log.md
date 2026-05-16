@@ -2,6 +2,25 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-15-02
+
+- Agent: Claude Opus 4.7
+- Subject: Executed the #726 GitHub App migration for Flux image-automation git auth (cross-repo work in `jwilleke/mj-infra-flux`), replacing the no-expiry `fluxcdbot` PAT. Full PAT-canary decommission. Closed ngdpbase #725/#726 and mj-infra-flux #71/#72.
+- Current Issue: #726 (migration) + #725 (PAT canary) — both closed.
+- Tests: n/a — GitOps/infra change, no ngdpbase code touched. Verified via Flux: `GitRepository/flux-system` + `Kustomization/flux-system` + `ImageUpdateAutomation/geohazardwatch` all `READY=True` post-cutover; source-controller fetched a fresh revision with App auth.
+- Work Done:
+  - Rebuilt SOPS-age `Secret/flux-system-git-auth` with `githubAppID`/`githubAppInstallationID`/`githubAppPrivateKey` (App ID 3723872, Installation 132593575); age recipient reused from the existing encrypted file
+  - Recovered a SOPS secret accidentally truncated by a paste-mangled `>` redirect, via `git checkout --` (no data lost; original was committed)
+  - Set `spec.provider: github` on `GitRepository/flux-system` in `gotk-sync.yaml`; also patched the live resource (`KUBECONFIG=$HOME/.kube/config kubectl patch`) to break the deadlock where broken auth couldn't pull the commit that fixes it
+  - Drove all deby-side work over non-interactive SSH (192.168.68.71) after operator-terminal paste corruption made hand-paste unreliable; rebase-safe pushes only — never force (preserves in-cluster Flux auto-commits)
+  - Decommission: deleted `.github/workflows/pat-health-check.yml`; confirmed `FLUXCDBOT_PAT_HEALTHCHECK` never existed (no repo Actions secrets — the original #71 symptom); closed mj-infra-flux #71/#72; populated then updated mj-infra-flux `TODO.md`
+  - Operator manually revoked the old fine-grained `fluxcdbot` PAT (`github_pat_…`)
+  - Closed ngdpbase #725/#726 with full outcome comments
+- Commits (all in `jwilleke/mj-infra-flux`): `e6c430e` (App secret), `1e31ab2` (provider: github), `3d66dd8c` (remove pat-health-check workflow), `e213be50` + `6412c7f5` (TODO.md)
+- Files Modified:
+  - mj-infra-flux: `apps/production/image-automation/flux-system-git-auth.sops.yaml`, `clusters/deby/flux-system/gotk-sync.yaml`, `.github/workflows/pat-health-check.yml` (deleted), `TODO.md`
+  - ngdpbase: `docs/project_log.md` (this entry)
+
 ## 2026-05-15-01
 
 - Agent: Claude Opus 4.7
