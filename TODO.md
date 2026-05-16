@@ -43,7 +43,8 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 Items awaiting a yes/no/close or operator-only action. Not blocking other work.
 
-- None open. All 2026-05-16 carryover (#716/#724/#622/#725/#730/#731) resolved + closed; nothing currently awaiting a yes/no/close.
+- **#733** — title is just `[FEATURE]` with no description/body; looks like an accidental/placeholder issue. Operator to flesh out or close.
+- (All other 2026-05-16 carryover — #716/#724/#622/#725/#730/#731/#705 — resolved + closed.)
 
 ## Sister-site top priorities — combined table
 
@@ -62,7 +63,7 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | # | Topic | Priority hint |
 |---|---|---|
 | #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Medium — prototyped during #711 session, parked due to test-mock churn. WIP in `git stash@{0}`. |
-| #705 | Perf baseline: warm `/` cache or median-of-N | **Medium — earned its keep:** the `/` cold-sample artifact false-flagged a regression on *every* release this session (v3.15.0/.1, v3.16.0). Fixing it removes recurring release friction |
+| #734 | Warm the search subsystem at server-ready (cold `/search` ~150ms) | Low — #705 follow-up (`/` half fixed `41e3cf7e`). `/search` cold cost is lazy index/JIT init, not warm-up-fixable; warm-server `/semver` path already clean. Benchmark accuracy + post-deploy first-query nicety. Not a regression |
 | #732 | Test parity: ElasticsearchSearchProvider no-query/browse-all ACL guard | Low — filed 2026-05-16 (#731 follow-up). ES verified correct; regression guard mirroring the Lunr no-query ACL tests. Not a security defect |
 | #728 | ngdp Compatible Markdown | Low — filed 2026-05-16; architecture; markdown-compat scoping |
 | #729 | Improvements to `[{Location}]` | Low — filed 2026-05-16; good-first-issue; Location plugin follow-ups |
