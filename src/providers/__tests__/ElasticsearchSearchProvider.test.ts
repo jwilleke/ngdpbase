@@ -339,6 +339,62 @@ describe('advancedSearch()', () => {
 });
 
 // ---------------------------------------------------------------------------
+// advancedSearch() — no-query / browse-all ACL parity (#731 / #732)
+// ---------------------------------------------------------------------------
+// #731 Slice 1 found a no-query private-page leak in LunrSearchProvider and
+// added 6 guards (LunrSearchProvider.privateFilter.test.ts). ES enforces ACL
+// inside the ES query itself, so its no-query/`match_all` path cannot have
+// that leak — these guard that it stays so. ES's model collapses Lunr's
+// creator/admin/audience cases into "principals present → public-OR-in-
+// audience", so this mirrors the *intent* (browse-all / category-only is
+// always privacy-wrapped), not Lunr's case list 1:1. The authed no-query
+// case is already covered by 'private page filter allows audience members'
+// above; these add the anon, match_all-structure, and category-only gaps.
+describe('advancedSearch() — no-query/browse-all ACL parity (#731/#732)', () => {
+  test('no query + anon: match_all wrapped public-only, NO audience escape hatch', async () => {
+    const provider = new ElasticsearchSearchProvider(makeEngine());
+    await provider.initialize();
+
+    await provider.advancedSearch({}); // browse-all, no wikiContext
+
+    const { query } = mockClientInstance.search.mock.calls[0][0];
+    expect(query.bool.must).toEqual({ match_all: {} });
+    expect(query.bool.filter).toContainEqual({ term: { isPrivate: false } });
+    // anon must NOT receive the audience should-clause anywhere
+    expect(query.bool.filter.some(f => f.bool?.should)).toBe(false);
+    expect(JSON.stringify(query)).not.toContain('audience');
+  });
+
+  test('no query + authed: match_all wrapped public-OR-audience, minimum_should_match:1', async () => {
+    const provider = new ElasticsearchSearchProvider(makeEngine());
+    await provider.initialize();
+
+    await provider.advancedSearch({
+      wikiContext: { userContext: { roles: ['editor'], username: 'jim' }, getPrincipals: () => ['editor', 'jim'] }
+    });
+
+    const { query } = mockClientInstance.search.mock.calls[0][0];
+    expect(query.bool.must).toEqual({ match_all: {} });
+    const priv = query.bool.filter.find(f => f.bool?.should);
+    expect(priv.bool.minimum_should_match).toBe(1);
+    expect(priv.bool.should).toContainEqual({ term: { isPrivate: false } });
+    expect(priv.bool.should).toContainEqual({ terms: { audience: ['editor', 'jim'] } });
+  });
+
+  test('category-only (no text query) is STILL privacy-filtered — the #731 broader-leak class', async () => {
+    const provider = new ElasticsearchSearchProvider(makeEngine());
+    await provider.initialize();
+
+    await provider.advancedSearch({ categories: ['docs'] }); // no query, anon
+
+    const { query } = mockClientInstance.search.mock.calls[0][0];
+    expect(query.bool.must).toEqual({ match_all: {} });
+    expect(query.bool.filter).toContainEqual({ terms: { systemCategory: ['docs'] } });
+    expect(query.bool.filter).toContainEqual({ term: { isPrivate: false } });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // updatePageInIndex()
 // ---------------------------------------------------------------------------
 
