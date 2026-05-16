@@ -130,4 +130,4 @@ If no GitHub issues are related to the current work, skip this step and note "no
 
 ### Step 9: `/check-todos`
 
-Refresh `docs/TODO.md` against live state if any items closed or were filed during this session.
+Refresh the root `TODO.md` against live state if any items closed or were filed during this session.

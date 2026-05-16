@@ -12,7 +12,7 @@ slug: ngdpbase-todo
 
 # Project Development TODO
 
-Current near-term priorities for ngdpbase and the sister sites tracked by `/othersites`. Maintained as a snapshot — for the live state run `/check-todos`. Stale rows pruned regularly.
+Current near-term priorities for ngdpbase and the sister sites tracked by `/othersites`. Maintained as a snapshot of **open** work — closed/resolved items are not retained here (see `docs/project_log.md` and the GitHub issue history for the trail). For the live state run `/check-todos`.
 
 Sister sites in scope:
 
@@ -32,7 +32,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 ## Open BUGS (ngdpbase, by issue #)
 
-5 open as of 2026-05-16 (#725 + #723 closed since the 2026-05-15 refresh).
+5 open as of 2026-05-16.
 
 | # | Title |
 |---|---|
@@ -42,25 +42,15 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 | #622 | WikiRoutes.coverage3.test.ts intermittent timeout |
 | #599 | showdown ReDoS — no upstream patch (mitigation only) |
 
-*Closed 2026-05-13: #704 (protobufjs), #708 (/search default), #701 (/save/Molly migration script), #699 + #700 (asset-search capped flag + sort), #697 (/create Private + Author-lock toggles), #665 (insert page — operator close), **#711 (ACLManager creator drift — minimal fix `7c52c4c2`; larger refactor parked as #714 epic)**, #712 + #713 (access-control follow-ups). Six-slice access-control arc finished (private → author-lock → audience → role permissions docs); see project_log 2026-05-13-07 through -14 for the slice trail.*
-
-*Closed 2026-05-14: Dependabot PR #715 merged (`3c24a9bc`) bumping `systeminformation` 5.31.1 → 5.31.6, fixing high-severity alert #114 (Linux command injection via NetworkManager profile names). **#690 (`/contact` CSRF field-name mismatch, `1d9d2b91`)** — `views/contact.ejs` and `src/parsers/handlers/WikiFormHandler.ts` both emitted `_csrfToken` while csrf middleware reads `_csrf`; one-char fix in each, two test updates. **#710 (audience picker accepts usernames, `6e8fa1b0`)** — new vanilla typeahead widget + EJS partial alongside the existing role-checkbox dropdown in /edit and /create. Operator follow-up shipped on **#662** (`9b977473`): profile-rename flow now demotes the old page to general instead of hard-deleting (issue still open pending operator close — original repro is fixed by #661 + data cleanup).*
-
 ## Operator-decision carryover
 
 Items awaiting a yes/no/close or operator-only action. Not blocking other work.
 
 - **#724** — filed 2026-05-15, still awaiting triage (now the oldest untriaged bug).
 
-*Resolved 2026-05-15: geohazardwatch lag closed — its `Dockerfile` `NGDPBASE_VERSION` bumped 3.13.2 → 3.14.5 (`be7390c`), new `geohazardwatch:1.2.11` image published, Flux auto-deployed; geohazardwatch.com confirmed serving ngdpbase 3.14.5. Root cause was the `ghcr.io/jwilleke/ngdpbase` package being private (Renovate couldn't enumerate tags); package made public so future bumps flow automatically. #662 closed by operator.*
-
-*Closed 2026-05-15 — infra: **#726** Flux image-automation git auth migrated from the no-expiry `fluxcdbot` PAT to a GitHub App, and **#725** PAT canary retired (companion). Cross-repo work in `jwilleke/mj-infra-flux`: rebuilt SOPS-age `flux-system-git-auth` secret with `githubApp*` keys (`e6c430e`), set `spec.provider: github` on the GitRepository + patched the live resource (`1e31ab2`), verified `GitRepository`/`Kustomization`/`ImageUpdateAutomation` all `READY=True`. Decommission: removed `pat-health-check.yml` (`3d66dd8c`), closed mj-infra-flux #71/#72, operator revoked the old fine-grained PAT. See project_log 2026-05-15-02.*
-
-*Closed 2026-05-15 — CSRF arc: **#709** footnote add/edit/delete (`aaa77539`) — real cause was the client `.catch()` (tokenless mutation → text/plain 403 → `r.json()` throws); `cdb274c4` had only improved an unreached path. **#727** systemic sweep — all 9 tokenless client mutations fixed (`c7aa7867` High: page delete, version restore, addon form submit, calendar delete; `3be8bf58` Med/Low: admin user/role edit, comments, export ×2), regression-net test, **and a CI grep-guard `npm run lint:csrf`** (`f5dc4b8e`) wired into `lint`/`lint:ci`/pre-commit so new tokenless state-changing `fetch(` can't reach master. The #690 → WikiFormHandler → #709 → #727 root-cause class is now structurally closed.*
-
 ## Sister-site top priorities — combined table
 
-Top items across the sister-site issue trackers. Excludes Dependency Dashboard noise and items fully tracked under ngdpbase issues (e.g., the six geohazardwatch data-import issues all roll up to ngdpbase #685).
+Top items across the sister-site issue trackers. Excludes Dependency Dashboard noise and items fully tracked under ngdpbase issues (e.g., the geohazardwatch data-import issues all roll up to ngdpbase #685).
 
 | Repo | # | Type | Title | Notes |
 |---|---|---|---|---|
@@ -91,19 +81,9 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | #673 | Packaged addon distribution model (npm install) | Low — affects how #685 ships |
 | #655 | `.env`-style env loading via ConfigMap/Secret in k8s docs | Low |
 
-## Access-control arc — follow-up issues filed 2026-05-13
-
-The six-slice access-control arc surfaced four follow-up items. As of 2026-05-15, all four are closed:
-
-| # | State | Type | Topic |
-|---|---|---|---|
-| #710 | closed | enhancement | Audience picker accepts usernames — shipped `6e8fa1b0` (2026-05-14): vanilla typeahead widget + EJS partial |
-| #711 | closed | bug | ACLManager Tier-0 creator drift — fixed `7c52c4c2`; larger refactor parked as #714 epic |
-| #712 | closed | bug | /save handler legacy `user-keywords:[private]` fallback removed |
-| #713 | closed | bug | `_comment_roles` schema doc corrected |
-
 ## How this file is maintained
 
 - Updated when meaningful additions or closes happen during work sessions.
+- **Closed/resolved items are removed, not archived here.** The durable trail lives in `docs/project_log.md` and the GitHub issue history.
 - Not auto-generated — pruning is a judgment call. Stale rows should be removed when the underlying state has shifted (e.g., issue closed elsewhere).
 - For the live state at any moment, run `/check-todos` — that command queries GitHub directly and produces a fresher snapshot than this file.

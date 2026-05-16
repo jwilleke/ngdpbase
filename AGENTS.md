@@ -36,7 +36,7 @@ Always use the appriate .github/ISSUE_TEMPLATE
 **Start Here:**
 
 - **Project Overview:** [README.md](./README.md)
-- **Current Tasks:** [docs/TODO.md](docs/TODO.md) (What we are working on NOW)
+- **Current Tasks:** [TODO.md](TODO.md) (What we are working on NOW)
 - **Work History:** [docs/project_log.md](docs/project_log.md) (Check this to avoid repeating work)
 
 **Technical Standards:**
@@ -105,7 +105,7 @@ Always use the platform's native link syntax — never construct raw `/view/` UR
 - Bug fixes (non-critical)
 - Documentation updates
 - Writing/fixing tests
-- Explicitly assigned features in `docs/TODO.md`
+- Explicitly assigned features in `TODO.md`
 
 ### 🛑 Require Human Review
 

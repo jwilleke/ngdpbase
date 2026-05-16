@@ -1,6 +1,6 @@
 # Check TODOs Command
 
-Review current `docs/TODO.md` and priorities `AGENTS.md` file, then survey live state in GitHub.
+Review current `TODO.md` and priorities `AGENTS.md` file, then survey live state in GitHub.
 
 This command helps focus on high-priority and current work by showing:
 
@@ -39,11 +39,11 @@ Out of scope (per operator clarification):
 
 ## Usage
 
-Use `/check-todos` to see what work needs to be done and prioritize. Output should match the structure of `docs/TODO.md` for consistency, but read live from GitHub rather than the file — `TODO.md` is a curated snapshot that drifts.
+Use `/check-todos` to see what work needs to be done and prioritize. Output should match the structure of `TODO.md` for consistency, but read live from GitHub rather than the file — `TODO.md` is a curated snapshot that drifts.
 
 ## Freshen TODO.md
 
-Fresshen docs/TODO.md
+Freshen the root `TODO.md` (moved from `docs/TODO.md` on 2026-05-16). Keep only **open** items — do not retain closed/resolved entries (the durable trail is `docs/project_log.md` + GitHub issue history). Include the sister-site sections.
 
 ## Output sections
 
@@ -54,5 +54,5 @@ Fresshen docs/TODO.md
 - **Sister-site top priorities (combined table)** — geohazardwatch only today; expand if more separate satellites emerge
 - **Operator-action carryover** — items awaiting yes/no/close decisions
 - **Notable feature backlog** — recently filed, biggest scope, or close to ready
-- **docs/TODO.md staleness check** — flag if the file's `lastModified` is older than ~2 weeks
+- **TODO.md staleness check** — flag if the file's `lastModified` is older than ~2 weeks
 - **Recommended next moves** — 2-4 concrete next actions
