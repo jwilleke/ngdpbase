@@ -4,6 +4,14 @@
  * Provides centralized logging for the entire ngdpbase application with
  * file rotation, console output, and configurable log levels.
  *
+ * Issue #169: transport + format construction is delegated to a
+ * {@link BaseLoggingProvider} (default {@link FileLoggingProvider}) so the
+ * storage backend is swappable. The exported `logger` API is unchanged —
+ * call sites need no edits. The provider is deliberately engine-free: the
+ * logger bootstraps before WikiEngine/ConfigurationManager exist and is
+ * imported by nearly every module, so provider *selection* happens later in
+ * `WikiEngine.initialize()` via {@link setLoggingProvider}.
+ *
  * @module logger
  *
  * @example
@@ -12,8 +20,9 @@
  * logger.error('Error occurred', { error });
  */
 
-import path from 'path';
-import { createLogger, format, transports, Logger } from 'winston';
+import { createLogger, Logger } from 'winston';
+import BaseLoggingProvider from '../providers/BaseLoggingProvider.js';
+import FileLoggingProvider from '../providers/FileLoggingProvider.js';
 
 /**
  * Logger configuration options
@@ -39,7 +48,45 @@ const defaultConfig = {
 } as const;
 
 /**
- * Creates a winston logger instance with the specified configuration
+ * The active logging provider. Defaults to FileLoggingProvider (the pre-#169
+ * behaviour). Swapped via {@link setLoggingProvider} once config is resolved.
+ */
+let activeProvider: BaseLoggingProvider = new FileLoggingProvider();
+
+/**
+ * Resolve a provider name (e.g. `'fileloggingprovider'`) to an instance.
+ * Unknown names fall back to FileLoggingProvider — logging must never fail
+ * to initialize because of a misconfigured provider key.
+ *
+ * @param name - Lowercase provider name from `ngdpbase.logging.provider`
+ * @returns A logging provider instance
+ */
+export function resolveLoggingProvider(name: string | undefined): BaseLoggingProvider {
+  switch ((name ?? '').toLowerCase()) {
+  case 'fileloggingprovider':
+  case '':
+    return new FileLoggingProvider();
+  default:
+    // No logger guarantees available here yet; fall back silently to the
+    // default rather than throwing during bootstrap.
+    return new FileLoggingProvider();
+  }
+}
+
+/**
+ * Set the active logging provider. Called by WikiEngine after
+ * ConfigurationManager resolves `ngdpbase.logging.provider`. Does not rebuild
+ * the running logger on its own — {@link reconfigureLogger} does that.
+ *
+ * @param provider - The provider instance to activate
+ */
+export function setLoggingProvider(provider: BaseLoggingProvider): void {
+  activeProvider = provider;
+}
+
+/**
+ * Creates a winston logger instance with the specified configuration.
+ * Transports and format are produced by the active logging provider.
  *
  * @param config - Logger configuration
  * @returns Winston logger instance
@@ -47,51 +94,11 @@ const defaultConfig = {
 export function createLoggerWithConfig(config: LoggerConfig = {}): Logger {
   const logConfig = { ...defaultConfig, ...config };
 
-  // Convert maxSize string to bytes if needed
-  let maxSize: number = defaultConfig.maxSize;
-
-  if (typeof logConfig.maxSize === 'number') {
-    maxSize = logConfig.maxSize;
-  } else if (typeof logConfig.maxSize === 'string') {
-    const sizeMatch = logConfig.maxSize.match(/^(\d+(?:\.\d+)?)\s*(MB|KB|B)?$/i);
-    if (sizeMatch) {
-      const [, size, unit] = sizeMatch;
-      const multiplier = unit?.toUpperCase() === 'MB' ? 1024 * 1024 :
-        unit?.toUpperCase() === 'KB' ? 1024 : 1;
-      maxSize = parseFloat(size) * multiplier;
-    }
-  }
-
-  const logTransports: (transports.ConsoleTransportInstance | transports.FileTransportInstance)[] = [
-    new transports.Console()
-  ];
-
-  // Only add file transport when dir is explicitly provided
-  // (avoids creating ./data/logs before ConfigurationManager resolves paths)
-  if (logConfig.dir) {
-    logTransports.push(
-      new transports.File({
-        filename: path.join(logConfig.dir, 'app.log'),
-        maxsize: maxSize,
-        maxFiles: logConfig.maxFiles
-      })
-    );
-  }
-
-  const logger = createLogger({
+  return createLogger({
     level: logConfig.level,
-    format: format.combine(
-      format.timestamp(),
-      format.printf((info) => {
-        const ts = typeof info.timestamp === 'string' ? info.timestamp : JSON.stringify(info.timestamp);
-        const msg = typeof info.message === 'string' ? info.message : JSON.stringify(info.message);
-        return `${ts} [${info.level}]: ${msg}`;
-      })
-    ),
-    transports: logTransports
+    format: activeProvider.createFormat(),
+    transports: activeProvider.createTransports(logConfig)
   });
-
-  return logger;
 }
 
 /**

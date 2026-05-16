@@ -1,5 +1,5 @@
 import Engine from './core/Engine.js';
-import logger, { reconfigureLogger } from './utils/logger.js';
+import logger, { reconfigureLogger, setLoggingProvider, resolveLoggingProvider } from './utils/logger.js';
 import type { WikiConfig } from './types/Config.js';
 import type WikiContext from './context/WikiContext.js';
 
@@ -160,7 +160,11 @@ class WikiEngine extends Engine {
     await configManager.initialize(config);
 
     // Reconfigure logger with settings from ConfigurationManager
-    // Logger starts with defaults, then reconfigures here after config is available
+    // Logger starts with defaults, then reconfigures here after config is available.
+    // #169: select the logging provider before rebuilding transports.
+    setLoggingProvider(resolveLoggingProvider(
+      configManager.getProperty('ngdpbase.logging.provider', 'fileloggingprovider') as string
+    ));
     reconfigureLogger({
       level: configManager.getProperty('ngdpbase.logging.level', 'info') as string,
       dir: configManager.getResolvedDataPath('ngdpbase.logging.dir', './data/logs'),

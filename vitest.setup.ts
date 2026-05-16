@@ -24,7 +24,10 @@ vi.mock('./src/utils/logger', () => {
   return {
     default: mockLogger,
     reconfigureLogger: vi.fn(() => mockLogger),
-    createLoggerWithConfig: vi.fn(() => mockLogger)
+    createLoggerWithConfig: vi.fn(() => mockLogger),
+    // #169: LoggingProvider selection — no-op stubs for the global mock
+    setLoggingProvider: vi.fn(),
+    resolveLoggingProvider: vi.fn(() => ({}))
   };
 });
 

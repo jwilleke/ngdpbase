@@ -32,7 +32,7 @@ Workflow:
 | ---------- | --- | --- | ------------- |
 | [Managers](#managers) | 37 | 24 | Core system managers |
 | [Plugins](#plugins) | 32 | 23 | JSPWiki-style content plugins |
-| [Providers](#providers) | 28 | 8 | Storage and service providers |
+| [Providers](#providers) | 30 | 10 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
 | [Testing](#testing) | n/a | 3 | Testing guides and strategies |
 | [API](#api-reference) | n/a | Auto-gen | TypeDoc generated API reference |
@@ -150,6 +150,7 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | BaseAuditProvider | ⚠️ [src/providers/BaseAuditProvider.ts](../src/providers/BaseAuditProvider.ts) | _no doc page yet_ |
 | BaseAuthProvider | ⚠️ [src/providers/BaseAuthProvider.ts](../src/providers/BaseAuthProvider.ts) | _no doc page yet_ |
 | BaseCacheProvider | ⚠️ [src/providers/BaseCacheProvider.ts](../src/providers/BaseCacheProvider.ts) | _no doc page yet_ |
+| BaseLoggingProvider | ✅ [doc](providers/BaseLoggingProvider.md) | Abstract base class for logging providers — engine-free winston transport/format factory (#169) |
 | BaseMediaProvider | ✅ [doc](providers/BaseMediaProvider.md) | Abstract base class for asset/media providers — defines the AssetService-facing interface |
 | BasePageProvider | ⚠️ [src/providers/BasePageProvider.ts](../src/providers/BasePageProvider.ts) | _no doc page yet_ |
 | BaseSearchProvider | ⚠️ [src/providers/BaseSearchProvider.ts](../src/providers/BaseSearchProvider.ts) | _no doc page yet_ |
@@ -159,6 +160,7 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | DatabaseAuditProvider | ⚠️ [src/providers/DatabaseAuditProvider.ts](../src/providers/DatabaseAuditProvider.ts) | _no doc page yet_ |
 | ElasticsearchSearchProvider | 📘 [doc](providers/ElasticsearchSearchProvider.md) + [guide](providers/ElasticsearchSearchProvider-Complete-Guide.md) | Elasticsearch backend for SearchManager — full-text and (optionally) vector search over pages |
 | FileAuditProvider | ⚠️ [src/providers/FileAuditProvider.ts](../src/providers/FileAuditProvider.ts) | _no doc page yet_ |
+| FileLoggingProvider | ✅ [doc](providers/FileLoggingProvider.md) | Default logging provider — winston console + rotating-file transports (#169) |
 | FileOrganizationProvider | ⚠️ [src/providers/FileOrganizationProvider.ts](../src/providers/FileOrganizationProvider.ts) | _no doc page yet_ |
 | FilePersonProvider | ⚠️ [src/providers/FilePersonProvider.ts](../src/providers/FilePersonProvider.ts) | _no doc page yet_ |
 | FileRoleProvider | ⚠️ [src/providers/FileRoleProvider.ts](../src/providers/FileRoleProvider.ts) | _no doc page yet_ |
@@ -312,7 +314,7 @@ Honest accounting of doc coverage. Targets are pragmatic — abstract base class
 
 - AttachmentsPlugin, CommentsPlugin, FootnotesPlugin, MediaGallery, MediaItem, MediaPlugin, MediaSearch, MyContributionsPlugin, PageSlideshowPlugin, TablePlugin, TabPlugin, TabsPlugin
 
-**Providers:** 7/28 with quick-reference docs (25%); 5 with Complete Guides. 21 source-only:
+**Providers:** 9/30 with quick-reference docs (30%); 5 with Complete Guides. 21 source-only:
 
 - BaseAttachmentProvider, BaseAuditProvider, BaseAuthProvider, BaseCacheProvider, BasePageProvider, BaseSearchProvider, BaseUserProvider, CloudAuditProvider, DatabaseAuditProvider, FileAuditProvider, FileOrganizationProvider, FilePersonProvider, FileRoleProvider, GoogleOIDCProvider, LunrSearchProvider, MagicLinkAuthProvider, NodeCacheProvider, NullAuditProvider, NullCacheProvider, PasswordAuthProvider, RedisCacheProvider
 <!-- AUTO:doc-status END -->
