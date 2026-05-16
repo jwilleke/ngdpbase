@@ -2,6 +2,22 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-16-12
+
+- Agent: Claude Opus 4.7
+- Subject: #705 — fixed the recurring `/` cold-start false-positive in the perf baseline script (warm-up + median).
+- Current Issue: #705 (recommended ready-to-close); `/search` cold residual flagged as a separate follow-up.
+- Tests: bash `-n` syntax OK; validated post-`./server.sh restart` (cold scenario): `/` 27ms (was the ~140-160ms artifact, == warm 26ms), `/view`/`/login` stable; back-to-back runs `/` Δ<3ms.
+- Work Done:
+  - `scripts/baseline-profile.sh` `measure_route_ms_inline`: added 5 discarded warm-up hits/route; replaced mean-of-10 with median-of-10 (robust to any single outlier). Single-function change as the issue scoped.
+  - Empirically determined warm-up=3 clears `/` (44ms) and =5 makes it warm-equivalent (27ms); confirmed `/search?q=test` cold (~150ms) is unaffected by warm-up count → lazy search-index/JIT init, a deeper concern outside #705. Documented on the issue + recommended a separate follow-up rather than scope-creep.
+  - Cleaned throwaway validation baselines (r2/r3/r4) — untracked test byproducts, not real release baselines.
+  - Dev-tooling change only (the benchmark script) — no runtime/API/config impact; no semver bump.
+- Commits: `41e3cf7e`.
+- Files Modified:
+  - `scripts/baseline-profile.sh`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-16-11
 
 - Agent: Claude Opus 4.7
