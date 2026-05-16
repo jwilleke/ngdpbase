@@ -2,6 +2,22 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-16-11
+
+- Agent: Claude Opus 4.7
+- Subject: `/semver minor` release `v3.15.1 → v3.16.0` shipping the #731 list-view feature arc (+ #622 self-heal), propagated to all satellites; #731 closed; #732 filed.
+- Current Issue: #731 (closed — shipped in v3.16.0); #732 (filed, follow-up); #622 (closed earlier).
+- Tests: jimstest gate — build OK, unit 5537/5537. E2E: one transient `net::ERR_CONNECTION_REFUSED` on `location-plugin.spec.ts` under full-suite load (server momentarily unreachable; the hardened `deletePages` correctly reported 10/10 cleanup-failed — #724 working as designed); isolated re-run 11/11. Satellites: fairways-base / ngdpbase-veg / ngdp-temp-builds each `v3.16.0`, 5537/5537 unit + 72/72 E2E, no flakes.
+- Perf baseline: `docs/performance/baseline-v3.16.0-2026-05-16.md`. Only `/` flagged (28→144 ms) — the documented cold-sample artifact (v3.15.0 flagged it; v3.15.1 vindicated, recovered to 28 ms). `/search` (the route #731 actually changed) improved 7%; `/view`/`/login`/memory flat-or-better. Pre-accepted noise, not a regression; #731 cannot execute on the `/` render.
+- Work Done:
+  - `/semver minor`: gate (unit green; E2E flake confirmed via isolation), bump `3.16.0` via `version.ts`, baseline+diff, release commit + annotated tag `v3.16.0`, pushed, GitHub Release auto-published.
+  - `/othersites`: all three satellites pulled to `v3.16.0`, rebuilt, restarted, unit + E2E green. #731 is pure code (route/provider/EJS) — no required-pages sync needed.
+  - Closed #731 with the release reference; the ES ACL test-parity residual was filed as #732 (correctly framed as test-coverage, not a security defect — ES verified safe).
+- Commits: `726b11fa` (release v3.16.0).
+- Files Modified:
+  - `package.json`, `config/app-default-config.json`, `CHANGELOG.md`, `docs/performance/baseline-v3.16.0-2026-05-16.md`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-16-10
 
 - Agent: Claude Opus 4.7
