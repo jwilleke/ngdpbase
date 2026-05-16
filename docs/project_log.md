@@ -2,6 +2,26 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-16-01
+
+- Agent: Claude Opus 4.7
+- Subject: Relocated `docs/TODO.md` → repo-root `TODO.md`, stripped closed-item history (open-only policy; sister-site sections retained), fixed path references, then `/othersites` propagation of the docs-only commit range to the three satellite instances.
+- Current Issue: none (housekeeping); #622 datapoint added.
+- Tests: satellites — ngdpbase-veg 5522/5522, ngdp-temp-builds 5522/5522, fairways-base 5521/5522 then 5522/5522 on isolated retry (one full-suite-timeout flake). E2E skipped — commit range is docs-only (no `views/`/`public/`/`src/`/`addons/`/`tests/e2e/` paths).
+- Work Done:
+  - `git mv docs/TODO.md TODO.md`; rewrote `TODO.md` to retain only open work (5 bugs, operator carryover, feature backlog) + sister-site sections; removed all "Closed/Resolved" prose and the closed access-control follow-up table; added an explicit open-only maintenance policy
+  - Updated path references: `.claude/commands/check-todos.md` (all `docs/TODO.md` → `TODO.md`, Freshen section rewritten), `.claude/commands/session-commit.md` (Step 9), `AGENTS.md` (Current Tasks link + auto-approve features line); verified zero residual `docs/TODO.md` refs
+  - `/othersites` (satellite mode — jimstest is the commit source, already current): fairways-base / ngdpbase-veg / ngdp-temp-builds each `git pull --ff-only` → stop → build → start → unit tests, all fast-forwarded `5d8a08a9..cf51edc3`
+- Propagation results:
+  - **fairways-base** (2121) — pulled to `cf51edc3`, server up, **5521/5522** (1 flake) → **5522/5522** on isolated retry
+  - **ngdpbase-veg** (3333) — pulled to `cf51edc3`, server up, **5522/5522**
+  - **ngdp-temp-builds** (3001) — pulled to `cf51edc3`, server up, **5522/5522**
+- Flakes seen: fairways-base — `src/routes/__tests__/WikiRoutes.contact.test.ts` "GET /contact renders not-configured when mail.enabled is false" timed out at 30000ms under full-suite load; passed 45/45 in 488ms run in isolation. Same shape as #622 (full-suite-concurrency timeout that passes alone); different file than #622's `WikiRoutes.coverage3.test.ts`. #622 datapoint comment added.
+- Commits: `c8f83d34` (TODO.md freshen), `cf51edc3` (TODO.md move + ref fixes); `d34f0aba` (project_log 2026-05-15-02). Satellites fast-forwarded across `5d8a08a9..cf51edc3`.
+- Files Modified:
+  - `TODO.md` (moved from `docs/TODO.md`), `.claude/commands/check-todos.md`, `.claude/commands/session-commit.md`, `AGENTS.md`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-15-02
 
 - Agent: Claude Opus 4.7
