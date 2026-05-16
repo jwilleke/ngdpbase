@@ -32,11 +32,10 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 ## Open BUGS (ngdpbase, by issue #)
 
-5 open as of 2026-05-16.
+4 open as of 2026-05-16 (#724 closed — e2e cleanup hardened + 48-page backlog cleared).
 
 | # | Title |
 |---|---|
-| #724 | NGDPBASE-test-LocationTest-…-icon — **filed 2026-05-15, still untriaged (oldest untriaged bug)** |
 | #716 | Page Card Summary — empty page result cards; technical analysis comment posted, self-contained UI work ready to pick up |
 | #660 | Agent and ./docs documentation — index refresh + frontmatter policy + lint + auto-gen index all shipped; 49 lint warnings remain for source-only modules (stub-creation work) |
 | #622 | WikiRoutes.coverage3.test.ts intermittent timeout |
@@ -46,7 +45,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 Items awaiting a yes/no/close or operator-only action. Not blocking other work.
 
-- **#724** — filed 2026-05-15, still awaiting triage (now the oldest untriaged bug).
+- None open. (#724 triaged, fixed `c2d25d77`, backlog cleared, and closed 2026-05-16.)
 
 ## Sister-site top priorities — combined table
 
@@ -68,8 +67,11 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | #722 | Video poster-frame thumbnails (ffmpeg) | Low — substantial; adds ffmpeg dep. Visible gap in every media-tile UI |
 | #721 | Asset-picker advanced filters: capture-date for video + collapse into disclosure | Low — backend gap (video `dateTimeOriginal` not indexed) + UI tidy |
 | #720 | Asset-picker format dropdown: separate Video/Audio from Other | Low — discovery friction; mirrors existing Images filter |
-| #707 | Typed footnote syntax + knowledge-graph reference index | Low — speculative; companion to #706 |
-| #706 | `knowledge-role` frontmatter field — opt-in page role | Low — speculative; design captured in `docs/planning/ideas/llm-wiki-pattern.md` |
+| #730 | Wiki-health audit: deterministic data-quality lint (orphans / broken links / stale / missing-entity) | **Medium — value-certain.** Standalone wiki engineering, independent of #706/#707; lifted from llm-wiki-pattern step 5 (2026-05-16 brainstorm). The "keep the real" piece |
+| #729 | Improvements to `[{Location}]` | Low — filed 2026-05-16; Location plugin follow-ups |
+| #728 | ngdp Compatible Markdown | Low — filed 2026-05-16; markdown-compat scoping |
+| #707 | Typed footnote + knowledge-graph reference index | Low — speculative; **depends on #706**; defer behind a named citation-heavy user (2026-05-16 brainstorm) |
+| #706 | `knowledge-role` frontmatter field — opt-in page role | Low — sharpened to field+enum+badge; **foundational, blocks #707**; design in `docs/planning/ideas/llm-wiki-pattern.md` |
 | #705 | Perf baseline: warm cache or median-of-N | Low — quality-of-life for benchmark accuracy |
 | #691 | Surface page-specific filter UI in asset-picker (source=Pages) | Low |
 | #689 | Admin show/edit frontmatter | Low |
