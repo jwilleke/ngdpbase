@@ -2,6 +2,21 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-16-13
+
+- Agent: Claude Opus 4.7
+- Subject: #733 — moved the #731 list/grid view-mode toggle from the pagination footer to the top of the results.
+- Current Issue: #733 (closed).
+- Tests: /search 200; toggle renders before `#ap-results` and out of the footer (DOM-index check); rendered inline JS `node --check` OK; full E2E 72/72 incl. `search.spec.ts`, no flakes.
+- Work Done:
+  - Verified #733 was *not* an empty issue (initial title-only read mischaracterized it; the body was the #731 toggle markup + "Move to top / After??"). Corrected course before closing.
+  - `views/_asset-picker.ejs`: relocated the `ap-view-list`/`ap-view-grid` btn-group from the footer to a right-aligned row directly above `#ap-results`. IDs unchanged → Slice-2 JS wiring + localStorage persistence untouched (pure markup move).
+  - Closed #733 with the resolution.
+- Commits: `a5f23924`.
+- Files Modified:
+  - `views/_asset-picker.ejs`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-16-12
 
 - Agent: Claude Opus 4.7
