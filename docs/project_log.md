@@ -2,6 +2,20 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-16-14
+
+- Agent: Claude Opus 4.7
+- Subject: Removed dead `jest.setup.ts` (jest→vitest migration leftover) + tidied two stale refs.
+- Current Issue: none (ad-hoc cleanup from an operator question — "is jest.setup.ts used?").
+- Tests: `tsc --noEmit` OK, `lint:code` OK, full vitest suite 5537/5537 — unchanged with the file gone (conclusive proof it was unused).
+- Work Done:
+  - Confirmed via grep/config that nothing loads/imports `jest.setup.ts`: runner is vitest (`setupFiles: ./vitest.setup.ts`), no jest config/dependency, not in tsconfig.
+  - `git rm jest.setup.ts`; removed it from the `eslint.config.mjs` test-file glob; removed the stale `jest.setup.js` + `.jest/` lines from `docker/.dockerignore` (left unrelated playwright lines).
+- Commits: `1ff06edf`.
+- Files Modified:
+  - `jest.setup.ts` (deleted), `eslint.config.mjs`, `docker/.dockerignore`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-16-13
 
 - Agent: Claude Opus 4.7
