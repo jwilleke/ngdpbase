@@ -2,6 +2,21 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-16-10
+
+- Agent: Claude Opus 4.7
+- Subject: #731 Slices 2 & 3 — frontend list-view default + card/grid toggle, and routing browse-all through the ACL-safe index path. #731 fully implemented (Slice 1 was 2026-05-16-09).
+- Current Issue: #731 (all 3 slices shipped; recommended ready-to-close).
+- Tests: full suite 5537/5537; full E2E 72/72 incl. `search.spec.ts`; rendered inline JS `node --check` OK. Live on jimstest: filtered + browse-all page rows carry excerpt + systemCategory; anon ≤ admin.
+- Work Done:
+  - **Slice 2** (`3441ab80`, `views/_asset-picker.ejs`): list view default for ALL result types; persisted `localStorage` card/grid toggle; in-place re-render (no refetch, modal-safe); `_apRow` renders thumbnail/icon + title + type badge + category/keyword chips (display-only v1) + lastModified + excerpt; grid `_apCard` untouched (zero regression).
+  - **Slice 3** (`ecb95a00`, `WikiRoutes.ts`): `types=page` always uses the SearchManager/index path; removed the `getAllPages()` names-only cheap branch (caused #716 empty rows on browse-all + leaked private page names) and the dead `useSearchPath`/`hasFilter` vars. Updated the 6 assetSearch tests guarding the old cheap-path contract to the index-path contract.
+  - Posted the #731 wrap-up comment incl. follow-ups; flagged a **security-parity follow-up**: the Slice-1 no-query ACL filter was added to `LunrSearchProvider`; the Elasticsearch addon provider's no-query branch parity is unverified.
+- Commits: `3441ab80` (Slice 2), `ecb95a00` (Slice 3).
+- Files Modified:
+  - `views/_asset-picker.ejs`, `src/routes/WikiRoutes.ts`, `src/routes/__tests__/WikiRoutes.assetSearch.test.ts`
+  - `docs/project_log.md` (this entry)
+
 ## 2026-05-16-09
 
 - Agent: Claude Opus 4.7
