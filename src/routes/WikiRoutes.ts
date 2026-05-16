@@ -7970,7 +7970,7 @@ ${panes}
         // Helper to project a page-name or SearchResult into the AssetRecord
         // shape the asset-picker consumes. Canonical /view/ URL per the no-wiki
         // convention; the previous /wiki/<page> form was legacy.
-        const toAssetRecord = (pageName: string, title?: string, excerpt?: string, kw?: string[], lastModified?: string) => ({
+        const toAssetRecord = (pageName: string, title?: string, excerpt?: string, kw?: string[], lastModified?: string, systemCategory?: string) => ({
           id: pageName,
           providerId: 'page',
           filename: pageName,
@@ -7980,16 +7980,24 @@ ${panes}
           encodingFormat: 'text/wiki',
           url: '/view/' + encodeURIComponent(pageName),
           mentions: [],
-          metadata: lastModified ? { lastModified } : {},
+          metadata: {
+            ...(lastModified ? { lastModified } : {}),
+            ...(systemCategory ? { systemCategory } : {})
+          },
           insertSnippet: '[' + pageName + ']'
         });
 
         let all: ReturnType<typeof toAssetRecord>[];
         let pagesCapped = false;
         if (useSearchPath) {
+          // #716/#731: the provider emits `snippet` (excerpt) and nests
+          // userKeywords/systemCategory/lastModified under `metadata` — the
+          // prior `excerpt`/`userKeywords` top-level read silently dropped
+          // them, leaving page rows title-only. Type matches the real shape.
           const searchManager = this.engine.getManager('SearchManager') as {
             advancedSearchWithContext?: (ctx: unknown, opts: Record<string, unknown>) => Promise<Array<{
-              name: string; title?: string; excerpt?: string; userKeywords?: string[]; metadata?: Record<string, unknown>;
+              name: string; title?: string; snippet?: string;
+              metadata?: { systemCategory?: string; userKeywords?: string; lastModified?: string };
             }>>;
           };
           if (!searchManager?.advancedSearchWithContext) {
@@ -8011,8 +8019,12 @@ ${panes}
           // saturated we don't know the true match count, so conservatively flag capped.
           pagesCapped = hits.length >= fetchLimit;
           all = hits.map(h => {
-            const lm = typeof h.metadata?.lastModified === 'string' ? h.metadata.lastModified : undefined;
-            return toAssetRecord(h.name, h.title, h.excerpt, h.userKeywords, lm);
+            const md = h.metadata ?? {};
+            const lm = typeof md.lastModified === 'string' ? md.lastModified : undefined;
+            const kw = typeof md.userKeywords === 'string'
+              ? md.userKeywords.split(',').map(s => s.trim()).filter(Boolean)
+              : [];
+            return toAssetRecord(h.name, h.title, h.snippet, kw, lm, md.systemCategory);
           });
         } else {
           // Empty query, no filters, sort=caption — return all pages (cheap path).

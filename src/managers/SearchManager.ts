@@ -419,7 +419,11 @@ class SearchManager extends BaseManager {
     logger.info(`[SearchManager] Advanced search user=${username} details=${JSON.stringify(searchDetails)}`);
 
     try {
-      const results = await this.provider.advancedSearch(options);
+      // #731/#716: thread wikiContext so the provider can ACL-filter the
+      // no-text path (browse-all / category-only / keyword-only). Mirrors
+      // searchWithContext above; without it those page searches return
+      // private pages the caller cannot access.
+      const results = await this.provider.advancedSearch({ ...options, wikiContext });
       logger.info(`[SearchManager] Advanced search completed user=${username} results=${results.length}`);
       return results;
     } catch (err) {

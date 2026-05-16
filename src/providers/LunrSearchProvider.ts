@@ -440,6 +440,22 @@ class LunrSearchProvider extends BaseSearchProvider {
   }
 
   /**
+   * Private-page visibility check (#731/#716). Mirrors the inline filter in
+   * search() (the text path). Used by the no-text advancedSearch branch,
+   * which would otherwise return private pages to any caller. A page is
+   * visible if it is not private, or the caller is admin / its creator /
+   * in its frontmatter audience.
+   */
+  private isDocVisible(doc: LunrDocument, wikiContext?: SearchOptions['wikiContext']): boolean {
+    if (!doc.isPrivate) return true;
+    if (wikiContext?.hasRole?.('admin')) return true;
+    const username = wikiContext?.userContext?.username;
+    if (username !== undefined && username === doc.creator) return true;
+    const principals = wikiContext?.getPrincipals?.() ?? [];
+    return Array.isArray(doc.audience) && principals.some(p => doc.audience!.includes(p));
+  }
+
+  /**
    * Advanced search with multiple criteria
    * @param {SearchCriteria} options - Search criteria
    * @returns {Promise<SearchResult[]>} Search results
@@ -488,24 +504,36 @@ class LunrSearchProvider extends BaseSearchProvider {
         }
       }
 
-      // Start with text search
-      results = await this.search(searchQuery, { maxResults: maxResults * 2 });
+      // Start with text search. #731/#716: pass wikiContext so search()'s
+      // private-page filter uses the real caller (previously dropped here,
+      // which both over-hid private pages from authorized users and, on the
+      // no-text branch below, leaked them).
+      results = await this.search(searchQuery, {
+        maxResults: maxResults * 2,
+        wikiContext: options.wikiContext as SearchOptions['wikiContext']
+      });
     } else {
-      // No text query, get all documents
-      results = Object.keys(this.documents).map(name => ({
-        name,
-        title: this.documents[name].title || name,
-        score: 1.0,
-        snippet: this.documents[name].content.substring(0, this.config?.snippetLength ?? 200),
-        metadata: {
-          systemCategory: this.documents[name].systemCategory,
-          userKeywords: this.documents[name].userKeywords,
-          tags: this.documents[name].tags,
-          lastModified: this.documents[name].lastModified,
-          author: this.documents[name].author,
-          editor: this.documents[name].editor
-        }
-      }));
+      // No text query, get all documents — ACL-filtered (#731/#716): the
+      // raw documents map has no private filter; apply the same visibility
+      // rule search() uses so browse-all / category-only / keyword-only
+      // page searches never expose private pages.
+      const wc = options.wikiContext as SearchOptions['wikiContext'];
+      results = Object.keys(this.documents)
+        .filter(name => this.isDocVisible(this.documents[name], wc))
+        .map(name => ({
+          name,
+          title: this.documents[name].title || name,
+          score: 1.0,
+          snippet: this.documents[name].content.substring(0, this.config?.snippetLength ?? 200),
+          metadata: {
+            systemCategory: this.documents[name].systemCategory,
+            userKeywords: this.documents[name].userKeywords,
+            tags: this.documents[name].tags,
+            lastModified: this.documents[name].lastModified,
+            author: this.documents[name].author,
+            editor: this.documents[name].editor
+          }
+        }));
     }
 
     // Filter by categories if specified (case-insensitive)

@@ -347,3 +347,59 @@ describe('LunrSearchProvider.buildDocumentFromPageData — private signal source
     expect(doc.isPrivate).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// #716/#731: the no-text advancedSearch branch (browse-all / category-only /
+// keyword-only) builds from the raw documents map. Before Slice 1 it applied
+// NO private filter and leaked private pages to any caller. These guard the
+// isDocVisible() filter now applied there.
+// ---------------------------------------------------------------------------
+
+describe('LunrSearchProvider.advancedSearch — no-query branch — private filtering (#716/#731)', () => {
+  let p;
+  beforeEach(() => {
+    p = new LunrSearchProvider(makeEngine());
+    p['documents'] = {
+      'AlicePriv': makeDoc('AlicePriv', { isPrivate: true, creator: 'alice', systemCategory: 'docs', audience: ['team-x'] }),
+      'BobPriv':   makeDoc('BobPriv',   { isPrivate: true, creator: 'bob',   systemCategory: 'docs' }),
+      'Public':    makeDoc('Public',    { systemCategory: 'docs' })
+    };
+    p['config'] = { indexDir: '/tmp', stemming: false, boost: {}, maxResults: 100, snippetLength: 200 };
+  });
+
+  test('no wikiContext (anon): excludes every private page', async () => {
+    const names = (await p.advancedSearch({})).map(r => r.name);
+    expect(names).toEqual(['Public']);
+  });
+
+  test('category-only filter (no text query) still ACL-filters', async () => {
+    // The broader leak: a category filter with no `query` hits the same branch.
+    const names = (await p.advancedSearch({ categories: ['docs'] })).map(r => r.name);
+    expect(names).not.toContain('AlicePriv');
+    expect(names).not.toContain('BobPriv');
+    expect(names).toContain('Public');
+  });
+
+  test('non-creator user: private excluded', async () => {
+    const names = (await p.advancedSearch({ wikiContext: makeWikiContext('carol') })).map(r => r.name);
+    expect(names.sort()).toEqual(['Public']);
+  });
+
+  test('creator sees own private page only', async () => {
+    const names = (await p.advancedSearch({ wikiContext: makeWikiContext('alice') })).map(r => r.name).sort();
+    expect(names).toEqual(['AlicePriv', 'Public']);
+  });
+
+  test('admin sees all', async () => {
+    const names = (await p.advancedSearch({ wikiContext: makeWikiContext('root', ['admin']) })).map(r => r.name).sort();
+    expect(names).toEqual(['AlicePriv', 'BobPriv', 'Public']);
+  });
+
+  test('audience principal grants visibility of a private page', async () => {
+    // carol is not the creator but is in AlicePriv's audience via principals
+    const wc = makeWikiContext('carol', ['user', 'team-x']);
+    const names = (await p.advancedSearch({ wikiContext: wc })).map(r => r.name).sort();
+    expect(names).toContain('AlicePriv');
+    expect(names).not.toContain('BobPriv');
+  });
+});

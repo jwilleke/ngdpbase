@@ -243,7 +243,9 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       return { getAllPages: vi.fn().mockResolvedValue(allPages) };
     }
 
-    function makeSearchManager(hits: Array<{ name: string; title?: string; excerpt?: string; userKeywords?: string[] }> = []) {
+    // #716/#731: real provider shape — `snippet` (excerpt) + nested
+    // metadata.{systemCategory,userKeywords(comma string),lastModified}.
+    function makeSearchManager(hits: Array<{ name: string; title?: string; snippet?: string; metadata?: { systemCategory?: string; userKeywords?: string; lastModified?: string } }> = []) {
       return { advancedSearchWithContext: vi.fn().mockResolvedValue(hits) };
     }
 
@@ -308,7 +310,7 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
     });
 
     it('routes through SearchManager.advancedSearchWithContext when query is set', async () => {
-      const search = makeSearchManager([{ name: 'Beach Day', title: 'Beach Day', excerpt: 'A sunny afternoon' }]);
+      const search = makeSearchManager([{ name: 'Beach Day', title: 'Beach Day' }]);
       const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
       const req = makeReq({ query: { types: 'page', q: 'beach' } });
       const res = makeRes();
@@ -415,9 +417,14 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       expect(res.status).toHaveBeenCalledWith(503);
     });
 
-    it('maps SearchResult.title and excerpt into AssetRecord.name and description', async () => {
+    it('maps the provider shape (snippet + metadata.{userKeywords,systemCategory}) into the AssetRecord (#716/#731)', async () => {
       const search = makeSearchManager([
-        { name: 'Beach', title: 'A Day at the Beach', excerpt: 'sand and waves', userKeywords: ['ocean', 'summer'] }
+        {
+          name: 'Beach',
+          title: 'A Day at the Beach',
+          snippet: 'sand and waves',
+          metadata: { systemCategory: 'general', userKeywords: 'ocean,summer', lastModified: '2026-01-01' }
+        }
       ]);
       const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
       const req = makeReq({ query: { types: 'page', q: 'beach' } });
@@ -429,9 +436,10 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       expect(payload.results[0]).toEqual(expect.objectContaining({
         id: 'Beach',
         name: 'A Day at the Beach',
-        description: 'sand and waves',
-        keywords: ['ocean', 'summer'],
-        url: '/view/Beach'
+        description: 'sand and waves',                 // from provider `snippet`
+        keywords: ['ocean', 'summer'],                 // split from metadata.userKeywords comma string
+        url: '/view/Beach',
+        metadata: expect.objectContaining({ systemCategory: 'general', lastModified: '2026-01-01' })
       }));
     });
 
