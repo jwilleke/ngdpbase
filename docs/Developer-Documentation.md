@@ -31,7 +31,7 @@ Workflow:
 | Category | Count (src/) | Documented | Description |
 | ---------- | --- | --- | ------------- |
 | [Managers](#managers) | 37 | 24 | Core system managers |
-| [Plugins](#plugins) | 31 | 22 | JSPWiki-style content plugins |
+| [Plugins](#plugins) | 32 | 23 | JSPWiki-style content plugins |
 | [Providers](#providers) | 28 | 8 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
 | [Testing](#testing) | n/a | 3 | Testing guides and strategies |
@@ -131,6 +131,7 @@ JSPWiki-style content plugins in `src/plugins/`. Each plugin renders `[{PluginNa
 | UptimePlugin | ✅ [doc](plugins/UptimePlugin.md) | Shows the server uptime in human-readable format |
 | UserLookupPlugin | ✅ [doc](plugins/UserLookupPlugin.md) | Searches users via the asset-search API and renders results as a sortable table (PII gated server-side) |
 | VariablesPlugin | ✅ [doc](plugins/VariablesPlugin.md) | Displays the system + contextual variables available in the current render (admin/debugging aid) |
+| WikiHealthPlugin | ✅ [doc](plugins/WikiHealthPlugin.md) | Deterministic wiki-health audit — lists orphan pages, broken/undefined links, and stale pages |
 <!-- AUTO:plugins-table END -->
 
 Note: end-user documentation pages for plugins live in `required-pages/` with `system-category: documentation`, not in `docs/`. The CalendarPlugin docs at `docs/plugins/CalendarPlugin.md` describe an addon plugin; see addon documentation in `addons/calendar/`.
@@ -307,7 +308,7 @@ Honest accounting of doc coverage. Targets are pragmatic — abstract base class
 
 - AddonsManager, AssetManager, AuthManager, BackgroundJobManager, CatalogManager, CommentManager, EmailManager, FootnoteManager, ImportManager, OrganizationManager, PersonManager, RoleManager, ThemeManager
 
-**Plugins:** 19/31 with quick-reference docs (61%). 12 source-only:
+**Plugins:** 20/32 with quick-reference docs (63%). 12 source-only:
 
 - AttachmentsPlugin, CommentsPlugin, FootnotesPlugin, MediaGallery, MediaItem, MediaPlugin, MediaSearch, MyContributionsPlugin, PageSlideshowPlugin, TablePlugin, TabPlugin, TabsPlugin
 
