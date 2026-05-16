@@ -327,6 +327,8 @@ Violations are warnings, not hard rejections — users can override with a `--fo
 
 ### 5. Deterministic lint surface
 
+> **Lifted out — filed as #730 (2026-05-16), reframed as standalone wiki-health.** Per the 2026-05-16 brainstorm this is the value-certain piece of this doc and helps every user with no LLM involved, so it is tracked independently of the knowledge-graph work (#706/#707) and is **not** gated on them. The rest of this section is the original design context.
+
 A `[{WikiLint}]` plugin or `/admin/wiki-health` page that runs the three pure-graph audits:
 
 - **Orphan pages** — no inbound links from any other page
