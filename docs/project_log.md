@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-17-15
+
+- Agent: Claude Opus 4.7
+- Subject: #742 — `/search` "All sources" aggregates pages + users + (editor-only) attachments/media instead of 403'ing non-editors.
+- Current Issue: #742 (implemented per operator-approved A(i)+B(ii); fully resolved, recommended for operator close).
+- Tests: unit 5623/5623 (+15 new #742 suite, 5 asset-surface tests retargeted) + E2E 72 passed / 0 flaky. jimstest restarted clean on the committed code. Zero regressions.
+- Work Done:
+  - Root cause: the no-`types` path of `WikiRoutes.assetSearch` fell through the `needsEditorRole` gate (`typesParam !== 'page' && typesParam !== 'user'`), hard-403'ing readers and — for editors — returning attachments/media only. "All sources" never surfaced pages or users (a #693 partial-unification gap; #739 Pages-default was the interim workaround).
+  - Operator-approved approach **A(i)+B(ii)**: partial results, no blanket 403; reuse only the small page→record projector.
+  - New all-sources branch (`types` absent or `all`) placed *before* the editor gate. Per-source access rule: pages always (SearchManager applies per-page ACL via wikiContext — anon-safe; title-default recall per #739), users only when authenticated (PII; mirrors the `types=user` auth gate), attachments/media only with admin/editor/contributor (AssetService, same gate the single-type asset branch enforces). Merge → de-dupe by `providerId+id` → optional handler-side sort (caption|date) → paginate (offset/pageSize) → standard `{success,results,total,hasMore,capped}`.
+  - Page→record projector lifted out of the `types=page` branch into a bound private `pageToAssetRecord` class field so the page branch and all-sources branch stay in lockstep. The `types=page` / `types=user` / explicit-asset branches are otherwise untouched (B(ii) — lowest risk to the working single-type paths).
+  - Tests: 5 asset-surface tests (403-missing/insufficient, 503-no-AssetService, default-pageSize-forward, AssetPage-spread) retargeted to an explicit `types=attachment` since the no-types semantics intentionally changed; added a 15-test `all-sources branch (#742)` suite (anon→pages-no-403, `types=all` parity, reader→pages+users, editor→all three, SearchManager-degrade, de-dupe, pagination, capped, cross-source sort).
+  - Live smoke: anonymous `GET /api/assets/search?q=&pageSize=5` now returns HTTP 200 with `providerId:"page"` results (previously 403). eslint pre-commit caught two issues (unbound-method on the lifted projector, no-base-to-string on the sort key) — fixed by making the projector a bound arrow class field and typeof-guarding the sort key.
+- Commits: `822cf876` (#742), plus this log entry.
+- Files Modified:
+  - src/routes/WikiRoutes.ts, src/routes/**tests**/WikiRoutes.assetSearch.test.ts
+  - docs/project_log.md
+
 ## 2026-05-17-14
 
 - Agent: Claude Opus 4.7
