@@ -25,6 +25,7 @@ import WikiEngine from './src/WikiEngine.js';
 import type { WikiConfig } from './src/types/Config.js';
 import matter from 'gray-matter';
 import { normalizeExistingPageToNcm } from './src/converters/ncm/index.js';
+import { notifyNcmConversion } from './src/utils/ncmNotify.js';
 
 /**
  * Tool arguments interfaces
@@ -1253,6 +1254,7 @@ class NgdpbaseMCPServer {
     const ncmWarnings = ncm.warnings.map(w => `${w.kind}: ${w.detail}`);
 
     await pageManager.savePage(title, ncmDoc.content, ncmDoc.data as Record<string, unknown>);
+    notifyNcmConversion(this.wikiEngine!, 'MCP create_page', title, ncmWarnings);
 
     const savedPage = await pageManager.getPage(title);
     await searchManager.updatePageInIndex(title, {
@@ -1321,6 +1323,7 @@ class NgdpbaseMCPServer {
     const ncmWarnings = ncm.warnings.map(w => `${w.kind}: ${w.detail}`);
 
     await pageManager.savePage(pageName, ncmDoc.content, ncmDoc.data as Record<string, unknown>);
+    notifyNcmConversion(this.wikiEngine!, 'MCP update_page', pageName, ncmWarnings);
 
     const savedPage = await pageManager.getPage(pageName);
     await searchManager.updatePageInIndex(pageName, {

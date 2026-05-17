@@ -34,6 +34,7 @@ import BaseManager, { BackupData } from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import { IContentConverter, ConversionResult } from '../converters/IContentConverter.js';
 import { normalizeToNcm, ncmToConversionResult } from '../converters/ncm/index.js';
+import { notifyNcmConversion } from '../utils/ncmNotify.js';
 import JSPWikiConverter from '../converters/JSPWikiConverter.js';
 import HtmlConverter from '../converters/HtmlConverter.js';
 import MarkdownConverter from '../converters/MarkdownConverter.js';
@@ -580,6 +581,12 @@ class ImportManager extends BaseManager {
         const msg = err instanceof Error ? err.message : String(err);
         conversionResult.warnings.push(`Failed to import attachments: ${msg}`);
       }
+    }
+
+    // #728 S5d: non-preview NCM-routed imports (html/jspwiki) push a
+    // conversion-warning summary to /admin/notifications.
+    if (written && (formatId === 'html' || formatId === 'jspwiki') && conversionResult.warnings.length > 0) {
+      notifyNcmConversion(this.engine, `Import ${formatId}`, pageTitle, conversionResult.warnings);
     }
 
     return {
