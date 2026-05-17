@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-17T20:00:00.000Z'
+lastModified: '2026-05-17T22:30:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -32,12 +32,11 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 ## Open BUGS (ngdpbase, by issue #)
 
-6 open as of 2026-05-17. **Search cluster is the live theme**: #740/#735 (bugs) + #739 (enhancement) are all `/search`-quality, filed within 24h — highest-value actionable area. #660/#599 are non-actionable carry-forwards.
+5 open as of 2026-05-17. Search cluster mostly cleared: #739 (title default + full-text toggle) and #740 (relevance / snippet-regex throw) **closed** this session; the "All sources" gap was split to **#742** (enhancement). #735 still needs repro. **#741 is the top actionable bug.** #660/#599 are non-actionable carry-forwards.
 
 | # | Title |
 |---|---|
-| #741 | `[{Insert pagesection='…?section=1'}]` not rendering the page section as a heading — filed 2026-05-17; concrete repro (page MEW-Medical Summary); plugin-system/UI. Actionable |
-| #740 | `/search` for pages — poor relevance: `"Public Education"` phrase returns non-matching pages (e.g. Boise ID, only loose word hits). Filed 2026-05-17; concrete repro. Actionable; part of the search cluster (see #739/#735) |
+| #741 | `[{Insert pagesection='…?section=1'}]` not rendering the page section as a heading — filed 2026-05-17; concrete repro (page MEW-Medical Summary); plugin-system/UI. **Top actionable bug** |
 | #735 | `/search` fails on Mobile — filed 2026-05-16; **body still empty, needs repro detail** (device/OS/browser, exact failure, desktop comparison). Not yet actionable without repro |
 | #724 | `NGDPBASE-test-*` files linger after test runs (recurring) — test teardown not cleaning created pages; `help wanted`/testing. Note global rule: never delete live `data/` in teardown — fix must scope-delete only test-created subdirs |
 | #660 | Agent and ./docs documentation — tooling shipped; 49 doc-stub warnings remain for source-only modules (stub-creation backlog; cosmetic, non-blocking) |
@@ -67,7 +66,7 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | # | Topic | Priority hint |
 |---|---|---|
 | #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Low — body reconciled with `master` 2026-05-16 (audit comment pinned); search-provider ACL now explicitly out-of-scope; `stash@{0}` is a reference, no longer `git stash pop`-clean. Refactor intentionally not started |
-| #739 | `/search` for pages should search Titles by default | Medium — small, part of the live **search cluster** with bugs #740/#735; likely the cheapest lever on search relevance |
+| #742 | `/search` "All sources" should aggregate pages (+users), not just attachments+media | Medium — split from #740 (2026-05-17); a #693 partial-unification gap; #739 Pages-default is a reasonable interim workaround |
 | #738 | NCM/import conversion metrics — aggregate by structured `kind`, trend | Low — **unblocked** by #728 S3 (structured `kind` codes now exist); observability follow-up, reuses MetricsManager/OTLP |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images (security+size) | Low — #728 Phase-2 hardening split-out; config-gated, adds sharp/libvips; do when a real driver appears |
 | #736 | `config/app-default-config.json` documentation | Low — filed 2026-05-17; doc task; large config surface incl. new NCM keys |
