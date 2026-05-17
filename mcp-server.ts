@@ -23,6 +23,8 @@ import * as fs from 'fs-extra';
 // Import WikiEngine and types
 import WikiEngine from './src/WikiEngine.js';
 import type { WikiConfig } from './src/types/Config.js';
+import matter from 'gray-matter';
+import { normalizeExistingPageToNcm } from './src/converters/ncm/index.js';
 
 /**
  * Tool arguments interfaces
@@ -1242,7 +1244,15 @@ class NgdpbaseMCPServer {
     metadata.author = 'mcp-server';
     metadata.editor = 'mcp-server';
 
-    await pageManager.savePage(title, content, metadata);
+    // #728 S5c: normalize MCP-supplied content to NCM (links + ncmVersion).
+    // Image localization is deferred (MCP is non-preview; like ImportManager).
+    const ncm = normalizeExistingPageToNcm(
+      matter.stringify(content, metadata)
+    );
+    const ncmDoc = matter(ncm.content);
+    const ncmWarnings = ncm.warnings.map(w => `${w.kind}: ${w.detail}`);
+
+    await pageManager.savePage(title, ncmDoc.content, ncmDoc.data as Record<string, unknown>);
 
     const savedPage = await pageManager.getPage(title);
     await searchManager.updatePageInIndex(title, {
@@ -1265,6 +1275,8 @@ class NgdpbaseMCPServer {
             slug: savedPage.metadata.slug,
             category: savedPage.metadata['system-category'],
             keywords: savedPage.metadata['user-keywords'] || [],
+            ncmVersion: ncm.ncmVersion,
+            ncmWarnings,
             message: `Page "${title}" created successfully`
           }, null, 2)
         }
@@ -1301,7 +1313,14 @@ class NgdpbaseMCPServer {
 
     const updatedContent = content !== undefined ? content : existing.content;
 
-    await pageManager.savePage(pageName, updatedContent, updatedMetadata);
+    // #728 S5c: normalize to NCM (links + ncmVersion) before save.
+    const ncm = normalizeExistingPageToNcm(
+      matter.stringify(updatedContent, updatedMetadata)
+    );
+    const ncmDoc = matter(ncm.content);
+    const ncmWarnings = ncm.warnings.map(w => `${w.kind}: ${w.detail}`);
+
+    await pageManager.savePage(pageName, ncmDoc.content, ncmDoc.data as Record<string, unknown>);
 
     const savedPage = await pageManager.getPage(pageName);
     await searchManager.updatePageInIndex(pageName, {
@@ -1325,6 +1344,8 @@ class NgdpbaseMCPServer {
             category: savedPage.metadata['system-category'],
             keywords: savedPage.metadata['user-keywords'] || [],
             lastModified: savedPage.metadata.lastModified,
+            ncmVersion: ncm.ncmVersion,
+            ncmWarnings,
             message: `Page "${pageName}" updated successfully`
           }, null, 2)
         }
