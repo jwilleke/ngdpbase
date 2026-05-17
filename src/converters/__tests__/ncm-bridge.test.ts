@@ -7,17 +7,20 @@
 import { normalizeToNcm, ncmToConversionResult } from '../ncm/index';
 
 describe('ncmToConversionResult bridge', () => {
-  test('splits NCM frontmatter→metadata, body→content, NcmWarning[]→string[]', () => {
+  test('splits NCM frontmatter→metadata, body→content; warnings stay structured (S3 lossless)', () => {
     const ncm = normalizeToNcm('---\ntitle: T\n---\nbody [E](https://x.io)\n', 'markdown');
     const cr = ncmToConversionResult(ncm);
     expect(cr.metadata.title).toBe('T');
     expect(cr.metadata.ncmVersion).toBe(ncm.ncmVersion);
     expect(cr.content).toContain('body');
     expect(Array.isArray(cr.warnings)).toBe(true);
-    cr.warnings.forEach(w => expect(typeof w).toBe('string'));
+    cr.warnings.forEach(w => {
+      expect(typeof w.kind).toBe('string');
+      expect(typeof w.detail).toBe('string');
+    });
   });
 
-  test('html import path: NCM external link form + ncmVersion in metadata + string warnings', () => {
+  test('html import path: NCM external link form + ncmVersion in metadata + structured warnings', () => {
     const html =
       '<html><head><title>Doc</title></head><body><article>' +
       ('Plenty of article body so the content selector keeps it. '.repeat(4)) +
@@ -28,7 +31,7 @@ describe('ncmToConversionResult bridge', () => {
     expect(cr.metadata.ncmVersion).toBe(1);
     expect(cr.content).toContain('[Ext|https://example.com|target="_blank"]');
     expect(cr.content).not.toContain('---'); // frontmatter was split out into metadata
-    expect(cr.warnings.some(w => w.startsWith('link-externalized: https://example.com'))).toBe(true);
+    expect(cr.warnings.some(w => w.kind === 'link-externalized' && w.detail === 'https://example.com')).toBe(true);
   });
 
   test('jspwiki import path: importedFrom + ncmVersion surface as metadata', () => {

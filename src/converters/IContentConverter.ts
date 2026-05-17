@@ -25,6 +25,18 @@
  */
 
 /**
+ * A structured conversion warning (#728 S3). `kind` is a stable, aggregatable
+ * code (the prerequisite for the #738 conversion-metrics work); `detail` is
+ * the human-readable specifics. `kind` is `string` (not an enum) because
+ * converters and NCM each contribute their own codes — `NcmWarning` is an
+ * assignable subset.
+ */
+export interface ConversionWarning {
+  kind: string;
+  detail: string;
+}
+
+/**
  * Result of a content conversion operation
  */
 export interface ConversionResult {
@@ -34,8 +46,8 @@ export interface ConversionResult {
   /** Extracted metadata (e.g., from JSPWiki [{SET name=value}] attributes) */
   metadata: Record<string, unknown>;
 
-  /** Warnings generated during conversion (non-fatal issues) */
-  warnings: string[];
+  /** Structured warnings generated during conversion (non-fatal issues). */
+  warnings: ConversionWarning[];
 }
 
 /**

@@ -53,11 +53,14 @@ export function normalizeToNcm(
       : new JSPWikiConverter();
     const conv = converter.convert(input);
 
-    // Map upstream string warnings → structured NcmWarning. Drops/strips
-    // become `html-dropped`; everything else is a passthrough note.
+    // #728 S3: conv.warnings is now structured ConversionWarning. Map the
+    // converter's coarse kinds onto NcmWarning's enum (drop → html-dropped),
+    // preserving detail.
     for (const w of conv.warnings) {
-      const dropped = /\bremov(e|ed)\b|\bstrip|\bboilerplate\b|no .*content/i.test(w);
-      warnings.push({ kind: dropped ? 'html-dropped' : 'converter-note', detail: w });
+      warnings.push({
+        kind: w.kind === 'content-dropped' ? 'html-dropped' : 'converter-note',
+        detail: w.detail
+      });
     }
 
     // §2.4: CommonMark links → NCM JSPWiki link forms (records externalizations).

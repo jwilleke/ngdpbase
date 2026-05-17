@@ -64,7 +64,7 @@ describe('MarkdownConverter', () => {
 
     it('should warn when no frontmatter found', () => {
       const result = converter.convert('# Hello\n\nContent');
-      expect(result.warnings).toContain('No frontmatter found — title, uuid, and slug will be generated from filename');
+      expect(result.warnings.some(w => w.detail === 'No frontmatter found — title, uuid, and slug will be generated from filename')).toBe(true);
     });
   });
 
@@ -113,7 +113,7 @@ describe('MarkdownConverter', () => {
 
     it('should not warn about missing frontmatter', () => {
       const result = converter.convert(input);
-      expect(result.warnings).not.toContain('No frontmatter found — title, uuid, and slug will be generated from filename');
+      expect(result.warnings.some(w => w.detail === 'No frontmatter found — title, uuid, and slug will be generated from filename')).toBe(false);
     });
 
     it('should set importedFrom to markdown', () => {
@@ -127,7 +127,7 @@ describe('MarkdownConverter', () => {
       const input = '---\ntitle: Test\ncustom-field: value\n---\nContent';
       const result = converter.convert(input);
       expect(result.metadata['custom-field']).toBe('value');
-      expect(result.warnings.some(w => w.includes('custom-field'))).toBe(true);
+      expect(result.warnings.some(w => w.detail.includes('custom-field'))).toBe(true);
     });
   });
 

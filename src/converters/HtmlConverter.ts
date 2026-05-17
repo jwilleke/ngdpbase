@@ -9,6 +9,7 @@
  */
 
 import { IContentConverter, ConversionResult } from './IContentConverter.js';
+import { classifyWarnings } from './conversionWarning.js';
 import TurndownService from 'turndown';
 
 import { parseHTML } from 'linkedom';
@@ -131,7 +132,7 @@ class HtmlConverter implements IContentConverter {
     return {
       content: cleaned,
       metadata,
-      warnings
+      warnings: classifyWarnings(warnings)
     };
   }
 

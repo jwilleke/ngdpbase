@@ -12,6 +12,7 @@
 
 import matter from 'gray-matter';
 import { IContentConverter, ConversionResult } from './IContentConverter.js';
+import { classifyWarnings } from './conversionWarning.js';
 
 /**
  * Frontmatter fields that are surfaced as first-class metadata.
@@ -54,7 +55,7 @@ class MarkdownConverter implements IContentConverter {
       parsed = matter(content);
     } catch (err) {
       warnings.push(`Could not parse frontmatter: ${(err as Error).message} — treating as plain Markdown`);
-      return { content, metadata, warnings };
+      return { content, metadata, warnings: classifyWarnings(warnings) };
     }
 
     // Lift all frontmatter fields into metadata
@@ -75,7 +76,7 @@ class MarkdownConverter implements IContentConverter {
     return {
       content: parsed.content.trimStart(),
       metadata,
-      warnings
+      warnings: classifyWarnings(warnings)
     };
   }
 

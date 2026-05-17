@@ -128,7 +128,7 @@ describe('HtmlConverter', () => {
       const html = '<html><body><p>Body content only</p></body></html>';
       const result = converter.convert(html);
       expect(result.content).toContain('Body content only');
-      expect(result.warnings.some(w => w.includes('body content'))).toBe(true);
+      expect(result.warnings.some(w => w.detail.includes('body content'))).toBe(true);
     });
 
     it('should remove script and style elements', () => {
@@ -329,7 +329,7 @@ describe('HtmlConverter', () => {
     it('should handle empty HTML', () => {
       const result = converter.convert('');
       expect(result.content).toBe('');
-      expect(result.warnings.some(w => w.includes('No meaningful content'))).toBe(true);
+      expect(result.warnings.some(w => w.detail.includes('No meaningful content'))).toBe(true);
     });
 
     it('should handle HTML with only whitespace body', () => {

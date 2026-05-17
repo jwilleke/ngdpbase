@@ -457,8 +457,8 @@ See [Documentation] for more.
     it('should warn about unhandled JSPWiki plugins', () => {
       const result = converter.convert('[{INSERT SomePlugin page=Main}]');
       expect(result.warnings.length).toBeGreaterThan(0);
-      expect(result.warnings[0]).toMatch(/unhandled JSPWiki plugin/i);
-      expect(result.warnings[0]).toContain('INSERT');
+      expect(result.warnings[0].detail).toMatch(/unhandled JSPWiki plugin/i);
+      expect(result.warnings[0].detail).toContain('INSERT');
     });
 
     it('should warn about multiple different plugins', () => {
@@ -466,29 +466,29 @@ See [Documentation] for more.
         '[{INSERT PageIndex}]\n[{Counter name=visits}]\n[{CurrentTimePlugin format=yyyy}]'
       );
       expect(result.warnings.length).toBeGreaterThan(0);
-      expect(result.warnings[0]).toMatch(/3 unhandled/);
-      expect(result.warnings[0]).toContain('INSERT');
-      expect(result.warnings[0]).toContain('Counter');
-      expect(result.warnings[0]).toContain('CurrentTimePlugin');
+      expect(result.warnings[0].detail).toMatch(/3 unhandled/);
+      expect(result.warnings[0].detail).toContain('INSERT');
+      expect(result.warnings[0].detail).toContain('Counter');
+      expect(result.warnings[0].detail).toContain('CurrentTimePlugin');
     });
 
     it('should not warn about known-safe plugins (Image, ATTACH, TableOfContents)', () => {
       const result = converter.convert(
         "[{Image src='photo.jpg' width=200}]\n[{ATTACH file.pdf|Download}]\n[{TableOfContents}]"
       );
-      const pluginWarnings = result.warnings.filter(w => w.includes('unhandled'));
+      const pluginWarnings = result.warnings.filter(w => w.detail.includes('unhandled'));
       expect(pluginWarnings.length).toBe(0);
     });
 
     it('should not warn about SET directives', () => {
       const result = converter.convert("[{SET title='Page'}]");
-      const pluginWarnings = result.warnings.filter(w => w.includes('unhandled'));
+      const pluginWarnings = result.warnings.filter(w => w.detail.includes('unhandled'));
       expect(pluginWarnings.length).toBe(0);
     });
 
     it('should not warn about variable references', () => {
       const result = converter.convert('[{$title}]');
-      const pluginWarnings = result.warnings.filter(w => w.includes('unhandled'));
+      const pluginWarnings = result.warnings.filter(w => w.detail.includes('unhandled'));
       expect(pluginWarnings.length).toBe(0);
     });
   });
@@ -547,7 +547,7 @@ More content
 %%category [Cat6]%%`;
       const result = converter.convert(input);
       expect(result.metadata['user-keywords']).toHaveLength(6);
-      expect(result.warnings.some(w => w.includes('exceeds limit of 5'))).toBe(true);
+      expect(result.warnings.some(w => w.detail.includes('exceeds limit of 5'))).toBe(true);
     });
 
     it('should handle empty brackets gracefully', () => {

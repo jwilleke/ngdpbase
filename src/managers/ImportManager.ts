@@ -570,23 +570,29 @@ class ImportManager extends BaseManager {
       try {
         attachments = await this.importPageAttachments(filePath, pageTitle, options);
         if (attachments.errors.length > 0) {
-          conversionResult.warnings.push(
-            `Attachment errors: ${attachments.errors.join('; ')}`
-          );
+          conversionResult.warnings.push({
+            kind: 'import-attachment',
+            detail: `Attachment errors: ${attachments.errors.join('; ')}`
+          });
         }
         if (attachments.imported > 0) {
           logger.info(`[ImportManager] Imported ${attachments.imported} attachment(s) for "${pageTitle}"`);
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        conversionResult.warnings.push(`Failed to import attachments: ${msg}`);
+        conversionResult.warnings.push({ kind: 'import-attachment', detail: `Failed to import attachments: ${msg}` });
       }
     }
 
+    // #728 S3: ConversionResult.warnings is structured; ImportResult.warnings
+    // stays string[] (its public surface, rendered by admin-import.ejs) —
+    // flatten at this boundary.
+    const flatWarnings = conversionResult.warnings.map(w => `${w.kind}: ${w.detail}`);
+
     // #728 S5d: non-preview NCM-routed imports (html/jspwiki) push a
     // conversion-warning summary to /admin/notifications.
-    if (written && (formatId === 'html' || formatId === 'jspwiki') && conversionResult.warnings.length > 0) {
-      notifyNcmConversion(this.engine, `Import ${formatId}`, pageTitle, conversionResult.warnings);
+    if (written && (formatId === 'html' || formatId === 'jspwiki') && flatWarnings.length > 0) {
+      notifyNcmConversion(this.engine, `Import ${formatId}`, pageTitle, flatWarnings);
     }
 
     return {
@@ -595,7 +601,7 @@ class ImportManager extends BaseManager {
       format: formatId,
       size: Buffer.byteLength(finalContent, 'utf-8'),
       metadata: conversionResult.metadata,
-      warnings: conversionResult.warnings,
+      warnings: flatWarnings,
       written,
       attachments
     };
@@ -742,7 +748,8 @@ class ImportManager extends BaseManager {
       format: 'html',
       size: Buffer.byteLength(finalContent, 'utf-8'),
       metadata: conversionResult.metadata,
-      warnings: conversionResult.warnings,
+      // #728 S3: flatten structured ConversionResult.warnings → ImportResult string[].
+      warnings: conversionResult.warnings.map(w => `${w.kind}: ${w.detail}`),
       written
     };
   }

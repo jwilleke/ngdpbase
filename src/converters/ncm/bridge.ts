@@ -1,16 +1,14 @@
 /**
  * NCM → ConversionResult bridge (#728 Phase 2 Slice 5b)
  *
- * The shared `ConversionResult` (`{ content, metadata, warnings: string[] }`)
- * is consumed widely (ImportManager, ValidationManager, the import view).
- * Migrating it to structured `{kind,detail}` warnings is the broad, breaking
- * **S3** — deliberately deferred. Until then this lossy bridge lets the
- * import / MCP paths route through `normalizeToNcm` while still speaking the
- * existing `ConversionResult` shape:
+ * Adapts an `NcmResult` to the shared `ConversionResult` shape so the import
+ * path can route through `normalizeToNcm`. Since #728 S3 made
+ * `ConversionResult.warnings` structured (`ConversionWarning {kind,detail}`),
+ * this bridge is now **lossless** — `NcmWarning` is an assignable subset:
  *
  * - the NCM document's frontmatter → `metadata`
  * - the NCM body                  → `content`
- * - `NcmWarning[]`                → `string[]` as `"<kind>: <detail>"`
+ * - `NcmWarning[]`                → `warnings` (structured, unchanged)
  *
  * @module converters/ncm/bridge
  */
@@ -29,6 +27,8 @@ export function ncmToConversionResult(ncm: NcmResult): ConversionResult {
   return {
     content: parsed.content,
     metadata: parsed.data as Record<string, unknown>,
-    warnings: ncm.warnings.map(w => `${w.kind}: ${w.detail}`)
+    // #728 S3: ConversionResult.warnings is now structured, so this is
+    // lossless — NcmWarning {kind,detail} is assignable to ConversionWarning.
+    warnings: ncm.warnings
   };
 }

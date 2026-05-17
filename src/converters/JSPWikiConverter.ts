@@ -10,6 +10,7 @@
  */
 
 import { IContentConverter, ConversionResult } from './IContentConverter.js';
+import { classifyWarnings } from './conversionWarning.js';
 
 /**
  * JSPWiki syntax to Markdown converter
@@ -60,7 +61,7 @@ class JSPWikiConverter implements IContentConverter {
     return {
       content: result.trim(),
       metadata,
-      warnings
+      warnings: classifyWarnings(warnings)
     };
   }
 
