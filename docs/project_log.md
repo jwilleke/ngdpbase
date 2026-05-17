@@ -2,6 +2,23 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-17-07
+
+- Agent: Claude Opus 4.7
+- Subject: #728 — tables decision (b) + notifications decision recorded; Phase-2 Slice 5a-ii (real image-localization wiring).
+- Current Issue: #728. Slice plan: S1 ✓ S2 ✓ S4 ✓ S5b ✓ S5a ✓ **S5a-ii ✓** · S5c (MCP, next) · S5d (/admin/notifications) · S3 (breaking, last).
+- Tests: unit 5597/5597 (218 files) + E2E 72/72; jimstest restarted clean. Zero regressions.
+- Work Done:
+  - Recorded two operator decisions in the spec (`89f3b220`): **Tables = decision (b)** — NCM does NO table conversion either direction (JSPWiki `%%table-*`+`||` and GFM both pass through unchanged); already honored by passthrough, zero code, recorded so no future GFM↔JSPWiki transform is added. **Notifications** = the real `/admin/notifications` centre (interpretation gap owned) — new slice S5d; spec §2.1/§3/§5/§6/§7 updated.
+  - S5a-ii (`07ae811c`): route-layer `localizePageImages` builds the real `NcmImageConfig` (`ngdpbase.attachment.maxsize` / `ngdpbase.markdown.ncm.image.ad-deny-list` / `ngdpbase.fetch-timeout-ms`) + real `NcmImageDeps` (global fetch w/ `AbortSignal.timeout` mirroring ImportManager; `AttachmentManager.uploadAttachment` → `/attachments/<ref>`), keeping `ncm/` pure. Wired into adminConvertPreview (**dryRun — preview never persists**) and adminConvertExecute (real upload). `localizeNcmImages` core already tested (S4 ×10).
+- Caveat: S5a-ii deps-wiring (real fetch/upload glue) has no dedicated automated test (like the S5a UI caveat); pure core covered by S4, glue verified by build + full regression + E2E boot + the simple dryRun/real split.
+- Investigation: confirmed `/view/Karpathy-wiki-pattern` renders 115 `<tr>` GFM tables fine (showdown `tables:true`); `/admin/notifications` is a real subsystem (`NotificationManager`, `MediaManager` already feeds it).
+- Commits: `89f3b220` (spec decisions), `07ae811c` (S5a-ii), plus this log entry.
+- Files Modified:
+  - docs/planning/plan-ngdp-compatible-markdown.md
+  - src/routes/WikiRoutes.ts
+  - docs/project_log.md
+
 ## 2026-05-17-06
 
 - Agent: Claude Opus 4.7
