@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-17T23:55:00.000Z'
+lastModified: '2026-05-17T23:59:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -32,7 +32,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 ## Open BUGS (ngdpbase, by issue #)
 
-4 open as of 2026-05-17. **No actionable bug left without operator input** — #741 (Insert `caption=`), #739, #740 all closed this session; the "All sources" gap split to **#742**. Remaining: #735 needs repro, #724 is `help wanted`/awaiting decision, #660/#599 non-actionable carry-forwards.
+4 open as of 2026-05-17. **No actionable bug left without operator input** — #741/#739/#740 closed earlier; #742 ("All sources" aggregation) implemented & shipped in **v3.19.0**, awaiting operator close. Remaining: #735 needs repro, #724 is `help wanted`/awaiting decision, #660/#599 non-actionable carry-forwards.
 
 | # | Title |
 |---|---|
@@ -45,6 +45,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 Items awaiting a yes/no/close or operator-only action. Not blocking other work.
 
+- **#742** — `/search` "All sources" aggregation. Implemented per operator-approved A(i)+B(ii), shipped in **v3.19.0** (commit `822cf876`), propagated to all satellites. Fully resolves the reported gap; left open for operator close per workflow.
 - **#735** — `[BUG] /search fails on Mobile`, empty body. Awaiting operator repro detail (device/OS/browser, exact failure, desktop comparison) before it can be triaged.
 - **#724** — recurring `NGDPBASE-test-*` test-file lingering, labelled `help wanted`. Awaiting decision/assignment; the fix touches test teardown (must only scope-delete test-created subdirs, never the live `data/` tree).
 
@@ -65,7 +66,6 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | # | Topic | Priority hint |
 |---|---|---|
 | #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Low — body reconciled with `master` 2026-05-16 (audit comment pinned); search-provider ACL now explicitly out-of-scope; `stash@{0}` is a reference, no longer `git stash pop`-clean. Refactor intentionally not started |
-| #742 | `/search` "All sources" should aggregate pages (+users), not just attachments+media | Medium — split from #740 (2026-05-17); a #693 partial-unification gap; #739 Pages-default is a reasonable interim workaround |
 | #738 | NCM/import conversion metrics — aggregate by structured `kind`, trend | Low — **unblocked** by #728 S3 (structured `kind` codes now exist); observability follow-up, reuses MetricsManager/OTLP |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images (security+size) | Low — #728 Phase-2 hardening split-out; config-gated, adds sharp/libvips; do when a real driver appears |
 | #736 | `config/app-default-config.json` documentation | Low — filed 2026-05-17; doc task; large config surface incl. new NCM keys |
