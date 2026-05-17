@@ -2,6 +2,31 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-16-20
+
+- Agent: Claude Opus 4.7
+- Subject: v3.17.0 release (#443 addon theme auto-deploy) + /othersites propagation.
+- Current Issue: none (release + propagation; #443 implemented, left in review).
+- Tests: every instance — unit 5561/5561 (214 files) + E2E 72/72. Zero flakes.
+- Work Done:
+  - Cut v3.17.0 (minor): 3 commits since v3.16.1 (#443 feature + 2 docs logs). Gates: build + 5561 unit + 72 E2E. Tagged `v3.17.0`, pushed commit `36d0de05` + tag, GitHub release published (auto-notes, range v3.16.1..v3.17.0).
+  - Perf baseline v3.17.0 vs v3.16.1: flagged `/search` +531.8% (22→139ms), script exited 1. Operator-reviewed and approved as the known cold-`/search` false positive (#734/#705): the Step-4 jimstest restart sampled before the background Lunr index warmed; #443 cannot affect the search path; all other routes flat (`/` +3ms, `/view/Welcome`/`/login` ±0). Same artifact vindicated at prior releases. Proceeded per operator decision.
+  - /othersites: propagated v3.17.0 (04b754ef → 36d0de05) to the three satellites; E2E required (range touches `views/admin-addons.ejs` via #443). All four instances boot clean — #443 seedAddonTheme is a safe no-op where no addon ships theme/theme.json.
+- Propagation results:
+
+  | Instance | Port | Pulled to | Build | Unit | E2E |
+  | --- | --- | --- | --- | --- | --- |
+  | jimstest | 3000 | 36d0de05 (release origin) | clean | 5561 | 72 |
+  | fairways-base | 2121 | 36d0de05 | clean | 5561 | 72 |
+  | ngdpbase-veg | 3333 | 36d0de05 | clean | 5561 | 72 |
+  | ngdp-temp-builds | 3001 | 36d0de05 | clean | 5561 | 72 |
+
+- Flakes seen: none — all four instances green first run.
+- Notes: cold-`/search` baseline flag is a recurring false positive at release time (sample-after-restart vs warm prior baseline) — pre-accepted pattern, not a regression. fairways-base untracked planning note left alone (did not block ff pull).
+- Commits: `36d0de05` (release), plus this log entry.
+- Files Modified:
+  - docs/project_log.md
+
 ## 2026-05-16-19
 
 - Agent: Claude Opus 4.7
