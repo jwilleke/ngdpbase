@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-17T22:30:00.000Z'
+lastModified: '2026-05-17T23:55:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -32,11 +32,10 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 ## Open BUGS (ngdpbase, by issue #)
 
-5 open as of 2026-05-17. Search cluster mostly cleared: #739 (title default + full-text toggle) and #740 (relevance / snippet-regex throw) **closed** this session; the "All sources" gap was split to **#742** (enhancement). #735 still needs repro. **#741 is the top actionable bug.** #660/#599 are non-actionable carry-forwards.
+4 open as of 2026-05-17. **No actionable bug left without operator input** — #741 (Insert `caption=`), #739, #740 all closed this session; the "All sources" gap split to **#742**. Remaining: #735 needs repro, #724 is `help wanted`/awaiting decision, #660/#599 non-actionable carry-forwards.
 
 | # | Title |
 |---|---|
-| #741 | `[{Insert pagesection='…?section=1'}]` not rendering the page section as a heading — filed 2026-05-17; concrete repro (page MEW-Medical Summary); plugin-system/UI. **Top actionable bug** |
 | #735 | `/search` fails on Mobile — filed 2026-05-16; **body still empty, needs repro detail** (device/OS/browser, exact failure, desktop comparison). Not yet actionable without repro |
 | #724 | `NGDPBASE-test-*` files linger after test runs (recurring) — test teardown not cleaning created pages; `help wanted`/testing. Note global rule: never delete live `data/` in teardown — fix must scope-delete only test-created subdirs |
 | #660 | Agent and ./docs documentation — tooling shipped; 49 doc-stub warnings remain for source-only modules (stub-creation backlog; cosmetic, non-blocking) |
