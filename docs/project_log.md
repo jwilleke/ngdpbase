@@ -2,6 +2,32 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-17-10
+
+- Agent: Claude Opus 4.7
+- Subject: v3.18.0 release (NCM Phase-2 S1–S5d) + /othersites propagation.
+- Current Issue: #728 (Phase-2 shipped; S3 deferred — internal, post-release).
+- Tests: every instance — unit 5602/5602 + E2E 72/72. Zero flakes.
+- Pre-release audit (operator-requested): confirmed NO auto-migration of pages — PageManager save/load untouched by NCM; no batch/loop/startup/cron/on-read path; every NCM invocation is explicit single-item (import / admin convert Apply / MCP create-update). One transparent caveat surfaced: MCP `update_page` with metadata-only (no content) still NCM-normalizes that one page's body — explicit-per-page, not auto/bulk; operator accepted as-is, optional follow-up to gate on `content!==undefined`.
+- Work Done:
+  - Cut v3.18.0 (minor): ~23 commits since v3.17.0 (entire NCM Phase-2 + spec + #443/#444 docs). Gates: build + 5602 unit + 72 E2E. Tagged `v3.18.0`, pushed, GitHub release published (auto-notes v3.17.0..v3.18.0).
+  - Perf baseline v3.18.0 vs v3.17.0: flagged `/` +387% (31→151ms), operator-approved as the known restart-cold-`/` false positive (NCM has zero `/`-render involvement — audited; all other routes flat; mem +2.7% < threshold). Recurring artifact, vindicated each prior release.
+  - /othersites: propagated v3.18.0 (36d0de05 → 14f1322a) to the three satellites; E2E required (range adds `views/admin-convert.ejs`). jimstest already at v3.18.0 from the release.
+- Propagation results:
+
+  | Instance | Port | Pulled to | Build | Unit | E2E |
+  | --- | --- | --- | --- | --- | --- |
+  | jimstest | 3000 | 14f1322a (release origin) | clean | 5602 | 72 |
+  | fairways-base | 2121 | 14f1322a | clean | 5602 | 72 |
+  | ngdpbase-veg | 3333 | 14f1322a | clean | 5602 | 72 |
+  | ngdp-temp-builds | 3001 | 14f1322a | clean | 5602 | 72 |
+
+- Flakes seen: none — all four green first run.
+- Notes: fairways-base untracked `docs/planning/plan-addon-accounting.md` left alone (didn't block ff pull). NCM now live across all instances: html/jspwiki import, /admin/convert tool, MCP create/update, non-preview→/admin/notifications. S3 (structured-warnings migration) remains — internal, no user-facing effect.
+- Commits: `14f1322a` (release), plus this log entry.
+- Files Modified:
+  - docs/project_log.md
+
 ## 2026-05-17-09
 
 - Agent: Claude Opus 4.7
