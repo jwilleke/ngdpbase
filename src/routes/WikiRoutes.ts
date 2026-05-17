@@ -7869,6 +7869,29 @@ ${panes}
   }
 
   /**
+   * Project a page name / SearchResult into the AssetRecord-ish shape the
+   * asset-picker consumes. Pure (no `this`); shared by the `types=page`
+   * branch and the `#742` all-sources branch so both stay in lockstep.
+   * Canonical `/view/` URL per the no-wiki convention.
+   */
+  private readonly pageToAssetRecord = (pageName: string, title?: string, excerpt?: string, kw?: string[], lastModified?: string, systemCategory?: string) => ({
+    id: pageName,
+    providerId: 'page',
+    filename: pageName,
+    name: title || pageName,
+    description: excerpt || title || pageName,
+    keywords: kw ?? [],
+    encodingFormat: 'text/wiki',
+    url: '/view/' + encodeURIComponent(pageName),
+    mentions: [],
+    metadata: {
+      ...(lastModified ? { lastModified } : {}),
+      ...(systemCategory ? { systemCategory } : {})
+    },
+    insertSnippet: '[' + pageName + ']'
+  });
+
+  /**
    * GET /api/assets/search
    *
    * Unified search across AttachmentManager and MediaManager with pagination.
@@ -7903,12 +7926,149 @@ ${panes}
       const sort: 'date' | 'caption' | undefined = sortRaw === 'caption' ? 'caption' : sortRaw === 'date' ? 'date' : undefined;
       const order: 'asc' | 'desc' = req.query.order === 'desc' ? 'desc' : 'asc';
 
+      // #742: "All sources" (types absent or `all`) aggregates pages, users,
+      // and the asset stores instead of 403'ing non-editors and returning
+      // attachments/media only. Each source keeps its own access rule:
+      //   pages       → always; SearchManager applies per-page ACL (anon-safe)
+      //   users       → authenticated viewers only (PII; mirrors types=user)
+      //   attach/media → editor asset surface only (unchanged gate)
+      // Placed before the editor gate so readers get page hits — the core
+      // reported gap. Single-type branches below are untouched.
+      if (typesParam === '' || typesParam === 'all') {
+        const fetchLimit = Math.max(200, offset + pageSize);
+        const merged: Record<string, unknown>[] = [];
+        let anyCapped = false;
+
+        // Pages — SearchManager filters per-page ACL via wikiContext, so this
+        // is anon-safe. Title-default recall per #739 (no category/keyword
+        // filter inputs exist on the all-sources surface).
+        const searchManager = this.engine.getManager('SearchManager') as {
+          advancedSearchWithContext?: (ctx: unknown, opts: Record<string, unknown>) => Promise<Array<{
+            name: string; title?: string; snippet?: string;
+            metadata?: { systemCategory?: string; userKeywords?: string; lastModified?: string };
+          }>>;
+        };
+        if (searchManager?.advancedSearchWithContext) {
+          const hits = await searchManager.advancedSearchWithContext(wikiContext, {
+            query,
+            categories: [],
+            userKeywords: [],
+            systemKeywords: [],
+            searchIn: ['title'],
+            maxResults: fetchLimit
+          });
+          if (hits.length >= fetchLimit) anyCapped = true;
+          for (const h of hits) {
+            const md = h.metadata ?? {};
+            const lm = typeof md.lastModified === 'string' ? md.lastModified : undefined;
+            const kw = typeof md.userKeywords === 'string'
+              ? md.userKeywords.split(',').map(s => s.trim()).filter(Boolean)
+              : [];
+            merged.push(this.pageToAssetRecord(h.name, h.title, h.snippet, kw, lm, md.systemCategory));
+          }
+        }
+
+        // Users — authenticated viewers only (profile info is PII; mirrors
+        // the types=user auth gate). Anonymous viewers simply get no users.
+        {
+          const uname = wikiContext.userContext?.username;
+          const isAuthenticated = Boolean(
+            wikiContext.userContext?.authenticated
+            && uname
+            && uname !== 'anonymous'
+            && uname !== 'asserted'
+          );
+          const userManager = this.engine.getManager('UserManager') as {
+            searchUsers?: (q: string, opts?: { limit?: number; activeOnly?: boolean }) => Promise<Array<{
+              username: string; displayName?: string; profilePage?: string; avatar?: string; createdAt?: string;
+            }>>;
+          };
+          if (isAuthenticated && userManager?.searchUsers) {
+            const users = await userManager.searchUsers(query, { limit: fetchLimit, activeOnly: true });
+            if (users.length >= fetchLimit) anyCapped = true;
+            for (const u of users) {
+              const profile = u.profilePage || u.displayName || u.username;
+              merged.push({
+                id: u.username,
+                providerId: 'user',
+                filename: u.username,
+                name: u.displayName || u.username,
+                description: u.displayName || u.username,
+                keywords: [],
+                encodingFormat: 'application/user',
+                url: '/view/' + encodeURIComponent(profile),
+                thumbnailUrl: u.avatar,
+                mentions: [],
+                metadata: { username: u.username },
+                insertSnippet: '[' + profile + ']'
+              });
+            }
+          }
+        }
+
+        // Attachments + media — editor asset surface only (same role gate the
+        // single-type asset branch enforces). Skipped silently for readers.
+        const assetService = this.engine.getManager('AssetService');
+        if (assetService && wikiContext.hasRole('admin', 'editor', 'contributor')) {
+          const userRoles = wikiContext.userContext?.roles ?? [];
+          const acctName = wikiContext.userContext?.username ?? '';
+          const assetPage = await assetService.search({
+            query,
+            types: undefined,
+            pageSize: fetchLimit,
+            offset: 0,
+            sort: sort ?? 'date',
+            order,
+            wikiContext,
+            userRoles,
+            username: acctName
+          });
+          const assetResults = assetPage?.results ?? [];
+          if (assetResults.length >= fetchLimit) anyCapped = true;
+          for (const r of assetResults) merged.push(r as unknown as Record<string, unknown>);
+        }
+
+        // De-dupe defensively by providerId+id (sources are disjoint
+        // namespaces, but a provider could in principle repeat a row).
+        const seen = new Set<string>();
+        const deduped = merged.filter(r => {
+          const key = String(r.providerId) + ' ' + String(r.id);
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+
+        // Handler-side sort only when the caller asked (consistent with the
+        // per-type branches). Otherwise preserve source grouping (pages, then
+        // users, then assets) — stable and predictable for the picker.
+        if (sort) {
+          const orderMul = order === 'desc' ? -1 : 1;
+          const sortKey = sort === 'caption'
+            ? (r: Record<string, unknown>) => (typeof r.name === 'string' ? r.name.toLowerCase() : '')
+            : (r: Record<string, unknown>) => {
+              const m = r.metadata as { lastModified?: unknown } | undefined;
+              return typeof m?.lastModified === 'string' ? m.lastModified : '';
+            };
+          deduped.sort((a, b) => {
+            const ka = sortKey(a);
+            const kb = sortKey(b);
+            if (ka < kb) return -1 * orderMul;
+            if (ka > kb) return 1 * orderMul;
+            return 0;
+          });
+        }
+
+        const total = deduped.length;
+        const results = deduped.slice(offset, offset + pageSize);
+        return res.json({ success: true, results, total, hasMore: offset + pageSize < total, capped: anyCapped });
+      }
+
       // Auth model (#696):
       //   types=page  → anon allowed; SearchManager filters per-page ACL via
       //                 wikiContext. Matches the previous /search behaviour.
       //   types=user  → handled inside the user branch (search-user permission).
-      //   anything else (attachments, media, all-sources) → editor surface,
-      //                 keep the editor/contributor/admin gate.
+      //   anything else (attachments, media) → editor surface, keep the
+      //                 editor/contributor/admin gate.
       const needsEditorRole = typesParam !== 'page' && typesParam !== 'user';
       if (needsEditorRole && !wikiContext.hasRole('admin', 'editor', 'contributor')) {
         return res.status(403).json({ success: false, error: 'Access denied' });
@@ -7972,25 +8132,9 @@ ${panes}
         // page names with no ACL filter. (#700's sort handling is preserved
         // below; it now applies to the index path for every sort value.)
 
-        // Helper to project a page-name or SearchResult into the AssetRecord
-        // shape the asset-picker consumes. Canonical /view/ URL per the no-wiki
-        // convention; the previous /wiki/<page> form was legacy.
-        const toAssetRecord = (pageName: string, title?: string, excerpt?: string, kw?: string[], lastModified?: string, systemCategory?: string) => ({
-          id: pageName,
-          providerId: 'page',
-          filename: pageName,
-          name: title || pageName,
-          description: excerpt || title || pageName,
-          keywords: kw ?? [],
-          encodingFormat: 'text/wiki',
-          url: '/view/' + encodeURIComponent(pageName),
-          mentions: [],
-          metadata: {
-            ...(lastModified ? { lastModified } : {}),
-            ...(systemCategory ? { systemCategory } : {})
-          },
-          insertSnippet: '[' + pageName + ']'
-        });
+        // Project pages into the asset-picker record shape via the shared
+        // helper (#742 lifted this out so the all-sources branch reuses it).
+        const toAssetRecord = this.pageToAssetRecord;
 
         let all: ReturnType<typeof toAssetRecord>[];
         let pagesCapped = false;

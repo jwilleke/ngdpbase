@@ -65,9 +65,12 @@ function makeRoutes(assetService) {
 
 describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
   describe('authentication / authorisation', () => {
+    // #742: the editor gate now applies to explicit asset types only — the
+    // no-types "all sources" path is anon-safe (pages). These two tests pin
+    // the asset-surface gate via an explicit type.
     it('returns 403 when userContext is missing', async () => {
       const routes = makeRoutes(makeAssetService());
-      const req = makeReq({ userContext: null });
+      const req = makeReq({ userContext: null, query: { types: 'attachment' } });
       const res = makeRes();
 
       await routes.assetSearch(req, res);
@@ -78,7 +81,7 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
 
     it('returns 403 when user has no relevant role', async () => {
       const routes = makeRoutes(makeAssetService());
-      const req = makeReq({ userContext: { roles: ['viewer'] } });
+      const req = makeReq({ userContext: { roles: ['viewer'] }, query: { types: 'attachment' } });
       const res = makeRes();
 
       await routes.assetSearch(req, res);
@@ -110,7 +113,9 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       routes.createWikiContext = vi.fn((req: Request) =>
         createMockWikiContext({ userContext: (req as { userContext?: unknown }).userContext as never }, { engine })
       );
-      const req = makeReq({ query: {} });
+      // #742: 503-on-missing-AssetService is an asset-surface invariant; the
+      // no-types path no longer needs AssetService (pages/users still work).
+      const req = makeReq({ query: { types: 'attachment' } });
       const res = makeRes();
 
       await routes.assetSearch(req, res);
@@ -178,7 +183,9 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
     it('defaults pageSize to 48 when not provided', async () => {
       const service = makeAssetService();
       const routes = makeRoutes(service);
-      const req = makeReq({ query: {} });
+      // #742: forwarded-pageSize is an asset-branch invariant; the all-sources
+      // path oversamples AssetService and slices the merged response instead.
+      const req = makeReq({ query: { types: 'attachment' } });
       const res = makeRes();
 
       await routes.assetSearch(req, res);
@@ -207,7 +214,9 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       ];
       const service = makeAssetService(makeAssetPage(fakeResults, 42, true));
       const routes = makeRoutes(service);
-      const req = makeReq({ query: {} });
+      // #742: the raw AssetPage spread is the explicit-asset-type contract;
+      // the all-sources path re-computes total/hasMore over the merged set.
+      const req = makeReq({ query: { types: 'attachment' } });
       const res = makeRes();
 
       await routes.assetSearch(req, res);
@@ -884,6 +893,169 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
 
       const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
       expect(payload.results.map((r: { id: string }) => r.id)).toEqual(['z', 'a', 'm']);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // #742 — "All sources" (types absent or `all`) aggregates pages + users +
+  // (editor-only) attachments/media instead of 403'ing non-editors and
+  // returning attachments/media only.
+  // ---------------------------------------------------------------------------
+  describe('all-sources branch (#742)', () => {
+    function makeSearchManager(hits: Array<{ name: string; title?: string; snippet?: string; metadata?: { systemCategory?: string; userKeywords?: string; lastModified?: string } }> = []) {
+      return { advancedSearchWithContext: vi.fn().mockResolvedValue(hits) };
+    }
+    function makeUserManager(users: Array<{ username: string; displayName?: string; profilePage?: string; avatar?: string; createdAt?: string }> = []) {
+      return { searchUsers: vi.fn().mockResolvedValue(users) };
+    }
+    function makeRoutesAll(opts: { assetService?: unknown; searchManager?: unknown; userManager?: unknown }) {
+      const engine = {
+        getManager: vi.fn((name: string) => {
+          if (name === 'AssetService') return opts.assetService ?? null;
+          if (name === 'SearchManager') return opts.searchManager ?? null;
+          if (name === 'UserManager') return opts.userManager ?? null;
+          return null;
+        })
+      };
+      const routes = new WikiRoutes(engine);
+      routes.createWikiContext = vi.fn((req: Request) =>
+        createMockWikiContext({ userContext: (req as { userContext?: unknown }).userContext as never }, { engine })
+      );
+      return routes;
+    }
+    const reader = { authenticated: true, username: 'molly', roles: ['reader'] };
+    const editor = { authenticated: true, username: 'ed', roles: ['editor'] };
+
+    it('anonymous viewer is NOT 403 and gets page hits (the core #742 regression)', async () => {
+      const search = makeSearchManager([{ name: 'Welcome' }, { name: 'About' }]);
+      const asset = makeAssetService(makeAssetPage([{ id: 'a1', providerId: 'local' }] as never));
+      const userMgr = makeUserManager([{ username: 'alice' }]);
+      const routes = makeRoutesAll({ assetService: asset, searchManager: search, userManager: userMgr });
+      const req = makeReq({ userContext: null, query: {} });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(res.status).not.toHaveBeenCalledWith(403);
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.success).toBe(true);
+      const ids = payload.results.map((r: { id: string; providerId: string }) => `${r.providerId}:${r.id}`);
+      expect(ids).toEqual(['page:Welcome', 'page:About']);
+      // anon → no users, no editor asset surface
+      expect(userMgr.searchUsers).not.toHaveBeenCalled();
+      expect(asset.search).not.toHaveBeenCalled();
+    });
+
+    it('types=all behaves identically to types omitted', async () => {
+      const search = makeSearchManager([{ name: 'P1' }]);
+      const routes = makeRoutesAll({ assetService: makeAssetService(), searchManager: search });
+      const req = makeReq({ userContext: null, query: { types: 'all' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(res.status).not.toHaveBeenCalledWith(403);
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.results.map((r: { id: string }) => r.id)).toEqual(['P1']);
+    });
+
+    it('authenticated non-editor gets pages + users but NOT attachments/media', async () => {
+      const search = makeSearchManager([{ name: 'Welcome' }]);
+      const asset = makeAssetService(makeAssetPage([{ id: 'a1', providerId: 'local' }] as never));
+      const userMgr = makeUserManager([{ username: 'alice', displayName: 'Alice' }]);
+      const routes = makeRoutesAll({ assetService: asset, searchManager: search, userManager: userMgr });
+      const req = makeReq({ userContext: reader, query: {} });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      const ids = payload.results.map((r: { id: string; providerId: string }) => `${r.providerId}:${r.id}`);
+      expect(ids).toEqual(['page:Welcome', 'user:alice']);
+      expect(userMgr.searchUsers).toHaveBeenCalledWith('', expect.objectContaining({ activeOnly: true }));
+      expect(asset.search).not.toHaveBeenCalled();
+    });
+
+    it('editor gets pages + users + attachments/media merged', async () => {
+      const search = makeSearchManager([{ name: 'Welcome' }]);
+      const asset = makeAssetService(makeAssetPage([{ id: 'a1', providerId: 'local', name: 'photo.jpg' }] as never));
+      const userMgr = makeUserManager([{ username: 'alice' }]);
+      const routes = makeRoutesAll({ assetService: asset, searchManager: search, userManager: userMgr });
+      const req = makeReq({ userContext: editor, query: {} });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      const ids = payload.results.map((r: { id: string; providerId: string }) => `${r.providerId}:${r.id}`);
+      expect(ids).toEqual(['page:Welcome', 'user:alice', 'local:a1']);
+      expect(asset.search).toHaveBeenCalledWith(expect.objectContaining({ types: undefined, offset: 0 }));
+    });
+
+    it('degrades gracefully when SearchManager is unavailable (no 503)', async () => {
+      const routes = makeRoutesAll({ assetService: makeAssetService(), searchManager: null, userManager: makeUserManager([]) });
+      const req = makeReq({ userContext: null, query: {} });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(res.status).not.toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, results: [], total: 0 }));
+    });
+
+    it('de-dupes by providerId+id', async () => {
+      const search = makeSearchManager([{ name: 'Dup' }, { name: 'Dup' }, { name: 'Unique' }]);
+      const routes = makeRoutesAll({ assetService: makeAssetService(), searchManager: search });
+      const req = makeReq({ userContext: null, query: {} });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.results.map((r: { id: string }) => r.id)).toEqual(['Dup', 'Unique']);
+      expect(payload.total).toBe(2);
+    });
+
+    it('paginates the merged set with offset + pageSize', async () => {
+      const hits = Array.from({ length: 30 }, (_, i) => ({ name: `P${i}` }));
+      const search = makeSearchManager(hits);
+      const routes = makeRoutesAll({ assetService: makeAssetService(), searchManager: search });
+      const req = makeReq({ userContext: null, query: { offset: '10', pageSize: '5' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.total).toBe(30);
+      expect(payload.results).toHaveLength(5);
+      expect(payload.results[0].id).toBe('P10');
+      expect(payload.results[4].id).toBe('P14');
+      expect(payload.hasMore).toBe(true);
+    });
+
+    it('flags capped when a source saturates fetchLimit', async () => {
+      const search = makeSearchManager(Array.from({ length: 200 }, (_, i) => ({ name: `P${i}` })));
+      const routes = makeRoutesAll({ assetService: makeAssetService(), searchManager: search });
+      const req = makeReq({ userContext: null, query: {} });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.capped).toBe(true);
+    });
+
+    it('sort=caption&order=asc orders the merged set A→Z across sources', async () => {
+      const search = makeSearchManager([{ name: 'Mango' }, { name: 'Apple' }]);
+      const userMgr = makeUserManager([{ username: 'zoe', displayName: 'Zoe' }]);
+      const routes = makeRoutesAll({ assetService: makeAssetService(), searchManager: search, userManager: userMgr });
+      const req = makeReq({ userContext: reader, query: { sort: 'caption', order: 'asc' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.results.map((r: { name: string }) => r.name)).toEqual(['Apple', 'Mango', 'Zoe']);
     });
   });
 });
