@@ -2,6 +2,26 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-17-06
+
+- Agent: Claude Opus 4.7
+- Subject: #728 Phase-2 Slice 5a — admin "Convert page to NCM" tool + preview/confirm (operator chose A1+B2).
+- Current Issue: #728. Slice plan: S1 ✓ · S2 ✓ · S4 ✓ · S5b ✓ · **S5a ✓** · S5a-ii (image localization wiring) · S5c (MCP) · S3 (breaking, last).
+- Tests: unit 5597/5597 (218 files; +3 ncm-existing) + E2E 72/72 (regression; jimstest restarted clean with new routes/view). Zero regressions.
+- Work Done:
+  - `ncm/existing.ts` `normalizeExistingPageToNcm` — §2.4 link normalization + S1 fixed point; idempotent (already-NCM page round-trips byte-identical).
+  - WikiRoutes: `GET /admin/convert` (view), `POST /admin/convert/preview` (dry-run JSON: original/proposed/warnings/changed — preview+confirm is mandatory per spec §3, never a silent rewrite), `POST /admin/convert/execute` (saves via `PageManager.savePage` so versioning + ACL apply). All `admin-system` gated; mirrors the established `/admin/import` preview pattern.
+  - `views/admin-convert.ejs` (page input → Preview → warnings + proposed NCM + changed badge → Apply&Save via `csrfFetch`); dashboard link added next to Import.
+  - Image localization deliberately deferred to **S5a-ii** (needs real fetch + AttachmentManager wiring; `localizeNcmImages` already exists & tested from S4). Images survive as Markdown until then.
+- Caveat: the convert helper + handler logic is unit-tested and E2E regression is green, but the new `/admin/convert` UI flow itself has no dedicated automated E2E test and was not manually click-tested in a browser this session — recommend an operator eyeball or a follow-up E2E spec.
+- Commits: `ccf34490` (S5a), plus this log entry. Semver still deferred (sequence not yet at a releasable point; operator drives /semver).
+- Files Modified:
+  - src/converters/ncm/existing.ts (new), src/converters/ncm/index.ts
+  - src/routes/WikiRoutes.ts
+  - views/admin-convert.ejs (new), views/admin-dashboard.ejs
+  - src/converters/**tests**/ncm-existing.test.ts (new)
+  - docs/project_log.md
+
 ## 2026-05-17-05
 
 - Agent: Claude Opus 4.7
