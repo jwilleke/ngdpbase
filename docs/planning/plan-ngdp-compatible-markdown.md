@@ -39,12 +39,14 @@ NCM = **CommonMark/GFM core** (as rendered by the existing showdown config) **pl
 | Construct | NCM form | Backed by |
 |---|---|---|
 | **Headings, emphasis, lists, code** | CommonMark | showdown |
-| **Tables** | GFM pipe tables | showdown (GFM tables) |
+| **Tables** | **Passthrough — NCM does NO table conversion** (resolved 2026-05-17). JSPWiki `%%table-fit/%%table-bordered/%%table-striped/%%table-hover/%%sortable/%%table-sort/%%table-filter/…` wrapping `\|\|Header\|\|`/`\|cell\|` is the rich canonical form (sortable/striped/etc.); GFM pipe tables also render but plain. Both pass through **unchanged** — no down-convert (JSPWiki→GFM) and no up-convert (GFM/HTML→JSPWiki). | `JSPWikiPreprocessor` (`%%table-*` + `\|\|`/`\|`), showdown `tables:true` (GFM); `WikiTableHandler` |
 | **Links** | JSPWiki form (see §2.4): internal `[Display\|PageName]`, external `[Display\|https://url\|target="_blank"]`, InterWiki `[Display\|Site:Ref]` — **not** CommonMark `[text](url)` | `LinkParserHandler` |
 | **Footnotes** | `[^id]` reference + `[^id]: text` definition (single-line and multi-paragraph) | `FootnoteManager`, `showdown-footnotes-fixed`, `MarkupParser` steps 3.5/3.6 |
 | **Embedded images** | `![alt](attachment-ref)` — image downloaded and stored as an **attachment** (subject to existing `ngdpbase.attachment.maxsize` / `ngdpbase.attachment.allowedtypes`); source URL/`data:` URI replaced with the local attachment ref | `AttachmentManager`, `ImportManager.importPageAttachments()` |
 | **Plugins / variables** | `[{PluginName param='…'}]`, `[{$variable}]` | `PluginManager`, `VariableManager` |
 | **Frontmatter** | YAML via `gray-matter`, incl. the taxonomy fields (`system-category`, `user-keywords`, `system-keywords`) — see §3.2 | existing page contract |
+
+**Tables (resolved 2026-05-17, decision b):** NCM never transforms tables in either direction. The S1/S2/S5a body is passthrough and `normalizeLinks` only matches `[…](…)` (never `||`/`%%`), so this is **already honored with no code change** — recorded so a future implementer does not add GFM↔JSPWiki table conversion. Authors who want sortable/striped/etc. write the JSPWiki `%%table-* … || … /%` form by hand; legacy GFM tables keep rendering plain.
 
 > Note: the #728 issue's "Badges" line is **not** an NCM body construct. Page-top category badges and search/page keyword "chips" are *rendered product* — produced by the view/plugin layer (`header.ejs`, `view.ejs`, `SearchPlugin`) from the three taxonomy **frontmatter** fields, not authored in Markdown. NCM has no badge/chip syntax; its only obligation is to preserve those fields faithfully (§3.2). Inventing a `[{Badge}]` body token would create a second, conflicting taxonomy path.
 
@@ -98,7 +100,7 @@ NCM extends the **existing** `IContentConverter` registry — no new parallel sy
 - **Structured warnings (resolved 2026-05-17).** `ConversionResult.warnings` becomes `Array<{ kind: string; detail: string }>` rather than `string[]`. `kind` is a stable enum — e.g. `html-dropped:<tag>`, `img-attached`, `img-rejected:type|size|adhost|sniff-mismatch`, `link-externalized`, `placeholder-inserted`. Free text alone is not aggregatable; the stable code is the prerequisite for the conversion-metrics work (**#738**) and tightens §3.1 determinism (enum > prose). Same retrofit asymmetry as `ncmVersion` — cheap now, painful later.
 - **`ncmVersion` stamp (resolved 2026-05-17).** The normalizer writes an integer `ncmVersion` to frontmatter. Idempotent *within* a version; a profile change bumps the version and existing pages are re-normalized **only** via an explicit, opt-in migration command — **never** silently on read/edit. Protects versioned-page git history (a profile change must not smear reformat-diffs across every unrelated edit) and gives provenance for free.
 - **New/extended converters** register in `src/converters/` exactly as today (`formatId`, `formatName`, `fileExtensions`, `convert()`, `canHandle()`).
-- **"Convert an existing page" action** — admin/page action: load page → run through `toNgdpMarkdown` → save. **Interactive single-item ops (single-page import, convert-existing-page) preview-and-confirm before write** (the user sees exactly what will change/drop, then confirms — never a silent in-place rewrite of authored content). **Bulk import, #685 scheduled ingestion, MCP** cannot gate on a human → they rely on structured `warnings[]` + the in-body placeholder (§3.3) as the durable signal.
+- **"Convert an existing page" action** — admin/page action: load page → run through `toNgdpMarkdown` → save. **Interactive single-item ops (single-page import, convert-existing-page) preview-and-confirm before write** (the user sees exactly what will change/drop, then confirms — never a silent in-place rewrite of authored content). **Bulk import, #685 scheduled ingestion, MCP** cannot gate on a human → they rely on structured `warnings[]` + the in-body placeholder (§3.3) **plus a `NotificationManager.addNotification(...)` summary surfaced in `/admin/notifications`** (§5 #3) as the durable signal.
 - **Hookup points** (named in #728): `ImportManager` (all imports normalize to NCM) and `mcp-server.ts` (MCP page create/update normalizes to NCM).
 
 ### 3.1 Determinism (hard requirement — for #685)
@@ -140,7 +142,7 @@ All open questions were worked through with the operator and resolved. (The orig
 
 1. **Remote-image fetch — RESOLVED.** (a) Ad/tracker deny-list: new key `ngdpbase.markdown.ncm.image.ad-deny-list`, **seeded** default; dropped ad images emit a `warnings[]` entry (never silent). (b) Timeout: a **global** `ngdpbase.fetch-timeout-ms` (default `30000`, promoted from `ImportManager`'s hardcoded value), **not** an NCM-scoped key — governs our own outbound HTTP; third-party clients (ES/OTLP) keep their own. Size/MIME reuse `ngdpbase.attachment.*`; NCM adds a stricter raster allowlist on top (§2.2).
 2. **HTML-in-body conversion — RESOLVED.** Convert-known → strip-rest + warn: `turndown` converts structural HTML with a clean MD equivalent; `script/style/iframe`/unknown dropped with a structured `warnings[]` entry + placeholder (§3.3). `<img>` is intercepted by the §2.2 image→attachment rule, **not** turndown.
-3. **Lossy-conversion reporting — RESOLVED.** Reuse the existing `ConversionResult.warnings` channel (now structured, §3) — `admin-import.ejs` already renders it. **Preview+confirm** on interactive single-item ops only; bulk/#685/MCP rely on warnings + the in-body placeholder (§3.3). Aggregate metrics/trend (answering "why / fix-if-many") split to **#738** (depends on the structured `kind` codes).
+3. **Lossy-conversion reporting — RESOLVED (extended 2026-05-17).** Reuse the existing `ConversionResult.warnings` channel (now structured, §3) — `admin-import.ejs` already renders it. **Preview+confirm** on interactive single-item ops only. **Bulk import, #685 scheduled ingestion, MCP** (no human preview) → in addition to warnings + the in-body placeholder (§3.3), the conversion summary is pushed to the existing **`/admin/notifications`** centre via `NotificationManager.addNotification(...)` (the same subsystem `MediaManager` already feeds) so admins get an actionable per-event alert (e.g. "Imported X: 3 images dropped, 1 HTML block stripped"). This is the operator's intent of "add to notifications". Distinct from **#738** (aggregate metrics/trend = "fix-if-many"); notifications = per-event actionable admin alert.
 4. **NCM profile versioning — RESOLVED.** `ncmVersion` frontmatter stamp + explicit-migration only, never silent rewrite-on-read (§3).
 
 ## 6. Implementation phases
@@ -149,8 +151,9 @@ All open questions were worked through with the operator and resolved. (The orig
 2. **NCM profile + `toNgdpMarkdown` normalizer** on the existing converter registry; HTML→NCM + JSPWiki→NCM; structured `{kind,detail}` warnings; `ncmVersion` stamp; determinism/idempotence tests (incl. placeholder pass-through §3.3).
 3. **"Convert existing page" action** with **preview+confirm** (interactive single-item) + `ImportManager` / `mcp-server.ts` hookup; add the global `ngdpbase.fetch-timeout-ms` key.
 4. **Image→attachment MVP** (§2.2: sniff + strict allowlist + cap + seeded ad-deny-list + placeholder); **taxonomy frontmatter preservation** (§3.2) wired into every converter path.
-5. Unblocks **#501** (JSON→NCM serializer), then **#685** (uses it for body materialization).
-6. Follow-ups (separate issues, not MVP): **#737** image transcoding hardening; **#738** conversion-metrics aggregation (gated on the structured `kind` codes from phase 2).
+5. **`/admin/notifications` wiring** — non-preview NCM conversions (bulk import, #685, MCP) push a `NotificationManager.addNotification(...)` summary (§5 #3). Tables: nothing to build — passthrough already honors decision **b** (§2.1).
+6. Unblocks **#501** (JSON→NCM serializer), then **#685** (uses it for body materialization).
+7. Follow-ups (separate issues, not MVP): **#737** image transcoding hardening; **#738** conversion-metrics aggregation (gated on the structured `kind` codes from phase 2).
 
 ## 7. Acceptance criteria
 
@@ -169,4 +172,6 @@ All open questions were worked through with the operator and resolved. (The orig
 - [ ] Image MVP: magic-byte sniff + strict raster allowlist (SVG/RAW excluded) + `ngdpbase.attachment.maxsize` cap + seeded `ngdpbase.markdown.ncm.image.ad-deny-list`
 - [ ] Global `ngdpbase.fetch-timeout-ms` (default 30000) added and used by NCM image fetch + ImportManager URL import
 - [ ] `ngdpbase.features.images.*` flagged as out-of-scope dead-key duplication (not used, not fixed by #728)
+- [ ] Tables: NCM performs **no** table conversion either direction (JSPWiki `%%table-*`+`||` and GFM both pass through unchanged) — verified by passthrough; no GFM↔JSPWiki transform exists
+- [ ] Non-preview conversions (bulk import / #685 / MCP) push a summary to `/admin/notifications` via `NotificationManager.addNotification(...)`
 - [ ] #501 and #685 documented as consumers; #737 (transcoding) and #738 (metrics) split out and linked
