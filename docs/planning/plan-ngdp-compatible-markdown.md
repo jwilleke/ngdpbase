@@ -1,9 +1,9 @@
 # Plan: ngdp Compatible Markdown
 
 Issue: [#728](https://github.com/jwilleke/ngdpbase/issues/728)
-Status: Draft spec — not implemented
+Status: Draft spec — open questions resolved 2026-05-17; not yet implemented
 Date: 2026-05-17
-Related: [#501](https://github.com/jwilleke/ngdpbase/issues/501) (JSON→ngdp-MD serializer — consumer), [#685](https://github.com/jwilleke/ngdpbase/issues/685) (data-ingestion framework — consumer), [#599](https://github.com/jwilleke/ngdpbase/issues/599) (showdown ReDoS — why no raw-HTML sink)
+Related: [#501](https://github.com/jwilleke/ngdpbase/issues/501) (JSON→ngdp-MD serializer — consumer), [#685](https://github.com/jwilleke/ngdpbase/issues/685) (data-ingestion framework — consumer), [#599](https://github.com/jwilleke/ngdpbase/issues/599) (showdown ReDoS — why no raw-HTML sink), [#737](https://github.com/jwilleke/ngdpbase/issues/737) (Phase-2 image transcoding — split out), [#738](https://github.com/jwilleke/ngdpbase/issues/738) (conversion metrics — depends on the structured `kind` codes here)
 
 ---
 
@@ -48,16 +48,23 @@ NCM = **CommonMark/GFM core** (as rendered by the existing showdown config) **pl
 
 > Note: the #728 issue's "Badges" line is **not** an NCM body construct. Page-top category badges and search/page keyword "chips" are *rendered product* — produced by the view/plugin layer (`header.ejs`, `view.ejs`, `SearchPlugin`) from the three taxonomy **frontmatter** fields, not authored in Markdown. NCM has no badge/chip syntax; its only obligation is to preserve those fields faithfully (§3.2). Inventing a `[{Badge}]` body token would create a second, conflicting taxonomy path.
 
-### 2.2 Image → attachment rule (precise)
+### 2.2 Image → attachment rule (MVP — resolved 2026-05-17)
 
 On conversion, for every embedded image whose source is a remote URL or a `data:` URI:
 
-1. Fetch/decode the bytes. **Size and MIME limits reuse the existing attachment config** — `ngdpbase.attachment.maxsize` (default 10485760 = 10 MB) and `ngdpbase.attachment.allowedtypes` (default `image/*,text/*,application/pdf`), enforced today by `AttachmentManager` / `BasicAttachmentProvider`. NCM does **not** introduce a parallel image-limit namespace.
-2. Store via `AttachmentManager` against the target page (reuse `ImportManager.importPageAttachments()` semantics — limits are enforced there).
-3. Rewrite the Markdown image to reference the stored attachment.
-4. **Exclude ad/tracking images** (the issue's "NOT Ads"): images matching a deny-list of ad/tracker hosts/patterns are dropped, not attached. Deny-list is config-driven.
+1. **Fetch** with the global outbound-fetch timeout `ngdpbase.fetch-timeout-ms` (default `30000` — promoted from `ImportManager`'s previously hardcoded 30 s `AbortSignal`; governs *our own* outbound HTTP, not third-party clients like ES/OTLP that own their timeouts).
+2. **Magic-byte sniff** the fetched bytes — classify by content, **not** the URL extension or `Content-Type` header (polyglot/spoof defense).
+3. **Strict raster allowlist** (tighter than the attachment store's `image/*`): accept only `image/jpeg, image/png, image/gif, image/webp`. **`image/svg+xml` is excluded** (XSS vector). RAW/HEIC excluded (not browser-renderable; the embedded-JPEG-vs-real-JPEG distinction is a MediaManager/DAM concern — NCM never introspects RAW). NCM **tightens, never loosens**, on top of the attachment policy.
+4. **Size cap** reuses the existing `ngdpbase.attachment.maxsize` (default 10 MB) — no parallel image-limit namespace.
+5. **Ad/tracker deny-list**: a fetch whose host matches the deny-list is dropped, not attached. New config key `ngdpbase.markdown.ncm.image.ad-deny-list` (host/glob array), **seeded** with a sane default in `config/app-default-config.json` (`doubleclick.net`, `googlesyndication.com`, `google-analytics.com`, `facebook.com/tr`, `scorecardresearch.com`).
+6. **Accepted** → store via `AttachmentManager` (reuse `ImportManager.importPageAttachments()` semantics) and rewrite the Markdown to the local attachment ref.
+7. **Any drop** (over cap, type not in allowlist, sniff/Content-Type mismatch, ad/tracker host) → emit a structured `warnings[]` entry (§3) **and** leave an in-body placeholder (§3.3). Nothing vanishes silently.
 
-Rationale: pages must not hot-link or embed remote/data-URI binaries — provenance, offline integrity, and no remote-fetch-on-render.
+Transcoding/re-encoding fetched images (decode-bomb defense, EXIF/payload stripping, format normalization) is **out of MVP** — split to **#737** (Phase-2 hardening, config-gated, default off).
+
+Rationale: pages must not hot-link or embed remote/`data:` binaries — provenance, offline integrity, no remote-fetch-on-render; and the auto-fetch path from untrusted content must be stricter than the general attachment policy.
+
+> Config-source-of-truth note: `ngdpbase.attachment.*` (10 MB, `image/*,text/*,application/pdf`) is the **enforced** attachment policy NCM builds on. The separate `ngdpbase.features.images.*` block (5 MB, jpeg/png/gif/webp, `./public/images`) is **out of scope** for NCM and largely a config ghost — only `default-alt`/`default-class` are read (by `ImagePlugin`); `max-size`/`allowed-types`/`upload-dir`/`enabled` are declared but referenced nowhere in `src`. Flagged here as pre-existing config-hygiene debt; #728 neither uses nor fixes it.
 
 ### 2.3 Explicitly OUT of NCM
 
@@ -87,9 +94,11 @@ Rules for the normalizer / ingestion:
 
 NCM extends the **existing** `IContentConverter` registry — no new parallel system.
 
-- **`toNgdpMarkdown(input, sourceFormat) → ConversionResult`** — a normalizer that takes content in any registered source format (HTML, JSPWiki, raw Markdown, JSON-via-#501) and emits NCM. Returns the existing `ConversionResult { content, metadata, warnings }` shape.
+- **`toNgdpMarkdown(input, sourceFormat) → ConversionResult`** — a normalizer that takes content in any registered source format (HTML, JSPWiki, raw Markdown, JSON-via-#501) and emits NCM.
+- **Structured warnings (resolved 2026-05-17).** `ConversionResult.warnings` becomes `Array<{ kind: string; detail: string }>` rather than `string[]`. `kind` is a stable enum — e.g. `html-dropped:<tag>`, `img-attached`, `img-rejected:type|size|adhost|sniff-mismatch`, `link-externalized`, `placeholder-inserted`. Free text alone is not aggregatable; the stable code is the prerequisite for the conversion-metrics work (**#738**) and tightens §3.1 determinism (enum > prose). Same retrofit asymmetry as `ncmVersion` — cheap now, painful later.
+- **`ncmVersion` stamp (resolved 2026-05-17).** The normalizer writes an integer `ncmVersion` to frontmatter. Idempotent *within* a version; a profile change bumps the version and existing pages are re-normalized **only** via an explicit, opt-in migration command — **never** silently on read/edit. Protects versioned-page git history (a profile change must not smear reformat-diffs across every unrelated edit) and gives provenance for free.
 - **New/extended converters** register in `src/converters/` exactly as today (`formatId`, `formatName`, `fileExtensions`, `convert()`, `canHandle()`).
-- **"Convert an existing page" action** — admin/page action: load page → run through `toNgdpMarkdown` (HTML/JSPWiki/loose-MD → NCM) → save. Idempotent (NCM in ⇒ NCM out, byte-identical).
+- **"Convert an existing page" action** — admin/page action: load page → run through `toNgdpMarkdown` → save. **Interactive single-item ops (single-page import, convert-existing-page) preview-and-confirm before write** (the user sees exactly what will change/drop, then confirms — never a silent in-place rewrite of authored content). **Bulk import, #685 scheduled ingestion, MCP** cannot gate on a human → they rely on structured `warnings[]` + the in-body placeholder (§3.3) as the durable signal.
 - **Hookup points** (named in #728): `ImportManager` (all imports normalize to NCM) and `mcp-server.ts` (MCP page create/update normalizes to NCM).
 
 ### 3.1 Determinism (hard requirement — for #685)
@@ -110,6 +119,14 @@ Badges/chips are rendered by the view/plugin layer from three frontmatter fields
 - Round-trip rule: convert-existing-page must reproduce all three fields byte-identically (part of the §3.1 idempotence guarantee).
 - The badge/chip *rendering* (`header.ejs` page-badge config, `view.ejs` keyword chips, `SearchPlugin`) is existing presentation and is **out of #728 scope** — this spec only guarantees the inputs it consumes.
 
+### 3.3 Dropped-content placeholder (resolved 2026-05-17)
+
+When the normalizer drops content (stripped HTML, rejected/over-cap/ad image, anything lossy) it replaces it with a deterministic, explanatory in-body marker — so a reader of the page later sees *that* and *why* something was removed, not a silent gap. This is the durable signal where there is no preview (bulk import, #685, MCP).
+
+- Form: a **fixed-format NCM-valid blockquote**, e.g. `> ⚠️ NCM-DROPPED [iframe]: raw HTML not permitted`. **Not** an HTML comment (stripped by the no-HTML rule → invisible, defeats the purpose). **Not** a new plugin (avoids a new render path).
+- Always paired with a structured `warnings[]` entry of matching `kind` (§3) — placeholder is in-body, the warning is the machine signal.
+- **Idempotence (hard rule, ties to §3.1):** the normalizer must **recognise its own placeholder format and pass it through byte-identical** on re-run. Re-converting / re-ingesting a page that already contains a placeholder must not re-wrap, duplicate, or mutate it — otherwise convert-existing-page and #685 re-runs would churn version history. The placeholder is itself valid NCM at the current `ncmVersion`.
+
 ## 4. Consumers (locked relationships)
 
 - **#501 — JSON → NCM serializer.** Re-scoped from "JSON→HTML". A `json + template → NCM` serializer registered as an `IContentConverter`. Standalone surface (InterWiki/plugin rendering a JSON URL) is a thin consumer of that serializer.
@@ -117,22 +134,23 @@ Badges/chips are rendered by the view/plugin layer from three frontmatter fields
 
 Sequencing: **#728 spec (this doc) → #728 normalizer → #501 (re-scoped serializer) → #685.** #501 and #685 are blocked on the normalizer.
 
-## 5. Open questions (decide before implementation)
+## 5. Resolved decisions (2026-05-17)
 
-1. **Remote-image fetch: deny-list + timeout only.** Size/MIME limits are **already settled** — reuse `ngdpbase.attachment.maxsize` + `ngdpbase.attachment.allowedtypes` (§2.2). Genuinely open: (a) the **ad/tracker deny-list** — new config key name + default host/pattern list; (b) the remote-fetch **timeout** — reuse an existing HTTP-client timeout if one exists, else a new key.
-2. **HTML-in-body conversion policy.** Render-side is already settled (`ngdpbase.translator-reader.allow-html: false`). Open question is the *write-side* behaviour during conversion: strip silently, escape, or convert-known-then-strip-unknown? Proposal: `turndown` converts known structural HTML→MD, strip the rest, emit a `warnings[]` entry.
-3. **Lossy-conversion reporting** — surface `ConversionResult.warnings` to the user on "convert existing page" and on import.
-4. **Versioning of the NCM profile** — a `ncmVersion` so the normalizer can evolve without silently rewriting every page.
+All open questions were worked through with the operator and resolved. (The original Q1 "Badge syntax" was struck earlier the same day — badges/chips are rendered product from taxonomy frontmatter, not an NCM construct; see §2.1 note and §3.2.)
 
-> The former Q1 "Badge syntax" was removed 2026-05-17 — badges/chips are rendered product from taxonomy frontmatter, not an NCM construct; see §2.1 note and §3.2.
+1. **Remote-image fetch — RESOLVED.** (a) Ad/tracker deny-list: new key `ngdpbase.markdown.ncm.image.ad-deny-list`, **seeded** default; dropped ad images emit a `warnings[]` entry (never silent). (b) Timeout: a **global** `ngdpbase.fetch-timeout-ms` (default `30000`, promoted from `ImportManager`'s hardcoded value), **not** an NCM-scoped key — governs our own outbound HTTP; third-party clients (ES/OTLP) keep their own. Size/MIME reuse `ngdpbase.attachment.*`; NCM adds a stricter raster allowlist on top (§2.2).
+2. **HTML-in-body conversion — RESOLVED.** Convert-known → strip-rest + warn: `turndown` converts structural HTML with a clean MD equivalent; `script/style/iframe`/unknown dropped with a structured `warnings[]` entry + placeholder (§3.3). `<img>` is intercepted by the §2.2 image→attachment rule, **not** turndown.
+3. **Lossy-conversion reporting — RESOLVED.** Reuse the existing `ConversionResult.warnings` channel (now structured, §3) — `admin-import.ejs` already renders it. **Preview+confirm** on interactive single-item ops only; bulk/#685/MCP rely on warnings + the in-body placeholder (§3.3). Aggregate metrics/trend (answering "why / fix-if-many") split to **#738** (depends on the structured `kind` codes).
+4. **NCM profile versioning — RESOLVED.** `ncmVersion` frontmatter stamp + explicit-migration only, never silent rewrite-on-read (§3).
 
 ## 6. Implementation phases
 
-1. **This spec** + sign-off on §5 open questions. (No code.)
-2. **NCM profile + `toNgdpMarkdown` normalizer** on the existing converter registry; HTML→NCM and JSPWiki→NCM paths; determinism/idempotence tests.
-3. **"Convert existing page" action** + `ImportManager` / `mcp-server.ts` hookup.
-4. **Image→attachment** rule (with ad deny-list); **taxonomy frontmatter preservation** (§3.2) wired into every converter path.
+1. **This spec** — decisions resolved (§5). No code. ✓
+2. **NCM profile + `toNgdpMarkdown` normalizer** on the existing converter registry; HTML→NCM + JSPWiki→NCM; structured `{kind,detail}` warnings; `ncmVersion` stamp; determinism/idempotence tests (incl. placeholder pass-through §3.3).
+3. **"Convert existing page" action** with **preview+confirm** (interactive single-item) + `ImportManager` / `mcp-server.ts` hookup; add the global `ngdpbase.fetch-timeout-ms` key.
+4. **Image→attachment MVP** (§2.2: sniff + strict allowlist + cap + seeded ad-deny-list + placeholder); **taxonomy frontmatter preservation** (§3.2) wired into every converter path.
 5. Unblocks **#501** (JSON→NCM serializer), then **#685** (uses it for body materialization).
+6. Follow-ups (separate issues, not MVP): **#737** image transcoding hardening; **#738** conversion-metrics aggregation (gated on the structured `kind` codes from phase 2).
 
 ## 7. Acceptance criteria
 
@@ -144,6 +162,11 @@ Sequencing: **#728 spec (this doc) → #728 normalizer → #501 (re-scoped seria
 - [ ] HTML and JSPWiki sources normalize to NCM with no raw-HTML sink remaining
 - [ ] Embedded remote/data-URI images become attachments; ad/tracker images dropped
 - [ ] `ImportManager` and `mcp-server.ts` route through the normalizer
-- [ ] "Convert an existing page" action available and idempotent
-- [ ] Lossy conversions reported via `warnings[]`
-- [ ] #501 and #685 documented as consumers of the normalizer/serializer (done — see issue cross-comments 2026-05-17)
+- [ ] "Convert an existing page" action available and idempotent, with **preview+confirm** before write (interactive single-item ops only)
+- [ ] `ConversionResult.warnings` is structured `{kind,detail}` with a stable `kind` enum; lossy conversions reported via it
+- [ ] Dropped content leaves a deterministic in-body placeholder (§3.3) that round-trips byte-identical (normalizer recognises its own placeholder)
+- [ ] `ncmVersion` written to frontmatter; no silent rewrite-on-read; profile bump migrates only via explicit command
+- [ ] Image MVP: magic-byte sniff + strict raster allowlist (SVG/RAW excluded) + `ngdpbase.attachment.maxsize` cap + seeded `ngdpbase.markdown.ncm.image.ad-deny-list`
+- [ ] Global `ngdpbase.fetch-timeout-ms` (default 30000) added and used by NCM image fetch + ImportManager URL import
+- [ ] `ngdpbase.features.images.*` flagged as out-of-scope dead-key duplication (not used, not fixed by #728)
+- [ ] #501 and #685 documented as consumers; #737 (transcoding) and #738 (metrics) split out and linked
