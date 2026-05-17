@@ -2,6 +2,21 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-17-03
+
+- Agent: Claude Opus 4.7
+- Subject: #728 Phase-2 Slice 2 — HTML/JSPWiki→NCM via the existing converter registry + §2.4 link normalization.
+- Current Issue: #728 (S2 landed). Slice plan: S1 ✓ · S2 ✓ · S3 (breaking) · S4 · S5.
+- Tests: unit 5581/5581 (216 files; +8 net — +10 S2 in ncm-convert.test.ts, −2 obsolete S1 pre-S2 placeholders). No E2E (no UI/render path). Zero regressions — ncm still imported by nothing outside itself.
+- Work Done:
+  - S2 (`9359ea9d`): `normalizeToNcm` html/jspwiki branch now delegates to the existing `HtmlConverter`/`JSPWikiConverter` (NCM extends the registry, doesn't reinvent — HtmlConverter already strips script/style/iframe/svg), maps their `string[]` warnings → structured `NcmWarning` (`html-dropped` vs new `converter-note` kind), runs new `links.ts` §2.4 pass (CommonMark `[t](url)` → `[t|url|target="_blank"]` external + `link-externalized` warning; `[t|page]` internal; images/other-schemes/footnotes/existing-NCM-links untouched; idempotent), then composes through the S1 fixed point so determinism/ncmVersion stay single-sourced.
+  - Removed the obsolete S1 `pre-S2` placeholder tests (their guarded deferral is now implemented); S2 covered by `ncm-convert.test.ts`.
+- Commits: `9359ea9d` (S2), plus this log entry. Semver: still deferred (dormant — no consumer imports ncm yet; S5 wires it in).
+- Files Modified:
+  - src/converters/ncm/{types,normalize,index}.ts, src/converters/ncm/links.ts (new)
+  - src/converters/__tests__/ncm-convert.test.ts (new), ncm-normalize.test.ts
+  - docs/project_log.md
+
 ## 2026-05-17-02
 
 - Agent: Claude Opus 4.7
