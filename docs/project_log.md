@@ -2,6 +2,26 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-17-11
+
+- Agent: Claude Opus 4.7
+- Subject: #728 Phase-2 Slice 3 — ConversionResult.warnings string[] → structured {kind,detail}. **NCM Phase-2 fully complete.**
+- Current Issue: #728 (Phase-2 done, all slices). Unblocks #738 (metrics by kind).
+- Tests: unit 5607/5607 (221 files; +5 classifyWarnings, 8 prior old-shape assertions updated to structured). Build clean. No E2E (admin-import.ejs deliberately untouched — boundary-flattened; no UI change). Zero regressions.
+- Work Done:
+  - S3 (`1da1e053`): `ConversionWarning {kind:string;detail:string}` added to IContentConverter; `ConversionResult.warnings: ConversionWarning[]`. New `conversionWarning.ts classifyWarnings()` maps each converter's internal prose `string[]` to a stable kind at the single `convert()` return (content-dropped / converter-warning / converter-note) — the ~12 push sites left untouched (minimal blast radius). `ncm/bridge` now **lossless** (NcmWarning ⊆ ConversionWarning). `ncm/normalize` S2 branch consumes structured conv.warnings. ImportManager pushes structured objects; flattens to `string[]` only at the `ImportResult` boundary so `admin-import.ejs` + the ImportResult contract stay unchanged.
+  - Scope confirmed by grounding: `ValidationManager` uses its own `ValidationResult` types (NOT ConversionResult) → untouched; `admin-import.ejs` untouched; `mcp-server` unaffected (uses NcmResult).
+- NCM Phase-2 status: S1✓ S2✓ S4✓ S5b✓ S5a✓ S5a-ii✓ S5c✓ S5d✓ **S3✓** — complete.
+- Semver: S3 is an internal refactor, no user-facing effect (Phase-2 user surface already shipped v3.18.0). No separate release needed; rides the next bump or operator `/semver patch` if a tag is wanted.
+- Caveats unchanged: `/admin/convert` UI + S5a-ii deps-wiring lack dedicated E2E (pure cores tested). #738 now unblocked (structured kinds exist). #728 itself: operator's call to close (Phase-2 implemented; #737/#738 are the tracked follow-ups).
+- Commits: `1da1e053` (S3), plus this log entry.
+- Files Modified:
+  - src/converters/IContentConverter.ts, conversionWarning.ts (new), HtmlConverter.ts, JSPWikiConverter.ts, MarkdownConverter.ts
+  - src/converters/ncm/bridge.ts, src/converters/ncm/normalize.ts
+  - src/managers/ImportManager.ts
+  - src/converters/**tests**/{conversionWarning,HtmlConverter,JSPWikiConverter,MarkdownConverter,ncm-bridge}.test.ts
+  - docs/project_log.md
+
 ## 2026-05-17-10
 
 - Agent: Claude Opus 4.7
