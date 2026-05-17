@@ -25,6 +25,7 @@ my-addon-repo/
         ├── routes/
         ├── plugins/
         ├── pages/            ← wiki pages seeded into the instance on startup
+        ├── theme/            ← optional; auto-deployed to themes/<addon>/ on first boot (theme.json required)
         ├── public/           ← static assets (CSS, JS, images)
         └── README.md
 ```
@@ -306,6 +307,54 @@ author: my-addon
 ---
 <small>**[{$applicationname}]** v[{$version}] | Powered by my-addon</small>
 ```
+
+---
+
+### Ship a Theme
+
+Since v3.17.0 (issue #443): if your add-on ships a `theme/` subdirectory, ngdpbase auto-deploys it to the
+instance's `themes/<addon-name>/` on **first boot** — the same mental model as
+`pages/`. This is how a domain add-on carries its site identity (e.g. the
+`fairways` add-on ships the Fairways theme).
+
+```
+addons/my-addon/theme/
+├── theme.json          ← REQUIRED — presence sentinel (no theme.json = not deployed)
+├── css/
+│   └── variables.css
+└── assets/
+    └── favicon.png
+```
+
+Behaviour:
+
+- **First-boot copy.** On add-on registration, if `theme/theme.json` exists
+  and `themes/<addon-name>/` does **not**, the tree is copied. Logged as
+  `[AddonsManager] Deployed theme from <addon>/theme/ → themes/<addon>/`.
+- **Never overwrites.** If `themes/<addon-name>/` already exists, the copy is
+  skipped — operator customisations to the deployed theme are preserved. The
+  add-on source is *not* re-synced automatically (it's a snapshot).
+- **Activate it.** Set the active theme via `domainDefaults` in your add-on so
+  it takes effect without operator config:
+
+  ```json
+  { "ngdpbase.theme.active": "my-addon" }
+  ```
+
+- **Manual re-deploy.** `/admin/addons` shows a **Deploy Theme** button
+  (**Redeploy Theme** once deployed) for any add-on that ships a theme. This
+  overwrites `themes/<addon-name>/` with the add-on's current `theme/` — used
+  to pull in upstream theme updates. No server restart needed (theme CSS is
+  served as static files; a page reload suffices).
+
+The instance themes root is `ngdpbase.theme.directory` (default `themes`).
+`ThemeManager` is unchanged — it still reads `themes/<name>/`; deployment just
+puts the files there.
+
+> Drift note: because first-boot copy is a snapshot, theme changes you ship in
+> a later add-on release are **not** picked up until an operator clicks
+> Redeploy. Direct-load (no-copy) resolution for domain add-ons is tracked as a
+> separate design discussion in #444 and is not implemented.
 
 ---
 
@@ -614,6 +663,7 @@ Keep core PRs self-contained — no add-on-specific code in the core repo.
 - [ ] Dependencies declared in `dependencies[]` if your add-on relies on another
 - [ ] Seed pages in `pages/` use real UUID v4 filenames and matching `uuid` frontmatter
 - [ ] `pages/left-menu-content.md` and `pages/footer-content.md` present if the add-on owns the UI chrome
+- [ ] If shipping a theme: `theme/theme.json` present (sentinel) and `domainDefaults` sets `ngdpbase.theme.active`
 
 ---
 

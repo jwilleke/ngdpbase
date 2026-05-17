@@ -75,7 +75,8 @@ For each addon in resolved order:
 3. **Config resolution** — call `getAddonConfig(addonName)` which collects all config entries matching the prefix `ngdpbase.addons.{addonName}.`, strips the prefix, and returns a plain `Record<string, unknown>`.
 4. **register(engine, config)** — the addon's main initialization hook.
 5. **Page seeding** — after `register()` returns, scan `addons/{name}/pages/*.md`, parse frontmatter, and call `PageManager.savePage()` for any page whose slug doesn't already exist in the instance.
-6. **status()** — if present, called immediately to populate the admin/addons panel.
+6. **Theme deploy** (since v3.17.0, #443) — immediately after page seeding, if `addons/{name}/theme/theme.json` exists and `themes/{name}/` does not, copy the `theme/` tree to the instance themes dir (`ngdpbase.theme.directory`, default `themes`). Skip-if-exists — never overwrites operator customisations. See [§ 8b Theme Deployment](#8b-theme-deployment).
+7. **status()** — if present, called immediately to populate the admin/addons panel.
 
 ---
 
@@ -275,6 +276,33 @@ author: system
 ```
 
 Seeding is **idempotent**: if a page with that slug already exists, it is skipped. User edits survive restarts. AddonsManager automatically sets `addon` and `system-category: addon` if omitted.
+
+---
+
+## 8b. Theme Deployment
+
+Since v3.17.0 (issue #443), an add-on may ship a `theme/` subdirectory; it
+deploys to the instance themes directory the same way pages seed, and is the
+mechanism by which a domain add-on carries its site identity.
+
+- **Sentinel:** `addons/{name}/theme/theme.json` must exist (mirrors `pages/`
+  needing at least one `.md`). No `theme.json` → nothing deploys.
+- **First-boot copy:** runs immediately after page seeding (step 6 in § 2c).
+  Copies `addons/{name}/theme/` → `{themesDir}/{name}/` only if the
+  destination does not already exist.
+- **Idempotent / non-destructive:** an existing `{themesDir}/{name}/` is never
+  overwritten on boot — operator theme edits survive. The copy is a snapshot;
+  the add-on source is not auto-re-synced.
+- **Themes dir:** `ngdpbase.theme.directory` (default `themes`).
+  `ThemeManager` is unchanged — it still reads `themes/<name>/`.
+- **Manual re-deploy:** `POST /admin/addons/:name/deploy-theme`
+  (`AddonsManager.deployAddonTheme()`) force-overwrites — surfaced as the
+  **Deploy / Redeploy Theme** button on `/admin/addons` for any add-on whose
+  `getStatus()` reports `hasTheme`. No restart required (theme CSS is static).
+
+Implementation: `AddonsManager.seedAddonTheme()` / `deployAddonTheme()` /
+`addonShipsTheme()`. Type-aware direct-load (no-copy) resolution for domain
+add-ons is a separate, **unimplemented** design discussion — see #444.
 
 ---
 
