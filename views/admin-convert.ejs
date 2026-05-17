@@ -1,0 +1,131 @@
+<%- include('header', { pageName: '' }) %>
+
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1><i class="fas fa-wand-magic-sparkles"></i> Convert page to NCM</h1>
+                <a href="/admin" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> Back to Dashboard
+                </a>
+            </div>
+
+            <div class="alert alert-info">
+                Rewrites an existing page to <strong>ngdp Compatible Markdown</strong>
+                (NCM links, stamped <code>ncmVersion</code>). You always preview the
+                result before it is saved &mdash; nothing is rewritten silently.
+                Embedded-image localization is a separate step (not applied here yet).
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <form id="convert-form" class="row g-2 align-items-end" onsubmit="return false;">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <div class="col-md-9">
+                            <label for="convert-page" class="form-label">Page name</label>
+                            <input type="text" class="form-control" id="convert-page"
+                                   placeholder="Exact page name or slug" required>
+                        </div>
+                        <div class="col-md-3">
+                            <button type="submit" class="btn btn-primary w-100" id="convert-preview-btn">
+                                <i class="fas fa-eye"></i> Preview
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card mb-4" id="convert-result" style="display:none;">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-eye"></i> Conversion preview &mdash;
+                        <span id="convert-page-label" class="badge bg-info"></span>
+                        <span id="convert-changed-badge" class="badge"></span>
+                    </span>
+                    <form id="convert-apply-form" onsubmit="return false;" class="d-inline">
+                        <button type="submit" class="btn btn-success btn-sm" id="convert-apply-btn">
+                            <i class="fas fa-check"></i> Apply &amp; Save
+                        </button>
+                    </form>
+                </div>
+                <div class="card-body">
+                    <h6>Warnings</h6>
+                    <ul id="convert-warnings" class="list-unstyled small text-warning"></ul>
+                    <h6 class="mt-3">Proposed NCM</h6>
+                    <pre id="convert-proposed" class="border rounded p-3 bg-body-tertiary"
+                         style="max-height:480px;overflow:auto;white-space:pre-wrap;"></pre>
+                </div>
+            </div>
+
+            <div id="convert-status"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+  const form = document.getElementById('convert-form');
+  const pageInput = document.getElementById('convert-page');
+  const result = document.getElementById('convert-result');
+  const changedBadge = document.getElementById('convert-changed-badge');
+  const status = document.getElementById('convert-status');
+  let currentPage = null;
+
+  function esc(s) { const d = document.createElement('div'); d.textContent = String(s == null ? '' : s); return d.innerHTML; }
+
+  form.addEventListener('submit', async function () {
+    const page = pageInput.value.trim();
+    if (!page) return;
+    status.innerHTML = '';
+    try {
+      const r = await csrfFetch('/admin/convert/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ page })
+      });
+      const data = await r.json();
+      if (!data.success) {
+        status.innerHTML = '<div class="alert alert-danger">' + esc(data.error) + '</div>';
+        result.style.display = 'none';
+        return;
+      }
+      currentPage = data.page;
+      document.getElementById('convert-page-label').textContent = data.page;
+      changedBadge.textContent = data.changed ? 'will change' : 'already NCM (no change)';
+      changedBadge.className = 'badge ' + (data.changed ? 'bg-warning text-dark' : 'bg-secondary');
+      document.getElementById('convert-apply-btn').disabled = !data.changed;
+      const w = document.getElementById('convert-warnings');
+      w.innerHTML = (data.warnings && data.warnings.length)
+        ? data.warnings.map(x => '<li><i class="fas fa-triangle-exclamation"></i> ' + esc(x) + '</li>').join('')
+        : '<li class="text-muted">none</li>';
+      document.getElementById('convert-proposed').textContent = data.proposed;
+      result.style.display = '';
+    } catch (e) {
+      status.innerHTML = '<div class="alert alert-danger">Preview failed: ' + esc(e.message) + '</div>';
+    }
+  });
+
+  document.getElementById('convert-apply-form').addEventListener('submit', async function () {
+    if (!currentPage) return;
+    if (!confirm('Save the NCM conversion of "' + currentPage + '"? This creates a new page version.')) return;
+    try {
+      const r = await csrfFetch('/admin/convert/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ page: currentPage })
+      });
+      const data = await r.json();
+      if (!data.success) {
+        status.innerHTML = '<div class="alert alert-danger">' + esc(data.error) + '</div>';
+        return;
+      }
+      status.innerHTML = '<div class="alert alert-success">'
+        + (data.changed ? 'Converted and saved' : 'No change &mdash; page already NCM')
+        + ': <strong>' + esc(data.page) + '</strong>'
+        + ' &mdash; <a href="/view/' + encodeURIComponent(data.page) + '">view page</a></div>';
+      result.style.display = 'none';
+    } catch (e) {
+      status.innerHTML = '<div class="alert alert-danger">Apply failed: ' + esc(e.message) + '</div>';
+    }
+  });
+})();
+</script>

@@ -20,6 +20,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import fse from 'fs-extra';
 import matter from 'gray-matter';
+import { normalizeExistingPageToNcm } from '../converters/ncm/index.js';
 import { createPatch } from 'diff';
 import { exec } from 'child_process';
 import { Request, Response, Application } from 'express';
@@ -8507,6 +8508,103 @@ ${panes}
   }
 
   /**
+   * GET /admin/convert — render the "Convert page to NCM" admin tool (#728 S5a)
+   */
+  async adminConvert(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!wikiContext.userContext || !(await wikiContext.hasPermission('admin-system'))) {
+        return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to convert pages');
+      }
+      const commonData = await this.getCommonTemplateData(req);
+      return res.render('admin-convert', {
+        ...commonData,
+        title: 'Convert page to NCM',
+        csrfToken: req.session.csrfToken
+      });
+    } catch (err: unknown) {
+      logger.error('Error loading admin convert:', err);
+      return res.status(500).send('Error loading convert tool');
+    }
+  }
+
+  /**
+   * Load a page and return the proposed NCM rewrite without saving (#728 S5a).
+   * Mirrors the import dry-run/preview pattern; preview+confirm is mandatory
+   * for this interactive single-page op (spec §3) — never a silent rewrite.
+   */
+  async adminConvertPreview(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!wikiContext.userContext || !(await wikiContext.hasPermission('admin-system'))) {
+        return res.status(403).json({ success: false, error: 'You do not have permission to convert pages' });
+      }
+      const pageName = (req.body as { page?: string }).page;
+      if (!pageName) {
+        return res.status(400).json({ success: false, error: 'page is required' });
+      }
+      const pageManager = this.engine.getManager<import('../managers/PageManager.js').default>('PageManager');
+      const page = await pageManager?.getPage(pageName);
+      if (!page) {
+        return res.status(404).json({ success: false, error: `Page not found: ${pageName}` });
+      }
+      const original = matter.stringify(page.content, page.metadata as Record<string, unknown>);
+      const ncm = normalizeExistingPageToNcm(original);
+      return res.json({
+        success: true,
+        page: pageName,
+        changed: ncm.content !== original,
+        ncmVersion: ncm.ncmVersion,
+        original,
+        proposed: ncm.content,
+        warnings: ncm.warnings.map(w => `${w.kind}: ${w.detail}`)
+      });
+    } catch (err: unknown) {
+      logger.error('Error previewing page conversion:', err);
+      return res.status(500).json({ success: false, error: getErrorMessage(err) || 'Error previewing conversion' });
+    }
+  }
+
+  /**
+   * Apply the NCM conversion to a page, saving via PageManager so versioning
+   * and ACL apply (#728 S5a).
+   */
+  async adminConvertExecute(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!wikiContext.userContext || !(await wikiContext.hasPermission('admin-system'))) {
+        return res.status(403).json({ success: false, error: 'You do not have permission to convert pages' });
+      }
+      const pageName = (req.body as { page?: string }).page;
+      if (!pageName) {
+        return res.status(400).json({ success: false, error: 'page is required' });
+      }
+      const pageManager = this.engine.getManager<import('../managers/PageManager.js').default>('PageManager');
+      const page = await pageManager?.getPage(pageName);
+      if (!page) {
+        return res.status(404).json({ success: false, error: `Page not found: ${pageName}` });
+      }
+      const original = matter.stringify(page.content, page.metadata as Record<string, unknown>);
+      const ncm = normalizeExistingPageToNcm(original);
+      if (ncm.content === original) {
+        return res.json({ success: true, page: pageName, changed: false, warnings: [] });
+      }
+      const split = matter(ncm.content);
+      await pageManager?.savePage(pageName, split.content, split.data as Record<string, unknown>);
+      return res.json({
+        success: true,
+        page: pageName,
+        changed: true,
+        ncmVersion: ncm.ncmVersion,
+        warnings: ncm.warnings.map(w => `${w.kind}: ${w.detail}`)
+      });
+    } catch (err: unknown) {
+      logger.error('Error executing page conversion:', err);
+      return res.status(500).json({ success: false, error: getErrorMessage(err) || 'Error executing conversion' });
+    }
+  }
+
+  /**
    * Admin logs page
    */
   async adminLogs(req: Request, res: Response) {
@@ -9283,6 +9381,9 @@ ${panes}
     app.post('/admin/import/execute/stream', (req: Request, res: Response) => this.adminImportExecuteStream(req, res));
     app.post('/admin/import/url/preview', (req: Request, res: Response) => this.adminImportUrlPreview(req, res));
     app.post('/admin/import/url/execute', (req: Request, res: Response) => this.adminImportUrlExecute(req, res));
+    app.get('/admin/convert', (req: Request, res: Response) => void this.adminConvert(req, res));
+    app.post('/admin/convert/preview', (req: Request, res: Response) => void this.adminConvertPreview(req, res));
+    app.post('/admin/convert/execute', (req: Request, res: Response) => void this.adminConvertExecute(req, res));
 
     // Image upload route with error handling
     app.post('/images/upload', (req: Request, res: Response) => {
