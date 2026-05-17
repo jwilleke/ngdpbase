@@ -2,6 +2,23 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-17-05
+
+- Agent: Claude Opus 4.7
+- Subject: #728 Phase-2 Slice 5b — ImportManager hookup via the NCM→ConversionResult bridge (first real NCM consumer).
+- Current Issue: #728. Slice plan: S1 ✓ · S2 ✓ · S4 ✓ · **S5b ✓** · S5a (UI) · S5c (MCP) · S3 (breaking, last).
+- Tests: unit 5594/5594 (217 files; +3 bridge). No E2E (no UI in S5b — ImportManager only). Zero regressions; existing ImportManager/converter tests unaffected (mock path preserved).
+- Work Done:
+  - S5b (`9b94f9c3`): new `src/converters/ncm/bridge.ts` `ncmToConversionResult` — adapts `NcmResult`→legacy `ConversionResult` (frontmatter→metadata incl. `ncmVersion`, body→content, `NcmWarning[]`→`string[]` as "kind: detail"). The deliberate lossy bridge deferring the broad structured-warnings migration (S3).
+  - `ImportManager` routes `formatId` html|jspwiki through `ncmToConversionResult(normalizeToNcm(...))` (same converters S2 delegates to + §2.4 links + ncmVersion). Markdown stays on MarkdownConverter (KNOWN_FIELDS reliance; markdown→NCM parity = S3); mock/other formats keep the direct path. `buildFrontmatter` already passes non-curated keys → `ncmVersion` flows with zero change there.
+- Note: NCM is **no longer dormant** — html/jspwiki imports now observably produce NCM link forms + `ncmVersion`. Behaviour change on the import path; capture in the eventual release notes (semver still deferred until the S5/S3 sequence reaches a releasable point or operator runs /semver).
+- Commits: `9b94f9c3` (S5b), plus this log entry.
+- Files Modified:
+  - src/converters/ncm/bridge.ts (new), src/converters/ncm/index.ts
+  - src/managers/ImportManager.ts
+  - src/converters/**tests**/ncm-bridge.test.ts (new)
+  - docs/project_log.md
+
 ## 2026-05-17-04
 
 - Agent: Claude Opus 4.7
