@@ -321,7 +321,7 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
 
       expect(search.advancedSearchWithContext).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ query: 'beach', categories: [], userKeywords: [], systemKeywords: [], searchIn: ['all'] })
+        expect.objectContaining({ query: 'beach', categories: [], userKeywords: [], systemKeywords: [], searchIn: ['title'] })
       );
     });
 
@@ -381,10 +381,24 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       );
     });
 
-    it('defaults searchIn to ["all"] when not provided', async () => {
+    it('defaults searchIn to ["title"] for page search when not provided (#739)', async () => {
       const search = makeSearchManager();
       const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
       const req = makeReq({ query: { types: 'page', q: 'x' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(search.advancedSearchWithContext).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ searchIn: ['title'] })
+      );
+    });
+
+    it('honours explicit searchIn=all (full-text opt-in) for page search (#739)', async () => {
+      const search = makeSearchManager();
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
+      const req = makeReq({ query: { types: 'page', q: 'x', searchIn: 'all' } });
       const res = makeRes();
 
       await routes.assetSearch(req, res);

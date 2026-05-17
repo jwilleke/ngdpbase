@@ -7956,9 +7956,13 @@ ${panes}
         const rawSearchIn = req.query.searchIn;
         let searchIn = (Array.isArray(rawSearchIn)
           ? rawSearchIn.filter((s): s is string => typeof s === 'string')
-          : typeof rawSearchIn === 'string' ? [rawSearchIn] : ['all']
+          : typeof rawSearchIn === 'string' ? [rawSearchIn] : []
         ).filter(s => s.trim() !== '');
-        if (searchIn.length === 0) searchIn = ['all'];
+        // #739: page search defaults to TITLE (short, high-signal — fixes the
+        // #740 "Public Education matches Boise ID" over-broad full-text recall).
+        // Full text is opt-in: the asset-picker "Full text" checkbox passes
+        // searchIn=all; bookmarked ?searchIn=content|all still works.
+        if (searchIn.length === 0) searchIn = ['title'];
 
         // #731 Slice 3: always use the SearchManager/index path for pages.
         // Slice 1 made the no-text branch ACL-safe AND rich (title / excerpt /

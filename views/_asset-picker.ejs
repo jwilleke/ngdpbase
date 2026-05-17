@@ -95,6 +95,12 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
             <label class="form-check-label small" for="ap-include-hidden">Include archived</label>
         </div>
     </div>
+    <div class="col-auto d-flex align-items-center" id="ap-fulltext-col" style="display:none;">
+        <div class="form-check mb-0">
+            <input class="form-check-input" type="checkbox" id="ap-fulltext">
+            <label class="form-check-label small" for="ap-fulltext" title="Off = match page titles only (default). On = also search page body/content.">Full text</label>
+        </div>
+    </div>
 </div>
 
 <!-- Layout: facet sidebar + results -->
@@ -166,6 +172,8 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
     var dateFieldEl  = document.getElementById('ap-date-field');
     var pathPrefixEl = document.getElementById('ap-path-prefix');
     var inclHiddenEl = document.getElementById('ap-include-hidden');
+    var fulltextEl   = document.getElementById('ap-fulltext');
+    var fulltextColEl = document.getElementById('ap-fulltext-col');
     var facetsEl     = document.getElementById('ap-facets');
     var resEl        = document.getElementById('ap-results');
     var cntEl        = document.getElementById('ap-count');
@@ -210,6 +218,7 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
         _apTimer = setTimeout(function () { _apSearch(0); }, 400);
     });
     inclHiddenEl.addEventListener('change', function () { _apSearch(0); });
+    if (fulltextEl) fulltextEl.addEventListener('change', function () { _apSearch(0); });
     document.getElementById('ap-search-btn').addEventListener('click', function () { _apSearch(0); });
     document.getElementById('ap-upload-btn').addEventListener('click', function () {
         if (typeof window.showUploadAttachment === 'function') {
@@ -245,6 +254,8 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
         // The wrapper IS the upload button; restore its original title when re-enabled.
         _apApply(uploadBtnEl, [uploadBtnEl], 'Upload Attachment');
         _apApply(advancedRow, [dateFromEl, dateToEl, dateFieldEl, pathPrefixEl, inclHiddenEl]);
+        // #739: the Full-text toggle only applies to page search.
+        if (fulltextColEl) fulltextColEl.style.display = (srcEl.value === 'page') ? '' : 'none';
     }
     _apUpdateControls();
 
@@ -302,6 +313,14 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
                         params.append(key, vals);
                     }
                 });
+            }
+
+            // #739: for page search the Full-text checkbox is the authoritative
+            // searchIn control. Unchecked → omit searchIn (server defaults to
+            // TITLE). Checked → search all fields (title + body/content/etc.).
+            if (src === 'page') {
+                params.delete('searchIn');
+                if (fulltextEl && fulltextEl.checked) params.set('searchIn', 'all');
             }
 
             var resp = await csrfFetch('/api/assets/search?' + params.toString());
@@ -682,6 +701,13 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
     // #696: hidden filters — no UI control today (#691). Read once on init
     // and re-attached to every search URL in _apSearch.
     var _apHiddenFilters = <%- JSON.stringify(_apInitFilters) %>;
+
+    // #739: reflect a bookmarked full-text page search in the checkbox so the
+    // UI matches the URL (e.g. /search?types=page&searchIn=content).
+    if (srcEl.value === 'page' && fulltextEl && Array.isArray(_apHiddenFilters.searchIn) &&
+        _apHiddenFilters.searchIn.some(function (s) { return s === 'all' || s === 'content'; })) {
+        fulltextEl.checked = true;
+    }
 
     // #731: reflect the persisted view on the toggle buttons before first
     // fetch (render is a no-op until results arrive; _apSearch then renders
