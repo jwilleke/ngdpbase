@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-16T23:15:00.000Z'
+lastModified: '2026-05-17T20:00:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -32,11 +32,14 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 ## Open BUGS (ngdpbase, by issue #)
 
-3 open as of 2026-05-16. #735 filed today (needs repro detail); #660/#599 are non-actionable carry-forwards.
+6 open as of 2026-05-17. **Search cluster is the live theme**: #740/#735 (bugs) + #739 (enhancement) are all `/search`-quality, filed within 24h — highest-value actionable area. #660/#599 are non-actionable carry-forwards.
 
 | # | Title |
 |---|---|
-| #735 | `/search` fails on Mobile — filed 2026-05-16; **body empty, needs repro detail** (device/OS/browser, exact failure, desktop comparison). Not yet actionable without repro |
+| #741 | `[{Insert pagesection='…?section=1'}]` not rendering the page section as a heading — filed 2026-05-17; concrete repro (page MEW-Medical Summary); plugin-system/UI. Actionable |
+| #740 | `/search` for pages — poor relevance: `"Public Education"` phrase returns non-matching pages (e.g. Boise ID, only loose word hits). Filed 2026-05-17; concrete repro. Actionable; part of the search cluster (see #739/#735) |
+| #735 | `/search` fails on Mobile — filed 2026-05-16; **body still empty, needs repro detail** (device/OS/browser, exact failure, desktop comparison). Not yet actionable without repro |
+| #724 | `NGDPBASE-test-*` files linger after test runs (recurring) — test teardown not cleaning created pages; `help wanted`/testing. Note global rule: never delete live `data/` in teardown — fix must scope-delete only test-created subdirs |
 | #660 | Agent and ./docs documentation — tooling shipped; 49 doc-stub warnings remain for source-only modules (stub-creation backlog; cosmetic, non-blocking) |
 | #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); tracked by Dependabot #96 |
 
@@ -44,7 +47,8 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 Items awaiting a yes/no/close or operator-only action. Not blocking other work.
 
-- **#735** — `[BUG] /search fails on Mobile` filed 2026-05-16 with an empty body. Awaiting operator repro detail (device/OS/browser, exact failure, desktop comparison) before it can be triaged or actioned.
+- **#735** — `[BUG] /search fails on Mobile`, empty body. Awaiting operator repro detail (device/OS/browser, exact failure, desktop comparison) before it can be triaged.
+- **#724** — recurring `NGDPBASE-test-*` test-file lingering, labelled `help wanted`. Awaiting decision/assignment; the fix touches test teardown (must only scope-delete test-created subdirs, never the live `data/` tree).
 
 ## Sister-site top priorities — combined table
 
@@ -63,7 +67,10 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | # | Topic | Priority hint |
 |---|---|---|
 | #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Low — body reconciled with `master` 2026-05-16 (audit comment pinned); search-provider ACL now explicitly out-of-scope; `stash@{0}` is a reference, no longer `git stash pop`-clean. Refactor intentionally not started |
-| #728 | ngdp Compatible Markdown | Low — filed 2026-05-16; architecture; markdown-compat scoping |
+| #739 | `/search` for pages should search Titles by default | Medium — small, part of the live **search cluster** with bugs #740/#735; likely the cheapest lever on search relevance |
+| #738 | NCM/import conversion metrics — aggregate by structured `kind`, trend | Low — **unblocked** by #728 S3 (structured `kind` codes now exist); observability follow-up, reuses MetricsManager/OTLP |
+| #737 | NCM Phase-2: transcode/re-encode fetched embedded images (security+size) | Low — #728 Phase-2 hardening split-out; config-gated, adds sharp/libvips; do when a real driver appears |
+| #736 | `config/app-default-config.json` documentation | Low — filed 2026-05-17; doc task; large config surface incl. new NCM keys |
 | #729 | Improvements to `[{Location}]` | Low — filed 2026-05-16; good-first-issue; Location plugin follow-ups |
 | #722 | Video poster-frame thumbnails (ffmpeg) | Low — substantial; adds ffmpeg dep. #731 shipped v3.16.0; this fills the video thumbnail cell in its list/card rows |
 | #721 | Asset-picker advanced filters: capture-date for video + collapse into disclosure | Low — filter-input axis; backend video `dateTimeOriginal` indexing + UI tidy |
