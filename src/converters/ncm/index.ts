@@ -11,4 +11,6 @@
 export * from './types.js';
 export { formatDroppedPlaceholder, isDroppedPlaceholderLine } from './placeholder.js';
 export { normalizeLinks } from './links.js';
+export { localizeNcmImages } from './images.js';
+export type { NcmImageConfig, NcmImageDeps } from './images.js';
 export { normalizeToNcm } from './normalize.js';

@@ -30,6 +30,8 @@
   "ngdpbase.translator-reader.allow-html": false,
   "ngdpbase.translator-reader.plain-uris": true,
   "ngdpbase.translator-reader.inline-pattern.1": "s/\\{\\{([^}]+)\\}\\}/\\<tt\\>$1\\<\\/tt\\>/g",
+  "_comment_http": "Global timeout (ms) for ngdpbase's own outbound HTTP fetches (NCM image fetch #728, URL import). Does NOT override third-party clients that manage their own timeouts (Elasticsearch, OTLP).",
+  "ngdpbase.fetch-timeout-ms": 30000,
   "_comment_application_organization": "Identity of THIS install (#617). The org JSON-LD file at <storagedir>/<file> is the single source of truth — name, url, address, etc. live IN THE FILE, not in config. Install completion tracked via INSTANCE_DATA_FOLDER/.install-complete (not config).",
   "ngdpbase.application.organization.storagedir": "${FAST_STORAGE}/organizations",
   "ngdpbase.application.organization.file": "",
@@ -86,6 +88,14 @@
   "ngdpbase.attachment.allowedtypes": "image/*,text/*,application/pdf",
   "ngdpbase.attachment.forcedownload": false,
   "ngdpbase.attachment.metadatafile": "${SLOW_STORAGE}/attachments/attachment-metadata.json",
+  "_comment_ncm_image": "ngdp Compatible Markdown embedded-image rule (#728 §2.2). Size cap reuses ngdpbase.attachment.maxsize; the accepted raster set is a fixed NCM allowlist (jpeg/png/gif/webp — SVG/RAW excluded, not configurable: NCM tightens, never loosens). ad-deny-list: hosts/host+path substrings whose images are dropped (not attached); matched case-insensitively against the URL.",
+  "ngdpbase.markdown.ncm.image.ad-deny-list": [
+    "doubleclick.net",
+    "googlesyndication.com",
+    "google-analytics.com",
+    "facebook.com/tr",
+    "scorecardresearch.com"
+  ],
   "_comment_search_storage": "Search indexing configuration (ALL LOWERCASE)",
   "ngdpbase.search.enabled": true,
   "_comment_search_provider": "Search provider with fallback",
