@@ -2,6 +2,22 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-17-09
+
+- Agent: Claude Opus 4.7
+- Subject: #728 Phase-2 Slice 5d — non-preview NCM conversions push to /admin/notifications. Phase-2 complete except S3.
+- Current Issue: #728. Slice plan: S1✓ S2✓ S4✓ S5b✓ S5a✓ S5a-ii✓ S5c✓ **S5d✓** · S3 (breaking structured-warnings migration — LAST, separately gated).
+- Tests: unit 5602/5602 (+5 ncmNotify). No E2E (no UI/views touched in S5d). Zero regressions.
+- Work Done:
+  - S5d (`2d448827`): `src/utils/ncmNotify.ts` `notifyNcmConversion` (engine-coupled glue, keeps `ncm/` pure; best-effort/non-blocking, mirrors MediaManager's NotificationManager usage). Wired into ImportManager (non-dryRun html/jspwiki imports) + mcp-server `createPage`/`updatePage`. #685 is future (framework unbuilt). Distinct from #738 (aggregate metrics vs per-event alert).
+- Milestone: NCM is wired into all live consumers — ImportManager (html/jspwiki), the `/admin/convert` admin tool (text+links+ncmVersion+image localization), MCP create/update — with structured warnings, in-body §3.3 placeholders, preview+confirm on interactive ops, and /admin/notifications on non-preview paths. New config keys + admin route/view. **S1–S5d is a coherent, releasable feature set.** Only the internal `ConversionResult` structured-warnings migration (S3) remains — no user-facing effect.
+- Open caveats: S5a `/admin/convert` UI + S5a-ii deps-wiring have no dedicated automated E2E (pure cores tested; verified by build+regression+E2E boot). Markdown import still on MarkdownConverter (markdown→NCM parity = S3).
+- Commits: `2d448827` (S5d), plus this log entry. Semver: a release is now warranted (deferred-pending → recommend operator `/semver minor`); S3 has no user-facing effect and can follow.
+- Files Modified:
+  - src/utils/ncmNotify.ts (new), src/utils/**tests**/ncmNotify.test.ts (new)
+  - src/managers/ImportManager.ts, mcp-server.ts
+  - docs/project_log.md
+
 ## 2026-05-17-08
 
 - Agent: Claude Opus 4.7
