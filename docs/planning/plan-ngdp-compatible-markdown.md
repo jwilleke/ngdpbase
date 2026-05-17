@@ -40,9 +40,9 @@ NCM = **CommonMark/GFM core** (as rendered by the existing showdown config) **pl
 |---|---|---|
 | **Headings, emphasis, lists, code** | CommonMark | showdown |
 | **Tables** | GFM pipe tables | showdown (GFM tables) |
-| **Links** | `[text](url)` for external; `[Text\|PageName]` for wiki links | MarkupParser link handling |
+| **Links** | JSPWiki form (see §2.4): internal `[Display\|PageName]`, external `[Display\|https://url\|target="_blank"]`, InterWiki `[Display\|Site:Ref]` — **not** CommonMark `[text](url)` | `LinkParserHandler` |
 | **Footnotes** | `[^id]` reference + `[^id]: text` definition (single-line and multi-paragraph) | `FootnoteManager`, `showdown-footnotes-fixed`, `MarkupParser` steps 3.5/3.6 |
-| **Embedded images** | `![alt](attachment-ref)` — the image is downloaded and stored as an **attachment**; the source URL/data-URI is replaced with the local attachment reference | `AttachmentManager`, `ImportManager.importPageAttachments()` |
+| **Embedded images** | `![alt](attachment-ref)` — image downloaded and stored as an **attachment** (subject to existing `ngdpbase.attachment.maxsize` / `ngdpbase.attachment.allowedtypes`); source URL/`data:` URI replaced with the local attachment ref | `AttachmentManager`, `ImportManager.importPageAttachments()` |
 | **Plugins / variables** | `[{PluginName param='…'}]`, `[{$variable}]` | `PluginManager`, `VariableManager` |
 | **Frontmatter** | YAML via `gray-matter`, incl. the taxonomy fields (`system-category`, `user-keywords`, `system-keywords`) — see §3.2 | existing page contract |
 
@@ -52,8 +52,8 @@ NCM = **CommonMark/GFM core** (as rendered by the existing showdown config) **pl
 
 On conversion, for every embedded image whose source is a remote URL or a `data:` URI:
 
-1. Fetch/decode the bytes (size/type limits enforced — see Open Questions).
-2. Store via `AttachmentManager` against the target page (reuse `ImportManager.importPageAttachments()` semantics).
+1. Fetch/decode the bytes. **Size and MIME limits reuse the existing attachment config** — `ngdpbase.attachment.maxsize` (default 10485760 = 10 MB) and `ngdpbase.attachment.allowedtypes` (default `image/*,text/*,application/pdf`), enforced today by `AttachmentManager` / `BasicAttachmentProvider`. NCM does **not** introduce a parallel image-limit namespace.
+2. Store via `AttachmentManager` against the target page (reuse `ImportManager.importPageAttachments()` semantics — limits are enforced there).
 3. Rewrite the Markdown image to reference the stored attachment.
 4. **Exclude ad/tracking images** (the issue's "NOT Ads"): images matching a deny-list of ad/tracker hosts/patterns are dropped, not attached. Deny-list is config-driven.
 
@@ -61,10 +61,27 @@ Rationale: pages must not hot-link or embed remote/data-URI binaries — provena
 
 ### 2.3 Explicitly OUT of NCM
 
-- **Raw/embedded HTML** in page body — stripped or escaped on normalization. (The single biggest reason for this spec.)
+- **Raw/embedded HTML** in page body — the platform already defaults to no-HTML via `ngdpbase.translator-reader.allow-html: false` (`config/app-default-config.json`). NCM normalization is the *write-side* counterpart: HTML is converted/stripped at conversion time (see §5 Q2) so the stored page never depends on `allow-html`.
 - **Remote-hosted images / `data:` URIs** left as-is — always converted to attachments (§2.2) or dropped (ads).
 - `<script>`, `<style>`, `<iframe>`, event-handler attributes — never.
 - Anything that triggers a render-time outbound fetch.
+
+### 2.4 Links (internal vs external)
+
+NCM uses the existing `LinkParserHandler` JSPWiki forms — **not** CommonMark `[text](url)`:
+
+| Kind | NCM form | Render behaviour |
+|---|---|---|
+| Internal (wiki) | `[Display\|PageName]` (or `[PageName]`) | resolves to `/view/<page>`; red-link if the page is absent |
+| External | `[Display\|https://example.com\|target="_blank"]` | opens in a new tab; the renderer adds `rel="noopener noreferrer"` |
+| InterWiki | `[Display\|Wikipedia:Article]` | expands via `ngdpbase.interwiki.*` site config |
+
+Rules for the normalizer / ingestion:
+
+- A link whose target is an absolute `http(s)://` URL is **external** → emit the `target="_blank"` attribute form (renderer adds `rel="noopener noreferrer"`; attribute allow-list is enforced by `LinkParserHandler`).
+- A link whose target resolves to a wiki page name is **internal** → emit `[Display|PageName]`. Do not hardcode `/view/...` paths; let the resolver own routing.
+- `[{$pagename}]` etc. are **variables**, not links — never emitted by ingestion as a link form.
+- Bare URLs are auto-linked (`ngdpbase.translator-reader.plain-uris: true`) but the normalizer should still prefer the explicit external form so `target`/`rel` are applied.
 
 ## 3. The converter / normalizer contract
 
@@ -102,8 +119,8 @@ Sequencing: **#728 spec (this doc) → #728 normalizer → #501 (re-scoped seria
 
 ## 5. Open questions (decide before implementation)
 
-1. **Image attachment limits** — max bytes, allowed MIME types, fetch timeout, and the **ad/tracker deny-list** source (config key name + default list).
-2. **HTML-in-body policy** — strip silently, escape, or convert-then-strip-unknown? Proposal: convert known HTML→MD via `turndown`, strip the rest, emit a `warnings[]` entry.
+1. **Remote-image fetch: deny-list + timeout only.** Size/MIME limits are **already settled** — reuse `ngdpbase.attachment.maxsize` + `ngdpbase.attachment.allowedtypes` (§2.2). Genuinely open: (a) the **ad/tracker deny-list** — new config key name + default host/pattern list; (b) the remote-fetch **timeout** — reuse an existing HTTP-client timeout if one exists, else a new key.
+2. **HTML-in-body conversion policy.** Render-side is already settled (`ngdpbase.translator-reader.allow-html: false`). Open question is the *write-side* behaviour during conversion: strip silently, escape, or convert-known-then-strip-unknown? Proposal: `turndown` converts known structural HTML→MD, strip the rest, emit a `warnings[]` entry.
 3. **Lossy-conversion reporting** — surface `ConversionResult.warnings` to the user on "convert existing page" and on import.
 4. **Versioning of the NCM profile** — a `ncmVersion` so the normalizer can evolve without silently rewriting every page.
 
@@ -119,7 +136,9 @@ Sequencing: **#728 spec (this doc) → #728 normalizer → #501 (re-scoped seria
 
 ## 7. Acceptance criteria
 
-- [ ] NCM profile is precisely specified (constructs, OUT list, image rule)
+- [ ] NCM profile is precisely specified (constructs, OUT list, image rule, link forms §2.4)
+- [ ] Links normalized to `LinkParserHandler` forms — external links carry `target="_blank"` (+ renderer `rel="noopener noreferrer"`), internal links emit `[Display\|PageName]` (no hardcoded `/view/` paths)
+- [ ] Image→attachment reuses existing `ngdpbase.attachment.maxsize` / `ngdpbase.attachment.allowedtypes` (no parallel limit namespace)
 - [ ] `toNgdpMarkdown` is idempotent and deterministic (NCM-in ⇒ byte-identical NCM-out); covered by tests
 - [ ] Taxonomy frontmatter (`user-keywords`/`system-keywords`/`system-category`) preserved per §3.2 — `user-keywords` never overwritten by ingestion; round-trips byte-identically
 - [ ] HTML and JSPWiki sources normalize to NCM with no raw-HTML sink remaining
