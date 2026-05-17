@@ -1,18 +1,19 @@
 /**
  * NCM normalizer — Phase 2 Slice 1 (#728)
  *
- * Slice 1 scope is deliberately narrow: the **idempotent fixed point** only.
- *
- * - `ncm` / `markdown`: parse frontmatter, stamp `ncmVersion` if absent
+ * - `ncm` / `markdown` (S1): parse frontmatter, stamp `ncmVersion` if absent
  *   (preserve an existing value — migration is a separate explicit step,
  *   never silent rewrite-on-read), re-emit with deterministic (sorted)
  *   frontmatter key order; body passed through unchanged. Placeholder lines
  *   therefore round-trip byte-identical.
- * - `html` / `jspwiki`: NOT converted here — that is Slice 2 (#728 S2).
- *   Content is returned unchanged with a single `source-unsupported`
- *   warning so the deferral is explicit in the type system and tests.
+ * - `html` / `jspwiki` (S2): delegate to the existing `HtmlConverter` /
+ *   `JSPWikiConverter` registry (the spec says NCM *extends* the registry,
+ *   not reinvents it), map their `string[]` warnings to structured
+ *   `NcmWarning`, normalize CommonMark links to NCM §2.4 forms, then run the
+ *   assembled doc through the S1 fixed point so determinism/version/order
+ *   live in exactly one place.
  *
- * The guarantee this slice establishes (and that is painful to retrofit):
+ * The guarantee S1 establishes (painful to retrofit):
  * `normalize(normalize(x)) === normalize(x)` byte-identical, and an existing
  * `ncmVersion` is never silently changed.
  *
@@ -20,7 +21,10 @@
  */
 
 import matter from 'gray-matter';
+import HtmlConverter from '../HtmlConverter.js';
+import JSPWikiConverter from '../JSPWikiConverter.js';
 import { NCM_VERSION, NcmResult, NcmSourceFormat, NcmWarning } from './types.js';
+import { normalizeLinks } from './links.js';
 
 /** Re-key an object with keys in stable sorted order (determinism, §3.1). */
 function sortedData(data: Record<string, unknown>): Record<string, unknown> {
@@ -44,11 +48,33 @@ export function normalizeToNcm(
   const warnings: NcmWarning[] = [];
 
   if (sourceFormat === 'html' || sourceFormat === 'jspwiki') {
-    warnings.push({
-      kind: 'source-unsupported',
-      detail: `${sourceFormat}→NCM conversion is not yet implemented (lands in #728 S2); content passed through unchanged`
-    });
-    return { content: input, warnings, ncmVersion: NCM_VERSION };
+    const converter = sourceFormat === 'html'
+      ? new HtmlConverter()
+      : new JSPWikiConverter();
+    const conv = converter.convert(input);
+
+    // Map upstream string warnings → structured NcmWarning. Drops/strips
+    // become `html-dropped`; everything else is a passthrough note.
+    for (const w of conv.warnings) {
+      const dropped = /\bremov(e|ed)\b|\bstrip|\bboilerplate\b|no .*content/i.test(w);
+      warnings.push({ kind: dropped ? 'html-dropped' : 'converter-note', detail: w });
+    }
+
+    // §2.4: CommonMark links → NCM JSPWiki link forms (records externalizations).
+    const body = normalizeLinks(conv.content, warnings);
+
+    // Compose frontmatter (from converter metadata) + body, then run the S1
+    // fixed point so sorting / ncmVersion / determinism is owned in one place.
+    const assembled = matter.stringify(
+      body,
+      (conv.metadata ?? {})
+    );
+    const fixed = normalizeToNcm(assembled, 'markdown');
+    return {
+      content: fixed.content,
+      warnings: [...warnings, ...fixed.warnings],
+      ncmVersion: fixed.ncmVersion
+    };
   }
 
   // 'ncm' | 'markdown' — the idempotent fixed point.

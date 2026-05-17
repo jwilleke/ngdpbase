@@ -88,13 +88,3 @@ describe('NCM dropped-content placeholder (§3.3)', () => {
     expect(r1.content).toContain(ph);
   });
 });
-
-describe('NCM deferred source formats (pre-S2)', () => {
-  test.each(['html', 'jspwiki'] as const)('%s is passed through with a source-unsupported warning', (fmt) => {
-    const src = '<p>hello</p>';
-    const r = normalizeToNcm(src, fmt);
-    expect(r.content).toBe(src);
-    expect(r.warnings).toHaveLength(1);
-    expect(r.warnings[0].kind).toBe('source-unsupported');
-  });
-});

@@ -31,7 +31,8 @@ export type NcmWarningKind =
   | 'img-rejected'          // detail: type | size | adhost | sniff-mismatch
   | 'link-externalized'     // detail: the URL
   | 'placeholder-inserted'  // detail: what the placeholder stands in for
-  | 'source-unsupported';   // detail: format not yet implemented (pre-S2)
+  | 'converter-note'        // detail: passthrough note from an upstream IContentConverter
+  | 'source-unsupported';   // detail: format not yet implemented
 
 export interface NcmWarning {
   kind: NcmWarningKind;
