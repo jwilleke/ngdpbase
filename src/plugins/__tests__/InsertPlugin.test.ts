@@ -326,4 +326,45 @@ describe('InsertPlugin', () => {
       expect(result).not.toContain('first.');
     });
   });
+
+  describe('caption override / suppression (#741)', () => {
+    function multiSectionPage() {
+      return {
+        getPage: vi.fn().mockResolvedValue({
+          content: '# One\n\nFirst.\n\n# Two\n\nSecond.\n\n# Three\n\nThird.',
+          metadata: {}
+        })
+      };
+    }
+
+    test('caption="Text" replaces the imported section heading text (keeps level)', async () => {
+      const ctx = makeContext({ pageManager: multiSectionPage() });
+      const result = await InsertPlugin.execute!(ctx, { pagesection: 'Page?section=1', caption: 'My Cool Heading' }) as string;
+      expect(result).toContain('# My Cool Heading');
+      expect(result).toContain('Second.');
+      expect(result).not.toContain('Two'); // source heading text gone
+    });
+
+    test('caption="none" drops the imported heading entirely', async () => {
+      const ctx = makeContext({ pageManager: multiSectionPage() });
+      const result = await InsertPlugin.execute!(ctx, { pagesection: 'Page?section=1', caption: 'none' }) as string;
+      expect(result).toContain('Second.');
+      expect(result).not.toContain('Two');
+      expect(result).not.toContain('none'); // not rendered as a heading
+      expect(result).not.toMatch(/<rendered>\s*#/); // body starts with no heading
+    });
+
+    test('no caption param keeps the source heading (back-compat)', async () => {
+      const ctx = makeContext({ pageManager: multiSectionPage() });
+      const result = await InsertPlugin.execute!(ctx, { pagesection: 'Page?section=1' }) as string;
+      expect(result).toContain('# Two');
+    });
+
+    test('caption applies to a full-page insert too', async () => {
+      const ctx = makeContext(); // default page: "# Title\n\nFull body.\n\n# Two\n\nSection two."
+      const result = await InsertPlugin.execute!(ctx, { page: 'Page', caption: 'Doc Heading' }) as string;
+      expect(result).toContain('# Doc Heading');
+      expect(result).not.toContain('# Title');
+    });
+  });
 });

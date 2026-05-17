@@ -20,9 +20,11 @@ Embed another page's content (or one section of it) into the current page at ren
 Three forms are supported:
 
 ```wiki
-[{Insert page='Pagename'}]                          full page
-[{Insert pagesection='Pagename#Heading'}]           section by heading text
-[{Insert pagesection='Pagename?section=N'}]         section by 0-based index
+[{Insert page='Pagename'}]                                   full page
+[{Insert pagesection='Pagename#Heading'}]                    section by heading text
+[{Insert pagesection='Pagename?section=N'}]                  section by 0-based index
+[{Insert pagesection='Pagename?section=1', caption='My Heading'}]   override imported heading
+[{Insert pagesection='Pagename?section=1', caption='none'}]         drop imported heading
 ```
 
 The `?section=N` index form mirrors the editor's section-edit URL (`/edit/Pagename?section=N`) and reuses `SectionUtils.extractSection()`. The two forms are mutually exclusive on a single target string — when both `?section=` and `#` appear, `?section=` wins because it is the unambiguous URL form.
@@ -33,6 +35,7 @@ The `?section=N` index form mirrors the editor's section-edit URL (`/edit/Pagena
 | --- | --- | --- | --- |
 | `page` | string | *(none)* | Page name for full-page insert |
 | `pagesection` | string | *(none)* | `Pagename#Heading` or `Pagename?section=N` for sectional insert; takes precedence over `page` |
+| `caption` | string | *(none)* | #741: override the imported leading heading's text (keeps its level). A suppression token — `none`, `off`, `false`, `no`, or empty — drops the imported heading entirely so only the body transcludes. Omit the param to keep the source page's own heading (back-compat). |
 
 At least one of `page` or `pagesection` must be provided. An empty target renders nothing.
 

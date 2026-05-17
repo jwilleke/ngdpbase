@@ -5,6 +5,17 @@
  *   [{Insert page='Pagename'}]                          full page
  *   [{Insert pagesection='Pagename#Introduction'}]      section by heading text
  *   [{Insert pagesection='Pagename?section=3'}]         section by 0-based index
+ *   [{Insert pagesection='Pagename?section=1', caption='My Heading'}]
+ *                                                       override the imported
+ *                                                       section heading text
+ *   [{Insert pagesection='Pagename?section=1', caption='none'}]
+ *                                                       drop the imported
+ *                                                       heading entirely
+ *
+ * `caption` (#741): with no `caption` param the inserted slice keeps the
+ * source page's own heading (back-compat). `caption='Text'` replaces that
+ * leading heading's text (same level); `caption=` one of none|off|false|no|''
+ * removes the leading heading so only the body transcludes.
  *
  * Behaviour:
  *   - Viewer's ACL gates the read. Private pages render a "[Insert: page not visible]"
@@ -108,6 +119,32 @@ function findSectionIndexByHeading(markdown: string, headingText: string): numbe
   return null;
 }
 
+/**
+ * #741: apply a caption override/suppression to an extracted slice.
+ * - suppress token (none|off|false|no|empty) → drop the leading ATX heading
+ * - any other text → replace the leading heading's text (keeping its level);
+ *   if the slice has no leading heading, prepend it as an `##` heading
+ */
+function applyCaption(sectionMarkdown: string, caption: string): string {
+  const trimmed = caption.trim();
+  const suppress = trimmed === '' || /^(none|off|false|no)$/i.test(trimmed);
+  const lines = sectionMarkdown.split('\n');
+  const m = lines[0] !== undefined ? lines[0].match(/^(#{1,6})\s+.*$/) : null;
+
+  if (m) {
+    if (suppress) {
+      lines.shift();
+      if (lines[0] !== undefined && lines[0].trim() === '') lines.shift();
+      return lines.join('\n').replace(/^\n+/, '');
+    }
+    lines[0] = `${m[1]} ${trimmed}`;
+    return lines.join('\n');
+  }
+  // Defensive: extractSection slices always start at a heading, but a
+  // full-page insert may not.
+  return suppress ? sectionMarkdown : `## ${trimmed}\n\n${sectionMarkdown}`;
+}
+
 const NO_RECURSION_PATTERN = /\[\{Insert(?:\s+[^}]*)?\}\]/g;
 
 function renderPlaceholder(pageName: string, reason: string): string {
@@ -193,6 +230,12 @@ const InsertPlugin: SimplePlugin = {
       const extracted = extractSection(content, idx);
       content = extracted ?? '';
       sectionLabel = sectionHeading;
+    }
+
+    // #741: caption override / suppression of the imported heading.
+    const captionParam = typeof params.caption === 'string' ? params.caption : undefined;
+    if (captionParam !== undefined) {
+      content = applyCaption(content, captionParam);
     }
 
     // No-recursion guard — strip nested Insert syntax before render so plugins
