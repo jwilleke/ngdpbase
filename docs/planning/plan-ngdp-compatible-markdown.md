@@ -43,9 +43,10 @@ NCM = **CommonMark/GFM core** (as rendered by the existing showdown config) **pl
 | **Links** | `[text](url)` for external; `[Text\|PageName]` for wiki links | MarkupParser link handling |
 | **Footnotes** | `[^id]` reference + `[^id]: text` definition (single-line and multi-paragraph) | `FootnoteManager`, `showdown-footnotes-fixed`, `MarkupParser` steps 3.5/3.6 |
 | **Embedded images** | `![alt](attachment-ref)` — the image is downloaded and stored as an **attachment**; the source URL/data-URI is replaced with the local attachment reference | `AttachmentManager`, `ImportManager.importPageAttachments()` |
-| **Badges** | a defined NCM badge token (see §2.3), rendered by a badge handler/plugin — *not* a raw `<img src="https://img.shields.io/...">` | new (see Open Questions) |
 | **Plugins / variables** | `[{PluginName param='…'}]`, `[{$variable}]` | `PluginManager`, `VariableManager` |
-| **Frontmatter** | YAML via `gray-matter` (uuid, slug, title, system-category, …) | existing page contract |
+| **Frontmatter** | YAML via `gray-matter`, incl. the taxonomy fields (`system-category`, `user-keywords`, `system-keywords`) — see §3.2 | existing page contract |
+
+> Note: the #728 issue's "Badges" line is **not** an NCM body construct. Page-top category badges and search/page keyword "chips" are *rendered product* — produced by the view/plugin layer (`header.ejs`, `view.ejs`, `SearchPlugin`) from the three taxonomy **frontmatter** fields, not authored in Markdown. NCM has no badge/chip syntax; its only obligation is to preserve those fields faithfully (§3.2). Inventing a `[{Badge}]` body token would create a second, conflicting taxonomy path.
 
 ### 2.2 Image → attachment rule (precise)
 
@@ -58,11 +59,7 @@ On conversion, for every embedded image whose source is a remote URL or a `data:
 
 Rationale: pages must not hot-link or embed remote/data-URI binaries — provenance, offline integrity, and no remote-fetch-on-render.
 
-### 2.3 Badges
-
-A badge is a small status token (label + value + colour). NCM defines a **first-class token** rather than allowing raw shields.io `<img>` (which would be a remote-image + raw-HTML sink). Proposed token (final syntax = Open Question): `[{Badge label='build' value='passing' color='green'}]` — i.e. a normal ngdp plugin, so it goes through `PluginManager` and the existing sanitizer with zero new render path.
-
-### 2.4 Explicitly OUT of NCM
+### 2.3 Explicitly OUT of NCM
 
 - **Raw/embedded HTML** in page body — stripped or escaped on normalization. (The single biggest reason for this spec.)
 - **Remote-hosted images / `data:` URIs** left as-is — always converted to attachments (§2.2) or dropped (ads).
@@ -82,6 +79,20 @@ NCM extends the **existing** `IContentConverter` registry — no new parallel sy
 
 `toNgdpMarkdown` **must be deterministic**: identical input ⇒ byte-identical output, with stable ordering (frontmatter keys, table column order, footnote numbering, attachment naming). #685's change-detection hashes the *normalized record*, not rendered Markdown — but the NCM serialization must be stable or unchanged upstream data still churns versioned-page git history. NCM-in ⇒ NCM-out must be a fixed point (idempotent).
 
+### 3.2 Taxonomy frontmatter preservation (replaces the "Badges" misread)
+
+Badges/chips are rendered by the view/plugin layer from three frontmatter fields; NCM does not author them. The normalizer's obligation is to carry these fields through every path **without corrupting human intent**:
+
+| Field | Origin | Normalizer / ingestion rule |
+|---|---|---|
+| `user-keywords` | Human-authored | **Never overwrite or drop.** Preserve verbatim across convert/import. #501/#685 must not write this field. |
+| `system-keywords` | Machine / ES auto-tags | Ingestion (#685/#501) **may populate/replace** this. Convert-existing-page preserves it. |
+| `system-category` | Single, admin-controlled value | Preserve. Ingestion must not fabricate a category; if a source implies one it goes to `system-keywords`, not here. |
+
+- If a source format has no concept of these fields, the normalizer leaves them **absent**, never empty-string or guessed.
+- Round-trip rule: convert-existing-page must reproduce all three fields byte-identically (part of the §3.1 idempotence guarantee).
+- The badge/chip *rendering* (`header.ejs` page-badge config, `view.ejs` keyword chips, `SearchPlugin`) is existing presentation and is **out of #728 scope** — this spec only guarantees the inputs it consumes.
+
 ## 4. Consumers (locked relationships)
 
 - **#501 — JSON → NCM serializer.** Re-scoped from "JSON→HTML". A `json + template → NCM` serializer registered as an `IContentConverter`. Standalone surface (InterWiki/plugin rendering a JSON URL) is a thin consumer of that serializer.
@@ -91,24 +102,26 @@ Sequencing: **#728 spec (this doc) → #728 normalizer → #501 (re-scoped seria
 
 ## 5. Open questions (decide before implementation)
 
-1. **Badge syntax** — `[{Badge …}]` plugin (recommended, zero new render path) vs a dedicated Markdown-ish token. Need a colour/label vocabulary.
-2. **Image attachment limits** — max bytes, allowed MIME types, fetch timeout, and the **ad/tracker deny-list** source (config key name + default list).
-3. **HTML-in-body policy** — strip silently, escape, or convert-then-strip-unknown? Proposal: convert known HTML→MD via `turndown`, strip the rest, emit a `warnings[]` entry.
-4. **Lossy-conversion reporting** — surface `ConversionResult.warnings` to the user on "convert existing page" and on import.
-5. **Versioning of the NCM profile** — a `ncmVersion` so the normalizer can evolve without silently rewriting every page.
+1. **Image attachment limits** — max bytes, allowed MIME types, fetch timeout, and the **ad/tracker deny-list** source (config key name + default list).
+2. **HTML-in-body policy** — strip silently, escape, or convert-then-strip-unknown? Proposal: convert known HTML→MD via `turndown`, strip the rest, emit a `warnings[]` entry.
+3. **Lossy-conversion reporting** — surface `ConversionResult.warnings` to the user on "convert existing page" and on import.
+4. **Versioning of the NCM profile** — a `ncmVersion` so the normalizer can evolve without silently rewriting every page.
+
+> The former Q1 "Badge syntax" was removed 2026-05-17 — badges/chips are rendered product from taxonomy frontmatter, not an NCM construct; see §2.1 note and §3.2.
 
 ## 6. Implementation phases
 
 1. **This spec** + sign-off on §5 open questions. (No code.)
 2. **NCM profile + `toNgdpMarkdown` normalizer** on the existing converter registry; HTML→NCM and JSPWiki→NCM paths; determinism/idempotence tests.
 3. **"Convert existing page" action** + `ImportManager` / `mcp-server.ts` hookup.
-4. **Image→attachment** rule (with ad deny-list) and **badge** token.
+4. **Image→attachment** rule (with ad deny-list); **taxonomy frontmatter preservation** (§3.2) wired into every converter path.
 5. Unblocks **#501** (JSON→NCM serializer), then **#685** (uses it for body materialization).
 
 ## 7. Acceptance criteria
 
-- [ ] NCM profile is precisely specified (constructs, OUT list, badge token, image rule)
+- [ ] NCM profile is precisely specified (constructs, OUT list, image rule)
 - [ ] `toNgdpMarkdown` is idempotent and deterministic (NCM-in ⇒ byte-identical NCM-out); covered by tests
+- [ ] Taxonomy frontmatter (`user-keywords`/`system-keywords`/`system-category`) preserved per §3.2 — `user-keywords` never overwritten by ingestion; round-trips byte-identically
 - [ ] HTML and JSPWiki sources normalize to NCM with no raw-HTML sink remaining
 - [ ] Embedded remote/data-URI images become attachments; ad/tracker images dropped
 - [ ] `ImportManager` and `mcp-server.ts` route through the normalizer

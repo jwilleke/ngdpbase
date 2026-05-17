@@ -399,6 +399,42 @@ Configured via the **Code Editor Style** field on the `/profile` page.
 
 Separate from Light-Dark Mode and the active Site Theme.
 
+### Chip
+
+Preferred: **Chip** (when the element is interactive / part of a set)
+Avoid: "badge" for keyword/tag pills, "tag pill", "label"
+
+An interactive pill representing one member of a page's **taxonomy**, derived
+from frontmatter, not authored in Markdown body. Rendered by the view/plugin
+layer:
+
+- `user-keywords` — human-authored; rendered clickable → `/search?q=<kw>`
+  (`view.ejs`).
+- `system-keywords` — machine/ES auto-tags ("auto-tags"); same chip rendering.
+
+A chip is part of a *set*, links/filters somewhere, and is generated from a
+frontmatter field — never written in page content. Ingestion/conversion
+(#501/#685, NCM #728) must **preserve** these fields; it must never overwrite
+human `user-keywords`.
+
+### Badge
+
+Preferred: **Badge** (when the element is static status / category, non-interactive)
+Avoid: "chip" for status indicators, "tag"
+
+A static, non-interactive indicator: a single category or status, not a set
+member and not a filter link. Examples in this codebase:
+
+- Page-top category badge — driven by `ngdpbase.system-category[<name>].page-badge`
+  config from the single `system-category` frontmatter value (`header.ejs`).
+- Status pills — `(Private)`, version pills (`v3.17.0`), admin
+  `New`/`Modified`/`Current` (`admin-required-pages.ejs`, `RecentChangesPlugin`).
+
+Note: Chips and Badges currently share the Bootstrap `.badge` CSS class — the
+**visual is not the semantic**. Both are *rendered product* (produced from
+frontmatter/config at view time), so neither is an authoring construct in page
+Markdown — see [`docs/planning/plan-ngdp-compatible-markdown.md`](./planning/plan-ngdp-compatible-markdown.md) §2.1/§3.2 (#728).
+
 ---
 
 ## Private Pages
