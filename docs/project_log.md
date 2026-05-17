@@ -15,10 +15,12 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - Page→record projector lifted out of the `types=page` branch into a bound private `pageToAssetRecord` class field so the page branch and all-sources branch stay in lockstep. The `types=page` / `types=user` / explicit-asset branches are otherwise untouched (B(ii) — lowest risk to the working single-type paths).
   - Tests: 5 asset-surface tests (403-missing/insufficient, 503-no-AssetService, default-pageSize-forward, AssetPage-spread) retargeted to an explicit `types=attachment` since the no-types semantics intentionally changed; added a 15-test `all-sources branch (#742)` suite (anon→pages-no-403, `types=all` parity, reader→pages+users, editor→all three, SearchManager-degrade, de-dupe, pagination, capped, cross-source sort).
   - Live smoke: anonymous `GET /api/assets/search?q=&pageSize=5` now returns HTTP 200 with `providerId:"page"` results (previously 403). eslint pre-commit caught two issues (unbound-method on the lifted projector, no-base-to-string on the sort key) — fixed by making the projector a bound arrow class field and typeof-guarding the sort key.
-- Commits: `822cf876` (#742), plus this log entry.
+  - Release: operator chose `minor` → **v3.18.0 → v3.19.0** (bundles #739/#740/#741/#742 — all committed since the v3.18.0 tag). GitHub release auto-published: <https://github.com/jwilleke/ngdpbase/releases/tag/v3.19.0>. Perf baseline `baseline-v3.19.0-2026-05-17.md` — no regressions (memory -4.1%, `/` -78.8% prior cold-start outlier normalised, `/search?q=test` flat at -2.1% despite the new aggregation, `/view`/`/login` +2–3ms within noise; script exit 0).
+  - `/othersites` propagation (satellite-only; jimstest already validated in pre-flight) — all green, zero flakes: fairways-base (2121) 5623 unit / 72 E2E; ngdpbase-veg (3333) 5623 / 72; ngdp-temp-builds (3001) 5623 / 72.
+- Commits: `822cf876` (#742 feat), `14dbba61` (this log entry), `7c5043e8` (chore: release v3.19.0).
 - Files Modified:
   - src/routes/WikiRoutes.ts, src/routes/**tests**/WikiRoutes.assetSearch.test.ts
-  - docs/project_log.md
+  - docs/project_log.md, package.json, config/app-default-config.json, CHANGELOG.md, docs/performance/baseline-v3.19.0-2026-05-17.md
 
 ## 2026-05-17-14
 
