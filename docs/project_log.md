@@ -2,6 +2,22 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-17-14
+
+- Agent: Claude Opus 4.7
+- Subject: #741 — InsertPlugin `caption=` to override / suppress the imported section heading.
+- Current Issue: #741 (implemented per operator spec; closed).
+- Tests: unit 5614/5614 (+4 InsertPlugin caption) + E2E 71 passed / 1 flaky. jimstest restarted clean. Zero regressions.
+- Work Done:
+  - Root cause: `SectionUtils.extractSection` returns the slice **starting with the source heading line**, so an inserted section always rendered the source page's own heading (the "Insert pagesection heading" the user objected to). Confirmed by reading extractSection (line 102: `lines.slice(startLine,…)`, startLine = heading line).
+  - `InsertPlugin` (`2a5de5f5`): new optional `caption=` param implementing the operator's #741-comment spec — `caption='Text'` replaces the leading heading text (keeps level); `caption` ∈ none|off|false|no|'' drops the imported heading (body-only); omitted → source heading kept (back-compat). Applies to section and full-page inserts. Attribution footer left unchanged (provenance, not a heading — out of scope per the report wording). Doc page updated.
+- Flake: E2E `admin.spec.ts:55 › Admin Dashboard › should have add user option` flaky — failed then **passed on retry** within the same run. Unrelated to InsertPlugin; post-`./server.sh restart` cold-start timing shape (#622 family). Per flake policy: noted here + a #622 datapoint comment; not a regression, not blocking.
+- Caveat: caption transform unit-tested via the renderMarkdown echo mock; not browser-eyeballed this session — operator verification on a real `[{Insert pagesection=…, caption=…}]` page recommended.
+- Commits: `2a5de5f5` (#741), plus this log entry.
+- Files Modified:
+  - src/plugins/InsertPlugin.ts, src/plugins/**tests**/InsertPlugin.test.ts, docs/plugins/InsertPlugin.md
+  - docs/project_log.md
+
 ## 2026-05-17-13
 
 - Agent: Claude Opus 4.7
