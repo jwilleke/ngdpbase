@@ -492,14 +492,30 @@ class LunrSearchProvider extends BaseSearchProvider {
           'keywords': 'userKeywords'
         };
 
-        // Build field-specific queries
-        const fieldQueries = searchInList
+        const fields = searchInList
           .filter(field => fieldMap[field])
-          .map(field => `${fieldMap[field]}:${query}`);
+          .map(field => fieldMap[field]);
 
-        if (fieldQueries.length > 0) {
-          // Combine with OR (Lunr uses space as OR by default)
-          searchQuery = fieldQueries.join(' ');
+        // #740: tokenize the user query, stripping quote/punctuation chars
+        // Lunr does not understand (it has no phrase syntax — `"a b"` would
+        // otherwise leave a stray `"a`/`b"` term).
+        const tokens = query.toLowerCase().split(/[^a-z0-9]+/i).filter(Boolean);
+
+        if (fields.length === 1 && tokens.length > 0) {
+          // Single field (the #739 title-default common case): require EVERY
+          // token in that field. `+field:tok` = presence-required + field-
+          // scoped → AND. Fixes #740: a multi-word query like
+          // "Public Education" no longer matches a page that merely has the
+          // words scattered across other fields (the Boise-ID example), and
+          // each term is genuinely title-scoped (Lunr's `field:` prefix only
+          // binds the next term, so the old `title:Public Education` left
+          // "Education" unscoped + OR'd).
+          searchQuery = tokens.map(t => `+${fields[0]}:${t}`).join(' ');
+          logger.debug(`[LunrSearchProvider] Field-scoped AND search: "${searchQuery}"`);
+        } else if (fields.length > 0) {
+          // Multi-field: keep the prior best-effort field:query form (not the
+          // reported #740 case; avoid over-engineering the multi-field query).
+          searchQuery = fields.map(f => `${f}:${query}`).join(' ');
           logger.debug(`[LunrSearchProvider] Field-specific search: "${searchQuery}" (searchIn: [${searchInList.join(', ')}])`);
         }
       }
@@ -602,7 +618,20 @@ class LunrSearchProvider extends BaseSearchProvider {
    */
   private generateSnippet(content: string, query: string): string {
     const maxLength = this.config?.snippetLength ?? 200;
-    const searchTerms = query.toLowerCase().split(/\s+/);
+    // #740: `query` may be a Lunr query string (e.g. `+title:public`), not a
+    // bare phrase. Strip Lunr operators (presence +/-, `field:` prefix,
+    // trailing wildcard/fuzzy/boost) and regex-escape each term before it is
+    // used to build a highlight RegExp — otherwise `new RegExp('+title:...')`
+    // throws "Nothing to repeat" and the whole search returns no results.
+    const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const searchTerms = query
+      .toLowerCase()
+      .split(/\s+/)
+      .map(t => t
+        .replace(/^[+-]/, '')
+        .replace(/^[a-z]+:/i, '')
+        .replace(/[*~^].*$/, ''))
+      .filter(Boolean);
 
     // Find best position for snippet
     let bestPosition = 0;
@@ -614,7 +643,7 @@ class LunrSearchProvider extends BaseSearchProvider {
       let score = 0;
 
       searchTerms.forEach(term => {
-        const matches = (window.match(new RegExp(term, 'gi')) || []).length;
+        const matches = (window.match(new RegExp(escapeRe(term), 'gi')) || []).length;
         score += matches;
       });
 
@@ -634,7 +663,7 @@ class LunrSearchProvider extends BaseSearchProvider {
 
     // Highlight search terms
     searchTerms.forEach(term => {
-      const regex = new RegExp(`(${term})`, 'gi');
+      const regex = new RegExp(`(${escapeRe(term)})`, 'gi');
       snippet = snippet.replace(regex, '<mark>$1</mark>');
     });
 

@@ -270,3 +270,36 @@ describe('LunrSearchProvider.advancedSearch — metadata fields', () => {
     expect(jimPage2.metadata.editor).toBe('alice');
   });
 });
+
+// ---------------------------------------------------------------------------
+// #740 — single-field (title) multi-word search is field-scoped AND
+// ---------------------------------------------------------------------------
+
+describe('LunrSearchProvider.advancedSearch — #740 field-scoped AND (title)', () => {
+  beforeEach(() => {
+    provider['documents'] = {
+      'PubEd':   makeDoc('PubEd',   { title: 'Public Education Programs', content: 'about local schools' }),
+      'Boise':   makeDoc('Boise',   { title: 'Boise, ID', content: 'mentions Public services and Education separately' }),
+      'OnlyPub': makeDoc('OnlyPub', { title: 'Public Notices', content: 'nothing relevant' })
+    };
+    provider['rebuildLunrFromDocuments']();
+  });
+
+  test('quoted multi-word title search requires ALL tokens in the title', async () => {
+    // Mirrors the reported URL q=%22Public+Education%22 (literal quotes) with
+    // the #739 title default (searchIn=['title']).
+    const results = await provider.advancedSearch({ query: '"Public Education"', searchIn: ['title'] });
+    const names = results.map(r => r.name);
+    expect(names).toContain('PubEd');       // both tokens in title
+    expect(names).not.toContain('Boise');   // tokens only in content → not title-scoped
+    expect(names).not.toContain('OnlyPub'); // only "Public" in title → AND fails
+  });
+
+  test('single-token title search still matches', async () => {
+    const results = await provider.advancedSearch({ query: 'Public', searchIn: ['title'] });
+    const names = results.map(r => r.name);
+    expect(names).toContain('PubEd');
+    expect(names).toContain('OnlyPub');
+    expect(names).not.toContain('Boise'); // "Public" not in Boise's title
+  });
+});
