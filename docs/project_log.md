@@ -2,6 +2,19 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-17-08
+
+- Agent: Claude Opus 4.7
+- Subject: #728 Phase-2 Slice 5c — MCP create/update pages normalize to NCM.
+- Current Issue: #728. Slice plan: S1 ✓ S2 ✓ S4 ✓ S5b ✓ S5a ✓ S5a-ii ✓ **S5c ✓** · S5d (/admin/notifications, next) · S3 (breaking, last).
+- Tests: unit 5597/5597; build clean. No E2E (mcp-server.ts is a separate MCP entrypoint, not web UI). Zero regressions.
+- Work Done:
+  - S5c (`9190ecd0`): `mcp-server.ts` `createPage`/`updatePage` route content through `normalizeExistingPageToNcm` (§2.4 links + S1 fixed point + `ncmVersion`) before `pageManager.savePage`; `ncmVersion` + `ncmWarnings` surfaced in the MCP tool response. Mirrors the S5b/S5a-execute pattern. Image localization deferred (MCP non-preview, like ImportManager); the non-preview `/admin/notifications` push is S5d.
+- Commits: `9190ecd0` (S5c), plus this log entry.
+- Files Modified:
+  - mcp-server.ts
+  - docs/project_log.md
+
 ## 2026-05-17-07
 
 - Agent: Claude Opus 4.7
