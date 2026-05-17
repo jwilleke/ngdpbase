@@ -2,6 +2,21 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-17-01
+
+- Agent: Claude Opus 4.7
+- Subject: #443 closed (operator sign-off), #444 analyzed (comment-only), docs/platform updated for addon theme deploy.
+- Current Issue: #443 (closed), #444 (open, analysis recorded — no implementation).
+- Tests: none run this entry — issue grooming + docs only (no code change since v3.17.0).
+- Work Done:
+  - #443 closed by operator sign-off — addon theme auto-deploy shipped `455976c7`, released v3.17.0, propagated to all satellites. `in review` label removed; close comment is the durable record.
+  - #444 (domain-addon theme resolution): posted a code-grounded analysis comment. Key finding — full Strategy A (direct-load) is invasive (ThemeManager single `themesDir` + single `/themes` static mount, 4+ construction sites, request hot path); a **symlink** `themes/<name>→addons/<name>/theme/` for `type:'domain'` addons achieves the no-drift goal at ~10% of the cost (no ThemeManager/static changes; Eject = replace symlink with copy). Operator chose "just commenting for now" — left open, no implementation.
+  - Updated `docs/platform/` for the #443 capability the docs predated: `addon-development-guide.md` (new "Ship a Theme" section + `theme/` in repo layout + checklist item); `addon-architecture.md` (theme-deploy step 6 in the loadAddon sequence + new § 8b Theme Deployment). Both flag #444 as unimplemented. Commit `2d21d215`. Pre-commit MD036 (emphasis-as-heading) rejected standalone `*(Since v3.17.0…)*` lines — folded into prose, retry passed.
+- Commits: `2d21d215` (platform docs), plus this log entry.
+- Files Modified:
+  - docs/platform/addon-development-guide.md, docs/platform/addon-architecture.md
+  - docs/project_log.md
+
 ## 2026-05-16-20
 
 - Agent: Claude Opus 4.7
