@@ -20,7 +20,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import fse from 'fs-extra';
 import matter from 'gray-matter';
-import { normalizeExistingPageToNcm } from '../converters/ncm/index.js';
+import { normalizeExistingPageToNcm, localizeNcmImages } from '../converters/ncm/index.js';
+import type { NcmImageDeps } from '../converters/ncm/index.js';
 import { createPatch } from 'diff';
 import { exec } from 'child_process';
 import { Request, Response, Application } from 'express';
@@ -8508,6 +8509,55 @@ ${panes}
   }
 
   /**
+   * #728 S5a-ii: run the NCM image→attachment rule with real deps.
+   * `dryRun` (preview) validates fetch/sniff/size/deny-list but never
+   * persists — preview must be side-effect-free, like the import dry-run.
+   */
+  private async localizePageImages(
+    ncmContent: string,
+    pageName: string,
+    userContext: UserContext | null | undefined,
+    dryRun: boolean
+  ): Promise<{ content: string; warnings: string[] }> {
+    const cm = this.engine.getManager('ConfigurationManager');
+    const maxBytes = (cm?.getProperty?.('ngdpbase.attachment.maxsize', 10485760) as number) || 10485760;
+    const adDenyList = (cm?.getProperty?.('ngdpbase.markdown.ncm.image.ad-deny-list', []) as string[]) || [];
+    const fetchTimeoutMs = (cm?.getProperty?.('ngdpbase.fetch-timeout-ms', 30000) as number) || 30000;
+    const attachmentManager = this.engine.getManager('AttachmentManager');
+
+    const deps: NcmImageDeps = {
+      fetchBytes: async (url: string, timeoutMs: number): Promise<Buffer> => {
+        const r = await fetch(url, {
+          headers: { 'User-Agent': 'ngdpbase/1.0 (NCM image)' },
+          redirect: 'follow',
+          signal: AbortSignal.timeout(timeoutMs)
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return Buffer.from(await r.arrayBuffer());
+      },
+      storeAttachment: async ({ bytes, mime, sourceUrl }): Promise<string> => {
+        const ext = (mime.split('/')[1] || 'bin').toLowerCase();
+        const rawBase = (sourceUrl.split('/').pop() || 'image').split(/[?#]/)[0]
+          .replace(/[^A-Za-z0-9._-]/g, '_') || 'image';
+        const originalName = /\.[A-Za-z0-9]+$/.test(rawBase) ? rawBase : `${rawBase}.${ext}`;
+        if (dryRun) {
+          // Preview: do not persist. Report it would be attached.
+          return `/attachments/${encodeURIComponent(originalName)}`;
+        }
+        const meta = await attachmentManager.uploadAttachment(
+          bytes,
+          { originalName, mimeType: mime, size: bytes.length },
+          { pageName, description: `NCM embedded image from ${sourceUrl}`, context: userContext ?? undefined }
+        );
+        return (meta.url as string) || `/attachments/${encodeURIComponent((meta.name as string) || originalName)}`;
+      }
+    };
+
+    const r = await localizeNcmImages(ncmContent, { maxBytes, adDenyList, fetchTimeoutMs }, deps);
+    return { content: r.content, warnings: r.warnings.map(w => `${w.kind}: ${w.detail}`) };
+  }
+
+  /**
    * GET /admin/convert — render the "Convert page to NCM" admin tool (#728 S5a)
    */
   async adminConvert(req: Request, res: Response) {
@@ -8550,14 +8600,16 @@ ${panes}
       }
       const original = matter.stringify(page.content, page.metadata as Record<string, unknown>);
       const ncm = normalizeExistingPageToNcm(original);
+      // S5a-ii: dry-run image localization (preview must not persist).
+      const img = await this.localizePageImages(ncm.content, pageName, wikiContext.userContext, true);
       return res.json({
         success: true,
         page: pageName,
-        changed: ncm.content !== original,
+        changed: img.content !== original,
         ncmVersion: ncm.ncmVersion,
         original,
-        proposed: ncm.content,
-        warnings: ncm.warnings.map(w => `${w.kind}: ${w.detail}`)
+        proposed: img.content,
+        warnings: [...ncm.warnings.map(w => `${w.kind}: ${w.detail}`), ...img.warnings]
       });
     } catch (err: unknown) {
       logger.error('Error previewing page conversion:', err);
@@ -8586,17 +8638,20 @@ ${panes}
       }
       const original = matter.stringify(page.content, page.metadata as Record<string, unknown>);
       const ncm = normalizeExistingPageToNcm(original);
-      if (ncm.content === original) {
-        return res.json({ success: true, page: pageName, changed: false, warnings: [] });
+      // S5a-ii: real image localization (persists attachments via AttachmentManager).
+      const img = await this.localizePageImages(ncm.content, pageName, wikiContext.userContext, false);
+      const warnings = [...ncm.warnings.map(w => `${w.kind}: ${w.detail}`), ...img.warnings];
+      if (img.content === original) {
+        return res.json({ success: true, page: pageName, changed: false, warnings });
       }
-      const split = matter(ncm.content);
+      const split = matter(img.content);
       await pageManager?.savePage(pageName, split.content, split.data as Record<string, unknown>);
       return res.json({
         success: true,
         page: pageName,
         changed: true,
         ncmVersion: ncm.ncmVersion,
-        warnings: ncm.warnings.map(w => `${w.kind}: ${w.detail}`)
+        warnings
       });
     } catch (err: unknown) {
       logger.error('Error executing page conversion:', err);
