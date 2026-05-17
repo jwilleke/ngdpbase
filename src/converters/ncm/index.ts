@@ -14,3 +14,4 @@ export { normalizeLinks } from './links.js';
 export { localizeNcmImages } from './images.js';
 export type { NcmImageConfig, NcmImageDeps } from './images.js';
 export { normalizeToNcm } from './normalize.js';
+export { ncmToConversionResult } from './bridge.js';

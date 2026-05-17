@@ -33,6 +33,7 @@ import { v4 as uuidv4 } from 'uuid';
 import BaseManager, { BackupData } from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import { IContentConverter, ConversionResult } from '../converters/IContentConverter.js';
+import { normalizeToNcm, ncmToConversionResult } from '../converters/ncm/index.js';
 import JSPWikiConverter from '../converters/JSPWikiConverter.js';
 import HtmlConverter from '../converters/HtmlConverter.js';
 import MarkdownConverter from '../converters/MarkdownConverter.js';
@@ -485,8 +486,16 @@ class ImportManager extends BaseManager {
       throw new Error(`Unknown format: ${formatId}`);
     }
 
-    // Convert content
-    const conversionResult: ConversionResult = converter.convert(content);
+    // Convert content. #728 S5b: HTML/JSPWiki imports route through the NCM
+    // normalizer (NCM extends the registry — it delegates to these same
+    // converters internally, then applies §2.4 links + stamps ncmVersion),
+    // bridged back to ConversionResult. Markdown stays on MarkdownConverter
+    // (its KNOWN_FIELDS mapping is relied on; markdown→NCM parity is S3).
+    // Any other format (e.g. test mocks) keeps the direct converter path.
+    const conversionResult: ConversionResult =
+      (formatId === 'html' || formatId === 'jspwiki')
+        ? ncmToConversionResult(normalizeToNcm(content, formatId))
+        : converter.convert(content);
 
     // Register any extracted user-keywords (e.g., from JSPWiki %%category%% blocks) to config
     const extractedKeywords = conversionResult.metadata['user-keywords'] as string[] | undefined;
