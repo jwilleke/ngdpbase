@@ -8656,6 +8656,37 @@ ${panes}
   }
 
   /**
+   * POST /admin/addons/:name/deploy-theme — #443: (re)deploy an add-on's
+   * theme/ into themes/<name>/ (always overwrites). No restart required —
+   * theme CSS is served as static files; a page reload picks it up.
+   */
+  async adminAddonDeployTheme(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
+      if (
+        !currentUser ||
+        !(await wikiContext.hasPermission('admin-system'))
+      ) {
+        return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to manage add-ons');
+      }
+      const addonName = req.params.name;
+      const addonsManager = this.engine.getManager('AddonsManager');
+      if (!addonsManager?.deployAddonTheme) {
+        return res.redirect(`/admin/addons?error=${encodeURIComponent('AddonsManager unavailable')}`);
+      }
+      const result = await addonsManager.deployAddonTheme(addonName);
+      if (result.ok) {
+        return res.redirect(`/admin/addons?success=${encodeURIComponent(`Add-on "${addonName}": ${result.message}. Reload the page to see theme changes.`)}`);
+      }
+      return res.redirect(`/admin/addons?error=${encodeURIComponent(`Add-on "${addonName}": ${result.message}`)}`);
+    } catch (err: unknown) {
+      logger.error('Error deploying add-on theme:', err);
+      return res.redirect(`/admin/addons?error=${encodeURIComponent('Failed to deploy add-on theme')}`);
+    }
+  }
+
+  /**
    * Get raw page source (markdown content) for viewing/copying
    */
   async getPageSource(req: Request, res: Response) {
@@ -9231,6 +9262,7 @@ ${panes}
     app.get('/admin/logs', (req: Request, res: Response) => this.adminLogs(req, res));
     app.get('/admin/addons', (req: Request, res: Response) => void this.adminAddons(req, res));
     app.post('/admin/addons/:name/toggle', (req: Request, res: Response) => void this.adminAddonToggle(req, res));
+    app.post('/admin/addons/:name/deploy-theme', (req: Request, res: Response) => void this.adminAddonDeployTheme(req, res));
     app.post('/admin/restart', (req: Request, res: Response) => this.adminRestart(req, res));
     app.post('/admin/reindex', (req: Request, res: Response) => this.adminReindex(req, res));
     app.get('/admin/events', (req: Request, res: Response) => this.adminEvents(req, res));

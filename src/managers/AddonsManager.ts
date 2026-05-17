@@ -144,6 +144,10 @@ export interface AddonStatus {
   type?: 'domain' | 'additive';
   details?: AddonStatusDetails;
   statusError?: string;
+  /** #443: add-on ships a deployable theme/ (theme.json sentinel present) */
+  hasTheme?: boolean;
+  /** #443: themes/<name>/ already exists in the instance */
+  themeDeployed?: boolean;
 }
 
 /**
@@ -551,6 +555,95 @@ class AddonsManager extends BaseManager {
   }
 
   /**
+   * Instance themes directory — sibling of addons/ under the project root.
+   * `projectRoot` is `process.cwd()` (see app.ts) and the static mount is
+   * `/themes` → `path.join(projectRoot, 'themes')`, so this resolves to the
+   * same place ThemeManager reads from. Matches how the default `./addons`
+   * path resolves.
+   */
+  private getInstanceThemesDir(): string {
+    const cm = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const configured = cm?.getProperty?.('ngdpbase.theme.directory', 'themes') as string | undefined;
+    return path.resolve(configured || 'themes');
+  }
+
+  /**
+   * True if the add-on ships a deployable theme. `theme/theme.json` is the
+   * presence sentinel (mirrors `pages/` needing at least one `.md`).
+   */
+  addonShipsTheme(addonPath: string): boolean {
+    try {
+      return fs.existsSync(path.join(addonPath, 'theme', 'theme.json'));
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * #443: Deploy an add-on's `theme/` into the instance `themes/<name>/`.
+   *
+   * When an add-on ships a `theme/` subdirectory it should land in the
+   * instance themes directory the same way `seedAddonPages()` handles
+   * `pages/`. ThemeManager then reads it via `ngdpbase.theme.active` (set by
+   * the addon's domainDefaults) — no ThemeManager change needed.
+   *
+   * @param addonName  Add-on name (also the destination theme folder)
+   * @param addonPath  Filesystem path to the add-on directory
+   * @param overwrite  false (default) = first-boot copy, never overwrites an
+   *                    existing `themes/<name>/` (preserves instance edits);
+   *                    true = dashboard-triggered redeploy, replaces it.
+   * @returns Result describing what happened (for the admin UI).
+   */
+  async seedAddonTheme(
+    addonName: string,
+    addonPath: string,
+    overwrite = false
+  ): Promise<{ ok: boolean; deployed: boolean; message: string }> {
+    const themeSrc = path.join(addonPath, 'theme');
+
+    if (!this.addonShipsTheme(addonPath)) {
+      return { ok: true, deployed: false, message: `${addonName} ships no theme/ (no theme.json sentinel)` };
+    }
+
+    const dest = path.join(this.getInstanceThemesDir(), addonName);
+
+    try {
+      const destExists = fs.existsSync(dest);
+      if (destExists && !overwrite) {
+        // First-boot semantics: never clobber instance customisations.
+        logger.debug(`[AddonsManager] themes/${addonName}/ already exists — skipping theme deploy for ${addonName}`);
+        return { ok: true, deployed: false, message: `themes/${addonName}/ already exists — left untouched` };
+      }
+
+      await fs.promises.cp(themeSrc, dest, { recursive: true, force: overwrite });
+
+      const verb = destExists ? 'Redeployed' : 'Deployed';
+      logger.info(`[AddonsManager] ${verb} theme from ${addonName}/theme/ → themes/${addonName}/`);
+      return { ok: true, deployed: true, message: `${verb} theme → themes/${addonName}/` };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn(`[AddonsManager] Could not deploy theme for ${addonName}: ${msg}`);
+      return { ok: false, deployed: false, message: `Failed to deploy theme: ${msg}` };
+    }
+  }
+
+  /**
+   * #443: Dashboard-triggered theme (re)deploy — always overwrites so theme
+   * updates shipped by the add-on can be pulled in without a server restart
+   * (theme CSS is served as static files; a page reload suffices).
+   *
+   * @param addonName  Add-on name
+   * @returns Result for the admin UI
+   */
+  async deployAddonTheme(addonName: string): Promise<{ ok: boolean; deployed: boolean; message: string }> {
+    const addon = this.addons.get(addonName);
+    if (!addon) {
+      return { ok: false, deployed: false, message: `Add-on "${addonName}" not found` };
+    }
+    return this.seedAddonTheme(addonName, addon.path, true);
+  }
+
+  /**
    * Load all enabled add-ons in dependency order
    */
   private async loadAddons(): Promise<void> {
@@ -679,6 +772,9 @@ class AddonsManager extends BaseManager {
       // Seed any pages shipped with the add-on (pages/ subdir)
       await this.seedAddonPages(addonName, addon.path);
 
+      // #443: Auto-deploy the add-on's theme/ on first boot (never overwrites)
+      await this.seedAddonTheme(addonName, addon.path);
+
       addon.loaded = true;
       addon.error = null;
 
@@ -774,6 +870,14 @@ class AddonsManager extends BaseManager {
         error: addon.error,
         type: addon.manifest?.type
       };
+
+      // #443: surface theme-deploy state for the admin dashboard
+      info.hasTheme = this.addonShipsTheme(addon.path);
+      if (info.hasTheme) {
+        info.themeDeployed = fs.existsSync(
+          path.join(this.getInstanceThemesDir(), name)
+        );
+      }
 
       // Call add-on's status() if available and loaded
       if (addon.loaded && typeof addon.module.status === 'function') {

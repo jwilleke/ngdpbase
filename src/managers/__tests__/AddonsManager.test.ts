@@ -1224,4 +1224,96 @@ describe('AddonsManager', () => {
       expect(Object.keys(cfg)).toEqual(['dataPath']);
     });
   });
+
+  describe('theme deploy (#443)', () => {
+    // configManager that points the instance themes dir inside tmpDir so
+    // tests never touch the real ./themes
+    const themeEngine = () => {
+      const themesDir = path.join(tmpDir, 'themes');
+      const cm = {
+        getProperty: vi.fn((key: string, dflt: unknown) =>
+          key === 'ngdpbase.theme.directory' ? themesDir : dflt)
+      };
+      return { engine: makeEngine(cm), themesDir };
+    };
+
+    const makeAddonWithTheme = async (name: string) => {
+      const addonPath = path.join(tmpDir, name);
+      await fs.ensureDir(path.join(addonPath, 'theme', 'css'));
+      await fs.writeJson(path.join(addonPath, 'theme', 'theme.json'), { name });
+      await fs.writeFile(path.join(addonPath, 'theme', 'css', 'site.css'), 'body{color:red}');
+      return addonPath;
+    };
+
+    test('addonShipsTheme: true with theme.json sentinel, false without', async () => {
+      const { engine } = themeEngine();
+      const manager = new AddonsManager(engine);
+      const withTheme = await makeAddonWithTheme('a1');
+      const noTheme = path.join(tmpDir, 'a2');
+      await fs.ensureDir(noTheme);
+      expect(manager.addonShipsTheme(withTheme)).toBe(true);
+      expect(manager.addonShipsTheme(noTheme)).toBe(false);
+    });
+
+    test('first-boot deploy copies theme/ → themes/<name>/', async () => {
+      const { engine, themesDir } = themeEngine();
+      const manager = new AddonsManager(engine);
+      const addonPath = await makeAddonWithTheme('fairways');
+
+      const r = await manager.seedAddonTheme('fairways', addonPath);
+
+      expect(r).toMatchObject({ ok: true, deployed: true });
+      expect(await fs.pathExists(path.join(themesDir, 'fairways', 'theme.json'))).toBe(true);
+      expect(await fs.readFile(path.join(themesDir, 'fairways', 'css', 'site.css'), 'utf8'))
+        .toBe('body{color:red}');
+    });
+
+    test('skip-if-exists: never overwrites an existing themes/<name>/ on first boot', async () => {
+      const { engine, themesDir } = themeEngine();
+      const manager = new AddonsManager(engine);
+      const addonPath = await makeAddonWithTheme('fairways');
+      // Pre-existing instance theme with a local edit
+      await fs.ensureDir(path.join(themesDir, 'fairways'));
+      await fs.writeFile(path.join(themesDir, 'fairways', 'theme.json'), '{"local":true}');
+
+      const r = await manager.seedAddonTheme('fairways', addonPath);
+
+      expect(r).toMatchObject({ ok: true, deployed: false });
+      // Local edit preserved — not clobbered
+      expect(await fs.readFile(path.join(themesDir, 'fairways', 'theme.json'), 'utf8'))
+        .toBe('{"local":true}');
+    });
+
+    test('overwrite=true replaces an existing theme (dashboard redeploy)', async () => {
+      const { engine, themesDir } = themeEngine();
+      const manager = new AddonsManager(engine);
+      const addonPath = await makeAddonWithTheme('fairways');
+      await fs.ensureDir(path.join(themesDir, 'fairways'));
+      await fs.writeFile(path.join(themesDir, 'fairways', 'theme.json'), '{"stale":true}');
+
+      const r = await manager.seedAddonTheme('fairways', addonPath, true);
+
+      expect(r).toMatchObject({ ok: true, deployed: true });
+      expect(await fs.readJson(path.join(themesDir, 'fairways', 'theme.json')))
+        .toMatchObject({ name: 'fairways' });
+    });
+
+    test('no theme/ is a no-op (ok, not deployed)', async () => {
+      const { engine } = themeEngine();
+      const manager = new AddonsManager(engine);
+      const addonPath = path.join(tmpDir, 'plain');
+      await fs.ensureDir(addonPath);
+
+      const r = await manager.seedAddonTheme('plain', addonPath);
+      expect(r).toMatchObject({ ok: true, deployed: false });
+    });
+
+    test('deployAddonTheme on an unknown addon returns ok:false not-found', async () => {
+      const { engine } = themeEngine();
+      const manager = new AddonsManager(engine);
+      const r = await manager.deployAddonTheme('does-not-exist');
+      expect(r.ok).toBe(false);
+      expect(r.message).toMatch(/not found/i);
+    });
+  });
 });
