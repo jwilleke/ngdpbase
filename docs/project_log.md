@@ -2,6 +2,25 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-18-10
+
+- Agent: Claude Opus 4.7
+- Subject: Release v3.20.1 (`/semver patch`, standalone) + `/othersites` — ships the #744 final IA slice; #744 closed.
+- Current Issue: none (release of `b0126c07` #744 final IA slice + logs since v3.20.0). #744 EPIC closed (operator).
+- Tests: jimstest (Step 8a, release commit `cc0c1030`) unit 5637/5637 + E2E 72/72. All 3 satellites 5637/5637 + 72/72. Zero flakes.
+- Work Done:
+  - Closed #744 (operator instruction) — all IA acceptance criteria met; acceptance walkthrough + closeout note posted to the issue. Non-blocking follow-ups (#745/#721-video/#746/#691-category/#735) tracked independently.
+  - `/semver patch` 3.20.0 → 3.20.1 (3 commits since v3.20.0). Release gate green on pre-bump (build, 5637 unit, 72 E2E). `version.ts` bump; release commit `cc0c1030`, tag `v3.20.1` pushed. GitHub release **deferred** (patch, not explicitly requested — `/release` can publish later).
+  - Perf baseline `baseline-v3.20.1-2026-05-18.md` — no regressions (script exit 0). Memory +3.7% (under 25%); `/` +6ms/+22% (absolute under the 50ms gate — does not trip); `/view`/`/search`/`/login` flat. `/search` holds the v3.20.0 26ms.
+  - Step 8a (jimstest-first): rebuilt + restarted + full-tested jimstest on the release commit BEFORE satellites — 5637 / 72, clean.
+  - Step 8b `/othersites` (satellite-only, valid because 8a done): fairways-base (2121), ngdpbase-veg (3333), ngdp-temp-builds (3001) — each pull→build→restart→5637 unit→72 E2E. All clean.
+  - Standalone-`/semver` bookkeeping (this entry + #744 release note) per the `/semver` Step 9 reminder.
+- Flakes seen: none (all 4 instances clean first run).
+- Commits: `cc0c1030` (chore: release v3.20.1), plus this log entry. Release ships `b0126c07` (#744 final IA slice).
+- Files Modified:
+  - package.json, config/app-default-config.json, CHANGELOG.md, docs/performance/baseline-v3.20.1-2026-05-18.md
+  - docs/project_log.md
+
 ## 2026-05-18-09
 
 - Agent: Claude Opus 4.7
