@@ -2,6 +2,23 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-18-03
+
+- Agent: Claude Opus 4.7
+- Subject: #744 slice 1a — compact icon results-toolbar in the asset-picker.
+- Current Issue: #744 (EPIC) / #721 (slice 1a). Not closed — EPIC has remaining slices.
+- Tests: unit 5628/5628 + E2E 72 passed / 0 flaky. jimstest rebuilt + restarted on the change; `/search` markup smoke-verified server-side.
+- Work Done:
+  - Replaced the wide `#ap-sort` `<select>` in the primary row with a compact Bootstrap dropdown-button, co-located with the **existing** (#733) list/grid view toggle in one right-aligned results bar (sist2-style: `[Sort ▾] [list][grid]`).
+  - Lowest-risk approach: `#ap-sort` is kept as a **hidden state-holder** (`<div id="ap-sort-col" hidden>`), so every existing JS contract is untouched — `sortEl.value` read in `_apSearch`, the `change` listener, and the #692/#700 source-visibility logic all work unchanged. The dropdown items set `sortEl.value` + dispatch a native `change` (the existing listener already turns that into a search). New `_apSyncSortBtn()` mirrors the select value onto the button label / active item; called on init and per selection.
+  - Grounded first: confirmed `#ap-sort` / `#ap-view-*` are referenced nowhere outside `_asset-picker.ejs` (no E2E/other view depends on the visible select); `sortColEl` was already a declared-but-unused dead var. Discovered the list/grid toggle already existed (#733), so slice 1a reduced to the sort control + co-location.
+  - General UX cleanup for all viewports — explicitly **not** mobile-specific (#735 is a beneficiary, not the driver), per the corrected #744 design record.
+  - Caveat: dropdown click behaviour not browser-eyeballed (no headless browser); logic is straightforward, unit + E2E green, rendered markup verified via curl. Operator click-through recommended.
+- Commits: `77345bec` (slice 1a), plus this log entry.
+- Files Modified:
+  - views/_asset-picker.ejs
+  - docs/project_log.md
+
 ## 2026-05-18-02
 
 - Agent: Claude Opus 4.7
