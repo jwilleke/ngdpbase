@@ -1136,4 +1136,81 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       expect(service.search.mock.calls[0][0].mimeCategory).toBeUndefined();
     });
   });
+
+  // #745: media Year facet — forwarded to AssetService (parsed to a number);
+  // in all-sources it suppresses pages/users like the #720 format facet.
+  describe('media year filter (#745)', () => {
+    function makeSearchManager(hits: Array<{ name: string }> = []) {
+      return { advancedSearchWithContext: vi.fn().mockResolvedValue(hits) };
+    }
+    function makeUserManager(users: Array<{ username: string }> = []) {
+      return { searchUsers: vi.fn().mockResolvedValue(users) };
+    }
+    function makeRoutesAll(opts: { assetService?: unknown; searchManager?: unknown; userManager?: unknown }) {
+      const engine = {
+        getManager: vi.fn((name: string) => {
+          if (name === 'AssetService') return opts.assetService ?? null;
+          if (name === 'SearchManager') return opts.searchManager ?? null;
+          if (name === 'UserManager') return opts.userManager ?? null;
+          return null;
+        })
+      };
+      const routes = new WikiRoutes(engine);
+      routes.createWikiContext = vi.fn((req: Request) =>
+        createMockWikiContext({ userContext: (req as { userContext?: unknown }).userContext as never }, { engine })
+      );
+      return routes;
+    }
+    const editor = { authenticated: true, username: 'ed', roles: ['editor'] };
+
+    it('year in all-sources forwards to assets and skips pages/users', async () => {
+      const search = makeSearchManager([{ name: 'Welcome' }]);
+      const asset = makeAssetService(makeAssetPage([{ id: 'm1', providerId: 'media-library' }] as never));
+      const userMgr = makeUserManager([{ username: 'alice' }]);
+      const routes = makeRoutesAll({ assetService: asset, searchManager: search, userManager: userMgr });
+      const req = makeReq({ userContext: editor, query: { year: '2024' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(search.advancedSearchWithContext).not.toHaveBeenCalled();
+      expect(userMgr.searchUsers).not.toHaveBeenCalled();
+      expect(asset.search).toHaveBeenCalledWith(expect.objectContaining({ year: 2024 }));
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.results.map((r: { providerId: string; id: string }) => `${r.providerId}:${r.id}`)).toEqual(['media-library:m1']);
+    });
+
+    it('no year in all-sources still includes pages (regression guard)', async () => {
+      const search = makeSearchManager([{ name: 'Welcome' }]);
+      const routes = makeRoutesAll({ assetService: makeAssetService(), searchManager: search });
+      const req = makeReq({ userContext: null, query: {} });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(search.advancedSearchWithContext).toHaveBeenCalled();
+    });
+
+    it('single-type asset branch forwards year as a number', async () => {
+      const service = makeAssetService();
+      const routes = makeRoutes(service);
+      const req = makeReq({ query: { types: 'media', year: '2023' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(service.search).toHaveBeenCalledWith(expect.objectContaining({ year: 2023 }));
+    });
+
+    it('invalid year is dropped (passes undefined)', async () => {
+      const service = makeAssetService();
+      const routes = makeRoutes(service);
+      const req = makeReq({ query: { types: 'media', year: 'abc' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(service.search.mock.calls[0][0].year).toBeUndefined();
+    });
+  });
 });

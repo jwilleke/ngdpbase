@@ -1123,6 +1123,23 @@ class WikiRoutes {
   }
 
   /**
+   * #745: available media years for the asset-picker Year filter. Sourced
+   * from MediaManager.getYears() (the same list /media/ uses); gracefully
+   * empty if MediaManager / the provider is unavailable. Years are public
+   * (per MediaManager.getYears — no wikiContext filtering needed).
+   */
+  private async getPickerYears(): Promise<number[]> {
+    const mm = this.engine.getManager('MediaManager') as { getYears?: () => Promise<number[]> } | undefined;
+    if (!mm?.getYears) return [];
+    try {
+      const ys = await mm.getYears();
+      return Array.isArray(ys) ? ys : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Extract user keywords from User-Keywords page
    */
   async getUserKeywords() {
@@ -3202,6 +3219,7 @@ ${panes}
 
       const commonData = await this.getCommonTemplateData(req);
       const pickerKw = await this.getPickerKeywordCatalogs();
+      const pickerYears = await this.getPickerYears();
 
       return res.render('browse-attachments', {
         ...commonData,
@@ -3211,7 +3229,8 @@ ${panes}
         assetPickerInitMime:    initMime,
         assetPickerInitFilters: initFilters,
         assetPickerUserKeywords:   pickerKw.userKeywords,
-        assetPickerSystemKeywords: pickerKw.systemKeywords
+        assetPickerSystemKeywords: pickerKw.systemKeywords,
+        assetPickerYears:          pickerYears
       });
     } catch (err: unknown) {
       logger.error('Error rendering search page:', err);
@@ -7881,12 +7900,14 @@ ${panes}
 
       const commonData = await this.getCommonTemplateData(req);
       const pickerKw = await this.getPickerKeywordCatalogs();
+      const pickerYears = await this.getPickerYears();
 
       return res.render('browse-attachments', {
         ...commonData,
         title: 'Browse Assets',
         assetPickerUserKeywords:   pickerKw.userKeywords,
-        assetPickerSystemKeywords: pickerKw.systemKeywords
+        assetPickerSystemKeywords: pickerKw.systemKeywords,
+        assetPickerYears:          pickerYears
       });
     } catch (err: unknown) {
       logger.error('Error loading attachment browser:', err);
@@ -7956,6 +7977,10 @@ ${panes}
       // all-sources branch and the single-type asset branch share one parse.
       const mimeCategoryRaw = typeof req.query.mimeCategory === 'string' ? req.query.mimeCategory : '';
       const mimeCategory = (['image', 'video', 'audio', 'document', 'other'] as const).find(c => c === mimeCategoryRaw);
+      // #745: media Year facet (Files-only). Live filter — BaseMediaProvider
+      // filters by item.year. Hoisted (like mimeCategory) so the all-sources
+      // branch and the single-type asset branch share one parse.
+      const year = req.query.year ? parseInt(req.query.year as string, 10) || undefined : undefined;
 
       // #742: "All sources" (types absent or `all`) aggregates pages, users,
       // and the asset stores instead of 403'ing non-editors and returning
@@ -7979,9 +8004,9 @@ ${panes}
             metadata?: { systemCategory?: string; userKeywords?: string; lastModified?: string };
           }>>;
         };
-        // #720: a file-format facet is meaningless for pages — when one is
-        // selected, "All sources" narrows to files only (skip pages/users).
-        if (!mimeCategory && searchManager?.advancedSearchWithContext) {
+        // #720/#745: a file-format or media-year facet is meaningless for
+        // pages/users — when one is set, "All sources" narrows to files only.
+        if (!mimeCategory && !year && searchManager?.advancedSearchWithContext) {
           const hits = await searchManager.advancedSearchWithContext(wikiContext, {
             query,
             categories: [],
@@ -8016,7 +8041,7 @@ ${panes}
               username: string; displayName?: string; profilePage?: string; avatar?: string; createdAt?: string;
             }>>;
           };
-          if (!mimeCategory && isAuthenticated && userManager?.searchUsers) {
+          if (!mimeCategory && !year && isAuthenticated && userManager?.searchUsers) {
             const users = await userManager.searchUsers(query, { limit: fetchLimit, activeOnly: true });
             if (users.length >= fetchLimit) anyCapped = true;
             for (const u of users) {
@@ -8049,6 +8074,7 @@ ${panes}
             query,
             types: undefined,
             mimeCategory,
+            year,
             pageSize: fetchLimit,
             offset: 0,
             sort: sort ?? 'date',
@@ -8324,9 +8350,8 @@ ${panes}
       const types = typesParam
         ? (typesParam.split(',').filter(t => t === 'attachment' || t === 'media'))
         : undefined;
-      const year = req.query.year ? parseInt(req.query.year as string, 10) || undefined : undefined;
-      // #720: mimeCategory parsed once at the top of the handler (shared with
-      // the all-sources branch); reused here.
+      // #720/#745: mimeCategory + year parsed once at the top of the handler
+      // (shared with the all-sources branch); reused here.
 
       const userRoles = wikiContext.userContext?.roles ?? [];
       const username = wikiContext.userContext?.username ?? '';

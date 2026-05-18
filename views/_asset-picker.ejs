@@ -28,6 +28,8 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
 // #691: Pages-only keyword filter catalogs (server-injected; index-accurate).
 var _apUserKwCatalog = typeof assetPickerUserKeywords   !== 'undefined' && Array.isArray(assetPickerUserKeywords)   ? assetPickerUserKeywords   : [];
 var _apSysKwCatalog  = typeof assetPickerSystemKeywords !== 'undefined' && Array.isArray(assetPickerSystemKeywords) ? assetPickerSystemKeywords : [];
+// #745: available media years (server-injected from MediaManager.getYears()).
+var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(assetPickerYears) ? assetPickerYears : [];
 %>
 
 <!-- Controls bar -->
@@ -56,6 +58,17 @@ var _apSysKwCatalog  = typeof assetPickerSystemKeywords !== 'undefined' && Array
             <option value="other">Other</option>
         </select>
     </div>
+    <%# #745: media Year filter (Files-only). Server-injected catalog from
+        MediaManager.getYears(); the `year=` param is a live filter
+        (BaseMediaProvider). Omitted entirely when no media years exist. %>
+    <% if (_apYearsCatalog.length) { %>
+    <div class="col-auto" id="ap-year-col">
+        <select id="ap-year" class="form-select" title="Media year">
+            <option value="">All years</option>
+            <% _apYearsCatalog.forEach(function (y) { %><option value="<%= y %>"><%= y %></option><% }); %>
+        </select>
+    </div>
+    <% } %>
     <%# Slice 1a (#744): sort moved out of this row into the compact icon
         results-toolbar below. #ap-sort stays as a hidden state-holder so all
         existing JS (value read, change listener, #692/#700 logic) is unchanged. %>
@@ -108,15 +121,11 @@ var _apSysKwCatalog  = typeof assetPickerSystemKeywords !== 'undefined' && Array
     never applied by any provider — dead no-op controls. Real date search
     is tracked as a separate [FEATURE]; asset date impl = #519. %>
 
-<!-- Layout: facet sidebar + results -->
+<!-- Results -->
 <div class="d-flex gap-3">
-    <!-- Facet sidebar -->
-    <div id="ap-facets" class="flex-shrink-0" style="width:160px;display:none;"></div>
-
-    <!-- Results grid -->
-    <%# min-width:0 lets this flex child shrink when the 160px facet sidebar
-        appears after a search — without it the row overflows the viewport
-        to the right (classic flexbox min-width:auto trap). %>
+    <%# #745: the facet sidebar (#ap-facets / _apRenderFacets) was removed —
+        the default provider never emitted aggregations and its click
+        handlers were dead. min-width:0 stays as a defensive flexbox guard. %>
     <div class="flex-grow-1" style="min-width:0;">
         <!-- #733: view-mode toggle at the top of the results (moved from the
              pagination footer). Same IDs — Slice 2 JS wiring is unchanged. -->
@@ -189,6 +198,8 @@ var _apSysKwCatalog  = typeof assetPickerSystemKeywords !== 'undefined' && Array
     var qEl          = document.getElementById('ap-query');
     var srcEl        = document.getElementById('ap-source');
     var mimeEl       = document.getElementById('ap-mime');
+    var yearEl       = document.getElementById('ap-year');      // #745 (may be absent)
+    var yearColEl    = document.getElementById('ap-year-col');
     var sortEl       = document.getElementById('ap-sort');
     var fulltextEl   = document.getElementById('ap-fulltext');
     var fulltextColEl = document.getElementById('ap-fulltext-col');
@@ -200,7 +211,6 @@ var _apSysKwCatalog  = typeof assetPickerSystemKeywords !== 'undefined' && Array
     function _apSelectedKw(el) {
         return el ? Array.prototype.map.call(el.selectedOptions, function (o) { return o.value; }) : [];
     }
-    var facetsEl     = document.getElementById('ap-facets');
     var resEl        = document.getElementById('ap-results');
     var cntEl        = document.getElementById('ap-count');
     var pagEl        = document.getElementById('ap-pagination');
@@ -260,6 +270,7 @@ var _apSysKwCatalog  = typeof assetPickerSystemKeywords !== 'undefined' && Array
     });
     srcEl.addEventListener('change',       function () { _apUpdateControls(); _apSearch(0); });
     mimeEl.addEventListener('change',      function () { _apSearch(0); });
+    if (yearEl) yearEl.addEventListener('change', function () { _apSearch(0); });
     sortEl.addEventListener('change',      function () { _apSearch(0); });
     if (fulltextEl) fulltextEl.addEventListener('change', function () { _apSearch(0); });
     if (userKwEl) userKwEl.addEventListener('change', function () { _apSearch(0); });
@@ -283,6 +294,7 @@ var _apSysKwCatalog  = typeof assetPickerSystemKeywords !== 'undefined' && Array
         var isFiles = srcEl.value !== 'page' && srcEl.value !== 'user'; // '', attachment, media, all
         var isPage  = srcEl.value === 'page';
         if (mimeColEl)   mimeColEl.style.display   = isFiles ? '' : 'none';
+        if (yearColEl)   yearColEl.style.display   = isFiles ? '' : 'none';
         if (uploadBtnEl) uploadBtnEl.style.display = isFiles ? '' : 'none';
         if (fulltextColEl) fulltextColEl.style.display = isPage ? '' : 'none';
         if (userKwColEl) userKwColEl.style.display = isPage ? '' : 'none';
@@ -319,6 +331,9 @@ var _apSysKwCatalog  = typeof assetPickerSystemKeywords !== 'undefined' && Array
             if (q)    params.set('q',            q);
             if (src)  params.set('types',         src);
             if (mime) params.set('mimeCategory',  mime);
+            // #745: media Year filter (Files-only; live via BaseMediaProvider).
+            var yr = yearEl ? yearEl.value : '';
+            if (yr) params.set('year', yr);
 
             // #696: hidden page-source filters (category / keywords / etc.) seeded
             // from URL params on init. No UI controls today (#691); we forward
@@ -357,8 +372,6 @@ var _apSysKwCatalog  = typeof assetPickerSystemKeywords !== 'undefined' && Array
             if (!resp.ok) throw new Error('Search failed (' + resp.status + ')');
             var data = await resp.json();
 
-            _apRenderFacets(data.aggregations);
-
             if (!data.success || !data.results || !data.results.length) {
                 _apItems = [];
                 _apTotal = 0;
@@ -389,68 +402,6 @@ var _apSysKwCatalog  = typeof assetPickerSystemKeywords !== 'undefined' && Array
             _apItems = [];
             resEl.innerHTML = '<div class="col-12 text-center text-danger py-4"><i class="fas fa-exclamation-triangle"></i> ' + _esc(err.message) + '</div>';
         }
-    }
-
-    // ------------------------------------------------------------------ facets
-
-    function _apRenderFacets(aggs) {
-        if (!facetsEl) return;
-        if (!aggs || (!aggs.byMime && !aggs.byYear && !aggs.byFolder && !aggs.byExtension)) {
-            facetsEl.style.display = 'none';
-            facetsEl.innerHTML = '';
-            return;
-        }
-        facetsEl.style.display = '';
-        var html = '';
-        if (aggs.byMime && aggs.byMime.length) {
-            html += _apFacetGroup('Type', aggs.byMime.slice(0, 8), function (f) {
-                mimeEl.value = '';
-                if (mimeEl) mimeEl.value = '';
-                if (mime) params && params.set ? '' : null;
-                params = null; // reset — will be rebuilt on next search
-                if (mimeEl) mimeEl.dispatchEvent(new Event('change'));
-                if (mimeEl) mimeEl.value = '';
-                return 'mime=' + encodeURIComponent(f.key);
-            });
-        }
-        if (aggs.byYear && aggs.byYear.length) {
-            html += _apFacetGroup('Year', aggs.byYear.slice(0, 10), null);
-        }
-        if (aggs.byExtension && aggs.byExtension.length) {
-            html += _apFacetGroup('Extension', aggs.byExtension.slice(0, 8), null);
-        }
-        facetsEl.innerHTML = html;
-        // Wire facet clicks
-        facetsEl.querySelectorAll('[data-ap-facet-mime]').forEach(function (el) {
-            el.addEventListener('click', function () {
-                var v = el.getAttribute('data-ap-facet-mime');
-                // Set hidden params for next search by appending to URL directly
-                params = null;
-                _apActiveFacet = { mime: v };
-                _apSearch(0);
-            });
-        });
-        facetsEl.querySelectorAll('[data-ap-facet-ext]').forEach(function (el) {
-            el.addEventListener('click', function () {
-                _apActiveFacet = { extension: el.getAttribute('data-ap-facet-ext') };
-                _apSearch(0);
-            });
-        });
-    }
-
-    var _apActiveFacet = {};
-
-    function _apFacetGroup(label, facets, _unused) {
-        var rows = facets.map(function (f) {
-            var attr = label === 'Type' ? 'data-ap-facet-mime="' + _esc(f.key) + '"'
-                     : label === 'Extension' ? 'data-ap-facet-ext="' + _esc(f.key) + '"'
-                     : '';
-            return '<div class="d-flex justify-content-between small py-1 border-bottom" ' + attr +
-                   (attr ? ' style="cursor:pointer;" class="ap-facet-row"' : '') + '>' +
-                   '<span class="text-truncate me-1" style="max-width:110px;" title="' + _esc(f.key) + '">' + _esc(f.key) + '</span>' +
-                   '<span class="badge bg-secondary">' + f.count.toLocaleString() + '</span></div>';
-        }).join('');
-        return '<div class="mb-3"><div class="small fw-bold text-muted mb-1 text-uppercase" style="font-size:.7rem;">' + _esc(label) + '</div>' + rows + '</div>';
     }
 
     // ------------------------------------------------------------------ card helpers
