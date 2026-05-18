@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-18-11
+
+- Agent: Claude Opus 4.7
+- Subject: #745 — media Year filter in the asset-picker + removed the dead #ap-facets sidebar.
+- Current Issue: #745 (media-year delivered; pages-date needs #643, asset-range #519 — NOT closed). Operator-approved dead-sidebar removal.
+- Tests: unit 5641/5641 (+4 assetSearch) + E2E 72/72 / 0 flaky. `/search` smoke-verified (Year options render; `year=` → 200; `#ap-facets` gone).
+- Work Done:
+  - Verified first: `year=` is live (`BaseMediaProvider:297`); `MediaManager.getYears()` is the catalog source (used by `/media/`); the picker's byYear facet was unreachable (default provider emits no aggregations) and the whole `#ap-facets` sidebar was dead (`_apRenderFacets` only ran on sist2-style providers; `_apActiveFacet` never consumed; Year facet had a null click handler). #745's "cheap, surface the byYear facet" premise was wrong — corrected to a server-injected Year select.
+  - `getPickerYears()` → `MediaManager.getYears()` (graceful []); injected at both `browse-attachments` render sites + passthrough in `browse-attachments.ejs` (mirrors #691). Files-only Year `<select>` in the primary row (shown via the #744 show-by-relevance Files group); `_apSearch` sends the live `year=`; empty catalog → control omitted.
+  - `year` hoisted in `assetSearch` (like #720 `mimeCategory`): forwarded to the all-sources asset sub-search; a selected year suppresses pages/users (same all-sources-bug-class fix as #720). Removed the duplicate single-type `year` parse.
+  - **Removed the dead `#ap-facets` sidebar** (operator-approved scope): the `#ap-facets` div, `facetsEl` ref, the `_apRenderFacets(data.aggregations)` call, and `_apRenderFacets`/`_apFacetGroup`/`_apActiveFacet` + facet-click wiring (~60 lines of #519-class dead UI). Kept the now-inert `d-flex` wrapper (single child) to avoid brace-rebalancing risk; de-staled the layout comments.
+  - +4 assetSearch tests (all-sources year forward+suppress, no-year regression guard, single-type number-parse, invalid-year drop). No fallout (nothing asserted the dead sidebar / year-absence).
+  - Caveat: Year `<select>`/removal not browser-eyeballed; unit+E2E green, markup+population+`#ap-facets`-gone smoke-verified via curl.
+- Commits: `0803a43c` (#745), plus this log entry.
+- Files Modified:
+  - src/routes/WikiRoutes.ts, src/routes/**tests**/WikiRoutes.assetSearch.test.ts, views/browse-attachments.ejs, views/_asset-picker.ejs
+  - docs/project_log.md
+
 ## 2026-05-18-10
 
 - Agent: Claude Opus 4.7
