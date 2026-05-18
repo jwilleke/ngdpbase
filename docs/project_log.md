@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-18-07
+
+- Agent: Claude Opus 4.7
+- Subject: #691 — Pages-only user/system keyword multi-selects in the asset-picker (operator-scoped: no category).
+- Current Issue: #691 (NOT closed — category UI intentionally out of scope per operator) / #744 EPIC slice.
+- Tests: unit 5637/5637 + E2E 72 passed / 0 flaky. `/search` smoke-verified.
+- Work Done:
+  - Verified first: backend page filters (`keywords`/`systemKeywords`) already live; `searchIn` already shipped (#739 fulltext); `search-results.ejs` gone; catalogs enumerable via `SearchManager.getAllUserKeywords()`/`getAllSystemKeywords()`. Operator scoped to **user-keywords + system-keywords only** (no category), server-injected, multi-select.
+  - New private `getPickerKeywordCatalogs()` → both lists from SearchManager (index-accurate; graceful `[]`). Injected at **both** `browse-attachments` render sites (`searchPage`, `browseAttachments`) via the shared helper; passed through `browse-attachments.ejs` into the `_asset-picker` partial.
+  - `_asset-picker`: two `<select multiple>` shown only when source=Pages (mirrors #739 show-by-relevance). Empty catalog → control omitted. Bookmarked keywords/systemKeywords seeded into the selects on init then deleted from `_apHiddenFilters` so the generic forward-loop can't double-append (controls authoritative); category/searchIn stay seed-forwarded. `_apSearch` appends selected values when source=Pages.
+  - Honest finding: `LunrSearchProvider` implements `getAllUserKeywords` but NOT `getAllSystemKeywords` → on the Lunr-backed jimstest the system-keywords control is **gracefully hidden** (lights up where the ES/#507 provider runs). By design (the `getAllSystemKeywords` graceful-[] + the `<% if catalog.length %>` guard), not a bug. user-keywords renders ~220 options (smoke-confirmed).
+  - Fixed `WikiRoutes.searchPages.test` "does not call SearchManager directly": it used "never requests SearchManager" as a stale proxy for "doesn't perform the search". Narrowed to assert no *search method* is invoked (advancedSearchWithContext/search/searchWiki), allowing #691's catalog reads — faithful update, not a weakening.
+  - Caveat: multi-select interaction not browser-eyeballed (no headless browser); unit+E2E green, markup+population smoke-verified via curl.
+- Commits: `ae8b6da5` (#691), plus this log entry.
+- Files Modified:
+  - src/routes/WikiRoutes.ts, src/routes/**tests**/WikiRoutes.searchPages.test.ts, views/browse-attachments.ejs, views/_asset-picker.ejs
+  - docs/project_log.md
+
 ## 2026-05-18-06
 
 - Agent: Claude Opus 4.7
