@@ -397,3 +397,59 @@ describe('SearchPlugin — $currentUser token', () => {
     expect(call.author).toBe('jim');
   });
 });
+
+// ---------------------------------------------------------------------------
+// #643 — last-modified date filter (since / until / date)
+// ---------------------------------------------------------------------------
+
+describe('SearchPlugin — date filter (#643)', () => {
+  test("date='YYYY-MM-DD' maps to a whole-day dateRange and uses advancedSearch", async () => {
+    const { context, mockSearchManager } = makeContext({ advancedSearchResults: [] });
+
+    await SearchPlugin.execute(context, { date: '2026-05-01' });
+
+    expect(mockSearchManager.advancedSearch).toHaveBeenCalledWith(
+      expect.objectContaining({ dateRange: { from: '2026-05-01', to: '2026-05-01' } })
+    );
+    expect(mockSearchManager.search).not.toHaveBeenCalled();
+  });
+
+  test('since + until map to dateRange.from / dateRange.to', async () => {
+    const { context, mockSearchManager } = makeContext({ advancedSearchResults: [] });
+
+    await SearchPlugin.execute(context, { since: '2026-04-01', until: '2026-04-30' });
+
+    expect(mockSearchManager.advancedSearch).toHaveBeenCalledWith(
+      expect.objectContaining({ dateRange: { from: '2026-04-01', to: '2026-04-30' } })
+    );
+  });
+
+  test('since only sets dateRange.from without to', async () => {
+    const { context, mockSearchManager } = makeContext({ advancedSearchResults: [] });
+
+    await SearchPlugin.execute(context, { since: '2026-05-10' });
+
+    const call = mockSearchManager.advancedSearch.mock.calls[0][0];
+    expect(call.dateRange).toEqual({ from: '2026-05-10' });
+  });
+
+  test('invalid date format returns an error and does not search', async () => {
+    const { context, mockSearchManager } = makeContext({ advancedSearchResults: [] });
+
+    const html = await SearchPlugin.execute(context, { date: '2026/05/01' });
+
+    expect(html).toContain('Invalid date parameter');
+    expect(mockSearchManager.advancedSearch).not.toHaveBeenCalled();
+    expect(mockSearchManager.search).not.toHaveBeenCalled();
+  });
+
+  test('no date param → no dateRange (does not trigger advancedSearch on its own)', async () => {
+    const { context, mockSearchManager } = makeContext({ searchResults: [] });
+
+    await SearchPlugin.execute(context, { query: 'hello' });
+
+    // plain text query → basic search, no dateRange anywhere
+    expect(mockSearchManager.search).toHaveBeenCalled();
+    expect(mockSearchManager.advancedSearch).not.toHaveBeenCalled();
+  });
+});

@@ -24,6 +24,7 @@
  * - user-keywords: Filter by user keywords (OR logic for multiple values)
  * - author: Filter by page author (original creator, from metadata.author); use '$currentUser' for the logged-in user
  * - editor: Filter by last editor (from metadata.editor); use '$currentUser' for the logged-in user
+ * - since/until/date: #643 — filter by last-modified date (YYYY-MM-DD; `date` = whole-day)
  * - max: Maximum number of results (default: 50, 0 = unlimited)
  * - pageSize: Results per page — enables pagination (default: 0 = disabled)
  * - page: Current page number (default: 1, also read from ?page= query string)
@@ -58,6 +59,10 @@ interface SearchParams extends PluginParams {
   'user-keywords'?: string;
   author?: string;
   editor?: string;
+  /** #643: filter by last-modified date (YYYY-MM-DD). `date` = whole-day. */
+  since?: string;
+  until?: string;
+  date?: string;
   max?: string | number;
   format?: string;
   page?: string | number;
@@ -81,6 +86,10 @@ interface SearchOptions {
   userKeywords?: string[];
   author?: string;
   editor?: string;
+  /** #643: last-modified date range (inclusive, whole-day). Maps to the
+   *  existing SearchCriteria.dateRange honoured by ES; LunrSearchProvider
+   *  filters result.metadata.lastModified. */
+  dateRange?: { from?: string; to?: string };
 }
 
 interface SearchManager {
@@ -281,6 +290,17 @@ const SearchPlugin: SimplePlugin = {
       const maxResults = parseMaxParam(opts.max, 50);
       const format = String(opts.format || 'table').toLowerCase();
 
+      // #643: last-modified date filter. `date` = whole-day match; otherwise
+      // since (lower bound) / until (upper bound). Filters by last-modified
+      // (pages do not store a creation date; `dateField=created` is N/A).
+      const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+      const dateWhole = opts.date ? String(opts.date) : '';
+      const dateFrom = dateWhole || (opts.since ? String(opts.since) : '');
+      const dateTo   = dateWhole || (opts.until ? String(opts.until) : '');
+      if ((dateFrom && !dateRe.test(dateFrom)) || (dateTo && !dateRe.test(dateTo))) {
+        return '<p class="error">Invalid date parameter: use YYYY-MM-DD (since / until / date)</p>';
+      }
+
       // Validate format parameter
       const validFormats = ['table', 'count', 'titles', 'list'];
       if (!validFormats.includes(format)) {
@@ -307,9 +327,16 @@ const SearchPlugin: SimplePlugin = {
       if (author) searchOptions.author = author;
       if (editor) searchOptions.editor = editor;
 
+      // #643: add the last-modified date range if specified
+      if (dateFrom || dateTo) {
+        searchOptions.dateRange = {};
+        if (dateFrom) searchOptions.dateRange.from = dateFrom;
+        if (dateTo) searchOptions.dateRange.to = dateTo;
+      }
+
       // Execute search
       let results: SearchResult[];
-      if (systemCategory || userKeywords || author || editor) {
+      if (systemCategory || userKeywords || author || editor || dateFrom || dateTo) {
         // Use advanced search for filtering
         results = await searchManager.advancedSearch(searchOptions);
       } else {

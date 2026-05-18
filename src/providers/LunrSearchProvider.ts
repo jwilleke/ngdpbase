@@ -606,6 +606,22 @@ class LunrSearchProvider extends BaseSearchProvider {
       });
     }
 
+    // #643: filter by last-modified date range (inclusive, whole-day).
+    // Honours the existing SearchCriteria.dateRange contract (ES already
+    // does; Lunr previously ignored it). Pages have no creation date, so
+    // this is last-modified only. Bounds are YYYY-MM-DD day edges (UTC).
+    const dateRange = options.dateRange;
+    if (dateRange && (dateRange.from || dateRange.to)) {
+      const fromTs = dateRange.from ? Date.parse(`${dateRange.from}T00:00:00.000Z`) : -Infinity;
+      const toTs = dateRange.to ? Date.parse(`${dateRange.to}T23:59:59.999Z`) : Infinity;
+      results = results.filter(result => {
+        const lm = result.metadata.lastModified;
+        if (typeof lm !== 'string' || !lm) return false;
+        const ts = Date.parse(lm);
+        return !Number.isNaN(ts) && ts >= fromTs && ts <= toTs;
+      });
+    }
+
     // Limit results
     return results.slice(0, maxResults);
   }

@@ -1,7 +1,7 @@
 ---
 name: SearchPlugin
 description: Embeds search results directly in pages via the [{Search ...}] markup
-dateModified: 2026-05-14
+dateModified: 2026-05-18
 category: plugins
 code: src/plugins/SearchPlugin.ts
 relatedModules: [PluginManager, SearchManager]
@@ -55,6 +55,11 @@ The SearchPlugin allows embedding search results within wiki content. It support
 | query | string | * | No | Search text query (* for all pages) |
 | system-category | string | - | No | Filter by system category |
 | user-keywords | string | - | No | Filter by user keywords (pipe-separated for OR) |
+| author | string | - | No | Filter by page author (metadata.author); `$currentUser` for the logged-in user |
+| editor | string | - | No | Filter by last editor (metadata.editor); `$currentUser` for the logged-in user |
+| since | date | - | No | #643: last-modified on/after this date (`YYYY-MM-DD`) |
+| until | date | - | No | #643: last-modified on/before this date (`YYYY-MM-DD`) |
+| date | date | - | No | #643: last-modified on exactly this day (`YYYY-MM-DD`; convenience for since=until=date) |
 | max | number | 50 | No | Maximum total results (0 = unlimited) |
 | pageSize | number | 0 | No | Results per page; enables pagination when > 0 |
 | page | number | 1 | No | Current page (also read from `?page=N` query string) |
@@ -159,6 +164,18 @@ Shows the first 10 documentation pages with Prev/Next navigation. The `?page=N` 
 ```
 
 Fetches up to 100 results and paginates them 20 per page.
+
+### Date filter (#643)
+
+```wiki
+[{Search since='2026-05-01' format='titles'}]
+[{Search author='$currentUser' until='2026-05-01'}]
+[{Search date='2026-05-01'}]
+```
+
+Filters by **last-modified** date (inclusive, whole-day; combined AND with `author`/`editor`/category/keywords). `date='X'` is shorthand for `since='X' until='X'`. Invalid dates (non-`YYYY-MM-DD`) return an error.
+
+> Note: this is **last-modified only**. ngdpbase pages do not store a creation timestamp (frontmatter carries `lastModified`, not `created`), so a `created`-date filter is intentionally not offered.
 
 ## Output Formats
 
