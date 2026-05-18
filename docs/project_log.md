@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-18-12
+
+- Agent: Claude Opus 4.7
+- Subject: Release v3.21.0 (`/semver minor`, standalone) + `/othersites` — ships #745 media Year filter + dead-facet-sidebar removal.
+- Current Issue: none (release of #745 `0803a43c` + logs since v3.20.1). #745 stays open (pages-date needs #643).
+- Tests: jimstest (Step 8a, release commit `a4a198f5`) unit 5641/5641 + E2E 72/72. All 3 satellites 5641/5641 + 72/72. Zero flakes.
+- Work Done:
+  - `/semver minor` 3.20.1 → 3.21.0 (3 commits). Gate green on pre-bump. Release commit `a4a198f5`, tag `v3.21.0`, GitHub release: <https://github.com/jwilleke/ngdpbase/releases/tag/v3.21.0>
+  - **Perf baseline false positive (Step 5b) — investigated, NOT a regression.** First diff flagged `/search` +519% (26→161ms); I initially hypothesised a per-request `getPickerYears` media-index scan, then *verified* and corrected: `FileSystemMediaProvider.index` is loaded once at init (in-memory), `getYears()` is a sub-ms Set build, and an independent live warm probe was **~40ms ×6**. Re-ran the baseline at operator request: it then showed `/` AND `/search` both spiking (+111/+129ms) with **memory −53.9%** — the unmistakable cold-start signature (`/view`/`/login` flat). This is the documented cold-cache baseline false positive (`docs/performance/`, #705/#734/#622), pre-accepted on prior releases. True steady-state `/search` ≈ 40ms; #745 adds only in-memory work. Lesson reinforced: verify the mechanism (read the code) before asserting it.
+  - Step 8a (jimstest-first): jimstest rebuilt+restarted+tested on the release commit BEFORE satellites — 5641 / 72, clean.
+  - Step 8b `/othersites` (satellite-only, 8a done): fairways-base (2121), ngdpbase-veg (3333), ngdp-temp-builds (3001) — each pull→build→restart→5641 unit→72 E2E. All clean.
+  - Standalone-`/semver` bookkeeping (this entry + #745 release note) per Step 9.
+- Flakes seen: none. Perf: cold-start false positive only (see above) — no real regression.
+- Commits: `a4a198f5` (chore: release v3.21.0), plus this log entry. Release ships `0803a43c` (#745 media Year + dead `#ap-facets` removal).
+- Files Modified:
+  - package.json, config/app-default-config.json, CHANGELOG.md, docs/performance/baseline-v3.21.0-2026-05-18.md
+  - docs/project_log.md
+
 ## 2026-05-18-11
 
 - Agent: Claude Opus 4.7
