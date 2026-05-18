@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-18-06
+
+- Agent: Claude Opus 4.7
+- Subject: #720 — Video/Audio format facet + "PDF & Office" rename; fixed the all-sources format bug from search-work.md.
+- Current Issue: #720 (Closes via `a5562875`) / #744 EPIC slice / #742 follow-up.
+- Tests: unit 5637/5637 (+9 assetSearch) + E2E 72 passed / 0 flaky. jimstest rebuilt + restarted; `/search` smoke-verified (Videos/Audio/PDF&Office options render; `mimeCategory=video` → HTTP 200).
+- Work Done:
+  - Verified first (lesson applied): `mimeCategory` is **live** — `BaseMediaProvider:301` and `BasicAttachmentProvider:1128` both filter on it (unlike the dead #519 controls). So #720 = extend a real filter, not implement one.
+  - Extended `mimeCategory` to `image|video|audio|document|other`: type unions (`Asset.ts`, `AssetService.ts`), the WikiRoutes allowlist (hoisted once to the top of `assetSearch`, shared by the all-sources + single-type branches; removed the duplicate single-type parse), and both provider filters (isVideo=`video/*`, isAudio=`audio/*`; `other` now excludes them).
+  - "Documents" → **"PDF & Office"** in the picker; extended the `document` predicate to `application/msword` / `application/vnd.*` so the label is truthful (was `pdf`|`text/` only).
+  - Fixed the operator's `search-work.md` bug: the #742 all-sources branch never forwarded `mimeCategory` and added pages/users regardless, so "All sources + Format=Images" returned pages + unfiltered assets. Now mimeCategory is forwarded to the all-sources asset sub-search, and a selected format **suppresses pages/users** (a file-format facet is meaningless for them). This is the coherent scope — shipping the categories while leaving the default ("All sources") view broken would be another no-op control.
+  - Tests: +9 in `WikiRoutes.assetSearch.test.ts` (all-sources forward+suppress pages/users, regression guard for no-mime, unknown-value drop, single-type forwarding of each category). No fallout — no existing test asserted the old 3-value/`other` semantics.
+  - Scope held: did NOT also wire `year` (that's #745) or rework the control into a tree/show-by-relevance (deferred #744 refinements). Caveat: dropdown values exercised via unit/handler + curl smoke; not browser-eyeballed.
+- Commits: `a5562875` (#720), plus this log entry.
+- Files Modified:
+  - src/types/Asset.ts, src/managers/AssetService.ts, src/providers/BaseMediaProvider.ts, src/providers/BasicAttachmentProvider.ts, src/routes/WikiRoutes.ts, src/routes/**tests**/WikiRoutes.assetSearch.test.ts, views/_asset-picker.ejs
+  - docs/project_log.md
+
 ## 2026-05-18-05
 
 - Agent: Claude Opus 4.7
