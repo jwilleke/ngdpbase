@@ -112,7 +112,10 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
     <div id="ap-facets" class="flex-shrink-0" style="width:160px;display:none;"></div>
 
     <!-- Results grid -->
-    <div class="flex-grow-1">
+    <%# min-width:0 lets this flex child shrink when the 160px facet sidebar
+        appears after a search — without it the row overflows the viewport
+        to the right (classic flexbox min-width:auto trap). %>
+    <div class="flex-grow-1" style="min-width:0;">
         <!-- #733: view-mode toggle at the top of the results (moved from the
              pagination footer). Same IDs — Slice 2 JS wiring is unchanged. -->
         <%# Slice 1a (#744): compact icon results-toolbar — sort dropdown-button
