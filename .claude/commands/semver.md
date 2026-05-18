@@ -115,7 +115,18 @@ When skipping (patch with no explicit request):
 
 ### Step 8: Update sister installs
 
-Sister ngdpbase installs (e.g., The Fairways, ve-geology) need to be told about the new release. Invoke the `/othersites` skill — defined in `.claude/commands/othersites.md`. It knows the list of installs and the update sequence (`git pull` → `./server.sh stop` → `npm run build` → `./server.sh start` → unit tests + E2E per site → file `[BUG]` issues for any failures).
+**Step 8a — Re-validate jimstest on the release commit FIRST (mandatory, before any satellite).**
+
+The Step 4 test gate ran on the **pre-release** commit. Step 5/6 then bumped the version and created the release commit *after* that gate, so jimstest's running server has NOT been validated on the final released code. jimstest is the source of truth and must never lag the satellites. Before invoking `/othersites`:
+
+- `npm run build` (release commit is checked out) → `./server.sh stop && ./server.sh start` → `npm test` (unit must be GREEN) → `npm run test:e2e` if the release range touches any UI-affecting path (`views/**`, `public/**`, `src/plugins/**`, `addons/**`, `tests/e2e/**`; when unsure, run it).
+- Only after jimstest is green on the **release commit** do you proceed to the satellites.
+
+This is non-negotiable: never propagate a release to satellites while jimstest is still on pre-release code. See `feedback_jimstest_first` in memory.
+
+**Step 8b — Propagate to the satellites.**
+
+Sister ngdpbase installs (e.g., The Fairways, ve-geology) need to be told about the new release. Invoke the `/othersites` skill — defined in `.claude/commands/othersites.md`. It knows the list of installs and the update sequence (`git pull` → `./server.sh stop` → `npm run build` → `./server.sh start` → unit tests + E2E per site → file `[BUG]` issues for any failures). Because Step 8a already validated jimstest on the release commit, `/othersites` may run in satellite-only mode here (skip jimstest) — that skip is valid *only* because Step 8a was performed on the final code.
 
 The current sites tracked there are:
 

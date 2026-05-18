@@ -72,6 +72,8 @@ This applies only to `/othersites` invoked **as a step of /session-commit**. The
 
 Precondition for running: jimstest pre-flight (Step 3) must be green and any semver bump (Step 4) must already be pushed to origin. Satellites pull from origin, so the new tag has to exist there first.
 
+**jimstest-first invariant (mandatory).** Step 3 pre-flight validated jimstest on the *pre-release* commit. A `minor`/`major` bump in Step 4 creates the version-bump + release commit *after* that, so jimstest is stale relative to what satellites will pull. `/semver` Step 8a handles this — it rebuilds + restarts + fully tests jimstest on the **release commit FIRST**, before any satellite. Do not let satellites be propagated while jimstest is still on pre-release code; jimstest (source of truth) must never lag the satellites. See `feedback_jimstest_first` in memory and `/othersites` "Mode".
+
 Targets:
 
 - `fairways-base` (port 2121, "The Fairways")

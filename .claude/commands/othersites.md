@@ -20,7 +20,9 @@ The `geohazardwatch` repo is a separate satellite with its own tracker and is **
 `/othersites` runs in one of two modes — pick based on how it was invoked:
 
 - **Standalone (default)** — operator typed `/othersites` directly. Process **all four** instances.
-- **Satellite-only** — `/othersites` was invoked from `/session-commit` Step 5. `/session-commit` already validated jimstest on the current commit in its Step 3 pre-flight, so **skip jimstest** here. Process only the three satellite instances. Avoids double build+restart+test on the operator's working instance.
+- **Satellite-only** — `/othersites` was invoked from `/session-commit` Step 5 (no version bump) and jimstest was validated on the **exact commit being propagated** in `/session-commit` Step 3 pre-flight. Only then **skip jimstest** here and process the three satellites. Avoids double build+restart+test on the operator's working instance.
+
+**Satellite-only is valid ONLY when no commit has landed since the jimstest validation.** After a `/semver` bump, the version-bump + release commit land *after* the pre-flight gate, so pre-flight validated *pre-release* code — jimstest is then stale relative to what the satellites will pull. In that case jimstest MUST be rebuilt + restarted + fully tested on the **release commit FIRST**, before any satellite. `/semver` Step 8a now does this explicitly; if you reach `/othersites` from a release flow and Step 8a was not performed, process jimstest FIRST on the final commit, then the satellites. jimstest (source of truth) must never lag the satellites. See `feedback_jimstest_first` in memory.
 
 If you're unsure which mode you're in, default to **standalone**. Redundant work is cheap; missed validation isn't.
 
