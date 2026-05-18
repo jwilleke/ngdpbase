@@ -2,6 +2,25 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-18-08
+
+- Agent: Claude Opus 4.7
+- Subject: Release v3.20.0 (`/semver minor`, standalone) + `/othersites` propagation — the search-picker IA cluster.
+- Current Issue: none (release of #744 slice 1a, #721 collapse→removed, #720, #691, dead-panel removal + workflow/logs since v3.19.1).
+- Tests: jimstest (Step 8a, release commit `7ce81f07`) unit 5637/5637 + E2E 72/72. All 3 satellites 5637/5637 + 72/72. Zero flakes anywhere.
+- Work Done:
+  - `/semver minor` 3.19.1 → 3.20.0. 17 commits since v3.19.1. Release gate green on the pre-bump commit (build, 5637 unit, 72 E2E). `version.ts` bump; release commit `7ce81f07`, tag `v3.20.0`, GitHub release auto-published: <https://github.com/jwilleke/ngdpbase/releases/tag/v3.20.0>
+  - Perf baseline `baseline-v3.20.0-2026-05-18.md` — **no regressions** (script exit 0). Notable: `/search?q=test` **142ms → 26ms (−81.7%)** — the leaner picker after the dead-Advanced-panel removal + IA simplification. Memory −5.0%; `/`/`/view` flat-better; `/login` flat. Drift table:
+    - Memory(idle) 3713.1→3527.8 MB (−5.0%) · `/` 30→27ms · `/view/Welcome` 22→21ms · `/search?q=test` 142→26ms (−81.7%) · `/login` 21→21ms
+  - Step 8a (jimstest-first): rebuilt + restarted + full-tested jimstest on the release commit BEFORE satellites — 5637 unit / 72 E2E, clean.
+  - Step 8b `/othersites` (satellite-only, valid because 8a done): fairways-base (2121), ngdpbase-veg (3333), ngdp-temp-builds (3001) — each pull→build→restart→5637 unit→72 E2E. All clean.
+  - Standalone-`/semver` bookkeeping (this entry + the issue comments below) per the `/semver` Step 9 reminder.
+- Flakes seen: none (all 4 instances clean first run).
+- Commits: `7ce81f07` (chore: release v3.20.0), plus this log entry. Release bundled: 1a `77345bec`, #721 `09a49950`, dead-panel `06b50a58`, #720 `a5562875`, #691 `ae8b6da5` (+ fixes/logs).
+- Files Modified:
+  - package.json, config/app-default-config.json, CHANGELOG.md, docs/performance/baseline-v3.20.0-2026-05-18.md
+  - docs/project_log.md
+
 ## 2026-05-18-07
 
 - Agent: Claude Opus 4.7
