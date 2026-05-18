@@ -2,6 +2,23 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-18-13
+
+- Agent: Claude Opus 4.7
+- Subject: #643 — SearchPlugin last-modified date filter (since/until/date); also unblocks #745 pages-date.
+- Current Issue: #643 (modified-date delivered; `created` infeasible by data model — left open for operator, recommend split). Refs #745.
+- Tests: unit 5641/5641 (+5 SearchPlugin) + E2E 72/72 / 0 flaky. jimstest rebuilt+restarted; pre-flight green on `c01e630b`.
+- Work Done:
+  - Verified-first chain: SearchManager.advancedSearch is a thin provider pass-through; the real filtering is in `LunrSearchProvider.advancedSearch` (author/editor post-filter pattern). `SearchCriteria.dateRange` **already exists** and is honoured by `ElasticsearchSearchProvider` (lines 305-308) but **ignored by LunrSearchProvider** (the default). Scope correction: pages have **no creation timestamp** (1/116 carry created/dateCreated; all carry lastModified) → #643's proposed `dateField=created` is infeasible without a page-model change.
+  - SearchPlugin: `since`/`until`/`date` params → the existing `SearchCriteria.dateRange` (`date` = whole-day; invalid non-`YYYY-MM-DD` → error; AND-combined; date-only routes through advancedSearch). Did NOT expose a `dateField` selector (only one filterable field — avoids shipping a mostly-dead control, the session's recurring anti-pattern).
+  - LunrSearchProvider.advancedSearch: implemented the `dateRange` filter it previously dropped — inclusive whole-day UTC bounds on `result.metadata.lastModified` (mirrors author/editor). ES already honoured `dateRange`, so both providers now consistent.
+  - Docs: `docs/plugins/SearchPlugin.md` (params table — also backfilled the missing author/editor rows — + date examples + the created-N/A note) and the in-file help block. +5 SearchPlugin tests (date→dateRange mapping, since-only, whole-day, invalid→error, no-date guard).
+  - This unblocks #745's pages-date half (date-filter pages by last-modified is now possible via the SearchManager/advancedSearch path the picker Pages source uses).
+- Commits: `c01e630b` (#643), plus this log entry.
+- Files Modified:
+  - src/plugins/SearchPlugin.ts, src/plugins/**tests**/SearchPlugin.test.ts, src/providers/LunrSearchProvider.ts, docs/plugins/SearchPlugin.md
+  - docs/project_log.md
+
 ## 2026-05-18-12
 
 - Agent: Claude Opus 4.7
