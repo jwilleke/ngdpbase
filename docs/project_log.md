@@ -2,6 +2,26 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-18-01
+
+- Agent: Claude Opus 4.7
+- Subject: #743 — InsertPlugin: transcluded heading resolved to the host page; whole-page insert had no source heading. Plus jimstest-first workflow hardening.
+- Current Issue: #743 (filed + fixed this session; `Closes #743` on `afa554b4`). Follow-up to #741.
+- Tests: unit 5628/5628 (+5 InsertPlugin) + E2E 72 passed / 0 flaky. jimstest rebuilt + restarted on the fix before commit.
+- Work Done:
+  - Root cause (operator report on #741 comment): `InsertPlugin` rendered inserted content under the **host** page name, so a source section heading using an identity variable (`# [{$title}] (2026-05-13)`) resolved to the host — e.g. `MEW-Current Health Concerns?section=1` showed `MEW-Medical Summary (2026-05-13)`. `$pagename`/`$title` → `RenderingManager.expandSystemVariable` returns the passed pageName.
+  - Fix 1: render transcluded content under the **source** `pageName` (was `hostPageName`) so identity variables resolve to the page the content came from — heading reads exactly as on the source page.
+  - Fix 2: a whole-page insert (`[{Insert page='X'}]`) with no `caption=` now prepends `## <metadata.title || pageName>` so the block is identifiably the source page. Section inserts keep their own heading; `caption=` still overrides/suppresses per #741.
+  - Tests: refocused the `escapes HTML in page name` test onto the attribution segment (the echo render-mock doesn't escape body markdown — that's the real renderer's job); added 5 tests (source-name render context, whole-page `## name`/`## title` prepend, section keeps own heading, caption beats prepend). 34 InsertPlugin tests total.
+  - Docs: `docs/plugins/InsertPlugin.md` (Overview + Render Path rewritten for source-identity, caption row, whole-page heading, test count, Issue trail) and the end-user required-page `using-insertplugin` (added missing `caption=` to Syntax/Parameters/new Captions section; source-identity note) brought current with code per operator request.
+  - Earlier in session: codified the jimstest-first invariant into `/semver` Step 8a + `/othersites` Mode + `/session-commit` Step 5 (commit `ea6a0bc3`); remediated jimstest onto released v3.19.0 (5623/72); saved `feedback_jimstest_first` to memory.
+- Commits: `afa554b4` (#743 fix + docs), `ea6a0bc3` (workflow hardening), plus this log entry. (Earlier today: v3.19.0 release `7c5043e8`, #742 `822cf876`.)
+- Files Modified:
+  - src/plugins/InsertPlugin.ts, src/plugins/**tests**/InsertPlugin.test.ts
+  - docs/plugins/InsertPlugin.md, required-pages/ad98220f-3780-4315-a7e1-ed598d5d870b.md
+  - .claude/commands/semver.md, .claude/commands/othersites.md, .claude/commands/session-commit.md
+  - docs/project_log.md
+
 ## 2026-05-17-15
 
 - Agent: Claude Opus 4.7
