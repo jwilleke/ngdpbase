@@ -300,11 +300,18 @@ abstract class BaseMediaProvider implements AssetProvider {
 
     if (query.mimeCategory) {
       items = items.filter(i => {
-        const isImage = i.mimeType.startsWith('image/');
-        const isDoc = i.mimeType.includes('pdf') || i.mimeType.startsWith('text/');
+        const f = i.mimeType;
+        const isImage = f.startsWith('image/');
+        const isVideo = f.startsWith('video/');
+        const isAudio = f.startsWith('audio/');
+        // #720: "PDF & Office" — pdf + text + Word/Excel/PowerPoint/ODF.
+        const isDoc = f.includes('pdf') || f.startsWith('text/') ||
+                      f.startsWith('application/msword') || f.startsWith('application/vnd.');
         if (query.mimeCategory === 'image') return isImage;
+        if (query.mimeCategory === 'video') return isVideo;
+        if (query.mimeCategory === 'audio') return isAudio;
         if (query.mimeCategory === 'document') return isDoc;
-        return !isImage && !isDoc; // 'other'
+        return !isImage && !isVideo && !isAudio && !isDoc; // 'other'
       });
     }
 

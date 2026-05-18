@@ -7925,6 +7925,11 @@ ${panes}
       const sortRaw = typeof req.query.sort === 'string' ? req.query.sort : '';
       const sort: 'date' | 'caption' | undefined = sortRaw === 'caption' ? 'caption' : sortRaw === 'date' ? 'date' : undefined;
       const order: 'asc' | 'desc' = req.query.order === 'desc' ? 'desc' : 'asc';
+      // #720: file-format facet (Files-only). Live filter — applied by
+      // BaseMediaProvider / BasicAttachmentProvider. Hoisted so the
+      // all-sources branch and the single-type asset branch share one parse.
+      const mimeCategoryRaw = typeof req.query.mimeCategory === 'string' ? req.query.mimeCategory : '';
+      const mimeCategory = (['image', 'video', 'audio', 'document', 'other'] as const).find(c => c === mimeCategoryRaw);
 
       // #742: "All sources" (types absent or `all`) aggregates pages, users,
       // and the asset stores instead of 403'ing non-editors and returning
@@ -7948,7 +7953,9 @@ ${panes}
             metadata?: { systemCategory?: string; userKeywords?: string; lastModified?: string };
           }>>;
         };
-        if (searchManager?.advancedSearchWithContext) {
+        // #720: a file-format facet is meaningless for pages — when one is
+        // selected, "All sources" narrows to files only (skip pages/users).
+        if (!mimeCategory && searchManager?.advancedSearchWithContext) {
           const hits = await searchManager.advancedSearchWithContext(wikiContext, {
             query,
             categories: [],
@@ -7983,7 +7990,7 @@ ${panes}
               username: string; displayName?: string; profilePage?: string; avatar?: string; createdAt?: string;
             }>>;
           };
-          if (isAuthenticated && userManager?.searchUsers) {
+          if (!mimeCategory && isAuthenticated && userManager?.searchUsers) {
             const users = await userManager.searchUsers(query, { limit: fetchLimit, activeOnly: true });
             if (users.length >= fetchLimit) anyCapped = true;
             for (const u of users) {
@@ -8015,6 +8022,7 @@ ${panes}
           const assetPage = await assetService.search({
             query,
             types: undefined,
+            mimeCategory,
             pageSize: fetchLimit,
             offset: 0,
             sort: sort ?? 'date',
@@ -8291,8 +8299,8 @@ ${panes}
         ? (typesParam.split(',').filter(t => t === 'attachment' || t === 'media'))
         : undefined;
       const year = req.query.year ? parseInt(req.query.year as string, 10) || undefined : undefined;
-      const mimeCategoryRaw = req.query.mimeCategory as string;
-      const mimeCategory = (['image', 'document', 'other'] as const).find(c => c === mimeCategoryRaw);
+      // #720: mimeCategory parsed once at the top of the handler (shared with
+      // the all-sources branch); reused here.
 
       const userRoles = wikiContext.userContext?.roles ?? [];
       const username = wikiContext.userContext?.username ?? '';

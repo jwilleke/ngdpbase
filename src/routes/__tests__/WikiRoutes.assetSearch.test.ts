@@ -1057,5 +1057,83 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
       expect(payload.results.map((r: { name: string }) => r.name)).toEqual(['Apple', 'Mango', 'Zoe']);
     });
+
+    // #720: a file-format facet is Files-only — in all-sources it must be
+    // forwarded to the asset sub-search AND suppress pages/users (format is
+    // meaningless for them). Fixes the search-work.md report.
+    it('mimeCategory in all-sources forwards to assets and skips pages/users', async () => {
+      const search = makeSearchManager([{ name: 'Welcome' }, { name: 'About' }]);
+      const asset = makeAssetService(makeAssetPage([{ id: 'v1', providerId: 'media-library', name: 'clip.mp4' }] as never));
+      const userMgr = makeUserManager([{ username: 'alice' }]);
+      const routes = makeRoutesAll({ assetService: asset, searchManager: search, userManager: userMgr });
+      const req = makeReq({ userContext: editor, query: { mimeCategory: 'video' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      // pages + users suppressed because a file-format facet is active
+      expect(search.advancedSearchWithContext).not.toHaveBeenCalled();
+      expect(userMgr.searchUsers).not.toHaveBeenCalled();
+      // mimeCategory forwarded to the asset sub-search
+      expect(asset.search).toHaveBeenCalledWith(expect.objectContaining({ mimeCategory: 'video' }));
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.results.map((r: { providerId: string; id: string }) => `${r.providerId}:${r.id}`)).toEqual(['media-library:v1']);
+    });
+
+    it('no mimeCategory in all-sources still includes pages (regression guard)', async () => {
+      const search = makeSearchManager([{ name: 'Welcome' }]);
+      const routes = makeRoutesAll({ assetService: makeAssetService(), searchManager: search });
+      const req = makeReq({ userContext: null, query: {} });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(search.advancedSearchWithContext).toHaveBeenCalled();
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.results.map((r: { id: string }) => r.id)).toEqual(['Welcome']);
+    });
+
+    it('rejects an unknown mimeCategory (treated as no filter — pages still included)', async () => {
+      const search = makeSearchManager([{ name: 'Welcome' }]);
+      const routes = makeRoutesAll({ assetService: makeAssetService(), searchManager: search });
+      const req = makeReq({ userContext: null, query: { mimeCategory: 'garbage' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      // 'garbage' is not in the allowlist → mimeCategory undefined → not file-only
+      expect(search.advancedSearchWithContext).toHaveBeenCalled();
+      const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.results.map((r: { id: string }) => r.id)).toEqual(['Welcome']);
+    });
+  });
+
+  // #720: video / audio are accepted mimeCategory values and forwarded to
+  // AssetService on the single-type asset branch (was image/document/other).
+  describe('mimeCategory video/audio (#720)', () => {
+    it.each(['video', 'audio', 'image', 'document', 'other'])(
+      'forwards mimeCategory=%s to AssetService.search',
+      async (cat) => {
+        const service = makeAssetService();
+        const routes = makeRoutes(service);
+        const req = makeReq({ query: { types: 'attachment', mimeCategory: cat } });
+        const res = makeRes();
+
+        await routes.assetSearch(req, res);
+
+        expect(service.search).toHaveBeenCalledWith(expect.objectContaining({ mimeCategory: cat }));
+      }
+    );
+
+    it('drops an unknown mimeCategory (passes undefined)', async () => {
+      const service = makeAssetService();
+      const routes = makeRoutes(service);
+      const req = makeReq({ query: { types: 'attachment', mimeCategory: 'garbage' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(service.search.mock.calls[0][0].mimeCategory).toBeUndefined();
+    });
   });
 });

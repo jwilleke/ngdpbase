@@ -201,8 +201,8 @@ export interface AssetQuery {
   query?: string;
   /** Filter media results to a specific year */
   year?: number;
-  /** Filter results to a MIME category */
-  mimeCategory?: 'image' | 'document' | 'other';
+  /** Filter results to a MIME category (#720) */
+  mimeCategory?: 'image' | 'video' | 'audio' | 'document' | 'other';
   /** Number of results per page (default 48) */
   pageSize?: number;
   /** Zero-based offset into the full result set (default 0) */

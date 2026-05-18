@@ -1127,11 +1127,18 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
 
     if (mimeCategory) {
       items = items.filter(s => {
-        const isImage = s.encodingFormat.startsWith('image/');
-        const isDoc = s.encodingFormat.includes('pdf') || s.encodingFormat.startsWith('text/');
+        const f = s.encodingFormat;
+        const isImage = f.startsWith('image/');
+        const isVideo = f.startsWith('video/');
+        const isAudio = f.startsWith('audio/');
+        // #720: "PDF & Office" — pdf + text + Word/Excel/PowerPoint/ODF.
+        const isDoc = f.includes('pdf') || f.startsWith('text/') ||
+                      f.startsWith('application/msword') || f.startsWith('application/vnd.');
         if (mimeCategory === 'image') return isImage;
+        if (mimeCategory === 'video') return isVideo;
+        if (mimeCategory === 'audio') return isAudio;
         if (mimeCategory === 'document') return isDoc;
-        return !isImage && !isDoc; // 'other'
+        return !isImage && !isVideo && !isAudio && !isDoc; // 'other'
       });
     }
 

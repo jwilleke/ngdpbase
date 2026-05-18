@@ -37,8 +37,8 @@ export interface AssetSearchOptions {
   sort?: 'date' | 'caption';
   /** Sort direction: 'asc' (default) or 'desc' */
   order?: 'asc' | 'desc';
-  /** Filter results to a MIME category: 'image', 'document', or 'other' */
-  mimeCategory?: 'image' | 'document' | 'other';
+  /** Filter results to a MIME category: image / video / audio / document / other (#720) */
+  mimeCategory?: 'image' | 'video' | 'audio' | 'document' | 'other';
   /** WikiContext for media access-control evaluation */
   wikiContext?: WikiContext;
   /** Authenticated user's roles — forwarded to providers for principal-based filtering */
