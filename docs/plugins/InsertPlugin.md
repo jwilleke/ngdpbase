@@ -1,7 +1,7 @@
 ---
 name: InsertPlugin
 description: Embed another page's content (or one section of it) into the current page at render time.
-dateModified: '2026-05-14'
+dateModified: '2026-05-18'
 category: plugins
 code: src/plugins/InsertPlugin.ts
 ---
@@ -11,11 +11,11 @@ code: src/plugins/InsertPlugin.ts
 Embed another page's content (or one section of it) into the current page at render time.
 
 **Version:** 1.0.0
-**Issue:** #665
+**Issue:** #665 (origin); #741 (`caption=`); #743 (source-page render identity + whole-page heading)
 
 ## Overview
 
-`InsertPlugin` is a render-time transclusion plugin. When a page is rendered, every `[{Insert ...}]` invocation loads the referenced page, optionally slices a section out of it, and inlines its markdown into the host page's render pipeline. The inserted content runs through the same `RenderingManager.renderMarkdown` pipeline as the host so other plugins (Image, MediaPlugin, etc.) inside it still evaluate.
+`InsertPlugin` is a render-time transclusion plugin. When a page is rendered, every `[{Insert ...}]` invocation loads the referenced page, optionally slices a section out of it, and inlines its markdown into the host page at that position. The inserted content runs through `RenderingManager.renderMarkdown` so other plugins (Image, MediaPlugin, etc.) inside it still evaluate — but it is rendered under the **source** page's name (not the host's), so identity variables like `[{$pagename}]` / `[{$title}]` resolve to the page the content came from (see [Render Path](#render-path); #743).
 
 Three forms are supported:
 
@@ -35,7 +35,7 @@ The `?section=N` index form mirrors the editor's section-edit URL (`/edit/Pagena
 | --- | --- | --- | --- |
 | `page` | string | *(none)* | Page name for full-page insert |
 | `pagesection` | string | *(none)* | `Pagename#Heading` or `Pagename?section=N` for sectional insert; takes precedence over `page` |
-| `caption` | string | *(none)* | #741: override the imported leading heading's text (keeps its level). A suppression token — `none`, `off`, `false`, `no`, or empty — drops the imported heading entirely so only the body transcludes. Omit the param to keep the source page's own heading (back-compat). |
+| `caption` | string | *(none)* | #741: override the imported leading heading's text (keeps its level). A suppression token — `none`, `off`, `false`, `no`, or empty — drops the imported heading entirely so only the body transcludes. Omit the param: a **section** insert keeps the section's own heading; a **whole-page** insert is prefixed with an `## <source page title>` heading (#743). |
 
 At least one of `page` or `pagesection` must be provided. An empty target renders nothing.
 
@@ -67,10 +67,14 @@ Other plugin syntax inside the inserted page passes through unchanged and evalua
 
 ## Render Path
 
-The inserted content is rendered with `renderingManager.renderMarkdown(content, hostPageName, userContext)`. The **host page's** name is used for the rendering context so:
+The inserted content is rendered with `renderingManager.renderMarkdown(content, sourcePageName, userContext)`. The **source page's** name is used for the rendering context so identity variables and pagename-relative context resolve against the page the content actually came from:
 
-- Relative links resolve against the host's location
-- Plugin context (variables, etc.) sees the host's surroundings
+- `[{$pagename}]` / `[{$title}]` in the inserted content resolve to the **source** page, so a transcluded heading reads exactly as it does on its own page (not the host's identity).
+- Pagename-relative plugin context sees the source page.
+
+This was a fix (#743, follow-up to #741): rendering under the host page name made a transcluded `# [{$title}]` heading display the host page's title.
+
+For a **whole-page** insert (`[{Insert page='X'}]`) with no `caption=`, an `## <source page title>` heading (falling back to the page name) is prepended so the inserted block is identifiably the source page. Section inserts keep their own heading; `caption=` still overrides or suppresses it (see Parameters).
 
 If `RenderingManager` is unavailable (degraded deployment), the plugin falls back to an escaped `<pre>` block of the raw markdown so the host page still renders cleanly with no HTML injection risk.
 
@@ -91,7 +95,7 @@ When a section is requested, `(section: <label>)` is appended — using either t
 | File | Purpose |
 | --- | --- |
 | `src/plugins/InsertPlugin.ts` | Plugin implementation |
-| `src/plugins/__tests__/InsertPlugin.test.ts` | 25 unit tests |
+| `src/plugins/__tests__/InsertPlugin.test.ts` | 34 unit tests |
 | `src/utils/SectionUtils.ts` | `extractSection(markdown, index)` reused by the index path |
 | `required-pages/ad98220f-3780-4315-a7e1-ed598d5d870b.md` | End-user "Using InsertPlugin" guide |
 

@@ -253,14 +253,20 @@ describe('InsertPlugin', () => {
       expect(result).toContain('href="/view/My%20Page%20With%20Spaces"');
     });
 
-    test('escapes HTML in page name', async () => {
+    test('escapes HTML in page name (attribution link)', async () => {
+      // InsertPlugin emits the page name directly only in the attribution
+      // (and placeholders) — those must escape HTML. The inserted body goes
+      // through RenderingManager, which is responsible for escaping rendered
+      // markdown; the echo mock here intentionally does not render, so we
+      // assert on the attribution segment (InsertPlugin's own output).
       const pm = {
         getPage: vi.fn().mockResolvedValue({ content: 'hi', metadata: {} })
       };
       const ctx = makeContext({ pageManager: pm });
       const result = await InsertPlugin.execute!(ctx, { page: '<script>x</script>' }) as string;
-      expect(result).not.toContain('<script>x</script>');
-      expect(result).toContain('&lt;script&gt;');
+      const attribution = result.slice(result.indexOf('insert-plugin-attribution'));
+      expect(attribution).not.toContain('<script>x</script>');
+      expect(attribution).toContain('&lt;script&gt;');
     });
   });
 
@@ -365,6 +371,77 @@ describe('InsertPlugin', () => {
       const result = await InsertPlugin.execute!(ctx, { page: 'Page', caption: 'Doc Heading' }) as string;
       expect(result).toContain('# Doc Heading');
       expect(result).not.toContain('# Title');
+    });
+  });
+
+  // #741 follow-up — transcluded headings resolved to the HOST page, and
+  // whole-page inserts had no source-identity heading.
+  describe('source-page identity (#741 follow-up)', () => {
+    test('renders inserted content under the SOURCE page name, not the host', async () => {
+      const calls: Array<[string, string]> = [];
+      const renderingManager = {
+        renderMarkdown: vi.fn().mockImplementation(async (content: string, pageName: string) => {
+          calls.push([content, pageName]);
+          return `<rendered>${content}</rendered>`;
+        })
+      };
+      const pm = {
+        getPage: vi.fn().mockResolvedValue({
+          content: '# One\n\nfirst.\n\n# Two\n\nsecond.',
+          metadata: {}
+        })
+      };
+      const ctx = makeContext({ pageManager: pm, renderingManager, hostPage: 'MEW-Medical Summary' });
+      await InsertPlugin.execute!(ctx, { pagesection: 'MEW-Current Health Concerns?section=1' });
+
+      // 2nd arg to renderMarkdown is the render pageName — must be the
+      // SOURCE page (so $pagename/$title resolve to it), never the host.
+      expect(calls[0][1]).toBe('MEW-Current Health Concerns');
+      expect(calls[0][1]).not.toBe('MEW-Medical Summary');
+    });
+
+    test('whole-page insert prepends "## <pageName>" when no caption', async () => {
+      const ctx = makeContext(); // default content: "# Title\n\nFull body..."
+      const result = await InsertPlugin.execute!(ctx, { page: 'TargetPage' }) as string;
+      expect(result).toContain('## TargetPage');
+    });
+
+    test('whole-page insert uses the source page TITLE when present', async () => {
+      const pm = {
+        getPage: vi.fn().mockResolvedValue({
+          content: 'Body only.',
+          metadata: { title: 'My Friendly Title' }
+        })
+      };
+      const ctx = makeContext({ pageManager: pm });
+      const result = await InsertPlugin.execute!(ctx, { page: 'some-slug' }) as string;
+      expect(result).toContain('## My Friendly Title');
+    });
+
+    test('section insert does NOT get the source-title heading (keeps its own)', async () => {
+      const pm = {
+        getPage: vi.fn().mockResolvedValue({
+          content: '# One\n\nfirst.\n\n# Two\n\nsecond.',
+          metadata: { title: 'Src' }
+        })
+      };
+      const ctx = makeContext({ pageManager: pm });
+      const result = await InsertPlugin.execute!(ctx, { pagesection: 'Page?section=1' }) as string;
+      expect(result).toContain('# Two');     // section's own heading kept
+      expect(result).not.toContain('## Src'); // no source-title prepend
+    });
+
+    test('whole-page insert with caption gets NO source-title prepend (caption wins)', async () => {
+      const pm = {
+        getPage: vi.fn().mockResolvedValue({
+          content: '# Orig\n\nbody.',
+          metadata: { title: 'Src' }
+        })
+      };
+      const ctx = makeContext({ pageManager: pm });
+      const result = await InsertPlugin.execute!(ctx, { page: 'Page', caption: 'Chosen' }) as string;
+      expect(result).toContain('# Chosen');
+      expect(result).not.toContain('## Src');
     });
   });
 });

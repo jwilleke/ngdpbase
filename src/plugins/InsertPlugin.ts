@@ -232,10 +232,21 @@ const InsertPlugin: SimplePlugin = {
       sectionLabel = sectionHeading;
     }
 
+    const isFullPage = typeof sectionIndex !== 'number' && !sectionHeading;
+
     // #741: caption override / suppression of the imported heading.
     const captionParam = typeof params.caption === 'string' ? params.caption : undefined;
     if (captionParam !== undefined) {
       content = applyCaption(content, captionParam);
+    } else if (isFullPage) {
+      // Whole-page insert with no caption: prepend an `## <source title>`
+      // heading so the inserted block is identifiably the source page (per
+      // operator spec on the #741 follow-up). Section inserts keep their
+      // own heading instead. Plain text — the markdown renderer escapes it.
+      const sourceTitle = (typeof metadata.title === 'string' && metadata.title.trim())
+        ? metadata.title.trim()
+        : pageName;
+      content = `## ${sourceTitle}\n\n${content}`;
     }
 
     // No-recursion guard — strip nested Insert syntax before render so plugins
@@ -243,16 +254,20 @@ const InsertPlugin: SimplePlugin = {
     content = content.replace(NO_RECURSION_PATTERN, '<!-- Insert (skipped: no recursion) -->');
 
     // Render the (possibly section-sliced, Insert-stripped) markdown to HTML.
-    // Use the host page's name as the rendering pageName so relative links and
-    // plugin context resolve against the host (consistent transclusion model).
+    // Render under the SOURCE page's name (not the host's) so identity
+    // variables ($pagename, $title) and pagename-relative context resolve
+    // against the page the content actually came from. The inserted heading
+    // then reads exactly as it does on the source page — previously a
+    // transcluded `# [{$title}]` heading resolved to the HOST page (#741
+    // follow-up bug: e.g. "MEW-Medical Summary" instead of the source
+    // section's own title).
     const renderingManager = ctx.engine?.getManager('RenderingManager') as RenderingManagerLike | undefined;
     let renderedHtml = '';
     if (renderingManager?.renderMarkdown) {
       try {
-        const hostPageName = typeof ctx.pageName === 'string' ? ctx.pageName : pageName;
         renderedHtml = await renderingManager.renderMarkdown(
           content,
-          hostPageName,
+          pageName,
           ctx.userContext ?? ctx.currentUser ?? null
         );
       } catch (err) {
