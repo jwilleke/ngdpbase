@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-17T23:59:00.000Z'
+lastModified: '2026-05-18T05:00:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -32,7 +32,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 ## Open BUGS (ngdpbase, by issue #)
 
-4 open as of 2026-05-17. **No actionable bug left without operator input** — #741/#739/#740 closed earlier; #742 ("All sources" aggregation) implemented & shipped in **v3.19.0**, awaiting operator close. Remaining: #735 needs repro, #724 is `help wanted`/awaiting decision, #660/#599 non-actionable carry-forwards.
+4 open as of 2026-05-18. **No actionable bug left without operator input** — #741/#739/#740/#743 closed; #742 ("All sources" aggregation) shipped v3.19.0→v3.19.1 and **closed**. Remaining: #735 needs repro (also the priority dependency for EPIC #744), #724 is `help wanted`/awaiting decision, #660/#599 non-actionable carry-forwards.
 
 | # | Title |
 |---|---|
@@ -45,8 +45,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 Items awaiting a yes/no/close or operator-only action. Not blocking other work.
 
-- **#742** — `/search` "All sources" aggregation. Implemented per operator-approved A(i)+B(ii), shipped in **v3.19.0** (commit `822cf876`), propagated to all satellites. Fully resolves the reported gap; left open for operator close per workflow.
-- **#735** — `[BUG] /search fails on Mobile`, empty body. Awaiting operator repro detail (device/OS/browser, exact failure, desktop comparison) before it can be triaged.
+- **#735** — `[BUG] /search fails on Mobile`, empty body. Awaiting operator repro detail (device/OS/browser, exact failure, desktop comparison) before it can be triaged. Now also the **priority dependency for EPIC #744** (mobile-parity slice).
 - **#724** — recurring `NGDPBASE-test-*` test-file lingering, labelled `help wanted`. Awaiting decision/assignment; the fix touches test teardown (must only scope-delete test-created subdirs, never the live `data/` tree).
 
 ## Sister-site top priorities — combined table
@@ -65,15 +64,13 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 
 | # | Topic | Priority hint |
 |---|---|---|
-| #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Low — body reconciled with `master` 2026-05-16 (audit comment pinned); search-provider ACL now explicitly out-of-scope; `stash@{0}` is a reference, no longer `git stash pop`-clean. Refactor intentionally not started |
+| #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Low — body reconciled with `master` 2026-05-16 (audit comment pinned); search-provider ACL explicitly out-of-scope; de-scoped from the **Search + Finding Entries** label 2026-05-18 (ACL epic, not search-UX); refactor intentionally not started |
 | #738 | NCM/import conversion metrics — aggregate by structured `kind`, trend | Low — **unblocked** by #728 S3 (structured `kind` codes now exist); observability follow-up, reuses MetricsManager/OTLP |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images (security+size) | Low — #728 Phase-2 hardening split-out; config-gated, adds sharp/libvips; do when a real driver appears |
 | #736 | `config/app-default-config.json` documentation | Low — filed 2026-05-17; doc task; large config surface incl. new NCM keys |
 | #729 | Improvements to `[{Location}]` | Low — filed 2026-05-16; good-first-issue; Location plugin follow-ups |
-| #722 | Video poster-frame thumbnails (ffmpeg) | Low — substantial; adds ffmpeg dep. #731 shipped v3.16.0; this fills the video thumbnail cell in its list/card rows |
-| #721 | Asset-picker advanced filters: capture-date for video + collapse into disclosure | Low — filter-input axis; backend video `dateTimeOriginal` indexing + UI tidy |
-| #720 | Asset-picker format dropdown: separate Video/Audio from Other | Low — filter-input axis; smallest standalone asset-picker win; mirrors existing Images filter |
-| #691 | Asset-picker page filter UI (source=Pages) | Low — filter-input axis; #716/#731 (presentation) shipped v3.16.0; the remaining page filter-input piece |
+| #744 | [EPIC] Search-picker IA simplification — consolidate `/search` asset-picker controls (sist2-style) | **Medium — actively driven (operator, 2026-05-18).** Children: #721 (slice 1 = Advanced disclosure, design decided), #720 (Video/Audio format options), #691 (Pages filter UI). Pure IA/markup, behaviour-preserving; one slice per PR. Out of scope: #550 / AI / semantic, #643 (SearchPlugin), #722 (presentation). Mobile-parity slice blocked on #735 |
+| #722 | Video poster-frame thumbnails (ffmpeg) | Low — related to #744 (better video tiles make the video filter useful) but **not a child**: result presentation + adds ffmpeg dep. #731 shipped v3.16.0; fills the video thumbnail cell |
 | #707 | Typed footnote + knowledge-graph reference index | Low — speculative; **depends on #706**; defer behind a named citation-heavy user (2026-05-16 brainstorm) |
 | #706 | `knowledge-role` frontmatter field — opt-in page role | Low — sharpened to field+enum+badge; **foundational, blocks #707**; design in `docs/planning/ideas/llm-wiki-pattern.md` |
 | #689 | Admin show/edit frontmatter | Low |
