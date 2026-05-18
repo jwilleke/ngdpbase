@@ -1103,6 +1103,26 @@ class WikiRoutes {
   }
 
   /**
+   * #691: keyword catalogs for the asset-picker Pages filters. Sourced from
+   * SearchManager (index-accurate — reflects what is actually filterable);
+   * gracefully empty if the provider does not support them.
+   */
+  private async getPickerKeywordCatalogs(): Promise<{ userKeywords: string[]; systemKeywords: string[] }> {
+    const sm = this.engine.getManager('SearchManager') as {
+      getAllUserKeywords?: () => Promise<string[]>;
+      getAllSystemKeywords?: () => Promise<string[]>;
+    } | undefined;
+    const [userKeywords, systemKeywords] = await Promise.all([
+      sm?.getAllUserKeywords ? sm.getAllUserKeywords() : Promise.resolve([]),
+      sm?.getAllSystemKeywords ? sm.getAllSystemKeywords() : Promise.resolve([])
+    ]);
+    return {
+      userKeywords: Array.isArray(userKeywords) ? userKeywords : [],
+      systemKeywords: Array.isArray(systemKeywords) ? systemKeywords : []
+    };
+  }
+
+  /**
    * Extract user keywords from User-Keywords page
    */
   async getUserKeywords() {
@@ -3181,6 +3201,7 @@ ${panes}
       };
 
       const commonData = await this.getCommonTemplateData(req);
+      const pickerKw = await this.getPickerKeywordCatalogs();
 
       return res.render('browse-attachments', {
         ...commonData,
@@ -3188,7 +3209,9 @@ ${panes}
         assetPickerInitQuery:   initQuery,
         assetPickerInitSource:  initSource,
         assetPickerInitMime:    initMime,
-        assetPickerInitFilters: initFilters
+        assetPickerInitFilters: initFilters,
+        assetPickerUserKeywords:   pickerKw.userKeywords,
+        assetPickerSystemKeywords: pickerKw.systemKeywords
       });
     } catch (err: unknown) {
       logger.error('Error rendering search page:', err);
@@ -7857,10 +7880,13 @@ ${panes}
       }
 
       const commonData = await this.getCommonTemplateData(req);
+      const pickerKw = await this.getPickerKeywordCatalogs();
 
       return res.render('browse-attachments', {
         ...commonData,
-        title: 'Browse Assets'
+        title: 'Browse Assets',
+        assetPickerUserKeywords:   pickerKw.userKeywords,
+        assetPickerSystemKeywords: pickerKw.systemKeywords
       });
     } catch (err: unknown) {
       logger.error('Error loading attachment browser:', err);

@@ -25,6 +25,9 @@ var _apInitQuery   = typeof assetPickerInitQuery    !== 'undefined' ? assetPicke
 var _apInitSource  = typeof assetPickerInitSource   !== 'undefined' ? assetPickerInitSource   : '';
 var _apInitMime    = typeof assetPickerInitMime     !== 'undefined' ? assetPickerInitMime     : '';
 var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPickerInitFilters ? assetPickerInitFilters : {};
+// #691: Pages-only keyword filter catalogs (server-injected; index-accurate).
+var _apUserKwCatalog = typeof assetPickerUserKeywords   !== 'undefined' && Array.isArray(assetPickerUserKeywords)   ? assetPickerUserKeywords   : [];
+var _apSysKwCatalog  = typeof assetPickerSystemKeywords !== 'undefined' && Array.isArray(assetPickerSystemKeywords) ? assetPickerSystemKeywords : [];
 %>
 
 <!-- Controls bar -->
@@ -73,6 +76,23 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
             <label class="form-check-label small" for="ap-fulltext" title="Off = match page titles only (default). On = also search page body/content.">Full text</label>
         </div>
     </div>
+    <%# #691: Pages-only keyword filters (multi-select). Server-injected
+        catalogs; shown only when source = Pages via _apUpdateControls.
+        Empty catalog → control omitted (nothing to choose). %>
+    <% if (_apUserKwCatalog.length) { %>
+    <div class="col-auto" id="ap-userkw-col" style="display:none;">
+        <select id="ap-user-keywords" class="form-select form-select-sm" multiple size="1" title="Filter by user keywords (Pages)" aria-label="User keywords">
+            <% _apUserKwCatalog.forEach(function (k) { %><option value="<%= k %>"><%= k %></option><% }); %>
+        </select>
+    </div>
+    <% } %>
+    <% if (_apSysKwCatalog.length) { %>
+    <div class="col-auto" id="ap-syskw-col" style="display:none;">
+        <select id="ap-system-keywords" class="form-select form-select-sm" multiple size="1" title="Filter by system keywords (Pages)" aria-label="System keywords">
+            <% _apSysKwCatalog.forEach(function (k) { %><option value="<%= k %>"><%= k %></option><% }); %>
+        </select>
+    </div>
+    <% } %>
     <div class="col-auto d-flex gap-2">
         <button type="button" class="btn btn-primary" id="ap-search-btn">
             <i class="fas fa-search"></i> <span class="d-none d-sm-inline">Search</span>
@@ -172,6 +192,14 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
     var sortEl       = document.getElementById('ap-sort');
     var fulltextEl   = document.getElementById('ap-fulltext');
     var fulltextColEl = document.getElementById('ap-fulltext-col');
+    // #691: Pages-only keyword filters (may be absent if catalog empty).
+    var userKwEl     = document.getElementById('ap-user-keywords');
+    var userKwColEl  = document.getElementById('ap-userkw-col');
+    var sysKwEl      = document.getElementById('ap-system-keywords');
+    var sysKwColEl   = document.getElementById('ap-syskw-col');
+    function _apSelectedKw(el) {
+        return el ? Array.prototype.map.call(el.selectedOptions, function (o) { return o.value; }) : [];
+    }
     var facetsEl     = document.getElementById('ap-facets');
     var resEl        = document.getElementById('ap-results');
     var cntEl        = document.getElementById('ap-count');
@@ -234,6 +262,8 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
     mimeEl.addEventListener('change',      function () { _apSearch(0); });
     sortEl.addEventListener('change',      function () { _apSearch(0); });
     if (fulltextEl) fulltextEl.addEventListener('change', function () { _apSearch(0); });
+    if (userKwEl) userKwEl.addEventListener('change', function () { _apSearch(0); });
+    if (sysKwEl)  sysKwEl.addEventListener('change',  function () { _apSearch(0); });
     document.getElementById('ap-search-btn').addEventListener('click', function () { _apSearch(0); });
     document.getElementById('ap-upload-btn').addEventListener('click', function () {
         if (typeof window.showUploadAttachment === 'function') {
@@ -269,6 +299,10 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
         _apApply(uploadBtnEl, [uploadBtnEl], 'Upload Attachment');
         // #739: the Full-text toggle only applies to page search.
         if (fulltextColEl) fulltextColEl.style.display = (srcEl.value === 'page') ? '' : 'none';
+        // #691: keyword filters are Pages-only (show-by-relevance).
+        var showPageKw = (srcEl.value === 'page') ? '' : 'none';
+        if (userKwColEl) userKwColEl.style.display = showPageKw;
+        if (sysKwColEl)  sysKwColEl.style.display  = showPageKw;
     }
     _apUpdateControls();
 
@@ -325,6 +359,14 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
             if (src === 'page') {
                 params.delete('searchIn');
                 if (fulltextEl && fulltextEl.checked) params.set('searchIn', 'all');
+            }
+
+            // #691: Pages keyword filters from the multi-selects. The
+            // controls are authoritative; any bookmarked seed values were
+            // moved out of _apHiddenFilters at init to avoid double-append.
+            if (src === 'page') {
+                _apSelectedKw(userKwEl).forEach(function (v) { if (v) params.append('keywords', v); });
+                _apSelectedKw(sysKwEl).forEach(function (v) { if (v) params.append('systemKeywords', v); });
             }
 
             var resp = await csrfFetch('/api/assets/search?' + params.toString());
@@ -702,8 +744,9 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
     <% if (_apInitMime) { %>
     if (mimeEl) mimeEl.value = <%- JSON.stringify(_apInitMime) %>;
     <% } %>
-    // #696: hidden filters — no UI control today (#691). Read once on init
-    // and re-attached to every search URL in _apSearch.
+    // #696: bookmarked page filters seeded from the URL. keywords/
+    // systemKeywords now have UI (#691) and are moved to the multi-selects
+    // below; category has no dedicated UI yet so it stays seed-forwarded.
     var _apHiddenFilters = <%- JSON.stringify(_apInitFilters) %>;
 
     // #739: reflect a bookmarked full-text page search in the checkbox so the
@@ -712,6 +755,25 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
         _apHiddenFilters.searchIn.some(function (s) { return s === 'all' || s === 'content'; })) {
         fulltextEl.checked = true;
     }
+
+    // #691: reflect bookmarked keyword filters into the multi-selects, then
+    // move those keys OUT of _apHiddenFilters so the generic forward-loop
+    // won't double-append (the controls are now authoritative). category /
+    // searchIn stay in _apHiddenFilters (no dedicated UI in this slice).
+    (function () {
+        function _apSeed(el, vals) {
+            if (!el || !Array.isArray(vals) || !vals.length) return;
+            var want = {};
+            vals.forEach(function (v) { want[String(v)] = true; });
+            Array.prototype.forEach.call(el.options, function (o) {
+                if (want[o.value]) o.selected = true;
+            });
+        }
+        _apSeed(userKwEl, _apHiddenFilters.keywords);
+        _apSeed(sysKwEl, _apHiddenFilters.systemKeywords);
+        delete _apHiddenFilters.keywords;
+        delete _apHiddenFilters.systemKeywords;
+    })();
 
     // #731: reflect the persisted view on the toggle buttons before first
     // fetch (render is a no-op until results arrive; _apSearch then renders

@@ -188,17 +188,29 @@ describe('WikiRoutes.searchPages — GET /search (post-#693 swap)', () => {
     }));
   });
 
-  it('does not call SearchManager directly — moved to /api/assets/search', async () => {
+  it('does not perform the search server-side — search runs via /api/assets/search', async () => {
     const routes = makeRoutes();
+    const searchManager = {
+      advancedSearchWithContext: vi.fn(),
+      search: vi.fn(),
+      searchWiki: vi.fn(),
+      // #691: reading keyword catalogs to server-inject the picker's
+      // Pages filters IS allowed — that is not "performing the search".
+      getAllUserKeywords: vi.fn().mockResolvedValue([]),
+      getAllSystemKeywords: vi.fn().mockResolvedValue([])
+    };
+    (routes.engine.getManager as ReturnType<typeof vi.fn>).mockImplementation(
+      (name: string) => (name === 'SearchManager' ? searchManager : null)
+    );
     const req = makeReq({ query: { q: 'beach' } });
     const res = makeRes();
 
     await routes.searchPages(req, res);
 
-    // routes.engine.getManager should not have been called for SearchManager
-    // (the new handler doesn't query managers; just renders).
-    const calls = (routes.engine.getManager as ReturnType<typeof vi.fn>).mock.calls;
-    const requestedNames = calls.map(c => c[0]);
-    expect(requestedNames).not.toContain('SearchManager');
+    // The /search page render must not execute a search (that moved to the
+    // client-side /api/assets/search). Catalog reads for the picker are fine.
+    expect(searchManager.advancedSearchWithContext).not.toHaveBeenCalled();
+    expect(searchManager.search).not.toHaveBeenCalled();
+    expect(searchManager.searchWiki).not.toHaveBeenCalled();
   });
 });
