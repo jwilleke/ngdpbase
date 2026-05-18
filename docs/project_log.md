@@ -14,7 +14,8 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
   - Grounded first: confirmed `#ap-sort` / `#ap-view-*` are referenced nowhere outside `_asset-picker.ejs` (no E2E/other view depends on the visible select); `sortColEl` was already a declared-but-unused dead var. Discovered the list/grid toggle already existed (#733), so slice 1a reduced to the sort control + co-location.
   - General UX cleanup for all viewports — explicitly **not** mobile-specific (#735 is a beneficiary, not the driver), per the corrected #744 design record.
   - Caveat: dropdown click behaviour not browser-eyeballed (no headless browser); logic is straightforward, unit + E2E green, rendered markup verified via curl. Operator click-through recommended.
-- Commits: `77345bec` (slice 1a), plus this log entry.
+  - Follow-up regression fix (`7d17e308`): operator reported the list/grid toggle disappearing at some display widths. Cause was self-introduced — slice 1a added a second btn-group + a label into a no-wrap `d-flex justify-content-end`, so at constrained widths (picker modal, facet sidebar shown, narrow viewport) the row overflowed and clipped a btn-group. Fixed by adding `flex-wrap` (CSS-class only) so the sort and view groups wrap instead of one vanishing. Re-validated: unit 5628/5628, E2E 72/72.
+- Commits: `77345bec` (slice 1a), `7d17e308` (wrap regression fix), plus this log entry.
 - Files Modified:
   - views/_asset-picker.ejs
   - docs/project_log.md
