@@ -17,7 +17,7 @@ Embed another page's content (or one section of it) into the current page at ren
 
 `InsertPlugin` is a render-time transclusion plugin. When a page is rendered, every `[{Insert ...}]` invocation loads the referenced page, optionally slices a section out of it, and inlines its markdown into the host page at that position. The inserted content runs through `RenderingManager.renderMarkdown` so other plugins (Image, MediaPlugin, etc.) inside it still evaluate — but it is rendered under the **source** page's name (not the host's), so identity variables like `[{$pagename}]` / `[{$title}]` resolve to the page the content came from (see [Render Path](#render-path); #743).
 
-Three forms are supported:
+The supported forms:
 
 ```wiki
 [{Insert page='Pagename'}]                                   full page
@@ -27,7 +27,15 @@ Three forms are supported:
 [{Insert pagesection='Pagename?section=1', caption='none'}]         drop imported heading
 ```
 
-The `?section=N` index form mirrors the editor's section-edit URL (`/edit/Pagename?section=N`) and reuses `SectionUtils.extractSection()`. The two forms are mutually exclusive on a single target string — when both `?section=` and `#` appear, `?section=` wins because it is the unambiguous URL form.
+The `?section=N` index form mirrors the editor's section-edit URL (`/edit/Pagename?section=N`) and reuses `SectionUtils.extractSection()`. The two locators are mutually exclusive on a single target string — when both `?section=` and `#` appear, `?section=` wins because it is the unambiguous URL form.
+
+## Section semantics
+
+Both section locators resolve through the same model:
+
+- A **section** is an ATX heading (`#`–`######`) plus everything down to — but not including — the next heading of the **same or higher level** (fewer/equal `#`s). Deeper subsections are therefore included in their parent's slice.
+- Section **indexing** (`?section=N`, 0-based) counts every heading of any level in document order. It matches the editor's `?section=N` URL: YAML frontmatter is excluded from numbering, and headings inside fenced code blocks (```` ``` ````/`~~~`) are not counted (`SectionUtils.extractSection` / `findHeadings`).
+- The heading-text locator (`#Heading`) is the first heading whose text matches case-insensitively after trimming. **Caveat:** the heading-name scan (`findSectionIndexByHeading`) does *not* skip code-fence or frontmatter headings, so on a page that has `#`-lines inside a code block the `#Heading` form and the `?section=N` form can resolve to different sections. Prefer `?section=N` when a page embeds fenced code containing `#` lines.
 
 ## Parameters
 
@@ -104,3 +112,4 @@ When a section is requested, `(section: <label>)` is appended — using either t
 - ACL is `private`-flag only (see [ACL](#acl) above). Frontmatter `audience` and global policy evaluation are not yet honoured.
 - No caching of the inserted content. Every host-page render re-loads and re-renders the target page. Fine for typical deployments; worth revisiting if an embedded page becomes hot.
 - Heading-text matching is exact (case-insensitive, whitespace-trimmed). Slug matching (`some-anchor` against an `id="some-anchor"`) is not currently supported.
+- The `#Heading` and `?section=N` locators count headings differently on pages with `#`-lines inside fenced code blocks or frontmatter — the index path skips them, the heading-name path does not. See [Section semantics](#section-semantics).
