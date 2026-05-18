@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-18-02
+
+- Agent: Claude Opus 4.7
+- Subject: Release v3.19.1 (`/semver patch`) + `/othersites` propagation.
+- Current Issue: none (release of the #743 fix + the docs/workflow commits accumulated since v3.19.0).
+- Tests: jimstest (Step 8a, release commit `1243dee5`) unit 5628/5628 + E2E 71 passed / 1 flaky (retry-recovered). All 3 satellites 5628/5628 + 72/72 E2E, zero flakes.
+- Work Done:
+  - `/semver patch` 3.19.0 → 3.19.1. Release gate green on the pre-bump commit (build, 5628 unit, 72 E2E). Bumped via `version.ts`; perf baseline `baseline-v3.19.1-2026-05-18.md` — no regressions (memory +5.1% under the 25% gate, `/search` flat 0.0%, other routes flat/improved; script exit 0). Release commit `1243dee5`, tag `v3.19.1`, both pushed.
+  - GitHub release: **deferred** (patch, not explicitly requested — per the auto-release rule; `/release` can publish later).
+  - Step 8a (jimstest-first, the newly-codified invariant): rebuilt + restarted + full-tested jimstest on the release commit `1243dee5` BEFORE any satellite — unit 5628/5628, E2E 72/72 (1 retry-recovered flake).
+  - Step 8b `/othersites` (satellite-only, valid because 8a done): fairways-base (2121), ngdpbase-veg (3333), ngdp-temp-builds (3001) — each `git pull --ff-only` → build → restart → 5628/5628 unit → 72/72 E2E. All clean.
+  - This was the first release exercising the jimstest-first Step 8a path added in `ea6a0bc3`; ordering held (jimstest validated on the final code before satellites).
+- Flakes seen: jimstest only — `mobile-navigation.spec.ts:109 › Mobile Navigation › Page actions in offcanvas › page actions section not shown on non-page routes` [mobile-chrome] failed then passed on retry. Post-`./server.sh restart` cold-start shape (#622 family); did NOT reproduce on any satellite. Datapoint comment added to #622. Not a regression, not blocking.
+- Commits: `1243dee5` (chore: release v3.19.1), plus this log entry. (Release bundled: `afa554b4` #743 fix, `ea6a0bc3` workflow hardening, plus docs/log commits since v3.19.0.)
+- Files Modified:
+  - package.json, config/app-default-config.json, CHANGELOG.md, docs/performance/baseline-v3.19.1-2026-05-18.md
+  - docs/project_log.md
+
 ## 2026-05-18-01
 
 - Agent: Claude Opus 4.7
