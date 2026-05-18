@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-18-04
+
+- Agent: Claude Opus 4.7
+- Subject: #721 — collapse the asset-picker advanced filters behind an "Advanced filters" disclosure (#744 slice).
+- Current Issue: #721 (collapse half only — NOT closed; video capture-date indexing half remains) / #744 EPIC.
+- Tests: unit 5628/5628 + E2E 72 passed / 0 flaky. jimstest rebuilt + restarted; `/search` markup smoke-verified (Advanced toggle/collapse/badge present; `#ap-fulltext` confirmed in the primary row, before the collapse).
+- Work Done:
+  - Operator proposed literally deleting `#ap-advanced-row` and pasting the toolbar; declined that (would null-ref-crash the picker, delete the #739 `#ap-fulltext`, and duplicate toolbar IDs) — implemented the safe equivalent: collapse, not delete.
+  - Wrapped date-range / path-prefix / include-archived in a Bootstrap `collapse` (default closed) behind an "Advanced filters" `btn-link` toggle. `#ap-advanced-row` keeps its id so `_apUpdateControls`'s `_apApply(advancedRow,…)` is unchanged; all elements stay in the DOM (collapse = CSS only) so every JS ref/listener is intact — no breakage.
+  - Relocated `#ap-fulltext-col` out of the (now-collapsed) advanced row into the primary controls row. It is page-search-relevant and pages are the default source (#739); `_apUpdateControls` still shows it only when source = Pages (logic unchanged). Verified server-side that `#ap-fulltext` precedes `#ap-advanced` in the DOM.
+  - Added `_apSyncAdvBadge()` — a dot on the Advanced toggle when any collapsed filter (dateFrom/dateTo/pathPrefix/includeHidden) is set, so progressive disclosure never hides an in-effect filter. Called at init and on every `_apSearch`.
+  - Scoping (recorded on #744): `#ap-mime` relocation deferred to #720 (the mimetype-tree rework reworks that control anyway); show-by-relevance-vs-dim/disable and "Clear filters" deferred as follow-ups; auto-expand-on-bookmarked-params is moot here (date/path/hidden are never seeded from URL — only the page `_apHiddenFilters` are). The video capture-date indexing half of #721 is untouched.
+  - Caveat: collapse/badge interaction not browser-eyeballed (no headless browser); unit + E2E green, markup verified via curl. Operator click-through recommended.
+- Commits: `09a49950` (#721 collapse), plus this log entry.
+- Files Modified:
+  - views/_asset-picker.ejs
+  - docs/project_log.md
+
 ## 2026-05-18-03
 
 - Agent: Claude Opus 4.7
