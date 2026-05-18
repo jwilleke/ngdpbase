@@ -2,6 +2,15 @@
 
 Cut a new semver release: bump `package.json` (and `config/app-default-config.json` + `CHANGELOG.md`) via ngdpbase's `src/utils/version.ts`, create an annotated git tag, push it, and create a GitHub release with auto-generated notes.
 
+## Relationship to /session-commit
+
+`/semver` is **release mechanics only** (Steps 1–9: gate → bump → baseline → tag → push → GitHub release → jimstest-first re-validate → `/othersites`). It does **NOT** update `docs/project_log.md`, comment on / close GitHub issues, or run `/check-todos` — that bookkeeping lives in `/session-commit` Steps 6–9.
+
+- **"I did work, ship it"** → run **`/session-commit`**, not `/semver`. `/session-commit` commits the work, pre-flights jimstest, makes the semver decision and **invokes `/semver` internally** (Step 4), propagates, then logs + comments issues + freshens TODO. Running `/semver` yourself in this case skips the log/issue/TODO updates.
+- **"Work is already committed & logged, just cut/consolidate a release"** → standalone `/semver` is correct. But it leaves a bookkeeping gap: after it finishes you must still add a project_log entry for the *release event itself* (version, baseline drift, `/othersites` results, any flakes) and comment/close any issues the release ships. `/semver` will not do this for you.
+
+`/semver` also requires a clean tree on `master` (Step 1) — it never commits your feature work. Commit (or `/session-commit`) first.
+
 ## Usage
 
 `/semver <bump>` — where `<bump>` is one of:
@@ -146,6 +155,8 @@ Output to the user:
 - Number of commits in this release (from Step 3)
 - **Perf diff table** from Step 5b (re-included here for easy reference; if any regression candidate was flagged, repeat the warning)
 - Whether `/othersites` propagation succeeded.
+
+**Bookkeeping reminder (standalone `/semver` only):** `/semver` does not touch `docs/project_log.md`, GitHub issues, or `/check-todos`. If this was a standalone invocation (not driven by `/session-commit`), add a project_log entry for the release event (version, baseline drift, `/othersites` results + any flakes) and comment/close any issues the release ships — see [Relationship to /session-commit](#relationship-to-session-commit). When `/semver` was invoked from `/session-commit`, its Steps 6–9 cover this; do not duplicate.
 
 ## Rules
 
