@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-18-05
+
+- Agent: Claude Opus 4.7
+- Subject: #744 — removed the dead Advanced filters panel from the asset-picker; filed #745 for real date search.
+- Current Issue: #744 EPIC / supersedes the #721 collapse / filed #745.
+- Tests: unit 5628/5628 + E2E 71 passed / 1 flaky (retry-recovered, unrelated). jimstest rebuilt + restarted; `/search` smoke-verified (advanced markup gone, Full-text + slice-1a toolbar intact).
+- Work Done:
+  - Operator asked "is Include archived dead like path-prefix?" — investigated: `includeHidden`, `dateFrom`, `dateTo`, `dateField` are ALL #519-era options parsed in WikiRoutes and threaded through AssetService → `AssetManager.search`, but consumed by **no provider** (zero refs in AssetManager or any provider). The media provider indexes `dateTimeOriginal` but nothing filters by it. The **entire Advanced panel was non-functional.**
+  - Removed the toggle + collapse + date/path/hidden controls and all JS (the 5 DOM refs, their listeners, the `_apApply(advancedRow,…)`, the `_apSearch` param build, and the #721 `_apSyncAdvBadge`). Net −79/+4. This **supersedes the #721 collapse** (`09a49950`, shipped earlier today) — collapsing dead controls was the wrong end state; removal is correct. Owned that I built #721's collapse without first verifying control liveness (verify-before-acting).
+  - Full-text toggle retained (primary row, live, #739). Dead API/type plumbing (`pathPrefix`/`includeHidden`/`date*` in `Asset.ts`/`AssetService`/`WikiRoutes`) deliberately left as a separate deferred dead-code cleanup (touches shared types + AssetService tests).
+  - Filed **#745** ([FEATURE], `enhancement` + `Search + Finding Entries`): real date search in the picker — media `year` is live but unexposed (cheap win), pages need #643 (SearchManager has no date fields), asset range needs #519; operator's idea to fold date search into the existing compact date/sort dropdown rather than a new panel. Cross-refs #643/#519/#744/#691/#720.
+  - Grounded findings rather than asserting: confirmed via grep that SearchManager has zero date options and that `year` (getItemsByYear/byYear facet) is the one live date-ish filter.
+- Flake: E2E `pages.spec.ts:50 › Create Page › should create a new wiki page` [chromium] failed then passed on retry — post-`./server.sh restart` cold-start (#622 family), orthogonal to this view-only asset-picker change. Datapoint added to #622. Not a regression.
+- Commits: `06b50a58` (remove dead Advanced panel), plus this log entry.
+- Files Modified:
+  - views/_asset-picker.ejs
+  - docs/project_log.md
+
 ## 2026-05-18-04
 
 - Agent: Claude Opus 4.7
