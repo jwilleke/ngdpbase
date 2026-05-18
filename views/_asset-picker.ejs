@@ -81,47 +81,10 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
     </div>
 </div>
 
-<%# #721: advanced filters collapsed by default. Bootstrap `collapse` only
-    hides via CSS — every element stays in the DOM, so all JS refs and
-    listeners (dateFrom/To, pathPrefix, includeHidden) are unchanged. The
-    Full-text toggle is deliberately NOT here (moved to the primary row,
-    #739). #ap-advanced-row keeps its id so _apUpdateControls is unchanged. %>
-<div class="mb-2">
-    <button type="button" class="btn btn-sm btn-link px-0 text-decoration-none"
-            id="ap-advanced-toggle" data-bs-toggle="collapse" data-bs-target="#ap-advanced"
-            aria-expanded="false" aria-controls="ap-advanced">
-        <i class="fas fa-sliders-h"></i> Advanced filters
-        <span id="ap-adv-badge" class="badge rounded-pill bg-secondary ms-1" title="Advanced filters active" hidden>&bull;</span>
-    </button>
-</div>
-<div class="collapse" id="ap-advanced">
-    <div class="row g-2 mb-3" id="ap-advanced-row">
-        <div class="col-auto" id="ap-date-col">
-            <div class="input-group input-group-sm">
-                <span class="input-group-text"><i class="fas fa-calendar-alt"></i></span>
-                <input type="date" id="ap-date-from" class="form-control form-control-sm" title="From date" style="max-width:140px;">
-                <span class="input-group-text">&ndash;</span>
-                <input type="date" id="ap-date-to" class="form-control form-control-sm" title="To date" style="max-width:140px;">
-                <select id="ap-date-field" class="form-select form-select-sm" title="Date field" style="max-width:120px;">
-                    <option value="mtime">File date</option>
-                    <option value="exif_datetime">EXIF date</option>
-                </select>
-            </div>
-        </div>
-        <div class="col-auto" id="ap-path-col">
-            <div class="input-group input-group-sm">
-                <span class="input-group-text"><i class="fas fa-folder"></i></span>
-                <input type="text" id="ap-path-prefix" class="form-control form-control-sm" placeholder="Path prefix&hellip;" style="max-width:160px;" autocomplete="off">
-            </div>
-        </div>
-        <div class="col-auto d-flex align-items-center" id="ap-hidden-col">
-            <div class="form-check mb-0">
-                <input class="form-check-input" type="checkbox" id="ap-include-hidden">
-                <label class="form-check-label small" for="ap-include-hidden">Include archived</label>
-            </div>
-        </div>
-    </div>
-</div>
+<%# Advanced filters panel removed (#744): date-range / path-prefix /
+    include-archived were #519 options parsed and threaded to the API but
+    never applied by any provider — dead no-op controls. Real date search
+    is tracked as a separate [FEATURE]; asset date impl = #519. %>
 
 <!-- Layout: facet sidebar + results -->
 <div class="d-flex gap-3">
@@ -205,11 +168,6 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
     var srcEl        = document.getElementById('ap-source');
     var mimeEl       = document.getElementById('ap-mime');
     var sortEl       = document.getElementById('ap-sort');
-    var dateFromEl   = document.getElementById('ap-date-from');
-    var dateToEl     = document.getElementById('ap-date-to');
-    var dateFieldEl  = document.getElementById('ap-date-field');
-    var pathPrefixEl = document.getElementById('ap-path-prefix');
-    var inclHiddenEl = document.getElementById('ap-include-hidden');
     var fulltextEl   = document.getElementById('ap-fulltext');
     var fulltextColEl = document.getElementById('ap-fulltext-col');
     var facetsEl     = document.getElementById('ap-facets');
@@ -273,14 +231,6 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
     srcEl.addEventListener('change',       function () { _apUpdateControls(); _apSearch(0); });
     mimeEl.addEventListener('change',      function () { _apSearch(0); });
     sortEl.addEventListener('change',      function () { _apSearch(0); });
-    dateFromEl.addEventListener('change',  function () { _apSearch(0); });
-    dateToEl.addEventListener('change',    function () { _apSearch(0); });
-    dateFieldEl.addEventListener('change', function () { _apSearch(0); });
-    pathPrefixEl.addEventListener('input', function () {
-        clearTimeout(_apTimer);
-        _apTimer = setTimeout(function () { _apSearch(0); }, 400);
-    });
-    inclHiddenEl.addEventListener('change', function () { _apSearch(0); });
     if (fulltextEl) fulltextEl.addEventListener('change', function () { _apSearch(0); });
     document.getElementById('ap-search-btn').addEventListener('click', function () { _apSearch(0); });
     document.getElementById('ap-upload-btn').addEventListener('click', function () {
@@ -296,7 +246,6 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
     var mimeColEl    = document.getElementById('ap-mime-col');
     var sortColEl    = document.getElementById('ap-sort-col');
     var uploadBtnEl  = document.getElementById('ap-upload-btn');
-    var advancedRow  = document.getElementById('ap-advanced-row');
     function _apUpdateControls() {
         var isPageOrUser = srcEl.value === 'page' || srcEl.value === 'user';
         var sourceLabel = srcEl.value === 'page' ? 'pages' : srcEl.value === 'user' ? 'users' : 'this source';
@@ -316,23 +265,10 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
         // Backend sort wiring for those source types is tracked in #700.
         // The wrapper IS the upload button; restore its original title when re-enabled.
         _apApply(uploadBtnEl, [uploadBtnEl], 'Upload Attachment');
-        _apApply(advancedRow, [dateFromEl, dateToEl, dateFieldEl, pathPrefixEl, inclHiddenEl]);
         // #739: the Full-text toggle only applies to page search.
         if (fulltextColEl) fulltextColEl.style.display = (srcEl.value === 'page') ? '' : 'none';
     }
     _apUpdateControls();
-
-    // #721: show a dot on the Advanced toggle when a (now-collapsed) filter
-    // is set, so progressive disclosure never hides an in-effect filter.
-    var advBadgeEl = document.getElementById('ap-adv-badge');
-    function _apSyncAdvBadge() {
-        if (!advBadgeEl) return;
-        var active = (dateFromEl && dateFromEl.value) ||
-                     (dateToEl && dateToEl.value) ||
-                     (pathPrefixEl && pathPrefixEl.value.trim()) ||
-                     (inclHiddenEl && inclHiddenEl.checked);
-        advBadgeEl.hidden = !active;
-    }
 
     // Expose for modal wrapper to call on open
     window.apRunSearch = function () { _apSearch(0); };
@@ -341,7 +277,6 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
 
     async function _apSearch(page) {
         _apPage = page;
-        _apSyncAdvBadge();
         var q       = qEl.value.trim();
         var src     = srcEl.value;
         var mime    = mimeEl.value;
@@ -364,15 +299,6 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
             if (q)    params.set('q',            q);
             if (src)  params.set('types',         src);
             if (mime) params.set('mimeCategory',  mime);
-            var dateFrom = dateFromEl ? dateFromEl.value : '';
-            var dateTo   = dateToEl   ? dateToEl.value   : '';
-            var dateField = dateFieldEl ? dateFieldEl.value : '';
-            if (dateFrom) params.set('dateFrom', dateFrom);
-            if (dateTo)   params.set('dateTo',   dateTo);
-            if (dateField && dateField !== 'mtime') params.set('dateField', dateField);
-            var pathPfx = pathPrefixEl ? pathPrefixEl.value.trim() : '';
-            if (pathPfx) params.set('pathPrefix', pathPfx);
-            if (inclHiddenEl && inclHiddenEl.checked) params.set('includeHidden', 'true');
 
             // #696: hidden page-source filters (category / keywords / etc.) seeded
             // from URL params on init. No UI controls today (#691); we forward
@@ -790,7 +716,6 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
     // through _apRenderResults honouring _apView).
     _apSetView(_apView);
     _apSyncSortBtn();
-    _apSyncAdvBadge();
 
     // Auto-load on init
     _apSearch(0);
