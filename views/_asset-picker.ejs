@@ -271,38 +271,22 @@ var _apSysKwCatalog  = typeof assetPickerSystemKeywords !== 'undefined' && Array
         }
     });
 
-    // #692 — when source is page or user, file-type / sort / upload / the
-    // advanced filter row don't apply. Disable + dim with a tooltip rather
-    // than hide, so the layout doesn't jump and the user can see what
-    // controls exist for other source types.
+    // #744: show-by-relevance — controls that don't apply to the current
+    // source are HIDDEN, not greyed. The old #692 opacity:0.5/disabled
+    // pattern was the "hard to follow" smell this EPIC set out to remove.
+    // Format & Upload are Files-only; Full-text & keyword filters are
+    // Pages-only; Sort is always available (pages/users sort by
+    // lastModified / dateCreated / displayName — #700).
     var mimeColEl    = document.getElementById('ap-mime-col');
-    var sortColEl    = document.getElementById('ap-sort-col');
     var uploadBtnEl  = document.getElementById('ap-upload-btn');
     function _apUpdateControls() {
-        var isPageOrUser = srcEl.value === 'page' || srcEl.value === 'user';
-        var sourceLabel = srcEl.value === 'page' ? 'pages' : srcEl.value === 'user' ? 'users' : 'this source';
-        var notApplicable = 'Not applicable to ' + sourceLabel;
-        function _apApply(wrapperEl, controls, defaultTitle) {
-            if (wrapperEl) {
-                wrapperEl.style.opacity = isPageOrUser ? '0.5' : '';
-                wrapperEl.title = isPageOrUser ? notApplicable : (defaultTitle || '');
-            }
-            controls.forEach(function (el) {
-                if (el) el.disabled = isPageOrUser;
-            });
-        }
-        _apApply(mimeColEl, [mimeEl]);
-        // Sort dropdown intentionally NOT disabled for pages/users — they
-        // have sortable fields (lastModified / dateCreated / displayName).
-        // Backend sort wiring for those source types is tracked in #700.
-        // The wrapper IS the upload button; restore its original title when re-enabled.
-        _apApply(uploadBtnEl, [uploadBtnEl], 'Upload Attachment');
-        // #739: the Full-text toggle only applies to page search.
-        if (fulltextColEl) fulltextColEl.style.display = (srcEl.value === 'page') ? '' : 'none';
-        // #691: keyword filters are Pages-only (show-by-relevance).
-        var showPageKw = (srcEl.value === 'page') ? '' : 'none';
-        if (userKwColEl) userKwColEl.style.display = showPageKw;
-        if (sysKwColEl)  sysKwColEl.style.display  = showPageKw;
+        var isFiles = srcEl.value !== 'page' && srcEl.value !== 'user'; // '', attachment, media, all
+        var isPage  = srcEl.value === 'page';
+        if (mimeColEl)   mimeColEl.style.display   = isFiles ? '' : 'none';
+        if (uploadBtnEl) uploadBtnEl.style.display = isFiles ? '' : 'none';
+        if (fulltextColEl) fulltextColEl.style.display = isPage ? '' : 'none';
+        if (userKwColEl) userKwColEl.style.display = isPage ? '' : 'none';
+        if (sysKwColEl)  sysKwColEl.style.display  = isPage ? '' : 'none';
     }
     _apUpdateControls();
 
