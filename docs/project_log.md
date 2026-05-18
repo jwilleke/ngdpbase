@@ -2,6 +2,22 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-18-09
+
+- Agent: Claude Opus 4.7
+- Subject: #744 — final IA slice (show-by-relevance, not dim/disable); EPIC acceptance met → recommended for close.
+- Current Issue: #744 (EPIC — all IA acceptance criteria now met; recommended-close, operator drives the close).
+- Tests: unit 5637/5637 + E2E 72/72 / 0 flaky. jimstest rebuilt+restarted; `/search` smoke-verified (no opacity/disabled in markup).
+- Work Done:
+  - Read #744's acceptance criteria; the one genuine remaining IA gap was criterion 4 ("non-applicable controls hidden by relevance, not greyed-out") + criterion 1's "no mime inline when N/A": `_apUpdateControls` still used the #692 `opacity:0.5`+`disabled` pattern for `#ap-mime`/Upload — the exact "hard to follow" smell the EPIC targeted.
+  - Replaced it with display show/hide: Format + Upload are Files-only (hidden for source page/user; Format shown for ''/attachment/media per the Sources/Formats model); Full-text + keyword multi-selects Pages-only; Sort always available (#700). Removed the now-dead `_apApply` helper + unused `sortColEl`. Behaviour-preserving (only visibility changes; filter values/params untouched). Net −29/+13.
+  - Acceptance walkthrough posted to #744: all IA criteria met (dead panel removed not collapsed — those filters were all #519 no-ops; toolbar consolidated via 1a; Format facet correct #720; Pages keyword facets #691; mobile off-screen fixed via min-width:0+flex-wrap; show-by-relevance now done). Remaining open issues (#745 date search, #721 video-capture-date, #746 chip-links, #691 category UI) are explicitly out-of-scope / operator-deferred / operator-blocked (#735) — they do NOT block the EPIC. Recommended operator close #744.
+  - Not released this slice (operator drives /semver; rolls into the next bump).
+- Commits: `b0126c07` (#744 final IA slice), plus this log entry.
+- Files Modified:
+  - views/_asset-picker.ejs
+  - docs/project_log.md
+
 ## 2026-05-18-08
 
 - Agent: Claude Opus 4.7
