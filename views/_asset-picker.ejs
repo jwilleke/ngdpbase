@@ -51,8 +51,11 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
             <option value="other">Other</option>
         </select>
     </div>
-    <div class="col-auto" id="ap-sort-col">
-        <select id="ap-sort" class="form-select" title="Sort order">
+    <%# Slice 1a (#744): sort moved out of this row into the compact icon
+        results-toolbar below. #ap-sort stays as a hidden state-holder so all
+        existing JS (value read, change listener, #692/#700 logic) is unchanged. %>
+    <div id="ap-sort-col" hidden>
+        <select id="ap-sort" title="Sort order">
             <option value="date-desc">Date &darr; (newest)</option>
             <option value="date-asc">Date &uarr; (oldest)</option>
             <option value="caption-asc">Name A&ndash;Z</option>
@@ -112,7 +115,22 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
     <div class="flex-grow-1">
         <!-- #733: view-mode toggle at the top of the results (moved from the
              pagination footer). Same IDs — Slice 2 JS wiring is unchanged. -->
-        <div class="d-flex justify-content-end mb-2">
+        <%# Slice 1a (#744): compact icon results-toolbar — sort dropdown-button
+            co-located with the existing list/grid view toggle. %>
+        <div class="d-flex justify-content-end align-items-center gap-2 mb-2">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Sort order">
+                <button type="button" class="btn btn-outline-secondary dropdown-toggle"
+                        id="ap-sort-btn" data-bs-toggle="dropdown" aria-expanded="false" title="Sort order">
+                    <i class="fas fa-sort-amount-down"></i>
+                    <span class="d-none d-sm-inline ms-1" id="ap-sort-label">Date &darr; (newest)</span>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end" id="ap-sort-menu" aria-labelledby="ap-sort-btn">
+                    <li><button type="button" class="dropdown-item" data-sort="date-desc">Date &darr; (newest)</button></li>
+                    <li><button type="button" class="dropdown-item" data-sort="date-asc">Date &uarr; (oldest)</button></li>
+                    <li><button type="button" class="dropdown-item" data-sort="caption-asc">Name A&ndash;Z</button></li>
+                    <li><button type="button" class="dropdown-item" data-sort="caption-desc">Name Z&ndash;A</button></li>
+                </ul>
+            </div>
             <div class="btn-group btn-group-sm" role="group" aria-label="Result view mode">
                 <button type="button" class="btn btn-outline-secondary" id="ap-view-list" title="List view"><i class="fas fa-list"></i></button>
                 <button type="button" class="btn btn-outline-secondary" id="ap-view-grid" title="Grid view"><i class="fas fa-th"></i></button>
@@ -198,6 +216,31 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
     }
     if (listBtn) listBtn.addEventListener('click', function () { _apSetView('list'); });
     if (gridBtn) gridBtn.addEventListener('click', function () { _apSetView('grid'); });
+
+    // Slice 1a (#744): the compact sort dropdown drives the hidden #ap-sort
+    // select. Selecting an item sets the select's value and dispatches its
+    // native 'change' — the existing listener (below) runs the search. No
+    // change to _apSearch or _apUpdateControls; #ap-sort stays authoritative.
+    var sortBtnLabel = document.getElementById('ap-sort-label');
+    var sortMenuItems = document.querySelectorAll('#ap-sort-menu .dropdown-item');
+    function _apSyncSortBtn() {
+        var v = sortEl.value;
+        sortMenuItems.forEach(function (it) {
+            it.classList.toggle('active', it.getAttribute('data-sort') === v);
+        });
+        var active = document.querySelector('#ap-sort-menu .dropdown-item[data-sort="' + v + '"]');
+        if (sortBtnLabel && active) sortBtnLabel.textContent = active.textContent.trim();
+    }
+    sortMenuItems.forEach(function (it) {
+        it.addEventListener('click', function () {
+            var v = it.getAttribute('data-sort');
+            if (v && v !== sortEl.value) {
+                sortEl.value = v;
+                sortEl.dispatchEvent(new Event('change'));
+            }
+            _apSyncSortBtn();
+        });
+    });
 
     // Wire controls
     qEl.addEventListener('input', function () {
@@ -713,6 +756,7 @@ var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPick
     // fetch (render is a no-op until results arrive; _apSearch then renders
     // through _apRenderResults honouring _apView).
     _apSetView(_apView);
+    _apSyncSortBtn();
 
     // Auto-load on init
     _apSearch(0);
