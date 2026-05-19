@@ -2,6 +2,27 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-19-07
+
+- Agent: Claude Opus 4.7
+- Subject: #748 REAL fix — CRLF source content defeated `applyCaption` heading detection (v3.24.2's fix was insufficient; issue reopened). Bumped v3.24.3 (patch; release deferred, /othersites skipped).
+- Current Issue: #748 (root-caused + verified on the real page; stays open / `in review` until operator browser-confirms).
+- Tests: build clean, unit 5661/5661 (+4 #748 caption tests incl. exact CRLF repro), E2E 72/72. jimstest restarted. Perf drift vs v3.24.2 exit 1 → memory +134% (1340→3140 MB) — **verified noise** + operator-acknowledged: the fix is a per-render string transform in one plugin (no retention vector); idle RSS of a server restarted ~15× over a multi-hour session is the documented noisy dimension; all routes flat/improved.
+- Work Done:
+  - Operator showed a screenshot proving v3.24.2 did NOT fix #748: the insert block still rendered TWO headings — caption "Current Symptoms" + source title "MEW-Current Symptoms". My v3.24.2 smoke only counted the exact string "MEW-Current Symptoms" (→1) and missed the second heading. Reopened #748, corrected course.
+  - Honest re-diagnosis (no theorizing): deterministic Node repro of the real param regex + real source file showed params parse fine (`{page, caption}`) but the source content is **CRLF**. `applyCaption` did `split('\n')`, leaving a trailing `\r`; `/^(#{1,6})\s+.*$/` cannot match a line ending in `\r` (`.` won't cross `\r`, `$` won't match before `\r`) → leading heading undetected → caption **prepended** as a 2nd heading while the source `# [{$pagename}]` survived. (An earlier first-non-blank-only attempt didn't help — the first non-blank line still had the `\r`.)
+  - Confirmed the caption contract with the operator: full-page → replace only the leading `#`; section → replace only that section's heading; following sub-headings kept.
+  - Fix: normalise CRLF→LF in `applyCaption`, then operate on the first non-blank line; replace that heading's text keeping its level (or splice for `caption=none`); prepend only when there is genuinely no leading heading. Removed the temp diagnostic. +4 #748 caption tests (CRLF repro, leading-blank, caption=none-with-blank, section-heading-replaced-sub-kept).
+  - Verified on the REAL reported page MEW-Cardiology Summary (authenticated, cache cleared via restart): the insert block now has exactly ONE heading "Current Symptoms"; "MEW-Current Symptoms" source title is GONE.
+  - Lesson reinforced: a string-count smoke is not a substitute for asserting the actual rendered structure; verify the mechanism (the CRLF was found by deterministic repro, not guesswork) before claiming a fix.
+  - Caveat: client section-edit pencil/numbering (the v3.24.2 fix A, unchanged) still not browser-eyeballed; this fix's caption result IS verified on the live page.
+- Flakes seen: none. Perf: no real regression (long-uptime RSS noise; #748 fix has no memory mechanism).
+- Commits: `b792c39d` (fix #748 CRLF), `3f4fe74c` (chore: release v3.24.3), plus this log entry.
+- Files Modified:
+  - src/plugins/InsertPlugin.ts, src/plugins/**tests**/InsertPlugin.test.ts
+  - package.json, config/app-default-config.json, CHANGELOG.md, docs/performance/baseline-v3.24.3-2026-05-19.md
+  - docs/project_log.md
+
 ## 2026-05-19-06
 
 - Agent: Claude Opus 4.7
