@@ -2,6 +2,26 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-19-06
+
+- Agent: Claude Opus 4.7
+- Subject: #748 — `[{Insert}]` title duplication + transcluded headings becoming host editable sections. Bumped v3.24.2 (patch; release deferred, /othersites skipped per the patch gate).
+- Current Issue: #748 (both symptoms fixed + verified on the real reported page; NOT closed — operator to confirm).
+- Tests: build clean, unit 5657/5657 (+3 #748, 1 pre-existing #741 test corrected), E2E 72/72. jimstest restarted. Perf drift vs v3.24.1 exit 1 → `/` +390% (30→147 ms) — **verified false positive** + operator-acknowledged: #748 only touches view-page client JS + InsertPlugin (cannot affect the `/` redirect); all other routes flat, memory −5.7%. The documented cold-`/` artifact (operator-accepted on v3.18.0; recurred v3.21–v3.23).
+- Work Done:
+  - Reported on MEW-Cardiology Summary: `[{Insert page='MEW-Current Symptoms', 'caption='Current Symptoms'}]` repeats the "MEW-Current Symptoms" title AND that title is a numbered/editable section of the host.
+  - Root cause 1 (repeats title): the no-caption full-page branch in `InsertPlugin.execute` blindly prepended `## <sourceTitle>` even when the source body already led with its own heading. The standard page template starts with `# [{$pagename}]` (and Insert renders under the SOURCE page name → resolves to the source title), so the title rendered twice. Fix B: prepend only when the source body has no leading ATX heading (#741 "identify source" intent preserved for headingless bodies).
+  - Root cause 2 (editable section / section number): `views/view.ejs` section-edit script decorated every `.markdown-body` heading incl. transcluded ones inside `.insert-plugin` — bogus "edit this section" pencil → `/edit/<host>?section=i`, and every real host section index after an Insert was shifted (server `?section=N` counts host-markdown headings only). Fix A: `!h.closest('.insert-plugin')` filter so the client index mirrors the server's host-only numbering.
+  - Updated one pre-existing #741 test that encoded the old double-prepend (default mock content leads with `# Title`); +3 #748 unit tests. Verified on the live reported page (authenticated): "MEW-Current Symptoms" heading count 2→1; transcluded `<h1>`+caption `<h2>` confirmed inside `.insert-plugin` (fix A excludes them); host headings outside the div unaffected — no regression.
+  - Observation (not a plugin bug, no action): the host page also has a literal pasted copy of the source content below the Insert — the user's own authoring, separate from the fixed title-duplication.
+  - Caveat: the client section-edit pencil/numbering not browser-eyeballed; logic + rendered DOM nesting verified, E2E green.
+- Flakes seen: none. Perf: no real regression (cold-`/` false positive; #748 cannot touch `/`).
+- Commits: `5ccd3b91` (fix #748), `cf53962c` (chore: release v3.24.2), plus this log entry.
+- Files Modified:
+  - src/plugins/InsertPlugin.ts, src/plugins/**tests**/InsertPlugin.test.ts, views/view.ejs
+  - package.json, config/app-default-config.json, CHANGELOG.md, docs/performance/baseline-v3.24.2-2026-05-19.md
+  - docs/project_log.md
+
 ## 2026-05-19-05
 
 - Agent: Claude Opus 4.7

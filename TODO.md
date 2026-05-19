@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-19T14:30:00.000Z'
+lastModified: '2026-05-19T15:10:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -34,11 +34,11 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 ## Open BUGS (ngdpbase, by issue #)
 
-4 open as of 2026-05-19 (#724 **closed** — operator confirmed the v3.24.0 search-ghost fix; #735/#747 also closed). #748 is the only fresh functional bug; #749 pairs with #599; #660 non-actionable.
+4 open as of 2026-05-19. #748 **fixed v3.24.2** (`in review` — awaiting operator browser-confirm). #749 pairs with #599; #660 non-actionable. No untriaged functional bug remains.
 
 | # | Title |
 |---|---|
-| #748 | `[{Insert page='...', 'caption='...'}]` — filed 2026-05-19; InsertPlugin parsing/usage bug. **Only fresh functional bug; not yet triaged → strongest bug candidate to pick up.** |
+| #748 | `[{Insert}]` repeated the transcluded title + made it an editable/numbered host section. Root-caused (not the malformed `'caption='` typo): no-caption full-page blindly prepended `## title` over a body that already led with `# [{$pagename}]`; and view.ejs section-edit decorated transcluded headings. **Fixed v3.24.2** (`5ccd3b91`, fix A view.ejs + fix B InsertPlugin). `in review` — needs operator browser-confirm of the pencil/renumber |
 | #749 | Showdown CVE-2024-1899 patch check — filed 2026-05-19; recurring tracking task to re-check for an upstream `showdown` patch (pairs with #599 / Dependabot GHSA-rmmh-p597-ppvv). Not a code bug |
 | #660 | Agent and ./docs documentation — tooling shipped; 49 doc-stub warnings remain for source-only modules (stub-creation backlog; cosmetic, non-blocking) |
 | #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); tracked by Dependabot / #749 |
