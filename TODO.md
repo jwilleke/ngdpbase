@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-19T13:50:00.000Z'
+lastModified: '2026-05-19T14:30:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -28,8 +28,9 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 | Source | Package | Severity | Status |
 |---|---|---|---|
-| Dependabot (GHSA-58qx-3vcg-4xpx) | `ws` | medium | **Actionable — patched in 8.20.1** (upstream fix exists). DoS via many HTTP headers. Bump `ws` ≥ 8.20.1 (transitive — check `npm why ws`). |
-| Dependabot (GHSA-rmmh-p597-ppvv) | `showdown` | medium | ReDoS (CVE-2024-1899); tracked in #599; **no upstream patch** — mitigation only. #749 = recurring "re-check for a patch" task. |
+| Dependabot (GHSA-rmmh-p597-ppvv) | `showdown` | medium | ReDoS (CVE-2024-1899); tracked in #599; **no upstream patch** — mitigation only. #749 = recurring "re-check for a patch" task. **Only remaining open alert.** |
+
+> `ws` GHSA-58qx-3vcg-4xpx **resolved v3.24.1** (`97a95d1d`) — scoped pm2 override forced ws → 8.20.1; `npm audit` no longer lists it.
 
 ## Open BUGS (ngdpbase, by issue #)
 

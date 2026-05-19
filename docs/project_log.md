@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-19-05
+
+- Agent: Claude Opus 4.7
+- Subject: Dependabot — resolve `ws` GHSA-58qx-3vcg-4xpx (medium DoS) via a scoped pm2 override. Bumped v3.24.1 (patch; release deferred, /othersites skipped per the patch gate).
+- Current Issue: none (Dependabot alert; no GH issue). Distinct from #599/#749 (showdown, no upstream fix).
+- Tests: build clean, unit 5654/5654. E2E n/a (pure pm2-subtree dep bump; zero views/public/plugins/addons/e2e path). jimstest restarted cleanly on ws@8.20.1 (/login + /view/Welcome 200).
+- Work Done:
+  - Diagnosed: `ws@8.20.0` (vuln `>=8.0.0 <8.20.1`, patched 8.20.1) pinned **exactly** by `pm2@7.0.1` → no Dependabot PR could auto-bump it. The other `ws@7.5.10` (via `@pm2/js-api`) is outside the vuln range.
+  - Surgical override added to package.json `overrides`: `"pm2": { "ws": "^8.20.1", "@pm2/js-api": { "ws": "7.5.10" } }` — forces only pm2's direct ws → 8.20.1; explicitly re-pins @pm2/js-api's ws at 7.5.10 so that subtree is NOT pushed to an unexpected ws8. `npm why ws` confirms pm2→8.20.1, @pm2/js-api→7.5.10; `npm audit` no longer lists ws (only the 2 known no-fix showdown moderates remain).
+  - Perf gate flagged `/search` +263% (41→149 ms) — **verified false positive** and operator-acknowledged: ws is required only by the pm2 subtree (daemon/IPC), never the request/search path; all other routes improved (`/` −19%, `/view/Welcome` −26%, `/login` −24%); memory +6.7% (< 25%). The documented `/search` cold-cache artifact (warm ≈ 40 ms; #705/#734/#622). Mechanism checked before asserting.
+  - Release: `/semver patch` 3.24.0 → 3.24.1. Patch ⇒ GitHub release **deferred** (`/release` can consolidate), `/othersites` **skipped** (satellites pull at the next minor).
+- Flakes seen: none. Perf: no real regression (the flagged `/search` is the known cold-start false positive; ws is pm2-only).
+- Commits: `97a95d1d` (fix(deps) ws override), `5f8550e5` (chore: release v3.24.1), plus this log entry.
+- Files Modified:
+  - package.json, package-lock.json
+  - config/app-default-config.json, CHANGELOG.md, docs/performance/baseline-v3.24.1-2026-05-19.md
+  - docs/project_log.md
+
 ## 2026-05-19-04
 
 - Agent: Claude Opus 4.7
