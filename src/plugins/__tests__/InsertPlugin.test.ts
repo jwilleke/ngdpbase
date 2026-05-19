@@ -359,6 +359,36 @@ describe('InsertPlugin', () => {
     });
   });
 
+  describe('#752 — misplaced-quote guard (caption swallowed into target)', () => {
+    test('pagesection value with embedded "caption=" → visible placeholder, no insert', async () => {
+      const pm = { getPage: vi.fn().mockResolvedValue({ content: '# X\n\nbody', metadata: {} }) };
+      const ctx = makeContext({ pageManager: pm });
+
+      // The exact misplaced-quote shape the param regex produces.
+      const result = await InsertPlugin.execute!(ctx, { pagesection: 'MEW-Current Symptoms?section=0, caption=' }) as string;
+
+      expect(result).toContain('insert-plugin-placeholder');
+      expect(result).toMatch(/malformed parameters/i);
+      expect(pm.getPage).not.toHaveBeenCalled(); // did NOT silently insert the wrong target
+    });
+
+    test('false-positive guard: legit page name with a comma is NOT flagged', async () => {
+      const pm = { getPage: vi.fn().mockResolvedValue({ content: '# Bio\n\nbody', metadata: {} }) };
+      const ctx = makeContext({ pageManager: pm });
+      const result = await InsertPlugin.execute!(ctx, { page: 'Smith, John' }) as string;
+      expect(result).not.toMatch(/malformed parameters/i);
+      expect(pm.getPage).toHaveBeenCalledWith('Smith, John'); // normal insert proceeds
+    });
+
+    test('false-positive guard: a valid ?section=N target is NOT flagged', async () => {
+      const pm = { getPage: vi.fn().mockResolvedValue({ content: '# A\n\na\n\n# B\n\nb', metadata: {} }) };
+      const ctx = makeContext({ pageManager: pm });
+      const result = await InsertPlugin.execute!(ctx, { pagesection: 'SomePage?section=1' }) as string;
+      expect(result).not.toMatch(/malformed parameters/i);
+      expect(pm.getPage).toHaveBeenCalledWith('SomePage'); // section= is legitimate, not caption=
+    });
+  });
+
   describe('attribution', () => {
     test('full-page attribution links to /view/<encodedPageName>', async () => {
       const ctx = makeContext();

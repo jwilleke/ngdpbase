@@ -198,6 +198,21 @@ const InsertPlugin: SimplePlugin = {
     const pageParam = typeof params.page === 'string' ? params.page : '';
     const pagesectionParam = typeof params.pagesection === 'string' ? params.pagesection : '';
     const target = pagesectionParam || pageParam;
+
+    // #752: misplaced-quote guard. If the closing quote is in the wrong
+    // place — e.g. `pagesection='X?section=0, caption='Y'` — the shared
+    // param regex swallows `caption=` INTO this value and the real
+    // `caption` param is silently lost. A page/section target never
+    // legitimately contains `caption=` (only `?section=`/`#Heading`), so
+    // this is unambiguously a malformed Insert. Surface it instead of
+    // quietly inserting the wrong thing (the #748 reporter hit this).
+    if (/\bcaption\s*=/i.test(target)) {
+      return renderPlaceholder(
+        target,
+        'Insert: malformed parameters — check the quotes (use [{Insert page=\'X\' caption=\'Y\'}], a single quoted value per parameter)'
+      );
+    }
+
     const { pageName, sectionIndex, sectionHeading } = parseTarget(target);
 
     if (!pageName) return '';
