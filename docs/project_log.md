@@ -2,6 +2,27 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-19-03
+
+- Agent: Claude Opus 4.7
+- Subject: #724 — root-caused the recurring "test/deleted pages linger" report to stale Lunr search-index ghosts; added a true "Rebuild Pages" (the missing media-style Rebuild vs Reindex). Released v3.24.0 + `/othersites`.
+- Current Issue: #724 (durable fix delivered + jimstest backlog purged; NOT closed — operator to confirm on their side / satellites still hold their own pre-fix backlog). Also corrected the misleading reindex-pages doc. Filed-context: #747 (separate).
+- Tests: unit 5654/5654 (+2 LunrSearchProvider rebuild tests) + E2E 72/72 on jimstest at release commit `afbd0bee` (Step 8a); all 3 satellites 5654/5654 + 72/72. Perf drift vs v3.23.0 exit 0 (memory −36.7% improvement; route deltas sub-10 ms abs on fast routes; `/search` −73% from the leaner post-rebuild index). One pre-release full-suite flake on jimstest: `auth.spec.ts` "maintain session across navigation" + "logout successfully" failed in the full run, **passed 7/7 in isolation** — the #622 full-suite-only auth-session pattern; clean on the release-commit re-run and all satellites.
+- Work Done:
+  - Diagnosis (verified, not guessed): page files **are** deleted from disk and the current delete path is clean — this session's ~80 create/delete E2E cycles added zero ghosts; all 53 found on jimstest were pre-2026-05-12 historical. The lingering entries are **search-index ghosts**: indexed in Lunr but `/view` 404. Authoritative live sweep found 53 (48 `NGDPBASE-test-*` + **5 real content pages**: Crude Oil Market, Everything We Know About You, Göbekli Tepe, Mitogen Activated Protein kinase, Web Blog_blogentry_100117_1) — so not a test-only problem.
+  - Root cause: `LunrSearchProvider.buildIndex()` fast-path rebuilds Lunr from the persisted `documents.json` when the in-memory map is non-empty (always) — **no disk reconciliation**, so a ghost survives restarts AND `/admin` Reindex. Exactly the media manager's Reindex(rescan) vs Rebuild(clear+rescan) split; search only had Reindex.
+  - Fix: `LunrSearchProvider.rebuild()` (clear map + delete `documents.json` + force cold disk re-scan — mirrors `MediaManager.rebuildIndex`); `SearchManager.rebuildFromDisk()` (provider-optional, falls back to buildIndex); new `pages.rebuild` admin job; admin-dashboard "Rebuild Pages" button + `rebuildPages()` + `?` doc link; new `/view/rebuild-pages` doc; corrected `/view/reindex-pages` (it falsely claimed Reindex prunes deleted pages — the exact false expectation behind this report). +2 unit tests.
+  - Verified on jimstest: `pages.rebuild` purged all 53 ghosts → 0 (job: "Rebuilt from disk — 17525 pages, 17525 search documents"); real pages still searchable; both doc pages 200. Reverted the earlier wrong `beforeAll` test-sweep (built on the wrong on-disk model).
+  - Satellites: code + new job deployed (v3.24.0), but each carries its **own** pre-fix ghost backlog — purge per-instance via the new Admin → Page Management → **Rebuild Pages** button (not auto-run by the deploy).
+  - Caveat: admin button not browser-eyeballed; backend + job verified via the API.
+- Flakes seen: jimstest pre-release full-suite `auth.spec.ts` ×2 (session/logout) — passed 7/7 isolated; #622 full-suite-only pattern; #622 datapoint added. No real regression.
+- Commits: `83ff04bb` (fix #724), `afbd0bee` (chore: release v3.24.0), plus this log entry.
+- Files Modified:
+  - src/providers/LunrSearchProvider.ts, src/managers/SearchManager.ts, src/routes/WikiRoutes.ts, src/providers/**tests**/LunrSearchProvider.test.ts, views/admin-dashboard.ejs
+  - required-pages/cfb40874-44dd-46b0-b97f-db7f9f60e59d.md (new — rebuild-pages doc), required-pages/67b76b5c-81f0-4a00-9bb1-6a816d26e284.md (corrected reindex-pages doc)
+  - package.json, config/app-default-config.json, CHANGELOG.md, docs/performance/baseline-v3.24.0-2026-05-19.md
+  - docs/project_log.md
+
 ## 2026-05-19-02
 
 - Agent: Claude Opus 4.7
