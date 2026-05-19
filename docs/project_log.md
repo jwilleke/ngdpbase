@@ -2,6 +2,23 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-19-10
+
+- Agent: Claude Opus 4.7
+- Subject: #736 — make the Configuration Properties Reference complete & never-stale via a live ConfigAccessor index. Triaged the 3 open `documentation` issues.
+- Current Issue: #736 (delivered; #525/#660 surfaced, not guessed). No ngdpbase code change → semver skip, no /othersites.
+- Tests: n/a (required-pages doc source only; no code).
+- Work Done:
+  - Recon: `config/app-default-config.json` has **432 keys**; the canonical `Configuration Properties Reference` required-page (`928a1050-…`) existed but was **758 lines hand-maintained, zero `[{ConfigAccessor}]`, last touched 2026-03-26** — that hand-listing IS the staleness/discoverability pain #736 reports. `docs/proper-documentation-pages.md` explicitly prescribes `[{ConfigAccessor key='prefix.*'}]` wildcards for exactly this.
+  - Fix (additive, low-risk — curated prose preserved): appended an **"All Properties (Live Index)"** section — one `[{ConfigAccessor key='ngdpbase.<group>.*'}]` per prefix group (55 groups incl. `log4j.*`/`jspwiki.*`) + 23 ungrouped top-level `ngdpbase.*` scalars as live `valueonly` entries. Every current and future key auto-appears, no hand-maintenance. Generated from the canonical config; `%%table` blocks above verified balanced (50/50); `lastModified` bumped.
+  - Caveat: required-pages **source** committed; live `/view/Configuration Properties Reference` reflects it after the sanctioned required-pages sync (live data store not hand-edited).
+  - #525 ("Lucene") — title is a misnomer: default search provider is **Lunr** (`lunrsearchprovider`), not Lucene; Elasticsearch (Lucene-based) is the optional addon. Naming must be resolved before the end-user doc — surfaced, not guessed.
+  - #660 — broad/meta; 3 slices already shipped; actionable remnant = the 49-stub doc-coverage grind; its body explicitly demands clarifying questions → scoping question raised, no blind work.
+- Commits: this log entry + the #736 doc commit.
+- Files Modified:
+  - required-pages/928a1050-3542-4140-9cd4-515bac154c84.md (Configuration Properties Reference — live index appended)
+  - docs/project_log.md
+
 ## 2026-05-19-09
 
 - Agent: Claude Opus 4.7
