@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-19-12
+
+- Agent: Claude Opus 4.7
+- Subject: #691 — Pages-only Category multi-select in the asset-picker (the deliberate "ship value" pick). Released v3.25.0 + /othersites.
+- Current Issue: #691 (delivered + smoke-verified; `in review` — operator browser-confirm). Completes the residual of the closed #744 EPIC.
+- Tests: unit 5666/5666 (+2 searchPages #691) + E2E 72/72 on jimstest at release commit `41f4bc42` (Step 8a); all 3 satellites 5666/5666 + 72/72. Zero flakes. Perf drift vs v3.24.4 **clean** (no regression: memory −45% = fresh-restart RSS reset; `/` back to 29 ms warm; others ±3 ms).
+- Work Done:
+  - Context: after the operator's "ship value, not what's cool" reframe ([[feedback-ship-value-not-cool]]), picked #691 as the highest value-per-effort open item — finishes a search-picker surface actively used, low risk, exact existing pattern.
+  - Scanned related issues first (operator asked): #744 parent EPIC already **CLOSED** → #691 standalone, no scope creep; #746 (chips→search) downstream synergy only, **not bundled** (small-iterations discipline).
+  - Mirrored the user/system-keyword multi-select exactly: `getPickerKeywordCatalogs()` also returns `categories` via `SearchManager.getAllCategories()` (graceful []); `assetPickerCategories` injected at both `searchPages` render sites + `browse-attachments` passthrough; `_asset-picker.ejs` gains `_apCatCatalog`, `#ap-category-col` multi-select shown only when source=Pages via `_apUpdateControls`, `_apSearch` appends `category=` for src=page, bookmarked `?category=` seeds the control then is removed from `_apHiddenFilters` to avoid double-append. Backend category filtering already existed; only catalog injection + UI were missing. +2 searchPages unit tests.
+  - Smoke (jimstest): `#ap-category` renders Pages-only (hidden by default, 8 categories); `category=documentation` → 107/200, bogus → 0. Caveat: live select interaction not browser-eyeballed (markup+backend+tests verified).
+- Flakes seen: none. Perf: no regression (all routes flat/improved).
+- Commits: `a4d60c35` (feat #691), `41f4bc42` (chore: release v3.25.0), plus this log entry. Release range also carried the already-logged #736/#525 doc commits + #752/#751 bookkeeping.
+- Files Modified:
+  - src/routes/WikiRoutes.ts, src/routes/**tests**/WikiRoutes.searchPages.test.ts, views/_asset-picker.ejs, views/browse-attachments.ejs
+  - package.json, config/app-default-config.json, CHANGELOG.md, docs/performance/baseline-v3.25.0-2026-05-19.md
+  - docs/project_log.md
+
 ## 2026-05-19-11
 
 - Agent: Claude Opus 4.7
