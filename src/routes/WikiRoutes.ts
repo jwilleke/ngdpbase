@@ -210,6 +210,7 @@ interface ISearchManager {
   updatePageInIndex(pageName: string, pageData: unknown): Promise<void>;
   removePageFromIndex(pageName: string): Promise<void>;
   rebuildIndex(): Promise<void>;
+  rebuildFromDisk(): Promise<void>;
   getSuggestions(partial: string): Promise<string[]>;
   getStatistics(): Promise<{ totalDocuments?: number; [key: string]: unknown }>;
   getStats(): unknown;
@@ -12403,6 +12404,35 @@ ${description}
       }
     });
 
+    // #724: "Rebuild Pages" — the disk-reconciling counterpart of
+    // pages.reindex (same relationship as media.rebuild vs media.rescan).
+    // reindex rebuilds the Lunr structure from the persisted document map
+    // (fast, but a deleted page's stale entry — a "ghost" — survives it).
+    // rebuild clears the map + persisted documents.json and re-scans every
+    // page from disk, so ghosts are dropped by construction.
+    jobManager.registerJob({
+      id: 'pages.rebuild',
+      displayName: 'Rebuild Pages',
+      run: async (reportProgress: ReportProgress) => {
+        const pageManager = this.engine.getManager('PageManager');
+        const searchManager = this.engine.getManager('SearchManager');
+        const renderingManager = this.engine.getManager('RenderingManager');
+        const cacheManager = this.engine.getManager('CacheManager');
+
+        reportProgress('Refreshing page list…');
+        await pageManager.refreshPageList();
+        reportProgress('Rebuilding search index from disk (clears stale entries)…');
+        await searchManager.rebuildFromDisk();
+        const pageCount = (await pageManager.getAllPages()).length;
+        const searchStats = await searchManager.getStatistics();
+        await renderingManager.rebuildLinkGraph();
+        await cacheManager.clear(undefined, 'rendered-pages:*');
+
+        const docs = searchStats.totalDocuments || 0;
+        return { success: true, summary: `Rebuilt from disk — ${pageCount} pages, ${docs} search documents (stale entries dropped)` };
+      }
+    });
+
     jobManager.registerJob({
       id: 'media.rescan',
       displayName: 'Reindex Media',
@@ -12439,7 +12469,7 @@ ${description}
       }
     });
 
-    logger.info('[jobs] Admin jobs registered: pages.reindex, media.rescan, media.rebuild');
+    logger.info('[jobs] Admin jobs registered: pages.reindex, pages.rebuild, media.rescan, media.rebuild');
   }
 }
 

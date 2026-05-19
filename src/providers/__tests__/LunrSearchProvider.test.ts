@@ -303,3 +303,76 @@ describe('LunrSearchProvider.advancedSearch — #740 field-scoped AND (title)', 
     expect(names).not.toContain('Boise'); // "Public" not in Boise's title
   });
 });
+
+// ---------------------------------------------------------------------------
+// #724 — rebuild() drops ghosts (deleted-page entries) by re-scanning disk
+// ---------------------------------------------------------------------------
+
+describe('LunrSearchProvider.rebuild — #724 ghost reconciliation', () => {
+  function makeEngineWithPages(realPages: string[]) {
+    return {
+      getManager: (name) => {
+        if (name === 'ConfigurationManager') {
+          return {
+            getProperty: (key, def) => {
+              if (key === 'ngdpbase.search.provider.lunr.stemming') return false;
+              if (key === 'ngdpbase.search.provider.lunr.snippetlength') return 200;
+              if (key.startsWith('ngdpbase.search.provider.lunr.boost')) return 1;
+              if (key === 'ngdpbase.search.provider.lunr.maxresults') return 100;
+              return def;
+            },
+            getResolvedDataPath: (_key, def) => def
+          };
+        }
+        if (name === 'PageManager') {
+          return {
+            getAllPages: async () => realPages,
+            getPage: async (n) =>
+              realPages.includes(n)
+                ? { title: n, content: `Content for ${n}`, metadata: { uuid: `uuid-${n}` } }
+                : null
+          };
+        }
+        if (name === 'MetricsManager') return null;
+        return null;
+      }
+    };
+  }
+
+  test('drops a ghost (indexed page no longer on disk) and keeps real pages', async () => {
+    const prov = new LunrSearchProvider(makeEngineWithPages(['RealPage']));
+    prov['config'] = {
+      indexDir: '/tmp', stemming: false,
+      boost: { title: 1, systemCategory: 1, userKeywords: 1, tags: 1, keywords: 1 },
+      maxResults: 100, snippetLength: 200
+    };
+    // documentsPath stays null (initialize() not called) → no disk I/O.
+    prov['documents'] = {
+      RealPage: makeDoc('RealPage'),
+      GhostPage: makeDoc('GhostPage') // deleted from disk but still indexed
+    };
+
+    expect(Object.keys(prov['documents'])).toContain('GhostPage');
+
+    await prov.rebuild();
+
+    const keys = Object.keys(prov['documents']);
+    expect(keys).toContain('RealPage');     // real page re-indexed from disk
+    expect(keys).not.toContain('GhostPage'); // ghost dropped by construction
+  });
+
+  test('rebuild starts from an empty map even if a stale persisted map exists', async () => {
+    const prov = new LunrSearchProvider(makeEngineWithPages([]));
+    prov['config'] = {
+      indexDir: '/tmp', stemming: false,
+      boost: { title: 1, systemCategory: 1, userKeywords: 1, tags: 1, keywords: 1 },
+      maxResults: 100, snippetLength: 200
+    };
+    prov['documents'] = { OldGhost: makeDoc('OldGhost') };
+
+    await prov.rebuild();
+
+    // No pages on disk → index ends empty (ghost cannot survive a rebuild).
+    expect(Object.keys(prov['documents'])).toHaveLength(0);
+  });
+});

@@ -791,6 +791,37 @@ class LunrSearchProvider extends BaseSearchProvider {
   }
 
   /**
+   * True rebuild from disk — mirrors MediaManager.rebuildIndex().
+   *
+   * #724: buildIndex() has a fast path that, when this.documents is
+   * non-empty (always, in steady state), rebuilds Lunr from the persisted
+   * map WITHOUT re-reading pages from disk. That makes a deleted page's
+   * index entry ("ghost") unkillable — a normal reindex can never drop it.
+   * rebuild() is the missing "Rebuild" half (vs the "Reindex"/rescan that
+   * buildIndex provides): it clears the in-memory map AND deletes the
+   * persisted documents.json, then forces the cold disk-scan path. Pages
+   * that no longer exist on disk are dropped by construction.
+   *
+   * documents.json is a derived cache (regenerated here from PageManager),
+   * never source data — deleting it is safe and not the data/-tree rule.
+   */
+  async rebuild(): Promise<void> {
+    logger.info('[LunrSearchProvider] rebuild() — clearing index + persisted documents, rescanning all pages from disk');
+    this.documents = {};
+    try {
+      if (this.documentsPath && await fs.pathExists(this.documentsPath)) {
+        await fs.remove(this.documentsPath);
+        logger.debug(`[LunrSearchProvider] Deleted persisted documents: ${this.documentsPath}`);
+      }
+    } catch (err) {
+      logger.warn(`[LunrSearchProvider] Could not delete persisted documents: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    // this.documents is now empty → buildIndex() takes the cold path:
+    // re-scan every page from PageManager and re-persist. Ghosts gone.
+    await this.buildIndex();
+  }
+
+  /**
    * Get all unique categories from indexed documents
    * @returns {Promise<string[]>} List of categories
    */

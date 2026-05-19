@@ -102,6 +102,12 @@ interface BaseSearchProvider {
   getSuggestions(partial: string): Promise<string[]>;
   updatePageInIndex(pageName: string, pageData: PageData): Promise<void>;
   removePageFromIndex(pageName: string): Promise<void>;
+  /**
+   * #724: true rebuild from disk (clear + re-scan), distinct from
+   * buildIndex()'s incremental "reindex". Optional — providers without a
+   * disk-reconciling rebuild fall back to buildIndex via SearchManager.
+   */
+  rebuild?(): Promise<void>;
   searchByCategory(category: string): Promise<SearchResult[]>;
   searchByUserKeywords(keyword: string): Promise<SearchResult[]>;
   getAllDocuments(): Promise<SearchResult[]>;
@@ -521,6 +527,33 @@ class SearchManager extends BaseManager {
    */
   async rebuildIndex(): Promise<void> {
     await this.buildSearchIndex();
+  }
+
+  /**
+   * #724: true rebuild FROM DISK — clears the index + persisted cache and
+   * re-scans every page, so entries for deleted pages ("ghosts") are
+   * dropped by construction. This is the "Rebuild" to rebuildIndex()'s
+   * "Reindex" (mirrors media.rebuild vs media.rescan). Providers that lack
+   * a disk-reconciling rebuild fall back to the normal index build.
+   *
+   * @returns {Promise<void>}
+   */
+  async rebuildFromDisk(): Promise<void> {
+    if (!this.provider) {
+      return;
+    }
+    const provider = this.provider as { rebuild?: () => Promise<void> };
+    try {
+      if (typeof provider.rebuild === 'function') {
+        await provider.rebuild();
+      } else {
+        // No disk-reconciling rebuild on this provider — best effort.
+        await this.buildSearchIndex();
+      }
+    } catch (err) {
+      logger.error('[SearchManager] rebuildFromDisk failed:', err);
+      throw err;
+    }
   }
 
   /**

@@ -287,6 +287,13 @@
                         </span>
 
                         <span class="d-inline-flex align-items-center gap-1">
+                            <button class="btn btn-warning btn-sm" onclick="rebuildPages()">
+                                <i class="fas fa-database"></i> Rebuild Pages
+                            </button>
+                            <a href="/view/rebuild-pages" class="text-muted small" title="Documentation" target="_blank"><i class="fas fa-question-circle"></i></a>
+                        </span>
+
+                        <span class="d-inline-flex align-items-center gap-1">
                             <a href="/admin/import" class="btn btn-info btn-sm">
                                 <i class="fas fa-file-import"></i> Import Pages
                             </a>
@@ -602,6 +609,55 @@ async function reindexPages() {
         button.disabled = false;
         button.innerHTML = originalHTML;
         showMessage('Failed to reindex: ' + error.message, 'error');
+    }
+}
+
+// #724: full rebuild from disk. Unlike Reindex (rebuilds the search
+// structure from the persisted document cache), Rebuild clears that cache
+// and re-scans every page from disk, so entries for deleted pages ("ghosts"
+// still showing in search/listings) are dropped. Heavier than Reindex.
+async function rebuildPages() {
+    if (!confirm('Rebuild the page search index from disk?\n\nThis clears the persisted search cache and re-scans every page. Use it when deleted pages still appear in search/listings (Reindex cannot remove those). Slower than Reindex.')) {
+        return;
+    }
+
+    const button = document.querySelector('button[onclick="rebuildPages()"]');
+    const originalHTML = button.innerHTML;
+
+    try {
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting…';
+
+        const csrfToken = document.querySelector('input[name="_csrf"]')?.value || '<%= csrfToken %>';
+
+        const enqueueRes = await csrfFetch('/api/admin/jobs/pages.rebuild/enqueue', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'CSRF-Token': csrfToken }
+        });
+        const { runId } = await enqueueRes.json();
+        if (!runId) throw new Error('Failed to start rebuild job');
+
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Rebuilding…';
+
+        const run = await pollJobStatus(runId);
+        if (run.status === 'completed') {
+            button.classList.remove('btn-warning');
+            button.classList.add('btn-success');
+            button.innerHTML = '<i class="fas fa-check"></i> Rebuilt';
+            showMessage(`Rebuild complete — ${run.result?.summary || ''}`, 'success');
+            setTimeout(() => {
+                button.disabled = false;
+                button.classList.remove('btn-success');
+                button.classList.add('btn-warning');
+                button.innerHTML = originalHTML;
+            }, 3000);
+        } else {
+            throw new Error(run.result?.error || 'Rebuild failed');
+        }
+    } catch (error) {
+        button.disabled = false;
+        button.innerHTML = originalHTML;
+        showMessage('Failed to rebuild: ' + error.message, 'error');
     }
 }
 
