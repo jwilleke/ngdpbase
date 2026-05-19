@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-19T10:05:00.000Z'
+lastModified: '2026-05-19T13:50:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -26,28 +26,27 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 ## Security
 
-| Source | # | Severity | Status |
+| Source | Package | Severity | Status |
 |---|---|---|---|
-| Dependabot | #96 | medium | `showdown` ReDoS; tracked in #599; no upstream patch — mitigation only |
+| Dependabot (GHSA-58qx-3vcg-4xpx) | `ws` | medium | **Actionable — patched in 8.20.1** (upstream fix exists). DoS via many HTTP headers. Bump `ws` ≥ 8.20.1 (transitive — check `npm why ws`). |
+| Dependabot (GHSA-rmmh-p597-ppvv) | `showdown` | medium | ReDoS (CVE-2024-1899); tracked in #599; **no upstream patch** — mitigation only. #749 = recurring "re-check for a patch" task. |
 
 ## Open BUGS (ngdpbase, by issue #)
 
-5 open as of 2026-05-19 (#735 & #747 **closed**). #724 durable fix **shipped v3.24.0** (awaiting operator confirm + per-satellite Rebuild). New: #748, #749. #660/#599 non-actionable carry-forwards.
+4 open as of 2026-05-19 (#724 **closed** — operator confirmed the v3.24.0 search-ghost fix; #735/#747 also closed). #748 is the only fresh functional bug; #749 pairs with #599; #660 non-actionable.
 
 | # | Title |
 |---|---|
-| #749 | Showdown CVE-2024-1899 patch check — filed 2026-05-19; tracking task to re-check for an upstream `showdown` patch (pairs with #599 / Dependabot #96). Not yet triaged |
-| #748 | `[{Insert page='...', 'caption='...'}]` — filed 2026-05-19; InsertPlugin parsing/usage bug. Not yet triaged |
-| #724 | Deleted/test pages lingered in **search index** ("ghosts"). Root-caused (NOT a delete bug — disk delete is clean; the Lunr `buildIndex` fast-path never reconciled vs disk). **Fixed v3.24.0** (`83ff04bb`): true `pages.rebuild` + Admin → Page Management → **Rebuild Pages** (mirror of media Rebuild). jimstest 53 ghosts→0. Open: operator confirm + click Rebuild Pages on each satellite (own pre-fix backlog) |
+| #748 | `[{Insert page='...', 'caption='...'}]` — filed 2026-05-19; InsertPlugin parsing/usage bug. **Only fresh functional bug; not yet triaged → strongest bug candidate to pick up.** |
+| #749 | Showdown CVE-2024-1899 patch check — filed 2026-05-19; recurring tracking task to re-check for an upstream `showdown` patch (pairs with #599 / Dependabot GHSA-rmmh-p597-ppvv). Not a code bug |
 | #660 | Agent and ./docs documentation — tooling shipped; 49 doc-stub warnings remain for source-only modules (stub-creation backlog; cosmetic, non-blocking) |
-| #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); tracked by Dependabot #96 / #749 |
+| #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); tracked by Dependabot / #749 |
 
 ## Operator-decision carryover
 
 Items awaiting a yes/no/close or operator-only action. Not blocking other work.
 
-- **#643** — SearchPlugin date filter. Modified-date half **released v3.22.0**; `created` / `dateField=created` half infeasible without a page-model change (1/116 pages carry a creation timestamp). Operator call: split off `created` as a separate page-model issue, or accept modified-only and close.
-- **#724** — durable fix shipped v3.24.0 (true Rebuild Pages; jimstest backlog purged 53→0). Awaiting operator: confirm ghosts gone, and click **Admin → Page Management → Rebuild Pages** on each satellite (fairways/veg/temp) to clear their own pre-fix backlogs. Then closeable.
+- **#643** — SearchPlugin date filter. Modified-date half **released v3.22.0**; `created` / `dateField=created` half infeasible without a page-model change (1/116 pages carry a creation timestamp). Operator call: split off `created` as a separate page-model issue, or accept modified-only and close. **Only remaining operator-decision item.**
 
 ## Sister-site top priorities — combined table
 
