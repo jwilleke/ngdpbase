@@ -32,87 +32,106 @@ var _apSysKwCatalog  = typeof assetPickerSystemKeywords !== 'undefined' && Array
 var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(assetPickerYears) ? assetPickerYears : [];
 %>
 
-<!-- Controls bar -->
-<div class="row g-2 mb-2">
-    <div class="col">
-        <input type="text" id="ap-query" class="form-control"
-               placeholder="Search by filename, description, year&hellip;"
-               autocomplete="off">
-    </div>
-    <div class="col-auto">
-        <select id="ap-source" class="form-select" title="Asset source">
-            <option value="">All sources</option>
-            <option value="attachment">Attachments only</option>
-            <option value="media">Media library only</option>
-            <option value="page">Pages</option>
-            <option value="user">Users</option>
-        </select>
-    </div>
-    <div class="col-auto" id="ap-mime-col">
-        <select id="ap-mime" class="form-select" title="File type">
-            <option value="">All formats</option>
-            <option value="image">Images</option>
-            <option value="video">Videos</option>
-            <option value="audio">Audio</option>
-            <option value="document">PDF &amp; Office</option>
-            <option value="other">Other</option>
-        </select>
-    </div>
-    <%# #745: media Year filter (Files-only). Server-injected catalog from
-        MediaManager.getYears(); the `year=` param is a live filter
-        (BaseMediaProvider). Omitted entirely when no media years exist. %>
-    <% if (_apYearsCatalog.length) { %>
-    <div class="col-auto" id="ap-year-col">
-        <select id="ap-year" class="form-select" title="Media year">
-            <option value="">All years</option>
-            <% _apYearsCatalog.forEach(function (y) { %><option value="<%= y %>"><%= y %></option><% }); %>
-        </select>
-    </div>
-    <% } %>
-    <%# Slice 1a (#744): sort moved out of this row into the compact icon
-        results-toolbar below. #ap-sort stays as a hidden state-holder so all
-        existing JS (value read, change listener, #692/#700 logic) is unchanged. %>
-    <div id="ap-sort-col" hidden>
-        <select id="ap-sort" title="Sort order">
-            <option value="date-desc">Date &darr; (newest)</option>
-            <option value="date-asc">Date &uarr; (oldest)</option>
-            <option value="caption-asc">Name A&ndash;Z</option>
-            <option value="caption-desc">Name Z&ndash;A</option>
-        </select>
-    </div>
-    <%# #721: the Full-text toggle lives in the PRIMARY row, not the collapsed
-        Advanced panel — it is page-search-relevant and pages are the default
-        source (#739). _apUpdateControls shows it only when source = Pages. %>
-    <div class="col-auto d-flex align-items-center" id="ap-fulltext-col" style="display:none;">
-        <div class="form-check mb-0">
-            <input class="form-check-input" type="checkbox" id="ap-fulltext">
-            <label class="form-check-label small" for="ap-fulltext" title="Off = match page titles only (default). On = also search page body/content.">Full text</label>
+<%# #735: defined control panel + 2-row layout. Before, the query input,
+    every filter select and BOTH action buttons shared one Bootstrap .row;
+    on a phone they wrapped into each other, the query box collapsed to a
+    sliver, and the area had no visual edge. Now: a theme-aware bordered
+    panel (bg-body-tertiary + border adapt to data-bs-theme light/dark),
+    row 1 = query + actions, row 2 = an isolated flex-wrap of filters so
+    adding controls later (e.g. #745 page-date) wraps among the filters
+    instead of shoving Search/Upload around. All element IDs are unchanged
+    so the #ap-* JS wiring is untouched. %>
+<div class="ap-panel border rounded bg-body-tertiary p-2 p-md-3 mb-3">
+
+    <!-- Row 1 — query + actions. The input keeps `col` (all remaining
+         width) so it is never cramped; Search/Upload stay together. -->
+    <div class="row g-2">
+        <div class="col">
+            <input type="text" id="ap-query" class="form-control"
+                   placeholder="Search by filename, description, year&hellip;"
+                   autocomplete="off">
+        </div>
+        <div class="col-auto d-flex gap-2">
+            <button type="button" class="btn btn-primary" id="ap-search-btn">
+                <i class="fas fa-search"></i> <span class="d-none d-sm-inline">Search</span>
+            </button>
+            <button type="button" class="btn btn-outline-secondary" id="ap-upload-btn" title="Upload Attachment">
+                <i class="fas fa-upload"></i> <span class="d-none d-sm-inline">Upload</span>
+            </button>
         </div>
     </div>
-    <%# #691: Pages-only keyword filters (multi-select). Server-injected
-        catalogs; shown only when source = Pages via _apUpdateControls.
-        Empty catalog → control omitted (nothing to choose). %>
-    <% if (_apUserKwCatalog.length) { %>
-    <div class="col-auto" id="ap-userkw-col" style="display:none;">
-        <select id="ap-user-keywords" class="form-select form-select-sm" multiple size="1" title="Filter by user keywords (Pages)" aria-label="User keywords">
-            <% _apUserKwCatalog.forEach(function (k) { %><option value="<%= k %>"><%= k %></option><% }); %>
-        </select>
-    </div>
-    <% } %>
-    <% if (_apSysKwCatalog.length) { %>
-    <div class="col-auto" id="ap-syskw-col" style="display:none;">
-        <select id="ap-system-keywords" class="form-select form-select-sm" multiple size="1" title="Filter by system keywords (Pages)" aria-label="System keywords">
-            <% _apSysKwCatalog.forEach(function (k) { %><option value="<%= k %>"><%= k %></option><% }); %>
-        </select>
-    </div>
-    <% } %>
-    <div class="col-auto d-flex gap-2">
-        <button type="button" class="btn btn-primary" id="ap-search-btn">
-            <i class="fas fa-search"></i> <span class="d-none d-sm-inline">Search</span>
-        </button>
-        <button type="button" class="btn btn-outline-secondary" id="ap-upload-btn" title="Upload Attachment">
-            <i class="fas fa-upload"></i> <span class="d-none d-sm-inline">Upload</span>
-        </button>
+
+    <!-- Row 2 — filters. Own flex-wrap row; col-auto children wrap among
+         themselves on narrow screens (scoped .ap-filters CSS gives the
+         selects a min-width and full-width on xs). -->
+    <div class="row g-2 mt-1 ap-filters">
+        <div class="col-auto">
+            <select id="ap-source" class="form-select" title="Asset source">
+                <option value="">All sources</option>
+                <option value="attachment">Attachments only</option>
+                <option value="media">Media library only</option>
+                <option value="page">Pages</option>
+                <option value="user">Users</option>
+            </select>
+        </div>
+        <div class="col-auto" id="ap-mime-col">
+            <select id="ap-mime" class="form-select" title="File type">
+                <option value="">All formats</option>
+                <option value="image">Images</option>
+                <option value="video">Videos</option>
+                <option value="audio">Audio</option>
+                <option value="document">PDF &amp; Office</option>
+                <option value="other">Other</option>
+            </select>
+        </div>
+        <%# #745: media Year filter (Files-only). Server-injected catalog from
+            MediaManager.getYears(); the `year=` param is a live filter
+            (BaseMediaProvider). Omitted entirely when no media years exist. %>
+        <% if (_apYearsCatalog.length) { %>
+        <div class="col-auto" id="ap-year-col">
+            <select id="ap-year" class="form-select" title="Media year">
+                <option value="">All years</option>
+                <% _apYearsCatalog.forEach(function (y) { %><option value="<%= y %>"><%= y %></option><% }); %>
+            </select>
+        </div>
+        <% } %>
+        <%# Slice 1a (#744): sort moved out of this row into the compact icon
+            results-toolbar below. #ap-sort stays as a hidden state-holder so all
+            existing JS (value read, change listener, #692/#700 logic) is unchanged. %>
+        <div id="ap-sort-col" hidden>
+            <select id="ap-sort" title="Sort order">
+                <option value="date-desc">Date &darr; (newest)</option>
+                <option value="date-asc">Date &uarr; (oldest)</option>
+                <option value="caption-asc">Name A&ndash;Z</option>
+                <option value="caption-desc">Name Z&ndash;A</option>
+            </select>
+        </div>
+        <%# #721: the Full-text toggle is page-search-relevant and pages are the
+            default source (#739). _apUpdateControls shows it only when
+            source = Pages. %>
+        <div class="col-auto d-flex align-items-center" id="ap-fulltext-col" style="display:none;">
+            <div class="form-check mb-0">
+                <input class="form-check-input" type="checkbox" id="ap-fulltext">
+                <label class="form-check-label small" for="ap-fulltext" title="Off = match page titles only (default). On = also search page body/content.">Full text</label>
+            </div>
+        </div>
+        <%# #691: Pages-only keyword filters (multi-select). Server-injected
+            catalogs; shown only when source = Pages via _apUpdateControls.
+            Empty catalog → control omitted (nothing to choose). %>
+        <% if (_apUserKwCatalog.length) { %>
+        <div class="col-auto" id="ap-userkw-col" style="display:none;">
+            <select id="ap-user-keywords" class="form-select form-select-sm" multiple size="1" title="Filter by user keywords (Pages)" aria-label="User keywords">
+                <% _apUserKwCatalog.forEach(function (k) { %><option value="<%= k %>"><%= k %></option><% }); %>
+            </select>
+        </div>
+        <% } %>
+        <% if (_apSysKwCatalog.length) { %>
+        <div class="col-auto" id="ap-syskw-col" style="display:none;">
+            <select id="ap-system-keywords" class="form-select form-select-sm" multiple size="1" title="Filter by system keywords (Pages)" aria-label="System keywords">
+                <% _apSysKwCatalog.forEach(function (k) { %><option value="<%= k %>"><%= k %></option><% }); %>
+            </select>
+        </div>
+        <% } %>
     </div>
 </div>
 
@@ -177,6 +196,16 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
 .ap-row-thumb img { width: 56px; height: 56px; object-fit: cover; }
 .ap-row-body { flex: 1 1 auto; min-width: 0; }
 .ap-row-act { flex: 0 0 auto; }
+
+/* #735: keep the filter selects from collapsing so row 2 wraps predictably
+   (and so a future #745 page-date control just flows into the wrap rather
+   than crushing its neighbours). On phones every filter goes full-width,
+   one per line — no more sliver controls overlapping the action buttons. */
+.ap-filters .form-select:not([multiple]) { min-width: 9rem; }
+@media (max-width: 575.98px) {
+    .ap-filters > .col-auto { flex: 1 1 100%; }
+    .ap-filters .form-select { width: 100%; }
+}
 </style>
 <% if (_apMode === 'modal') { %>
 <style>
