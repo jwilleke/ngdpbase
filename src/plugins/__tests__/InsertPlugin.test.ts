@@ -292,6 +292,73 @@ describe('InsertPlugin', () => {
     });
   });
 
+  describe('#748 — caption replaces leading heading even with leading blank/whitespace', () => {
+    function pmWith(content: string) {
+      return { getPage: vi.fn().mockResolvedValue({ content, metadata: {} }) };
+    }
+    function rmEcho() {
+      return { renderMarkdown: vi.fn().mockImplementation(async (c: string) => `<rendered>${c}</rendered>`) };
+    }
+
+    test('full-page: leading blank line before the title → caption REPLACES it (no double heading)', async () => {
+      // The reported scenario: source body begins with a blank line before
+      // `# [{$pagename}]`. Old code prepended `## caption` and kept the
+      // source title → two headings. Now the caption replaces the title.
+      const rm = rmEcho();
+      const ctx = makeContext({ pageManager: pmWith('\n# [{$pagename}]\n\nReported by patient...'), renderingManager: rm });
+
+      await InsertPlugin.execute!(ctx, { page: 'MEW-Current Symptoms', caption: 'Current Symptoms' });
+
+      const rendered = (rm.renderMarkdown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(rendered).toContain('# Current Symptoms');       // caption present
+      expect(rendered).not.toContain('[{$pagename}]');         // source title gone
+      expect(rendered).not.toMatch(/^## Current Symptoms/);    // NOT prepended as a new ## heading
+      expect((rendered.match(/^#{1,6}\s+Current Symptoms/gm) || []).length).toBe(1); // exactly one title
+    });
+
+    test('full-page: CRLF source content → caption REPLACES the title (the real #748 repro)', async () => {
+      // The reported page is stored with CRLF. split('\n') leaves "\r" so
+      // the heading regex missed it and the caption was prepended as a 2nd
+      // heading on top of the source title.
+      const rm = rmEcho();
+      const ctx = makeContext({ pageManager: pmWith('# [{$pagename}]\r\n\r\nReported by patient...\r\n'), renderingManager: rm });
+
+      await InsertPlugin.execute!(ctx, { page: 'MEW-Current Symptoms', caption: 'Current Symptoms' });
+
+      const rendered = (rm.renderMarkdown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(rendered).not.toContain('[{$pagename}]');                         // source title gone
+      expect(rendered).not.toMatch(/^## Current Symptoms/);                    // not prepended
+      expect((rendered.match(/^#{1,6}\s+Current Symptoms/gm) || []).length).toBe(1); // exactly one heading
+      expect(rendered).not.toContain('\r');                                    // CRLF normalised
+    });
+
+    test('full-page: caption=none with leading blank → leading heading removed, body kept', async () => {
+      const rm = rmEcho();
+      const ctx = makeContext({ pageManager: pmWith('\n\n# [{$pagename}]\n\nBody stays.'), renderingManager: rm });
+
+      await InsertPlugin.execute!(ctx, { page: 'P', caption: 'none' });
+
+      const rendered = (rm.renderMarkdown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(rendered).not.toContain('[{$pagename}]');
+      expect(rendered.startsWith('Body stays.')).toBe(true);
+    });
+
+    test('section insert: caption replaces THAT section heading; following sub-headings kept', async () => {
+      // section 1 of a 2-section page; extractSection slice starts at the
+      // section heading. Caption renames it; a later ### sub-heading stays.
+      const rm = rmEcho();
+      const content = '# Intro\n\nfirst.\n\n## Target Section\n\nbody one.\n\n### Sub Kept\n\nmore.';
+      const ctx = makeContext({ pageManager: pmWith(content), renderingManager: rm });
+
+      await InsertPlugin.execute!(ctx, { pagesection: 'P?section=1', caption: 'Current Symptoms' });
+
+      const rendered = (rm.renderMarkdown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(rendered).toContain('## Current Symptoms'); // section heading renamed, level kept
+      expect(rendered).not.toContain('Target Section');  // original section heading gone
+      expect(rendered).toContain('### Sub Kept');         // following sub-heading preserved
+    });
+  });
+
   describe('attribution', () => {
     test('full-page attribution links to /view/<encodedPageName>', async () => {
       const ctx = makeContext();

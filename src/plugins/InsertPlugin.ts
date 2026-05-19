@@ -124,24 +124,46 @@ function findSectionIndexByHeading(markdown: string, headingText: string): numbe
  * - suppress token (none|off|false|no|empty) → drop the leading ATX heading
  * - any other text → replace the leading heading's text (keeping its level);
  *   if the slice has no leading heading, prepend it as an `##` heading
+ *
+ * #748: two compounding causes made the caption render as a SECOND
+ * heading on top of the source's own title:
+ *   1. CRLF source content — `split('\n')` left a trailing `\r` on each
+ *      line, and `/^(#{1,6})\s+.*$/` cannot match it (`.` won't cross
+ *      `\r`; `$` won't match before `\r`). The leading heading went
+ *      undetected → caption prepended as a new heading.
+ *   2. The heading is the first NON-BLANK line, not rigidly `lines[0]`
+ *      (full-page bodies / extractSection slices can start with blanks).
+ * Fix: normalise CRLF→LF, then operate on the first non-blank line. Only
+ * the first heading is ever touched; following headings are kept.
  */
 function applyCaption(sectionMarkdown: string, caption: string): string {
   const trimmed = caption.trim();
   const suppress = trimmed === '' || /^(none|off|false|no)$/i.test(trimmed);
-  const lines = sectionMarkdown.split('\n');
-  const m = lines[0] !== undefined ? lines[0].match(/^(#{1,6})\s+.*$/) : null;
+  const lines = sectionMarkdown.replace(/\r\n?/g, '\n').split('\n');
+
+  // First non-blank line — the candidate leading heading.
+  let hIdx = 0;
+  while (hIdx < lines.length && (lines[hIdx] ?? '').trim() === '') hIdx++;
+  const headingLine = hIdx < lines.length ? lines[hIdx] : undefined;
+  const m = headingLine !== undefined ? headingLine.match(/^(#{1,6})\s+.*$/) : null;
 
   if (m) {
     if (suppress) {
-      lines.shift();
-      if (lines[0] !== undefined && lines[0].trim() === '') lines.shift();
+      // Drop the heading and a single trailing blank; leading blanks (if
+      // any) are stripped by the final replace so nothing is left dangling.
+      lines.splice(hIdx, 1);
+      if (lines[hIdx] !== undefined && (lines[hIdx] ?? '').trim() === '') {
+        lines.splice(hIdx, 1);
+      }
       return lines.join('\n').replace(/^\n+/, '');
     }
-    lines[0] = `${m[1]} ${trimmed}`;
-    return lines.join('\n');
+    // Replace the leading heading's TEXT, keeping its level. Following
+    // headings (sub-sections of the inserted page) are untouched.
+    lines[hIdx] = `${m[1]} ${trimmed}`;
+    return lines.join('\n').replace(/^\n+/, '');
   }
-  // Defensive: extractSection slices always start at a heading, but a
-  // full-page insert may not.
+  // No heading at/near the top → prepend the caption as one (or, for the
+  // suppress token, leave the body untouched).
   return suppress ? sectionMarkdown : `## ${trimmed}\n\n${sectionMarkdown}`;
 }
 
