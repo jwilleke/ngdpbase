@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-19T17:00:00.000Z'
+lastModified: '2026-05-19T17:25:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -48,7 +48,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 Items awaiting a yes/no/close or operator-only action. Not blocking other work.
 
-- **#643** — SearchPlugin date filter. Modified-date half **released v3.22.0**; `created` / `dateField=created` half infeasible without a page-model change (1/116 pages carry a creation timestamp). Operator call: split off `created` as a separate page-model issue, or accept modified-only and close. **Only remaining operator-decision item.**
+- _(none)_ — #643 resolved 2026-05-19: closed for the delivered modified-date scope (v3.22.0); the deferred `created`/`dateField=created` half split into the page-model feature **#754**. No operator-decision items outstanding.
 
 ## Sister-site top priorities — combined table
 
@@ -74,6 +74,7 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | #744 | [EPIC] Search-picker IA simplification — consolidate `/search` asset-picker controls (sist2-style) | **Medium.** Most slices shipped: #735 (responsive 2-row toolbar, v3.22.0), #720 (format facets), #691 (keywords/system-keywords/searchIn — now narrowed to **Category-only**), #745 (date — **closed, shipped** v3.21/3.23). #721 **closed** (collapse obsolete — panel removed under #744). Out of scope: #550/AI/semantic, #643, #722 |
 | #691 | Asset-picker: **Category** multi-select for source=Pages | Low — keywords/system-keywords/searchIn already shipped; only the Category control remains (mirror the keyword multi-select pattern; backend already honours `category=`) |
 | #750 | Index video capture-date (CreateDate/MediaCreateDate) | Low — real remnant split out of closed #721; enabler for the asset capture-date range half (with **#519** provider-side filter). Do alongside #519 |
+| #754 | Page-model `created` timestamp (creation-date search/sort) | Low/Medium — split from closed #643 (modified-date shipped v3.22.0). Gated by a per-page schema change + ~17K-page backfill migration; own focused effort. Unblocks `dateField=created` in SearchPlugin + the #745 asset-picker date control |
 | #722 | Video poster-frame thumbnails (ffmpeg) | Low — related to #744 (better video tiles make the video filter useful) but **not a child**: result presentation + adds ffmpeg dep. #731 shipped v3.16.0; fills the video thumbnail cell |
 | #707 | Typed footnote + knowledge-graph reference index | Low — speculative; **depends on #706**; defer behind a named citation-heavy user (2026-05-16 brainstorm) |
 | #706 | `knowledge-role` frontmatter field — opt-in page role | Low — sharpened to field+enum+badge; **foundational, blocks #707**; design in `docs/planning/ideas/llm-wiki-pattern.md` |
