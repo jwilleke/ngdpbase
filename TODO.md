@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-19T06:30:00.000Z'
+lastModified: '2026-05-19T09:40:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -32,22 +32,22 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 ## Open BUGS (ngdpbase, by issue #)
 
-4 open as of 2026-05-19 (#735 **closed** — operator confirmed the v3.22.0 mobile fix). New: **#747** (page-search 503). #724 `help wanted`/awaiting decision; #660/#599 non-actionable carry-forwards.
+5 open as of 2026-05-19 (#735 & #747 **closed**). #724 durable fix **shipped v3.24.0** (awaiting operator confirm + per-satellite Rebuild). New: #748, #749. #660/#599 non-actionable carry-forwards.
 
 | # | Title |
 |---|---|
-| #747 | `/search?q=Do+Virus+Exist&types=page` → `Search failed (503)` — filed 2026-05-19. **Does NOT reproduce** on any of the 4 instances post-restart on v3.23.0 (all HTTP 200, empty results). Suspected **transient index-not-ready 503**: the assetSearch Pages branch 503s if SearchManager/PageManager isn't ready yet (e.g. mid index-build right after a restart). Needs operator confirmation of when/where it hit; if it's the startup window, the fix is a "search warming up, retry" response instead of a bare 503 |
-| #724 | `NGDPBASE-test-*` files linger after test runs (recurring) — test teardown not cleaning created pages; `help wanted`/testing. Note global rule: never delete live `data/` in teardown — fix must scope-delete only test-created subdirs |
+| #749 | Showdown CVE-2024-1899 patch check — filed 2026-05-19; tracking task to re-check for an upstream `showdown` patch (pairs with #599 / Dependabot #96). Not yet triaged |
+| #748 | `[{Insert page='...', 'caption='...'}]` — filed 2026-05-19; InsertPlugin parsing/usage bug. Not yet triaged |
+| #724 | Deleted/test pages lingered in **search index** ("ghosts"). Root-caused (NOT a delete bug — disk delete is clean; the Lunr `buildIndex` fast-path never reconciled vs disk). **Fixed v3.24.0** (`83ff04bb`): true `pages.rebuild` + Admin → Page Management → **Rebuild Pages** (mirror of media Rebuild). jimstest 53 ghosts→0. Open: operator confirm + click Rebuild Pages on each satellite (own pre-fix backlog) |
 | #660 | Agent and ./docs documentation — tooling shipped; 49 doc-stub warnings remain for source-only modules (stub-creation backlog; cosmetic, non-blocking) |
-| #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); tracked by Dependabot #96 |
+| #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); tracked by Dependabot #96 / #749 |
 
 ## Operator-decision carryover
 
 Items awaiting a yes/no/close or operator-only action. Not blocking other work.
 
 - **#643** — SearchPlugin date filter. Modified-date half **released v3.22.0**; `created` / `dateField=created` half infeasible without a page-model change (1/116 pages carry a creation timestamp). Operator call: split off `created` as a separate page-model issue, or accept modified-only and close.
-- **#747** — page-search 503; not reproducible post-restart on v3.23.0 (see Open BUGS). Awaiting operator detail on when/where it occurred (instance, timing vs server restart) to confirm the transient-index hypothesis before any fix.
-- **#724** — recurring `NGDPBASE-test-*` test-file lingering, labelled `help wanted`. Awaiting decision/assignment; the fix touches test teardown (must only scope-delete test-created subdirs, never the live `data/` tree).
+- **#724** — durable fix shipped v3.24.0 (true Rebuild Pages; jimstest backlog purged 53→0). Awaiting operator: confirm ghosts gone, and click **Admin → Page Management → Rebuild Pages** on each satellite (fairways/veg/temp) to clear their own pre-fix backlogs. Then closeable.
 
 ## Sister-site top priorities — combined table
 
