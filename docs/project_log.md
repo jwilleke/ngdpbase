@@ -2,6 +2,21 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-19-11
+
+- Agent: Claude Opus 4.7
+- Subject: #525 — audit/fix the Search Documentation page (provider model + Lunr-vs-Lucene naming); #660 — operator chose "keep as tracking issue" (no stub grind).
+- Current Issue: #525 (fixed; operator to verify/close), #660 (decision recorded). No code change → semver skip.
+- Tests: n/a (required-pages doc source only).
+- Work Done:
+  - #525: the existing `Search Documentation` required-page (`fe7a378d-…`) had a factual error — "Lunr.js provides fast **client-side** search". Lunr in ngdpbase is **server-side, in-process** (`LunrSearchProvider`, in-memory index persisted to disk). Corrected that line and added a **"Search Providers"** subsection: pluggable model via `ngdpbase.search.provider`; **Lunr = built-in default** (in-process, no external service); **Elasticsearch = optional addon** for large/multi-node, and explicitly noted ES is built on **Apache Lucene** — resolving the issue's "Lucene" misnomer (ngdpbase's default is Lunr, *not* Lucene); extensible via `BaseSearchProvider`. End-user framed (switching is transparent to searchers). `lastModified` bumped. No duplicate page created.
+  - #660: operator decided to keep it as the tracking issue — the structural automation (frontmatter + auto-index, 3 prior slices) is done; the ~49 remaining doc-coverage stub warnings are non-blocking/cosmetic and will not be mass-generated this session. Recorded on the issue; TODO already lists #660 as a non-actionable carry-forward.
+  - Caveat: required-pages **source** edits; live `/view/Search Documentation` (and the #736 Configuration Properties Reference) reflect after the sanctioned required-pages sync — live store not hand-edited.
+- Commits: this log entry + the #525 doc commit.
+- Files Modified:
+  - required-pages/fe7a378d-dfa5-4e37-9891-637568ebe0b4.md (Search Documentation — provider model fix)
+  - docs/project_log.md
+
 ## 2026-05-19-10
 
 - Agent: Claude Opus 4.7
