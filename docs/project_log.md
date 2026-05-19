@@ -2,6 +2,22 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-19-09
+
+- Agent: Claude Opus 4.7
+- Subject: #751 — root-caused the recurring "GeoHazardWatch v3.14.5 vs v3.24" drift; fix is a geohazardwatch-repo PR (no ngdpbase code change).
+- Current Issue: #751 (diagnosed; fix = geohazardwatch PR #54; left open for operator merge/review).
+- Tests: n/a (no ngdpbase code touched — cross-repo coordination only; geohazardwatch PR passed its own pre-commit lint).
+- Work Done:
+  - Traced the hand-off chain end-to-end: ngdpbase CI publishes `ghcr.io/jwilleke/ngdpbase:{X.Y.Z,X.Y,X}` on every `v*` tag (correct) → geohazardwatch `Dockerfile` builds `ghcr.io/jwilleke/geohazardwatch:1.x` `FROM ghcr.io/jwilleke/ngdpbase:${NGDPBASE_VERSION}` → mj-infra-flux `apps/production/geohazardwatch/` has a full `ImageRepository`/`ImagePolicy`/`ImageUpdateAutomation` and correctly auto-deploys the newest `geohazardwatch:1.x` (correct).
+  - **Root cause is neither ngdpbase nor Flux** (the issue asked for an mj-infra-flux issue — that would have had nothing to action; surfaced this rather than file misdirected): the ngdpbase version is an **annotated `ARG NGDPBASE_VERSION`**, which Renovate's built-in dockerfile manager can't follow (ARG-interpolated `FROM` tag), and geohazardwatch's `renovate.json` had no `customManagers`. So no bump PR was ever generated and the pin silently froze at 3.14.5 — every deployed geohazardwatch image was built on ngdpbase 3.14.5.
+  - Fix (geohazardwatch **PR #54**, <https://github.com/jwilleke/geohazardwatch/pull/54>): `Dockerfile` ARG 3.14.5→3.24.4; `renovate.json` add a `customManagers` regex for the annotated ARG (datasource=docker, semver — JS-engine-verified to capture the right groups); made the two ngdpbase packageRules manager-agnostic so the existing minor/patch auto-merge + major-review rules apply. Closes the drift loop permanently (Renovate bump → CI rebuild → existing Flux ImageUpdateAutomation deploys).
+  - Per cross-repo-coordination convention, the diagnosis + PR link were posted on ngdpbase #751; no satellite-repo issue filed.
+- Commits: this log entry only (no ngdpbase code change; semver skip, no /othersites).
+- Files Modified:
+  - docs/project_log.md
+  - (geohazardwatch repo, separate: Dockerfile, renovate.json — PR #54)
+
 ## 2026-05-19-08
 
 - Agent: Claude Opus 4.7
