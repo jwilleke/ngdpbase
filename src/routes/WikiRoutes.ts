@@ -1108,18 +1108,22 @@ class WikiRoutes {
    * SearchManager (index-accurate — reflects what is actually filterable);
    * gracefully empty if the provider does not support them.
    */
-  private async getPickerKeywordCatalogs(): Promise<{ userKeywords: string[]; systemKeywords: string[] }> {
+  private async getPickerKeywordCatalogs(): Promise<{ userKeywords: string[]; systemKeywords: string[]; categories: string[] }> {
     const sm = this.engine.getManager('SearchManager') as {
       getAllUserKeywords?: () => Promise<string[]>;
       getAllSystemKeywords?: () => Promise<string[]>;
+      getAllCategories?: () => Promise<string[]>;
     } | undefined;
-    const [userKeywords, systemKeywords] = await Promise.all([
+    const [userKeywords, systemKeywords, categories] = await Promise.all([
       sm?.getAllUserKeywords ? sm.getAllUserKeywords() : Promise.resolve([]),
-      sm?.getAllSystemKeywords ? sm.getAllSystemKeywords() : Promise.resolve([])
+      sm?.getAllSystemKeywords ? sm.getAllSystemKeywords() : Promise.resolve([]),
+      // #691: Pages-only category multi-select catalog (mirrors keywords).
+      sm?.getAllCategories ? sm.getAllCategories() : Promise.resolve([])
     ]);
     return {
       userKeywords: Array.isArray(userKeywords) ? userKeywords : [],
-      systemKeywords: Array.isArray(systemKeywords) ? systemKeywords : []
+      systemKeywords: Array.isArray(systemKeywords) ? systemKeywords : [],
+      categories: Array.isArray(categories) ? categories : []
     };
   }
 
@@ -3240,6 +3244,7 @@ ${panes}
         assetPickerInitFilters: initFilters,
         assetPickerUserKeywords:   pickerKw.userKeywords,
         assetPickerSystemKeywords: pickerKw.systemKeywords,
+        assetPickerCategories:     pickerKw.categories,
         assetPickerYears:          pickerYears
       });
     } catch (err: unknown) {
@@ -7917,6 +7922,7 @@ ${panes}
         title: 'Browse Assets',
         assetPickerUserKeywords:   pickerKw.userKeywords,
         assetPickerSystemKeywords: pickerKw.systemKeywords,
+        assetPickerCategories:     pickerKw.categories,
         assetPickerYears:          pickerYears
       });
     } catch (err: unknown) {

@@ -213,4 +213,36 @@ describe('WikiRoutes.searchPages — GET /search (post-#693 swap)', () => {
     expect(searchManager.search).not.toHaveBeenCalled();
     expect(searchManager.searchWiki).not.toHaveBeenCalled();
   });
+
+  it('#691: server-injects assetPickerCategories from SearchManager.getAllCategories', async () => {
+    const routes = makeRoutes();
+    const searchManager = {
+      getAllUserKeywords:   vi.fn().mockResolvedValue(['kw1']),
+      getAllSystemKeywords: vi.fn().mockResolvedValue(['sk1']),
+      getAllCategories:     vi.fn().mockResolvedValue(['General', 'Documentation'])
+    };
+    (routes.engine.getManager as ReturnType<typeof vi.fn>).mockImplementation(
+      (name: string) => (name === 'SearchManager' ? searchManager : null)
+    );
+    const res = makeRes();
+
+    await routes.searchPages(makeReq(), res);
+
+    expect(res.render).toHaveBeenCalledWith('browse-attachments', expect.objectContaining({
+      assetPickerCategories:     ['General', 'Documentation'],
+      assetPickerUserKeywords:   ['kw1'],
+      assetPickerSystemKeywords: ['sk1']
+    }));
+  });
+
+  it('#691: assetPickerCategories defaults to [] when SearchManager is unavailable (graceful)', async () => {
+    const routes = makeRoutes(); // makeEngine getManager → null
+    const res = makeRes();
+
+    await routes.searchPages(makeReq(), res);
+
+    expect(res.render).toHaveBeenCalledWith('browse-attachments', expect.objectContaining({
+      assetPickerCategories: []
+    }));
+  });
 });

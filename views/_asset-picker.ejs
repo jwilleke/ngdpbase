@@ -16,10 +16,13 @@
  *                            inputs from a bookmarked /search?since=&until= URL)
  *   assetPickerInitFilters : { category?: string[], keywords?: string[],
  *                              systemKeywords?: string[], searchIn?: string[] } | undefined
- *                            UI controls for these are tracked in #691; this slice (#696)
- *                            just threads them through to /api/assets/search so bookmarked
- *                            URLs like /search?category=foo continue returning filtered
- *                            results.
+ *                            Pages-only UI controls (#691): category +
+ *                            user/system keyword multi-selects (+ #739
+ *                            Full-text for searchIn). Bookmarked URLs like
+ *                            /search?category=foo seed the controls and
+ *                            still return filtered results.
+ *   assetPickerCategories  : string[] | undefined  (#691: server-injected
+ *                            category catalog for the Pages category select)
  */
 var _apMode        = typeof assetPickerMode        !== 'undefined' ? assetPickerMode        : 'page';
 var _apInsert      = typeof assetPickerInsert       !== 'undefined' ? assetPickerInsert       : false;
@@ -30,9 +33,10 @@ var _apInitMime    = typeof assetPickerInitMime     !== 'undefined' ? assetPicke
 var _apInitSince   = typeof assetPickerInitSince    !== 'undefined' ? assetPickerInitSince    : '';
 var _apInitUntil   = typeof assetPickerInitUntil    !== 'undefined' ? assetPickerInitUntil    : '';
 var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPickerInitFilters ? assetPickerInitFilters : {};
-// #691: Pages-only keyword filter catalogs (server-injected; index-accurate).
+// #691: Pages-only filter catalogs (server-injected; index-accurate).
 var _apUserKwCatalog = typeof assetPickerUserKeywords   !== 'undefined' && Array.isArray(assetPickerUserKeywords)   ? assetPickerUserKeywords   : [];
 var _apSysKwCatalog  = typeof assetPickerSystemKeywords !== 'undefined' && Array.isArray(assetPickerSystemKeywords) ? assetPickerSystemKeywords : [];
+var _apCatCatalog    = typeof assetPickerCategories     !== 'undefined' && Array.isArray(assetPickerCategories)     ? assetPickerCategories     : [];
 // #745: available media years (server-injected from MediaManager.getYears()).
 var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(assetPickerYears) ? assetPickerYears : [];
 %>
@@ -133,6 +137,16 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
             <input type="date" id="ap-until" class="form-control form-control-sm" style="width:8.5rem;"
                    title="Modified on or before this date" aria-label="Modified until">
         </div>
+        <%# #691: Pages-only Category filter (multi-select). Server-injected
+            catalog (SearchManager.getAllCategories); shown only when
+            source = Pages via _apUpdateControls. Empty catalog → omitted. %>
+        <% if (_apCatCatalog.length) { %>
+        <div class="col-auto" id="ap-category-col" style="display:none;">
+            <select id="ap-category" class="form-select form-select-sm" multiple size="1" title="Filter by category (Pages)" aria-label="Category">
+                <% _apCatCatalog.forEach(function (k) { %><option value="<%= k %>"><%= k %></option><% }); %>
+            </select>
+        </div>
+        <% } %>
         <%# #691: Pages-only keyword filters (multi-select). Server-injected
             catalogs; shown only when source = Pages via _apUpdateControls.
             Empty catalog → control omitted (nothing to choose). %>
@@ -254,7 +268,9 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
     var sinceEl      = document.getElementById('ap-since');
     var untilEl      = document.getElementById('ap-until');
     var pgDateColEl  = document.getElementById('ap-pgdate-col');
-    // #691: Pages-only keyword filters (may be absent if catalog empty).
+    // #691: Pages-only category + keyword filters (may be absent if catalog empty).
+    var catEl        = document.getElementById('ap-category');
+    var catColEl     = document.getElementById('ap-category-col');
     var userKwEl     = document.getElementById('ap-user-keywords');
     var userKwColEl  = document.getElementById('ap-userkw-col');
     var sysKwEl      = document.getElementById('ap-system-keywords');
@@ -349,6 +365,7 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
         if (uploadBtnEl) uploadBtnEl.style.display = isFiles ? '' : 'none';
         if (fulltextColEl) fulltextColEl.style.display = isPage ? '' : 'none';
         if (pgDateColEl) pgDateColEl.style.display = isPage ? '' : 'none';
+        if (catColEl)    catColEl.style.display    = isPage ? '' : 'none';
         if (userKwColEl) userKwColEl.style.display = isPage ? '' : 'none';
         if (sysKwColEl)  sysKwColEl.style.display  = isPage ? '' : 'none';
     }
@@ -416,6 +433,7 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
             // controls are authoritative; any bookmarked seed values were
             // moved out of _apHiddenFilters at init to avoid double-append.
             if (src === 'page') {
+                _apSelectedKw(catEl).forEach(function (v) { if (v) params.append('category', v); });
                 _apSelectedKw(userKwEl).forEach(function (v) { if (v) params.append('keywords', v); });
                 _apSelectedKw(sysKwEl).forEach(function (v) { if (v) params.append('systemKeywords', v); });
             }
@@ -747,9 +765,10 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
     <% if (_apInitUntil) { %>
     if (untilEl) untilEl.value = <%- JSON.stringify(_apInitUntil) %>;
     <% } %>
-    // #696: bookmarked page filters seeded from the URL. keywords/
-    // systemKeywords now have UI (#691) and are moved to the multi-selects
-    // below; category has no dedicated UI yet so it stays seed-forwarded.
+    // #696: bookmarked page filters seeded from the URL. category /
+    // keywords / systemKeywords now have UI (#691) and are moved to the
+    // multi-selects below; only searchIn stays seed-forwarded (its UI is
+    // the #739 Full-text toggle, reflected just below).
     var _apHiddenFilters = <%- JSON.stringify(_apInitFilters) %>;
 
     // #739: reflect a bookmarked full-text page search in the checkbox so the
@@ -759,10 +778,11 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
         fulltextEl.checked = true;
     }
 
-    // #691: reflect bookmarked keyword filters into the multi-selects, then
-    // move those keys OUT of _apHiddenFilters so the generic forward-loop
-    // won't double-append (the controls are now authoritative). category /
-    // searchIn stay in _apHiddenFilters (no dedicated UI in this slice).
+    // #691: reflect bookmarked category + keyword filters into the
+    // multi-selects, then move those keys OUT of _apHiddenFilters so the
+    // generic forward-loop won't double-append (the controls are now
+    // authoritative). Only searchIn stays in _apHiddenFilters (its UI is
+    // the #739 Full-text toggle).
     (function () {
         function _apSeed(el, vals) {
             if (!el || !Array.isArray(vals) || !vals.length) return;
@@ -772,8 +792,10 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
                 if (want[o.value]) o.selected = true;
             });
         }
+        _apSeed(catEl, _apHiddenFilters.category);
         _apSeed(userKwEl, _apHiddenFilters.keywords);
         _apSeed(sysKwEl, _apHiddenFilters.systemKeywords);
+        delete _apHiddenFilters.category;
         delete _apHiddenFilters.keywords;
         delete _apHiddenFilters.systemKeywords;
     })();
