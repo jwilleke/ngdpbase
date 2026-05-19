@@ -2,6 +2,26 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-19-02
+
+- Agent: Claude Opus 4.7
+- Subject: #745 — Pages last-modified date filter in the asset-picker (operator-chosen filters-row placement); released v3.23.0 + `/othersites`.
+- Current Issue: #745 (pages-date delivered; asset capture-date range still needs #519 — NOT closed). Builds on #643 (v3.22.0) + #735 (v3.22.0).
+- Tests: unit 5652/5652 (+6 assetSearch) + E2E 72/72 on jimstest at release commit `98be36a2` (Step 8a); all 3 satellites 5652/5652 + 72/72. Zero flakes. Perf drift vs v3.22.0 exited 0 (memory +17.9% < 25% — long-running-server RSS noise, same class as the +5.9% last release; `/` −80% = cold→warm; #745 adds only in-memory date-string compares).
+- Work Done:
+  - Operator picked the UI placement (asked, given #735 changed the context vs #745's original "fold into the sort dropdown" idea): a Pages-only date control in the #735 filters row, not inside the sort dropdown-button.
+  - Verified-first: `AdvancedSearchOptions` has an index signature; `SearchManager.advancedSearchWithContext` spreads options into `provider.advancedSearch`; `LunrSearchProvider:613` already honours `dateRange` (whole-day UTC on `metadata.lastModified`, from #643). So #745 needed NO manager/provider change — purely route param-wiring + UI.
+  - Backend (`WikiRoutes.assetSearch`, `types=page` branch): parse `since`/`until`/`date` mirroring SearchPlugin #643 exactly (`^\d{4}-\d{2}-\d{2}$`; `date` = whole-day → both bounds; invalid → 400 JSON; no search call on invalid). `dateRange` attached to the `advancedSearchWithContext` options only when a bound is given (no-date path byte-identical).
+  - UI (`_asset-picker.ejs`): Pages-only `#ap-pgdate-col` with native `#ap-since` / `#ap-until` `<input type=date>` in the filters row; `_apUpdateControls` shows it only when `source=Pages` (mirrors Full-text/keyword Pages controls); `_apSearch` sends `since`/`until` for `src=page`. Bookmarked `/search?types=page&since=&until=&date=` now seeds the inputs (`searchPages` threads `initSince`/`initUntil` → `browse-attachments` → picker init), same pattern as query/source/mime.
+  - +6 assetSearch tests: since/until/both/date-whole-day → `dateRange`; invalid → 400 + no search; no-date no-op guard. Smoke-verified on jimstest: control renders Pages-only, API filters (`since=2099`/`until=2000` differential → 0 of 200), invalid → 400, bookmark seeds inputs+source.
+  - Caveat: picker show/hide + send wired and curl-verified, but the date control was not browser-eyeballed (same caveat class as #735).
+- Flakes seen: none. Perf: no regression (drift script exit 0).
+- Commits: `623fa192` (feat #745), `98be36a2` (chore: release v3.23.0), plus this log entry.
+- Files Modified:
+  - src/routes/WikiRoutes.ts, src/routes/**tests**/WikiRoutes.assetSearch.test.ts, views/_asset-picker.ejs, views/browse-attachments.ejs
+  - package.json, config/app-default-config.json, CHANGELOG.md, docs/performance/baseline-v3.23.0-2026-05-19.md
+  - docs/project_log.md
+
 ## 2026-05-19-01
 
 - Agent: Claude Opus 4.7
