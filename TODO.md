@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-19T15:45:00.000Z'
+lastModified: '2026-05-19T16:30:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -34,11 +34,13 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 ## Open BUGS (ngdpbase, by issue #)
 
-4 open as of 2026-05-19. #748 **fixed v3.24.2** (`in review` — awaiting operator browser-confirm). #749 pairs with #599; #660 non-actionable. No untriaged functional bug remains.
+6 open as of 2026-05-19. #748/#752 **fixed** (`in review`). #753 = deferred core MarkupParser fix. #749 pairs with #599; #660 non-actionable. No untriaged functional bug remains.
 
 | # | Title |
 |---|---|
-| #748 | `[{Insert}]` repeated the transcluded title + made it an editable/numbered host section. v3.24.2 (`5ccd3b91`: view.ejs section-edit `.insert-plugin` filter + no-caption guard) was **insufficient** for the title-dup. **Real fix v3.24.3** (`b792c39d`): root cause was **CRLF** source content — `applyCaption`'s `split('\n')` left a `\r` that defeated the heading regex, so the caption was prepended as a 2nd heading. Now CRLF-normalised + first-non-blank detection; verified on the live reported page (one heading). `in review` — needs operator browser-confirm (caption result + the v3.24.2 pencil/renumber) |
+| #748 | `[{Insert}]` repeated the transcluded title + made it an editable/numbered host section. v3.24.2 was insufficient; **real fix v3.24.3** (`b792c39d`): root cause **CRLF** source defeated `applyCaption`'s heading regex → caption prepended as 2nd heading. CRLF-normalised + first-non-blank detection; verified live (one heading). `in review` |
+| #752 | `[{Insert}]` silently dropped caption when a misplaced quote made the param regex swallow `caption=` into the target. **Fixed v3.24.4** (`ce32631c`): InsertPlugin-local guard → visible "malformed parameters" notice. `in review` |
+| #753 | **MarkupParser** leaks `data-jspwiki-placeholder` spans for CommonMark variable-length backtick code spans (```` ``` ````); the inner ` ``` ` is mis-detected as a fence and cascade-corrupts placeholder restore (e.g. `/view/Using InsertPlugin`). Interim doc reword shipped v3.24.4; **core fix open** — high-blast-radius `MarkupParser.ts`, own focused session (full unit+E2E+multi-page render) |
 | #749 | Showdown CVE-2024-1899 patch check — filed 2026-05-19; recurring tracking task to re-check for an upstream `showdown` patch (pairs with #599 / Dependabot GHSA-rmmh-p597-ppvv). Not a code bug |
 | #660 | Agent and ./docs documentation — tooling shipped; 49 doc-stub warnings remain for source-only modules (stub-creation backlog; cosmetic, non-blocking) |
 | #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); tracked by Dependabot / #749 |
