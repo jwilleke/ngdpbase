@@ -11,6 +11,9 @@
  *                            (pre-select source filter)
  *   assetPickerInitMime    : 'image' | 'document' | 'other' | '' | undefined
  *                            (pre-select mime category filter, attachments only)
+ *   assetPickerInitSince   : 'YYYY-MM-DD' | '' | undefined  (#745: seed the
+ *   assetPickerInitUntil   : 'YYYY-MM-DD' | '' | undefined   Pages date range
+ *                            inputs from a bookmarked /search?since=&until= URL)
  *   assetPickerInitFilters : { category?: string[], keywords?: string[],
  *                              systemKeywords?: string[], searchIn?: string[] } | undefined
  *                            UI controls for these are tracked in #691; this slice (#696)
@@ -24,6 +27,8 @@ var _apPageName    = typeof assetPickerPageName     !== 'undefined' ? assetPicke
 var _apInitQuery   = typeof assetPickerInitQuery    !== 'undefined' ? assetPickerInitQuery    : '';
 var _apInitSource  = typeof assetPickerInitSource   !== 'undefined' ? assetPickerInitSource   : '';
 var _apInitMime    = typeof assetPickerInitMime     !== 'undefined' ? assetPickerInitMime     : '';
+var _apInitSince   = typeof assetPickerInitSince    !== 'undefined' ? assetPickerInitSince    : '';
+var _apInitUntil   = typeof assetPickerInitUntil    !== 'undefined' ? assetPickerInitUntil    : '';
 var _apInitFilters = typeof assetPickerInitFilters  !== 'undefined' && assetPickerInitFilters ? assetPickerInitFilters : {};
 // #691: Pages-only keyword filter catalogs (server-injected; index-accurate).
 var _apUserKwCatalog = typeof assetPickerUserKeywords   !== 'undefined' && Array.isArray(assetPickerUserKeywords)   ? assetPickerUserKeywords   : [];
@@ -114,6 +119,19 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
                 <input class="form-check-input" type="checkbox" id="ap-fulltext">
                 <label class="form-check-label small" for="ap-fulltext" title="Off = match page titles only (default). On = also search page body/content.">Full text</label>
             </div>
+        </div>
+        <%# #745: Pages-only last-modified date range. Native date inputs;
+            shown only when source = Pages via _apUpdateControls. _apSearch
+            sends since=/until= → SearchCriteria.dateRange (inclusive,
+            whole-day UTC), honoured by LunrSearchProvider/ES. Pages have no
+            creation timestamp — this is last-modified only. %>
+        <div class="col-auto d-flex align-items-center gap-1" id="ap-pgdate-col" style="display:none;">
+            <label class="form-label small mb-0 me-1" for="ap-since">Modified</label>
+            <input type="date" id="ap-since" class="form-control form-control-sm" style="width:8.5rem;"
+                   title="Modified on or after this date (last-modified; pages have no creation date)" aria-label="Modified since">
+            <span class="small text-muted">–</span>
+            <input type="date" id="ap-until" class="form-control form-control-sm" style="width:8.5rem;"
+                   title="Modified on or before this date" aria-label="Modified until">
         </div>
         <%# #691: Pages-only keyword filters (multi-select). Server-injected
             catalogs; shown only when source = Pages via _apUpdateControls.
@@ -232,6 +250,10 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
     var sortEl       = document.getElementById('ap-sort');
     var fulltextEl   = document.getElementById('ap-fulltext');
     var fulltextColEl = document.getElementById('ap-fulltext-col');
+    // #745: Pages-only last-modified date range.
+    var sinceEl      = document.getElementById('ap-since');
+    var untilEl      = document.getElementById('ap-until');
+    var pgDateColEl  = document.getElementById('ap-pgdate-col');
     // #691: Pages-only keyword filters (may be absent if catalog empty).
     var userKwEl     = document.getElementById('ap-user-keywords');
     var userKwColEl  = document.getElementById('ap-userkw-col');
@@ -326,6 +348,7 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
         if (yearColEl)   yearColEl.style.display   = isFiles ? '' : 'none';
         if (uploadBtnEl) uploadBtnEl.style.display = isFiles ? '' : 'none';
         if (fulltextColEl) fulltextColEl.style.display = isPage ? '' : 'none';
+        if (pgDateColEl) pgDateColEl.style.display = isPage ? '' : 'none';
         if (userKwColEl) userKwColEl.style.display = isPage ? '' : 'none';
         if (sysKwColEl)  sysKwColEl.style.display  = isPage ? '' : 'none';
     }
@@ -395,6 +418,14 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
             if (src === 'page') {
                 _apSelectedKw(userKwEl).forEach(function (v) { if (v) params.append('keywords', v); });
                 _apSelectedKw(sysKwEl).forEach(function (v) { if (v) params.append('systemKeywords', v); });
+            }
+
+            // #745: Pages-only last-modified date range. Native date inputs
+            // already emit YYYY-MM-DD (or '' when empty) — no reformatting.
+            // Server validates the format and maps to dateRange.
+            if (src === 'page') {
+                if (sinceEl && sinceEl.value) params.set('since', sinceEl.value);
+                if (untilEl && untilEl.value) params.set('until', untilEl.value);
             }
 
             var resp = await csrfFetch('/api/assets/search?' + params.toString());
@@ -707,6 +738,14 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
     <% } %>
     <% if (_apInitMime) { %>
     if (mimeEl) mimeEl.value = <%- JSON.stringify(_apInitMime) %>;
+    <% } %>
+    <%# #745: reflect a bookmarked Pages date range into the inputs so the
+        UI matches /search?types=page&since=&until=. %>
+    <% if (_apInitSince) { %>
+    if (sinceEl) sinceEl.value = <%- JSON.stringify(_apInitSince) %>;
+    <% } %>
+    <% if (_apInitUntil) { %>
+    if (untilEl) untilEl.value = <%- JSON.stringify(_apInitUntil) %>;
     <% } %>
     // #696: bookmarked page filters seeded from the URL. keywords/
     // systemKeywords now have UI (#691) and are moved to the multi-selects

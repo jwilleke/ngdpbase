@@ -418,6 +418,91 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       );
     });
 
+    // #745: Pages last-modified date filter. since/until/date → the
+    // SearchCriteria.dateRange that LunrSearchProvider/ES already honour.
+    it('threads since= as dateRange.from to advancedSearchWithContext (#745)', async () => {
+      const search = makeSearchManager();
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
+      const req = makeReq({ query: { types: 'page', since: '2026-01-15' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(search.advancedSearchWithContext).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ dateRange: { from: '2026-01-15' } })
+      );
+    });
+
+    it('threads until= as dateRange.to to advancedSearchWithContext (#745)', async () => {
+      const search = makeSearchManager();
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
+      const req = makeReq({ query: { types: 'page', until: '2026-03-31' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(search.advancedSearchWithContext).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ dateRange: { to: '2026-03-31' } })
+      );
+    });
+
+    it('threads since + until as a closed dateRange (#745)', async () => {
+      const search = makeSearchManager();
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
+      const req = makeReq({ query: { types: 'page', since: '2026-01-01', until: '2026-01-31' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(search.advancedSearchWithContext).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ dateRange: { from: '2026-01-01', to: '2026-01-31' } })
+      );
+    });
+
+    it('date= seeds both bounds (whole-day) (#745)', async () => {
+      const search = makeSearchManager();
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
+      const req = makeReq({ query: { types: 'page', date: '2026-05-07' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(search.advancedSearchWithContext).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ dateRange: { from: '2026-05-07', to: '2026-05-07' } })
+      );
+    });
+
+    it('rejects a non-YYYY-MM-DD date with 400 and does NOT search (#745)', async () => {
+      const search = makeSearchManager();
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
+      const req = makeReq({ query: { types: 'page', since: '15-01-2026' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false }));
+      expect(search.advancedSearchWithContext).not.toHaveBeenCalled();
+    });
+
+    it('omits dateRange entirely when no date param is given (#745 no-op guard)', async () => {
+      const search = makeSearchManager();
+      const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);
+      const req = makeReq({ query: { types: 'page', q: 'beach' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(search.advancedSearchWithContext).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.not.objectContaining({ dateRange: expect.anything() })
+      );
+    });
+
     it('threads explicit searchIn value', async () => {
       const search = makeSearchManager();
       const routes = makeRoutesWithPages(makeAssetService(), makePageManager(), search);

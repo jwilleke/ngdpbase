@@ -3217,6 +3217,13 @@ ${panes}
         searchIn:       queryParamArray(req.query.searchIn)
       };
 
+      // #745: pre-populate the Pages date inputs from a bookmarked URL.
+      // `date` (whole-day) seeds both bounds; the assetSearch route does the
+      // authoritative YYYY-MM-DD validation, so this is best-effort seeding.
+      const initDate  = firstString(req.query.date);
+      const initSince = initDate || firstString(req.query.since);
+      const initUntil = initDate || firstString(req.query.until);
+
       const commonData = await this.getCommonTemplateData(req);
       const pickerKw = await this.getPickerKeywordCatalogs();
       const pickerYears = await this.getPickerYears();
@@ -3227,6 +3234,8 @@ ${panes}
         assetPickerInitQuery:   initQuery,
         assetPickerInitSource:  initSource,
         assetPickerInitMime:    initMime,
+        assetPickerInitSince:   initSince,
+        assetPickerInitUntil:   initUntil,
         assetPickerInitFilters: initFilters,
         assetPickerUserKeywords:   pickerKw.userKeywords,
         assetPickerSystemKeywords: pickerKw.systemKeywords,
@@ -8184,6 +8193,25 @@ ${panes}
         // searchIn=all; bookmarked ?searchIn=content|all still works.
         if (searchIn.length === 0) searchIn = ['title'];
 
+        // #745: last-modified date filter for the picker's Pages source.
+        // Mirrors SearchPlugin #643 exactly — `date` = whole-day match;
+        // otherwise since (lower bound) / until (upper bound). Pages carry no
+        // creation timestamp, so this is last-modified only. Forwarded as
+        // SearchCriteria.dateRange, which LunrSearchProvider.advancedSearch
+        // (and ES) honour as inclusive whole-day UTC bounds.
+        const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+        const rawDate  = typeof req.query.date  === 'string' ? req.query.date.trim()  : '';
+        const rawSince = typeof req.query.since === 'string' ? req.query.since.trim() : '';
+        const rawUntil = typeof req.query.until === 'string' ? req.query.until.trim() : '';
+        const dateFrom = rawDate || rawSince;
+        const dateTo   = rawDate || rawUntil;
+        if ((dateFrom && !dateRe.test(dateFrom)) || (dateTo && !dateRe.test(dateTo))) {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid date parameter: use YYYY-MM-DD (since / until / date)'
+          });
+        }
+
         // #731 Slice 3: always use the SearchManager/index path for pages.
         // Slice 1 made the no-text branch ACL-safe AND rich (title / excerpt /
         // system-category / keywords / lastModified) and it is O(n) in-memory
@@ -8222,6 +8250,14 @@ ${panes}
             userKeywords,
             systemKeywords,
             searchIn,
+            // #745: only attach dateRange when a bound was given so the
+            // common no-date path is byte-identical to before.
+            ...(dateFrom || dateTo
+              ? { dateRange: {
+                ...(dateFrom ? { from: dateFrom } : {}),
+                ...(dateTo ? { to: dateTo } : {})
+              } }
+              : {}),
             maxResults: fetchLimit
           });
           // #699: detect cap saturation. Same trade-off as the user branch — when
