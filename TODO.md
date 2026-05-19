@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-19T09:40:00.000Z'
+lastModified: '2026-05-19T10:05:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -70,8 +70,9 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images (security+size) | Low — #728 Phase-2 hardening split-out; config-gated, adds sharp/libvips; do when a real driver appears |
 | #736 | `config/app-default-config.json` documentation | Low — filed 2026-05-17; doc task; large config surface incl. new NCM keys |
 | #729 | Improvements to `[{Location}]` | Low — filed 2026-05-16; good-first-issue; Location plugin follow-ups |
-| #744 | [EPIC] Search-picker IA simplification — consolidate `/search` asset-picker controls (sist2-style) | **Medium — actively driven (operator, 2026-05-18).** Children: #721 (slice 1 = Advanced disclosure, design decided), #720 (Video/Audio format options), #691 (Pages filter UI). Pure IA/markup, behaviour-preserving; one slice per PR. Out of scope: #550 / AI / semantic, #643 (SearchPlugin), #722 (presentation). Mobile-parity dependency (#735) **resolved v3.22.0** — asset-picker toolbar is now responsive (2-row panel) |
-| #745 | Real date search in the asset-picker (asset capture-date range only) | **Low — blocked on #519.** Media-year shipped v3.21.0; **pages-date shipped v3.23.0** (filters-row Since/Until → `SearchCriteria.dateRange`). Only remaining scope is a precise asset *capture-date* range (EXIF/mtime), which needs provider-side date filtering = **#519**. Stays open until #519 lands |
+| #744 | [EPIC] Search-picker IA simplification — consolidate `/search` asset-picker controls (sist2-style) | **Medium.** Most slices shipped: #735 (responsive 2-row toolbar, v3.22.0), #720 (format facets), #691 (keywords/system-keywords/searchIn — now narrowed to **Category-only**), #745 (date — **closed, shipped** v3.21/3.23). #721 **closed** (collapse obsolete — panel removed under #744). Out of scope: #550/AI/semantic, #643, #722 |
+| #691 | Asset-picker: **Category** multi-select for source=Pages | Low — keywords/system-keywords/searchIn already shipped; only the Category control remains (mirror the keyword multi-select pattern; backend already honours `category=`) |
+| #750 | Index video capture-date (CreateDate/MediaCreateDate) | Low — real remnant split out of closed #721; enabler for the asset capture-date range half (with **#519** provider-side filter). Do alongside #519 |
 | #722 | Video poster-frame thumbnails (ffmpeg) | Low — related to #744 (better video tiles make the video filter useful) but **not a child**: result presentation + adds ffmpeg dep. #731 shipped v3.16.0; fills the video thumbnail cell |
 | #707 | Typed footnote + knowledge-graph reference index | Low — speculative; **depends on #706**; defer behind a named citation-heavy user (2026-05-16 brainstorm) |
 | #706 | `knowledge-role` frontmatter field — opt-in page role | Low — sharpened to field+enum+badge; **foundational, blocks #707**; design in `docs/planning/ideas/llm-wiki-pattern.md` |
