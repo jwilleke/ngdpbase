@@ -1,7 +1,7 @@
 /**
  * ngdp Compatible Markdown (NCM) — module barrel (#728)
  *
- * Spec: docs/planning/plan-ngdp-compatible-markdown.md
+ * Spec: docs/NGDP-Compatible-Markdown.md
  * Phase 2: S1 core types + idempotent normalizer + placeholder;
  * S2 HTML/JSPWiki→NCM conversion + §2.4 link normalization.
  *

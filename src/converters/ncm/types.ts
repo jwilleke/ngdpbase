@@ -1,7 +1,7 @@
 /**
  * ngdp Compatible Markdown (NCM) — core types (#728, Phase 2 Slice 1)
  *
- * Spec: docs/planning/plan-ngdp-compatible-markdown.md
+ * Spec: docs/NGDP-Compatible-Markdown.md
  *
  * These are NCM-local types. The shared `ConversionResult.warnings`
  * (string[]) used by ImportManager/ValidationManager/the converters is NOT

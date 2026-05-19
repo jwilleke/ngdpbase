@@ -433,7 +433,7 @@ member and not a filter link. Examples in this codebase:
 Note: Chips and Badges currently share the Bootstrap `.badge` CSS class — the
 **visual is not the semantic**. Both are *rendered product* (produced from
 frontmatter/config at view time), so neither is an authoring construct in page
-Markdown — see [`docs/planning/plan-ngdp-compatible-markdown.md`](./planning/plan-ngdp-compatible-markdown.md) §2.1/§3.2 (#728).
+Markdown — see [`docs/NGDP-Compatible-Markdown.md`](./NGDP-Compatible-Markdown.md) §2.1/§3.2 (#728).
 
 ---
 

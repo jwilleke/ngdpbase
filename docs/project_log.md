@@ -2,6 +2,23 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-19-04
+
+- Agent: Claude Opus 4.7
+- Subject: NCM documentation — publish canonical `docs/NGDP-Compatible-Markdown.md`; remove the superseded draft plan; repoint inbound refs.
+- Current Issue: none (doc hygiene; #728 closed). Refs #728/#737/#738.
+- Tests: build clean (src change is comment-only — `Spec:` header path in two ncm files). No unit/E2E gate needed (docs + comment-only, zero behavior change); semver skip; no /othersites.
+- Work Done:
+  - Operator asked NCM status: confirmed #728 **closed**, Phase-1+2 shipped v3.18.0, MCP-wired (`mcp-server.ts` → `normalizeExistingPageToNcm`/`notifyNcmConversion`), but the only doc was `docs/planning/plan-ngdp-compatible-markdown.md` whose header still said "Draft spec — not yet implemented" (stale/misleading) and there was no canonical reference.
+  - Wrote `docs/NGDP-Compatible-Markdown.md` — canonical reference, present-tense/shipped-state, folding the plan's authoritative substance (contract, constructs, image→attachment rule, links §2.4, normalizer API, determinism, taxonomy preservation, §3.3 placeholder, consumers, resolved decisions, no-auto-migration guarantee, #737/#738 follow-ups). Verified specifics against `src/converters/ncm/*` (`NCM_VERSION = 1`, barrel exports, placeholder regex `^> ⚠️ NCM-DROPPED \[...\]: .+$`, config keys `ngdpbase.fetch-timeout-ms` / `ngdpbase.markdown.ncm.image.ad-deny-list`).
+  - Repointed the 3 inbound refs to the new path: `src/converters/ncm/types.ts`, `src/converters/ncm/index.ts` (`Spec:` headers), `docs/GLOSSARY.md` (link). Historical `docs/project_log.md` references left as point-in-time records (not rewritten).
+  - `git rm docs/planning/plan-ngdp-compatible-markdown.md` (superseded; content preserved in the canonical doc).
+- Commits: this entry + the doc commit.
+- Files Modified:
+  - docs/NGDP-Compatible-Markdown.md (new), docs/planning/plan-ngdp-compatible-markdown.md (removed)
+  - docs/GLOSSARY.md, src/converters/ncm/index.ts, src/converters/ncm/types.ts
+  - docs/project_log.md
+
 ## 2026-05-19-03
 
 - Agent: Claude Opus 4.7
