@@ -59,7 +59,16 @@
 document.addEventListener('DOMContentLoaded', function () {
     var body = document.querySelector('.markdown-body');
     if (!body) return;
-    var headings = body.querySelectorAll('h1, h2, h3, h4, h5, h6');
+    // #748: headings inside an InsertPlugin (.insert-plugin) block are
+    // transcluded from another page — they are NOT sections of THIS page's
+    // markdown. Decorating them gave a bogus "edit this section" pencil and
+    // shifted every real ?section=i index after an Insert (the server's
+    // ?section=N counts host-markdown headings only). Filter them out so the
+    // client index mirrors the server's host-only section numbering.
+    var headings = Array.prototype.filter.call(
+        body.querySelectorAll('h1, h2, h3, h4, h5, h6'),
+        function (h) { return !h.closest('.insert-plugin'); }
+    );
     headings.forEach(function (h, i) {
         var a = document.createElement('a');
         a.href = '/edit/<%= encodeURIComponent(pageName) %>?section=' + i;

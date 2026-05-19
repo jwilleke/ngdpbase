@@ -246,6 +246,52 @@ describe('InsertPlugin', () => {
     });
   });
 
+  describe('#748 — no-caption full-page must not duplicate a leading title', () => {
+    function pmWith(content: string, title?: string) {
+      return {
+        getPage: vi.fn().mockResolvedValue({
+          content,
+          metadata: title ? { title } : {}
+        })
+      };
+    }
+
+    test('source body already leads with a heading → NO "## <title>" prepended', async () => {
+      // The standard page template starts with `# [{$pagename}]`.
+      const rm = { renderMarkdown: vi.fn().mockImplementation(async (c: string) => `<rendered>${c}</rendered>`) };
+      const ctx = makeContext({ pageManager: pmWith('# [{$pagename}]\n\nReported symptoms.', 'MEW-Current Symptoms'), renderingManager: rm });
+
+      await InsertPlugin.execute!(ctx, { page: 'MEW-Current Symptoms' });
+
+      const rendered = (rm.renderMarkdown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      // The body's own heading is kept verbatim as line 0; no second title.
+      expect(rendered.split('\n')[0]).toBe('# [{$pagename}]');
+      expect(rendered).not.toContain('## MEW-Current Symptoms');
+      expect(rendered).not.toMatch(/^## /); // nothing prepended at all
+    });
+
+    test('source body has NO leading heading → still prepends "## <title>" (#741 preserved)', async () => {
+      const rm = { renderMarkdown: vi.fn().mockImplementation(async (c: string) => `<rendered>${c}</rendered>`) };
+      const ctx = makeContext({ pageManager: pmWith('Just body text, no heading.', 'Src Title'), renderingManager: rm });
+
+      await InsertPlugin.execute!(ctx, { page: 'SrcPage' });
+
+      const rendered = (rm.renderMarkdown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(rendered.startsWith('## Src Title\n\n')).toBe(true);
+    });
+
+    test('explicit caption still replaces the source heading (regression)', async () => {
+      const rm = { renderMarkdown: vi.fn().mockImplementation(async (c: string) => `<rendered>${c}</rendered>`) };
+      const ctx = makeContext({ pageManager: pmWith('# Original Heading\n\nbody', 'Src'), renderingManager: rm });
+
+      await InsertPlugin.execute!(ctx, { page: 'SrcPage', caption: 'My Caption' });
+
+      const rendered = (rm.renderMarkdown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(rendered.split('\n')[0]).toBe('# My Caption');
+      expect(rendered).not.toContain('Original Heading');
+    });
+  });
+
   describe('attribution', () => {
     test('full-page attribution links to /view/<encodedPageName>', async () => {
       const ctx = makeContext();
@@ -400,8 +446,14 @@ describe('InsertPlugin', () => {
       expect(calls[0][1]).not.toBe('MEW-Medical Summary');
     });
 
-    test('whole-page insert prepends "## <pageName>" when no caption', async () => {
-      const ctx = makeContext(); // default content: "# Title\n\nFull body..."
+    test('whole-page insert prepends "## <pageName>" when no caption and body has no leading heading', async () => {
+      // #748: prepend only when the source body does NOT already lead with
+      // its own heading (otherwise the title rendered twice). pageName is the
+      // fallback when there is no metadata.title.
+      const pm = {
+        getPage: vi.fn().mockResolvedValue({ content: 'Body, no heading.', metadata: {} })
+      };
+      const ctx = makeContext({ pageManager: pm });
       const result = await InsertPlugin.execute!(ctx, { page: 'TargetPage' }) as string;
       expect(result).toContain('## TargetPage');
     });

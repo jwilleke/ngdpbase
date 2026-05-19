@@ -243,10 +243,19 @@ const InsertPlugin: SimplePlugin = {
       // heading so the inserted block is identifiably the source page (per
       // operator spec on the #741 follow-up). Section inserts keep their
       // own heading instead. Plain text — the markdown renderer escapes it.
-      const sourceTitle = (typeof metadata.title === 'string' && metadata.title.trim())
-        ? metadata.title.trim()
-        : pageName;
-      content = `## ${sourceTitle}\n\n${content}`;
+      //
+      // #748: but only when the source body does NOT already lead with its
+      // own heading. The standard page template starts with `# [{$pagename}]`
+      // (and Insert renders under the SOURCE page name, so it resolves to the
+      // source title) — blindly prepending here produced the title TWICE.
+      // An existing leading heading already identifies the source; leave it.
+      const firstLine = content.split('\n', 1)[0] ?? '';
+      if (!/^#{1,6}\s+\S/.test(firstLine)) {
+        const sourceTitle = (typeof metadata.title === 'string' && metadata.title.trim())
+          ? metadata.title.trim()
+          : pageName;
+        content = `## ${sourceTitle}\n\n${content}`;
+      }
     }
 
     // No-recursion guard — strip nested Insert syntax before render so plugins
