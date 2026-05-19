@@ -2,6 +2,25 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-19-01
+
+- Agent: Claude Opus 4.7
+- Subject: #735 — responsive `/search` asset-picker (2-row panel, scales for #745); released as v3.22.0 (also ships the previously-unreleased #643 feat) + `/othersites`.
+- Current Issue: #735 (delivered, in review — not browser-eyeballed for dark/light visual). Release also ships #643 (still operator-open: modified delivered, `created` infeasible — split recommendation stands). Refs #745.
+- Tests: unit 5646/5646, E2E 72/72 on jimstest at the release commit `1d903769` (Step 8a); all 3 satellites 5646/5646 + 72/72. Zero flakes. Perf drift vs v3.21.0 exited 0 (memory +5.9% < 25%; routes within ±5 ms warm — no cold-start false positive this time).
+- Work Done:
+  - Operator report: `/search` unusable on mobile — single Bootstrap `.row` mixed the query input, every filter select and both action buttons; on a phone they wrapped into each other, the query box collapsed to a sliver, and the area had no visual edge in either theme. Operator also flagged it "may be worse when adding #745" (a pages-date control lands in the same bar).
+  - `views/_asset-picker.ejs`: wrapped controls in a theme-aware bordered panel (`border` + `bg-body-tertiary`, both adapt to `data-bs-theme` light/dark). Row 1 = query (`col`, full remaining width) + Search/Upload kept together. Row 2 = isolated flex-wrap of the filters (source/format/year/full-text/keyword) so they wrap among themselves instead of shoving the buttons. Scoped `.ap-filters` CSS: filter selects get a min-width and go full-width one-per-line on phones (<576px) — this also makes the bar absorb a future #745 page-date control by wrapping, not breaking. All `#ap-*` element IDs unchanged → the existing asset-picker JS wiring (`_apUpdateControls`, search/upload handlers) untouched.
+  - Verified-first: E2E/unit target the picker by `#ap-*` IDs only (no DOM-structure assertions) → restructure is safe. `/search` markup smoke-verified via curl (`ap-panel`, exactly 2 panel rows, all IDs present, no error markers). Caveat: not browser-eyeballed for the dark/light visual or true narrow-viewport render.
+  - Semver call surfaced to operator: the v3.21.0..HEAD range also contained the unreleased `c01e630b feat(search): #643`; patch would under-version a feat. Operator chose `minor` → v3.22.0 (auto-published GitHub release + `/othersites`).
+  - `package-lock.json` had a pre-existing stale `version` field (3.14.5→3.21.0, predates this session, unrelated to #735) — restored to tracked state rather than fold an unrelated lockfile edit into a #735 release.
+- Flakes seen: none. Perf: no regression (drift script exit 0).
+- Commits: `442b6346` (fix #735), `1d903769` (chore: release v3.22.0), plus this log entry.
+- Files Modified:
+  - views/_asset-picker.ejs
+  - package.json, config/app-default-config.json, CHANGELOG.md, docs/performance/baseline-v3.22.0-2026-05-19.md
+  - docs/project_log.md
+
 ## 2026-05-18-13
 
 - Agent: Claude Opus 4.7
