@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-20T23:00:00.000Z'
+lastModified: '2026-05-20T23:35:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -69,7 +69,7 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | #756 | Slice 1 of #755 — CatalogManager audit: docs + minimum-API recommendation | **Shipped 2026-05-20** (`7a68b718`) — `in review`. `docs/managers/CatalogManager.md` created. Closed CatalogManager warning in #660 docs-coverage (managers 24→25/37) |
 | #757 | Slice 2 of #755 — `src/types/Schema.ts`: CreativeWork + subtypes + per-source mapper signatures | **Shipped 2026-05-20** (`8fd3a996`) — `in review`. 5 subtypes + CatalogSource interface + 5 type guards + 17 tests. Unblocks Slices 3–6 |
 | #758 | Slice 3 of #755 — MediaManager-as-CatalogSource + asset-picker duration badge | **CLOSED 2026-05-20** — shipped v3.26.0 + v3.26.1 patch (`48611f21`+`77596e01`+`16cac01d`). Operator-confirmed working in browser. toAssetRecord re-derivation deferred (won't land unless a consumer needs it). Satellites pick up patch on next minor |
-| #759 | Slice 5 of #755 — AttachmentManager-as-CatalogSource + PDF/docx metadata extraction | **Shipped 2026-05-20** (`b348bfd4`) — `in review`. exiftool-based extraction of Title/Author/Subject/Keywords/CreationDate/ModDate/Language for PDF + 3 OOXML formats; AttachmentManager implements CatalogSource. Attachments now findable beyond filename via search. Caveat: NEW uploads only — backfill job deferred. Text body extraction (articleBody) split to future Slice 5b |
+| #759 | Slice 5 of #755 — AttachmentManager-as-CatalogSource + PDF/docx metadata extraction | **Shipped v3.27.0 2026-05-20** (`b348bfd4`+cast-fixes `9ceb88f7`/`4029f1d6`) — `in review`. exiftool-based extraction of Title/Author/Subject/Keywords/CreationDate/ModDate/Language for PDF + 3 OOXML formats; AttachmentManager implements CatalogSource. Attachments now findable beyond filename via search. Caveat: NEW uploads only — backfill job deferred. Text body extraction (articleBody) split to future Slice 5b. Propagated to all 4 instances |
 | #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Low — body reconciled with `master` 2026-05-16 (audit comment pinned); search-provider ACL explicitly out-of-scope; de-scoped from the **Search + Finding Entries** label 2026-05-18 (ACL epic, not search-UX); refactor intentionally not started |
 | #738 | NCM/import conversion metrics — aggregate by structured `kind`, trend | Low — **unblocked** by #728 S3 (structured `kind` codes now exist); observability follow-up, reuses MetricsManager/OTLP |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images (security+size) | Low — #728 Phase-2 hardening split-out; config-gated, adds sharp/libvips; do when a real driver appears |

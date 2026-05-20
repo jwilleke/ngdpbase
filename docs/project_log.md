@@ -2,6 +2,26 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-20-09
+
+- Agent: Claude Opus 4.7
+- Subject: Released v3.27.0 — Slice 5 of EPIC #755 (#759, AttachmentManager-as-CatalogSource + PDF/docx metadata) propagated to all 4 instances.
+- Current Issue: #759 (shipped, `in review`).
+- Tests: jimstest re-validated on release commit (`9e8630c7`): 5800/5800 unit + 72/72 E2E. All 3 satellites green: 5800/5800 + 72/72 each. Zero flakes.
+- Perf: clean drift — `/` recovered to 33 ms (warm cache), `/search` to 45 ms; memory +4.5% under threshold. No regression flagged.
+- Mid-flight blocker resolved: the v3.27.0 build initially failed because `eslint --fix` had stripped the `as Record<string, unknown>` cast on `exiftool().read()` during the v3.26.1 commit-hook pass. Single-step assertion is treated as "unnecessary" by `@typescript-eslint/no-unnecessary-type-assertion` because exiftool-vendored's `Tags` type doesn't declare PDF/docx fields (ModDate, Language, Subject) that we access through the cast. Fixed in `4029f1d6` by switching to the `as unknown as Record<string, unknown>` double-cast pattern, which the rule respects. Documented inline.
+- Work Done:
+  - `/semver minor` bumped 3.26.1 → 3.27.0; baseline `docs/performance/baseline-v3.27.0-2026-05-20.md` written.
+  - GitHub Release published with auto-generated notes for v3.26.1..v3.27.0.
+  - Step 8a — jimstest rebuilt + restarted + tested on release commit (`9e8630c7`) before any satellite touch.
+  - `/othersites` satellite-only mode — Fairways (2121), ve-geology (3333), temp-builds (3001) sequentially. Each: pull → stop → build → start → npm test → npm run test:e2e. All green first try.
+- Commits: `9ceb88f7`/`4029f1d6` (cast fixes), `9e8630c7` (release bump). Tag v3.27.0 + GitHub Release published.
+- Files Modified (release-bump + cast-fix range):
+  - src/providers/BasicAttachmentProvider.ts (cast fix)
+  - package.json, config/app-default-config.json, CHANGELOG.md
+  - docs/performance/baseline-v3.27.0-2026-05-20.md (new)
+  - docs/project_log.md
+
 ## 2026-05-20-08
 
 - Agent: Claude Opus 4.7
