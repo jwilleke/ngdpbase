@@ -2,6 +2,34 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-20-08
+
+- Agent: Claude Opus 4.7
+- Subject: Slice 5 of EPIC #755 (#759) — AttachmentManager as CatalogSource + PDF/docx embedded metadata extraction via exiftool. Continues the Slice 3 (#758) template for the third asset source. Mid-flight, the operator surfaced an unrelated concern (`.mp4.mp4` duplicate files in source folders); diagnosed as external-tool artifact, not from ngdpbase code — see "Side investigation" below.
+- Current Issue: #759 (delivered; ready for operator review).
+- Tests: unit 5800/5800 (+34 new across extractDocMetadata ×12, toCreativeWork ×12, AttachmentManager CatalogSource ×10). E2E 72/72 on jimstest. Build clean. tsc clean. Lint clean.
+- Work Done:
+  - **`BasicAttachmentProvider.extractDocMetadata(filePath, mimeType)`** — uses exiftool-vendored to read embedded doc metadata for PDFs and the three OOXML formats (.docx/.xlsx/.pptx). Normalises Title, Author (Author > Creator precedence), Subject, Keywords (deduplicates; handles array, comma-string, semicolon-string shapes), CreationDate, ModDate, Language. Non-fatal — failures log and continue (uploads always succeed). Returns null for non-document MIMEs or when all fields are absent.
+  - **`formatExifDate()` helper** — mirrors `FileSystemMediaProvider.extractDateTimeOriginal()` ExifDateTime → "YYYY-MM-DD HH:MM:SS" normalisation.
+  - **`BasicAttachmentProvider.toCreativeWork(schema)`** (public) — emits DigitalDocument for the 4 doc MIMEs (base DigitalDocument stub for everything else). Field precedence per schemas.md Decision 10: documentTitle > filename, documentAuthor > uploader Person.name, documentDateCreated > upload time. Keywords/inLanguage emitted only when present.
+  - **`storeAttachmentInternal()`** calls extractDocMetadata right after writing the file; new optional fields spread onto SchemaCreativeWork only when present (additive, no behavioral change for existing flows).
+  - **`search()` extended** to match against documentTitle / documentAuthor / documentSubject / documentKeywords too — makes attachments findable in the picker by their embedded metadata, beyond filename + uploader description.
+  - **`getAllAttachments()` flattening** expanded to include the 7 new doc fields so CatalogSource.list() consumers see them. Existing `id`/`filename`/`pageUuid`/`mimeType` shape preserved (added `identifier`/`name`/`encodingFormat` aliases alongside).
+  - **Lazy ExifTool worker** (`_exiftool` + `exiftool()`) — perl process only spawns on first PDF/docx upload, not at provider init.
+  - **`AttachmentManager implements CatalogSource`:** sourceId='attachments', types=['DigitalDocument'], currentSchemaVersion=1. New `list(query)` (getAllAttachments → text/keywords filter → toCreativeWork per item → optional @type post-filter, with limit cap), `get(identifier)` (round-trip to CreativeWork), `rebuild()` (no-op stub — deferred to a future attachments.rebuild job if/when operators need bulk backfill).
+  - `initialize()` registers with `CatalogManager.registerSource(this)`.
+  - **SchemaCreativeWork + AttachmentMetadata** both gain 7 optional fields: documentTitle / documentAuthor / documentSubject / documentKeywords / documentDateCreated / documentDateModified / inLanguage.
+  - Operator caveat: existing attachments don't yet have the new fields. Re-upload a file (dedup-by-hash keeps the same id) to trigger extraction. A formal attachments.rebuild backfill job lands in a follow-up if/when needed.
+- Out of scope (split to Slice 5b): text body extraction (`articleBody`) needs pdf-parse / mammoth deps; explicit ticket when a real consumer surfaces a need.
+- **Side investigation:** operator surfaced `.mp4.mp4` duplicates of Pixel `.TS.mp4` files. Diagnosed as external-tool artifact (1 dupe from March 21; today's 4 dupes from 07:28, ~6 hours BEFORE Slice 3 commits started landing; size delta of −6 bytes consistent with exiftool tag-write, not transcode; ngdpbase has zero source-file write/copy/rename code paths in any media handling). Operator will clean up the dupes externally and identify the source process.
+- Commits: `b348bfd4` (Slice 5), plus this log entry. EPIC #755 progress: Slices 1/2/3/5 of 6 shipped; Slices 4 (blocked on #754) and 6 (JSON-LD render) remain.
+- Files Modified:
+  - src/providers/BasicAttachmentProvider.ts (Schema import, lazy exiftool worker, DOC_METADATA_MIME_TYPES, extractDocMetadata, formatExifDate, toCreativeWork, storeAttachmentInternal extraction hook, search() expansion, getAllAttachments flattening)
+  - src/managers/AttachmentManager.ts (CatalogSource impl: properties, list/get/rebuild, registerSource hook)
+  - src/providers/**tests**/BasicAttachmentProvider.docMetadata.test.ts (new, 24 tests)
+  - src/managers/**tests**/AttachmentManager.test.ts (+10 CatalogSource tests)
+  - docs/project_log.md
+
 ## 2026-05-20-07
 
 - Agent: Claude Opus 4.7
