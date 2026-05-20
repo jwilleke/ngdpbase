@@ -2,6 +2,27 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-20-01
+
+- Agent: Claude Opus 4.7
+- Subject: #750 — index video capture-date (CreateDate / MediaCreateDate / CreationDate) so the asset-picker date filter no longer silently drops videos. Released v3.25.1 (patch; /othersites deferred per consolidation rule). Also a /check-todos scope correction: #519/#518 were closed and the trio "pair" the TODO implied doesn't hold — #750 stands alone.
+- Current Issue: #750 (delivered + tested; awaiting operator close. Optional back-fill via `media.rebuild`).
+- Tests: unit 5678/5678 (+12 new dateTimeOriginal tests; the existing 19 extractYear tests still pass after CreationDate was added to the shared chain) + E2E 72/72 on jimstest. Zero flakes.
+- Perf: `/` flagged +372%/+108ms vs v3.25.0 baseline — operator-accepted as the documented cold-cache post-restart pattern (consistent with v3.24.4↔v3.25.0 swing); other routes flat/improved, memory −6.6%.
+- Work Done:
+  - Diagnosed via FileSystemMediaProvider.ts:670-758: `extractYear` already fell back DateTimeOriginal → CreateDate → MediaCreateDate for videos, but the indexed `dateTimeOriginal` *timestamp* field at line 682 only read rawTags.DateTimeOriginal → videos got `null` and dropped out of any date sort/filter consumer (e.g. WikiRoutes.ts:11869 "metadata.dateTimeOriginal → metadata.createDate → year → 0", and the #745 asset-picker date control).
+  - Refactored: new `CAPTURE_DATE_FIELDS` constant (single source of truth) + new private `extractDateTimeOriginal()` helper; both `extractYear` and the line-682 call site now iterate the same chain. Added `CreationDate` (the QuickTime/Apple flat-name for QuickTime:CreationDate) for full video parity.
+  - +12 unit tests (new `FileSystemMediaProvider.extractDateTimeOriginal.test.ts`) mirroring the extractYear test pattern: vi.unmock + lightweight ExifDateTime mock, covers all 4 field positions, priority ordering, null handling, two-digit padding, year-only defaults, and the duck-typed-object cross-module guard.
+  - Pre-work `/check-todos` corrected three stale cross-refs: #519 was about sist2 path-exclusions (CLOSED, not dates); #518 was the actual sist2 date-range issue (CLOSED, may be premature-closed but operator chose to ship #750 standalone); #745 picker date control already shipped → #750 IS the residual.
+  - TODO.md edits earlier in session: #752 closed (5→4 bugs), #691 in-review label re-applied after first attempt silently no-op'd (lesson: verify label adds, don't trust `gh issue edit` URL output).
+- Operator caveat surfaced: existing video items in jimstest's media index still have `dateTimeOriginal: null` from the old extractor — one-click `media.rebuild` from admin back-fills them (informational, optional).
+- Commits: `97089601` (fix #750), `1a7eed03` (chore: release v3.25.1), plus this log entry. Release range also carried 3 prior doc commits since v3.25.0 (TODO freshens + project_log).
+- Files Modified:
+  - src/providers/FileSystemMediaProvider.ts, src/providers/**tests**/FileSystemMediaProvider.extractDateTimeOriginal.test.ts
+  - package.json, config/app-default-config.json, CHANGELOG.md, docs/performance/baseline-v3.25.1-2026-05-20.md
+  - TODO.md (#752/#691 freshen — committed `9a4c9d4a` earlier)
+  - docs/project_log.md
+
 ## 2026-05-19-12
 
 - Agent: Claude Opus 4.7
