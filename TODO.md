@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-19T18:15:00.000Z'
+lastModified: '2026-05-20T13:00:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -34,11 +34,10 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 ## Open BUGS (ngdpbase, by issue #)
 
-5 open as of 2026-05-19 (#748 **closed** — operator confirmed the v3.24.3 CRLF fix; #751 GeoHazardWatch-drift closed — fixed via geohazardwatch PR #54, deployed). #752 **fixed** (`in review`). #753 = deferred core MarkupParser fix. #749 pairs with #599; #660 non-actionable. No untriaged functional bug remains.
+4 open as of 2026-05-20 (#752 closed — operator confirmed the v3.24.4 InsertPlugin guard; #748/#751 previously closed). #753 = deferred core MarkupParser fix. #749 pairs with #599; #660 non-actionable. No untriaged functional bug remains.
 
 | # | Title |
 |---|---|
-| #752 | `[{Insert}]` silently dropped caption when a misplaced quote made the param regex swallow `caption=` into the target. **Fixed v3.24.4** (`ce32631c`): InsertPlugin-local guard → visible "malformed parameters" notice. `in review` |
 | #753 | **MarkupParser** leaks `data-jspwiki-placeholder` spans for CommonMark variable-length backtick code spans (```` ``` ````); the inner ` ``` ` is mis-detected as a fence and cascade-corrupts placeholder restore (e.g. `/view/Using InsertPlugin`). Interim doc reword shipped v3.24.4; **core fix open** — high-blast-radius `MarkupParser.ts`, own focused session (full unit+E2E+multi-page render) |
 | #749 | Showdown CVE-2024-1899 patch check — filed 2026-05-19; recurring tracking task to re-check for an upstream `showdown` patch (pairs with #599 / Dependabot GHSA-rmmh-p597-ppvv). Not a code bug |
 | #660 | Agent and ./docs documentation — tooling shipped; 49 doc-stub warnings remain for source-only modules (stub-creation backlog; cosmetic, non-blocking) |
