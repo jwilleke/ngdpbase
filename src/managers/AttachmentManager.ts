@@ -3,6 +3,16 @@ import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PageManager from './PageManager.js';
+import type CatalogManager from './CatalogManager.js';
+import type {
+  CatalogSource,
+  CatalogQuery,
+  CatalogPage,
+  CreativeWork,
+  SchemaType,
+  RebuildOpts
+} from '../types/Schema.js';
+import type BasicAttachmentProvider from '../providers/BasicAttachmentProvider.js';
 
 /**
  * Minimal interface for MediaManager — avoids a circular import.
@@ -99,6 +109,14 @@ export interface AttachmentMetadata {
     name: string;
     email?: string;
   };
+  // --- PDF / docx embedded document metadata (Slice 5 of #755 / #759) ---
+  documentTitle?: string;
+  documentAuthor?: string;
+  documentSubject?: string;
+  documentKeywords?: string[];
+  documentDateCreated?: string;
+  documentDateModified?: string;
+  inLanguage?: string;
   [key: string]: unknown;
 }
 
@@ -144,7 +162,27 @@ export interface AttachmentBackupData extends BackupData {
  * Based on:
  * https://github.com/apache/jspwiki/blob/master/jspwiki-main/src/main/java/org/apache/wiki/attachment/AttachmentManager.java
  */
-class AttachmentManager extends BaseManager {
+class AttachmentManager extends BaseManager implements CatalogSource {
+  /** CatalogSource identifier (Slice 5 of #755 / #759). */
+  readonly sourceId = 'attachments';
+
+  /**
+   * Subtypes this source produces. Today only DigitalDocument (PDFs / docx /
+   * xlsx / pptx). Image and video attachments emit a `DigitalDocument` stub
+   * since the rich ImageObject / VideoObject mapper lives on the media path.
+   */
+  readonly types: readonly SchemaType[] = ['DigitalDocument'];
+
+  /**
+   * On-disk schema version for attachment-metadata.json (Decision 6).
+   * Bump when the persisted SchemaCreativeWork shape changes; current v1 is
+   * the post-Slice-5 (#759) shape including documentTitle / documentAuthor /
+   * documentSubject / documentKeywords / documentDateCreated /
+   * documentDateModified / inLanguage.
+   */
+  static readonly CURRENT_SCHEMA_VERSION = 1;
+  readonly currentSchemaVersion = AttachmentManager.CURRENT_SCHEMA_VERSION;
+
   private attachmentProvider: BaseAttachmentProvider | null;
   private providerClass: string | null;
   private maxSize!: number;
@@ -221,6 +259,111 @@ class AttachmentManager extends BaseManager {
       logger.error(`📎 Failed to initialize attachment provider: ${this.providerClass}`, error);
       throw error;
     }
+
+    // Slice 5 of #755 (#759) — register as a CatalogSource so CatalogManager
+    // can fan out cross-source queries. CatalogManager is initialised before
+    // AttachmentManager in WikiEngine bootstrap (see WikiEngine.ts:178).
+    const catalog = this.engine.getManager<CatalogManager>('CatalogManager');
+    if (catalog) {
+      catalog.registerSource(this);
+    } else {
+      logger.warn('📎 CatalogManager not available at initialize — skipping CatalogSource registration');
+    }
+  }
+
+  // ===========================================================================
+  // CatalogSource interface (Slice 5 of #755 / #759)
+  // ===========================================================================
+
+  /**
+   * CatalogSource.list — query attachments and emit CreativeWork shapes.
+   *
+   * Routes `query.text` through the provider's `getAttachmentsForPage` /
+   * `getAllAttachments` surface, applies the (DigitalDocument-restricted)
+   * `types` filter, and converts each match via the provider's
+   * `toCreativeWork()`. Cursor pagination not yet implemented (initial
+   * slice); `limit` caps page size.
+   */
+  async list(query: CatalogQuery): Promise<CatalogPage> {
+    if (!this.attachmentProvider) return { items: [], total: 0 };
+    const provider = this.attachmentProvider as unknown as BasicAttachmentProvider;
+    if (typeof provider.toCreativeWork !== 'function') {
+      // Provider hasn't been updated to expose toCreativeWork — return empty.
+      // This can happen if an addon ships a custom provider that pre-dates Slice 5.
+      logger.debug('[AttachmentManager.list] provider does not implement toCreativeWork — returning empty page');
+      return { items: [], total: 0 };
+    }
+
+    // Pull all attachments via the existing flattened accessor (which now
+    // includes the Slice-5 documentTitle / documentAuthor / etc. fields).
+    let all = await this.attachmentProvider.getAllAttachments();
+
+    // Filter by free-text against name + description + doc fields.
+    if (query.text) {
+      const lower = query.text.toLowerCase();
+      all = all.filter(m => {
+        if ((m.name ?? '').toLowerCase().includes(lower)) return true;
+        if ((m.description ?? '').toLowerCase().includes(lower)) return true;
+        if ((m.documentTitle ?? '').toLowerCase().includes(lower)) return true;
+        if ((m.documentAuthor ?? '').toLowerCase().includes(lower)) return true;
+        if ((m.documentSubject ?? '').toLowerCase().includes(lower)) return true;
+        if (m.documentKeywords?.some(k => k.toLowerCase().includes(lower))) return true;
+        return false;
+      });
+    }
+
+    // Filter by keywords (intersect with documentKeywords).
+    if (query.keywords && query.keywords.length > 0) {
+      const wanted = new Set(query.keywords);
+      all = all.filter(m => m.documentKeywords?.some(k => wanted.has(k)));
+    }
+
+    const total = all.length;
+    const limit = typeof query.limit === 'number' && query.limit > 0 ? query.limit : all.length;
+    const sliced = all.slice(0, limit);
+    const items = sliced.map(m => provider.toCreativeWork(m as never));
+
+    // Apply types filter post-conversion since the provider produces either
+    // DigitalDocument or a base CW stub today.
+    const filtered = (query.types && query.types.length > 0)
+      ? items.filter(work => query.types?.includes(work['@type']))
+      : items;
+
+    return { items: filtered, total };
+  }
+
+  /**
+   * CatalogSource.get — fetch a single attachment by stable identifier.
+   * Returns null for not-found.
+   *
+   * Note: this does NOT enforce private-page ACL. CatalogManager callers
+   * should layer ACL on top (mirroring `getAttachment()` which goes through
+   * the request path with full WikiContext).
+   */
+  async get(identifier: string): Promise<CreativeWork | null> {
+    if (!this.attachmentProvider) return null;
+    const provider = this.attachmentProvider as unknown as BasicAttachmentProvider;
+    if (typeof provider.toCreativeWork !== 'function') return null;
+
+    const meta = await this.attachmentProvider.getAttachmentMetadata(identifier);
+    if (!meta) return null;
+    return provider.toCreativeWork(meta as never);
+  }
+
+  /**
+   * CatalogSource.rebuild — re-extract embedded document metadata on every
+   * stored attachment. Defers to a future `attachments.rebuild` background
+   * job; for the initial slice this is a no-op that just satisfies the
+   * interface so CatalogManager.checkSchemaVersions() can call it uniformly.
+   *
+   * Operator can trigger re-extraction today by re-uploading a file (the
+   * dedup-by-content-hash means a re-upload of the same bytes hits the
+   * existing record without overwriting it; only NEW uploads currently
+   * trigger extraction).
+   */
+  async rebuild(_opts?: RebuildOpts): Promise<void> {
+    void _opts;
+    logger.info('📎 AttachmentManager.rebuild() — no-op in this slice; operator can re-upload a file to trigger doc metadata extraction. A dedicated attachments.rebuild background job lands in a follow-up if/when operators have many pre-Slice-5 attachments to backfill.');
   }
 
   /**

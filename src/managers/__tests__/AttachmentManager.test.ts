@@ -116,3 +116,170 @@ describe('AttachmentManager resolveAttachmentSrc()', () => {
     expect(result).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// AttachmentManager as CatalogSource (Slice 5 of #755 / #759)
+// ---------------------------------------------------------------------------
+
+describe('AttachmentManager — CatalogSource interface (#759)', () => {
+  test('exposes the CatalogSource readonly identity fields', () => {
+    const mgr = new AttachmentManager(makeEngine());
+    expect(mgr.sourceId).toBe('attachments');
+    expect(mgr.types).toEqual(['DigitalDocument']);
+    expect(mgr.currentSchemaVersion).toBe(1);
+  });
+
+  test('list() returns empty page when provider is null (attachments disabled)', async () => {
+    const mgr = new AttachmentManager(makeEngine({ 'ngdpbase.attachment.enabled': false }));
+    await mgr.initialize();
+    expect(await mgr.list({})).toEqual({ items: [], total: 0 });
+  });
+
+  test('get() returns null when provider is null', async () => {
+    const mgr = new AttachmentManager(makeEngine({ 'ngdpbase.attachment.enabled': false }));
+    await mgr.initialize();
+    expect(await mgr.get('any-id')).toBeNull();
+  });
+
+  test('rebuild() resolves (no-op in initial slice)', async () => {
+    const mgr = new AttachmentManager(makeEngine({ 'ngdpbase.attachment.enabled': false }));
+    await mgr.initialize();
+    await expect(mgr.rebuild()).resolves.toBeUndefined();
+  });
+
+  test('list() with a mock provider returns CreativeWork items via toCreativeWork()', async () => {
+    const mockMetadata = [
+      { id: 'a1', identifier: 'a1', name: 'plan.pdf', encodingFormat: 'application/pdf', documentTitle: 'Q3 Plan', description: 'desc' },
+      { id: 'a2', identifier: 'a2', name: 'image.jpg', encodingFormat: 'image/jpeg' }
+    ];
+    const mockToCreativeWork = vi.fn((m: { identifier: string; encodingFormat: string; documentTitle?: string; name: string }) => ({
+      '@type': m.encodingFormat === 'application/pdf' ? 'DigitalDocument' : 'DigitalDocument',
+      '@id': `/attachments/${m.identifier}`,
+      identifier: m.identifier,
+      name: m.documentTitle ?? m.name,
+      url: `/attachments/${m.identifier}`,
+      encodingFormat: m.encodingFormat
+    }));
+
+    const mgr = new AttachmentManager(makeEngine());
+    // Inject a fake provider implementing the surface we need
+    (mgr as unknown as { attachmentProvider: unknown }).attachmentProvider = {
+      getAllAttachments: vi.fn().mockResolvedValue(mockMetadata),
+      toCreativeWork: mockToCreativeWork,
+      getAttachmentMetadata: vi.fn().mockResolvedValue(null)
+    };
+
+    const page = await mgr.list({});
+    expect(page.items).toHaveLength(2);
+    expect(page.total).toBe(2);
+    expect(page.items[0].name).toBe('Q3 Plan');
+    expect(mockToCreativeWork).toHaveBeenCalledTimes(2);
+  });
+
+  test('list() text filter matches against documentTitle / documentAuthor / documentKeywords', async () => {
+    const mockMetadata = [
+      { id: 'a1', identifier: 'a1', name: 'doc1.pdf', encodingFormat: 'application/pdf', documentTitle: 'Volcano Report', documentAuthor: 'Alice' },
+      { id: 'a2', identifier: 'a2', name: 'doc2.pdf', encodingFormat: 'application/pdf', documentTitle: 'Weather Report', documentAuthor: 'Bob' },
+      { id: 'a3', identifier: 'a3', name: 'doc3.pdf', encodingFormat: 'application/pdf', documentKeywords: ['lava', 'geology'] }
+    ];
+    const mockToCreativeWork = vi.fn((m: { identifier: string; name: string }) => ({
+      '@type': 'DigitalDocument', '@id': `/attachments/${m.identifier}`,
+      identifier: m.identifier, name: m.name, url: `/attachments/${m.identifier}`,
+      encodingFormat: 'application/pdf'
+    }));
+    const mgr = new AttachmentManager(makeEngine());
+    (mgr as unknown as { attachmentProvider: unknown }).attachmentProvider = {
+      getAllAttachments: vi.fn().mockResolvedValue(mockMetadata),
+      toCreativeWork: mockToCreativeWork,
+      getAttachmentMetadata: vi.fn().mockResolvedValue(null)
+    };
+
+    // Match documentTitle
+    const volcanoPage = await mgr.list({ text: 'volcano' });
+    expect(volcanoPage.total).toBe(1);
+    expect(volcanoPage.items[0].identifier).toBe('a1');
+
+    // Match documentAuthor
+    const bobPage = await mgr.list({ text: 'bob' });
+    expect(bobPage.total).toBe(1);
+    expect(bobPage.items[0].identifier).toBe('a2');
+
+    // Match documentKeywords
+    const lavaPage = await mgr.list({ text: 'lava' });
+    expect(lavaPage.total).toBe(1);
+    expect(lavaPage.items[0].identifier).toBe('a3');
+  });
+
+  test('list() keywords filter intersects documentKeywords', async () => {
+    const mockMetadata = [
+      { id: 'a1', identifier: 'a1', name: 'a.pdf', encodingFormat: 'application/pdf', documentKeywords: ['volcano', 'lava'] },
+      { id: 'a2', identifier: 'a2', name: 'b.pdf', encodingFormat: 'application/pdf', documentKeywords: ['weather'] },
+      { id: 'a3', identifier: 'a3', name: 'c.pdf', encodingFormat: 'application/pdf' } // no keywords
+    ];
+    const mockToCreativeWork = vi.fn((m: { identifier: string; name: string }) => ({
+      '@type': 'DigitalDocument', '@id': `/attachments/${m.identifier}`,
+      identifier: m.identifier, name: m.name, url: `/attachments/${m.identifier}`,
+      encodingFormat: 'application/pdf'
+    }));
+    const mgr = new AttachmentManager(makeEngine());
+    (mgr as unknown as { attachmentProvider: unknown }).attachmentProvider = {
+      getAllAttachments: vi.fn().mockResolvedValue(mockMetadata),
+      toCreativeWork: mockToCreativeWork,
+      getAttachmentMetadata: vi.fn().mockResolvedValue(null)
+    };
+
+    const page = await mgr.list({ keywords: ['volcano'] });
+    expect(page.total).toBe(1);
+    expect(page.items[0].identifier).toBe('a1');
+  });
+
+  test('list() respects the limit cap', async () => {
+    const mockMetadata = Array.from({ length: 50 }, (_, i) => ({
+      id: `a${i}`, identifier: `a${i}`, name: `doc${i}.pdf`, encodingFormat: 'application/pdf'
+    }));
+    const mockToCreativeWork = vi.fn((m: { identifier: string; name: string }) => ({
+      '@type': 'DigitalDocument', '@id': `/attachments/${m.identifier}`,
+      identifier: m.identifier, name: m.name, url: `/attachments/${m.identifier}`,
+      encodingFormat: 'application/pdf'
+    }));
+    const mgr = new AttachmentManager(makeEngine());
+    (mgr as unknown as { attachmentProvider: unknown }).attachmentProvider = {
+      getAllAttachments: vi.fn().mockResolvedValue(mockMetadata),
+      toCreativeWork: mockToCreativeWork,
+      getAttachmentMetadata: vi.fn().mockResolvedValue(null)
+    };
+
+    const page = await mgr.list({ limit: 10 });
+    expect(page.items).toHaveLength(10);
+    expect(page.total).toBe(50); // total counts all, items is paged
+  });
+
+  test('get() returns the CreativeWork for a real attachment', async () => {
+    const meta = { id: 'x1', identifier: 'x1', name: 'plan.pdf', encodingFormat: 'application/pdf' };
+    const mgr = new AttachmentManager(makeEngine());
+    (mgr as unknown as { attachmentProvider: unknown }).attachmentProvider = {
+      getAllAttachments: vi.fn(),
+      toCreativeWork: vi.fn(() => ({
+        '@type': 'DigitalDocument', '@id': '/attachments/x1',
+        identifier: 'x1', name: 'plan.pdf', url: '/attachments/x1', encodingFormat: 'application/pdf'
+      })),
+      getAttachmentMetadata: vi.fn().mockResolvedValue(meta)
+    };
+
+    const work = await mgr.get('x1');
+    expect(work).not.toBeNull();
+    expect(work?.identifier).toBe('x1');
+    expect(work?.['@type']).toBe('DigitalDocument');
+  });
+
+  test('get() returns null when the attachment does not exist', async () => {
+    const mgr = new AttachmentManager(makeEngine());
+    (mgr as unknown as { attachmentProvider: unknown }).attachmentProvider = {
+      getAllAttachments: vi.fn(),
+      toCreativeWork: vi.fn(),
+      getAttachmentMetadata: vi.fn().mockResolvedValue(null)
+    };
+
+    expect(await mgr.get('missing')).toBeNull();
+  });
+});

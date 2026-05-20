@@ -1,7 +1,9 @@
 import BaseAttachmentProvider, { FileInfo, User, AttachmentResult } from './BaseAttachmentProvider.js';
 import { AttachmentMetadata } from '../types/index.js';
 import type { AssetProvider, AssetRecord, AssetQuery, AssetPage, AssetInput, AssetMetadata } from '../types/Asset.js';
+import type { CreativeWork, DigitalDocument } from '../types/Schema.js';
 import sharp from 'sharp';
+import { ExifTool } from 'exiftool-vendored';
 import { transformImage, parseSize } from '../utils/imageTransform.js';
 import fs from 'fs-extra';
 import * as path from 'path';
@@ -54,6 +56,21 @@ interface SchemaCreativeWork {
   creator?: string;
   /** Structured metadata extracted at upload time (EXIF via sharp) — Phase 5 #405 */
   assetMetadata?: AssetMetadata;
+  // --- PDF / docx embedded document metadata (Slice 5 of #755 / #759) ---
+  /** Title embedded in the document (PDF /Info Title; docx core.xml dc:title). Distinct from the uploaded filename. */
+  documentTitle?: string;
+  /** Author embedded in the document (PDF /Info Author; docx dc:creator). Distinct from the uploader's user. */
+  documentAuthor?: string;
+  /** Subject / abstract embedded in the document (PDF /Info Subject; docx dc:description). */
+  documentSubject?: string;
+  /** Keywords / tags embedded in the document (PDF /Info Keywords; docx dc:subject). String array, deduplicated. */
+  documentKeywords?: string[];
+  /** Document's own CreationDate (when the file was first authored). Distinct from upload time. */
+  documentDateCreated?: string;
+  /** Document's own ModDate (last edit before upload). Distinct from upload time. */
+  documentDateModified?: string;
+  /** BCP-47 language tag from the document (PDF /Lang; docx core.xml dc:language). */
+  inLanguage?: string;
 }
 
 /**
@@ -149,6 +166,31 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
   private maxFileSize: number;
   private allowedMimeTypes: string[];
   private hashMethod: string;
+
+  /**
+   * Lazily-instantiated ExifTool worker (Slice 5 of #755 / #759).
+   * Used to extract embedded document metadata from PDFs / docx at upload
+   * time. Created on first use to avoid spawning a perl process when the
+   * provider initialises but never sees a PDF or docx upload.
+   */
+  private _exiftool: ExifTool | null = null;
+  private exiftool(): ExifTool {
+    if (!this._exiftool) {
+      this._exiftool = new ExifTool({ taskTimeoutMillis: 15000, maxProcs: 1 });
+    }
+    return this._exiftool;
+  }
+
+  /**
+   * MIME types that carry extractable document metadata.
+   * exiftool reads both via its PDF / OOXML modules.
+   */
+  private static readonly DOC_METADATA_MIME_TYPES: ReadonlySet<string> = new Set([
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',       // .xlsx
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation' // .pptx
+  ]);
 
   constructor(engine: WikiEngine) {
     super(engine);
@@ -461,6 +503,10 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     // Write file to storage
     await fs.writeFile(filePath, fileBuffer);
 
+    // Slice 5 of #755 (#759) — extract embedded document metadata for PDFs / docx.
+    // Non-critical: failures log and continue without the embedded fields.
+    const docMetadata = await this.extractDocMetadata(filePath, fileInfo.mimeType);
+
     // Create Schema.org CreativeWork metadata
     const now = new Date().toISOString();
     const author: SchemaPerson | undefined = user ? {
@@ -488,7 +534,15 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       'mentions': [], // Array of pages using this attachment
       'isPrivate': isPrivatePage,
       'creator': isPrivatePage && pageCreator ? pageCreator : undefined,
-      'assetMetadata': (metadata).assetMetadata
+      'assetMetadata': (metadata).assetMetadata,
+      // Slice 5 of #755 (#759) — embedded document metadata, spread only when present.
+      ...(docMetadata?.title ? { documentTitle: docMetadata.title } : {}),
+      ...(docMetadata?.author ? { documentAuthor: docMetadata.author } : {}),
+      ...(docMetadata?.subject ? { documentSubject: docMetadata.subject } : {}),
+      ...(docMetadata?.keywords ? { documentKeywords: docMetadata.keywords } : {}),
+      ...(docMetadata?.dateCreated ? { documentDateCreated: docMetadata.dateCreated } : {}),
+      ...(docMetadata?.dateModified ? { documentDateModified: docMetadata.dateModified } : {}),
+      ...(docMetadata?.inLanguage ? { inLanguage: docMetadata.inLanguage } : {})
     };
 
     // Store metadata
@@ -843,15 +897,30 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       .sort((a, b) => new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime());
 
     return Promise.resolve(schemaAttachments.map((schema): AttachmentMetadata => ({
+      // Required identifier from schema
+      identifier: schema.identifier,
+      // Legacy shape kept so existing callers don't break
       id: schema.identifier,
       filename: schema.name,
+      name: schema.name,
       pageUuid: schema.mentions[0]?.name || '',
       mimeType: schema.encodingFormat,
+      encodingFormat: schema.encodingFormat,
       size: schema.contentSize,
       uploadedAt: schema.dateCreated,
       uploadedBy: schema.author?.name || 'Unknown',
       filePath: schema.storageLocation,
-      description: schema.description
+      description: schema.description,
+      // Slice 5 of #755 (#759) — embedded document metadata fields surfaced
+      // for CatalogSource.list() consumers (and any other AttachmentMetadata
+      // caller that wants doc-level Title/Author/Keywords).
+      ...(schema.documentTitle ? { documentTitle: schema.documentTitle } : {}),
+      ...(schema.documentAuthor ? { documentAuthor: schema.documentAuthor } : {}),
+      ...(schema.documentSubject ? { documentSubject: schema.documentSubject } : {}),
+      ...(schema.documentKeywords ? { documentKeywords: schema.documentKeywords } : {}),
+      ...(schema.documentDateCreated ? { documentDateCreated: schema.documentDateCreated } : {}),
+      ...(schema.documentDateModified ? { documentDateModified: schema.documentDateModified } : {}),
+      ...(schema.inLanguage ? { inLanguage: schema.inLanguage } : {})
     })));
   }
 
@@ -1069,6 +1138,148 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     }
   }
 
+  /**
+   * Extract embedded document metadata via ExifTool (Slice 5 of #755 / #759).
+   *
+   * Handles PDFs and Office Open XML (`.docx`, `.xlsx`, `.pptx`). Returns the
+   * subset of fields we map into `SchemaCreativeWork` per the schemas.md
+   * `DigitalDocument` per-source mapping. Returns null for non-document MIME
+   * types or when extraction fails (treated as non-fatal — uploads always
+   * succeed even if metadata extraction trips).
+   */
+  private async extractDocMetadata(filePath: string, mimeType: string): Promise<{
+    title?: string;
+    author?: string;
+    subject?: string;
+    keywords?: string[];
+    dateCreated?: string;
+    dateModified?: string;
+    inLanguage?: string;
+  } | null> {
+    if (!BasicAttachmentProvider.DOC_METADATA_MIME_TYPES.has(mimeType)) return null;
+
+    try {
+      const tags = await this.exiftool().read(filePath);
+
+      const title = typeof tags.Title === 'string' && tags.Title ? tags.Title : undefined;
+      // Author — try both PDF (Author) and OOXML (Creator).
+      const rawAuthor = tags.Author ?? tags.Creator;
+      const author: string | undefined = Array.isArray(rawAuthor)
+        ? (typeof rawAuthor[0] === 'string' ? rawAuthor[0] : undefined)
+        : (typeof rawAuthor === 'string' && rawAuthor ? rawAuthor : undefined);
+      const subject = typeof tags.Subject === 'string' && tags.Subject ? tags.Subject : undefined;
+
+      // Keywords: PDF emits a comma- or semicolon-delimited string; docx emits
+      // an array. Normalise to deduped string[].
+      const rawKeywords = tags.Keywords;
+      let keywords: string[] | undefined;
+      if (Array.isArray(rawKeywords)) {
+        keywords = (rawKeywords as unknown[]).filter((k): k is string => typeof k === 'string' && k.length > 0);
+      } else if (typeof rawKeywords === 'string' && rawKeywords) {
+        keywords = rawKeywords.split(/[,;]\s*/).map(k => k.trim()).filter(Boolean);
+      }
+      if (keywords && keywords.length > 0) {
+        keywords = [...new Set(keywords)];
+      } else {
+        keywords = undefined;
+      }
+
+      // Dates: exiftool-vendored returns ExifDateTime-shaped objects with .year, .month, etc.
+      const dateCreated = this.formatExifDate(tags.CreationDate ?? tags.CreateDate);
+      const dateModified = this.formatExifDate(tags.ModifyDate ?? tags.ModDate);
+
+      const inLanguage = typeof tags.Language === 'string' && tags.Language ? tags.Language : undefined;
+
+      // Treat all-undefined as "no useful metadata" — return null so the caller
+      // can leave the new fields off the SchemaCreativeWork entirely.
+      if (!title && !author && !subject && !keywords && !dateCreated && !dateModified && !inLanguage) {
+        return null;
+      }
+
+      return { title, author, subject, keywords, dateCreated, dateModified, inLanguage };
+    } catch (err) {
+      logger.warn(`[BasicAttachmentProvider] extractDocMetadata failed for ${filePath}: ${String(err)}`);
+      return null;
+    }
+  }
+
+  /**
+   * Format an exiftool-vendored date value to ISO-ish "YYYY-MM-DD HH:MM:SS".
+   * Accepts the `ExifDateTime` shape (object with year/month/etc.) or a string
+   * passthrough. Returns undefined for anything unparseable.
+   */
+  private formatExifDate(raw: unknown): string | undefined {
+    if (raw === null || raw === undefined) return undefined;
+    if (typeof raw === 'string' && raw) return raw;
+    if (typeof raw === 'object' && raw !== null) {
+      const dt = raw as { year?: number; month?: number; day?: number; hour?: number; minute?: number; second?: number };
+      if (typeof dt.year === 'number') {
+        const pad = (n: number): string => String(n).padStart(2, '0');
+        return `${dt.year}-${pad(dt.month ?? 1)}-${pad(dt.day ?? 1)} ${pad(dt.hour ?? 0)}:${pad(dt.minute ?? 0)}:${pad(dt.second ?? 0)}`;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Convert a SchemaCreativeWork record to a schema.org-shaped CreativeWork
+   * (Slice 5 of #755 / #759).
+   *
+   * For PDF / docx / xlsx / pptx attachments → `DigitalDocument` with embedded
+   * doc-metadata fields populated. For everything else → a base CreativeWork
+   * (no subtype specialisation) — image/video attachments that need full
+   * ImageObject / VideoObject treatment are out-of-scope for this slice
+   * (they go through the media path).
+   *
+   * Public so AttachmentManager (the registered `CatalogSource`) can call it
+   * without exposing the internal SchemaCreativeWork shape.
+   */
+  toCreativeWork(schema: SchemaCreativeWork): CreativeWork {
+    const isDoc = BasicAttachmentProvider.DOC_METADATA_MIME_TYPES.has(schema.encodingFormat);
+
+    // Author preference: embedded doc author > uploader. Same for dateCreated.
+    // Per schemas.md Decision 10, `author` is the immutable original creator;
+    // for documents the embedded Author is the actual original.
+    const authorVal: string | undefined = schema.documentAuthor
+      ?? (schema.author ? schema.author.name : undefined);
+    const dateCreatedVal: string | undefined = schema.documentDateCreated ?? schema.dateCreated;
+    const dateModifiedVal: string | undefined = schema.documentDateModified ?? schema.dateModified;
+
+    const baseFields = {
+      '@id': `/attachments/${schema.identifier}`,
+      identifier: schema.identifier,
+      name: schema.documentTitle ?? schema.name,
+      ...(schema.documentSubject || schema.description ? { description: schema.documentSubject ?? schema.description } : {}),
+      ...(dateCreatedVal ? { dateCreated: dateCreatedVal } : {}),
+      ...(dateModifiedVal ? { dateModified: dateModifiedVal } : {}),
+      ...(authorVal ? { author: authorVal } : {}),
+      ...(schema.documentKeywords && schema.documentKeywords.length > 0 ? { keywords: schema.documentKeywords } : {}),
+      url: `/attachments/${schema.identifier}`,
+      contentUrl: `/attachments/${schema.identifier}`,
+      encodingFormat: schema.encodingFormat
+    };
+
+    if (isDoc) {
+      const result: DigitalDocument = {
+        ...baseFields,
+        '@type': 'DigitalDocument',
+        ...(schema.inLanguage ? { inLanguage: schema.inLanguage } : {})
+      };
+      return result;
+    }
+
+    // Non-document MIME — emit a base-shape Article-typed CreativeWork stub.
+    // This is a deliberate fallback: until image/video attachments are routed
+    // through their own subtype mapper (out-of-scope for Slice 5), they ride
+    // the document subtype with empty-doc fields. Schemas.md treats this as
+    // best-effort; consumers filter by `@type` upstream if they care.
+    const result: DigitalDocument = {
+      ...baseFields,
+      '@type': 'DigitalDocument'
+    };
+    return result;
+  }
+
   /** Convert a SchemaCreativeWork record to a unified AssetRecord. */
   private schemaToAssetRecord(schema: SchemaCreativeWork): AssetRecord {
     // Populate dimensions from sharp-extracted metadata stored at upload time
@@ -1119,10 +1330,18 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     let items = Array.from(this.attachmentMetadata.values());
 
     if (lower) {
-      items = items.filter(s =>
-        s.name.toLowerCase().includes(lower) ||
-        (s.description ?? '').toLowerCase().includes(lower)
-      );
+      items = items.filter(s => {
+        // Filename and description (existing behaviour)
+        if (s.name.toLowerCase().includes(lower)) return true;
+        if ((s.description ?? '').toLowerCase().includes(lower)) return true;
+        // Slice 5 of #755 (#759) — embedded document metadata makes attachments
+        // findable beyond filename / uploader description.
+        if ((s.documentTitle ?? '').toLowerCase().includes(lower)) return true;
+        if ((s.documentAuthor ?? '').toLowerCase().includes(lower)) return true;
+        if ((s.documentSubject ?? '').toLowerCase().includes(lower)) return true;
+        if (s.documentKeywords?.some(k => k.toLowerCase().includes(lower))) return true;
+        return false;
+      });
     }
 
     if (mimeCategory) {
