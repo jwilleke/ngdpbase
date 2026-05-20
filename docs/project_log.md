@@ -2,6 +2,22 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-20-03
+
+- Agent: Claude Opus 4.7
+- Subject: Slice 1 of EPIC #755 (#756) — `docs/managers/CatalogManager.md` audit doc + minimum-API recommendation. Pure docs, no code touched. semver skip, no /othersites.
+- Current Issue: #756 (delivered; ready for operator review).
+- Tests: n/a (docs only). Docs-coverage check now reports managers 25/37 (was 24/37); warning count 49 → 48 (CatalogManager warning cleared).
+- Work Done:
+  - Audited current `src/managers/CatalogManager.ts` (228 lines, 5 public methods: `registerProvider`, `getTerms`, `resolveUri`, `suggestTerms`, `getProviderInfo`) + `src/types/Catalog.ts` (`CatalogTerm`, `CatalogProvider`) + every call site (`WikiEngine.ts:178`, `WikiRoutes.ts:1791`, `TaggingService.ts`, `ElasticsearchSearchProvider.ts`).
+  - Wrote `docs/managers/CatalogManager.md` covering: (a) the two-registry coordinator role (vocabulary providers #424 shipped; asset sources #755 designed); (b) shipped methods + designed methods clearly separated; (c) bootstrapping order (1b in WikiEngine init — after ConfigurationManager); (d) `CatalogSource` / `CatalogQuery` / `SchemaVersionReport` sketches for Slice 2 to codify; (e) relationships to AssetService, AssetManager, PageManager, MediaManager, AttachmentManager, TaggingService, render mapper; (f) ACL delegation rule (sources own their permission models); (g) config keys; (h) naming-recommendation paragraph (keep "CatalogManager" — Catalog covers both senses in linked-data vocabulary; rename rejected); (i) minimum-API recommendation (5 read-side methods only — no unified write/delete; writes stay per-Manager).
+  - Closed all 5 Slice 1 acceptance criteria from #756.
+  - Side benefit: chips one row off #660 doc-stub list as predicted.
+- Commits: this log entry + the Slice 1 doc commit.
+- Files Modified:
+  - docs/managers/CatalogManager.md (new)
+  - docs/project_log.md
+
 ## 2026-05-20-02
 
 - Agent: Claude Opus 4.7

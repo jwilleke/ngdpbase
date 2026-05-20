@@ -30,7 +30,7 @@ Workflow:
 <!-- AUTO:quick-nav BEGIN -->
 | Category | Count (src/) | Documented | Description |
 | ---------- | --- | --- | ------------- |
-| [Managers](#managers) | 37 | 24 | Core system managers |
+| [Managers](#managers) | 37 | 25 | Core system managers |
 | [Plugins](#plugins) | 32 | 23 | JSPWiki-style content plugins |
 | [Providers](#providers) | 32 | 12 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
@@ -60,7 +60,7 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | BackupManager | 📘 [doc](managers/BackupManager.md) + [guide](managers/BackupManager-Complete-Guide.md) | System-wide backup and restore — pages, attachments, config, search indices |
 | BaseManager | 📘 [doc](managers/BaseManager.md) + [guide](managers/BaseManager-Complete-Guide.md) | Abstract base class for all managers — engine wiring, lifecycle hooks, config accessor pattern |
 | CacheManager | 📘 [doc](managers/CacheManager.md) + [guide](managers/CacheManager-Complete-Guide.md) | Centralized cache facade with pluggable backends (NodeCache, Redis, Null) and named regions per consumer |
-| CatalogManager | ⚠️ [src/managers/CatalogManager.ts](../src/managers/CatalogManager.ts) | _no doc page yet_ |
+| CatalogManager | ✅ [doc](managers/CatalogManager.md) | Two-registry coordinator — controlled-vocabulary providers (#424) + asset-source providers (#755). Fans out term lookup and asset queries across registered providers. |
 | CommentManager | ⚠️ [src/managers/CommentManager.ts](../src/managers/CommentManager.ts) | _no doc page yet_ |
 | ConfigurationManager | 📘 [doc](managers/ConfigurationManager.md) + [guide](managers/ConfigurationManager-Complete-Guide.md) | Loads and merges app-default-config.json + app-custom-config.json; the single source of truth for runtime config |
 | EmailManager | ⚠️ [src/managers/EmailManager.ts](../src/managers/EmailManager.ts) | _no doc page yet_ |
@@ -308,9 +308,9 @@ Before contributing, please review:
 Honest accounting of doc coverage. Targets are pragmatic — abstract base classes and trivial null/no-op providers don't need long-form docs, but every module should at least have a stub or appear in this index.
 
 <!-- AUTO:doc-status BEGIN -->
-**Managers:** 24/37 with quick-reference docs (65%); 18 with Complete Guides. 13 source-only:
+**Managers:** 25/37 with quick-reference docs (68%); 18 with Complete Guides. 12 source-only:
 
-- AddonsManager, AssetManager, AuthManager, BackgroundJobManager, CatalogManager, CommentManager, EmailManager, FootnoteManager, ImportManager, OrganizationManager, PersonManager, RoleManager, ThemeManager
+- AddonsManager, AssetManager, AuthManager, BackgroundJobManager, CommentManager, EmailManager, FootnoteManager, ImportManager, OrganizationManager, PersonManager, RoleManager, ThemeManager
 
 **Plugins:** 20/32 with quick-reference docs (63%). 12 source-only:
 
