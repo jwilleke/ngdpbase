@@ -265,6 +265,13 @@ abstract class BaseMediaProvider implements AssetProvider {
     if (typeof m.copyright === 'string') assetMetadata.copyright = m.copyright;
     if (typeof m.creator === 'string') assetMetadata.creator = m.creator;
     if (typeof m.orientation === 'number') assetMetadata.orientation = m.orientation;
+    if (typeof m.videoCodec === 'string') assetMetadata.videoCodec = m.videoCodec;
+    if (typeof m.audioCodec === 'string') assetMetadata.audioCodec = m.audioCodec;
+
+    // Slice 3 of #755 / #758 — surface duration + bitrate at the top level so
+    // the asset picker can render a video/audio badge without digging into metadata.
+    const duration = typeof m.duration === 'string' ? m.duration : undefined;
+    const bitrate = typeof m.bitrate === 'number' ? m.bitrate : undefined;
 
     return {
       id: item.id,
@@ -278,6 +285,8 @@ abstract class BaseMediaProvider implements AssetProvider {
       description,
       keywords,
       dimensions,
+      duration,
+      bitrate,
       mentions: item.linkedPageName ? [item.linkedPageName] : [],
       isPrivate: item.isPrivate,
       metadata: assetMetadata,

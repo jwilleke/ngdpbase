@@ -505,6 +505,23 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
         return 'fa-file';
     }
 
+    // Slice 3 of #755 / #758 — format an ISO 8601 duration string
+    // (e.g. "PT1M30S") into a compact "M:SS" or "H:MM:SS" badge label.
+    // Returns '' for missing or malformed input so callers can omit the badge.
+    function _apFormatDuration(iso) {
+        if (typeof iso !== 'string' || !iso) return '';
+        var m = iso.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
+        if (!m) return '';
+        var h = parseInt(m[1] || '0', 10);
+        var mm = parseInt(m[2] || '0', 10);
+        var s = parseInt(m[3] || '0', 10);
+        if (!h && !mm && !s) return '';
+        var pad = function (n) { return n < 10 ? '0' + n : String(n); };
+        return h > 0
+            ? h + ':' + pad(mm) + ':' + pad(s)
+            : mm + ':' + pad(s);
+    }
+
     // #731: render the current page of results in the active view. Called
     // after a fetch AND on toggle (no refetch). Sets the container class so
     // grid keeps Bootstrap's row/col layout and list uses the flex stack.
@@ -564,7 +581,11 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
 
         var yearStr = asset.dateCreated ? String(new Date(asset.dateCreated).getFullYear()) : '';
         var lm = (typeof md.lastModified === 'string') ? md.lastModified.slice(0, 10) : '';
-        var metaBits = [yearStr, lm].filter(Boolean).map(_esc).join(' · ');
+        // Slice 3 of #755 / #758 — duration in row meta line for video/audio assets
+        var durLabel = _apFormatDuration(asset.duration);
+        var isAV = asset.encodingFormat && (asset.encodingFormat.startsWith('video/') || asset.encodingFormat.startsWith('audio/'));
+        var dur = (durLabel && isAV) ? durLabel : '';
+        var metaBits = [yearStr, lm, dur].filter(Boolean).map(_esc).join(' · ');
         var meta = metaBits ? '<div class="mt-1"><small class="text-muted">' + metaBits + '</small></div>' : '';
 
         var excerpt = (isPage && asset.description && asset.description !== label)
@@ -611,6 +632,18 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
         } else {
             var icon = isMedia ? 'fa-photo-video' : _apMimeIcon(asset.encodingFormat);
             thumb = '<div class="text-center text-muted ' + AP_THUMB_BOX + '"><i class="fas ' + icon + ' fa-2x"></i></div>';
+        }
+
+        // Slice 3 of #755 / #758 — duration badge overlay for video/audio
+        // tiles. Wrap the thumb in a relative-positioned div so the badge
+        // pins to the bottom-right corner without disturbing the thumb's
+        // 110px-tall box.
+        var durLabel = _apFormatDuration(asset.duration);
+        var isAV = asset.encodingFormat && (asset.encodingFormat.startsWith('video/') || asset.encodingFormat.startsWith('audio/'));
+        if (durLabel && isAV) {
+            thumb = '<div class="position-relative">' + thumb +
+                '<span class="position-absolute bottom-0 end-0 m-1 badge bg-dark bg-opacity-75 text-light" itemprop="duration" title="Duration">' +
+                _esc(durLabel) + '</span></div>';
         }
 
         // #606: wrap the thumbnail in a link to asset.url so clicking opens

@@ -67,6 +67,10 @@ export interface AssetMetadata {
   creator?: string;
   /** EXIF Orientation value (1–8) */
   orientation?: number;
+  /** Video/audio codec (ExifTool VideoCodec) — internal compatibility hint */
+  videoCodec?: string;
+  /** Audio codec (ExifTool AudioFormat / AudioCodec) — internal compatibility hint */
+  audioCodec?: string;
   /** Provider-specific or custom metadata fields */
   [key: string]: unknown;
 }
@@ -163,6 +167,14 @@ export interface AssetRecord {
   url: string;
   /** Thumbnail URL — schema.org/thumbnailUrl */
   thumbnailUrl?: string;
+  /**
+   * Playback duration for video/audio as ISO 8601 duration string,
+   * e.g. "PT1M30S" for 1 minute 30 seconds — schema.org/duration.
+   * Populated from ExifTool MediaDuration / Duration tags.
+   */
+  duration?: string;
+  /** Average bitrate in bits/second for video/audio — schema.org/bitrate. */
+  bitrate?: number;
 
   // --- Administrative ---
   /** ISO 8601 timestamp when the asset was first ingested / uploaded — schema.org/dateCreated */

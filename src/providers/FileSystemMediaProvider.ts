@@ -653,6 +653,18 @@ class FileSystemMediaProvider extends BaseMediaProvider {
         ? (typeof rawCreator[0] === 'string' ? rawCreator[0] : undefined)
         : (typeof rawCreator === 'string' ? rawCreator : undefined);
 
+      // Image / video dimensions
+      const imageWidth = typeof rawTags.ImageWidth === 'number' ? rawTags.ImageWidth : undefined;
+      const imageHeight = typeof rawTags.ImageHeight === 'number' ? rawTags.ImageHeight : undefined;
+
+      // Video / audio playback metadata
+      const duration = this.extractDuration(rawTags);
+      const bitrate = this.extractBitrate(rawTags);
+      const videoCodec = typeof rawTags.VideoCodec === 'string' ? rawTags.VideoCodec
+        : (typeof rawTags.CompressorID === 'string' ? rawTags.CompressorID : undefined);
+      const audioCodec = typeof rawTags.AudioFormat === 'string' ? rawTags.AudioFormat
+        : (typeof rawTags.AudioCodec === 'string' ? rawTags.AudioCodec : undefined);
+
       const entry: MediaIndexEntry = {
         id,
         filePath,
@@ -669,6 +681,13 @@ class FileSystemMediaProvider extends BaseMediaProvider {
           creator,
           colorSpace: typeof rawTags.ColorSpace === 'string' ? rawTags.ColorSpace : undefined,
           orientation,
+          // --- Media playback (Slice 3 of #755 / #758) ---
+          imageWidth,
+          imageHeight,
+          duration,
+          bitrate,
+          videoCodec,
+          audioCodec,
           // --- Legacy flat fields (kept for backward compat with pre-Phase-5 index entries) ---
           title: rawTags.Title ?? null,
           caption: (rawTags.Description ?? null) as string | null,
@@ -743,6 +762,84 @@ class FileSystemMediaProvider extends BaseMediaProvider {
       if (dt && typeof dt.year === 'number') {
         const pad = (n: number): string => String(n).padStart(2, '0');
         return `${dt.year}-${pad(dt.month ?? 1)}-${pad(dt.day ?? 1)} ${pad(dt.hour ?? 0)}:${pad(dt.minute ?? 0)}:${pad(dt.second ?? 0)}`;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Extract playback duration from ExifTool's MediaDuration / Duration tags
+   * and normalise to ISO 8601 duration format (e.g. "PT1M30S").
+   *
+   * exiftool-vendored returns Duration values in several shapes:
+   *   - number of seconds (most common for QuickTime / MP4)
+   *   - string like "0:01:30" or "00:01:30" (HH:MM:SS — some legacy paths)
+   *   - already a string like "PT1M30S" (rare)
+   *
+   * Returns null when no usable duration field is present.
+   */
+  private extractDuration(tags: Record<string, unknown>): string | null {
+    const raw = tags.MediaDuration ?? tags.Duration;
+    if (raw === null || raw === undefined) return null;
+
+    let seconds: number | null = null;
+
+    if (typeof raw === 'number' && Number.isFinite(raw) && raw >= 0) {
+      seconds = raw;
+    } else if (typeof raw === 'string') {
+      // Already ISO 8601?
+      if (/^PT/i.test(raw)) return raw.toUpperCase();
+      // HH:MM:SS or MM:SS or SS
+      const parts = raw.split(':').map(p => Number(p.trim()));
+      if (parts.every(p => Number.isFinite(p))) {
+        if (parts.length === 3) seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+        else if (parts.length === 2) seconds = parts[0] * 60 + parts[1];
+        else if (parts.length === 1) seconds = parts[0];
+      }
+    } else if (typeof raw === 'object' && raw !== null && 'seconds' in raw) {
+      // exiftool-vendored Duration object
+      const s = (raw as { seconds?: unknown }).seconds;
+      if (typeof s === 'number' && Number.isFinite(s) && s >= 0) seconds = s;
+    }
+
+    if (seconds === null || seconds < 0) return null;
+
+    const totalSec = Math.round(seconds);
+    const hours = Math.floor(totalSec / 3600);
+    const mins = Math.floor((totalSec % 3600) / 60);
+    const secs = totalSec % 60;
+
+    let iso = 'PT';
+    if (hours > 0) iso += `${hours}H`;
+    if (mins > 0) iso += `${mins}M`;
+    // Always emit seconds when nothing else (PT0S), and when there are residual seconds
+    if (secs > 0 || (hours === 0 && mins === 0)) iso += `${secs}S`;
+    return iso;
+  }
+
+  /**
+   * Extract average bitrate (bits/second) from ExifTool AvgBitrate tag.
+   *
+   * exiftool-vendored returns AvgBitrate as either:
+   *   - a number (raw bits/second)
+   *   - a string like "5.00 Mbps" or "192 kbps" — parse the magnitude + unit
+   *
+   * Returns null when no usable bitrate is present.
+   */
+  private extractBitrate(tags: Record<string, unknown>): number | null {
+    const raw = tags.AvgBitrate;
+    if (raw === null || raw === undefined) return null;
+
+    if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return Math.round(raw);
+
+    if (typeof raw === 'string') {
+      const m = raw.match(/([\d.]+)\s*([kKmMgG]?)bps/i);
+      if (m) {
+        const n = Number(m[1]);
+        if (!Number.isFinite(n)) return null;
+        const unit = m[2].toLowerCase();
+        const mult = unit === 'g' ? 1_000_000_000 : unit === 'm' ? 1_000_000 : unit === 'k' ? 1_000 : 1;
+        return Math.round(n * mult);
       }
     }
     return null;
