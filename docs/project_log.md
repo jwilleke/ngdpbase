@@ -2,6 +2,31 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-20-04
+
+- Agent: Claude Opus 4.7
+- Subject: Slice 2 of EPIC #755 (#757) — `src/types/Schema.ts`: CreativeWork base + 5 subtypes + CatalogSource interface + per-source mapper signatures + type guards. semver skip (no consumer wired; pure scaffolding for Slices 3–6), no /othersites.
+- Current Issue: #757 (delivered; ready for operator review).
+- Tests: unit 5695/5695 (+17 new in `src/types/__tests__/Schema.test.ts`); zero regressions. Build clean. `tsc --noEmit` clean. Lint clean (1 auto-fix on case-statement indent).
+- Work Done:
+  - Created `src/types/Schema.ts` (~340 LOC) implementing the design Slice 1 sketched in `docs/managers/CatalogManager.md`. Surfaces:
+    - **5 subtype interfaces** matching every row of schemas.md's per-type extension tables: `Article` (adds `articleBody`/`mentions`/`version`/`inLanguage`/`editor`/`ngdp:category`/`ngdp:slug`; narrows `identifier` to required), `ImageObject` (`width`/`height`/`contentLocation`/`exifData`/`ngdp:orientation`), `VideoObject` (`width`/`height`/`duration`/`bitrate`/`contentLocation`/`ngdp:videoCodec`/`ngdp:audioCodec`), `AudioObject` (`duration`/`bitrate`/`ngdp:audioCodec`), `DigitalDocument` (`articleBody`/`inLanguage`).
+    - **`CreativeWorkBase`** with `@id`/`@type`/`identifier`/`name`/`description`/`dateCreated`/`dateModified`/`author`/`keywords`/`url`/`contentUrl`/`thumbnailUrl`/`encodingFormat`.
+    - **Discriminated union** `CreativeWork = Article | ImageObject | VideoObject | AudioObject | DigitalDocument` driven by `@type`. Switch narrowing verified by test.
+    - **Supporting shapes**: `Person`, `Place`+`GeoCoordinates`, `ExifCameraData`, `Mention`, `AdditionalProperty` (PropertyValue render fallback per Decision 5).
+    - **CatalogSource interface** + `CatalogQuery` (with the `filters: Record<string, unknown>` source-specific bag per Decision 7) + `CatalogPage` + `RebuildOpts` + `SchemaVersionReport` (per Decision 6).
+    - **Per-source mapper signatures** as type aliases (loose `Record<string, unknown>` inputs intentionally — Slices 3–5 will narrow them).
+    - **Type guards** `isArticle`/`isImageObject`/`isVideoObject`/`isAudioObject`/`isDigitalDocument`.
+  - Top-of-file JSDoc points at `docs/schemas.md` as source of truth + documents the AssetRecord↔CreativeWork coexistence (Decision 11) + the `ngdp:` prefix convention.
+  - Created `src/types/__tests__/Schema.test.ts` (17 tests): minimal + full construction of each subtype; union narrowing via switch; type-guard truth table; CatalogSource implementation type-check; CatalogQuery `filters` bag; SchemaVersionReport; AdditionalProperty.
+  - Vitest (not jest) is the test runner — file uses describe/test/expect API which is compatible.
+  - No production consumer wired in; nothing imports from Schema.ts yet (by design — Slices 3–6 do the wiring). Hence semver skip.
+- Commits: this log entry + the Slice 2 commit.
+- Files Modified:
+  - src/types/Schema.ts (new, ~340 LOC)
+  - src/types/**tests**/Schema.test.ts (new, ~210 LOC, 17 tests)
+  - docs/project_log.md
+
 ## 2026-05-20-03
 
 - Agent: Claude Opus 4.7
