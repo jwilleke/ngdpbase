@@ -2,6 +2,30 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-20-05
+
+- Agent: Claude Opus 4.7
+- Subject: Slice 3 of EPIC #755 (#758) — Phase B: BaseMediaProvider.toCreativeWork() + MediaManager-as-CatalogSource + CatalogManager.registerSource()/getCreativeWork()/listCreativeWorks()/checkSchemaVersions()/getSourceInfo() implementation. Architectural plumbing that completes #758 (Phase A landed earlier today as commit `48611f21` with the duration badge).
+- Current Issue: #758 (Phase B delivered; Phase A already in review). Closes the "MediaManager implements CatalogSource" + "CatalogManager actually implements the methods designed in Slice 1" acceptance criteria.
+- Tests: unit 5757/5757 (+30 new: toCreativeWork ×17, CatalogManager asset-source registry ×8, plus 5 retests of existing CatalogManager surface). E2E 72/72 on jimstest. Build clean. tsc clean.
+- Work Done:
+  - **`BaseMediaProvider.toCreativeWork(item)`** — new PUBLIC method (so MediaManager can call without `extends`) that emits ImageObject / VideoObject / AudioObject discriminated by MIME prefix. Reads same metadata bag as `toAssetRecord` (title/caption/dateTimeOriginal/keywords/creator/gps/etc.); each subtype includes only its applicable fields per the schemas.md per-type tables. Unknown MIME → ImageObject (best-effort).
+  - **`MediaManager implements CatalogSource`** — `sourceId='media'`, `types=['ImageObject','VideoObject','AudioObject']`, `currentSchemaVersion=1`, plus `list(query)` / `get(identifier)` / `rebuild()` methods. `list()` honours `query.types` (MIME-filtered) and `query.keywords`; cursor pagination deferred for initial slice. `MediaManager.initialize()` registers with CatalogManager (`getManager('CatalogManager').registerSource(this)`).
+  - **`CatalogManager` asset-source registry** — second `Map<sourceId, CatalogSource>` parallel to the existing vocabulary `Map<id, CatalogProvider>`. `registerSource` (last-write-wins on dup id), `getCreativeWork(id, opts?)` (fan-out; first non-null wins; optional `sourceId` restricts), `listCreativeWorks(query)` (concatenate items across sources matching `query.types`), `checkSchemaVersions()` (initial slice: returns equal current/onDisk per source — per-file schemaVersion machinery lands when each source persists the marker), `getSourceInfo()`. Errors from a single source are logged + skipped so one bad source doesn't break the fan-out.
+  - **`src/types/Schema.ts`** — narrowed `CatalogSource.types` from `SchemaType[]` to `readonly SchemaType[]` so `as const` style declarations on Manager implementations are accepted. No callsite breakage.
+  - **`docs/managers/CatalogManager.md`** — moved asset-source registry from "Designed but not yet implemented" to "shipped in Slice 3"; method table updated to reflect actual behaviour (initial slice: cursor scoped to single source).
+  - Deferred to follow-up: `toAssetRecord()` re-derivation from `toCreativeWork()` (the Slice 3 spec mentioned this but it's an internal refactor with zero operator-visible value vs. shipped Phase A duration badge + Phase B CatalogSource integration). Will land when a real consumer exposes a measurable need.
+- Commits: this log entry + the Slice 3 Phase B commit.
+- Files Modified:
+  - src/providers/BaseMediaProvider.ts (toCreativeWork, Schema import)
+  - src/managers/CatalogManager.ts (sources registry + 5 new methods)
+  - src/managers/MediaManager.ts (implements CatalogSource; registers in initialize)
+  - src/types/Schema.ts (types: readonly SchemaType[])
+  - docs/managers/CatalogManager.md (shipped status)
+  - src/providers/**tests**/BaseMediaProvider.toCreativeWork.test.ts (new, 17 tests)
+  - src/managers/**tests**/CatalogManager.test.ts (+8 asset-source registry tests)
+  - docs/project_log.md
+
 ## 2026-05-20-04
 
 - Agent: Claude Opus 4.7

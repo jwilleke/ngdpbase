@@ -12,6 +12,14 @@
  */
 
 import type { AssetProvider, AssetRecord, AssetQuery, AssetPage, AssetInput, AssetMetadata } from '../types/Asset.js';
+import type {
+  CreativeWork,
+  ImageObject,
+  VideoObject,
+  AudioObject,
+  ExifCameraData,
+  Place
+} from '../types/Schema.js';
 
 /**
  * Represents a single media item in the index.
@@ -201,6 +209,127 @@ abstract class BaseMediaProvider implements AssetProvider {
 
   /** Capabilities — override in subclasses. */
   abstract readonly capabilities: import('../types/Asset.js').ProviderCapability[];
+
+  /**
+   * Convert a MediaItem to a schema.org-shaped CreativeWork (Slice 3 of #755).
+   *
+   * Discriminated by MIME prefix:
+   *   - image/* → ImageObject
+   *   - video/* → VideoObject
+   *   - audio/* → AudioObject
+   *   - anything else → ImageObject (best-effort; callers should filter
+   *     by mime upstream if they only want media subtypes)
+   *
+   * Internal consumers read AssetRecord (see `toAssetRecord` below);
+   * this method produces the canonical shape for JSON-LD render (Slice 6)
+   * and for CatalogSource.get() / list() fan-out from CatalogManager.
+   * Subclasses may override for provider-specific URL schemes.
+   *
+   * Public so MediaManager (the registered `CatalogSource`) can call it
+   * without exposing `toAssetRecord`'s internal projection.
+   */
+  toCreativeWork(item: MediaItem): CreativeWork {
+    const m = item.metadata ?? {};
+    const mime = item.mimeType;
+
+    const titleMeta = typeof m['title'] === 'string' && m['title'] ? m['title'] : undefined;
+    const name = titleMeta ?? item.filename;
+    const description = typeof m['caption'] === 'string' && m['caption']
+      ? m['caption']
+      : (typeof m['imageDescription'] === 'string' ? m['imageDescription'] : undefined);
+
+    const dateCreated = typeof m['dateTimeOriginal'] === 'string'
+      ? m['dateTimeOriginal']
+      : (typeof item.mtime === 'number' ? new Date(item.mtime).toISOString() : undefined);
+
+    const rawKeywords = m['keywords'];
+    const keywords: string[] | undefined = Array.isArray(rawKeywords)
+      ? (rawKeywords as unknown[]).filter((k): k is string => typeof k === 'string')
+      : typeof rawKeywords === 'string' && rawKeywords ? [rawKeywords] : undefined;
+
+    const author: string | undefined = typeof m['creator'] === 'string' ? m['creator'] : undefined;
+
+    const base = {
+      '@id': `/media/file/${item.id}`,
+      identifier: item.id,
+      name,
+      description,
+      dateCreated,
+      author,
+      keywords: keywords && keywords.length > 0 ? keywords : undefined,
+      url: `/media/file/${item.id}`,
+      contentUrl: `/media/file/${item.id}`,
+      thumbnailUrl: `/media/thumb/${item.id}?size=300x300`,
+      encodingFormat: mime
+    };
+
+    // Build optional contentLocation from GPS (Decision 12 — surface when present).
+    let contentLocation: Place | undefined;
+    const gps = m.gps;
+    if (gps && typeof gps.latitude === 'number' && typeof gps.longitude === 'number') {
+      contentLocation = {
+        '@type': 'Place',
+        geo: {
+          '@type': 'GeoCoordinates',
+          latitude: gps.latitude,
+          longitude: gps.longitude,
+          ...(typeof gps.altitude === 'number' ? { elevation: gps.altitude } : {})
+        }
+      };
+    }
+
+    if (mime.startsWith('video/')) {
+      const result: VideoObject = {
+        ...base,
+        '@type': 'VideoObject',
+        ...(typeof m.imageWidth === 'number' ? { width: m.imageWidth } : {}),
+        ...(typeof m.imageHeight === 'number' ? { height: m.imageHeight } : {}),
+        ...(typeof m.duration === 'string' ? { duration: m.duration } : {}),
+        ...(typeof m.bitrate === 'number' ? { bitrate: m.bitrate } : {}),
+        ...(contentLocation ? { contentLocation } : {}),
+        ...(typeof m.videoCodec === 'string' ? { 'ngdp:videoCodec': m.videoCodec } : {}),
+        ...(typeof m.audioCodec === 'string' ? { 'ngdp:audioCodec': m.audioCodec } : {})
+      };
+      return result;
+    }
+
+    if (mime.startsWith('audio/')) {
+      const result: AudioObject = {
+        ...base,
+        '@type': 'AudioObject',
+        ...(typeof m.duration === 'string' ? { duration: m.duration } : {}),
+        ...(typeof m.bitrate === 'number' ? { bitrate: m.bitrate } : {}),
+        ...(typeof m.audioCodec === 'string' ? { 'ngdp:audioCodec': m.audioCodec } : {})
+      };
+      return result;
+    }
+
+    // Default to ImageObject for image/* and any other types
+    const camera = m.camera;
+    let exifData: ExifCameraData | undefined;
+    if (camera && Object.values(camera).some(v => v !== undefined)) {
+      exifData = {
+        ...(camera.make !== undefined ? { make: camera.make } : {}),
+        ...(camera.model !== undefined ? { model: camera.model } : {}),
+        ...(camera.lens !== undefined ? { lensModel: camera.lens } : {}),
+        ...(camera.focalLength !== undefined ? { focalLength: camera.focalLength } : {}),
+        ...(camera.aperture !== undefined ? { fNumber: camera.aperture } : {}),
+        ...(camera.shutterSpeed !== undefined ? { exposureTime: camera.shutterSpeed } : {}),
+        ...(camera.iso !== undefined ? { iso: camera.iso } : {})
+      };
+    }
+
+    const result: ImageObject = {
+      ...base,
+      '@type': 'ImageObject',
+      ...(typeof m.imageWidth === 'number' ? { width: m.imageWidth } : {}),
+      ...(typeof m.imageHeight === 'number' ? { height: m.imageHeight } : {}),
+      ...(contentLocation ? { contentLocation } : {}),
+      ...(exifData ? { exifData } : {}),
+      ...(typeof m.orientation === 'number' ? { 'ngdp:orientation': m.orientation } : {})
+    };
+    return result;
+  }
 
   /**
    * Convert a MediaItem to a unified AssetRecord.

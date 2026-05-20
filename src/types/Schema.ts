@@ -440,7 +440,7 @@ export interface CatalogSource {
   readonly sourceId: string;
 
   /** Which subtypes this source produces. */
-  readonly types: SchemaType[];
+  readonly types: readonly SchemaType[];
 
   /**
    * Schema version of the on-disk records this source writes/reads.

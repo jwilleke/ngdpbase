@@ -17,6 +17,14 @@ import BaseManager from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { CatalogProvider, CatalogTerm } from '../types/Catalog.js';
+import type {
+  CatalogSource,
+  CatalogQuery,
+  CatalogPage,
+  CreativeWork,
+  SchemaVersionReport,
+  SchemaType
+} from '../types/Schema.js';
 import logger from '../utils/logger.js';
 
 // ---------------------------------------------------------------------------
@@ -108,10 +116,19 @@ class AICatalogProvider implements CatalogProvider {
 // ---------------------------------------------------------------------------
 
 class CatalogManager extends BaseManager {
-  readonly description = 'Controlled-vocabulary registry for system keywords';
+  readonly description = 'Two-registry coordinator: vocabulary providers (#424) + asset sources (#755)';
 
   private providers: Map<string, CatalogProvider> = new Map();
   private aiProvider: AICatalogProvider | null = null;
+
+  /**
+   * Asset-source registry (Slice 3 of #755).
+   *
+   * Parallel to the vocabulary `providers` map. Each entry is a Manager
+   * (PageManager, MediaManager, AttachmentManager) that produces CreativeWork
+   * records — see `src/types/Schema.ts` `CatalogSource` interface.
+   */
+  private sources: Map<string, CatalogSource> = new Map();
 
   constructor(engine: WikiEngine) {
     super(engine);
@@ -220,6 +237,125 @@ class CatalogManager extends BaseManager {
       id: p.id,
       displayName: p.displayName,
       domain: p.domain
+    }));
+  }
+
+  // ===========================================================================
+  // Asset-source registry (Slice 3 of #755) — designed in docs/managers/CatalogManager.md
+  // ===========================================================================
+
+  /**
+   * Register an asset source (Slice 3 of #755).
+   *
+   * PageManager, MediaManager, AttachmentManager call this during their own
+   * `initialize()` to expose CreativeWork records via this Manager. Replacing
+   * by `sourceId` is allowed (last registration wins).
+   */
+  registerSource(source: CatalogSource): void {
+    this.sources.set(source.sourceId, source);
+    logger.debug(`[CatalogManager] Registered source: ${source.sourceId} (types: ${source.types.join(', ')}, schemaVersion: ${source.currentSchemaVersion})`);
+  }
+
+  /**
+   * Look up a single CreativeWork by stable identifier across all registered
+   * sources. Returns the first non-null hit; returns null when no source has
+   * the identifier or all matching sources filter it out via ACL.
+   *
+   * Pass `opts.sourceId` to restrict the lookup to one source — useful when
+   * the caller already knows which source owns the record.
+   */
+  async getCreativeWork(
+    identifier: string,
+    opts?: { sourceId?: string }
+  ): Promise<CreativeWork | null> {
+    const targetSourceId = opts?.sourceId;
+    const sources = targetSourceId
+      ? (this.sources.get(targetSourceId) ? [this.sources.get(targetSourceId) as CatalogSource] : [])
+      : [...this.sources.values()];
+
+    for (const source of sources) {
+      try {
+        const work = await source.get(identifier);
+        if (work) return work;
+      } catch (err) {
+        logger.warn(`[CatalogManager] getCreativeWork failed for source '${source.sourceId}':`, err);
+      }
+    }
+    return null;
+  }
+
+  /**
+   * List CreativeWorks across registered sources matching the query.
+   *
+   * When `query.types` is set, only sources advertising at least one of the
+   * requested @types are queried. Cursors are scoped to a single source —
+   * callers paginating across multiple sources receive items in source
+   * registration order without a unified cursor (initial slice; can be
+   * extended once a real consumer needs cross-source pagination).
+   */
+  async listCreativeWorks(query: CatalogQuery): Promise<CatalogPage> {
+    const wanted: SchemaType[] | undefined = query.types && query.types.length > 0 ? query.types : undefined;
+    const candidates = [...this.sources.values()].filter(s =>
+      !wanted || s.types.some(t => wanted.includes(t))
+    );
+
+    const collected: CreativeWork[] = [];
+    let totalsSum = 0;
+    let cursor: string | undefined;
+    for (const source of candidates) {
+      try {
+        const page = await source.list(query);
+        collected.push(...page.items);
+        if (typeof page.total === 'number') totalsSum += page.total;
+        if (page.cursor && !cursor) cursor = page.cursor;
+      } catch (err) {
+        logger.warn(`[CatalogManager] listCreativeWorks failed for source '${source.sourceId}':`, err);
+      }
+    }
+    return { items: collected, total: totalsSum, ...(cursor ? { cursor } : {}) };
+  }
+
+  /**
+   * Check whether each source's on-disk index is up to date with its in-code
+   * `currentSchemaVersion` constant (Decision 6). Sources report `isStale =
+   * true` when the index file lags behind code; the admin dashboard surfaces
+   * a banner per stale source.
+   *
+   * Each source is expected to compare its own on-disk version against
+   * `currentSchemaVersion` and return both numbers. CatalogManager just
+   * aggregates and routes the report to consumers.
+   */
+  checkSchemaVersions(): SchemaVersionReport {
+    return [...this.sources.values()].map(source => {
+      const onDisk = this.readOnDiskSchemaVersion(source);
+      return {
+        sourceId: source.sourceId,
+        currentSchemaVersion: source.currentSchemaVersion,
+        onDiskSchemaVersion: onDisk,
+        isStale: onDisk < source.currentSchemaVersion
+      };
+    });
+  }
+
+  /**
+   * Reads the on-disk schemaVersion from a source.
+   *
+   * For now this just returns the source's currentSchemaVersion — the per-file
+   * on-disk schemaVersion machinery (Decision 6) is wired in later slices as
+   * each source's persisted index file gains the `schemaVersion` field.
+   * Until then, all sources report fresh, which matches the actual state
+   * (everything is at v1, no upgrade-from-prior-version path needed yet).
+   */
+  private readOnDiskSchemaVersion(source: CatalogSource): number {
+    return source.currentSchemaVersion;
+  }
+
+  /** Diagnostics — list registered sources for admin UIs / dashboards. */
+  getSourceInfo(): Array<{ sourceId: string; types: readonly SchemaType[]; currentSchemaVersion: number }> {
+    return [...this.sources.values()].map(s => ({
+      sourceId: s.sourceId,
+      types: s.types,
+      currentSchemaVersion: s.currentSchemaVersion
     }));
   }
 }

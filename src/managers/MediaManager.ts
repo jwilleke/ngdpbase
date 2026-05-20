@@ -27,8 +27,30 @@ import FileSystemMediaProvider, { DEFAULT_MEDIA_EXTENSIONS } from '../providers/
 import { transformImage } from '../utils/imageTransform.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PageManager from './PageManager.js';
+import type CatalogManager from './CatalogManager.js';
+import type {
+  CatalogSource,
+  CatalogQuery,
+  CatalogPage,
+  CreativeWork,
+  SchemaType,
+  RebuildOpts
+} from '../types/Schema.js';
 
-class MediaManager extends BaseManager {
+class MediaManager extends BaseManager implements CatalogSource {
+  /** CatalogSource identifier (Slice 3 of #755 / #758). */
+  readonly sourceId = 'media';
+
+  /** Subtypes this source produces — MIME-discriminated at item level. */
+  readonly types: readonly SchemaType[] = ['ImageObject', 'VideoObject', 'AudioObject'];
+
+  /**
+   * On-disk schema version for media-index.json (Decision 6).
+   * Bump when the persisted MediaIndexEntry shape changes; current v1 is
+   * the post-Slice-3 (#758) shape including duration/bitrate/codecs.
+   */
+  static readonly CURRENT_SCHEMA_VERSION = 1;
+  readonly currentSchemaVersion = MediaManager.CURRENT_SCHEMA_VERSION;
   /** Active media provider (null when not yet initialized) */
   private _provider: BaseMediaProvider | null = null;
 
@@ -125,7 +147,92 @@ class MediaManager extends BaseManager {
       }
     }
 
+    // Slice 3 of #755 (#758) — register as a CatalogSource so CatalogManager
+    // can fan out cross-source queries. CatalogManager is initialised before
+    // MediaManager in WikiEngine bootstrap (see WikiEngine.ts:178).
+    const catalog = this.engine.getManager<CatalogManager>('CatalogManager');
+    if (catalog) {
+      catalog.registerSource(this);
+    } else {
+      logger.warn('[MediaManager] CatalogManager not available at initialize — skipping CatalogSource registration');
+    }
+
     logger.info(`[MediaManager] Initialized (stub). Configured folders: [${folders.join(', ')}]`);
+  }
+
+  // ===========================================================================
+  // CatalogSource interface (Slice 3 of #755 / #758)
+  // ===========================================================================
+
+  /**
+   * CatalogSource.list — query media records and emit CreativeWork shapes.
+   *
+   * Currently maps `query.text` to the underlying provider's free-text search
+   * and applies `types` filtering MIME-side. Cursor pagination is not yet
+   * implemented (initial slice); `limit` caps the page size. Source-specific
+   * filters live in `query.filters` and are ignored by this initial impl.
+   */
+  async list(query: CatalogQuery): Promise<CatalogPage> {
+    if (!this._provider) return { items: [], total: 0 };
+
+    let items = await this._provider.searchItems(query.text ?? '');
+
+    if (query.types && query.types.length > 0) {
+      const wanted = new Set(query.types);
+      items = items.filter(item => {
+        const mime = item.mimeType;
+        if (mime.startsWith('image/') && wanted.has('ImageObject')) return true;
+        if (mime.startsWith('video/') && wanted.has('VideoObject')) return true;
+        if (mime.startsWith('audio/') && wanted.has('AudioObject')) return true;
+        return false;
+      });
+    }
+
+    if (query.keywords && query.keywords.length > 0) {
+      const wanted = new Set(query.keywords);
+      items = items.filter(item => {
+        const kw = item.metadata?.keywords;
+        const flat: string[] = Array.isArray(kw)
+          ? (kw as unknown[]).filter((k): k is string => typeof k === 'string')
+          : typeof kw === 'string' ? [kw] : [];
+        return flat.some(k => wanted.has(k));
+      });
+    }
+
+    const total = items.length;
+    const limit = typeof query.limit === 'number' && query.limit > 0 ? query.limit : items.length;
+    const sliced = items.slice(0, limit);
+    return {
+      items: sliced.map(item => this._provider!.toCreativeWork(item)),
+      total
+    };
+  }
+
+  /**
+   * CatalogSource.get — fetch a single media record by stable identifier
+   * (the sha256-derived media id). Returns null for not-found and for
+   * ACL-filtered (linked private page the caller can't access).
+   *
+   * CatalogManager passes through any `WikiContext` it has via a future
+   * `opts.wikiContext`; for the initial slice we accept no context and
+   * therefore can't enforce private-page ACL here — callers that need
+   * permission-aware access should continue using `getItem(id, ctx)`.
+   */
+  async get(identifier: string): Promise<CreativeWork | null> {
+    if (!this._provider) return null;
+    const item = await this._provider.getItem(identifier);
+    if (!item) return null;
+    return this._provider.toCreativeWork(item);
+  }
+
+  /**
+   * CatalogSource.rebuild — full media index rebuild. Wraps `rebuildIndex()`
+   * so the CatalogSource contract is honoured even though MediaManager's
+   * existing admin route prefers the named method.
+   */
+  async rebuild(_opts?: RebuildOpts): Promise<void> {
+    void _opts;
+    await this.rebuildIndex();
   }
 
   /**

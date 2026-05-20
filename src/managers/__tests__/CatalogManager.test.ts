@@ -245,3 +245,125 @@ describe('ValidationManager — loadSystemKeywords', () => {
     expect(validationManager.getValidSystemKeywords()).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Asset-source registry (Slice 3 of #755 / #758)
+// ---------------------------------------------------------------------------
+
+describe('CatalogManager — asset-source registry (#758)', () => {
+  let manager;
+
+  beforeEach(async () => {
+    const engine = makeMockEngine({});
+    manager = new CatalogManager(engine as unknown as WikiEngine);
+    await manager.initialize();
+  });
+
+  function makeFakeSource(overrides = {}) {
+    return {
+      sourceId: 'fake',
+      types: ['Article'],
+      currentSchemaVersion: 1,
+      list: vi.fn(async () => ({ items: [], total: 0 })),
+      get: vi.fn(async () => null),
+      rebuild: vi.fn(async () => undefined),
+      ...overrides
+    };
+  }
+
+  test('registerSource() adds a source; getSourceInfo() lists it', () => {
+    const src = makeFakeSource();
+    manager.registerSource(src);
+    const info = manager.getSourceInfo();
+    expect(info).toHaveLength(1);
+    expect(info[0]).toMatchObject({ sourceId: 'fake', currentSchemaVersion: 1 });
+    expect(info[0].types).toEqual(['Article']);
+  });
+
+  test('registerSource() replaces a source with the same id (last write wins)', () => {
+    manager.registerSource(makeFakeSource({ currentSchemaVersion: 1 }));
+    manager.registerSource(makeFakeSource({ currentSchemaVersion: 5 }));
+    expect(manager.getSourceInfo()[0].currentSchemaVersion).toBe(5);
+  });
+
+  test('getCreativeWork() returns null when no source has the id', async () => {
+    manager.registerSource(makeFakeSource());
+    const work = await manager.getCreativeWork('unknown-id');
+    expect(work).toBeNull();
+  });
+
+  test('getCreativeWork() returns the first non-null hit', async () => {
+    const fakeWork = {
+      '@type': 'Article', '@id': '/view/X', identifier: 'x-1', name: 'X', url: '/view/X'
+    };
+    const a = makeFakeSource({ sourceId: 'a', get: vi.fn(async () => null) });
+    const b = makeFakeSource({ sourceId: 'b', get: vi.fn(async () => fakeWork) });
+    manager.registerSource(a);
+    manager.registerSource(b);
+    const work = await manager.getCreativeWork('x-1');
+    expect(work).toBe(fakeWork);
+    expect(a.get).toHaveBeenCalledWith('x-1');
+    expect(b.get).toHaveBeenCalledWith('x-1');
+  });
+
+  test('getCreativeWork() with sourceId opt restricts to that source', async () => {
+    const fakeWork = {
+      '@type': 'Article', '@id': '/view/X', identifier: 'x-1', name: 'X', url: '/view/X'
+    };
+    const a = makeFakeSource({ sourceId: 'a', get: vi.fn(async () => fakeWork) });
+    const b = makeFakeSource({ sourceId: 'b', get: vi.fn(async () => null) });
+    manager.registerSource(a);
+    manager.registerSource(b);
+    const work = await manager.getCreativeWork('x-1', { sourceId: 'b' });
+    expect(work).toBeNull();
+    expect(a.get).not.toHaveBeenCalled();
+    expect(b.get).toHaveBeenCalledWith('x-1');
+  });
+
+  test('getCreativeWork() handles a source that throws — logs and continues', async () => {
+    const fakeWork = {
+      '@type': 'Article', '@id': '/view/X', identifier: 'x-1', name: 'X', url: '/view/X'
+    };
+    const broken = makeFakeSource({ sourceId: 'broken', get: vi.fn(async () => { throw new Error('boom'); }) });
+    const good = makeFakeSource({ sourceId: 'good', get: vi.fn(async () => fakeWork) });
+    manager.registerSource(broken);
+    manager.registerSource(good);
+    const work = await manager.getCreativeWork('x-1');
+    expect(work).toBe(fakeWork);
+  });
+
+  test('listCreativeWorks() fans out and concatenates', async () => {
+    const w1 = { '@type': 'Article', '@id': '/view/A', identifier: 'a', name: 'A', url: '/view/A' };
+    const w2 = { '@type': 'ImageObject', '@id': '/media/file/i', name: 'i', url: '/media/file/i' };
+    manager.registerSource(makeFakeSource({
+      sourceId: 'pages', types: ['Article'],
+      list: vi.fn(async () => ({ items: [w1], total: 1 }))
+    }));
+    manager.registerSource(makeFakeSource({
+      sourceId: 'media', types: ['ImageObject', 'VideoObject', 'AudioObject'],
+      list: vi.fn(async () => ({ items: [w2], total: 1 }))
+    }));
+    const page = await manager.listCreativeWorks({});
+    expect(page.items).toHaveLength(2);
+    expect(page.total).toBe(2);
+  });
+
+  test('listCreativeWorks() with types filter only queries matching sources', async () => {
+    const pagesList = vi.fn(async () => ({ items: [], total: 0 }));
+    const mediaList = vi.fn(async () => ({ items: [], total: 0 }));
+    manager.registerSource(makeFakeSource({ sourceId: 'pages', types: ['Article'], list: pagesList }));
+    manager.registerSource(makeFakeSource({ sourceId: 'media', types: ['ImageObject'], list: mediaList }));
+    await manager.listCreativeWorks({ types: ['ImageObject'] });
+    expect(pagesList).not.toHaveBeenCalled();
+    expect(mediaList).toHaveBeenCalled();
+  });
+
+  test('checkSchemaVersions() reports current vs on-disk per source (initial slice: equal)', () => {
+    manager.registerSource(makeFakeSource({ sourceId: 'pages', currentSchemaVersion: 1 }));
+    manager.registerSource(makeFakeSource({ sourceId: 'media', currentSchemaVersion: 2 }));
+    const report = manager.checkSchemaVersions();
+    expect(report).toHaveLength(2);
+    expect(report.every(r => !r.isStale)).toBe(true);
+    expect(report.map(r => r.sourceId).sort()).toEqual(['media', 'pages']);
+  });
+});

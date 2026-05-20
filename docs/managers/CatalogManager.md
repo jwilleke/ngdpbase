@@ -40,11 +40,11 @@ Per the 2026-05-20 design (see `docs/schemas.md`), this two-registry layout is t
 
 ### Designed but not yet implemented
 
-The 2026-05-20 schema-ratification decisions add three forward-looking capabilities. None of these are in the codebase today.
+The 2026-05-20 schema-ratification decisions add forward-looking capabilities. Progress so far:
 
-- **Asset-source registry** (Slice 2+ of #755) — a second `Map<sourceId, CatalogSource>` for CreativeWork producers, fanned out via `getCreativeWork()` / `listCreativeWorks()` / `checkSchemaVersions()`.
-- **SKOS-shaped vocabulary terms** — `CatalogTerm` gains optional fields aligned with W3C SKOS (`altLabels`, `broader`, `narrower`, `exactMatch`, `closeMatch`, `definition`, `scopeNote`, etc.). The existing flat `uri` field stays as deprecated legacy, treated as a single `exactMatch` entry when present.
-- **SKOS `ConceptScheme` JSON-LD emission** — a future endpoint at `/api/catalog/vocabulary/<scheme-id>` will render each vocabulary as a dereferenceable SKOS ConceptScheme document. Implements Slice 6 of #755 (linked-data middle ground framing).
+- **Asset-source registry** — **shipped in Slice 3 of #755 (#758)**. A second `Map<sourceId, CatalogSource>` for CreativeWork producers, fanned out via `registerSource()` / `getCreativeWork()` / `listCreativeWorks()` / `checkSchemaVersions()` / `getSourceInfo()`. `MediaManager` is the first registered source; `PageManager` lands in Slice 4 (#754-gated), `AttachmentManager` in Slice 5.
+- **SKOS-shaped vocabulary terms** — not yet implemented. `CatalogTerm` will gain optional fields aligned with W3C SKOS (`altLabels`, `broader`, `narrower`, `exactMatch`, `closeMatch`, `definition`, `scopeNote`, etc.). The existing flat `uri` field stays as deprecated legacy, treated as a single `exactMatch` entry when present.
+- **SKOS `ConceptScheme` JSON-LD emission** — not yet implemented. A future endpoint at `/api/catalog/vocabulary/<scheme-id>` will render each vocabulary as a dereferenceable SKOS ConceptScheme document. Implements Slice 6 of #755 (linked-data middle ground framing).
 
 ## Bootstrapping order
 
@@ -95,16 +95,16 @@ const page = await catalog.listCreativeWorks({
 | `suggestTerms(content, title)` | `Promise<CatalogTerm[]>` | Fan out to any provider implementing `suggestTerms()` (currently the AI stub only). |
 | `getProviderInfo()` | `Array<{id, displayName, domain?}>` | Diagnostics — list registered providers for admin UIs. |
 
-## Core methods (designed for #755 — Slices 2+)
+## Core methods (asset-source registry — shipped in Slice 3 / #758)
 
-The following surface is the **minimum API** that Slice 2 codifies in `src/types/Schema.ts` and that Slices 3–5 implement against. It is documented here so that #757 (Slice 2) has an authoritative target.
+The following surface is codified in `src/types/Schema.ts` (Slice 2 / #757) and implemented on CatalogManager in Slice 3 (#758). `MediaManager` is the first registered source; PageManager (Slice 4) and AttachmentManager (Slice 5) follow.
 
 | Method | Returns | Description |
 |---|---|---|
 | `registerSource(source)` | `void` | Register a `CatalogSource` (PageManager, MediaManager, AttachmentManager, or an addon-contributed source). Replaces by `sourceId`. |
-| `getCreativeWork(identifier, opts?)` | `Promise<CreativeWork \| null>` | Look up a single record across all sources by stable identifier (the rename-stable UUID per `docs/schemas.md` Decision 4). Returns `null` for not-found; throws only for actual errors. Optional `getByUrl(@id)` convenience for URL-only callers. |
-| `listCreativeWorks(query)` | `Promise<CatalogPage>` | Fan out a query across all sources matching the requested `types`. Cursor-based pagination. |
-| `checkSchemaVersions()` | `Promise<SchemaVersionReport>` | Compare each source's `currentSchemaVersion` constant against its on-disk file's value. Used by the admin-dashboard staleness banner per `docs/schemas.md` Decision 6. Non-blocking. |
+| `getCreativeWork(identifier, opts?)` | `Promise<CreativeWork \| null>` | Look up a single record across all sources by stable identifier (the rename-stable UUID per `docs/schemas.md` Decision 4). Returns `null` for not-found; throws only for actual errors. Optional `sourceId` opt restricts the lookup to one source. |
+| `listCreativeWorks(query)` | `Promise<CatalogPage>` | Fan out a query across all sources matching the requested `types`. Cursor scoped to a single source in the initial slice — callers paginating across multiple sources receive items in registration order. |
+| `checkSchemaVersions()` | `SchemaVersionReport` | Per-source comparison of `currentSchemaVersion` vs on-disk version (initial slice: all sources report `isStale: false`; per-file `schemaVersion` machinery wires in as each source persists the marker). |
 | `getSourceInfo()` | `Array<{sourceId, types, currentSchemaVersion}>` | Diagnostics symmetric with `getProviderInfo()`. |
 
 ### `CatalogSource` interface
