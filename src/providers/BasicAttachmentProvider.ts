@@ -1159,9 +1159,12 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     if (!BasicAttachmentProvider.DOC_METADATA_MIME_TYPES.has(mimeType)) return null;
 
     try {
-      // exiftool-vendored's Tags type is strict; cast to a loose bag because
-      // PDF/docx tags (ModDate, Language, Subject) aren't in the declared type.
-      const tags = await this.exiftool().read(filePath);
+      // exiftool-vendored's `Tags` type is strict and doesn't declare PDF/docx
+      // fields like ModDate, Language, Subject. Double-cast through `unknown`
+      // to a loose bag so we can read them — single-step casts get stripped by
+      // `@typescript-eslint/no-unnecessary-type-assertion` on commit.
+      const rawTags = await this.exiftool().read(filePath);
+      const tags = rawTags as unknown as Record<string, unknown>;
 
       const title = typeof tags.Title === 'string' && tags.Title ? tags.Title : undefined;
       // Author — try both PDF (Author) and OOXML (Creator).
