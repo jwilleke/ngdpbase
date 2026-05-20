@@ -768,53 +768,103 @@ class FileSystemMediaProvider extends BaseMediaProvider {
   }
 
   /**
-   * Extract playback duration from ExifTool's MediaDuration / Duration tags
-   * and normalise to ISO 8601 duration format (e.g. "PT1M30S").
+   * Ordered duration-tag fallback chain. Walked by `extractDuration()` until
+   * one yields a strictly positive value. Order is most-reliable-first.
    *
-   * exiftool-vendored returns Duration values in several shapes:
+   * Why each field is in the chain:
+   *   - `Duration` — container-level top tag, present in QuickTime/MP4/MOV,
+   *     MKV, AVI, WAV, AIFF, FLAC, MPEG. Single value per file.
+   *   - `TrackDuration` — per-track fallback when the container doesn't
+   *     expose its own. exiftool-vendored flattens N tracks into one tag,
+   *     keeping the last non-empty value seen.
+   *   - `MediaDuration` — same per-track shape as TrackDuration, but often
+   *     zero on Pixel/Android `.TS.mp4` files where track-N is metadata-only
+   *     (this is the bug that motivated the chain — exiftool reported
+   *     `Duration: 15.87 s` but `MediaDuration: 0 s` for the same file).
+   *   - `AudioDuration` — audio-only fallback (rarely useful alone, but
+   *     present in some streaming formats).
+   *   - `GoogleTrackDuration` — Pixel-specific QuickTime extension.
+   *   - `StreamDuration` — streaming containers (HLS chunks, etc.).
+   *   - `TotalDuration` — MPEG-1/MPEG-2 alternative top-level tag.
+   *
+   * Excluded as not-a-playback-duration: `PreviewDuration`, `SelectionDuration`,
+   * `BulbDuration`, `ContrastFlowDuration`, `SampleDuration`, `BlockDuration`,
+   * `ClusterDuration`, `DefaultDuration`, `SlowMotionRegions*Duration*`, and
+   * all DICOM `*Duration` variants. Those are either codec-internal sub-sample
+   * markers or non-media (medical imaging, slow-mo region metadata, edit
+   * selection state).
+   */
+  private static readonly DURATION_FIELDS: readonly string[] = [
+    'Duration',
+    'TrackDuration',
+    'MediaDuration',
+    'AudioDuration',
+    'GoogleTrackDuration',
+    'StreamDuration',
+    'TotalDuration'
+  ];
+
+  /**
+   * Extract playback duration from ExifTool's duration tags and normalise to
+   * ISO 8601 duration format (e.g. "PT1M30S").
+   *
+   * Walks `DURATION_FIELDS` and accepts the first tag that yields a strictly
+   * positive number of seconds. Zero values are skipped — Pixel `.TS.mp4`
+   * files set `MediaDuration: 0 s` while `Duration: 15.87 s` is the real
+   * length, and prior versions of this method picked up the zero via
+   * `??` short-circuit (#758 follow-up).
+   *
+   * Accepted raw shapes per candidate field:
    *   - number of seconds (most common for QuickTime / MP4)
-   *   - string like "0:01:30" or "00:01:30" (HH:MM:SS — some legacy paths)
-   *   - already a string like "PT1M30S" (rare)
+   *   - string like "0:01:30" / "00:01:30" / "30" (HH:MM:SS / MM:SS / SS)
+   *   - already-ISO string like "PT1M30S"
+   *   - exiftool-vendored Duration object (`.seconds` property)
    *
-   * Returns null when no usable duration field is present.
+   * Returns null when no candidate field yields a positive duration.
    */
   private extractDuration(tags: Record<string, unknown>): string | null {
-    const raw = tags.MediaDuration ?? tags.Duration;
-    if (raw === null || raw === undefined) return null;
+    for (const field of FileSystemMediaProvider.DURATION_FIELDS) {
+      const raw = tags[field];
+      if (raw === null || raw === undefined) continue;
 
-    let seconds: number | null = null;
+      let seconds: number | null = null;
 
-    if (typeof raw === 'number' && Number.isFinite(raw) && raw >= 0) {
-      seconds = raw;
-    } else if (typeof raw === 'string') {
-      // Already ISO 8601?
-      if (/^PT/i.test(raw)) return raw.toUpperCase();
-      // HH:MM:SS or MM:SS or SS
-      const parts = raw.split(':').map(p => Number(p.trim()));
-      if (parts.every(p => Number.isFinite(p))) {
-        if (parts.length === 3) seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
-        else if (parts.length === 2) seconds = parts[0] * 60 + parts[1];
-        else if (parts.length === 1) seconds = parts[0];
+      if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
+        seconds = raw;
+      } else if (typeof raw === 'string') {
+        // Already ISO 8601?
+        if (/^PT/i.test(raw)) {
+          // Skip the literal "PT0S" zero-duration case — try the next field.
+          if (/^PT0S$/i.test(raw.trim())) continue;
+          return raw.toUpperCase();
+        }
+        // HH:MM:SS or MM:SS or SS
+        const parts = raw.split(':').map(p => Number(p.trim()));
+        if (parts.every(p => Number.isFinite(p))) {
+          if (parts.length === 3) seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+          else if (parts.length === 2) seconds = parts[0] * 60 + parts[1];
+          else if (parts.length === 1) seconds = parts[0];
+        }
+      } else if (typeof raw === 'object' && raw !== null && 'seconds' in raw) {
+        const s = (raw as { seconds?: unknown }).seconds;
+        if (typeof s === 'number' && Number.isFinite(s) && s > 0) seconds = s;
       }
-    } else if (typeof raw === 'object' && raw !== null && 'seconds' in raw) {
-      // exiftool-vendored Duration object
-      const s = (raw as { seconds?: unknown }).seconds;
-      if (typeof s === 'number' && Number.isFinite(s) && s >= 0) seconds = s;
+
+      if (seconds === null || seconds <= 0) continue;
+
+      const totalSec = Math.round(seconds);
+      const hours = Math.floor(totalSec / 3600);
+      const mins = Math.floor((totalSec % 3600) / 60);
+      const secs = totalSec % 60;
+
+      let iso = 'PT';
+      if (hours > 0) iso += `${hours}H`;
+      if (mins > 0) iso += `${mins}M`;
+      // Always emit seconds when nothing else, and when there are residual seconds
+      if (secs > 0 || (hours === 0 && mins === 0)) iso += `${secs}S`;
+      return iso;
     }
-
-    if (seconds === null || seconds < 0) return null;
-
-    const totalSec = Math.round(seconds);
-    const hours = Math.floor(totalSec / 3600);
-    const mins = Math.floor((totalSec % 3600) / 60);
-    const secs = totalSec % 60;
-
-    let iso = 'PT';
-    if (hours > 0) iso += `${hours}H`;
-    if (mins > 0) iso += `${mins}M`;
-    // Always emit seconds when nothing else (PT0S), and when there are residual seconds
-    if (secs > 0 || (hours === 0 && mins === 0)) iso += `${secs}S`;
-    return iso;
+    return null;
   }
 
   /**

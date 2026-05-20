@@ -52,8 +52,8 @@ describe('FileSystemMediaProvider.extractDuration() — Slice 3 of #755 (#758)',
     provider = new FileSystemMediaProvider(minimalConfig);
   });
 
-  describe('null / missing input', () => {
-    it('returns null when no MediaDuration or Duration tag is present', () => {
+  describe('null / missing / zero input', () => {
+    it('returns null when no duration tag is present', () => {
       expect(provider['extractDuration']({})).toBeNull();
     });
 
@@ -63,6 +63,47 @@ describe('FileSystemMediaProvider.extractDuration() — Slice 3 of #755 (#758)',
 
     it('returns null when seconds is negative', () => {
       expect(provider['extractDuration']({ MediaDuration: -5 })).toBeNull();
+    });
+
+    it('returns null when ALL candidate fields are zero', () => {
+      expect(provider['extractDuration']({ Duration: 0, MediaDuration: 0, TrackDuration: 0 })).toBeNull();
+    });
+  });
+
+  describe('multi-field fallback (#758 follow-up — Pixel .TS.mp4 bug)', () => {
+    it('picks Duration over MediaDuration when MediaDuration is zero', () => {
+      // The actual exiftool output for a 15.87s Pixel video:
+      //   Duration: 15.87 s   MediaDuration: 0 s   TrackDuration: 15.87 s
+      // Pre-fix this returned "PT0S" because `??` short-circuited on MediaDuration=0.
+      expect(provider['extractDuration']({ Duration: 15.87, MediaDuration: 0, TrackDuration: 15.87 })).toBe('PT16S');
+    });
+
+    it('falls back to TrackDuration when both Duration and MediaDuration are zero', () => {
+      expect(provider['extractDuration']({ Duration: 0, MediaDuration: 0, TrackDuration: 45 })).toBe('PT45S');
+    });
+
+    it('skips literal "PT0S" string and tries the next field', () => {
+      expect(provider['extractDuration']({ Duration: 'PT0S', MediaDuration: 90 })).toBe('PT1M30S');
+    });
+
+    it('falls back to AudioDuration when container-level + per-track all missing/zero', () => {
+      expect(provider['extractDuration']({ Duration: 0, AudioDuration: 174 })).toBe('PT2M54S');
+    });
+
+    it('falls back to GoogleTrackDuration (Pixel-specific) when others fail', () => {
+      expect(provider['extractDuration']({ GoogleTrackDuration: 27.5 })).toBe('PT28S');
+    });
+
+    it('falls back to StreamDuration (streaming containers)', () => {
+      expect(provider['extractDuration']({ StreamDuration: 10 })).toBe('PT10S');
+    });
+
+    it('falls back to TotalDuration (MPEG-1/2 alternate top-level tag)', () => {
+      expect(provider['extractDuration']({ TotalDuration: '00:00:42' })).toBe('PT42S');
+    });
+
+    it('ignores irrelevant duration-named tags (PreviewDuration, BulbDuration, etc.)', () => {
+      expect(provider['extractDuration']({ PreviewDuration: 99, BulbDuration: 99, SampleDuration: 99 })).toBeNull();
     });
   });
 
@@ -83,8 +124,8 @@ describe('FileSystemMediaProvider.extractDuration() — Slice 3 of #755 (#758)',
       expect(provider['extractDuration']({ MediaDuration: 60 })).toBe('PT1M');
     });
 
-    it('formats 0 seconds as PT0S (always emits at least one component)', () => {
-      expect(provider['extractDuration']({ MediaDuration: 0 })).toBe('PT0S');
+    it('rejects 0 seconds (no positive duration → null)', () => {
+      expect(provider['extractDuration']({ MediaDuration: 0 })).toBeNull();
     });
 
     it('rounds fractional seconds (1.7 → 2s)', () => {
@@ -121,8 +162,11 @@ describe('FileSystemMediaProvider.extractDuration() — Slice 3 of #755 (#758)',
   });
 
   describe('priority and routing', () => {
-    it('MediaDuration wins when both MediaDuration and Duration are present', () => {
-      expect(provider['extractDuration']({ MediaDuration: 90, Duration: 60 })).toBe('PT1M30S');
+    it('Duration wins when both Duration and MediaDuration are positive', () => {
+      // Reversed from the original (#758-Phase-A) priority: Duration is the
+      // container-level value and is more reliable than the track-level
+      // MediaDuration which can be zero or report a non-media track.
+      expect(provider['extractDuration']({ Duration: 60, MediaDuration: 90 })).toBe('PT1M');
     });
   });
 });
