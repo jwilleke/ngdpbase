@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-20-02
+
+- Agent: Claude Opus 4.7
+- Subject: Ratified `docs/schemas.md` (status: brainstorm → ratified — 2026-05-20). Closed the 3 remaining open questions (Q4 Provider-vs-Manager unification, Q5 embedded-image metadata, Q8 federation framing) and filed EPIC #755 to track the 6-slice implementation. No ngdpbase code change → semver skip, no /othersites.
+- Current Issue: #755 (EPIC filed). No code touched.
+- Tests: n/a (docs only).
+- Work Done:
+  - **Q4 (provider unification)**: confirmed already answered by the 2026-05-20 CatalogSource decision (lines 21–29) — Managers unify behind `CatalogSource`; Providers stay diverse per-deployment. Struck-through with pointer to existing decision.
+  - **Q5 (embedded image metadata)**: ratified **link-only** — JSON-LD emits `associatedMedia` / `image` referencing the attachment's `@id`; page record itself stays page-text-only. Existing `AttachmentManager.syncPageMentions()` (`src/managers/AttachmentManager.ts:639`) + reverse `mentions[]` index (per #384) provides the join. **(C) hybrid (keyword-bleed into page search doc) explicitly parked** — would require new cascade-refresh hooks for "image keywords changed" and "image deleted" to re-index every page in `mentions[]`, not worth building speculatively. Reopen trigger documented: operator complains "searched X, image came back, page that uses it didn't." Markdown `![alt](src)` extraction gap also noted as same revisit trigger.
+  - **Q8 (federation framing)**: ratified **linked-data middle ground** — `@id` URLs are real dereferenceable URLs (content-negotiation `Accept: application/ld+json`), SKOS `ConceptScheme` endpoints at `/api/catalog/vocabulary/<scheme-id>` actually exist, `schemaVersion` markers self-describe the data graph. **Explicitly out of scope**: SPARQL, GraphQL-with-schema-org, cross-instance federation, OGC Vocabulary Service provider, per-sub-entity dereferenceable IDs. Rationale: prior decisions (canonical-URL `@id`, SKOS vocabularies, JSON-LD-only) already leaned this way; making it explicit prevents Slice 6 from underdelivering OR scope-creeping.
+  - Doc edits: frontmatter `status: brainstorm — open for revision` → `status: ratified — 2026-05-20`; banner rewritten + added schemas-vs-vocabularies terminology note (schemas = record shape; vocabularies = controlled term lists hosted by CatalogProvider); 2 long single-line bullets split at sentence boundaries to satisfy markdownlint 900-char limit.
+  - **EPIC #755 filed** with full cross-reference table: 8 closed predecessors (#154, #149, #405, #617, #624, #424, #384, #711, #750) and 2 open dependencies (#754 blocker for Slice 4's `Article.dateCreated`; #423 exercises Provider-layer diversity preserved by Decision 7). Notably calls out **#149 explicitly superseded** by Decision 9 (JSON-LD only, no microdata) and **#405 Phase 2's microdata plan superseded** by Slice 6.
+  - Slice plan stays as documented: Slice 1 CatalogManager audit, Slice 2 `src/types/Schema.ts`, Slice 3 media mapper, Slice 4 page mapper (gated by #754), Slice 5 PDF/docx mapper, Slice 6 JSON-LD render + content-negotiation + SKOS endpoint. Sub-issues to be filed off #755 as each slice starts.
+- Commits: this log entry + the schemas.md ratification commit.
+- Files Modified:
+  - docs/schemas.md (new file: ratified — 2026-05-20; Q4/Q5/Q8 closed; EPIC #755 referenced)
+  - docs/project_log.md
+
 ## 2026-05-20-01
 
 - Agent: Claude Opus 4.7
