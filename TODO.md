@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-20T14:30:00.000Z'
+lastModified: '2026-05-20T17:00:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -65,13 +65,14 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 
 | # | Topic | Priority hint |
 |---|---|---|
+| #755 | [EPIC] Metadata schemas ratified — schema.org-shaped CreativeWork model + JSON-LD linked-data publishing (6 slices) | **NEW 2026-05-20** — filed today; `docs/schemas.md` now `status: ratified`; closes Q4/Q5/Q8. Slice 1 (CatalogManager audit) or Slice 2 (`src/types/Schema.ts`) the natural first concrete step. Slice 4 blocked on #754 |
 | #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Low — body reconciled with `master` 2026-05-16 (audit comment pinned); search-provider ACL explicitly out-of-scope; de-scoped from the **Search + Finding Entries** label 2026-05-18 (ACL epic, not search-UX); refactor intentionally not started |
 | #738 | NCM/import conversion metrics — aggregate by structured `kind`, trend | Low — **unblocked** by #728 S3 (structured `kind` codes now exist); observability follow-up, reuses MetricsManager/OTLP |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images (security+size) | Low — #728 Phase-2 hardening split-out; config-gated, adds sharp/libvips; do when a real driver appears |
 | #736 | `config/app-default-config.json` documentation | Low — filed 2026-05-17; doc task; large config surface incl. new NCM keys |
 | #729 | Improvements to `[{Location}]` | Low — filed 2026-05-16; good-first-issue; Location plugin follow-ups |
 | #744 | [EPIC] Search-picker IA simplification | **CLOSED** — all slices shipped: #735 (2-row toolbar v3.22.0), #720 (format facets), #745 (date v3.21/3.23), #691 (Category multi-select **v3.25.0** — final residual). #721 closed (collapse obsolete). Nothing left |
-| #691 | Asset-picker: Category multi-select for source=Pages | **Fixed v3.25.0** (`a4d60c35`) — `in review`, awaiting operator browser-confirm. Mirrors the keyword multi-select; Pages-only; backend already honoured `category=`. Closes out the #744 EPIC residual |
+| #691 | Asset-picker: Category multi-select for source=Pages | **Fixed v3.25.0** (`a4d60c35`) — `in review` label no longer set (operator dropped 2026-05-20); presumed accepted. Closes out the #744 EPIC residual |
 | #750 | Index video capture-date (CreateDate/MediaCreateDate/CreationDate) | **Fixed v3.25.1** (`97089601`) — `in review`. Shared `CAPTURE_DATE_FIELDS` constant + `extractDateTimeOriginal` helper; videos now populate the indexed timestamp instead of dropping out of date sort/filter. Optional `media.rebuild` back-fills existing items. (Prior #519/#518 cross-refs were stale — both CLOSED; #750 stands alone) |
 | #754 | Page-model `created` timestamp (creation-date search/sort) | Low/Medium — split from closed #643 (modified-date shipped v3.22.0). Gated by a per-page schema change + ~17K-page backfill migration; own focused effort. Unblocks `dateField=created` in SearchPlugin + the #745 asset-picker date control |
 | #722 | Video poster-frame thumbnails (ffmpeg) | Low — related to #744 (better video tiles make the video filter useful) but **not a child**: result presentation + adds ffmpeg dep. #731 shipped v3.16.0; fills the video thumbnail cell |
