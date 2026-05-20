@@ -2,6 +2,26 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-20-06
+
+- Agent: Claude Opus 4.7
+- Subject: Released v3.26.0 — schemas ratified + Slices 1/2/3 of EPIC #755 (#756 audit doc, #757 src/types/Schema.ts, #758 MediaManager CatalogSource + duration badge). Propagated to all 4 satellites.
+- Current Issue: #755 (Slices 1-3 of 6 shipped), #756, #757, #758 (Phase A + B both delivered today).
+- Tests: jimstest re-validated on release commit (`955d72e0`): unit 5757/5757, E2E 72/72. All 3 satellites green: 5757/5757 + 72/72 each. Zero flakes across the propagation.
+- Perf: idle memory +100% (1490 → 2984 MB) flagged as warning; identical documented cold-vs-warm RSS swing pattern as v3.24.4↔v3.25.0 and v3.25.0↔v3.25.1 (operator-accepted artifact). All routes flat or **improved** — `/` 137→30 ms (−78%), `/search` 152→40 ms (−74%), `/view/Welcome` flat, `/login` +1 ms. No code-level memory regression suggested.
+- Work Done:
+  - `/semver minor` bumped 3.25.1 → 3.26.0; baseline file `docs/performance/baseline-v3.26.0-2026-05-20.md` written with full drift table.
+  - GitHub release published at <https://github.com/jwilleke/ngdpbase/releases/tag/v3.26.0> with auto-generated notes from the v3.25.1..v3.26.0 commit range.
+  - Step 8a — jimstest fully re-built + restarted + tested on the release commit before any satellite propagation.
+  - `/othersites` (satellite-only mode) processed Fairways (port 2121), ve-geology (3333), temp-builds (3001) sequentially. Each: git pull → ./server.sh stop → npm run build → ./server.sh start → npm test → npm run test:e2e. All green first try.
+- Commits in release range: 10 (the 4 EPIC docs commits + Slice 1 + Slice 2 + Slice 3 Phase A + Slice 3 Phase B + 2 TODO freshens), plus the release-bump commit `955d72e0`.
+- Files Modified (release-bump only):
+  - package.json (3.25.1 → 3.26.0)
+  - config/app-default-config.json (version)
+  - CHANGELOG.md (v3.26.0 section)
+  - docs/performance/baseline-v3.26.0-2026-05-20.md (new)
+  - docs/project_log.md
+
 ## 2026-05-20-05
 
 - Agent: Claude Opus 4.7
