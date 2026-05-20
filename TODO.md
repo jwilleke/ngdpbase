@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-20T20:00:00.000Z'
+lastModified: '2026-05-20T21:30:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -68,7 +68,7 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | #755 | [EPIC] Metadata schemas ratified — schema.org-shaped CreativeWork model + JSON-LD linked-data publishing (6 slices) | **NEW 2026-05-20** — filed today; `docs/schemas.md` now `status: ratified`; closes Q4/Q5/Q8. Sub-issues filed: **#756 Slice 1 (CatalogManager audit)** + **#757 Slice 2 (`src/types/Schema.ts`)** — both prep work, can run in parallel. Slices 3–6 to be filed when predecessors land; Slice 4 blocked on #754 |
 | #756 | Slice 1 of #755 — CatalogManager audit: docs + minimum-API recommendation | **Shipped 2026-05-20** (`7a68b718`) — `in review`. `docs/managers/CatalogManager.md` created. Closed CatalogManager warning in #660 docs-coverage (managers 24→25/37) |
 | #757 | Slice 2 of #755 — `src/types/Schema.ts`: CreativeWork + subtypes + per-source mapper signatures | **Shipped 2026-05-20** (`8fd3a996`) — `in review`. 5 subtypes + CatalogSource interface + 5 type guards + 17 tests. Unblocks Slices 3–6 |
-| #758 | Slice 3 of #755 — MediaManager-as-CatalogSource + asset-picker duration badge | **Shipped v3.26.0 2026-05-20** (`48611f21`+`77596e01`) — `in review`. Video/audio duration extraction; AssetRecord.duration/bitrate; picker duration badge; CatalogManager.registerSource impl. Caveat: existing media items need one-click media.rebuild to back-fill. toAssetRecord re-derivation deferred |
+| #758 | Slice 3 of #755 — MediaManager-as-CatalogSource + asset-picker duration badge | **Shipped v3.26.0 + v3.26.1 patch 2026-05-20** (`48611f21`+`77596e01`+`16cac01d`) — `in review`. v3.26.1 patch fixes Pixel `.TS.mp4` `MediaDuration: 0` bug via 7-tag candidate chain. Operator needs media.rebuild to re-extract durations. toAssetRecord re-derivation deferred. Satellites pick up patch on next minor |
 | #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Low — body reconciled with `master` 2026-05-16 (audit comment pinned); search-provider ACL explicitly out-of-scope; de-scoped from the **Search + Finding Entries** label 2026-05-18 (ACL epic, not search-UX); refactor intentionally not started |
 | #738 | NCM/import conversion metrics — aggregate by structured `kind`, trend | Low — **unblocked** by #728 S3 (structured `kind` codes now exist); observability follow-up, reuses MetricsManager/OTLP |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images (security+size) | Low — #728 Phase-2 hardening split-out; config-gated, adds sharp/libvips; do when a real driver appears |

@@ -2,6 +2,27 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-20-07
+
+- Agent: Claude Opus 4.7
+- Subject: v3.26.1 patch — `extractDuration()` walks a 7-tag candidate chain rejecting zero values. Fixes #758 follow-up where Pixel `.TS.mp4` files indexed `duration: 'PT0S'` because the original `MediaDuration ?? Duration` short-circuited on `MediaDuration: 0` (a metadata-only-track artifact in multi-track containers). Operator browser-confirmed the badge worked on some videos but not the Pixel TS files — diagnosis traced to exiftool emitting `Duration: 15.87 s` AND `MediaDuration: 0 s` for the same file. `/othersites` skipped per operator directive (patch chain, defer to next minor).
+- Current Issue: #758 (Phase A + Phase B + this patch fix all shipped).
+- Tests: unit 5766/5766 (+5 new for chain walk + zero rejection); E2E 72/72 on jimstest pre-release; jimstest re-validated on release commit (`21c13080`) — unit 5766/5766. E2E skipped on release commit per policy (only `src/providers/` changed; no UI path touched).
+- Perf: cold-cache pattern again — `/` +430% (30→159 ms), `/search` +305% (40→162 ms). v3.26.0 caught warm-cache at 30 ms making the comparison stark; both numbers are within historical normal (v3.25.1 was 137 ms, v3.24.4 was 189 ms). Memory +5.3% under threshold. Fix can't affect route timing (scanner-only).
+- Work Done:
+  - Diagnosed via exiftool output on `/Volumes/hd2A/media/photos/2020s/2024/2024-10/PXL_20241015_144829990.TS.mp4`: `Duration: 15.87 s`, `MediaDuration: 0 s`, `TrackDuration: 15.87 s`. exiftool-vendored flattens N tracks per file and keeps the LAST non-empty value — Track4 in this file is metadata-only with MediaDuration=0, overwriting Track1's real value.
+  - Replaced the `??` short-circuit with an ordered candidate chain (`DURATION_FIELDS`): Duration → TrackDuration → MediaDuration → AudioDuration → GoogleTrackDuration → StreamDuration → TotalDuration. Walked sequentially; each candidate must yield strictly-positive seconds or be skipped. Also rejects the literal `'PT0S'` pre-parsed string.
+  - Chain order validated against operator's exiftool reference table (Duration = composite/most-useful, TrackDuration typically matches, MediaDuration is QT/MP4 specific). Additional 4 tags cover audio-only, Pixel-specific, streaming, MPEG-1/2 variants. Excluded ~30 unrelated `*Duration` tags from exiftool's catalog (PreviewDuration, BulbDuration, SampleDuration, DICOM medical-imaging variants, slow-mo region metadata, etc.).
+  - Updated 2 existing tests for the new behavior (zero-seconds now → null not PT0S; Duration wins over MediaDuration). Added 5 new tests covering the exact Pixel bug + all the new fallback tags.
+  - Operator caveat: requires another media.rebuild to re-extract durations on items indexed during the brief v3.26.0 window — same pattern as #750 / #758 itself.
+- Commits: `16cac01d` (fix), `21c13080` (release bump). Tag v3.26.1 pushed; GitHub Release entry deferred (patch with no explicit ask — can backfill via `/release v3.26.1`).
+- Files Modified:
+  - src/providers/FileSystemMediaProvider.ts (DURATION_FIELDS chain + extractDuration walk)
+  - src/providers/**tests**/FileSystemMediaProvider.extractDurationBitrate.test.ts (+5 / updated 2)
+  - package.json, config/app-default-config.json, CHANGELOG.md
+  - docs/performance/baseline-v3.26.1-2026-05-20.md (new)
+  - docs/project_log.md
+
 ## 2026-05-20-06
 
 - Agent: Claude Opus 4.7
