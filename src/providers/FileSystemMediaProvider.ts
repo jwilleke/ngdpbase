@@ -679,12 +679,7 @@ class FileSystemMediaProvider extends BaseMediaProvider {
           model: rawTags.Model ?? null,
           gpsLatitude: lat ?? null,
           gpsLongitude: lng ?? null,
-          dateTimeOriginal: (() => {
-            const dt = rawTags.DateTimeOriginal as { year?: number; month?: number; day?: number; hour?: number; minute?: number; second?: number } | null | undefined;
-            if (!dt || typeof dt.year !== 'number') return null;
-            const pad = (n: number): string => String(n).padStart(2, '0');
-            return `${dt.year}-${pad(dt.month ?? 1)}-${pad(dt.day ?? 1)} ${pad(dt.hour ?? 0)}:${pad(dt.minute ?? 0)}:${pad(dt.second ?? 0)}`;
-          })()
+          dateTimeOriginal: this.extractDateTimeOriginal(rawTags)
         }
       };
 
@@ -712,10 +707,53 @@ class FileSystemMediaProvider extends BaseMediaProvider {
   }
 
   /**
+   * Ordered capture-date field names checked for both year extraction and
+   * full-timestamp extraction. Order matches ExifTool's own precedence:
+   * `DateTimeOriginal` is the photographer's intent (image EXIF), the
+   * `*CreateDate` variants are the file/container creation timestamps that
+   * video formats use (issue #750: QuickTime:CreationDate flattens to
+   * `CreationDate` in exiftool-vendored's Tags shape).
+   */
+  private static readonly CAPTURE_DATE_FIELDS: readonly string[] = [
+    'DateTimeOriginal',
+    'CreateDate',
+    'MediaCreateDate',
+    'CreationDate'
+  ];
+
+  /**
+   * Extract the formatted capture-date timestamp ("YYYY-MM-DD HH:MM:SS") from
+   * EXIF/QuickTime tags, falling back through `DateTimeOriginal` →
+   * `CreateDate` → `MediaCreateDate` → `CreationDate`.
+   *
+   * The first three already covered images; `CreationDate` is the
+   * QuickTime/Apple variant that video containers populate when the camera
+   * didn't write `DateTimeOriginal` (#750). Without this fallback, videos
+   * indexed `dateTimeOriginal: null` and silently dropped out of any
+   * capture-date sort/filter — only the year facet worked (via `extractYear`).
+   *
+   * Returns `null` when no field provides a usable `.year`.
+   */
+  private extractDateTimeOriginal(tags: Record<string, unknown>): string | null {
+    for (const field of FileSystemMediaProvider.CAPTURE_DATE_FIELDS) {
+      const dt = tags[field] as {
+        year?: number; month?: number; day?: number;
+        hour?: number; minute?: number; second?: number;
+      } | null | undefined;
+      if (dt && typeof dt.year === 'number') {
+        const pad = (n: number): string => String(n).padStart(2, '0');
+        return `${dt.year}-${pad(dt.month ?? 1)}-${pad(dt.day ?? 1)} ${pad(dt.hour ?? 0)}:${pad(dt.minute ?? 0)}:${pad(dt.second ?? 0)}`;
+      }
+    }
+    return null;
+  }
+
+  /**
    * Extract the four-digit year from tags, filename, path, or mtime.
    *
    * Priority:
-   * 1. EXIF DateTimeOriginal / CreateDate / MediaCreateDate
+   * 1. EXIF/QuickTime date fields (DateTimeOriginal / CreateDate /
+   *    MediaCreateDate / CreationDate — see CAPTURE_DATE_FIELDS)
    * 2. Filename prefix YYYY- or YYYY_
    * 3. Directory path component matching /^\d{4}$/
    * 4. File mtime year
@@ -725,8 +763,8 @@ class FileSystemMediaProvider extends BaseMediaProvider {
     filePath: string,
     mtime: Date
   ): number {
-    // 1. EXIF date fields
-    for (const field of ['DateTimeOriginal', 'CreateDate', 'MediaCreateDate']) {
+    // 1. EXIF/QuickTime date fields
+    for (const field of FileSystemMediaProvider.CAPTURE_DATE_FIELDS) {
       const dt = tags[field];
       const year = dt != null ? (dt as { year?: unknown }).year : undefined;
       if (typeof year === 'number' && year >= 1800 && year <= 2100) {
