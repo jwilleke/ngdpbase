@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-20T13:00:00.000Z'
+lastModified: '2026-05-20T14:30:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -72,7 +72,7 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | #729 | Improvements to `[{Location}]` | Low — filed 2026-05-16; good-first-issue; Location plugin follow-ups |
 | #744 | [EPIC] Search-picker IA simplification | **CLOSED** — all slices shipped: #735 (2-row toolbar v3.22.0), #720 (format facets), #745 (date v3.21/3.23), #691 (Category multi-select **v3.25.0** — final residual). #721 closed (collapse obsolete). Nothing left |
 | #691 | Asset-picker: Category multi-select for source=Pages | **Fixed v3.25.0** (`a4d60c35`) — `in review`, awaiting operator browser-confirm. Mirrors the keyword multi-select; Pages-only; backend already honoured `category=`. Closes out the #744 EPIC residual |
-| #750 | Index video capture-date (CreateDate/MediaCreateDate) | Low — real remnant split out of closed #721; enabler for the asset capture-date range half (with **#519** provider-side filter). Do alongside #519 |
+| #750 | Index video capture-date (CreateDate/MediaCreateDate/CreationDate) | **Fixed v3.25.1** (`97089601`) — `in review`. Shared `CAPTURE_DATE_FIELDS` constant + `extractDateTimeOriginal` helper; videos now populate the indexed timestamp instead of dropping out of date sort/filter. Optional `media.rebuild` back-fills existing items. (Prior #519/#518 cross-refs were stale — both CLOSED; #750 stands alone) |
 | #754 | Page-model `created` timestamp (creation-date search/sort) | Low/Medium — split from closed #643 (modified-date shipped v3.22.0). Gated by a per-page schema change + ~17K-page backfill migration; own focused effort. Unblocks `dateField=created` in SearchPlugin + the #745 asset-picker date control |
 | #722 | Video poster-frame thumbnails (ffmpeg) | Low — related to #744 (better video tiles make the video filter useful) but **not a child**: result presentation + adds ffmpeg dep. #731 shipped v3.16.0; fills the video thumbnail cell |
 | #707 | Typed footnote + knowledge-graph reference index | Low — speculative; **depends on #706**; defer behind a named citation-heavy user (2026-05-16 brainstorm) |
