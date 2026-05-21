@@ -8,34 +8,21 @@
 </div>
 <% } %>
 
+<%# Slice 6a of #760 (#765) — JSON-LD structured-data block. Replaces the
+    previous microdata (`itemscope itemtype=...`) used here per Decision 9 of
+    #755 (2026-05-20): "Structured-data is JSON-LD only, not HTML microdata.
+    Supersedes #149." The mapper lives in `src/utils/buildPageJsonLd.ts`;
+    `viewPage()` populates `pageJsonLd` on the template payload. JSON.stringify
+    handles `<` / `>` / `"` escaping inside the script body, so an attacker-
+    controlled metadata.title cannot break out. %>
+<% if (typeof pageJsonLdScript !== 'undefined' && pageJsonLdScript) { %>
+<script type="application/ld+json"><%- pageJsonLdScript %></script>
+<% } %>
+
 <!-- Page content -->
-<article class="markdown-body mb-4" itemscope itemtype="https://schema.org/Article">
-  <% if (metadata) { %>
-    <% if (metadata.title) { %><meta itemprop="name" content="<%= metadata.title %>"><% } %>
-    <% if (metadata.author) { %><meta itemprop="author" content="<%= metadata.author %>"><% } %>
-    <% if (metadata.lastModified) { %><meta itemprop="dateModified" content="<%= metadata.lastModified %>"><% } %>
-  <% } %>
+<article class="markdown-body mb-4">
   <%- content %>
 </article>
-
-<% if (metadata && (metadata['system-category'] || (metadata['user-keywords'] && metadata['user-keywords'].length) || (metadata['system-keywords'] && metadata['system-keywords'].length))) { %>
-<!-- Microdata: keywords and category (screen-reader accessible, crawlable) — #149 -->
-<div class="visually-hidden" aria-hidden="true">
-  <% if (metadata['system-category']) { %>
-    <span itemprop="keywords"<% if (keywordUris && keywordUris[metadata['system-category']]) { %> itemid="<%= keywordUris[metadata['system-category']] %>"<% } %>><%= metadata['system-category'] %></span>
-  <% } %>
-  <% if (metadata['system-keywords'] && metadata['system-keywords'].length) { %>
-    <% metadata['system-keywords'].forEach(function(kw) { %>
-      <span itemprop="keywords"<% if (keywordUris && keywordUris[kw]) { %> itemid="<%= keywordUris[kw] %>"<% } %>><%= kw %></span>
-    <% }); %>
-  <% } %>
-  <% if (metadata['user-keywords'] && metadata['user-keywords'].length) { %>
-    <% metadata['user-keywords'].forEach(function(kw) { %>
-      <span itemprop="keywords"<% if (keywordUris && keywordUris[kw]) { %> itemid="<%= keywordUris[kw] %>"<% } %>><%= kw %></span>
-    <% }); %>
-  <% } %>
-</div>
-<% } %>
 
 <% if (typeof sectionEditingEnabled !== 'undefined' && sectionEditingEnabled) { %>
 <style>

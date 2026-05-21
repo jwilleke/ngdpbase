@@ -32,6 +32,7 @@ import { extractSection, spliceSection } from '../utils/SectionUtils.js';
 import { shuffleArray } from '../utils/pluginFormatters.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
 import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../utils/ContactSubmissionLog.js';
+import { buildPageJsonLd, stringifyJsonLdForScript } from '../utils/buildPageJsonLd.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
 import { renderCommentListHtml } from '../plugins/CommentsPlugin.js';
 import WikiContext from '../context/WikiContext.js';
@@ -1811,6 +1812,20 @@ ${panes}
         autoTaggedKeywords = await searchManager.getPageSystemKeywords(pageName);
       }
 
+      // Slice 6a of #760 (#765) — build the schema.org Article JSON-LD
+      // payload for this page. Embedded by view.ejs in a
+      // `<script type="application/ld+json">` tag. `stringifyJsonLdForScript`
+      // escapes < / > / & as \uXXXX so attacker-controlled metadata can't
+      // close the <script> tag prematurely. Will move to
+      // CatalogManager.getCreativeWork('pages', pageId) once Slice 4 lands
+      // (#754 currently gates that).
+      const baseUrl = configManager?.getProperty('ngdpbase.base-url', '');
+      const pageJsonLd = buildPageJsonLd(pageName, metadata, {
+        baseUrl: baseUrl || undefined,
+        autoTaggedKeywords
+      });
+      const pageJsonLdScript = stringifyJsonLdForScript(pageJsonLd);
+
       res.render(template, {
         ...templateData,
         pageName,
@@ -1822,6 +1837,8 @@ ${panes}
         metadata,
         keywordUris,
         autoTaggedKeywords,
+        pageJsonLd,
+        pageJsonLdScript,
         pageIsPrivate: !canAccessPrivate ? false : await this._isPagePrivate(pageName),
         versionInfo,
         lastModified: metadata?.lastModified,
