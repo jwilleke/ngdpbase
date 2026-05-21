@@ -2,6 +2,25 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-21-05
+
+- Agent: Claude Opus 4.7
+- Subject: Manually propagated v3.27.1 (#753 MarkupParser fix) to all three satellites via `/othersites satellite-only`. Patch releases normally defer satellite propagation per `feedback_release_workflow`; operator explicitly opted in this time because the fix is user-visible (any page using a CommonMark variable-length backtick code span would leak `<span data-jspwiki-placeholder>` tags in the rendered HTML until the satellite picks up v3.27.1).
+- Current Issue: #753 (in review on v3.27.1; now live on all four instances).
+- Mode: satellite-only — jimstest was validated on the release commit in `/semver` Step 8a earlier this session (5807/5807 unit), so `/othersites` skipped jimstest and processed only the three satellites sequentially.
+- Per-instance results (each: `git pull --ff-only` → `./server.sh stop` → `npm run build` → `./server.sh start` → `npm test` → `npm run test:e2e`):
+
+| Instance | Path | Port | Unit | E2E |
+|---|---|---|---|---|
+| The Fairways | `/Volumes/hd2A/workspaces/github/fairways-base` | 2121 | 5807/5807 ✅ | 72/72 ✅ |
+| ve-geology | `/Volumes/hd2A/workspaces/github/ngdpbase-veg` | 3333 | 5807/5807 ✅ | 72/72 ✅ |
+| ngdpbase temp build | `/Volumes/hd2/ngdp-temp-builds/ngdpbase` | 3001 | 5807/5807 ✅ | 72/72 ✅ |
+
+- Flakes seen: none. Zero retries; all three satellites first-try green on both unit and E2E.
+- Side: fairways-base had a single untracked file `docs/planning/plan-addon-accounting.md` (operator working notes, expected); not touched. ve-geology and ngdp-temp-builds were clean pre-pull.
+- Commits: none (propagation only).
+- Files Modified: docs/project_log.md (this entry).
+
 ## 2026-05-21-04
 
 - Agent: Claude Opus 4.7
