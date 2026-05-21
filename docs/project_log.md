@@ -2,6 +2,29 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-21-10
+
+- Agent: Claude Opus 4.7
+- Subject: Fixed #764 — `BasicAttachmentProvider.storeAttachmentInternal()`'s dedup-by-hash branch short-circuited before `extractDocMetadata()` ran, so re-uploading a pre-Slice-5 PDF/docx/xlsx/pptx never populated the seven Slice-5 fields on the existing record. Per-file complement to #763 (Slice 5b's bulk backfill). Re-upload now does what users naturally expect: refresh embedded metadata on the existing record.
+- Current Issue: #764 (shipped on master `16482277`; pending release + close).
+- Tests: 5834/5834 unit (was 5827; +7 new dedup-branch cases in `BasicAttachmentProvider.docMetadata.test.ts` covering pre-Slice-5 PDF refresh, source-edited Title refresh, stale-field clear, no-op when already-matching, image MIME skip, missing storageLocation non-fatal, exiftool throw non-fatal). E2E 72/72 on jimstest. Build + tsc clean.
+- Refactor: extracted the field-by-field apply logic from `backfillDocMetadata()` into a shared private helper `applyDocMetadataFields(record, extracted): boolean`. Used by both Slice 5b's bulk path and the new dedup branch — keeps the "set when value exists; clear stale when null/undefined" semantics in lockstep. Verified safe by re-running the 7 existing backfill tests against the refactored code path.
+- Semver: pending decision (see release-decision note below).
+- /othersites: pending (gated on semver).
+- Changes:
+  - `src/providers/BasicAttachmentProvider.ts`:
+    - New private `applyDocMetadataFields(record, extracted)` helper. Field-by-field mutation; returns `true` when the record changed. Identical to the inline logic that was previously buried in `backfillDocMetadata()`.
+    - `backfillDocMetadata()` simplified to call the helper.
+    - Dedup branch in `storeAttachmentInternal()` (the 4-line `if (existing) { log + return }` block at line 478): when the existing record's MIME is in `DOC_METADATA_MIME_TYPES` and it has a `storageLocation`, run `extractDocMetadata()` on that path and apply via the shared helper. Persist only on change. Non-doc MIMEs (image/video/etc.) still short-circuit immediately — no perl process spawn. Per-file extraction failures are non-fatal (logged; existing record returned unchanged); the dedup-return contract is preserved.
+  - `src/providers/__tests__/BasicAttachmentProvider.docMetadata.test.ts`: +7 new test cases in a `storeAttachmentInternal — dedup-by-hash re-extract (#764)` block. Tests drive `storeAttachmentInternal` directly via the same private-method-call pattern used by the existing `extractDocMetadata` tests. Mocks `generateAttachmentId` to force the dedup branch.
+- Out of scope (still tracked under EPIC #760): faceted search dialog, Slice 6 JSON-LD render, `media.rebuild` Slice-3-field verification, `media.toAssetRecord` re-derivation.
+- **Release decision note**: this is a bug fix (the dedup branch was missing the metadata refresh) with no new public API. Suggests `/semver patch` (defers GH Release publishing and skips `/othersites` per the patch rule; satellites pick up at next minor). Operator may opt to cut as `/semver minor` if they want this propagated to satellites immediately (similar to v3.27.1 / #753) since this fix touches the upload path and is user-visible. Currently uncut — pending operator preference.
+- Commits: `16482277` (dedup re-extract fix — headline).
+- Files Modified:
+  - src/providers/BasicAttachmentProvider.ts
+  - src/providers/**tests**/BasicAttachmentProvider.docMetadata.test.ts
+  - docs/project_log.md
+
 ## 2026-05-21-09
 
 - Agent: Claude Opus 4.7
