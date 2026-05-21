@@ -6,7 +6,7 @@ This command helps focus on high-priority and current work by showing:
 
 - GitHub Dependabot alerts or other vulnerabilities
 - Open `[BUG]`s in ngdpbase
-- `in review` items awaiting decision
+- **Waiting on Review Sign-off** — work shipped, `in review` label set, operator verification is the only thing left before close
 - Open PRs (ngdpbase and satellites)
 - Operator-decision carryover (e.g., recommended-close issues)
 - Top-priority items from sister sites (combined table — see below)
@@ -48,8 +48,8 @@ Freshen the root `TODO.md` (moved from `docs/TODO.md` on 2026-05-16). Keep only 
 ## Output sections
 
 - **Security / Dependabot** — open alerts table
+- **Waiting on Review Sign-off** — issues carrying the `in review` label: work is shipped/merged; operator verification is the only thing between the issue and closure. For each item include shipped version (if any), what changed in one line, and how to verify (URL, command, file to inspect). This is the section the operator should clear first each session.
 - **Open PRs** — ngdpbase + satellites
-- **In Review** — issues with the `in review` label
 - **Open BUGS** — ngdpbase, count + top by issue # / recency
 - **Sister-site top priorities (combined table)** — geohazardwatch only today; expand if more separate satellites emerge
 - **Operator-action carryover** — items awaiting yes/no/close decisions

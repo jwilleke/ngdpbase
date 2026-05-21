@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-20T23:35:00.000Z'
+lastModified: '2026-05-21T08:30:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -31,6 +31,17 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 | Dependabot (GHSA-rmmh-p597-ppvv) | `showdown` | medium | ReDoS (CVE-2024-1899); tracked in #599; **no upstream patch** — mitigation only. #749 = recurring "re-check for a patch" task. **Only remaining open alert.** |
 
 > `ws` GHSA-58qx-3vcg-4xpx **resolved v3.24.1** (`97a95d1d`) — scoped pm2 override forced ws → 8.20.1; `npm audit` no longer lists it.
+
+## Waiting on Review Sign-off
+
+Items carrying the `in review` label — work is shipped/merged; operator verification is the only thing left before close. **Clear this list before starting new feature work.**
+
+| # | Title | Shipped | How to verify |
+|---|---|---|---|
+| #759 | Slice 5 of #755 — AttachmentManager-as-CatalogSource + PDF/docx metadata extraction | v3.27.0 (`b348bfd4`) 2026-05-20 | Slice 5 plumbed extraction → storage → search-match → CatalogSource emission but **adds no UI surface**. Three review paths: (a) upload a PDF whose embedded `Title`/`Author` differ from filename and search for them in the asset picker — pre-Slice-5 wouldn't match, post-Slice-5 should; (b) grep `data/attachments/attachment-metadata.json` after upload for `documentTitle`/`documentAuthor`/etc.; (c) `npm test -- BasicAttachmentProvider.docMetadata AttachmentManager` (34 cases). Follow-up "Slice 5a" to render the new fields in `admin-attachments.ejs` would close the review-friendliness gap |
+| #757 | Slice 2 of #755 — `src/types/Schema.ts`: CreativeWork + subtypes + per-source mapper signatures | (`8fd3a996`) 2026-05-20 | Type-only deliverable: 5 subtypes + CatalogSource interface + 5 type guards + 17 tests. Verify by reading `src/types/Schema.ts` and `src/types/guards.ts`; tests `npm test -- src/types/__tests__/guards.test.ts` |
+| #756 | Slice 1 of #755 — CatalogManager audit: docs + minimum-API recommendation | (`7a68b718`) 2026-05-20 | Docs deliverable: read `docs/managers/CatalogManager.md`; check it appears in the docs-coverage report (managers 25/37, closed one #660 warning) |
+| #750 | Index video capture-date (CreateDate/MediaCreateDate/QuickTime:CreationDate) | v3.25.1 (`97089601`) | Upload a video with a known capture date or run `media.rebuild`; confirm it appears in date sort/filter in the asset picker. Tests: `npm test -- FileSystemMediaProvider.extractDateTimeOriginal` |
 
 ## Open BUGS (ngdpbase, by issue #)
 
@@ -65,11 +76,7 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 
 | # | Topic | Priority hint |
 |---|---|---|
-| #755 | [EPIC] Metadata schemas ratified — schema.org-shaped CreativeWork model + JSON-LD linked-data publishing (6 slices) | **NEW 2026-05-20** — filed today; `docs/schemas.md` now `status: ratified`; closes Q4/Q5/Q8. Sub-issues filed: **#756 Slice 1 (CatalogManager audit)** + **#757 Slice 2 (`src/types/Schema.ts`)** — both prep work, can run in parallel. Slices 3–6 to be filed when predecessors land; Slice 4 blocked on #754 |
-| #756 | Slice 1 of #755 — CatalogManager audit: docs + minimum-API recommendation | **Shipped 2026-05-20** (`7a68b718`) — `in review`. `docs/managers/CatalogManager.md` created. Closed CatalogManager warning in #660 docs-coverage (managers 24→25/37) |
-| #757 | Slice 2 of #755 — `src/types/Schema.ts`: CreativeWork + subtypes + per-source mapper signatures | **Shipped 2026-05-20** (`8fd3a996`) — `in review`. 5 subtypes + CatalogSource interface + 5 type guards + 17 tests. Unblocks Slices 3–6 |
-| #758 | Slice 3 of #755 — MediaManager-as-CatalogSource + asset-picker duration badge | **CLOSED 2026-05-20** — shipped v3.26.0 + v3.26.1 patch (`48611f21`+`77596e01`+`16cac01d`). Operator-confirmed working in browser. toAssetRecord re-derivation deferred (won't land unless a consumer needs it). Satellites pick up patch on next minor |
-| #759 | Slice 5 of #755 — AttachmentManager-as-CatalogSource + PDF/docx metadata extraction | **Shipped v3.27.0 2026-05-20** (`b348bfd4`+cast-fixes `9ceb88f7`/`4029f1d6`) — `in review`. exiftool-based extraction of Title/Author/Subject/Keywords/CreationDate/ModDate/Language for PDF + 3 OOXML formats; AttachmentManager implements CatalogSource. Attachments now findable beyond filename via search. Caveat: NEW uploads only — backfill job deferred. Text body extraction (articleBody) split to future Slice 5b. Propagated to all 4 instances |
+| #755 | [EPIC] Metadata schemas ratified — schema.org-shaped CreativeWork model + JSON-LD linked-data publishing (6 slices) | **In flight 2026-05-20** — Slices 1/2/5 shipped (see _Waiting on Review Sign-off_ above); Slice 3 (#758) closed; Slices 4 + 6 not yet filed; Slice 4 blocked on #754 |
 | #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Low — body reconciled with `master` 2026-05-16 (audit comment pinned); search-provider ACL explicitly out-of-scope; de-scoped from the **Search + Finding Entries** label 2026-05-18 (ACL epic, not search-UX); refactor intentionally not started |
 | #738 | NCM/import conversion metrics — aggregate by structured `kind`, trend | Low — **unblocked** by #728 S3 (structured `kind` codes now exist); observability follow-up, reuses MetricsManager/OTLP |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images (security+size) | Low — #728 Phase-2 hardening split-out; config-gated, adds sharp/libvips; do when a real driver appears |
@@ -77,7 +84,6 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 | #729 | Improvements to `[{Location}]` | Low — filed 2026-05-16; good-first-issue; Location plugin follow-ups |
 | #744 | [EPIC] Search-picker IA simplification | **CLOSED** — all slices shipped: #735 (2-row toolbar v3.22.0), #720 (format facets), #745 (date v3.21/3.23), #691 (Category multi-select **v3.25.0** — final residual). #721 closed (collapse obsolete). Nothing left |
 | #691 | Asset-picker: Category multi-select for source=Pages | **Fixed v3.25.0** (`a4d60c35`) — `in review` label no longer set (operator dropped 2026-05-20); presumed accepted. Closes out the #744 EPIC residual |
-| #750 | Index video capture-date (CreateDate/MediaCreateDate/CreationDate) | **Fixed v3.25.1** (`97089601`) — `in review`. Shared `CAPTURE_DATE_FIELDS` constant + `extractDateTimeOriginal` helper; videos now populate the indexed timestamp instead of dropping out of date sort/filter. Optional `media.rebuild` back-fills existing items. (Prior #519/#518 cross-refs were stale — both CLOSED; #750 stands alone) |
 | #754 | Page-model `created` timestamp (creation-date search/sort) | Low/Medium — split from closed #643 (modified-date shipped v3.22.0). Gated by a per-page schema change + ~17K-page backfill migration; own focused effort. Unblocks `dateField=created` in SearchPlugin + the #745 asset-picker date control |
 | #722 | Video poster-frame thumbnails (ffmpeg) | Low — related to #744 (better video tiles make the video filter useful) but **not a child**: result presentation + adds ffmpeg dep. #731 shipped v3.16.0; fills the video thumbnail cell |
 | #707 | Typed footnote + knowledge-graph reference index | Low — speculative; **depends on #706**; defer behind a named citation-heavy user (2026-05-16 brainstorm) |
