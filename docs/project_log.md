@@ -2,6 +2,37 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-21-08
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped #763 — Slice 5b of EPIC #760 — replacing the v3.27.0 no-op `AttachmentManager.rebuild()` stub with a real `attachments.rebuild` background job that walks every stored attachment and re-extracts embedded doc metadata for PDF + 3 OOXML formats. Closes the "ONLY on new uploads" half of the operator's #759 callout — pre-v3.27.0 records can now be backfilled to the Slice-5 fields that the Slice-5a admin UI (#761, v3.28.0) renders.
+- Current Issue: #763 (shipped on master `5d581cd8`; pending release + close).
+- Tests: 5827/5827 unit (+15 new: 7 in `BasicAttachmentProvider.docMetadata.test.ts` for the `backfillDocMetadata()` happy/skip/error/clear/progress/no-save/empty cases; 5 in `AttachmentManager.test.ts` for the `rebuild()` delegation + `backfillDocMetadata()` typed-summary surface; 2 in `WikiRoutes.coverage6.test.ts` for `POST /admin/attachments/rebuild` 403/202 cases plus a 3rd existing AttachmentManager mock-registry addition); E2E 72/72 on jimstest. Build + tsc clean.
+- Live sanity check on jimstest: `curl -s -X POST http://localhost:3000/admin/attachments/rebuild -i` → 403 (route registered + behind admin-system auth + CSRF).
+- Semver: pending decision (see release-decision note below).
+- /othersites: pending (gated on semver).
+- Changes:
+  - `src/providers/BasicAttachmentProvider.ts`: new public `backfillDocMetadata(onProgress?)` method. Walks the metadata Map, for each doc-MIME attachment re-runs `extractDocMetadata()` on `storageLocation`, applies the seven Slice-5 fields field-by-field (sets when extracted value exists; clears stale fields when extraction now returns null), counts per-file errors non-fatally (matching the existing extractDocMetadata contract), skips non-doc MIMEs, treats missing `storageLocation` as a counted error. Only saves the metadata file once at the end and only if something changed. Returns `{scanned, updated, skipped, errors}` for the job summary.
+  - `src/managers/AttachmentManager.ts`: `rebuild(opts)` now delegates to `provider.backfillDocMetadata(opts.onProgress)` — replaces the previous no-op log. CatalogSource interface signature preserved (`Promise<void>`). New public `backfillDocMetadata(onProgress?)` returns the typed summary so the job report can render `scanned/updated/skipped/errors` (parallel to `MediaManager.rebuild()` vs `MediaManager.rebuildIndex()`). Returns zero summary gracefully when the provider is null or doesn't implement the method.
+  - `src/routes/WikiRoutes.ts`: registered the `attachments.rebuild` job alongside the existing four (`pages.reindex`, `pages.rebuild`, `media.rescan`, `media.rebuild`). Progress callback formats "Re-extracting… N/M attachments (P%)" per the existing convention. New `POST /admin/attachments/rebuild` endpoint mirrors `POST /admin/media/rebuild`: requires admin-system, enqueues the job via `BackgroundJobManager`, returns the runId with 202.
+  - `views/admin-attachments.ejs`: new admin-only "Rebuild Metadata" button in the page header. Confirms, enqueues, polls `/api/admin/jobs/:runId/status` at 1.5s intervals (1-hour ceiling matching the admin-dashboard `media.rebuild` client), surfaces the result, and reloads the page so the newly-backfilled rows render their embedded fields. Auth re-checked server-side.
+- Decisions of note:
+  - Backfill applies fields field-by-field (set when extracted value exists; clear when it doesn't) so a source file that *lost* its embedded Title between uploads doesn't leave stale data in the record. Tested via the "clears stale Slice-5 fields when the source file no longer has them" case.
+  - Per-file failures inside `extractDocMetadata()` are caught there (existing contract) and surface as `updated=0` for the affected row, not as an `errors++`. Only filesystem-level failures (missing storageLocation, etc.) bump the `errors` count. The test that exercises this behavior is annotated inline.
+  - `AttachmentManager.rebuild(opts)` accepts an optional `opts.onProgress` callback even though the `RebuildOpts` interface doesn't declare it — defensive cast in the implementation. Mirrors how the admin-jobs runner already passes a progress fn through `MediaManager`'s signature.
+- Out of scope (still tracked under EPIC #760): Re-upload re-triggers `extractDocMetadata` (small dedup-by-hash bug fix that would complement this for single-file refreshes), faceted search dialog (Author / Language / Date filter panel), Slice 6 JSON-LD render, verifying `media.rebuild` re-extracts Slice 3 fields.
+- **Release decision note**: matches the Slice 3 / Slice 5 / Slice 5a precedent for new operator-visible features. Cut as `/semver minor` (auto-publishes a GitHub Release + auto-runs `/othersites` to propagate), OR defer to bundle with the next slice (dedup-re-extract bug fix or Slice 6 JSON-LD) into a single minor. Currently uncut — pending operator preference (#763 is in-progress until then).
+- Commits: `5d581cd8` (Slice 5b feat — headline).
+- Files Modified:
+  - src/providers/BasicAttachmentProvider.ts
+  - src/providers/**tests**/BasicAttachmentProvider.docMetadata.test.ts
+  - src/managers/AttachmentManager.ts
+  - src/managers/**tests**/AttachmentManager.test.ts
+  - src/routes/WikiRoutes.ts
+  - src/routes/**tests**/WikiRoutes.coverage6.test.ts
+  - views/admin-attachments.ejs
+  - docs/project_log.md
+
 ## 2026-05-21-07
 
 - Agent: Claude Opus 4.7
