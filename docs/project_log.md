@@ -2,6 +2,41 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-21-03
+
+- Agent: Claude Opus 4.7
+- Subject: Fixed #749 — the weekly `Showdown CVE-2024-1899 Patch Check` workflow had been failing on every scheduled run since it was written: the `Get installed and latest showdown versions` step ran `node -e "require('./node_modules/showdown/package.json')"` without ever running `npm install`, so it always crashed with `MODULE_NOT_FOUND`. The downstream advisory check and conditional `gh issue comment 599` steps were correct but never executed. Also delivered the operator's second ask on #749 — add a "Failing GitHub Actions" survey section to `/check-todos`.
+- Current Issue: #749 (closed).
+- Tests: skipped jimstest pre-flight — commit touches only `.github/workflows/showdown-patch-check.yml` and `.claude/commands/check-todos.md`. Neither affects the running server, TypeScript build, or unit tests. Verified the workflow fix directly via `workflow_dispatch` on the fix commit (run 26216004398): green end-to-end, printed `Installed: 2.1.0 / Latest: 2.1.0 / Advisory patched_versions: none / No patch available yet`. Correct branch (`Log no-patch status`) fired, no false-positive comment on #599.
+- Semver: skip — no shipped behavior change on the app.
+- /othersites: not run (gated on minor/major semver).
+- Work Done:
+  - `.github/workflows/showdown-patch-check.yml`: switched the installed-version read from `require('./node_modules/showdown/package.json')` to `jq -r '.packages["node_modules/showdown"].version' package-lock.json`. Lockfile is authoritative for what would get installed and doesn't require an install step. `npm view showdown version` still works for the latest-version read (no `node_modules` needed). Added an inline comment referencing #749 so future readers understand the choice.
+  - Manual patch check today: npm latest=2.1.0, installed=2.1.0, advisory `patched_versions=none`, `vulnerable_version_range=<= 2.1.0`. No upstream patch since #599 was filed — mitigation-only state unchanged.
+  - `.claude/commands/check-todos.md`: added "Failing GitHub Actions" to both the survey bullet list and the Output sections. Survey command spelled out (`gh run list --status failure --branch master`), with a dedupe rule (most-recent failing run per workflow; recovered workflows drop off) and per-row requirements (workflow name, last-failed timestamp, failing-job error excerpt via `gh run view <id> --log-failed`, related issue if one exists). Rationale noted inline: scheduled crons fire weekly/monthly on the default branch, so silent failures sit unread for a long time without this surface.
+  - Triggered `workflow_dispatch` on the fix commit and waited for completion to confirm green. Then closed #749.
+- Commits: `4c9f9a17` (workflow + /check-todos fix).
+- Files Modified:
+  - .github/workflows/showdown-patch-check.yml
+  - .claude/commands/check-todos.md
+  - docs/project_log.md
+
+## 2026-05-21-02
+
+- Agent: Claude Opus 4.7
+- Subject: Filed follow-up EPIC **#760** to deliver operator-visible value on the #755 plumbing. Triggered by operator's 2026-05-21 callout on #759: "gather the data but ONLY on new uploads and provides no method of display or search dialog for data." After Slices 1/2/3/5 of #755 shipped, the data layer is wired (types, CatalogManager registry, MediaManager + AttachmentManager as CatalogSources, PDF/docx exiftool extraction) but nothing displays, backfills, or publishes the data externally.
+- Current Issue: #760 (new EPIC), cross-referencing #755 + #759.
+- Tests: n/a (issue-filing only; no code change).
+- Semver: skip.
+- /othersites: not run.
+- Work Done:
+  - Read EPIC #755 + comments and #759 + comments to confirm scope.
+  - Produced a "what is / is not available" status table for the EPIC (Slices 1–5 + 6) and a follow-up backlog ordered by operator-visible value vs. cost.
+  - Filed EPIC #760 with the body capturing: problem statement (table of what works vs. what doesn't), 7 in-scope sub-issue slices to be filed (Slice 5a display, Slice 6 JSON-LD render, `attachments.rebuild` backfill, dedup-re-extract bug fix, faceted search dialog, `media.rebuild` verification, `media.toAssetRecord` re-derivation), explicit out-of-scope items (no design re-litigation, no SPARQL, no microdata), acceptance criteria, timeline, source-of-truth references. Labels `enhancement` + `architecture` matching #755.
+  - Cross-linked: comments on #755 (parent) and #759 (originating thread) pointing at #760.
+- Commits: none (issue-only work).
+- Files Modified: none.
+
 ## 2026-05-21-01
 
 - Agent: Claude Opus 4.7
