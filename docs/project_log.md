@@ -2,6 +2,32 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-21-14
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped #766 — Slice 6b of EPIC #760. Content-negotiation on the three canonical asset URLs: `/view/:page` / `/attachments/:id` / `/media/file/:id` now respect `Accept: application/ld+json` and return the JSON-LD CreativeWork body alone (no HTML envelope). Satisfies the #755 EPIC acceptance criterion "/view/<slug> and /media/file/<id> return JSON-LD when negotiated with Accept: application/ld+json."
+- Current Issue: #766 (shipped on master `fcbe4e64`; pending release + close).
+- Tests: 5865/5865 unit (was 5854; +11 new `wantsJsonLd()` cases in `src/utils/__tests__/buildPageJsonLd.test.ts` covering exact / mixed / q-value / case-insensitive / array / negative / missing / empty Accept-header scenarios). E2E 72/72 on jimstest. Build + tsc clean. Live curl-verified: `/view/Welcome` with `Accept: application/ld+json` returns HTTP 200 + `Content-Type: application/ld+json; charset=utf-8` + JSON-LD body; default Accept returns HTML as before. `/attachments/<unknown>` and `/media/file/<unknown>` route into the JSON-LD branch and 404 cleanly (dev install has no items; underlying `get(id)` shape is covered by existing Slice 3/5 tests).
+- Semver: pending decision (see release-decision note below).
+- /othersites: pending (gated on semver).
+- Notable design choices:
+  - `wantsJsonLd()` does a simple substring check rather than RFC 7231 preference parsing. Tolerates q-values, casing, surrounding MIME types, string-array Accept, missing header. Strict on `application/json` (NOT a match — it's a different content-type). If a real consumer ever needs full q-value-driven preference resolution, the upgrade path is a one-function swap.
+  - All three routes set `Content-Type: application/ld+json; charset=utf-8` (matches the registered IANA media type with the explicit charset).
+  - ACL gates fire BEFORE the JSON-LD branch in each route — no information disclosure. Private-page / private-attachment 403 still works with `Accept: application/ld+json`.
+  - The mediaFile JSON-LD branch skips the transcode + range-request logic entirely (no streaming for JSON; just serialize the CreativeWork).
+- Out of scope (separate sub-slice under #760, not yet filed):
+  - Slice 6c — SKOS `/api/catalog/vocabulary/<scheme-id>` endpoint for keyword vocabularies.
+  - RFC 7231 q-value preference resolution (`text/html;q=0.5, application/ld+json;q=1.0` → JSON-LD wins). Current implementation: substring check; if both are present, JSON-LD wins because we check first.
+  - HTTP 406 Not Acceptable for unsupported Accept headers — existing routes don't strict-negotiate today.
+- **Release decision note**: matches the Slice 6a precedent (also minor). Adds three new content-type branches on operator-visible URLs — feature, not bug. Cut as `/semver minor`.
+- Files Modified:
+  - src/utils/buildPageJsonLd.ts (new export `wantsJsonLd`)
+  - src/utils/**tests**/buildPageJsonLd.test.ts (+11 cases)
+  - src/routes/WikiRoutes.ts (3 handler branches + import)
+  - docs/project_log.md (this entry)
+- Commits: `fcbe4e64` (Slice 6b feat — headline).
+- Operator IDE-cursor note: line-786 highlight persisted through this session. Already-investigated reference (#744 CLOSED). Treating as inert until told otherwise.
+
 ## 2026-05-21-13
 
 - Agent: Claude Opus 4.7
