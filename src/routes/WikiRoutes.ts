@@ -33,6 +33,7 @@ import { shuffleArray } from '../utils/pluginFormatters.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
 import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../utils/ContactSubmissionLog.js';
 import { buildPageJsonLd, stringifyJsonLdForScript, wantsJsonLd } from '../utils/buildPageJsonLd.js';
+import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
 import { renderCommentListHtml } from '../plugins/CommentsPlugin.js';
 import WikiContext from '../context/WikiContext.js';
@@ -9558,6 +9559,14 @@ ${panes}
     app.post('/api/preview', (req: Request, res: Response) => this.previewPage(req, res));
     logger.debug('ROUTES DEBUG: Registering /api/test route');
     app.get('/api/test', (_req: Request, res: Response) => res.json({ message: 'API working!' }));
+
+    // Slice 6c of #760 (#767) — SKOS vocabulary publishing.
+    app.get('/api/catalog/vocabulary/', (req: Request, res: Response) =>
+      void this.catalogVocabularyIndex(req, res)
+    );
+    app.get('/api/catalog/vocabulary/:schemeId', (req: Request, res: Response) =>
+      void this.catalogVocabularyScheme(req, res)
+    );
     logger.debug('ROUTES DEBUG: Registering /api/page-metadata/:page route');
     app.get('/api/page-metadata/:page', (req: Request, res: Response) =>
       this.getPageMetadata(req, res)
@@ -12342,6 +12351,61 @@ ${description}
       return res.status(202).json({ runId });
     } catch (err: unknown) {
       logger.error('[media] Error enqueueing rescan job:', err);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  /**
+   * Slice 6c of #760 (#767) — SKOS vocabulary endpoints. Public (no auth);
+   * vocabularies are public structured-data by definition.
+   *
+   * GET /api/catalog/vocabulary/
+   * Returns an index of registered CatalogProviders: { id, displayName, count }.
+   */
+  async catalogVocabularyIndex(_req: Request, res: Response) {
+    try {
+      const catalogManager = this.engine.getManager('CatalogManager');
+      if (!catalogManager) {
+        return res.status(503).json({ error: 'Catalog manager not enabled' });
+      }
+      const providers = catalogManager.getProviderInfo();
+      const out = await Promise.all(providers.map(async (p: { id: string; displayName: string }) => {
+        const data = await catalogManager.getProviderTerms(p.id);
+        return { id: p.id, displayName: p.displayName, count: data ? data.terms.length : 0 };
+      }));
+      res.setHeader('Content-Type', 'application/ld+json; charset=utf-8');
+      return res.send(JSON.stringify(out));
+    } catch (err: unknown) {
+      logger.error('[catalog] Error building vocabulary index:', err);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  /**
+   * GET /api/catalog/vocabulary/:schemeId
+   * Returns one provider's terms as a SKOS ConceptScheme JSON-LD document.
+   * 404 when the schemeId doesn't match a registered provider.
+   */
+  async catalogVocabularyScheme(req: Request, res: Response) {
+    try {
+      const catalogManager = this.engine.getManager('CatalogManager');
+      if (!catalogManager) {
+        return res.status(503).json({ error: 'Catalog manager not enabled' });
+      }
+      const schemeId = req.params.schemeId;
+      const data = await catalogManager.getProviderTerms(schemeId);
+      if (!data) {
+        return res.status(404).json({ error: `No vocabulary scheme: ${schemeId}` });
+      }
+      const configManager = this.engine.getManager('ConfigurationManager');
+      const baseUrl = configManager?.getProperty('ngdpbase.base-url', '');
+      const scheme = buildConceptSchemeJsonLd(schemeId, data.displayName, data.terms, {
+        baseUrl: baseUrl || undefined
+      });
+      res.setHeader('Content-Type', 'application/ld+json; charset=utf-8');
+      return res.send(JSON.stringify(scheme));
+    } catch (err: unknown) {
+      logger.error('[catalog] Error building vocabulary scheme:', err);
       return res.status(500).json({ error: 'Internal server error' });
     }
   }

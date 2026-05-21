@@ -240,6 +240,25 @@ class CatalogManager extends BaseManager {
     }));
   }
 
+  /**
+   * Slice 6c of #760 (#767) — return one provider's terms for SKOS emission.
+   * The aggregate `getTerms()` is the wrong surface for SKOS publishing:
+   * `/api/catalog/vocabulary/<scheme-id>` is per-provider, so the route
+   * needs per-provider access. Returns null when the schemeId doesn't match
+   * a registered provider (caller renders 404).
+   */
+  async getProviderTerms(schemeId: string): Promise<{ displayName: string; terms: CatalogTerm[] } | null> {
+    const provider = this.providers.get(schemeId);
+    if (!provider) return null;
+    try {
+      const terms = await provider.getTerms();
+      return { displayName: provider.displayName, terms };
+    } catch (err) {
+      logger.warn(`[CatalogManager] getProviderTerms failed for provider '${schemeId}':`, err);
+      return { displayName: provider.displayName, terms: [] };
+    }
+  }
+
   // ===========================================================================
   // Asset-source registry (Slice 3 of #755) — designed in docs/managers/CatalogManager.md
   // ===========================================================================
