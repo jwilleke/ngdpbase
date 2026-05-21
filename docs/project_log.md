@@ -2,6 +2,31 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-21-13
+
+- Agent: Claude Opus 4.7
+- Subject: Released v3.30.0 — Slice 6a of EPIC #760 (#765, JSON-LD `<script>` on `/view/:page`) — and propagated to all 3 satellites.
+- Current Issue: #765 (shipped in v3.30.0; comment+close to follow).
+- Tests: jimstest re-validated on the release commit (`dafd6c91`): 5854/5854 unit GREEN. E2E re-run skipped at Step 8a — release commit only touched version-string files; pre-release E2E (72/72) ran on identical UI code in session 2026-05-21-12.
+- Semver: `/semver minor` — 3.29.1 → 3.30.0. GitHub Release published with auto-generated notes: <https://github.com/jwilleke/ngdpbase/releases/tag/v3.30.0>
+- Perf drift vs v3.29.1: one anomaly flagged, both directions attributable to baseline-state noise NOT regressions:
+  - Memory 1391.6 → 3286.2 MB (+136.1%) — v3.29.1 baseline captured a drained-state snapshot immediately after restart (1391 MB), and this baseline is the natural warm-state (3286 MB). 3286 MB is consistent with the long-running series (v3.27 / v3.28 ran ~3280-3290 MB). Inverse of the v3.29.1 noise we annotated; net memory is steady.
+  - Routes flat within noise (`/` +0 ms, `/view/Welcome` +1 ms, `/search?q=test` +8 ms, `/login` +1 ms). Baseline: `docs/performance/baseline-v3.30.0-2026-05-21.md`.
+- /othersites: satellite-only mode (jimstest validated by Step 8a). All 3 satellites first-try green on both unit and E2E:
+
+| Instance | Path | Port | Unit | E2E |
+|---|---|---|---|---|
+| jimstest | `/Volumes/hd2A/workspaces/github/ngdpbase` | 3000 | 5854/5854 ✅ (Step 8a) | 72/72 ✅ (pre-release session 12) |
+| The Fairways | `/Volumes/hd2A/workspaces/github/fairways-base` | 2121 | 5854/5854 ✅ | 72/72 ✅ |
+| ve-geology | `/Volumes/hd2A/workspaces/github/ngdpbase-veg` | 3333 | 5854/5854 ✅ | 72/72 ✅ |
+| ngdpbase temp build | `/Volumes/hd2/ngdp-temp-builds/ngdpbase` | 3001 | 5854/5854 ✅ | 72/72 ✅ |
+
+- Flakes seen: none. All instances first-try green on both unit and E2E.
+- Side: fairways-base still has the single untracked `docs/planning/plan-addon-accounting.md`; other satellites clean pre-pull.
+- Commits in release range (v3.29.1..v3.30.0): `e9c1a0ad` (session 11 log), `32de1ea9` (Slice 6a feat — headline), `72bc89e2` (session 12 log), `dafd6c91` (release v3.30.0).
+- Operator IDE-cursor flag — sticky at `docs/project_log.md` line 761 ("drives the close" inside the 2026-05-18-09 #744 entry). Verified #744 is CLOSED. Treating as incidental; not actionable. Mentioned a second time so the trail records it.
+- Files Modified (this session): docs/project_log.md (this entry).
+
 ## 2026-05-21-12
 
 - Agent: Claude Opus 4.7
