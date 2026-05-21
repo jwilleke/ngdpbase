@@ -2,6 +2,29 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-21-15
+
+- Agent: Claude Opus 4.7
+- Subject: Released v3.31.0 — Slice 6b of EPIC #760 (#766, content-negotiation on `@id` URLs) — and propagated to all 3 satellites. `/view/:page`, `/attachments/:id`, `/media/file/:id` now respect `Accept: application/ld+json` and return the JSON-LD body alone with the correct Content-Type.
+- Current Issue: #766 (shipped in v3.31.0; comment+close to follow).
+- Tests: jimstest re-validated on the release commit (`13638e33`): 5865/5865 unit GREEN. E2E re-run skipped at Step 8a — release commit only touched version-string files; pre-release E2E (72/72) ran on identical UI code in session 2026-05-21-14.
+- Semver: `/semver minor` — 3.30.0 → 3.31.0. GitHub Release published with auto-generated notes: <https://github.com/jwilleke/ngdpbase/releases/tag/v3.31.0>
+- Perf drift vs v3.30.0: clean — memory -1.9%, all routes flat or better. `/search?q=test` recovered 161 → 41 ms (-74.5%) — the v3.29.1 / v3.30.0 first-hit cold-cache spikes from those baselines finally aged out; this is the long-running stable warm value. Baseline: `docs/performance/baseline-v3.31.0-2026-05-21.md`.
+- /othersites: satellite-only mode (jimstest validated by Step 8a). All 3 satellites first-try green on both unit and E2E:
+
+| Instance | Path | Port | Unit | E2E |
+|---|---|---|---|---|
+| jimstest | `/Volumes/hd2A/workspaces/github/ngdpbase` | 3000 | 5865/5865 ✅ (Step 8a) | 72/72 ✅ (pre-release session 14) |
+| The Fairways | `/Volumes/hd2A/workspaces/github/fairways-base` | 2121 | 5865/5865 ✅ | 72/72 ✅ |
+| ve-geology | `/Volumes/hd2A/workspaces/github/ngdpbase-veg` | 3333 | 5865/5865 ✅ | 72/72 ✅ |
+| ngdpbase temp build | `/Volumes/hd2/ngdp-temp-builds/ngdpbase` | 3001 | 5865/5865 ✅ | 72/72 ✅ |
+
+- Flakes seen: none. All instances first-try green on both unit and E2E.
+- Side: fairways-base still has the single untracked `docs/planning/plan-addon-accounting.md`; other satellites clean pre-pull.
+- Commits in release range (v3.30.0..v3.31.0): `e6328c13` (session 13 log), `fcbe4e64` (Slice 6b feat — headline), `6b3a84f1` (session 14 log), `13638e33` (release v3.31.0).
+- Files Modified (this session): docs/project_log.md (this entry).
+- Operator IDE-cursor note: line-812 highlight persisted through this session. Already-investigated reference (#744 CLOSED). Treating as inert.
+
 ## 2026-05-21-14
 
 - Agent: Claude Opus 4.7
