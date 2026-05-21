@@ -306,6 +306,76 @@ describe('MarkupParser.extractJSPWikiSyntax()', () => {
       expect(jspwikiElements[0].codeContent).toBe('const');
     });
 
+    // #753: CommonMark allows backtick code spans of any length. A run of N
+    // backticks opens the span; a run of exactly N backticks closes it.
+    // Pre-fix, the extractor used /`([^`]+)`/g which only handled length-1
+    // delimiters and orphaned the rest of the backticks, leading to a
+    // cascading placeholder leak on later fenced blocks.
+    describe('CommonMark variable-length backtick code spans (#753)', () => {
+      test('extracts a double-backtick code span containing a single backtick', () => {
+        // Content between the `` delimiters is " ` " (CommonMark trims one
+        // leading + one trailing space when both are present, so codeContent
+        // is the literal single backtick).
+        const content = 'Show `` ` `` literally';
+        const { sanitized, jspwikiElements } = parser.extractJSPWikiSyntax(content);
+        expect(jspwikiElements).toHaveLength(1);
+        expect(jspwikiElements[0].type).toBe('code');
+        expect(jspwikiElements[0].codeContent).toBe('`');
+        expect(sanitized).not.toMatch(/`/);
+      });
+
+      test('extracts a quadruple-backtick code span containing a triple backtick (the #753 reproduction)', () => {
+        const content = '(between ```` ``` ````  fences)';
+        const { sanitized, jspwikiElements } = parser.extractJSPWikiSyntax(content);
+        expect(jspwikiElements).toHaveLength(1);
+        expect(jspwikiElements[0].type).toBe('code');
+        expect(jspwikiElements[0].codeContent).toBe('```');
+        // No orphaned backticks should remain in sanitized output.
+        expect(sanitized).not.toMatch(/`/);
+      });
+
+      test('handles the #753 line verbatim — variable-length span + a separate single-backtick span on the same line, no orphaned backticks', () => {
+        const content = 'Headings written **inside a fenced code block** (between ```` ``` ````  fences) are **not** counted for `?section=N`.';
+        const { sanitized, jspwikiElements } = parser.extractJSPWikiSyntax(content);
+        // Exactly two code spans: the variable-length one with ``` and the
+        // single-backtick one with ?section=N. Pre-fix this line produced 3
+        // partial-match placeholders + orphaned backticks (the cascade root).
+        expect(jspwikiElements.filter(e => e.type === 'code')).toHaveLength(2);
+        const contents = jspwikiElements.filter(e => e.type === 'code').map(e => e.codeContent);
+        expect(contents).toEqual(expect.arrayContaining(['```', '?section=N']));
+        expect(sanitized).not.toMatch(/`/);
+      });
+
+      test('an unmatched opening backtick run leaves the backticks as literal text (no placeholder, no orphan)', () => {
+        const content = 'Has `` an opening but no close';
+        const { sanitized, jspwikiElements } = parser.extractJSPWikiSyntax(content);
+        expect(jspwikiElements.filter(e => e.type === 'code')).toHaveLength(0);
+        // Opening backticks must survive as literal text — not consumed, not
+        // replaced with a placeholder.
+        expect(sanitized).toContain('``');
+      });
+
+      test('closing run length must equal opening run length (shorter inner run is content, not close)', () => {
+        // Triple-backtick opens; the inner ` and `` are content; the closing
+        // triple is the close.
+        const content = 'A ``` x ` y `` z ``` B';
+        const { sanitized, jspwikiElements } = parser.extractJSPWikiSyntax(content);
+        const codeEls = jspwikiElements.filter(e => e.type === 'code');
+        expect(codeEls).toHaveLength(1);
+        expect(codeEls[0].codeContent).toBe('x ` y `` z');
+        expect(sanitized).not.toMatch(/`/);
+      });
+
+      test('does not strip surrounding spaces when content is entirely spaces', () => {
+        // CommonMark: only strip if the result is not entirely spaces.
+        const content = 'Pad `   ` more';
+        const { sanitized: _, jspwikiElements } = parser.extractJSPWikiSyntax(content);
+        const codeEls = jspwikiElements.filter(e => e.type === 'code');
+        expect(codeEls).toHaveLength(1);
+        expect(codeEls[0].codeContent).toBe('   ');
+      });
+    });
+
     test('preserves markdown tables', () => {
       const content = '| A | B |\n|---|---|\n| 1 | 2 |';
       const { sanitized } = parser.extractJSPWikiSyntax(content);

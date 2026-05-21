@@ -1395,19 +1395,79 @@ class MarkupParser extends BaseManager {
     sanitized = styleResult.content;
     id = styleResult.nextId;
 
-    // Inline code spans (`...`) — single backtick, not fenced.
-    // Runs after style block extraction so backticks inside table cells are handled
-    // directly by appendWikiNodes rather than pre-converted to placeholder spans.
-    sanitized = sanitized.replace(/`([^`]+)`/g, (match: string, inner: string, offset: number) => {
-      jspwikiElements.push({
-        type: 'code',
-        syntax: match,
-        codeContent: inner,
-        id: id++,
-        position: offset
-      });
-      return `<span data-jspwiki-placeholder="${uuid}-${id - 1}"></span>`;
-    });
+    // Inline code spans — CommonMark variable-length backtick delimiters
+    // (#753). A run of N backticks opens; a run of *exactly* N backticks
+    // closes. Runs of any other length are content. The previous regex
+    // `/`([^`]+)`/g` only handled N=1 and orphaned the leftover backticks
+    // when N > 1, which then paired with downstream backticks (often inside
+    // later fenced placeholders) and leaked `<span data-jspwiki-placeholder>`
+    // tags into the rendered HTML.
+    //
+    // Runs after style block extraction so backticks inside table cells are
+    // handled directly by appendWikiNodes rather than pre-converted to
+    // placeholder spans.
+    {
+      const out: string[] = [];
+      let i = 0;
+      while (i < sanitized.length) {
+        if (sanitized[i] !== '`') {
+          out.push(sanitized[i]);
+          i++;
+          continue;
+        }
+        // Backtick run starts at i. Measure its length.
+        const openStart = i;
+        while (i < sanitized.length && sanitized[i] === '`') i++;
+        const openLen = i - openStart;
+        // Look for a closing run of *exactly* openLen backticks.
+        let scan = i;
+        let closeStart = -1;
+        let closeEnd = -1;
+        while (scan < sanitized.length) {
+          if (sanitized[scan] !== '`') {
+            scan++;
+            continue;
+          }
+          const runStart = scan;
+          while (scan < sanitized.length && sanitized[scan] === '`') scan++;
+          if (scan - runStart === openLen) {
+            closeStart = runStart;
+            closeEnd = scan;
+            break;
+          }
+          // Different-length run: part of the content, keep scanning.
+        }
+        if (closeStart === -1) {
+          // No matching close — emit the opening backticks as literal text.
+          out.push(sanitized.substring(openStart, i));
+          continue;
+        }
+        // Extract content between the open and close runs. CommonMark: if
+        // the content has both a leading and trailing space and is not
+        // entirely spaces, strip one space from each end.
+        const rawContent = sanitized.substring(i, closeStart);
+        let content = rawContent;
+        if (
+          content.length >= 2 &&
+          content.startsWith(' ') &&
+          content.endsWith(' ') &&
+          /[^ ]/.test(content)
+        ) {
+          content = content.substring(1, content.length - 1);
+        }
+        const syntax = sanitized.substring(openStart, closeEnd);
+        jspwikiElements.push({
+          type: 'code',
+          syntax,
+          codeContent: content,
+          id: id++,
+          position: openStart
+        });
+        out.push(`<span data-jspwiki-placeholder="${uuid}-${id - 1}"></span>`);
+        i = closeEnd;
+      }
+      sanitized = out.join('');
+    }
 
     // Step 0.55 moved — see parseWithDOMExtraction() after Phase 2.5.
     // Running it here (before JSPWikiPreprocessor) caused table cell content

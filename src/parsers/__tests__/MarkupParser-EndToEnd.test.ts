@@ -958,5 +958,24 @@ Links: [Wikipedia:Section${i}] and [JSPWiki:Test${i}].
       const result = await markupParser.parse(content, {});
       expect(result).not.toContain('data-jspwiki-placeholder');
     });
+
+    test('CommonMark variable-length backtick code span containing ``` no longer cascades placeholder leaks into later fenced blocks (#753)', async () => {
+      // Original /view/Using InsertPlugin line 76 + the later ```wiki block
+      // that was cascade-corrupted by the orphaned backticks. Pre-fix this
+      // produced 6–7 literal `<span data-jspwiki-placeholder=...></span>`
+      // tags in the rendered output.
+      const content =
+        'Headings written **inside a fenced code block** (between ```` ``` ````  fences) are **not** counted for `?section=N`.\n\n' +
+        '```wiki\n[{Insert pagesection=\'Pregnancy?section=2\'}]\n```\n';
+      const result = await markupParser.parse(content, {});
+      expect(result).not.toContain('data-jspwiki-placeholder');
+      // The variable-length span renders the literal triple-backtick.
+      expect(result).toContain('<code>```</code>');
+      // The trailing `?section=N` survives as its own code span.
+      expect(result).toContain('<code>?section=N</code>');
+      // The fenced ```wiki block remains a pre/code block, not orphaned text.
+      expect(result).toContain('<pre');
+      expect(result).toContain('[{Insert');
+    });
   });
 });
