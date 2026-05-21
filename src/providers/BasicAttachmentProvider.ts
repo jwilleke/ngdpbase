@@ -1209,6 +1209,94 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
   }
 
   /**
+   * Slice 5b of #760 (#763) — walk every stored attachment and re-extract
+   * embedded document metadata for the supported doc MIMEs. Backfills the
+   * seven Slice-5 fields (documentTitle / documentAuthor / documentSubject /
+   * documentKeywords / documentDateCreated / documentDateModified /
+   * inLanguage) on pre-v3.27.0 records that never went through the
+   * Slice-5 extraction path at upload time.
+   *
+   * Per-file failures are non-fatal (logged + counted) — mirrors the
+   * existing `extractDocMetadata` contract where uploads succeed even when
+   * exiftool trips. Non-document MIMEs are skipped without modification.
+   * Returns a summary suitable for the background-job report.
+   */
+  async backfillDocMetadata(
+    onProgress?: (processed: number, total: number) => void
+  ): Promise<{ scanned: number; updated: number; skipped: number; errors: number }> {
+    const summary = { scanned: 0, updated: 0, skipped: 0, errors: 0 };
+    const entries = Array.from(this.attachmentMetadata.entries());
+    const total = entries.length;
+    let dirty = false;
+
+    for (const [id, meta] of entries) {
+      summary.scanned++;
+      const mime = (meta.encodingFormat ?? '');
+      const filePath = (meta.storageLocation ?? '');
+
+      if (!BasicAttachmentProvider.DOC_METADATA_MIME_TYPES.has(mime)) {
+        summary.skipped++;
+        if (onProgress) onProgress(summary.scanned, total);
+        continue;
+      }
+      if (!filePath) {
+        // Metadata record without a storageLocation — can't re-read the file.
+        // Count as error so the operator can investigate, but continue.
+        logger.warn(`[BasicAttachmentProvider] backfillDocMetadata: attachment ${id} has no storageLocation; cannot re-extract`);
+        summary.errors++;
+        if (onProgress) onProgress(summary.scanned, total);
+        continue;
+      }
+
+      try {
+        const docMetadata = await this.extractDocMetadata(filePath, mime);
+        // Apply field-by-field: set when the extracted value exists, clear
+        // when extraction returned null/undefined for that field. Treat the
+        // record as mutable per-field rather than overwriting wholesale so a
+        // partial re-extract doesn't drop unrelated existing data.
+        const target = meta as unknown as Record<string, unknown>;
+        const apply = (key: string, value: string | string[] | undefined): boolean => {
+          if (value === undefined || (Array.isArray(value) && value.length === 0)) {
+            if (target[key] !== undefined) { delete target[key]; return true; }
+            return false;
+          }
+          // Compare by JSON for arrays; primitives by equality.
+          const before = target[key];
+          const changed = Array.isArray(value)
+            ? JSON.stringify(before) !== JSON.stringify(value)
+            : before !== value;
+          if (changed) { target[key] = value; return true; }
+          return false;
+        };
+
+        let changed = false;
+        changed = apply('documentTitle',         docMetadata?.title)        || changed;
+        changed = apply('documentAuthor',        docMetadata?.author)       || changed;
+        changed = apply('documentSubject',       docMetadata?.subject)      || changed;
+        changed = apply('documentKeywords',      docMetadata?.keywords)     || changed;
+        changed = apply('documentDateCreated',   docMetadata?.dateCreated)  || changed;
+        changed = apply('documentDateModified', docMetadata?.dateModified) || changed;
+        changed = apply('inLanguage',            docMetadata?.inLanguage)   || changed;
+
+        if (changed) { summary.updated++; dirty = true; }
+      } catch (err) {
+        logger.warn(`[BasicAttachmentProvider] backfillDocMetadata failed for ${id} (${filePath}): ${String(err)}`);
+        summary.errors++;
+      }
+      if (onProgress) onProgress(summary.scanned, total);
+    }
+
+    if (dirty) {
+      await this.saveMetadata();
+    }
+    logger.info(
+      `[BasicAttachmentProvider] backfillDocMetadata complete — scanned=${summary.scanned} ` +
+        `updated=${summary.updated} skipped=${summary.skipped} errors=${summary.errors}`
+    );
+    return summary;
+  }
+
+  /**
    * Format an exiftool-vendored date value to ISO-ish "YYYY-MM-DD HH:MM:SS".
    * Accepts the `ExifDateTime` shape (object with year/month/etc.) or a string
    * passthrough. Returns undefined for anything unparseable.

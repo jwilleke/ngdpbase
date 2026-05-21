@@ -9891,6 +9891,8 @@ ${panes}
     app.get('/admin/media', (req: Request, res: Response) => void this.adminMedia(req, res));
     app.post('/admin/media/rescan', (req: Request, res: Response) => void this.adminMediaRescan(req, res));
     app.post('/admin/media/rebuild', (req: Request, res: Response) => void this.adminMediaRebuild(req, res));
+    // Slice 5b of #760 (#763) — attachments.rebuild trigger.
+    app.post('/admin/attachments/rebuild', (req: Request, res: Response) => void this.adminAttachmentsRebuild(req, res));
 
     // Background job API
     app.post('/api/admin/jobs/:jobId/enqueue', (req: Request, res: Response) => void this.apiJobEnqueue(req, res));
@@ -12315,6 +12317,31 @@ ${description}
   }
 
   /**
+   * POST /admin/attachments/rebuild
+   * Enqueues the attachments.rebuild background job (Slice 5b of #760 / #763).
+   * Backfills embedded doc metadata across every stored attachment.
+   */
+  async adminAttachmentsRebuild(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
+      if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      const attachmentManager = this.engine.getManager('AttachmentManager');
+      if (!attachmentManager) {
+        return res.status(503).json({ error: 'Attachment manager not enabled' });
+      }
+      const jobManager = this.engine.getManager('BackgroundJobManager');
+      const runId = await jobManager.enqueue('attachments.rebuild');
+      return res.status(202).json({ runId });
+    } catch (err: unknown) {
+      logger.error('[attachments] Error enqueueing rebuild job:', err);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  /**
    * POST /api/admin/jobs/:jobId/enqueue
    * Enqueue a registered background job. Returns { runId }.
    */
@@ -12475,7 +12502,27 @@ ${description}
       }
     });
 
-    logger.info('[jobs] Admin jobs registered: pages.reindex, pages.rebuild, media.rescan, media.rebuild');
+    // Slice 5b of #760 (#763) — attachments.rebuild backfills the seven
+    // Slice-5 doc-metadata fields on pre-v3.27.0 attachment records.
+    jobManager.registerJob({
+      id: 'attachments.rebuild',
+      displayName: 'Rebuild Attachment Metadata',
+      run: async (reportProgress: ReportProgress) => {
+        const attachmentManager = this.engine.getManager('AttachmentManager');
+        if (!attachmentManager) return { success: false, error: 'Attachment manager not enabled' };
+        const result = await attachmentManager.backfillDocMetadata((processed: number, total: number) => {
+          const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
+          reportProgress(`Re-extracting… ${processed.toLocaleString()}/${total.toLocaleString()} attachments (${pct}%)`);
+        });
+        const r = result as { scanned?: number; updated?: number; skipped?: number; errors?: number };
+        return {
+          success: true,
+          summary: `Rebuilt — scanned ${r.scanned ?? 0}, updated ${r.updated ?? 0}, skipped ${r.skipped ?? 0}, errors ${r.errors ?? 0}`
+        };
+      }
+    });
+
+    logger.info('[jobs] Admin jobs registered: pages.reindex, pages.rebuild, media.rescan, media.rebuild, attachments.rebuild');
   }
 }
 

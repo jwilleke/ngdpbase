@@ -141,10 +141,74 @@ describe('AttachmentManager — CatalogSource interface (#759)', () => {
     expect(await mgr.get('any-id')).toBeNull();
   });
 
-  test('rebuild() resolves (no-op in initial slice)', async () => {
+  test('rebuild() resolves cleanly with no provider (returns void)', async () => {
     const mgr = new AttachmentManager(makeEngine({ 'ngdpbase.attachment.enabled': false }));
     await mgr.initialize();
     await expect(mgr.rebuild()).resolves.toBeUndefined();
+  });
+
+  // Slice 5b of #760 (#763) — rebuild() now delegates to the provider's
+  // backfillDocMetadata() instead of the previous no-op stub.
+  test('rebuild() delegates to provider.backfillDocMetadata when available', async () => {
+    const mgr = new AttachmentManager(makeEngine());
+    const backfill = vi.fn().mockResolvedValue({ scanned: 3, updated: 2, skipped: 1, errors: 0 });
+    (mgr as unknown as { attachmentProvider: unknown }).attachmentProvider = {
+      getAllAttachments: vi.fn().mockResolvedValue([]),
+      toCreativeWork: vi.fn(),
+      getAttachmentMetadata: vi.fn().mockResolvedValue(null),
+      backfillDocMetadata: backfill
+    };
+    await mgr.rebuild();
+    expect(backfill).toHaveBeenCalledTimes(1);
+  });
+
+  test('rebuild() forwards onProgress through opts', async () => {
+    const mgr = new AttachmentManager(makeEngine());
+    const captured: Array<(processed: number, total: number) => void> = [];
+    const backfill = vi.fn().mockImplementation(async (onProgress?: (p: number, t: number) => void) => {
+      if (onProgress) captured.push(onProgress);
+      return { scanned: 0, updated: 0, skipped: 0, errors: 0 };
+    });
+    (mgr as unknown as { attachmentProvider: unknown }).attachmentProvider = {
+      getAllAttachments: vi.fn().mockResolvedValue([]),
+      toCreativeWork: vi.fn(),
+      getAttachmentMetadata: vi.fn().mockResolvedValue(null),
+      backfillDocMetadata: backfill
+    };
+    const onProgress = vi.fn();
+    await mgr.rebuild({ onProgress });
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toBe(onProgress);
+  });
+
+  test('backfillDocMetadata() returns zero summary when provider is null', async () => {
+    const mgr = new AttachmentManager(makeEngine({ 'ngdpbase.attachment.enabled': false }));
+    await mgr.initialize();
+    const summary = await mgr.backfillDocMetadata();
+    expect(summary).toEqual({ scanned: 0, updated: 0, skipped: 0, errors: 0 });
+  });
+
+  test('backfillDocMetadata() returns the provider summary verbatim', async () => {
+    const mgr = new AttachmentManager(makeEngine());
+    const expected = { scanned: 12, updated: 7, skipped: 4, errors: 1 };
+    (mgr as unknown as { attachmentProvider: unknown }).attachmentProvider = {
+      getAllAttachments: vi.fn().mockResolvedValue([]),
+      toCreativeWork: vi.fn(),
+      getAttachmentMetadata: vi.fn().mockResolvedValue(null),
+      backfillDocMetadata: vi.fn().mockResolvedValue(expected)
+    };
+    expect(await mgr.backfillDocMetadata()).toEqual(expected);
+  });
+
+  test('backfillDocMetadata() returns zero summary when provider lacks the method (provider-not-yet-upgraded case)', async () => {
+    const mgr = new AttachmentManager(makeEngine());
+    (mgr as unknown as { attachmentProvider: unknown }).attachmentProvider = {
+      getAllAttachments: vi.fn().mockResolvedValue([]),
+      toCreativeWork: vi.fn(),
+      getAttachmentMetadata: vi.fn().mockResolvedValue(null)
+      // no backfillDocMetadata
+    };
+    expect(await mgr.backfillDocMetadata()).toEqual({ scanned: 0, updated: 0, skipped: 0, errors: 0 });
   });
 
   test('list() with a mock provider returns CreativeWork items via toCreativeWork()', async () => {

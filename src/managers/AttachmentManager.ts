@@ -352,18 +352,43 @@ class AttachmentManager extends BaseManager implements CatalogSource {
 
   /**
    * CatalogSource.rebuild — re-extract embedded document metadata on every
-   * stored attachment. Defers to a future `attachments.rebuild` background
-   * job; for the initial slice this is a no-op that just satisfies the
-   * interface so CatalogManager.checkSchemaVersions() can call it uniformly.
+   * stored attachment. Walks the entire metadata store, for each
+   * doc-MIME attachment re-runs exiftool extraction on the stored file and
+   * backfills the seven Slice-5 fields (documentTitle / documentAuthor /
+   * documentSubject / documentKeywords / documentDateCreated /
+   * documentDateModified / inLanguage). Backfills pre-v3.27.0 records that
+   * never went through the Slice-5 extraction path at upload time.
    *
-   * Operator can trigger re-extraction today by re-uploading a file (the
-   * dedup-by-content-hash means a re-upload of the same bytes hits the
-   * existing record without overwriting it; only NEW uploads currently
-   * trigger extraction).
+   * Per-file failures are non-fatal — logged and counted. Non-document
+   * MIMEs are skipped. Wired into the `attachments.rebuild` background job
+   * for operator-triggered runs from the admin dashboard. Slice 5b of #760
+   * (#763).
    */
-  async rebuild(_opts?: RebuildOpts): Promise<void> {
-    void _opts;
-    logger.info('📎 AttachmentManager.rebuild() — no-op in this slice; operator can re-upload a file to trigger doc metadata extraction. A dedicated attachments.rebuild background job lands in a follow-up if/when operators have many pre-Slice-5 attachments to backfill.');
+  async rebuild(opts?: RebuildOpts): Promise<void> {
+    const onProgress = (opts as { onProgress?: (processed: number, total: number) => void } | undefined)?.onProgress;
+    await this.backfillDocMetadata(onProgress);
+  }
+
+  /**
+   * Re-extract embedded document metadata across every stored attachment.
+   * Same operation as {@link rebuild} but returns the summary so the
+   * `attachments.rebuild` background job can produce a per-run report.
+   * Returns `{scanned, updated, skipped, errors}` zeros when the provider
+   * isn't initialised yet (caller can branch on this).
+   */
+  async backfillDocMetadata(
+    onProgress?: (processed: number, total: number) => void
+  ): Promise<{ scanned: number; updated: number; skipped: number; errors: number }> {
+    if (!this.attachmentProvider) {
+      logger.warn('[AttachmentManager] backfillDocMetadata() called before initialization');
+      return { scanned: 0, updated: 0, skipped: 0, errors: 0 };
+    }
+    const provider = this.attachmentProvider as unknown as BasicAttachmentProvider;
+    if (typeof provider.backfillDocMetadata !== 'function') {
+      logger.warn('[AttachmentManager] backfillDocMetadata() — provider does not support it; skipping');
+      return { scanned: 0, updated: 0, skipped: 0, errors: 0 };
+    }
+    return provider.backfillDocMetadata(onProgress);
   }
 
   /**

@@ -275,4 +275,157 @@ describe('BasicAttachmentProvider — Slice 5 of #755 (#759)', () => {
       expect(work2.keywords).toBeUndefined();
     });
   });
+
+  // ─── backfillDocMetadata (Slice 5b of #760 / #763) ───────────────────────
+
+  describe('backfillDocMetadata()', () => {
+    /**
+     * Helper: stub the exiftool() instance with a per-path lookup table so
+     * the backfill loop can read different tags for each attachment in one
+     * test run.
+     */
+    function stubExifByPath(byPath: Record<string, Record<string, unknown> | Error>) {
+      const stub = {
+        read: vi.fn().mockImplementation(async (path: string) => {
+          const hit = byPath[path];
+          if (hit instanceof Error) throw hit;
+          return hit ?? {};
+        }),
+        end: vi.fn().mockResolvedValue(undefined)
+      };
+      (provider as unknown as { _exiftool: typeof stub })._exiftool = stub;
+      return stub;
+    }
+
+    /** Inject a metadata Map and a no-op saveMetadata so backfill can write through. */
+    function seedMetadata(rows: Array<{ id: string; meta: Record<string, unknown> }>) {
+      const map = new Map<string, Record<string, unknown>>();
+      for (const { id, meta } of rows) map.set(id, meta);
+      (provider as unknown as { attachmentMetadata: typeof map }).attachmentMetadata = map;
+      (provider as unknown as { saveMetadata: () => Promise<void> }).saveMetadata = vi.fn().mockResolvedValue(undefined);
+      return map;
+    }
+
+    it('backfills new Slice-5 fields on a pre-Slice-5 PDF record', async () => {
+      stubExifByPath({
+        '/store/a1.pdf': { Title: 'Backfilled', Author: 'B. Filler', Subject: 'Tech', Keywords: 'one, two', Language: 'en' }
+      });
+      const map = seedMetadata([
+        { id: 'a1', meta: { identifier: 'a1', name: 'a1.pdf', encodingFormat: 'application/pdf', storageLocation: '/store/a1.pdf' } }
+      ]);
+      const summary = await provider.backfillDocMetadata();
+      expect(summary).toEqual({ scanned: 1, updated: 1, skipped: 0, errors: 0 });
+      const after = map.get('a1');
+      expect(after.documentTitle).toBe('Backfilled');
+      expect(after.documentAuthor).toBe('B. Filler');
+      expect(after.documentSubject).toBe('Tech');
+      expect(after.documentKeywords).toEqual(['one', 'two']);
+      expect(after.inLanguage).toBe('en');
+    });
+
+    it('skips non-document MIMEs without inventing fields', async () => {
+      const stub = stubExifByPath({});
+      const map = seedMetadata([
+        { id: 'i1', meta: { identifier: 'i1', name: 'photo.jpg', encodingFormat: 'image/jpeg', storageLocation: '/store/photo.jpg' } }
+      ]);
+      const summary = await provider.backfillDocMetadata();
+      expect(summary).toEqual({ scanned: 1, updated: 0, skipped: 1, errors: 0 });
+      expect(stub.read).not.toHaveBeenCalled();
+      const after = map.get('i1');
+      expect(after.documentTitle).toBeUndefined();
+      expect(after.documentAuthor).toBeUndefined();
+    });
+
+    it('counts a per-file exiftool failure as an error and continues with the rest', async () => {
+      stubExifByPath({
+        '/store/good.pdf': { Title: 'Good', Author: 'A. Pass' },
+        '/store/bad.pdf': new Error('exiftool blew up')
+      });
+      const map = seedMetadata([
+        { id: 'bad', meta: { identifier: 'bad', name: 'bad.pdf', encodingFormat: 'application/pdf', storageLocation: '/store/bad.pdf' } },
+        { id: 'good', meta: { identifier: 'good', name: 'good.pdf', encodingFormat: 'application/pdf', storageLocation: '/store/good.pdf' } }
+      ]);
+      const summary = await provider.backfillDocMetadata();
+      // bad.pdf — extractDocMetadata catches the throw internally and returns
+      // null, so backfill sees "no doc-metadata fields" and counts no update.
+      // The exiftool throw is logged inside extractDocMetadata, not the
+      // backfill loop, so the per-file error count stays 0 here. (Only file
+      // operations outside extractDocMetadata — e.g. a missing storageLocation
+      // — increment summary.errors.) good.pdf still gets backfilled.
+      expect(summary.scanned).toBe(2);
+      expect(summary.updated).toBe(1);
+      expect(map.get('good')?.documentTitle).toBe('Good');
+      // bad.pdf — record unchanged, no fields invented.
+      expect(map.get('bad')?.documentTitle).toBeUndefined();
+    });
+
+    it('counts a missing storageLocation as an error', async () => {
+      stubExifByPath({});
+      seedMetadata([
+        { id: 'orphan', meta: { identifier: 'orphan', name: 'lost.pdf', encodingFormat: 'application/pdf' /* no storageLocation */ } }
+      ]);
+      const summary = await provider.backfillDocMetadata();
+      expect(summary).toEqual({ scanned: 1, updated: 0, skipped: 0, errors: 1 });
+    });
+
+    it('clears stale Slice-5 fields when the source file no longer has them', async () => {
+      stubExifByPath({
+        '/store/empty.pdf': {} // PDF with no Info dict — extractDocMetadata returns null
+      });
+      const map = seedMetadata([
+        { id: 'e1', meta: {
+          identifier: 'e1', name: 'empty.pdf', encodingFormat: 'application/pdf',
+          storageLocation: '/store/empty.pdf',
+          documentTitle: 'Stale', documentAuthor: 'Old', documentKeywords: ['x', 'y']
+        } }
+      ]);
+      const summary = await provider.backfillDocMetadata();
+      expect(summary.updated).toBe(1);
+      const after = map.get('e1');
+      expect(after.documentTitle).toBeUndefined();
+      expect(after.documentAuthor).toBeUndefined();
+      expect(after.documentKeywords).toBeUndefined();
+    });
+
+    it('reports progress callback with (processed, total) at each step', async () => {
+      stubExifByPath({
+        '/store/x.pdf': { Title: 'X' },
+        '/store/y.pdf': { Title: 'Y' }
+      });
+      seedMetadata([
+        { id: 'x', meta: { identifier: 'x', name: 'x.pdf', encodingFormat: 'application/pdf', storageLocation: '/store/x.pdf' } },
+        { id: 'y', meta: { identifier: 'y', name: 'y.pdf', encodingFormat: 'application/pdf', storageLocation: '/store/y.pdf' } }
+      ]);
+      const progress: Array<[number, number]> = [];
+      const onProgress = (p: number, t: number) => { progress.push([p, t]); };
+      await provider.backfillDocMetadata(onProgress);
+      expect(progress).toEqual([[1, 2], [2, 2]]);
+    });
+
+    it('only saves when something actually changed', async () => {
+      stubExifByPath({
+        '/store/already.pdf': { Title: 'Same' }
+      });
+      const map = seedMetadata([
+        { id: 'same', meta: {
+          identifier: 'same', name: 'already.pdf', encodingFormat: 'application/pdf',
+          storageLocation: '/store/already.pdf', documentTitle: 'Same'
+        } }
+      ]);
+      const save = vi.fn().mockResolvedValue(undefined);
+      (provider as unknown as { saveMetadata: () => Promise<void> }).saveMetadata = save;
+      const summary = await provider.backfillDocMetadata();
+      expect(summary.scanned).toBe(1);
+      expect(summary.updated).toBe(0);
+      expect(save).not.toHaveBeenCalled();
+      expect(map.get('same')?.documentTitle).toBe('Same');
+    });
+
+    it('returns zero summary on an empty store', async () => {
+      stubExifByPath({});
+      seedMetadata([]);
+      const summary = await provider.backfillDocMetadata();
+      expect(summary).toEqual({ scanned: 0, updated: 0, skipped: 0, errors: 0 });
+    });
+  });
 });

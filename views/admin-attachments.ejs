@@ -5,9 +5,19 @@
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h1><i class="fas fa-paperclip"></i> Attachments</h1>
-                <a href="/admin" class="btn btn-secondary">
-                    <i class="fas fa-arrow-left"></i> Back to Dashboard
-                </a>
+                <div>
+                    <%# Slice 5b of #760 (#763) — admin trigger for the attachments.rebuild
+                        background job. Backfills embedded doc metadata on pre-Slice-5
+                        attachment records. Admin-only — server checks admin-system again. %>
+                    <% if (currentUser.roles.includes('admin')) { %>
+                    <button class="btn btn-warning" id="rebuild-attachments-btn" onclick="rebuildAttachments()" title="Re-extract embedded Title / Author / Subject / Keywords / dates / Language for every PDF / docx / xlsx / pptx attachment.">
+                        <i class="fas fa-sync"></i> Rebuild Metadata
+                    </button>
+                    <% } %>
+                    <a href="/admin" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left"></i> Back to Dashboard
+                    </a>
+                </div>
             </div>
 
             <!-- Summary Stats -->
@@ -356,6 +366,53 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('stat-images').textContent = allAttachments.filter(function(a) { return isImageType(a.mimeType); }).length;
         document.getElementById('stat-documents').textContent = allAttachments.filter(function(a) { return isDocumentType(a.mimeType); }).length;
     }
+
+    // #761 + #763 (Slice 5b of #760) — kick the attachments.rebuild background
+    // job to backfill embedded doc metadata on pre-Slice-5 records. Mirrors
+    // the dashboardMediaRebuild() pattern in admin-dashboard.ejs (enqueue,
+    // poll status, surface summary). Server re-checks admin role.
+    window.rebuildAttachments = async function() {
+        if (!confirm('Re-extract embedded metadata for every PDF / docx / xlsx / pptx attachment? This may take a few minutes on a large store.')) return;
+        var btn = document.getElementById('rebuild-attachments-btn');
+        if (!btn) return;
+        var originalHTML = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Rebuilding…';
+        try {
+            var enqueueRes = await csrfFetch('/api/admin/jobs/attachments.rebuild/enqueue', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            var enqueueJson = await enqueueRes.json();
+            var runId = enqueueJson.runId;
+            if (!runId) throw new Error(enqueueJson.error || 'Failed to start rebuild job');
+            // Poll. 1.5s interval, 1 hour ceiling — matches the media.rebuild client.
+            var deadline = Date.now() + 3600000;
+            var run;
+            while (Date.now() < deadline) {
+                await new Promise(function(r) { setTimeout(r, 1500); });
+                var st = await csrfFetch('/api/admin/jobs/' + encodeURIComponent(runId) + '/status');
+                run = await st.json();
+                if (run.status === 'completed' || run.status === 'failed') break;
+            }
+            if (!run || (run.status !== 'completed' && run.status !== 'failed')) {
+                throw new Error('Rebuild timed out');
+            }
+            if (run.status === 'completed') {
+                alert((run.result && run.result.summary) || 'Rebuild complete');
+                // Reload the page so the embedded fields render for any newly-
+                // backfilled rows (allAttachments JSON is server-embedded).
+                window.location.reload();
+            } else {
+                alert((run.result && run.result.error) || 'Rebuild failed');
+            }
+        } catch (err) {
+            alert('Rebuild failed: ' + (err && err.message ? err.message : err));
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalHTML;
+        }
+    };
 
     // Initial render
     render();

@@ -629,6 +629,33 @@ describe('WikiRoutes — coverage batch 6', () => {
     });
   });
 
+  // ── POST /admin/attachments/rebuild (Slice 5b of #760 / #763) ────────────
+
+  describe('POST /admin/attachments/rebuild', () => {
+    test('returns 403 when user lacks admin-system permission', async () => {
+      mockUserContext = { ...regularUser };
+      mockUserManager.hasPermission.mockResolvedValue(false);
+      const res = await request(app)
+        .post('/admin/attachments/rebuild')
+        .set('x-csrf-token', 'test-csrf-token');
+      expect(res.status).toBe(403);
+    });
+
+    test('enqueues attachments.rebuild and returns 202 with runId', async () => {
+      mockUserContext = { ...adminUser };
+      mockUserManager.hasPermission.mockResolvedValue(true);
+      // BackgroundJobManager.enqueue is on the engine via getManager.
+      const enqueue = vi.fn().mockResolvedValue('run-abc-123');
+      mockBackgroundJobManager.enqueue = enqueue;
+      const res = await request(app)
+        .post('/admin/attachments/rebuild')
+        .set('x-csrf-token', 'test-csrf-token');
+      expect(res.status).toBe(202);
+      expect(res.body).toEqual({ runId: 'run-abc-123' });
+      expect(enqueue).toHaveBeenCalledWith('attachments.rebuild');
+    });
+  });
+
   // ── DELETE /admin/attachments/:id ────────────────────────────────────────────
 
   describe('DELETE /admin/attachments/:id', () => {
