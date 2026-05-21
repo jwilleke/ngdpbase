@@ -15,7 +15,7 @@
  *   - leaves XSS hygiene to JSON.stringify (we don't double-escape here)
  */
 
-import { buildPageJsonLd, stringifyJsonLdForScript } from '../buildPageJsonLd';
+import { buildPageJsonLd, stringifyJsonLdForScript, wantsJsonLd } from '../buildPageJsonLd';
 
 describe('buildPageJsonLd()', () => {
   it('emits a full Article shape when all the canonical fields are present', () => {
@@ -213,5 +213,56 @@ describe('stringifyJsonLdForScript()', () => {
     expect(parsed.name).toBe('Demo <Page>');
     expect(parsed.author.name).toBe('Alice & Bob');
     expect(parsed.keywords).toEqual(['<a>', 'b>c']);
+  });
+});
+
+describe('wantsJsonLd() — Slice 6b content-negotiation gate (#766)', () => {
+  const r = (accept: string | string[] | undefined) => ({ headers: { accept } });
+
+  it('returns true for exact `application/ld+json`', () => {
+    expect(wantsJsonLd(r('application/ld+json'))).toBe(true);
+  });
+
+  it('returns true when application/ld+json is one of several MIME types in the header', () => {
+    expect(wantsJsonLd(r('text/html, application/ld+json, */*'))).toBe(true);
+  });
+
+  it('returns true when application/ld+json has a quality value', () => {
+    expect(wantsJsonLd(r('application/ld+json; q=0.9'))).toBe(true);
+    expect(wantsJsonLd(r('text/html;q=0.5, application/ld+json;q=1.0'))).toBe(true);
+  });
+
+  it('returns true case-insensitively (RFC 7231 says Accept tokens are case-insensitive)', () => {
+    expect(wantsJsonLd(r('Application/LD+JSON'))).toBe(true);
+  });
+
+  it('returns true when accept is a string-array (some proxies / frameworks normalize that way)', () => {
+    expect(wantsJsonLd(r(['text/html', 'application/ld+json']))).toBe(true);
+  });
+
+  it('returns false for plain text/html', () => {
+    expect(wantsJsonLd(r('text/html'))).toBe(false);
+  });
+
+  it('returns false for application/json (NOT application/ld+json — strict)', () => {
+    expect(wantsJsonLd(r('application/json'))).toBe(false);
+  });
+
+  it('returns false for */* (the curl/browser default)', () => {
+    expect(wantsJsonLd(r('*/*'))).toBe(false);
+  });
+
+  it('returns false when accept header is missing entirely', () => {
+    expect(wantsJsonLd(r(undefined))).toBe(false);
+  });
+
+  it('returns false when headers object is missing', () => {
+    expect(wantsJsonLd({})).toBe(false);
+    expect(wantsJsonLd(null)).toBe(false);
+    expect(wantsJsonLd(undefined)).toBe(false);
+  });
+
+  it('returns false for the empty string (some proxies send `accept: ""`)', () => {
+    expect(wantsJsonLd(r(''))).toBe(false);
   });
 });

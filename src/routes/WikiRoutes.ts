@@ -32,7 +32,7 @@ import { extractSection, spliceSection } from '../utils/SectionUtils.js';
 import { shuffleArray } from '../utils/pluginFormatters.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
 import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../utils/ContactSubmissionLog.js';
-import { buildPageJsonLd, stringifyJsonLdForScript } from '../utils/buildPageJsonLd.js';
+import { buildPageJsonLd, stringifyJsonLdForScript, wantsJsonLd } from '../utils/buildPageJsonLd.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
 import { renderCommentListHtml } from '../plugins/CommentsPlugin.js';
 import WikiContext from '../context/WikiContext.js';
@@ -1826,6 +1826,16 @@ ${panes}
       });
       const pageJsonLdScript = stringifyJsonLdForScript(pageJsonLd);
 
+      // Slice 6b of #760 (#766) — content-negotiation. When the client sends
+      // `Accept: application/ld+json`, return the JSON-LD body alone (no HTML
+      // envelope) with the correct Content-Type. ACL gates already fired
+      // above; the JSON-LD response respects the same authorization.
+      if (wantsJsonLd(req)) {
+        this.engine.getManager('MetricsManager')?.recordPageView?.(Date.now() - _metricsStart);
+        res.setHeader('Content-Type', 'application/ld+json; charset=utf-8');
+        return res.send(JSON.stringify(pageJsonLd));
+      }
+
       res.render(template, {
         ...templateData,
         pageName,
@@ -3466,6 +3476,20 @@ ${panes}
             currentUser: req.userContext
           });
         }
+      }
+
+      // Slice 6b of #760 (#766) — content-negotiation. When `Accept:
+      // application/ld+json`, return the DigitalDocument CreativeWork shape
+      // (Slice 5 / #759) as JSON instead of streaming the file bytes. ACL
+      // gate already fired above; we never reach this branch with an
+      // unauthorized private attachment.
+      if (wantsJsonLd(req)) {
+        const cw = await attachmentManager.get(attachmentId);
+        if (!cw) {
+          return res.status(404).send('Attachment not found');
+        }
+        res.setHeader('Content-Type', 'application/ld+json; charset=utf-8');
+        return res.send(JSON.stringify(cw));
       }
 
       // Get attachment with buffer and metadata
@@ -12155,6 +12179,19 @@ ${description}
       const item = await mediaManager.getItem(req.params.id, wikiContext);
       if (!item) {
         return res.status(404).send('Media item not found');
+      }
+
+      // Slice 6b of #760 (#766) — content-negotiation. When `Accept:
+      // application/ld+json`, return the ImageObject/VideoObject/AudioObject
+      // CreativeWork (Slice 3 / #758) as JSON instead of streaming the file.
+      // ACL gate already fired via getItem() with WikiContext.
+      if (wantsJsonLd(req)) {
+        const cw = await mediaManager.get(req.params.id);
+        if (!cw) {
+          return res.status(404).send('Media item not found');
+        }
+        res.setHeader('Content-Type', 'application/ld+json; charset=utf-8');
+        return res.send(JSON.stringify(cw));
       }
 
       const filePath: string = item.filePath;
