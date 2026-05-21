@@ -476,6 +476,27 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     // Check if attachment already exists (deduplication)
     const existing = this.attachmentMetadata.get(attachmentId);
     if (existing) {
+      // #764 — when the existing record is a doc MIME, re-run exiftool on its
+      // stored file and refresh the seven Slice-5 fields. Makes "re-upload to
+      // refresh metadata" work for the per-file case (the bulk equivalent is
+      // the attachments.rebuild job from Slice 5b / #763). Non-doc MIMEs
+      // continue to short-circuit — image/video re-uploads shouldn't pay for
+      // a perl process spawn.
+      const existingMime = (existing.encodingFormat ?? '');
+      const existingPath = (existing.storageLocation ?? '');
+      if (BasicAttachmentProvider.DOC_METADATA_MIME_TYPES.has(existingMime) && existingPath) {
+        try {
+          const docMetadata = await this.extractDocMetadata(existingPath, existingMime);
+          if (this.applyDocMetadataFields(existing, docMetadata)) {
+            await this.saveMetadata();
+            logger.info(`[BasicAttachmentProvider] Attachment dedup hit refreshed embedded metadata: ${attachmentId} (${fileInfo.originalName})`);
+            return existing;
+          }
+        } catch (err) {
+          // Non-fatal — re-extract failure should not block the dedup return.
+          logger.warn(`[BasicAttachmentProvider] dedup re-extract failed for ${attachmentId} (${existingPath}): ${String(err)}`);
+        }
+      }
       logger.info(`[BasicAttachmentProvider] Attachment already exists: ${attachmentId} (${fileInfo.originalName})`);
       return existing;
     }
@@ -1250,35 +1271,10 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
 
       try {
         const docMetadata = await this.extractDocMetadata(filePath, mime);
-        // Apply field-by-field: set when the extracted value exists, clear
-        // when extraction returned null/undefined for that field. Treat the
-        // record as mutable per-field rather than overwriting wholesale so a
-        // partial re-extract doesn't drop unrelated existing data.
-        const target = meta as unknown as Record<string, unknown>;
-        const apply = (key: string, value: string | string[] | undefined): boolean => {
-          if (value === undefined || (Array.isArray(value) && value.length === 0)) {
-            if (target[key] !== undefined) { delete target[key]; return true; }
-            return false;
-          }
-          // Compare by JSON for arrays; primitives by equality.
-          const before = target[key];
-          const changed = Array.isArray(value)
-            ? JSON.stringify(before) !== JSON.stringify(value)
-            : before !== value;
-          if (changed) { target[key] = value; return true; }
-          return false;
-        };
-
-        let changed = false;
-        changed = apply('documentTitle',         docMetadata?.title)        || changed;
-        changed = apply('documentAuthor',        docMetadata?.author)       || changed;
-        changed = apply('documentSubject',       docMetadata?.subject)      || changed;
-        changed = apply('documentKeywords',      docMetadata?.keywords)     || changed;
-        changed = apply('documentDateCreated',   docMetadata?.dateCreated)  || changed;
-        changed = apply('documentDateModified', docMetadata?.dateModified) || changed;
-        changed = apply('inLanguage',            docMetadata?.inLanguage)   || changed;
-
-        if (changed) { summary.updated++; dirty = true; }
+        if (this.applyDocMetadataFields(meta, docMetadata)) {
+          summary.updated++;
+          dirty = true;
+        }
       } catch (err) {
         logger.warn(`[BasicAttachmentProvider] backfillDocMetadata failed for ${id} (${filePath}): ${String(err)}`);
         summary.errors++;
@@ -1294,6 +1290,47 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
         `updated=${summary.updated} skipped=${summary.skipped} errors=${summary.errors}`
     );
     return summary;
+  }
+
+  /**
+   * Apply extracted doc-metadata to a stored record field-by-field. Sets each
+   * field when the extracted value exists; clears when extraction returned
+   * null/undefined for that field. Per-field mutation so a partial re-extract
+   * doesn't drop unrelated existing data. Returns true when the record
+   * changed (caller decides whether to persist).
+   *
+   * Shared by `backfillDocMetadata` (Slice 5b / #763) and
+   * `storeAttachmentInternal`'s dedup-by-hash branch (#764). Keeping the
+   * two call sites on the same helper ensures their "set vs clear stale"
+   * semantics stay in lockstep.
+   */
+  private applyDocMetadataFields(
+    record: SchemaCreativeWork,
+    extracted: { title?: string; author?: string; subject?: string; keywords?: string[];
+                 dateCreated?: string; dateModified?: string; inLanguage?: string } | null | undefined
+  ): boolean {
+    const target = record as unknown as Record<string, unknown>;
+    const apply = (key: string, value: string | string[] | undefined): boolean => {
+      if (value === undefined || (Array.isArray(value) && value.length === 0)) {
+        if (target[key] !== undefined) { delete target[key]; return true; }
+        return false;
+      }
+      const before = target[key];
+      const changed = Array.isArray(value)
+        ? JSON.stringify(before) !== JSON.stringify(value)
+        : before !== value;
+      if (changed) { target[key] = value; return true; }
+      return false;
+    };
+    let changed = false;
+    changed = apply('documentTitle',         extracted?.title)        || changed;
+    changed = apply('documentAuthor',        extracted?.author)       || changed;
+    changed = apply('documentSubject',       extracted?.subject)      || changed;
+    changed = apply('documentKeywords',      extracted?.keywords)     || changed;
+    changed = apply('documentDateCreated',   extracted?.dateCreated)  || changed;
+    changed = apply('documentDateModified',  extracted?.dateModified) || changed;
+    changed = apply('inLanguage',            extracted?.inLanguage)   || changed;
+    return changed;
   }
 
   /**

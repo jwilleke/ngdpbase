@@ -428,4 +428,157 @@ describe('BasicAttachmentProvider — Slice 5 of #755 (#759)', () => {
       expect(summary).toEqual({ scanned: 0, updated: 0, skipped: 0, errors: 0 });
     });
   });
+
+  // ─── dedup-by-hash re-extract on storeAttachmentInternal (#764) ───────────
+
+  describe('storeAttachmentInternal — dedup-by-hash re-extract (#764)', () => {
+    /**
+     * Drive only the dedup branch of `storeAttachmentInternal` — `extractDocMetadata`
+     * is exercised via the lookup-table-backed exiftool stub from the
+     * backfill tests. We invoke the private method directly because the
+     * public `storeAttachment` path also touches a `BackgroundJobManager`
+     * mock, fs.writeFile, and validateFile — none of which are exercised
+     * here. The dedup branch returns BEFORE any of those.
+     */
+    function stubExifByPath(byPath: Record<string, Record<string, unknown> | Error>) {
+      const stub = {
+        read: vi.fn().mockImplementation(async (p: string) => {
+          const hit = byPath[p];
+          if (hit instanceof Error) throw hit;
+          return hit ?? {};
+        }),
+        end: vi.fn().mockResolvedValue(undefined)
+      };
+      (provider as unknown as { _exiftool: typeof stub })._exiftool = stub;
+      return stub;
+    }
+
+    function seedExistingRecord(id: string, meta: Record<string, unknown>) {
+      const map = new Map<string, Record<string, unknown>>();
+      map.set(id, meta);
+      (provider as unknown as { attachmentMetadata: typeof map }).attachmentMetadata = map;
+      const save = vi.fn().mockResolvedValue(undefined);
+      (provider as unknown as { saveMetadata: () => Promise<void> }).saveMetadata = save;
+      // generateAttachmentId returns the same id (drive the dedup branch).
+      (provider as unknown as { generateAttachmentId: (b: Buffer) => string }).generateAttachmentId = () => id;
+      // validateFile is a no-op for the dedup branch's purposes (returns early
+      // before fs touches anything), but stub it so test passes when invoked.
+      (provider as unknown as { validateFile: (info: unknown) => void }).validateFile = vi.fn();
+      // storageDirectory just needs to be truthy; dedup returns before fs is hit.
+      (provider as unknown as { storageDirectory: string }).storageDirectory = '/tmp/test-store';
+      return { map, save };
+    }
+
+    const storeInternal = async (mime = 'application/pdf') => {
+      return (provider as unknown as { storeAttachmentInternal: (
+        buf: Buffer, info: { originalName: string; mimeType: string; size: number },
+        meta?: Record<string, unknown>, user?: unknown, opts?: Record<string, unknown>
+      ) => Promise<Record<string, unknown>> }).storeAttachmentInternal(
+        Buffer.from('x'),
+        { originalName: 'reupload.pdf', mimeType: mime, size: 1 }
+      );
+    };
+
+    it('dedup hit on a pre-Slice-5 PDF re-runs exiftool and populates Slice-5 fields', async () => {
+      stubExifByPath({
+        '/store/old.pdf': { Title: 'Refreshed Title', Author: 'R. Eextract', Keywords: 'k1, k2' }
+      });
+      const { map, save } = seedExistingRecord('att-1', {
+        identifier: 'att-1', name: 'reupload.pdf', encodingFormat: 'application/pdf',
+        storageLocation: '/store/old.pdf'
+        // no Slice-5 fields — emulates pre-v3.27.0 record
+      });
+      const result = await storeInternal();
+      expect(result.documentTitle).toBe('Refreshed Title');
+      expect(result.documentAuthor).toBe('R. Eextract');
+      expect(result.documentKeywords).toEqual(['k1', 'k2']);
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(map.get('att-1')?.documentTitle).toBe('Refreshed Title');
+    });
+
+    it('dedup hit on a doc whose embedded Title changed in the source refreshes the field', async () => {
+      stubExifByPath({
+        '/store/edit.pdf': { Title: 'New Title' }
+      });
+      const { save } = seedExistingRecord('att-2', {
+        identifier: 'att-2', name: 'edit.pdf', encodingFormat: 'application/pdf',
+        storageLocation: '/store/edit.pdf', documentTitle: 'Old Title'
+      });
+      const result = await storeInternal();
+      expect(result.documentTitle).toBe('New Title');
+      expect(save).toHaveBeenCalledTimes(1);
+    });
+
+    it('dedup hit clears stale Slice-5 fields when the source no longer has them', async () => {
+      stubExifByPath({
+        '/store/stripped.pdf': {} // operator removed all PDF Info entries
+      });
+      const { save } = seedExistingRecord('att-3', {
+        identifier: 'att-3', name: 'stripped.pdf', encodingFormat: 'application/pdf',
+        storageLocation: '/store/stripped.pdf',
+        documentTitle: 'Was set', documentAuthor: 'Was set too', documentKeywords: ['a', 'b']
+      });
+      const result = await storeInternal();
+      expect(result.documentTitle).toBeUndefined();
+      expect(result.documentAuthor).toBeUndefined();
+      expect(result.documentKeywords).toBeUndefined();
+      expect(save).toHaveBeenCalledTimes(1);
+    });
+
+    it('dedup hit on a doc whose fields already match is a no-op — no save call', async () => {
+      stubExifByPath({
+        '/store/same.pdf': { Title: 'Same', Author: 'Same Author' }
+      });
+      const { save } = seedExistingRecord('att-4', {
+        identifier: 'att-4', name: 'same.pdf', encodingFormat: 'application/pdf',
+        storageLocation: '/store/same.pdf',
+        documentTitle: 'Same', documentAuthor: 'Same Author'
+      });
+      await storeInternal();
+      expect(save).not.toHaveBeenCalled();
+    });
+
+    it('dedup hit on a non-doc MIME (image/jpeg) does NOT call exiftool — short-circuit preserved', async () => {
+      const stub = stubExifByPath({});
+      const { save } = seedExistingRecord('att-5', {
+        identifier: 'att-5', name: 'photo.jpg', encodingFormat: 'image/jpeg',
+        storageLocation: '/store/photo.jpg'
+      });
+      await storeInternal('image/jpeg');
+      expect(stub.read).not.toHaveBeenCalled();
+      expect(save).not.toHaveBeenCalled();
+    });
+
+    it('dedup hit on a doc with no storageLocation is non-fatal and returns the existing record unchanged', async () => {
+      const stub = stubExifByPath({});
+      const { save } = seedExistingRecord('att-6', {
+        identifier: 'att-6', name: 'orphan.pdf', encodingFormat: 'application/pdf'
+        // no storageLocation
+      });
+      const result = await storeInternal();
+      // No exiftool call attempted (no path to read); no save; existing returned.
+      expect(stub.read).not.toHaveBeenCalled();
+      expect(save).not.toHaveBeenCalled();
+      expect(result.identifier).toBe('att-6');
+    });
+
+    it('dedup hit on a doc whose exiftool read throws is non-fatal and returns the existing record', async () => {
+      stubExifByPath({
+        '/store/bad.pdf': new Error('exif crashed')
+      });
+      const { save } = seedExistingRecord('att-7', {
+        identifier: 'att-7', name: 'bad.pdf', encodingFormat: 'application/pdf',
+        storageLocation: '/store/bad.pdf', documentTitle: 'Preserved'
+      });
+      const result = await storeInternal();
+      // extractDocMetadata catches the throw internally and returns null →
+      // applyDocMetadataFields() with null clears every Slice-5 field. The
+      // single existing field gets cleared → save IS called.
+      // Verify the dedup branch did NOT throw out to the caller — that's the
+      // non-fatal guarantee — and that the existing record was returned.
+      expect(result.identifier).toBe('att-7');
+      expect(result.documentTitle).toBeUndefined();
+      expect(save).toHaveBeenCalledTimes(1);
+    });
+  });
 });
