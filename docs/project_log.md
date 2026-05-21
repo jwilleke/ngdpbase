@@ -2,6 +2,28 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-21-09
+
+- Agent: Claude Opus 4.7
+- Subject: Released v3.29.0 — Slice 5b of EPIC #760 (#763, `attachments.rebuild` background job) — and propagated to all 3 satellites. Pre-v3.27.0 attachments can now be backfilled to the seven Slice-5 embedded-metadata fields via a one-click admin action on `/admin/attachments`.
+- Current Issue: #763 (shipped in v3.29.0; comment+close to follow).
+- Tests: jimstest re-validated on the release commit (`15ee0c64`): 5827/5827 unit GREEN. E2E re-run skipped at Step 8a — release commit only touched package.json / config/app-default-config.json / CHANGELOG.md / the new baseline doc; pre-release E2E (72/72) ran on the identical UI code in session 2026-05-21-08.
+- Semver: `/semver minor` — 3.28.0 → 3.29.0. GitHub Release published with auto-generated notes: <https://github.com/jwilleke/ngdpbase/releases/tag/v3.29.0>
+- Perf drift vs v3.28.0: clean — memory −0.2%, routes 1-3 ms higher (within the per-route 50 ms / 50 % threshold; well under measurement noise). No regressions flagged. Baseline: `docs/performance/baseline-v3.29.0-2026-05-21.md`.
+- /othersites: satellite-only mode (jimstest validated by Step 8a). All 3 satellites first-try green on both unit and E2E:
+
+| Instance | Path | Port | Unit | E2E |
+|---|---|---|---|---|
+| jimstest | `/Volumes/hd2A/workspaces/github/ngdpbase` | 3000 | 5827/5827 ✅ (Step 8a) | 72/72 ✅ (pre-release session 08) |
+| The Fairways | `/Volumes/hd2A/workspaces/github/fairways-base` | 2121 | 5827/5827 ✅ | 72/72 ✅ |
+| ve-geology | `/Volumes/hd2A/workspaces/github/ngdpbase-veg` | 3333 | 5827/5827 ✅ | 72/72 ✅ |
+| ngdpbase temp build | `/Volumes/hd2/ngdp-temp-builds/ngdpbase` | 3001 | 5827/5827 ✅ | 72/72 ✅ |
+
+- Flakes seen: none. All instances first-try green on both unit and E2E.
+- Side: fairways-base still has the single untracked `docs/planning/plan-addon-accounting.md` (expected operator working notes); other satellites clean pre-pull.
+- Commits in release range (v3.28.0..v3.29.0): `b7befc73` (session 07 log), `5d581cd8` (Slice 5b feat — headline), `daafae4b` (session 08 log), `15ee0c64` (release v3.29.0).
+- Files Modified (this session): docs/project_log.md (this entry).
+
 ## 2026-05-21-08
 
 - Agent: Claude Opus 4.7
