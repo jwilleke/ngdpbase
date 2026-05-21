@@ -2,6 +2,30 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-21-17
+
+- Agent: Claude Opus 4.7
+- Subject: Released v3.32.0 — Slice 6c of EPIC #760 (#767, SKOS ConceptScheme endpoint) — and propagated to all 3 satellites. With this, the #755 EPIC's full Slice 6 acceptance criteria are met: per-page `<script>` (6a), content-negotiation on `@id` URLs (6b), SKOS endpoint (6c) — all live across all four instances.
+- Current Issue: #767 (shipped in v3.32.0; comment+close to follow).
+- Tests: jimstest re-validated on the release commit (`0349ff59`): 5875/5875 unit GREEN. E2E re-run skipped — release commit only touched version-string files; pre-release E2E (72/72) ran on identical runtime code in session 2026-05-21-16.
+- Semver: `/semver minor` — 3.31.0 → 3.32.0. GitHub Release published with auto-generated notes: <https://github.com/jwilleke/ngdpbase/releases/tag/v3.32.0>
+- Perf drift vs v3.31.0: one anomaly flagged, confirmed cold-cache noise:
+  - `/search?q=test` 41 → 152 ms (+270.7% / +111 ms) — first-hit lazy-index spike right after the restart. Re-sampled 5× post-warmup: 40-41 ms, consistent with v3.31.0's stable warm value. Same pattern observed on v3.27.1 / v3.29.1 / v3.30.0 baselines. Slice 6c adds only `/api/catalog/vocabulary/*` endpoints — physically can't affect `/search`.
+  - Memory -2.7%, other routes flat. Baseline: `docs/performance/baseline-v3.32.0-2026-05-21.md`.
+- /othersites: satellite-only mode (jimstest validated by Step 8a). E2E skipped on satellites — release range touches only `src/utils/`, `src/managers/`, `src/routes/`; no UI-affecting paths. Unit tests + live curl on jimstest already covered the route behavior. All 3 satellites first-try green:
+
+| Instance | Path | Port | Unit | E2E |
+|---|---|---|---|---|
+| jimstest | `/Volumes/hd2A/workspaces/github/ngdpbase` | 3000 | 5875/5875 ✅ (Step 8a) | 72/72 ✅ (pre-release session 16) |
+| The Fairways | `/Volumes/hd2A/workspaces/github/fairways-base` | 2121 | 5875/5875 ✅ | skipped (no UI changes) |
+| ve-geology | `/Volumes/hd2A/workspaces/github/ngdpbase-veg` | 3333 | 5875/5875 ✅ | skipped (no UI changes) |
+| ngdpbase temp build | `/Volumes/hd2/ngdp-temp-builds/ngdpbase` | 3001 | 5875/5875 ✅ | skipped (no UI changes) |
+
+- Flakes seen: none.
+- Side: fairways-base still has the untracked `docs/planning/plan-addon-accounting.md` (expected operator notes); others clean.
+- Commits in release range (v3.31.0..v3.32.0): `0a69cf85` (session 15 log), `1bdd438c` (Slice 6c feat — headline), `8796cc60` (session 16 log), `0349ff59` (release v3.32.0).
+- Files Modified (this session): docs/project_log.md (this entry).
+
 ## 2026-05-21-16
 
 - Agent: Claude Opus 4.7
