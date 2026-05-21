@@ -2,6 +2,35 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-21-12
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped #765 — Slice 6a of EPIC #760 (and of Slice 6 in EPIC #755). Every `/view/:page` render now embeds a `<script type="application/ld+json">` block with the page's schema.org Article (or CreativeWork base) shape. First consumer of the #755 plumbing — `CatalogManager.getCreativeWork()` is still untouched by this slice (Slice 4 / #754 gates that), but the canonical mapper now lives at `src/utils/buildPageJsonLd.ts` ready to be wrapped by a CatalogSource delegate when Slice 4 unblocks.
+- Current Issue: #765 (shipped on master `32de1ea9`; pending release + close).
+- Tests: 5854/5854 unit (was 5834; +20 new mapper tests in `src/utils/__tests__/buildPageJsonLd.test.ts` — full Article shape, CreativeWork fallback, single-signal promotion, empty-field omission, editor-distinct-from-author Decision 10, legacy scalar `user-keywords` parsing, cross-source keyword dedupe, baseUrl trailing-slash trim, URL-encoded slugs, inLanguage preference, null-metadata tolerance, XSS hygiene for both the mapper and the safe-stringify helper). E2E 72/72 on jimstest. Build + tsc clean. Live verified: `curl /view/Welcome` returns the expected `<script type="application/ld+json">{...}</script>` block.
+- Semver: pending decision (see release-decision note below).
+- /othersites: pending (gated on semver).
+- Notable design choices:
+  - Mapper is intentionally NOT a CatalogSource. Slice 4 (PageManager-as-CatalogSource) is gated on #754 (per-page `created` timestamp + ~17K-page backfill). When Slice 4 lands, the mapper here gets wrapped by a 10-line CatalogSource delegate. Doing it inline now unblocks Slice 6a without waiting for the page-model schema change.
+  - Decision 9 enforced: removed the existing `itemscope itemtype=...` microdata block in `view.ejs` (the visually-hidden `itemprop="keywords"` spans + meta tags). All semantic info now lives in the JSON-LD. #149 was the parent design ticket for the old microdata; explicitly superseded by Decision 9 (2026-05-20).
+  - `stringifyJsonLdForScript()` — companion helper that escapes `<` / `>` / `&` to `\uXXXX` JSON escapes before embedding inside `<script>`. `JSON.stringify` alone doesn't escape those, so attacker-controlled metadata containing `</script>` could close the tag prematurely. OWASP-aligned. Round-trips through `JSON.parse`. The mapper itself stays unescaped — consumers like Slice 6b (content-negotiation) want the natural JSON shape, not the HTML-safe form.
+  - @type promotion rule: Article when any Article-signal field (`dateModified` / `author` / `system-category`) is present; CreativeWork base for very-sparse pages. Pragmatic — schema.org allows narrow → broad fallback, and Article-with-no-author looked weird in early dry runs.
+  - Keyword union: user-keywords ∪ system-keywords ∪ auto-tagged (#507) ∪ system-category, deduplicated case-sensitively with first-seen ordering. `system-category` is also surfaced as `articleSection` (its schema.org-canonical field).
+  - `baseUrl` config (`ngdpbase.base-url`): when empty, emits relative `/view/<slug>` form which is still a valid JSON-LD IRI. Operators who configure a base URL get fully-qualified `@id`s. Slug is URL-encoded for spaces / special chars.
+- Out of scope (separate sub-slices under #760, not yet filed):
+  - Slice 6b — content-negotiation on `/view/`, `/attachments/`, `/media/file/` canonical URLs (`Accept: application/ld+json` returns JSON-LD body alone, no HTML envelope).
+  - Slice 6c — SKOS `/api/catalog/vocabulary/<scheme-id>` endpoint for keyword vocabularies.
+  - Slice 4 — PageManager-as-CatalogSource refactor (replaces this slice's inline mapper); gated on #754.
+- **Release decision note**: matches the Slice 3 / 5 / 5a / 5b precedent for new operator-visible features. Every page render now ships a structured-data block — a feature, not a bug fix. Cut as `/semver minor` (auto-publishes a GitHub Release + auto-runs `/othersites` to propagate). Currently uncut — pending operator preference.
+- Files Modified:
+  - src/utils/buildPageJsonLd.ts (new)
+  - src/utils/**tests**/buildPageJsonLd.test.ts (new)
+  - src/routes/WikiRoutes.ts (import + viewPage payload + render data)
+  - views/view.ejs (JSON-LD `<script>` block + microdata removal)
+  - docs/project_log.md (this entry)
+- Commits: `32de1ea9` (Slice 6a feat — headline).
+- Side note (incidental): operator highlighted an old log fragment at `docs/project_log.md` line 732 ("es the clo" inside a 2026-05-18 entry on #744). Did not appear actionable for Slice 6a; flagged in the session so it isn't lost.
+
 ## 2026-05-21-11
 
 - Agent: Claude Opus 4.7
