@@ -23,7 +23,12 @@ jobs:
       - name: Get installed and latest showdown versions
         id: versions
         run: |
-          INSTALLED=$(node -e "console.log(require('./node_modules/showdown/package.json').version)")
+          # Read pinned version from package-lock.json (no npm install needed
+          # for a version check; lockfile is authoritative for what would get
+          # installed). Avoids the prior failure mode where the workflow tried
+          # to require ./node_modules/showdown/package.json without ever
+          # running npm install. See #749.
+          INSTALLED=$(jq -r '.packages["node_modules/showdown"].version' package-lock.json)
           LATEST=$(npm view showdown version 2>/dev/null)
           echo "installed=$INSTALLED" >> $GITHUB_OUTPUT
           echo "latest=$LATEST" >> $GITHUB_OUTPUT
