@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-21T09:30:00.000Z'
+lastModified: '2026-05-21T09:45:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -36,17 +36,11 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 Items carrying the `in review` label — work is shipped/merged; operator verification is the only thing left before close. **Clear this list before starting new feature work.**
 
-| # | Title | Shipped | How to verify |
-|---|---|---|---|
-| #753 | MarkupParser: CommonMark variable-length backtick code spans (```` ``` ````) leaked `data-jspwiki-placeholder` spans + cascade-corrupted later fenced blocks | v3.27.1 (`090c77c9` + `739fe57b`) 2026-05-21 | Root cause was the Step-0 inline regex `/`([^`]+)`/g`, not the fenced-code scanner. Replaced with a CommonMark scanner (run-of-N opens; run-of-exactly-N closes). Verify: (a)`npm test -- MarkupParser-Extraction.test.ts -t "#753"` + `... MarkupParser-EndToEnd.test.ts -t "#753"`; (b) UI-edit any wiki page with `` ```` ``` ```` `` and confirm`<code>```</code>` renders with no placeholder spans; (c) live `/view/Using InsertPlugin` needs an operator UI edit — required-pages source only seeds on first install |
-| #759 | Slice 5 of #755 — AttachmentManager-as-CatalogSource + PDF/docx metadata extraction | v3.27.0 (`b348bfd4`) 2026-05-20 | Slice 5 plumbed extraction → storage → search-match → CatalogSource emission but **adds no UI surface**. Three review paths: (a) upload a PDF whose embedded `Title`/`Author` differ from filename and search for them in the asset picker — pre-Slice-5 wouldn't match, post-Slice-5 should; (b) grep `data/attachments/attachment-metadata.json` after upload for `documentTitle`/`documentAuthor`/etc.; (c) `npm test -- BasicAttachmentProvider.docMetadata AttachmentManager` (34 cases). Follow-up "Slice 5a" tracked in EPIC #760 |
-| #757 | Slice 2 of #755 — `src/types/Schema.ts`: CreativeWork + subtypes + per-source mapper signatures | (`8fd3a996`) 2026-05-20 | Type-only deliverable: 5 subtypes + CatalogSource interface + 5 type guards + 17 tests. Verify by reading `src/types/Schema.ts` and `src/types/guards.ts`; tests `npm test -- src/types/__tests__/guards.test.ts` |
-| #756 | Slice 1 of #755 — CatalogManager audit: docs + minimum-API recommendation | (`7a68b718`) 2026-05-20 | Docs deliverable: read `docs/managers/CatalogManager.md`; check it appears in the docs-coverage report (managers 25/37, closed one #660 warning) |
-| #750 | Index video capture-date (CreateDate/MediaCreateDate/QuickTime:CreationDate) | v3.25.1 (`97089601`) | Upload a video with a known capture date or run `media.rebuild`; confirm it appears in date sort/filter in the asset picker. Tests: `npm test -- FileSystemMediaProvider.extractDateTimeOriginal` |
+_(none)_ — operator confirmed and closed all five #755-slice / #753 / #750 in-review items on 2026-05-21 (~09:34–09:43Z). Durable trail in `docs/project_log.md` and the GitHub issue history.
 
 ## Open BUGS (ngdpbase, by issue #)
 
-2 open as of 2026-05-21. #753 closed-pending-signoff in v3.27.1 (see _Waiting on Review Sign-off_ above); #749 closed (workflow fix + /check-todos GH-actions section, `4c9f9a17`). Remaining: #660 cosmetic doc-stub backlog, #599 mitigation-only CVE with no upstream patch.
+2 open as of 2026-05-21. #753 closed 2026-05-21 09:43Z after v3.27.1 propagation; #749 closed earlier (workflow fix + /check-todos GH-actions section, `4c9f9a17`). Remaining: #660 cosmetic doc-stub backlog, #599 mitigation-only CVE with no upstream patch.
 
 | # | Title |
 |---|---|
