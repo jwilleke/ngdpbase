@@ -2,6 +2,26 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-21-01
+
+- Agent: Claude Opus 4.7
+- Subject: Added a top-of-file "Waiting on Review Sign-off" section to `TODO.md` and updated the `/check-todos` skill to surface and require it. Triggered by an operator review-friendliness question on the `in review` Slice 5 (#759): the four `in review` issues were buried mid-table in "Notable feature work in flight" with no signal that they're shipped work blocked only on operator verification, and the #759 entry in particular gave no path to "how do I review this?"
+- Current Issue: #759 (review-path documentation only; issue itself stays `in review`).
+- Tests: skipped jimstest pre-flight — commit touches only `TODO.md`, `.claude/commands/check-todos.md`, and `package-lock.json` (top-level project-name version sync to 3.27.0, no dependency-tree change). No code, no views, no addons; TypeScript build / runtime / unit tests are not exercised by markdown or a lockfile project-version bump.
+- Semver: skip — process/docs change, no shipped behavior.
+- /othersites: not run (gated on minor/major semver).
+- Work Done:
+  - `TODO.md`: new `## Waiting on Review Sign-off` section immediately after Security, framed as the section to clear first each session. Each item carries shipped version, one-line change description, and an explicit "How to verify" path (URL / command / file to inspect). Lifted #759, #757, #756, #750 out of the "Notable feature work in flight" table so they live in exactly one place. Bumped `lastModified` to 2026-05-21.
+  - `#759` row notes the review-friendliness gap surfaced this session: Slice 5 plumbed exiftool extraction → storage → search-match → CatalogSource emission but added no UI surface, so three concrete review paths are listed (asset-picker search for embedded Author/Title that differ from filename; grep `data/attachments/attachment-metadata.json` for new `documentTitle`/`documentAuthor`/etc.; `npm test -- BasicAttachmentProvider.docMetadata AttachmentManager` covering 34 cases). Follow-up "Slice 5a" (render fields in `admin-attachments.ejs`) flagged but not filed.
+  - `.claude/commands/check-todos.md`: added "Waiting on Review Sign-off" to both the survey bullet list and the Output sections, with the contract that each entry must include shipped version, one-line description, and verification path.
+  - Side: bundled a stale `package-lock.json` version sync to 3.27.0 — `/semver` bumped `package.json` on the v3.27.0 release commit but did not run `npm install` to refresh the lockfile's top-level `version` entry. Worth a follow-up to `/semver` so future minor releases stay clean.
+- Commits: `89d72d5a` (lockfile sync), `6dc70e82` (TODO + /check-todos docs).
+- Files Modified:
+  - TODO.md
+  - .claude/commands/check-todos.md
+  - package-lock.json
+  - docs/project_log.md
+
 ## 2026-05-20-09
 
 - Agent: Claude Opus 4.7
