@@ -167,6 +167,18 @@ const mockBackgroundJobManager = {
   getActiveJobs: vi.fn()
 };
 
+// AttachmentManager mock — only the surface admin-attachments.ejs touches.
+// Used by #761 (Slice 5a) tests to verify embedded doc metadata reaches the
+// rendered admin page.
+const mockAttachmentManager = {
+  getAllAttachments: vi.fn().mockResolvedValue([])
+};
+
+// Captures the most-recent res.render() call so tests can inspect what the
+// route handler hands to the template. The render itself is stubbed (the
+// real EJS engine isn't exercised here) so we verify the data contract.
+let lastRenderCall: { view: string; data: unknown } | null = null;
+
 vi.mock('../../WikiEngine', () => {
   const MockEngine = vi.fn().mockImplementation(function () {
     return {
@@ -199,7 +211,8 @@ vi.mock('../../WikiEngine', () => {
             applyTemplate: vi.fn().mockReturnValue('# Template content')
           },
           ExportManager: { getExports: vi.fn().mockResolvedValue([]) },
-          SchemaManager: { getPerson: vi.fn().mockResolvedValue(null), getOrganization: vi.fn().mockResolvedValue(null) }
+          SchemaManager: { getPerson: vi.fn().mockResolvedValue(null), getOrganization: vi.fn().mockResolvedValue(null) },
+          AttachmentManager: mockAttachmentManager
         };
         return managers[name] ?? null;
       }),
@@ -301,7 +314,8 @@ function buildApp() {
   appInstance.set('views', path.join(__dirname, '../views'));
 
   appInstance.use((_req: express.Request, res: express.Response, next: express.NextFunction) => {
-    res.render = (_view: string, _data: unknown, cb?: (err: Error | null, str?: string) => void) => {
+    res.render = (view: string, data: unknown, cb?: (err: Error | null, str?: string) => void) => {
+      lastRenderCall = { view, data };
       if (cb) cb(null, '<html>stub</html>');
       else res.send('<html>stub</html>');
     };
@@ -475,6 +489,133 @@ describe('WikiRoutes — coverage batch 6', () => {
       mockUserContext = { ...regularUser };
       const res = await request(app).get('/admin/attachments');
       expect(res.status).toBe(403);
+    });
+
+    // #761 / Slice 5a — verify that the Slice 5 (#759) embedded doc-metadata
+    // fields reach the rendered admin page. Pre-Slice-5a the fields were on
+    // the attachment record but nothing rendered them; the admin table now
+    // shows present fields below the filename. The route's `res.render` is
+    // stubbed by the harness, so these tests inspect `lastRenderCall.data`
+    // to verify the route → template data contract, plus a direct read of
+    // the on-disk EJS to verify the renderer references each new field.
+    describe('Slice 5a — embedded doc metadata in rendered output', () => {
+      const docAttachment = {
+        id: 'att-doc-1',
+        filename: 'whitepaper.pdf',
+        mimeType: 'application/pdf',
+        size: 12345,
+        uploadedBy: 'someone',
+        uploadedAt: '2026-05-21T08:00:00.000Z',
+        pageUuid: null,
+        description: '',
+        documentTitle: 'Confidential Whitepaper',
+        documentAuthor: 'J. Doe',
+        documentSubject: 'Internal',
+        documentKeywords: ['alpha', 'beta'],
+        documentDateCreated: '2024-01-15',
+        documentDateModified: '2024-02-20',
+        inLanguage: 'en'
+      };
+
+      const plainAttachment = {
+        id: 'att-plain-1',
+        filename: 'photo.jpg',
+        mimeType: 'image/jpeg',
+        size: 67890,
+        uploadedBy: 'someone',
+        uploadedAt: '2026-05-20T08:00:00.000Z',
+        pageUuid: null,
+        description: ''
+      };
+
+      test('hands all seven new doc-metadata fields through to the template', async () => {
+        mockUserContext = { ...adminUser };
+        mockUserManager.hasPermission.mockResolvedValue(true);
+        mockAttachmentManager.getAllAttachments.mockResolvedValue([docAttachment]);
+        lastRenderCall = null;
+        const res = await request(app).get('/admin/attachments');
+        expect(res.status).toBe(200);
+        expect(lastRenderCall?.view).toBe('admin-attachments');
+        const data = lastRenderCall?.data as { attachments: typeof docAttachment[] };
+        expect(data.attachments).toHaveLength(1);
+        const a = data.attachments[0];
+        expect(a.documentTitle).toBe('Confidential Whitepaper');
+        expect(a.documentAuthor).toBe('J. Doe');
+        expect(a.documentSubject).toBe('Internal');
+        expect(a.documentKeywords).toEqual(['alpha', 'beta']);
+        expect(a.documentDateCreated).toBe('2024-01-15');
+        expect(a.documentDateModified).toBe('2024-02-20');
+        expect(a.inLanguage).toBe('en');
+      });
+
+      test('hands plain (non-document) attachments through without inventing fields', async () => {
+        mockUserContext = { ...adminUser };
+        mockUserManager.hasPermission.mockResolvedValue(true);
+        mockAttachmentManager.getAllAttachments.mockResolvedValue([plainAttachment]);
+        lastRenderCall = null;
+        const res = await request(app).get('/admin/attachments');
+        expect(res.status).toBe(200);
+        const data = lastRenderCall?.data as { attachments: Record<string, unknown>[] };
+        const a = data.attachments[0];
+        expect(a.filename).toBe('photo.jpg');
+        // No Slice-5 keys should appear when the source attachment had none.
+        for (const key of ['documentTitle', 'documentAuthor', 'documentSubject',
+          'documentKeywords', 'documentDateCreated',
+          'documentDateModified', 'inLanguage']) {
+          expect(a[key]).toBeUndefined();
+        }
+      });
+
+      test('the admin-attachments.ejs renderer references every new field (regression guard for Slice 5a JS)', async () => {
+        // Reads the on-disk EJS directly — verifies the client-side JS keeps
+        // referencing every Slice-5a field. Catches accidental removals (a
+        // future refactor that drops a `if (a.documentSubject)` line would
+        // silently regress without this guard).
+        const fs = await import('fs');
+        const ejsPath = path.join(__dirname, '../../../views/admin-attachments.ejs');
+        const src = fs.readFileSync(ejsPath, 'utf8');
+        for (const fieldRef of ['a.documentTitle', 'a.documentAuthor',
+          'a.documentSubject', 'a.documentKeywords',
+          'a.documentDateCreated', 'a.documentDateModified',
+          'a.inLanguage']) {
+          expect(src).toContain(fieldRef);
+        }
+        // Renderer must also pipe each field through escapeHtml() for XSS.
+        // Field values flow from PDF/docx Info dicts — uncontrolled input.
+        const escapedRefs = src.match(/escapeHtml\(a\.document\w+\)/g) || [];
+        expect(escapedRefs.length).toBeGreaterThanOrEqual(5);
+        expect(src).toContain('escapeHtml(a.inLanguage)');
+      });
+
+      test('search filter haystack includes the new doc-metadata fields (regression guard)', async () => {
+        const fs = await import('fs');
+        const ejsPath = path.join(__dirname, '../../../views/admin-attachments.ejs');
+        const src = fs.readFileSync(ejsPath, 'utf8');
+        // The filename-search box should match against Slice-5 embedded
+        // fields too, mirroring what BasicAttachmentProvider.search() does.
+        for (const fieldRef of ['a.documentTitle', 'a.documentAuthor',
+          'a.documentSubject', 'a.documentKeywords',
+          'a.inLanguage']) {
+          // Each must appear in the haystack-building block (search filter).
+          // We look for the unescaped reference appearing twice or more in
+          // the file — once in render, once in the filter haystack.
+          const occurrences = src.split(fieldRef).length - 1;
+          expect(occurrences).toBeGreaterThanOrEqual(2);
+        }
+      });
+
+      test('_asset-picker.ejs renders documentAuthor on attachment tiles (row + card variants)', async () => {
+        const fs = await import('fs');
+        const ejsPath = path.join(__dirname, '../../../views/_asset-picker.ejs');
+        const src = fs.readFileSync(ejsPath, 'utf8');
+        // Both helpers (_apRow and _apCard) must reference asset.documentAuthor.
+        const occurrences = src.split('asset.documentAuthor').length - 1;
+        expect(occurrences).toBeGreaterThanOrEqual(2);
+        // The line must be gated to attachments (not pages/users) and must
+        // pass the value through the picker's _esc() helper for XSS hygiene.
+        expect(src).toContain('!isPage && !isUser && asset.documentAuthor');
+        expect(src).toContain('_esc(asset.documentAuthor)');
+      });
     });
   });
 

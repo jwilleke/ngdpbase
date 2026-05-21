@@ -175,10 +175,16 @@ document.addEventListener('DOMContentLoaded', function() {
         const mimeType = mimeFilter.value;
 
         return allAttachments.filter(function(a) {
-            // Search filter
+            // Search filter — includes Slice 5 (#759) embedded doc metadata so
+            // the admin search box matches what `BasicAttachmentProvider.search()`
+            // and `AttachmentManager.list()` already match on the data side.
             if (query) {
-                const haystack = [a.filename, a.description, a.uploadedBy]
-                    .filter(Boolean).join(' ').toLowerCase();
+                const haystack = [
+                    a.filename, a.description, a.uploadedBy,
+                    a.documentTitle, a.documentAuthor, a.documentSubject,
+                    Array.isArray(a.documentKeywords) ? a.documentKeywords.join(' ') : '',
+                    a.inLanguage
+                ].filter(Boolean).join(' ').toLowerCase();
                 if (!haystack.includes(query)) return false;
             }
             // MIME type filter
@@ -241,8 +247,25 @@ document.addEventListener('DOMContentLoaded', function() {
                     actions += '<button class="btn btn-sm btn-outline-danger delete-btn" data-id="' + escapeHtml(a.id) + '" data-name="' + escapeHtml(a.filename) + '" title="Delete"><i class="fas fa-trash"></i></button>';
                 }
 
+                // #761 / Slice 5a — surface embedded doc metadata (Slice 5
+                // / #759) below the filename. Render only fields that are
+                // present so non-document attachments and pre-Slice-5 records
+                // continue to render exactly as before. escapeHtml() handles
+                // XSS — embedded PDF Title / Author etc. can contain anything.
+                var embeddedBits = [];
+                if (a.documentTitle)        embeddedBits.push('<div><small class="text-muted"><strong>Title:</strong> '    + escapeHtml(a.documentTitle)    + '</small></div>');
+                if (a.documentAuthor)       embeddedBits.push('<div><small class="text-muted"><strong>Author:</strong> '   + escapeHtml(a.documentAuthor)   + '</small></div>');
+                if (a.documentSubject)      embeddedBits.push('<div><small class="text-muted"><strong>Subject:</strong> '  + escapeHtml(a.documentSubject)  + '</small></div>');
+                if (Array.isArray(a.documentKeywords) && a.documentKeywords.length) {
+                    embeddedBits.push('<div><small class="text-muted"><strong>Keywords:</strong> ' + escapeHtml(a.documentKeywords.join(', ')) + '</small></div>');
+                }
+                if (a.documentDateCreated)  embeddedBits.push('<div><small class="text-muted"><strong>Created:</strong> '  + escapeHtml(a.documentDateCreated)  + '</small></div>');
+                if (a.documentDateModified) embeddedBits.push('<div><small class="text-muted"><strong>Modified:</strong> ' + escapeHtml(a.documentDateModified) + '</small></div>');
+                if (a.inLanguage)           embeddedBits.push('<div><small class="text-muted"><strong>Lang:</strong> '     + escapeHtml(a.inLanguage)           + '</small></div>');
+                var embedded = embeddedBits.join('');
+
                 row.innerHTML =
-                    '<td>' + escapeHtml(a.filename) + (a.description ? '<br><small class="text-muted">' + escapeHtml(a.description) + '</small>' : '') + '</td>' +
+                    '<td>' + escapeHtml(a.filename) + (a.description ? '<br><small class="text-muted">' + escapeHtml(a.description) + '</small>' : '') + embedded + '</td>' +
                     '<td><span class="badge bg-info">' + escapeHtml(a.mimeType) + '</span></td>' +
                     '<td>' + formatSize(a.size) + '</td>' +
                     '<td>' + escapeHtml(a.uploadedBy) + '</td>' +

@@ -591,6 +591,14 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
         var excerpt = (isPage && asset.description && asset.description !== label)
             ? '<div class="small text-muted text-truncate">' + _esc(asset.description) + '</div>' : '';
 
+        // #761 / Slice 5a — surface embedded documentAuthor on attachment
+        // rows (same field set as the card variant above). Pages/users/media
+        // don't carry this field.
+        var docAuthorLine = (!isPage && !isUser && asset.documentAuthor)
+            ? '<div class="small text-muted text-truncate" title="' + _esc(asset.documentAuthor) + '">' +
+              '<i class="fas fa-user-edit fa-xs me-1"></i>' + _esc(asset.documentAuthor) + '</div>'
+            : '';
+
         var actionBtn = _apInsert
             ? '<button type="button" class="btn btn-sm btn-primary" onclick="apAction(' + idx + ')" title="' + _esc(asset.insertSnippet) + '"><i class="fas fa-code"></i> Insert</button>'
             : '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="apAction(' + idx + ')" title="Copy wiki syntax"><i class="fas fa-copy"></i> Copy</button>';
@@ -599,7 +607,7 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
             '<div class="ap-row-thumb">' + thumbInner + '</div>' +
             '<div class="ap-row-body">' +
                 '<div class="d-flex align-items-center gap-2 flex-wrap">' + titleHtml + badge + '</div>' +
-                chips + excerpt + meta +
+                chips + excerpt + docAuthorLine + meta +
             '</div>' +
             '<div class="ap-row-act align-self-center">' + actionBtn + '</div>' +
         '</div>';
@@ -669,6 +677,16 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
         var year  = yearStr ? '<small class="text-muted me-1" itemprop="dateCreated">' + _esc(yearStr) + '</small>' : '';
         var name  = asset.description || asset.filename || asset.id;
 
+        // #761 / Slice 5a — show embedded documentAuthor on attachment tiles
+        // when present (Slice 5 / #759 extracts this from PDF / docx / xlsx
+        // / pptx uploads). Mirrors the Slice 3 / #758 duration-badge pattern:
+        // a small line of metadata under the filename. Only attachments
+        // carry this field; pages/users/media tiles aren't affected.
+        var docAuthorLine = (!isPage && !isUser && asset.documentAuthor)
+            ? '<div class="small text-muted text-truncate" title="' + _esc(asset.documentAuthor) + '">' +
+              '<i class="fas fa-user-edit fa-xs me-1"></i>' + _esc(asset.documentAuthor) + '</div>'
+            : '';
+
         var actionBtn;
         if (_apInsert) {
             actionBtn = '<button type="button" class="btn btn-sm btn-primary w-100" onclick="apAction(' + idx + ')" title="' + _esc(asset.insertSnippet) + '">' +
@@ -690,6 +708,7 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
                     thumb +
                     '<div class="small text-truncate" title="' + _esc(name) + '" itemprop="name">' + _esc(name) + '</div>' +
                     userHandle +
+                    docAuthorLine +
                     '<div class="mt-1">' + year + badge + '</div>' +
                 '</div>' +
                 '<div class="card-footer p-1 text-center">' + actionBtn + '</div>' +
