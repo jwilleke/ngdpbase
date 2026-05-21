@@ -2,6 +2,28 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-21-07
+
+- Agent: Claude Opus 4.7
+- Subject: Released v3.28.0 — Slice 5a of EPIC #760 (#761) — and propagated to all 3 satellites. First operator-visible payoff for the #755 metadata-schemas plumbing: PDF/.docx/.xlsx/.pptx attachments now surface their embedded Title / Author / Subject / Keywords / dates / Language in `/admin/attachments` and the asset picker. Slice 5 (#759, v3.27.0) had extracted these fields onto the records but nothing rendered them.
+- Current Issue: #761 (shipped in v3.28.0; comment+close to follow).
+- Tests: jimstest re-validated on the release commit (`0b0f7e4e`): 5812/5812 unit GREEN. E2E re-run skipped at Step 8a — release commit only touched package.json / config/app-default-config.json / CHANGELOG.md / the new baseline doc; UI E2E (72/72) had run on the identical UI code in the pre-release session 2026-05-21-06.
+- Semver: `/semver minor` — 3.27.1 → 3.28.0. GitHub Release published with auto-generated notes: <https://github.com/jwilleke/ngdpbase/releases/tag/v3.28.0>
+- Perf drift vs v3.27.1: clean — memory -1.8%, `/` / `/view/Welcome` / `/login` flat at 24 / 19 / 19 ms, `/search?q=test` recovered 144 → 37 ms (the prior 144 ms was cold-cache noise the v3.27.1 entry already annotated). No regressions flagged. Baseline: `docs/performance/baseline-v3.28.0-2026-05-21.md`.
+- /othersites: satellite-only mode (jimstest validated by Step 8a). All 3 satellites first-try green on both unit and E2E:
+
+| Instance | Path | Port | Unit | E2E |
+|---|---|---|---|---|
+| jimstest | `/Volumes/hd2A/workspaces/github/ngdpbase` | 3000 | 5812/5812 ✅ (Step 8a) | 72/72 ✅ (pre-release session 06) |
+| The Fairways | `/Volumes/hd2A/workspaces/github/fairways-base` | 2121 | 5812/5812 ✅ | 72/72 ✅ |
+| ve-geology | `/Volumes/hd2A/workspaces/github/ngdpbase-veg` | 3333 | 5812/5812 ✅ | 72/72 ✅ |
+| ngdpbase temp build | `/Volumes/hd2/ngdp-temp-builds/ngdpbase` | 3001 | 5812/5812 ✅ | 72/72 ✅ |
+
+- Flakes seen: none on the release commit. (Session 06's pre-release E2E run did see one flake — `mobile-navigation.spec.ts:51 Offcanvas sidebar on mobile › offcanvas contains a search form` on mobile-chrome, passed on retry, matches the #622 pattern. Mentioned in the 06 entry; no `[BUG]` filed.)
+- Side: fairways-base still has the single untracked `docs/planning/plan-addon-accounting.md` (operator working notes, expected); other two satellites clean pre-pull.
+- Commits in release range (v3.27.1..v3.28.0): `3bc99514` (Slice 5a feat — headline), `f72abdef` (session 06 log), `267df80c` (TODO refresh), `ea290a90` (session 05 log), `a3104bde` (TODO refresh earlier in session), `24ea7f73` (session 04 log), `0b0f7e4e` (release v3.28.0).
+- Files Modified (this session): docs/project_log.md (this entry).
+
 ## 2026-05-21-06
 
 - Agent: Claude Opus 4.7
