@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-21T08:30:00.000Z'
+lastModified: '2026-05-21T09:30:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -38,21 +38,20 @@ Items carrying the `in review` label — work is shipped/merged; operator verifi
 
 | # | Title | Shipped | How to verify |
 |---|---|---|---|
-| #759 | Slice 5 of #755 — AttachmentManager-as-CatalogSource + PDF/docx metadata extraction | v3.27.0 (`b348bfd4`) 2026-05-20 | Slice 5 plumbed extraction → storage → search-match → CatalogSource emission but **adds no UI surface**. Three review paths: (a) upload a PDF whose embedded `Title`/`Author` differ from filename and search for them in the asset picker — pre-Slice-5 wouldn't match, post-Slice-5 should; (b) grep `data/attachments/attachment-metadata.json` after upload for `documentTitle`/`documentAuthor`/etc.; (c) `npm test -- BasicAttachmentProvider.docMetadata AttachmentManager` (34 cases). Follow-up "Slice 5a" to render the new fields in `admin-attachments.ejs` would close the review-friendliness gap |
+| #753 | MarkupParser: CommonMark variable-length backtick code spans (```` ``` ````) leaked `data-jspwiki-placeholder` spans + cascade-corrupted later fenced blocks | v3.27.1 (`090c77c9` + `739fe57b`) 2026-05-21 | Root cause was the Step-0 inline regex `/`([^`]+)`/g`, not the fenced-code scanner. Replaced with a CommonMark scanner (run-of-N opens; run-of-exactly-N closes). Verify: (a)`npm test -- MarkupParser-Extraction.test.ts -t "#753"` + `... MarkupParser-EndToEnd.test.ts -t "#753"`; (b) UI-edit any wiki page with `` ```` ``` ```` `` and confirm`<code>```</code>` renders with no placeholder spans; (c) live `/view/Using InsertPlugin` needs an operator UI edit — required-pages source only seeds on first install |
+| #759 | Slice 5 of #755 — AttachmentManager-as-CatalogSource + PDF/docx metadata extraction | v3.27.0 (`b348bfd4`) 2026-05-20 | Slice 5 plumbed extraction → storage → search-match → CatalogSource emission but **adds no UI surface**. Three review paths: (a) upload a PDF whose embedded `Title`/`Author` differ from filename and search for them in the asset picker — pre-Slice-5 wouldn't match, post-Slice-5 should; (b) grep `data/attachments/attachment-metadata.json` after upload for `documentTitle`/`documentAuthor`/etc.; (c) `npm test -- BasicAttachmentProvider.docMetadata AttachmentManager` (34 cases). Follow-up "Slice 5a" tracked in EPIC #760 |
 | #757 | Slice 2 of #755 — `src/types/Schema.ts`: CreativeWork + subtypes + per-source mapper signatures | (`8fd3a996`) 2026-05-20 | Type-only deliverable: 5 subtypes + CatalogSource interface + 5 type guards + 17 tests. Verify by reading `src/types/Schema.ts` and `src/types/guards.ts`; tests `npm test -- src/types/__tests__/guards.test.ts` |
 | #756 | Slice 1 of #755 — CatalogManager audit: docs + minimum-API recommendation | (`7a68b718`) 2026-05-20 | Docs deliverable: read `docs/managers/CatalogManager.md`; check it appears in the docs-coverage report (managers 25/37, closed one #660 warning) |
 | #750 | Index video capture-date (CreateDate/MediaCreateDate/QuickTime:CreationDate) | v3.25.1 (`97089601`) | Upload a video with a known capture date or run `media.rebuild`; confirm it appears in date sort/filter in the asset picker. Tests: `npm test -- FileSystemMediaProvider.extractDateTimeOriginal` |
 
 ## Open BUGS (ngdpbase, by issue #)
 
-4 open as of 2026-05-20 (#752 closed — operator confirmed the v3.24.4 InsertPlugin guard; #748/#751 previously closed). #753 = deferred core MarkupParser fix. #749 pairs with #599; #660 non-actionable. No untriaged functional bug remains.
+2 open as of 2026-05-21. #753 closed-pending-signoff in v3.27.1 (see _Waiting on Review Sign-off_ above); #749 closed (workflow fix + /check-todos GH-actions section, `4c9f9a17`). Remaining: #660 cosmetic doc-stub backlog, #599 mitigation-only CVE with no upstream patch.
 
 | # | Title |
 |---|---|
-| #753 | **MarkupParser** leaks `data-jspwiki-placeholder` spans for CommonMark variable-length backtick code spans (```` ``` ````); the inner ` ``` ` is mis-detected as a fence and cascade-corrupts placeholder restore (e.g. `/view/Using InsertPlugin`). Interim doc reword shipped v3.24.4; **core fix open** — high-blast-radius `MarkupParser.ts`, own focused session (full unit+E2E+multi-page render) |
-| #749 | Showdown CVE-2024-1899 patch check — filed 2026-05-19; recurring tracking task to re-check for an upstream `showdown` patch (pairs with #599 / Dependabot GHSA-rmmh-p597-ppvv). Not a code bug |
 | #660 | Agent and ./docs documentation — tooling shipped; 49 doc-stub warnings remain for source-only modules (stub-creation backlog; cosmetic, non-blocking) |
-| #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); tracked by Dependabot / #749 |
+| #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); recurring patch-check workflow now green (`4c9f9a17`); next scheduled check Tuesday 09:23 UTC |
 
 ## Operator-decision carryover
 
@@ -76,7 +75,8 @@ Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or i
 
 | # | Topic | Priority hint |
 |---|---|---|
-| #755 | [EPIC] Metadata schemas ratified — schema.org-shaped CreativeWork model + JSON-LD linked-data publishing (6 slices) | **In flight 2026-05-20** — Slices 1/2/5 shipped (see _Waiting on Review Sign-off_ above); Slice 3 (#758) closed; Slices 4 + 6 not yet filed; Slice 4 blocked on #754 |
+| #760 | [EPIC] Deliver operator-visible value on the #755 plumbing — display, backfill, search, JSON-LD render | **NEW 2026-05-21** — follow-up to #755 driven by operator's #759 comment "gather the data but ONLY on new uploads and provides no method of display or search dialog". 7 sub-slices listed in the EPIC; smallest visible win = Slice 5a (render attachment doc metadata in `admin-attachments.ejs` + asset-picker tile) |
+| #755 | [EPIC] Metadata schemas ratified — schema.org-shaped CreativeWork model + JSON-LD linked-data publishing (6 slices) | **In flight 2026-05-20** — Slices 1/2/5 shipped (see _Waiting on Review Sign-off_ above); Slice 3 (#758) closed; Slices 4 + 6 not yet filed; Slice 4 blocked on #754. Value-delivery follow-ups split out to #760 |
 | #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Low — body reconciled with `master` 2026-05-16 (audit comment pinned); search-provider ACL explicitly out-of-scope; de-scoped from the **Search + Finding Entries** label 2026-05-18 (ACL epic, not search-UX); refactor intentionally not started |
 | #738 | NCM/import conversion metrics — aggregate by structured `kind`, trend | Low — **unblocked** by #728 S3 (structured `kind` codes now exist); observability follow-up, reuses MetricsManager/OTLP |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images (security+size) | Low — #728 Phase-2 hardening split-out; config-gated, adds sharp/libvips; do when a real driver appears |
