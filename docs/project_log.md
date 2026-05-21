@@ -2,6 +2,21 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-21-11
+
+- Agent: Claude Opus 4.7
+- Subject: Released v3.29.1 — dedup-by-hash re-extract fix (#764). Patch-only; GitHub Release entry deferred per the patch rule; `/othersites` propagation deferred (satellites consolidate at next minor).
+- Current Issue: #764 (shipped in v3.29.1; comment+close to follow).
+- Tests: jimstest re-validated on the release commit (`bfab37e9`): 5834/5834 unit GREEN. E2E re-run skipped — release range (v3.29.0..v3.29.1) touches only `src/providers/BasicAttachmentProvider.ts` + `src/providers/__tests__/...` + `docs/project_log.md` + the version-string files — none in the strict UI-affecting list (`views/`, `public/`, `src/plugins/`, `addons/`, `tests/e2e/`). Pre-release E2E (72/72) ran on the identical runtime code in session 2026-05-21-10.
+- Semver: `/semver patch` — 3.29.0 → 3.29.1. Patch precedent (same as #753 → v3.27.1 and #749 → v3.27.1 in the same patch cycle).
+- Perf drift vs v3.29.0: two anomalies flagged, both attributed to cold-cache noise from the post-build restart, NOT regressions:
+  - Memory 3222.9 → 1391.6 MB (−56.8%) — server just restarted; cache hasn't accumulated. A decrease is positive direction, not a regression. Will refill within minutes.
+  - `/search?q=test` 40 → 153 ms (+282.5% / +113 ms) — first-hit cold lazy-index build. Re-sampled 5× post-warmup: first hit 1173 ms (cold), subsequent 43-75 ms warm. Same first-hit-cold pattern as v3.27.1 documented. Bug fix touches the attachment dedup branch only; no plausible search-path impact.
+  - Other routes flat (±1 ms). Baseline: `docs/performance/baseline-v3.29.1-2026-05-21.md`.
+- /othersites: NOT run (operator chose "patch only" — satellites consolidate at next minor per `feedback_release_workflow`).
+- Commits in release range (v3.29.0..v3.29.1): `7b262eda` (session 09 log), `16482277` (dedup re-extract fix — headline), `aa8cf5b3` (session 10 log), `bfab37e9` (release v3.29.1).
+- Files Modified (this session): docs/project_log.md (this entry).
+
 ## 2026-05-21-10
 
 - Agent: Claude Opus 4.7
