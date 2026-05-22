@@ -2,6 +2,52 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-22-06
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped Slice A+B of **#754** (page-model `created` timestamp) as **v3.33.0** — the Slice 4 unblocker for #755. Added a `created` ISO-8601 field to `PageFrontmatter` / `WikiPage` / `PageIndexEntry`, wired `FileSystemProvider.savePage` to set-once-and-preserve via priority chain (caller-metadata > existing > now), and built a one-shot backfill migration that filled in **17,654 pages** with zero lossy seeds. Verified end-to-end on jimstest data before tagging.
+- Current Issue: **#754** (in-review after v3.33.0 ships).
+- Release: **v3.33.0** — <https://github.com/jwilleke/ngdpbase/releases/tag/v3.33.0>
+- Tests: 5896/5896 unit on jimstest + all 3 satellites (was 5880; +16 new — 11 in `scripts/__tests__/migrate-page-created.test.ts`, 5 in `src/providers/__tests__/FileSystemProvider.test.ts > savePage 'created' field`). E2E skipped per /session-commit Step 3 — no UI-affecting paths touched.
+- Semver: **minor** (new public field on `PageFrontmatter`, new public migration script, new `savePage` behavior).
+- /othersites: satellite-only mode (jimstest validated on release commit per /semver Step 8a). fairways-base ✅ ngdpbase-veg ✅ ngdp-temp-builds ✅ — 5896/5896 on each.
+- Perf baseline: **`/` route 25ms → 135ms flagged** (memory -3.2%, other 3 routes flat). Cold-cache outlier — server was just restarted before the sample; previous baseline was likely warm. Operator confirmed proceed.
+- **Design decisions ratified mid-session**:
+  - **Slice A+B in one go**, not A then B later. Operator's call — shipping schema + backfill together delivers value immediately; the schema alone would have been theatre.
+  - **Source priority chain for backfill**: (1) v1 manifest `dateCreated` from `<dir>/versions/<uuid>/manifest.json` → `versions[0].dateCreated`; (2) file mtime; (3) `lastModified` as last-resort lossy seed.
+  - **Required-pages templates in the repo are deliberately NOT given a `created` value.** Committing them with the migration-run timestamp would mean every new ngdpbase install permanently inherits `2026-05-22T11:21:23.x` as their seed-page `created`. Templates left untouched in git; new installs compute `created` on first save (savePage path now writes it). Existing installs run the migration once.
+- **What `savePage` does now** (`src/providers/FileSystemProvider.ts:589`):
+
+  ```typescript
+  const existingCreated = oldPageInfo?.metadata?.created;
+  const created = metadata.created ?? existingCreated ?? now;
+  ```
+
+  Priority: explicit `metadata.created` (migration path) > existing on-disk frontmatter > `now`. `VersioningFileProvider.savePage` lifts the same computation to share the value with the page-index write (so on-disk frontmatter and `PageIndexEntry.created` always agree).
+- **Migration results on jimstest** (`SLOW_STORAGE=/Volumes/hd2A/jimstest-wiki/data`):
+  - 17,654 migrated total
+  - 17,528 (99.3%) from v1 manifest `dateCreated` — the accurate source
+  - 126 from file mtime — pages predating versioning
+  - **0 from lossy `lastModified` seed** ✅ — nothing fell to the last-resort source
+  - 1 already had `created`
+  - 0 errors
+  - Idempotency verified: re-running the dry-run reports 0 to migrate, 17,655 already.
+- **Safety invariants enforced by tests** (`scripts/__tests__/migrate-page-created.test.ts`):
+  - Migration NEVER mutates `lastModified` or `user-keywords` (covered by an explicit assertion).
+  - Idempotent — re-running on already-migrated content is a no-op.
+  - Returns 'error' outcome when no source is available (leaves the file untouched rather than guessing).
+  - Manifest-finder handles all three real layouts: `pages/<uuid>.md`, `pages/private/<creator>/<uuid>.md`, `required-pages/<uuid>.md`.
+- **Test-scaffolding wrinkle fixed during implementation**:
+  - Vitest's `toBeGreaterThanOrEqual` requires numbers — ISO 8601 strings sort lexicographically so use plain `>=` / `<=` comparisons. First attempt failed with "actual value must be number or bigint, received string"; fixed by comparing the strings directly.
+  - ESLint typed-linting required `scripts/migrate-page-created.ts` to be listed in `tsconfig.json` `"include"` (lint-staged blocked the commit otherwise). Added the entry.
+- **EPIC #760 status**: unchanged at 8/10. **#754 is independent** of #760 — it's a #755 Slice 4 prerequisite, not a #760 sub-issue. With #754's schema in place, the path to Slice 4 (PageManager → Article JSON-LD on view pages) is unblocked whenever the operator picks it up.
+- ngdpbase commits (this session):
+  - `946adc5f` — `feat(#754): page-model — add 'created' timestamp + ~17K-page backfill migration`
+  - `9d4da80e` — `chore: release v3.33.0`
+- Files Modified (ngdpbase, code): src/providers/FileSystemProvider.ts; src/providers/VersioningFileProvider.ts; src/providers/\_\_tests\_\_/FileSystemProvider.test.ts; src/types/Page.ts; scripts/migrate-page-created.ts (new); scripts/\_\_tests\_\_/migrate-page-created.test.ts (new); package.json (npm script); tsconfig.json (lint include).
+- Files Modified (ngdpbase, release): package.json; config/app-default-config.json; CHANGELOG.md; docs/performance/baseline-v3.33.0-2026-05-22.md (new).
+- Operator-action carryover: confirm #754 in review and close once verified; the `created` field is now visible on every page in `data/pages/*.md` and on the page-index entries as they get re-saved.
+
 ## 2026-05-22-05
 
 - Agent: Claude Opus 4.7
