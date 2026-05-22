@@ -2,6 +2,54 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-22-08
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped **#773** (the route-refactor follow-up to Slice 4 / #772) as **v3.35.0** — unified page→JSON-LD via the PageManager CatalogSource path. The two JSON-LD output paths (inline `<script>` block in view.ejs and `/view/<slug>` `Accept: application/ld+json` content-negotiation) now share one code path; the source comment in `buildPageJsonLd.ts:5-10` that anticipated this slice for ~6 months is finally accurate.
+- Current Issue: **#773** (in-review after v3.35.0 ships).
+- Release: **v3.35.0** — <https://github.com/jwilleke/ngdpbase/releases/tag/v3.35.0>
+- Tests: 5940/5940 unit + **72/72 E2E** on jimstest + all 3 satellites 5940/5940 each (was 5924; +16 new in `src/utils/__tests__/articleToPageJsonLd.test.ts`). E2E ran on the release commit because the WikiRoutes change altered JSON-LD output even though no UI template was touched.
+- Semver: **minor** (new public `articleToPageJsonLd()` utility, accepted JSON-LD output shifts).
+- /othersites: satellite-only mode (jimstest validated on release commit per /semver Step 8a). fairways-base ✅ ngdpbase-veg ✅ ngdp-temp-builds ✅.
+- Perf baseline: Memory dropped 53.5% (3000.9 MB → 1395.5 MB) — server-restart-cache-shed, not a real code improvement. Routes flat (`/` +1ms, `/view/Welcome` +2ms, `/search` +6ms, `/login` +1ms — all noise-floor).
+- **Architecture after this slice**:
+
+  ```text
+  src/utils/pageToArticle.ts       → internal Article (catalog shape, NO @context)
+  src/utils/articleToPageJsonLd.ts → render adapter (adds @context, Person objects,
+                                     ngdp:category → articleSection)
+  src/utils/buildPageJsonLd.ts     → thin compose of the two above (legacy entrypoint,
+                                     kept for back-compat — one runtime caller post-refactor)
+  src/routes/WikiRoutes.ts:viewPage → calls pageManager.toCreativeWork() then the
+                                       render adapter directly
+  ```
+
+  Single source of truth for the page→Article mapping. `buildPageJsonLd.ts` shrunk from 220 → ~150 lines as the per-mapping logic moved into the two split mappers.
+- **Accepted behavior shifts ratified in #773's issue body** (all confirmed in spot-checks):
+  1. **All pages emit `@type: Article`** (the legacy `CreativeWork` fallback for very-sparse pages is gone). Consistent with `PageManager.types = ['Article']` declared in #772. In practice every page on the running system already had at least `lastModified`, so this only affects synthetic / null-metadata inputs.
+  2. **Slug-bearing pages canonicalise to `/view/<slug>`** instead of `/view/<encoded-pageName>`. Example seen on jimstest: Welcome (title "Welcome", slug "welcome") now emits `@id: "/view/welcome"` instead of `@id: "/view/Welcome"`. Both URLs route to the same page (route is case-insensitive); slug is the actual canonical form per the route definitions, so JSON-LD is finally truthful.
+  3. **Empty-string `uuid` falls back to `pageName`** as the identifier. `Article.identifier` is required (non-empty); the previous behavior of omitting identifier on uuid:'' violated the type. Updated assertion in the existing `buildPageJsonLd` test.
+- **Spot-check on running server**:
+  - `curl http://localhost:3000/view/Welcome` (HTML) → inline `<script type="application/ld+json">` block:
+
+    ```json
+    {"@context":"https://schema.org","@type":"Article","@id":"/view/welcome",
+     "url":"/view/welcome","name":"Welcome",
+     "identifier":"92fd6e62-...","dateModified":"2025-10-20T10:46:34.027Z",
+     "author":{"@type":"Person","name":"system"},
+     "articleSection":"system","keywords":["system"]}
+    ```
+
+  - `curl -H "Accept: application/ld+json" http://localhost:3000/view/Welcome` → byte-for-byte identical JSON-LD as the inline block. Unified source confirmed.
+- **EPIC #755 status**: 5 of 6 slices done (1, 2, 3, **4**, 5). Slice 6 covered by EPIC #760 (Slices 6a/#765, 6b/#766, 6c/#767) PLUS the route-refactor we just shipped under #773 (unifies the JSON-LD output paths). The two EPICs are now fully converged — there is no remaining work on either at this design level.
+- **What remains downstream**: search-index uniformity (rewire Lunr + Elasticsearch to consume `CatalogSource`) and EPIC #760's faceted search dialog — both real UX projects, not bookkeeping.
+- ngdpbase commits (this session):
+  - `1b84f0b0` — `refactor(#773): unify page→JSON-LD via PageManager CatalogSource`
+  - `277ff22a` — `chore: release v3.35.0`
+- Files Modified (ngdpbase, code): src/routes/WikiRoutes.ts; src/utils/articleToPageJsonLd.ts (new); src/utils/buildPageJsonLd.ts (compose refactor); src/utils/pageToArticle.ts (empty-uuid fallback); src/utils/\_\_tests\_\_/articleToPageJsonLd.test.ts (new); src/utils/\_\_tests\_\_/buildPageJsonLd.test.ts (updated 3 assertions).
+- Files Modified (ngdpbase, release): package.json; config/app-default-config.json; CHANGELOG.md; docs/performance/baseline-v3.35.0-2026-05-22.md (new).
+- Operator-action carryover: confirm #773 in review (spot-check the JSON-LD output above; the slug-canonicalisation may surface in any external SEO/LLM consumer that cached the old `/view/Welcome` form).
+
 ## 2026-05-22-07
 
 - Agent: Claude Opus 4.7
