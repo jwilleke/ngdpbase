@@ -2,6 +2,29 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-22-04
+
+- Agent: Claude Opus 4.7
+- Subject: Merged PR #769 (sibling uuid 9.0.1 → 14.0.0 bumps for root + addons/calendar + addons/forms) and propagated the change to all 4 instances via standalone `/othersites`. With #769 + the earlier-merged #768 (Dependabot's addons/journal auto-PR), the four GHSA-w5hq-g745-h8pq alerts are fully closed. Only the showdown ReDoS alert (#599 mitigation-only) remains open on the main ngdpbase repo.
+- Current Issues: ngdpbase Dependabot — 1 open (showdown #599). All other targets clean.
+- Tests: 5875/5875 unit + 72/72 E2E on every instance. Zero flakes across the propagation.
+- Semver: not run — the merge commit (`b535e6c3`) is a lockfile sync only, no public-API surface change. No version bump warranted.
+- /othersites: **standalone mode** (post-merge, not via `/semver`). Range `v3.32.0..b535e6c3` touched `addons/calendar/package*.json` + `addons/forms/package*.json` + root `package*.json` (uuid 9 → 14) plus docs/skill commits. The `addons/**` change triggered the "addons/** → E2E required" rule, so all 4 instances ran the full test + E2E suite.
+
+| Instance | Path | Port | Unit | E2E |
+|---|---|---|---|---|
+| jimstest | `/Volumes/hd2A/workspaces/github/ngdpbase` | 3000 | 5875/5875 ✅ | 72/72 ✅ |
+| The Fairways | `/Volumes/hd2A/workspaces/github/fairways-base` | 2121 | 5875/5875 ✅ | 72/72 ✅ |
+| ve-geology | `/Volumes/hd2A/workspaces/github/ngdpbase-veg` | 3333 | 5875/5875 ✅ | 72/72 ✅ |
+| ngdpbase temp build | `/Volumes/hd2/ngdp-temp-builds/ngdpbase` | 3001 | 5875/5875 ✅ | 72/72 ✅ |
+
+- Flakes seen: none. First-try green on all 4 instances on both unit and E2E.
+- Side: fairways-base still has the untracked `docs/planning/plan-addon-accounting.md` (expected operator working notes); other satellites clean pre-pull.
+- Diagnoses confirmed from the earlier session: uuid v14's breaking change in v3/v5/v6 with offset args was correctly assessed as not affecting our codebase (we use only v4). Three runtime instances + jimstest validate the assessment empirically.
+- ngdpbase commits (this session): none beyond the merge of #769 (`b535e6c3`, performed by GitHub).
+- Files Modified (ngdpbase, this session): docs/project_log.md (this entry).
+- Operator-action carryover: none. The session closed cleanly.
+
 ## 2026-05-22-03
 
 - Agent: Claude Opus 4.7
