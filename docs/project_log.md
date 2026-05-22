@@ -2,6 +2,35 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-22-05
+
+- Agent: Claude Opus 4.7
+- Subject: Closed EPIC #760's next-remaining bullet — "verify `media.rebuild` re-extracts Slice-3 fields" — by filing #771 and adding 5 end-to-end tests that prove the `rebuild → scan → processFile` chain re-populates the seven Slice-3 fields on a pre-Slice-3 `MediaIndexEntry`. Architecture was sound; the gap was test-only.
+- Current Issue: **#771** (closed-as-verified).
+- Tests: 5880/5880 unit (was 5875; +5 new in `src/providers/__tests__/FileSystemMediaProvider.rebuildSlice3.test.ts`). Build + tsc clean. No E2E run — test-only change, no production code touched.
+- Semver: skip — test-only.
+- /othersites: not run — no runtime behavior changed; satellites pick up the test file at the next minor.
+- **Investigation findings before writing the test**:
+  - `FileSystemMediaProvider.rebuild()` (line 202) clears the in-memory index + deletes the index file, then calls `scan(force=true)`.
+  - `scan(force=true)` walks configured folders, dedup-by-format, and for each primary file runs `processFile(force=true)`.
+  - `processFile()` extracts the Slice-3 fields via `extractDuration` / `extractBitrate` / `extractDateTimeOriginal` + direct reads of `VideoCodec` / `AudioFormat` / `ImageWidth` / `ImageHeight`. Writes them onto a fresh `MediaIndexEntry.metadata` (a fresh entry, not a merge into the existing one).
+  - Existing tests cover the extract helpers in isolation (`extractDurationBitrate.test.ts`, `extractDateTimeOriginal.test.ts`) but no test proved the integration end-to-end. That gap is what #771 closes.
+- **New test cases** in `FileSystemMediaProvider.rebuildSlice3.test.ts`:
+  1. Pre-Slice-3 record (no Slice-3 fields) gets all seven populated from stubbed exiftool tags.
+  2. Stale Slice-3 values overwritten when exiftool returns different ones — proves rebuild **replaces** vs. patches.
+  3. Missing-in-source tags clear stale data — proves a fresh `MediaIndexEntry` is constructed each pass.
+  4. `CompressorID` fallback used when `VideoCodec` absent (legacy codec chain).
+  5. `MediaCreateDate` used when `DateTimeOriginal` absent (`CAPTURE_DATE_FIELDS` chain — video-typical capture date).
+- **Test-scaffolding wrinkles fixed during implementation**:
+  - `fs-extra` is consumed as a default import (`import fs from 'fs-extra'`); the vi.mock needed both the named exports AND a `default: stubs` property. First attempt missed the default; tests failed with "No `default` export is defined".
+  - `extractDuration(30.5)` → rounds to 31s → `PT31S`, not `PT30S`. Fixed by using `Duration: 30` in the stub.
+  - `extractDateTimeOriginal` emits **space separator**, not ISO `T` separator (`'2024-06-15 14:30:00'`, not `'2024-06-15T14:30:00'`). Fixed the assertion.
+- **EPIC #760 status**: 8 of 10 items done. Two remaining: faceted search dialog (real UX work, multi-session) + `media.toAssetRecord` re-derivation (explicitly deferred). Plus optional Slice-6d (richer `CatalogTerm` shape) bench item.
+- ngdpbase commits (this session):
+  - `9d747a03` — `test(#771): verify media.rebuild re-extracts Slice-3 fields end-to-end`
+- Files Modified (ngdpbase): src/providers/**tests**/FileSystemMediaProvider.rebuildSlice3.test.ts (new), docs/project_log.md (this entry).
+- Operator-action carryover: none.
+
 ## 2026-05-22-04
 
 - Agent: Claude Opus 4.7
