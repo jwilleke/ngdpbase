@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-21T09:45:00.000Z'
+lastModified: '2026-05-22T13:30:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -36,22 +36,22 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 Items carrying the `in review` label — work is shipped/merged; operator verification is the only thing left before close. **Clear this list before starting new feature work.**
 
-_(none)_ — operator confirmed and closed all five #755-slice / #753 / #750 in-review items on 2026-05-21 (~09:34–09:43Z). Durable trail in `docs/project_log.md` and the GitHub issue history.
+_(none)_ — operator confirmed and closed today's four shipped issues (**#754**, **#772**, **#773**, **#774**) as they landed across v3.33.0 → v3.36.0. Durable trail in `docs/project_log.md` and the GitHub issue history.
 
 ## Open BUGS (ngdpbase, by issue #)
 
-2 open as of 2026-05-21. #753 closed 2026-05-21 09:43Z after v3.27.1 propagation; #749 closed earlier (workflow fix + /check-todos GH-actions section, `4c9f9a17`). Remaining: #660 cosmetic doc-stub backlog, #599 mitigation-only CVE with no upstream patch.
+2 open as of 2026-05-22 (unchanged from 2026-05-21 — both are perma-open backlog items). Remaining: #660 cosmetic doc-stub backlog, #599 mitigation-only CVE with no upstream patch.
 
 | # | Title |
 |---|---|
-| #660 | Agent and ./docs documentation — tooling shipped; 49 doc-stub warnings remain for source-only modules (stub-creation backlog; cosmetic, non-blocking) |
-| #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); recurring patch-check workflow now green (`4c9f9a17`); next scheduled check Tuesday 09:23 UTC |
+| #660 | Agent and ./docs documentation — tooling shipped; 48 doc-stub warnings remain for source-only modules (stub-creation backlog; cosmetic, non-blocking) |
+| #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); recurring patch-check workflow last ran green 2026-05-21; next scheduled check Tuesday 09:23 UTC |
 
 ## Operator-decision carryover
 
 Items awaiting a yes/no/close or operator-only action. Not blocking other work.
 
-- _(none)_ — #643 resolved 2026-05-19: closed for the delivered modified-date scope (v3.22.0); the deferred `created`/`dateField=created` half split into the page-model feature **#754**. No operator-decision items outstanding.
+- _(none)_ — #754 (page `created` timestamp + 17K-page backfill) shipped v3.33.0 and **#774** (`dateField=created`) shipped v3.36.0; together they deliver the half of **#643** that was deferred at v3.22.0. The full creation-date search axis is now wired end-to-end. No operator-decision items outstanding.
 
 ## Sister-site top priorities — combined table
 
@@ -67,24 +67,34 @@ Top items across the sister-site issue trackers. Excludes Dependency Dashboard n
 
 Not "TODO" exactly — these are filed, scoped, and awaiting prioritization or implementation cycles.
 
+### Recently closed (2026-05-22, the 4-release day)
+
+EPIC **#755** "Metadata schemas ratified — schema.org-shaped CreativeWork model" — **functionally complete** (5 of 6 slices shipped). EPIC **#760** "Deliver operator-visible value on the #755 plumbing" — **functionally complete** (8 of 10 items shipped; remainder either deferred until a consumer surfaces or covered by the route refactor under #773). Closed today:
+
+| # | Released | Summary |
+|---|---|---|
+| #754 | v3.33.0 | Page-model `created` timestamp + 17,654-page backfill |
+| #772 | v3.34.0 | PageManager as CatalogSource (Slice 4 of #755) |
+| #773 | v3.35.0 | Unified page→JSON-LD via the new CatalogSource path |
+| #774 | v3.36.0 | `SearchCriteria.dateField=created` — closes the deferred half of #643 |
+
+EPIC #755 + EPIC #760 are both fully delivered at the design level. Remaining downstream pieces (asset-picker date control, `created` sort key, search-index Lunr/ES uniformity) are real UX work, not bookkeeping — file fresh issues if/when a driver appears.
+
+### Still in flight (low priority, no driver pushing them)
+
 | # | Topic | Priority hint |
 |---|---|---|
-| #760 | [EPIC] Deliver operator-visible value on the #755 plumbing — display, backfill, search, JSON-LD render | **NEW 2026-05-21** — follow-up to #755 driven by operator's #759 comment "gather the data but ONLY on new uploads and provides no method of display or search dialog". 7 sub-slices listed in the EPIC; smallest visible win = Slice 5a (render attachment doc metadata in `admin-attachments.ejs` + asset-picker tile) |
-| #755 | [EPIC] Metadata schemas ratified — schema.org-shaped CreativeWork model + JSON-LD linked-data publishing (6 slices) | **In flight 2026-05-20** — Slices 1/2/5 shipped (see _Waiting on Review Sign-off_ above); Slice 3 (#758) closed; Slices 4 + 6 not yet filed; Slice 4 blocked on #754. Value-delivery follow-ups split out to #760 |
-| #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Low — body reconciled with `master` 2026-05-16 (audit comment pinned); search-provider ACL explicitly out-of-scope; de-scoped from the **Search + Finding Entries** label 2026-05-18 (ACL epic, not search-UX); refactor intentionally not started |
-| #738 | NCM/import conversion metrics — aggregate by structured `kind`, trend | Low — **unblocked** by #728 S3 (structured `kind` codes now exist); observability follow-up, reuses MetricsManager/OTLP |
-| #737 | NCM Phase-2: transcode/re-encode fetched embedded images (security+size) | Low — #728 Phase-2 hardening split-out; config-gated, adds sharp/libvips; do when a real driver appears |
-| #736 | `config/app-default-config.json` documentation | Low — filed 2026-05-17; doc task; large config surface incl. new NCM keys |
-| #729 | Improvements to `[{Location}]` | Low — filed 2026-05-16; good-first-issue; Location plugin follow-ups |
-| #744 | [EPIC] Search-picker IA simplification | **CLOSED** — all slices shipped: #735 (2-row toolbar v3.22.0), #720 (format facets), #745 (date v3.21/3.23), #691 (Category multi-select **v3.25.0** — final residual). #721 closed (collapse obsolete). Nothing left |
-| #691 | Asset-picker: Category multi-select for source=Pages | **Fixed v3.25.0** (`a4d60c35`) — `in review` label no longer set (operator dropped 2026-05-20); presumed accepted. Closes out the #744 EPIC residual |
-| #754 | Page-model `created` timestamp (creation-date search/sort) | Low/Medium — split from closed #643 (modified-date shipped v3.22.0). Gated by a per-page schema change + ~17K-page backfill migration; own focused effort. Unblocks `dateField=created` in SearchPlugin + the #745 asset-picker date control |
-| #722 | Video poster-frame thumbnails (ffmpeg) | Low — related to #744 (better video tiles make the video filter useful) but **not a child**: result presentation + adds ffmpeg dep. #731 shipped v3.16.0; fills the video thumbnail cell |
-| #707 | Typed footnote + knowledge-graph reference index | Low — speculative; **depends on #706**; defer behind a named citation-heavy user (2026-05-16 brainstorm) |
-| #706 | `knowledge-role` frontmatter field — opt-in page role | Low — sharpened to field+enum+badge; **foundational, blocks #707**; design in `docs/planning/ideas/llm-wiki-pattern.md` |
+| #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Low — body reconciled with `master` 2026-05-16; search-provider ACL explicitly out-of-scope; refactor intentionally not started |
+| #738 | NCM/import conversion metrics | Low — **unblocked** by #728 S3 (structured `kind` codes now exist); observability follow-up |
+| #737 | NCM Phase-2: transcode/re-encode fetched embedded images | Low — adds sharp/libvips; do when a real driver appears |
+| #736 | `config/app-default-config.json` documentation | Low — large config surface incl. new NCM keys |
+| #729 | Improvements to `[{Location}]` | Low — good-first-issue; Location plugin follow-ups |
+| #722 | Video poster-frame thumbnails (ffmpeg) | Low — better video tiles; adds ffmpeg dep |
+| #707 | Typed footnote + knowledge-graph reference index | Low — **depends on #706**; speculative |
+| #706 | `knowledge-role` frontmatter field — opt-in page role | Low — sharpened to field+enum+badge; **foundational, blocks #707** |
 | #689 | Admin show/edit frontmatter | Low |
-| #686 | AddonsManager: auto-enable bundled addons in non-default addons-path dirs | Low — Lever 3 follow-up from the Domain Addon Deployment cluster |
-| #685 | Data-ingestion framework (platform addon) | Low / Future — 2-4 weeks platform work; unblocks bespoke ingestion in any satellite |
+| #686 | AddonsManager: auto-enable bundled addons in non-default addons-path dirs | Low — Domain Addon Deployment Lever 3 |
+| #685 | Data-ingestion framework (platform addon) | Low / Future — 2-4 weeks platform work; unblocks geohazardwatch data-source imports |
 | #684 | Route-test infra hardening | Low — E2E compensates; opportunistic |
 | #681 | Deployment options hub + per-mode guides | Body content complete; further iteration optional |
 | #675 | Scaffolder + reference template for new addons | Low |
