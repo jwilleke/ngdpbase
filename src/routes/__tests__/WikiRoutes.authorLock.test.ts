@@ -123,16 +123,24 @@ function createRes() {
 /**
  * Install spies that bypass infrastructure not under test:
  * - createWikiContext → returns a plain object with the given userContext
- * - checkPrivatePageAccess → always allow
  * - isRequiredPage → always false (normal user page)
  * - renderError → calls res.status(code).render('error', { code }) directly
+ *
+ * #714 Slice C: the `checkPrivatePageAccess` spy that previously sat here
+ * was removed alongside the underlying private method on WikiRoutes (the
+ * 5 route handlers now use either `aclManager.checkPagePermissionWithContext`
+ * directly or `wikiContext.canAccess(action, pageNameOverride?)` for
+ * cross-page checks). These tests cover the route-layer author-lock branch
+ * at WikiRoutes.editPage:~2338, which still exists during Slice C; Slice E
+ * removes that branch and these route-level tests can be retired then.
+ * The equivalent ACL-layer coverage is in `Tier 0.5 — author-lock (#714
+ * Slice A)` describe block in `ACLManager.test.ts`.
  */
 function installSpies(wikiRoutes, userContext) {
   // #638 — use the shared mock fixture instead of an inline duck-typed object.
   vi.spyOn(wikiRoutes, 'createWikiContext').mockReturnValue(
     createMockWikiContext({ userContext })
   );
-  vi.spyOn(wikiRoutes, 'checkPrivatePageAccess').mockResolvedValue(true);
   vi.spyOn(wikiRoutes, 'isRequiredPage').mockResolvedValue(false);
   vi.spyOn(wikiRoutes, 'renderError').mockImplementation(
     async (_req, res, code, _title, _message) => {

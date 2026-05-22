@@ -383,49 +383,21 @@ class WikiRoutes {
     }
   }
 
-  /**
-   * Check whether the current user may access a private page.
-   * Reads the page index entry for pageName and applies the following rules:
-   * - If the page is not private (location !== 'private') → allow
-   * - If not authenticated → deny
-   * - If admin role → allow
-   * - If username === entry.creator → allow
-   * - Otherwise → deny
-   *
-   * Returns true to allow, false to deny (caller should return 403).
-   */
-  private async checkPrivatePageAccess(wikiContext: WikiContext, pageName: string): Promise<boolean> {
-    try {
-      const pageManager = this.engine.getManager('PageManager');
-      if (!pageManager) return true; // No page manager — allow (will fail elsewhere)
-
-      // Get page metadata to find the UUID
-      const pageMetadata = await pageManager.getPageMetadata(pageName);
-      if (!pageMetadata?.uuid) return true; // No UUID — cannot check index, allow
-
-      // Access the provider's page index entry via provider reference
-       
-      const provider = pageManager.getCurrentPageProvider?.() ?? (pageManager).provider;
-      if (!provider) return true;
-
-       
-      const pageIndex = (provider).pageIndex as { pages: Record<string, { location?: string; creator?: string }> } | null;
-      if (!pageIndex) return true;
-
-      const entry = pageIndex.pages[pageMetadata.uuid];
-      if (!entry || entry.location !== 'private') return true; // Not a private page
-
-      // Page is private — apply access rules
-      const username = wikiContext.userContext?.username;
-      if (!username) return false; // Not authenticated
-      if (wikiContext.hasRole('admin')) return true; // Admin
-      if (username === entry.creator) return true; // Creator
-      return false; // Deny
-    } catch {
-      // If check fails for any reason, allow (conservative — will fail elsewhere if truly missing)
-      return true;
-    }
-  }
+  // #714 Slice C/E: deleted the legacy `private checkPrivatePageAccess`
+  // helper that previously sat here. Its 5 callers (viewPage, editPage,
+  // deletePage, pageHistory, serveAttachment) have all migrated to
+  // either `aclManager.checkPagePermissionWithContext` (same-page checks,
+  // which already covers private via Tier 0 / #711) or
+  // `wikiContext.canAccess('view', linkedPageName)` (cross-page checks,
+  // via Slice B's `canUserAccessPage`).
+  //
+  // The behavior shift: the legacy helper returned ALLOW on any
+  // "can't determine" path (no PageManager, no UUID, no pageIndex,
+  // entry missing). The new cross-page path is conservative-on-security
+  // and returns DENY. Some private attachments whose owning-page name
+  // was unresolvable will now 403 where they previously served. This
+  // was the EPIC's explicit "Behavior decision point"; operator
+  // authorized the shift.
 
   /**
    * Create a WikiContext for the given request and page
@@ -1675,15 +1647,14 @@ ${panes}
       }
       (wikiContext as { pageMetadata: unknown }).pageMetadata = metadata ?? null;
 
-      // Check private page access before rendering
-      const canAccessPrivate = await this.checkPrivatePageAccess(wikiContext, pageName);
-      if (!canAccessPrivate) {
-        return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to view this page.');
-      }
-
       // Update WikiContext with page content for ACL checking
       (wikiContext as { content: string | null }).content = markdown;
 
+      // #714 Slice C: removed the redundant `this.checkPrivatePageAccess`
+      // call that previously sat here. Tier 0 inside
+      // `checkPagePermissionWithContext` (below) already delegates to
+      // `PageManager.checkPrivatePageAccess` (per #711), so the legacy
+      // route-layer helper was running the same logic twice.
       const canView = await aclManager.checkPagePermissionWithContext(wikiContext, 'view');
       logger.info(`[VIEW] ACL decision for ${pageName}: ${canView}`);
       if (!canView) {
@@ -1872,7 +1843,15 @@ ${panes}
         autoTaggedKeywords,
         pageJsonLd,
         pageJsonLdScript,
-        pageIsPrivate: !canAccessPrivate ? false : await this._isPagePrivate(pageName),
+        // #714 Slice C: was `!canAccessPrivate ? false : await this._isPagePrivate(...)`.
+        // The `canAccessPrivate` variable was removed when the redundant
+        // `this.checkPrivatePageAccess` call was deleted. We only reach
+        // this render path when `canView` is true (the full ACL evaluator
+        // above allowed access) — which for private pages already requires
+        // the caller to be admin or page-creator. So the gate is implicit
+        // here; show the private badge unconditionally when the page IS
+        // marked private.
+        pageIsPrivate: await this._isPagePrivate(pageName),
         versionInfo,
         lastModified: metadata?.lastModified,
         referringPages: [], // TODO: Implement backlink detection
@@ -2281,13 +2260,12 @@ ${panes}
       // Get page data to check ACL (if page exists)
       let pageData = await pageManager.getPage(pageName);
 
-      // Check private page access for existing pages
-      if (pageData) {
-        const canAccessPrivate = await this.checkPrivatePageAccess(wikiContext, pageName);
-        if (!canAccessPrivate) {
-          return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to edit this page.');
-        }
-      }
+      // #714 Slice C: removed the redundant `this.checkPrivatePageAccess`
+      // call that previously sat here. Tier 0 inside the
+      // `checkPagePermissionWithContext('edit')` call below already covers
+      // private-page access (it delegates to
+      // `PageManager.checkPrivatePageAccess` per #711) — duplicating it
+      // here was a leftover from before #711 unified Tier 0.
 
       // Check if this is a required page that needs admin access
       if (await this.isRequiredPage(pageName)) {
@@ -3044,11 +3022,11 @@ ${panes}
         return res.status(404).send('Page not found');
       }
 
-      // Check private page access
-      const canAccessPrivateForDelete = await this.checkPrivatePageAccess(wikiContext, pageName);
-      if (!canAccessPrivateForDelete) {
-        return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to delete this page.');
-      }
+      // #714 Slice C: removed the redundant `this.checkPrivatePageAccess`
+      // call that previously sat here. The
+      // `checkPagePermissionWithContext('delete')` call below already
+      // covers private-page access via Tier 0 (delegates to
+      // `PageManager.checkPrivatePageAccess` per #711).
 
       // Check if this is a required page that needs admin access
       if (await this.isRequiredPage(pageName)) {
@@ -3490,9 +3468,29 @@ ${panes}
             : undefined) ??
           (meta.pageName as string | undefined) ??
           '';
-        const wikiContext = this.createWikiContext(req, { pageName: linkedPageName });
-        const canAccess = await this.checkPrivatePageAccess(wikiContext, linkedPageName);
-        if (!canAccess) {
+        // #714 Slice C: was `this.checkPrivatePageAccess(wikiContext, linkedPageName)`.
+        // Migrated to the unified cross-page facade `wikiContext.canAccess('view', linkedPageName)`
+        // (Slice B added the override parameter); under the hood this
+        // routes through `ACLManager.canUserAccessPage`, which loads the
+        // owning page's metadata and runs the full evaluator.
+        //
+        // Important: the WikiContext is constructed WITHOUT pageName so
+        // that the canAccess call follows the cross-page path
+        // (`canUserAccessPage`) rather than the same-page fast path
+        // (`checkPagePermissionWithContext`). The route doesn't need a
+        // "current page" — it's serving an attachment, not rendering
+        // a page.
+        //
+        // **Behavior shift** (per #714 issue body's "Behavior decision
+        // point" — explicit operator decision was to proceed):
+        // when `linkedPageName` is empty or the owning page's metadata
+        // can't be loaded, the new code returns deny; the legacy helper
+        // returned allow (`if (!pageMetadata?.uuid) return true`). Some
+        // private attachments whose owning-page name was unresolvable
+        // will now 403 where they previously served. This is the
+        // conservative-on-security default the EPIC adopts.
+        const wikiContext = this.createWikiContext(req);
+        if (!(await wikiContext.canAccess('view', linkedPageName))) {
           return res.status(403).render('error', {
             code: 403,
             message: 'You do not have permission to access this attachment',
@@ -11088,9 +11086,19 @@ ${panes}
         return this.renderError(req, res, 404, 'Not Found', `Page "${pageName}" not found`);
       }
 
-      // Check private page access for history
-      const canAccessPrivateHistory = await this.checkPrivatePageAccess(wikiContext, pageName);
-      if (!canAccessPrivateHistory) {
+      // #714 Slice C: pageHistory previously only checked the private
+      // dimension. Replaced with the full ACL evaluator via
+      // `wikiContext.canAccess('view')` — same gate the rendered page
+      // uses. This closes a pre-existing security gap where users who
+      // couldn't view a page (audience-restricted, policy-denied) could
+      // still see its full edit history. Now: if you can't view the
+      // page, you can't view its history. (The route's input is the
+      // current request page, so this is the same-page fast path through
+      // `checkPagePermissionWithContext`, NOT the cross-page
+      // `canUserAccessPage` route.)
+      const pageMetadataForHistory = await pageManager.getPageMetadata(pageName);
+      (wikiContext as { pageMetadata: unknown }).pageMetadata = pageMetadataForHistory ?? null;
+      if (!(await wikiContext.canAccess('view'))) {
         return this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to view this page history.');
       }
 

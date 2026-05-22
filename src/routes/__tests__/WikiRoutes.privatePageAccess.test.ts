@@ -31,7 +31,7 @@ const PAGE_NAME = 'AlicePrivatePage';
 // Mock factories
 // ---------------------------------------------------------------------------
 
-/** Provider stub with a pageIndex for checkPrivatePageAccess */
+/** Provider stub with a pageIndex (legacy pre-#714 check; kept for symmetry). */
 function makeProvider(location = 'private', creator = PAGE_CREATOR) {
   return {
     pageIndex: {
@@ -42,10 +42,24 @@ function makeProvider(location = 'private', creator = PAGE_CREATOR) {
   };
 }
 
-/** PageManager stub */
+/**
+ * PageManager stub. #714 Slice C migrated `WikiRoutes.serveAttachment` from
+ * the legacy `checkPrivatePageAccess` helper (which read
+ * `provider.pageIndex.pages[uuid].location === 'private'`) to
+ * `wikiContext.canAccess('view', linkedPageName)`. The new path reads
+ * `metadata.private` directly (Tier 0 of the ACL evaluator) — so the
+ * fixture now sets `private: true` + `author: <creator>` on the returned
+ * metadata to drive the same scenarios.
+ */
 function makePageManager(uuid = PAGE_UUID, location = 'private', creator = PAGE_CREATOR) {
+  const isPrivate = location === 'private';
   return {
-    getPageMetadata: vi.fn().mockResolvedValue({ uuid }),
+    getPageMetadata: vi.fn().mockResolvedValue({
+      uuid,
+      title: PAGE_NAME,
+      lastModified: '',
+      ...(isPrivate ? { private: true, author: creator } : {})
+    }),
     getCurrentPageProvider: vi.fn().mockReturnValue(makeProvider(location, creator))
   };
 }
@@ -68,11 +82,48 @@ function makeAttachmentManager({ isPrivate = false, pageName = PAGE_NAME } = {})
 }
 
 /** Engine stub */
-function makeEngine(pageManager, attachmentManager) {
+/**
+ * ACLManager stub used by `wikiContext.canAccess('view', pageName)`. #714
+ * Slice C migrated `serveAttachment` from the legacy
+ * `WikiRoutes.checkPrivatePageAccess` helper to the cross-page facade,
+ * which routes through `ACLManager.canUserAccessPage(userContext, pageName, action)`.
+ *
+ * The stub re-implements the private-attachment access rule in terms of
+ * the new contract so the route-level tests can drive the same scenarios:
+ *   - anonymous → deny
+ *   - admin role → allow
+ *   - username === creator → allow
+ *   - else → deny
+ * For a non-private page (location !== 'private'), allow.
+ */
+function makeACLManagerStub({ creator = PAGE_CREATOR, isPrivatePage = true } = {}) {
+  return {
+    canUserAccessPage: vi.fn(async (userContext, pageName, _action) => {
+      // Mimic canUserAccessPage's "no page name → deny" rule from
+      // Slice B (the conservative-on-security default).
+      if (!pageName) return false;
+      if (!isPrivatePage) return true;
+
+      const username = userContext?.username;
+      const roles    = userContext?.roles ?? [];
+      if (!username) return false;
+      if (roles.includes('admin')) return true;
+      if (username === creator) return true;
+      return false;
+    }),
+    // Same-page fast path — not exercised by serveAttachment (which is
+    // always a cross-page check) but defined so WikiContext.canAccess
+    // doesn't trip when it constructs the cache key shape.
+    checkPagePermissionWithContext: vi.fn().mockResolvedValue(true)
+  };
+}
+
+function makeEngine(pageManager, attachmentManager, aclManager = makeACLManagerStub()) {
   return {
     getManager: vi.fn((name) => {
-      if (name === 'PageManager')      return pageManager;
+      if (name === 'PageManager')       return pageManager;
       if (name === 'AttachmentManager') return attachmentManager;
+      if (name === 'ACLManager')        return aclManager;
       return null;
     })
   } as unknown as WikiEngine;
@@ -201,7 +252,8 @@ describe('WikiRoutes — private attachment — pageName resolution (#122)', () 
       // no mentions field
     });
     const pageManager = makePageManager();
-    const engine = makeEngine(pageManager, attachmentManager);
+    const aclManager = makeACLManagerStub();
+    const engine = makeEngine(pageManager, attachmentManager, aclManager);
     const wikiRoutes = new WikiRoutes(engine);
 
     // Anonymous — should be denied
@@ -211,18 +263,36 @@ describe('WikiRoutes — private attachment — pageName resolution (#122)', () 
     await wikiRoutes.serveAttachment(req, res);
 
     expect(res.status).toHaveBeenCalledWith(403);
-    // Verify it used the pageName from meta (not an empty string)
-    expect(pageManager.getPageMetadata).toHaveBeenCalledWith(PAGE_NAME);
+    // #714 Slice C: the route now delegates the cross-page check to
+    // `ACLManager.canUserAccessPage`. Verify the right `pageName`
+    // (from `meta.pageName` fallback) reached the gate. Previously this
+    // asserted on `pageManager.getPageMetadata` because the legacy
+    // `WikiRoutes.checkPrivatePageAccess` invoked it directly; under the
+    // new wiring `pageManager.getPageMetadata` is called inside
+    // `ACLManager.canUserAccessPage` (in production code, not in the
+    // ACL-manager stub used here).
+    // Anonymous request → userContext is null. `expect.anything()` does NOT
+    // match null/undefined, so check the args positionally.
+    expect(aclManager.canUserAccessPage).toHaveBeenCalled();
+    const [_userContext, pageName, action] = aclManager.canUserAccessPage.mock.calls[0];
+    expect(pageName).toBe(PAGE_NAME);
+    expect(action).toBe('view');
   });
 
-  test('uses empty string pageName when neither mentions nor pageName present', async () => {
+  test('empty string pageName denies (#714 — deny-on-empty replaces legacy allow-on-empty)', async () => {
+    // #714 Slice C: the legacy `WikiRoutes.checkPrivatePageAccess` returned
+    // **allow** when `pageName` couldn't be resolved (`if (!pageMetadata?.uuid) return true`).
+    // Under the new cross-page facade `wikiContext.canAccess('view', '')`,
+    // the empty page name returns **deny** at the first guard in
+    // `ACLManager.canUserAccessPage` (`if (!pageName) return false`).
+    // This is the EPIC's explicit "Behavior decision point" — some
+    // private attachments whose owning-page name was unresolvable now 403.
     const attachmentManager = makeAttachmentManager({ isPrivate: false });
     attachmentManager.getAttachmentMetadata.mockResolvedValue({
       isPrivate: true
       // no mentions, no pageName
     });
     const pageManager = makePageManager();
-    // empty pageName → getPageMetadata('') → uuid null → allow (conservative)
     pageManager.getPageMetadata.mockResolvedValue(null);
     const engine = makeEngine(pageManager, attachmentManager);
     const wikiRoutes = new WikiRoutes(engine);
@@ -232,7 +302,7 @@ describe('WikiRoutes — private attachment — pageName resolution (#122)', () 
 
     await wikiRoutes.serveAttachment(req, res);
 
-    // No UUID → conservative allow → attachment is served (or 404 if getAttachment returns null)
-    expect(res.status).not.toHaveBeenCalledWith(403);
+    // Empty linkedPageName → canUserAccessPage returns false → 403.
+    expect(res.status).toHaveBeenCalledWith(403);
   });
 });
