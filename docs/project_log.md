@@ -2,6 +2,43 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-22-03
+
+- Agent: Claude Opus 4.7
+- Subject: First `/check-addons` use-in-anger pass, then drove fairways-gen2-website's 8 open Dependabot PRs to zero — all 13 Dependabot alerts (including 4 high-severity) closed. Per `feedback_cross_repo_coordination` this fwg2w work is logged here.
+- Current Issues: ngdpbase Dependabot alerts unchanged (3 uuid covered by PR #769, 1 showdown mitigation-only). fwg2w: zero open PRs, zero open alerts.
+- Tests: skipped — pure satellite-repo PR triage; no ngdpbase runtime touched. The `report-addons.md` and skill commits both passed pre-commit `lint:staged` (markdownlint-fix).
+- Semver: skip.
+- /othersites: not run.
+- **Ran `/check-addons`** to refresh `report-addons.md` against live state (commit `a98e862b`). Surfaced status changes since the previous report:
+  - PR #19 was now confirmed CLEAN/MERGEABLE (first PR opened post-`d71561c` CI fix).
+  - `deploy.yml` on fwg2w failed on master at 08:30Z — my earlier `d71561c` push triggered it; same missing-script issue I fixed in `ci.yml` but didn't touch `deploy.yml`. Real-time confirmation that the CI-sanity scan in `/check-addons` would have caught the original break.
+  - Local checkouts now 6 commits behind master (was 3-4); pure doc-only lag.
+- **Drove fwg2w PRs to zero**:
+  - Merged **#19** (ws 8.20.0 → 8.20.1) — first clean merge.
+  - Nudged the other 7 PRs (#7-#10, #16-#18) with `@dependabot rebase` comments. Dependabot rebased 6 of 7 within a few minutes.
+  - Merged **#16** (ip-address), **#17** (basic-ftp), **#18** (brace-expansion) in order. Each clean after Dependabot's rebase.
+  - **Cluster #7-#10 hit a real blocker**: all four bump `markdownlint-cli` from `^0.43.0` to `^0.48.0`; versions ≥0.45 dropped Node 18 support. CI matrix tested `[18.x, 20.x]`, so all four failed the 18.x entry with `SyntaxError: Invalid regular expression flags`. Reported the blocker + 3 options (drop Node 18 from CI matrix, pin markdownlint-cli back, close cluster) to the operator.
+  - Operator chose option 1: drop Node 18. Pushed **`6b18e94`** directly to fwg2w master — CI matrix `[18.x, 20.x]` → `[20.x, 22.x]` (current LTS + previous, with explanatory comment).
+  - Manually rebased **#10** locally against new master (Dependabot's rebase cycle was too slow), force-pushed (`57d4ce6`). CI went 4/4 green on the new matrix; merged.
+  - **#10's merge cascaded**: ALL 13 Dependabot alerts auto-closed when markdownlint-cli's new transitive dep tree resolved every vulnerability — including the `basic-ftp × 4` / `glob` / `minimatch × 3` high-severity ones that the other cluster PRs were targeting.
+  - **#7** (smol-toml) and **#8** (glob) went CLEAN post-#10-merge (their independent sibling deps were now safely on top of the new lockfile). Merged both.
+  - **#9** (minimatch) — Dependabot itself auto-closed it at 09:06Z when it detected #10 transitively resolved the minimatch alerts. Tried to close it manually but `gh pr close` reported "already closed" — confirmed via `gh pr view 9 --json state` = `CLOSED`.
+- Diagnoses worth keeping for future Dependabot triage:
+  - **Renovate-style cluster PRs** where multiple PRs bump the same ancestor dependency can resolve transitively: merging the one that bumps the ancestor (here `markdownlint-cli`) may cascade-close sibling alerts and self-close sibling PRs. Don't waste cycles rebasing every cluster PR — merge the most-current ancestor bump and let the others fall.
+  - **GitHub PR `mergeStateStatus` lags behind manual force-pushes**. When master moves, stale CI checks from before the move stay attached to PRs until either Dependabot rebases the branch OR you manually rebase + force-push. The latter is faster when waiting on Dependabot's poll cycle (~5-10 min typical).
+  - **Node 18 EOL implications**: April 2025 was the EOL. `markdownlint-cli ≥0.45` is the canary that surfaces Node 18 incompatibility. Other deps will follow; CI matrices pinned to 18.x will accumulate similar breakages.
+- ngdpbase commits (this session):
+  - `a98e862b` — `docs(report): regenerate report-addons.md — /check-addons run 2026-05-22T09:08Z`
+- Satellite commits (fairways-gen2-website master):
+  - `6b18e94` — `ci: drop Node 18 from matrix; add Node 22 (current LTS)`
+- Satellite branch commits (manual rebase):
+  - `57d4ce6` on `dependabot/npm_and_yarn/multi-6d7a0bb401` — rebased #10's bump on new master (force-pushed).
+- Files Modified (ngdpbase): docs/project_log.md (this entry), report-addons.md.
+- Operator-action carryover (low priority, recorded in `report-addons.md`):
+  - fwg2w `deploy.yml` still has scaffolded `npm run test` + `npm run build` references; fails on push-to-master. Same one-liner fix as `ci.yml`.
+  - fwg2w action pins `actions/checkout@v4` / `setup-node@v4` (one major behind ngdpbase's v5). Node 20 deprecation warning surfaced in CI logs.
+
 ## 2026-05-22-02
 
 - Agent: Claude Opus 4.7
