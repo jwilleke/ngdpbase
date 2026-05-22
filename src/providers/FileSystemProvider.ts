@@ -586,11 +586,19 @@ class FileSystemProvider extends BasePageProvider {
       const conflictTitle = this.uuidIndex.get(uuid);
       throw new Error(`UUID "${uuid}" is already assigned to page "${conflictTitle || 'unknown'}"`);
     }
+    // `created` (#754): set once on first save, preserved on every update.
+    // Priority: explicit metadata.created (migration) > existing frontmatter `created` > now.
+    // `metadata.created` is undefined for normal user saves (PageManager doesn't pass it),
+    // so existing pages naturally fall through to the on-disk value.
+    const existingCreated = oldPageInfo?.metadata?.created;
+    const created = metadata.created ?? existingCreated ?? now;
+
     const updatedMetadata: Partial<PageFrontmatter> = {
       ...metadata,
       title: finalTitle, // Ensure title is set after spread
       uuid: uuid,
-      lastModified: now
+      lastModified: now,
+      created
     };
 
     const fileContent = matter.stringify(content, updatedMetadata);

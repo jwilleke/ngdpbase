@@ -456,5 +456,76 @@ describe('FileSystemProvider', () => {
         expect(provider.pageCache.size).toBe(1);
       });
     });
+
+    describe('savePage `created` field (#754)', () => {
+      test('sets `created` to now() on first save of a new page', async () => {
+        const provider = new FileSystemProvider(createMockEngine());
+        await provider.initialize();
+
+        const before = new Date().toISOString();
+        await provider.savePage('Brand New', '# Content', { title: 'Brand New', uuid: 'new-uuid' });
+        const after = new Date().toISOString();
+
+        const meta = await provider.getPageMetadata('Brand New');
+        expect(meta?.created).toBeDefined();
+        expect(typeof meta?.created).toBe('string');
+        // ISO 8601 strings sort lexicographically — `created` should land
+        // between the timestamps captured before/after the save.
+        expect(meta!.created! >= before).toBe(true);
+        expect(meta!.created! <= after).toBe(true);
+      });
+
+      test('preserves existing `created` across subsequent saves', async () => {
+        const provider = new FileSystemProvider(createMockEngine());
+        await provider.initialize();
+
+        await provider.savePage('Stable', '# v1', { title: 'Stable', uuid: 'stable-uuid' });
+        const firstSave = await provider.getPageMetadata('Stable');
+        const originalCreated = firstSave!.created!;
+        expect(originalCreated).toBeDefined();
+
+        // Tiny delay to ensure a measurable lastModified difference. We're
+        // proving `created` is preserved even when other timestamps move on.
+        await new Promise((resolve) => setTimeout(resolve, 5));
+
+        await provider.savePage('Stable', '# v2 — updated', { title: 'Stable', uuid: 'stable-uuid' });
+        const secondSave = await provider.getPageMetadata('Stable');
+
+        expect(secondSave?.created).toBe(originalCreated);
+        // sanity check: lastModified DID change
+        expect(secondSave?.lastModified).not.toBe(firstSave?.lastModified);
+      });
+
+      test('honors caller-provided `created` (migration path)', async () => {
+        const provider = new FileSystemProvider(createMockEngine());
+        await provider.initialize();
+
+        const fixedCreated = '2020-06-15T08:00:00.000Z';
+        await provider.savePage('From Migration', '# Content', {
+          title: 'From Migration',
+          uuid: 'mig-uuid',
+          created: fixedCreated
+        });
+
+        const meta = await provider.getPageMetadata('From Migration');
+        expect(meta?.created).toBe(fixedCreated);
+      });
+
+      test('caller-provided `created` wins over existing on-disk `created`', async () => {
+        // First save establishes a `created` value.
+        const provider = new FileSystemProvider(createMockEngine());
+        await provider.initialize();
+
+        await provider.savePage('Overridable', '# v1', { title: 'Overridable', uuid: 'ov-uuid' });
+
+        // Second save passes an explicit `created` — that should win, because
+        // the priority chain is metadata.created > existing > now.
+        const explicit = '2018-01-01T00:00:00.000Z';
+        await provider.savePage('Overridable', '# v2', { title: 'Overridable', uuid: 'ov-uuid', created: explicit });
+
+        const meta = await provider.getPageMetadata('Overridable');
+        expect(meta?.created).toBe(explicit);
+      });
+    });
   });
 });

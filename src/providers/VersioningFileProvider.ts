@@ -34,6 +34,13 @@ interface PageIndexEntry {
   /** Username that created the page; required when location === 'private' */
   creator?: string;
   lastModified: string;
+  /**
+   * Creation timestamp (ISO 8601). Mirrors `PageFrontmatter.created` for fast
+   * index-level filtering/sorting without reading the page file. Set on initial
+   * save and preserved by every subsequent save. Optional because pre-#754
+   * indexes were written without it; the page-frontmatter is the source of truth.
+   */
+  created?: string;
   /** Username that last modified the page */
   editor: string;
   /** Username that originally created the page (from metadata.author) */
@@ -1387,8 +1394,16 @@ class VersioningFileProvider extends FileSystemProvider {
       // Continue with parent savePage even if versioning fails
     }
 
+    // `created` (#754): set once on initial save and preserved by every update.
+    // Priority: explicit metadata.created (migration) > existing index entry > existing
+    // frontmatter > now. Computed here so both the on-disk write (via super.savePage)
+    // and the page-index write below use the SAME value.
+    const indexCreated = currentEntry?.created;
+    const frontmatterCreated = pageInfo?.metadata?.created;
+    const created = metadata.created ?? indexCreated ?? frontmatterCreated ?? new Date().toISOString();
+
     // Call parent to save current content (uses FileSystemProvider path logic)
-    await super.savePage(pageName, content, { ...metadata, uuid });
+    await super.savePage(pageName, content, { ...metadata, uuid, created });
 
     // Update page index — always store filename so fast init uses the correct path
     const creator = location === 'private'
@@ -1407,6 +1422,7 @@ class VersioningFileProvider extends FileSystemProvider {
       location: location,
       creator: creator,
       lastModified: new Date().toISOString(),
+      created,
       editor: metadata.editor || metadata.author || 'unknown',
       author: metadata.author ? String(metadata.author) : undefined,
       hasVersions: true,

@@ -22,6 +22,18 @@ export interface PageFrontmatter {
   /** Last modification timestamp (ISO 8601 format) */
   lastModified: string;
 
+  /**
+   * Page creation timestamp (ISO 8601 format).
+   *
+   * Set ONCE on first save and preserved by every subsequent save —
+   * `FileSystemProvider.savePage()` carries it forward from the on-disk
+   * frontmatter so updates never overwrite it. Optional in the type
+   * because pre-#754 pages were written without it; the migration
+   * script `scripts/migrate-page-created.ts` backfills existing pages
+   * from v1-manifest `dateCreated` → file mtime → `lastModified`.
+   */
+  created?: string;
+
   /** System-defined category (optional) */
   'system-category'?: string;
 
@@ -135,6 +147,9 @@ export interface PageInfo {
 
   /** Last modification timestamp (from metadata) */
   lastModified?: string;
+
+  /** Creation timestamp (from metadata, #754) */
+  created?: string;
 
   /** Page author (from metadata) */
   author?: string;

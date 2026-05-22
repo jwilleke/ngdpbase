@@ -43,6 +43,8 @@
     "migrate:private:dry": "tsx scripts/migrate-private-field.ts --dry-run",
     "migrate:user-pages-category": "tsx scripts/migrate-user-pages-category.ts",
     "migrate:user-pages-category:dry": "tsx scripts/migrate-user-pages-category.ts --dry-run",
+    "migrate:page-created": "tsx scripts/migrate-page-created.ts",
+    "migrate:page-created:apply": "tsx scripts/migrate-page-created.ts --apply",
     "repair:frontmatter": "tsx scripts/repair-jspwiki-frontmatter.ts",
     "repair:frontmatter:dry": "tsx scripts/repair-jspwiki-frontmatter.ts --dry-run",
     "maintain:versioning": "tsx scripts/maintain-versions.ts",
