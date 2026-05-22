@@ -497,6 +497,79 @@ class ACLManager extends BaseManager {
   }
 
   /**
+   * Check whether a user can access a given page — for cross-page checks where
+   * the current WikiContext describes a DIFFERENT page than the one being
+   * checked (#714 Slice B).
+   *
+   * Loads the target page's metadata internally (`PageManager.getPageMetadata`)
+   * and constructs a minimal WikiContext shape for the evaluator. This is the
+   * implementation that {@link WikiContext.canAccess} delegates to when its
+   * `pageNameOverride` parameter is set.
+   *
+   * Used today by:
+   *   - linked-page visibility filters (a list page wanting to drop entries
+   *     the user can't view)
+   *   - {@link WikiRoutes.serveAttachment}'s owning-page check (the page
+   *     hosting the attachment may be private; the request URL is the
+   *     attachment URL, not the page URL).
+   *
+   * Returns false when:
+   *   - the target page has no resolvable metadata (deleted, never existed,
+   *     or PageManager unavailable). This is the **conservative-on-security**
+   *     default — see #714 EPIC body's "Behavior decision point" for the
+   *     pre-#714 allow→deny shift for the private-attachment-no-page-name
+   *     case.
+   *   - any tier returns deny.
+   *
+   * @param userContext - The user requesting access (may be null / anonymous).
+   * @param pageName    - Target page to check.
+   * @param action      - Action verb (e.g., `'view'`, `'edit'`, `'delete'`).
+   */
+  async canUserAccessPage(
+    userContext: UserContext | null | undefined,
+    pageName: string,
+    action: string
+  ): Promise<boolean> {
+    if (!pageName) {
+      // Conservative-on-security: no page name → deny. Pre-#714 callers in
+      // WikiRoutes.checkPrivatePageAccess returned allow for the
+      // can't-resolve-page-name case (conservative-on-availability). The
+      // EPIC body flags this as the user-visible shift in Slice C/D.
+      return false;
+    }
+
+    // Load target metadata. PageManager.getPageMetadata may be unavailable
+    // in test fixtures without a PageManager mock — deny in that case (we
+    // can't evaluate without metadata).
+    type PageManagerShape = {
+      getPageMetadata?: (id: string) => Promise<PageFrontmatter | null>;
+    };
+    const pm = this.engine.getManager<PageManagerShape>('PageManager');
+    const pageMetadata = pm?.getPageMetadata
+      ? await pm.getPageMetadata(pageName).catch(() => null)
+      : null;
+    if (!pageMetadata) {
+      return false;
+    }
+
+    // Build a minimal WikiContext-shaped object for the evaluator. We don't
+    // have a full request-scope context here (no req/res, no rendering
+    // context); the evaluator only reads pageName / userContext /
+    // pageMetadata / context fields.
+    const minimalCtx = {
+      pageName,
+      userContext: userContext ?? null,
+      pageMetadata,
+      content: null,
+      context: 'cross-page-check'
+    };
+    return this.checkPagePermissionWithContext(
+      minimalCtx as unknown as WikiContext,
+      action
+    );
+  }
+
+  /**
    * Check front matter audience / access fields (Tier 1.5).
    * Returns a decision object; decided=false means no front matter restriction — fall through.
    */

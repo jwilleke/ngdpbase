@@ -349,6 +349,140 @@ describe('ACLManager', () => {
     });
   });
 
+  describe('canUserAccessPage — cross-page check (#714 Slice B)', () => {
+    // canUserAccessPage loads the target page's metadata internally and runs
+    // the full evaluator. Used by WikiContext.canAccess(action, override) for
+    // cross-page checks (e.g. WikiRoutes.serveAttachment's owning-page lookup,
+    // linked-page visibility filters).
+    //
+    // Conservative-on-security: returns false when the page name can't be
+    // resolved (no metadata, PageManager unavailable). Per the issue body's
+    // "Behavior decision point", this is the allow→deny shift documented
+    // for Slices C/D.
+
+    test('returns false when pageName is empty string', async () => {
+      const userContext = { username: 'alice', roles: ['editor'], isAuthenticated: true };
+      expect(await aclManager.canUserAccessPage(userContext, '', 'view')).toBe(false);
+    });
+
+    test('returns false when PageManager is unavailable (test fixture without mock)', async () => {
+      // The default mock engine returns null for getManager('PageManager').
+      // Without a PageManager.getPageMetadata helper, we cannot load metadata,
+      // so the conservative-on-security default kicks in.
+      const userContext = { username: 'alice', roles: ['editor'], isAuthenticated: true };
+      expect(await aclManager.canUserAccessPage(userContext, 'SomePage', 'view')).toBe(false);
+    });
+
+    test('returns false when PageManager returns null metadata (page does not exist)', async () => {
+      const userContext = { username: 'alice', roles: ['editor'], isAuthenticated: true };
+      const localEngine = {
+        getManager: vi.fn((name: string) => {
+          if (name === 'UserManager') return mockUserManager;
+          if (name === 'ConfigurationManager') return mockConfigurationManager;
+          if (name === 'PageManager') {
+            return { getPageMetadata: vi.fn().mockResolvedValue(null) };
+          }
+          return null;
+        })
+      };
+      const localACL = new ACLManager(localEngine as unknown as WikiEngine);
+      await localACL.initialize();
+      expect(await localACL.canUserAccessPage(userContext, 'Ghost', 'view')).toBe(false);
+    });
+
+    test('runs the evaluator on the target page (Tier 1 audience match → allow)', async () => {
+      const userContext = { username: 'bob', roles: ['editor'], isAuthenticated: true };
+      const pageMetadata = {
+        title: 'Other', uuid: 'o', lastModified: '',
+        audience: ['editor']  // Tier 1 allows view for editor role
+      };
+      const localEngine = {
+        getManager: vi.fn((name: string) => {
+          if (name === 'UserManager') return mockUserManager;
+          if (name === 'ConfigurationManager') return mockConfigurationManager;
+          if (name === 'PageManager') {
+            return { getPageMetadata: vi.fn().mockResolvedValue(pageMetadata) };
+          }
+          return null;
+        })
+      };
+      const localACL = new ACLManager(localEngine as unknown as WikiEngine);
+      await localACL.initialize();
+      expect(await localACL.canUserAccessPage(userContext, 'Other', 'view')).toBe(true);
+    });
+
+    test('runs the evaluator on the target page (Tier 1 audience mismatch → deny)', async () => {
+      const userContext = { username: 'bob', roles: ['reader'], isAuthenticated: true };
+      const pageMetadata = {
+        title: 'Restricted', uuid: 'r', lastModified: '',
+        audience: ['admin', 'editor']  // bob is neither
+      };
+      const localEngine = {
+        getManager: vi.fn((name: string) => {
+          if (name === 'UserManager') return mockUserManager;
+          if (name === 'ConfigurationManager') return mockConfigurationManager;
+          if (name === 'PageManager') {
+            return { getPageMetadata: vi.fn().mockResolvedValue(pageMetadata) };
+          }
+          return null;
+        })
+      };
+      const localACL = new ACLManager(localEngine as unknown as WikiEngine);
+      await localACL.initialize();
+      expect(await localACL.canUserAccessPage(userContext, 'Restricted', 'view')).toBe(false);
+    });
+
+    test('tolerates null userContext (anonymous cross-page check)', async () => {
+      const pageMetadata = {
+        title: 'Public', uuid: 'p', lastModified: ''
+      };
+      const localEngine = {
+        getManager: vi.fn((name: string) => {
+          if (name === 'UserManager') return mockUserManager;
+          if (name === 'ConfigurationManager') return mockConfigurationManager;
+          if (name === 'PageManager') {
+            return { getPageMetadata: vi.fn().mockResolvedValue(pageMetadata) };
+          }
+          return null;
+        })
+      };
+      const localACL = new ACLManager(localEngine as unknown as WikiEngine);
+      await localACL.initialize();
+      // No audience / access set → falls through to Tier 2 / default. The
+      // important assertion is that it doesn't throw on null userContext.
+      const result = await localACL.canUserAccessPage(null, 'Public', 'view');
+      expect(typeof result).toBe('boolean');
+    });
+
+    test('Tier 0 private fires on cross-page check too', async () => {
+      // Private check via PageManager.checkPrivatePageAccess — when that
+      // helper is unavailable in the test fixture, falls back to the
+      // legacy frontmatter-author check (matching the same fallback
+      // logic checkPagePermissionWithContext uses for Tier 0).
+      const userContext = { username: 'bob', roles: ['editor'], isAuthenticated: true };
+      const pageMetadata = {
+        title: 'Secret', uuid: 's', lastModified: '',
+        private: true, author: 'alice'
+      };
+      const localEngine = {
+        getManager: vi.fn((name: string) => {
+          if (name === 'UserManager') return mockUserManager;
+          if (name === 'ConfigurationManager') return mockConfigurationManager;
+          if (name === 'PageManager') {
+            // getPageMetadata returns private:true; no checkPrivatePageAccess
+            // helper → falls through to the frontmatter-author check.
+            return { getPageMetadata: vi.fn().mockResolvedValue(pageMetadata) };
+          }
+          return null;
+        })
+      };
+      const localACL = new ACLManager(localEngine as unknown as WikiEngine);
+      await localACL.initialize();
+      // bob is not alice, not admin → Tier 0 denies.
+      expect(await localACL.canUserAccessPage(userContext, 'Secret', 'view')).toBe(false);
+    });
+  });
+
   describe('Tier 1.5 — front matter access control', () => {
     test('audience: [editor, admin] + editor role → allow', async () => {
       const ctx = makeWikiContext({

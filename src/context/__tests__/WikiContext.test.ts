@@ -471,6 +471,142 @@ describe('WikiContext', () => {
       // 5 calls, 2 unique action+pageName combos → 2 ACL invocations
       expect(aclManagerMock.checkPagePermissionWithContext).toHaveBeenCalledTimes(2);
     });
+
+    // ─────────────────────────────────────────────────────────────────────
+    // #714 Slice B — pageNameOverride for cross-page checks
+    // ─────────────────────────────────────────────────────────────────────
+
+    test('Slice B — cross-page check routes through ACLManager.canUserAccessPage', async () => {
+      const aclManagerMock = {
+        checkPagePermissionWithContext: vi.fn().mockResolvedValue(true),
+        canUserAccessPage: vi.fn().mockResolvedValue(true)
+      };
+      const engineWithAcl = {
+        getManager: vi.fn((name) => {
+          if (name === 'ACLManager') return aclManagerMock;
+          return mockEngine.getManager(name);
+        })
+      };
+      const ctx = new WikiContext(engineWithAcl as unknown as WikiEngine, {
+        pageName: 'Main',
+        userContext: { username: 'alice', roles: ['editor'] }
+      });
+
+      const result = await ctx.canAccess('view', 'OtherPage');
+
+      // Cross-page check goes through canUserAccessPage, NOT
+      // checkPagePermissionWithContext.
+      expect(aclManagerMock.canUserAccessPage).toHaveBeenCalledWith(
+        ctx.userContext,
+        'OtherPage',
+        'view'
+      );
+      expect(aclManagerMock.checkPagePermissionWithContext).not.toHaveBeenCalled();
+      expect(result).toBe(true);
+    });
+
+    test('Slice B — same-page override (override === this.pageName) uses fast path', async () => {
+      const aclManagerMock = {
+        checkPagePermissionWithContext: vi.fn().mockResolvedValue(true),
+        canUserAccessPage: vi.fn().mockResolvedValue(true)
+      };
+      const engineWithAcl = {
+        getManager: vi.fn((name) => {
+          if (name === 'ACLManager') return aclManagerMock;
+          return mockEngine.getManager(name);
+        })
+      };
+      const ctx = new WikiContext(engineWithAcl as unknown as WikiEngine, {
+        pageName: 'Main',
+        userContext: { username: 'alice', roles: ['editor'] }
+      });
+
+      // Passing the SAME page as override → still hits the fast path
+      // (avoids a metadata reload).
+      await ctx.canAccess('view', 'Main');
+
+      expect(aclManagerMock.checkPagePermissionWithContext).toHaveBeenCalled();
+      expect(aclManagerMock.canUserAccessPage).not.toHaveBeenCalled();
+    });
+
+    test('Slice B — cache key incorporates the override (cross-page result is NOT memoized as same-page)', async () => {
+      // The pre-#714 cache key was `${action}:${this.pageName}` — would
+      // have returned the SAME-page memoized result for a different page.
+      // Slice B fixes the key to use the resolved target.
+      const aclManagerMock = {
+        checkPagePermissionWithContext: vi.fn().mockResolvedValue(true),
+        canUserAccessPage: vi.fn().mockResolvedValue(false)  // different result for other page!
+      };
+      const engineWithAcl = {
+        getManager: vi.fn((name) => {
+          if (name === 'ACLManager') return aclManagerMock;
+          return mockEngine.getManager(name);
+        })
+      };
+      const ctx = new WikiContext(engineWithAcl as unknown as WikiEngine, {
+        pageName: 'Main',
+        userContext: { username: 'alice', roles: ['editor'] }
+      });
+
+      // First call: same-page → ACL says allow → cached as 'view:Main'.
+      const sameResult = await ctx.canAccess('view');
+      expect(sameResult).toBe(true);
+
+      // Second call: cross-page → cache key 'view:OtherPage' is distinct;
+      // does NOT return the cached same-page result. ACL says deny.
+      const crossResult = await ctx.canAccess('view', 'OtherPage');
+      expect(crossResult).toBe(false);
+
+      // Both paths fired exactly once each — proves the cache didn't
+      // erroneously short-circuit the second call.
+      expect(aclManagerMock.checkPagePermissionWithContext).toHaveBeenCalledTimes(1);
+      expect(aclManagerMock.canUserAccessPage).toHaveBeenCalledTimes(1);
+    });
+
+    test('Slice B — cross-page memoization works (repeat cross-page calls share one evaluation)', async () => {
+      const aclManagerMock = {
+        checkPagePermissionWithContext: vi.fn().mockResolvedValue(true),
+        canUserAccessPage: vi.fn().mockResolvedValue(true)
+      };
+      const engineWithAcl = {
+        getManager: vi.fn((name) => {
+          if (name === 'ACLManager') return aclManagerMock;
+          return mockEngine.getManager(name);
+        })
+      };
+      const ctx = new WikiContext(engineWithAcl as unknown as WikiEngine, {
+        pageName: 'Main',
+        userContext: { username: 'alice', roles: ['editor'] }
+      });
+
+      await ctx.canAccess('view', 'OtherPage');
+      await ctx.canAccess('view', 'OtherPage');
+      await ctx.canAccess('view', 'OtherPage');
+
+      expect(aclManagerMock.canUserAccessPage).toHaveBeenCalledTimes(1);
+    });
+
+    test('Slice B — override with pageName=null and no current page → still returns false', async () => {
+      const aclManagerMock = {
+        checkPagePermissionWithContext: vi.fn(),
+        canUserAccessPage: vi.fn()
+      };
+      const engineWithAcl = {
+        getManager: vi.fn((name) => {
+          if (name === 'ACLManager') return aclManagerMock;
+          return mockEngine.getManager(name);
+        })
+      };
+      // No pageName on this context.
+      const ctx = new WikiContext(engineWithAcl as unknown as WikiEngine, {
+        userContext: { username: 'alice', roles: ['admin'] }
+      });
+
+      // No this.pageName and no override → still false (no target page).
+      expect(await ctx.canAccess('view')).toBe(false);
+      expect(aclManagerMock.checkPagePermissionWithContext).not.toHaveBeenCalled();
+      expect(aclManagerMock.canUserAccessPage).not.toHaveBeenCalled();
+    });
   });
 
   describe('getPrincipals', () => {

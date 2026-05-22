@@ -418,33 +418,70 @@ class WikiContext {
 
   /**
    * Returns true if the current user is allowed to perform the given action
-   * on the current page.
+   * on the current page — or on a different page when `pageNameOverride` is
+   * passed (#714 Slice B, the cross-page check used by linked-page visibility
+   * filters and serveAttachment's owning-page lookup).
    *
-   * Delegates to {@link ACLManager.checkPagePermissionWithContext}, which runs
-   * the three-tier evaluator (private user-keyword → frontmatter audience →
-   * global policies).
+   * Delegates to {@link ACLManager.checkPagePermissionWithContext} for the
+   * current page (the no-override fast path) and {@link ACLManager.canUserAccessPage}
+   * for cross-page checks (#714 Slice B — loads the target page's metadata
+   * internally and runs the same evaluator).
    *
-   * Returns false if the WikiContext has no pageName or no ACLManager.
+   * Returns false if the WikiContext has no pageName (and no override) or no
+   * ACLManager.
    *
    * @param {string} action - Page action (e.g., 'view', 'edit', 'delete')
-   * @returns {Promise<boolean>} true if access is allowed for this user on this page
+   * @param {string} [pageNameOverride] - When set, check access on this page
+   *   instead of `this.pageName`. Used for cross-page checks (e.g., a private
+   *   attachment whose owning page is not the current request's page).
+   * @returns {Promise<boolean>} true if access is allowed
    *
    * @example
    * if (await wikiContext.canAccess('edit')) { ... }
+   *
+   * @example
+   * // Cross-page check (Slice B): can the current user view the page that
+   * // owns this attachment? Used at WikiRoutes.serveAttachment to enforce
+   * // private-page access for attachments whose owning page is private.
+   * if (!(await wikiContext.canAccess('view', owningPageName))) {
+   *   return 403;
+   * }
    */
-  async canAccess(action: string): Promise<boolean> {
-    if (!this.aclManager || !this.pageName) return false;
-    // #636: per-instance memoization keyed by action+pageName. Concurrent calls
-    // for the same key share an in-flight Promise so a single evaluation runs.
-    const key = `${action}:${this.pageName}`;
+  async canAccess(action: string, pageNameOverride?: string): Promise<boolean> {
+    if (!this.aclManager) return false;
+
+    // Resolve the page we're checking. When `pageNameOverride` is set, it
+    // wins — that's the cross-page case. Otherwise use this.pageName (the
+    // current page being rendered/edited).
+    const targetPage = pageNameOverride ?? this.pageName;
+    if (!targetPage) return false;
+
+    // #636 / #714 Slice B: per-instance memoization. Cache key MUST include
+    // the resolved target page (NOT this.pageName) — otherwise a cross-page
+    // check via override returns a memoized result for the wrong page. Pre
+    // -#714 this was keyed on `${action}:${this.pageName}` (silent bug).
+    const key = `${action}:${targetPage}`;
     const cached = this._canAccessCache.get(key);
     if (cached) return cached;
-    // ACLManager has a local minimal WikiContext interface that types pageName
-    // as `string`; the runtime guard above ensures pageName is non-null here.
-    const promise = this.aclManager.checkPagePermissionWithContext(
-      this as unknown as Parameters<ACLManager['checkPagePermissionWithContext']>[0],
-      action
-    );
+
+    let promise: Promise<boolean>;
+    if (pageNameOverride && pageNameOverride !== this.pageName) {
+      // Cross-page check — go through canUserAccessPage so the target's
+      // metadata is loaded internally (the current WikiContext's
+      // pageMetadata describes a DIFFERENT page).
+      promise = this.aclManager.canUserAccessPage(
+        this.userContext as Parameters<ACLManager['canUserAccessPage']>[0],
+        pageNameOverride,
+        action
+      );
+    } else {
+      // Same-page check — reuse the existing evaluator with this WikiContext
+      // (its pageMetadata + content are already loaded for the current page).
+      promise = this.aclManager.checkPagePermissionWithContext(
+        this as unknown as Parameters<ACLManager['checkPagePermissionWithContext']>[0],
+        action
+      );
+    }
     this._canAccessCache.set(key, promise);
     return promise;
   }
