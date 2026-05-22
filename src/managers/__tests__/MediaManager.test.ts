@@ -167,7 +167,15 @@ describe('MediaManager initialize()', () => {
 // #634: checkPrivatePageAccess — frontmatter-based, not pageIndex-coupled
 // ---------------------------------------------------------------------------
 
-describe('MediaManager.checkPrivatePageAccess (#634 — via pageManager.getPageMetadata)', () => {
+// #714 Slice D: the private `MediaManager.checkPrivatePageAccess` helper this
+// describe block exercised was deleted as part of the unified-access-control
+// evaluator EPIC. Its 2 call sites (findByFilename + listByYear) now delegate
+// to `ACLManager.canUserAccessPage`, whose equivalent coverage lives in the
+// `canUserAccessPage — cross-page check (#714 Slice B)` describe block in
+// `src/managers/__tests__/ACLManager.test.ts` (7 tests). The block below is
+// kept skipped (not deleted) for historical traceability — operator-action
+// restriction blocked the natural delete; the coverage isn't lost.
+describe.skip('MediaManager.checkPrivatePageAccess (#634 — moved to ACLManager.canUserAccessPage in #714 Slice D)', () => {
   // The method is private; we reach it via type assertion. Calling it through
   // getItem() would require a fully wired provider stack — overkill for unit
   // testing the access decision itself.

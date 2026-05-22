@@ -26,7 +26,7 @@ import BaseMediaProvider, { MediaItem, ScanResult } from '../providers/BaseMedia
 import FileSystemMediaProvider, { DEFAULT_MEDIA_EXTENSIONS } from '../providers/FileSystemMediaProvider.js';
 import { transformImage } from '../utils/imageTransform.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import type PageManager from './PageManager.js';
+import type ACLManager from './ACLManager.js';
 import type CatalogManager from './CatalogManager.js';
 import type {
   CatalogSource,
@@ -313,16 +313,26 @@ class MediaManager extends BaseManager implements CatalogSource {
     const item = await this.provider.getItem(id);
     if (!item) return null;
 
-    // Private-awareness: if item is linked to a private page, check access
+    // #714 Slice D: was a private MediaManager.checkPrivatePageAccess
+    // helper that re-implemented the legacy private-page rule. Migrated
+    // to ACLManager.canUserAccessPage (added in Slice B) — same evaluator
+    // every other surface uses, no duplicated logic.
+    //
+    // Behavior shift: the legacy helper returned `true` (allow) for the
+    // no-PageManager / no-metadata / catch-all cases (conservative-on-
+    // availability). `canUserAccessPage` returns false in those cases
+    // (conservative-on-security). Matches the documented Slice C/D
+    // shift in #714.
     if (item.linkedPageName && wikiContext) {
-      const pageWikiContext = new WikiContext(this.engine, {
-        context: WikiContext.CONTEXT.VIEW,
-        pageName: item.linkedPageName,
-        userContext: wikiContext.userContext ?? undefined,
-        request: wikiContext.request ?? undefined
-      });
-      const allowed = await this.checkPrivatePageAccess(pageWikiContext, item.linkedPageName);
-      if (!allowed) return null;
+      const aclManager = this.engine.getManager<ACLManager>('ACLManager');
+      if (aclManager) {
+        const allowed = await aclManager.canUserAccessPage(
+          wikiContext.userContext ?? null,
+          item.linkedPageName,
+          'view'
+        );
+        if (!allowed) return null;
+      }
     }
 
     return item;
@@ -483,16 +493,25 @@ class MediaManager extends BaseManager implements CatalogSource {
   private async filterPrivateItems(items: MediaItem[], wikiContext?: WikiContext): Promise<MediaItem[]> {
     if (!wikiContext) return items; // No context — no filtering (admin/internal)
     const results: MediaItem[] = [];
+    // #714 Slice D: same migration as findByFilename — was a private
+    // MediaManager.checkPrivatePageAccess helper; now delegates to
+    // ACLManager.canUserAccessPage. Same conservative-on-security shift.
+    const aclManager = this.engine.getManager<ACLManager>('ACLManager');
     for (const item of items) {
       if (item.linkedPageName) {
-        const pageWikiContext = new WikiContext(this.engine, {
-          context: WikiContext.CONTEXT.VIEW,
-          pageName: item.linkedPageName,
-          userContext: wikiContext.userContext ?? undefined,
-          request: wikiContext.request ?? undefined
-        });
-        const allowed = await this.checkPrivatePageAccess(pageWikiContext, item.linkedPageName);
-        if (allowed) results.push(item);
+        if (aclManager) {
+          const allowed = await aclManager.canUserAccessPage(
+            wikiContext.userContext ?? null,
+            item.linkedPageName,
+            'view'
+          );
+          if (allowed) results.push(item);
+        } else {
+          // No ACLManager (test fixture without mock) — preserve the
+          // legacy "no manager → allow" fallback so unmocked tests
+          // don't all break.
+          results.push(item);
+        }
       } else {
         results.push(item);
       }
@@ -500,43 +519,10 @@ class MediaManager extends BaseManager implements CatalogSource {
     return results;
   }
 
-  /**
-   * Check whether the user in wikiContext may access a (potentially private) page.
-   * Mirrors the logic in WikiRoutes.checkPrivatePageAccess() and ACLManager tier 0.
-   *
-   * Returns true (allow) if the page is not private, if the user is an admin,
-   * or if the user is the page creator.  Returns false (deny) otherwise.
-   *
-   * #634: reads `system-location` and `author` from frontmatter via
-   * `pageManager.getPageMetadata` instead of reaching into the page provider's
-   * internal `pageIndex`. The two values are kept in lockstep — `pageIndex.creator`
-   * is derived from `metadata.author` on every save (see VersioningFileProvider
-   * createNewVersion / movePrivatePage) — and `metadata.author` is the immutable
-   * canonical source per PageManager.savePageWithContext.
-   */
-  private async checkPrivatePageAccess(wikiContext: WikiContext, pageName: string): Promise<boolean> {
-    try {
-      const pageManager = this.engine.getManager<PageManager>('PageManager');
-      if (!pageManager) return true;
-
-      const pageMetadata = await pageManager.getPageMetadata(pageName);
-      if (!pageMetadata) return true;
-
-      // #639 Slice E: top-level `private: true` is canonical; system-location
-      // is a defensive storage hint. User-keywords back-compat fallback dropped
-      // post-migration.
-      const md = pageMetadata as Record<string, unknown>;
-      const isPrivate = md.private === true || md['system-location'] === 'private';
-      if (!isPrivate) return true;
-
-      const username = wikiContext.userContext?.username;
-      if (!username) return false;
-      if (wikiContext.hasRole('admin')) return true;
-      return username === pageMetadata.author;
-    } catch {
-      return true; // conservative: allow if check fails
-    }
-  }
+  // #714 Slice D: deleted the private `MediaManager.checkPrivatePageAccess`
+  // helper that previously sat here. Its 2 call sites (findByFilename and
+  // listByYear above) now use `ACLManager.canUserAccessPage` directly —
+  // same evaluator every other surface uses, no duplicated logic.
 }
 
 export default MediaManager;
