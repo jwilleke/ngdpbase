@@ -2,6 +2,40 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-22-02
+
+- Agent: Claude Opus 4.7
+- Subject: Fixed `fairways-gen2-website` CI (broken for months by missing-script references) so its 8 stale Dependabot PRs can clear, then created a new `/check-addons` skill to survey the ngdpbase-adjacent surfaces that `/check-todos` and `/othersites` don't cover. Skill scope expanded to all 5 of the additions surfaced in its own initial report (local-checkout health for `fairways-base` + `ngdp-temp-builds`, per-addon Dependabot breakdown, workflow-action-pin freshness, cross-repo dep drift, CI-config sanity scan). Per `feedback_cross_repo_coordination`, this fairways-gen2-website work is logged here.
+- Current Issues: ngdpbase Dependabot alerts #117 + #118 + #119 (still open; PR #769 covers); fairways-gen2-website 8 open PRs + 13 open Dependabot alerts (4 high-severity); ngdpbase open issues unchanged.
+- Tests: skipped — session is pure docs/skill + cross-repo CI/workflow fix; no ngdpbase runtime code touched.
+- Semver: skip — no ngdpbase runtime change.
+- /othersites: not run.
+- **fairways-gen2-website**:
+  - Diagnosed all 8 open Dependabot PRs as failing CI for the same pre-existing reason: `.github/workflows/ci.yml` referenced `npm run test` / `npm run test:coverage` / `npm run build` + `npx tsc --noEmit`, none of which had matching `package.json` scripts (the repo has only `lint` + `lint:code` + `lint:md` + `prepare`; no test suite, no TypeScript build, no `dist/` output). Scaffolded workflow steps that were never wired up.
+  - Pushed `d71561c` directly to fairways-gen2-website master: trimmed `ci.yml` to one `lint` job (matrix node 18/20, runs `npm run lint`) + the existing `security-audit` job. Dropped the entire `build` job and the test-related steps. PR #19 (`ws` bump, opened *after* my fix) is already 4/4 green; the other 7 PRs (#7-#10, #16-#18) need Dependabot's poll cycle to rebase against the new master before their CI re-runs.
+  - `deploy.yml` has the same scaffolded-but-never-wired-up issue (`npm run test` + `npm run build`) but only fires on push to master (not on PRs), so it doesn't block PR CI. Flagged in the new `/check-addons` report for the next time someone touches that repo.
+- **New skill `/check-addons`** (`.claude/commands/check-addons.md`) plus initial `report-addons.md` snapshot at the ngdpbase repo root. Skill is **read-only by design** — surveys + reports, never merges PRs or pushes commits. Targets:
+  - `jwilleke/fairways-gen2-website` (separate repo, own tracker)
+  - `fairways-base` / `ngdpbase-veg` / `ngdp-temp-builds` (local checkouts of ngdpbase)
+- Skill structure: 7 numbered output sections — per-target (separate-repo + local-checkout shape), per-addon Dependabot breakdown (slices the main ngdpbase repo's alerts by `manifest_path`), workflow-file freshness (`actions/checkout` etc. pins across targets), cross-repo dep drift (`NGDPBASE_VERSION` ARG / `"ngdpbase":` npm dep), CI-config sanity scan (`npm run <script>` references cross-checked against `package.json`), notable findings, recommended next moves.
+- Geohazardwatch + the main ngdpbase tracker are **explicitly excluded** (already covered by `/check-todos`) — out-of-scope list in the skill body so the boundary is durable.
+- Findings the expanded survey surfaced (recorded in `report-addons.md`):
+  1. fairways-gen2-website workflow pins lag on `actions/checkout@v4` / `setup-node@v4` while ngdpbase is on v5. Not breaking; bump opportunistically.
+  2. `deploy.yml` in fairways-gen2-website still has the missing-script issue (`npm run test` / `build`).
+  3. 3 of 4 remaining ngdpbase Dependabot alerts are addon-scoped (`addons/forms` + `addons/calendar` + root); per-addon breakdown made the slice visible.
+  4. All four local ngdpbase checkouts (jimstest + fairways-base + ngdpbase-veg + ngdp-temp-builds) are healthy on their respective ports (3000 / 2121 / 3333 / 3001) — 3-4 commits behind master on doc-only lag from yesterday's session.
+- Cross-skill relationships clarified in the skill body: `/check-todos` (ngdpbase tracker + geohazardwatch) → `/check-addons` (separate-repo satellites + per-addon Dependabot + local-checkout health) → `/othersites` (validate-and-propagate). Three skills compose into a full ngdpbase-touching surface check.
+- ngdpbase commits (this session):
+  - `0fbb75f1` — `feat(skill): /check-addons + initial report-addons.md snapshot`
+  - `222bd9d6` — `feat(skill): expand /check-addons with 5 suggested additions`
+- Satellite commits (this session):
+  - `d71561c` on `jwilleke/fairways-gen2-website` master — `ci: trim workflow to scripts that actually exist`
+- Files Modified (ngdpbase):
+  - .claude/commands/check-addons.md (new + expanded)
+  - report-addons.md (new + regenerated)
+  - docs/project_log.md (this entry)
+- Operator-action carryover (not blocking): fairways-gen2-website's 7 stale Dependabot PRs (#7-#10, #16-#18) need Dependabot to rebase against the post-fix master before they can merge; #19 (`ws`) is already green and mergeable now. Resolution path: merge #19, wait ~5-10 min, merge #16-#18 as they go green, then resolve the #7-#10 `markdownlint-cli` conflict cluster (merge #10, close #7-#9 as Dependabot recreates consolidated).
+
 ## 2026-05-22-01
 
 - Agent: Claude Opus 4.7
