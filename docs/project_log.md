@@ -2,6 +2,51 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-22-09
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped **#774** (`SearchCriteria.dateField=created`) as **v3.36.0** — the unfinished half of #754 / #643. With #754 having backfilled `created` onto every page at v3.33.0 (99.3% from v1 manifest), search can finally filter on creation date. Closes a feature operator originally filed back in #643 (v3.22.0).
+- Current Issue: **#774** (in-review after v3.36.0 ships).
+- Release: **v3.36.0** — <https://github.com/jwilleke/ngdpbase/releases/tag/v3.36.0>
+- Tests: 5953/5953 unit on jimstest + all 3 satellites (was 5940; +13 new — 6 SearchPlugin + 5 LunrSearch + 2 ElasticsearchSearch). E2E skipped per /session-commit Step 3 — no UI-affecting paths touched.
+- Semver: **minor** (new public `dateField` parameter on SearchPlugin + SearchCriteria + AdvancedSearchOptions).
+- /othersites: satellite-only mode (jimstest validated on release commit per /semver Step 8a). fairways-base ✅ ngdpbase-veg ✅ ngdp-temp-builds ✅ — 5953/5953 each.
+- Perf baseline: regression candidates flagged but ratified as **cold-cache + memory-regression-to-mean** noise after operator confirmation. `/` 27ms→156ms tracks the same cold-cache pattern v3.32.0→v3.33.0 hit (25→135ms). Memory 1395→3135 MB is just the just-restarted baseline returning to the steady-state ~3000 MB seen at v3.32.0 (3134) and v3.34.0 (3035). Code change is pure search-criteria plumbing — no memory-heavy paths touched.
+- **Architecture** (mirrored on the existing `dateRange` plumbing):
+
+  ```text
+  SearchPlugin (parses dateField= markup param, validates enum, default 'modified')
+    → SearchOptions { dateRange, dateField }
+      → SearchManager.advancedSearch(options)
+        → LunrSearchProvider — filters result.metadata[dateField] against the range
+        → ElasticsearchSearchProvider — { range: { [dateField]: ... } } in the ES query
+  ```
+
+  Both providers' indexing paths now write `created` onto their internal doc shape (`LunrDocument.created`, `EsPageDocument.created`) so the filter reads from local data, no roundtrip to the page-metadata store.
+- **Behavior contract**:
+  - Default `dateField='modified'` — back-compat with #643 (v3.22.0). Pre-#774 callers see no change.
+  - `dateField='created'` — filters against the `created` field from #754 (v3.33.0 backfill).
+  - Missing-`created` rows are **non-match** under `dateField=created`. Every production page carries `created` post-#754; this only hits synthetic test data.
+  - ES requires a **one-time reindex** for the new `created: { type: 'date' }` mapping to apply to existing docs (documented; not auto-fired).
+- **Sample query that now works**:
+
+  ```text
+  [{Search since=2024-01-01 until=2024-12-31 dateField=created}]
+  ```
+
+  Returns pages **created** in 2024 instead of last-modified-in-2024 (the pre-#774 behavior).
+- **Stale comment fixed**: `SearchPlugin.ts:295` said "`dateField=created` is N/A" because pages had no creation date when #643 shipped. That's no longer true post-#754; updated to point at #774.
+- **What remains downstream** (filed as separate follow-ups per the small-iteration rule):
+  - Asset-picker Pages date control (#745 follow-on) — would let the picker filter by creation date too.
+  - Optional `created` sort key (`PageListOptions.sortBy='created'`) — adjacent to #700.
+  - Search-index uniformity (Lunr + ES consume `CatalogSource`) — bigger refactor, not on the critical path now that `dateField` works.
+- ngdpbase commits (this session):
+  - `3cba6d3d` — `feat(#774): SearchCriteria.dateField=created — light up creation-date search`
+  - `08d7dbd0` — `chore: release v3.36.0`
+- Files Modified (ngdpbase, code): src/plugins/SearchPlugin.ts (parameter + comment); src/managers/SearchManager.ts (AdvancedSearchOptions); src/providers/LunrSearchProvider.ts (indexing + filter); src/providers/ElasticsearchSearchProvider.ts (mapping + filter); src/plugins/\_\_tests\_\_/SearchPlugin.test.ts (+6 tests); src/providers/\_\_tests\_\_/LunrSearchProvider.test.ts (+5 tests); src/providers/\_\_tests\_\_/ElasticsearchSearchProvider.test.ts (+2 tests).
+- Files Modified (ngdpbase, release): package.json; config/app-default-config.json; CHANGELOG.md; docs/performance/baseline-v3.36.0-2026-05-22.md (new).
+- Operator-action carryover: (1) confirm #774 in review — try `[{Search since=2024-01-01 until=2024-12-31 dateField=created}]` on a wiki page; (2) deby's ES index needs a one-time reindex to populate `created` on already-indexed documents (until then ES-side `dateField=created` queries will return empty for pre-reindex docs).
+
 ## 2026-05-22-08
 
 - Agent: Claude Opus 4.7
