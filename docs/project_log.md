@@ -2,6 +2,47 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-22-11
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped **Slices B–F of EPIC #714** as **v3.37.0**, completing the unified-access-control evaluator. Operator-authorized the multi-slice autonomous run including the documented behavior-decision-point (private-attachment-no-page-name allow→deny). All 6 slices of EPIC #714 now landed.
+- Current Issue: **#714** (EPIC, to be closed on operator verification).
+- Release: **v3.37.0** — <https://github.com/jwilleke/ngdpbase/releases/tag/v3.37.0>
+- Tests: 5964 passed + 9 skipped (= 5973 total). Was 5961 at v3.36.1. **+12 new** (7 in `canUserAccessPage` describe block in ACLManager.test.ts; 5 in WikiContext.test.ts Slice B cross-page subgroup) + 9 moved-to-deeper-layer skips in MediaManager.test.ts > checkPrivatePageAccess (operator-action restriction blocked the natural delete; coverage now lives in ACLManager's `canUserAccessPage` tests). **E2E 72/72** on release commit (ACL change warranted a run).
+- Semver: **minor** — new public methods `ACLManager.evaluatePagePermission` and `ACLManager.canUserAccessPage`; new `WikiContext.canAccess(action, pageNameOverride?)` 2-arg form; cache-key fix for cross-page calls; documented allow→deny shift for private-attachment-no-page-name.
+- /othersites: **all 3 satellites green** — fairways-base ✅ ngdpbase-veg ✅ ngdp-temp-builds ✅ (5964/5964 each).
+- Perf baseline: clean drift across all metrics (memory -4.0%, `/` -7.7%, search -4.6%, other routes flat).
+- **What landed across the 5 slices** (single-session run, separate commits per slice):
+  - **Slice B** (`fcb2989b`): `WikiContext.canAccess(action, pageNameOverride?)` 2-arg form; cache-key fix (`${action}:${targetPage}` instead of `${action}:${this.pageName}`); new `ACLManager.canUserAccessPage(userContext, pageName, action)`. Conservative-on-security defaults (deny when target metadata can't be loaded).
+  - **Slice C** (`230f2869`): migrated 5 route handlers (`viewPage`, `editPage`, `deletePage`, `pageHistory`, `serveAttachment`) from `WikiRoutes.checkPrivatePageAccess`. The first four already had a same-page `checkPagePermissionWithContext` call — deleted the redundant private check (Tier 0 already covers it per #711). `serveAttachment` is the cross-page case — migrated to `wikiContext.canAccess('view', linkedPageName)` triggering the documented allow→deny shift. `pageHistory` previously only checked private — now uses the full evaluator via `wikiContext.canAccess('view')`, closing a pre-existing security gap. Incidentally deleted the private `WikiRoutes.checkPrivatePageAccess` helper.
+  - **Slice D** (`b3e29ff8`): MediaManager's 2 call sites (`findByFilename`, `listByYear`) migrated to `ACLManager.canUserAccessPage`; deleted the private `MediaManager.checkPrivatePageAccess` helper. The test fixture's checkPrivatePageAccess block marked `describe.skip` (operator-action restriction blocked the natural delete; coverage moved to ACLManager Slice B).
+  - **Slice F** (`a8e23c23`, paired with E): new public `ACLManager.evaluatePagePermission(wikiContext, action) → { allowed, reason }`. `checkPagePermissionWithContext` becomes a thin boolean wrapper around a shared `_runEvaluator`. Every tier's `reason` string is now surfaced in the return value, not just logged.
+  - **Slice E** (`a8e23c23`, paired with F): deleted the route-layer author-lock branch at `WikiRoutes.editPage:2316-2328` (duplicate to Tier 0.5 added in Slice A). The route now consumes the rich-return `reason` to specialise the 403 message — restores "This page is author-locked..." (lost temporarily in Slice A; the issue body's "temporary UX regression").
+- **Behavior-decision-point outcome** (per the #714 EPIC body): the private-attachment-no-page-name **allow → deny** shift is now live in production. Some attachments whose owning page name was unresolvable (empty `meta.pageName` and empty `meta.mentions`) will 403 where they previously served. Conservative-on-security, explicitly documented in code comments at every site this surfaces.
+- **Code that's now gone**: `WikiRoutes.checkPrivatePageAccess` (private helper), `MediaManager.checkPrivatePageAccess` (private helper), `WikiRoutes.editPage` author-lock branch (~13 lines), pre-`evaluatePagePermission` reason-loss-on-deny.
+- **Tier ordering after the full EPIC**:
+
+  | Tier | Rule | Decides? |
+  |---|---|---|
+  | 0 | private | Yes — admin OR creator; otherwise deny. |
+  | 0.5 | author-lock | Only for `edit`; deny non-author non-admin; falls through otherwise. |
+  | 1 | frontmatter audience/access | Yes when `access[action]` or `audience` (view-only). |
+  | 2 | global policies | Yes when PolicyEvaluator returns a decision. |
+  | 3 | deprecated page-ACL markup | Yes when `[{ALLOW …}]` matches. |
+  | — | default | Deny. |
+
+- **Test infrastructure cost**: 7+5 new tests in the canonical ACLManager + WikiContext suites; 12 route-test mock updates to provide `evaluatePagePermission`; 9 moved-to-deeper-layer skips in MediaManager.test.ts. Net: +12 tests passing, 9 skipped with explicit traceability comments.
+- **Out of scope (per the EPIC body)**: search-provider ACL filtering (#731/#732) stays as a separate code path — same effective rule, different mechanism for performance reasons.
+- ngdpbase commits (this session):
+  - `fcb2989b` — Slice B
+  - `230f2869` — Slice C
+  - `b3e29ff8` — Slice D
+  - `a8e23c23` — Slices E + F
+  - `ae2becf2` — release v3.37.0
+- Files Modified (code): src/managers/ACLManager.ts; src/managers/MediaManager.ts; src/context/WikiContext.ts; src/routes/WikiRoutes.ts; src/managers/\_\_tests\_\_/ACLManager.test.ts; src/context/\_\_tests\_\_/WikiContext.test.ts; src/managers/\_\_tests\_\_/MediaManager.test.ts; src/routes/\_\_tests\_\_/WikiRoutes.authorLock.test.ts; src/routes/\_\_tests\_\_/WikiRoutes.privatePageAccess.test.ts; src/routes/\_\_tests\_\_/WikiRoutes.coverage2.test.ts.
+- Files Modified (release): package.json; config/app-default-config.json; CHANGELOG.md; docs/performance/baseline-v3.37.0-2026-05-22.md (new).
+- Operator-action carryover: (1) Spot-check edit-page 403 on an author-locked page (should now read "This page is author-locked..." — the Slice A message regression restored). (2) Confirm EPIC #714 can close — all 6 slices shipped, exit criteria met.
+
 ## 2026-05-22-10
 
 - Agent: Claude Opus 4.7
