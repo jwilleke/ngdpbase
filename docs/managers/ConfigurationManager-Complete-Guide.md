@@ -126,14 +126,20 @@ Initializes the ConfigurationManager by loading and merging configuration files.
 
 ##### `getProperty(key, defaultValue = null)`
 
-Gets a configuration property value with optional default.
+Gets a configuration property value with optional default. String values may carry **env-var references** that are resolved at lookup time — see [#775 in `ConfigurationManager.md`](ConfigurationManager.md#env-var-references-in-config-values-775-v3380) for the two-form spec (`${VAR}` embedded paths vs `$VAR` whole-value secrets).
 
 **Parameters:**
 
 - `key` (string): Property key (e.g., 'ngdpbase.application-name')
 - `defaultValue` (any): Default value if property not found
 
-**Returns:** any - Property value or default
+**Returns:** any — Property value (with env-refs resolved) or default.
+
+**Throws:** when a bare-form `$VAR` config value references an unset env var — loud failure is preferred for secrets.
+
+##### `getMaskedProperty(key, defaultValue = null)`
+
+Like `getProperty()` but returns `"***"` for any value sourced from a bare-form `$VAR` env-var reference. Use on any log path that prints config values (boot banners, admin endpoints, debug dumps) so secrets never land in the logs. Plain literals and brace-form `${VAR}` path templates resolve unmasked. Added by [#775](https://github.com/jwilleke/ngdpbase/issues/775) in v3.38.0.
 
 ##### `setProperty(key, value)`
 
