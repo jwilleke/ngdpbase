@@ -2,6 +2,40 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-22-07
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped **Slice 4 of EPIC #755** (filed as **#772**) as **v3.34.0** — PageManager is now a `CatalogSource`, mirroring MediaManager (Slice 3 / #758) and AttachmentManager (Slice 5 / #759). With pages now in the catalog surface, all three major entity classes (pages + media + attachments) are queryable through `CatalogManager.getCreativeWork(<uuid>)`.
+- Current Issue: **#772** (in-review after v3.34.0 ships); resolves the Slice 4 row of EPIC #755 (the open `[ ]` checkbox in the EPIC body).
+- Release: **v3.34.0** — <https://github.com/jwilleke/ngdpbase/releases/tag/v3.34.0>
+- Tests: 5924/5924 unit on jimstest + all 3 satellites (was 5896; +28 new — 11 in `src/utils/__tests__/pageToArticle.test.ts` + 17 in `src/managers/__tests__/PageManager.catalogSource.test.ts`). E2E skipped per /session-commit Step 3 — no UI-affecting paths touched.
+- Semver: **minor** (new public `CatalogSource` surface on PageManager, new public `pageToArticle()` utility).
+- /othersites: satellite-only mode (jimstest validated on release commit per /semver Step 8a). fairways-base ✅ ngdpbase-veg ✅ ngdp-temp-builds ✅ — 5924/5924 each.
+- Perf baseline: **clean** — `/` route recovered from yesterday's cold-cache outlier (135ms → 26ms, -80.7%). Memory -1.1%. Other routes flat.
+- jimstest boot log shows the wire-up confirmation: `[CatalogManager] Registered source: pages (types: Article, schemaVersion: 1)` at server startup, alongside the existing `attachments` and `media` registrations.
+- **Design decisions ratified mid-session**:
+  - **Scope to "PageManager as CatalogSource only"**, not the wider Slice-4 wording from the EPIC. The EPIC row says "PageManager produces Article shape; **search index consumes it**; dateModified exposed uniformly" — but rewiring Lunr + Elasticsearch is a multi-session effort and the catalog surface delivers value standalone. Filed search-index-uniformity as the natural follow-up.
+  - **New `pageToArticle()` mapper rather than reusing `buildPageJsonLd()`** — they produce DIFFERENT shapes by design (Decision 11: AssetRecord-internal vs CreativeWork-render coexist). `buildPageJsonLd` carries `@context` plus `articleSection` and Person-object `author`/`editor`; the internal `Article` from `src/types/Schema.ts` uses `ngdp:category` and bare-string `author`/`editor`. Reusing one for the other would either lose `@context` from the JSON-LD output (regression) or pollute the internal record with render-only conventions. Two mappers, one job each.
+  - **Defer the WikiRoutes route refactor** that `buildPageJsonLd:5-10` explicitly anticipated. Wrapping the internal `Article` into the existing `PageJsonLd` render shape requires a separate `Article → PageJsonLd` adapter; without it, refactoring the `Accept: application/ld+json` branch drops `@context` and changes field names. Out of scope for this slice (the regression-safety acceptance criterion from #772 demanded the existing output be preserved). Will land alongside any follow-up that needs the unified route path.
+- **What `PageManager` looks like now** (`src/managers/PageManager.ts`):
+  - `class PageManager extends BaseManager implements CatalogSource`
+  - `sourceId='pages'`, `types=['Article']`, `currentSchemaVersion=1`
+  - `get(uuid)` → `Article` via `provider.getPageByUUID()` then `pageToArticle()`
+  - `list(query)` with text / keywords / dateRange / limit filters (no cursor yet — initial slice)
+  - `rebuild()` delegates to `provider.refreshPageList()`
+  - `toCreativeWork(pageName, metadata, opts?)` public for callers that already have the pair without a UUID lookup
+  - `PageManager.initialize()` registers itself with `CatalogManager` after the provider loads — same `try / warn-only` pattern as MediaManager / AttachmentManager.
+- **Spot-check on running server**:
+  - `curl http://localhost:3000/view/Welcome` → HTTP 200 (HTML unchanged)
+  - `curl -H "Accept: application/ld+json" http://localhost:3000/view/Welcome` → `{"@context":"https://schema.org","@type":"Article","@id":"/view/Welcome",...}` (still served via `buildPageJsonLd` path, regression-safe)
+- **EPIC #755 status**: 5 of 6 slices done (Slices 1, 2, 3, 5, **4**). The remaining surface is Slice 6 — JSON-LD render + content-negotiation + SKOS endpoint — which is **already largely done** in EPIC #760 (Slice 6a #765, Slice 6b #766, Slice 6c #767). The two EPICs converge once the route refactor (deferred above) lands the final unification.
+- ngdpbase commits (this session):
+  - `83f69738` — `feat(#772): Slice 4 of #755 — PageManager as CatalogSource (Article)`
+  - `51898cec` — `chore: release v3.34.0`
+- Files Modified (ngdpbase, code): src/managers/PageManager.ts; src/utils/pageToArticle.ts (new); src/utils/\_\_tests\_\_/pageToArticle.test.ts (new); src/managers/\_\_tests\_\_/PageManager.catalogSource.test.ts (new).
+- Files Modified (ngdpbase, release): package.json; config/app-default-config.json; CHANGELOG.md; docs/performance/baseline-v3.34.0-2026-05-22.md (new).
+- Operator-action carryover: confirm #772 in review (CatalogManager registration visible in jimstest boot log; `/view/<slug>` Accept-negotiation behavior unchanged) and close once verified.
+
 ## 2026-05-22-06
 
 - Agent: Claude Opus 4.7
