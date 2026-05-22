@@ -226,6 +226,129 @@ describe('ACLManager', () => {
     });
   });
 
+  describe('Tier 0.5 — author-lock (#714 Slice A)', () => {
+    // Author-lock denies non-author / non-admin EDIT attempts. It does NOT
+    // grant access — when the user IS author or admin, Tier 0.5 falls
+    // through to Tier 1+ so the normal evaluator decides. Tier 0 (private)
+    // takes precedence — if private===true, Tier 0.5 is never reached.
+    //
+    // Mirrors the route-layer branch at `WikiRoutes.editPage:2338`; the
+    // route branch stays in place during Slice A (no-removal yet) — both
+    // paths deny independently. Removed in Slice E once the rich-return
+    // evaluator (Slice F) lets routes specialise the 403 on
+    // `reason === 'author_lock_deny'`.
+
+    test('edit + author-lock + non-author non-admin → deny (Tier 0.5 fires)', async () => {
+      const ctx = makeWikiContext({
+        pageMetadata: {
+          title: 'Test', uuid: 'x', lastModified: '',
+          'author-lock': true, author: 'alice',
+          // Tier 1 would allow bob to edit via the per-action access map —
+          // proves Tier 0.5 denies first, before Tier 1 ever runs.
+          access: { edit: ['bob'] }
+        },
+        userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true }
+      });
+      expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(false);
+    });
+
+    test('edit + author-lock + page-author → falls through (Tier 1 access.edit decides allow)', async () => {
+      const ctx = makeWikiContext({
+        pageMetadata: {
+          title: 'Test', uuid: 'x', lastModified: '',
+          'author-lock': true, author: 'alice',
+          access: { edit: ['alice'] }
+        },
+        userContext: { username: 'alice', roles: ['editor'], isAuthenticated: true }
+      });
+      // alice IS the author — Tier 0.5 doesn't deny her; Tier 1 access.edit
+      // matches; allowed.
+      expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
+    });
+
+    test('edit + author-lock + admin → falls through (Tier 1 access.edit decides allow)', async () => {
+      const ctx = makeWikiContext({
+        pageMetadata: {
+          title: 'Test', uuid: 'x', lastModified: '',
+          'author-lock': true, author: 'alice',
+          access: { edit: ['admin'] }
+        },
+        userContext: { username: 'bob', roles: ['admin'], isAuthenticated: true }
+      });
+      expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
+    });
+
+    test('view + author-lock + non-author non-admin → Tier 0.5 does NOT fire (action-specific gate)', async () => {
+      const ctx = makeWikiContext({
+        pageMetadata: {
+          title: 'Test', uuid: 'x', lastModified: '',
+          'author-lock': true, author: 'alice',
+          // For view, the legacy audience field controls Tier 1 access.
+          audience: ['bob']
+        },
+        userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true }
+      });
+      // Author-lock is a write constraint, not a read constraint. View
+      // falls straight through to Tier 1; audience matches → allow.
+      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
+    });
+
+    test('edit + private:true + author-lock + non-creator → Tier 0 wins (deny by private; Tier 0.5 never consulted)', async () => {
+      const ctx = makeWikiContext({
+        pageMetadata: {
+          title: 'Test', uuid: 'x', lastModified: '',
+          private: true,
+          'author-lock': true, author: 'alice'
+        },
+        userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true }
+      });
+      // Tier 0 denies (private + not creator + not admin). Tier 0.5 would
+      // also deny here, but the test fixture proves the precedence: Tier 0
+      // fires first and returns before Tier 0.5 sees the request.
+      expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(false);
+    });
+
+    test('edit + private:true + author-lock + page-creator → Tier 0 wins (allow by private; Tier 0.5 never consulted)', async () => {
+      const ctx = makeWikiContext({
+        pageMetadata: {
+          title: 'Test', uuid: 'x', lastModified: '',
+          private: true,
+          'author-lock': true, author: 'alice'
+        },
+        userContext: { username: 'alice', roles: ['editor'], isAuthenticated: true }
+      });
+      // The interesting precedence case: private grants alice access; we
+      // don't want Tier 0.5 to then deny her because she "isn't admin".
+      // Tier 0 returns early → allow.
+      expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
+    });
+
+    test('edit + author-lock absent → Tier 0.5 does NOT fire (falls through)', async () => {
+      const ctx = makeWikiContext({
+        pageMetadata: {
+          title: 'Test', uuid: 'x', lastModified: '',
+          author: 'alice',
+          access: { edit: ['editor'] }
+        },
+        userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true }
+      });
+      // No author-lock field → Tier 0.5 is a no-op; Tier 1 access.edit matches → allow.
+      expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
+    });
+
+    test('edit + author-lock:false (explicit) → Tier 0.5 does NOT fire', async () => {
+      const ctx = makeWikiContext({
+        pageMetadata: {
+          title: 'Test', uuid: 'x', lastModified: '',
+          'author-lock': false, author: 'alice',
+          access: { edit: ['editor'] }
+        },
+        userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true }
+      });
+      expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
+    });
+  });
+
   describe('Tier 1.5 — front matter access control', () => {
     test('audience: [editor, admin] + editor role → allow', async () => {
       const ctx = makeWikiContext({

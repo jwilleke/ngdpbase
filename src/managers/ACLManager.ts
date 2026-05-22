@@ -355,6 +355,46 @@ class ACLManager extends BaseManager {
       return allowed;
     }
 
+    // Tier 0.5: author-lock — write-time constraint on `edit` actions only
+    // (#714 Slice A — first slice of the unified-access-control epic).
+    //
+    // Semantics (mirrors the route-layer branch at `WikiRoutes.editPage`):
+    //   - Only applies when `action === 'edit'` (author-lock is a write
+    //     constraint, not a read constraint).
+    //   - Tier 0 (private) takes precedence — if we reached Tier 0.5, the
+    //     page is NOT private. The route-layer's explicit
+    //     `private !== true` guard is implicit here through tier ordering.
+    //   - Author-lock DENIES non-author, non-admin edit attempts. It does
+    //     NOT grant access — if the user IS author or admin, we fall
+    //     through to Tier 1+ so the normal evaluator decides.
+    //
+    // During #714 Slice A we DO NOT remove the route-layer branch
+    // (`WikiRoutes.ts:2338`); both paths can deny independently. They
+    // produce different error messages — the route-layer branch's
+    // "This page is author-locked..." vs the more general "no permission
+    // to edit" rendered by callers consuming `checkPagePermissionWithContext`.
+    // Slice E removes the route-layer branch once `evaluatePagePermission`
+    // (Slice F's rich-return form) lets the route specialise the 403
+    // message on `reason === 'author_lock_deny'`.
+    if (action.toLowerCase() === 'edit'
+        && wikiContext.pageMetadata?.['author-lock'] === true) {
+      const isAdmin = (userContext?.roles ?? []).includes('admin');
+      const isAuthor = (userContext?.username ?? '') === (wikiContext.pageMetadata?.author ?? '');
+      if (!isAdmin && !isAuthor) {
+        this.logAccessDecision({
+          user: userContext,
+          pageName,
+          action,
+          allowed: false,
+          reason: 'author_lock_deny',
+          context: { wikiContext: wikiContext.context }
+        });
+        return false;
+      }
+      // fall through — author-lock doesn't grant edit, it only denies.
+      // Tier 1+ decides whether this author/admin is actually permitted.
+    }
+
     // Tier 1: Front matter audience / access check — page-level overrides global policies
     if (wikiContext.pageMetadata) {
       const fm = this.checkFrontmatterAccess(wikiContext.pageMetadata, userContext, action);
