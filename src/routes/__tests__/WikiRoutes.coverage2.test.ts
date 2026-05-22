@@ -400,6 +400,11 @@ describe('WikiRoutes — coverage batch 2', () => {
       const res = await request(app).get('/edit/TestPage');
 
       expect(res.status).toBe(403);
+      // The specific "author-locked..." message string can't be asserted
+      // at this supertest level because the test app stubs the template
+      // renderer to `<html>stub</html>`. Coverage for the
+      // reason→message routing lives at the unit-test layer (route code
+      // is a 2-line if/else on `decision.reason`).
     });
 
     test('returns 403 when new page requires page-create permission and user lacks it', async () => {
