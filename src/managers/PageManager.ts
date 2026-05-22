@@ -6,7 +6,17 @@ import logger from '../utils/logger.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import { PageProvider, ProviderInfo, RecentChangesOptions, RecentChangeEntry, GetPagesByCreatorOptions, PagesScanOptions } from '../types/Provider.js';
 import { WikiPage, PageFrontmatter } from '../types/Page.js';
+import type {
+  CatalogSource,
+  CatalogQuery,
+  CatalogPage,
+  CreativeWork,
+  RebuildOpts,
+  SchemaType
+} from '../types/Schema.js';
+import { pageToArticle } from '../utils/pageToArticle.js';
 import type ConfigurationManager from './ConfigurationManager.js';
+import type CatalogManager from './CatalogManager.js';
 import type ValidationManager from './ValidationManager.js';
 import type NotificationManager from './NotificationManager.js';
 
@@ -57,7 +67,27 @@ interface ProviderConstructor {
  * const page = await pageManager.getPage('Main');
  * console.log(page.content);
  */
-class PageManager extends BaseManager {
+class PageManager extends BaseManager implements CatalogSource {
+  /** CatalogSource identifier (Slice 4 of #755 / #772). */
+  readonly sourceId = 'pages';
+
+  /**
+   * Subtypes this source produces. Pages always map to Article (Decision 1).
+   * Very-sparse pre-#754 pages still produce Article — `dateCreated` is the
+   * only Article-distinctive field and it's now mandatory after the
+   * #754 backfill (v3.33.0).
+   */
+  readonly types: readonly SchemaType[] = ['Article'];
+
+  /**
+   * On-disk schema version for the page-frontmatter shape (Decision 6).
+   * Bump when the persisted Article-relevant fields on a page change. v1 is
+   * the post-#754 (v3.33.0) shape, which adds the required `created`
+   * timestamp to every page.
+   */
+  static readonly CURRENT_SCHEMA_VERSION = 1;
+  readonly currentSchemaVersion = PageManager.CURRENT_SCHEMA_VERSION;
+
   private provider: PageProvider | null = null;
   private providerClass?: string;
 
@@ -131,6 +161,119 @@ class PageManager extends BaseManager {
       logger.error(`📄 Failed to initialize page provider: ${this.providerClass}`, error);
       throw error;
     }
+
+    // Slice 4 of #755 (#772) — register as a CatalogSource so CatalogManager
+    // can fan out cross-source queries. Mirrors MediaManager (Slice 3 / #758)
+    // and AttachmentManager (Slice 5 / #759). CatalogManager is initialised
+    // before PageManager in WikiEngine bootstrap.
+    const catalog = this.engine.getManager<CatalogManager>('CatalogManager');
+    if (catalog) {
+      catalog.registerSource(this);
+    } else {
+      logger.warn('📄 CatalogManager not available at initialize — skipping CatalogSource registration');
+    }
+  }
+
+  // ===========================================================================
+  // CatalogSource interface (Slice 4 of #755 / #772)
+  // ===========================================================================
+
+  /**
+   * Convert a single page (frontmatter + name) to its schema.org `Article`
+   * record. Public so view-page / API consumers can build the same shape
+   * without rerouting through `CatalogManager`.
+   *
+   * The render mapper for the `<script type="application/ld+json">` block on
+   * `view.ejs` is a separate utility (`src/utils/buildPageJsonLd.ts`) — it
+   * adds `@context` and a couple of JSON-LD-render conventions on top of this
+   * internal record. Per `docs/schemas.md` Decision 11.
+   */
+  toCreativeWork(
+    pageName: string,
+    metadata: PageFrontmatter | null | undefined,
+    options?: { baseUrl?: string; autoTaggedKeywords?: string[] }
+  ): CreativeWork {
+    return pageToArticle(pageName, metadata, options);
+  }
+
+  /**
+   * CatalogSource.get — fetch a single page by UUID and return its `Article`.
+   *
+   * Returns null for unknown UUIDs. ACL filtering is **not** applied here —
+   * callers needing the full WikiContext path should go through `getPage()`.
+   * (Same convention as `MediaManager.get` / `AttachmentManager.get`.)
+   */
+  async get(identifier: string): Promise<CreativeWork | null> {
+    if (!this.provider) return null;
+    const page = await this.provider.getPageByUUID(identifier);
+    if (!page) return null;
+    return pageToArticle(page.title, page.metadata);
+  }
+
+  /**
+   * CatalogSource.list — paginated list of CreativeWorks across all pages.
+   *
+   * Initial implementation: pulls `getAllPageInfo()`, applies text / keyword
+   * / type / dateRange filters in-process, returns up to `query.limit`
+   * items. Cursor pagination is not implemented yet — the existing
+   * search-provider path (Lunr / ES) is the production query surface;
+   * this method exists so cross-source CatalogManager fan-out works.
+   */
+  async list(query: CatalogQuery): Promise<CatalogPage> {
+    if (!this.provider) return { items: [], total: 0 };
+
+    // Type filter: PageManager only produces Article. If the caller asked
+    // for a non-Article type, short-circuit.
+    if (query.types && query.types.length > 0 && !query.types.includes('Article')) {
+      return { items: [], total: 0 };
+    }
+
+    const allInfo = await this.provider.getAllPageInfo();
+
+    // Convert to Articles upfront so filters can match against the
+    // schema-shaped fields (keywords, dateCreated, etc.).
+    let articles = allInfo.map(info => pageToArticle(info.title, info.metadata));
+
+    if (query.text) {
+      const lower = query.text.toLowerCase();
+      articles = articles.filter(a =>
+        a.name.toLowerCase().includes(lower) ||
+        (a.description ?? '').toLowerCase().includes(lower) ||
+        (a.keywords ?? []).some(k => k.toLowerCase().includes(lower))
+      );
+    }
+
+    if (query.keywords && query.keywords.length > 0) {
+      const wanted = new Set(query.keywords);
+      articles = articles.filter(a => (a.keywords ?? []).some(k => wanted.has(k)));
+    }
+
+    if (query.dateRange) {
+      const { from, to } = query.dateRange;
+      articles = articles.filter(a => {
+        const dc = a.dateCreated;
+        if (!dc) return false;
+        if (from && dc < from) return false;
+        if (to && dc > to) return false;
+        return true;
+      });
+    }
+
+    const total = articles.length;
+    const limit = typeof query.limit === 'number' && query.limit > 0 ? query.limit : articles.length;
+    const items: CreativeWork[] = articles.slice(0, limit);
+    return { items, total };
+  }
+
+  /**
+   * CatalogSource.rebuild — re-scan storage and rebuild the page-index. Wraps
+   * `provider.refreshPageList()`. The `force` option is accepted for
+   * `RebuildOpts` compatibility but doesn't change behavior — the underlying
+   * provider always does a full rescan.
+   */
+  async rebuild(_opts?: RebuildOpts): Promise<void> {
+    if (!this.provider) return;
+    await this.provider.refreshPageList();
   }
 
   /**
