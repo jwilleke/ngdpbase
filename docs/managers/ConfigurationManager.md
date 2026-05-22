@@ -112,6 +112,8 @@ For Docker/Traefik/Kubernetes deployments:
 | `NGDPBASE_HOST` | Overrides `ngdpbase.server.host` |
 | `NGDPBASE_PORT` | Overrides `ngdpbase.server.port` |
 
+> **Future:** [#775](https://github.com/jwilleke/ngdpbase/issues/775) tracks adding **env-var-ref resolution inside `getProperty()`** so any string config value of the form `"$VARNAME"` resolves to `process.env.VARNAME` at lookup time. Lets secrets (API keys, SMTP passwords) live in `.env` instead of committed config files. Same `.env` workflow already used for `FAST_STORAGE` / `SLOW_STORAGE` / `PORT`. See the issue for the resolution rules (whole-value refs only in v1; `"$$literal"` escape; strict throw on unset).
+
 ## Admin Interface
 
 Access `/admin/configuration` with admin privileges to:

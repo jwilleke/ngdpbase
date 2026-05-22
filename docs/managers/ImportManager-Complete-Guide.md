@@ -144,3 +144,23 @@ importManager.registerConverter(new MyFormatConverter());
 - `src/converters/HtmlConverter.ts` — HTML implementation
 - `docs/managers/ExportManager.md` — companion export functionality
 - Admin UI: `/admin/import`
+
+---
+
+## Sibling: FeedManager ([#685](https://github.com/jwilleke/ngdpbase/issues/685))
+
+`ImportManager` (this doc) handles **operator-triggered one-shot** imports — file upload at `/admin/import`, stateless converter registry, output is wiki pages. Its sibling **FeedManager** (filed, not yet implemented) will handle **scheduled live feeds** — URL-driven, cron-managed, state-bearing (last-fetched + dedup + change-detection), output is **catalog records** consumed by `[DataFeed]` / `[Marquee]` plugins rather than materialised as pages.
+
+Same problem family ("get external structured data into the wiki"), different lifecycle:
+
+| | ImportManager (shipped) | FeedManager ([#685](https://github.com/jwilleke/ngdpbase/issues/685)) |
+|---|---|---|
+| Trigger | Operator at `/admin/import` | Cron / scheduler |
+| Input | File upload (JSPWiki, HTML, MD pending [#467](https://github.com/jwilleke/ngdpbase/issues/467)) | URL feed (REST, RSS, CSV, GeoJSON, WFS, XLS) |
+| Output | Wiki pages | Catalog records (queryable via `CatalogSource`) |
+| State | Stateless beyond converter registry | Last-fetched, dedup, stale-feed warnings |
+| Consumer | The created page **is** the product | `[DataFeed source=…]` + `[Marquee source=…]` plugins |
+| Materialise as page? | Always | Only when operator explicitly curates a subject page |
+| Packaging | Manager (in-engine) | **Addon** (long-running, disable-able) |
+
+They share normalization primitives (`kind` codes from [#728](https://github.com/jwilleke/ngdpbase/issues/728), page-creation utilities) for the rare materialize-as-page case — but **do not share codepaths**. See [#685](https://github.com/jwilleke/ngdpbase/issues/685) for the full design.
