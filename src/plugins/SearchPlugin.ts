@@ -24,7 +24,11 @@
  * - user-keywords: Filter by user keywords (OR logic for multiple values)
  * - author: Filter by page author (original creator, from metadata.author); use '$currentUser' for the logged-in user
  * - editor: Filter by last editor (from metadata.editor); use '$currentUser' for the logged-in user
- * - since/until/date: #643 — filter by last-modified date (YYYY-MM-DD; `date` = whole-day)
+ * - since/until/date: #643 — filter by date (YYYY-MM-DD; `date` = whole-day).
+ *   Field selected by `dateField` (defaults to `modified`).
+ * - dateField: #774 — `modified` (default) or `created`. Filters `since/until/date`
+ *   against `metadata.lastModified` or `metadata.created` respectively.
+ *   `created` is reliable since #754 backfilled all pages at v3.33.0.
  * - max: Maximum number of results (default: 50, 0 = unlimited)
  * - pageSize: Results per page — enables pagination (default: 0 = disabled)
  * - page: Current page number (default: 1, also read from ?page= query string)
@@ -86,10 +90,13 @@ interface SearchOptions {
   userKeywords?: string[];
   author?: string;
   editor?: string;
-  /** #643: last-modified date range (inclusive, whole-day). Maps to the
-   *  existing SearchCriteria.dateRange honoured by ES; LunrSearchProvider
-   *  filters result.metadata.lastModified. */
+  /** #643 / #774: date range (inclusive, whole-day). Field selected by
+   *  `dateField` below — `'modified'` (default, the v3.22.0 behavior) filters
+   *  `metadata.lastModified`; `'created'` (#774, requires #754) filters
+   *  `metadata.created`. */
   dateRange?: { from?: string; to?: string };
+  /** #774: which date field `dateRange` applies to. Default `'modified'`. */
+  dateField?: 'modified' | 'created';
 }
 
 interface SearchManager {
@@ -290,9 +297,11 @@ const SearchPlugin: SimplePlugin = {
       const maxResults = parseMaxParam(opts.max, 50);
       const format = String(opts.format || 'table').toLowerCase();
 
-      // #643: last-modified date filter. `date` = whole-day match; otherwise
-      // since (lower bound) / until (upper bound). Filters by last-modified
-      // (pages do not store a creation date; `dateField=created` is N/A).
+      // #643: date filter. `date` = whole-day match; otherwise
+      // since (lower bound) / until (upper bound).
+      // #774: `dateField` selects which field to filter (modified | created).
+      // Pages all carry `created` since #754 (v3.33.0) — the previous
+      // "dateField=created is N/A" comment is no longer true.
       const dateRe = /^\d{4}-\d{2}-\d{2}$/;
       const dateWhole = opts.date ? String(opts.date) : '';
       const dateFrom = dateWhole || (opts.since ? String(opts.since) : '');
@@ -300,6 +309,11 @@ const SearchPlugin: SimplePlugin = {
       if ((dateFrom && !dateRe.test(dateFrom)) || (dateTo && !dateRe.test(dateTo))) {
         return '<p class="error">Invalid date parameter: use YYYY-MM-DD (since / until / date)</p>';
       }
+      const dateFieldRaw = opts.dateField ? String(opts.dateField).toLowerCase() : 'modified';
+      if (dateFieldRaw !== 'modified' && dateFieldRaw !== 'created') {
+        return '<p class="error">Invalid dateField parameter: use `modified` or `created`</p>';
+      }
+      const dateField = dateFieldRaw;
 
       // Validate format parameter
       const validFormats = ['table', 'count', 'titles', 'list'];
@@ -327,11 +341,14 @@ const SearchPlugin: SimplePlugin = {
       if (author) searchOptions.author = author;
       if (editor) searchOptions.editor = editor;
 
-      // #643: add the last-modified date range if specified
+      // #643: add the date range if specified. #774: also propagate the
+      // selected dateField (default 'modified' — pre-#774 callers see no
+      // behavior change).
       if (dateFrom || dateTo) {
         searchOptions.dateRange = {};
         if (dateFrom) searchOptions.dateRange.from = dateFrom;
         if (dateTo) searchOptions.dateRange.to = dateTo;
+        searchOptions.dateField = dateField;
       }
 
       // Execute search

@@ -41,6 +41,10 @@ interface AdvancedSearchOptions {
   searchIn?: string[];
   maxResults?: number;
   offset?: number;
+  /** #643 / #774: date range (inclusive, whole-day). */
+  dateRange?: { from?: string; to?: string };
+  /** #774: which date field `dateRange` filters on. Default `'modified'`. */
+  dateField?: 'modified' | 'created';
   [key: string]: unknown;
 }
 

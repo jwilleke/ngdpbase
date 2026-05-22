@@ -307,7 +307,7 @@ describe('advancedSearch()', () => {
     expect(catFilter).toEqual({ terms: { systemCategory: ['addon'] } });
   });
 
-  test('adds range filter for dateRange', async () => {
+  test('adds range filter for dateRange (defaults to lastModified — back-compat #643)', async () => {
     const engine = makeEngine();
     const provider = new ElasticsearchSearchProvider(engine);
     await provider.initialize();
@@ -317,6 +317,41 @@ describe('advancedSearch()', () => {
     const { query } = mockClientInstance.search.mock.calls[0][0];
     const rangeFilter = query.bool.filter.find(f => f.range?.lastModified);
     expect(rangeFilter.range.lastModified).toEqual({ gte: '2024-01-01', lte: '2024-12-31' });
+  });
+
+  test('#774 — dateField=created switches the range filter to the `created` field', async () => {
+    const engine = makeEngine();
+    const provider = new ElasticsearchSearchProvider(engine);
+    await provider.initialize();
+
+    await provider.advancedSearch({
+      dateRange: { from: '2024-01-01', to: '2024-12-31' },
+      dateField: 'created'
+    });
+
+    const { query } = mockClientInstance.search.mock.calls[0][0];
+    const rangeFilter = query.bool.filter.find(f => f.range?.created);
+    expect(rangeFilter.range.created).toEqual({ gte: '2024-01-01', lte: '2024-12-31' });
+    // And the lastModified range should NOT be present
+    const lmFilter = query.bool.filter.find(f => f.range?.lastModified);
+    expect(lmFilter).toBeUndefined();
+  });
+
+  test('#774 — dateField=modified is the explicit equivalent of the default', async () => {
+    const engine = makeEngine();
+    const provider = new ElasticsearchSearchProvider(engine);
+    await provider.initialize();
+
+    await provider.advancedSearch({
+      dateRange: { from: '2024-01-01', to: '2024-12-31' },
+      dateField: 'modified'
+    });
+
+    const { query } = mockClientInstance.search.mock.calls[0][0];
+    const rangeFilter = query.bool.filter.find(f => f.range?.lastModified);
+    expect(rangeFilter.range.lastModified).toEqual({ gte: '2024-01-01', lte: '2024-12-31' });
+    const createdFilter = query.bool.filter.find(f => f.range?.created);
+    expect(createdFilter).toBeUndefined();
   });
 
   test('private page filter allows audience members', async () => {

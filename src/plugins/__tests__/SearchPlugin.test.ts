@@ -453,3 +453,66 @@ describe('SearchPlugin — date filter (#643)', () => {
     expect(mockSearchManager.advancedSearch).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// #774 — dateField parameter (modified | created)
+// ---------------------------------------------------------------------------
+
+describe('SearchPlugin — dateField parameter (#774)', () => {
+  test('dateField is `modified` by default when only since/until are given', async () => {
+    const { context, mockSearchManager } = makeContext({ advancedSearchResults: [] });
+
+    await SearchPlugin.execute(context, { since: '2026-04-01' });
+
+    const call = mockSearchManager.advancedSearch.mock.calls[0][0];
+    expect(call.dateField).toBe('modified');
+  });
+
+  test('dateField=created propagates through to advancedSearch', async () => {
+    const { context, mockSearchManager } = makeContext({ advancedSearchResults: [] });
+
+    await SearchPlugin.execute(context, { since: '2026-04-01', dateField: 'created' });
+
+    const call = mockSearchManager.advancedSearch.mock.calls[0][0];
+    expect(call.dateField).toBe('created');
+    expect(call.dateRange).toEqual({ from: '2026-04-01' });
+  });
+
+  test('dateField=modified is the explicit equivalent of the default', async () => {
+    const { context, mockSearchManager } = makeContext({ advancedSearchResults: [] });
+
+    await SearchPlugin.execute(context, { since: '2026-04-01', dateField: 'modified' });
+
+    const call = mockSearchManager.advancedSearch.mock.calls[0][0];
+    expect(call.dateField).toBe('modified');
+  });
+
+  test('dateField is case-insensitive (Created / CREATED both accepted)', async () => {
+    const { context, mockSearchManager } = makeContext({ advancedSearchResults: [] });
+
+    await SearchPlugin.execute(context, { since: '2026-04-01', dateField: 'Created' });
+
+    const call = mockSearchManager.advancedSearch.mock.calls[0][0];
+    expect(call.dateField).toBe('created');
+  });
+
+  test('invalid dateField value returns an error and does not search', async () => {
+    const { context, mockSearchManager } = makeContext({ advancedSearchResults: [] });
+
+    const html = await SearchPlugin.execute(context, { since: '2026-04-01', dateField: 'bogus' });
+
+    expect(html).toContain('Invalid dateField parameter');
+    expect(mockSearchManager.advancedSearch).not.toHaveBeenCalled();
+  });
+
+  test('dateField is omitted from searchOptions when no date param is given (defaults flow downstream)', async () => {
+    // When no date range is set, the plugin shouldn't add a dateField key
+    // either — keeps the searchOptions clean for the basic-search path.
+    const { context, mockSearchManager } = makeContext({ searchResults: [] });
+
+    await SearchPlugin.execute(context, { query: 'hello' });
+
+    expect(mockSearchManager.search).toHaveBeenCalled();
+    expect(mockSearchManager.advancedSearch).not.toHaveBeenCalled();
+  });
+});

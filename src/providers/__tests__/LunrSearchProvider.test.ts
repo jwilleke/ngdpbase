@@ -376,3 +376,95 @@ describe('LunrSearchProvider.rebuild — #724 ghost reconciliation', () => {
     expect(Object.keys(prov['documents'])).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// #774 — dateField=created filter
+// ---------------------------------------------------------------------------
+
+function makeDateDoc(id, created, lastModified) {
+  return {
+    id,
+    title: id,
+    content: `Content for ${id}`,
+    body: `Content for ${id}`,
+    systemCategory: 'general',
+    userKeywords: '',
+    tags: '',
+    keywords: '',
+    lastModified,
+    created,
+    uuid: `uuid-${id}`,
+    author: undefined,
+    editor: undefined,
+    isPrivate: undefined,
+    creator: undefined
+  };
+}
+
+describe('LunrSearchProvider.advancedSearch — dateField=created (#774)', () => {
+  let prov;
+  beforeEach(() => {
+    prov = new LunrSearchProvider(makeEngine());
+    // Three pages — A created in Jan, B in June, C in Dec; lastModified
+    // intentionally inverted so a `dateField=created` filter must read
+    // `created` (not lastModified) to get the right answer.
+    prov['documents'] = {
+      A: makeDateDoc('A', '2024-01-15T00:00:00.000Z', '2025-12-15T00:00:00.000Z'),
+      B: makeDateDoc('B', '2024-06-15T00:00:00.000Z', '2025-06-15T00:00:00.000Z'),
+      C: makeDateDoc('C', '2024-12-15T00:00:00.000Z', '2025-01-15T00:00:00.000Z')
+    };
+    prov['config'] = {
+      indexDir: '/tmp', stemming: false,
+      boost: { title: 1, systemCategory: 1, userKeywords: 1, tags: 1, keywords: 1 },
+      maxResults: 100, snippetLength: 200
+    };
+  });
+
+  test('default dateField (modified) filters lastModified — back-compat with #643', async () => {
+    const results = await prov.advancedSearch({
+      dateRange: { from: '2025-05-01', to: '2025-07-01' }
+    });
+    // 2025-06-15 (B) is the only lastModified in that window.
+    expect(results.map(r => r.name)).toEqual(['B']);
+  });
+
+  test('explicit dateField=modified is equivalent to the default', async () => {
+    const results = await prov.advancedSearch({
+      dateRange: { from: '2025-05-01', to: '2025-07-01' },
+      dateField: 'modified'
+    });
+    expect(results.map(r => r.name)).toEqual(['B']);
+  });
+
+  test('dateField=created filters on metadata.created instead of lastModified', async () => {
+    const results = await prov.advancedSearch({
+      dateRange: { from: '2024-05-01', to: '2024-07-01' },
+      dateField: 'created'
+    });
+    // 2024-06-15 (B) is the only created in that window. (Its lastModified
+    // is 2025-06-15, which would NOT pass an identical range — proves the
+    // filter is reading `created` and not lastModified.)
+    expect(results.map(r => r.name)).toEqual(['B']);
+  });
+
+  test('dateField=created returns no matches when no document falls in the range', async () => {
+    const results = await prov.advancedSearch({
+      dateRange: { from: '2023-01-01', to: '2023-12-31' },
+      dateField: 'created'
+    });
+    expect(results).toEqual([]);
+  });
+
+  test('dateField=created excludes documents missing the created field', async () => {
+    // Inject a doc with no `created` to confirm the non-match policy.
+    prov['documents'] = {
+      WithCreated: makeDateDoc('WithCreated', '2024-06-15T00:00:00.000Z', '2024-06-15T00:00:00.000Z'),
+      NoCreated: { ...makeDateDoc('NoCreated', undefined, '2024-06-15T00:00:00.000Z'), created: undefined }
+    };
+    const results = await prov.advancedSearch({
+      dateRange: { from: '2024-01-01', to: '2024-12-31' },
+      dateField: 'created'
+    });
+    expect(results.map(r => r.name)).toEqual(['WithCreated']);
+  });
+});

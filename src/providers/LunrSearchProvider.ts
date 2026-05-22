@@ -50,6 +50,10 @@ interface LunrDocument {
   tags: string;
   keywords: string;
   lastModified: string;
+  /** ISO 8601 page creation timestamp (#754, v3.33.0). Optional because
+   *  pre-migration synthetic test data may omit it. Indexed so #774's
+   *  `dateField=created` filter can read it without a separate lookup. */
+  created?: string;
   uuid: string;
   /** Original page author (from metadata.author frontmatter field) */
   author?: string;
@@ -288,6 +292,7 @@ class LunrSearchProvider extends BaseSearchProvider {
       tags,
       keywords: `${userKeywords} ${tags}`,
       lastModified: toStr(metadata.lastModified),
+      created: toStr(metadata.created) || undefined,
       uuid: toStr(metadata.uuid),
       author: toStr(metadata.author) || undefined,
       editor: toStr(metadata.editor) || undefined,
@@ -424,6 +429,7 @@ class LunrSearchProvider extends BaseSearchProvider {
               systemCategory: doc.systemCategory,
               userKeywords: doc.userKeywords,
               lastModified: doc.lastModified,
+              created: doc.created,
               author: doc.author,
               editor: doc.editor
             }
@@ -546,6 +552,7 @@ class LunrSearchProvider extends BaseSearchProvider {
             userKeywords: this.documents[name].userKeywords,
             tags: this.documents[name].tags,
             lastModified: this.documents[name].lastModified,
+            created: this.documents[name].created,
             author: this.documents[name].author,
             editor: this.documents[name].editor
           }
@@ -606,18 +613,24 @@ class LunrSearchProvider extends BaseSearchProvider {
       });
     }
 
-    // #643: filter by last-modified date range (inclusive, whole-day).
-    // Honours the existing SearchCriteria.dateRange contract (ES already
-    // does; Lunr previously ignored it). Pages have no creation date, so
-    // this is last-modified only. Bounds are YYYY-MM-DD day edges (UTC).
+    // #643 / #774: filter by date range (inclusive, whole-day). `dateField`
+    // selects the source field — `'modified'` (default) reads
+    // `metadata.lastModified`; `'created'` reads `metadata.created` (per-page
+    // creation timestamp added in #754, v3.33.0). Honours the existing
+    // SearchCriteria.dateRange contract (ES already does the same).
+    // Bounds are YYYY-MM-DD day edges (UTC). Missing-`created` rows are
+    // treated as non-matches under `dateField=created` (every production
+    // page carries `created` post-#754 backfill — the no-match path only
+    // hits synthetic test data).
     const dateRange = options.dateRange;
     if (dateRange && (dateRange.from || dateRange.to)) {
       const fromTs = dateRange.from ? Date.parse(`${dateRange.from}T00:00:00.000Z`) : -Infinity;
       const toTs = dateRange.to ? Date.parse(`${dateRange.to}T23:59:59.999Z`) : Infinity;
+      const dateField = options.dateField === 'created' ? 'created' : 'lastModified';
       results = results.filter(result => {
-        const lm = result.metadata.lastModified;
-        if (typeof lm !== 'string' || !lm) return false;
-        const ts = Date.parse(lm);
+        const raw = result.metadata[dateField];
+        if (typeof raw !== 'string' || !raw) return false;
+        const ts = Date.parse(raw);
         return !Number.isNaN(ts) && ts >= fromTs && ts <= toTs;
       });
     }

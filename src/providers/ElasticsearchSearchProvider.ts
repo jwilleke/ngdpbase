@@ -55,6 +55,10 @@ interface EsPageDocument {
   author: string;
   editor: string;
   lastModified: string;
+  /** ISO 8601 page creation timestamp (#754, v3.33.0). Optional because
+   *  pre-migration documents may have been indexed without it; a re-index
+   *  populates it. Used by #774's `dateField=created` filter. */
+  created?: string;
   uuid: string;
   /** True when the page lives in the private storage location */
   isPrivate: boolean;
@@ -79,6 +83,13 @@ const INDEX_MAPPING = {
       author:         { type: 'keyword' as const },
       editor:         { type: 'keyword' as const },
       lastModified:   { type: 'date' as const },
+      // #774: per-page creation timestamp (added via #754 / v3.33.0). Once
+      // this mapping ships, existing indexes need a one-time reindex to
+      // populate `created` on already-indexed documents. Until then the
+      // `dateField=created` filter will only match docs indexed AFTER the
+      // re-index — pre-existing docs lack the field and ES will exclude
+      // them from the `range: { created }` query.
+      created:        { type: 'date' as const },
       uuid:           { type: 'keyword' as const },
       isPrivate:      { type: 'boolean' as const },
       audience:       { type: 'keyword' as const }
@@ -259,8 +270,9 @@ class ElasticsearchSearchProvider extends BaseSearchProvider {
       author = '',
       editor = '',
       dateRange,
+      dateField,
       maxResults: maxR
-    } = criteria as SearchCriteria & { systemKeywords?: string[] };
+    } = criteria as SearchCriteria & { systemKeywords?: string[]; dateField?: 'modified' | 'created' };
 
     const maxResults = (maxR) ?? this.maxResults;
     const { isPrivate: privateFilter, audience: audienceFilter } = this._buildPrivacyFilter(
@@ -306,7 +318,11 @@ class ElasticsearchSearchProvider extends BaseSearchProvider {
       const range: Record<string, string> = {};
       if (dateRange.from) range['gte'] = dateRange.from;
       if (dateRange.to)   range['lte'] = dateRange.to;
-      filter.push({ range: { lastModified: range } });
+      // #774: branch the filter field on `dateField`. Default `modified` is
+      // back-compat with the pre-#774 contract. `created` requires the new
+      // mapping above + a re-index for existing documents.
+      const field = dateField === 'created' ? 'created' : 'lastModified';
+      filter.push({ range: { [field]: range } });
     }
 
     const esQuery = this._wrapWithPrivacy(must, privateFilter, audienceFilter, filter);
@@ -641,6 +657,7 @@ class ElasticsearchSearchProvider extends BaseSearchProvider {
       author: toStr(metadata.author),
       editor: toStr(metadata.editor),
       lastModified: toStr(metadata.lastModified),
+      created: toStr(metadata.created) || undefined,
       uuid: toStr(metadata.uuid),
       isPrivate,
       audience
