@@ -232,6 +232,49 @@ author: system
 - `user-keywords` drives search and the keyword index — include synonyms a reader might search for.
 - `lastModified` must be updated whenever the page content changes.
 
+## Page Access Control
+
+When a page needs to restrict who can view, edit, or delete it, set access in **frontmatter** — never in body markup. Two frontmatter fields cover the cases:
+
+### `audience` — gates `view`
+
+A list of role names or usernames. If set, only users matching at least one entry can view the page. Omit the field entirely for public-view pages (public is the default).
+
+```yaml
+audience: ['Trusted']        # only members of the Trusted role can view
+audience: ['Admin', 'jim']   # admins OR the jim user can view
+```
+
+### `access` — per-action principal map
+
+A `{ action: principals[] }` map that gates one or more actions. Action keys: `view`, `edit`, `delete`, `rename`, `upload`.
+
+```yaml
+access:
+  edit: ['Admin']                     # only admins can edit
+  delete: ['jim', 'Admin']            # jim OR admins can delete
+  edit: ['jim', 'Admin']              # jim OR admins can edit
+```
+
+When both `audience` and `access.view` are set, `access.view` wins for the `view` action.
+
+### Tier ordering reminder
+
+These frontmatter fields are evaluated at **Tier 1** of the ACL ladder — see [`docs/managers/ACLManager.md`](managers/ACLManager.md) for the full six-tier order. The other tiers (private, author-lock, global policies) are independent dimensions.
+
+### Deprecated: `[{ALLOW <action> <principals>}]` body-content markup
+
+The legacy JSPWiki-style ACL markup in page **body content** is **deprecated and scheduled for removal** ([#778](https://github.com/jwilleke/ngdpbase/issues/778), follow-on to [#714](https://github.com/jwilleke/ngdpbase/issues/714)):
+
+```text
+[{ALLOW edit Admin}]      DO NOT use in new pages.
+[{ALLOW view Trusted}]    DO NOT use in new pages.
+```
+
+- New saves block these patterns; the ACL evaluator currently still honors them as Tier 3 back-compat for already-on-disk content.
+- Operators converting an existing page: move the equivalent rules into `audience` / `access` frontmatter (see the mapping table in #778), then delete the markup lines from body.
+- Tier 3 (the back-compat evaluator branch) is scheduled for deletion once the remaining ~13 jimstest pages are migrated.
+
 ## What Makes a Good Documentation Page
 
 A documentation page is good when a user can find it by searching a keyword, read the opening sentence and know immediately whether it answers their question, and follow the examples to accomplish the task. Related pages are surfaced automatically in the Referring Pages tab.

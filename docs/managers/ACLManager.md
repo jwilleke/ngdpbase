@@ -23,7 +23,7 @@ ACLManager runs the per-page access-control evaluator. Every page action (`view`
 - **Six-tier evaluator** — Tier 0 private → Tier 0.5 author-lock → Tier 1 frontmatter → Tier 2 global policies → Tier 3 ACL markup → default deny
 - **Rich-return form** (`evaluatePagePermission`) returns `{ allowed, reason }` so callers can specialise 403 messages on the reason
 - **Cross-page check** (`canUserAccessPage`) for "can user X view page Y" lookups (linked-page filters, attachment owning-page resolution)
-- **JSPWiki-style ACL markup**: `[{ALLOW view Admin}]` (deprecated — blocked on new saves; remaining pages still honored as Tier 3)
+- **JSPWiki-style ACL markup**: `[{ALLOW view Admin}]` (**deprecated; Tier 3 scheduled for removal per [#778](https://github.com/jwilleke/ngdpbase/issues/778)**). Blocked on new saves; remaining ~13 jimstest pages will be migrated to the modern frontmatter `audience` / `access` pattern (see [`docs/proper-documentation-pages.md` § Page Access Control](../proper-documentation-pages.md#page-access-control))
 - Integration with [PolicyEvaluator](PolicyEvaluator.md) for global policies at Tier 2
 - Audit logging of every decision (allow + deny) via `logAccessDecision`
 
@@ -96,7 +96,7 @@ const acl = aclManager.parsePageACL('[{ALLOW view All}] [{ALLOW edit Admin}]');
 | **0.5** | Author-lock — write-only gate ([#714 Slice A](https://github.com/jwilleke/ngdpbase/issues/714)) | _(never allows; only denies)_ | `author_lock_deny` when `action === 'edit'` AND `metadata['author-lock'] === true` AND user is neither admin nor `metadata.author` |
 | **1** | Frontmatter `audience` / `access[action]` | `frontmatter_principal_<p>` | `frontmatter_deny` (map exists; user not in it) |
 | **2** | Global policies via [PolicyEvaluator](PolicyEvaluator.md) | `<policyName>` / `global_policy` | `<policyName>` |
-| **3** | Legacy `[{ALLOW <action> …}]` page markup | `page_acl_all` / `page_acl_role_<r>` / `page_acl_user` | _(never denies; falls through if no match)_ |
+| **3** ⚠ deprecated | Legacy `[{ALLOW <action> …}]` page markup — **scheduled for removal per [#778](https://github.com/jwilleke/ngdpbase/issues/778)** | `page_acl_all` / `page_acl_role_<r>` / `page_acl_user` | _(never denies; falls through if no match)_ |
 | — | Default | _(never)_ | `default_deny` |
 
 ### Tier-ordering invariants
