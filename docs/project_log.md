@@ -2,6 +2,64 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-22-10
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped **Slice A of EPIC #714** as **v3.36.1** — added Tier 0.5 author-lock to `ACLManager.checkPagePermissionWithContext`. First slice of the unified-access-control evaluator EPIC. Route-layer branch at `WikiRoutes.editPage:2338` stays in place during this slice — no removal yet; both paths can deny independently. Five more slices (B–F) remain.
+- Current Issue: **#714** (EPIC, multi-slice).
+- Release: **v3.36.1** — patch; GitHub release deferred per `/release` skill convention (consolidates with next minor).
+- Tests: 5961/5961 unit on jimstest + release-commit re-validate ✅ (was 5953; +8 new in `Tier 0.5 — author-lock (#714 Slice A)` describe block). E2E skipped per /session-commit Step 3 — no UI-affecting paths touched.
+- Semver: **patch** — internal ACL evaluator extension; no public API surface change (`checkPagePermissionWithContext` signature unchanged); the route-layer call shape unchanged.
+- /othersites: **skipped** per /session-commit Step 5 patch rule. Satellites continue on v3.36.0; will catch up at next minor.
+- Perf baseline: clean drift — memory +8.9% (steady-state, under 25% threshold), all 4 routes flat (0 ± 1ms).
+- **What the Tier 0.5 check does** (`src/managers/ACLManager.ts:358-394`):
+
+  ```typescript
+  // Only fires for action === 'edit' (write constraint, not read constraint).
+  // Tier 0 takes precedence — if we reached Tier 0.5, page is NOT private.
+  // Denies non-author non-admin edits; falls through (doesn't grant) when
+  // user IS author or admin (Tier 1+ decides).
+  if (action.toLowerCase() === 'edit'
+      && wikiContext.pageMetadata?.['author-lock'] === true) {
+    const isAdmin = (userContext?.roles ?? []).includes('admin');
+    const isAuthor = (userContext?.username ?? '') === (wikiContext.pageMetadata?.author ?? '');
+    if (!isAdmin && !isAuthor) {
+      // logAccessDecision({ reason: 'author_lock_deny' });
+      return false;
+    }
+  }
+  ```
+
+- **Known temporary UX regression — restored in Slice F**:
+  - Author-locked edit attempts by non-author non-admin previously rendered the specific "*This page is author-locked. Only the page author and administrators can edit it.*" 403 from `WikiRoutes.ts:2342-2348`.
+  - Post-Slice A: the earlier `checkPagePermissionWithContext` call at `WikiRoutes.ts:2317` now denies first (Tier 0.5 fired), rendering the generic "*You do not have permission to edit this page*" 403 at `:2322-2329`. The author-lock branch at `:2338` is never reached in the deny path.
+  - Outcome (deny) is identical — only the error message changed.
+  - Slice F's rich-return `evaluatePagePermission({allowed, reason})` lets the route handler specialise the 403 on `reason === 'author_lock_deny'` and restore the specific message. Slice A ships intentionally accepting this temporary regression.
+- **Tier ordering after Slice A** (`ACLManager.checkPagePermissionWithContext`):
+
+  | Tier | Rule | Decides? |
+  |---|---|---|
+  | 0 | private | Yes — admin OR creator; otherwise deny. |
+  | **0.5 (NEW)** | author-lock | Only for `edit`; deny non-author non-admin; falls through otherwise. |
+  | 1 | frontmatter audience/access | Yes if `access[action]` or `audience` (view-only) matches. |
+  | 2 | global policies | Yes if PolicyEvaluator returns a decision. |
+  | 3 | deprecated page-ACL markup (`[{ALLOW …}]`) | Yes if matches. |
+  | — | default-deny | Falls through to deny. |
+
+- **Slices remaining on EPIC #714**:
+  - **Slice B** — `WikiContext.canAccess(action, pageNameOverride?)` gains optional override; `ACLManager.canUserAccessPage` added. Cache-key fix per the issue body audit (`_canAccessCache` keyed only on `${action}:${this.pageName}` today).
+  - **Slice C** — migrate 5 route handlers to `wikiContext.canAccess` (5 commits, one per route).
+  - **Slice D** — migrate MediaManager; delete `MediaManager.checkPrivatePageAccess`.
+  - **Slice E** — delete `WikiRoutes.checkPrivatePageAccess` and the route-level author-lock branch at `:2338`.
+  - **Slice F** — split `checkPagePermissionWithContext` into rich-return `evaluatePagePermission` + boolean wrapper; restores the specific author-lock 403 message.
+- **Behavior decision point still pending** (from issue body): private-attachment-no-page-name handling shifts from allow → deny in Slice C/D. **User-visible**; needs explicit operator decision before Slice C lands. Not relevant to Slice A.
+- ngdpbase commits (this session):
+  - `a7332dbc` — `feat(#714): Slice A — add Tier 0.5 author-lock to ACLManager`
+  - `c433d0be` — `chore: release v3.36.1`
+- Files Modified (code): src/managers/ACLManager.ts; src/managers/\_\_tests\_\_/ACLManager.test.ts.
+- Files Modified (release): package.json; config/app-default-config.json; CHANGELOG.md; docs/performance/baseline-v3.36.1-2026-05-22.md (new).
+- Operator-action carryover: (1) confirm Slice A — try editing an author-locked page as a non-author non-admin and verify the 403 still denies (message wording will be generic, not author-lock-specific, until Slice F); (2) decide the private-attachment-no-page-name allow→deny shift before Slice C starts.
+
 ## 2026-05-22-09
 
 - Agent: Claude Opus 4.7
