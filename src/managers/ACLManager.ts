@@ -276,11 +276,38 @@ class ACLManager extends BaseManager {
   }
 
   /**
-   * Check page permission using WikiContext
+   * Check page permission using WikiContext — rich-return form (#714 Slice F).
    *
-   * Checks if the user in WikiContext has permission to perform an action on a page.
-   * Uses WikiContext as the single source of truth for page name, content, and user info.
-   * Includes policy-based and page-level ACL evaluation with audit logging.
+   * Same evaluator as {@link checkPagePermissionWithContext} but returns a
+   * `{ allowed, reason }` object instead of a bare boolean. Lets callers
+   * specialise their 403 response on the reason — e.g. an editPage route
+   * handler can detect `reason === 'author_lock_deny'` and render the
+   * specific "This page is author-locked" message rather than the generic
+   * "no permission to edit" 403.
+   *
+   * `reason` values currently emitted (from `logAccessDecision` call sites):
+   *   - `private_match` / `private_deny`           (Tier 0)
+   *   - `author_lock_deny`                         (Tier 0.5 — Slice A)
+   *   - `frontmatter_principal_<p>` / `frontmatter_deny`  (Tier 1)
+   *   - `<policyName>` / `global_policy`           (Tier 2)
+   *   - `page_acl_all` / `page_acl_role_<r>` / `page_acl_user`  (Tier 3)
+   *   - `default_deny`                             (no tier decided)
+   *
+   * @async
+   * @param {WikiContext} wikiContext - The wiki context containing page and user info
+   * @param {string} action - Action to check (view, edit, delete, rename, upload)
+   * @returns {Promise<{ allowed: boolean; reason: string }>} Rich decision
+   */
+  async evaluatePagePermission(wikiContext: WikiContext, action: string): Promise<{ allowed: boolean; reason: string }> {
+    return this._runEvaluator(wikiContext, action);
+  }
+
+  /**
+   * Check page permission using WikiContext — boolean (back-compat) form.
+   *
+   * Thin wrapper around {@link evaluatePagePermission} (#714 Slice F) that
+   * discards the `reason` and returns just `allowed`. Existing callers
+   * (which only care about allow/deny) keep working without change.
    *
    * @async
    * @param {WikiContext} wikiContext - The wiki context containing page and user info
@@ -292,6 +319,20 @@ class ACLManager extends BaseManager {
    * if (canEdit) console.log('User can edit page');
    */
   async checkPagePermissionWithContext(wikiContext: WikiContext, action: string): Promise<boolean> {
+    const { allowed } = await this._runEvaluator(wikiContext, action);
+    return allowed;
+  }
+
+  /**
+   * Internal evaluator — runs the 3-tier evaluator (Tier 0 private →
+   * Tier 0.5 author-lock → Tier 1 audience/access → Tier 2 global
+   * policies → Tier 3 deprecated page-ACL markup → default deny) and
+   * returns the rich `{ allowed, reason }` decision.
+   *
+   * `evaluatePagePermission` (rich) and `checkPagePermissionWithContext`
+   * (boolean) both delegate here.
+   */
+  private async _runEvaluator(wikiContext: WikiContext, action: string): Promise<{ allowed: boolean; reason: string }> {
     if (!wikiContext) {
       throw new Error('ACLManager.checkPagePermissionWithContext requires a WikiContext');
     }
@@ -337,7 +378,7 @@ class ACLManager extends BaseManager {
           user: userContext, pageName, action, allowed: decision, reason,
           context: { wikiContext: wikiContext.context }
         });
-        return decision;
+        return { allowed: decision, reason };
       }
     } else if (wikiContext.pageMetadata?.private === true) {
       // Fallback for legacy callers without a PageManager: use frontmatter
@@ -347,12 +388,12 @@ class ACLManager extends BaseManager {
       const userRoles = userContext?.roles ?? [];
       const username  = userContext?.username ?? '';
       const allowed   = userRoles.includes('admin') || username === creator;
+      const reason    = allowed ? 'private_match' : 'private_deny';
       this.logAccessDecision({
-        user: userContext, pageName, action, allowed,
-        reason: allowed ? 'private_match' : 'private_deny',
+        user: userContext, pageName, action, allowed, reason,
         context: { wikiContext: wikiContext.context }
       });
-      return allowed;
+      return { allowed, reason };
     }
 
     // Tier 0.5: author-lock — write-time constraint on `edit` actions only
@@ -389,7 +430,7 @@ class ACLManager extends BaseManager {
           reason: 'author_lock_deny',
           context: { wikiContext: wikiContext.context }
         });
-        return false;
+        return { allowed: false, reason: 'author_lock_deny' };
       }
       // fall through — author-lock doesn't grant edit, it only denies.
       // Tier 1+ decides whether this author/admin is actually permitted.
@@ -407,7 +448,7 @@ class ACLManager extends BaseManager {
           reason: fm.reason,
           context: { wikiContext: wikiContext.context }
         });
-        return fm.allowed;
+        return { allowed: fm.allowed, reason: fm.reason };
       }
     }
 
@@ -421,16 +462,17 @@ class ACLManager extends BaseManager {
         logger.info(`[ACL] PolicyEvaluator decision hasDecision=${policyResult.hasDecision} allowed=${policyResult.allowed} policy=${policyResult.policyName}`);
 
         if (policyResult.hasDecision) {
+          const reason = policyResult.policyName || 'global_policy';
           this.logAccessDecision({
             user: userContext,
             pageName,
             action,
             allowed: policyResult.allowed,
-            reason: policyResult.policyName || 'global_policy',
+            reason,
             context: { wikiContext: wikiContext.context }
           });
 
-          return policyResult.allowed;
+          return { allowed: policyResult.allowed, reason };
         }
       } catch (e) {
         logger.warn('[ACL] PolicyEvaluator error', { error: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack : undefined });
@@ -453,20 +495,21 @@ class ACLManager extends BaseManager {
             reason: 'page_acl_all',
             context: { wikiContext: wikiContext.context }
           });
-          return true;
+          return { allowed: true, reason: 'page_acl_all' };
         }
         if (userContext?.roles) {
           for (const r of userContext.roles) {
             if (principals.has(r)) {
+              const reason = `page_acl_role_${r}`;
               this.logAccessDecision({
                 user: userContext,
                 pageName,
                 action,
                 allowed: true,
-                reason: `page_acl_role_${r}`,
+                reason,
                 context: { wikiContext: wikiContext.context }
               });
-              return true;
+              return { allowed: true, reason };
             }
           }
         }
@@ -479,7 +522,7 @@ class ACLManager extends BaseManager {
             reason: 'page_acl_user',
             context: { wikiContext: wikiContext.context }
           });
-          return true;
+          return { allowed: true, reason: 'page_acl_user' };
         }
       }
     }
@@ -493,7 +536,7 @@ class ACLManager extends BaseManager {
       reason: 'default_deny',
       context: { wikiContext: wikiContext.context }
     });
-    return false;
+    return { allowed: false, reason: 'default_deny' };
   }
 
   /**

@@ -173,6 +173,9 @@ interface IPageManager {
 
 interface IACLManager {
   checkPagePermissionWithContext(wikiContext: WikiContext, action: string): Promise<boolean>;
+  /** #714 Slice F: rich-return form — `{ allowed, reason }`. Lets callers
+   *  specialise 403 messages on `reason` (e.g. `author_lock_deny`). */
+  evaluatePagePermission(wikiContext: WikiContext, action: string): Promise<{ allowed: boolean; reason: string }>;
   getAccessLog(limit?: number, filters?: unknown): unknown[];
   removeACLMarkup(content: string): string;
   getAccessControlStats(): unknown;
@@ -2292,39 +2295,40 @@ ${panes}
           // Update WikiContext with page content for ACL checking
           (wikiContext as { content: string | null }).content = pageData.content;
 
-          const hasEditPermission = await aclManager.checkPagePermissionWithContext(
-            wikiContext,
-            'edit'
-          );
+          // #714 Slice F: use the rich-return `evaluatePagePermission`
+          // when available so we can specialise the 403 message on
+          // `reason === 'author_lock_deny'`. Restores the specific
+          // "This page is author-locked..." message that Slice A
+          // temporarily lost when Tier 0.5 moved the check into ACLManager.
+          //
+          // Defensive fallback: many existing test fixtures mock only
+          // `checkPagePermissionWithContext` (the legacy boolean form).
+          // Fall back to it when the rich form isn't on the mocked
+          // ACLManager — same allow/deny outcome, generic message.
+          //
+          // #714 Slice E: the previous route-layer author-lock branch
+          // that sat below this block is now deleted — the same check
+          // lives at ACL Tier 0.5 (added in Slice A) and the rich-return
+          // reason restores its specific 403 message at the route layer.
+          let decision: { allowed: boolean; reason: string };
+          if (typeof aclManager.evaluatePagePermission === 'function') {
+            decision = await aclManager.evaluatePagePermission(wikiContext, 'edit');
+          } else {
+            const allowed = await aclManager.checkPagePermissionWithContext(wikiContext, 'edit');
+            decision = { allowed, reason: allowed ? 'legacy_allow' : 'legacy_deny' };
+          }
 
-          if (!hasEditPermission) {
+          if (!decision.allowed) {
+            const message = decision.reason === 'author_lock_deny'
+              ? 'This page is author-locked. Only the page author and administrators can edit it.'
+              : 'You do not have permission to edit this page';
             return await this.renderError(
               req,
               res,
               403,
               'Access Denied',
-              'You do not have permission to edit this page'
+              message
             );
-          }
-
-          // Author-lock check: if set, only the page author and admins may edit.
-          // Private pages bypass this — `private: true` is the higher-priority
-          // rule (admin + creator only) and is already enforced upstream by
-          // ACLManager Tier 0 / checkPrivatePageAccess. Formalizing the
-          // supersedes relationship in code matches the documented model
-          // (see required-pages "Page Private" precedence table).
-          if (pageData.metadata?.['author-lock'] && pageData.metadata?.private !== true) {
-            const isAdmin = wikiContext.hasRole('admin');
-            const isAuthor = pageData.metadata?.author === currentUser.username;
-            if (!isAdmin && !isAuthor) {
-              return await this.renderError(
-                req,
-                res,
-                403,
-                'Access Denied',
-                'This page is author-locked. Only the page author and administrators can edit it.'
-              );
-            }
           }
         } else {
           // For new pages, check general page creation permission

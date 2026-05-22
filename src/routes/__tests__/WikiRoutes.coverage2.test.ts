@@ -82,6 +82,9 @@ const mockPageManager = {
 const mockACLManager = {
   checkPagePermission: vi.fn(),
   checkPagePermissionWithContext: vi.fn(),
+  // #714 Slice F rich-return form. Tests can override per-scenario to
+  // surface specific reasons (e.g. `author_lock_deny`).
+  evaluatePagePermission: vi.fn(),
   removeACLMarkup: vi.fn(),
   parseACL: vi.fn()
 };
@@ -367,6 +370,9 @@ describe('WikiRoutes — coverage batch 2', () => {
 
     test('returns 403 when ACL edit check fails', async () => {
       mockACLManager.checkPagePermissionWithContext.mockResolvedValue(false);
+      // #714 Slice F: editPage prefers evaluatePagePermission; mirror
+      // the deny in the rich-return shape.
+      mockACLManager.evaluatePagePermission.mockResolvedValue({ allowed: false, reason: 'default_deny' });
 
       const res = await request(app).get('/edit/TestPage');
 
@@ -382,7 +388,14 @@ describe('WikiRoutes — coverage batch 2', () => {
           metadata: { title: 'TestPage', 'system-category': 'general', uuid: 'test-uuid-1', author: 'testuser', 'author-lock': true }
         });
       });
-      mockACLManager.checkPagePermissionWithContext.mockResolvedValue(true);
+      // #714 Slice F: deny via the rich-return form with the
+      // `author_lock_deny` reason — the route consumes it to render
+      // the specific "This page is author-locked..." 403.
+      mockACLManager.checkPagePermissionWithContext.mockResolvedValue(false);
+      mockACLManager.evaluatePagePermission.mockResolvedValue({
+        allowed: false,
+        reason: 'author_lock_deny'
+      });
 
       const res = await request(app).get('/edit/TestPage');
 
@@ -407,6 +420,8 @@ describe('WikiRoutes — coverage batch 2', () => {
 
     test('returns 200 for authorised edit of existing page', async () => {
       mockACLManager.checkPagePermissionWithContext.mockResolvedValue(true);
+      // #714 Slice F: also surface allow via the rich-return form.
+      mockACLManager.evaluatePagePermission.mockResolvedValue({ allowed: true, reason: 'legacy_allow' });
 
       const res = await request(app).get('/edit/TestPage');
 

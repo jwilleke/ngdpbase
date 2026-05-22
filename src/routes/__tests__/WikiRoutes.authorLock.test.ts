@@ -56,9 +56,24 @@ function makePageManager(pageData) {
   };
 }
 
-function makeACLManager(permitted = true) {
+/**
+ * Build an ACLManager mock with both the legacy boolean and #714 Slice F
+ * rich-return forms.
+ *
+ * @param permitted  - allow / deny for the general edit gate
+ * @param denyReason - when `!permitted`, the reason string surfaced by
+ *                     `evaluatePagePermission` (defaults to
+ *                     `'author_lock_deny'`, matching the cases this
+ *                     suite exercises).
+ */
+function makeACLManager(permitted = true, denyReason = 'author_lock_deny') {
   return {
-    checkPagePermissionWithContext: vi.fn().mockResolvedValue(permitted)
+    checkPagePermissionWithContext: vi.fn().mockResolvedValue(permitted),
+    evaluatePagePermission: vi.fn().mockResolvedValue(
+      permitted
+        ? { allowed: true,  reason: 'legacy_allow' }
+        : { allowed: false, reason: denyReason }
+    )
   };
 }
 
@@ -164,7 +179,12 @@ describe('WikiRoutes — author-lock enforcement in editPage()', () => {
 
   describe('when page is author-locked', () => {
     beforeEach(() => {
-      wikiRoutes = new WikiRoutes(makeEngine());
+      // #714 Slice E/F: route-layer author-lock branch deleted. The 403
+      // deny for non-author non-admin edits now comes from ACL Tier 0.5
+      // (added in Slice A) via `evaluatePagePermission` returning
+      // `{ allowed: false, reason: 'author_lock_deny' }`. Mock the
+      // ACLManager to return that decision shape directly.
+      wikiRoutes = new WikiRoutes(makeEngine({ aclManager: makeACLManager(false, 'author_lock_deny') }));
     });
 
     test('non-author, non-admin receives 403', async () => {
