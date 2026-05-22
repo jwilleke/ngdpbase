@@ -112,7 +112,79 @@ For Docker/Traefik/Kubernetes deployments:
 | `NGDPBASE_HOST` | Overrides `ngdpbase.server.host` |
 | `NGDPBASE_PORT` | Overrides `ngdpbase.server.port` |
 
-> **Future:** [#775](https://github.com/jwilleke/ngdpbase/issues/775) tracks adding **env-var-ref resolution inside `getProperty()`** so any string config value of the form `"$VARNAME"` resolves to `process.env.VARNAME` at lookup time. Lets secrets (API keys, SMTP passwords) live in `.env` instead of committed config files. Same `.env` workflow already used for `FAST_STORAGE` / `SLOW_STORAGE` / `PORT`. See the issue for the resolution rules (whole-value refs only in v1; `"$$literal"` escape; strict throw on unset).
+## Env-var references in config values (#775, v3.38.0)
+
+`getProperty()` resolves environment-variable references in string config values
+at lookup time. Two forms — pick by use:
+
+### `${VAR}` brace form (embedded, silent on missing) — for paths
+
+Use inside a larger template string. The reference is resolved when the env var
+is set; left literal when unset (the missing value surfaces at point-of-use,
+typically with a clear filesystem error).
+
+```json
+"ngdpbase.session.storagedir":         "${FAST_STORAGE}/sessions",
+"ngdpbase.page.provider.filesystem.storagedir": "${SLOW_STORAGE}/pages"
+```
+
+This is the existing form used throughout `app-default-config.json` for storage
+path templates. Multiple refs per string and embedded use are both supported.
+
+### `$VAR` bare-whole-value form (strict, throws on missing) — for secrets
+
+The ENTIRE config value is a single env-var reference. **Throws** at lookup time
+when the var is unset — loud failure beats silent misconfiguration for credentials.
+
+```dotenv
+# .env
+NASA_FIRMS_KEY=xxxxxxxx
+SMTP_PASSWORD=yyyyyyyy
+```
+
+```json
+// app-custom-config.json
+"ngdpbase.feedManager.sources.nasa-firms.apiKey": "$NASA_FIRMS_KEY",
+"ngdpbase.email.smtp.password":                   "$SMTP_PASSWORD"
+```
+
+Bare-form variable names must match the POSIX-shell convention:
+uppercase letters / digits / underscores, not starting with a digit (`^\$[A-Z_][A-Z0-9_]*$`).
+
+### `$$literal` escape hatch
+
+For the rare value that genuinely starts with `$`:
+
+```json
+"some.key": "$$abc"   // resolves to "$abc"
+```
+
+### Log-safety: `getMaskedProperty()`
+
+When logging config values (admin endpoints, startup banners), use
+`getMaskedProperty(key, default?)` to surface `"***"` for any bare-form secret
+reference. Plain literals and brace-form path templates resolve unmasked
+(they're not secrets).
+
+```typescript
+logger.info(`API key configured: ${cm.getMaskedProperty('feeds.nasa.apiKey')}`);
+// → "API key configured: ***"
+```
+
+### k8s / production interplay (touches #655)
+
+Env-var refs compose cleanly with k8s `Secret` + `ConfigMap`:
+
+```yaml
+env:
+  - name: NASA_FIRMS_KEY
+    valueFrom:
+      secretKeyRef:
+        name: ngdpbase-feed-secrets
+        key: nasa-firms-key
+```
+
+No code change between local-dev `.env` and prod k8s Secret — same `$VAR` syntax in config.
 
 ## Admin Interface
 

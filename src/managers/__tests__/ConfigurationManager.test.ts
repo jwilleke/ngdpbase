@@ -1164,4 +1164,127 @@ describe('ConfigurationManager', () => {
       await expect(cm.initialize()).rejects.toThrow(/hidden/);
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // #775 — env-var-ref resolution in getProperty / getMaskedProperty
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe('#775 — env-var-ref resolution', () => {
+    /**
+     * Helper: build a configured manager with a custom default-config map.
+     * Reuses the outer `tempDir` (created fresh per test in beforeEach and
+     * cleaned up in afterEach) so we don't leak test artifacts under
+     * `__tests__/temp/`.
+     */
+    async function makeCm(defaultConfig: Record<string, unknown>) {
+      // Overwrite the outer beforeEach's default config with this test's values.
+      await fs.writeJson(path.join(tempDir, 'config', 'app-default-config.json'), defaultConfig, { spaces: 2 });
+      const cm = new ConfigurationManager({ getManager: vi.fn() });
+      await cm.initialize();
+      return { cm };
+    }
+
+    test('bare $VAR resolves to process.env.VAR', async () => {
+      process.env.NGDPBASE_TEST_KEY = 'abc123';
+      const { cm } = await makeCm({ 'test.secret': '$NGDPBASE_TEST_KEY' });
+      expect(cm.getProperty('test.secret')).toBe('abc123');
+      delete process.env.NGDPBASE_TEST_KEY;
+    });
+
+    test('bare $VAR throws with a clear message when env var is unset', async () => {
+      delete process.env.NGDPBASE_MISSING_KEY;
+      const { cm } = await makeCm({ 'test.secret': '$NGDPBASE_MISSING_KEY' });
+      expect(() => cm.getProperty('test.secret')).toThrow(
+        /Config secret `NGDPBASE_MISSING_KEY` referenced by `test\.secret` but env var is unset/
+      );
+    });
+
+    test('brace ${VAR} embedded form preserves legacy silent-on-missing behavior', async () => {
+      delete process.env.NGDPBASE_MISSING_KEY;
+      const { cm } = await makeCm({ 'test.path': '${NGDPBASE_MISSING_KEY}/sessions' });
+      // Silent: returns the unresolved placeholder. (Pre-#775 behavior; back-compat.)
+      expect(cm.getProperty('test.path')).toBe('${NGDPBASE_MISSING_KEY}/sessions');
+    });
+
+    test('brace ${VAR} embedded form resolves when env var is set', async () => {
+      process.env.NGDPBASE_TEST_PATH = '/tmp/fast';
+      const { cm } = await makeCm({ 'test.path': '${NGDPBASE_TEST_PATH}/sessions' });
+      expect(cm.getProperty('test.path')).toBe('/tmp/fast/sessions');
+      delete process.env.NGDPBASE_TEST_PATH;
+    });
+
+    test('$$literal escape hatch returns $literal', async () => {
+      const { cm } = await makeCm({ 'test.lit': '$$abc' });
+      expect(cm.getProperty('test.lit')).toBe('$abc');
+    });
+
+    test('plain strings without $ prefix pass through unchanged', async () => {
+      const { cm } = await makeCm({ 'test.plain': 'hello world' });
+      expect(cm.getProperty('test.plain')).toBe('hello world');
+    });
+
+    test('non-string values (number/boolean/array/object) pass through unchanged', async () => {
+      const { cm } = await makeCm({
+        'test.num':  42,
+        'test.bool': true,
+        'test.arr':  ['a', 'b'],
+        'test.obj':  { x: 1 }
+      });
+      expect(cm.getProperty('test.num')).toBe(42);
+      expect(cm.getProperty('test.bool')).toBe(true);
+      expect(cm.getProperty('test.arr')).toEqual(['a', 'b']);
+      expect(cm.getProperty('test.obj')).toEqual({ x: 1 });
+    });
+
+    test('resolution is lazy — env var set after init is picked up on next read', async () => {
+      delete process.env.NGDPBASE_LAZY_KEY;
+      const { cm } = await makeCm({ 'test.lazy': '$NGDPBASE_LAZY_KEY' });
+      // Verify the env var is unset right now — read would throw.
+      expect(() => cm.getProperty('test.lazy')).toThrow();
+      // Set the env var; next read resolves.
+      process.env.NGDPBASE_LAZY_KEY = 'late-bound';
+      expect(cm.getProperty('test.lazy')).toBe('late-bound');
+      delete process.env.NGDPBASE_LAZY_KEY;
+    });
+
+    test('lowercase $var does NOT resolve as a bare ref (POSIX env var name convention)', async () => {
+      process.env.lowercase_key = 'should-not-match';
+      const { cm } = await makeCm({ 'test.weird': '$lowercase_key' });
+      // The bare-form regex requires uppercase-leading; lowercase falls
+      // through to the "no $ prefix" pass-through path. Returns the
+      // literal string. (Operator wanting to use a lowercase env var
+      // can switch to the `${var}` brace form for embedded use.)
+      expect(cm.getProperty('test.weird')).toBe('$lowercase_key');
+      delete process.env.lowercase_key;
+    });
+
+    test('getMaskedProperty returns *** for bare $VAR secrets when env var is set', async () => {
+      process.env.NGDPBASE_LOG_TEST = 'super-secret-value';
+      const { cm } = await makeCm({ 'test.secret': '$NGDPBASE_LOG_TEST' });
+      expect(cm.getMaskedProperty('test.secret')).toBe('***');
+      delete process.env.NGDPBASE_LOG_TEST;
+    });
+
+    test('getMaskedProperty returns the literal value for plain (non-secret) config', async () => {
+      const { cm } = await makeCm({ 'test.public': 'https://example.com' });
+      expect(cm.getMaskedProperty('test.public')).toBe('https://example.com');
+    });
+
+    test('getMaskedProperty resolves and returns brace ${VAR} values unmasked (paths, not secrets)', async () => {
+      process.env.NGDPBASE_PATH_TEST = '/tmp/fast';
+      const { cm } = await makeCm({ 'test.path': '${NGDPBASE_PATH_TEST}/sessions' });
+      // Brace form is for path templates — non-secret. Surface the
+      // resolved value so operators see the actual path.
+      expect(cm.getMaskedProperty('test.path')).toBe('/tmp/fast/sessions');
+      delete process.env.NGDPBASE_PATH_TEST;
+    });
+
+    test('getMaskedProperty still throws when a referenced secret env var is unset (loud failure)', async () => {
+      delete process.env.NGDPBASE_MISSING_FOR_MASK;
+      const { cm } = await makeCm({ 'test.secret': '$NGDPBASE_MISSING_FOR_MASK' });
+      expect(() => cm.getMaskedProperty('test.secret')).toThrow(
+        /Config secret `NGDPBASE_MISSING_FOR_MASK`/
+      );
+    });
+  });
 });

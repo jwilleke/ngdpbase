@@ -619,16 +619,121 @@ class ConfigurationManager extends BaseManager {
 
     const raw = this.mergedConfig?.[key] ?? defaultValue;
 
-    // Expand ${ENV_VAR} placeholders in string config values.
-    // Only replaces a placeholder when the env var is actually set — leaves
-    // unresolved placeholders intact so missing vars are obvious at runtime.
-    if (typeof raw === 'string' && raw.includes('${')) {
-      return raw.replace(/\$\{([^}]+)\}/g, (match: string, varName: string) =>
-        varName in process.env ? (process.env[varName] as string) : match
+    return this.resolveEnvRef(raw, key);
+  }
+
+  /**
+   * Resolve environment-variable references in a string config value.
+   *
+   * Two forms supported (#775):
+   *
+   * **`${VAR}` brace form** — embedded references, suitable for path templates
+   * like `"${FAST_STORAGE}/sessions"`. Silent on missing: leaves the
+   * unresolved placeholder intact (the value flows through to the caller,
+   * which typically fails later at point-of-use). Multiple embedded refs in
+   * one string work; partial-string refs work. **Use for paths and
+   * prefix-based templates.**
+   *
+   * **`$VAR` bare-whole-value form** — the ENTIRE config value is a single
+   * env-var reference. Strict on missing: throws with a clear message so
+   * the operator notices immediately at startup or first read. **Use for
+   * secrets** (API keys, SMTP passwords, etc.). Operators set these in
+   * `.env` alongside `FAST_STORAGE` / `SLOW_STORAGE` / `PORT`.
+   *
+   * **`$$literal` escape** — for the rare config value that genuinely
+   * starts with `$`. `"$$abc"` resolves to `"$abc"`.
+   *
+   * Non-string values pass through unchanged. Resolution happens at lookup
+   * time (per-`getProperty()` call), not at config load — so tests that
+   * mutate `process.env` mid-run see the new value on the next read.
+   *
+   * @param value - The raw config value (any type; only strings are processed)
+   * @param key   - The config key being looked up; included in error messages
+   *                so operators can find the offending entry.
+   * @returns The resolved value, or the input unchanged for non-strings /
+   *          non-refs.
+   * @throws  When the bare `$VAR` form references an unset env var.
+   */
+  private resolveEnvRef(value: unknown, key: string): unknown {
+    if (typeof value !== 'string') return value;
+
+    // Escape hatch — `$$literal` → `$literal`. Must come before the bare-form
+    // check so `$$VAR` isn't mistaken for a malformed bare ref.
+    if (value.startsWith('$$')) {
+      return value.slice(1);
+    }
+
+    // Bare whole-value form `$VAR`. Strict: must match the WHOLE string and
+    // throw on missing. The regex enforces a valid POSIX-shell-style env var
+    // name (uppercase letters, digits, underscores; not starting with digit).
+    const bareMatch = /^\$([A-Z_][A-Z0-9_]*)$/.exec(value);
+    if (bareMatch) {
+      const varName = bareMatch[1];
+      if (varName in process.env) {
+        this._envRefHitCount++;
+        return process.env[varName] as string;
+      }
+      this._envRefMissCount++;
+      throw new Error(
+        `Config secret \`${varName}\` referenced by \`${key}\` but env var is unset. ` +
+        `Add \`${varName}=...\` to your .env (or k8s Secret) and restart.`
       );
     }
 
-    return raw;
+    // Brace embedded form `${VAR}`. Legacy behavior preserved from
+    // pre-#775: leaves unresolved placeholders intact when the var is
+    // unset (silent — appropriate for path templates where the missing
+    // value surfaces at filesystem use-time).
+    if (value.includes('${')) {
+      return value.replace(/\$\{([^}]+)\}/g, (match: string, varName: string) => {
+        if (varName in process.env) {
+          this._envRefHitCount++;
+          return process.env[varName] as string;
+        }
+        // Stay silent on miss — this is the back-compat behavior. The
+        // unresolved placeholder propagates to the caller; expected to
+        // fail loudly at point-of-use (e.g. filesystem operations on
+        // `"${UNSET_VAR}/sessions"` will throw ENOENT).
+        this._envRefBraceMissCount++;
+        return match;
+      });
+    }
+
+    return value;
+  }
+
+  /** Audit counters for the boot-time env-ref summary log (#775). */
+  private _envRefHitCount = 0;
+  private _envRefMissCount = 0;
+  private _envRefBraceMissCount = 0;
+
+  /**
+   * Get a config property with secrets masked to `"***"` for safe logging
+   * (#775). Returns the unmasked value for plain literals and brace-form
+   * resolved values; only the bare-form `$VAR` secrets return the mask.
+   *
+   * Use this on any log path that may print a config value. Boot banners,
+   * admin /config endpoint listings, debug-level config dumps.
+   *
+   * @param key          - Config key
+   * @param defaultValue - Default when key absent
+   * @returns The unmasked value, OR `"***"` if the raw config value was a
+   *          bare-form `$VAR` reference (indicating it carries a secret).
+   */
+  getMaskedProperty(key: string, defaultValue: unknown = null): unknown {
+    const raw = this.mergedConfig?.[key] ?? defaultValue;
+    // A raw value of `$VAR` indicates this entry is a secret reference.
+    // Resolve it (to validate the env var is set — same throw semantics)
+    // but return `"***"` to the caller for log-safety.
+    if (typeof raw === 'string' && /^\$[A-Z_][A-Z0-9_]*$/.test(raw)) {
+      // Force the resolution to fire (so it throws if the env var is
+      // missing — operators want loud failure, not a silent `"***"`).
+      this.resolveEnvRef(raw, key);
+      return '***';
+    }
+    // Everything else (literals, brace-form templates) is non-secret;
+    // return the resolved value.
+    return this.resolveEnvRef(raw, key);
   }
 
   /**
