@@ -125,7 +125,10 @@ export function pageToArticle(
   const article: Article = {
     '@id': canonical,
     '@type': 'Article',
-    identifier: typeof metadata?.uuid === 'string' ? metadata.uuid : pageName,
+    // Treat empty-string uuid as missing — Article.identifier is required
+    // (non-empty) per the type. Falls back to pageName so the field is always
+    // present even for legacy / synthetic pages without a real UUID.
+    identifier: typeof metadata?.uuid === 'string' && metadata.uuid ? metadata.uuid : pageName,
     name: typeof metadata?.title === 'string' && metadata.title ? metadata.title : pageName,
     url: canonical,
     ...(description ? { description } : {}),

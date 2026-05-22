@@ -3,8 +3,9 @@
  *
  * Pure-function tests; no engine / WikiContext / I/O. Verifies that the
  * mapper:
- *   - emits the canonical Article shape when enough Article-signal is present
- *   - falls back to base CreativeWork for very-sparse pages
+ *   - emits the canonical Article shape (always — the CreativeWork fallback
+ *     for very-sparse pages was removed in #773 once PageManager declared
+ *     `types: ['Article']`; the render path matches the catalog source)
  *   - omits absent fields (no nulls, no empty strings)
  *   - merges + dedupes the four keyword sources into a single `keywords` array
  *   - resolves the `@id` / `url` to a canonical /view/<slug> when no baseUrl
@@ -50,9 +51,12 @@ describe('buildPageJsonLd()', () => {
     expect(out.inLanguage).toBe('en');
   });
 
-  it('falls back to CreativeWork base when no Article-signal field is present', () => {
+  it('always emits Article even when no Article-signal field is present (#773 removed the CreativeWork fallback)', () => {
+    // Before #773 the very-sparse case emitted `@type: CreativeWork`. After
+    // #773 PageManager.types = ['Article'] is the source of truth and the
+    // render path matches — every page is an Article.
     const out = buildPageJsonLd('Stub', {});
-    expect(out['@type']).toBe('CreativeWork');
+    expect(out['@type']).toBe('Article');
     expect(out.name).toBe('Stub'); // falls back to pageName when title absent
     expect(out['@id']).toBe('/view/Stub');
     expect(out.url).toBe('/view/Stub');
@@ -87,7 +91,11 @@ describe('buildPageJsonLd()', () => {
     expect(out.dateModified).toBeUndefined();
     expect(out.articleSection).toBeUndefined();
     expect(out.keywords).toBeUndefined();
-    expect(out.identifier).toBeUndefined();
+    // identifier falls back to pageName when uuid is empty (#773 — Article
+    // requires a non-empty identifier per the type). Before #773 the legacy
+    // buildPageJsonLd path omitted identifier here; the shift unifies the
+    // catalog-side and render-side identifier rule.
+    expect(out.identifier).toBe('Empty');
     expect(out.inLanguage).toBeUndefined();
     // name falls back to pageName when title is empty.
     expect(out.name).toBe('Empty');
@@ -155,7 +163,9 @@ describe('buildPageJsonLd()', () => {
 
   it('tolerates null/undefined metadata', () => {
     const out = buildPageJsonLd('Lonely', null);
-    expect(out['@type']).toBe('CreativeWork');
+    // Article-always policy from #773 — see the comment on the
+    // "always emits Article" test above.
+    expect(out['@type']).toBe('Article');
     expect(out.name).toBe('Lonely');
     expect(out['@id']).toBe('/view/Lonely');
   });

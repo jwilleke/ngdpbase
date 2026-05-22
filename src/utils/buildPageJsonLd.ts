@@ -2,12 +2,19 @@
  * Slice 6a of #760 (#765) — build the schema.org Article JSON-LD payload
  * embedded on every `/view/:page` rendered output.
  *
- * Intentionally NOT a CatalogSource yet. Slice 4 (PageManager-as-
- * CatalogSource) is gated on #754 (per-page `created` timestamp + ~17K-page
- * backfill); when that lands, this mapper will be replaced by a
- * `CatalogManager.getCreativeWork('pages', pageId)` delegate. Keeping the
- * page→Article shape mapping centralised here makes that future refactor a
- * 10-line move rather than scattering shape logic across the view handler.
+ * **#773 update (v3.35.0):** this function is now a thin compose over the
+ * unified page-shape logic: `pageToArticle()` produces the internal `Article`
+ * record, then `articleToPageJsonLd()` converts to the render shape. Single
+ * source of truth for the page→Article mapping. Before #773 this function
+ * carried its own keyword-merging, author/editor, and @type-fallback logic;
+ * that logic now lives in the two split mappers.
+ *
+ * One ratified behavior shift came with #773: the legacy CreativeWork
+ * fallback for very-sparse pages is GONE — every page emits `@type: Article`
+ * (consistent with `PageManager.types = ['Article']` and the EPIC #755
+ * Decision 1 "Article-first" policy). In practice every page on the system
+ * carries at least `lastModified`, so this only affects synthetic / null
+ * metadata inputs.
  *
  * The output adheres to `docs/schemas.md` (ratified 2026-05-20) and to the
  * ratified decisions referenced in #755:
@@ -27,6 +34,9 @@
  * which the EJS template caller is responsible for (we don't double-escape
  * here).
  */
+
+import { pageToArticle } from './pageToArticle.js';
+import { articleToPageJsonLd } from './articleToPageJsonLd.js';
 
 /** Minimal Person reference used in `author` / `editor`. */
 interface JsonLdPerson {
@@ -85,21 +95,6 @@ export interface BuildPageJsonLdOptions {
 }
 
 /**
- * Coerce a value to a non-empty string array. Handles arrays, comma /
- * whitespace-separated strings, single strings, and nullish.
- */
-function coerceKeywordList(raw: unknown): string[] {
-  if (raw === null || raw === undefined) return [];
-  if (Array.isArray(raw)) {
-    return raw.filter((k): k is string => typeof k === 'string' && k.length > 0);
-  }
-  if (typeof raw === 'string') {
-    return raw.split(/[\s,]+/).filter(Boolean);
-  }
-  return [];
-}
-
-/**
  * Slice 6b of #760 (#766) — content-negotiation gate. Returns true when
  * the client's `Accept` header signals it wants the JSON-LD representation
  * of a resource instead of the default (usually HTML).
@@ -137,83 +132,30 @@ export function stringifyJsonLdForScript(payload: unknown): string {
     .replace(/&/g, '\\u0026');
 }
 
-/** Build the JSON-LD payload for a single page. */
+/**
+ * Build the JSON-LD payload for a single page.
+ *
+ * Thin compose: `pageToArticle()` produces the internal `Article` from
+ * frontmatter, then `articleToPageJsonLd()` converts to the render shape.
+ * See `pageToArticle.ts` and `articleToPageJsonLd.ts` for the per-mapping
+ * detail.
+ */
 export function buildPageJsonLd(
   pageName: string,
   metadata: PageMetadataLike | null | undefined,
   options: BuildPageJsonLdOptions = {}
 ): PageJsonLd {
-  const slug = encodeURIComponent(pageName);
-  const base = options.baseUrl?.replace(/\/$/, '') ?? '';
-  const canonical = `${base}/view/${slug}`;
-
-  // Keywords: union of user-keywords + system-keywords + auto-tagged + system-category.
-  // Deduplicated case-sensitively; preserves first-seen ordering.
-  const keywordSet = new Set<string>();
-  for (const kw of coerceKeywordList(metadata?.['user-keywords'])) keywordSet.add(kw);
-  for (const kw of coerceKeywordList(metadata?.['system-keywords'])) keywordSet.add(kw);
-  for (const kw of options.autoTaggedKeywords ?? []) {
-    if (typeof kw === 'string' && kw) keywordSet.add(kw);
-  }
-  // system-category is a single scalar, included in keywords AND surfaced as
-  // articleSection (the schema.org-canonical field for a page's section).
-  const sysCat = typeof metadata?.['system-category'] === 'string' ? metadata['system-category'] : undefined;
-  if (sysCat) keywordSet.add(sysCat);
-  const keywords = keywordSet.size > 0 ? Array.from(keywordSet) : undefined;
-
-  // Author / editor — Decision 10: author = immutable original creator;
-  // editor = mutable last-saver. Many legacy pages only have `author` and no
-  // separate `editor` — emit `author` only in that case.
-  const authorName = typeof metadata?.author === 'string' && metadata.author ? metadata.author : undefined;
-  const editorName = typeof metadata?.editor === 'string' && metadata.editor && metadata.editor !== authorName
-    ? metadata.editor
-    : undefined;
-
-  // Determine @type: Article when we have any Article-distinctive field
-  // (dateModified, author, system-category). Fall back to CreativeWork base
-  // for very-sparse pages. (Schema.org allows narrow → broad fallback.)
-  const hasArticleSignal =
-    typeof metadata?.lastModified === 'string' && metadata.lastModified ||
-    !!authorName ||
-    !!sysCat;
-  const type: 'Article' | 'CreativeWork' = hasArticleSignal ? 'Article' : 'CreativeWork';
-
-  // inLanguage — pages may carry this in either `language` (legacy) or
-  // `inLanguage` (schema.org-aligned). Prefer inLanguage.
-  const lang = typeof metadata?.inLanguage === 'string' && metadata.inLanguage
-    ? metadata.inLanguage
-    : typeof metadata?.language === 'string' && metadata.language
-      ? metadata.language
-      : undefined;
-
-  const out: PageJsonLd = {
-    '@context': 'https://schema.org',
-    '@type': type,
-    '@id': canonical,
-    url: canonical,
-    name: typeof metadata?.title === 'string' && metadata.title ? metadata.title : pageName
-  };
-
-  // identifier — Decision 4: @id is the URL; uuid is the schema.org identifier.
-  if (typeof metadata?.uuid === 'string' && metadata.uuid) {
-    out.identifier = metadata.uuid;
-  }
-  if (typeof metadata?.description === 'string' && metadata.description) {
-    out.description = metadata.description;
-  }
-  // dateCreated lands once Slice 4 / #754 ships per-page `created`. Emit
-  // when present so the consumer side already handles it.
-  if (typeof metadata?.created === 'string' && metadata.created) {
-    out.dateCreated = metadata.created;
-  }
-  if (typeof metadata?.lastModified === 'string' && metadata.lastModified) {
-    out.dateModified = metadata.lastModified;
-  }
-  if (authorName) out.author = { '@type': 'Person', name: authorName };
-  if (editorName) out.editor = { '@type': 'Person', name: editorName };
-  if (sysCat) out.articleSection = sysCat;
-  if (keywords) out.keywords = keywords;
-  if (lang) out.inLanguage = lang;
-
-  return out;
+  // pageToArticle expects PageFrontmatter; PageMetadataLike is a structurally
+  // compatible loose superset (extra fields ignored). The cast is safe.
+  const article = pageToArticle(
+    pageName,
+    metadata as unknown as Parameters<typeof pageToArticle>[1],
+    { baseUrl: options.baseUrl, autoTaggedKeywords: options.autoTaggedKeywords }
+  );
+  return articleToPageJsonLd(article);
 }
+
+// The lonely `coerceKeywordList` helper used to live here; it's now in
+// `pageToArticle.ts` (the new source of truth for the merge). Keeping the
+// import list above clean is intentional — adding it back here would
+// reintroduce the duplication this refactor removed.

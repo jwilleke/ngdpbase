@@ -32,7 +32,9 @@ import { extractSection, spliceSection } from '../utils/SectionUtils.js';
 import { shuffleArray } from '../utils/pluginFormatters.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
 import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../utils/ContactSubmissionLog.js';
-import { buildPageJsonLd, stringifyJsonLdForScript, wantsJsonLd } from '../utils/buildPageJsonLd.js';
+import { stringifyJsonLdForScript, wantsJsonLd } from '../utils/buildPageJsonLd.js';
+import { articleToPageJsonLd } from '../utils/articleToPageJsonLd.js';
+import type { Article } from '../types/Schema.js';
 import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
 import { renderCommentListHtml } from '../plugins/CommentsPlugin.js';
@@ -1813,18 +1815,38 @@ ${panes}
         autoTaggedKeywords = await searchManager.getPageSystemKeywords(pageName);
       }
 
-      // Slice 6a of #760 (#765) — build the schema.org Article JSON-LD
-      // payload for this page. Embedded by view.ejs in a
-      // `<script type="application/ld+json">` tag. `stringifyJsonLdForScript`
-      // escapes < / > / & as \uXXXX so attacker-controlled metadata can't
-      // close the <script> tag prematurely. Will move to
-      // CatalogManager.getCreativeWork('pages', pageId) once Slice 4 lands
-      // (#754 currently gates that).
+      // #773 — build the page's JSON-LD via the unified CatalogSource path.
+      // PageManager (registered as CatalogSource per #772, Slice 4 of #755)
+      // produces the internal Article record from frontmatter; the render
+      // adapter `articleToPageJsonLd` converts to the `<script
+      // type="application/ld+json">` shape. Single source of truth for the
+      // page→Article mapping; replaces the direct buildPageJsonLd call from
+      // Slice 6a (#765). `stringifyJsonLdForScript` escapes < / > / & as
+      // \uXXXX so attacker-controlled metadata can't close the <script> tag.
       const baseUrl = configManager?.getProperty('ngdpbase.base-url', '');
-      const pageJsonLd = buildPageJsonLd(pageName, metadata, {
-        baseUrl: baseUrl || undefined,
-        autoTaggedKeywords
-      });
+      // pageManager is in scope from line ~1633; reuse it. Cast to the
+      // CatalogSource-shaped subset we need — IPageManager doesn't declare
+      // toCreativeWork yet (it's a Slice 4 / #772 addition).
+      const pageManagerCatalog = pageManager as unknown as {
+        toCreativeWork?: (
+          name: string,
+          meta: typeof metadata,
+          opts?: { baseUrl?: string; autoTaggedKeywords?: string[] }
+        ) => Article;
+      };
+      const article = typeof pageManagerCatalog.toCreativeWork === 'function'
+        ? pageManagerCatalog.toCreativeWork(pageName, metadata, {
+          baseUrl: baseUrl || undefined,
+          autoTaggedKeywords
+        })
+        : null;
+      // Fallback path: if PageManager is unavailable (or hasn't loaded the
+      // CatalogSource surface for any reason), still emit a JSON-LD block by
+      // calling the wrapped mapper directly. Same code path either way after
+      // #773's buildPageJsonLd compose refactor.
+      const pageJsonLd = article
+        ? articleToPageJsonLd(article)
+        : articleToPageJsonLd({ '@id': '/view/' + pageName, '@type': 'Article', identifier: pageName, name: pageName, url: '/view/' + pageName });
       const pageJsonLdScript = stringifyJsonLdForScript(pageJsonLd);
 
       // Slice 6b of #760 (#766) — content-negotiation. When the client sends
