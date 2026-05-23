@@ -75,16 +75,51 @@ export interface AddonModule {
    *
    * Return `null` to opt out per-user (e.g. when the addon's feature is
    * disabled for this user's roles).
+   *
+   * ⚠️ SECURITY — the returned `html` is rendered with EJS `<%- %>` (RAW,
+   * NOT escaped) inside the user's `/profile` form. **The addon is fully
+   * responsible for escaping any user-controlled data it interpolates.**
+   * Use `<%= %>` in your own EJS templates, or an explicit escape helper.
+   * A buggy `profileSection()` that string-concatenates user input becomes
+   * stored-XSS against every user who views their profile.
+   *
+   * Two specific things to avoid:
+   *   - Do NOT emit `<input name="_csrf" …>` — that would override the
+   *     host form's CSRF token and corrupt the user's save.
+   *   - Do NOT emit a wrapping `<form>` — your fields submit with the host
+   *     preferences form. A nested `<form>` is invalid HTML and browsers
+   *     will hoist your inputs unpredictably.
+   *
+   * RECOMMENDED — include a hidden marker so your paired `saveProfileSection`
+   * can distinguish "section was rendered but checkboxes unchecked" from
+   * "section was not rendered at all" (addon disabled mid-session, cached
+   * form). Without it, absent checkbox fields look identical to "user
+   * submitted no such field" and you may silently clobber stored values.
    */
   profileSection?(user: AddonProfileUser): Promise<AddonProfileSection | null> | AddonProfileSection | null;
 
   /**
    * Optional save handler paired with `profileSection()` (#534).
    *
-   * Receives the full `req.body` from `POST /preferences`; the addon
+   * Receives a shallow-cloned `req.body` from `POST /preferences`; the addon
    * extracts whichever fields its `profileSection()` form rendered and
    * persists them. Errors are caught by AddonsManager and logged — they
    * do NOT block the core-preferences save or other addons' saves.
+   *
+   * Two pitfalls the implementation must guard against (the host cannot
+   * do this for you):
+   *
+   *   1. ABSENT-FIELD CLOBBER. HTML checkboxes only submit when checked, so
+   *      an absent key is ambiguous between "user unchecked it" and "the
+   *      field was never rendered". Without a presence signal (see the
+   *      recommended hidden marker on `profileSection()`), writing
+   *      `body['x'] === 'on'` unconditionally turns every save where the
+   *      section was hidden into a stealth reset to `false`.
+   *
+   *   2. CONFIG-GATED FIELDS. If your partial gates a field behind an admin
+   *      config flag (`<% if (enabled) %>`), your save handler MUST re-check
+   *      the same flag server-side before writing — otherwise a crafted
+   *      POST can bypass the admin's gate.
    */
   saveProfileSection?(username: string, body: Record<string, unknown>): Promise<void> | void;
 
@@ -952,40 +987,70 @@ class AddonsManager extends BaseManager {
   /**
    * Collect profile-page sections contributed by loaded addons (#534).
    *
-   * Iterates every loaded addon that implements `profileSection()`, awaits
-   * its return, and packages results for `profile.ejs`. Errors and `null`
-   * returns are skipped silently — one failing addon must not break the
-   * profile page.
+   * Iterates every loaded addon that implements `profileSection()`, fans
+   * out IN PARALLEL via `Promise.allSettled`, then packages results for
+   * `profile.ejs`. Errors and `null` returns are skipped (malformed shapes
+   * are logged so addon authors get a diagnostic instead of an invisibly-
+   * missing card). One failing addon must not break the profile page.
    *
-   * Mirrors the `getStatus()` pattern exactly so the architectural shape
-   * stays consistent across addon-extension points.
+   * Mirrors the `getStatus()` pattern but runs in parallel so page-render
+   * latency is bounded by the slowest addon, not the sum.
+   *
+   * Result order follows registration order of the addons map so the
+   * displayed section order is stable across renders.
    */
   async getProfileSections(user: AddonProfileUser): Promise<AddonProfileSectionEntry[]> {
+    const candidates = [...this.addons.entries()].filter(
+      ([, addon]) => addon.loaded && typeof addon.module.profileSection === 'function'
+    );
+
+    // async IIFE per addon so a SYNCHRONOUS throw inside profileSection()
+    // becomes a rejected promise, not an escaped throw out of the .map().
+    // (Promise.resolve(fn()) would not catch the sync throw.)
+    const settled = await Promise.allSettled(
+      candidates.map(([, addon]) => (async () => addon.module.profileSection!(user))())
+    );
+
     const sections: AddonProfileSectionEntry[] = [];
-
-    for (const [name, addon] of this.addons) {
-      if (!addon.loaded || typeof addon.module.profileSection !== 'function') continue;
-
-      try {
-        const result = await addon.module.profileSection(user);
-        if (result && typeof result.title === 'string' && typeof result.html === 'string') {
-          sections.push({ addonName: name, title: result.title, html: result.html });
-        }
-      } catch (err) {
+    for (let i = 0; i < settled.length; i++) {
+      const entry = settled[i];
+      const [name] = candidates[i];
+      if (entry.status === 'rejected') {
+        const err: unknown = entry.reason;
         logger.warn(
           `[AddonsManager] profileSection() failed for addon '${name}': ${err instanceof Error ? err.message : String(err)}`
         );
+        continue;
       }
+      const result = entry.value;
+      if (result === null) continue; // explicit opt-out — normal, no warn
+      if (!result || typeof result.title !== 'string' || typeof result.html !== 'string') {
+        logger.warn(
+          `[AddonsManager] profileSection() for addon '${name}' returned malformed shape; expected {title:string, html:string} or null`
+        );
+        continue;
+      }
+      sections.push({ addonName: name, title: result.title, html: result.html });
     }
-
     return sections;
   }
 
   /**
    * Fan out `POST /preferences` body to every loaded addon that registered a
-   * `saveProfileSection()` handler (#534). Each addon picks its own fields
-   * out of the shared body. Errors are caught and logged so one bad addon
-   * cannot block other addons' saves or the core-preferences save.
+   * `saveProfileSection()` handler (#534).
+   *
+   * Runs SEQUENTIALLY — each addon's read-modify-write of user preferences
+   * (typical implementation: `getUser → merge → updateUser`) must see the
+   * previous addon's writes. Parallel execution would create a same-snapshot
+   * race where two addons read identical preferences, each merge their own
+   * keys, and the second writer clobbers the first writer's changes.
+   * Self-inflicted by the original #534 PR; reverted to sequential here.
+   *
+   * (`getProfileSections()` above stays parallel — it's a read path with no
+   * cross-addon write contention.)
+   *
+   * Errors are caught per-addon and logged so one bad addon cannot block
+   * other addons' saves or the core-preferences save.
    */
   async saveProfileSections(username: string, body: Record<string, unknown>): Promise<void> {
     for (const [name, addon] of this.addons) {

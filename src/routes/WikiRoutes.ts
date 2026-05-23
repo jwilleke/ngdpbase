@@ -5064,8 +5064,17 @@ ${panes}
         currentUser.username
       );
 
-      // Get current user's existing preferences
-      const currentPreferences = currentUser.preferences || {};
+      // Re-read fresh preferences from disk rather than spreading the
+      // session-cached `currentUser.preferences`. The session snapshot can
+      // miss keys written since login (by another tab, the standalone
+      // /journal/settings page, an admin tool, etc.), and the subsequent
+      // updateUser({ preferences }) call REPLACES the whole bag — any key
+      // not in our spread base is wiped. Re-reading per-request avoids
+      // that wholesale clobber. (Surfaced by #534 code review.)
+      const freshUserForPrefs = currentUser.username
+        ? await userManager.getUser(currentUser.username)
+        : null;
+      const currentPreferences = (freshUserForPrefs?.preferences ?? currentUser.preferences ?? {}) as Record<string, unknown>;
       logger.debug(
         'DEBUG: updatePreferences - current preferences:',
         currentPreferences
@@ -5148,16 +5157,25 @@ ${panes}
       await userManager.updateUser(currentUser.username ?? '', { preferences });
 
       // #534: fan out the same body to every addon that registered a
-      // saveProfileSection() handler. Errors are absorbed by AddonsManager
-      // (per-addon try/catch) — a failing addon must not block this redirect.
-      const addonsManager = this.engine.getManager('AddonsManager');
-      if (
-        addonsManager
-        && currentUser.username
-        && typeof (addonsManager as { saveProfileSections?: unknown }).saveProfileSections === 'function'
-      ) {
-        await (addonsManager as { saveProfileSections: (u: string, b: Record<string, unknown>) => Promise<void> })
-          .saveProfileSections(currentUser.username, req.body as Record<string, unknown>);
+      // saveProfileSection() handler. Wrapped in its OWN try/catch so a
+      // failure here does NOT fall through to the outer catch and mislead
+      // the user with "Failed to save preferences" — core prefs already
+      // persisted at the updateUser call above. (Surfaced by #534 code review.)
+      // Body is shallow-cloned to defend against an addon mutating req.body
+      // and affecting peer addons or post-route middleware.
+      try {
+        const addonsManager = this.engine.getManager('AddonsManager');
+        if (
+          addonsManager
+          && currentUser.username
+          && typeof (addonsManager as { saveProfileSections?: unknown }).saveProfileSections === 'function'
+        ) {
+          const bodyClone = { ...(req.body as Record<string, unknown>) };
+          await (addonsManager as { saveProfileSections: (u: string, b: Record<string, unknown>) => Promise<void> })
+            .saveProfileSections(currentUser.username, bodyClone);
+        }
+      } catch (addonErr) {
+        logger.warn('[/preferences] addon saveProfileSections threw — core preferences saved successfully, fan-out failed', addonErr);
       }
 
       logger.debug('DEBUG: updatePreferences - preferences saved successfully');
