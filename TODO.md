@@ -74,7 +74,7 @@ Filed and scoped, awaiting prioritization or implementation cycles.
 | #689 | Admin show/edit frontmatter | Low |
 | #686 | AddonsManager: auto-enable bundled addons in non-default addons-path dirs | Low — Domain Addon Deployment Lever 3 |
 | #685 | Data-ingestion framework (platform addon) | Low / Future — 2-4 weeks platform work; unblocks geohazardwatch data-source imports. **Pairs with #501** — the JSON→NCM serializer is #685's rendering counterpart; pick them up together when a driver appears. |
-| #684 | Route-test infra hardening | Low — `buildTestApp` helper + 2 reference migrations landed `2e2d6396`; remaining ~30 tests migrate opportunistically when touched |
+| #684 | Route-test infra hardening | Low — `buildTestApp` helper + 3 reference migrations landed (`2e2d6396` coverage9+contact, `02330ca2` imageUpload covers multipart/header-only); remaining ~30 tests migrate opportunistically when touched |
 | #675 | Scaffolder + reference template for new addons | Low |
 | #673 | Packaged addon distribution model (npm install) | Low — affects how #685 ships |
 | #501 | JSON → ngdp Compatible Markdown serializer (re-scoped 2026-05-17 from "JSON → HTML") | Deferred — dependency #728 (NCM spec/normalizer) shipped, but **no driver today**. **Pairs with #685**: #685 is the mandatory downstream consumer (fetch/schedule) and hasn't started; #501 is the render-to-page-body counterpart. Picking up #501 in isolation risks designing the API around the inline-plugin consumer and refactoring when #685 lands. Pick them up together. Four architectural questions still open (template DSL, fetch policy, template storage, ImportManager integration shape) — a Decisions doc would unblock implementation when the driver appears. |
