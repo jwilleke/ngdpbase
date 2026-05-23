@@ -11,7 +11,6 @@ This command helps focus on high-priority and current work by showing:
 - Open PRs (ngdpbase and satellites)
 - Operator-decision carryover (e.g., recommended-close issues)
 - Top-priority items from sister sites (combined table — see below)
-- Notable feature work in flight
 
 ## Sister-site survey
 
@@ -55,6 +54,5 @@ Freshen the root `TODO.md` (moved from `docs/TODO.md` on 2026-05-16). Keep only 
 - **Open BUGS** — ngdpbase, count + top by issue # / recency
 - **Sister-site top priorities (combined table)** — geohazardwatch only today; expand if more separate satellites emerge
 - **Operator-action carryover** — items awaiting yes/no/close decisions
-- **Notable feature backlog** — recently filed, biggest scope, or close to ready
 - **TODO.md staleness check** — flag if the file's `lastModified` is older than ~2 weeks
 - **Recommended next moves** — 2-4 concrete next actions

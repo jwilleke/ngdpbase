@@ -1,10 +1,12 @@
 # Docs
 
-Review the current work and determine whether end-user documentation is needed.
+Review the current work and determine whether end-user documentation and / or developer documentation is needed.
 
 ## Reference
 
 Read `docs/proper-documentation-pages.md` for the documentation standards and conventions used on this site. Follow those guidelines for any pages you create or edit.
+
+If developer documentation, add to docs/Developer-Documentation.md
 
 ## Steps
 

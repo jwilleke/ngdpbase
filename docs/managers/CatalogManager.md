@@ -1,7 +1,7 @@
 ---
 name: CatalogManager
 description: "Two-registry coordinator — controlled-vocabulary providers (#424) + asset-source providers (#755). Fans out term lookup and asset queries across registered providers."
-dateModified: '2026-05-20'
+dateModified: '2026-05-23'
 category: managers
 code: src/managers/CatalogManager.ts
 ---
@@ -21,7 +21,7 @@ CatalogManager is a **coordinator** — it owns no records itself but routes que
 | Registry | What it holds | Status | Filed under |
 |---|---|---|---|
 | **Vocabulary providers** | Controlled-vocabulary term lists (categories, system-keywords, SKOS concept schemes) | **Shipped** | #424 |
-| **Asset sources** | CreativeWork producers (`PageManager`, `MediaManager`, `AttachmentManager` once they implement `CatalogSource`) | **Designed, not implemented** — Slice 2+ of #755 | #755 |
+| **Asset sources** | CreativeWork producers — `MediaManager`, `AttachmentManager`, `PageManager` all implement `CatalogSource`; addons can register their own | **Shipped** — Slices 3 / 4 / 5 of #755 | #755 |
 
 Both registries live on the same Manager because they share the same shape (`Map<id, Provider>`) and the same fan-out pattern (walk providers, merge or first-match). They do not interact beyond living together.
 
@@ -38,13 +38,16 @@ Per the 2026-05-20 design (see `docs/schemas.md`), this two-registry layout is t
 - **Linked-Data URI resolution** — `resolveUri(term)` walks providers in registration order and returns the first non-null hit (currently used for page-keyword sameAs links in `WikiRoutes.ts:1791`).
 - **Term suggestion fan-out** — `suggestTerms(content, title)` delegates to any provider that implements it (currently only the AI stub; returns `[]` until an LLM addon is wired).
 
-### Designed but not yet implemented
+### Asset-source registry and Linked-Data emission
 
-The 2026-05-20 schema-ratification decisions add forward-looking capabilities. Progress so far:
+The 2026-05-20 schema-ratification roadmap is largely shipped. Status:
 
-- **Asset-source registry** — **shipped in Slice 3 of #755 (#758)**. A second `Map<sourceId, CatalogSource>` for CreativeWork producers, fanned out via `registerSource()` / `getCreativeWork()` / `listCreativeWorks()` / `checkSchemaVersions()` / `getSourceInfo()`. `MediaManager` is the first registered source; `PageManager` lands in Slice 4 (#754-gated), `AttachmentManager` in Slice 5.
-- **SKOS-shaped vocabulary terms** — not yet implemented. `CatalogTerm` will gain optional fields aligned with W3C SKOS (`altLabels`, `broader`, `narrower`, `exactMatch`, `closeMatch`, `definition`, `scopeNote`, etc.). The existing flat `uri` field stays as deprecated legacy, treated as a single `exactMatch` entry when present.
-- **SKOS `ConceptScheme` JSON-LD emission** — not yet implemented. A future endpoint at `/api/catalog/vocabulary/<scheme-id>` will render each vocabulary as a dereferenceable SKOS ConceptScheme document. Implements Slice 6 of #755 (linked-data middle ground framing).
+- **Asset-source registry** — **shipped** (Slices 3 / 4 / 5 of #755). A second `Map<sourceId, CatalogSource>` for CreativeWork producers, fanned out via `registerSource()` / `getCreativeWork()` / `listCreativeWorks()` / `checkSchemaVersions()` / `getSourceInfo()`. Currently registered core sources: `MediaManager` (Slice 3, #758), `AttachmentManager` (Slice 5, #759), `PageManager` (Slice 4, #772). Addons register additional sources from their `register()` hook — the registry is fully dynamic and per-deployment.
+- **JSON-LD embedded on page renders** — **shipped** (Slice 6a, #765). `<script type="application/ld+json">` embedded on `/view/:page`.
+- **JSON-LD content negotiation on `@id` URLs** — **shipped** (Slice 6b, #766). `Accept: application/ld+json` on any `@id` URL returns the JSON-LD document.
+- **SKOS `ConceptScheme` JSON-LD emission** — **shipped** (Slice 6c, #767). Endpoint at `/api/catalog/vocabulary/<scheme-id>` renders each vocabulary as a dereferenceable SKOS ConceptScheme document. Emitter at `src/utils/buildConceptSchemeJsonLd.ts`.
+- **SKOS-shaped vocabulary terms** — **not yet implemented**. `CatalogTerm` will gain optional fields aligned with W3C SKOS (`altLabels`, `broader`, `narrower`, `exactMatch`, `closeMatch`, `definition`, `scopeNote`, etc.). The existing flat `uri` field stays as deprecated legacy, treated as a single `exactMatch` entry when present.
+- **Runtime visibility of registered sources** — diagnostics methods `getSourceInfo()` and `checkSchemaVersions()` exist but have no admin-UI surface yet. Tracked in **#780**.
 
 ## Bootstrapping order
 
