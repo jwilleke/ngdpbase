@@ -2,6 +2,34 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-23-02
+
+- Agent: Claude Opus 4.7
+- Subject: Closed **#655** — documented and demonstrated the `.env`-style three-surface k8s config split (flat-env `ConfigMap` + flat-env `Secret` via `envFrom:` + structured JSON `ConfigMap` via `subPath`). Bundled a quietly-broken `NGDPBASE_SESSION_SECRET` env-var name bugfix in the same commit. Also stripped the stale **#714** (CLOSED 2026-05-22) row from `TODO.md`.
+- Current Issue: **#655** (closed via "Closes #655" in the commit), **#714** (TODO.md hygiene).
+- Release: none — docs + k8s manifest examples only.
+- Tests: none — docs-only pre-flight skip per the rule formalized in `877965d3` (this session's earlier commit). Zero `src/` / `addons/` / `views/` / `tests/` paths touched.
+- Semver: **skip** — docs + manifest examples; no runtime, public-API, or persisted-state change.
+- /othersites: skipped — gated on `minor|major`.
+- Bug discovered while surveying: `docker/k8s/deployment.yaml` line 63 and `docker/HEADLESS-DEPLOYMENT-NOTES.md` §8 both used env-var name `SESSION_SECRET`, but `ConfigurationManager.ts:612` reads `process.env.NGDPBASE_SESSION_SECRET`. The misnamed env-var was silently ignored, so every pod restart regenerated the session secret and bumped all logged-in users to Anonymous. Operator confirmed bundling the fix with the #655 docs work. Now corrected everywhere (deployment.yaml, secrets.yaml.example, README.md, HEADLESS-DEPLOYMENT-NOTES.md §8). The docker-compose path (`docker/.env.example` line 183) was already correct — only the k8s docs/manifests were wrong.
+- Three-surface config split — rationale captured in new HEADLESS-DEPLOYMENT-NOTES.md §10:
+  - Non-sensitive flat env vars (`NODE_ENV`, `HEADLESS_INSTALL`, `INSTANCE_DATA_FOLDER`, `NGDPBASE_BASE_URL`, ...) → `ConfigMap` mounted via `envFrom: configMapRef:`.
+  - Sensitive flat env vars (`NGDPBASE_SESSION_SECRET`, OIDC client secrets, SMTP password, ES password, ...) → `Secret` mounted via `envFrom: secretRef:`.
+  - Structured `ngdpbase.*` dotted-key config (theme, addons-path arrays, page provider, nested objects) → `ConfigMap` mounted as a file via `subPath`. Doesn't fit flat env vars because of array-valued / nested keys.
+  - Two-ConfigMap split (not one) is intentional: a single ConfigMap with both flat env keys AND a JSON key, mounted via `envFrom:`, would inject the stringified JSON as an env var. Wrong shape.
+  - Env-var names matter — `process.env.X` lookups are verbatim. New §10 explicitly calls out the `SESSION_SECRET` vs `NGDPBASE_SESSION_SECRET` foot-gun and tells future operators to grep `src/` before naming a ConfigMap/Secret key.
+- New starter manifest: `docker/k8s/configmap-env.yaml.example` (~50 lines, commented for each env var with the corresponding `process.env.X` consumer).
+- `docker/k8s/secrets.yaml.example` switched from `data:` (base64-encoded) to `stringData:` (paste-raw, k8s base64-encodes on apply) — operator's mental model matches the .env-pasting flow better.
+- Deployment header rewritten: three-surface split named explicitly at the top; Strategy 1 / Strategy 2 commands updated to include `kubectl apply -f configmap-env.yaml` and `secrets.yaml`; the JSON ConfigMap is now explicitly distinguished by "(the JSON one)" in the Strategy 1 comment to avoid confusion with the new env ConfigMap.
+- TODO.md row for **#714** removed — the issue was CLOSED 2026-05-22 (Slices A-F shipped across v3.36.1 + v3.37.0; spot-checked end-to-end). Row text said "refactor intentionally not started" which had been wrong since 2026-05-22 16:27 UTC. All other 16 rows in the "Notable feature work in flight" table verified OPEN.
+- ngdpbase commits (this entry):
+  - `2aeec74f` — `docs(#655): k8s env-style three-surface config split + fix NGDPBASE_SESSION_SECRET bug`
+- Files Modified (code): none.
+- Files Modified (docs/manifests): `docker/HEADLESS-DEPLOYMENT-NOTES.md` (+71/-9 lines: §8 rewrite + new §10 + updated deploy order), `docker/k8s/README.md` (+16/-7: Quick Start + Manifest Files table + Secrets section), `docker/k8s/deployment.yaml` (+27/-15: header + envFrom switch), `docker/k8s/secrets.yaml.example` (+34/-25: stringData + NGDPBASE_SESSION_SECRET).
+- Files Modified (new): `docker/k8s/configmap-env.yaml.example` (50 lines).
+- Files Modified (TODO): `TODO.md` (-1 line for #714 row).
+- GitHub: comment will be posted on #655; "Closes #655" in commit message will auto-close the issue on push.
+
 ## 2026-05-23-01
 
 - Agent: Claude Opus 4.7
