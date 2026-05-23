@@ -43,8 +43,7 @@ import path from 'path';
 import express from 'express';
 import ejs from 'ejs';
 import type { WikiEngine } from '../../dist/src/types/WikiEngine.js';
-import type { AddonStatusDetails, AddonProfileSection } from '../../dist/src/managers/AddonsManager.js';
-import type { User } from '../../dist/src/types/User.js';
+import type { AddonStatusDetails, AddonProfileSection, AddonProfileUser } from '../../dist/src/managers/AddonsManager.js';
 import type UserManager from '../../dist/src/managers/UserManager.js';
 import type PluginManager from '../../dist/src/managers/PluginManager.js';
 import type AddonsManager from '../../dist/src/managers/AddonsManager.js';
@@ -89,8 +88,11 @@ const journalAddon = {
 
     // #534: capture engine reference + voice-to-text flag for the
     // profileSection / saveProfileSection hooks below.
+    // Coerce explicitly — config values arriving as strings ("false", "off",
+    // "0") from env-var resolution should disable, not pass the strict `!== false` check.
     engineRef = engine;
-    voiceToTextEnabled = config['enableVoiceToText'] !== false;
+    const v = config['enableVoiceToText'];
+    voiceToTextEnabled = !(v === false || v === 'false' || v === 'off' || v === '0');
 
     // ── 1. JournalDataManager ────────────────────────────────────────────────
     dataManager = new JournalDataManager(engine, dataPath);
@@ -210,13 +212,15 @@ const journalAddon = {
    * use `journal.*` names so the host POST /preferences body lands in
    * `saveProfileSection()` keyed correctly. Returns `null` when the addon
    * isn't fully loaded (defensive — host already filters by `loaded`).
+   *
+   * Trusts the `user` argument's preferences — the host (WikiRoutes.profilePage)
+   * already fetched a fresh user record from UserManager. Re-fetching per
+   * addon would scale page-render latency linearly with addon count.
    */
-  async profileSection(user: User): Promise<AddonProfileSection | null> {
+  async profileSection(user: AddonProfileUser): Promise<AddonProfileSection | null> {
     if (!engineRef || !templateManager) return null;
 
-    const userManager = engineRef.getManager<UserManager>('UserManager');
-    const freshUser = userManager ? await userManager.getUser(user.username) : null;
-    const stored = (freshUser?.preferences ?? user.preferences ?? {}) as Record<string, unknown>;
+    const stored = (user.preferences ?? {}) as Record<string, unknown>;
 
     const prefs = {
       defaultTemplate: (stored['journal.defaultTemplate'] as string | undefined) ?? 'free-write',
@@ -240,11 +244,22 @@ const journalAddon = {
    * #534 — persist journal preferences submitted via POST /preferences.
    *
    * The host has already saved core preferences before calling this — we
-   * just merge the journal.* keys into the same `preferences` bag. Errors
-   * surface to AddonsManager's try/catch so a journal-save failure can't
-   * block the rest of the form save.
+   * just merge the journal.* keys into the same `preferences` bag.
+   *
+   * IMPORTANT — absent-field policy:
+   *   1. We require the `journal._rendered` hidden marker before doing
+   *      anything. Without it, the form did not include our fields, so
+   *      treating "absent checkbox" as "user unchecked it" would clobber
+   *      stored values. (Marker is emitted at the top of _profile-section.ejs.)
+   *   2. Even with the marker, per-field writes are gated by the SAME server-
+   *      side conditions the partial uses to RENDER each field. If the
+   *      partial hid a field (templates empty, admin disabled voice-to-text),
+   *      we don't write that key — a crafted POST cannot bypass the gate.
+   *
+   * Errors propagate to AddonsManager's per-addon try/catch.
    */
   async saveProfileSection(username: string, body: Record<string, unknown>): Promise<void> {
+    if (body['journal._rendered'] !== '1') return;
     if (!engineRef) return;
 
     const userManager = engineRef.getManager<UserManager>('UserManager');
@@ -252,20 +267,24 @@ const journalAddon = {
 
     const freshUser = await userManager.getUser(username);
     const existing = (freshUser?.preferences ?? {}) as Record<string, unknown>;
+    const updated: Record<string, unknown> = { ...existing };
 
-    // Extract the addon's keys from the unified body — checkboxes only
-    // appear when checked, so absent === false.
-    const dt = body['journal.defaultTemplate'];
+    // Per-field gating mirrors the partial's `<% if (...) %>` blocks.
+    const templates = templateManager?.listTemplates() ?? [];
+    if (templates.length > 0) {
+      const dt = body['journal.defaultTemplate'];
+      updated['journal.defaultTemplate'] = typeof dt === 'string' && dt.trim() ? dt.trim() : 'free-write';
+    }
+    if (voiceToTextEnabled) {
+      updated['journal.voiceToText'] = body['journal.voiceToText'] === 'on';
+    }
+
+    // Always-rendered fields — safe to read unconditionally now that the
+    // _rendered marker has guaranteed the partial was on the submitted form.
+    updated['journal.streakVisible']   = body['journal.streakVisible']   === 'on';
+    updated['journal.reminderEnabled'] = body['journal.reminderEnabled'] === 'on';
     const rt = body['journal.reminderTime'];
-
-    const updated: Record<string, unknown> = {
-      ...existing,
-      'journal.defaultTemplate': typeof dt === 'string' && dt.trim() ? dt : 'free-write',
-      'journal.voiceToText':     body['journal.voiceToText']     === 'on',
-      'journal.reminderEnabled': body['journal.reminderEnabled'] === 'on',
-      'journal.reminderTime':    typeof rt === 'string' && rt.trim() ? rt.trim() : '20:00',
-      'journal.streakVisible':   body['journal.streakVisible']   === 'on'
-    };
+    updated['journal.reminderTime']    = typeof rt === 'string' && rt.trim() ? rt.trim() : '20:00';
 
     await userManager.updateUser(username, { preferences: updated });
   },
@@ -276,6 +295,7 @@ const journalAddon = {
     dataManager = null;
     templateManager = null;
     engineRef = null;
+    voiceToTextEnabled = false; // symmetry — reset all module-level state on shutdown
   }
 };
 

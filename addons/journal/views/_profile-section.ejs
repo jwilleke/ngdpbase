@@ -3,6 +3,13 @@
     wrapper, no header, no sidebar. The wrapping card + save button come from
     the host profile.ejs preferences form. %>
 
+<%# Hidden marker so saveProfileSection can distinguish "section was rendered
+    but the user unchecked everything" from "section was not rendered at all"
+    (admin disabled the addon mid-session, cached form, etc.). Without this,
+    absent checkbox fields would be indistinguishable from "user submitted no
+    such field" and we'd silently clobber stored prefs to false on every save. %>
+<input type="hidden" name="journal._rendered" value="1">
+
 <% if (templates && templates.length > 0) { %>
 <div class="mb-3">
   <label class="form-label fw-semibold">Default Template</label>
