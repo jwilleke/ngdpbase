@@ -2,6 +2,36 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-23-07
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped **#534** (addon-extension hook for `/profile` page) as **v3.38.1**. First post-triage easy-win to ship. Added optional `profileSection()` / `saveProfileSection()` methods to the `AddonModule` interface, two fan-out methods on `AddonsManager`, a `profile.ejs` slot inside the preferences form (so addon fields save with the existing POST /preferences), and migrated the Journal addon as the first real consumer. Standalone `/journal/settings` route left in place for backward compat during transition.
+- Current Issue: **#534** (auto-closed via `Closes #534` footer in `a339c8e6`).
+- Release: **v3.38.1** — GitHub release deferred per operator choice (patch with explicit defer; satellites will pick up at next minor/major).
+- Tests: 5994 passed + 9 skipped on jimstest (**+10 new** in `AddonsManager.profileSection.test.ts`). E2E 72/72 pass on the release commit per Step 8a jimstest-first invariant. Pre-flight ran full build + restart + unit + E2E because the commit touches UI surface (`views/profile.ejs`, `addons/journal/views/_profile-section.ejs`, `addons/journal/index.ts`).
+- Semver: **patch** — operator picked patch with explicit "defers release publishing" intent. The change adds new optional `AddonModule` fields + two new public `AddonsManager` methods, which would justify a minor; operator chose patch to bundle release publishing for a later cycle.
+- /othersites: **skipped** — gated on `minor|major` per `/session-commit` Step 5. Consistent with the patch+defer decision.
+- Perf baseline drift v3.38.0 → v3.38.1: memory −24.7% (cold-cache noise — matches the historical pattern of post-restart-vs-warm comparisons), routes drift +5/+11 ms (well under the 50 ms regression bar). No threshold trips. Baseline file at `docs/performance/baseline-v3.38.1-2026-05-23.md`.
+- Design fidelity — mirrored the **`AddonModule.status()` → `AddonsManager.getStatus()`** pattern exactly per the issue's "Updated Design — follow the admin addon pattern exactly" comment from 2026-04-18:
+  - Per-addon try/catch in the collector (one bad addon does not break the page).
+  - Per-addon try/catch in the save fan-out (one bad save does not block others, does not block the core-preferences save, does not block the redirect).
+  - `loaded` filter (skip not-loaded addons).
+  - Type-narrowing on returned `{title, html}` (malformed shapes silently filtered).
+- Bundled bug-defense: `AddonProfileUser = Omit<User, 'password'>` keeps the hook contract narrow (addons can't accidentally read password hashes) and matches what `UserManager.getUser()` actually returns at runtime. The local `IUserManager` interface in WikiRoutes declares `getUser` as returning `UserContext` (a long-standing lie); cast through `unknown` at the call site with an explanatory comment.
+- Defensive typeof guards on `addonsManager.getProfileSections` / `saveProfileSections` calls in WikiRoutes — partial-mock route tests + headless configs without AddonsManager need to not 500. (Caught by the existing `/profile` route test in `routes.test.ts`; fixed with the typeof guard.)
+- Journal addon migration: new `_profile-section.ejs` partial (form fields only, no `<form>` wrapper, no sidebar, no alerts); `profileSection()` renders the partial via `ejs.renderFile`; `saveProfileSection()` writes the 5 `journal.*` keys to user preferences via UserManager. Standalone `/journal/settings` route + view kept — both surfaces save the same keys, last-write-wins, no risk of corruption during transition. `@types/ejs` added to journal devDeps for TS compile-time typings.
+- Test coverage: `AddonsManager.profileSection.test.ts` — 10 tests using on-disk addon fixtures + `AddonsManager.initialize()` (same pattern as `AddonsManager.disableCascade.test.ts`). Each test writes minimal `index.js` files under a tmp dir, scans them through the real loader, then exercises the hooks. Satisfies acceptance criterion 5 ("at least one other addon can contribute without core changes") via the test fixtures going through the same loader path a real addon takes.
+- Commit-message linter normalized double-quoted string literals to single-quoted in the new test file as part of the pre-commit hook — no semantic change.
+- TODO.md: no row change. #534 wasn't in the "Notable feature work in flight" backlog table (it was surfaced as an Easy Win via the new `/check-todos` section; that section reads live from GitHub, not from TODO.md). The "Waiting on Review Sign-off" section still lists #259 only.
+- ngdpbase commits (this entry):
+  - `a339c8e6` — `feat(#534): addon profileSection / saveProfileSection extension hook + Journal migration`
+  - `2d0f05a2` — `chore: release v3.38.1`
+- Files Modified (code): `src/managers/AddonsManager.ts`, `src/routes/WikiRoutes.ts`, `addons/journal/index.ts`.
+- Files Modified (views): `views/profile.ejs`, `addons/journal/views/_profile-section.ejs` (NEW).
+- Files Modified (tests): `src/managers/__tests__/AddonsManager.profileSection.test.ts` (NEW, 10 tests).
+- Files Modified (config/release): `addons/journal/package.json` (+ `@types/ejs`), `addons/journal/package-lock.json`, `package.json` (3.38.0 → 3.38.1), `config/app-default-config.json`, `CHANGELOG.md`, `docs/performance/baseline-v3.38.1-2026-05-23.md` (NEW).
+- GitHub: #534 closed (auto via commit footer); comment posted summarising the ship with all 6 acceptance-criteria checkboxes checked. v3.38.1 tag pushed; GitHub release entry deferred per patch+defer policy.
+
 ## 2026-05-23-06
 
 - Agent: Claude Opus 4.7
