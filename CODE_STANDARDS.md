@@ -19,10 +19,10 @@ In all interactions and commit messages
 - NEVER put unencrypted "Secrets" in in Git or other CMS systems.
 - Always create docs/project_log.md file as a log of work done on the project in format specified in document within "## Format"
 - In Markdown documents:
-  - **bold** in list beginings.
-  - do not use "1. Headings" ok to use "## Step 1 ..."
-  - **NO Bolding in List Headings:** e.g., `- **Project Overview:**` is invalid. Use `- Project Overview:` instead.
-  - **NO Bolding entire lines:** e.g., `**Process:**` is invalid. Use proper headings (e.g., `### Process`) instead.
+  - No `**bold**` at the start of list items or as a pseudo-heading (Markdownlint rule MD036).
+  - Do not number headings with `1. Heading`; `## Step 1 ...` is fine.
+  - Bolded list-item prefixes are invalid — e.g., `- **Project Overview:**` should be `- Project Overview:`.
+  - Whole-line bold acting as a heading is invalid — e.g., `**Process:**` should be a proper heading like `### Process`.
 
 ## Language & Environment
 
@@ -138,7 +138,7 @@ Run markdown linting:
 npm run lint:md:fix   # Auto-fix markdown issues (note: MD036 requires manual fix)
 ```
 
-**Heading vs Bold Text:**
+#### Heading vs Bold Text
 
 ```markdown
 <!-- ❌ Bad - bold text used as heading -->
