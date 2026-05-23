@@ -2,6 +2,21 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-23-05
+
+- Agent: Claude Opus 4.7
+- Subject: Closed **#525** per operator decision. Substantive doc fix shipped 2026-05-19 in commit `cab445ff` — Search Documentation page corrected (the "client-side search" inaccuracy) and a new "Search Providers" subsection added covering the pluggable model, Lunr as the in-process default, Elasticsearch as the optional Lucene-backed addon, and the `BaseSearchProvider` extensibility hook. The issue had sat awaiting eyeball-and-close since then. Operator confirmed and asked to close directly (rather than the `in review` label dance I'd just done for #259).
+- Current Issue: **#525** (closed).
+- Release: none — issue closure only, no code or doc commit this turn.
+- Tests: none — no source change.
+- Semver: **skip** — not a code action.
+- /othersites: skipped — not a code action.
+- TODO.md: no change. #525 was never in the in-flight backlog table (the operator's policy is bugs/features filed-and-scoped; #525 was always an end-user-doc audit). Nothing to remove.
+- Pattern note for future similar cases: when an issue says "leaving open for you to eyeball … and close", the choice between (a) move to `in review` label and let it cycle through the operator's TODO.md review queue versus (b) close directly when operator confirms is operator-pick. Both are valid; (b) is faster when the operator is actively reviewing and ready to decide. Don't insist on the label dance when the operator says close.
+- ngdpbase commits (this entry): none.
+- Files Modified: none (other than this log entry, committed as its own housekeeping below).
+- GitHub: `gh issue close 525` with closing comment summarising the shipped work.
+
 ## 2026-05-23-04
 
 - Agent: Claude Opus 4.7
