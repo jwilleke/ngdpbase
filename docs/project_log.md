@@ -2,6 +2,25 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-23-16
+
+- Agent: Claude Opus 4.7
+- Subject: Cross-repo session — used ngdpbase as the reference to bring `jwilleke/mjs-project-template` forward (three PRs landed) and then consolidated the Dependabot sweep across ngdpbase into `/check-todos` so the operator sees the full security picture (main repo + per-addon path slicing + separate-repo satellites) from one skill instead of two. The template now carries the four Behavioral Principles, has a healthy CI matrix on Node 20/22 only (Node 18 EOL), and the bold-prefix list items that contradicted its own MD036 rule are gone repo-wide. Zero open Dependabot alerts on the template post-merge (9 fixed by the dep-bump cascade, 1 auto-dismissed).
+- Current Issue: none directly.
+- Tests: skipped both repos — every commit qualified for docs-only / config-only skip per `/session-commit` Step 3. Husky pre-commit (markdownlint + docs-coverage) ran green on each commit. Template CI verified each PR end-to-end on Node 20.x + 22.x once the matrix was fixed.
+- Semver: **skip** — no runtime / served / API change in ngdpbase; template is pre-1.0 and uses its own cycle.
+- /othersites: **skipped** — `skip` policy per `/session-commit` Step 5.
+- Work Done:
+  - **mjs-project-template PR #4** (`docs: align AGENTS.md + CODE_STANDARDS.md with ngdpbase patterns`) — ported the four Behavioral Principles (Think Before Coding / Simplicity First / Surgical Changes / Goal-Driven Execution) as a new `## Behavioral Principles` section in the template's AGENTS.md, bumped `last_updated` from 2025-12-21 → 2026-05-23, fixed two MD036 self-violations in CODE_STANDARDS.md (the rule's own list endorsed the pattern it forbids; an example header was itself a violation). Audit kept ngdpbase-specific concepts (WikiContext, /view/, server.sh, FAST_STORAGE, jimstest, app-default-config) out.
+  - **mjs-project-template PR #5** (`fix(ci): drop Node 18 from matrix; bump engines to >=20`) — Node 18 went EOL 2025-04-30 and current transitive deps (`string-width` via `markdownlint-cli`) use the regex `v` flag introduced in V8 11.x. Matrix `[18.x, 20.x]` → `[20.x, 22.x]`; `engines.node >=18.0.0` → `>=20.0.0`; `engines.npm >=9.0.0` → `>=10.0.0`. Second commit on the branch (`c9c5607`) added the missing `@vitest/coverage-v8@^4.1.7` devDependency — Node 18 fix unmasked a second CI failure on `vitest run --coverage`.
+  - **mjs-project-template PR #6** (`docs: strict MD036 sweep — strip decorative bold-prefix from list items`) — three mechanical sed passes converted `- **Foo:** content` → `- Foo: content`, `1. **Foo** - desc` → `1. Foo - desc`, and `- [link](url) - **Foo:** content` → `- [link](url) - Foo: content` across 12 docs. Standalone bold pseudo-headings promoted to `####` or stripped depending on context. Two over-promotions (CONTRIBUTING.md:75, CLAUDE.md:6 — sentences that got `####`-ified by the sed) demoted back to plain text by individual edits. Net 191 insertions / 191 deletions. The one remaining bold-prefix is intentional — it sits inside the markdownlint rule's own bad-pattern example block.
+  - **ngdpbase commit `6742c749`** — `/check-todos` "Security / Dependabot" section expanded from a one-liner into a 4-step survey: main ngdpbase + per-addon `manifest_path` slicing + separate-repo satellites (`geohazardwatch`, `fairways-gen2-website`) + explicit skip of local-only checkouts to avoid double-counting. `/check-addons` cross-references updated so the two skills declare their consolidated split: `/check-todos` is the live priority view, `/check-addons` retains the deep per-target snapshot written to `report-addons.md`.
+  - Template Dependabot audit post-PR-#5 merge: zero open alerts, 9 in `fixed` state (resolved by the dep-cascade from adding `@vitest/coverage-v8`), 1 auto-dismissed (`brace-expansion` ≥5.0.0 <5.0.6 — medium-severity DoS, dev-only transitive, not production-reachable). The push-hook's "2 vulnerabilities" message was stale at push time; GitHub recomputed after the new lockfile landed.
+- Commits: `6742c749` (ngdpbase). Cross-repo merge commits in `jwilleke/mjs-project-template`: `61efb2d` (PR #4 merge), `47629c6` (PR #5 merge), `8318bf8` (PR #6 merge).
+- Files Modified:
+  - ngdpbase: `.claude/commands/check-todos.md`, `.claude/commands/check-addons.md`
+  - mjs-project-template: 12+ files including `AGENTS.md`, `CODE_STANDARDS.md`, `CONTRIBUTING.md`, `ARCHITECTURE.md`, `README.md`, `SECURITY.md`, `TEMPLATE_INTEGRATION.md`, `CLAUDE.md`, `.claude/README.md`, `.claude/commands/sync-template.md`, `.github/workflows/README.md`, `.github/workflows/ci.yml`, `.github/ISSUE_TEMPLATE/bug_report.md`, `package.json`, `package-lock.json`
+
 ## 2026-05-23-15
 
 - Agent: Claude Opus 4.7
