@@ -278,6 +278,7 @@ Then restart the server (see [Configuration](#configuration) section above).
 ## Documentation
 
 - [CHANGELOG.md](CHANGELOG.md) - Version history and detailed change notes.
+- [RELEASES.md](RELEASES.md) - Publishing contract for downstream consumers (geohazardwatch, mj-infra-flux, etc.) — what ngdpbase publishes, when, and where.
 - [CONTRIBUTING.md](CONTRIBUTING.md) - How to contribute to the project.
 - [ROADMAP.md](ROADMAP.md) - Project vision and feature priorities.
 - [docs/](docs/) - In-depth technical guides on architecture, plugins, and more.

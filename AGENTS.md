@@ -107,6 +107,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
 - Commit workflow: every non-trivial code commit triggers the full [.claude/commands/session-commit.md](.claude/commands/session-commit.md) flow (jimstest pre-flight, semver decision, project_log entry, GH issue comments, TODO.md refresh, log push) — even when `/session-commit` was not explicitly invoked. Docs-only commits skip the build/test pre-flight but still get a project_log entry.
 - GitHub interactions: prefer the `gh` CLI for issues, PRs, checks, and releases. For new issues, always use `gh issue create --template <name>` against the templates in `.github/ISSUE_TEMPLATE/` (`bug_report.md`, `feature_request.md`, `epic.md`) — they set labels, assignees, and title prefixes correctly.
 - Pre-commit: Husky runs ESLint + Markdownlint; see [CODE_STANDARDS.md § Pre-commit Hooks](./CODE_STANDARDS.md#pre-commit-hooks). Do not bypass with `--no-verify`.
+- Publishing contract: [RELEASES.md](./RELEASES.md) states explicitly what ngdpbase publishes for each release (git tag, Docker image at `ghcr.io/jwilleke/ngdpbase`, CHANGELOG, GH Release for minor/major) and what it deliberately does NOT do for downstream consumers (no notifications, no cross-repo pin updates, no consumer re-deploys). Reference when a consumer-side lag issue is filed (see #783).
 
 ## Creating or Editing Pages Rendered on Any ngdpbase System
 
