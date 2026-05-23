@@ -2,6 +2,25 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-23-18
+
+- Agent: Claude Opus 4.7
+- Subject: Closed issue #783 by making ngdpbase's publishing contract explicit. Added [RELEASES.md](../RELEASES.md) at the repo root documenting exactly what ngdpbase produces for every `v*` tag (git tag, release commit, Docker image at `ghcr.io/jwilleke/ngdpbase` with semver + major.minor + major + latest tags, CHANGELOG entry, GH Release for minor/major only, perf baseline file) and explicit non-promises (no consumer notifications, no cross-repo pin updates, no consumer re-deploys, no waiting for consumers). Linked from `README.md` and `AGENTS.md`. Filed `jwilleke/geohazardwatch#61` as `[BUG]` listing four likely consumer-side root causes for the Renovate auto-bump gap; filed `jwilleke/mj-infra-flux#84` as `[FEATURE]` FYI so the GitOps side knows where the upstream contract lives. Closed `#783`.
+- Current Issue: closes `#783`. Cross-repo issues filed: `jwilleke/geohazardwatch#61`, `jwilleke/mj-infra-flux#84`.
+- Tests: skipped — docs-only commit (RELEASES.md new + README.md + AGENTS.md additions). All paths match the `*.md` allowlist per `/session-commit` Step 3.
+- Semver: **skip** — no runtime / served / API change.
+- /othersites: **skipped** — docs-only.
+- Work Done:
+  - Audited ngdpbase's actual publishing pipeline: `.github/workflows/docker-build.yml` fires on `push.tags: v*` and tags the ghcr.io image with `<X>.<Y>.<Z>`, `<X>.<Y>`, `<X>`, and `latest`. All recent runs (v3.36.1 through v3.39.3) green — publishing chain is healthy.
+  - Diagnosed the actual gap: geohazardwatch's `renovate.json` (PR #54 merged 2026-05-19) has a customManager pointing at `ghcr.io/jwilleke/ngdpbase` with auto-merge for minor/patch and manual review for major. Since #54 merged, ngdpbase has shipped ~15 new minor versions + several patches with zero Renovate PRs in geohazardwatch. Other dep-bump PRs (#55–#60) are firing normally, so Renovate is alive but the customManager isn't triggering. Did NOT debug their side per the operator's "clear contract on our side" framing — surfaced four likely root causes in the bug filing instead.
+  - Wrote RELEASES.md as the canonical publishing contract. Includes: artefact table (where + tag pattern + trigger), GH Release auto-publish rules per bump type, explicit non-promises list, three consumer subscription patterns documented as informational (Renovate-with-ARG-pin, Renovate-direct-FROM, GitOps-manual), current cadence expectation, out-of-band-notification courtesy clause.
+  - Posted the contract summary as a comment on `#783`, then closed `#783` as `completed`. Added a follow-up comment with the actual consumer-side issue numbers.
+- Commits: `3781d36a` (RELEASES.md + README.md + AGENTS.md).
+- Files Modified:
+  - `RELEASES.md` (NEW — 99 lines of contract documentation)
+  - `README.md` (+1 line — bullet under Documentation pointing at RELEASES.md)
+  - `AGENTS.md` (+1 bullet under Process pointing at RELEASES.md with the "explicit non-promises" framing)
+
 ## 2026-05-23-17
 
 - Agent: Claude Opus 4.7
