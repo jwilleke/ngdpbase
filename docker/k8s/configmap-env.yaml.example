@@ -1,0 +1,50 @@
+# ngdpbase Flat-Env ConfigMap (example)
+#
+# This pairs with the *-secrets Secret. Together they replace the inline
+# `env:` block in deployment.yaml — mount with `envFrom: configMapRef:`.
+#
+# Copy and edit before applying:
+#   cp configmap-env.yaml.example configmap-env.yaml
+#   # edit values for your deployment
+#   kubectl apply -f configmap-env.yaml
+#
+# What lives here vs. the other two surfaces:
+#   - configmap-env.yaml      → flat, NON-SENSITIVE env vars (this file)
+#   - secrets.yaml            → flat, SENSITIVE env vars (NGDPBASE_SESSION_SECRET, etc.)
+#   - configmap.yaml          → structured app-custom-config.json (ngdpbase.* dotted keys)
+#
+# Two-ConfigMap split is intentional: a single ConfigMap holding both flat env vars
+# AND the JSON would inject the stringified JSON as an env var when used with
+# `envFrom:`. See HEADLESS-DEPLOYMENT-NOTES.md §10 for the rationale.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ngdpbase-env
+  labels:
+    app: ngdpbase
+    app.kubernetes.io/name: ngdpbase
+data:
+  # Runtime mode — set to "production" for deployed pods, "development" for local dev.
+  NODE_ENV: "production"
+
+  # Headless install: skips the interactive wizard. Required for automated k8s rollouts.
+  # See HEADLESS-DEPLOYMENT-NOTES.md for the gotchas the wizard normally papers over.
+  HEADLESS_INSTALL: "true"
+
+  # Where the app stores operational data inside the container.
+  # Must match the volumeMount in deployment.yaml.
+  INSTANCE_DATA_FOLDER: "/app/data"
+
+  # Optional: split fast (operational: sessions, config, search-index) from slow
+  # (bulk: pages, attachments) storage. When both are set, app prefers FAST_STORAGE
+  # for operational paths. Leave commented to use INSTANCE_DATA_FOLDER for both.
+  # FAST_STORAGE: "/app/data"
+  # SLOW_STORAGE: "/app/data"
+
+  # Custom config filename inside FAST_STORAGE/config/. Default: app-custom-config.json.
+  # INSTANCE_CONFIG_FILE: "app-custom-config.json"
+
+  # Public base URL the app advertises in absolute links, JSON-LD @id values, OIDC
+  # redirects, magic-link emails, etc. MUST match the externally-reachable URL.
+  # Wins over the same key set in app-custom-config.json (env-var override).
+  NGDPBASE_BASE_URL: "https://wiki.example.com"

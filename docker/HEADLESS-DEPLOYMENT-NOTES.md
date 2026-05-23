@@ -179,17 +179,29 @@ See `docs/platform/addon-development-guide.md` UUID requirements section for the
 
 **Symptom.** Logged-in users get bumped to anonymous after every pod restart. Browser still holds a session cookie, but the server treats them as Anonymous.
 
-**Root cause.** Without `SESSION_SECRET` set, `ngdpbase` generates a random secret on each pod start. Existing cookies' HMAC signatures stop validating against the new secret.
+**Root cause.** Without `NGDPBASE_SESSION_SECRET` set, `ngdpbase` generates a random secret on each pod start. Existing cookies' HMAC signatures stop validating against the new secret.
 
-**Fix.** Pass a stable secret via env var, sourced from a Kubernetes `Secret` (ideally SOPS-encrypted in your GitOps repo):
+The exact env-var name matters — `ConfigurationManager.ts` reads `process.env.NGDPBASE_SESSION_SECRET`. A misnamed `SESSION_SECRET` is silently ignored and looks like the bug above on every restart.
+
+**Fix.** Pass a stable secret via env var, sourced from a Kubernetes `Secret` (ideally SOPS-encrypted in your GitOps repo). Use `envFrom: secretRef:` so the Secret's keys map directly to env-var names (see §10):
 
 ```yaml
-env:
-  - name: SESSION_SECRET
-    valueFrom:
-      secretKeyRef:
-        name: <name>-secrets
-        key: session-secret
+# In your Secret (stringData lets you paste raw, k8s base64-encodes on apply)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ngdpbase-secrets
+type: Opaque
+stringData:
+  NGDPBASE_SESSION_SECRET: "<output of openssl rand -base64 32>"
+
+# In your Deployment
+spec:
+  containers:
+    - name: ngdpbase
+      envFrom:
+        - secretRef:
+            name: ngdpbase-secrets
 ```
 
 Generate once: `openssl rand -base64 32`. Rotate when needed; rotation invalidates all existing sessions.
@@ -222,13 +234,63 @@ Generate once: `openssl rand -base64 32`. Rotate when needed; rotation invalidat
 
 ---
 
+## 10. Three-surface config split (`envFrom` + JSON file mount)
+
+**Symptom.** Operators coming from docker-compose's `.env` pattern expect the same shape in k8s. The early `deployment.yaml` examples wired env vars one-by-one with inline `env:` entries — adding a new var meant editing the Deployment manifest, secrets and non-secrets sat in the same block, and the layout drifted from how every other GitOps workload at the same site was modelled.
+
+**Root cause.** ngdpbase has two distinct config surfaces with no shared shape:
+
+1. **Operational env toggles** — `HEADLESS_INSTALL`, `INSTANCE_DATA_FOLDER`, `INSTANCE_CONFIG_FILE`, `NGDPBASE_BASE_URL`, `NODE_ENV`, `NGDPBASE_SESSION_SECRET`. Flat key=value, naturally env-var-shaped.
+2. **Structured app config** — the `ngdpbase.*` dotted keys in `app-custom-config.json` (theme, addons-path arrays, page providers, nested objects). Doesn't fit flat env vars — would need shell-unfriendly value escaping and breaks for array-valued / nested keys.
+
+The fix splits across three k8s resources so each surface uses the mechanism it fits.
+
+**Fix.** Three resources, mounted three different ways:
+
+| Surface | Resource | Mount mechanism | Holds |
+|---|---|---|---|
+| Non-sensitive flat env | `ConfigMap` (e.g. `ngdpbase-env`) | `envFrom: configMapRef:` | `NODE_ENV`, `HEADLESS_INSTALL`, `INSTANCE_DATA_FOLDER`, `NGDPBASE_BASE_URL`, ... |
+| Sensitive flat env | `Secret` (e.g. `ngdpbase-secrets`) | `envFrom: secretRef:` | `NGDPBASE_SESSION_SECRET`, OIDC client secrets, SMTP password, ES password, ... |
+| Structured JSON | `ConfigMap` (e.g. `ngdpbase-config`) | `subPath` file mount | `app-custom-config.json` (the `ngdpbase.*` dotted keys) |
+
+Deployment containers[0] then reads:
+
+```yaml
+envFrom:
+  - configMapRef:
+      name: ngdpbase-env
+  - secretRef:
+      name: ngdpbase-secrets
+      optional: true
+volumeMounts:
+  - name: ngdpbase-config
+    mountPath: /app/data/config/app-custom-config.json
+    subPath: app-custom-config.json
+    readOnly: true
+```
+
+**Two-ConfigMap split, not one.** A single ConfigMap with both flat env keys AND an `app-custom-config.json` key, mounted via `envFrom:`, would inject the stringified JSON as an environment variable — wrong shape, wrong semantics. Keep them separate.
+
+**Env-var names matter.** The keys in the flat-env ConfigMap and Secret become `process.env.*` lookups verbatim — they must match what the code reads. The most common foot-gun is `SESSION_SECRET` (ignored) vs `NGDPBASE_SESSION_SECRET` (honored — see §8). When adding a new flat env var, grep `src/` for the `process.env.X` reference before naming the ConfigMap/Secret key.
+
+**Env wins over envFrom.** Per-pod overrides under `env:` (with `valueFrom: fieldRef:` or literal values) override anything injected by `envFrom:`. Useful for canary pods or one-off debug toggles without touching the shared ConfigMap.
+
+**Why this matches the `.env` mental model.** Each ConfigMap or Secret is a flat key=value bag — same shape as `.env`. Adding a new operational toggle is a one-line edit to `configmap-env.yaml`, then `kubectl apply` + roll the deployment. No Deployment edit, no `env:` block to keep alphabetized, no mixing of secrets and non-secrets. The split also mirrors how `transmission` and similar workloads are modelled in `jwilleke/mj-infra-flux`, so operators with multiple deployments converge on one pattern.
+
+**Starter manifests.** See `docker/k8s/configmap-env.yaml.example` and `docker/k8s/secrets.yaml.example` for the shapes; `docker/k8s/deployment.yaml` shows the wired-up consumer.
+
+---
+
 ## Recommended deploy order
 
 For a clean first deploy under HEADLESS_INSTALL=true:
 
 1. Build/publish your image (with the Dockerfile fixes from §6).
-2. Author the `ConfigMap` containing both `app-custom-config.json` (with theme, front-page, page provider, addons-path, organization.file) AND the Organization JSON-LD (§1).
-3. Author the Deployment with `dnsConfig.options.ndots: "1"` (§5), the SESSION_SECRET reference (§8), and the two ConfigMap subPath mounts.
+2. Author the **three config surfaces** per §10:
+   - `ngdpbase-env` ConfigMap — flat non-sensitive env vars including `HEADLESS_INSTALL: "true"`.
+   - `ngdpbase-secrets` Secret — flat `NGDPBASE_SESSION_SECRET` (§8).
+   - `ngdpbase-config` ConfigMap — `app-custom-config.json` (theme, front-page, page provider, addons-path, organization.file) plus the Organization JSON-LD as a second key (§1).
+3. Author the Deployment with `dnsConfig.options.ndots: "1"` (§5), `envFrom:` referencing both the env ConfigMap and the secrets Secret (§10), and the two `subPath` mounts for the JSON config + Organization file.
 4. Apply, wait for first pod Ready. The boot log should show `OrganizationManager initialized (1 orgs)`, `Created Person record for admin`, `Created default admin user`, and an Add-on loaded line.
 5. Verify `/app/data/roles/admin.json` exists and its `member` array references the same UUID as `/app/data/persons/<uuid>.json`.
 6. Log in as `admin` / `admin123` and change the password immediately.

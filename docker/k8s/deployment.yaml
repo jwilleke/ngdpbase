@@ -1,23 +1,42 @@
 # ngdpbase Kubernetes Deployment
 # Deploy with: kubectl apply -f deployment.yaml
 #
+# CONFIGURATION SURFACES (three-way split; see HEADLESS-DEPLOYMENT-NOTES.md §10):
+#
+#   1. configmap-env.yaml   → flat NON-SENSITIVE env vars (NODE_ENV, HEADLESS_INSTALL,
+#                             INSTANCE_DATA_FOLDER, NGDPBASE_BASE_URL, ...)
+#                             Mounted via `envFrom: configMapRef:`.
+#
+#   2. secrets.yaml         → flat SENSITIVE env vars (NGDPBASE_SESSION_SECRET, OIDC
+#                             client secrets, SMTP password, ...)
+#                             Mounted via `envFrom: secretRef:`.
+#
+#   3. configmap.yaml       → structured ngdpbase.* dotted-key config as
+#                             app-custom-config.json. Mounted as a file via subPath.
+#                             Holds keys that don't fit flat env vars (arrays,
+#                             nested objects).
+#
 # DEPLOYMENT STRATEGIES:
 #
 # Strategy 1: Interactive Installation (first deployment)
 #   kubectl apply -f pvc.yaml
+#   kubectl apply -f configmap-env.yaml   # with HEADLESS_INSTALL="false" to keep wizard
+#   kubectl apply -f secrets.yaml
 #   kubectl apply -f service.yaml
-#   kubectl apply -f deployment.yaml  # WITHOUT configmap.yaml
+#   kubectl apply -f deployment.yaml      # WITHOUT configmap.yaml (the JSON one)
 #   - Installation wizard runs on first access via web browser
 #   - Config is written to PVC
 #
 # Strategy 2: Pre-configured (GitOps / automated)
 #   kubectl apply -f pvc.yaml
-#   kubectl apply -f configmap.yaml   # With your configuration
+#   kubectl apply -f configmap-env.yaml   # with HEADLESS_INSTALL="true"
+#   kubectl apply -f secrets.yaml
+#   kubectl apply -f configmap.yaml       # ngdpbase.* dotted-key JSON config
 #   kubectl apply -f service.yaml
 #   kubectl apply -f deployment.yaml
-#   - ConfigMap mounted read-only - installation wizard cannot write to it
+#   - JSON ConfigMap mounted read-only — installation wizard cannot write to it
 #   - You must pre-create admin user and .install-complete marker
-#   - See configmap.yaml for details
+#   - See configmap.yaml and HEADLESS-DEPLOYMENT-NOTES.md §1-§2 for details
 #
 apiVersion: apps/v1
 kind: Deployment
@@ -51,21 +70,16 @@ spec:
             - containerPort: 3000
               name: http
               protocol: TCP
-          env:
-            - name: NODE_ENV
-              value: "production"
-            - name: INSTANCE_DATA_FOLDER
-              value: "/app/data"
-            # Config filename (default: app-custom-config.json)
-            # - name: INSTANCE_CONFIG_FILE
-            #   value: "app-custom-config.json"
-            # Session secret from Kubernetes Secret
-            - name: SESSION_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: ngdpbase-secrets
-                  key: session-secret
-                  optional: true
+          # Env vars come from two sources, both flat:
+          #   - ngdpbase-env       ConfigMap (non-sensitive)  — see configmap-env.yaml.example
+          #   - ngdpbase-secrets   Secret    (sensitive)      — see secrets.yaml.example
+          # Add per-pod overrides under `env:` below if needed (env wins over envFrom).
+          envFrom:
+            - configMapRef:
+                name: ngdpbase-env
+            - secretRef:
+                name: ngdpbase-secrets
+                optional: true
           # Mount persistent volume for wiki data
           # All instance data stored here: pages, users, config, logs, etc.
           volumeMounts:
