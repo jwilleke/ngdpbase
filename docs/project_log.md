@@ -2,6 +2,25 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-23-15
+
+- Agent: Claude Opus 4.7
+- Subject: Cleaned up diverged `master` (1 local "Added stuff" commit vs 7 origin) and revised `AGENTS.md` end-to-end. Worktree slop file `.claude/worktrees/issue` dropped; legitimate `package-lock.json` 3.39.1→3.39.2 sync split into its own commit. AGENTS.md kept the four behavioral principles from `d3e3ebab` but stripped MD036 bold pseudo-headings, restored the `docs/project_log.md` + recent-commits pointer, reconciled the new "ask if unclear" framing with `agent_autonomy_level: high`, deduplicated against `CODE_STANDARDS.md` via section anchor links, and added five rules that had only lived in feedback memory. Then fixed `CODE_STANDARDS.md`'s own MD036 self-violations — its rule list and `**Heading vs Bold Text:**` example header were themselves written as bold pseudo-headings.
+- Current Issue: none directly.
+- Tests: skipped — docs-only session (all commits match `*.md` per the session-commit Step 3 exception, plus a lockfile version-string sync). Husky pre-commit (markdownlint + docs-coverage) ran green on every commit.
+- Semver: **skip** — no runtime / served / API change.
+- /othersites: **skipped** — `skip` policy per `/session-commit` Step 5.
+- Work Done:
+  - Tagged `backup/added-stuff-d3e3ebab` before any reset to preserve the original "Added stuff" commit reachable for recovery; verified the worktree commit `04c0033d` was already on `origin/master` and not actually lost.
+  - Hard-reset `master` to `origin/master` and re-applied the AGENTS.md rewrite and lockfile bump as two clean commits (`8c5c89e2`, `ead61443`). Worktree slop `.claude/worktrees/issue` discarded.
+  - Audited the AGENTS.md draft against every feedback memory file in `~/.claude/projects/.../memory/` and against the global `~/.claude/CLAUDE.md` to surface the gaps that landed as the alignment commit `701ad67d`. Five new rules added: session-commit workflow on every commit, `./server.sh restart` after `npm run build`, test-teardown ban on wiping `./data/`, `gh issue create --template` requirement, `/wiki/<slug>` URL hardcoding ban for new code.
+  - Two distinct AGENTS.md violations of `CODE_STANDARDS.md` MD036 still existed in CODE_STANDARDS.md itself — list lines 22/24/25 and the `**Heading vs Bold Text:**` pseudo-heading at line 141. Rewrote the list to use plain prose and promoted the example header to `####`. The rule now describes itself accurately.
+- Commits: `8c5c89e2`, `ead61443`, `701ad67d`, `14710418`.
+- Files Modified:
+  - `AGENTS.md` (two commits: the principles rewrite, then the alignment/gap-fill — net +73, −58 across both)
+  - `CODE_STANDARDS.md` (+5, −5 — MD036 self-fix only)
+  - `package-lock.json` (lockfile version-string sync 3.39.1 → 3.39.2)
+
 ## 2026-05-23-14
 
 - Agent: Claude Opus 4.7
