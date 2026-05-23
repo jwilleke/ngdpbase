@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-23T12:00:00.000Z'
+lastModified: '2026-05-23T12:30:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -79,7 +79,6 @@ Filed and scoped, awaiting prioritization or implementation cycles.
 | #681 | Deployment options hub + per-mode guides | Body content complete; further iteration optional |
 | #675 | Scaffolder + reference template for new addons | Low |
 | #673 | Packaged addon distribution model (npm install) | Low — affects how #685 ships |
-| #655 | `.env`-style env loading via ConfigMap/Secret in k8s docs | Low |
 
 ## How this file is maintained
 
