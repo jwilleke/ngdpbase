@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-23T12:30:00.000Z'
+lastModified: '2026-05-23T13:00:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -34,7 +34,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 Items carrying the `in review` label — work is shipped/merged; operator verification is the only thing left before close. **Clear this list before starting new feature work.**
 
-- _(none)_
+- **#259** — storage migration tool for attachment paths. Substantive fix shipped 2026-04-19 (`9a8a0918`, `BasicAttachmentProvider.migrateStaleStoragePaths()`); test-coverage gap closed 2026-05-23 (`d7d20b6a`, 7 new tests). Operator action: confirm the auto-migration code path is sufficient for known data-move scenarios and close (or comment with what else is needed). Two original sub-items recommended as deferred-indefinitely: admin endpoint (`POST /admin/storage/migrate`) and Option C (relative-path schema migration) — neither has a driver.
 
 ## Open BUGS (ngdpbase, by issue #)
 
