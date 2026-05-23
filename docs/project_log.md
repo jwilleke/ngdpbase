@@ -2,6 +2,26 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-23-12
+
+- Agent: Claude Opus 4.7
+- Subject: Released **v3.39.2** carrying the Dependabot `qs` bump 6.15.0 → 6.15.2 (PR #781, merged squash as `f4d01997`). Clears 4 new medium-severity Dependabot DoS alerts on `qs.stringify`. The vulnerable API is NOT directly called from ngdpbase source (grep `qs.stringify` returns nothing), so the DoS wasn't reachable in production; this is alert hygiene + transitive hardening.
+- Current Issue: none directly; release ships Dependabot PR #781.
+- Release: **v3.39.2** — release commit `5e6052c3`. Tag pushed; GH Release entry deferred per patch policy.
+- Tests: jimstest 6008 unit + 9 skipped on the pre-release commit (Step 4 gate) and again on the release commit (Step 8a). E2E skipped both gates — release range is the qs lockfile bump + TODO.md hygiene + package-lock version-string sync; no `views/` / `addons/` / `public/` / `src/plugins/` / `tests/e2e/` paths.
+- Semver: **patch** — Dependabot security bump only, no code/contract change.
+- /othersites: **skipped** — patch-defer policy per `/session-commit` Step 5. Satellites stay on qs 6.15.0 until next minor/major; acceptable because the DoS isn't reachable from ngdpbase source (no `qs.stringify` callers).
+- Perf baseline drift v3.39.1 → v3.39.2: clean. Both baselines cold-cache (post-restart), so the warm-vs-cold noise pattern from v3.39.0 doesn't recur. Memory ±3%, routes ±11ms (well under the 50ms threshold), no thresholds tripped. Baseline file: `docs/performance/baseline-v3.39.2-2026-05-23.md`.
+- /check-todos surfaced one stale TODO.md row (#259 was closed earlier today after I added the `in-review` label; my TODO entry was stale) — fixed in `f904fb9c` before the bump. `npm install` also synced the lagging `version` string in `package-lock.json` (3.38.0 → 3.39.1) at the same time.
+- Today's release chain on jimstest is now: **v3.38.0** (start of day) → **v3.38.1** (#534 feature) → **v3.39.0** (#534 code-review fixes) → **v3.39.1** (defensive qs flatten) → **v3.39.2** (qs Dependabot bump). Satellites are at v3.39.0; the v3.39.1 and v3.39.2 patches are jimstest-only until next minor/major.
+- ngdpbase commits (release window):
+  - `f4d01997` — `chore(deps): Bump qs from 6.15.0 to 6.15.2 (#781)` (Dependabot squash)
+  - `f904fb9c` — `docs(TODO.md): clear shipped #259 + package-lock version sync after qs bump`
+  - `5e6052c3` — `chore: release v3.39.2`
+- Files Modified (release commit only): `package.json` (3.39.1 → 3.39.2), `config/app-default-config.json`, `CHANGELOG.md`, `docs/performance/baseline-v3.39.2-2026-05-23.md` (NEW).
+- GitHub: PR #781 merged; v3.39.2 tag pushed; 4 Dependabot qs alerts (#123-#126) cleared per `npm audit` (only the persistent showdown ReDoS #599 remains, which has no upstream patch).
+- TODO.md: no further row change in v3.39.2 itself; the `_(none)_` Waiting-on-Review state from the v3.39.2 prep edit holds.
+
 ## 2026-05-23-11
 
 - Agent: Claude Opus 4.7
