@@ -2,6 +2,28 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-23-10
+
+- Agent: Claude Opus 4.7
+- Subject: Defensive flatten of the `saveProfileSection` body-shape contract — even though the qs-nesting concern flagged in the original code review was REFUTED (`express.urlencoded({ extended: true })` keeps dotted form-field names flat by default in production today), the operator asked to fix it anyway. Two motivations: (a) the WikiRoutes line-5078 comment was factually wrong and a future maintainer copying that pattern would reach for the wrong shape; (b) if anyone ever flips body-parser to `allowDots: true` for another addon's needs, every addon relying on flat lookups silently breaks. AddonsManager now normalizes the body shape before fan-out so addons get a stable flat-key contract regardless of host body-parser config.
+- Current Issue: #534 (already closed; this is a defensive follow-up to the same hook).
+- Release: pending operator semver decision.
+- Tests: 6008 unit + 9 skipped (**+10 new**: 9 in `AddonsManager.flattenDottedKeys.test.ts` covering the helper directly, 1 end-to-end test in `AddonsManager.profileSection.test.ts` confirming an addon receives flat keys even when the caller passes a nested body). No E2E run — no `views/` / `addons/` / `public/` / `src/plugins/` / `tests/e2e/` paths touched. Pre-flight scope: build + npm test is the gate.
+- Semver: TBD (asking operator).
+- /othersites: TBD (gated on minor|major).
+- Re-verification before doing the work: ran a real express + body-parser + qs stack via a tmp script — POST'd `journal.defaultTemplate=daily` etc. and confirmed `body['journal.defaultTemplate']` returns `"daily"` flat, `body.journal?.defaultTemplate` returns `undefined`. The journal save handler's flat lookups are correct in production today. The defensive flatten is purely future-proofing, not bugfix.
+- Implementation choices:
+  - **Host-side normalization** (recommended option the operator picked) — single chokepoint in `AddonsManager.saveProfileSections`; addons need zero per-addon defensiveness.
+  - Helper named `flattenDottedKeys` (exported for direct testing).
+  - Preserves arrays, Date objects, class instances — only walks `Object.prototype`-prototyped plain objects. Defensive against accidentally splitting non-form values.
+  - Does not mutate the input (verified by test).
+  - Documented contract on `AddonsManager.saveProfileSection` JSDoc — addons can rely on flat keys regardless of body-parser config.
+  - Corrected the WikiRoutes line-5078 comment to accurately describe the local `getBodyValue` helper as defensive, not as documentation that nesting actually happens.
+- ngdpbase commits (this entry):
+  - `ab66d91e` — `fix(#534): defensive host-side flatten of addon-bound body shape` (merged to master directly from `fix/qs-defensive-flatten` branch; small scope, operator pre-approved approach)
+- Files Modified: `src/managers/AddonsManager.ts` (+45 helper + saveProfileSections wiring + JSDoc), `src/routes/WikiRoutes.ts` (comment correction), `src/managers/__tests__/AddonsManager.flattenDottedKeys.test.ts` (NEW, 9 tests), `src/managers/__tests__/AddonsManager.profileSection.test.ts` (+1 nested-input test).
+- GitHub: branch `fix/qs-defensive-flatten` created locally, merged --ff-only, deleted; pushed master directly. No PR (small defensive change, operator pre-approved). #534 stays closed.
+
 ## 2026-05-23-09
 
 - Agent: Claude Opus 4.7
