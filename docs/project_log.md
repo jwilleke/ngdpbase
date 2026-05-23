@@ -2,6 +2,22 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-23-14
+
+- Agent: Claude Opus 4.7
+- Subject: Third #684 migration — `WikiRoutes.imageUpload.test.ts` now uses `buildTestApp({ withCsrf: true })`. All 19 `.post('/images/upload')` calls send `csrfTestHeaders()`. This is the first migration to surface a **production constraint at the test layer**: multer parses `req.body` AFTER `csrfMiddleware` runs, so multipart uploads can ONLY validate CSRF via the `X-CSRF-Token` header — a `_csrf` body field would be invisible. The new "rejects uploads missing the X-CSRF-Token header" assertion locks in that channel as the enforced one.
+- Current Issue: #684 (in review since 2026-05-23-13)
+- Tests: jimstest 237 files / **6011 unit + 9 skipped** (was 6010 + 9 — the +1 is the new CSRF header-rejection test). E2E skipped — only `src/routes/__tests__/` touched.
+- Semver: **skip** — dev-only test migration on top of v3.39.2; no runtime / served / API change.
+- /othersites: **skipped** — `skip` policy per `/session-commit` Step 5.
+- Work Done:
+  - Dropped `import express` + the 3-line inline `app = express(); app.use(json()); app.use(urlencoded())` in favor of `app = buildTestApp({ withCsrf: true })`. Default options work — the test relies on `UserManager.getCurrentUser` for auth, not `req.userContext`, so no userContext injection needed; route returns JSON, so the default `<html>stub</html>` render stub is never activated.
+  - Inline-form test (`should return 400 when no file is uploaded`) needed `.set(csrfTestHeaders())` too — CSRF rejects before the no-file branch is reached.
+  - Helper API unchanged this session — three distinct migration shapes (coverage9 simple stub, contact custom-render stub, imageUpload multipart) have now all worked against the existing helper without additions.
+- Commits: `02330ca2`
+- Files Modified:
+  - `src/routes/__tests__/WikiRoutes.imageUpload.test.ts` (−24 lines inline express setup, +43 with CSRF headers throughout and 1 new rejection assertion)
+
 ## 2026-05-23-13
 
 - Agent: Claude Opus 4.7
