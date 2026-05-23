@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-23-08
+
+- Agent: Claude Opus 4.7
+- Subject: Merged **PR #782** — post-merge xhigh code review of #534 surfaced 15 candidate defects across 5 finder angles; 13 fixable issues addressed in one consolidated PR, 4 deferred for follow-up. Squash-merged to master as `0d38c71b`. Pre-flight green on the branch (5998 unit + 72 E2E); same code now on master.
+- Current Issue: **#534** (already closed), **#782** (merged).
+- Release: pending operator semver decision — code fixes are real behavior changes (absent-field clobber, admin bypass, wholesale clobber) that jimstest and any v3.38.1 deployment is still vulnerable to until v3.38.2 ships.
+- Tests: 5998 unit + 9 skipped (+4 new total this PR: parallel fan-out for reads, malformed-shape warn, null-opt-out silent, sequential ordering regression test for saves), 72/72 E2E.
+- Semver: TBD (asking operator).
+- /othersites: TBD (gated on minor|major).
+- Self-review caught one race I introduced — first round of fixes parallelized both `getProfileSections` AND `saveProfileSections`; the save path has a per-user race (two addons read same snapshot, second writer clobbers first). Reverted saves to sequential in commit `1611331c` before merge; reads stay parallel. Regression test asserts B sees A's marker. The `getStatus()` precedent (which #534 was supposed to "follow exactly") IS sequential — I should have stuck to that.
+- Findings shipped (13 fixes consolidated): absent-field clobber via `journal._rendered` marker + per-field gates; admin-disabled bypass closed by the same gate; outer-catch isolation around saveProfileSections; wholesale prefs clobber fix (re-read fresh from disk); parallel reads via Promise.allSettled with async-IIFE sync-throw capture; redundant getUser dropped from profileSection; malformed-shape warning; req.body shallow clone; enableVoiceToText explicit coercion (rejects 'false'/'off'/'0'); defaultTemplate trim; shutdown symmetry for voiceToTextEnabled; prominent XSS+CSRF JSDoc warning on profileSection; absent-field-policy JSDoc warning on saveProfileSection.
+- Findings deferred (follow-up issues to file if drivers appear): race read-modify-write across concurrent /preferences POSTs (needs optimistic concurrency on `UserManager.updateUser`); namespace-collision enforcement across addons; ENOENT on dist-only addon builds; re-entrancy guard for addons that recursively call getProfileSections.
+- Originally flagged but **REFUTED** during Phase 2 verification: qs body-nesting (the WikiRoutes comment claims dotted form names get nested but qs default does NOT enable `allowDots` — verified via `node -e "qs.parse('a.b=c')"`). Flat `body['journal.X']` lookups are correct. Documented in the PR description to avoid future re-derivation.
+- ngdpbase commits (this entry):
+  - `0d38c71b` — merged squash commit on master: `fix(#534): code-review findings — absent-field clobber, admin bypass, wholesale clobber, parallel reads, XSS docs`
+- Files Modified: `src/managers/AddonsManager.ts`, `src/routes/WikiRoutes.ts`, `addons/journal/index.ts`, `addons/journal/views/_profile-section.ejs`, `src/managers/__tests__/AddonsManager.profileSection.test.ts`.
+- GitHub: PR #782 merged; branch `fix/534-code-review-findings` deleted (local + remote). No issue state changes (#534 was already closed; #782 was the PR itself).
+
 ## 2026-05-23-07
 
 - Agent: Claude Opus 4.7
