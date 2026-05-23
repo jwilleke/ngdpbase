@@ -48,7 +48,15 @@ Freshen the root `TODO.md` (moved from `docs/TODO.md` on 2026-05-16). Keep only 
 
 ## Output sections
 
-- **Security / Dependabot** — open alerts table
+- **Security / Dependabot** — open alerts across **every ngdpbase-touching repo and addon path**, not just the root. Survey in this order:
+  1. **Main ngdpbase repo** — `gh api repos/jwilleke/ngdpbase/dependabot/alerts --jq '[.[] | select(.state == "open") | {number, path: .dependency.manifest_path, package: .security_vulnerability.package.name, severity: .security_advisory.severity, ghsa: .security_advisory.ghsa_id}]'`
+  2. **Sliced by addon path** — group the main-repo result by `manifest_path` prefix. Show root `package.json` separately from each `addons/*/package.json`. This surfaces the case where the same GHSA is open across multiple sibling addons (the pattern that produced ngdpbase PR #769 — 4 sibling `uuid` alerts only one of which had an auto-PR).
+  3. **Separate-repo satellites** — same query against each satellite that has its own Dependabot state:
+     - `gh api repos/jwilleke/geohazardwatch/dependabot/alerts --jq '[.[] | select(.state == "open") | ...]'`
+     - `gh api repos/jwilleke/fairways-gen2-website/dependabot/alerts --jq '[.[] | select(.state == "open") | ...]'`
+  4. **Local-only checkouts** (`fairways-base`, `ngdpbase-veg`, `ngdp-temp-builds`) — **skip the API call**: they share `jwilleke/ngdpbase`'s alert state and would double-count.
+
+  Report compactly: one table with columns `Repo · Path · Severity · Package · GHSA`, sorted by severity desc then repo. If the total is large (>20), show only `critical`/`high` in full and roll the `medium`/`low` rows up to per-repo counts. Auto-dismissed alerts are not "open" — they will not appear in this section by construction.
 - **Failing GitHub Actions** — recurring workflows on `master` whose latest run failed. Survey via `gh run list --repo jwilleke/ngdpbase --branch master --status failure --limit 10 --json name,conclusion,createdAt,databaseId,url`, then dedupe to the most-recent failing run per workflow (a workflow that has since recovered should not appear). For each failing workflow include name, last-failed timestamp, the failing-job exit message (`gh run view <id> --log-failed | grep -E "##\[error\]|MODULE_NOT_FOUND|Cannot find"`), and the related issue if one exists (#749 for the showdown patch check, etc.). Skip workflows that haven't run on master yet. Note: scheduled-cron workflows on the default branch fire weekly/monthly, so a single failed run can sit unsurfaced for a long time.
 - **Waiting on Review Sign-off** — issues carrying the `in review` label: work is shipped/merged; operator verification is the only thing between the issue and closure. For each item include shipped version (if any), what changed in one line, and how to verify (URL, command, file to inspect). This is the section the operator should clear first each session.
 - **Open PRs** — ngdpbase + satellites

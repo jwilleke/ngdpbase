@@ -15,8 +15,9 @@ Survey health of ngdpbase-adjacent repositories and local instances that fall ou
 
 **Explicitly out of scope** — these are already covered elsewhere and including them here would double-report:
 
-- `jwilleke/ngdpbase` (the main repo) — covered by `/check-todos`. **Exception**: the per-addon Dependabot alert breakdown in `addons/*/` is unique to `/check-addons` (see [Per-addon Dependabot breakdown](#per-addon-dependabot-breakdown-main-ngdpbase-repo) below).
-- `jwilleke/geohazardwatch` — covered by `/check-todos`'s sister-site table.
+- `jwilleke/ngdpbase` (the main repo) — covered by `/check-todos`. **Including** the per-addon Dependabot path slicing, which `/check-todos` now surfaces as part of its consolidated Security section. The deep per-path snapshot below is retained because `/check-addons` writes it into the durable `report-addons.md` artefact; `/check-todos` shows the live compact view for prioritization.
+- `jwilleke/geohazardwatch` — issues/PRs covered by `/check-todos`'s sister-site table; Dependabot alerts are now also folded into `/check-todos`'s consolidated Security section.
+- `jwilleke/fairways-gen2-website` — Dependabot alerts now also folded into `/check-todos`'s consolidated Security section. `/check-addons` retains the deeper per-target view (PRs, issues, failing Actions, CI sanity).
 - `jimstest` (the main ngdpbase working tree itself) — that's the operator's primary instance; `/othersites` validates propagation to it.
 
 ## Survey per target
@@ -158,6 +159,6 @@ Then organized as:
 
 ## Cross-skill relationships
 
-- **`/check-todos`** surveys the main ngdpbase tracker + geohazardwatch sister site. Run `/check-todos` for top-of-stack work; run `/check-addons` for satellite + addon-level health.
+- **`/check-todos`** surveys the main ngdpbase tracker + geohazardwatch sister site, and now also runs a **consolidated Dependabot sweep** across ngdpbase root + every `addons/*/` path + the separate-repo satellites (`geohazardwatch`, `fairways-gen2-website`). Use `/check-todos` for top-of-stack work and the live security picture; use `/check-addons` for the deeper per-target health snapshot (PRs, issues, failing Actions, CI sanity, addon drift) written to `report-addons.md`.
 - **`/othersites`** propagates a master-branch commit across the four ngdpbase local checkouts. Different intent from `/check-addons`: propagation is write/validate; this skill is read-only survey.
 - The three skills are complementary; running all three on a session morning gives a complete picture of every ngdpbase-touching surface.
