@@ -5083,8 +5083,18 @@ ${panes}
       // Extract preference values from form and merge with existing
       const preferences: Record<string, string | boolean | undefined> = { ...(currentPreferences as Record<string, string | boolean | undefined>) };
 
-      // Helper: resolve dotted field names from nested req.body (qs extended parsing)
-      // e.g. form field "editor.plain.smartpairs" is parsed as { editor: { plain: { smartpairs: 'on' } } }
+      // Helper: resolve dotted field names defensively.
+      //
+      // Today's `express.urlencoded({ extended: true })` (app.ts:182) keeps
+      // dotted form-field names FLAT — `<input name="editor.plain.smartpairs">`
+      // arrives as `body['editor.plain.smartpairs']` directly, NOT as
+      // `body.editor.plain.smartpairs`. qs's `allowDots` defaults to false
+      // and body-parser doesn't override that.
+      //
+      // This helper hits the flat path on the first line; the nested walk is
+      // defensive against a future body-parser config change (someone enables
+      // `allowDots: true` for a different addon's needs) silently breaking
+      // every preference field. Either body shape resolves correctly.
       const getBodyValue = (key: string): string | undefined => {
         if (req.body[key] !== undefined) return req.body[key];
         const parts = key.split('.');

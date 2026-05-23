@@ -32,6 +32,50 @@ import type { User } from '../types/User.js';
 export type AddonProfileUser = Omit<User, 'password'>;
 
 /**
+ * Flatten nested plain-object values into dotted-key form (#534 defensive).
+ *
+ * `express.urlencoded({ extended: true })` keeps dotted form-field names FLAT
+ * by default — `<input name="journal.x">` → `body['journal.x']` directly,
+ * NOT `body.journal.x`. (Verified: qs's `allowDots` defaults to false, and
+ * body-parser doesn't override that.) But the WikiRoutes core code defends
+ * against a future config change with its own `getBodyValue` walker, and
+ * `AddonsManager.saveProfileSections` normalizes addon-bound body shape so
+ * addon authors can rely on flat lookups regardless of host config.
+ *
+ * Rules:
+ *   - Non-object values (string, number, boolean, null, undefined) pass
+ *     through as-is at the current dotted key.
+ *   - Arrays pass through as-is (not flattened element-wise — qs already
+ *     produces sensible array shapes for `name="x[]"` inputs).
+ *   - Plain objects are recursively flattened.
+ *   - Flat dotted keys present on the input pass through unchanged.
+ *   - If both flat (`'a.b': X`) and nested (`a: { b: Y }`) shapes are
+ *     present, the LAST seen during iteration wins — typically the nested
+ *     value, since flat dotted keys are inserted before nested objects in
+ *     qs output. This is intentional: nested is the more-specific shape.
+ */
+export function flattenDottedKeys(
+  obj: Record<string, unknown>,
+  prefix = ''
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    const key = prefix ? `${prefix}.${k}` : k;
+    if (
+      v !== null
+      && typeof v === 'object'
+      && !Array.isArray(v)
+      && Object.getPrototypeOf(v) === Object.prototype
+    ) {
+      Object.assign(out, flattenDottedKeys(v as Record<string, unknown>, key));
+    } else {
+      out[key] = v;
+    }
+  }
+  return out;
+}
+
+/**
  * Standard interface that all add-ons must implement
  */
 export interface AddonModule {
@@ -1049,15 +1093,25 @@ class AddonsManager extends BaseManager {
    * (`getProfileSections()` above stays parallel — it's a read path with no
    * cross-addon write contention.)
    *
+   * Body shape: the host normalizes whatever shape qs produced into FLAT
+   * dotted keys before fan-out, so addons always see `body['journal.X']`
+   * regardless of whether body-parser was configured with `allowDots: true`
+   * (which would have produced `body.journal.X` instead). This is a
+   * defensive contract — today's `express.urlencoded({ extended: true })`
+   * leaves dotted form-field names flat by default, but a future config
+   * change shouldn't silently break addons. See `flattenDottedKeys`.
+   *
    * Errors are caught per-addon and logged so one bad addon cannot block
    * other addons' saves or the core-preferences save.
    */
   async saveProfileSections(username: string, body: Record<string, unknown>): Promise<void> {
+    const flatBody = flattenDottedKeys(body);
+
     for (const [name, addon] of this.addons) {
       if (!addon.loaded || typeof addon.module.saveProfileSection !== 'function') continue;
 
       try {
-        await addon.module.saveProfileSection(username, body);
+        await addon.module.saveProfileSection(username, flatBody);
       } catch (err) {
         logger.warn(
           `[AddonsManager] saveProfileSection() failed for addon '${name}': ${err instanceof Error ? err.message : String(err)}`

@@ -278,6 +278,34 @@ describe('AddonsManager — profile-section hooks (#534)', () => {
       expect(bMark).toEqual({ u: 'alice', body: { 'a.x': 'on', 'b.y': '42' } });
     });
 
+    it('flattens nested body shapes before fan-out — addon always sees flat dotted keys', async () => {
+      // Defensive: if body-parser is ever switched to `allowDots: true` (or a
+      // request comes through some other path that nests the body), addons
+      // must still see `body['a.x']` not `body.a.x`. AddonsManager normalizes.
+      const markerDir = path.join(tmpDir, '.markers');
+      await fs.ensureDir(markerDir);
+      const safeMarker = markerDir.replace(/\\/g, '\\\\');
+
+      await writeAddon('flat-reader',
+        `saveProfileSection: async (u, body) => { require('fs').writeFileSync('${safeMarker}/flat.json', JSON.stringify(body)); }`);
+
+      const mgr = new AddonsManager(makeEngine(makeConfigManager(['flat-reader'])));
+      await mgr.initialize();
+
+      // Caller passes a NESTED body (simulating allowDots:true or hand-built request).
+      await mgr.saveProfileSections('alice', {
+        journal: { defaultTemplate: 'daily', voiceToText: 'on' },
+        'display.theme': 'dark' // already flat — should also pass through
+      });
+
+      const seen = JSON.parse(await fs.readFile(path.join(markerDir, 'flat.json'), 'utf8'));
+      expect(seen).toEqual({
+        'journal.defaultTemplate': 'daily',
+        'journal.voiceToText': 'on',
+        'display.theme': 'dark'
+      });
+    });
+
     it('continues past a throwing addon — failure in one save does not block others', async () => {
       const markerDir = path.join(tmpDir, '.markers');
       await fs.ensureDir(markerDir);
