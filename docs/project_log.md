@@ -2,6 +2,25 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-23-09
+
+- Agent: Claude Opus 4.7
+- Subject: Released **v3.39.0** carrying the #534 post-merge code-review fixes (PR #782). Operator picked **minor** semver (over the recommended patch) to make the new contract surface — XSS docs warning, absent-field policy, parallel-reads optimization — visible as a release event. Auto-published GH Release; /othersites propagated cleanly across all 3 satellites.
+- Current Issue: **#534** (already closed) carried in the release; **#782** (merged in `0d38c71b`).
+- Release: **v3.39.0** — <https://github.com/jwilleke/ngdpbase/releases/tag/v3.39.0> — release commit `cece7752`.
+- Tests: jimstest 5998 unit + 9 skipped + 72/72 E2E on pre-release commit; Step 8a re-ran the gate on the release commit (same numbers); each satellite re-ran the same gates and all green.
+- Semver: **minor** — new public manager methods + new optional AddonModule fields shipped in v3.38.1 and audited/hardened in this release. Auto-published.
+- /othersites: ✓ all 3 satellites (The Fairways 2121, ve-geology 3333, ngdpbase temp build 3001) pulled, built, restarted, and passed both unit + E2E. No flakes.
+- Perf baseline drift v3.38.1 → v3.39.0: memory +123.9% (1375.6 → 3080.0 MB) **flagged but operator-acknowledged as warm-cache noise** — prior baseline was minutes after restart, new baseline was after 30+ min of E2E load; route timings dropped 20–84% (warm cache hits) consistent with cache-fill not a real allocator regression. No regressions in the fix code itself. Baseline file: `docs/performance/baseline-v3.39.0-2026-05-23.md`.
+- Self-review cycle proved its value — the first round of code-review fixes parallelized BOTH `getProfileSections` AND `saveProfileSections`. A fresh read of the diff after pushing caught that parallel saves introduced a same-snapshot race that didn't exist in the original sequential code. Reverted saves to sequential in `1611331c` before merge, kept reads parallel, added a regression test asserting B sees A's writes. The original #534 design comment said "follow the admin addon pattern exactly" and `getStatus()` IS sequential — should have stuck to that on the first pass.
+- ngdpbase commits (release window):
+  - `0d38c71b` — `fix(#534): code-review findings — absent-field clobber, admin bypass, wholesale clobber, parallel reads, XSS docs` (PR #782 squash)
+  - `99a812e0` — `docs: update project log for session 2026-05-23-08 — PR #782 merged`
+  - `cece7752` — `chore: release v3.39.0`
+- Files Modified (release commit only — package.json/CHANGELOG/app-default-config + baseline doc): `package.json`, `config/app-default-config.json`, `CHANGELOG.md`, `docs/performance/baseline-v3.39.0-2026-05-23.md` (NEW).
+- GitHub: v3.39.0 tag pushed; release entry auto-published with `--generate-notes`; PR #782 already closed by the squash merge; #534 stays closed (release ships the fixes against the already-closed issue).
+- TODO.md: no row change. None of the in-flight backlog items moved.
+
 ## 2026-05-23-08
 
 - Agent: Claude Opus 4.7
