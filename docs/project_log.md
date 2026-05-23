@@ -2,6 +2,26 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-23-13
+
+- Agent: Claude Opus 4.7
+- Subject: Closed the unit-test layer coverage gap from #684 — route tests previously built their own bare `express()` with `json()` + `urlencoded()` and never exercised the production `csrfMiddleware`. Introduced `src/routes/__tests__/__fixtures__/buildTestApp.ts` as a shared route-test app builder with opt-in `withCsrf: true` that mounts the real middleware (no parallel impl, no drift). Migrated two representative tests as proof-of-pattern per the issue's "few representative, rest opportunistic" plan.
+- Current Issue: #684
+- Tests: jimstest 237 files / **6010 unit + 9 skipped (was 6007 + 9 skipped)** — the +3 are: one extra existing test re-counted after `npm run build` repopulated `dist/src/plugins` (which had been the lone pre-existing PluginManager failure), plus 2 new explicit "POST without _csrf → 403" assertions added to the migrated files. E2E skipped — files touched are `src/routes/__tests__/**` only, no `views/` / `public/` / `src/plugins/` / `addons/` / `tests/e2e/` paths.
+- Semver: **skip** — dev-only test infrastructure on top of a fresh v3.39.2 release; no runtime / served code / public API change.
+- /othersites: **skipped** — `skip` policy per `/session-commit` Step 5.
+- Work Done:
+  - Created `buildTestApp({ withCsrf, userContext, extraSession, csrfToken, stubRender })`. `userContext` accepts a value or a `() => …` provider so route tests that reassign `mockUserContext` between requests still work via closure. `stubRender` accepts `true` (default `<html>stub</html>`), `false`, or a `(view, data) => string` function for tests that assert on render arguments via the response body.
+  - Migrated `WikiRoutes.coverage9.test.ts`: dropped a 42-line inline `buildApp` that included a hand-rolled parallel CSRF check; all 12 `.set('x-csrf-token', 'test-csrf-token')` calls now use `csrfTestHeaders()` so the canonical `TEST_CSRF_TOKEN` from `csrfTestHelpers.ts` is the single source of truth. Added one new "POST without CSRF → 403" assertion.
+  - Migrated `WikiRoutes.contact.test.ts`: dropped a 36-line inline `buildApp`; all 4 `validBody` constants now include `_csrf: TEST_CSRF_TOKEN` so the real `csrfMiddleware` accepts state-changing requests. Defined a top-level `contactRenderStub(view, data)` that encodes `data.state` and view name into HTML so the existing 20+ `data-state="…"` / `data-view="…"` assertions keep working. Added one new "POST without `_csrf` → 403" assertion — this directly closes the gap that allowed the #690 typo (`_csrfToken` form field vs canonical `_csrf`) to escape unit tests; the template-content test caught it then, route tests would catch it now.
+  - Pre-flight green: `tsc --noEmit` clean, `npm run build` clean, `npm test` 237/237 files green (the prior PluginManager failure was a stale-`dist/` artifact, not a real regression — resolved as soon as the build ran).
+  - Net coverage gain: 2 of ~33 route tests now exercise the production CSRF middleware on every state-changing request; the remaining 30 can migrate opportunistically when touched (per the issue's plan). The helper API has been stressed by both common shapes — simple stub (coverage9) and custom render stub (contact) — so subsequent migrations have working precedent.
+- Commits: `2e2d6396`
+- Files Modified:
+  - `src/routes/__tests__/__fixtures__/buildTestApp.ts` (NEW — 162 lines)
+  - `src/routes/__tests__/WikiRoutes.coverage9.test.ts` (−42 lines inline `buildApp`, +12 token-helper migrations, +1 CSRF-rejection test)
+  - `src/routes/__tests__/WikiRoutes.contact.test.ts` (−36 lines inline `buildApp`, +1 stub helper, +4 `_csrf` fields in `validBody`, +1 CSRF-rejection test)
+
 ## 2026-05-23-12
 
 - Agent: Claude Opus 4.7
