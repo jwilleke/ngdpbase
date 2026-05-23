@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-23-03
+
+- Agent: Claude Opus 4.7
+- Subject: Closed the test-coverage gap on **#259**. `BasicAttachmentProvider.migrateStaleStoragePaths()` shipped 2026-04-19 in commit `9a8a0918` as the production safety belt for stale post-data-migration `storageLocation` paths, but had zero direct test coverage in the ~7 months since. Added 7 unit tests under `src/providers/__tests__/`. Recommended adding `in review` label on #259 since the substantive code fix shipped long ago — remaining open work (admin endpoint, Option C relative-path schema migration) is speculative and has no driver.
+- Current Issue: **#259**.
+- Release: none — test-only addition; no public API or runtime behavior change.
+- Tests: 5984 passed + 9 skipped on jimstest (**+7 new** in a `BasicAttachmentProvider.migrateStaleStoragePaths()` describe block in `src/providers/__tests__/BasicAttachmentProvider.migrateStaleStoragePaths.test.ts`). Pre-flight scoped per operator: `npm run build` (TS compile check on the new file — green) + `npm test` (the meaningful gate). Skipped `./server.sh restart` (served code unchanged) and E2E (no UI / template / public-asset paths touched).
+- Semver: **skip** — test addition only.
+- /othersites: skipped — gated on `minor|major`.
+- Test scaffolding mirrors the existing `BasicAttachmentProvider.diskFallback.test.ts` / `.docMetadata.test.ts` files: `vi.unmock('../BasicAttachmentProvider')` to bypass the global mock, per-test `mkdtemp` + `fs.remove` lifecycle, `makeEngine(storageDir)` helper for the ConfigurationManager mock, direct injection of metadata via the private `attachmentMetadata` map, `vi.spyOn(provider, 'saveMetadata')` to assert call-count semantics (1 save per dirty batch; 0 saves when nothing migrated).
+- Edge cases covered: (1) stale absolute path → rewritten to `<storageDir>/<basename>`, (2) private + creator → rewritten to `<storageDir>/private/<creator>/<basename>`, (3) fresh path → untouched, no `saveMetadata` call, (4) private with missing creator → fallback to `storageDirectory` (not `private/undefined/`), (5) mixed batch → all stale entries rewritten in a single save, (6) idempotency — second run is a no-op, (7) uninitialized provider → early-return guard, no save.
+- #259 status decision — recommended `in review` rather than direct close, per [[feedback_issue_workflow]]: substantive fix (`9a8a0918`) and now tests both landed; operator should confirm before closing. Two outstanding sub-items from the original issue body are explicitly deferred without filing follow-ups (no driver): (a) admin endpoint `POST /admin/storage/migrate` for restart-free migration — restart-based path covers all known scenarios; (b) Option C "store only hash filename, derive path at runtime" — clean architectural ideal but adds schema-migration + back-compat risk with no current driver. Per [[feedback_ship_value_not_cool]], both deferred until a real driver appears.
+- ngdpbase commits (this entry):
+  - `d7d20b6a` — `test(#259): cover migrateStaleStoragePaths edge cases`
+- Files Modified (code): none.
+- Files Modified (tests): `src/providers/__tests__/BasicAttachmentProvider.migrateStaleStoragePaths.test.ts` (NEW, 207 lines, 7 tests).
+- GitHub: comment + `in review` label will be added on #259.
+
 ## 2026-05-23-02
 
 - Agent: Claude Opus 4.7
