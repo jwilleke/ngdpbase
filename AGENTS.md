@@ -1,6 +1,6 @@
 ---
 project_state: "active"
-lastModified: '2026-04-07T00:00:00.000Z'
+lastModified: '2026-05-23T00:00:00.000Z'
 agent_priority_level: "medium"
 blockers: []
 requires_human_review: ["major architectural changes", "security policy modifications", "deployment to production"]
@@ -9,26 +9,28 @@ agent_autonomy_level: "high"
 
 # Agent Context & Protocols
 
-This file is the **Context Map** for AI agents. It directs you to the Single Source of Truth (SSoT) for specific domains and defines your operational parameters.
+This file is the Context Map for AI agents. It directs you to the Single Source of Truth (SSoT) for specific domains and defines your operational parameters.
 
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+Before you start, check `docs/project_log.md` and recent GitHub commits — that is where session continuity lives. Repeating work that's already done is the most common avoidable mistake on this project.
 
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+The four principles below are behavioral guidelines that reduce common LLM coding mistakes. They bias toward caution over speed; for trivial tasks, use judgment.
 
 ## 1. Think Before Coding
 
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
+Don't assume. Don't hide confusion. Surface tradeoffs.
 
 Before implementing:
 
 - State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
+- If multiple interpretations exist, present them — don't pick silently.
 - If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
+- If something is unclear, stop, name what's confusing, ask.
+
+This applies to ambiguous scope, not every step — `agent_autonomy_level: high` still holds for clearly-defined work.
 
 ## 2. Simplicity First
 
-**Minimum code that solves the problem. Nothing speculative.**
+Minimum code that solves the problem. Nothing speculative.
 
 - No features beyond what was asked.
 - No abstractions for single-use code.
@@ -36,29 +38,31 @@ Before implementing:
 - No error handling for impossible scenarios.
 - If you write 200 lines and it could be 50, rewrite it.
 
+Ship the smallest coherent slice. Ask before bundling adjacent work into the current change.
+
 Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
 
 ## 3. Surgical Changes
 
-**Touch only what you must. Clean up only your own mess.**
+Touch only what you must. Clean up only your own mess.
 
 When editing existing code:
 
 - Don't "improve" adjacent code, comments, or formatting.
 - Don't refactor things that aren't broken.
 - Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
+- If you notice unrelated dead code, mention it — don't delete it.
 
 When your changes create orphans:
 
-- Remove imports/variables/functions that YOUR changes made unused.
+- Remove imports/variables/functions that your changes made unused.
 - Don't remove pre-existing dead code unless asked.
 
-The test: Every changed line should trace directly to the user's request.
+The test: every changed line should trace directly to the user's request.
 
 ## 4. Goal-Driven Execution
 
-**Define success criteria. Loop until verified.**
+Define success criteria. Loop until verified.
 
 Transform tasks into verifiable goals:
 
@@ -78,26 +82,31 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ---
 
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
-**Start Here:**
+## Start Here
 
-- **Project Overview:** [README.md](./README.md)
-- **Current Tasks:** [TODO.md](TODO.md) (What we are working on NOW)
-- **Work History:** [docs/project_log.md](docs/project_log.md) (Check this to avoid repeating work)
+- Project Overview: [README.md](./README.md)
+- Current Tasks: [TODO.md](TODO.md) — what we are working on now
+- Work History: [docs/project_log.md](docs/project_log.md) — check this to avoid repeating work
 
-**Technical Standards:**
+## Technical Standards
 
-- **Architecture:** [ARCHITECTURE.md](./ARCHITECTURE.md) (Patterns, stack, file organization)
-- **Code Style:** [CODE_STANDARDS.md](./CODE_STANDARDS.md) (Naming, formatting, linting, **Markdown Rules: No bold headings/list items**)
-- **Security:** [SECURITY.md](./SECURITY.md) (Secrets, auth, dependencies)
-- **Testing:** [docs/testing/PREVENTING-REGRESSIONS.md](docs/testing/PREVENTING-REGRESSIONS.md) (CRITICAL: Read before modifying code)
-- **Glossary:** [docs/GLOSSARY.md](docs/GLOSSARY.md) (Canonical terms: Build vs Restart vs Directory Scan vs Page Index vs Search Index Rebuild)
+- Architecture: [ARCHITECTURE.md](./ARCHITECTURE.md) — patterns, stack, file organization
+- Code Style: [CODE_STANDARDS.md](./CODE_STANDARDS.md) — global preferences, TypeScript config, Prettier, ESLint, Markdownlint (MD036: no bold-as-heading), naming, commit format. **Read this first.**
+- TypeScript: [docs/TypeScript-Style-Guide.md](./docs/TypeScript-Style-Guide.md) — patterns, type definitions, TSDoc conventions.
+- Security: [SECURITY.md](./SECURITY.md) — secrets, auth, dependencies
+- Testing: [docs/testing/PREVENTING-REGRESSIONS.md](docs/testing/PREVENTING-REGRESSIONS.md) — CRITICAL, read before modifying code. Also see [CODE_STANDARDS.md § Testing](./CODE_STANDARDS.md#testing).
+- Glossary: [docs/GLOSSARY.md](docs/GLOSSARY.md) — canonical terms (Build vs Restart vs Directory Scan vs Page Index vs Search Index Rebuild)
 
-**Process:**
+## Process
 
-- **Setup:** [SETUP.md](./SETUP.md)
-- **Contributing:** [CONTRIBUTING.md](./CONTRIBUTING.md) (Workflow, PRs)
+- Setup: [SETUP.md](./SETUP.md)
+- Contributing: [CONTRIBUTING.md](./CONTRIBUTING.md) — workflow, PRs
+- Commit message format: conventional commits (`type(scope): description`) per [CODE_STANDARDS.md § Git Commit Messages](./CODE_STANDARDS.md#git-commit-messages).
+- Commit workflow: every non-trivial code commit triggers the full [.claude/commands/session-commit.md](.claude/commands/session-commit.md) flow (jimstest pre-flight, semver decision, project_log entry, GH issue comments, TODO.md refresh, log push) — even when `/session-commit` was not explicitly invoked. Docs-only commits skip the build/test pre-flight but still get a project_log entry.
+- GitHub interactions: prefer the `gh` CLI for issues, PRs, checks, and releases. For new issues, always use `gh issue create --template <name>` against the templates in `.github/ISSUE_TEMPLATE/` (`bug_report.md`, `feature_request.md`, `epic.md`) — they set labels, assignees, and title prefixes correctly.
+- Pre-commit: Husky runs ESLint + Markdownlint; see [CODE_STANDARDS.md § Pre-commit Hooks](./CODE_STANDARDS.md#pre-commit-hooks). Do not bypass with `--no-verify`.
 
 ## Creating or Editing Pages Rendered on Any ngdpbase System
 
@@ -105,7 +114,7 @@ These rules apply to any content page (required-pages, documentation, user-facin
 
 ### Never Use the Word "Wiki"
 
-ngdpbase is not just a wiki — it is a general-purpose platform. The word **"wiki" must not appear** in any user-facing page content, labels, or documentation rendered by the system. Use these instead:
+ngdpbase is not just a wiki — it is a general-purpose platform. The word "wiki" must not appear in any user-facing page content, labels, or documentation rendered by the system. Use these instead:
 
 | Instead of | Use |
 |---|---|
@@ -115,6 +124,10 @@ ngdpbase is not just a wiki — it is a general-purpose platform. The word **"wi
 | wiki's global policies | global access policies |
 | wiki content | content |
 | wiki links section | Page Links section |
+
+Internal class names like `WikiContext` and `WikiDocument` are code identifiers and not subject to this rule — do not rename them.
+
+The rule also extends to **URLs, route handlers, config keys, and page slugs**: new code must not hardcode `/wiki/<slug>` — the canonical path is `/view/<slug>`. The legacy `/wiki/:page` route registration that 301-redirects to `/view/:page` is tolerated so external bookmarks survive, but no new view, controller, EJS template, or plugin should introduce `/wiki/` URLs.
 
 ### Use Builtin Syntax
 
@@ -131,22 +144,20 @@ Always use the platform's native link syntax — never construct raw `/view/` UR
 - Preferred: `[Page Title]` — resolves by title, plural/singular matching included
 - With display text: `[Display Text|Page Title]`
 - Only use `[Text|/view/slug]` when linking to a slug that differs from the page title AND no page title match exists
-- The `PageNameMatcher` handles English plural↔singular resolution automatically in both directions (e.g., `[User Keyword]` resolves to a page titled **User Keywords**), so prefer the simplest form that works
+- The `PageNameMatcher` handles English plural↔singular resolution automatically in both directions (e.g., `[User Keyword]` resolves to a page titled User Keywords), so prefer the simplest form that works
 
-## ⚠️ Critical Technical Mandates
+## Critical Technical Mandates
 
-1. **TypeScript Migration:** "One File Done Right" strategy. Enable strict mode, fix all lint errors, and ensure tests pass before deleting the `.js` file. Atomic commits per file.
-2. **Configuration:** NEVER hardcode. Use `ConfigurationManager.getInstance()`. See [config/app-default-config.json](config/app-default-config.json).
-3. **Testing:**
-    - Unit: `npm test` (Jest) - Mock file I/O.
-    - E2E: Playwright (Chromium).
-    - **Requirement:** >80% coverage for managers.
-4. **WikiContext:** Always use `WikiContext` for request/user state.
-5. **WikiDocument:** Use the DOM-based pipeline for parsing.
+1. TypeScript Migration: "One File Done Right" — for the JS→TS migration specifically, ensure tests pass before deleting the `.js` file, and use atomic commits per file. General TS, ESLint, naming, and formatting rules live in [CODE_STANDARDS.md](./CODE_STANDARDS.md#typescript-configuration).
+2. Configuration: never hardcode. Use `ConfigurationManager.getInstance()`. See [config/app-default-config.json](config/app-default-config.json).
+3. Testing: TDD only — write the failing test first, then the code. Unit tests run with `npm test` (Jest, mock file I/O); E2E uses Playwright (Chromium). Coverage and test-style rules live in [CODE_STANDARDS.md](./CODE_STANDARDS.md#testing); regression-prevention rules in [docs/testing/PREVENTING-REGRESSIONS.md](docs/testing/PREVENTING-REGRESSIONS.md). One additional non-negotiable: **test teardown must never wipe `./data/` wholesale** — remove only specific test-created subdirectories. Patterns like `fs.rmSync(dataDir, {recursive:true})` or `fs.remove(path.join(cwd(), 'data'))` have previously destroyed live page, config, and install state on `npm test` runs.
+4. `WikiContext`: always use it for request/user state (code identifier; see no-wiki rule above).
+5. `WikiDocument`: use the DOM-based pipeline for parsing (code identifier; see no-wiki rule above).
+6. Secrets: never commit unencrypted secrets to git or any CMS. Store in gitignored `.env`; see [SECURITY.md](./SECURITY.md).
 
-## 🚦 Agent Autonomy Matrix
+## Agent Autonomy Matrix
 
-### ✅ Autonomous Tasks
+### Autonomous Tasks
 
 - Refactoring (following `CODE_STANDARDS.md`)
 - Bug fixes (non-critical)
@@ -154,18 +165,19 @@ Always use the platform's native link syntax — never construct raw `/view/` UR
 - Writing/fixing tests
 - Explicitly assigned features in `TODO.md`
 
-### 🛑 Require Human Review
+### Require Human Review
 
 - Major architectural changes
 - Security policy modifications
 - Breaking API changes
 - New 3rd party integrations
 - Database/Schema changes
+- `config/app-default-config.json` permission/role/policy catalog changes — do not modify as part of a fix without explicit approval
 
-## Always use
+## Always Use
 
-- server.sh to stop and start server
-- src/utils/version.ts to perform SEMVER updates.
+- `server.sh` to stop and start the server (never `pm2`, `kill`, or `node` directly). After any `npm run build` or `/semver` release, run `./server.sh restart` explicitly — building `dist/` does **not** cycle the running pm2 process, and the live instance will keep serving stale code until restarted.
+- `src/utils/version.ts` to perform SEMVER updates
 
 ## Local Environment
 
