@@ -2,6 +2,35 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-23-01
+
+- Agent: Claude Opus 4.7
+- Subject: Housekeeping session — freshened the **#762** CatalogSource producer roster against current state, freshened the **CatalogManager.md** dev-doc against the shipped Slice 4 / 5 / 6 work, filed **#780** (admin dashboard for runtime catalog-source visibility), and tightened the `/check-todos` and `/docs` slash commands. No source code touched.
+- Current Issue: **#762** (roster freshen), **#780** (new feature filed).
+- Release: none — docs-only.
+- Tests: none — pre-flight skipped per operator decision; zero source/addon/view/test paths touched.
+- Semver: **skip** — no public-API or behavior change.
+- /othersites: skipped — gated on `minor|major` per `/session-commit` Step 5.
+- Roster edit on **#762** — moved `PageManager` from 🟡 *Filed / gated* → ✅ *Shipped producers* (Slice 4, #772, v3.34.0, 2026-05-22). Gating issue #754 also confirmed shipped. `Filed / gated` section now reads `_(none)_`. Verified `registerSource` calls in code at `PageManager.ts:171`, `MediaManager.ts:155`, `AttachmentManager.ts:268`. Comment posted summarising the freshen.
+- `FeedManager` observation — the working name from yesterday's #685 brainstorm referenced at `docs/project_log.md` line 7. Not in `src/` yet; belongs in the existing "external feeds via #685" section of #762 conceptually (per-feed addons register CatalogSources at runtime via `CatalogManager.registerSource()`). Decided NOT to add a static roster row — the registry is already runtime-dynamic; addon-supplied sources should be discoverable through an admin UI, not pre-enumerated in a doc.
+- Filed **#780** "[FEATURE] Admin dashboard: registered catalog sources at runtime" — `CatalogManager.getSourceInfo()` and `checkSchemaVersions()` exist as diagnostics methods but have zero callers in routes or EJS today. New admin route + EJS table proposed; ~small slice. Tagged as `enhancement`, medium priority. Becomes higher priority the moment #685's feed-ingestion framework starts shipping per-feed sources.
+- Dev-doc freshen on `docs/managers/CatalogManager.md`:
+  - `dateModified` bumped 2026-05-20 → 2026-05-23.
+  - Overview table "Asset sources" row flipped from "Designed, not implemented — Slice 2+ of #755" → "Shipped — Slices 3/4/5 of #755"; named all three registered managers and noted addons can register additional sources.
+  - Renamed `### Designed but not yet implemented` → `### Asset-source registry and Linked-Data emission` (heading no longer fit when 5 of 6 bullets had shipped).
+  - Added previously-undocumented Slice 6a (#765 embedded JSON-LD on `/view/:page`), Slice 6b (#766 content-neg on `@id`), and Slice 6c (#767 SKOS ConceptScheme endpoint + emitter).
+  - Kept SKOS-shaped vocabulary terms as the lone still-not-shipped bullet (verified `CatalogTerm` in `src/types/Catalog.ts` has no altLabel/broader/narrower/exactMatch fields yet).
+  - Added a new bullet flagging the runtime-visibility gap with a reference to **#780**.
+- `/check-todos` slash command — dropped two "Notable feature work" sections (intro list + output sections list) per operator direction. Command now stays focused on actionable TODOs: security, failing CI, in-review queue, open PRs, open bugs, sister-site priorities, operator carryover, TODO.md freshness, recommended next moves.
+- `/docs` slash command — operator-supplied edit before /docs ran: added "If developer documentation, add to docs/Developer-Documentation.md" cue. Useful — directed me to consider dev docs, which is exactly what the CatalogManager.md freshen was.
+- `package-lock.json` — version-string sync 3.32.0 → 3.38.0 (no dep tree change). Catch-up from prior release commits that landed the bump in `package.json` but not the lockfile.
+- ngdpbase commits (this session):
+  - `b10e6684` — `docs: refresh CatalogManager dev-doc (Slices 4/5/6 + #780); tighten /check-todos and /docs`
+- Files Modified (code): none.
+- Files Modified (docs): `docs/managers/CatalogManager.md`.
+- Files Modified (commands/lockfile): `.claude/commands/check-todos.md`, `.claude/commands/docs.md`, `package-lock.json`.
+- GitHub edits: issue body of **#762** updated + comment posted; issue **#780** filed (no comments yet on #780).
+
 ## 2026-05-22-12
 
 - Agent: Claude Opus 4.7
