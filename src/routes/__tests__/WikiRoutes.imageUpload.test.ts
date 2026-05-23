@@ -1,9 +1,10 @@
 import request from 'supertest';
-import express from 'express';
 import path from 'path';
 import fs from 'fs-extra';
 import WikiRoutes from '../WikiRoutes';
 import type { WikiEngine } from '../../types/WikiEngine';
+import { buildTestApp } from './__fixtures__/buildTestApp';
+import { csrfTestHeaders } from '../../middleware/__tests__/__fixtures__/csrfTestHelpers';
 
 // Mock dependencies
 const mockUserManager = {
@@ -61,10 +62,12 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
     // Create test upload directory
     await fs.ensureDir(testUploadDir);
 
-    // Setup Express app
-    app = express();
-    app.use(express.json());
-    app.use(express.urlencoded({ extended: true }));
+    // #684 — shared test-app builder mounts the real csrfMiddleware so
+    // every POST to /images/upload below sends a matching token via
+    // csrfTestHeaders(). Body-field _csrf won't work for uploads because
+    // multer parses req.body AFTER csrfMiddleware runs — same constraint
+    // as production. Clients must use the X-CSRF-Token header.
+    app = buildTestApp({ withCsrf: true });
 
     // Create WikiRoutes instance
     wikiRoutes = new WikiRoutes(mockEngine as unknown as WikiEngine);
@@ -109,7 +112,7 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
       }
 
       const response = await request(app)
-        .post('/images/upload')
+        .post('/images/upload').set(csrfTestHeaders())
         .attach('image', testImagePath)
         .expect(200);
 
@@ -129,7 +132,7 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
     });
 
     test('should return 400 when no file is uploaded', async () => {
-      const response = await request(app).post('/images/upload').expect(400);
+      const response = await request(app).post('/images/upload').set(csrfTestHeaders()).expect(400);
 
       expect(response.body).toHaveProperty('error');
       expect(response.body.error).toMatch(/no.*image.*file.*uploaded/i);
@@ -140,7 +143,7 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
       const largeBuffer = Buffer.alloc(11 * 1024 * 1024);
 
       const response = await request(app)
-        .post('/images/upload')
+        .post('/images/upload').set(csrfTestHeaders())
         .attach('image', largeBuffer, 'large-image.jpg')
         .expect(400);
 
@@ -154,7 +157,7 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
       const textBuffer = Buffer.from('This is not an image');
 
       const response = await request(app)
-        .post('/images/upload')
+        .post('/images/upload').set(csrfTestHeaders())
         .attach('image', textBuffer, 'test.txt')
         .timeout(5000);
 
@@ -176,7 +179,7 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
       }
 
       const response = await request(app)
-        .post('/images/upload')
+        .post('/images/upload').set(csrfTestHeaders())
         .attach('image', testImagePath)
         .expect(200);
 
@@ -201,7 +204,7 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
       ]);
 
       const response = await request(app)
-        .post('/images/upload')
+        .post('/images/upload').set(csrfTestHeaders())
         .attach('image', pngBuffer, 'test.png')
         .expect(200);
 
@@ -226,7 +229,7 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
       }
 
       const response1 = await request(app)
-        .post('/images/upload')
+        .post('/images/upload').set(csrfTestHeaders())
         .attach('image', testImagePath);
 
       // Track uploaded file for cleanup
@@ -235,7 +238,7 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
       }
 
       const response2 = await request(app)
-        .post('/images/upload')
+        .post('/images/upload').set(csrfTestHeaders())
         .attach('image', testImagePath);
 
       // Track uploaded file for cleanup
@@ -258,7 +261,7 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
       }
 
       const response = await request(app)
-        .post('/images/upload')
+        .post('/images/upload').set(csrfTestHeaders())
         .attach('image', testImagePath)
         .expect(200);
 
@@ -283,7 +286,7 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
       }
 
       const response = await request(app)
-        .post('/images/upload')
+        .post('/images/upload').set(csrfTestHeaders())
         .attach('image', testImagePath)
         .expect(200);
 
@@ -313,7 +316,7 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
 
       // Test that multer creates directory if needed (don't actually remove it)
       const response = await request(app)
-        .post('/images/upload')
+        .post('/images/upload').set(csrfTestHeaders())
         .attach('image', testImagePath);
 
       // Track uploaded file for cleanup
@@ -341,7 +344,7 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
       }
 
       const response = await request(app)
-        .post('/images/upload')
+        .post('/images/upload').set(csrfTestHeaders())
         .attach('image', testImagePath)
         .expect(200);
 
@@ -367,7 +370,7 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
       }
 
       const response = await request(app)
-        .post('/images/upload')
+        .post('/images/upload').set(csrfTestHeaders())
         .attach('image', testImagePath)
         .expect(200);
 
@@ -390,7 +393,7 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
     test('should handle multer errors gracefully', async () => {
       // Try to upload without multipart/form-data
       const response = await request(app)
-        .post('/images/upload')
+        .post('/images/upload').set(csrfTestHeaders())
         .send({ image: 'not a file' })
         .expect(400);
 
@@ -401,7 +404,7 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
       const largeBuffer = Buffer.alloc(11 * 1024 * 1024);
 
       const response = await request(app)
-        .post('/images/upload')
+        .post('/images/upload').set(csrfTestHeaders())
         .attach('image', largeBuffer, 'large.jpg')
         .expect(400);
 
@@ -414,12 +417,28 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
       const textBuffer = Buffer.from('This is not an image');
 
       const response = await request(app)
-        .post('/images/upload')
+        .post('/images/upload').set(csrfTestHeaders())
         .attach('image', textBuffer, 'test.txt')
         .expect(400);
 
       expect(response.body.success).toBe(false);
       expect(response.body.error).toMatch(/only image files/i);
+    });
+
+    // #684 — locks in CSRF coverage at the unit-test layer. Note: multer
+    // parses req.body AFTER csrfMiddleware runs, so multipart uploads CAN
+    // ONLY validate via the X-CSRF-Token header — a _csrf body field would
+    // be invisible to the middleware. This assertion confirms the header
+    // path is the enforced channel, not just the convenient one.
+    test('rejects uploads missing the X-CSRF-Token header (#684)', async () => {
+      const pngBuffer = Buffer.from([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a
+      ]);
+      const response = await request(app)
+        .post('/images/upload')
+        .attach('image', pngBuffer, 'no-csrf.png');
+      expect(response.status).toBe(403);
+      expect(response.text).toContain('CSRF');
     });
   });
 
@@ -438,7 +457,7 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
       }
 
       const uploadResponse = await request(app)
-        .post('/images/upload')
+        .post('/images/upload').set(csrfTestHeaders())
         .attach('image', testImagePath)
         .expect(200);
 
@@ -470,7 +489,7 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
       ]);
 
       const response = await request(app)
-        .post('/images/upload')
+        .post('/images/upload').set(csrfTestHeaders())
         .attach('image', pngBuffer, '../../../malicious.png')
         .expect(200);
 
@@ -492,7 +511,7 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
 </svg>`;
 
       const response = await request(app)
-        .post('/images/upload')
+        .post('/images/upload').set(csrfTestHeaders())
         .attach('image', Buffer.from(maliciousSVG), 'malicious.svg');
 
       // Track uploaded file for cleanup
