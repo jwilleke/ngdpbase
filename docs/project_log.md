@@ -2,6 +2,28 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-23-04
+
+- Agent: Claude Opus 4.7
+- Subject: Deferred **#501** (JSON → ngdp Compatible Markdown serializer, re-scoped 2026-05-17 from "JSON → HTML") with a durable cross-reference to **#685** on both sides. Dependency satisfied (#728 NCM spec + normalizer shipped 2026-05-17), but no driver today — #685 (mandatory downstream consumer) hasn't started, PubChem (motivating use case) isn't actively pulled in by any deployment. Picking up #501 in isolation would design the serializer API around the inline-plugin consumer and risk refactor when #685 lands. Recommended: pair them up when a driver appears.
+- Current Issue: **#501** (deferred), **#685** (cross-referenced).
+- Release: none — TODO.md hygiene + two GitHub comments.
+- Tests: none — docs-only commit (TODO.md only); pre-flight skipped per the docs-only rule formalized in `877965d3`.
+- Semver: **skip** — no runtime / code change.
+- /othersites: skipped — gated on `minor|major`.
+- Cross-references posted on both sides for durability:
+  - **#501** comment (`4525147981`) — defer decision with status snapshot, why-not-now rationale, four open architectural questions (template DSL, fetch policy, template storage, ImportManager integration shape), and recommendation to pair with #685 when picked up.
+  - **#685** comment (`4525148317`) — "Pairs with #501" annotation: #685 is fetch/schedule, #501 is the render-to-page-body counterpart; same serializer, two consumers (the framework + the inline plugin).
+- TODO.md updates:
+  - New row added at the bottom of "Notable feature work in flight" for **#501** with the deferred status, full rationale, and cross-reference to #685.
+  - **#685** row tightened with a "Pairs with #501" annotation so the coupling is discoverable from the framework side, not only from #501.
+- Architectural questions explicitly noted as still-open (not blockers for the defer decision, but blockers for any future Slice A): (1) template DSL — JSONPath+Handlebars / custom mini-DSL / JSON-Schema-driven, (2) fetching policy — URL allowlist (SSRF), cache TTL, timeout/size limits, auth-forwarding default, (3) template storage — config namespace vs filesystem vs addon-supplied, (4) #685 integration shape — direct `jsonToNcm()` call vs `ImportManager.convert(json, format=...)`. A `docs/planning/#501-json-to-ncm-decisions.md` (one focused session) would unblock implementation when the driver appears.
+- ngdpbase commits (this entry):
+  - `016803f5` — `docs(TODO.md): defer #501 with #685 cross-reference; tighten #685 row`
+- Files Modified (code): none.
+- Files Modified (docs): `TODO.md` (+3/-2).
+- GitHub: comments posted on #501 (defer decision) and #685 (cross-reference). Neither issue changed state.
+
 ## 2026-05-23-03
 
 - Agent: Claude Opus 4.7
