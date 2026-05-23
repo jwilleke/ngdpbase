@@ -2,6 +2,44 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-23-06
+
+- Agent: Claude Opus 4.7
+- Subject: Open-issue triage sweep across the 47-issue backlog. Closed 6 issues (2 verified-stale, 4 shipped-but-not-closed), added `deferred` label to 6 issues whose body framing already marked them parked-no-driver, and added a new "Easy wins" section + formal filter to the `/check-todos` slash command. Net result: 47 open → 41 open; the `deferred`-labelled subset is now filterable (`gh issue list --label deferred`).
+- Current Issue: triage across many.
+- Release: none — issue housekeeping + slash-command doc update.
+- Tests: none — no source change.
+- Semver: **skip** — no runtime / public API change.
+- /othersites: skipped — gated on `minor|major`.
+- Verified CLOSES (with the supersession reference per issue):
+  - **#779** "[FEATURE] Claude Usage" — empty `[FEATURE]` template stub about external Claude Code tooling (`/tui`, worktrees, `/memory`, multi-repo agent view). Not an ngdpbase concern; no problem statement.
+  - **#422** "AuthManager: OAuth / SSO auth provider" — operator's own 2026-04-05 comment said immediate OAuth need satisfied by `GoogleOIDCProvider` (#447, closed same day) with the instruction "re-open when a second OAuth provider is required." No second provider has appeared in the year since.
+  - **#760** "[EPIC] Deliver operator-visible value on the #755 plumbing" — functionally complete (8 of 10 sub-items shipped across v3.30.0–v3.36.0; remaining two deferred until a consumer surfaces or covered by #773). Sibling roster #762 stays open as the durable producer inventory.
+  - **#736** "config/app-default-config.json Documentation" — shipped `bd3c55c8` (Configuration Properties Reference now includes the live ConfigAccessor index).
+  - **#681** "Deployment options — project-scope hub + per-mode guides" — shipped `c77c8ba2` (hub + per-mode stubs) and `a6759f19` (Deployment.md reconciled with shipped artifacts).
+  - **#535** "feat: Docker image — testing, documentation, and CI improvements" — shipped `c66b6d5d` (Docker smoke test — healthcheck + HTTP endpoint verification) and `259dc77b` (simplified smoke to addon-independent paths).
+- `deferred` label added to: **#738**, **#737**, **#722**, **#707**, **#706**, **#645**. All six were deferred-in-effect-but-not-in-label — body or comment already framed each as parked / no current driver. Sweep makes the backlog filterable via `--label deferred` (joining the existing `deferred`-labelled set: #421, #423, #444, #448, #501).
+- TODO.md updates: removed the now-closed **#736** and **#681** rows from the "Notable feature work in flight" table; kept #738, #737, #722, #707, #706 rows since the existing text already describes them as deferred (label is now consistent with text). Bumped `lastModified`.
+- `/check-todos` slash command updated (`7dce844d`): new "Easy wins" output section + intro-list bullet, formal **Easy-win filter** with 8 must-hit criteria and examples of qualifies / does-not, capped at 5 per run. Triggered by the triage finding that 5 issues across the 47-issue backlog cleanly qualify (#776, #746, #729, #684, #534).
+- Easy-win candidates surfaced by the filter (will appear in future /check-todos runs):
+  - **#776** — SessionManager admin dashboard section (collapsible `<details>` block, `listActiveSessions()` walker).
+  - **#746** — wrap rendered keyword chips in `/search?types=page&keywords=<chip>` links.
+  - **#729** — extend `[{Location}]` `coords=` parser to accept DMS + Plus Codes (good-first-issue).
+  - **#684** — introduce `src/routes/__tests__/__fixtures__/buildTestApp.ts` helper; migrate one route test.
+  - **#534** — profile-page addon-extension hook (`profileSection()` / `saveProfileSection()`) — design already mirrored from admin-status pattern.
+- Cross-corpus observations recorded for future reference:
+  - **In-review label workflow gap** — #736 / #535 / #681 / #760 all sat as plain OPEN with code shipped weeks ago. Triage caught the lag. Future commits that close out a body of work need either the `in review` label or a direct close per [[feedback_issue_workflow]].
+  - **Deferred-label inconsistency** — sweep applied this session brings the label set in line with text framing.
+  - **Add-on backlog** — 9 new-addon ideas (#486 #487 #492 #494 #570 #600 #601 #602 #621), none with a current driver beyond #602. An "Addon backlog" EPIC would clarify priority order; otherwise the items look like equal-weight TODOs.
+  - **Condominium/HOA stack** — #486 + #487 + #570 + #602 form a dependency chain (person-contacts → accounting → physical-assets → unit-management). Could be one EPIC.
+  - **Backlog is feature-heavy, defect-light** — outside #599 (mitigation-only) and #660 (cosmetic), no live defects in the open set.
+- ngdpbase commits (this entry):
+  - `7dce844d` — `docs(check-todos): add Easy Wins section + filter criteria` (already pushed before triage actions)
+  - This log entry + TODO.md cleanup committed together below.
+- Files Modified (code): none.
+- Files Modified (docs): `.claude/commands/check-todos.md`, `TODO.md`, `docs/project_log.md`.
+- GitHub: 6 issues closed, 6 issues relabelled. Open count: 47 → 41.
+
 ## 2026-05-23-05
 
 - Agent: Claude Opus 4.7
