@@ -2,6 +2,27 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-23-17
+
+- Agent: Claude Opus 4.7
+- Subject: Closed the `qs` GHSA-q8mj-m7cp-5q26 cluster — released **v3.39.3** covering the three ngdpbase addon lockfiles (`calendar`, `forms`, `journal`) that still resolved transitive `qs` at 6.15.0/6.15.1, and merged Dependabot's PR #21 on `jwilleke/fairways-gen2-website` for the satellite's `addons/fairways/package-lock.json`. Five sibling alerts → zero. ngdpbase now has 1 open Dependabot alert (`showdown` GHSA-rmmh-p597-ppvv — no upstream patch; tracked by #599 / #749). This is the cluster pattern the new consolidated `/check-todos` Security section was designed to surface: PR #781 / v3.39.2 bumped qs at the root but left siblings stale, and the satellite alert would have stayed invisible without the cross-repo sweep.
+- Current Issue: none directly — closes the live qs cluster surfaced by `/check-todos` this session.
+- Tests: jimstest GREEN twice — 237/237 files, **6011 unit + 9 skipped** on the pre-release commit (Step 4 gate) and again on the release commit (Step 8a). E2E skipped both gates — release range is 3 nested `addons/*/package-lock.json` transitive-dep bumps; no `views/` / `public/` / `src/plugins/` / `addons/*/src/` / `tests/e2e/` paths touched. fairways-gen2-website CI passed on PR #21 (lint 20.x + 22.x, security-audit, GitGuardian) — Dependabot ran it.
+- Semver: **patch** — security bump of a transitive runtime dep. No public API, config schema, or on-disk format change. GH Release entry deferred per patch policy; backfill with `/release v3.39.3` if needed.
+- /othersites: **skipped** — patch-defer policy per `/session-commit` Step 5. Satellites stay on v3.39.2 until next minor/major; acceptable because the qs ReDoS isn't reachable from typical ngdpbase request paths and addon lockfiles only matter when the addon is actually loaded.
+- Perf baseline drift v3.39.2 → v3.39.3: **memory threshold tripped (+148.3% / 1334.7 MB → 3314.7 MB)** — flagged as cache-state noise, NOT a real regression. The v3.39.2 baseline was captured cold-cache (post-restart, no traffic); the v3.39.3 baseline was captured after `npm test` had already run 6011 tests against the live server, so the page cache was warm with 17534 pages loaded. Route latencies — the real code-change signal — are all flat or faster: `/` -4.0%, `/view/Welcome` ±0%, `/search?q=test` -5.9%, `/login` ±0%. None tripped route thresholds. Operator acknowledged and approved proceed. Baseline file: `docs/performance/baseline-v3.39.3-2026-05-23.md`.
+- Work Done:
+  - Ran `npm audit fix` in each of `addons/calendar`, `addons/forms`, `addons/journal` — bumped transitive `qs` to 6.15.2 with no dependency-tree additions/removals. Three nested lockfiles touched, nothing else.
+  - jimstest Step 3 pre-flight green on the work commit (`1b12a144`).
+  - `/semver patch` → release commit `46dca91c`, tag `v3.39.3` pushed.
+  - Step 8a re-validation on `46dca91c`: build + restart + test green, 6011/6011 same as Step 4 gate.
+  - Verified ngdpbase Dependabot post-merge: 4 open alerts → 1 open alert (the surviving showdown one).
+  - Switched to fairways-gen2-website checkout, found Dependabot had already opened **PR #21** doing the same bump in `addons/fairways/package-lock.json`. CI green (lint 20.x + 22.x + security-audit + GitGuardian). Merged via `gh pr merge 21 --merge --delete-branch`. Synced local master to remote (was on stale Dependabot branch + 3 behind). fairways-gen2-website Dependabot post-merge: 0 open alerts.
+- Commits: ngdpbase: `1b12a144` (addon bump), `46dca91c` (release v3.39.3). Cross-repo: `7d63441` (fairways-gen2-website PR #21 merge), containing `af58ea2` (the Dependabot bump itself).
+- Files Modified:
+  - ngdpbase: `addons/calendar/package-lock.json`, `addons/forms/package-lock.json`, `addons/journal/package-lock.json`, `package.json`, `config/app-default-config.json`, `CHANGELOG.md`, `docs/performance/baseline-v3.39.3-2026-05-23.md`
+  - fairways-gen2-website: `addons/fairways/package.json`, `addons/fairways/package-lock.json` (via merged PR)
+
 ## 2026-05-23-16
 
 - Agent: Claude Opus 4.7
