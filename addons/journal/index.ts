@@ -41,8 +41,11 @@
 
 import path from 'path';
 import express from 'express';
+import ejs from 'ejs';
 import type { WikiEngine } from '../../dist/src/types/WikiEngine.js';
-import type { AddonStatusDetails } from '../../dist/src/managers/AddonsManager.js';
+import type { AddonStatusDetails, AddonProfileSection } from '../../dist/src/managers/AddonsManager.js';
+import type { User } from '../../dist/src/types/User.js';
+import type UserManager from '../../dist/src/managers/UserManager.js';
 import type PluginManager from '../../dist/src/managers/PluginManager.js';
 import type AddonsManager from '../../dist/src/managers/AddonsManager.js';
 import type NotificationManager from '../../dist/src/managers/NotificationManager.js';
@@ -63,6 +66,14 @@ let dataManager: JournalDataManager | null = null;
 let templateManager: JournalTemplateManager | null = null;
 let reminderTimer: ReturnType<typeof setTimeout> | null = null;
 
+// #534: engine + config-derived state captured during register() so the
+// AddonModule.profileSection / saveProfileSection hooks can reach UserManager
+// and the same config the standalone /journal/settings page already reads.
+// The 5 journal.* preference keys touched by saveProfileSection are listed
+// in the method body itself — no separate constant needed.
+let engineRef: WikiEngine | null = null;
+let voiceToTextEnabled = false;
+
 const journalAddon = {
   name: 'journal',
   version: '1.0.0',
@@ -75,6 +86,11 @@ const journalAddon = {
     const dataPath = typeof config['dataPath'] === 'string' && config['dataPath'] !== ''
       ? config['dataPath']
       : (cm?.resolveDataPath('journal') ?? './data/journal');
+
+    // #534: capture engine reference + voice-to-text flag for the
+    // profileSection / saveProfileSection hooks below.
+    engineRef = engine;
+    voiceToTextEnabled = config['enableVoiceToText'] !== false;
 
     // ── 1. JournalDataManager ────────────────────────────────────────────────
     dataManager = new JournalDataManager(engine, dataPath);
@@ -187,11 +203,79 @@ const journalAddon = {
     };
   },
 
-   
+  /**
+   * #534 — contribute a journal-preferences section to /profile.
+   *
+   * Renders the `_profile-section.ejs` partial to a string. The form fields
+   * use `journal.*` names so the host POST /preferences body lands in
+   * `saveProfileSection()` keyed correctly. Returns `null` when the addon
+   * isn't fully loaded (defensive — host already filters by `loaded`).
+   */
+  async profileSection(user: User): Promise<AddonProfileSection | null> {
+    if (!engineRef || !templateManager) return null;
+
+    const userManager = engineRef.getManager<UserManager>('UserManager');
+    const freshUser = userManager ? await userManager.getUser(user.username) : null;
+    const stored = (freshUser?.preferences ?? user.preferences ?? {}) as Record<string, unknown>;
+
+    const prefs = {
+      defaultTemplate: (stored['journal.defaultTemplate'] as string | undefined) ?? 'free-write',
+      voiceToText:     stored['journal.voiceToText']     !== false,
+      reminderEnabled: Boolean(stored['journal.reminderEnabled']),
+      reminderTime:    (stored['journal.reminderTime'] as string | undefined) ?? '20:00',
+      streakVisible:   stored['journal.streakVisible']   !== false
+    };
+
+    const partialPath = path.join(__dirname, 'views', '_profile-section.ejs');
+    const html = await ejs.renderFile(partialPath, {
+      templates: templateManager.listTemplates(),
+      prefs,
+      adminVoiceEnabled: voiceToTextEnabled
+    });
+
+    return { title: 'Journal', html };
+  },
+
+  /**
+   * #534 — persist journal preferences submitted via POST /preferences.
+   *
+   * The host has already saved core preferences before calling this — we
+   * just merge the journal.* keys into the same `preferences` bag. Errors
+   * surface to AddonsManager's try/catch so a journal-save failure can't
+   * block the rest of the form save.
+   */
+  async saveProfileSection(username: string, body: Record<string, unknown>): Promise<void> {
+    if (!engineRef) return;
+
+    const userManager = engineRef.getManager<UserManager>('UserManager');
+    if (!userManager) return;
+
+    const freshUser = await userManager.getUser(username);
+    const existing = (freshUser?.preferences ?? {}) as Record<string, unknown>;
+
+    // Extract the addon's keys from the unified body — checkboxes only
+    // appear when checked, so absent === false.
+    const dt = body['journal.defaultTemplate'];
+    const rt = body['journal.reminderTime'];
+
+    const updated: Record<string, unknown> = {
+      ...existing,
+      'journal.defaultTemplate': typeof dt === 'string' && dt.trim() ? dt : 'free-write',
+      'journal.voiceToText':     body['journal.voiceToText']     === 'on',
+      'journal.reminderEnabled': body['journal.reminderEnabled'] === 'on',
+      'journal.reminderTime':    typeof rt === 'string' && rt.trim() ? rt.trim() : '20:00',
+      'journal.streakVisible':   body['journal.streakVisible']   === 'on'
+    };
+
+    await userManager.updateUser(username, { preferences: updated });
+  },
+
+
   async shutdown(): Promise<void> {
     if (reminderTimer) { clearTimeout(reminderTimer); reminderTimer = null; }
     dataManager = null;
     templateManager = null;
+    engineRef = null;
   }
 };
 

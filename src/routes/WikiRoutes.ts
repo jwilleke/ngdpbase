@@ -4607,6 +4607,19 @@ ${panes}
         ? await this.getMyContributionsCounts(currentUser.username, freshUser as { preferences?: Record<string, unknown> } | null)
         : { pages: undefined, private: undefined, journal: undefined, links: undefined };
 
+      // #534: addon-contributed profile sections.
+      // Cast through unknown — local IUserManager (WikiRoutes.ts:108) declares
+      // getUser as returning UserContext, but at runtime UserManager actually
+      // returns Omit<User, 'password'> which is what AddonsManager expects.
+      const addonsManager = this.engine.getManager('AddonsManager');
+      const addonProfileSections = (
+        addonsManager
+        && freshUser
+        && typeof (addonsManager as { getProfileSections?: unknown }).getProfileSections === 'function'
+      )
+        ? await (addonsManager as { getProfileSections: (u: unknown) => Promise<unknown[]> }).getProfileSections(freshUser)
+        : [];
+
       res.render('profile', {
         ...commonData,
         title: 'Profile',
@@ -4615,6 +4628,7 @@ ${panes}
         availableTimezones: availableTimezones,
         availableDateFormats: availableDateFormats,
         contributions, // #640
+        addonProfileSections, // #534
         error: req.query.error,
         success: req.query.success,
         csrfToken: req.session.csrfToken
@@ -5132,6 +5146,19 @@ ${panes}
 
       // Update user with new preferences
       await userManager.updateUser(currentUser.username ?? '', { preferences });
+
+      // #534: fan out the same body to every addon that registered a
+      // saveProfileSection() handler. Errors are absorbed by AddonsManager
+      // (per-addon try/catch) — a failing addon must not block this redirect.
+      const addonsManager = this.engine.getManager('AddonsManager');
+      if (
+        addonsManager
+        && currentUser.username
+        && typeof (addonsManager as { saveProfileSections?: unknown }).saveProfileSections === 'function'
+      ) {
+        await (addonsManager as { saveProfileSections: (u: string, b: Record<string, unknown>) => Promise<void> })
+          .saveProfileSections(currentUser.username, req.body as Record<string, unknown>);
+      }
 
       logger.debug('DEBUG: updatePreferences - preferences saved successfully');
       res.redirect('/profile?success=Preferences saved successfully');

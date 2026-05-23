@@ -1,0 +1,57 @@
+<%# Journal profile-section partial (#534) — rendered into /profile via the
+    AddonModule.profileSection() hook. Contains form fields ONLY; no <form>
+    wrapper, no header, no sidebar. The wrapping card + save button come from
+    the host profile.ejs preferences form. %>
+
+<% if (templates && templates.length > 0) { %>
+<div class="mb-3">
+  <label class="form-label fw-semibold">Default Template</label>
+  <p class="text-muted small mb-2">Pre-selected when you open the new entry editor.</p>
+  <div class="journal-template-grid">
+    <% templates.forEach(function(tmpl) { %>
+      <label class="journal-template-card <%= tmpl.id === prefs.defaultTemplate ? 'selected' : '' %>"
+             style="cursor:pointer;">
+        <input type="radio" name="journal.defaultTemplate" value="<%= tmpl.id %>"
+               class="visually-hidden"
+               <%= tmpl.id === prefs.defaultTemplate ? 'checked' : '' %>>
+        <div class="journal-template-name"><%= tmpl.name %></div>
+        <div class="journal-template-desc"><%= tmpl.description %></div>
+      </label>
+    <% }); %>
+  </div>
+</div>
+<% } %>
+
+<% if (adminVoiceEnabled) { %>
+<div class="form-check mb-2">
+  <input class="form-check-input" type="checkbox" name="journal.voiceToText" id="journal_voiceToText"
+         <%= prefs.voiceToText ? 'checked' : '' %>>
+  <label class="form-check-label" for="journal_voiceToText">
+    <i class="fas fa-microphone text-muted"></i> Enable voice-to-text in journal editor
+  </label>
+  <div class="form-text">Uses your browser's Web Speech API — no audio is sent to the server.</div>
+</div>
+<% } %>
+
+<div class="form-check mb-2">
+  <input class="form-check-input" type="checkbox" name="journal.streakVisible" id="journal_streakVisible"
+         <%= prefs.streakVisible ? 'checked' : '' %>>
+  <label class="form-check-label" for="journal_streakVisible">
+    Show writing streak widget in journal sidebar
+  </label>
+</div>
+
+<div class="form-check mb-2">
+  <input class="form-check-input" type="checkbox" name="journal.reminderEnabled" id="journal_reminderEnabled"
+         <%= prefs.reminderEnabled ? 'checked' : '' %>
+         onchange="document.getElementById('journal_reminderTimeRow').style.display = this.checked ? '' : 'none'">
+  <label class="form-check-label" for="journal_reminderEnabled">
+    Send me a daily in-app reminder to journal
+  </label>
+</div>
+
+<div id="journal_reminderTimeRow" class="ms-4 mb-2" style="<%= prefs.reminderEnabled ? '' : 'display:none' %>">
+  <label for="journal_reminderTime" class="form-label small">Reminder time</label>
+  <input class="form-control form-control-sm" type="time" name="journal.reminderTime"
+         id="journal_reminderTime" value="<%= prefs.reminderTime %>" style="max-width: 8rem;">
+</div>

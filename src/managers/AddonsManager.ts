@@ -21,6 +21,15 @@ import type ConfigurationManager from './ConfigurationManager.js';
 import type PageManager from './PageManager.js';
 import type SearchManager from './SearchManager.js';
 import logger from '../utils/logger.js';
+import type { User } from '../types/User.js';
+
+/**
+ * Type passed to `AddonModule.profileSection()` (#534). Matches what
+ * `UserManager.getUser()` returns at runtime — `User` minus the password
+ * hash — so addons can read preferences/roles/email without coupling
+ * to whether the host happened to fetch the full User record.
+ */
+export type AddonProfileUser = Omit<User, 'password'>;
 
 /**
  * Standard interface that all add-ons must implement
@@ -56,9 +65,54 @@ export interface AddonModule {
   status?(): Promise<AddonStatusDetails> | AddonStatusDetails;
 
   /**
+   * Optional `/profile` page extension hook (#534).
+   *
+   * When implemented, the addon contributes a section to the core profile
+   * page rather than maintaining a standalone settings route. The returned
+   * `html` is inserted **inside** the core preferences form, so the form
+   * fields it carries are submitted with the existing `POST /preferences`
+   * and surfaced to `saveProfileSection()` for persistence.
+   *
+   * Return `null` to opt out per-user (e.g. when the addon's feature is
+   * disabled for this user's roles).
+   */
+  profileSection?(user: AddonProfileUser): Promise<AddonProfileSection | null> | AddonProfileSection | null;
+
+  /**
+   * Optional save handler paired with `profileSection()` (#534).
+   *
+   * Receives the full `req.body` from `POST /preferences`; the addon
+   * extracts whichever fields its `profileSection()` form rendered and
+   * persists them. Errors are caught by AddonsManager and logged — they
+   * do NOT block the core-preferences save or other addons' saves.
+   */
+  saveProfileSection?(username: string, body: Record<string, unknown>): Promise<void> | void;
+
+  /**
    * Optional cleanup on app shutdown.
    */
   shutdown?(): Promise<void> | void;
+}
+
+/**
+ * Returned from `AddonModule.profileSection()` — a single section rendered as
+ * a card inside the `/profile` preferences form. `html` is inserted with `<%-`
+ * (raw); the addon is responsible for any escaping of its own data.
+ */
+export interface AddonProfileSection {
+  /** Heading shown in the card header (e.g. "Journal"). */
+  title: string;
+  /** Raw HTML rendered inside the card body; should contain form input fields. */
+  html: string;
+}
+
+/**
+ * One entry per addon that contributed a profile section, returned by
+ * `AddonsManager.getProfileSections()`. `addonName` is the registry key —
+ * useful for debug logging and CSS scoping.
+ */
+export interface AddonProfileSectionEntry extends AddonProfileSection {
+  addonName: string;
 }
 
 /**
@@ -893,6 +947,58 @@ class AddonsManager extends BaseManager {
     }
 
     return status;
+  }
+
+  /**
+   * Collect profile-page sections contributed by loaded addons (#534).
+   *
+   * Iterates every loaded addon that implements `profileSection()`, awaits
+   * its return, and packages results for `profile.ejs`. Errors and `null`
+   * returns are skipped silently — one failing addon must not break the
+   * profile page.
+   *
+   * Mirrors the `getStatus()` pattern exactly so the architectural shape
+   * stays consistent across addon-extension points.
+   */
+  async getProfileSections(user: AddonProfileUser): Promise<AddonProfileSectionEntry[]> {
+    const sections: AddonProfileSectionEntry[] = [];
+
+    for (const [name, addon] of this.addons) {
+      if (!addon.loaded || typeof addon.module.profileSection !== 'function') continue;
+
+      try {
+        const result = await addon.module.profileSection(user);
+        if (result && typeof result.title === 'string' && typeof result.html === 'string') {
+          sections.push({ addonName: name, title: result.title, html: result.html });
+        }
+      } catch (err) {
+        logger.warn(
+          `[AddonsManager] profileSection() failed for addon '${name}': ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    }
+
+    return sections;
+  }
+
+  /**
+   * Fan out `POST /preferences` body to every loaded addon that registered a
+   * `saveProfileSection()` handler (#534). Each addon picks its own fields
+   * out of the shared body. Errors are caught and logged so one bad addon
+   * cannot block other addons' saves or the core-preferences save.
+   */
+  async saveProfileSections(username: string, body: Record<string, unknown>): Promise<void> {
+    for (const [name, addon] of this.addons) {
+      if (!addon.loaded || typeof addon.module.saveProfileSection !== 'function') continue;
+
+      try {
+        await addon.module.saveProfileSection(username, body);
+      } catch (err) {
+        logger.warn(
+          `[AddonsManager] saveProfileSection() failed for addon '${name}': ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    }
   }
 
   /**

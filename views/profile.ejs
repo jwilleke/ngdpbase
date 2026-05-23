@@ -337,11 +337,24 @@
                                         
                                         <hr>
                                         
-                                        <div class="d-flex justify-content-between">
+                                        <%# ── Addon-contributed profile sections (#534) ─────────────── %>
+                                        <%# Rendered inside the preferences form so the addon's input fields  %>
+                                        <%# submit with the existing POST /preferences and reach each addon's %>
+                                        <%# saveProfileSection() handler. Sections render in registration order. %>
+                                        <% if (addonProfileSections && addonProfileSections.length > 0) { %>
+                                            <% addonProfileSections.forEach(function(section) { %>
+                                                <div class="card mt-4" data-addon="<%= section.addonName %>">
+                                                    <div class="card-header"><h6 class="mb-0"><%= section.title %></h6></div>
+                                                    <div class="card-body"><%- section.html %></div>
+                                                </div>
+                                            <% }); %>
+                                        <% } %>
+
+                                        <div class="d-flex justify-content-between mt-4">
                                             <button type="submit" class="btn btn-success">
                                                 <i class="fas fa-save"></i> Save Preferences
                                             </button>
-                                            
+
                                             <button type="button" class="btn btn-outline-secondary" onclick="resetPreferences()">
                                                 <i class="fas fa-undo"></i> Reset to Defaults
                                             </button>
