@@ -1037,33 +1037,28 @@ class AddonsManager extends BaseManager {
 
   /**
    * Fan out `POST /preferences` body to every loaded addon that registered a
-   * `saveProfileSection()` handler (#534). Runs IN PARALLEL via
-   * `Promise.allSettled` so total request latency is bounded by the slowest
-   * addon, not the sum — important for the user's redirect.
+   * `saveProfileSection()` handler (#534).
    *
-   * Each addon picks its own fields out of the shared body; the assumption
-   * is that addons own disjoint preference-key namespaces (e.g. `journal.*`
-   * for journal). Overlapping namespaces are a separate concern and would
-   * race regardless of serial vs parallel scheduling.
+   * Runs SEQUENTIALLY — each addon's read-modify-write of user preferences
+   * (typical implementation: `getUser → merge → updateUser`) must see the
+   * previous addon's writes. Parallel execution would create a same-snapshot
+   * race where two addons read identical preferences, each merge their own
+   * keys, and the second writer clobbers the first writer's changes.
+   * Self-inflicted by the original #534 PR; reverted to sequential here.
+   *
+   * (`getProfileSections()` above stays parallel — it's a read path with no
+   * cross-addon write contention.)
    *
    * Errors are caught per-addon and logged so one bad addon cannot block
    * other addons' saves or the core-preferences save.
    */
   async saveProfileSections(username: string, body: Record<string, unknown>): Promise<void> {
-    const candidates = [...this.addons.entries()].filter(
-      ([, addon]) => addon.loaded && typeof addon.module.saveProfileSection === 'function'
-    );
+    for (const [name, addon] of this.addons) {
+      if (!addon.loaded || typeof addon.module.saveProfileSection !== 'function') continue;
 
-    // async IIFE so a synchronous throw becomes a rejected promise.
-    const settled = await Promise.allSettled(
-      candidates.map(([, addon]) => (async () => addon.module.saveProfileSection!(username, body))())
-    );
-
-    for (let i = 0; i < settled.length; i++) {
-      const entry = settled[i];
-      if (entry.status === 'rejected') {
-        const [name] = candidates[i];
-        const err: unknown = entry.reason;
+      try {
+        await addon.module.saveProfileSection(username, body);
+      } catch (err) {
         logger.warn(
           `[AddonsManager] saveProfileSection() failed for addon '${name}': ${err instanceof Error ? err.message : String(err)}`
         );

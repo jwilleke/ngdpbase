@@ -299,6 +299,31 @@ describe('AddonsManager — profile-section hooks (#534)', () => {
       expect(mark.u).toBe('alice');
     });
 
+    it('runs SEQUENTIALLY — addon B sees addon A\'s side-effects (no race on user-prefs writes)', async () => {
+      // Each addon's read-modify-write of user prefs (getUser → merge →
+      // updateUser) must see the previous addon's writes. Parallel execution
+      // would create a same-snapshot race. We simulate this by having addon A
+      // write a marker file after a delay; addon B reads the marker and writes
+      // its observation. Sequential => B sees A's marker. Parallel => B reads
+      // before A's delayed write and observes 'no-marker'.
+      const markerDir = path.join(tmpDir, '.markers');
+      await fs.ensureDir(markerDir);
+      const safeMarker = markerDir.replace(/\\/g, '\\\\');
+
+      await writeAddon('a',
+        `saveProfileSection: async () => { await new Promise(r => setTimeout(r, 50)); require('fs').writeFileSync('${safeMarker}/a.json', 'A-wrote'); }`);
+      await writeAddon('b',
+        `saveProfileSection: async () => { const fs = require('fs'); const seen = fs.existsSync('${safeMarker}/a.json') ? fs.readFileSync('${safeMarker}/a.json','utf8') : 'no-marker'; fs.writeFileSync('${safeMarker}/b-saw.json', seen); }`);
+
+      const mgr = new AddonsManager(makeEngine(makeConfigManager(['a', 'b'])));
+      await mgr.initialize();
+
+      await mgr.saveProfileSections('alice', {});
+
+      const bSaw = await fs.readFile(path.join(markerDir, 'b-saw.json'), 'utf8');
+      expect(bSaw).toBe('A-wrote');
+    });
+
     it('skips addons that are not loaded', async () => {
       // Addon's register() throws — addon entry stays in the Map with loaded:false.
       await writeAddon('broken-on-register',
