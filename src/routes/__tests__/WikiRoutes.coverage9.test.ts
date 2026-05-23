@@ -14,8 +14,9 @@
  */
 import express from 'express';
 import request from 'supertest';
-import path from 'path';
 import WikiRoutes from '../WikiRoutes';
+import { buildTestApp } from './__fixtures__/buildTestApp';
+import { csrfTestHeaders } from '../../middleware/__tests__/__fixtures__/csrfTestHelpers';
 
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
@@ -304,48 +305,9 @@ function resetMocks() {
   mockNotificationManager.getStats.mockReturnValue({ total: 0, active: 0, expired: 0, byType: {}, byLevel: {} });
 }
 
-function buildApp() {
-  const appInstance = express();
-  appInstance.use(express.json());
-  appInstance.use(express.urlencoded({ extended: true }));
-  appInstance.set('view engine', 'ejs');
-  appInstance.set('views', path.join(__dirname, '../views'));
-
-  appInstance.use((_req: express.Request, res: express.Response, next: express.NextFunction) => {
-    res.render = (_view: string, _data: unknown, cb?: (err: Error | null, str?: string) => void) => {
-      if (cb) cb(null, '<html>stub</html>');
-      else res.send('<html>stub</html>');
-    };
-    next();
-  });
-
-  appInstance.use((req: express.Request, _res: express.Response, next: express.NextFunction) => {
-    const sess: Record<string, unknown> = {
-      csrfToken: 'test-csrf-token',
-      user: mockUserContext ? { username: mockUserContext.username } : null,
-      destroy: (cb: () => void) => cb?.(),
-      save: (cb: (err?: unknown) => void) => cb?.()
-    };
-    (req as unknown as Record<string, unknown>).session = sess;
-    (req as unknown as Record<string, unknown>).userContext = mockUserContext;
-    (req as unknown as Record<string, unknown>).sessionID = 'test-session-id';
-    next();
-  });
-
-  appInstance.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const token = (req.body as Record<string, unknown>)?._csrf ||
-      (req.headers as Record<string, unknown>)?.['x-csrf-token'];
-    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
-      if (token !== 'test-csrf-token') {
-        return res.status(403).json({ error: 'Invalid CSRF token' });
-      }
-    }
-    (req as unknown as Record<string, unknown>).csrfToken = () => 'test-csrf-token';
-    next();
-  });
-
-  return appInstance;
-}
+// #684 — replaced inline buildApp + parallel CSRF check with the shared
+// buildTestApp helper that mounts the real csrfMiddleware. Tests submit the
+// matching token via csrfTestHeaders() (or csrfTestBodyField()).
 
 // ── tests ─────────────────────────────────────────────────────────────────────
 
@@ -355,7 +317,10 @@ describe('WikiRoutes — coverage batch 9', () => {
   beforeEach(async () => {
     mockUserContext = { ...adminUser };
     resetMocks();
-    app = buildApp();
+    app = buildTestApp({
+      withCsrf: true,
+      userContext: () => mockUserContext
+    });
     const { default: WikiEngine } = await import('../../WikiEngine');
     const engine = new WikiEngine();
     const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
@@ -465,7 +430,7 @@ describe('WikiRoutes — coverage batch 9', () => {
     test('returns 400 for invalid version number', async () => {
       const res = await request(app)
         .post('/api/page/TestPage/restore/0')
-        .set('x-csrf-token', 'test-csrf-token');
+        .set(csrfTestHeaders());
       expect(res.status).toBe(400);
     });
 
@@ -473,7 +438,7 @@ describe('WikiRoutes — coverage batch 9', () => {
       mockUserContext = null;
       const res = await request(app)
         .post('/api/page/TestPage/restore/2')
-        .set('x-csrf-token', 'test-csrf-token');
+        .set(csrfTestHeaders());
       expect(res.status).toBe(401);
     });
 
@@ -481,7 +446,7 @@ describe('WikiRoutes — coverage batch 9', () => {
       mockPageManager.provider = null;
       const res = await request(app)
         .post('/api/page/TestPage/restore/2')
-        .set('x-csrf-token', 'test-csrf-token');
+        .set(csrfTestHeaders());
       expect(res.status).toBe(501);
     });
 
@@ -489,7 +454,7 @@ describe('WikiRoutes — coverage batch 9', () => {
       mockPageManager.provider = mockVersionProvider;
       const res = await request(app)
         .post('/api/page/TestPage/restore/1')
-        .set('x-csrf-token', 'test-csrf-token')
+        .set(csrfTestHeaders())
         .send({ comment: 'Restore to initial version' });
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -526,7 +491,7 @@ describe('WikiRoutes — coverage batch 9', () => {
       mockUserManager.hasPermission.mockResolvedValue(false);
       const res = await request(app)
         .post('/api/admin/cache/clear')
-        .set('x-csrf-token', 'test-csrf-token');
+        .set(csrfTestHeaders());
       expect(res.status).toBe(403);
     });
 
@@ -534,14 +499,14 @@ describe('WikiRoutes — coverage batch 9', () => {
       mockCacheManager.isInitialized.mockReturnValue(false);
       const res = await request(app)
         .post('/api/admin/cache/clear')
-        .set('x-csrf-token', 'test-csrf-token');
+        .set(csrfTestHeaders());
       expect(res.status).toBe(503);
     });
 
     test('returns 200 success when cache cleared', async () => {
       const res = await request(app)
         .post('/api/admin/cache/clear')
-        .set('x-csrf-token', 'test-csrf-token');
+        .set(csrfTestHeaders());
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
     });
@@ -554,14 +519,14 @@ describe('WikiRoutes — coverage batch 9', () => {
       mockUserManager.hasPermission.mockResolvedValue(false);
       const res = await request(app)
         .post('/api/admin/cache/clear/page/TestPage')
-        .set('x-csrf-token', 'test-csrf-token');
+        .set(csrfTestHeaders());
       expect(res.status).toBe(403);
     });
 
     test('returns 200 success for valid identifier', async () => {
       const res = await request(app)
         .post('/api/admin/cache/clear/page/TestPage')
-        .set('x-csrf-token', 'test-csrf-token');
+        .set(csrfTestHeaders());
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
     });
@@ -574,7 +539,7 @@ describe('WikiRoutes — coverage batch 9', () => {
       mockUserManager.hasPermission.mockResolvedValue(false);
       const res = await request(app)
         .post('/api/admin/cache/clear/rendered-pages')
-        .set('x-csrf-token', 'test-csrf-token');
+        .set(csrfTestHeaders());
       expect(res.status).toBe(403);
     });
 
@@ -582,14 +547,14 @@ describe('WikiRoutes — coverage batch 9', () => {
       mockCacheManager.isInitialized.mockReturnValue(false);
       const res = await request(app)
         .post('/api/admin/cache/clear/rendered-pages')
-        .set('x-csrf-token', 'test-csrf-token');
+        .set(csrfTestHeaders());
       expect(res.status).toBe(503);
     });
 
     test('returns 200 success when region cleared', async () => {
       const res = await request(app)
         .post('/api/admin/cache/clear/rendered-pages')
-        .set('x-csrf-token', 'test-csrf-token');
+        .set(csrfTestHeaders());
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
     });
@@ -628,6 +593,23 @@ describe('WikiRoutes — coverage batch 9', () => {
       mockPageManager.pageExists.mockReturnValue(false);
       const res = await request(app).get('/diff/NonExistent?v1=1&v2=2');
       expect(res.status).toBe(404);
+    });
+  });
+
+  // ── CSRF middleware wiring (#684) ────────────────────────────────────────────
+  // Locks in the coverage gain from migrating off the inline buildApp's
+  // parallel CSRF check. If a future change drops `withCsrf: true` from the
+  // buildTestApp call (or the production middleware stops rejecting bare
+  // POSTs), these assertions break — exactly the regression #684 was filed
+  // to catch at the unit-test layer.
+  describe('CSRF middleware wiring', () => {
+    test('POST without a CSRF token is rejected by the real middleware', async () => {
+      mockPageManager.provider = mockVersionProvider;
+      const res = await request(app)
+        .post('/api/page/TestPage/restore/1')
+        .send({ comment: 'no token submitted' });
+      expect(res.status).toBe(403);
+      expect(res.text).toContain('CSRF');
     });
   });
 });

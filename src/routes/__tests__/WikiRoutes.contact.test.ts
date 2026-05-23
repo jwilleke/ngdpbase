@@ -14,6 +14,8 @@ import path from 'path';
 import os from 'os';
 import { promises as fsPromises } from 'fs';
 import WikiRoutes, { contactRateLimiter } from '../WikiRoutes';
+import { buildTestApp } from './__fixtures__/buildTestApp';
+import { TEST_CSRF_TOKEN } from '../../middleware/__tests__/__fixtures__/csrfTestHelpers';
 
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
@@ -186,41 +188,12 @@ const adminUser = {
   preferences: {}
 };
 
-function buildApp() {
-  const appInstance = express();
-  appInstance.use(express.json());
-  appInstance.use(express.urlencoded({ extended: true }));
-  appInstance.set('view engine', 'ejs');
-  appInstance.set('views', path.join(__dirname, '../views'));
-
-  // Stub render so we don't actually load EJS files in this unit test.
-  appInstance.use((_req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const renderFn = function (this: express.Response, view: string, data: unknown, cb?: (err: Error | null, str?: string) => void) {
-      // Encode the state for assertion
-      const state = (data as { state?: string } | undefined)?.state ?? 'unknown';
-      const html = `<html data-view="${view}" data-state="${state}">stub</html>`;
-      if (cb) cb(null, html);
-      else this.send(html);
-      return this;
-    };
-    res.render = renderFn as unknown as typeof res.render;
-    next();
-  });
-
-  appInstance.use((req: express.Request, _res: express.Response, next: express.NextFunction) => {
-    const sess: Record<string, unknown> = {
-      csrfToken: 'test-csrf-token',
-      user: mockUserContext ? { username: mockUserContext.username } : null,
-      destroy: (cb: () => void) => cb?.(),
-      save: (cb: (err?: unknown) => void) => cb?.()
-    };
-    (req as unknown as Record<string, unknown>).session = sess;
-    (req as unknown as Record<string, unknown>).userContext = mockUserContext;
-    (req as unknown as Record<string, unknown>).sessionID = 'test-session-id';
-    next();
-  });
-
-  return appInstance;
+// #684 — render stub for contact tests. Encodes view + data.state into the
+// HTML so tests can assert on `data-state="form"` / `data-view="contact"`
+// without loading the real EJS file.
+function contactRenderStub(view: string, data: unknown): string {
+  const state = (data as { state?: string } | undefined)?.state ?? 'unknown';
+  return `<html data-view="${view}" data-state="${state}">stub</html>`;
 }
 
 describe('WikiRoutes — GET /contact (#658 iteration 2)', () => {
@@ -244,7 +217,11 @@ describe('WikiRoutes — GET /contact (#658 iteration 2)', () => {
       return null;
     });
 
-    app = buildApp();
+    app = buildTestApp({
+      withCsrf: true,
+      userContext: () => mockUserContext,
+      stubRender: contactRenderStub
+    });
     const { default: WikiEngine } = await import('../../WikiEngine');
     const engine = new WikiEngine();
     const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
@@ -347,7 +324,8 @@ describe('WikiRoutes — POST /contact (#658 iteration 3)', () => {
     name: 'Alice Smith',
     email: 'alice@example.com',
     subject: 'Hello',
-    message: 'Hi there, I would like to request access.'
+    message: 'Hi there, I would like to request access.',
+    _csrf: TEST_CSRF_TOKEN
   };
 
   beforeEach(async () => {
@@ -370,7 +348,11 @@ describe('WikiRoutes — POST /contact (#658 iteration 3)', () => {
       return 'admin@example.com'; // default: recipient resolves
     });
 
-    app = buildApp();
+    app = buildTestApp({
+      withCsrf: true,
+      userContext: () => mockUserContext,
+      stubRender: contactRenderStub
+    });
     const { default: WikiEngine } = await import('../../WikiEngine');
     const engine = new WikiEngine();
     const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
@@ -489,6 +471,18 @@ describe('WikiRoutes — POST /contact (#658 iteration 3)', () => {
     const res = await request(app).post('/contact').send(validBody);
     expect(res.text).not.toContain('admin@example.com');
   });
+
+  // #684 — locks in the coverage gain from wiring the real csrfMiddleware.
+  // Before #684, route tests built their own bare express app and never
+  // exercised CSRF; this test ensures POST /contact actually fails when a
+  // submission omits the token (the #690 bug — `name="_csrfToken"` in the
+  // form instead of `_csrf` — would now surface here, not just in E2E).
+  test('POST without _csrf is rejected by the real CSRF middleware (#684)', async () => {
+    const { _csrf: _omit, ...bodyWithoutToken } = validBody;
+    const res = await request(app).post('/contact').send(bodyWithoutToken);
+    expect(res.status).toBe(403);
+    expect(res.text).toContain('CSRF');
+  });
 });
 
 
@@ -508,7 +502,8 @@ describe('WikiRoutes — /contact mail-disabled honesty (#670 Phase B)', () => {
     name: 'Alice Smith',
     email: 'alice@example.com',
     subject: 'Hello',
-    message: 'Hi there, I would like to request access.'
+    message: 'Hi there, I would like to request access.',
+    _csrf: TEST_CSRF_TOKEN
   };
 
   beforeEach(async () => {
@@ -531,7 +526,11 @@ describe('WikiRoutes — /contact mail-disabled honesty (#670 Phase B)', () => {
       return 'admin@example.com'; // default: recipient resolves
     });
 
-    app = buildApp();
+    app = buildTestApp({
+      withCsrf: true,
+      userContext: () => mockUserContext,
+      stubRender: contactRenderStub
+    });
     const { default: WikiEngine } = await import('../../WikiEngine');
     const engine = new WikiEngine();
     const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
@@ -604,7 +603,8 @@ describe('WikiRoutes — POST /contact submission persistence (#670 Phase C)', (
     name: 'Alice Smith',
     email: 'alice@example.com',
     subject: 'Hello',
-    message: 'Hi there.'
+    message: 'Hi there.',
+    _csrf: TEST_CSRF_TOKEN
   };
 
   beforeEach(async () => {
@@ -628,7 +628,11 @@ describe('WikiRoutes — POST /contact submission persistence (#670 Phase C)', (
       return 'admin@example.com';
     });
 
-    app = buildApp();
+    app = buildTestApp({
+      withCsrf: true,
+      userContext: () => mockUserContext,
+      stubRender: contactRenderStub
+    });
     const { default: WikiEngine } = await import('../../WikiEngine');
     const engine = new WikiEngine();
     const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
@@ -786,7 +790,8 @@ describe('WikiRoutes — POST /contact configurable anti-spam (#670 Phase E)', (
     name: 'Alice Smith',
     email: 'alice@example.com',
     subject: 'Hello',
-    message: 'Hi there.'
+    message: 'Hi there.',
+    _csrf: TEST_CSRF_TOKEN
   };
 
   beforeEach(async () => {
@@ -811,7 +816,11 @@ describe('WikiRoutes — POST /contact configurable anti-spam (#670 Phase E)', (
       return 'admin@example.com';
     });
 
-    app = buildApp();
+    app = buildTestApp({
+      withCsrf: true,
+      userContext: () => mockUserContext,
+      stubRender: contactRenderStub
+    });
     const { default: WikiEngine } = await import('../../WikiEngine');
     const engine = new WikiEngine();
     const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
