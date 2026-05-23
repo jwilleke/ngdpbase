@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-23-11
+
+- Agent: Claude Opus 4.7
+- Subject: Released **v3.39.1** carrying the defensive qs-flatten hardening (`ab66d91e`). Patch bump per operator choice — no runtime behavior change in production, purely future-proofing against a body-parser config flip. GH Release deferred per patch policy; `/othersites` skipped per /session-commit gate (satellites stay on v3.39.0).
+- Current Issue: #534 (already closed; this release ships the defensive follow-up to the same hook).
+- Release: **v3.39.1** — release commit `ab8ec49e`. Tag pushed; GH Release entry deferrred (use `/release v3.39.1` to publish if needed).
+- Tests: jimstest 6008 unit + 9 skipped on the pre-release commit (Step 4 gate) and again on the release commit (Step 8a). E2E skipped at both gates — release range touches only `src/managers/AddonsManager.ts`, `src/routes/WikiRoutes.ts` (comment only), and two test files; no `views/` / `addons/` / `public/` / `src/plugins/` / `tests/e2e/` paths.
+- Semver: **patch** — operator picked patch (over the recommended-from-Step-9-side minor) because runtime behavior is unchanged in production.
+- /othersites: **skipped** — gated on `minor|major` per `/session-commit` Step 5. Satellites stay on v3.39.0 (which already carries the substantive code-review fixes); they'll catch up at the next minor/major.
+- Perf baseline drift v3.39.0 → v3.39.1: `/` flagged +482.6%, `/search` flagged +287.2%, memory dropped -55.5%. **Operator-acknowledged as the second half of the warm-vs-cold-cache noise pattern from v3.39.0**. The v3.39.0 baseline was the outlier (taken after 30+ min of E2E flooding — warm cache, 3080 MB resident, 23ms `/`). v3.39.1 baseline (cold cache, just restarted) is 1371.5 MB resident, 134ms `/` — matching v3.38.1's 1375.6 MB and 144ms within ±3%. The defensive flatten is a pure refactor with no allocation-pattern change; cannot have caused this. Recorded for the perf-baseline workflow's known limitation: warm-vs-cold-cache comparisons aren't directly meaningful and the gate fires false-positives at release events that happen to span a cache state change. Baseline file: `docs/performance/baseline-v3.39.1-2026-05-23.md`.
+- ngdpbase commits (release window):
+  - `ab66d91e` — `fix(#534): defensive host-side flatten of addon-bound body shape`
+  - `de9cfd7c` — `docs: update project log for session 2026-05-23-10 — defensive qs flatten in AddonsManager`
+  - `ab8ec49e` — `chore: release v3.39.1`
+- Files Modified (release commit only): `package.json` (3.39.0 → 3.39.1), `config/app-default-config.json`, `CHANGELOG.md`, `docs/performance/baseline-v3.39.1-2026-05-23.md` (NEW).
+- GitHub: v3.39.1 tag pushed; release entry deferred. #534 stays closed.
+- TODO.md: no row change. No backlog items moved.
+
 ## 2026-05-23-10
 
 - Agent: Claude Opus 4.7
