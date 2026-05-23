@@ -8,7 +8,7 @@ The high-level flow is:
 
 1. Gather context
 2. Create the commit
-3. **jimstest pre-flight** (build → restart → unit tests → E2E if UI-affecting) — **ALWAYS runs**, regardless of semver outcome.
+3. **jimstest pre-flight** (build → restart → unit tests → E2E if UI-affecting) — **runs by default** before propagation, but **skipped entirely for docs-only commits** (see Step 3 for the precise file-path rule).
 4. **Semver decision** (patch / minor / major / skip)
 5. **`/othersites` propagation** (pull + build + restart + tests on the satellite instances) — **only when Step 4 was `minor` or `major`**. Skipped for `patch` and `skip`. Standalone `/othersites` invocations (typed by the operator outside this command) are unaffected and always run.
 6. Update project log
@@ -33,9 +33,28 @@ Run these in parallel:
 - Write a conventional commit message: `type(scope): description`
 - Commit the changes
 
-### Step 3: jimstest pre-flight (ALWAYS, before propagation)
+### Step 3: jimstest pre-flight (before propagation)
 
-Always validate the just-committed work on jimstest (this repo, port 3000) **before** running `/othersites` or making a semver call. Catches build / test regressions on the operator's primary instance first.
+Validate the just-committed work on jimstest (this repo, port 3000) **before** running `/othersites` or making a semver call. Catches build / test regressions on the operator's primary instance first.
+
+#### Docs-only skip (no pre-flight)
+
+If the commit touches **zero runtime / test surface**, skip pre-flight entirely — there is nothing for the build to compile differently, nothing for the server to serve differently, and nothing for the test suite to exercise differently. Continue straight to Step 4 with `skip` as the expected semver outcome.
+
+A commit qualifies as docs-only when **every** changed file matches one of these patterns:
+
+- `*.md` anywhere (docs pages, READMEs, project log, TODO, CHANGELOG)
+- `docs/**` (developer documentation tree)
+- `required-pages/**` (end-user content shipped to all sites)
+- `.claude/**` (Claude slash commands, agents, skills — not read by the running server)
+- `.github/**` (GitHub issue/PR templates and Actions workflow YAML)
+- `package-lock.json` **only when** the diff is a pure version-string sync (no dependency tree additions/removals) — confirm with `git diff package-lock.json | head -50` showing only the top-level `"version"` change
+
+If **any** changed file is outside these patterns — `src/**`, `addons/**`, `views/**`, `public/**`, `tests/**`, `server.sh`, `config/**`, `package.json` dep changes, etc. — run the full pre-flight below.
+
+When in doubt, run the pre-flight — the cost of an unnecessary cycle is bounded; the cost of shipping a broken release is not.
+
+#### Standard pre-flight
 
 Run sequentially from the repo root:
 
