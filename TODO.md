@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-22T13:30:00.000Z'
+lastModified: '2026-05-23T10:30:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -83,6 +83,7 @@ EPIC #755 + EPIC #760 are both fully delivered at the design level. Remaining do
 
 | # | Topic | Priority hint |
 |---|---|---|
+| #780 | Admin dashboard: registered catalog sources at runtime (consumer of `CatalogManager.getSourceInfo` + `checkSchemaVersions`) | Medium — filed 2026-05-23 to close the runtime-visibility gap surfaced by the #685 FeedManager brainstorm; bumps when #685 starts shipping per-feed sources |
 | #714 | [EPIC] Unified access-control evaluator — `wikiContext.canAccess` as single facade | Low — body reconciled with `master` 2026-05-16; search-provider ACL explicitly out-of-scope; refactor intentionally not started |
 | #738 | NCM/import conversion metrics | Low — **unblocked** by #728 S3 (structured `kind` codes now exist); observability follow-up |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images | Low — adds sharp/libvips; do when a real driver appears |
