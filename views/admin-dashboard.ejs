@@ -648,9 +648,13 @@
                         return;
                     }
                     const data = await res.json();
-                    statusEl.textContent = 'Cleared ' + data.removed + ' anonymous (kept ' + data.kept + ', removed ' + data.orphansRemoved + ' orphans).';
-                    // Reload the table to reflect the new state
+                    const sweepMsg = 'Cleared ' + data.removed + ' anonymous (kept ' + data.kept + ', removed ' + data.orphansRemoved + ' orphans).';
+                    statusEl.textContent = sweepMsg;
+                    // Reload the table to reflect the new state; load() overwrites
+                    // statusEl with its own "N session(s) loaded" line, so re-apply
+                    // our message after so the operator sees what just happened.
                     await load();
+                    statusEl.textContent = sweepMsg;
                 } catch (e) {
                     statusEl.textContent = 'Network error: ' + (e && e.message ? e.message : e);
                 } finally {
