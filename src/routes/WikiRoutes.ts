@@ -365,6 +365,65 @@ const imageUpload: Multer = multer({
 });
 
 /**
+ * Sweep anonymous sessions from a session-file-store directory (#777).
+ *
+ * "Anonymous" = the session JSON file has neither a top-level
+ * `isAuthenticated: true` nor a nested `user.isAuthenticated === true`.
+ * (express-session entries written by ngdpbase use the top-level form;
+ * the nested-user form is what the issue body describes for stores that
+ * structure session data differently.)
+ *
+ * Always deletes `*.json.NNN` atomic-write orphans regardless of contents.
+ * Never deletes a session whose id matches `excludeSessionId` (so the
+ * admin clicking the button can't accidentally log themselves out).
+ *
+ * Returns counts for the caller to surface and log.
+ *
+ * Extracted as a free function so it's unit-testable against a real temp
+ * directory without spinning up the full WikiRoutes handler.
+ */
+export async function sweepAnonymousSessions(
+  sessionDir: string,
+  excludeSessionId: string | null
+): Promise<{ removed: number; kept: number; orphansRemoved: number }> {
+  let removed = 0;
+  let kept = 0;
+  let orphansRemoved = 0;
+  if (!await fse.pathExists(sessionDir)) {
+    return { removed, kept, orphansRemoved };
+  }
+  const entries = await fse.readdir(sessionDir);
+  for (const name of entries) {
+    const full = path.join(sessionDir, name);
+    // Atomic-write orphans: *.json.NNN — always delete
+    if (/\.json\.\d+$/.test(name)) {
+      try { await fse.unlink(full); orphansRemoved++; } catch { /* skip */ }
+      continue;
+    }
+    if (!name.endsWith('.json')) continue;
+    const sid = name.slice(0, -'.json'.length);
+    let raw: unknown;
+    try {
+      raw = await fse.readJson(full);
+    } catch {
+      // Unreadable / malformed — leave it alone. Cleanup of bad files is
+      // out of scope for this action; operator can ssh in to investigate.
+      kept++;
+      continue;
+    }
+    const s = (raw ?? {}) as Record<string, unknown>;
+    const topLevelAuth = s.isAuthenticated === true;
+    const nestedUser = (s.user ?? {}) as Record<string, unknown>;
+    const nestedAuth = nestedUser.isAuthenticated === true;
+    const isAuthenticated = topLevelAuth || nestedAuth;
+    if (isAuthenticated) { kept++; continue; }
+    if (excludeSessionId && sid === excludeSessionId) { kept++; continue; }
+    try { await fse.unlink(full); removed++; } catch { /* skip */ }
+  }
+  return { removed, kept, orphansRemoved };
+}
+
+/**
  * Build a SessionSummary from a raw session-store entry (#776). The shape
  * depends on what was stored at session-create time; legacy entries may have
  * only cookie+csrfToken (anonymous CSRF-only session), while authenticated
@@ -889,6 +948,55 @@ class WikiRoutes {
     } catch (err) {
       logger.error('Failed to obtain session details:', err);
       res.status(500).json({ error: 'Failed to obtain session details' });
+    }
+  }
+
+  /**
+   * #777 — admin action: delete all anonymous (non-authenticated) sessions.
+   * Preserves authenticated sessions and the caller's own session. Also
+   * cleans up `*.json.NNN` atomic-write orphan files.
+   *
+   * Admin-only, CSRF-protected. Records an AuditManager event so the action
+   * is traceable.
+   */
+  async clearAnonymousSessions(req: Request, res: Response): Promise<void> {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!wikiContext.userContext?.isAuthenticated || !wikiContext.hasRole('admin')) {
+        res.status(403).json({ error: 'Admin role required' });
+        return;
+      }
+      const configManager = this.engine.getManager('ConfigurationManager');
+      const sessionDir = configManager.getResolvedDataPath('ngdpbase.session.storagedir', './data/sessions');
+      const excludeSid = typeof req.sessionID === 'string' ? req.sessionID : null;
+      const result = await sweepAnonymousSessions(sessionDir, excludeSid);
+
+      // Audit log (best-effort — don't fail the action if the audit subsystem is down)
+      try {
+        const auditManager = this.engine.getManager('AuditManager') as {
+          logAuditEvent?: (event: Record<string, unknown>) => Promise<string>;
+        } | null;
+        if (auditManager?.logAuditEvent) {
+          await auditManager.logAuditEvent({
+            eventType: 'admin.sessions.clear-anonymous',
+            user: wikiContext.userContext.username ?? 'unknown',
+            sessionId: excludeSid ?? undefined,
+            ipAddress: req.ip,
+            action: 'clear-anonymous-sessions',
+            result: 'success',
+            severity: 'medium',
+            metadata: result
+          });
+        }
+      } catch (auditErr) {
+        logger.warn('Audit log failed for clear-anonymous-sessions:', auditErr);
+      }
+      logger.info(`[AUDIT] admin ${wikiContext.userContext.username ?? 'unknown'} cleared anonymous sessions: ${result.removed} removed, ${result.kept} kept, ${result.orphansRemoved} orphans`);
+
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      logger.error('Failed to clear anonymous sessions:', err);
+      res.status(500).json({ error: 'Failed to clear anonymous sessions' });
     }
   }
 
@@ -10142,6 +10250,10 @@ ${panes}
     // #776 — admin-only per-session listing for the dashboard
     app.get('/api/sessions/list', (req: Request, res: Response) =>
       void this.getActiveSessionDetails(req, res)
+    );
+    // #777 — admin action: clear all anonymous sessions (preserves authed sessions and caller's own)
+    app.post('/api/sessions/clear-anonymous', (req: Request, res: Response) =>
+      void this.clearAnonymousSessions(req, res)
     );
     app.get('/api/check-updates', (req: Request, res: Response) =>
       void this.checkForUpdates(req, res)

@@ -186,5 +186,26 @@ test.describe('Admin Dashboard', () => {
       expect(resp.status()).toBe(403);
       await anonCtx.close();
     });
+
+    test('Clear anonymous button renders inside Session Manager card (#777)', async ({ page }) => {
+      // We only verify the button renders and is wired — the actual sweep is
+      // covered by the sweepAnonymousSessions unit suite against a real temp
+      // directory. Clicking it here would delete real session files on jimstest.
+      await page.goto('/admin');
+      await page.waitForLoadState('domcontentloaded');
+      // Expand the <details> so children become visible
+      await page.locator('#session-manager-details summary').click();
+      const btn = page.locator('#session-manager-clear-anon');
+      await expect(btn).toBeVisible();
+      await expect(btn).toContainText(/Clear anonymous/i);
+    });
+
+    test('/api/sessions/clear-anonymous returns 403 for unauthenticated callers (#777)', async ({ browser }) => {
+      const anonCtx = await browser.newContext({ storageState: undefined });
+      const anonPage = await anonCtx.newPage();
+      const resp = await anonPage.request.post('/api/sessions/clear-anonymous');
+      expect(resp.status()).toBe(403);
+      await anonCtx.close();
+    });
   });
 });
