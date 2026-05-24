@@ -463,10 +463,11 @@
                                             <th class="session-sort" data-sort-key="expires" style="cursor: pointer;" title="Click to sort by cookie expiry">Expires <span class="text-muted small">⇅</span></th>
                                             <th class="session-sort" data-sort-key="isAuthenticated" style="cursor: pointer;" title="Authenticated — whether a logged-in user owns this session. Anonymous sessions are CSRF-token-only entries created on first visit and have no user.">Logged in? <span class="text-muted small">⇅</span></th>
                                             <th class="session-sort" data-sort-key="ip" style="cursor: pointer;" title="Client IP captured on first request. Older sessions created before IP-capture middleware shipped will be blank until next request.">IP <span class="text-muted small">⇅</span></th>
+                                            <th title="Revoke this session — force-logout its owner. Your own row is marked and asks for an extra confirmation. (#787)">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody id="session-manager-rows">
-                                        <tr><td colspan="6" class="text-center text-muted">Expand to load.</td></tr>
+                                        <tr><td colspan="7" class="text-center text-muted">Expand to load.</td></tr>
                                     </tbody>
                                 </table>
                             </div>
@@ -520,7 +521,7 @@
         function renderRows() {
             const sessions = sortedView(currentSessions);
             if (!sessions || sessions.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No sessions.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No sessions.</td></tr>';
                 return;
             }
             tbody.innerHTML = sessions.map(function(s) {
@@ -528,19 +529,30 @@
                 const userCell = s.username
                     ? '<span class="text-primary">' + escapeHtml(s.username) + '</span>'
                     : '<span class="text-muted fst-italic">(anon)</span>';
+                const selfMark = s.isSelf ? ' <span class="badge bg-info text-dark ms-1" title="This is your own session">you</span>' : '';
                 const expiredMark = s.expired ? ' <span class="badge bg-warning text-dark ms-1">expired</span>' : '';
                 // Logged-in column: explicit text so the column meaning is self-evident
                 // (was just an icon before — operators asked "what does this mean?" #776 follow-up).
                 const authCell = s.isAuthenticated
                     ? '<span class="text-success fw-semibold">yes</span>'
                     : '<span class="text-muted">no</span>';
+                // #787: Revoke button — encodes data attributes so the click handler can
+                // safely look up the target without re-encoding in the onclick string.
+                const revokeBtn = '<button type="button" class="btn btn-sm btn-link text-danger p-0 session-revoke-btn"'
+                    + ' title="Revoke this session"'
+                    + ' data-target-id="' + escapeHtml(s.id) + '"'
+                    + ' data-target-user="' + escapeHtml(s.username || '') + '"'
+                    + ' data-target-ip="' + escapeHtml(s.ip || '') + '"'
+                    + ' data-target-self="' + (s.isSelf ? '1' : '0') + '"'
+                    + '><i class="fas fa-times"></i></button>';
                 return '<tr>'
                     + '<td><code class="small">' + escapeHtml(idShort) + '</code></td>'
-                    + '<td>' + userCell + '</td>'
+                    + '<td>' + userCell + selfMark + '</td>'
                     + '<td>' + escapeHtml(fmtRel(s.lastAccess)) + '</td>'
                     + '<td>' + escapeHtml(fmtRel(s.expires)) + expiredMark + '</td>'
                     + '<td>' + authCell + '</td>'
                     + '<td>' + (s.ip ? '<code class="small">' + escapeHtml(s.ip) + '</code>' : '<span class="text-muted">—</span>') + '</td>'
+                    + '<td>' + revokeBtn + '</td>'
                     + '</tr>';
             }).join('');
         }
@@ -567,13 +579,13 @@
 
         async function load() {
             statusEl.textContent = 'Loading…';
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Loading…</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Loading…</td></tr>';
             try {
                 const res = await fetch('/api/sessions/list', { credentials: 'same-origin' });
                 if (!res.ok) {
                     const err = await res.json().catch(() => ({}));
                     statusEl.textContent = 'Error: ' + (err.error || ('HTTP ' + res.status));
-                    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">' + escapeHtml(statusEl.textContent) + '</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger">' + escapeHtml(statusEl.textContent) + '</td></tr>';
                     return;
                 }
                 const data = await res.json();
@@ -583,7 +595,7 @@
                 renderRows();
             } catch (e) {
                 statusEl.textContent = 'Network error: ' + (e && e.message ? e.message : e);
-                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">' + escapeHtml(statusEl.textContent) + '</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger">' + escapeHtml(statusEl.textContent) + '</td></tr>';
             }
         }
 
@@ -646,6 +658,53 @@
                 }
             });
         }
+
+        // #787: per-row revoke. Click delegation on tbody so newly-rendered
+        // rows (after a refresh) inherit the handler automatically.
+        tbody.addEventListener('click', async function(evt) {
+            const btn = evt.target.closest('.session-revoke-btn');
+            if (!btn) return;
+            const id = btn.getAttribute('data-target-id') || '';
+            const user = btn.getAttribute('data-target-user') || '';
+            const ip = btn.getAttribute('data-target-ip') || '';
+            const isSelf = btn.getAttribute('data-target-self') === '1';
+            if (!id) return;
+
+            // Build a context-appropriate confirm message
+            let prompt;
+            if (isSelf) {
+                prompt = 'This is YOUR OWN session. Revoking it will log you out immediately.\n\nContinue?';
+            } else if (user) {
+                prompt = 'Revoke session for ' + user + (ip ? ' @ ' + ip : '') + '?\n\nThey will be logged out.';
+            } else {
+                prompt = 'Revoke this anonymous session' + (ip ? ' from ' + ip : '') + '?';
+            }
+            if (!confirm(prompt)) return;
+
+            btn.disabled = true;
+            statusEl.textContent = 'Revoking…';
+            try {
+                const url = '/api/sessions/' + encodeURIComponent(id) + (isSelf ? '?confirm-self=1' : '');
+                const res = await window.csrfFetch(url, { method: 'DELETE', credentials: 'same-origin' });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    statusEl.textContent = 'Revoke failed: ' + (err.error || ('HTTP ' + res.status));
+                    btn.disabled = false;
+                    return;
+                }
+                const data = await res.json();
+                const shortId = (data.revokedId || id).slice(0, 8) + '…';
+                statusEl.textContent = 'Revoked session ' + shortId
+                    + (data.revokedUsername ? ' (user=' + data.revokedUsername + ')' : ' (anonymous)')
+                    + (data.selfRevoke ? ' — you have been logged out; refresh to land on /login' : '');
+                if (!data.selfRevoke) {
+                    await load();
+                }
+            } catch (e) {
+                statusEl.textContent = 'Network error: ' + (e && e.message ? e.message : e);
+                btn.disabled = false;
+            }
+        });
     })();
     </script>
 

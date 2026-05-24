@@ -925,4 +925,145 @@ describe('WikiRoutes — coverage batch 12', () => {
       expect(true).toBe(true);
     });
   });
+
+  // ── Revoke a single session (#787) ───────────────────────────────────────────
+
+  describe('DELETE /api/sessions/:id (clearOneSession)', () => {
+    test('returns 403 when caller lacks admin role', async () => {
+      mockUserContext = {
+        username: 'bob',
+        isAuthenticated: true,
+        roles: ['reader']
+      };
+      const res = await request(app).delete('/api/sessions/some-id');
+      expect(res.status).toBe(403);
+    });
+
+    test('returns 403 when caller is anonymous', async () => {
+      mockUserContext = null;
+      const res = await request(app).delete('/api/sessions/some-id');
+      expect(res.status).toBe(403);
+    });
+
+    test('returns 503 when session store has no destroy method', async () => {
+      mockUserContext = {
+        username: 'admin',
+        isAuthenticated: true,
+        roles: ['admin']
+      };
+      const res = await request(app).delete('/api/sessions/some-id').set('X-CSRF-Token', 'test-csrf-token');
+      expect(res.status).toBe(503);
+    });
+
+    test('returns 404 when target session does not exist', async () => {
+      mockUserContext = {
+        username: 'admin',
+        isAuthenticated: true,
+        roles: ['admin']
+      };
+      const fakeStore = {
+        get: (_sid: string, cb: (err: unknown, data?: unknown) => void) => cb(null, null),
+        destroy: (_sid: string, cb: (err: unknown) => void) => cb(null)
+      };
+      const { default: WikiEngine } = await import('../../WikiEngine');
+      const testApp = buildApp();
+      testApp.use((req, _res, next) => {
+        (req as unknown as { sessionStore: typeof fakeStore }).sessionStore = fakeStore;
+        next();
+      });
+      const engine = new WikiEngine();
+      const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+      routes.registerRoutes(testApp);
+
+      const res = await request(testApp).delete('/api/sessions/does-not-exist').set('X-CSRF-Token', 'test-csrf-token');
+      expect(res.status).toBe(404);
+    });
+
+    test('returns 409 when admin tries to revoke their own session without confirm-self', async () => {
+      mockUserContext = {
+        username: 'admin',
+        isAuthenticated: true,
+        roles: ['admin']
+      };
+      const fakeStore = {
+        get: (_sid: string, cb: (err: unknown, data?: unknown) => void) => cb(null, { cookie: {}, username: 'admin' }),
+        destroy: (_sid: string, cb: (err: unknown) => void) => cb(null)
+      };
+      const { default: WikiEngine } = await import('../../WikiEngine');
+      const testApp = buildApp();
+      testApp.use((req, _res, next) => {
+        (req as unknown as { sessionStore: typeof fakeStore; sessionID: string }).sessionStore = fakeStore;
+        (req as unknown as { sessionStore: typeof fakeStore; sessionID: string }).sessionID = 'my-own-sid';
+        next();
+      });
+      const engine = new WikiEngine();
+      const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+      routes.registerRoutes(testApp);
+
+      const res = await request(testApp).delete('/api/sessions/my-own-sid').set('X-CSRF-Token', 'test-csrf-token');
+      expect(res.status).toBe(409);
+      expect(res.body.isSelf).toBe(true);
+    });
+
+    test('allows self-revoke when confirm-self=1 is passed', async () => {
+      mockUserContext = {
+        username: 'admin',
+        isAuthenticated: true,
+        roles: ['admin']
+      };
+      let destroyed: string | null = null;
+      const fakeStore = {
+        get: (_sid: string, cb: (err: unknown, data?: unknown) => void) =>
+          cb(null, { cookie: {}, username: 'admin', isAuthenticated: true, ip: '127.0.0.1' }),
+        destroy: (sid: string, cb: (err: unknown) => void) => { destroyed = sid; cb(null); }
+      };
+      const { default: WikiEngine } = await import('../../WikiEngine');
+      const testApp = buildApp();
+      testApp.use((req, _res, next) => {
+        (req as unknown as { sessionStore: typeof fakeStore; sessionID: string }).sessionStore = fakeStore;
+        (req as unknown as { sessionStore: typeof fakeStore; sessionID: string }).sessionID = 'my-own-sid';
+        next();
+      });
+      const engine = new WikiEngine();
+      const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+      routes.registerRoutes(testApp);
+
+      const res = await request(testApp).delete('/api/sessions/my-own-sid?confirm-self=1').set('X-CSRF-Token', 'test-csrf-token');
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.selfRevoke).toBe(true);
+      expect(destroyed).toBe('my-own-sid');
+    });
+
+    test('200 + destroys target on successful revoke (anonymous target)', async () => {
+      mockUserContext = {
+        username: 'admin',
+        isAuthenticated: true,
+        roles: ['admin']
+      };
+      let destroyed: string | null = null;
+      const fakeStore = {
+        get: (_sid: string, cb: (err: unknown, data?: unknown) => void) =>
+          cb(null, { cookie: {} /* no username = anon */ }),
+        destroy: (sid: string, cb: (err: unknown) => void) => { destroyed = sid; cb(null); }
+      };
+      const { default: WikiEngine } = await import('../../WikiEngine');
+      const testApp = buildApp();
+      testApp.use((req, _res, next) => {
+        (req as unknown as { sessionStore: typeof fakeStore; sessionID: string }).sessionStore = fakeStore;
+        (req as unknown as { sessionStore: typeof fakeStore; sessionID: string }).sessionID = 'admin-sid';
+        next();
+      });
+      const engine = new WikiEngine();
+      const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+      routes.registerRoutes(testApp);
+
+      const res = await request(testApp).delete('/api/sessions/anon-target-sid').set('X-CSRF-Token', 'test-csrf-token');
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.revokedUsername).toBeNull();
+      expect(res.body.selfRevoke).toBe(false);
+      expect(destroyed).toBe('anon-target-sid');
+    });
+  });
 });

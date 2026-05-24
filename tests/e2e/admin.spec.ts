@@ -207,5 +207,31 @@ test.describe('Admin Dashboard', () => {
       expect(resp.status()).toBe(403);
       await anonCtx.close();
     });
+
+    test('Revoke button renders per row in Session Manager (#787)', async ({ page }) => {
+      // Verify the column exists and each rendered row carries a revoke button.
+      // We don't click it here — the unit suite covers the handler contract and
+      // the actual sweep would log out real sessions on jimstest.
+      await page.goto('/admin');
+      await page.waitForLoadState('domcontentloaded');
+      await page.locator('#session-manager-details summary').click();
+      // Wait for the table to populate (count badge replaces the "—" placeholder)
+      await expect(page.locator('#session-manager-count')).not.toHaveText('—', { timeout: 5000 });
+      const buttons = page.locator('.session-revoke-btn');
+      const count = await buttons.count();
+      expect(count).toBeGreaterThan(0);
+      // First button has the data attributes the click handler reads
+      const first = buttons.first();
+      await expect(first).toHaveAttribute('data-target-id', /.+/);
+      await expect(first).toHaveAttribute('data-target-self', /[01]/);
+    });
+
+    test('/api/sessions/:id returns 403 for unauthenticated callers (#787)', async ({ browser }) => {
+      const anonCtx = await browser.newContext({ storageState: undefined });
+      const anonPage = await anonCtx.newPage();
+      const resp = await anonPage.request.delete('/api/sessions/any-id');
+      expect(resp.status()).toBe(403);
+      await anonCtx.close();
+    });
   });
 });

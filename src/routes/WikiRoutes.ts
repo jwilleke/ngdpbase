@@ -429,7 +429,7 @@ export async function sweepAnonymousSessions(
  * only cookie+csrfToken (anonymous CSRF-only session), while authenticated
  * entries add username/isAuthenticated and may carry an `ip` field.
  */
-function summarizeSession(id: string, raw: unknown): Record<string, unknown> {
+function summarizeSession(id: string, raw: unknown, callerSessionId: string | null = null): Record<string, unknown> {
   const s = (raw ?? {}) as Record<string, unknown>;
   const cookie = (s.cookie ?? {}) as Record<string, unknown>;
   const expRaw = cookie.expires;
@@ -447,7 +447,11 @@ function summarizeSession(id: string, raw: unknown): Record<string, unknown> {
     lastAccess: lastAccessMs ? new Date(lastAccessMs).toISOString() : null,
     expires: expiresIso,
     isAuthenticated: isAuth,
-    expired
+    expired,
+    // #787: caller-side marker so the revoke button can warn before
+    // killing the admin's own session. Computed server-side so the
+    // session ID itself doesn't have to leak into the template.
+    isSelf: !!callerSessionId && id === callerSessionId
   };
   if (ip) summary.ip = ip;
   return summary;
@@ -910,6 +914,8 @@ class WikiRoutes {
         return;
       }
 
+      const callerSessionId = typeof req.sessionID === 'string' ? req.sessionID : null;
+
       // session-file-store exposes list+get (the path used in production). Some
       // other stores implement all(). Fall back to all() if list isn't there.
       let summaries: Array<Record<string, unknown>>;
@@ -928,7 +934,7 @@ class WikiRoutes {
         );
         summaries = sessions
           .filter(s => s.data !== null)
-          .map(s => summarizeSession(s.id, s.data));
+          .map(s => summarizeSession(s.id, s.data, callerSessionId));
       } else if (typeof store.all === 'function') {
         const sessions: unknown = await new Promise((resolve, reject) => {
           store.all!((err, ss) => err ? reject(err instanceof Error ? err : new Error(typeof err === 'string' ? err : 'session store error')) : resolve(ss));
@@ -938,7 +944,7 @@ class WikiRoutes {
           : sessions
             ? Object.entries(sessions as Record<string, unknown>)
             : [];
-        summaries = entries.map(([id, data]) => summarizeSession(id, data));
+        summaries = entries.map(([id, data]) => summarizeSession(id, data, callerSessionId));
       } else {
         res.status(503).json({ error: 'Session store has no list/get or all methods' });
         return;
@@ -997,6 +1003,111 @@ class WikiRoutes {
     } catch (err) {
       logger.error('Failed to clear anonymous sessions:', err);
       res.status(500).json({ error: 'Failed to clear anonymous sessions' });
+    }
+  }
+
+  /**
+   * #787 — admin action: revoke a single session by id.
+   *
+   * Admin-only, CSRF-protected. By default refuses to revoke the caller's
+   * own session (returns 409 so the UI can prompt). Pass `?confirm-self=1`
+   * to override — the admin really means to log themselves out.
+   *
+   * Records an AuditManager event with the target session's username + ip
+   * so the trail is meaningful even after the session is gone.
+   */
+  async clearOneSession(req: Request, res: Response): Promise<void> {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!wikiContext.userContext?.isAuthenticated || !wikiContext.hasRole('admin')) {
+        res.status(403).json({ error: 'Admin role required' });
+        return;
+      }
+      const targetId = decodeURIComponent(req.params.id ?? '');
+      if (!targetId) {
+        res.status(400).json({ error: 'session id required' });
+        return;
+      }
+      const confirmSelf = req.query['confirm-self'] === '1';
+      const callerId = typeof req.sessionID === 'string' ? req.sessionID : null;
+      if (callerId && targetId === callerId && !confirmSelf) {
+        res.status(409).json({
+          error: 'Refusing to revoke your own session without confirm-self=1',
+          isSelf: true
+        });
+        return;
+      }
+      const store = req.sessionStore as unknown as {
+        get?: (sid: string, cb: (err: unknown, session?: unknown) => void) => void;
+        destroy?: (sid: string, cb: (err: unknown) => void) => void;
+      } | undefined;
+      if (!store || typeof store.destroy !== 'function') {
+        res.status(503).json({ error: 'Session store does not support destroy' });
+        return;
+      }
+
+      // Load first so the audit trail can record what we're killing
+      // (after destroy, the session JSON is gone). Tolerate get-not-supported
+      // stores by skipping the metadata lookup.
+      let targetMeta: { username?: string | null; ip?: string } = {};
+      if (typeof store.get === 'function') {
+        const raw: unknown = await new Promise((resolve) => {
+          store.get!(targetId, (err, data) => resolve(err ? null : data));
+        });
+        if (raw === null || raw === undefined) {
+          res.status(404).json({ error: 'session not found' });
+          return;
+        }
+        const s = raw as Record<string, unknown>;
+        targetMeta = {
+          username: typeof s.username === 'string' && s.username ? s.username : null,
+          ip: typeof s.ip === 'string' ? s.ip : undefined
+        };
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        store.destroy!(targetId, (err) => err
+          ? reject(err instanceof Error ? err : new Error(typeof err === 'string' ? err : 'session destroy failed'))
+          : resolve());
+      });
+
+      // Audit log — best-effort, don't fail the revoke if the audit subsystem is down
+      try {
+        const auditManager = this.engine.getManager('AuditManager') as {
+          logAuditEvent?: (event: Record<string, unknown>) => Promise<string>;
+        } | null;
+        if (auditManager?.logAuditEvent) {
+          await auditManager.logAuditEvent({
+            eventType: 'admin.sessions.revoke',
+            user: wikiContext.userContext.username ?? 'unknown',
+            sessionId: callerId ?? undefined,
+            ipAddress: req.ip,
+            action: 'revoke-session',
+            result: 'success',
+            severity: 'medium',
+            metadata: {
+              targetId,
+              targetUsername: targetMeta.username ?? null,
+              targetIp: targetMeta.ip ?? null,
+              selfRevoke: !!(callerId && targetId === callerId)
+            }
+          });
+        }
+      } catch (auditErr) {
+        logger.warn('Audit log failed for revoke-session:', auditErr);
+      }
+      logger.info(`[AUDIT] admin ${wikiContext.userContext.username ?? 'unknown'} revoked session ${targetId} (user=${targetMeta.username ?? 'anon'}, ip=${targetMeta.ip ?? 'unknown'})`);
+
+      res.json({
+        ok: true,
+        revokedId: targetId,
+        revokedUsername: targetMeta.username ?? null,
+        revokedIp: targetMeta.ip ?? null,
+        selfRevoke: !!(callerId && targetId === callerId)
+      });
+    } catch (err) {
+      logger.error('Failed to revoke session:', err);
+      res.status(500).json({ error: 'Failed to revoke session' });
     }
   }
 
@@ -10254,6 +10365,10 @@ ${panes}
     // #777 — admin action: clear all anonymous sessions (preserves authed sessions and caller's own)
     app.post('/api/sessions/clear-anonymous', (req: Request, res: Response) =>
       void this.clearAnonymousSessions(req, res)
+    );
+    // #787 — admin action: revoke a single session by id (force-logout that session's owner)
+    app.delete('/api/sessions/:id', (req: Request, res: Response) =>
+      void this.clearOneSession(req, res)
     );
     app.get('/api/check-updates', (req: Request, res: Response) =>
       void this.checkForUpdates(req, res)
