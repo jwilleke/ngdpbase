@@ -25,7 +25,7 @@ The LocationPlugin displays locations with map links and optional embedded map p
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
 | `name` | string | - | Location name (geocoded by map service) |
-| `coords` | string | - | Latitude,longitude (e.g., "48.8566,2.3522") |
+| `coords` | string | - | Decimal `48.8566,2.3522` OR DMS `40°24′23.8″N 82°27′34.0″W` (see [Coordinate formats](#coordinate-formats)) |
 | `embed` | boolean | false | Show embedded map preview (requires coords) |
 | `zoom` | number | 13 | Map zoom level (1-18) |
 | `width` | string | "100%" | Embedded map width |
@@ -34,6 +34,38 @@ The LocationPlugin displays locations with map links and optional embedded map p
 | `label` | string | name/coords | Custom display text for link |
 
 Either `name` or `coords` (or both) must be provided.
+
+## Coordinate formats
+
+The `coords` parameter accepts two notations (#729):
+
+### Decimal
+
+```
+[{Location coords='48.8566,2.3522'}]
+```
+
+Comma-separated `lat,lon`. Optional whitespace after the comma. Range: `lat ∈ [-90, 90]`, `lon ∈ [-180, 180]`.
+
+### DMS (degrees / minutes / seconds)
+
+```
+[{Location coords='40°24′23.8″N 82°27′34.0″W'}]
+```
+
+Each coordinate is `Dd°Mm′Ss″H` where `M` and `S` are optional and `H` is a required hemisphere letter (`N`/`S` for latitude, `E`/`W` for longitude). Either order works — `82°27′34.0″W 40°24′23.8″N` parses the same.
+
+**Important:** use the Unicode prime characters **`′` (U+2032) and `″` (U+2033)** for minutes and seconds, not ASCII straight quotes (`'` and `"`). The plugin parameter parser treats `'` as a quote delimiter, so a value like `coords='40°24'23.8"N'` truncates at the first embedded apostrophe before reaching the coord parser. On macOS you can paste primes via Edit → Emoji & Symbols; many geocoding sources output them by default.
+
+Forms accepted:
+
+- `40°24′23.8″N 82°27′34.0″W` — full DMS
+- `40°24′N 82°27′W` — degrees + minutes (seconds omitted)
+- `40°N 82°W` — degrees only (no minutes / seconds)
+
+### Other formats — out of scope today
+
+Plus Code (Open Location Code, e.g. `CG4R+J6V Mt Vernon, Ohio`) was discussed in #729 but is deferred — it needs either a small dependency (`open-location-code` on npm) or an inline base-20 decoder, both beyond the no-new-deps boundary of the initial slice. File a follow-up issue if you want it.
 
 ## Providers
 

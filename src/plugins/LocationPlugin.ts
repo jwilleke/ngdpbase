@@ -4,14 +4,18 @@
  *
  * Syntax: [{Location name='Paris, France'}]
  *         [{Location coords='48.8566,2.3522'}]
- *         [{Location coords='40°24'23.8"N 82°27'34.0"W'}]
+ *         [{Location coords='40°24′23.8″N 82°27′34.0″W'}]
  *         [{Location name='Eiffel Tower' embed=true}]
  *
  * Parameters:
  *   name (optional) - Location name (geocoded by map service)
  *   coords (optional) - Latitude,longitude. Accepts:
  *     - Decimal: "48.8566,2.3522" (comma-separated, optional space)
- *     - DMS:     "40°24'23.8\"N 82°27'34.0\"W" (degrees/minutes/seconds with N/S/E/W hemisphere; #729)
+ *     - DMS:     "40°24′23.8″N 82°27′34.0″W" — use Unicode primes (′ U+2032, ″ U+2033)
+ *                for minutes/seconds; NOT ASCII straight quotes (the plugin-param
+ *                parser treats ' and " as value delimiters and would truncate the
+ *                coord string at the first embedded one). See docs/plugins/LocationPlugin.md
+ *                "Coordinate formats" for full rules. (#729)
  *   embed (optional) - Show embedded map preview (default: false)
  *   zoom (optional) - Map zoom level 1-18 (default: 13)
  *   width (optional) - Embedded map width (default: "100%")
@@ -189,7 +193,7 @@ const LocationPlugin: SimplePlugin = {
             displayLabel = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
           }
         } else {
-          return '<span class="location-error">Location: Invalid coords format (use lat,lon decimal or DMS like 40°24\'23.8&quot;N 82°27\'34.0&quot;W)</span>';
+          return '<span class="location-error">Location: Invalid coords format (use decimal like 48.8566,2.3522 or DMS with Unicode primes like 40°24′23.8″N 82°27′34.0″W)</span>';
         }
       }
 
