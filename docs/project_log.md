@@ -2,6 +2,33 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-24-03
+
+- Agent: Claude Opus 4.7
+- Subject: Released **v3.40.0** (minor) bundling #784 Phase 1 (mobile offcanvas reorganization) + #785 (URL-based My Links pinning) shipped earlier this session. Also cycled all four ngdpbase deployments via `/othersites` so the release is live across jimstest + 3 satellites.
+- Current Issue: none directly; release ships work for closed `#784` and `#785`.
+- Tests: jimstest GREEN twice — 6026 unit + 9 skipped on pre-release commit (Step 4 gate) and again on release commit (Step 8a). E2E 72/72 chromium + chromium-maintenance on pre-release; focused mobile-navigation 26/26 on release commit (release range touches views/, public/, src/plugins/, tests/e2e/ → E2E required by /othersites policy). All three satellites: 6026 unit + 72 E2E each, no flakes.
+- Semver: **minor** — #785 adds new capability (URL-based pinning), new API request form, new public JS primitives (addPinnedItem/removePinnedItem), new template local (currentUrl), new data shape (PinnedItem with url canonical). Backwards-compatible — legacy {pageName, title} clients keep working. GH Release auto-published.
+- /othersites: **ran in satellite-only mode** — Step 8a already validated jimstest on the release commit so /othersites skipped jimstest re-processing. All three satellites cycled cleanly: pull → stop → build → start → 6026 unit + 72 E2E. fairways-base carries the now-familiar untracked operator working note `docs/planning/plan-addon-accounting.md` — left alone per skill guidance.
+- /othersites results:
+  - `fairways-base` (port 2121, PID 69105): 6026 unit + 72 E2E
+  - `ngdpbase-veg` (port 3333, PID 72041): 6026 unit + 72 E2E
+  - `ngdp-temp-builds` (port 3001, PID 75045): 6026 unit + 72 E2E
+- Perf baseline drift v3.39.3 → v3.40.0: clean — memory −1.6% (3314.7 → 3263.1 MB), `/` −78% (143 → 31 ms), `/search?q=test` −72% (144 → 40 ms), `/view/Welcome` +10% (19 → 21 ms, within noise), `/login` +15% (19 → 22 ms, within noise). The two large drops on `/` and `/search` are most likely cache-warmth artefacts — v3.39.3 baseline was captured cold, v3.40.0 baseline was warm. No regressions. Baseline file: `docs/performance/baseline-v3.40.0-2026-05-24.md`.
+- Work Done:
+  - Cleaned working tree before /semver: reverted stale TODO.md edit (bugs since closed; /check-todos will refresh), committed lockfile sync as `192251a4`.
+  - Ran /semver minor Steps 1-7: gate green, version.ts bumped 3.39.3 → 3.40.0 across package.json + config/app-default-config.json + CHANGELOG.md, baseline captured + diff clean, release commit `9be1e063` tagged + pushed, GH Release v3.40.0 auto-published.
+  - /semver Step 8a (jimstest-first revalidation on release commit): build, restart (PID 66270), 6026 unit, 26 mobile-navigation E2E — all green.
+  - /othersites in satellite-only mode: processed fairways-base, ngdpbase-veg, ngdp-temp-builds sequentially. All three: pull → stop → build → start → 6026 unit + 72 E2E. No flakes.
+- Commits: `192251a4` (lockfile sync), `9be1e063` (release v3.40.0). Plus session log commit `455fe94d` (#784), `309bad4e` (#785), and this entry.
+- Files Modified (release commit `9be1e063` only):
+  - `package.json` (3.39.3 → 3.40.0)
+  - `package-lock.json` (synced via earlier commit `192251a4`)
+  - `config/app-default-config.json` (3.39.3 → 3.40.0)
+  - `CHANGELOG.md` (v3.40.0 entry appended by version.ts)
+  - `docs/performance/baseline-v3.40.0-2026-05-24.md` (NEW — perf baseline)
+- Release URL: <https://github.com/jwilleke/ngdpbase/releases/tag/v3.40.0>
+
 ## 2026-05-24-02
 
 - Agent: Claude Opus 4.7
