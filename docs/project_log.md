@@ -2,6 +2,30 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-24-10
+
+- Agent: Claude Opus 4.7
+- Subject: Filed and shipped #787 — per-session revoke action. Sibling to #777 (bulk clear-anonymous): this is "kill exactly that one session by id". Pre-discussed in #776's "Bonus / follow-ups" body. New `DELETE /api/sessions/:id` admin-only handler with self-revoke guard (returns 409 unless `?confirm-self=1`). Per-row × button in the Session Manager table with context-specific confirm prompts (named user vs anonymous vs self). Live-verified all four paths on jimstest: anon → 403, valid target → 200, missing → 404, self-no-override → 409.
+- Current Issue: `#787` (`in review`; full close pending operator verification on /admin).
+- Tests: 6059 unit + 9 skipped pass (added 7 new clearOneSession cases in coverage12 covering each gating branch + success cases). All 9 Session Manager E2E pass (added 2: revoke button renders per row; anon DELETE 403).
+- Semver: **deferred** — additive admin-only mutation endpoint; no schema/config/data-shape change for existing callers. Rolls into the next minor.
+- /othersites: **deferred** — patch-class; bundles with the other in-flight session work.
+- Work Done:
+  - Filed `[FEATURE] #787` via `gh issue create` with explicit `--label enhancement` (couldn't combine `--template` with `--body`). Full design spec in the body.
+  - Added `clearOneSession` handler in `src/routes/WikiRoutes.ts`. Loads target session first via `store.get` so the audit trail records `targetUsername`/`targetIp` even after destroy; calls `store.destroy(id, cb)` (same API express-session uses for user logout).
+  - Self-revoke guard: 409 + `isSelf:true` unless `?confirm-self=1`. Override possible but never accidental.
+  - Extended `summarizeSession(id, raw, callerSessionId?)` to add an `isSelf` flag per row. Keeps the actual session ID off the template.
+  - New 7th "Action" column with × button per row; click delegation on tbody so re-rendered rows after a refresh keep the handler.
+  - Audit log via `AuditManager.logAuditEvent` + `logger.info '[AUDIT] ...'`.
+  - 7 new unit tests; 2 new E2E. Tests required adding `X-CSRF-Token: test-csrf-token` header since the test app's CSRF middleware blocks DELETEs otherwise.
+- Commits: `535e3f59` (`src/routes/WikiRoutes.ts` + coverage12 test + admin-dashboard.ejs + admin.spec.ts; 351 insertions / 10 deletions).
+- Files Modified:
+  - `src/routes/WikiRoutes.ts` (clearOneSession handler + route + summarizeSession isSelf flag)
+  - `src/routes/__tests__/WikiRoutes.coverage12.test.ts` (7 new tests)
+  - `views/admin-dashboard.ejs` (Action column + revoke click handler with self-revoke UX)
+  - `tests/e2e/admin.spec.ts` (2 new tests)
+- Next: operator verify on /admin — expand Session Manager → "you" badge on own row → click × on an anonymous row → confirm → row vanishes from list. On verification: close #787.
+
 ## 2026-05-24-09
 
 - Agent: Claude Opus 4.7
