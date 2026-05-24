@@ -138,7 +138,23 @@ describe('MyLinksPlugin', () => {
       const user = authenticatedUser([{ pageName: 'PageX', title: 'Page X' }]);
       const result = MyLinksPlugin.execute({ userContext: user }, {}) as string;
       expect(result).toContain('my-links-remove');
-      expect(result).toContain('removePinnedPage');
+      // #785: remove button targets the unified URL-based handler.
+      // Legacy {pageName, title} entries normalise to url=/view/<pageName>.
+      expect(result).toContain('removePinnedItem');
+      expect(result).toContain('/view/PageX');
+    });
+
+    test('renders URL-based pinned items (#785 — /my/journal, /profile, etc.)', () => {
+      const user = authenticatedUser([
+        { url: '/my/journal', title: 'My Journal' },
+        { url: '/profile', title: 'My Profile' }
+      ]);
+      const result = MyLinksPlugin.execute({ userContext: user }, {}) as string;
+      expect(result).toContain('href="/my/journal"');
+      expect(result).toContain('My Journal');
+      expect(result).toContain('href="/profile"');
+      expect(result).toContain('My Profile');
+      expect(result).toContain("removePinnedItem('/my/journal')");
     });
 
     test('includes scrollable container', () => {

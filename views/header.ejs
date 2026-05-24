@@ -283,19 +283,35 @@
                                         <i class="fas fa-book-reader"></i> Show Reader View
                                     </a></li>
                                 <% } %>
-                                <% if (typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated && typeof pageName !== 'undefined' && pageName) {
-                                    const _myLinksPinned = (currentUser.preferences && Array.isArray(currentUser.preferences['nav.pinnedPages'])) ? currentUser.preferences['nav.pinnedPages'] : [];
-                                    const _isMyLinksPinned = _myLinksPinned.some(function(p) { return p.pageName === pageName; });
+                                <% if (typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated) {
+                                    // #785: Any URL is pinnable, not just wiki pages. For wiki pages
+                                    // we still pass pageName (so the entry keeps the wiki-page metadata
+                                    // for /view/ rendering); for app routes (/profile, /my/journal,
+                                    // /search?q=foo) we pass only url + title.
+                                    const _myPinned = (currentUser.preferences && Array.isArray(currentUser.preferences['nav.pinnedPages'])) ? currentUser.preferences['nav.pinnedPages'] : [];
+                                    const _hasPageHere = typeof pageName !== 'undefined' && pageName;
+                                    const _pinUrl = _hasPageHere
+                                        ? '/view/' + encodeURIComponent(pageName)
+                                        : (typeof currentUrl !== 'undefined' && currentUrl ? currentUrl : (typeof req !== 'undefined' && req && req.originalUrl ? req.originalUrl : ''));
+                                    const _pinTitle = (typeof title !== 'undefined' && title) ? title : (_hasPageHere ? pageName : _pinUrl);
+                                    const _isPinned = !!_pinUrl && _myPinned.some(function(p) {
+                                        if (p && p.url) return p.url === _pinUrl;
+                                        if (p && p.pageName && _hasPageHere) return p.pageName === pageName;
+                                        return false;
+                                    });
+                                    const _escJs = function(s) { return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"); };
                                 %>
+                                <% if (_pinUrl) { %>
                                 <li><hr class="dropdown-divider"></li>
-                                <% if (_isMyLinksPinned) { %>
-                                <li><a class="dropdown-item" href="#" onclick="removePinnedPage('<%= pageName.replace(/'/g, "\\'") %>'); return false;">
+                                <% if (_isPinned) { %>
+                                <li><a class="dropdown-item" href="#" onclick="removePinnedItem('<%= _escJs(_pinUrl) %>'); return false;">
                                     <i class="fas fa-bookmark me-2 text-primary"></i> Remove from My Links
                                 </a></li>
                                 <% } else { %>
-                                <li><a class="dropdown-item" href="#" onclick="addPinnedPage('<%= pageName.replace(/'/g, "\\'") %>', '<%= (typeof title !== 'undefined' && title ? title : pageName).replace(/'/g, "\\'") %>'); return false;">
+                                <li><a class="dropdown-item" href="#" onclick="addPinnedItem('<%= _escJs(_pinUrl) %>', '<%= _escJs(_pinTitle) %>'<%= _hasPageHere ? ", '" + _escJs(pageName) + "'" : '' %>); return false;">
                                     <i class="fas fa-bookmark me-2"></i> Add to My Links
                                 </a></li>
+                                <% } %>
                                 <% } %>
                                 <% } %>
                                 <li><hr class="dropdown-divider"></li>
@@ -331,10 +347,21 @@
               const _authed = typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated;
               const _canCreate = _authed && currentUser.roles && (currentUser.roles.includes('admin') || currentUser.roles.includes('editor') || currentUser.roles.includes('contributor'));
               const _journalEntry = typeof listKind !== 'undefined' && listKind === 'journal' && typeof journalEnabled !== 'undefined' && journalEnabled && _authed;
-              const _showPageActions = _hasPage || _canCreate || _journalEntry;
-              const _myLinksPinned = (_authed && currentUser.preferences && Array.isArray(currentUser.preferences['nav.pinnedPages'])) ? currentUser.preferences['nav.pinnedPages'] : [];
-              const _isMyLinksPinned = _hasPage && _myLinksPinned.some(function(p) { return p.pageName === pageName; });
+              // #785: pin any URL, not just wiki pages — derive a canonical URL for the current
+              // route so /my/journal, /profile, /search?q=foo, etc. are bookmarkable.
+              const _myPinned = (_authed && currentUser.preferences && Array.isArray(currentUser.preferences['nav.pinnedPages'])) ? currentUser.preferences['nav.pinnedPages'] : [];
+              const _pinUrl = _hasPage
+                  ? '/view/' + encodeURIComponent(pageName)
+                  : (typeof currentUrl !== 'undefined' && currentUrl ? currentUrl : '');
+              const _pinTitle = (typeof title !== 'undefined' && title) ? title : (_hasPage ? pageName : _pinUrl);
+              const _isPinned = _authed && !!_pinUrl && _myPinned.some(function(p) {
+                  if (p && p.url) return p.url === _pinUrl;
+                  if (p && p.pageName && _hasPage) return p.pageName === pageName;
+                  return false;
+              });
+              const _showPageActions = _hasPage || _canCreate || _journalEntry || (_authed && _pinUrl);
               const _hideOC = "bootstrap.Offcanvas.getInstance(this.closest('.offcanvas')).hide();";
+              const _escJs = function(s) { return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"); };
             %>
             <% if (_showPageActions) { %>
             <hr class="mt-0">
@@ -350,13 +377,13 @@
                     <i class="fas fa-edit me-2"></i> Edit Page
                 </a>
                 <% } %>
-                <% if (_hasPage && _authed) { %>
-                    <% if (_isMyLinksPinned) { %>
-                    <a class="nav-link py-2" href="#" onclick="removePinnedPage('<%= pageName.replace(/'/g, "\\'") %>'); <%- _hideOC %> return false;">
+                <% if (_authed && _pinUrl) { %>
+                    <% if (_isPinned) { %>
+                    <a class="nav-link py-2" href="#" onclick="removePinnedItem('<%= _escJs(_pinUrl) %>'); <%- _hideOC %> return false;">
                         <i class="fas fa-bookmark me-2 text-primary"></i> Remove from My Links
                     </a>
                     <% } else { %>
-                    <a class="nav-link py-2" href="#" onclick="addPinnedPage('<%= pageName.replace(/'/g, "\\'") %>', '<%= (typeof title !== 'undefined' && title ? title : pageName).replace(/'/g, "\\'") %>'); <%- _hideOC %> return false;">
+                    <a class="nav-link py-2" href="#" onclick="addPinnedItem('<%= _escJs(_pinUrl) %>', '<%= _escJs(_pinTitle) %>'<%= _hasPage ? ", '" + _escJs(pageName) + "'" : '' %>); <%- _hideOC %> return false;">
                         <i class="fas fa-bookmark me-2"></i> Add to My Links
                     </a>
                     <% } %>
@@ -418,17 +445,25 @@
                         </div>
                     <% } %>
                     <% if (typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated) {
+                       // #785: entries may be legacy {pageName, title} or unified {url, title, pageName?}.
+                       // Derive href from p.url when present; fall back to /view/<pageName> for legacy.
                        const _tmplPinned = (currentUser.preferences && Array.isArray(currentUser.preferences['nav.pinnedPages']))
                          ? currentUser.preferences['nav.pinnedPages'] : [];
-                       if (_tmplPinned.length > 0) { %>
+                       if (_tmplPinned.length > 0) {
+                         const _tmplEscJs = function(s) { return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"); };
+                    %>
                     <div class="my-links-sidebar mt-2">
                       <h6 class="sidebar-heading text-muted fw-semibold mb-1">My Links</h6>
                       <div style="max-height:200px;overflow-y:auto;">
                         <ul class="list-unstyled mb-0">
-                          <% _tmplPinned.forEach(function(p) { %>
+                          <% _tmplPinned.forEach(function(p) {
+                              const _href = (p && p.url) ? p.url : (p && p.pageName ? '/view/' + encodeURIComponent(p.pageName) : '#');
+                              const _label = (p && p.title) || (p && p.pageName) || (p && p.url) || '(untitled)';
+                              const _ident = (p && p.url) ? p.url : (p && p.pageName ? p.pageName : '');
+                          %>
                           <li class="d-flex align-items-center gap-1 py-0">
-                            <a href="/view/<%= encodeURIComponent(p.pageName) %>" class="flex-grow-1 text-truncate small"><i class="fas fa-bookmark me-1"></i><%= p.title || p.pageName %></a>
-                            <button type="button" class="btn btn-link btn-sm p-0 text-muted" title="Remove" onclick="removePinnedPage('<%= p.pageName.replace(/'/g, "\\'") %>')">&times;</button>
+                            <a href="<%= _href %>" class="flex-grow-1 text-truncate small"><i class="fas fa-bookmark me-1"></i><%= _label %></a>
+                            <button type="button" class="btn btn-link btn-sm p-0 text-muted" title="Remove" onclick="removePinnedItem('<%= _tmplEscJs(_ident) %>')">&times;</button>
                           </li>
                           <% }); %>
                         </ul>

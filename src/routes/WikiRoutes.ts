@@ -30,6 +30,8 @@ import logger from '../utils/logger.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
 import { extractSection, spliceSection } from '../utils/SectionUtils.js';
 import { shuffleArray } from '../utils/pluginFormatters.js';
+import { normalizePinnedItems, deriveCanonicalUrl } from '../utils/pinnedItems.js';
+import type { PinnedItem } from '../types/User.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
 import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../utils/ContactSubmissionLog.js';
 import { stringifyJsonLdForScript, wantsJsonLd } from '../utils/buildPageJsonLd.js';
@@ -572,6 +574,7 @@ class WikiRoutes {
       contactAvailable: boolean;
       contactFooterEnabled: boolean;
       csrfToken: string;
+      currentUrl: string;
       leftMenu?: string;
       footer?: string;
       systemCategoryDefs?: Record<string, unknown>;
@@ -580,6 +583,7 @@ class WikiRoutes {
       user: userContext,       // alias
       userContext: userContext, // used by page-history.ejs and other templates
       csrfToken: req.session?.csrfToken || '', // #663: token for header meta + form _csrf inputs
+      currentUrl: req.originalUrl || req.url || '', // #785: lets header.ejs offer "Add to My Links" for any route, not just wiki pages
       appName: configManager?.getProperty(
         'ngdpbase.application-name',
         'ngdpbase'
@@ -4894,10 +4898,11 @@ ${panes}
       }
       const userManager = this.engine.getManager('UserManager');
       const freshUser = await userManager.getUser(currentUser.username);
-      const pinnedRaw = (freshUser?.preferences?.['nav.pinnedPages'] ?? []) as Array<{ url?: string; title?: string; pinnedAt?: string }>;
-      const items = (Array.isArray(pinnedRaw) ? pinnedRaw : []).map(p => ({
-        title: p.title ?? p.url ?? '(untitled)',
-        url: p.url ?? '',
+      // #785: normalise legacy {pageName, title} entries to the unified shape
+      // so /my/links works for users whose data was written before the migration.
+      const items = normalizePinnedItems(freshUser?.preferences?.['nav.pinnedPages']).map(p => ({
+        title: p.title,
+        url: p.url,
         pinnedAt: p.pinnedAt
       }));
       const commonData = await this.getCommonTemplateData(req);
@@ -5224,22 +5229,40 @@ ${panes}
 
   // ─── My Links (pinned pages) ───────────────────────────────────────────────
 
-  /** POST /api/user/pinned-pages — add current page to My Links */
+  /**
+   * POST /api/user/pinned-pages — add an item to My Links.
+   *
+   * Accepts either form:
+   *   - Legacy wiki-page pin: `{pageName: "Foo", title?: "Foo"}` → URL derived.
+   *   - URL-based pin (#785):  `{url: "/my/journal", title: "My Journal", pageName?}` →
+   *     pageName is optional metadata; URL is the canonical dedup key.
+   *
+   * Existing entries are normalised at read time so the merge is safe even
+   * when prior data is in the legacy shape.
+   */
   async addPinnedPage(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
       if (!currentUser?.isAuthenticated) return res.status(401).json({ error: 'Not authenticated' });
-      const pageName = typeof req.body?.pageName === 'string' ? req.body.pageName.trim() : '';
-      const title = typeof req.body?.title === 'string' ? req.body.title.trim() : pageName;
-      if (!pageName) return res.status(400).json({ error: 'pageName required' });
+      const rawPageName = typeof req.body?.pageName === 'string' ? req.body.pageName.trim() : '';
+      const rawUrl = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+      const rawTitle = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
+      const canonicalUrl = deriveCanonicalUrl({ url: rawUrl, pageName: rawPageName });
+      if (!canonicalUrl) return res.status(400).json({ error: 'url or pageName required' });
+      const title = rawTitle || rawPageName || canonicalUrl;
       const userManager = this.engine.getManager('UserManager');
       const prefs: Record<string, unknown> = { ...(currentUser.preferences as Record<string, unknown> ?? {}) };
-      const pinned: Array<{ pageName: string; title: string }> =
-        Array.isArray(prefs['nav.pinnedPages']) ? [...(prefs['nav.pinnedPages'] as Array<{ pageName: string; title: string }>)] : [];
-      if (pinned.length >= 20) return res.status(400).json({ error: 'Maximum 20 pinned pages reached' });
-      if (!pinned.find(p => p.pageName === pageName)) {
-        pinned.push({ pageName, title: title || pageName });
+      const pinned: PinnedItem[] = normalizePinnedItems(prefs['nav.pinnedPages']);
+      if (pinned.length >= 20) return res.status(400).json({ error: 'Maximum 20 pinned items reached' });
+      if (!pinned.find(p => p.url === canonicalUrl)) {
+        const entry: PinnedItem = {
+          url: canonicalUrl,
+          title,
+          ...(rawPageName ? { pageName: rawPageName } : {}),
+          pinnedAt: new Date().toISOString()
+        };
+        pinned.push(entry);
       }
       prefs['nav.pinnedPages'] = pinned;
       await userManager.updateUser(currentUser.username ?? '', { preferences: prefs });
@@ -5250,17 +5273,30 @@ ${panes}
     }
   }
 
-  /** DELETE /api/user/pinned-pages/:pageName — remove a page from My Links */
+  /**
+   * DELETE /api/user/pinned-pages/:pageName — remove an item from My Links.
+   *
+   * For back-compat the path segment is named `:pageName`, but it accepts any
+   * URL-decoded identifier: either a legacy pageName OR a URL-encoded canonical
+   * URL. Match is by URL after normalisation (legacy entries have url derived).
+   */
   async removePinnedPage(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
       if (!currentUser?.isAuthenticated) return res.status(401).json({ error: 'Not authenticated' });
-      const pageName = decodeURIComponent(req.params.pageName ?? '');
+      const ident = decodeURIComponent(req.params.pageName ?? '');
+      if (!ident) return res.status(400).json({ error: 'identifier required' });
       const userManager = this.engine.getManager('UserManager');
       const prefs: Record<string, unknown> = { ...(currentUser.preferences as Record<string, unknown> ?? {}) };
-      const pinned: Array<{ pageName: string; title: string }> =
-        Array.isArray(prefs['nav.pinnedPages']) ? (prefs['nav.pinnedPages'] as Array<{ pageName: string; title: string }>).filter(p => p.pageName !== pageName) : [];
+      const normalized: PinnedItem[] = normalizePinnedItems(prefs['nav.pinnedPages']);
+      // ident may be a URL (e.g. "/my/journal") or a legacy pageName ("Foo").
+      // Compute the canonical URL we'd derive for "Foo" so legacy clients
+      // sending pageName still find their entry.
+      const identAsPageNameUrl = ident.startsWith('/') ? null : `/view/${encodeURIComponent(ident)}`;
+      const pinned = normalized.filter(p =>
+        p.url !== ident && p.url !== identAsPageNameUrl && p.pageName !== ident
+      );
       prefs['nav.pinnedPages'] = pinned;
       await userManager.updateUser(currentUser.username ?? '', { preferences: prefs });
       return res.json({ ok: true, pinnedPages: pinned });
@@ -5270,20 +5306,27 @@ ${panes}
     }
   }
 
-  /** PUT /api/user/pinned-pages/order — reorder My Links */
+  /**
+   * PUT /api/user/pinned-pages/order — reorder My Links.
+   *
+   * Accepts `order: string[]` where each entry is a URL (preferred) or a
+   * legacy pageName. Matching falls back through both fields so old clients
+   * sending pageNames keep working.
+   */
   async reorderPinnedPages(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
       if (!currentUser?.isAuthenticated) return res.status(401).json({ error: 'Not authenticated' });
-      const order: string[] = Array.isArray(req.body?.order) ? req.body.order : [];
+      const order: string[] = Array.isArray(req.body?.order)
+        ? req.body.order.filter((s: unknown): s is string => typeof s === 'string')
+        : [];
       const userManager = this.engine.getManager('UserManager');
       const prefs: Record<string, unknown> = { ...(currentUser.preferences as Record<string, unknown> ?? {}) };
-      const pinned: Array<{ pageName: string; title: string }> =
-        Array.isArray(prefs['nav.pinnedPages']) ? (prefs['nav.pinnedPages'] as Array<{ pageName: string; title: string }>) : [];
+      const pinned: PinnedItem[] = normalizePinnedItems(prefs['nav.pinnedPages']);
       const reordered = order
-        .map(name => pinned.find(p => p.pageName === name))
-        .filter((p): p is { pageName: string; title: string } => p !== undefined);
+        .map(ident => pinned.find(p => p.url === ident || p.pageName === ident))
+        .filter((p): p is PinnedItem => p !== undefined);
       prefs['nav.pinnedPages'] = reordered;
       await userManager.updateUser(currentUser.username ?? '', { preferences: prefs });
       return res.json({ ok: true });

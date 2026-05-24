@@ -10,11 +10,7 @@
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
 import { escapeHtml } from '../utils/pluginFormatters.js';
-
-interface PinnedPage {
-  pageName: string;
-  title: string;
-}
+import { normalizePinnedItems } from '../utils/pinnedItems.js';
 
 interface UserContext {
   username?: string;
@@ -41,11 +37,8 @@ const MyLinksPlugin: SimplePlugin = {
       return '';
     }
 
-    const pinned = (user.preferences?.['nav.pinnedPages'] ?? []) as PinnedPage[];
-
-    if (!Array.isArray(pinned) || pinned.length === 0) {
-      return '';
-    }
+    const pinned = normalizePinnedItems(user.preferences?.['nav.pinnedPages']);
+    if (pinned.length === 0) return '';
 
     let html = '<div class="my-links-plugin">\n';
     html += '  <div class="my-links-header d-flex align-items-center justify-content-between mb-1">\n';
@@ -55,14 +48,14 @@ const MyLinksPlugin: SimplePlugin = {
     html += '    <ul class="nav flex-column">\n';
 
     for (const item of pinned) {
-      const href = '/view/' + encodeURIComponent(item.pageName);
-      const label = escapeHtml(item.title || item.pageName);
-      const page = escapeHtml(item.pageName).replace(/'/g, '&#39;');
+      const href = escapeHtml(item.url);
+      const label = escapeHtml(item.title);
+      const ident = escapeHtml(item.url).replace(/'/g, '&#39;');
       html += '      <li class="nav-item d-flex align-items-center">\n';
       html += `        <a class="nav-link flex-grow-1 py-1 ps-0" href="${href}">\n`;
       html += `          <i class="fas fa-bookmark me-1 small text-muted"></i>${label}\n`;
       html += '        </a>\n';
-      html += `        <button class="btn btn-link btn-sm p-0 ms-1 text-muted my-links-remove" title="Remove from My Links" onclick="removePinnedPage('${page}'); return false;">\n`;
+      html += `        <button class="btn btn-link btn-sm p-0 ms-1 text-muted my-links-remove" title="Remove from My Links" onclick="removePinnedItem('${ident}'); return false;">\n`;
       html += '          <i class="fas fa-times small"></i>\n';
       html += '        </button>\n';
       html += '      </li>\n';

@@ -1,14 +1,21 @@
 /**
- * My Links — pinned page management.
- * Issue #537
+ * My Links — pinned item management.
+ *
+ * Items can be either wiki pages (pageName + title) or app-route URLs
+ * (url + title), since #785. The legacy addPinnedPage / removePinnedPage
+ * remain as thin wrappers around the URL-based core so call sites that
+ * still pass pageName keep working unchanged.
  */
 
-async function addPinnedPage(pageName, title) {
+async function addPinnedItem(url, title, pageName) {
   try {
+    const body = pageName
+      ? { url, title: title || pageName, pageName }
+      : { url, title: title || url };
     const res = await csrfFetch('/api/user/pinned-pages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pageName, title: title || pageName }),
+      body: JSON.stringify(body),
       credentials: 'same-origin'
     });
     if (!res.ok) {
@@ -23,9 +30,9 @@ async function addPinnedPage(pageName, title) {
   }
 }
 
-async function removePinnedPage(pageName) {
+async function removePinnedItem(ident) {
   try {
-    const res = await csrfFetch('/api/user/pinned-pages/' + encodeURIComponent(pageName), {
+    const res = await csrfFetch('/api/user/pinned-pages/' + encodeURIComponent(ident), {
       method: 'DELETE',
       credentials: 'same-origin'
     });
@@ -38,4 +45,15 @@ async function removePinnedPage(pageName) {
   } catch {
     showTemporaryMessage('Network error', 'error');
   }
+}
+
+// Legacy wrappers — kept for back-compat with templates and plugins that
+// still pass pageName directly. They derive the URL on the client and route
+// through the URL-based core. Safe to remove once all call sites migrate.
+async function addPinnedPage(pageName, title) {
+  return addPinnedItem('/view/' + encodeURIComponent(pageName), title || pageName, pageName);
+}
+
+async function removePinnedPage(pageName) {
+  return removePinnedItem(pageName);
 }

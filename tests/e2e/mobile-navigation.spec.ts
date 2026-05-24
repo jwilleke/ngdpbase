@@ -110,6 +110,8 @@ test.describe('Mobile Navigation', () => {
       // /search has no pageName, but an authed user with create rights still has useful actions
       // (Create New Page, Upload Attachment, Browse Assets, Recent Changes, Export) — those
       // should be available on app routes too, not buried under the desktop-only More dropdown.
+      // Per #785, Add to My Links is also surfaced on app routes so the operator can pin
+      // /my/journal, /profile, /search?q=foo, etc.
       await page.goto('/search');
       await page.waitForLoadState('domcontentloaded');
 
@@ -126,10 +128,12 @@ test.describe('Mobile Navigation', () => {
       await expect(offcanvas.getByRole('link', { name: /Export/i })).toBeVisible();
       await expect(offcanvas.getByRole('link', { name: /Recent Changes/i }).first()).toBeVisible();
 
-      // Items that DO need pageName are NOT present on /search
+      // #785: Add to My Links is now URL-keyed, so it appears on app routes too
+      await expect(offcanvas.getByRole('link', { name: /Add to My Links|Remove from My Links/i })).toBeVisible();
+
+      // Items that DO need pageName remain absent on /search (no page to edit / no page metadata to view)
       await expect(offcanvas.getByRole('link', { name: /^Edit Page$/i })).toHaveCount(0);
       await expect(offcanvas.getByRole('link', { name: /Page Information/i })).toHaveCount(0);
-      await expect(offcanvas.getByRole('link', { name: /Add to My Links/i })).toHaveCount(0);
     });
 
     test('Reader View link is present in page actions', async ({ page }) => {

@@ -6,12 +6,27 @@
  */
 
 /**
- * A page pinned to the user's My Links sidebar section.
+ * An item pinned to the user's My Links sidebar section. The shape is unified
+ * across wiki pages and arbitrary app-route bookmarks (e.g. /my/journal,
+ * /profile, /search?q=foo). `url` is the canonical identifier; `pageName` is
+ * carried for wiki pages so the rendering path can still use page-aware
+ * affordances when relevant.
+ *
+ * Legacy entries (`{pageName, title}` only, no `url`) are normalised at read
+ * time by normalizePinnedItem in src/utils/pinnedItems.ts.
  */
-export interface PinnedPage {
-  pageName: string;
+export interface PinnedItem {
+  url: string;
   title: string;
+  pageName?: string;
+  pinnedAt?: string;
 }
+
+/**
+ * @deprecated Use PinnedItem. Kept as an alias for back-compat with callers
+ * that only handle wiki-page pins.
+ */
+export type PinnedPage = PinnedItem;
 
 /**
  * User preferences
@@ -49,8 +64,8 @@ export interface UserPreferences {
   /** Language/locale */
   locale?: string;
 
-  /** Pages pinned to the My Links sidebar section */
-  'nav.pinnedPages'?: PinnedPage[];
+  /** Items pinned to the My Links sidebar section (wiki pages and app-route URLs) */
+  'nav.pinnedPages'?: PinnedItem[];
 
   /** Additional custom preferences */
   [key: string]: unknown;
