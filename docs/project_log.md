@@ -2,6 +2,31 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-24-06
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped #776 — admin dashboard now has a collapsed Session Manager card listing one row per active session. New `GET /api/sessions/list` (admin-only) returns `{total, sessions: SessionSummary[]}` via `summarizeSession` helper. Lazy-loaded on expand so a 575-row table doesn't serialize into every admin page render. Live-verified on jimstest: returned 575 sessions, mostly anonymous CSRF-only — matches the operator's "why is the count high?" diagnosis from the issue body.
+- Current Issue: `#776` (`in review`; full close pending operator verification on /admin).
+- Tests: 6042 unit + 9 skipped pass (added 2 new for list+get path and all() fallback). 5 new E2E in `tests/e2e/admin.spec.ts` Session Manager describe block — section render, expand-lazy-load-populates-count, direct API shape, anon caller gets 403.
+- Semver: **deferred** — additive admin-only feature, no API surface for non-admins, no schema/config/data-shape change. Will roll into next minor.
+- /othersites: **deferred** — patch-class additive change; satellites pick up at next minor per `/session-commit` Step 5 rule.
+- Work Done:
+  - Read full #776 body. Operator wants visibility into the 458→575 session count to distinguish anon CSRF traffic from real authed users without ssh+ls+jq.
+  - Implemented backend endpoint at `src/routes/WikiRoutes.ts`. First cut used `store.all` (mirroring the existing `/api/session-count` probe order) but `session-file-store` does NOT implement `all` — that path silently returned 503. Reworked to use `store.list` + per-id `store.get` (the path session-file-store actually exposes; its `list` already filters out `*.json.NNN` atomic-write orphans).
+  - Extracted `summarizeSession(id, raw)` as a module-private helper above the WikiRoutes class so the logic is reusable and the endpoint stays focused.
+  - Added Row 4b card to `views/admin-dashboard.ejs` — `<details>` block, summary with count badge, refresh button, sticky-header table populated client-side. JS uses fetch + escapes everything; relative-time formatter for lastAccess/expires; expired sessions get a yellow badge.
+  - Wrote 2 unit tests (list+get path with 3 sessions of varying shapes including the operator's specific "anon CSRF only" pattern; all() fallback) and 4 E2E (section render, lazy-load populates count, direct API shape, anon 403 — last one needed `storageState: undefined` since project-level config applies admin storageState to all `browser.newContext()` calls by default).
+  - Live-verified at `/api/sessions/list` with admin cookie: 575 entries, expected shape.
+- Commits: `104eba41` (`src/routes/WikiRoutes.ts` + coverage12 test + admin-dashboard.ejs + admin.spec.ts; 432 insertions).
+- Files Modified:
+  - `src/routes/WikiRoutes.ts` (summarizeSession helper + getActiveSessionDetails handler + route binding)
+  - `src/routes/__tests__/WikiRoutes.coverage12.test.ts` (4 new test cases)
+  - `views/admin-dashboard.ejs` (Row 4b card + lazy-load IIFE)
+  - `tests/e2e/admin.spec.ts` (Session Manager describe block — 4 tests)
+- Next:
+  - Operator verify: load `/admin` on jimstest as admin → see "Session Manager (—)" card collapsed near bottom → expand → table populates with current sessions → click Refresh.
+  - On verification: close #776. The remaining sibling easy-win is #777 (clear-all-anon-sessions button) which naturally builds on this; can be a separate slice.
+
 ## 2026-05-24-05
 
 - Agent: Claude Opus 4.7
