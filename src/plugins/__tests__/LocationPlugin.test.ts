@@ -210,6 +210,99 @@ describe('Location (via PluginManager)', () => {
     });
   });
 
+  describe('DMS coordinate parsing (#729)', () => {
+    it('parses operator example: 40°24\'23.8"N 82°27\'34.0"W', () => {
+      // Reference: 21 FAIRWAY DR, MOUNT VERNON, OH from #729 issue body.
+      // Decimal equivalent: ~40.4066, ~-82.4594
+      const params = { coords: "40°24'23.8\"N 82°27'34.0\"W" };
+      const result = LocationPlugin.execute(mockContext, params);
+
+      expect(result).not.toContain('location-error');
+      expect(result).toContain('40.4066');
+      expect(result).toContain('-82.4594');
+    });
+
+    it('parses positive E hemisphere (Paris-ish)', () => {
+      const params = { coords: "48°51'24\"N 2°21'8\"E" };
+      const result = LocationPlugin.execute(mockContext, params);
+      expect(result).not.toContain('location-error');
+      // 48 + 51/60 + 24/3600 = 48.8567; 2 + 21/60 + 8/3600 = 2.3522
+      expect(result).toContain('48.8567');
+      expect(result).toContain('2.3522');
+    });
+
+    it('parses southern + western hemispheres (Sydney-ish)', () => {
+      const params = { coords: "33°52'7.7\"S 151°12'33.5\"E" };
+      const result = LocationPlugin.execute(mockContext, params);
+      expect(result).not.toContain('location-error');
+      // Lat negative (S), lon positive (E)
+      expect(result).toContain('-33.8688');
+      expect(result).toContain('151.2093');
+    });
+
+    it('accepts longitude-first order (E/W first, then N/S)', () => {
+      // Coordinate order shouldn't matter — hemisphere letters determine which is lat
+      const params = { coords: "82°27'34.0\"W 40°24'23.8\"N" };
+      const result = LocationPlugin.execute(mockContext, params);
+      expect(result).not.toContain('location-error');
+      expect(result).toContain('40.4066');
+      expect(result).toContain('-82.4594');
+    });
+
+    it('accepts DMS with only degrees and minutes (no seconds)', () => {
+      const params = { coords: "40°24'N 82°27'W" };
+      const result = LocationPlugin.execute(mockContext, params);
+      expect(result).not.toContain('location-error');
+      // 40 + 24/60 = 40.4; -(82 + 27/60) = -82.45
+      expect(result).toContain('40.4000');
+      expect(result).toContain('-82.4500');
+    });
+
+    it('accepts DMS with only degrees (no minutes or seconds)', () => {
+      const params = { coords: '40°N 82°W' };
+      const result = LocationPlugin.execute(mockContext, params);
+      expect(result).not.toContain('location-error');
+      expect(result).toContain('40.0000');
+      expect(result).toContain('-82.0000');
+    });
+
+    it('accepts prime (′) and double-prime (″) marks', () => {
+      const params = { coords: '40°24′23.8″N 82°27′34.0″W' };
+      const result = LocationPlugin.execute(mockContext, params);
+      expect(result).not.toContain('location-error');
+      expect(result).toContain('40.4066');
+      expect(result).toContain('-82.4594');
+    });
+
+    it('rejects DMS missing a hemisphere letter', () => {
+      const params = { coords: "40°24'23.8 82°27'34.0" };
+      const result = LocationPlugin.execute(mockContext, params);
+      expect(result).toContain('location-error');
+      expect(result).toContain('Invalid coords format');
+    });
+
+    it('rejects two same-axis hemispheres (e.g. two N values)', () => {
+      // Two latitude hemispheres with no longitude — meaningless
+      const params = { coords: '40°N 50°N' };
+      const result = LocationPlugin.execute(mockContext, params);
+      expect(result).toContain('location-error');
+    });
+
+    it('rejects DMS with latitude out of range', () => {
+      const params = { coords: '91°N 82°W' };
+      const result = LocationPlugin.execute(mockContext, params);
+      expect(result).toContain('location-error');
+      expect(result).toContain('Latitude must be between -90 and 90');
+    });
+
+    it('rejects DMS with longitude out of range', () => {
+      const params = { coords: '40°N 181°W' };
+      const result = LocationPlugin.execute(mockContext, params);
+      expect(result).toContain('location-error');
+      expect(result).toContain('Longitude must be between -180 and 180');
+    });
+  });
+
   describe('provider parameter', () => {
     it('uses OSM by default', () => {
       const params = { coords: '48.8566,2.3522' };

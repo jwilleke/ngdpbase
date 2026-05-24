@@ -4,11 +4,14 @@
  *
  * Syntax: [{Location name='Paris, France'}]
  *         [{Location coords='48.8566,2.3522'}]
+ *         [{Location coords='40°24'23.8"N 82°27'34.0"W'}]
  *         [{Location name='Eiffel Tower' embed=true}]
  *
  * Parameters:
  *   name (optional) - Location name (geocoded by map service)
- *   coords (optional) - Latitude,longitude (e.g., "48.8566,2.3522")
+ *   coords (optional) - Latitude,longitude. Accepts:
+ *     - Decimal: "48.8566,2.3522" (comma-separated, optional space)
+ *     - DMS:     "40°24'23.8\"N 82°27'34.0\"W" (degrees/minutes/seconds with N/S/E/W hemisphere; #729)
  *   embed (optional) - Show embedded map preview (default: false)
  *   zoom (optional) - Map zoom level 1-18 (default: 13)
  *   width (optional) - Embedded map width (default: "100%")
@@ -78,6 +81,51 @@ const providers: Record<string, MapProvider> = {
   }
 };
 
+/**
+ * Parse a `coords=` string into [lat, lon]. Accepts:
+ *   - Decimal: "48.8566,2.3522" (optional whitespace around comma)
+ *   - DMS:     "40°24'23.8\"N 82°27'34.0\"W" — degrees, minutes (optional),
+ *              seconds (optional), and a required N/S/E/W hemisphere per pair.
+ *              Accepts straight (' ") or prime (′ ″) minute/second marks.
+ *              The lat/lon order is inferred from the hemisphere letters
+ *              (N/S → latitude, E/W → longitude) so either order works.
+ *
+ * Returns null when the string matches neither shape. Range validation
+ * (lat ∈ [-90,90], lon ∈ [-180,180]) is the caller's responsibility — this
+ * helper only concerns itself with parsing. (#729)
+ */
+export function parseCoordsString(input: string): [number, number] | null {
+  if (typeof input !== 'string' || input.trim() === '') return null;
+
+  // Decimal first — preserves prior behavior verbatim
+  const decimalParts = input.split(',').map((s) => parseFloat(s.trim()));
+  if (decimalParts.length === 2 && !isNaN(decimalParts[0]) && !isNaN(decimalParts[1])) {
+    return [decimalParts[0], decimalParts[1]];
+  }
+
+  // DMS — matchAll to find the two coord groups in either order
+  const dmsRe = /(\d+(?:\.\d+)?)\s*°\s*(?:(\d+(?:\.\d+)?)\s*['′]\s*)?(?:(\d+(?:\.\d+)?)\s*["″]\s*)?\s*([NSEW])/gi;
+  const matches = [...input.matchAll(dmsRe)];
+  if (matches.length === 2) {
+    const toDecimal = (m: RegExpMatchArray): number => {
+      const deg = parseFloat(m[1]);
+      const min = m[2] ? parseFloat(m[2]) : 0;
+      const sec = m[3] ? parseFloat(m[3]) : 0;
+      const value = deg + min / 60 + sec / 3600;
+      const hemi = m[4].toUpperCase();
+      return (hemi === 'S' || hemi === 'W') ? -value : value;
+    };
+    const a = toDecimal(matches[0]);
+    const b = toDecimal(matches[1]);
+    const firstIsLat = /[NS]/i.test(matches[0][4]);
+    const secondIsLat = /[NS]/i.test(matches[1][4]);
+    // Both halves must be of opposite kind (one lat-hemi, one lon-hemi)
+    if (firstIsLat === secondIsLat) return null;
+    return firstIsLat ? [a, b] : [b, a];
+  }
+  return null;
+}
+
 const LocationPlugin: SimplePlugin = {
   name: 'Location',
   description: 'Display locations with map links and embedded previews',
@@ -125,10 +173,9 @@ const LocationPlugin: SimplePlugin = {
 
       // Parse coordinates if provided
       if (coords) {
-        const parts = coords.split(',').map((s) => parseFloat(s.trim()));
-        if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-          lat = parts[0];
-          lon = parts[1];
+        const parsed = parseCoordsString(coords);
+        if (parsed) {
+          [lat, lon] = parsed;
 
           // Validate coordinate ranges
           if (lat < -90 || lat > 90) {
@@ -142,7 +189,7 @@ const LocationPlugin: SimplePlugin = {
             displayLabel = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
           }
         } else {
-          return '<span class="location-error">Location: Invalid coords format (use lat,lon)</span>';
+          return '<span class="location-error">Location: Invalid coords format (use lat,lon decimal or DMS like 40°24\'23.8&quot;N 82°27\'34.0&quot;W)</span>';
         }
       }
 
