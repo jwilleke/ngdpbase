@@ -454,15 +454,15 @@
                                 </div>
                             </div>
                             <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
-                                <table class="table table-sm table-hover mb-0 small">
+                                <table class="table table-sm table-hover mb-0 small" id="session-manager-table">
                                     <thead class="table-light sticky-top">
                                         <tr>
                                             <th>ID</th>
-                                            <th>User</th>
-                                            <th>Last Access</th>
-                                            <th>Expires</th>
-                                            <th>Auth</th>
-                                            <th>IP</th>
+                                            <th class="session-sort" data-sort-key="username" style="cursor: pointer;" title="Click to sort by user — anonymous sessions sort to the end">User <span class="text-muted small">⇅</span></th>
+                                            <th class="session-sort" data-sort-key="lastAccess" style="cursor: pointer;" title="Click to sort by last-access timestamp">Last Access <span class="text-muted small">⇅</span></th>
+                                            <th class="session-sort" data-sort-key="expires" style="cursor: pointer;" title="Click to sort by cookie expiry">Expires <span class="text-muted small">⇅</span></th>
+                                            <th class="session-sort" data-sort-key="isAuthenticated" style="cursor: pointer;" title="Authenticated — whether a logged-in user owns this session. Anonymous sessions are CSRF-token-only entries created on first visit and have no user.">Logged in? <span class="text-muted small">⇅</span></th>
+                                            <th class="session-sort" data-sort-key="ip" style="cursor: pointer;" title="Client IP captured on first request. Older sessions created before IP-capture middleware shipped will be blank until next request.">IP <span class="text-muted small">⇅</span></th>
                                         </tr>
                                     </thead>
                                     <tbody id="session-manager-rows">
@@ -488,6 +488,9 @@
         const statusEl = document.getElementById('session-manager-status');
         const refreshBtn = document.getElementById('session-manager-refresh');
         let loaded = false;
+        let currentSessions = [];     // latest fetched payload (raw, unsorted)
+        let sortKey = null;           // current sort column key
+        let sortDir = 1;              // 1 = asc, -1 = desc
 
         function fmtRel(iso) {
             if (!iso) return '—';
@@ -514,6 +517,54 @@
                 .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
+        function renderRows() {
+            const sessions = sortedView(currentSessions);
+            if (!sessions || sessions.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No sessions.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = sessions.map(function(s) {
+                const idShort = s.id.length > 16 ? s.id.slice(0, 8) + '…' + s.id.slice(-4) : s.id;
+                const userCell = s.username
+                    ? '<span class="text-primary">' + escapeHtml(s.username) + '</span>'
+                    : '<span class="text-muted fst-italic">(anon)</span>';
+                const expiredMark = s.expired ? ' <span class="badge bg-warning text-dark ms-1">expired</span>' : '';
+                // Logged-in column: explicit text so the column meaning is self-evident
+                // (was just an icon before — operators asked "what does this mean?" #776 follow-up).
+                const authCell = s.isAuthenticated
+                    ? '<span class="text-success fw-semibold">yes</span>'
+                    : '<span class="text-muted">no</span>';
+                return '<tr>'
+                    + '<td><code class="small">' + escapeHtml(idShort) + '</code></td>'
+                    + '<td>' + userCell + '</td>'
+                    + '<td>' + escapeHtml(fmtRel(s.lastAccess)) + '</td>'
+                    + '<td>' + escapeHtml(fmtRel(s.expires)) + expiredMark + '</td>'
+                    + '<td>' + authCell + '</td>'
+                    + '<td>' + (s.ip ? '<code class="small">' + escapeHtml(s.ip) + '</code>' : '<span class="text-muted">—</span>') + '</td>'
+                    + '</tr>';
+            }).join('');
+        }
+
+        // Sort helpers: stable comparator that orders nullish values last regardless of direction.
+        function compareForKey(a, b, key) {
+            const av = a[key];
+            const bv = b[key];
+            const aNullish = av === null || av === undefined || av === '';
+            const bNullish = bv === null || bv === undefined || bv === '';
+            if (aNullish && bNullish) return 0;
+            if (aNullish) return 1;   // nullish goes after non-nullish
+            if (bNullish) return -1;
+            if (typeof av === 'boolean' && typeof bv === 'boolean') return (av === bv) ? 0 : (av ? -1 : 1);
+            // ISO timestamps and string-ipv4 sort lexicographically correctly enough for our purpose
+            return av < bv ? -1 : av > bv ? 1 : 0;
+        }
+        function sortedView(sessions) {
+            if (!sortKey) return sessions;
+            const copy = sessions.slice();
+            copy.sort(function(a, b) { return compareForKey(a, b, sortKey) * sortDir; });
+            return copy;
+        }
+
         async function load() {
             statusEl.textContent = 'Loading…';
             tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Loading…</td></tr>';
@@ -528,33 +579,32 @@
                 const data = await res.json();
                 countEl.textContent = String(data.total);
                 statusEl.textContent = data.total + ' session(s) loaded ' + fmtRel(new Date().toISOString());
-                if (!data.sessions || data.sessions.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No sessions.</td></tr>';
-                    return;
-                }
-                tbody.innerHTML = data.sessions.map(function(s) {
-                    const idShort = s.id.length > 16 ? s.id.slice(0, 8) + '…' + s.id.slice(-4) : s.id;
-                    const userCell = s.username
-                        ? '<span class="text-primary">' + escapeHtml(s.username) + '</span>'
-                        : '<span class="text-muted fst-italic">(anon)</span>';
-                    const expiredMark = s.expired ? ' <span class="badge bg-warning text-dark ms-1">expired</span>' : '';
-                    const authMark = s.isAuthenticated
-                        ? '<i class="fas fa-check text-success" title="authenticated"></i>'
-                        : '<span class="text-muted">—</span>';
-                    return '<tr>'
-                        + '<td><code class="small">' + escapeHtml(idShort) + '</code></td>'
-                        + '<td>' + userCell + '</td>'
-                        + '<td>' + escapeHtml(fmtRel(s.lastAccess)) + '</td>'
-                        + '<td>' + escapeHtml(fmtRel(s.expires)) + expiredMark + '</td>'
-                        + '<td>' + authMark + '</td>'
-                        + '<td>' + (s.ip ? '<code class="small">' + escapeHtml(s.ip) + '</code>' : '<span class="text-muted">—</span>') + '</td>'
-                        + '</tr>';
-                }).join('');
+                currentSessions = data.sessions || [];
+                renderRows();
             } catch (e) {
                 statusEl.textContent = 'Network error: ' + (e && e.message ? e.message : e);
                 tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">' + escapeHtml(statusEl.textContent) + '</td></tr>';
             }
         }
+
+        // Sortable headers — click toggles asc/desc on the clicked column.
+        document.querySelectorAll('#session-manager-table th.session-sort').forEach(function(th) {
+            th.addEventListener('click', function() {
+                const key = th.getAttribute('data-sort-key');
+                if (!key) return;
+                if (sortKey === key) {
+                    sortDir = -sortDir;
+                } else {
+                    sortKey = key;
+                    sortDir = 1;
+                }
+                // Update arrow indicators
+                document.querySelectorAll('#session-manager-table th.session-sort span').forEach(function(s) { s.textContent = '⇅'; });
+                const arrowSpan = th.querySelector('span');
+                if (arrowSpan) arrowSpan.textContent = sortDir > 0 ? '↑' : '↓';
+                renderRows();
+            });
+        });
 
         details.addEventListener('toggle', function() {
             if (details.open && !loaded) {

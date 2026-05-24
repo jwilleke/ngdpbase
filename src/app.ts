@@ -276,6 +276,17 @@ void (async (): Promise<void> => {
     }
   }));
 
+  // #776/#777 follow-up: capture req.ip into the session on first write so the
+  // admin Session Manager can display it. Only writes when the session exists
+  // and doesn't already have an ip — avoids triggering a session save on every
+  // request (which would be expensive for the file store).
+  app.use((req, _res, next) => {
+    if (req.session && !(req.session as unknown as { ip?: string }).ip && req.ip) {
+      (req.session as unknown as { ip?: string }).ip = req.ip;
+    }
+    next();
+  });
+
   // Middleware to attach user context from session
   const debugSession = configManager.getProperty('ngdpbase.logging.debug.session', false);
   const debugRequests = configManager.getProperty('ngdpbase.logging.debug.requests', false);
