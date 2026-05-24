@@ -287,8 +287,11 @@
                                                 <td><code class="small"><%= entry[0] %></code></td>
                                                 <td class="text-end"><%= entry[1] %></td>
                                                 <td class="text-end">
-                                                    <div class="progress" style="height: 8px;" title="<%= _pct %>%">
-                                                        <div class="progress-bar bg-info" role="progressbar" style="width: <%= _pct %>%"></div>
+                                                    <div class="d-flex align-items-center gap-2">
+                                                        <span class="text-muted small" style="min-width: 3em; text-align: right;"><%= _pct %>%</span>
+                                                        <div class="progress flex-grow-1" style="height: 8px;" title="<%= _pct %>%">
+                                                            <div class="progress-bar bg-info" role="progressbar" style="width: <%= _pct %>%"></div>
+                                                        </div>
                                                     </div>
                                                 </td>
                                             </tr>
@@ -319,7 +322,11 @@
                                                 <td><span class="text-muted"><%= r.startedAt %></span></td>
                                                 <td><span class="badge bg-secondary"><%= r.importType %></span></td>
                                                 <td>
-                                                    <% if (r.isSystem) { %><span class="badge bg-info text-dark">system</span> <% } %><%= r.actor %>
+                                                    <% if (r.isSystem) { %>
+                                                        <span class="badge bg-info text-dark" title="Run initiated by the canonical system principal (#631)">system</span>
+                                                    <% } else { %>
+                                                        <%= r.actor %>
+                                                    <% } %>
                                                 </td>
                                                 <td class="text-end"><%= r.total %></td>
                                                 <td class="text-end text-success"><%= r.converted %></td>
@@ -329,7 +336,7 @@
                                                     <% if (_topKinds.length === 0) { %>
                                                         <span class="text-muted">—</span>
                                                     <% } else { %>
-                                                        <% _topKinds.forEach(function(e) { %><code class="small me-1"><%= e[0] %>×<%= e[1] %></code><% }); %>
+                                                        <% _topKinds.forEach(function(e, idx) { %><% if (idx > 0) { %><span class="text-muted">, </span><% } %><code class="small"><%= e[0] %>×<%= e[1] %></code><% }); %>
                                                     <% } %>
                                                 </td>
                                             </tr>
