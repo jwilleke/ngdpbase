@@ -2,6 +2,33 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-24-07
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped #777 — admin action to clear all anonymous (non-logged-in) sessions, sibling to the #776 Session Manager card. New `POST /api/sessions/clear-anonymous` (admin-only, CSRF-protected) calls a pure `sweepAnonymousSessions(dir, excludeSid)` helper that walks `${FAST_STORAGE}/sessions/`, deletes anon `*.json` and `*.json.NNN` atomic-write orphans, preserves authed sessions and the caller's own session. Added a "Clear anonymous" button next to Refresh in the Session Manager card. Live-verified on jimstest: cleared 542 anon, kept 40 authed, removed 5 atomic-write orphans (exactly the count the operator noted in the issue body).
+- Current Issue: `#777` (`in review`; full close pending operator verification on /admin).
+- Tests: 6052 unit + 9 skipped pass (added 7 new helper cases in dedicated `sweepAnonymousSessions.test.ts` against a real temp directory + 2 gating cases in coverage12). All 7 Session Manager E2E pass.
+- Semver: **deferred** — additive admin-only mutation endpoint, no schema/config/data-shape change for existing callers. Will roll into next minor alongside #776 + #729 + #746.
+- /othersites: **deferred** — patch-class additive change; satellites pick up at next minor.
+- Work Done:
+  - Read full #777 body. Operator wants one-click cleanup of accumulated anon CSRF sessions without touching authed users or themselves.
+  - Implemented `sweepAnonymousSessions(sessionDir, excludeSessionId)` as an exported pure helper in `src/routes/WikiRoutes.ts` — testable against a real temp directory without mocking fs. Rules: anonymous = no `isAuthenticated=true` at top-level OR nested under `user.`; always delete `*.json.NNN` orphans; never delete `excludeSessionId`; malformed JSON kept (operator-investigable).
+  - Added `clearAnonymousSessions` handler with admin gate + CSRF (via existing middleware) + best-effort `AuditManager.logAuditEvent` + `logger.info '[AUDIT] ...'`. Returns `{ok, removed, kept, orphansRemoved}`.
+  - Added "Clear anonymous" button (broom icon, outline-warning) in the Session Manager card header next to Refresh. Confirms with current count, csrfFetch POST, updates status line with counts, reloads the table.
+  - Wrote `src/routes/__tests__/sweepAnonymousSessions.test.ts` — 7 cases against a real temp dir (missing dir, anon-vs-authed mix, orphan cleanup, never-delete-self, malformed JSON survives, non-session files ignored, empty dir).
+  - Added 2 gating E2E in admin.spec.ts: button renders inside expanded card; anon POST returns 403. Did NOT add an E2E for the actual sweep — it's destructive against live jimstest session store and the unit suite covers the contract.
+  - Live-verified: anon POST → 403; admin POST → `{ok:true, removed:542, kept:40, orphansRemoved:5}`. The 5 atomic-write orphans match the operator's exact count from the issue body (jimstest had 5 such orphans from interrupted writes over the past 3 months). Admin session survived (excludeSessionId guard worked end-to-end).
+- Commits: `1758615e` (`src/routes/WikiRoutes.ts` + coverage12 test + new sweep test + admin-dashboard.ejs + admin.spec.ts; 322 insertions / 3 deletions).
+- Files Modified:
+  - `src/routes/WikiRoutes.ts` (sweepAnonymousSessions exported helper + clearAnonymousSessions handler + route binding)
+  - `src/routes/__tests__/sweepAnonymousSessions.test.ts` (NEW — 7 cases)
+  - `src/routes/__tests__/WikiRoutes.coverage12.test.ts` (2 gating tests + placeholder note pointing at sweep suite)
+  - `views/admin-dashboard.ejs` (Clear anonymous button + click handler)
+  - `tests/e2e/admin.spec.ts` (button-render + anon-403 E2E)
+- Next:
+  - Operator verify: load `/admin` on jimstest → expand Session Manager → click "Clear anonymous" → confirm → see status line update with removed/kept/orphan counts → table reflects new state.
+  - On verification: close #777. That clears the four easy wins surfaced by today's /check-todos (#729 DMS coords, #746 keyword-chip links, #776 Session Manager card, #777 clear-anon button).
+
 ## 2026-05-24-06
 
 - Agent: Claude Opus 4.7
