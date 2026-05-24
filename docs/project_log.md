@@ -2,6 +2,40 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-24-02
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped #785 — My Links pins any URL. Operator could not pin `/my/journal` (no `pageName` in template locals); `/my/links` list page was also silently broken (already read URL-based entries that writers never produced). Unified data to `{url, title, pageName?, pinnedAt?}` with url canonical; legacy `{pageName, title}` normalised at read time, no destructive migration. API backwards-compatible — legacy clients keep working. Desktop "More" dropdown and mobile offcanvas Page Actions relaxed the page-name gate on Add to My Links so it appears on any authed route, deriving URL from new `currentUrl` local on `getCommonTemplateData`.
+- Current Issue: closes work for `#785` (pending operator verification on phone for /my/journal pinning round-trip). Builds on `#784` Phase 1.
+- Tests: full suite green — **6026 unit + 9 skipped** (238 files), **26/26** `tests/e2e/mobile-navigation.spec.ts`. New unit suite `src/utils/__tests__/pinnedItems.test.ts` covers 14 cases for the normaliser (legacy/URL/malformed entries, deriveCanonicalUrl). E2E `#784/#785` test now also asserts Add to My Links is visible on /search when authenticated, confirming the URL-based pinning is wired through to mobile.
+- Semver: **deferred** — adds a new field shape and a new API form but neither breaks any existing client. Will roll into the next /semver bump alongside any further mobile work.
+- /othersites: **not yet** — both #784 Phase 1 and #785 verified on jimstest only. Recommend bundling propagation after operator verifies the /my/journal pin round-trip and any further mobile-UX iteration lands.
+- Work Done:
+  - Mapped the existing My Links data flow across 23 files (type defn, plugin, sidebar widget, offcanvas template, 3 API handlers, 14 WikiRoutes coverage tests).
+  - Designed unified `PinnedItem` interface with `url` canonical and `pageName?` as optional metadata for wiki-page pins. Kept `PinnedPage` as deprecated alias.
+  - Wrote `src/utils/pinnedItems.ts` with `normalizePinnedItem`, `normalizePinnedItems`, `deriveCanonicalUrl` so reads and writes both go through one normaliser.
+  - Rewrote `addPinnedPage` / `removePinnedPage` / `reorderPinnedPages` to accept both legacy and URL forms; dedup by URL; `removePinnedPage` matches by either url, derived-url-from-pageName, or pageName field.
+  - Updated `MyLinksPlugin.ts` to use `normalizePinnedItems` so legacy data renders correctly with `href=item.url` and the URL-based remove handler.
+  - Added `currentUrl: req.originalUrl ?? req.url ?? ''` to `getCommonTemplateData` so the header template can derive a pinnable URL for any route.
+  - Rewrote `views/header.ejs` desktop "More" dropdown Add-to-My-Links block (L286-) and mobile offcanvas equivalent (L344-) to derive `_pinUrl` from pageName when present or from `currentUrl` otherwise, and to use `addPinnedItem` / `removePinnedItem`. Sidebar widget at L447 renders via item.url with legacy fallback.
+  - Rewrote `public/js/my-links.js` with `addPinnedItem(url, title, pageName?)` / `removePinnedItem(ident)` as primary functions, kept `addPinnedPage` / `removePinnedPage` as wrappers.
+  - `/my/links` route handler reads via `normalizePinnedItems` so legacy entries display correctly.
+- Commits: `eea76db2` (9 files; 372 insertions, 68 deletions).
+- Files Modified:
+  - `src/types/User.ts` (PinnedPage → PinnedItem with `url` canonical, `pageName?` optional; PinnedPage kept as deprecated alias)
+  - `src/utils/pinnedItems.ts` (NEW — normalisation helpers)
+  - `src/utils/__tests__/pinnedItems.test.ts` (NEW — 14 cases)
+  - `src/routes/WikiRoutes.ts` (currentUrl in getCommonTemplateData; 3 API handlers rewritten; /my/links normalised)
+  - `src/plugins/MyLinksPlugin.ts` (uses normaliser; uses item.url for href and removePinnedItem)
+  - `src/plugins/__tests__/MyLinksPlugin.test.ts` (added URL-based fixtures)
+  - `public/js/my-links.js` (URL-based primitives + legacy wrappers)
+  - `views/header.ejs` (Add to My Links surfaces on any authenticated route; sidebar widget URL-aware)
+  - `tests/e2e/mobile-navigation.spec.ts` (asserts Add to My Links on /search)
+- Next:
+  - Operator verification on real phone: pin `/my/journal`, pin a search-result URL, confirm both appear in sidebar and on /my/links page; confirm round-trip remove works.
+  - **Retitle #784 and #785** (Task 4) to match what actually shipped — #784 is now about offcanvas reorg, #785 is now about URL-based pinning; both old titles ("MOBILE No add to my list" and "Drop-downs Different") were symptom-level.
+  - **/othersites** propagation once operator OKs.
+
 ## 2026-05-24-01
 
 - Agent: Claude Opus 4.7
