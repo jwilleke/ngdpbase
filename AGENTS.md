@@ -19,6 +19,12 @@ The four principles below are behavioral guidelines that reduce common LLM codin
 
 Don't assume. Don't hide confusion. Surface tradeoffs.
 
+No guessing. Be sure to:
+
+- check existing code and
+- you understand the issue and
+- ask any clarifying questions before proceeding.
+
 Before implementing:
 
 - State your assumptions explicitly. If uncertain, ask.
