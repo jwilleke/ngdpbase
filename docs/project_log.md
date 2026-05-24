@@ -2,6 +2,25 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-24-08
+
+- Agent: Claude Opus 4.7
+- Subject: #776 follow-up addressing operator feedback (issue comment 4528047396) on the Session Manager card — sortable columns, IP capture middleware, and clearer Auth column. Diagnosis: Auth was correctly populated but the column was just an icon-only "Auth" header with no text explanation (operator read green-checks-everywhere as "what does this mean?"); IP was genuinely never captured because express-session doesn't store req.ip by default. Fix: new ~6-line middleware in `src/app.ts` captures `req.ip` into `req.session.ip` on first access (cheap — only writes when ip is unset). Renamed Auth → "Logged in?" with "yes"/"no" text + tooltip explaining anonymous = CSRF-only. Added click-to-sort on all five non-ID columns with arrow indicators and nullish-last ordering. Verified live: new sessions immediately carry ip ("::ffff:127.0.0.1"); older sessions populate on next request.
+- Current Issue: `#776` (still `in review` from the original ship; this follow-up commits address the operator's review comment, ready for re-verification on /admin).
+- Tests: 6052 unit + 9 skipped pass (unchanged — the SessionSummary contract didn't change, only UI rendering + a tiny app middleware). All 7 Session Manager E2E pass.
+- Semver: **deferred** — additive middleware + UI rendering tweaks; no public API or data-shape change.
+- /othersites: **deferred** — patch-class; bundles with the rest into the next minor.
+- Work Done:
+  - Inspected live session data via curl + jq: 42 sessions all authed (post-#777 sweep), 0 with IP. Confirmed the Auth-column "what does this mean?" was a clarity issue not a bug, and IP genuinely was never captured.
+  - Added IP-capture middleware in `src/app.ts` immediately after the express-session middleware. Only writes `req.session.ip = req.ip` when `req.session.ip` is undefined — avoids per-request session writes (which would be expensive against the file store).
+  - Updated `views/admin-dashboard.ejs` table: renamed Auth → "Logged in?" with text values (yes/no) instead of icon-only; added `title=` tooltips on every sortable header explaining what each column means; replaced the inline-render loop with a `renderRows()` helper backed by a `currentSessions` cache so sorting doesn't refetch; added click handlers on the five non-ID headers with a comparator that handles nullish values (anonymous users / blank IPs sort to the end regardless of direction).
+  - Verified IP capture live: hit `/admin` with an admin cookie, then `/api/sessions/list` showed 2 sessions with `ip: "::ffff:127.0.0.1"` (loopback IPv4-in-IPv6) and `ip: "::1"` (loopback IPv6). Confirms middleware fires and persists.
+- Commits: `20da44b9` (`src/app.ts` + `views/admin-dashboard.ejs`; 89 insertions / 28 deletions).
+- Files Modified:
+  - `src/app.ts` (IP-capture middleware after session middleware)
+  - `views/admin-dashboard.ejs` (column header text/tooltips, "Logged in?" text rendering, sortable headers with renderRows helper)
+- Next: operator re-verifies on /admin — column headers should be clearer, click-to-sort should work, IP column will gradually populate for older sessions as their cookies are reused.
+
 ## 2026-05-24-07
 
 - Agent: Claude Opus 4.7
