@@ -2,6 +2,37 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-24-11
+
+- Agent: Claude Opus 4.7
+- Subject: Released **v3.41.0** (minor) bundling the day's feature work since v3.40.0. New features: #729 (Location DMS coords), #746 (keyword chips → pre-filtered search), #776 (Session Manager card with sortable cols + IP capture + Logged-in rename), #777 (clear-anonymous-sessions admin action), #787 (per-session revoke), #738 (NCM/import conversion metrics with persisted per-run summary + admin trend view). Plus #789 partial fix (journal title-collision), AGENTS.md no-guessing rule added by operator, EPIC #790 + #786 cross-reference + #788 surfaced. Propagated to all four ngdpbase deployments.
+- Current Issue: none directly — release bundles work for closed `#729`, `#746`, `#776`, `#777`, `#787`, `#738`, partial `#789`.
+- Tests: jimstest GREEN twice — 6069 unit + 9 skipped on pre-release commit (Step 3 gate) and again on release commit (Step 8a). E2E full 80/80 on pre-release; focused 51/51 (admin + mobile-navigation + location-plugin) on release commit. All three satellites: 6069 unit + 80 E2E each, no flakes.
+- Semver: **minor** — 23 commits since v3.40.0, 6 new `feat()` commits adding new public API (recordImportConversion, addPinnedItem, removePinnedItem, MetricsManager counters, journal title format, Location DMS parser), new admin endpoints (DELETE /api/sessions/:id, POST /api/sessions/clear-anonymous, GET /api/sessions/list), new UI surfaces (Session Manager card, Clear anonymous button, per-session revoke ×, NCM trend card). GH Release auto-published.
+- /othersites: **ran in satellite-only mode** — Step 8a validated jimstest on release commit, so /othersites skipped jimstest re-processing. All three satellites cycled cleanly: pull → stop → build → start → 6069 unit + 80 E2E. fairways-base carries the known-untracked operator working note `docs/planning/plan-addon-accounting.md`.
+- /othersites results:
+  - `fairways-base` (port 2121, PID 15386): 6069 unit + 80 E2E
+  - `ngdpbase-veg` (port 3333, PID 18411): 6069 unit + 80 E2E
+  - `ngdp-temp-builds` (port 3001, PID 21544): 6069 unit + 80 E2E
+- Perf baseline drift v3.40.0 → v3.41.0: clean — all metrics improved. Memory −12.4% (3263.1 → 2857.8 MB), `/` −16% (31 → 26 ms), `/view/Welcome` −10% (21 → 19 ms), `/search?q=test` −5% (40 → 38 ms), `/login` −14% (22 → 19 ms). No regressions; no thresholds tripped. Baseline file: `docs/performance/baseline-v3.41.0-2026-05-24.md`.
+- Work Done (since v3.40.0):
+  - #729 — Location plugin DMS notation (`parseCoordsString` helper, 11 new unit tests, docs + error message pointing at Unicode primes; ASCII-quote markup-parser collision documented).
+  - #746 — Keyword chip → pre-filtered Pages search URLs (auto-tag → `?systemKeywords=`, user-keyword → `?keywords=`; Page Info modal `formatKeywords` helper rewrote span → anchor).
+  - #776 — Admin Session Manager collapsible card (`/api/sessions/list` admin endpoint + `summarizeSession` helper; sortable columns; "Logged in?" rename; IP-capture middleware in `src/app.ts`; lazy-load on first expand).
+  - #777 — Clear-anonymous-sessions action (`POST /api/sessions/clear-anonymous` + `sweepAnonymousSessions` pure helper with 7-case test suite against real temp dir; never deletes caller's own session or *.json.NNN orphans; live-verified clearing 542 sessions on jimstest).
+  - #787 — Per-session revoke (`DELETE /api/sessions/:id` admin-only with self-revoke guard via `?confirm-self=1`; × button per row in Session Manager; `summarizeSession` gained `isSelf` flag computed server-side so session IDs don't leak into template).
+  - #738 — NCM/import conversion metrics (new `recordImportConversion` labeled counter + per-run JSON summaries at `FAST_STORAGE/import-runs/` + trend card in admin-import.ejs with top-kinds + per-run table; forward-compat `actor`/`isSystem` schema fields for #631 + #685; 10-case unit suite for the persistence helper).
+  - #789 — Partial fix: journal entry title now `Journal — ${username} — ${date}` (was `Journal — ${date}` only, colliding across users on same date). Deeper architectural remediation tracked in EPIC #790 (filed today).
+  - EPIC #790 filed + #786 cross-reference. Architectural distillation of journal-addon-vs-page-primitives discussion captured in #789's design-distillation comment.
+  - Operator added "No guessing" discipline rule to `AGENTS.md` (commit `1e44d636`) after #789 debugging surfaced a pattern of theorizing without code-verification.
+- Commits: `29b68602` (release v3.41.0 + baseline). Plus 22 feature/fix/doc commits since v3.40.0 (see `git log v3.40.0..v3.41.0`).
+- Files Modified (release commit `29b68602` only):
+  - `package.json` (3.40.0 → 3.41.0)
+  - `config/app-default-config.json` (3.40.0 → 3.41.0)
+  - `CHANGELOG.md` (v3.41.0 entry appended by version.ts)
+  - `docs/performance/baseline-v3.41.0-2026-05-24.md` (NEW)
+- Release URL: <https://github.com/jwilleke/ngdpbase/releases/tag/v3.41.0>
+
 ## 2026-05-24-10
 
 - Agent: Claude Opus 4.7
