@@ -2,6 +2,30 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-24-01
+
+- Agent: Claude Opus 4.7
+- Subject: Diagnosed #784 (mobile UX) and shipped Phase 1 — mobile offcanvas reorganization. The triggering video was recorded with Chrome's "Request Desktop Site" mode on; at proper Pixel-8 viewport (412px) the page has zero overflow and renders fine. Real defect: offcanvas was a blind clone of the desktop sidebar — SYSTEM INFO widget ate ~50% of drawer height and a sparse 3-item PAGE ACTIONS sat at the bottom, omitting 6 desktop-dropdown items (Add to My Links, Export, Page Statistics, View Source, Recent Changes, Create New Page). Fix in `views/header.ejs`: PAGE ACTIONS now surfaces first with all desktop items mirrored using identical gating conditions; SYSTEM INFO demoted below. Verified by operator on jimstest mobile.
+- Current Issue: `#784` (Phase 1 shipped — full close pending operator verification on real device). Foundation laid for `#785` (Add to My Links surfaced in mobile offcanvas, but still pageName-gated; URL-keyed bookmarks still TODO).
+- Tests: `tests/e2e/mobile-navigation.spec.ts` — 26/26 pass. Updated test at L109 ("page actions section not shown on non-page routes") to reflect the new contract — when authenticated with create rights, PAGE ACTIONS appears on app routes (/search etc.) with the items that don't require a pageName (Create New Page, Upload, Browse, Recent Changes, Export). Previously hidden entirely, which was the over-restrictive side-effect that contributed to the "app routes feel useless" friction.
+- Semver: **deferred** — view template + test only; no public API, no served-data shape, no config schema, no on-disk format. Will roll into next semver bump alongside #785's data-model change.
+- /othersites: **not yet** — Phase 1 verified on jimstest only. Will propagate after #785 lands so the satellites pick up the full mobile+pinning improvement in one cycle.
+- Work Done:
+  - Used ffmpeg to extract video frames from `private/2026-05-24-021327-pixel-screen.mp4` — confirmed the recording shows desktop layout shrunk (`flex-shrink-0 d-none d-md-block` desktop button group visible AND `d-md-none` hamburger visible simultaneously, which only happens at >=md viewport). That rules out a responsive-CSS bug and points at Chrome desktop-site mode.
+  - Wrote Playwright probes at 412×915 mobile viewport (mobile UA) and 980×2244 desktop viewport (desktop UA) — confirmed: mobile mode renders cleanly with zero overflow; desktop-site mode reproduces the video exactly.
+  - Identified the real defect: `views/header.ejs:1344-1345` JS does `offcanvasBody.innerHTML = sidebarBody.innerHTML` (blind clone), then the EJS appends a sparse PAGE ACTIONS block underneath at L333-361.
+  - Restructured the offcanvas block (L313-364): added EJS locals for `_hasPage`, `_authed`, `_canCreate`, `_journalEntry`, `_showPageActions`, `_isMyLinksPinned`, `_hideOC`; rendered PAGE ACTIONS first with conditionally-shown items mirroring the desktop Info+More dropdowns at L257-306; kept Journal Entry addon-gated; moved cloned-sidebar `<div id="mobile-nav-body">` below PAGE ACTIONS.
+  - Verified: anonymous mobile on `/view/Welcome` shows 7-item PAGE ACTIONS at top. Anonymous mobile on `/search` correctly hides PAGE ACTIONS (no relevant items). Desktop @ 1440px unchanged — sidebar visible, button group visible, hamburger hidden, no overflow. All 26 mobile-navigation E2E pass.
+  - Saved a memory `project_journal_is_addon.md` after operator pointed out that Journal is an addon and may not be active on every deployment. Used in this commit to keep the Journal Entry item correctly gated; will guide #785's data-model design so we don't hardcode `/my/journal` as a default.
+- Commits: `b2d2d9a0` (`views/header.ejs` + `tests/e2e/mobile-navigation.spec.ts`).
+- Files Modified:
+  - `views/header.ejs` (offcanvas block L313-364 restructured; 75 lines changed)
+  - `tests/e2e/mobile-navigation.spec.ts` (test at L109 updated to new contract)
+- Next:
+  - **#785 (next slice)** — extend My Links data model from `{pageName, title}` to URL-keyed entries so `/my/journal`, `/profile`, search-result URLs, etc. become bookmarkable. Surfaces in this commit's PAGE ACTIONS block; just needs the backing store + the gating condition relaxed.
+  - **#784 close** — pending operator verification on actual phone (Chrome mobile mode, NOT desktop-site).
+  - **/othersites** — defer until #785 lands; satellites get the bundled improvement in one cycle.
+
 ## 2026-05-23-18
 
 - Agent: Claude Opus 4.7
