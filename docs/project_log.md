@@ -2,6 +2,25 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-24-04
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped #746 — keyword chips on a page header (and in the Page Info modal "User Keywords" row) now link to a pre-filtered Pages search instead of free-text /search?q=<kw>, so a reader pivoting from a chip lands on a search with the keyword already seeded in the #691 multi-select. Per chip type: auto-tagged chips use systemKeywords=, user-keyword chips use keywords=. Verified end-to-end on jimstest: chip on /view/PageIndex → /search?types=page&keywords=Navigation → _apHiddenFilters seeded with {"keywords":["Navigation"]}.
+- Current Issue: `#746` (closing pending operator verification — easy-win pick from this session's /check-todos output).
+- Tests: full unit suite green — 6026 unit + 9 skipped (238 files). Full Playwright E2E — 70 deterministic + 2 flakes (location-plugin embedded-map availability + pages.spec home-page render). Both flakes passed on retry, both unrelated to chip rendering paths; noted here per the /othersites flake-handling policy.
+- Semver: **deferred** — small UX polish that swaps href patterns and converts one inline <span> to <a>; no new public API, config, manager method, or data shape. Will roll into the next /semver minor.
+- /othersites: **deferred** — patch-class change; satellites pick up at next minor per the standard /session-commit Step 5 rule.
+- Work Done:
+  - Read full #746 issue body. Operator wanted chips → pre-filtered search (the URL pattern #691 consumes), not the free-text /search?q= they linked to today. Issue body called out user-keywords vs system-keywords mapping.
+  - Found three chip-rendering sites: views/view.ejs:82 (auto-tags), views/view.ejs:89 (user-keywords), views/header.ejs:740 (formatKeywords JS helper for Page Info modal). Confirmed views/media-item.ejs:140 already uses a sophisticated "wiki page if exists, redlink otherwise + media-album icon" pattern — different IA, deliberately left alone.
+  - Updated view.ejs:82 to `/search?types=page&systemKeywords=<kw>` and view.ejs:89 to `/search?types=page&keywords=<kw>`. Updated header.ejs formatKeywords helper to render `<a class="badge ...">` with the same `keywords=` target, HTML-escaping both href and label to tolerate keywords with unusual characters.
+  - Verified end-to-end with curl: chip href correct, target URL returns 200, _apHiddenFilters object in the search page initialises with the seeded keyword array.
+- Commits: `9be75b9d` (`views/view.ejs` + `views/header.ejs`; 10 insertions / 4 deletions).
+- Files Modified:
+  - `views/view.ejs` (page-tags block — autotag + userKw chip URLs)
+  - `views/header.ejs` (formatKeywords JS helper — static span → anchor with escaping)
+- Next: operator verify by clicking a chip on any wiki page with user-keywords on jimstest. On verification: close #746, no separate /semver needed for this slice.
+
 ## 2026-05-24-03
 
 - Agent: Claude Opus 4.7
