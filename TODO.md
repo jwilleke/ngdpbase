@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-24T14:45:00.000Z'
+lastModified: '2026-05-24T15:25:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -34,13 +34,12 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 Items carrying the `in review` label — work is shipped/merged; operator verification is the only thing left before close. **Clear this list before starting new feature work.**
 
-- **#789** — `[BUG] Can not open Journal Entries` — title-collision symptom shipped in `92be2fb0` (title now `Journal — {user} — {date}`). Deeper architectural cleanup of the journal addon is tracked in EPIC **#790** (file-routing, metadata-strip, category-coercion, sidecar drift). To verify: log in as jim, click Journal Entry, confirm `journal-jim-2026-05-24` is now creatable.
+- _(none)_
 
 ## Open BUGS (ngdpbase, by issue #)
 
 | # | Title |
 |---|---|
-| #789 | Can not open Journal Entries — partial fix shipped (`92be2fb0`); deeper work in EPIC #790. In review |
 | #660 | Agent and ./docs documentation — 48 doc-stub warnings remain for source-only modules (stub-creation backlog; cosmetic, non-blocking) |
 | #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); weekly patch-check workflow watches for a fix |
 
