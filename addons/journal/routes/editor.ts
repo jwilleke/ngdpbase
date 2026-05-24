@@ -173,7 +173,9 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
 
         // Create stub entry with journal frontmatter
         const uuid = uuidv4();
-        const title = `Journal — ${date}`;
+        // #789: per-user title to avoid PageManager title-uniqueness collision
+        // when two users journal on the same date. Mirrors the per-user slug.
+        const title = `Journal — ${username} — ${date}`;
         const defaultPrivate    = config['defaultPrivate']    !== false;
         const defaultAuthorLock = config['defaultAuthorLock'] !== false;
 
@@ -232,9 +234,12 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
         const date  = typeof body['journal-date'] === 'string'
           ? body['journal-date']
           : new Date().toISOString().slice(0, 10);
+        // #789: default title now per-user to mirror the per-user slug and avoid
+        // the PageManager title-uniqueness collision. Operator-supplied custom
+        // titles still win when present.
         const title   = typeof body['title'] === 'string' && body['title'].trim()
           ? body['title'].trim()
-          : `Journal — ${date}`;
+          : `Journal — ${username} — ${date}`;
         const content = (typeof body['content'] === 'string' ? body['content'] : '') || ' ';
         const mood    = typeof body['mood'] === 'string' && body['mood'].trim()
           ? body['mood'].trim()

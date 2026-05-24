@@ -94,7 +94,10 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
         const defaultPrivate    = config['defaultPrivate']    !== false;
         const defaultAuthorLock = config['defaultAuthorLock'] !== false;
         const uuid = uuidv4();
-        const title = `Journal — ${date}`;
+        // #789: include username so two users journaling on the same day don't
+        // collide on the PageManager title-uniqueness check. Slug is already
+        // per-user (`journal-${username}-${date}`); title now mirrors that.
+        const title = `Journal — ${username} — ${date}`;
         const now = new Date().toISOString();
 
         const metadata: Record<string, unknown> = {
