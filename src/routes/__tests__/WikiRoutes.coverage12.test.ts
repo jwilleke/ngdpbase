@@ -755,4 +755,144 @@ describe('WikiRoutes — coverage batch 12', () => {
       expect(res.status).toBe(503);
     });
   });
+
+  // ── Session Manager admin endpoint (#776) ────────────────────────────────────
+
+  describe('GET /api/sessions/list (getActiveSessionDetails)', () => {
+    test('returns 403 when caller lacks admin role', async () => {
+      mockUserContext = {
+        username: 'bob',
+        isAuthenticated: true,
+        roles: ['reader']
+      };
+      const res = await request(app).get('/api/sessions/list');
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({ error: 'Admin role required' });
+    });
+
+    test('returns 403 when caller is anonymous', async () => {
+      mockUserContext = null;
+      const res = await request(app).get('/api/sessions/list');
+      expect(res.status).toBe(403);
+    });
+
+    test('returns 503 when session store is missing', async () => {
+      mockUserContext = {
+        username: 'admin',
+        isAuthenticated: true,
+        roles: ['admin']
+      };
+      // The test app has no session middleware wired up so req.sessionStore is undefined
+      const res = await request(app).get('/api/sessions/list');
+      expect(res.status).toBe(503);
+      expect(res.body.error).toMatch(/not available/);
+    });
+
+    test('returns per-session summaries via store.list + store.get (session-file-store path)', async () => {
+      mockUserContext = {
+        username: 'admin',
+        isAuthenticated: true,
+        roles: ['admin']
+      };
+      // Mimic session-file-store: list returns *.json filenames, get loads each session by id.
+      const sessionData: Record<string, unknown> = {
+        'abc123': {
+          cookie: { expires: '2030-01-01T00:00:00.000Z' },
+          username: 'admin',
+          isAuthenticated: true,
+          __lastAccess: Date.parse('2026-05-24T12:00:00.000Z'),
+          ip: '127.0.0.1'
+        },
+        'def456-anon-csrf-only': {
+          cookie: { expires: '2030-01-01T00:00:00.000Z' },
+          __lastAccess: Date.parse('2026-05-24T12:01:00.000Z')
+        },
+        'old-expired': {
+          cookie: { expires: '2020-01-01T00:00:00.000Z' },
+          username: 'jim',
+          isAuthenticated: true,
+          __lastAccess: Date.parse('2019-12-31T00:00:00.000Z')
+        }
+      };
+      const fakeStore = {
+        list: (cb: (err: unknown, files?: string[]) => void) => {
+          cb(null, Object.keys(sessionData).map(k => k + '.json'));
+        },
+        get: (sid: string, cb: (err: unknown, data?: unknown) => void) => {
+          cb(null, sessionData[sid]);
+        }
+      };
+      const { default: WikiEngine } = await import('../../WikiEngine');
+      const testApp = buildApp();
+      testApp.use((req, _res, next) => {
+        (req as unknown as { sessionStore: typeof fakeStore }).sessionStore = fakeStore;
+        next();
+      });
+      const engine = new WikiEngine();
+      const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+      routes.registerRoutes(testApp);
+
+      const res = await request(testApp).get('/api/sessions/list');
+      expect(res.status).toBe(200);
+      expect(res.body.total).toBe(3);
+      expect(res.body.sessions).toHaveLength(3);
+
+      const admin = res.body.sessions.find((s: { id: string }) => s.id === 'abc123');
+      expect(admin).toMatchObject({
+        username: 'admin',
+        isAuthenticated: true,
+        expired: false,
+        ip: '127.0.0.1',
+        expires: '2030-01-01T00:00:00.000Z'
+      });
+
+      const anon = res.body.sessions.find((s: { id: string }) => s.id === 'def456-anon-csrf-only');
+      expect(anon).toMatchObject({
+        username: null,
+        isAuthenticated: false,
+        expired: false
+      });
+      expect(anon.ip).toBeUndefined();
+
+      const expired = res.body.sessions.find((s: { id: string }) => s.id === 'old-expired');
+      expect(expired.expired).toBe(true);
+      expect(expired.username).toBe('jim');
+    });
+
+    test('falls back to store.all when list+get are not available', async () => {
+      // Some session stores (memory store etc.) implement all() instead of list+get.
+      // The handler should still work end-to-end.
+      mockUserContext = {
+        username: 'admin',
+        isAuthenticated: true,
+        roles: ['admin']
+      };
+      const fakeStore = {
+        all: (cb: (err: unknown, sessions: unknown) => void) => {
+          cb(null, {
+            'memstore-1': {
+              cookie: { expires: '2030-01-01T00:00:00.000Z' },
+              username: 'jim',
+              isAuthenticated: true,
+              __lastAccess: Date.parse('2026-05-24T12:00:00.000Z')
+            }
+          });
+        }
+      };
+      const { default: WikiEngine } = await import('../../WikiEngine');
+      const testApp = buildApp();
+      testApp.use((req, _res, next) => {
+        (req as unknown as { sessionStore: typeof fakeStore }).sessionStore = fakeStore;
+        next();
+      });
+      const engine = new WikiEngine();
+      const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+      routes.registerRoutes(testApp);
+
+      const res = await request(testApp).get('/api/sessions/list');
+      expect(res.status).toBe(200);
+      expect(res.body.total).toBe(1);
+      expect(res.body.sessions[0].username).toBe('jim');
+    });
+  });
 });

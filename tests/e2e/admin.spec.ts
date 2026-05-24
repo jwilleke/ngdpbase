@@ -131,4 +131,60 @@ test.describe('Admin Dashboard', () => {
       await context.close();
     });
   });
+
+  test.describe('Session Manager (#776)', () => {
+    test('admin dashboard renders the collapsed Session Manager section', async ({ page }) => {
+      await page.goto('/admin');
+      await page.waitForLoadState('domcontentloaded');
+
+      const sessionDetails = page.locator('#session-manager-details');
+      await expect(sessionDetails).toBeVisible();
+      // Collapsed by default — open attribute absent
+      await expect(sessionDetails).not.toHaveAttribute('open', '');
+      await expect(page.locator('summary:has-text("Session Manager")')).toBeVisible();
+    });
+
+    test('expanding loads sessions and populates the count', async ({ page }) => {
+      await page.goto('/admin');
+      await page.waitForLoadState('domcontentloaded');
+
+      // Open the <details> via summary click — this fires the toggle handler
+      // that calls fetch('/api/sessions/list') once (lazy-load).
+      await page.locator('#session-manager-details summary').click();
+
+      // Count badge replaces the "—" placeholder once the fetch resolves.
+      await expect(page.locator('#session-manager-count')).not.toHaveText('—', { timeout: 8000 });
+
+      // At least the placeholder row is gone (table body has session rows or a "no sessions" row).
+      const rows = page.locator('#session-manager-rows tr');
+      await expect(rows.first()).toBeVisible();
+    });
+
+    test('GET /api/sessions/list returns session details for admin', async ({ page }) => {
+      // Validate the endpoint shape directly from an authenticated context.
+      const resp = await page.request.get('/api/sessions/list');
+      expect(resp.status()).toBe(200);
+      const json = await resp.json();
+      expect(json).toHaveProperty('total');
+      expect(typeof json.total).toBe('number');
+      expect(Array.isArray(json.sessions)).toBe(true);
+      if (json.sessions.length > 0) {
+        const first = json.sessions[0];
+        expect(first).toHaveProperty('id');
+        expect(first).toHaveProperty('isAuthenticated');
+        expect(first).toHaveProperty('expired');
+      }
+    });
+
+    test('/api/sessions/list returns 403 for unauthenticated callers', async ({ browser }) => {
+      // The default chromium project applies storageState (admin) to every context
+      // it creates — including browser.newContext() — so override with undefined to
+      // get a genuinely anonymous request.
+      const anonCtx = await browser.newContext({ storageState: undefined });
+      const anonPage = await anonCtx.newPage();
+      const resp = await anonPage.request.get('/api/sessions/list');
+      expect(resp.status()).toBe(403);
+      await anonCtx.close();
+    });
+  });
 });

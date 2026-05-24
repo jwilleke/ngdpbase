@@ -364,6 +364,36 @@ const imageUpload: Multer = multer({
   }
 });
 
+/**
+ * Build a SessionSummary from a raw session-store entry (#776). The shape
+ * depends on what was stored at session-create time; legacy entries may have
+ * only cookie+csrfToken (anonymous CSRF-only session), while authenticated
+ * entries add username/isAuthenticated and may carry an `ip` field.
+ */
+function summarizeSession(id: string, raw: unknown): Record<string, unknown> {
+  const s = (raw ?? {}) as Record<string, unknown>;
+  const cookie = (s.cookie ?? {}) as Record<string, unknown>;
+  const expRaw = cookie.expires;
+  const expiresIso = typeof expRaw === 'string'
+    ? expRaw
+    : (expRaw instanceof Date ? expRaw.toISOString() : null);
+  const lastAccessMs = typeof s.__lastAccess === 'number' ? s.__lastAccess : null;
+  const username = typeof s.username === 'string' && s.username ? s.username : null;
+  const isAuth = s.isAuthenticated === true;
+  const ip = typeof s.ip === 'string' ? s.ip : undefined;
+  const expired = expiresIso ? Date.parse(expiresIso) < Date.now() : false;
+  const summary: Record<string, unknown> = {
+    id,
+    username,
+    lastAccess: lastAccessMs ? new Date(lastAccessMs).toISOString() : null,
+    expires: expiresIso,
+    isAuthenticated: isAuth,
+    expired
+  };
+  if (ip) summary.ip = ip;
+  return summary;
+}
+
 class WikiRoutes {
   private engine: WikiEngine;
   /** Connected admin SSE clients — used to push real-time events to admin pages */
@@ -789,6 +819,76 @@ class WikiRoutes {
     } catch {
       res.status(500).json({ error: 'Failed to obtain session count' });
       return;
+    }
+  }
+
+  /**
+   * Active session details — one summary entry per session in the store.
+   * #776: surfaces what's in ${FAST_STORAGE}/sessions/ so operators don't
+   * have to ls+jq the store dir to understand session state (anonymous vs
+   * authenticated, oldest active session, what's expired but not swept,
+   * etc.). Admin-only — exposes session metadata that an unauthed caller
+   * has no business seeing.
+   *
+   * Returns: { total: number, sessions: SessionSummary[] }
+   * where SessionSummary is { id, username|null, lastAccess|null, expires|null,
+   * isAuthenticated, expired, ip? }.
+   */
+  async getActiveSessionDetails(req: Request, res: Response): Promise<void> {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!wikiContext.userContext?.isAuthenticated || !wikiContext.hasRole('admin')) {
+        res.status(403).json({ error: 'Admin role required' });
+        return;
+      }
+      const store = req.sessionStore as unknown as {
+        list?: (cb: (err: unknown, files?: string[]) => void) => void;
+        get?: (sid: string, cb: (err: unknown, session?: unknown) => void) => void;
+        all?: (cb: (err: unknown, sessions?: unknown) => void) => void;
+      } | undefined;
+      if (!store) {
+        res.status(503).json({ error: 'Session store not available' });
+        return;
+      }
+
+      // session-file-store exposes list+get (the path used in production). Some
+      // other stores implement all(). Fall back to all() if list isn't there.
+      let summaries: Array<Record<string, unknown>>;
+      if (typeof store.list === 'function' && typeof store.get === 'function') {
+        const files: string[] = await new Promise((resolve, reject) => {
+          store.list!((err, fs) => err ? reject(err instanceof Error ? err : new Error(typeof err === 'string' ? err : 'session store error')) : resolve(fs ?? []));
+        });
+        // Strip the .json suffix to get the session id. session-file-store's
+        // list already filters by the configured filePattern, so atomic-write
+        // .json.NNN orphans don't appear here.
+        const ids = files.map(f => f.replace(/\.json$/, ''));
+        const sessions = await Promise.all(
+          ids.map(id => new Promise<{ id: string; data: unknown }>((resolve) => {
+            store.get!(id, (err, data) => resolve({ id, data: err ? null : data }));
+          }))
+        );
+        summaries = sessions
+          .filter(s => s.data !== null)
+          .map(s => summarizeSession(s.id, s.data));
+      } else if (typeof store.all === 'function') {
+        const sessions: unknown = await new Promise((resolve, reject) => {
+          store.all!((err, ss) => err ? reject(err instanceof Error ? err : new Error(typeof err === 'string' ? err : 'session store error')) : resolve(ss));
+        });
+        const entries: Array<[string, unknown]> = Array.isArray(sessions)
+          ? sessions.map((s, i) => [String(i), s])
+          : sessions
+            ? Object.entries(sessions as Record<string, unknown>)
+            : [];
+        summaries = entries.map(([id, data]) => summarizeSession(id, data));
+      } else {
+        res.status(503).json({ error: 'Session store has no list/get or all methods' });
+        return;
+      }
+
+      res.json({ total: summaries.length, sessions: summaries });
+    } catch (err) {
+      logger.error('Failed to obtain session details:', err);
+      res.status(500).json({ error: 'Failed to obtain session details' });
     }
   }
 
@@ -10039,6 +10139,10 @@ ${panes}
     app.get('/api/session-users', (req: Request, res: Response) => {
       this.getActiveSessionUsers(req, res);
     });
+    // #776 — admin-only per-session listing for the dashboard
+    app.get('/api/sessions/list', (req: Request, res: Response) =>
+      void this.getActiveSessionDetails(req, res)
+    );
     app.get('/api/check-updates', (req: Request, res: Response) =>
       void this.checkForUpdates(req, res)
     );
