@@ -2,6 +2,27 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-24-05
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped #729 — `[{Location coords='...'}]` plugin now accepts DMS notation alongside the existing decimal. Operator's example `coords='40°24'23.8"N 82°27'34.0"W'` (21 FAIRWAY DR, MOUNT VERNON, OH) now parses to `[40.4066, -82.4594]`. Decimal back-compat preserved. Either lat/lon order works (hemisphere letters identify which axis). Accepts straight or prime (′ ″) minute/second marks. Minutes and seconds are optional (`40°N 82°W` parses to `[40, -82]`). Plus Code (Open Location Code) deferred per the easy-win filter — needs a small library or careful inline decoder.
+- Current Issue: `#729` (marked `in review`; full close pending operator verification on a real wiki page).
+- Tests: full unit suite green — **6037 unit + 9 skipped** (up from 6026; added 11 DMS cases covering operator example, lon-first ordering, prime marks, deg-only, deg+min, S/W hemispheres, missing hemisphere, two same-axis rejection, both range checks). LocationPlugin E2E 11/11 pass.
+- Semver: **deferred** — small additive parser extension; no new public API, config, or data shape. No new deps. Will roll into the next /semver minor.
+- /othersites: **deferred** — patch-class change; satellites pick up at next minor per standard /session-commit Step 5 rule.
+- Work Done:
+  - Read full #729 issue body. Operator wanted three things: DMS notation, Plus Code, and "anything else commonly used". Picked DMS as slice 1 since it's pure regex+arithmetic with no new deps (passes easy-win filter); Plus Code deferred since it needs a small library OR a careful inline base-20 decoder.
+  - Factored coord parsing into `parseCoordsString(input)` helper in `src/plugins/LocationPlugin.ts`. Tries decimal first (preserves prior behavior verbatim), falls back to DMS regex.
+  - DMS regex: `(\d+(?:\.\d+)?)°\s*(?:(\d+(?:\.\d+)?)\s*['′]\s*)?(?:(\d+(?:\.\d+)?)\s*["″]\s*)?\s*([NSEW])` — matchAll to find two coord groups in either order, then `[lat, lon]` based on which has an N/S vs E/W hemisphere letter.
+  - Rejects pairs with two same-axis hemispheres (e.g. `40°N 50°N`) by checking that one of the two halves carries N/S and the other carries E/W.
+  - Range validation (lat ∈ [-90,90], lon ∈ [-180,180]) reuses the same branch as decimal so error messages stay consistent.
+  - Verified live against the compiled dist module: operator example, lon-first ordering, Paris with prime marks, deg-only, decimal back-compat — all produce expected output. Invalid strings and Plus Codes correctly return null.
+- Commits: `40d45599` (`src/plugins/LocationPlugin.ts` + `src/plugins/__tests__/LocationPlugin.test.ts`; 146 insertions / 6 deletions).
+- Files Modified:
+  - `src/plugins/LocationPlugin.ts` (parseCoordsString helper + execute() wiring + doc-comment update)
+  - `src/plugins/__tests__/LocationPlugin.test.ts` (11 new DMS test cases)
+- Next: operator verify by adding the DMS example to a wiki page and confirming it renders as a working OSM link. On verification: close #729, file a separate follow-up issue for Plus Code if desired.
+
 ## 2026-05-24-04
 
 - Agent: Claude Opus 4.7
