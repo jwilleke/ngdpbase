@@ -325,40 +325,85 @@
                     <button class="btn btn-outline-secondary" type="submit"><i class="fas fa-search"></i></button>
                 </div>
             </form>
+<!-- Page Actions — surfaced first on mobile so primary affordances aren't buried beneath cloned sidebar widgets. Mirrors desktop Info + More dropdowns; addon-conditional items (Journal Entry) remain gated. -->
+            <%
+              const _hasPage = typeof pageName !== 'undefined' && pageName;
+              const _authed = typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated;
+              const _canCreate = _authed && currentUser.roles && (currentUser.roles.includes('admin') || currentUser.roles.includes('editor') || currentUser.roles.includes('contributor'));
+              const _journalEntry = typeof listKind !== 'undefined' && listKind === 'journal' && typeof journalEnabled !== 'undefined' && journalEnabled && _authed;
+              const _showPageActions = _hasPage || _canCreate || _journalEntry;
+              const _myLinksPinned = (_authed && currentUser.preferences && Array.isArray(currentUser.preferences['nav.pinnedPages'])) ? currentUser.preferences['nav.pinnedPages'] : [];
+              const _isMyLinksPinned = _hasPage && _myLinksPinned.some(function(p) { return p.pageName === pageName; });
+              const _hideOC = "bootstrap.Offcanvas.getInstance(this.closest('.offcanvas')).hide();";
+            %>
+            <% if (_showPageActions) { %>
             <hr class="mt-0">
-
-            <!-- Sidebar navigation links (populated from desktop sidebar by JS) -->
-            <div id="mobile-nav-body"></div>
-
-            <!-- Page actions (only when on a page) -->
-            <% if (typeof pageName !== 'undefined' && pageName) { %>
-            <hr class="my-3">
             <p class="text-muted small text-uppercase fw-semibold ps-1 mb-2">Page Actions</p>
-            <nav class="nav flex-column">
-                <% if (typeof canEdit !== 'undefined' && canEdit) { %>
+            <nav class="nav flex-column mb-3">
+                <% if (_journalEntry) { %>
+                <a class="nav-link py-2" href="/api/journal/new">
+                    <i class="fas fa-plus me-2"></i> Journal Entry
+                </a>
+                <% } %>
+                <% if (_hasPage && typeof canEdit !== 'undefined' && canEdit) { %>
                 <a class="nav-link py-2" href="/edit/<%= encodeURIComponent(pageName) %>">
                     <i class="fas fa-edit me-2"></i> Edit Page
                 </a>
                 <% } %>
-                <a class="nav-link py-2" href="#" onclick="showPageInfo(); bootstrap.Offcanvas.getInstance(this.closest('.offcanvas')).hide(); return false;">
-                    <i class="fas fa-info me-2"></i> Page Information
+                <% if (_hasPage && _authed) { %>
+                    <% if (_isMyLinksPinned) { %>
+                    <a class="nav-link py-2" href="#" onclick="removePinnedPage('<%= pageName.replace(/'/g, "\\'") %>'); <%- _hideOC %> return false;">
+                        <i class="fas fa-bookmark me-2 text-primary"></i> Remove from My Links
+                    </a>
+                    <% } else { %>
+                    <a class="nav-link py-2" href="#" onclick="addPinnedPage('<%= pageName.replace(/'/g, "\\'") %>', '<%= (typeof title !== 'undefined' && title ? title : pageName).replace(/'/g, "\\'") %>'); <%- _hideOC %> return false;">
+                        <i class="fas fa-bookmark me-2"></i> Add to My Links
+                    </a>
+                    <% } %>
+                <% } %>
+                <% if (_hasPage) { %>
+                <a class="nav-link py-2" href="#" onclick="showPageInfo(); <%- _hideOC %> return false;">
+                    <i class="fas fa-info-circle me-2"></i> Page Information
                 </a>
-                <a class="nav-link py-2" href="#" onclick="showPageHistory(); bootstrap.Offcanvas.getInstance(this.closest('.offcanvas')).hide(); return false;">
+                <a class="nav-link py-2" href="#" onclick="showPageHistory(); <%- _hideOC %> return false;">
                     <i class="fas fa-history me-2"></i> Page History
+                </a>
+                <a class="nav-link py-2" href="#" onclick="showPageSource(); <%- _hideOC %> return false;">
+                    <i class="fas fa-code me-2"></i> View Page Source
+                </a>
+                <a class="nav-link py-2" href="#" onclick="showPageStats(); <%- _hideOC %> return false;">
+                    <i class="fas fa-chart-bar me-2"></i> Page Statistics
                 </a>
                 <a class="nav-link py-2" href="/view/<%= encodeURIComponent(pageName) %>?view=reader">
                     <i class="fas fa-book-reader me-2"></i> Reader View
                 </a>
-                <% if (typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated && currentUser.roles && (currentUser.roles.includes('admin') || currentUser.roles.includes('editor') || currentUser.roles.includes('contributor'))) { %>
-                <a class="nav-link py-2" href="#" onclick="showUploadAttachment(); bootstrap.Offcanvas.getInstance(this.closest('.offcanvas')).hide(); return false;">
+                <% } %>
+                <% if (_canCreate) { %>
+                <a class="nav-link py-2" href="/create">
+                    <i class="fas fa-plus me-2"></i> Create New Page
+                </a>
+                <a class="nav-link py-2" href="#" onclick="showUploadAttachment(); <%- _hideOC %> return false;">
                     <i class="fas fa-paperclip me-2"></i> Upload Attachment
                 </a>
-                <a class="nav-link py-2" href="#" onclick="openBrowseAttachments(); bootstrap.Offcanvas.getInstance(this.closest('.offcanvas')).hide(); return false;">
+                <a class="nav-link py-2" href="#" onclick="openBrowseAttachments(); <%- _hideOC %> return false;">
                     <i class="fas fa-photo-video me-2"></i> Browse Assets
                 </a>
                 <% } %>
+                <a class="nav-link py-2" href="/view/Recent%20Changes">
+                    <i class="fas fa-clock me-2"></i> Recent Changes
+                </a>
+                <a class="nav-link py-2" href="/export">
+                    <i class="fas fa-download me-2"></i> Export
+                </a>
             </nav>
             <% } %>
+
+            <hr class="mt-0">
+            <!-- Sidebar navigation links (populated from desktop sidebar by JS).
+                 Placed AFTER Page Actions on mobile because the cloned sidebar
+                 widgets (SYSTEM INFO, etc.) are ambient info, not what an
+                 operator opened the drawer to do. -->
+            <div id="mobile-nav-body"></div>
 
         </div>
     </div>
