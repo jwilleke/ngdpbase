@@ -734,10 +734,16 @@
             return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
         }
 
-        // Generate keywords display
+        // Generate keywords display — #746: chips link to a pre-filtered Pages search
+        // so a reader can pivot from a chip into discovery. Title text is escaped to
+        // tolerate keywords that contain HTML-significant characters.
         function formatKeywords(keywords) {
             if (!keywords || keywords.length === 0) return 'None';
-            return keywords.map(keyword => `<span class="badge bg-secondary me-1">${keyword}</span>`).join('');
+            const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            return keywords.map(keyword => {
+                const href = '/search?types=page&keywords=' + encodeURIComponent(keyword);
+                return `<a href="${esc(href)}" class="badge bg-secondary text-decoration-none me-1" title="Find pages with this keyword">${esc(keyword)}</a>`;
+            }).join('');
         }
 
         // Generate custom metadata display

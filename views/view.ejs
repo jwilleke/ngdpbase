@@ -79,14 +79,14 @@ document.addEventListener('DOMContentLoaded', function () {
   <% if (_autoTags.length > 0) { %>
     <span class="text-muted small me-1" title="Auto-tagged system keywords"><i class="fas fa-tag"></i></span>
     <% _autoTags.forEach(function(kw) { %>
-      <a href="/search?q=<%= encodeURIComponent(kw) %>" class="badge text-bg-secondary text-decoration-none me-1" title="Auto-tagged"><%= kw %></a>
+      <a href="/search?types=page&amp;systemKeywords=<%= encodeURIComponent(kw) %>" class="badge text-bg-secondary text-decoration-none me-1" title="Auto-tagged — find pages with this system keyword"><%= kw %></a>
     <% }); %>
   <% } %>
   <% if (_userKws.length > 0) { %>
     <% if (_autoTags.length > 0) { %><span class="text-muted small mx-1">|</span><% } %>
     <span class="text-muted small me-1" title="User keywords"><i class="fas fa-tags"></i></span>
     <% _userKws.forEach(function(kw) { %>
-      <a href="/search?q=<%= encodeURIComponent(kw) %>" class="badge text-bg-info text-decoration-none me-1" title="User keyword"><%= kw %></a>
+      <a href="/search?types=page&amp;keywords=<%= encodeURIComponent(kw) %>" class="badge text-bg-info text-decoration-none me-1" title="User keyword — find pages with this keyword"><%= kw %></a>
     <% }); %>
   <% } %>
 </div>
