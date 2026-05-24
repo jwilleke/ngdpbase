@@ -39,6 +39,7 @@ class MetricsManager extends BaseManager {
   private loginAttemptsTotal: Counter | null = null;
   private httpRequestsTotal: Counter | null = null;
   private cacheLookupsTotal: Counter | null = null;
+  private importConversionsTotal: Counter | null = null;
 
   // Histograms
   private pageViewDuration: Histogram | null = null;
@@ -171,6 +172,18 @@ class MetricsManager extends BaseManager {
     this.cacheLookupsTotal = this.meter.createCounter(`${this.prefix}_cache_lookups_total`, {
       description: 'Identity-manager cache lookups (hit/miss) — see #620'
     });
+    // #738: NCM / import conversion outcomes by structured `kind`. Attributes:
+    //   kind    — ConversionWarning.kind (img-rejected, img-attached,
+    //              link-externalized, content-dropped, import-attachment, ...).
+    //              Stays flat for now (no colon-subkinds) per the #738 design
+    //              decision; sub-categorization can move into the `kind`
+    //              namespace later if a fix-if-many case demands it.
+    //   outcome — 'warning' | 'error' (today only 'warning' is emitted; the
+    //              field reserves room for error-class kinds without a metric
+    //              break-change later).
+    this.importConversionsTotal = this.meter.createCounter(`${this.prefix}_import_conversions_total`, {
+      description: 'NCM / import conversion outcomes by ConversionWarning.kind — see #738'
+    });
 
     // Histograms
     this.pageViewDuration = this.meter.createHistogram(`${this.prefix}_page_view_duration_ms`, {
@@ -293,6 +306,20 @@ class MetricsManager extends BaseManager {
    */
   recordCacheLookup(attributes: { manager: string; cache: string; result: 'hit' | 'miss' }): void {
     this.cacheLookupsTotal?.add(1, attributes);
+  }
+
+  /**
+   * Record an NCM / import conversion outcome (#738). Increment once per
+   * ConversionWarning emitted by a converter run. Cardinality is bounded
+   * by the size of the `kind` namespace — today ~5 kinds × 2 outcomes =
+   * 10 series; grows with each new structured kind. No-op when telemetry
+   * is disabled, matches the rest of MetricsManager's API.
+   *
+   * Called from ImportManager and (when it ships) the #685 data-ingestion
+   * framework — anywhere a converter run produces ConversionResult.
+   */
+  recordImportConversion(attributes: { kind: string; outcome: 'warning' | 'error' }): void {
+    this.importConversionsTotal?.add(1, attributes);
   }
 
   /**

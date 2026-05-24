@@ -35,6 +35,7 @@ import type { WikiEngine } from '../types/WikiEngine.js';
 import { IContentConverter, ConversionResult } from '../converters/IContentConverter.js';
 import { normalizeToNcm, ncmToConversionResult } from '../converters/ncm/index.js';
 import { notifyNcmConversion } from '../utils/ncmNotify.js';
+import { writeRunSummary, type ImportRunSummary } from '../utils/importRunSummary.js';
 import JSPWikiConverter from '../converters/JSPWikiConverter.js';
 import HtmlConverter from '../converters/HtmlConverter.js';
 import MarkdownConverter from '../converters/MarkdownConverter.js';
@@ -77,6 +78,27 @@ export interface ImportOptions {
 
   /** Progress callback for streaming updates */
   onProgress?: (event: ImportProgressEvent) => void;
+
+  /**
+   * Categorises this run for the per-run summary (#738). Examples:
+   * `'paste'`, `'url'`, `'file'`, `'jspwiki'`, `'ingest:<sourceId>'`.
+   * Defaults to `'import'` when caller doesn't specify.
+   */
+  importType?: string;
+
+  /**
+   * Principal that initiated this run (#738 + #631 forward-compat).
+   * For request-bound manual imports, the admin's `req.userContext.username`.
+   * For scheduled #685 ingestion (when it lands), the system principal's
+   * username per #631. Defaults to `'unknown'` when not supplied.
+   */
+  actor?: string;
+
+  /**
+   * True when `actor` is the #631 canonical system principal. Default false.
+   * Reserved for non-request code paths (#685 ingestion, background jobs).
+   */
+  actorIsSystem?: boolean;
 }
 
 /**
@@ -294,6 +316,7 @@ class ImportManager extends BaseManager {
    */
   async importPages(options: ImportOptions): Promise<ImportResult> {
     const startTime = Date.now();
+    const startedAtIso = new Date(startTime).toISOString();
     const result: ImportResult = {
       success: true,
       converted: 0,
@@ -304,6 +327,9 @@ class ImportManager extends BaseManager {
       files: [],
       durationMs: 0
     };
+    // #738: aggregate ConversionWarning.kind counts across all files in this run
+    // so the per-run summary can drive the trend view + metric emit.
+    const runKindCounts: Record<string, number> = {};
 
     // Validate source path exists
     if (!await fs.pathExists(options.sourceDir)) {
@@ -371,6 +397,14 @@ class ImportManager extends BaseManager {
 
         if (imported) {
           result.files.push(imported);
+          // #738: re-derive the kind from the flattened `${kind}: ${detail}` strings
+          // emitted by importSinglePage. (Keeping the flatten boundary as-is for
+          // back-compat with existing ImportedFile consumers.)
+          for (const w of imported.warnings ?? []) {
+            const sep = w.indexOf(': ');
+            const kind = sep > 0 ? w.slice(0, sep) : w;
+            if (kind) runKindCounts[kind] = (runKindCounts[kind] ?? 0) + 1;
+          }
           if (imported.skippedReason) {
             result.skipped++;
             // Send progress event for skipped file
@@ -452,6 +486,50 @@ class ImportManager extends BaseManager {
       failed: result.failed,
       durationMs: result.durationMs
     });
+
+    // #738: emit per-kind metrics + persist per-run summary so the operator
+    // can answer "is this failure systemic and worth fixing?" Best-effort —
+    // observability failures must not bubble back into the import result.
+    if (!options.dryRun) {
+      try {
+        type MetricsRecorder = { recordImportConversion?: (a: { kind: string; outcome: 'warning' | 'error' }) => void };
+        const metricsManager = this.engine.getManager<MetricsRecorder>('MetricsManager');
+        for (const [kind, count] of Object.entries(runKindCounts)) {
+          for (let i = 0; i < count; i++) {
+            // outcome is always 'warning' today — ConversionWarning is the only
+            // structured emit. Hard errors land in result.errors[] (unstructured).
+            // The outcome label reserves room for an error-kind enum without a
+            // breaking metric change later (#738 design notes).
+            metricsManager?.recordImportConversion?.({ kind, outcome: 'warning' });
+          }
+        }
+      } catch (metricErr) {
+        logger.warn('[ImportManager] Failed to record import conversion metrics:', metricErr);
+      }
+
+      try {
+        const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+        const runsDir = configManager?.getResolvedDataPath?.('ngdpbase.import.runs-dir', './data/import-runs')
+          ?? path.resolve('./data/import-runs');
+        const finishedAtIso = new Date().toISOString();
+        const summary: ImportRunSummary = {
+          runId: startedAtIso.replace(/:/g, '-').replace(/\.\d+Z$/, 'Z'),
+          startedAt: startedAtIso,
+          finishedAt: finishedAtIso,
+          importType: options.importType ?? 'import',
+          actor: options.actor ?? 'unknown',
+          isSystem: options.actorIsSystem === true,
+          total: result.total,
+          converted: result.converted,
+          skipped: result.skipped,
+          failed: result.failed,
+          kindCounts: runKindCounts
+        };
+        await writeRunSummary(runsDir, summary);
+      } catch (persistErr) {
+        logger.warn('[ImportManager] Failed to persist import run summary:', persistErr);
+      }
+    }
 
     return result;
   }

@@ -242,6 +242,106 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Recent Conversion Trend (#738) -->
+            <div class="card mb-4">
+                <div class="card-body py-2">
+                    <details id="import-trend-details">
+                        <summary class="d-flex align-items-center gap-2" style="cursor: pointer;">
+                            <i class="fas fa-chart-bar"></i>
+                            <strong>Recent conversion trend by kind</strong>
+                            <span class="badge bg-secondary"><%= (typeof recentRuns !== 'undefined' && recentRuns) ? recentRuns.length : 0 %> run<%= ((typeof recentRuns !== 'undefined' && recentRuns) ? recentRuns.length : 0) === 1 ? '' : 's' %></span>
+                            <span class="text-muted small ms-auto">Click to expand &middot; structured NCM/import outcomes — fix-if-many signal (#738)</span>
+                        </summary>
+                        <div class="mt-3">
+                            <%
+                              const _runs = (typeof recentRuns !== 'undefined' && Array.isArray(recentRuns)) ? recentRuns : [];
+                              // Aggregate top kinds across all runs for the "is this systemic?" view
+                              const _aggregate = {};
+                              _runs.forEach(function(r) {
+                                  Object.entries(r.kindCounts || {}).forEach(function(entry) {
+                                      _aggregate[entry[0]] = (_aggregate[entry[0]] || 0) + entry[1];
+                                  });
+                              });
+                              const _sortedKinds = Object.entries(_aggregate).sort(function(a, b) { return b[1] - a[1]; });
+                              const _totalWarnings = _sortedKinds.reduce(function(s, e) { return s + e[1]; }, 0);
+                            %>
+                            <% if (_runs.length === 0) { %>
+                                <p class="text-muted mb-0">No persisted run summaries yet. Trends appear after the first non-dry-run import.</p>
+                            <% } else { %>
+                                <h6 class="mt-0">Top kinds across last <%= _runs.length %> run<%= _runs.length === 1 ? '' : 's' %> (<%= _totalWarnings %> total warning<%= _totalWarnings === 1 ? '' : 's' %>)</h6>
+                                <div class="table-responsive mb-3">
+                                    <table class="table table-sm table-hover mb-0 small">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>kind</th>
+                                                <th class="text-end">count</th>
+                                                <th class="text-end" style="width:40%;">share</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <% _sortedKinds.forEach(function(entry) {
+                                                 const _pct = _totalWarnings > 0 ? Math.round((entry[1] / _totalWarnings) * 1000) / 10 : 0;
+                                            %>
+                                            <tr>
+                                                <td><code class="small"><%= entry[0] %></code></td>
+                                                <td class="text-end"><%= entry[1] %></td>
+                                                <td class="text-end">
+                                                    <div class="progress" style="height: 8px;" title="<%= _pct %>%">
+                                                        <div class="progress-bar bg-info" role="progressbar" style="width: <%= _pct %>%"></div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            <% }); %>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <h6>Per-run summary</h6>
+                                <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                                    <table class="table table-sm mb-0 small">
+                                        <thead class="table-light sticky-top">
+                                            <tr>
+                                                <th>started</th>
+                                                <th>type</th>
+                                                <th>actor</th>
+                                                <th class="text-end">total</th>
+                                                <th class="text-end">conv</th>
+                                                <th class="text-end">skip</th>
+                                                <th class="text-end">fail</th>
+                                                <th>top kinds</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <% _runs.forEach(function(r) {
+                                                const _topKinds = Object.entries(r.kindCounts || {}).sort(function(a, b) { return b[1] - a[1]; }).slice(0, 3);
+                                            %>
+                                            <tr>
+                                                <td><span class="text-muted"><%= r.startedAt %></span></td>
+                                                <td><span class="badge bg-secondary"><%= r.importType %></span></td>
+                                                <td>
+                                                    <% if (r.isSystem) { %><span class="badge bg-info text-dark">system</span> <% } %><%= r.actor %>
+                                                </td>
+                                                <td class="text-end"><%= r.total %></td>
+                                                <td class="text-end text-success"><%= r.converted %></td>
+                                                <td class="text-end text-muted"><%= r.skipped %></td>
+                                                <td class="text-end <%= r.failed > 0 ? 'text-danger' : 'text-muted' %>"><%= r.failed %></td>
+                                                <td>
+                                                    <% if (_topKinds.length === 0) { %>
+                                                        <span class="text-muted">—</span>
+                                                    <% } else { %>
+                                                        <% _topKinds.forEach(function(e) { %><code class="small me-1"><%= e[0] %>×<%= e[1] %></code><% }); %>
+                                                    <% } %>
+                                                </td>
+                                            </tr>
+                                            <% }); %>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            <% } %>
+                        </div>
+                    </details>
+                </div>
+            </div>
         </div>
     </div>
 </div>

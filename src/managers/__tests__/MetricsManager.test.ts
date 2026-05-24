@@ -155,8 +155,9 @@ describe('MetricsManager', () => {
       await manager.initialize();
       expect(manager.isEnabled()).toBe(true);
 
-      // Should create counters and histograms (counter #8 is cache_lookups_total — #620)
-      expect(mockMeter.createCounter).toHaveBeenCalledTimes(8);
+      // Should create counters and histograms. Counter #8 is cache_lookups_total (#620);
+      // counter #9 is import_conversions_total (#738).
+      expect(mockMeter.createCounter).toHaveBeenCalledTimes(9);
       expect(mockMeter.createHistogram).toHaveBeenCalledTimes(7);
     });
 

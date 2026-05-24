@@ -8312,10 +8312,19 @@ ${panes}
       const converters = importManager.getConverterInfo();
       const commonData = await this.getCommonTemplateData(req);
 
+      // #738: load the last N per-run summaries for the trend view. Best-effort
+      // — if the directory doesn't exist yet (first install or no imports yet)
+      // listRecentRuns returns [] and the trend section renders empty.
+      const configManager = this.engine.getManager('ConfigurationManager');
+      const runsDir = configManager?.getResolvedDataPath?.('ngdpbase.import.runs-dir', './data/import-runs') as string | undefined;
+      const { listRecentRuns } = await import('../utils/importRunSummary.js');
+      const recentRuns = runsDir ? await listRecentRuns(runsDir, 10) : [];
+
       return res.render('admin-import', {
         ...commonData,
         title: 'Import Pages',
         converters,
+        recentRuns,
         success: req.query.success || null,
         error: req.query.error || null,
         csrfToken: req.session.csrfToken
