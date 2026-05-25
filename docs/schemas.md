@@ -1,7 +1,7 @@
 ---
 title: ngdpbase Metadata Schemas
 status: ratified — 2026-05-20
-lastModified: 2026-05-20
+lastModified: 2026-05-24
 epic: "#755"
 ---
 
@@ -92,6 +92,12 @@ Decisions made during the brainstorm that the rest of the doc must respect. New 
   So `dateModified` is "when the page was last edited" regardless of which revision is currently being viewed.
   Matches schema.org's intent (`dateModified` = "the date on which the CreativeWork was most recently modified") and matches operator expectation across every other versioned-content platform (Wikipedia, GitHub blob view, Confluence).
   **Note for revision-specific views:** if a future consumer needs "when was *this specific revision* created" (e.g. on `/view/Foo?revision=42`), that's a separate field — call it `ngdp:revisionDate` or use schema.org's `datePublished` *on a revision sub-object* if we ever surface revision as its own node. Not in scope today.
+- **2026-05-24 — JSON-LD `@type` per category is config-driven via a sibling `ngdpbase.schema-types` block.** (Per [#791](https://github.com/jwilleke/ngdpbase/issues/791), sub-issue of [EPIC #790](https://github.com/jwilleke/ngdpbase/issues/790).)
+  `pageToArticle` selects `@type` by looking up the page's `system-category` in a new top-level config block `ngdpbase.schema-types` (operator-controllable per deployment via `app-custom-config.json`). Fallback when no entry: `Article` — matches today's hardcoded behavior. Shipped sparse defaults: `documentation → TechArticle`, `developer → TechArticle`, `journal → BlogPosting` (no-op until `journal` becomes a registered system-category per EPIC #790).
+  **Sibling block, not a nested field.** `ngdpbase.schema-types` is its own top-level key, NOT a `schema-type` field on each `ngdpbase.system-category` entry. Rationale: `system-category` already carries seven concerns (storage routing, ACL, search filtering, search relevance boosting, page-badge rendering, required-pages dir routing, default-category fallback); JSON-LD `@type` is a *semantic* concern (what kind of thing is this?) distinct from those *deployment* concerns (where/how is it persisted and shown?). Keeping each concern in its own config surface stops the drift and composes cleanly with future "what is this for X subsystem?" config (Open Graph, RSS, sitemap priority).
+  **Article subtypes only in shipped defaults.** Every ngdp page carries Article-shaped fields (`articleBody`, `editor`, `mentions`, `version`, `slug`); refining to schema.org Article subtypes (`BlogPosting`, `TechArticle`, `NewsArticle`, `ScholarlyArticle`, `MedicalScholarlyArticle`, `Report`, `SatiricalArticle`, `APIReference`, `SocialMediaPosting`, `DiscussionForumPosting`, `AdvertiserContentArticle`) is field-compatible. Refining to WebPage subtypes (`AboutPage`, `ProfilePage`, `ContactPage`, `FAQPage`, `ItemPage`) would break that field-shape match (WebPage subtypes don't carry `articleBody`/`editor`). The lookup itself is **permissive** — operators can configure any schema.org type string per deployment if they want — but shipped defaults stay on the Article branch.
+  **`user-profile` deferred.** Proper schema.org modeling for a profile page is a multi-node `@graph` (`ProfilePage` wrapper + `Person` as `mainEntity` + `BlogPosting`/`Article` as content), where the `Person` is extracted from the User record (`User.profilePage` field at `src/types/User.ts:127` points to a wiki page name). Different render path, different driver — keyed off the User→Page pointer, not the page's `system-category`. Deferred to a separate sub-issue; `user-profile` pages keep rendering as plain `Article` (today's behavior) until then.
+  **`DigitalDocument` unaffected.** Pages render as Article subtypes (or fall through to `Article`); PDFs/docx still render as `DigitalDocument` via their own AttachmentManager render path. The two type families remain separate per their separate storage pipelines.
 
 ## Framing
 
@@ -152,7 +158,7 @@ These fields apply to every asset type because every consumer above reads them.
 |---|---|---|---|---|
 | `@id` | ✅ JSON-LD `@id` | IRI (string) | yes | **Canonical URL** (Decision γ, 2026-05-20). Pages: `/view/<slug>`. Media: `/media/file/<id>`. Dereferenceable — a consumer can `GET` it and retrieve the resource. **Not the same as the page's UUID** — the rename-stable internal UUID is the separate `identifier` field below. `@id` changes when slug changes; `identifier` never does |
 | `identifier` | ✅ `identifier` | string | yes for pages; optional otherwise | Opaque rename-stable internal ID. For pages this is the frontmatter `uuid`. For media this is the sha256-derived item id (same value as appears in the `@id` URL fragment). schema.org's blessed slot for "internal ID" — preferred over a custom `ngdp:uuid` |
-| `@type` | ✅ JSON-LD `@type` | `Article` \| `ImageObject` \| `VideoObject` \| `AudioObject` \| `DigitalDocument` | yes | Drives which extensions apply |
+| `@type` | ✅ JSON-LD `@type` | `Article` (+ subtypes, see [Per-category JSON-LD `@type`](#per-category-json-ld-type-config-driven)) \| `ImageObject` \| `VideoObject` \| `AudioObject` \| `DigitalDocument` | yes | Drives which extensions apply. Article subtype is operator-configurable per `system-category` (per 2026-05-24 decision) |
 | `name` | ✅ `name` | string | yes | Display title |
 | `description` | ✅ `description` | string | optional | Caption / abstract / image alt-text |
 | `dateCreated` | ✅ `dateCreated` | ISO 8601 | optional | When the original was authored / captured |
@@ -175,6 +181,63 @@ Deliberately omitted at the base, with rationale:
 ## Per-type extensions
 
 Type-specific fields are added only when (a) a named ngdp consumer above needs them and (b) the meaning survives the type boundary.
+
+### Per-category JSON-LD `@type` (config-driven)
+
+How a page's `@type` is selected at render time. Per the [2026-05-24 ratified decision](#ratified-decisions).
+
+Schema.org type-tree relevant to ngdp pages:
+
+```text
+Thing → CreativeWork
+         ├── Article ────► BlogPosting, TechArticle, NewsArticle,
+         │                  ScholarlyArticle, MedicalScholarlyArticle,
+         │                  Report, SatiricalArticle, APIReference,
+         │                  SocialMediaPosting, DiscussionForumPosting,
+         │                  AdvertiserContentArticle
+         └── WebPage ────► AboutPage, ProfilePage, ContactPage,
+                            FAQPage, ItemPage
+```
+
+ngdp pages map to **Article subtypes** (field-compatible — every page carries `articleBody` / `editor` / `mentions` / `version` / `slug`). WebPage subtypes have a different field shape and aren't shipped as defaults, though the lookup is permissive (operators can configure them per deployment).
+
+**Config block** in `config/app-default-config.json`:
+
+```json
+"ngdpbase.schema-types": {
+  "documentation": "TechArticle",
+  "developer":     "TechArticle",
+  "journal":       "BlogPosting"
+}
+```
+
+**Lookup**: `pageToArticle` reads the page's `system-category` and looks it up in `ngdpbase.schema-types`. Fallback when no entry (or unknown category): `Article`. Operators override per deployment via `app-custom-config.json` — same precedence as every other config key.
+
+**Sparse by design.** Only categories that diverge from the `Article` default appear in the block. `general`, `system`, `addon`, `user-profile`, and unknown categories all fall through to `Article` — same JSON-LD as today's hardcoded behavior, no migration needed.
+
+**Available Article subtypes** (operators can pick any for their categories; non-Article types work too but field-shape match isn't guaranteed):
+
+| If a category looks like… | Article subtype | schema.org link |
+|---|---|---|
+| Tutorials, manuals, code walkthroughs | `TechArticle` | <https://schema.org/TechArticle> |
+| API endpoint documentation | `APIReference` (TechArticle subtype) | <https://schema.org/APIReference> |
+| News / time-sensitive posts | `NewsArticle` | <https://schema.org/NewsArticle> |
+| Personal blog / journal entries | `BlogPosting` | <https://schema.org/BlogPosting> |
+| Peer-reviewed / research papers | `ScholarlyArticle` | <https://schema.org/ScholarlyArticle> |
+| Medical / clinical research | `MedicalScholarlyArticle` | <https://schema.org/MedicalScholarlyArticle> |
+| Compliance / policy / whitepapers | `Report` | <https://schema.org/Report> |
+| Satire / parody | `SatiricalArticle` | <https://schema.org/SatiricalArticle> |
+| Generic page (default) | `Article` | <https://schema.org/Article> |
+
+**Why a sibling block, not a `schema-type` field on `ngdpbase.system-category` entries?**
+
+`ngdpbase.system-category` already carries seven concerns (storage routing, ACL, search filtering, search relevance boosting, page-badge, required-pages dir routing, default-category fallback). JSON-LD `@type` is a *semantic* concern distinct from those *deployment* concerns. A sibling block keeps each concern in its own config surface and composes cleanly with future per-subsystem-type config (Open Graph, RSS, sitemap priority).
+
+**Why is `user-profile` not in the shipped defaults?**
+
+Proper schema.org modeling for a profile page is a multi-node `@graph`: `ProfilePage` (page wrapper) + `Person` (`mainEntity` — the human the profile is about) + `BlogPosting` or `Article` (the body content). The `Person` data lives on the User record (`User.profilePage` pointer at `src/types/User.ts:127`), not on the page itself. That render path is a separate sub-issue keyed off the User→Page pointer, not the page's `system-category`. Until that lands, `user-profile` pages render as plain `Article` — same as today.
+
+**`DigitalDocument` is not affected.** Per [#791](https://github.com/jwilleke/ngdpbase/issues/791): pages always render as Article (or an Article subtype); PDFs/docx attachments still render as `DigitalDocument` via AttachmentManager's own render path. The two type families stay separate per their separate storage pipelines.
 
 ### `Article` (pages)
 
