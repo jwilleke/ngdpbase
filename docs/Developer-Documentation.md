@@ -32,7 +32,7 @@ Workflow:
 | ---------- | --- | --- | ------------- |
 | [Managers](#managers) | 37 | 25 | Core system managers |
 | [Plugins](#plugins) | 32 | 23 | JSPWiki-style content plugins |
-| [Providers](#providers) | 32 | 12 | Storage and service providers |
+| [Providers](#providers) | 33 | 12 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
 | [Testing](#testing) | n/a | 3 | Testing guides and strategies |
 | [API](#api-reference) | n/a | Auto-gen | TypeDoc generated API reference |
@@ -158,6 +158,7 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | BaseUserProvider | ⚠️ [src/providers/BaseUserProvider.ts](../src/providers/BaseUserProvider.ts) | _no doc page yet_ |
 | BasicAttachmentProvider | 📘 [doc](providers/BasicAttachmentProvider.md) + [guide](providers/BasicAttachmentProvider-Complete-Guide.md) | File-system attachment storage with SHA-256-content-addressed dedup and per-page listings |
 | CloudAuditProvider | ⚠️ [src/providers/CloudAuditProvider.ts](../src/providers/CloudAuditProvider.ts) | _no doc page yet_ |
+| CloudflareAccessAuthProvider | ⚠️ [src/providers/CloudflareAccessAuthProvider.ts](../src/providers/CloudflareAccessAuthProvider.ts) | _no doc page yet_ |
 | DatabaseAuditProvider | ⚠️ [src/providers/DatabaseAuditProvider.ts](../src/providers/DatabaseAuditProvider.ts) | _no doc page yet_ |
 | ElasticsearchSearchProvider | 📘 [doc](providers/ElasticsearchSearchProvider.md) + [guide](providers/ElasticsearchSearchProvider-Complete-Guide.md) | Elasticsearch backend for SearchManager — full-text and (optionally) vector search over pages |
 | FileAuditProvider | ⚠️ [src/providers/FileAuditProvider.ts](../src/providers/FileAuditProvider.ts) | _no doc page yet_ |
@@ -316,9 +317,9 @@ Honest accounting of doc coverage. Targets are pragmatic — abstract base class
 
 - AttachmentsPlugin, CommentsPlugin, FootnotesPlugin, MediaGallery, MediaItem, MediaPlugin, MediaSearch, MyContributionsPlugin, PageSlideshowPlugin, TablePlugin, TabPlugin, TabsPlugin
 
-**Providers:** 11/32 with quick-reference docs (34%); 5 with Complete Guides. 21 source-only:
+**Providers:** 11/33 with quick-reference docs (33%); 5 with Complete Guides. 22 source-only:
 
-- BaseAttachmentProvider, BaseAuditProvider, BaseAuthProvider, BaseCacheProvider, BasePageProvider, BaseSearchProvider, BaseUserProvider, CloudAuditProvider, DatabaseAuditProvider, FileAuditProvider, FileOrganizationProvider, FilePersonProvider, FileRoleProvider, GoogleOIDCProvider, LunrSearchProvider, MagicLinkAuthProvider, NodeCacheProvider, NullAuditProvider, NullCacheProvider, PasswordAuthProvider, RedisCacheProvider
+- BaseAttachmentProvider, BaseAuditProvider, BaseAuthProvider, BaseCacheProvider, BasePageProvider, BaseSearchProvider, BaseUserProvider, CloudAuditProvider, CloudflareAccessAuthProvider, DatabaseAuditProvider, FileAuditProvider, FileOrganizationProvider, FilePersonProvider, FileRoleProvider, GoogleOIDCProvider, LunrSearchProvider, MagicLinkAuthProvider, NodeCacheProvider, NullAuditProvider, NullCacheProvider, PasswordAuthProvider, RedisCacheProvider
 <!-- AUTO:doc-status END -->
 
 See [issue #178](https://github.com/jwilleke/ngdpbase/issues/178) for the doc-coverage tracking issue and [#660](https://github.com/jwilleke/ngdpbase/issues/660) for the discoverability problem this index addresses.

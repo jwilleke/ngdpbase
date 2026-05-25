@@ -98,6 +98,7 @@
     "google-auth-library": "^10.6.2",
     "gray-matter": "^4.0.3",
     "husky": "^9.1.7",
+    "jose": "^6.2.3",
     "linkedom": "^0.18.12",
     "lunr": "^2.3.9",
     "markdownlint": "^0.38.0",

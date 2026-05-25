@@ -33,6 +33,7 @@ import type {
 import { PasswordAuthProvider } from '../providers/PasswordAuthProvider.js';
 import { MagicLinkAuthProvider } from '../providers/MagicLinkAuthProvider.js';
 import { GoogleOIDCProvider } from '../providers/GoogleOIDCProvider.js';
+import { CloudflareAccessAuthProvider } from '../providers/CloudflareAccessAuthProvider.js';
 import type EmailManager from './EmailManager.js';
 import logger from '../utils/logger.js';
 
@@ -102,6 +103,27 @@ class AuthManager extends BaseManager {
       };
       this.providers.set('google-oidc', new GoogleOIDCProvider(this.engine, googleConfig));
       logger.info('[AuthManager] Registered provider: google-oidc');
+    }
+
+    // Register Cloudflare Access provider if enabled (#649)
+    if (configManager?.getProperty('ngdpbase.auth.cloudflare-access.enabled', false)) {
+      const teamDomain = configManager.getProperty('ngdpbase.auth.cloudflare-access.team-domain', '') as string;
+      const applicationAud = configManager.getProperty('ngdpbase.auth.cloudflare-access.application-aud', '') as string;
+      if (!teamDomain || !applicationAud) {
+        logger.error(
+          '[AuthManager] Cloudflare Access provider NOT registered: ngdpbase.auth.cloudflare-access.team-domain ' +
+          'and ngdpbase.auth.cloudflare-access.application-aud must both be set in custom config before enabling. (#649)'
+        );
+      } else {
+        const cfConfig = {
+          teamDomain,
+          applicationAud,
+          defaultRole: configManager.getProperty('ngdpbase.auth.cloudflare-access.default-role', 'occupant') as string,
+          groupMap: configManager.getProperty('ngdpbase.auth.cloudflare-access.group-map', {}) as Record<string, string>
+        };
+        this.providers.set('cloudflare-access', new CloudflareAccessAuthProvider(this.engine, cfConfig));
+        logger.info(`[AuthManager] Registered provider: cloudflare-access (team=${teamDomain})`);
+      }
     }
 
     // Load required-factors chain

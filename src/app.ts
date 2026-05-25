@@ -287,6 +287,33 @@ void (async (): Promise<void> => {
     next();
   });
 
+  // #649 — Cloudflare Access JWT trust. When the request carries a
+  // `Cf-Access-Jwt-Assertion` header AND the provider is registered AND the
+  // session doesn't already identify a user, verify the JWT via AuthManager
+  // and populate req.session.username. The existing user-context middleware
+  // below then resolves the user the normal way. No-ops in the common case
+  // (header absent, provider disabled, or session already authenticated).
+  app.use(async (req: Request, _res: Response, next: NextFunction) => {
+    try {
+      const token = req.headers['cf-access-jwt-assertion'];
+      if (!token || typeof token !== 'string') { next(); return; }
+      if (req.session?.username) { next(); return; }
+      const authManager = engine.getManager('AuthManager') as {
+        authenticate?: (id: string, creds: { token?: string }) => Promise<{ success: boolean; username?: string }>;
+        getProviders?: () => Array<{ id: string }>;
+      } | null;
+      const hasCf = authManager?.getProviders?.().some(p => p.id === 'cloudflare-access');
+      if (!authManager?.authenticate || !hasCf) { next(); return; }
+      const result = await authManager.authenticate('cloudflare-access', { token });
+      if (result.success && result.username && req.session) {
+        req.session.username = result.username;
+      }
+    } catch (err) {
+      logger.warn('[CloudflareAccess middleware] failed:', err);
+    }
+    next();
+  });
+
   // Middleware to attach user context from session
   const debugSession = configManager.getProperty('ngdpbase.logging.debug.session', false);
   const debugRequests = configManager.getProperty('ngdpbase.logging.debug.requests', false);
