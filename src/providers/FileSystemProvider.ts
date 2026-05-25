@@ -420,6 +420,26 @@ class FileSystemProvider extends BasePageProvider {
   }
 
   /**
+   * Read the literal raw file content for a page — frontmatter YAML + body
+   * markdown together, exactly as it appears on disk. Used by the admin
+   * "Edit raw" UI (#689) to recover pages whose frontmatter is corrupted
+   * in ways that the normal getPage() path sanitises or normalises away.
+   * Returns null when the page is unknown (no page-index entry).
+   */
+  async getRawFile(identifier: string): Promise<{ filePath: string; content: string } | null> {
+    const info = this.resolvePageInfo(identifier);
+    if (!info) return null;
+    try {
+      const content = await fs.readFile(info.filePath, this.encoding);
+      return { filePath: info.filePath, content };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`[FileSystemProvider] Failed to read raw file: ${identifier}`, { error: errorMessage });
+      return null;
+    }
+  }
+
+  /**
    * Retrieves the raw markdown content of a page (without frontmatter).
    * @param {string} identifier - Page UUID or title
    * @returns {Promise<string>} The raw markdown content without frontmatter

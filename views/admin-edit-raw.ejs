@@ -1,0 +1,52 @@
+<%- include('header', { pageName: pageName }) %>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <h1><i class="fas fa-file-code"></i> Edit raw: <%= pageName %></h1>
+
+            <div class="alert alert-warning d-flex align-items-start mb-3" role="alert">
+                <i class="fas fa-exclamation-triangle me-2 mt-1 flex-shrink-0"></i>
+                <div>
+                    <strong>Admin override.</strong> Saving here bypasses ValidationManager and conflict-checks — the textarea bytes are the source of truth, parsed by gray-matter then handed to the provider's save path. The page's <code>editor</code> / <code>lastModifiedBy</code> fields are <em>not</em> updated to your identity (audit log captures who did what). Versioning, indexing, and cache invalidation still fire normally. Use when the normal <a href="/edit/<%= encodeURIComponent(pageName) %>" class="alert-link">/edit/<%= pageName %></a> form can't reach a broken frontmatter field.
+                </div>
+            </div>
+
+            <div class="mb-2 small text-muted">
+                Editing: <code><%= filePath %></code>
+            </div>
+
+            <% if (typeof errorMessage !== 'undefined' && errorMessage) { %>
+            <div class="alert alert-danger d-flex align-items-start mb-3" role="alert">
+                <i class="fas fa-times-circle me-2 mt-1 flex-shrink-0"></i>
+                <div>
+                    <strong>Save failed.</strong> <%= errorMessage %>
+                </div>
+            </div>
+            <% } %>
+
+            <form method="POST" action="/admin/edit-raw/<%= encodeURIComponent(pageName) %>">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <div class="mb-3">
+                    <textarea name="rawContent" id="rawContent"
+                              class="form-control"
+                              style="font-family: ui-monospace, SFMono-Regular, 'Cascadia Mono', Menlo, Consolas, monospace; font-size: 13px;"
+                              rows="32"
+                              spellcheck="false"
+                              wrap="off"
+                              required><%= rawContent %></textarea>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-warning">
+                        <i class="fas fa-save"></i> Save (admin override)
+                    </button>
+                    <a href="/view/<%= encodeURIComponent(pageName) %>" class="btn btn-outline-secondary">
+                        <i class="fas fa-times"></i> Cancel
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<%- include('footer') %>

@@ -534,6 +534,42 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * Read the literal raw file content for a page — frontmatter YAML + body
+   * markdown together, exactly as it appears on disk. Backs the admin
+   * "Edit raw" UI (#689); intended for recovery of pages whose frontmatter
+   * the normal getPage() path sanitises or normalises away. Returns null
+   * when the page is unknown or the provider doesn't support raw reads.
+   */
+  async getRawPageContent(identifier: string): Promise<{ filePath: string; content: string } | null> {
+    const provider = this.provider as PageProvider & {
+      getRawFile?: (id: string) => Promise<{ filePath: string; content: string } | null>;
+    } | null;
+    if (!provider?.getRawFile) return null;
+    return provider.getRawFile(identifier);
+  }
+
+  /**
+   * Admin-override save (#689): parse the raw file content (frontmatter +
+   * body) with gray-matter and persist via provider.savePage, bypassing
+   * ValidationManager.sanitizeMetadata and checkConflicts entirely. Used
+   * by the admin "Edit raw" UI to fix pages where those gates would block
+   * the very edit being attempted (corrupted YAML, duplicate-slug repairs,
+   * etc.). The admin's identity does NOT propagate to the `editor` /
+   * `lastModifiedBy` fields — that's audit-log territory (recorded by the
+   * route handler, not here). The textarea is the source of truth.
+   *
+   * Versioning, indexing, and cache invalidation still fire via
+   * provider.savePage. Throws if the textarea content isn't parseable YAML.
+   */
+  async saveRawPageWithAdminOverride(pageName: string, rawFileContent: string): Promise<void> {
+    if (!this.provider) throw new Error('PageManager: Provider not initialized');
+    const parsed = matter(rawFileContent);
+    const metadata = parsed.data as Partial<PageFrontmatter>;
+    const content = parsed.content;
+    return this.provider.savePage(pageName, content, metadata);
+  }
+
+  /**
    * Save page content and metadata using WikiContext
    *
    * Creates a new page or updates an existing one using WikiContext as the

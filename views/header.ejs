@@ -282,6 +282,11 @@
                                     <li><a class="dropdown-item" href="/view/<%= encodeURIComponent(pageName) %>?view=reader">
                                         <i class="fas fa-book-reader"></i> Show Reader View
                                     </a></li>
+                                    <% if (typeof currentUser !== 'undefined' && currentUser && currentUser.roles && currentUser.roles.includes('admin')) { %>
+                                    <li><a class="dropdown-item text-warning" href="/admin/edit-raw/<%= encodeURIComponent(pageName) %>" title="Edit raw page file (frontmatter + body). Admin override — bypasses validation. (#689)">
+                                        <i class="fas fa-file-code"></i> Edit raw (admin)
+                                    </a></li>
+                                    <% } %>
                                 <% } %>
                                 <% if (typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated) {
                                     // #785: Any URL is pinnable, not just wiki pages. For wiki pages
@@ -375,6 +380,11 @@
                 <% if (_hasPage && typeof canEdit !== 'undefined' && canEdit) { %>
                 <a class="nav-link py-2" href="/edit/<%= encodeURIComponent(pageName) %>">
                     <i class="fas fa-edit me-2"></i> Edit Page
+                </a>
+                <% } %>
+                <% if (_hasPage && _authed && currentUser.roles && currentUser.roles.includes('admin')) { %>
+                <a class="nav-link py-2 text-warning" href="/admin/edit-raw/<%= encodeURIComponent(pageName) %>">
+                    <i class="fas fa-file-code me-2"></i> Edit raw (admin)
                 </a>
                 <% } %>
                 <% if (_authed && _pinUrl) { %>

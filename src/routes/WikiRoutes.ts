@@ -3319,6 +3319,118 @@ ${panes}
   }
 
   /**
+   * #689 — admin-only raw page editor (GET). Renders the entire on-disk
+   * page file (frontmatter YAML + body markdown) in a single textarea so an
+   * admin can repair pages whose frontmatter is corrupted in ways the
+   * normal /edit/:page form cannot reach. Bypasses ValidationManager on
+   * save (handled by the POST counterpart + PageManager.saveRawPageWithAdminOverride).
+   */
+  async adminEditRaw(req: Request, res: Response): Promise<void> {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!wikiContext.userContext?.isAuthenticated || !wikiContext.hasRole('admin')) {
+        await this.renderError(req, res, 403, 'Forbidden', 'Admin role required to edit raw page content.');
+        return;
+      }
+      const pageName = decodeURIComponent(req.params.page);
+      const pageManager = this.engine.getManager('PageManager') as {
+        getRawPageContent?: (id: string) => Promise<{ filePath: string; content: string } | null>;
+      } | null;
+      const raw = pageManager?.getRawPageContent ? await pageManager.getRawPageContent(pageName) : null;
+      if (!raw) {
+        await this.renderError(req, res, 404, 'Page Not Found', `No page named '${pageName}' on this instance.`);
+        return;
+      }
+      const templateData = await this.getCommonTemplateData(req);
+      res.render('admin-edit-raw', {
+        ...templateData,
+        pageName,
+        filePath: raw.filePath,
+        rawContent: raw.content,
+        errorMessage: null,
+        csrfToken: req.session?.csrfToken ?? ''
+      });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error('adminEditRaw failed:', err);
+      await this.renderError(req, res, 500, 'Error', `Failed to load raw editor: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * #689 — admin-only raw page editor (POST). Persists the textarea bytes
+   * via PageManager.saveRawPageWithAdminOverride (which skips validation
+   * and conflict-check but preserves versioning, indexing, and cache
+   * invalidation). The admin's identity is NOT written to the `editor`
+   * field — captured in the audit log instead.
+   */
+  async adminSaveRaw(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    const pageName = decodeURIComponent(req.params.page);
+    const rawContent = typeof req.body?.rawContent === 'string' ? req.body.rawContent : '';
+    try {
+      if (!wikiContext.userContext?.isAuthenticated || !wikiContext.hasRole('admin')) {
+        await this.renderError(req, res, 403, 'Forbidden', 'Admin role required to edit raw page content.');
+        return;
+      }
+      const pageManager = this.engine.getManager('PageManager') as {
+        saveRawPageWithAdminOverride?: (name: string, raw: string) => Promise<void>;
+        getRawPageContent?: (id: string) => Promise<{ filePath: string; content: string } | null>;
+      } | null;
+      if (!pageManager?.saveRawPageWithAdminOverride) {
+        await this.renderError(req, res, 500, 'Unavailable', 'PageManager does not support raw save on this deployment.');
+        return;
+      }
+      await pageManager.saveRawPageWithAdminOverride(pageName, rawContent);
+
+      // Audit log — best-effort; don't fail the save if audit is down.
+      try {
+        const auditManager = this.engine.getManager('AuditManager') as {
+          logAuditEvent?: (event: Record<string, unknown>) => Promise<string>;
+        } | null;
+        const rawAfter = pageManager.getRawPageContent ? await pageManager.getRawPageContent(pageName) : null;
+        if (auditManager?.logAuditEvent) {
+          await auditManager.logAuditEvent({
+            eventType: 'admin.page.raw-edit',
+            user: wikiContext.userContext.username ?? 'unknown',
+            ipAddress: req.ip,
+            action: 'admin-raw-edit',
+            result: 'success',
+            severity: 'medium',
+            metadata: {
+              pageName,
+              filePath: rawAfter?.filePath ?? null,
+              bytes: rawContent.length,
+              adminOverride: true
+            }
+          });
+        }
+      } catch (auditErr) {
+        logger.warn('Audit log failed for admin-raw-edit:', auditErr);
+      }
+      logger.info(`[AUDIT] admin ${wikiContext.userContext.username ?? 'unknown'} performed raw edit on '${pageName}' (${rawContent.length} bytes)`);
+
+      res.redirect(`/view/${encodeURIComponent(pageName)}`);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.warn(`adminSaveRaw('${pageName}') failed: ${errorMessage}`);
+      const pageManager = this.engine.getManager('PageManager') as {
+        getRawPageContent?: (id: string) => Promise<{ filePath: string; content: string } | null>;
+      } | null;
+      const raw = pageManager?.getRawPageContent ? await pageManager.getRawPageContent(pageName) : null;
+      const templateData = await this.getCommonTemplateData(req);
+      res.status(400).render('admin-edit-raw', {
+        ...templateData,
+        pageName,
+        filePath: raw?.filePath ?? '(unknown)',
+        rawContent,
+        errorMessage,
+        csrfToken: req.session?.csrfToken ?? ''
+      });
+    }
+  }
+
+  /**
    * Delete a page
    */
   async deletePage(req: Request, res: Response) {
@@ -10059,6 +10171,8 @@ ${panes}
     });
     app.get('/edit/:page', (req: Request, res: Response) => this.editPage(req, res));
     app.post('/save/:page', (req: Request, res: Response) => this.savePage(req, res));
+    app.get('/admin/edit-raw/:page', (req: Request, res: Response) => void this.adminEditRaw(req, res));
+    app.post('/admin/edit-raw/:page', (req: Request, res: Response) => void this.adminSaveRaw(req, res));
     app.get('/create', (req: Request, res: Response) => this.createPage(req, res));
     app.post('/create', (req: Request, res: Response) => this.createPageFromTemplate(req, res));
     app.post('/delete/:page', (req: Request, res: Response) => this.deletePage(req, res));
