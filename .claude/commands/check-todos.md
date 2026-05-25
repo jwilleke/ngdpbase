@@ -1,6 +1,6 @@
 # Check TODOs Command
 
-Review current `TODO.md` and priorities `AGENTS.md` file, then survey live state in GitHub.
+Review current priorities `AGENTS.md` file, then survey live state in GitHub.
 
 This command helps focus on high-priority and current work by showing:
 
@@ -98,3 +98,5 @@ Examples of what does NOT qualify:
 - New auth providers, search providers, or storage providers (architectural).
 - New rendering pipelines or content converters.
 - "Generic" / "framework" / "scaffolder" issues (always more involved than they look).
+
+Update the TODO.md file.
