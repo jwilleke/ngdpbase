@@ -206,35 +206,34 @@
     <div class="row">
         <div class="col-12 mb-4">
             <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">
-                        <i class="fas fa-puzzle-piece"></i> Add-ons
-                    </h5>
-                    <a href="/admin/addons" class="btn btn-sm btn-outline-primary">
-                        <i class="fas fa-puzzle-piece"></i> Manage Add-ons
-                    </a>
-                </div>
-                <details open>
-                    <summary class="px-3 py-1 small text-muted border-top" style="cursor: pointer;">Toggle details</summary>
-                    <% if (addonsSummary && addonsSummary.total > 0) { %>
-                    <div class="card-body">
-                        <div class="d-flex gap-3">
-                            <span><i class="fas fa-circle text-success me-1"></i><strong><%= addonsSummary.loaded %></strong> loaded</span>
-                            <span><i class="fas fa-circle text-danger me-1"></i><strong><%= addonsSummary.errored %></strong> errored</span>
-                            <span><i class="fas fa-circle text-secondary me-1"></i><strong><%= addonsSummary.disabled %></strong> disabled</span>
+                <div class="card-body py-2">
+                    <details>
+                        <summary class="d-flex align-items-center gap-2" style="cursor: pointer;">
+                            <i class="fas fa-puzzle-piece"></i>
+                            <strong>Add-ons</strong>
+                            <span class="badge bg-secondary ms-auto"><%= addonsSummary ? addonsSummary.total : 0 %></span>
+                        </summary>
+                        <div class="mt-3">
+                            <% if (addonsSummary && addonsSummary.total > 0) { %>
+                                <div class="d-flex gap-3 mb-2">
+                                    <span><i class="fas fa-circle text-success me-1"></i><strong><%= addonsSummary.loaded %></strong> loaded</span>
+                                    <span><i class="fas fa-circle text-danger me-1"></i><strong><%= addonsSummary.errored %></strong> errored</span>
+                                    <span><i class="fas fa-circle text-secondary me-1"></i><strong><%= addonsSummary.disabled %></strong> disabled</span>
+                                </div>
+                                <% if (addonsSummary.errored > 0) { %>
+                                    <div class="mb-2">
+                                        <small class="text-danger"><i class="fas fa-exclamation-triangle"></i> <%= addonsSummary.errored %> add-on(s) have errors</small>
+                                    </div>
+                                <% } %>
+                            <% } else { %>
+                                <p class="text-muted mb-2">No add-ons loaded.</p>
+                            <% } %>
+                            <a href="/admin/addons" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-puzzle-piece"></i> Manage Add-ons
+                            </a>
                         </div>
-                        <% if (addonsSummary.errored > 0) { %>
-                            <div class="mt-2">
-                                <small class="text-danger"><i class="fas fa-exclamation-triangle"></i> <%= addonsSummary.errored %> add-on(s) have errors — <a href="/admin/addons">view details</a></small>
-                            </div>
-                        <% } %>
-                    </div>
-                    <% } else { %>
-                    <div class="card-body">
-                        <p class="text-muted mb-0">No add-ons loaded.</p>
-                    </div>
-                    <% } %>
-                </details>
+                    </details>
+                </div>
             </div>
         </div>
     </div>
@@ -389,23 +388,23 @@
         <% if (capabilities && capabilities.metrics) { %>
         <div class="col-lg-6 mb-4">
             <div class="card h-100">
-                <div class="card-header">
-                    <h5 class="mb-0">
-                        <i class="fas fa-chart-line"></i> Metrics
-                        <a href="/view/Using Metrics" class="ms-1 text-muted" title="Documentation" target="_blank"><i class="fas fa-question-circle fa-sm"></i></a>
-                    </h5>
-                </div>
-                <details open>
-                    <summary class="px-3 py-1 small text-muted border-top" style="cursor: pointer;">Toggle details</summary>
-                    <div class="card-body">
-                        <p class="text-muted small mb-2">Prometheus telemetry is active. Raw metrics are available at <a href="/metrics" target="_blank"><code>/metrics</code></a>. See <a href="/view/Using Metrics" target="_blank">Using Metrics</a> for configuration and query reference.</p>
-                        <div class="d-flex flex-wrap gap-2">
-                            <a href="/metrics" target="_blank" class="btn btn-outline-secondary btn-sm">
-                                <i class="fas fa-terminal"></i> Raw Prometheus Data
-                            </a>
+                <div class="card-body py-2">
+                    <details>
+                        <summary class="d-flex align-items-center gap-2" style="cursor: pointer;">
+                            <i class="fas fa-chart-line"></i>
+                            <strong>Metrics</strong>
+                            <span class="badge bg-success ms-auto">active</span>
+                        </summary>
+                        <div class="mt-3">
+                            <p class="text-muted small mb-2">Prometheus telemetry is active. Raw metrics are available at <a href="/metrics" target="_blank"><code>/metrics</code></a>. See <a href="/view/Using Metrics" target="_blank">Using Metrics</a> for configuration and query reference.</p>
+                            <div class="d-flex flex-wrap gap-2">
+                                <a href="/metrics" target="_blank" class="btn btn-outline-secondary btn-sm">
+                                    <i class="fas fa-terminal"></i> Raw Prometheus Data
+                                </a>
+                            </div>
                         </div>
-                    </div>
-                </details>
+                    </details>
+                </div>
             </div>
         </div>
         <% } %>
@@ -416,24 +415,27 @@
     <div class="row">
         <div class="col-12">
             <div class="card mb-4">
-                <div class="card-header">
-                    <h5><i class="fas fa-history"></i> Recent Activity</h5>
+                <div class="card-body py-2">
+                    <details>
+                        <summary class="d-flex align-items-center gap-2" style="cursor: pointer;">
+                            <i class="fas fa-history"></i>
+                            <strong>Recent Activity</strong>
+                            <span class="badge bg-secondary ms-auto"><%= recentActivity ? recentActivity.length : 0 %></span>
+                        </summary>
+                        <div class="mt-3">
+                            <% if (recentActivity && recentActivity.length > 0) { %>
+                                <% recentActivity.slice(0, 5).forEach(activity => { %>
+                                    <div class="mb-2">
+                                        <small class="text-muted"><%= activity.timestamp %></small><br>
+                                        <%= activity.description %>
+                                    </div>
+                                <% }); %>
+                            <% } else { %>
+                                <p class="text-muted">No recent activity to display.</p>
+                            <% } %>
+                        </div>
+                    </details>
                 </div>
-                <details open>
-                    <summary class="px-3 py-1 small text-muted border-top" style="cursor: pointer;">Toggle details</summary>
-                    <div class="card-body">
-                        <% if (recentActivity && recentActivity.length > 0) { %>
-                            <% recentActivity.slice(0, 5).forEach(activity => { %>
-                                <div class="mb-2">
-                                    <small class="text-muted"><%= activity.timestamp %></small><br>
-                                    <%= activity.description %>
-                                </div>
-                            <% }); %>
-                        <% } else { %>
-                            <p class="text-muted">No recent activity to display.</p>
-                        <% } %>
-                    </div>
-                </details>
             </div>
         </div>
     </div>
@@ -730,71 +732,67 @@
     <div class="row">
         <div class="col-12">
             <div class="card mb-4">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5><i class="fas fa-bell"></i> System Notifications</h5>
-                    <span class="badge bg-primary"><%= notifications ? notifications.length : 0 %></span>
-                </div>
-                <details open>
-                    <summary class="px-3 py-1 small text-muted border-top" style="cursor: pointer;">Toggle details</summary>
-                    <div class="card-body">
-                        <% if (notifications && notifications.length > 0) { %>
-                            <% notifications.slice(0, 5).forEach(notification => { %>
-                                <div class="alert alert-<%= notification.level === 'warning' ? 'warning' : notification.level === 'error' ? 'danger' : notification.level === 'success' ? 'success' : 'info' %> border-0 mb-3">
-                                    <div class="d-flex justify-content-between align-items-start">
-                                        <div class="flex-grow-1">
-                                            <h6 class="alert-heading mb-1"><%= notification.title %></h6>
-                                            <p class="mb-1"><%= notification.message %></p>
-                                            <small class="text-muted">
-                                                <i class="fas fa-clock"></i> <%= new Date(notification.createdAt).toLocaleString() %>
-                                                <% if (notification.type) { %>
-                                                    <span class="badge bg-secondary ms-2"><%= notification.type %></span>
-                                                <% } %>
-                                            </small>
-                                        </div>
-                                        <div class="ms-3">
-                                            <form method="POST" action="/admin/notifications/<%= notification.id %>/dismiss" class="d-inline">
-                                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="Dismiss notification">
-                                                    <i class="fas fa-times"></i>
-                                                </button>
-                                            </form>
+                <div class="card-body py-2">
+                    <details>
+                        <summary class="d-flex align-items-center gap-2" style="cursor: pointer;">
+                            <i class="fas fa-bell"></i>
+                            <strong>System Notifications</strong>
+                            <span class="badge bg-primary ms-auto"><%= notifications ? notifications.length : 0 %></span>
+                        </summary>
+                        <div class="mt-3">
+                            <% if (notifications && notifications.length > 0) { %>
+                                <% notifications.slice(0, 5).forEach(notification => { %>
+                                    <div class="alert alert-<%= notification.level === 'warning' ? 'warning' : notification.level === 'error' ? 'danger' : notification.level === 'success' ? 'success' : 'info' %> border-0 mb-3">
+                                        <div class="d-flex justify-content-between align-items-start">
+                                            <div class="flex-grow-1">
+                                                <h6 class="alert-heading mb-1"><%= notification.title %></h6>
+                                                <p class="mb-1"><%= notification.message %></p>
+                                                <small class="text-muted">
+                                                    <i class="fas fa-clock"></i> <%= new Date(notification.createdAt).toLocaleString() %>
+                                                    <% if (notification.type) { %>
+                                                        <span class="badge bg-secondary ms-2"><%= notification.type %></span>
+                                                    <% } %>
+                                                </small>
+                                            </div>
+                                            <div class="ms-3">
+                                                <form method="POST" action="/admin/notifications/<%= notification.id %>/dismiss" class="d-inline">
+                                                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                                    <button type="submit" class="btn btn-sm btn-outline-secondary" title="Dismiss notification">
+                                                        <i class="fas fa-times"></i>
+                                                    </button>
+                                                </form>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            <% }); %>
+                                <% }); %>
 
-                            <% if (totalNotificationCount > 5) { %>
-                                <div class="text-center">
-                                    <a href="/admin/notifications" class="btn btn-outline-primary btn-sm">
-                                        <i class="fas fa-list"></i> View All Notifications (<%= totalNotificationCount %>)
-                                    </a>
+                                <% if (totalNotificationCount > 5) { %>
+                                    <div class="text-center mb-3">
+                                        <a href="/admin/notifications" class="btn btn-outline-primary btn-sm">
+                                            <i class="fas fa-list"></i> View All Notifications (<%= totalNotificationCount %>)
+                                        </a>
+                                    </div>
+                                <% } %>
+                            <% } else { %>
+                                <div class="text-center py-4">
+                                    <i class="fas fa-bell-slash fa-3x text-muted mb-3"></i>
+                                    <p class="text-muted">No system notifications at this time.</p>
+                                    <small class="text-muted">Notifications will appear here when system events occur.</small>
                                 </div>
                             <% } %>
-                        <% } else { %>
-                            <div class="text-center py-4">
-                                <i class="fas fa-bell-slash fa-3x text-muted mb-3"></i>
-                                <p class="text-muted">No system notifications at this time.</p>
-                                <small class="text-muted">Notifications will appear here when system events occur.</small>
+                            <div class="border-top pt-3 mt-3 d-flex justify-content-between">
+                                <form method="POST" action="/admin/notifications/clear-all" class="d-inline">
+                                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                    <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Clear all notifications? This action cannot be undone.')">
+                                        <i class="fas fa-trash"></i> Clear All
+                                    </button>
+                                </form>
+                                <a href="/admin/notifications" class="btn btn-outline-primary btn-sm">
+                                    <i class="fas fa-cog"></i> Manage Notifications
+                                </a>
                             </div>
-                        <% } %>
-                    </div>
-                </details>
-                <div class="card-footer">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <form method="POST" action="/admin/notifications/clear-all" class="d-inline">
-                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                                <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Clear all notifications? This action cannot be undone.')">
-                                    <i class="fas fa-trash"></i> Clear All
-                                </button>
-                            </form>
                         </div>
-                        <div class="col-md-6 text-end">
-                            <a href="/admin/notifications" class="btn btn-outline-primary btn-sm">
-                                <i class="fas fa-cog"></i> Manage Notifications
-                            </a>
-                        </div>
-                    </div>
+                    </details>
                 </div>
             </div>
         </div>
