@@ -2,6 +2,25 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-25-02
+
+- Agent: Claude Opus 4.7
+- Subject: Fix #788 to actually match Session Manager — closed-by-default with heading as click target + far-right count badge. First cut shipped default-open with a separate "Toggle details" hint line above the kept card-header; operator said "On #788, are NOT like Session Manager. Closed by default and click 'Heading' to open." Plus "Showing number of entries on far right would be helpful."
+- Current Issue: #788 (in review — UX corrected)
+- Tests: jimstest E2E GREEN — 80/80, no flakes. Build + unit tests skipped (EJS-only change; would be no-ops for both).
+- Semver: skip (UX fix on already-in-review work; no new public surface).
+- Work Done:
+  - Dropped `card-header` on all four cards (Add-ons / Metrics / Recent Activity / System Notifications). Icon + bold title now lives inside `<summary>`.
+  - Dropped the "Toggle details" hint line — summary IS the toggle (matches Session Manager exactly).
+  - Dropped the `open` attribute — cards start collapsed.
+  - Added far-right count badge per card via `ms-auto`: Add-ons → `addonsSummary.total` (bg-secondary), Metrics → "active" (bg-success; no natural count for Prometheus), Recent Activity → `recentActivity.length` (bg-secondary), System Notifications → `notifications.length` (bg-primary).
+  - Moved Add-ons "Manage Add-ons" button into the body (was in the dropped card-header).
+  - Moved System Notifications card-footer (Clear All + Manage Notifications buttons) into the body on a `border-top` row at the bottom of the expanded content. Same primitive as Session Manager's in-body action row.
+  - Verified rendered HTML on jimstest: 0 `<details open>`, 5 `<details>`, 4 `ms-auto` badges in summaries, no "Toggle details" strings, all 5 cards visible (4 corrected + Session Manager).
+- Commits: f81430e3 (`fix(#788): closed-by-default with heading as click target + far-right count badge`)
+- Files Modified:
+  - views/admin-dashboard.ejs
+
 ## 2026-05-25-01
 
 - Agent: Claude Opus 4.7
