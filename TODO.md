@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-25T07:55:00.000Z'
+lastModified: '2026-05-25T08:10:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -38,7 +38,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 Items carrying the `in review` label — work is shipped/merged; operator verification is the only thing left before close. **Clear this list before starting new feature work.**
 
-- _(none)_
+- **#780** — Admin dashboard "Catalog Sources" card surfacing `CatalogManager.getSourceInfo()` + `checkSchemaVersions()` at runtime. Shipped in commit `8480fe3d`. Verify at <http://localhost:3000/admin> — locate the **Catalog Sources** card between Add-ons and Page Management; click to expand → 3-row table (pages → Article, attachments → DigitalDocument, media → Image/Video/Audio).
 
 ## Open BUGS (ngdpbase, by issue #)
 
@@ -70,7 +70,6 @@ Filed and scoped, awaiting prioritization or implementation cycles.
 |---|---|---|
 | **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24 from #789 debug). Retire the journal addon's parallel implementations of editor/save/index/templates/tags/mood/date/storage-routing in favor of thin UI specializations over generic page primitives. Two sub-issues filed: **#791** (config-driven JSON-LD `@type` via new `ngdpbase.schema-types` block — design finalized 2026-05-25, doc trail in `docs/schemas.md`) and **#792** (SchemaGenerator reconciliation — blocker for #791). Foundation work that also unblocks #786. | Medium — implementation order: #792 Phase 1 → #791 → register `journal` category → ProfilePage `@graph` for `user-profile`. |
 | #786 | Auto-journal — digester consuming CatalogManager records into journal entries | Gated by #685 + EPIC #790. Consumer-pattern; no source-specific code |
-| #780 | Runtime catalog-source registry UI — admin dashboard surface for `CatalogManager.getSourceInfo()` + `checkSchemaVersions()`. **This IS the runtime registry visibility piece** (no separate issue exists or is planned). | Medium — filed 2026-05-23 to close the runtime-visibility gap surfaced by the #685 FeedManager brainstorm: addon-supplied producers (per-feed sources, etc.) live only in the runtime registry and an operator currently has no way to see them without reading logs. Bumps when #685 starts shipping per-feed sources. |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images | Low — adds sharp/libvips; do when a real driver appears |
 | #707 | Typed footnote + knowledge-graph reference index | Low — **depends on #706**; speculative |
 | #706 | `knowledge-role` frontmatter field — opt-in page role | Low — sharpened to field+enum+badge; **foundational, blocks #707** |
