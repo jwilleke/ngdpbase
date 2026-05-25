@@ -1,7 +1,7 @@
 ---
 title: Architecture Threads (in-flight, cross-cutting)
 status: living document
-lastModified: 2026-05-25T11:00:00Z
+lastModified: 2026-05-25T11:30:00Z
 ---
 
 # Architecture Threads
@@ -171,13 +171,22 @@ Update this doc when: a thread crosses a milestone, a new sub-issue is filed, an
 | #792 | Reconcile SchemaGenerator with pageToArticle | CLOSED 2026-05-25 | Sub-issue — dead JSON-LD render code deleted; was blocking #791 |
 | #786 | Auto-journal digester | OPEN, deferred | Downstream consumer; gated on this EPIC + #685 |
 
-**Pending sub-issues (in EPIC body, not yet filed):**
+**Sub-issues filed 2026-05-25:**
 
-- Register `journal` as a core `system-category` in `app-default-config.json`
-- Retire `addons/journal/managers/JournalDataManager` sidecar `journal-index.json` (replace with `PageManager.listCreativeWorks` filtered to BlogPosting)
-- Merge `journal-editor.ejs` into `_basicEditor.ejs` + extension slot pattern
-- Merge `journal-view.ejs` into `_basicView.ejs` + extension slot pattern
+- [#793](https://github.com/jwilleke/ngdpbase/issues/793) — Register `journal` as a core `system-category` (smallest; lights up #791's JSON-LD mapping in prod)
+- [#794](https://github.com/jwilleke/ngdpbase/issues/794) — Refactor `views/edit.ejs` → `_basicEditor.ejs` partial with extension slots
+- [#795](https://github.com/jwilleke/ngdpbase/issues/795) — Sister refactor: `views/view.ejs` → `_basicView.ejs`
+
+**Pending sub-issues (in EPIC #790 body, not yet filed — file when scope sharpens):**
+
+- Wire journal-editor.ejs to extend `_basicEditor.ejs` (depends on #794)
+- Retire `addons/journal/managers/JournalDataManager` sidecar `journal-index.json` (replace with `page-index` queries filtered to `system-category: journal`)
+- Implement Shape 3 (metadata-merge on generic save) at `WikiRoutes.ts:3088`
 - Promote `journal-date` to generic page-level `datePublished` field
+- Replace `journal-tags` writes with `user-keywords` writes
+- Replace `JournalTemplateManager` with core `TemplateManager`
+- Replace `system-location: 'private'` writes with canonical `private: true`
+- Decide `mood` model (user-keyword vs registered-vocabulary)
 - ProfilePage `@graph` rendering for `user-profile` pages (filed separately — Person extracted from User record)
 
 **Dependency graph:**
@@ -187,9 +196,10 @@ EPIC #790 (Journal reconcile)
         │
         ├── #791 (@type per system-category, CLOSED 2026-05-25)
         ├── #792 (SchemaGenerator reconciliation, CLOSED 2026-05-25)
-        ├── (register journal as system-category)         ◄── NOT FILED
+        ├── #793 (register journal as system-category)    ◄── FILED 2026-05-25
+        ├── #794 (refactor edit.ejs → _basicEditor)       ◄── FILED 2026-05-25
+        ├── #795 (refactor view.ejs → _basicView)         ◄── FILED 2026-05-25
         ├── (retire JournalDataManager sidecar)           ◄── NOT FILED
-        ├── (merge journal editor/view into _basic*)      ◄── NOT FILED
         ├── (promote journal-date → datePublished)        ◄── NOT FILED
         └── (ProfilePage @graph for user-profile)         ◄── NOT FILED
         
