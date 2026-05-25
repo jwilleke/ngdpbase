@@ -2,6 +2,30 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-25-03
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped #689 Slice C — admin-only raw page editor that bypasses ValidationManager (sanitize + conflict-check) while preserving versioning, indexing, cache invalidation; admin identity recorded in audit log only (NOT propagated to `editor`/`lastModifiedBy` per operator directive).
+- Current Issue: #689 (in review)
+- Tests: jimstest GREEN — 6069 unit + 80 E2E. Smoke test: admin GET /admin/edit-raw/Main → 200 with file path display + 88KB textarea; anon GET → 403.
+- Semver: skip (feature work but #689 not closed yet — gather a few of these into the next minor).
+- Work Done:
+  - Design discussion narrowed three sub-needs into Slices A (find by UUID), B (read-only show frontmatter), C (admin edit raw); operator picked C only and added two constraints: (1) entry in page More dropdown for admin-roles only, (2) "does not update editor on save — noted only in audit."
+  - Provider surface: new `FileSystemProvider.getRawFile(identifier)` reads the literal on-disk file via `fs.readFile` on resolvePageInfo's filePath, bypassing the gray-matter parse so corrupted frontmatter still loads for repair. Inherited by VersioningFileProvider.
+  - Manager surface: new `PageManager.getRawPageContent` (delegates to `provider.getRawFile`) and `PageManager.saveRawPageWithAdminOverride(pageName, rawFileContent)` which parses with gray-matter then hands metadata + content to `provider.savePage` — skipping `ValidationManager.sanitizeMetadata` + `checkConflicts` while keeping versioning/indexing/cache via the provider's normal hooks.
+  - Routes: GET + POST `/admin/edit-raw/:page` registered alongside the existing `/edit/:page` + `/save/:page` block. Admin-role check + WikiContext pattern matched against the clear-anonymous-sessions handler.
+  - View: new `views/admin-edit-raw.ejs` — single monospace textarea (32 rows, wrap=off, spellcheck=false), warning banner explaining what bypasses what, absolute file path displayed above the textarea, Save (admin override) + Cancel buttons. YAML parse failure renders 400 with error banner; textarea preserves typed bytes.
+  - Menu entries: `views/header.ejs` desktop More dropdown (after "Show Reader View", admin-gated, `fa-file-code` icon, `text-warning` styling) and mobile PAGE ACTIONS section (after "Edit Page" nav-link, same gating + icon).
+  - Audit log: `AuditManager.logAuditEvent({ eventType: 'admin.page.raw-edit', user, ipAddress, action, severity: 'medium', metadata: { pageName, filePath, bytes, adminOverride: true } })` posts on successful save. Best-effort — audit failure does not fail the save (matches clear-anonymous pattern).
+  - Out of scope (filed as sub-needs in #689 body, NOT shipped this slice): Slice A (`/find/uuid/:uuid` route), Slice B (read-only frontmatter view), E2E test for the round-trip (smoke-tested via curl; CSRF token harvesting needed for POST half).
+- Commits: 0950d37c (`feat(#689): admin-only raw page editor — bypass validation, preserve versioning + indexing + cache`)
+- Files Modified:
+  - src/managers/PageManager.ts
+  - src/providers/FileSystemProvider.ts
+  - src/routes/WikiRoutes.ts
+  - views/admin-edit-raw.ejs (NEW)
+  - views/header.ejs
+
 ## 2026-05-25-02
 
 - Agent: Claude Opus 4.7
