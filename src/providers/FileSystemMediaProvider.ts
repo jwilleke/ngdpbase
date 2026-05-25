@@ -17,6 +17,7 @@ import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs-extra';
 import { transformImage, parseSize } from '../utils/imageTransform.js';
+import { extractVideoFrame } from '../utils/videoFrame.js';
 import { ExifTool } from 'exiftool-vendored';
 import { minimatch } from 'minimatch';
 import logger from '../utils/logger.js';
@@ -412,10 +413,14 @@ class FileSystemMediaProvider extends BaseMediaProvider {
   }
 
   /**
-   * Return a JPEG thumbnail buffer for the given item and size.
+   * Return a thumbnail buffer (webp) for the given item and size.
    *
-   * Thumbnails are cached on disk in config.thumbnailDir. Video items
-   * return null (thumbnail generation requires ffmpeg, not yet implemented).
+   * Thumbnails are cached on disk in config.thumbnailDir. Image items run
+   * through Sharp directly. Video items (#722 Slice 1) have a poster frame
+   * extracted via ffmpeg-static at the 1-second mark, then fed through the
+   * same Sharp pipeline so the on-disk cache layout and `/media/thumb/:id`
+   * endpoint are unchanged. Other item types (audio, docs) return null and
+   * fall back to the generic icon in the asset-picker / media library.
    *
    * @param id   - Item identifier.
    * @param size - Size string in the form "WxH" (e.g. "300x300").
@@ -424,11 +429,14 @@ class FileSystemMediaProvider extends BaseMediaProvider {
     const item = this.index[id];
     if (!item) return null;
 
-    // Video thumbnails not supported yet
-    if (!item.mimeType.startsWith('image/')) return null;
+    const isImage = item.mimeType.startsWith('image/');
+    const isVideo = item.mimeType.startsWith('video/');
+    if (!isImage && !isVideo) return null;
 
     // Include orientation, fit mode, and format in cache key so that changes
-    // to any of these automatically bypass stale cached thumbnails.
+    // to any of these automatically bypass stale cached thumbnails. Videos
+    // share the same key shape (orientation defaults to 1 — videos don't
+    // carry EXIF Orientation today; revisit if a real source does).
     const orientation = typeof item.metadata?.orientation === 'number' ? item.metadata.orientation : 1;
     const thumbFormat = 'webp';
     const thumbPath = path.join(this.config.thumbnailDir, `${id}-${size}-inside-o${orientation}-${thumbFormat}.webp`);
@@ -442,7 +450,19 @@ class FileSystemMediaProvider extends BaseMediaProvider {
     if (!dims) return null;
 
     try {
-      const buffer = await transformImage(item.filePath, {
+      // For videos, extract a poster frame first; the JPEG buffer that comes
+      // back is structurally a still image and feeds into transformImage the
+      // same way image filePaths do. Hardcoded 1s timestamp per #722 Slice 1
+      // scope — configurable timestamp deferred to follow-up if needed.
+      let source: Buffer | string;
+      if (isVideo) {
+        const frame = await extractVideoFrame(item.filePath, 1);
+        if (!frame) return null;
+        source = frame;
+      } else {
+        source = item.filePath;
+      }
+      const buffer = await transformImage(source, {
         width: dims.width,
         height: dims.height,
         fit: 'inside',
