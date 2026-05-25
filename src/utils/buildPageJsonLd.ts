@@ -47,7 +47,18 @@ interface JsonLdPerson {
 /** Output shape — a subset of schema.org `Article` (no `articleBody` etc.). */
 export interface PageJsonLd {
   '@context': 'https://schema.org';
-  '@type': 'Article' | 'CreativeWork';
+  /**
+   * JSON-LD render @type. Default `'Article'` (matches the internal `Article`
+   * record); operator-configurable Article subtypes via the
+   * `ngdpbase.schema-types` config block (per #791). Includes the shipped-
+   * subtype set; operators may configure non-Article schema.org types per
+   * deployment but consumers should defensively treat `@type` as `string`
+   * when handling operator-overridden values.
+   */
+  '@type': 'Article' | 'BlogPosting' | 'TechArticle' | 'NewsArticle'
+    | 'ScholarlyArticle' | 'MedicalScholarlyArticle' | 'Report'
+    | 'SatiricalArticle' | 'APIReference' | 'SocialMediaPosting'
+    | 'DiscussionForumPosting' | 'AdvertiserContentArticle' | 'CreativeWork';
   '@id': string;
   identifier?: string;
   url: string;

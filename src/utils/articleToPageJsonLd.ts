@@ -40,11 +40,37 @@ import type { PageJsonLd } from './buildPageJsonLd.js';
  * into the JSON-LD-render shape `PageJsonLd` consumed by `view.ejs` and by
  * the `/view/<slug>` `Accept: application/ld+json` content-negotiation
  * branch. Pure function, no I/O.
+ *
+ * @param article          Internal Article record from `pageToArticle`.
+ * @param schemaTypeMap    Optional `system-category` → schema.org subtype
+ *                         map (typically resolved from
+ *                         `ngdpbase.schema-types` config per #791). When
+ *                         provided and the article's `ngdp:category` matches
+ *                         an entry, the output `@type` is overridden with
+ *                         the mapped value (e.g. `'BlogPosting'`); otherwise
+ *                         the internal `article['@type']` is passed through
+ *                         (always `'Article'` for pages today — the subtype
+ *                         override is "render-time-only" per #791 D1=A).
  */
-export function articleToPageJsonLd(article: Article): PageJsonLd {
+export function articleToPageJsonLd(
+  article: Article,
+  schemaTypeMap?: Record<string, string>
+): PageJsonLd {
+  // #791 — resolve the JSON-LD `@type` from the schema-types map when
+  // available. Empty / unmapped categories fall through to the internal
+  // article's @type. The lookup is permissive (accepts any string from
+  // config); the type system narrows to Article-family subtypes via the
+  // PageJsonLd['@type'] union, so non-Article overrides will type-error
+  // at consumer destructure — that's intentional discipline.
+  const internalCategory = article['ngdp:category'];
+  const mappedType = (schemaTypeMap && typeof internalCategory === 'string' && internalCategory)
+    ? schemaTypeMap[internalCategory]
+    : undefined;
+  const renderType = (mappedType || article['@type']) as PageJsonLd['@type'];
+
   const out: PageJsonLd = {
     '@context': 'https://schema.org',
-    '@type': article['@type'],
+    '@type': renderType,
     '@id': article['@id'],
     url: article.url,
     name: article.name,

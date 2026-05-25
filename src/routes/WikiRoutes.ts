@@ -2035,13 +2035,20 @@ ${panes}
           autoTaggedKeywords
         })
         : null;
+      // #791 — resolve the schema-types map once per render so the JSON-LD
+      // @type can be overridden per system-category (e.g. `documentation` →
+      // `TechArticle`). Resolved here rather than inside articleToPageJsonLd
+      // so the mapper stays a pure function. Empty / missing map → mapper
+      // falls through to article['@type'] (always 'Article' today).
+      const _configForSchema = this.engine.getManager('ConfigurationManager');
+      const schemaTypeMap = (_configForSchema?.getProperty?.('ngdpbase.schema-types', {}) ?? {}) as Record<string, string>;
       // Fallback path: if PageManager is unavailable (or hasn't loaded the
       // CatalogSource surface for any reason), still emit a JSON-LD block by
       // calling the wrapped mapper directly. Same code path either way after
       // #773's buildPageJsonLd compose refactor.
       const pageJsonLd = article
-        ? articleToPageJsonLd(article)
-        : articleToPageJsonLd({ '@id': '/view/' + pageName, '@type': 'Article', identifier: pageName, name: pageName, url: '/view/' + pageName });
+        ? articleToPageJsonLd(article, schemaTypeMap)
+        : articleToPageJsonLd({ '@id': '/view/' + pageName, '@type': 'Article', identifier: pageName, name: pageName, url: '/view/' + pageName }, schemaTypeMap);
       const pageJsonLdScript = stringifyJsonLdForScript(pageJsonLd);
 
       // Slice 6b of #760 (#766) — content-negotiation. When the client sends
