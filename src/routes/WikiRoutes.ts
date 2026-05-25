@@ -6178,6 +6178,28 @@ ${panes}
         // non-fatal — summary card just won't show counts
       }
 
+      // #780 — registered CatalogSources at runtime (Thread #1, CatalogManager unification).
+      // Pure read of in-memory Map; cheap to do per dashboard render.
+      let catalogSources: Array<{ sourceId: string; types: readonly string[]; currentSchemaVersion: number; onDiskSchemaVersion?: number; isStale?: boolean }> = [];
+      try {
+        const catalogManager = this.engine.getManager('CatalogManager') as {
+          getSourceInfo?: () => Array<{ sourceId: string; types: readonly string[]; currentSchemaVersion: number }>;
+          checkSchemaVersions?: () => Array<{ sourceId: string; currentSchemaVersion: number; onDiskSchemaVersion: number; isStale: boolean }>;
+        } | null;
+        if (catalogManager?.getSourceInfo) {
+          const sources = catalogManager.getSourceInfo();
+          const versionReport = catalogManager.checkSchemaVersions?.() ?? [];
+          const versionByID = new Map(versionReport.map(v => [v.sourceId, v]));
+          catalogSources = sources.map(s => ({
+            ...s,
+            onDiskSchemaVersion: versionByID.get(s.sourceId)?.onDiskSchemaVersion,
+            isStale: versionByID.get(s.sourceId)?.isStale ?? false
+          }));
+        }
+      } catch (catalogErr) {
+        logger.warn('[adminDashboard] CatalogManager not available for source listing:', catalogErr);
+      }
+
       const templateData = {
         ...commonData,
         title: 'Admin Dashboard',
@@ -6197,7 +6219,8 @@ ${panes}
         successMessage: req.query.success || null,
         errorMessage: req.query.error || null,
         addonsSummary,
-        addonCards
+        addonCards,
+        catalogSources
       };
 
       res.render('admin-dashboard', templateData);
