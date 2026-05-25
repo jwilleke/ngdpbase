@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-25T08:10:00.000Z'
+lastModified: '2026-05-25T08:15:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -38,7 +38,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 Items carrying the `in review` label — work is shipped/merged; operator verification is the only thing left before close. **Clear this list before starting new feature work.**
 
-- **#780** — Admin dashboard "Catalog Sources" card surfacing `CatalogManager.getSourceInfo()` + `checkSchemaVersions()` at runtime. Shipped in commit `8480fe3d`. Verify at <http://localhost:3000/admin> — locate the **Catalog Sources** card between Add-ons and Page Management; click to expand → 3-row table (pages → Article, attachments → DigitalDocument, media → Image/Video/Audio).
+- _(none)_
 
 ## Open BUGS (ngdpbase, by issue #)
 
