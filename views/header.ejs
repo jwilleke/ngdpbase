@@ -41,14 +41,7 @@
     <script src="/js/tableSort.js"></script>
     <script src="/js/tableFilter.js"></script>
 
-    <!-- Schema.org JSON-LD structured data -->
-    <% if (typeof pageSchema !== 'undefined' && pageSchema) { %>
-        <%- pageSchema %>
-    <% } %>
-    
-    <% if (typeof siteSchema !== 'undefined' && siteSchema) { %>
-        <%- siteSchema %>
-    <% } %>
+    <%# JSON-LD structured data emission happens inside views/view.ejs via the unified pageToArticle → buildPageJsonLd pipeline. Per #792 cleanup the legacy pageSchema / siteSchema hooks here were removed — they were never assigned by any route handler. %>
 </head>
 <body>
     <!-- JSPWiki-style header (#371, #375) -->
