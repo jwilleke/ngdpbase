@@ -1,7 +1,7 @@
 ---
 title: Architecture Threads (in-flight, cross-cutting)
 status: living document
-lastModified: 2026-05-25T10:45:00Z
+lastModified: 2026-05-25T11:00:00Z
 ---
 
 # Architecture Threads
@@ -115,7 +115,7 @@ Update this doc when: a thread crosses a milestone, a new sub-issue is filed, an
 
 ### 3. JSON-LD render pipeline (Slice 6 of #755)
 
-**Status:** mostly shipped (live since #773's compose refactor). Config-driven `@type` per system-category in design (#791); parallel-path drift cleaned up (#792 CLOSED 2026-05-25 — `SchemaGenerator` scope-narrowed from 814 LOC to ~58, dead page/site render code deleted).
+**Status:** **shipped 2026-05-25** — config-driven `@type` per system-category (#791) and SchemaGenerator dead-code cleanup (#792) both landed. JSON-LD render pipeline is the single live path; operator-controllable Article subtypes via `ngdpbase.schema-types` config block. Eligible to move to the archive section after one release cycle of stability.
 
 **Driver:** the 2026-05-20 ratified decision (schemas.md) that structured-data emission is JSON-LD only (not microdata); `@id` URLs are real dereferenceable URLs; content-negotiation serves `application/ld+json`. Slice 6 of #755 (which is itself CLOSED) tracked the work; the implementation went live via #773 (composed pipeline) and #760/#766 (content-neg).
 
@@ -126,7 +126,7 @@ Update this doc when: a thread crosses a milestone, a new sub-issue is filed, an
 | #755 | [EPIC] Metadata schemas ratified (Slice 6 = JSON-LD render) | CLOSED 2026-05-20 | Parent design |
 | #773 | `buildPageJsonLd` compose refactor | CLOSED | Unified `pageToArticle → articleToPageJsonLd → buildPageJsonLd` pipeline |
 | #760 / #766 | Content-negotiation (`Accept: application/ld+json`) | CLOSED | Dereferenceable `@id` URLs serve JSON-LD on request |
-| #791 | JSON-LD @type per system-category — config-driven schema.org subtypes | OPEN, unblocked (#792 done) | Operator-controllable `ngdpbase.schema-types` config block; replaces hardcoded `@type: Article` |
+| #791 | JSON-LD @type per system-category — config-driven schema.org subtypes | CLOSED 2026-05-25 | Operator-controllable `ngdpbase.schema-types` config block. Sparse defaults: documentation/developer → TechArticle, journal → BlogPosting (no-op until EPIC #790's "register journal" sub-issue ships). |
 | #792 | Reconcile SchemaGenerator with pageToArticle pipeline | CLOSED 2026-05-25 | Phase 1 investigation confirmed dead code on page-render path; Phase 2+3 deleted the dead methods (815→58 LOC in SchemaGenerator.ts; -101 in WikiRoutes; -6 in header.ejs; 2 dead test files dropped) |
 
 **Dependency graph:**
@@ -185,7 +185,7 @@ Update this doc when: a thread crosses a milestone, a new sub-issue is filed, an
 ```text
 EPIC #790 (Journal reconcile)
         │
-        ├── #791 (@type per system-category) ◄── UNBLOCKED (#792 CLOSED 2026-05-25)
+        ├── #791 (@type per system-category, CLOSED 2026-05-25)
         ├── #792 (SchemaGenerator reconciliation, CLOSED 2026-05-25)
         ├── (register journal as system-category)         ◄── NOT FILED
         ├── (retire JournalDataManager sidecar)           ◄── NOT FILED
