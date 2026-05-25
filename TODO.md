@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-24T15:25:00.000Z'
+lastModified: '2026-05-25T05:00:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -34,7 +34,7 @@ The first three local checkouts share `jwilleke/ngdpbase` as their git remote �
 
 Items carrying the `in review` label — work is shipped/merged; operator verification is the only thing left before close. **Clear this list before starting new feature work.**
 
-- _(none)_
+- **#788** — Admin dashboard cards collapsible (Add-ons / Metrics / Recent Activity / System Notifications). Shipped 2026-05-25-01 in commit `ec65756d`. Verify at <http://localhost:3000/admin> — each card should show a thin "Toggle details" line between header and body; clicking folds the body only (header + footer stay visible). Default open.
 
 ## Open BUGS (ngdpbase, by issue #)
 
@@ -64,8 +64,7 @@ Filed and scoped, awaiting prioritization or implementation cycles.
 
 | # | Topic | Priority hint |
 |---|---|---|
-| **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24 from #789 debug). Retire the journal addon's parallel implementations of editor/save/index/templates/tags/mood/date/storage-routing in favor of thin UI specializations over generic page primitives. Foundation work that unblocks #786 (auto-journal digester). | Medium — architectural cleanup, no user-facing functionality break after #789's partial fix shipped. Sub-issues to be filed when picked up. |
-| #788 | Make admin dashboard entries collapsable — extend the `<details>` pattern from Session Manager (#776) to Metrics / Recent Activity / System Notifications / Addons cards | **Easy-win**, filed today by operator. Pure UI replication, ~4 cards |
+| **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24 from #789 debug). Retire the journal addon's parallel implementations of editor/save/index/templates/tags/mood/date/storage-routing in favor of thin UI specializations over generic page primitives. Two sub-issues filed: **#791** (config-driven JSON-LD `@type` via new `ngdpbase.schema-types` block — design finalized 2026-05-25, doc trail in `docs/schemas.md`) and **#792** (SchemaGenerator reconciliation — blocker for #791). Foundation work that also unblocks #786. | Medium — implementation order: #792 Phase 1 → #791 → register `journal` category → ProfilePage `@graph` for `user-profile`. |
 | #786 | Auto-journal — digester consuming CatalogManager records into journal entries | Gated by #685 + EPIC #790. Consumer-pattern; no source-specific code |
 | #780 | Runtime catalog-source registry UI — admin dashboard surface for `CatalogManager.getSourceInfo()` + `checkSchemaVersions()`. **This IS the runtime registry visibility piece** (no separate issue exists or is planned). | Medium — filed 2026-05-23 to close the runtime-visibility gap surfaced by the #685 FeedManager brainstorm: addon-supplied producers (per-feed sources, etc.) live only in the runtime registry and an operator currently has no way to see them without reading logs. Bumps when #685 starts shipping per-feed sources. |
 | #738 | NCM/import conversion metrics | Low — **unblocked** by #728 S3 (structured `kind` codes now exist); observability follow-up |
