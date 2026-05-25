@@ -2,6 +2,28 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-25-06
+
+- Agent: Claude Opus 4.7
+- Subject: Released **v3.42.0** (minor) consolidating v3.41.0..v3.42.0 into a single visible GitHub Release. Bundles 25 commits across the day — 5 new features (#788 collapsible admin cards, #689 admin raw edit, #649 Phase 1 CF Access, #722 Slice 1 video thumbnails, #780 admin Catalog Sources) + #778 ACL migration + architecture-threads.md doc. Auto-published GitHub Release with notes spanning v3.41.0..v3.42.0 (covers the deferred v3.41.1 + v3.41.2 patches). Operator invoked `/semver minor` standalone after `/session-commit 2026-05-25-05`.
+- Current Issue: none directly — release consolidates work for closed `#788`, `#689`, `#649`, `#778`, `#722`, `#444`, `#780`, partial `#791` (unblocked, not closed), `#792` (Phase 1 done, Phases 2+3 deferred).
+- Tests: jimstest GREEN twice — 6099 unit + 80 E2E on pre-release commit (Step 4 trust) and again on release commit `52f6ac78` (Step 8a). All three satellites: 6099 unit + 80 E2E each, no flakes.
+- Semver: **minor** — 25 commits since v3.41.0, 5 new public-surface features (new routes /admin/edit-raw + CF Access middleware; new PageManager + Provider methods; new admin dashboard cards; new config block ngdpbase.auth.cloudflare-access.*; new audit event admin.page.raw-edit). Two new deps shipped (`jose@^6.2.3`, `ffmpeg-static@^5.3.0`). Auto-published GH Release per release-workflow rules for minor.
+- /othersites: **ran in satellite-only mode** — /semver Step 8a validated jimstest on release commit, so /othersites skipped jimstest re-processing. All three satellites cycled cleanly via `git pull` → `npm install` → `npm run build` → `./server.sh restart` → `npm test` → `npm run test:e2e`.
+- /othersites results (instance | port | unit | E2E):
+  - `fairways-base` | 2121 | 6099 | 80 (first build failed with "Cannot find module 'ffmpeg-static'" — fixed by `npm install` then rebuild; second attempt clean)
+  - `ngdpbase-veg` | 3333 | 6099 | 80 (proactive `npm install` per fairways-base lesson)
+  - `ngdp-temp-builds` | 3001 | 6099 | 80 (same)
+- Operational note for future minor releases that add deps: insert `npm install` between `git pull` and `npm run build` on satellites — without it, `tsc` errors loudly but `./server.sh start` succeeds on stale dist (silent fail mode). `/othersites` skill text doesn't currently mandate `npm install`; worth a follow-up.
+- Perf baseline drift v3.41.2 → v3.42.0: clean. Memory +8.4% (1340.4 → 1453.4 MB; under 25% threshold). All routes -1 to -5ms (improvements). Baseline file: `docs/performance/baseline-v3.42.0-2026-05-25.md`.
+- Work Done: see 2026-05-25-05 for the detailed slice list; this entry covers the release-event mechanics only.
+- Commits: `52f6ac78` (`chore: release v3.42.0`) — release commit on top of `625ce066`. v3.42.0 tag pushed; GH Release auto-published.
+- Files Modified (release commit only — broader list in 2026-05-25-05):
+  - package.json
+  - config/app-default-config.json
+  - CHANGELOG.md
+  - docs/performance/baseline-v3.42.0-2026-05-25.md (NEW)
+
 ## 2026-05-25-05
 
 - Agent: Claude Opus 4.7
