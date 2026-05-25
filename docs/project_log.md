@@ -2,6 +2,62 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-25-05
+
+- Agent: Claude Opus 4.7
+- Subject: Long-arc session — shipped #649 Phase 1 (Cloudflare Access JWT trust); released v3.41.1 (patch, bundled #788 + #689 + #649 + #778-Slice-1 + 7 docs); shipped #722 Slice 1 (video poster-frame thumbnails via ffmpeg-static); created `docs/architecture-threads.md` to track 7 in-flight cross-cutting design threads; closed #444 (superseded-by-practice); ran #792 Phase 1 (SchemaGenerator dead-code investigation — #791 unblocked); shipped #780 (admin Catalog Sources card); released v3.41.2 (patch, bundles #722 + #780). Updated 2 memories (release-workflow default = patch; check-todos refreshes TODO.md inline).
+- Current Issue: #649 (closed), #722 (closed), #444 (closed), #780 (closed), #792 (Phase 1 done — Phases 2+3 deferred), #791 (unblocked)
+- Tests: jimstest GREEN throughout — 6094 unit (+12 from CF Access tests) → 6099 (+5 from videoFrame tests) → 6099 stable. E2E 80/80 green after #722 slice. Smoke tests verified: admin /admin Catalog Sources card renders 3 sources (pages/attachments/media); CF Access middleware no-ops cleanly when disabled; video thumb /media/thumb/<id> returns valid WebP.
+- Semver: **two patches** this session — v3.41.0 → v3.41.1 (bundling 13 commits incl. #788 #689 #649 #778-Slice-1) → v3.41.2 (bundling #722 + #780). Both deferred GitHub Release per the new "default = patch" memory. v3.41.2 perf diff CLEAN (no regressions; confirmed earlier `/search?q=test` spikes were cold-start measurement noise — warm-process diff shows +1-2ms across all routes).
+- /othersites: skipped both releases (patch). Satellites stay on v3.41.0 until next minor.
+- Work Done:
+  - **#649 Cloudflare Access JWT Phase 1**: New `CloudflareAccessAuthProvider` + middleware bridging `Cf-Access-Jwt-Assertion` header → `req.session.username`. Operator-confirmed Q1=a (email-keyed coordination), Q2=i (JIT-provision via `password=''` GoogleOIDC precedent), Q3=b (group-map config). New `jose@^6.2.3` dep. 12 unit tests with locally-minted JWKS (no network). Default-off; team-domain + AUD required before opt-in. Closed with 6 deferred follow-ups documented (external-id linkage, logout coordination, multi-AUD, group-map hot-reload, JWT-exp session lifetime, live-CF e2e).
+  - **v3.41.1 release**: First /semver patch invocation per operator directive "seems we should do semver patch on most code changes". 13 commits bundled. Perf 5b flagged `/search?q=test` 38ms→158ms regression; proceeded per operator's clear intent + memory update.
+  - **#722 Video poster-frame thumbnails Slice 1**: `extractVideoFrame(filePath, atSeconds=1)` spawns ffmpeg-static; hands MJPEG stdout buffer to existing Sharp pipeline via `transformImage(Buffer | string)`. `FileSystemMediaProvider.getThumbnailBuffer` now accepts video items in addition to images. New `ffmpeg-static@^5.3.0` dep. 5 unit tests with dynamically-generated lavfi testsrc fixture (no committed binary). End-to-end smoke: real .mov on jimstest → HTTP 200, valid WebP magic, 5226 bytes. Unblocks #731 (asset-picker list view).
+  - **`docs/architecture-threads.md` created**: Living doc tracking 7 in-flight cross-cutting threads (CatalogManager unification, NCM pipeline, JSON-LD render, Journal reconcile EPIC #790, ACL evaluator, system principal #631, addon platform maturation). Each thread captures status / composing issues / dependency graph / drift risks / what "done" looks like. Plus "recently completed threads" archive section (CF Access, mobile UX, Session Manager, NCM metrics). Filed at top-level `docs/architecture-threads.md` for discoverability (matches `docs/schemas.md`).
+  - **Thread #7 added** (Addon platform maturation): 4 issues (#673 packaged distribution, #675 scaffolder, #686 auto-enable non-default paths, #444 theme policy) + 3 closed companions (#682 Domain Addon EPIC, #674 Kustomize, #443 theme auto-copy). Drift risks called out (most prominent: #673's `packaged` distribution-model name locked in `docs/platform/addon-architecture.md` but loader code missing).
+  - **#444 closed (superseded-by-practice)**: Theme load-vs-copy policy question — #443's auto-copy mechanism has operated ~1 year without complaint; question answered de facto. Thread #7 row updated to CLOSED with rationale.
+  - **GH label sweep**: created `NCM` label (already existed) verification; applied `CatalogManager` × 7 (#685, #762, #780, #786, #790, #791, #792) and `NCM` × 3 (#501, #685, #737) for thread-tracking surface in GH issue queries.
+  - **TODO.md refreshed inline** as part of `/check-todos` (new policy — see memory below). Dropped closed rows (#689, #722, #729, #738, #444, #780); added #631 (Thread #6 issue not previously tracked); added cross-ref to `docs/architecture-threads.md`; added v3.41.x latest-release note in header.
+  - **Skill text updated**: `.claude/commands/check-todos.md` now explicitly requires inline TODO.md refresh (no follow-up question); commit + push as part of the command. Operator edited the file too (terser intro + "Update the TODO.md file." closing line).
+  - **#792 Phase 1 investigation (SchemaGenerator reconciliation)**: pure-investigation finding — `SchemaGenerator.generatePageSchema` + `generateComprehensiveSchema` are **dead code on the page-render path**. Template hooks `pageSchema`/`siteSchema` in `views/header.ejs` are referenced but NEVER assigned by any route handler. SchemaGenerator hasn't been substantively modified in ~1 year. `#791` is **unblocked** — no production "fight between two paths" exists today. Phase 2 + 3 decisions documented per call site (delete `WikiRoutes.generatePageSchema` + `generateSiteSchema` class methods + their `header.ejs` template hooks; KEEP `generateOrganizationSchema` + `generatePersonSchema` for /admin org/person renders).
+  - **#780 Admin Catalog Sources card shipped**: `adminDashboard` handler gathers `CatalogManager.getSourceInfo()` + `checkSchemaVersions()`; new card in admin-dashboard.ejs (closed-by-default `<details>` pattern from #788) shows 3 registered sources (pages → Article, attachments → DigitalDocument, media → Image/Video/Audio) with stale badges if any. Closes Thread #1's "operators can't see what's registered" drift risk. Verified visually by operator; closed.
+  - **v3.41.2 release**: Second patch this session bundling #722 + #780 + architecture-threads.md. Perf diff CLEAN — confirms cold-start regression theory.
+  - **Memory updates**: `feedback_release_workflow.md` extended ("default bump = patch for most code changes per operator 2026-05-25; reserve `minor` for deliberate milestones"); new `feedback_check_todos_refreshes_todo.md` ("/check-todos always refreshes TODO.md inline as part of the command; don't surface as a follow-up question").
+- Commits (in this 2026-05-25-05 arc, since `c12e8610`):
+  - `c7b69c9f` feat(#649): Phase 1 — CloudflareAccessAuthProvider + middleware
+  - `a1d464cc` chore: release v3.41.1
+  - `0bfdf4ed` feat(#722): Slice 1 — video poster-frame thumbnails via ffmpeg-static
+  - `84a58b92` docs: add architecture-threads.md
+  - `1a4e9cb9` docs(architecture-threads): add Thread #7 — Addon platform maturation
+  - `2b693df9` docs(architecture-threads): #444 closed as superseded-by-practice
+  - `d65c3a30` docs: freshen TODO.md after /check-todos
+  - `f4436e3b` docs(skill): /check-todos refresh TODO.md inline
+  - `8480fe3d` feat(#780): admin dashboard card — registered CatalogSources at runtime
+  - `d42f0f03` docs: freshen TODO.md — move #780 to Waiting on Review Sign-off
+  - `ee1fc6d2` docs: freshen TODO.md — #780 closed
+  - `37e177a7` chore: release v3.41.2
+- Files Modified (since `c12e8610`):
+  - .claude/commands/check-todos.md
+  - CHANGELOG.md
+  - config/app-default-config.json
+  - docs/architecture-threads.md (NEW)
+  - docs/Developer-Documentation.md (auto-regenerated)
+  - docs/performance/baseline-v3.41.1-2026-05-25.md (NEW)
+  - docs/performance/baseline-v3.41.2-2026-05-25.md (NEW)
+  - package.json
+  - package-lock.json
+  - src/app.ts
+  - src/managers/AuthManager.ts
+  - src/providers/**tests**/CloudflareAccessAuthProvider.test.ts (NEW)
+  - src/providers/CloudflareAccessAuthProvider.ts (NEW)
+  - src/providers/FileSystemMediaProvider.ts
+  - src/routes/WikiRoutes.ts
+  - src/utils/**tests**/videoFrame.test.ts (NEW)
+  - src/utils/videoFrame.ts (NEW)
+  - TODO.md
+  - views/admin-dashboard.ejs
+
 ## 2026-05-25-04
 
 - Agent: Claude Opus 4.7
