@@ -2,6 +2,27 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-25-01
+
+- Agent: Claude Opus 4.7
+- Subject: Finalized #791 schema-types config block design (sibling block not nested field; sparse Article-subtype defaults; permissive lookup; user-profile deferred to ProfilePage @graph follow-up); added impact survey + 4 architectural decisions to #791; filed #792 (SchemaGenerator reconciliation, blocker for #791); updated docs/schemas.md with 2026-05-24 ratified decision; shipped #788 admin dashboard collapsible cards (Add-ons / Metrics / Recent Activity / System Notifications via `<details open>`).
+- Current Issue: #788 (shipped), #791 (refined — body rewritten 4 times as design narrowed), #792 (filed)
+- Tests: jimstest pre-flight GREEN — 6069 unit (240 files) + 80 E2E. No flakes.
+- Semver: **patch** — small UI tweak + doc update; no new public API. GH Release deferred per release-workflow rules.
+- /othersites: skipped (patch).
+- Work Done:
+  - #791 design iteration (operator drove via schema.org research): rejected nesting `schema-type` into `ngdpbase.system-category` (already wears 7 concerns); chose new sibling block `ngdpbase.schema-types` keyed by `system-category`. Sparse defaults — only `documentation → TechArticle`, `developer → TechArticle`, `journal → BlogPosting`; everything else falls through to `Article`. Brief mid-session detour proposing `DigitalDocument` as the fallback was wrong per `docs/schemas.md:155` (DigitalDocument = PDFs/docx attachments, not pages) — reverted to `Article`. Dropped `user-profile → ProfilePage` from defaults: ProfilePage is a WebPage subtype (different field shape) and proper modeling needs a multi-node `@graph` with Person extracted from User.profilePage pointer — deferred to a future sub-issue keyed off the User→Page pointer.
+  - #791 impact survey: 6 files MUST change (pageToArticle.ts:127, articleToPageJsonLd.ts:44, buildPageJsonLd.ts:50, Schema.ts:199, config/app-default-config.json, docs/schemas.md), 5 files need a DECISION (Schema.ts:38-43 SchemaType union, Schema.ts:537-538 isArticle guard, PageManager.ts:80 types declaration, PageManager.ts:227 query filter, WikiRoutes.ts:2146 synthetic-Article fallback). D1 (render-time-only vs subtype-aware) recommended A (render-time-only, ~80 LOC, 6 files) over B (subtype-aware, ~200 LOC, 12 files). D2/D3 tied to D1. D4 = SchemaGenerator reconciliation (blocker — see #792).
+  - #792 SchemaGenerator reconciliation sub-issue filed: `src/utils/SchemaGenerator.ts:212` is a parallel JSON-LD render path called from `WikiRoutes.ts:1589` — uses legacy title-cased category names (don't match today's lowercase `system-category` config), defaults to `'WebPage'` (contradicts pageToArticle's `'Article'` default and schemas.md ratified type set), has dead code at line 241 (`return 'Article'` after unconditional `return 'WebPage'`), never joined #773's unified pipeline. Three-phase plan: Phase 1 investigation (grep + curl to confirm what runs in prod), Phase 2 per-call-site decision (delete / migrate / keep), Phase 3 remove SchemaGenerator.ts if all callers freed. Organization/Person renders carved out as separate concern.
+  - `docs/schemas.md` updated: new 2026-05-24 ratified decision appended; new "Per-category JSON-LD @type (config-driven)" subsection under "Per-type extensions" with type-tree diagram, config block shape, sparse-by-design rationale, Article-subtype reference table (10 rows with schema.org links), why-sibling-not-nested explanation, and `user-profile`-deferred rationale; common-base `@type` row updated to surface operator-configurable subtype refinement.
+  - Cross-references posted on EPIC #790 (twice: design shift + #792 filing) and #791 (#792 D4 blocker number resolved).
+  - #788 shipped: 4 admin dashboard cards (Add-ons / Metrics / Recent Activity / System Notifications) wrapped in `<details open>` with thin "Toggle details" summary. Same primitive as Session Manager (#776) — native HTML `<details>`, no JS, no Bootstrap collapse, no localStorage. Card-headers preserved (Add-ons "Manage Add-ons" button + System Notifications badge + footer all stay always-visible). Default open per UX-safety (no surprise on first load; operators collapse per-session what they don't want to see). Verified rendered HTML on jimstest: 4 wrappers present, all 5 cards visible (4 new + Session Manager).
+  - Operator added new auto-memory: `feedback_no_guessing.md` (carryover from yesterday's #789 debugging — reproduce + read code + ASK before proposing; no guessing). Surfaced this session when I mis-read "DigitalDocument stored same as pages" as "make DigitalDocument the page default" — operator caught it, I reverted.
+- Commits: 166f06cc (`docs(schemas): document config-driven JSON-LD @type per system-category (#791)`), ec65756d (`feat(admin): make Add-ons / Metrics / Recent Activity / System Notifications cards collapsible (#788)`)
+- Files Modified:
+  - docs/schemas.md
+  - views/admin-dashboard.ejs
+
 ## 2026-05-24-11
 
 - Agent: Claude Opus 4.7
