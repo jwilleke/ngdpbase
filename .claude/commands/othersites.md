@@ -7,11 +7,10 @@ Run the operator's update + validation cycle across the locally-installed ngdpba
 | Path | Port | `PROJECT_NAME` | Notes |
 |---|---|---|---|
 | `/Volumes/hd2A/workspaces/github/fairways-base` | 2121 | `"The Fairways"` | Satellite checkout |
-| `/Volumes/hd2A/workspaces/github/ngdpbase-veg` | 3333 | `"ve-geology"` | Satellite checkout |
 | `/Volumes/hd2A/workspaces/github/ngdpbase` | 3000 | `"jimstest"` | This repo / primary dev instance |
 | `/Volumes/hd2/ngdp-temp-builds/ngdpbase` | 3001 | `"ngdpbase temp build"` | Throwaway build sandbox |
 
-All four are checkouts of `jwilleke/ngdpbase`. Each has its own `.env` with `PROJECT_NAME`, `PORT`, `FAST_STORAGE`, `SLOW_STORAGE`. Their issues land in `jwilleke/ngdpbase`, not in satellite repos (per `feedback_cross_repo_coordination`).
+All three are checkouts of `jwilleke/ngdpbase`. Each has its own `.env` with `PROJECT_NAME`, `PORT`, `FAST_STORAGE`, `SLOW_STORAGE`. Their issues land in `jwilleke/ngdpbase`, not in satellite repos (per `feedback_cross_repo_coordination`).
 
 The `geohazardwatch` repo is a separate satellite with its own tracker and is **not** part of `/othersites` scope today.
 
@@ -19,8 +18,8 @@ The `geohazardwatch` repo is a separate satellite with its own tracker and is **
 
 `/othersites` runs in one of two modes — pick based on how it was invoked:
 
-- **Standalone (default)** — operator typed `/othersites` directly. Process **all four** instances.
-- **Satellite-only** — `/othersites` was invoked from `/session-commit` Step 5 (no version bump) and jimstest was validated on the **exact commit being propagated** in `/session-commit` Step 3 pre-flight. Only then **skip jimstest** here and process the three satellites. Avoids double build+restart+test on the operator's working instance.
+- **Standalone (default)** — operator typed `/othersites` directly. Process **all three** instances.
+- **Satellite-only** — `/othersites` was invoked from `/session-commit` Step 5 (no version bump) and jimstest was validated on the **exact commit being propagated** in `/session-commit` Step 3 pre-flight. Only then **skip jimstest** here and process the two satellites. Avoids double build+restart+test on the operator's working instance.
 
 **Satellite-only is valid ONLY when no commit has landed since the jimstest validation.** After a `/semver` bump, the version-bump + release commit land *after* the pre-flight gate, so pre-flight validated *pre-release* code — jimstest is then stale relative to what the satellites will pull. In that case jimstest MUST be rebuilt + restarted + fully tested on the **release commit FIRST**, before any satellite. `/semver` Step 8a now does this explicitly; if you reach `/othersites` from a release flow and Step 8a was not performed, process jimstest FIRST on the final commit, then the satellites. jimstest (source of truth) must never lag the satellites. See `feedback_jimstest_first` in memory.
 

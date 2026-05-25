@@ -21,12 +21,11 @@ Current near-term priorities for ngdpbase and the sister sites tracked by `/othe
 Sister sites in scope:
 
 - `fairways-base` — checkout of `jwilleke/ngdpbase` (port 2121, "The Fairways")
-- `ngdpbase-veg` — checkout of `jwilleke/ngdpbase` (port 3333, "ve-geology")
 - `ngdpbase` (this repo) — port 3000, "jimstest"
 - `ngdp-temp-builds` — local builds, no separate issue tracker
 - `geohazardwatch` — separate repo at `jwilleke/geohazardwatch`, real satellite with its own issues
 
-The first three local checkouts share `jwilleke/ngdpbase` as their git remote — their issues ARE this repo's issues.
+All three local checkouts share `jwilleke/ngdpbase` as their git remote — their issues ARE this repo's issues. (`ngdpbase-veg` / "ve-geology" was retired 2026-05-25; port 3333 is now served by `GeoHazardWatch`, a separate satellite tracked by its own repo.)
 
 ## Security
 

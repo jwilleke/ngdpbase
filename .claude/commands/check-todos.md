@@ -20,9 +20,10 @@ The `/othersites` skill defines a list of related local instances; some are chec
 In-scope local checkouts of `jwilleke/ngdpbase`:
 
 - `fairways-base` (port 2121, "The Fairways")
-- `ngdpbase-veg` (port 3333, "ve-geology")
 - `ngdpbase` (port 3000, "jimstest" — this repo)
 - `ngdp-temp-builds` (no separate issue tracker)
+
+(`ngdpbase-veg` / "ve-geology" was retired 2026-05-25; its port 3333 is now served by `GeoHazardWatch`, a separate satellite with its own issue tracker.)
 
 Separate satellites with their own issue tracker:
 
@@ -54,7 +55,7 @@ Freshen the root `TODO.md` (moved from `docs/TODO.md` on 2026-05-16). Keep only 
   3. **Separate-repo satellites** — same query against each satellite that has its own Dependabot state:
      - `gh api repos/jwilleke/geohazardwatch/dependabot/alerts --jq '[.[] | select(.state == "open") | ...]'`
      - `gh api repos/jwilleke/fairways-gen2-website/dependabot/alerts --jq '[.[] | select(.state == "open") | ...]'`
-  4. **Local-only checkouts** (`fairways-base`, `ngdpbase-veg`, `ngdp-temp-builds`) — **skip the API call**: they share `jwilleke/ngdpbase`'s alert state and would double-count.
+  4. **Local-only checkouts** (`fairways-base`, `ngdp-temp-builds`) — **skip the API call**: they share `jwilleke/ngdpbase`'s alert state and would double-count.
 
   Report compactly: one table with columns `Repo · Path · Severity · Package · GHSA`, sorted by severity desc then repo. If the total is large (>20), show only `critical`/`high` in full and roll the `medium`/`low` rows up to per-repo counts. Auto-dismissed alerts are not "open" — they will not appear in this section by construction.
 - **Failing GitHub Actions** — recurring workflows on `master` whose latest run failed. Survey via `gh run list --repo jwilleke/ngdpbase --branch master --status failure --limit 10 --json name,conclusion,createdAt,databaseId,url`, then dedupe to the most-recent failing run per workflow (a workflow that has since recovered should not appear). For each failing workflow include name, last-failed timestamp, the failing-job exit message (`gh run view <id> --log-failed | grep -E "##\[error\]|MODULE_NOT_FOUND|Cannot find"`), and the related issue if one exists (#749 for the showdown patch check, etc.). Skip workflows that haven't run on master yet. Note: scheduled-cron workflows on the default branch fire weekly/monthly, so a single failed run can sit unsurfaced for a long time.
