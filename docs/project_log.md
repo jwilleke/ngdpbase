@@ -2,6 +2,25 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-25-04
+
+- Agent: Claude Opus 4.7
+- Subject: Applied #778 Slice 2 — migrated 13 jimstest pages from `[{ALLOW ...}]` markup to `audience` / `access` frontmatter. Operator manually fixed the 2 Group 3 Trusted-view pages via #689's `/admin/edit-raw` surface (or deleted them); #778 closed. Attempted `/semver minor` (v3.41.0 → v3.42.0), but skipped at Step 5b due to a `/search?q=test` perf-regression candidate flagged by the threshold script — version stays at v3.41.0; the 11 commits since v3.41.0 carry forward for the next release.
+- Current Issue: #778 (closed this session)
+- Tests: jimstest GREEN — 6082 unit (241 files; +13 new tests from migration script) + 80 E2E. Migration script run produced 13/13 migrated + 0 errors; idempotency re-run reported 0 migrations + 0 errors.
+- Semver: **skip** — `/semver minor` attempted, rolled back at Step 5b. `/search?q=test` jumped 38ms → 158ms (+120ms, +315.8%); other metrics improved or were noise (memory -49.2%, other routes +1–2ms). Likely cold-process measurement noise: server was restarted twice in the prior 20 minutes (for the #689 build + Slice 2 data migration), and `/search?q=test` is the most warmup-sensitive route in the suite (cold Lunr index access on first hit). None of the 11 commits in the release range touched the search code path (SearchPlugin / SearchManager / LunrSearchProvider all unchanged). Operator chose to skip rather than re-measure or proceed-with-noted-regression. Version bump files (package.json, config/app-default-config.json, CHANGELOG.md) unstaged + reverted; unreleased baseline file deleted.
+- /othersites: skipped (no release).
+- Work Done:
+  - Surfaced #778 (operator pointed at it) and explained the "Or add specific users:" widget from `views/_audience-typeahead.ejs` (shipped via #710) — combined role + username audience pattern, wire format `<input name="audience" value="<username>">` matching the role-checkbox shape, ACLManager matches via `userRoles.includes(p) || username === p`.
+  - #778 Slice 1: Already shipped earlier in the day (commit b7199325) — migration script `scripts/migrate-page-acl-to-frontmatter.ts` + 13 unit tests + npm scripts `migrate:page-acl{,:dry}` + tsconfig.json allow-list entry.
+  - #778 Slice 2: Ran `SLOW_STORAGE=/Volumes/hd2A/jimstest-wiki/data npm run migrate:page-acl` on jimstest. 13/13 pages migrated, 0 errors. Patterns landed: 9 CSS/theme pages → `access.edit: [Admin]` with view stayed public; 2 public-view-only (`RejectedMessage`, `JSPWikiTags`) → markup stripped, no frontmatter additions; 2 trusted-view (`AdminsPage`, `2015-11-07-1-journal-jim`) → `audience: [Trusted]` + `access: {delete,edit}: [jim, Admin]`. Server restarted to refresh in-memory page-index with migrated frontmatter.
+  - #778 review checklist posted as issue comment (titles + slugs + view links + per-pattern guidance + Group 3 manual-fix instructions per operator's Trusted→admin directive).
+  - Operator manually fixed (or deleted) the 2 Group 3 pages via `/admin/edit-raw/<slug>` — dogfooded the #689 surface the same session it shipped.
+  - #778 closed with final slice status: Slices 1–3 + Slice 2 + manual fixes all done; Slice 4 (delete Tier 3 from `ACLManager._runEvaluator` + parity test + cross-site migration to the 3 satellite instances) deferred to a future sub-issue.
+  - `/semver minor` invoked: Step 1 verified clean tree + master + in-sync; Step 2 computed 3.41.0 → 3.42.0; Step 3 listed 11 commits in release (3 feats: #788 + #689 + #778-Slice-1, 1 fix: #788 correction, 7 docs); Step 4 skipped redundant test re-run (just-validated by `/session-commit` Step 3 pre-flight); Step 5 bumped version files; Step 5a ran `npm run test:baseline:compare` which exited 1 with the regression candidate.
+- Commits: none this session (Slice 2 was data migration outside the repo; #689 + #778-Slice-1 + #788-correction + log entries 01/02/03 all already on origin from prior sub-sessions today).
+- Files Modified: none in repo this session. Outside repo: 13 page files at `/Volumes/hd2A/jimstest-wiki/data/pages/*.md` rewritten by the migration script (frontmatter `audience`/`access` added or merged, body ALLOW markup stripped); 2 of those subsequently hand-edited by operator for the Trusted→admin fix.
+
 ## 2026-05-25-03
 
 - Agent: Claude Opus 4.7
