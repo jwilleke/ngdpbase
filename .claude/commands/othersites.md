@@ -33,10 +33,11 @@ Process the in-scope instances **sequentially** (not parallel — disk and CPU c
 1. **Check git state** — `git -C <path> status --short` (warn if there are uncommitted local changes that aren't expected operator work-in-progress)
 2. **`git pull --ff-only`** (fail loudly on non-fast-forward — never force)
 3. **`./server.sh stop`** (run from instance dir via `(cd <path> && ./server.sh stop)`)
-4. **`npm run build`** — must exit 0
-5. **`./server.sh start`** — wait for `✅ Server started` and the URL to print
-6. **`npm test`** — unit tests must end GREEN. Re-run any single intermittent failure once before treating it as a real regression
-7. **E2E — conditional** (matches `/session-commit` Step 3 policy). Run `npm run test:e2e` if and only if the commit range you're propagating touches any of:
+4. **`npm install`** — **mandatory** even when `package-lock.json` didn't change at first glance. New deps in `package.json` (or transitive bumps in `package-lock.json`) won't be in the satellite's `node_modules/` until install runs. Skip this step and `npm run build` may either fail loudly (`Cannot find module 'X'`) OR worse: succeed only for `dist/` it already had + leave the new code untyped/uncompiled, then `./server.sh start` happily serves stale dist (silent failure mode — server's "up" but missing the new behaviour). Observed on 2026-05-25 during v3.42.0 propagation when `jose` + `ffmpeg-static` were new deps. `npm install` is idempotent and fast on a no-change pull, so the cost of always running it is negligible vs the cost of a silent-stale-dist deploy.
+5. **`npm run build`** — must exit 0
+6. **`./server.sh start`** — wait for `✅ Server started` and the URL to print
+7. **`npm test`** — unit tests must end GREEN. Re-run any single intermittent failure once before treating it as a real regression
+8. **E2E — conditional** (matches `/session-commit` Step 3 policy). Run `npm run test:e2e` if and only if the commit range you're propagating touches any of:
    - `views/**`
    - `public/**`
    - `src/plugins/**`
