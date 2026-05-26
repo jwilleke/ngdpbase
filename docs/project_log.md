@@ -2,6 +2,42 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-26-06
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped #797 (journal editor wire-up — Option A: slot-inject from /edit/) as **v3.43.5** patch. Deleted orphan `addons/journal/views/journal-editor.ejs`.
+- Current Issue: #797 (closes); EPIC #790 (parent — 5 second-wave sub-issues remain)
+- Tests: jimstest GREEN — **6058 unit (+6 new #797 tests) + 80 E2E**.
+- Semver: **patch** — internal addon-slot injection. GH Release publish deferred (5-patch chain now: v3.43.1–v3.43.5); /othersites skipped per patch-gate.
+- Design decision (operator-chosen Option A): #797's body framed the work as "wrap journal-editor.ejs around _basicEditor.ejs". Reading the orphan revealed it was a fundamentally different surface (174 LOC streamlined narrow form vs 841 LOC full-featured editor with preview/attachments/audience/etc) — not a parallel implementation but a different specialization. Four ways to reconcile surfaced; operator chose **Option A**: inject journal-specific slot HTML from the generic /edit/ route when the page is `system-category: journal`, delete the orphan. Lighter touch than wrapping, loses today's streamlined UX but gains architectural consistency.
+- Implementation:
+  - New static helper `WikiRoutes.buildEditorExtraFrontmatterFields(metadata)` (pure function, ~25 LOC). Returns journal-date input HTML when system-category is `journal`, '' otherwise. HTML-attribute-escapes the date value (defense-in-depth).
+  - `WikiRoutes.editPage` (~line 2659) now computes `extraFrontmatterFields` from page metadata and passes through to `res.render('edit', ...)`. The slot lands in `_basicEditor.ejs` between the user-keywords row and the audience block.
+  - Round-trip persistence: the date input posts as `journal-date` to /save/<slug>; #803's unknown-field preservation keeps it in frontmatter.
+  - **Deleted**: `addons/journal/views/journal-editor.ejs` (174 LOC orphan). Unreachable since the journal routes started redirecting to /edit/<slug>; the EPIC #790 reconcile work has replaced its only purpose.
+- Followups left in place (not blocking #797 close):
+  - `addons/journal/routes/editor.ts` POST `/journal/new` + POST `/journal/:slug/edit` are now unreachable (no form points at them since the orphan was their only consumer). Leaving for a cleanup slice alongside #801 or standalone.
+  - Mood picker + journal-tags input: NOT in this slice. Mood is harder — the picker depends on a moodOptions catalog that lives nowhere usable today (it was hardcoded in the orphan only). Tags belong with #799 (`journal-tags → user-keywords` migration). Both belong in follow-up slices.
+- Test design note: the test infrastructure stubs `res.render` (`WikiRoutes.coverage15.test.ts:335-339`), so the rendered HTML can't be asserted on directly. Instead extracted the slot-HTML logic into a pure static method (`buildEditorExtraFrontmatterFields`) — unit-testable without Express. 6 tests cover the cases (positive emission, empty value, case-insensitive category match, non-journal categories, undefined/null/empty-object metadata, HTML-attribute-escape regression guard against `" onfocus="alert(1)`).
+- Perf baseline drift v3.43.4 → v3.43.5: clean. Memory +0.9%, `/search` -72% (cache effect; v3.43.4 was caught cold at 143ms, v3.43.5 caught warm at 40ms). No thresholds tripped. Baseline file: `docs/performance/baseline-v3.43.5-2026-05-26.md`.
+- /othersites: **skipped** — patch-gate. 5-patch chain (v3.43.1–v3.43.5) now accumulated for next minor consolidation.
+- Work Done:
+  - Read `addons/journal/views/journal-editor.ejs` (174 LOC) carefully and surfaced the design tension — the orphan is a streamlined narrow-form UX, not a parallel of the full editor.
+  - Presented 4 reconciliation paths to operator (A inject from /edit/, B journal route renders generic, C keep streamlined, D slot-injection registry). Operator chose A.
+  - Implemented A: new helper + editPage wiring + orphan delete.
+  - 6 unit tests for the helper + 1 security regression guard.
+  - /session-commit: committed `b3a5c675` feat + `088a8a50` release, tagged v3.43.5, pushed.
+- Commits:
+  - `b3a5c675` — feat(#797): inject journal-date slot HTML into /edit/ for journal pages
+  - `088a8a50` — chore: release v3.43.5
+- Files Modified:
+  - `src/routes/WikiRoutes.ts` (+39 LOC: static helper + editPage wiring + slot pass-through)
+  - `src/routes/__tests__/WikiRoutes.coverage15.test.ts` (+52 LOC: 6 new #797 tests)
+  - `addons/journal/views/journal-editor.ejs` (DELETED — 174 LOC orphan)
+  - `package.json`, `CHANGELOG.md`, `config/app-default-config.json` (version-bump mechanics)
+  - `docs/performance/baseline-v3.43.5-2026-05-26.md` (new baseline + drift section)
+  - `docs/project_log.md` (this entry — final commit)
+
 ## 2026-05-26-05
 
 - Agent: Claude Opus 4.7
