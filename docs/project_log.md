@@ -2,6 +2,38 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-26-07
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped #798 (journal view wire-up — Option A: slot-inject from /view/) as **v3.43.6** patch. Mirrors #797 pattern on the view side.
+- Current Issue: #798 (closes); EPIC #790 (parent — 4 second-wave sub-issues remain)
+- Tests: jimstest GREEN — **6067 unit (+9 new #798 tests) + 80 E2E**.
+- Semver: **patch** — internal view-slot injection. GH Release publish deferred (6-patch chain: v3.43.1–v3.43.6); /othersites skipped per patch-gate.
+- Design decision (operator-chosen Option A again): #798's body framed the work as "refactor journal-entry.ejs into a thin extension over _basicView.ejs." Reading the current state revealed journal-entry.ejs is LIVE (rendered by `addons/journal/routes/public.ts:200` at /journal/<slug>) — not orphaned like #797's editor was. The journal-flavored view provides genuine UX (sidebar widgets, /journal/tag/ chips, edit/delete affordances) that would be lost by retiring it. Three options surfaced; operator chose Option A — inject slot HTML from /view/<slug> so journal entries reached via wiki links/search/direct URL show journal affordances inline, while keeping /journal/<slug> rendering the parallel view unchanged.
+- Implementation:
+  - New static helper `WikiRoutes.buildViewExtraPageMetaBar(metadata)` — pure function (~35 LOC). Returns badge HTML for journal-date + mood when system-category is `journal`, '' otherwise. Two-tier escape: `escAttr` for title attributes, `escText` for badge body content. Defends against both attribute-context breakout AND `<script>` injection in text content.
+  - `WikiRoutes.viewPage` (~line 2098) computes `extraPageMetaBar` before render and passes through to `res.render`. The slot lands inside the navigation-title `<h5>` in `views/header.ejs` (shipped in #796), next to the existing `(Private)` and category badges.
+  - Both pills emit independently — only the field-present ones appear. Empty when category is journal but neither field is set (no empty wrapper).
+- Sidebar widgets (streak counter, on-this-day) deferred to a future slice: they need engine access to `JournalDataManager` (the helper would have to fetch streak data per-author). The `extraSidebarWidgets` slot from #796 remains available; populating it from /view/ is independent follow-up work.
+- 9 unit tests added: positive emission (date, mood, both), conditional skips (date unset / mood unset), case-insensitive category match, empty for non-journal / undefined / null / no-fields-set, attribute-context escape regression guard (`" onmouseover="alert(1)`), text-context escape regression guard (`<script>alert(1)</script>`).
+- Perf baseline drift v3.43.5 → v3.43.6: route threshold tripped on `/search` (+275%, +110ms). Surfaced to operator; **noise per established pattern** — same cold/warm cache oscillation `/` has been showing all day (v3.43.4 /search was 143ms, v3.43.5 warm 40ms, v3.43.6 cold 150ms). The #798 change is render-only badge HTML injection, doesn't touch the search code path. Other routes flat. Memory +1.8%. Baseline file: `docs/performance/baseline-v3.43.6-2026-05-26.md`.
+- /othersites: **skipped** — patch-gate. 6-patch chain now (v3.43.1–v3.43.6); accumulating for next minor consolidation.
+- Work Done:
+  - Verified `journal-entry.ejs` is LIVE (not orphaned), surfaced the design tension to operator.
+  - Operator chose Option A (mirror #797 on view side).
+  - Implemented: new helper + viewPage wiring.
+  - 9 unit tests including 2 security regression guards.
+  - /session-commit: committed `c952da2c` feat + `c704b2bd` release, tagged v3.43.6, pushed.
+- Commits:
+  - `c952da2c` — feat(#798): inject journal-date + mood pills into /view/ for journal pages
+  - `c704b2bd` — chore: release v3.43.6
+- Files Modified:
+  - `src/routes/WikiRoutes.ts` (+47 LOC: static helper + viewPage wiring + slot pass-through)
+  - `src/routes/__tests__/WikiRoutes.coverage15.test.ts` (+105 LOC: 9 new #798 tests)
+  - `package.json`, `CHANGELOG.md`, `config/app-default-config.json` (version-bump mechanics)
+  - `docs/performance/baseline-v3.43.6-2026-05-26.md` (new baseline + drift section)
+  - `docs/project_log.md` (this entry — final commit)
+
 ## 2026-05-26-06
 
 - Agent: Claude Opus 4.7
