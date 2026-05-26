@@ -2,6 +2,40 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-26-05
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped #803 (unified /save handler preserves unknown frontmatter fields) as **v3.43.4** patch. Unblocks #797/#798 (journal-addon wire-up) + every future addon claiming the `extraFrontmatterFields` slot.
+- Current Issue: #803 (closes); EPIC #790 (parent — second wave remains, #803 was a prerequisite surfaced during #797 implementation attempt)
+- Tests: jimstest GREEN — **6052 unit + 80 E2E** (added 4 new unit tests covering the 4 cases the issue body listed: preserves unknown fields, preserves existing-when-omitted, form value overrides existing, form-internal markers excluded).
+- Semver: **patch** — internal save-pipeline enhancement. GH Release publish deferred (consolidates with v3.43.1–v3.43.4 at next minor); /othersites propagation skipped per patch-gate.
+- Surfaced from work: while starting #797 (slice 1 of EPIC #790 second wave — wire `journal-editor.ejs` to extend `_basicEditor.ejs`), discovered that the unified `/save/<slug>` handler builds metadata from a fixed allowlist of known form fields. So an editor extending `_basicEditor.ejs` and adding `<input name="mood">` would silently drop `mood` on save. The EPIC #790 body referenced the merge pattern at `addons/journal/routes/editor.ts:364` and said it should "move into the generic save" — that's what #803 does.
+- Implementation:
+  - Insertion site: `src/routes/WikiRoutes.ts:savePage` after `buildNewPageMetadata` returns (line ~3001 → +28 LOC).
+  - Step 1 (existingMeta carry-forward): iterate existing on-disk metadata; if a field isn't already in the new metadata, copy it over. Result: editing through an editor that doesn't know about an addon field doesn't drop the field.
+  - Step 2 (req.body unknown merge): iterate req.body; skip managed-field names + form-internal markers + empty strings; copy everything else into metadata. Result: addon editor slot inputs persist.
+  - Managed-fields set: title, slug, uuid, lastModified, created, system-category, system-keywords, user-keywords, audience, author-lock, private, author, content (the fields savePage / buildNewPageMetadata / generateValidMetadata handle explicitly).
+  - Form-internal markers (excluded from frontmatter): _csrf, section, private-present, author-lock-present, categories, userKeywords (camelCase alias for user-keywords).
+- Test gotcha caught: my first attempt at the "form-internal markers don't leak" test set `_csrf: 'abc123'` (random invalid token) which triggered the test app's CSRF middleware (returns 403 when `req.body._csrf` doesn't match `'test-csrf-token'`). Middleware checks body `_csrf` BEFORE the x-csrf-token header. Fix: set `_csrf: 'test-csrf-token'` to satisfy the middleware while still being a form-internal marker the savePage shouldn't propagate. Worth noting if future tests want to assert on CSRF-marker exclusion.
+- Perf baseline drift v3.43.3 → v3.43.4: clean — memory +0.3%, `/` -82.6% (warm cache hit; v3.43.3 was caught cold at 149ms, v3.43.4 caught warm at 26ms — net across v3.43.2..v3.43.4 ≈ flat). No thresholds tripped. Baseline file: `docs/performance/baseline-v3.43.4-2026-05-26.md`.
+- /othersites: **skipped** — patch-gate. Satellites still on v3.43.0; consolidation now covers v3.43.1, v3.43.2, v3.43.3, v3.43.4 (4 patches to fold into the next minor).
+- Issue-filing this session: filed **#797–#803** for the EPIC #790 second wave + the surfaced prerequisite. Total 7 issues in the second wave (one of which — #803 — shipped this slice).
+- Work Done:
+  - Filed 6 second-wave EPIC #790 sub-issues (#797–#802) covering the journal-addon wire-up work documented in the parent EPIC.
+  - Started slice 1 (#797), hit the unified-save preservation gap, surfaced to operator, chose to file the prereq as #803 and ship that first.
+  - Implemented #803: 28-LOC enhancement to `WikiRoutes.savePage` + 4 unit tests in WikiRoutes.coverage15.test.ts.
+  - Fixed the test-app CSRF-middleware false-positive (test body `_csrf` triggered the middleware before reaching savePage).
+  - /session-commit: committed `2d8c581b` feat + `f191f294` release, tagged v3.43.4, pushed.
+- Commits:
+  - `2d8c581b` — feat(#803): unified /save handler preserves unknown frontmatter fields
+  - `f191f294` — chore: release v3.43.4
+- Files Modified:
+  - `src/routes/WikiRoutes.ts` (+28 LOC in `savePage` for the existingMeta + req.body unknown-field merge)
+  - `src/routes/__tests__/WikiRoutes.coverage15.test.ts` (+91 LOC: 4 new unit tests covering the four cases from #803's body)
+  - `package.json`, `CHANGELOG.md`, `config/app-default-config.json` (version-bump mechanics)
+  - `docs/performance/baseline-v3.43.4-2026-05-26.md` (new baseline + drift section)
+  - `docs/project_log.md` (this entry — final commit)
+
 ## 2026-05-26-04
 
 - Agent: Claude Opus 4.7
