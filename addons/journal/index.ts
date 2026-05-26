@@ -160,7 +160,7 @@ const journalAddon = {
         if (!nm || !jd) return;
         const today = new Date().toISOString().slice(0, 10);
         for (const user of reminderUsers) {
-          const hasEntry = jd.listByAuthor(user).some(e => e.journalDate === today);
+          const hasEntry = (await jd.listByAuthor(user)).some(e => e.journalDate === today);
           if (!hasEntry) {
             await nm.createNotification({
               type:        'user',
@@ -195,7 +195,7 @@ const journalAddon = {
 
    
   async status(): Promise<AddonStatusDetails> {
-    const total = dataManager?.count() ?? 0;
+    const total = dataManager ? await dataManager.count() : 0;
     return {
       healthy: true,
       records: total,

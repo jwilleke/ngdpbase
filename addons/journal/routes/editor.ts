@@ -221,22 +221,24 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
   // Redirect to the standard page editor so preview, user preferences, and all
   // /edit features are available. (#540)
   router.get('/:slug/edit', (req: Request, res: Response) => {
-    try {
-      const ctx = ApiContext.from(req, engine);
-      ctx.requireAuthenticated();
+    void (async () => {
+      try {
+        const ctx = ApiContext.from(req, engine);
+        ctx.requireAuthenticated();
 
-      const slug  = sp(req.params['slug']);
-      const entry = jdm()?.getBySlug(slug);
-      if (!entry) { res.status(404).send('Journal entry not found.'); return; }
+        const slug  = sp(req.params['slug']);
+        const entry = await jdm()?.getBySlug(slug);
+        if (!entry) { res.status(404).send('Journal entry not found.'); return; }
 
-      const isOwner = entry.author === ctx.username;
-      const isAdmin = (ctx.roles ?? []).includes('admin');
-      if (!isOwner && !isAdmin) { res.status(403).send('Access denied.'); return; }
+        const isOwner = entry.author === ctx.username;
+        const isAdmin = (ctx.roles ?? []).includes('admin');
+        if (!isOwner && !isAdmin) { res.status(403).send('Access denied.'); return; }
 
-      res.redirect(`/edit/${encodeURIComponent(slug)}`);
-    } catch (err) {
-      handleError(err, res);
-    }
+        res.redirect(`/edit/${encodeURIComponent(slug)}`);
+      } catch (err) {
+        handleError(err, res);
+      }
+    })();
   });
 
   // ── POST /journal/:slug/delete ───────────────────────────────────────────────
@@ -247,7 +249,7 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
         ctx.requireAuthenticated();
 
         const slug  = sp(req.params['slug']);
-        const entry = jdm()?.getBySlug(slug);
+        const entry = await jdm()?.getBySlug(slug);
         if (!entry) { res.status(404).send('Journal entry not found.'); return; }
 
         const isOwner = entry.author === ctx.username;

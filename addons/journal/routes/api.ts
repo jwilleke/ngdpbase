@@ -147,53 +147,59 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
 
   // ── GET /api/journal/entries ───────────────────────────────────────────────
   router.get('/entries', (req: Request, res: Response) => {
-    try {
-      const ctx = ApiContext.from(req, engine);
-      ctx.requireAuthenticated();
+    void (async () => {
+      try {
+        const ctx = ApiContext.from(req, engine);
+        ctx.requireAuthenticated();
 
-      const limit  = parseInt(qs(req.query['limit'])  ?? '50', 10) || 50;
-      const offset = parseInt(qs(req.query['offset']) ?? '0',  10) || 0;
+        const limit  = parseInt(qs(req.query['limit'])  ?? '50', 10) || 50;
+        const offset = parseInt(qs(req.query['offset']) ?? '0',  10) || 0;
 
-      const m       = jdm();
-      const total   = m ? m.countByAuthor(ctx.username!) : 0;
-      const entries = m ? m.listByAuthor(ctx.username!, { limit, offset }) : [];
+        const m       = jdm();
+        const total   = m ? await m.countByAuthor(ctx.username!) : 0;
+        const entries = m ? await m.listByAuthor(ctx.username!, { limit, offset }) : [];
 
-      res.json({ entries, total, offset, limit });
-    } catch (err) {
-      handleError(err, res);
-    }
+        res.json({ entries, total, offset, limit });
+      } catch (err) {
+        handleError(err, res);
+      }
+    })();
   });
 
   // ── GET /api/journal/on-this-day ──────────────────────────────────────────
   router.get('/on-this-day', (req: Request, res: Response) => {
-    try {
-      const ctx = ApiContext.from(req, engine);
-      ctx.requireAuthenticated();
+    void (async () => {
+      try {
+        const ctx = ApiContext.from(req, engine);
+        ctx.requireAuthenticated();
 
-      const today   = new Date().toISOString().slice(0, 10);
-      const m       = jdm();
-      const entries = m ? m.getOnThisDay(ctx.username!) : [];
+        const today   = new Date().toISOString().slice(0, 10);
+        const m       = jdm();
+        const entries = m ? await m.getOnThisDay(ctx.username!) : [];
 
-      res.json({ entries, today });
-    } catch (err) {
-      handleError(err, res);
-    }
+        res.json({ entries, today });
+      } catch (err) {
+        handleError(err, res);
+      }
+    })();
   });
 
   // ── GET /api/journal/streak ───────────────────────────────────────────────
   router.get('/streak', (req: Request, res: Response) => {
-    try {
-      const ctx = ApiContext.from(req, engine);
-      ctx.requireAuthenticated();
+    void (async () => {
+      try {
+        const ctx = ApiContext.from(req, engine);
+        ctx.requireAuthenticated();
 
-      const m      = jdm();
-      const streak = m ? m.computeStreak(ctx.username!) : 0;
-      const total  = m ? m.countByAuthor(ctx.username!) : 0;
+        const m      = jdm();
+        const streak = m ? await m.computeStreak(ctx.username!) : 0;
+        const total  = m ? await m.countByAuthor(ctx.username!) : 0;
 
-      res.json({ streak, total });
-    } catch (err) {
-      handleError(err, res);
-    }
+        res.json({ streak, total });
+      } catch (err) {
+        handleError(err, res);
+      }
+    })();
   });
 
   // ── GET /api/journal/export/json ──────────────────────────────────────────
@@ -209,7 +215,7 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
         }
 
         const m = jdm();
-        const entries = m ? m.listByAuthor(ctx.username!) : [];
+        const entries = m ? await m.listByAuthor(ctx.username!) : [];
         const p = pm();
 
         const exportData = await Promise.all(entries.map(async (e) => {
@@ -249,7 +255,7 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
         }
 
         const m = jdm();
-        const entries = m ? m.listByAuthor(ctx.username!) : [];
+        const entries = m ? await m.listByAuthor(ctx.username!) : [];
         const p = pm();
 
         const sections: string[] = [`# Journal — ${ctx.username!}\n`];

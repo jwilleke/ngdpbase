@@ -22,57 +22,62 @@ export default function adminRoutes(engine: WikiEngine, config: Record<string, u
 
   // ── GET /admin/journal ────────────────────────────────────────────────────
   router.get('/', (req: Request, res: Response) => {
-    try {
-      const ctx = ApiContext.from(req, engine);
-      ctx.requireAuthenticated();
-      ctx.requireRole('admin');
+    void (async () => {
+      try {
+        const ctx = ApiContext.from(req, engine);
+        ctx.requireAuthenticated();
+        ctx.requireRole('admin');
 
-      const showStreakLeaderboard = config['showStreakLeaderboard'] === true;
-      const m = jdm();
+        const showStreakLeaderboard = config['showStreakLeaderboard'] === true;
+        const m = jdm();
 
-      // Build per-author stats for the leaderboard / counts table
-      let userStats: Array<{ author: string; count: number; streak: number }> = [];
-      if (m) {
-        const allEntries = m.listAll();
-        const authorSet = [...new Set(allEntries.map(e => e.author))];
-        userStats = authorSet.map(author => ({
-          author,
-          count:  m.countByAuthor(author),
-          streak: showStreakLeaderboard ? m.computeStreak(author) : 0
-        })).sort((a, b) => b.count - a.count);
+        // Build per-author stats for the leaderboard / counts table
+        let userStats: Array<{ author: string; count: number; streak: number }> = [];
+        if (m) {
+          const allEntries = await m.listAll();
+          const authorSet = [...new Set(allEntries.map(e => e.author))];
+          userStats = await Promise.all(
+            authorSet.map(async author => ({
+              author,
+              count:  await m.countByAuthor(author),
+              streak: showStreakLeaderboard ? await m.computeStreak(author) : 0
+            }))
+          );
+          userStats.sort((a, b) => b.count - a.count);
+        }
+
+        res.render('admin-journal', {
+          currentUser:      req.userContext,
+          config: {
+            defaultPrivate:    config['defaultPrivate']    !== false,
+            defaultAuthorLock: config['defaultAuthorLock'] !== false,
+            defaultMoodOptions: Array.isArray(config['defaultMoodOptions'])
+              ? config['defaultMoodOptions']
+              : ['happy', 'content', 'neutral', 'anxious', 'sad', 'grateful', 'energized', 'tired'],
+            streakEnabled:      config['streakEnabled']      !== false,
+            dailyReminderEnabled: Boolean(config['dailyReminderEnabled']),
+            dailyReminderTime:  (config['dailyReminderTime'] as string | undefined) ?? '20:00',
+            dailyReminderUsers: Array.isArray(config['dailyReminderUsers'])
+              ? config['dailyReminderUsers']
+              : [],
+            exportEnabled:     config['exportEnabled'] !== false,
+            showStreakLeaderboard
+          },
+          userStats,
+          totalEntries:     m ? await m.count() : 0,
+          csrfToken:        req.session?.csrfToken,
+          successMessage:   req.query['success'] ?? null,
+          errorMessage:     req.query['error']   ?? null
+        });
+      } catch (err) {
+        if (err instanceof ApiError) {
+          res.status(err.status).send(err.message);
+          return;
+        }
+        const msg = err instanceof Error ? err.message : String(err);
+        res.status(500).send(msg);
       }
-
-      res.render('admin-journal', {
-        currentUser:      req.userContext,
-        config: {
-          defaultPrivate:    config['defaultPrivate']    !== false,
-          defaultAuthorLock: config['defaultAuthorLock'] !== false,
-          defaultMoodOptions: Array.isArray(config['defaultMoodOptions'])
-            ? config['defaultMoodOptions']
-            : ['happy', 'content', 'neutral', 'anxious', 'sad', 'grateful', 'energized', 'tired'],
-          streakEnabled:      config['streakEnabled']      !== false,
-          dailyReminderEnabled: Boolean(config['dailyReminderEnabled']),
-          dailyReminderTime:  (config['dailyReminderTime'] as string | undefined) ?? '20:00',
-          dailyReminderUsers: Array.isArray(config['dailyReminderUsers'])
-            ? config['dailyReminderUsers']
-            : [],
-          exportEnabled:     config['exportEnabled'] !== false,
-          showStreakLeaderboard
-        },
-        userStats,
-        totalEntries:     m?.count() ?? 0,
-        csrfToken:        req.session?.csrfToken,
-        successMessage:   req.query['success'] ?? null,
-        errorMessage:     req.query['error']   ?? null
-      });
-    } catch (err) {
-      if (err instanceof ApiError) {
-        res.status(err.status).send(err.message);
-        return;
-      }
-      const msg = err instanceof Error ? err.message : String(err);
-      res.status(500).send(msg);
-    }
+    })();
   });
 
   // ── POST /admin/journal/settings ──────────────────────────────────────────

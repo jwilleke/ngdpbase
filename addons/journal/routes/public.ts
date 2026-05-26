@@ -49,16 +49,19 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
     res.status(500).send(err instanceof Error ? err.message : String(err));
   }
 
-  function buildSidebarData(username: string, streakVisible = true): { moodFacets: Array<{mood: string; count: number}>; tagFacets: Array<{tag: string; count: number}>; streak: number; total: number; streakVisible: boolean } {
+  // #800 — read methods are now async (query SearchManager + PageManager on
+  // demand; the legacy on-disk sidecar is retired). Helper composes the four
+  // sidebar-data queries in parallel; route handlers `await buildSidebarData(...)`.
+  async function buildSidebarData(username: string, streakVisible = true): Promise<{ moodFacets: Array<{mood: string; count: number}>; tagFacets: Array<{tag: string; count: number}>; streak: number; total: number; streakVisible: boolean }> {
     const m = jdm();
     if (!m) return { moodFacets: [], tagFacets: [], streak: 0, total: 0, streakVisible };
-    return {
-      moodFacets:    m.getMoodFacets(username),
-      tagFacets:     m.getTagFacets(username),
-      streak:        m.computeStreak(username),
-      total:         m.countByAuthor(username),
-      streakVisible
-    };
+    const [moodFacets, tagFacets, streak, total] = await Promise.all([
+      m.getMoodFacets(username),
+      m.getTagFacets(username),
+      m.computeStreak(username),
+      m.countByAuthor(username)
+    ]);
+    return { moodFacets, tagFacets, streak, total, streakVisible };
   }
 
   // ── GET /journal ─────────────────────────────────────────────────────────────
@@ -72,10 +75,12 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
         const username = ctx.username!;
         const limit    = parseInt((req.query['limit']  as string | undefined) ?? '20', 10) || 20;
         const offset   = parseInt((req.query['offset'] as string | undefined) ?? '0',  10) || 0;
-        const total    = m ? m.countByAuthor(username) : 0;
-        const entries  = m ? m.listByAuthor(username, { limit, offset }) : [];
+        const total    = m ? await m.countByAuthor(username) : 0;
+        const entries  = m ? await m.listByAuthor(username, { limit, offset }) : [];
         const streakVisible = await getUserPref<boolean>(username, 'journal.streakVisible', true);
         const leftMenu = await getLeftMenu(engine, req.userContext ?? null);
+        const sidebar  = await buildSidebarData(username, streakVisible);
+        const onThisDay = m ? await m.getOnThisDay(username) : [];
 
         res.render('journal-home', {
           currentUser: req.userContext,
@@ -85,10 +90,10 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
           offset,
           prevOffset:  Math.max(0, offset - limit),
           nextOffset:  offset + limit < total ? offset + limit : null,
-          sidebar:     buildSidebarData(username, streakVisible),
+          sidebar,
           activeFilter: null,
           activeValue:  null,
-          onThisDay:   m ? m.getOnThisDay(username) : [],
+          onThisDay,
           leftMenu
         });
       } catch (err) {
@@ -107,16 +112,17 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
         const m        = jdm();
         const username = ctx.username!;
         const tag      = sp(req.params['tag']);
-        const entries  = m ? m.listByAuthor(username, { tag }) : [];
+        const entries  = m ? await m.listByAuthor(username, { tag }) : [];
         const streakVisible = await getUserPref<boolean>(username, 'journal.streakVisible', true);
         const leftMenu = await getLeftMenu(engine, req.userContext ?? null);
+        const sidebar  = await buildSidebarData(username, streakVisible);
 
         res.render('journal-by-tag', {
           currentUser:  req.userContext,
           entries,
           tag,
           total:        entries.length,
-          sidebar:      buildSidebarData(username, streakVisible),
+          sidebar,
           leftMenu
         });
       } catch (err) {
@@ -135,16 +141,17 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
         const m        = jdm();
         const username = ctx.username!;
         const mood     = sp(req.params['mood']);
-        const entries  = m ? m.listByAuthor(username, { mood }) : [];
+        const entries  = m ? await m.listByAuthor(username, { mood }) : [];
         const streakVisible = await getUserPref<boolean>(username, 'journal.streakVisible', true);
         const leftMenu = await getLeftMenu(engine, req.userContext ?? null);
+        const sidebar  = await buildSidebarData(username, streakVisible);
 
         res.render('journal-by-mood', {
           currentUser: req.userContext,
           entries,
           mood,
           total:       entries.length,
-          sidebar:     buildSidebarData(username, streakVisible),
+          sidebar,
           leftMenu
         });
       } catch (err) {
@@ -162,7 +169,7 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
 
         const slug = sp(req.params['slug']);
         const m    = jdm();
-        const entry = m?.getBySlug(slug);
+        const entry = await m?.getBySlug(slug);
 
         if (!entry) {
           res.status(404).send('Journal entry not found.');
@@ -196,13 +203,14 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
 
         const streakVisible = await getUserPref<boolean>(entry.author, 'journal.streakVisible', true);
         const leftMenu = await getLeftMenu(engine, req.userContext ?? null);
+        const sidebar  = await buildSidebarData(entry.author, streakVisible);
 
         res.render('journal-entry', {
           currentUser:     req.userContext,
           entry,
           renderedContent,
           attachments,
-          sidebar:         buildSidebarData(entry.author, streakVisible),
+          sidebar,
           canEdit:         isOwner || isAdmin,
           csrfToken:       req.session?.csrfToken,
           leftMenu

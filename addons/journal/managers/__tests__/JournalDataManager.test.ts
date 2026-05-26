@@ -8,21 +8,61 @@ import { v4 as uuidv4 } from 'uuid';
 import JournalDataManager from '../JournalDataManager';
 import type { JournalIndexEntry } from '../JournalDataManager';
 
-// Minimal engine stub — JournalDataManager never calls engine methods
-const ENGINE_STUB = {} as never;
+// ── Mock engine wiring ────────────────────────────────────────────────────────
+//
+// #800 retired the on-disk sidecar; JournalDataManager now queries
+// SearchManager.searchByCategory('journal') + PageManager.getPage(slug)
+// on demand. Tests mock both managers and feed pre-canned page metadata.
 
-function makeEntry(overrides: Partial<JournalIndexEntry> = {}): JournalIndexEntry {
-  return {
-    uuid:         overrides.uuid         ?? uuidv4(),
-    slug:         overrides.slug         ?? 'journal-alice-2026-01-01',
-    title:        overrides.title        ?? 'Test Entry',
-    author:       overrides.author       ?? 'alice',
-    journalDate:  overrides.journalDate  ?? '2026-01-01',
-    tags:         overrides.tags         ?? [],
-    isPrivate:    overrides.isPrivate    ?? true,
-    lastModified: overrides.lastModified ?? new Date().toISOString(),
-    ...overrides
+interface MockPage {
+  title?: string;
+  content?: string;
+  metadata: Record<string, unknown>;
+}
+
+type MockPageOverrides = Partial<Omit<JournalIndexEntry, 'tags'>> & { tags?: string[]; content?: string };
+
+function makeMockPage(overrides: MockPageOverrides = {}): MockPage {
+  const slug = overrides.slug ?? `journal-alice-${overrides.journalDate ?? '2026-01-01'}`;
+  const md: Record<string, unknown> = {
+    uuid:               overrides.uuid          ?? uuidv4(),
+    slug,
+    title:              overrides.title         ?? 'Test Entry',
+    author:             overrides.author        ?? 'alice',
+    'system-category':  'journal',
+    'journal-date':     overrides.journalDate   ?? '2026-01-01',
+    lastModified:       overrides.lastModified  ?? new Date().toISOString()
   };
+  if (overrides.mood !== undefined) md['mood'] = overrides.mood;
+  if (overrides.tags !== undefined) md['user-keywords'] = overrides.tags;
+  if (overrides.isPrivate) md['private'] = true;
+  return { title: md['title'] as string, content: overrides.content ?? '', metadata: md };
+}
+
+function makeMockEngine(pages: MockPage[]): {
+  engine: never;
+  searchByCategory: ReturnType<typeof vi.fn>;
+  getPage: ReturnType<typeof vi.fn>;
+} {
+  // SearchResults projection: searchByCategory returns { name } per hit;
+  // the manager then calls getPage(name) for each. We match name → page.slug.
+  const slugToPage = new Map<string, MockPage>(
+    pages.map(p => [(p.metadata['slug'] as string), p])
+  );
+  const searchByCategory = vi.fn(async (category: string) => {
+    if (category !== 'journal') return [];
+    return pages.map(p => ({ name: p.metadata['slug'] as string }));
+  });
+  const getPage = vi.fn(async (slug: string) => slugToPage.get(slug) ?? null);
+
+  const engine = {
+    getManager: vi.fn((name: string) => {
+      if (name === 'SearchManager') return { searchByCategory };
+      if (name === 'PageManager') return { getPage };
+      return undefined;
+    })
+  };
+  return { engine: engine as never, searchByCategory, getPage };
 }
 
 function tmpDir(): string {
@@ -39,296 +79,303 @@ describe('JournalDataManager', () => {
   });
 
   afterEach(() => {
+    // CRITICAL: only remove the per-test tmp dir created by os.tmpdir() + mkdtempSync.
+    // NEVER target any production data path (see feedback_test_data_destruction).
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  // ── Persistence ──────────────────────────────────────────────────────────────
+  // ── No-op persistence (sidecar retired in #800) ────────────────────────────
 
-  describe('load / save', () => {
-    it('starts with an empty index when no file exists', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
+  describe('load / save / indexEntry / removeEntry — sidecar retired no-ops', () => {
+    it('load() does not throw when no sidecar file exists', async () => {
+      const { engine } = makeMockEngine([]);
+      const m = new JournalDataManager(engine, dir);
       await m.load();
-      expect(m.count()).toBe(0);
+      expect(await m.count()).toBe(0);
     });
 
-    it('persists and reloads entries', async () => {
-      const m1 = new JournalDataManager(ENGINE_STUB, dir);
-      await m1.load();
-      const entry = makeEntry();
-      await m1.indexEntry(entry);
-
-      const m2 = new JournalDataManager(ENGINE_STUB, dir);
-      await m2.load();
-      expect(m2.count()).toBe(1);
-      expect(m2.getBySlug(entry.slug)).toMatchObject({ uuid: entry.uuid });
+    it('load() does not throw and ignores stale sidecar file if present', async () => {
+      // Pre-seed a stale legacy sidecar file — manager should ignore it.
+      fs.writeFileSync(
+        path.join(dir, 'journal-index.json'),
+        JSON.stringify({ version: 1, entries: { 'x': { /* stale */ } } })
+      );
+      const { engine } = makeMockEngine([]);
+      const m = new JournalDataManager(engine, dir);
+      await m.load();
+      // The mock engine has no pages; count must be 0 regardless of the stale file.
+      expect(await m.count()).toBe(0);
     });
 
-    it('silently starts fresh on corrupt index', async () => {
-      const indexPath = path.join(dir, 'journal-index.json');
-      fs.writeFileSync(indexPath, 'not-json');
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      expect(m.count()).toBe(0);
+    it('indexEntry is a no-op (does not throw; does not mutate state)', async () => {
+      const { engine } = makeMockEngine([]);
+      const m = new JournalDataManager(engine, dir);
+      const entry: JournalIndexEntry = {
+        uuid: 'x', slug: 'x', title: 'x', author: 'alice',
+        journalDate: '2026-01-01', tags: [], isPrivate: false, lastModified: ''
+      };
+      await m.indexEntry(entry);
+      expect(await m.count()).toBe(0);
+    });
+
+    it('removeEntry is a no-op (does not throw)', async () => {
+      const { engine } = makeMockEngine([]);
+      const m = new JournalDataManager(engine, dir);
+      await m.removeEntry('any-uuid');
+      expect(await m.count()).toBe(0);
+    });
+
+    it('save is a no-op (does not write a sidecar file)', async () => {
+      const { engine } = makeMockEngine([]);
+      const m = new JournalDataManager(engine, dir);
+      await m.save();
+      expect(fs.existsSync(path.join(dir, 'journal-index.json'))).toBe(false);
     });
   });
 
-  // ── indexEntry / removeEntry ──────────────────────────────────────────────────
-
-  describe('indexEntry / removeEntry', () => {
-    it('upserts an entry by uuid', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      const entry = makeEntry({ title: 'Original' });
-      await m.indexEntry(entry);
-      await m.indexEntry({ ...entry, title: 'Updated' });
-      expect(m.count()).toBe(1);
-      expect(m.getBySlug(entry.slug)?.title).toBe('Updated');
-    });
-
-    it('removes an entry by uuid', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      const entry = makeEntry();
-      await m.indexEntry(entry);
-      await m.removeEntry(entry.uuid);
-      expect(m.count()).toBe(0);
-    });
-
-    it('removeEntry is a no-op for unknown uuid', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      await expect(m.removeEntry('nonexistent')).resolves.not.toThrow();
-    });
-  });
-
-  // ── listByAuthor ──────────────────────────────────────────────────────────────
+  // ── listByAuthor ─────────────────────────────────────────────────────────────
 
   describe('listByAuthor', () => {
     it('returns only entries for the specified author', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), author: 'alice', slug: 'a1', journalDate: '2026-01-01' }));
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), author: 'bob',   slug: 'b1', journalDate: '2026-01-02' }));
-      const results = m.listByAuthor('alice');
-      expect(results).toHaveLength(1);
-      expect(results[0].author).toBe('alice');
+      const { engine } = makeMockEngine([
+        makeMockPage({ author: 'alice', journalDate: '2026-01-01' }),
+        makeMockPage({ author: 'bob',   journalDate: '2026-01-02' })
+      ]);
+      const m = new JournalDataManager(engine, dir);
+      expect((await m.listByAuthor('alice')).map(e => e.author)).toEqual(['alice']);
+      expect((await m.listByAuthor('bob')).map(e => e.author)).toEqual(['bob']);
     });
 
     it('returns entries sorted newest-first', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e1', journalDate: '2026-01-01' }));
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e2', journalDate: '2026-03-01' }));
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e3', journalDate: '2026-02-01' }));
-      const dates = m.listByAuthor('alice').map(e => e.journalDate);
-      expect(dates).toEqual(['2026-03-01', '2026-02-01', '2026-01-01']);
+      const { engine } = makeMockEngine([
+        makeMockPage({ journalDate: '2026-01-01' }),
+        makeMockPage({ journalDate: '2026-01-03' }),
+        makeMockPage({ journalDate: '2026-01-02' })
+      ]);
+      const m = new JournalDataManager(engine, dir);
+      const dates = (await m.listByAuthor('alice')).map(e => e.journalDate);
+      expect(dates).toEqual(['2026-01-03', '2026-01-02', '2026-01-01']);
     });
 
-    it('filters by tag', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e1', tags: ['gratitude', 'family'] }));
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e2', tags: ['work'] }));
-      expect(m.listByAuthor('alice', { tag: 'gratitude' })).toHaveLength(1);
-      expect(m.listByAuthor('alice', { tag: 'work' })).toHaveLength(1);
-      expect(m.listByAuthor('alice', { tag: 'missing' })).toHaveLength(0);
+    it('filters by tag (sourced from user-keywords per #799)', async () => {
+      const { engine } = makeMockEngine([
+        makeMockPage({ slug: 'e1', tags: ['happy', 'work'] }),
+        makeMockPage({ slug: 'e2', tags: ['sad'] }),
+        makeMockPage({ slug: 'e3', tags: [] })
+      ]);
+      const m = new JournalDataManager(engine, dir);
+      expect((await m.listByAuthor('alice', { tag: 'happy' })).map(e => e.slug)).toEqual(['e1']);
+      expect((await m.listByAuthor('alice', { tag: 'missing' }))).toHaveLength(0);
     });
 
     it('filters by mood', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e1', mood: 'happy' }));
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e2', mood: 'sad' }));
-      expect(m.listByAuthor('alice', { mood: 'happy' })).toHaveLength(1);
-      expect(m.listByAuthor('alice', { mood: 'missing' })).toHaveLength(0);
+      const { engine } = makeMockEngine([
+        makeMockPage({ slug: 'e1', mood: 'happy' }),
+        makeMockPage({ slug: 'e2', mood: 'sad' })
+      ]);
+      const m = new JournalDataManager(engine, dir);
+      expect((await m.listByAuthor('alice', { mood: 'happy' })).map(e => e.slug)).toEqual(['e1']);
     });
 
     it('applies limit and offset', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      for (let i = 1; i <= 5; i++) {
-        await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: `e${i}`, journalDate: `2026-01-0${i}` }));
-      }
-      expect(m.listByAuthor('alice', { limit: 2 })).toHaveLength(2);
-      expect(m.listByAuthor('alice', { limit: 2, offset: 4 })).toHaveLength(1);
+      const { engine } = makeMockEngine([
+        makeMockPage({ slug: 'e1', journalDate: '2026-01-01' }),
+        makeMockPage({ slug: 'e2', journalDate: '2026-01-02' }),
+        makeMockPage({ slug: 'e3', journalDate: '2026-01-03' }),
+        makeMockPage({ slug: 'e4', journalDate: '2026-01-04' })
+      ]);
+      const m = new JournalDataManager(engine, dir);
+      const slice = await m.listByAuthor('alice', { limit: 2, offset: 1 });
+      // Sorted newest-first: e4, e3, e2, e1. limit=2, offset=1 → e3, e2.
+      expect(slice.map(e => e.slug)).toEqual(['e3', 'e2']);
     });
   });
 
-  // ── computeStreak ─────────────────────────────────────────────────────────────
+  // ── computeStreak ────────────────────────────────────────────────────────────
 
   describe('computeStreak', () => {
+    function today(): string { return new Date().toISOString().slice(0, 10); }
+    function daysAgo(n: number): string {
+      const d = new Date();
+      d.setDate(d.getDate() - n);
+      return d.toISOString().slice(0, 10);
+    }
+
     it('returns 0 for author with no entries', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      expect(m.computeStreak('alice')).toBe(0);
+      const { engine } = makeMockEngine([]);
+      const m = new JournalDataManager(engine, dir);
+      expect(await m.computeStreak('alice')).toBe(0);
     });
 
     it('counts a streak starting today', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      const today = new Date().toISOString().slice(0, 10);
-      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-      const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e1', journalDate: today }));
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e2', journalDate: yesterday }));
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e3', journalDate: twoDaysAgo }));
-      expect(m.computeStreak('alice')).toBe(3);
+      const { engine } = makeMockEngine([
+        makeMockPage({ slug: 'e1', journalDate: today() }),
+        makeMockPage({ slug: 'e2', journalDate: daysAgo(1) }),
+        makeMockPage({ slug: 'e3', journalDate: daysAgo(2) })
+      ]);
+      const m = new JournalDataManager(engine, dir);
+      expect(await m.computeStreak('alice')).toBe(3);
     });
 
     it('breaks streak on a gap', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      const today = new Date().toISOString().slice(0, 10);
-      const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e1', journalDate: today }));
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e2', journalDate: twoDaysAgo }));
-      expect(m.computeStreak('alice')).toBe(1);
+      const { engine } = makeMockEngine([
+        makeMockPage({ slug: 'e1', journalDate: today() }),
+        makeMockPage({ slug: 'e2', journalDate: daysAgo(1) }),
+        // gap on daysAgo(2)
+        makeMockPage({ slug: 'e3', journalDate: daysAgo(3) })
+      ]);
+      const m = new JournalDataManager(engine, dir);
+      expect(await m.computeStreak('alice')).toBe(2);
     });
 
     it('counts 1 for today only', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      const today = new Date().toISOString().slice(0, 10);
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e1', journalDate: today }));
-      expect(m.computeStreak('alice')).toBe(1);
+      const { engine } = makeMockEngine([
+        makeMockPage({ journalDate: today() })
+      ]);
+      const m = new JournalDataManager(engine, dir);
+      expect(await m.computeStreak('alice')).toBe(1);
     });
 
-    it('returns 0 when most recent entry is not today or yesterday', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      const threeDaysAgo = new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10);
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e1', journalDate: threeDaysAgo }));
-      expect(m.computeStreak('alice')).toBe(0);
+    it('returns 0 when most recent entry is not today', async () => {
+      const { engine } = makeMockEngine([
+        makeMockPage({ journalDate: daysAgo(2) })
+      ]);
+      const m = new JournalDataManager(engine, dir);
+      expect(await m.computeStreak('alice')).toBe(0);
     });
 
     it('deduplicates multiple entries on the same day', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      const today = new Date().toISOString().slice(0, 10);
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e1', journalDate: today }));
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e2', journalDate: today }));
-      expect(m.computeStreak('alice')).toBe(1);
+      // Two entries dated today (different slugs) should count as 1 streak day.
+      const { engine } = makeMockEngine([
+        makeMockPage({ slug: 'e1', journalDate: today() }),
+        makeMockPage({ slug: 'e2', journalDate: today() })
+      ]);
+      const m = new JournalDataManager(engine, dir);
+      expect(await m.computeStreak('alice')).toBe(1);
     });
 
-    it('does not count another author\'s entries in streak', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      const today = new Date().toISOString().slice(0, 10);
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'b1', author: 'bob', journalDate: today }));
-      expect(m.computeStreak('alice')).toBe(0);
+    it("does not count another author's entries in streak", async () => {
+      const { engine } = makeMockEngine([
+        makeMockPage({ slug: 'a1', author: 'alice', journalDate: today() }),
+        makeMockPage({ slug: 'b1', author: 'bob',   journalDate: daysAgo(1) })
+      ]);
+      const m = new JournalDataManager(engine, dir);
+      expect(await m.computeStreak('alice')).toBe(1);
+      expect(await m.computeStreak('bob')).toBe(0);
     });
   });
 
-  // ── getOnThisDay ──────────────────────────────────────────────────────────────
+  // ── getOnThisDay ─────────────────────────────────────────────────────────────
 
   describe('getOnThisDay', () => {
     it('returns entries from the same MM-DD in prior years', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      const today = '2026-04-18';
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'past1', journalDate: '2025-04-18' }));
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'past2', journalDate: '2024-04-18' }));
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'today', journalDate: today }));
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'other', journalDate: '2025-04-19' }));
-      const results = m.getOnThisDay('alice', today);
-      expect(results).toHaveLength(2);
-      expect(results.map(e => e.slug).sort()).toEqual(['past1', 'past2'].sort());
+      const { engine } = makeMockEngine([
+        makeMockPage({ slug: 'e1', journalDate: '2024-05-26' }),
+        makeMockPage({ slug: 'e2', journalDate: '2025-05-26' }),
+        makeMockPage({ slug: 'e3', journalDate: '2025-05-27' })
+      ]);
+      const m = new JournalDataManager(engine, dir);
+      const onDay = await m.getOnThisDay('alice', '2026-05-26');
+      expect(onDay.map(e => e.slug)).toEqual(['e2', 'e1']);
     });
 
     it('excludes other authors', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'b1', author: 'bob', journalDate: '2025-04-18' }));
-      const results = m.getOnThisDay('alice', '2026-04-18');
-      expect(results).toHaveLength(0);
-    });
-
-    it('returns results sorted newest-first', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'p1', journalDate: '2023-04-18' }));
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'p2', journalDate: '2025-04-18' }));
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'p3', journalDate: '2024-04-18' }));
-      const dates = m.getOnThisDay('alice', '2026-04-18').map(e => e.journalDate);
-      expect(dates).toEqual(['2025-04-18', '2024-04-18', '2023-04-18']);
+      const { engine } = makeMockEngine([
+        makeMockPage({ slug: 'a1', author: 'alice', journalDate: '2025-05-26' }),
+        makeMockPage({ slug: 'b1', author: 'bob',   journalDate: '2025-05-26' })
+      ]);
+      const m = new JournalDataManager(engine, dir);
+      const onDay = await m.getOnThisDay('alice', '2026-05-26');
+      expect(onDay.map(e => e.slug)).toEqual(['a1']);
     });
   });
 
-  // ── getMoodFacets ─────────────────────────────────────────────────────────────
+  // ── getMoodFacets ────────────────────────────────────────────────────────────
 
   describe('getMoodFacets', () => {
     it('returns mood counts sorted by frequency', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e1', mood: 'happy' }));
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e2', mood: 'happy' }));
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e3', mood: 'sad' }));
-      const facets = m.getMoodFacets('alice');
-      expect(facets[0]).toEqual({ mood: 'happy', count: 2 });
-      expect(facets[1]).toEqual({ mood: 'sad',   count: 1 });
+      const { engine } = makeMockEngine([
+        makeMockPage({ slug: 'e1', mood: 'happy' }),
+        makeMockPage({ slug: 'e2', mood: 'happy' }),
+        makeMockPage({ slug: 'e3', mood: 'sad' })
+      ]);
+      const m = new JournalDataManager(engine, dir);
+      expect(await m.getMoodFacets('alice')).toEqual([
+        { mood: 'happy', count: 2 },
+        { mood: 'sad',   count: 1 }
+      ]);
     });
 
     it('excludes entries with no mood', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e1' })); // no mood
-      expect(m.getMoodFacets('alice')).toHaveLength(0);
-    });
-
-    it('excludes other authors', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'b1', author: 'bob', mood: 'happy' }));
-      expect(m.getMoodFacets('alice')).toHaveLength(0);
+      const { engine } = makeMockEngine([
+        makeMockPage({ slug: 'e1', mood: 'happy' }),
+        makeMockPage({ slug: 'e2' })
+      ]);
+      const m = new JournalDataManager(engine, dir);
+      expect(await m.getMoodFacets('alice')).toEqual([{ mood: 'happy', count: 1 }]);
     });
   });
 
-  // ── getTagFacets ──────────────────────────────────────────────────────────────
+  // ── getTagFacets (sources from user-keywords per #799) ───────────────────────
 
   describe('getTagFacets', () => {
     it('returns tag counts sorted by frequency', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e1', tags: ['gratitude', 'family'] }));
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e2', tags: ['gratitude'] }));
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e3', tags: ['work'] }));
-      const facets = m.getTagFacets('alice');
-      expect(facets[0]).toEqual({ tag: 'gratitude', count: 2 });
-      expect(facets).toHaveLength(3);
+      const { engine } = makeMockEngine([
+        makeMockPage({ slug: 'e1', tags: ['work', 'family'] }),
+        makeMockPage({ slug: 'e2', tags: ['work'] })
+      ]);
+      const m = new JournalDataManager(engine, dir);
+      expect(await m.getTagFacets('alice')).toEqual([
+        { tag: 'work',   count: 2 },
+        { tag: 'family', count: 1 }
+      ]);
     });
 
     it('returns empty array when no tags exist', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e1', tags: [] }));
-      expect(m.getTagFacets('alice')).toHaveLength(0);
-    });
-
-    it('excludes other authors', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'b1', author: 'bob', tags: ['family'] }));
-      expect(m.getTagFacets('alice')).toHaveLength(0);
+      const { engine } = makeMockEngine([
+        makeMockPage({ slug: 'e1' })
+      ]);
+      const m = new JournalDataManager(engine, dir);
+      expect(await m.getTagFacets('alice')).toEqual([]);
     });
   });
 
-  // ── toMarqueeText ─────────────────────────────────────────────────────────────
+  // ── toMarqueeText ────────────────────────────────────────────────────────────
 
   describe('toMarqueeText', () => {
     it('uses singular for 1 entry', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      await m.indexEntry(makeEntry());
+      const { engine } = makeMockEngine([
+        makeMockPage({ slug: 'e1' })
+      ]);
+      const m = new JournalDataManager(engine, dir);
       expect(await m.toMarqueeText()).toBe('Journal: 1 entry indexed');
     });
 
     it('uses plural for 0 or multiple entries', async () => {
-      const m = new JournalDataManager(ENGINE_STUB, dir);
-      await m.load();
-      expect(await m.toMarqueeText()).toBe('Journal: 0 entries indexed');
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e1' }));
-      await m.indexEntry(makeEntry({ uuid: uuidv4(), slug: 'e2' }));
-      expect(await m.toMarqueeText()).toBe('Journal: 2 entries indexed');
+      const { engine: emptyEngine } = makeMockEngine([]);
+      const m0 = new JournalDataManager(emptyEngine, dir);
+      expect(await m0.toMarqueeText()).toBe('Journal: 0 entries indexed');
+
+      const { engine: twoEngine } = makeMockEngine([
+        makeMockPage({ slug: 'e1' }),
+        makeMockPage({ slug: 'e2' })
+      ]);
+      const m2 = new JournalDataManager(twoEngine, dir);
+      expect(await m2.toMarqueeText()).toBe('Journal: 2 entries indexed');
+    });
+  });
+
+  // ── Defensive: gracefully handles missing managers ────────────────────────────
+
+  describe('graceful degradation', () => {
+    it('returns empty results when SearchManager / PageManager are unavailable', async () => {
+      const engine = {
+        getManager: vi.fn(() => undefined)
+      } as never;
+      const m = new JournalDataManager(engine, dir);
+      expect(await m.count()).toBe(0);
+      expect(await m.listByAuthor('alice')).toEqual([]);
+      expect(await m.computeStreak('alice')).toBe(0);
     });
   });
 });
