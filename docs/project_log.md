@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-26-10
+
+- Agent: Claude Opus 4.7
+- Subject: **Standalone `/othersites` propagation**. Operator surfaced the propagation gap (8 deferred patches; satellites still on v3.43.0). Pulled all three instances forward to **v3.43.8** and validated.
+- Current Issue: none directly (operational hygiene)
+- Tests: all three instances GREEN — 6064 unit + 80 E2E each, no flakes.
+- /othersites mode: **standalone**. Per the skill: "If you're unsure which mode you're in, default to standalone. Redundant work is cheap; missed validation isn't." Processed jimstest too (it was already on v3.43.8 / just-validated, but a re-run is cheap insurance).
+- Pre-pull state on both satellites: same benign `package-lock.json` version-string diff (`3.42.0` → `3.43.8` sync) — the satellites' last build wrote a newer lock than what was committed at the time. `git checkout --` to restore then `git pull --ff-only` worked clean. (Same pattern observed during v3.42.0 propagation; documented in `feedback_cross_repo_coordination`.)
+- /othersites results (instance | port | unit | E2E | duration | notes):
+  - jimstest                | 3000 | 6064 | 80 | unit ~10s, E2E 2.6m | already on v3.43.8; redundant pass clean
+  - fairways-base           | 2121 | 6064 | 80 | unit ~10s, E2E 37s  | jumped v3.42.0 → v3.43.8 (8 patches); no stale sidecar file (journal addon was never actively writing entries on this instance)
+  - ngdp-temp-builds        | 3001 | 6064 | 80 | unit ~10s, E2E 25s  | jumped v3.42.0 → v3.43.8
+- Flakes seen: **none**.
+- Total elapsed: ~12 min for all three instances (build + restart + unit + E2E each).
+- Confirms today's EPIC #790 second-wave refactor (#797/#798/#799/#800/#803) is now live on all three local instances. Satellites no longer have the orphaned `journal-editor.ejs`, the dead `parseTags` code, the unreachable POST handlers, or the on-disk sidecar code path.
+- No log entries needed on individual closed issues (#797–#800, #803) since their commits propagated as a single bundle without rework.
+- Next: continue with **#801** (JournalTemplateManager retirement) — operator-confirmed direction.
+
 ## 2026-05-26-09
 
 - Agent: Claude Opus 4.7
