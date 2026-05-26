@@ -2,7 +2,7 @@
   "ngdpbase.application-name": "ngdp-instance",
   "ngdpbase.favicon-path": "/favicon.svg",
   "ngdpbase.application.category": "Digital Platform",
-  "ngdpbase.version": "3.42.0",
+  "ngdpbase.version": "3.43.0",
   "ngdpbase.github.repo": "jwilleke/ngdpbase",
   "ngdpbase.application.base-url": "http://localhost:3000",
   "ngdpbase.encoding": "UTF-8",
@@ -207,14 +207,12 @@
   "ngdpbase.auth.cloudflare-access.application-aud": "",
   "ngdpbase.auth.cloudflare-access.default-role": "occupant",
   "ngdpbase.auth.cloudflare-access.group-map": {},
-
   "_comment_schema_types": "JSON-LD @type per system-category (#791) — operator-controllable schema.org subtypes. articleToPageJsonLd consults this map at render time; categories not listed fall through to 'Article'. Shipped Article-subtype defaults: documentation/developer → TechArticle, journal → BlogPosting (no-op until `journal` is registered as a system-category per EPIC #790). Operators may add Article-family or non-Article (e.g. FAQPage) types per deployment in app-custom-config.json. See docs/schemas.md § Per-category JSON-LD @type.",
   "ngdpbase.schema-types": {
     "documentation": "TechArticle",
     "developer": "TechArticle",
     "journal": "BlogPosting"
   },
-
   "_comment_password_auth": "Password (local) authentication — set false to hide the password form when Google OIDC is the only desired login method",
   "ngdpbase.auth.password.enabled": true,
   "_comment_user_external": "Default isExternal for newly provisioned users. false = local account with password. OIDC auto-provision overrides to true.",
