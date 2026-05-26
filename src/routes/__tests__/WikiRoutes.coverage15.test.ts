@@ -535,6 +535,97 @@ describe('WikiRoutes — coverage batch 15', () => {
         .send({ content: '## Section', title: 'TestPage', 'system-category': 'general', section: '0' });
       expect(res.status).toBe(302);
     });
+
+    // ── #803 — Unified /save preserves unknown frontmatter fields ──────────
+
+    test('#803 — preserves unknown form fields (mood, journal-date) into metadata', async () => {
+      mockPageManager.savePageWithContext.mockClear();
+      const res = await request(app)
+        .post('/save/TestPage')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({
+          content: '# Hello',
+          title: 'TestPage',
+          'system-category': 'general',
+          mood: 'curious',
+          'journal-date': '2026-05-26'
+        });
+      expect(res.status).toBe(302);
+      expect(mockPageManager.savePageWithContext).toHaveBeenCalled();
+      const metadata = mockPageManager.savePageWithContext.mock.calls[0][1] as Record<string, unknown>;
+      expect(metadata['mood']).toBe('curious');
+      expect(metadata['journal-date']).toBe('2026-05-26');
+    });
+
+    test('#803 — preserves existing on-disk frontmatter when form omits the field', async () => {
+      mockPageManager.savePageWithContext.mockClear();
+      // existingPageData.metadata default includes 'mood: tired' for this test
+      mockPageManager.getPage.mockImplementationOnce(() => Promise.resolve({
+        content: '# Existing',
+        metadata: {
+          title: 'TestPage', uuid: 'uuid-1', 'system-category': 'general',
+          'user-keywords': [], author: 'adminuser',
+          mood: 'tired' // existing on-disk field; form below does NOT post mood
+        },
+        filePath: '/data/pages/TestPage.md'
+      }));
+      const res = await request(app)
+        .post('/save/TestPage')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general' });
+      expect(res.status).toBe(302);
+      const metadata = mockPageManager.savePageWithContext.mock.calls[0][1] as Record<string, unknown>;
+      // Existing mood survives because the form didn't post a mood field
+      expect(metadata['mood']).toBe('tired');
+    });
+
+    test('#803 — req.body unknown field overrides existing frontmatter', async () => {
+      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.getPage.mockImplementationOnce(() => Promise.resolve({
+        content: '# Existing',
+        metadata: {
+          title: 'TestPage', uuid: 'uuid-1', 'system-category': 'general',
+          'user-keywords': [], author: 'adminuser',
+          mood: 'tired'
+        },
+        filePath: '/data/pages/TestPage.md'
+      }));
+      const res = await request(app)
+        .post('/save/TestPage')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general', mood: 'happy' });
+      expect(res.status).toBe(302);
+      const metadata = mockPageManager.savePageWithContext.mock.calls[0][1] as Record<string, unknown>;
+      // Form-posted mood wins over existing
+      expect(metadata['mood']).toBe('happy');
+    });
+
+    test('#803 — form-internal markers do not leak into metadata', async () => {
+      mockPageManager.savePageWithContext.mockClear();
+      const res = await request(app)
+        .post('/save/TestPage')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({
+          content: '# Hello',
+          title: 'TestPage',
+          'system-category': 'general',
+          _csrf: 'test-csrf-token', // must satisfy the test app's CSRF middleware
+          'private-present': '1',
+          'author-lock-present': '1',
+          section: '',
+          categories: 'legacy-noise',
+          userKeywords: 'tech'
+        });
+      expect(res.status).toBe(302);
+      const metadata = mockPageManager.savePageWithContext.mock.calls[0][1] as Record<string, unknown>;
+      // None of the form-internal markers should appear in the saved frontmatter
+      expect(metadata).not.toHaveProperty('_csrf');
+      expect(metadata).not.toHaveProperty('private-present');
+      expect(metadata).not.toHaveProperty('author-lock-present');
+      expect(metadata).not.toHaveProperty('section');
+      expect(metadata).not.toHaveProperty('categories');
+      expect(metadata).not.toHaveProperty('userKeywords'); // camelCase alias handled by managed flow
+    });
   });
 
   // ── deletePage ────────────────────────────────────────────────────────────────

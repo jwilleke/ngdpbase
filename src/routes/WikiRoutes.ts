@@ -3000,6 +3000,34 @@ ${panes}
         uuid: existingPage?.metadata?.uuid || undefined
       });
 
+      // #803 — preserve addon-claimed unknown frontmatter fields (EPIC #790).
+      // Step 1: carry forward existing on-disk frontmatter fields the form
+      // didn't post (so editing a page through a generic editor that doesn't
+      // know about an addon field — e.g. `mood` on a journal entry — doesn't
+      // drop the field). Step 2: layer non-managed, non-form-internal fields
+      // from the submit body on top so an addon editor's `extraFrontmatterFields`
+      // slot inputs (e.g. mood + journal-date in `_basicEditor.ejs`) actually
+      // persist. Empty-string values preserve existing (clear-via-blank is a
+      // known minor UX gap; a follow-up can add explicit deletion).
+      const _803_managedFields = new Set<string>([
+        'title', 'slug', 'uuid', 'lastModified', 'created',
+        'system-category', 'system-keywords', 'user-keywords',
+        'audience', 'author-lock', 'private', 'author', 'content'
+      ]);
+      const _803_formInternal = new Set<string>([
+        '_csrf', 'section', 'private-present', 'author-lock-present',
+        'categories', 'userKeywords'
+      ]);
+      const _803_existingMeta = (existingPage?.metadata ?? {}) as Record<string, unknown>;
+      for (const [k, v] of Object.entries(_803_existingMeta)) {
+        if (!(k in metadata)) (metadata)[k] = v;
+      }
+      for (const [k, v] of Object.entries(req.body as Record<string, unknown>)) {
+        if (_803_managedFields.has(k) || _803_formInternal.has(k)) continue;
+        if (typeof v === 'string' && v.trim() === '') continue;
+        (metadata)[k] = v;
+      }
+
       // Mark pages as user-modified based on their storageLocation in config
       const _catConfigManager = this.engine.getManager('ConfigurationManager');
       const _allCategoryConfig = (_catConfigManager
