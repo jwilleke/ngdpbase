@@ -1293,6 +1293,40 @@ class WikiRoutes {
    * Build complete default metadata for a new or existing page.
    * Single source of truth — delegates to ValidationManager.generateValidMetadata().
    */
+  /**
+   * #797 — Build the HTML string for the editor's `extraFrontmatterFields`
+   * slot (consumed in `views/_basicEditor.ejs`, #794) based on the page's
+   * metadata. Today only emits content for `system-category: journal`
+   * (renders a journal-date input). Designed as a pure static method so
+   * the addon-detection logic is trivially unit-testable and centralized
+   * — when more addons claim slots, this helper grows a small switch on
+   * system-category rather than spreading conditionals across editPage.
+   *
+   * The journal-date input value persists through unified /save (#803).
+   *
+   * @param metadata - The page's frontmatter (may be undefined-ish for new pages).
+   * @returns Pre-rendered HTML string for the slot, or '' when no addon claims it.
+   */
+  static buildEditorExtraFrontmatterFields(metadata: Record<string, unknown> | undefined | null): string {
+    const systemCategory = ((metadata?.['system-category'] as string | undefined) ?? '').toLowerCase();
+    if (systemCategory !== 'journal') return '';
+
+    // HTML-attribute-escape the existing journal-date so a hostile
+    // frontmatter value can't break out of the value="..." attribute.
+    const rawDate = (metadata?.['journal-date'] as string | undefined) ?? '';
+    const escDate = String(rawDate).replace(/[&<>"']/g, (c: string) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>)[c]
+    );
+
+    return `
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label for="journal-date" style="font-weight:bold;">Journal Date:</label>
+                        <input type="date" id="journal-date" name="journal-date" class="form-control" value="${escDate}">
+                    </div>
+                </div>`;
+  }
+
   buildNewPageMetadata(
     title: string,
     options: Record<string, unknown> = {}
@@ -2656,6 +2690,15 @@ ${panes}
 
       const pageIsRequired = await this.isRequiredPage(pageName);
 
+      // #797 — addon-claimed extension slot HTML for the editor's
+      // `extraFrontmatterFields` slot (defined in `_basicEditor.ejs`, #794).
+      // For journal-categorised pages, inject a journal-date input that
+      // round-trips through unified /save (#803 preservation). Mood + tags
+      // pickers can layer on in a follow-up slice.
+      const extraFrontmatterFields = WikiRoutes.buildEditorExtraFrontmatterFields(
+        pageData.metadata as Record<string, unknown>
+      );
+
       res.render('edit', {
         ...commonData,
         title: sectionIndex !== null ? `Edit section of ${pageName}` : `Edit ${pageName}`,
@@ -2674,7 +2717,8 @@ ${panes}
         pageAttachments: pageAttachments,
         csrfToken: req.session.csrfToken,
         isRequiredPage: pageIsRequired,
-        sectionIndex: sectionIndex
+        sectionIndex: sectionIndex,
+        extraFrontmatterFields: extraFrontmatterFields
       });
     } catch (err: unknown) {
       logger.error('Error loading edit page:', err);

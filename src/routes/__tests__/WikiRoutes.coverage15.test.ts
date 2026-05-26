@@ -447,6 +447,58 @@ describe('WikiRoutes — coverage batch 15', () => {
     });
   });
 
+  // ── #797 — buildEditorExtraFrontmatterFields helper ─────────────────────────
+
+  describe('#797 — buildEditorExtraFrontmatterFields (extraFrontmatterFields slot)', () => {
+    test('emits journal-date input HTML when system-category is journal', () => {
+      const html = WikiRoutes.buildEditorExtraFrontmatterFields({
+        'system-category': 'journal',
+        'journal-date': '2026-05-26'
+      });
+      expect(html).toContain('name="journal-date"');
+      expect(html).toContain('type="date"');
+      expect(html).toContain('value="2026-05-26"');
+    });
+
+    test('emits empty input when system-category is journal but journal-date is unset', () => {
+      const html = WikiRoutes.buildEditorExtraFrontmatterFields({
+        'system-category': 'journal'
+      });
+      expect(html).toContain('name="journal-date"');
+      expect(html).toContain('value=""');
+    });
+
+    test('case-insensitive match on system-category (journal vs Journal)', () => {
+      const html = WikiRoutes.buildEditorExtraFrontmatterFields({
+        'system-category': 'Journal'
+      });
+      expect(html).toContain('name="journal-date"');
+    });
+
+    test('returns empty string for non-journal categories', () => {
+      const html = WikiRoutes.buildEditorExtraFrontmatterFields({
+        'system-category': 'general'
+      });
+      expect(html).toBe('');
+    });
+
+    test('returns empty string when metadata is undefined or has no system-category', () => {
+      expect(WikiRoutes.buildEditorExtraFrontmatterFields(undefined)).toBe('');
+      expect(WikiRoutes.buildEditorExtraFrontmatterFields(null)).toBe('');
+      expect(WikiRoutes.buildEditorExtraFrontmatterFields({})).toBe('');
+    });
+
+    test('HTML-attribute-escapes the journal-date value to prevent attribute injection', () => {
+      const html = WikiRoutes.buildEditorExtraFrontmatterFields({
+        'system-category': 'journal',
+        'journal-date': '" onfocus="alert(1)'
+      });
+      // The unescaped breakout would set onfocus; the escaped value must be safe.
+      expect(html).not.toContain('onfocus="alert(1)"');
+      expect(html).toContain('&quot;');
+    });
+  });
+
   // ── savePage ──────────────────────────────────────────────────────────────────
 
   describe('POST /save/:page (savePage)', () => {
