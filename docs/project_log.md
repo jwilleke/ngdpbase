@@ -2,6 +2,38 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-26-01
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped #793 (register `journal` as a core system-category) + cut **v3.43.0** minor release. EPIC #790 Thread #4 progress — first journal-reconcile sub-issue lands and lights up #791's previously-deferred JSON-LD mapping.
+- Current Issue: #793 (closes); EPIC #790 (parent, still open with #794/#795 remaining)
+- Tests: jimstest GREEN twice — 6048 unit + 80 E2E on pre-release commit `1d089d44` (session-commit Step 3 / semver Step 4) and again on release commit `6df9b63b` (semver Step 8a). All satellites: 6048 unit + 80 E2E each, no flakes.
+- Semver: **minor** — release range v3.42.0..v3.43.0 = 9 commits, includes new public configuration (`ngdpbase.system-category.journal`) + previously-uncovered feature `#791` (`articleToPageJsonLd.ts` schema-types lookup) + #792 dead-code deletion. Auto-published GH Release.
+- **Drift discovery (worth noting)**: TODO.md and prior project_log claimed `#791` and `#792` "shipped in v3.42.0", but git history shows both commits (`63603f70` feat(#791), `bf9a4dd2` refactor(#792)) actually landed AFTER the `52f6ac78` v3.42.0 release commit on 2026-05-25 — they sat untagged on master and now ship as part of v3.43.0. No correction needed retroactively; just be precise in future log entries that "shipped in vN" means tagged ≤ vN, not committed ≤ vN.
+- /othersites: ran in satellite-only mode — semver Step 8a validated jimstest on release commit `6df9b63b` (rebuild + restart + 6048 unit + 80 E2E), so /othersites skipped jimstest re-processing.
+- /othersites results (instance | port | unit | E2E):
+  - `fairways-base` | 2121 | 6048 | 80 (package-lock.json pre-pull diff was benign 3.41.1→3.42.0 string sync; `git checkout --` + pull + npm install + rebuild clean)
+  - `ngdp-temp-builds` | 3001 | 6048 | 80 (same package-lock.json pre-pull pattern; same recovery)
+- Perf baseline drift v3.42.0 → v3.43.0: memory **+129.4%** (1453.4 → 3333.8 MB) — threshold tripped. Surfaced to operator; **judged noise** per historical pattern (v3.39.3 was +148%, v3.41.1 was -53%, all centered around the same baseline series). Post-test V8 heap inflation, not real regression. Route times all clean (`/` improved -79.3% to 29ms; `/view/Welcome` +5% within noise; `/search` -6.5%; `/login` +10.5% within noise). Baseline file: `docs/performance/baseline-v3.43.0-2026-05-26.md`.
+- New Dependabot alert: GitHub flagged **alert #96 (1 moderate)** on jwilleke/ngdpbase default branch during the push. My /check-todos survey at session start showed 0 open alerts — this opened between then and the v3.43.0 push (~30 min window). Will inspect during the Step 9 /check-todos refresh.
+- Work Done:
+  - /check-todos at session start: confirmed 0 open Dependabot alerts at that point, no failing scheduled workflows, no `in review` items, 1 open PR (geohazardwatch #60 awaiting operator decision on eslint v10 major).
+  - Started #793: read EPIC #790 + #793 issue body; confirmed `config/app-default-config.json` policy-tier gate per operator-approval requirement; surfaced exact proposed diff; operator approved verbatim.
+  - Applied #793 diff: inserted `journal` entry in `ngdpbase.system-category` block after `user-profile` with the issue body's verbatim shape (label, description, default:false, storageLocation:regular, enabled:true, page-badge bg-info "Journal").
+  - Restarted jimstest: startup log went `Loaded 6 system categories` → `Loaded 7 system categories: ..., journal`.
+  - Verified by code-path inspection: `ValidationManager:200` loads dynamically, `WikiRoutes.getSystemCategories():1389-1396` filters to dropdown, `views/header.ejs:177-181` renders badge, `articleToPageJsonLd.ts:65-69` consults `ngdpbase.schema-types['journal'] → BlogPosting` (shipped untagged on 2026-05-25 in `63603f70`).
+  - /session-commit: committed `1d089d44`, ran full pre-flight + semver minor + GH Release + jimstest re-validation + 2-satellite propagation.
+- Commits:
+  - `1d089d44` — feat(#793): register `journal` as core system-category
+  - `6df9b63b` — chore: release v3.43.0
+- Files Modified:
+  - `config/app-default-config.json` (added journal system-category entry)
+  - `TODO.md` (refreshed at session start: v3.42.0 → v3.43.0 latest release, EPIC #790 sub-issue status, operator-decision carryover)
+  - `package-lock.json` (version-string sync 3.41.1 → 3.42.0 → 3.43.0 across two bumps)
+  - `package.json`, `CHANGELOG.md` (version-bump mechanics)
+  - `docs/performance/baseline-v3.43.0-2026-05-26.md` (new baseline + drift section)
+  - `docs/project_log.md` (this entry — final commit)
+
 ## 2026-05-25-06
 
 - Agent: Claude Opus 4.7
