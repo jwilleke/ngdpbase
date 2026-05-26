@@ -1294,6 +1294,61 @@ class WikiRoutes {
    * Single source of truth — delegates to ValidationManager.generateValidMetadata().
    */
   /**
+   * #798 — Build the HTML string for the view's `extraPageMetaBar` slot
+   * (consumed in `views/header.ejs`, #796) based on the page's metadata.
+   * Today emits journal-specific content for `system-category: journal`
+   * (journal-date pill + mood badge). When more addons claim the slot,
+   * this helper grows a small switch on system-category rather than
+   * spreading conditionals across viewPage.
+   *
+   * The slot lands inside the navigation-title `<h5>` next to the existing
+   * `(Private)` and `(Category)` badges, so addon badges appear in the
+   * same visual group as the core badges.
+   *
+   * Note: this is per-page-VIEW affordance injection. The journal-flavored
+   * view at `/journal/<slug>` (rendered by `addons/journal/views/journal-entry.ejs`)
+   * keeps its sidebar widgets / tag chips / edit-delete affordances; this
+   * helper only adds the meta-bar pills for operators reaching a journal
+   * entry through generic `/view/<slug>`.
+   *
+   * @param metadata - The page's frontmatter (may be undefined-ish).
+   * @returns Pre-rendered HTML string for the slot, or '' when no addon claims it.
+   */
+  static buildViewExtraPageMetaBar(metadata: Record<string, unknown> | undefined | null): string {
+    const systemCategory = ((metadata?.['system-category'] as string | undefined) ?? '').toLowerCase();
+    if (systemCategory !== 'journal') return '';
+
+    // Shared HTML-attribute escape — same shape as #797's helper, defended
+    // against attribute-context breakout via hostile frontmatter.
+    const escAttr = (s: string): string => s.replace(/[&<>"']/g, (c: string) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>)[c]
+    );
+    // HTML-body escape (text-context): journal-date is rendered as text content
+    // (not just an attribute), so escape <, >, & here too.
+    const escText = (s: string): string => s.replace(/[&<>]/g, (c: string) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' } as Record<string, string>)[c]
+    );
+
+    const parts: string[] = [];
+
+    const rawDate = (metadata?.['journal-date'] as string | undefined) ?? '';
+    if (rawDate) {
+      parts.push(
+        `<span class="badge bg-info text-dark ms-1" style="font-size:0.6em;vertical-align:middle;" title="Journal entry date (${escAttr(String(rawDate))})">${escText(String(rawDate))}</span>`
+      );
+    }
+
+    const rawMood = (metadata?.['mood'] as string | undefined) ?? '';
+    if (rawMood) {
+      parts.push(
+        `<span class="badge bg-secondary ms-1" style="font-size:0.6em;vertical-align:middle;" title="Mood: ${escAttr(String(rawMood))}">${escText(String(rawMood))}</span>`
+      );
+    }
+
+    return parts.join('');
+  }
+
+  /**
    * #797 — Build the HTML string for the editor's `extraFrontmatterFields`
    * slot (consumed in `views/_basicEditor.ejs`, #794) based on the page's
    * metadata. Today only emits content for `system-category: journal`
@@ -2095,6 +2150,18 @@ ${panes}
         return res.send(JSON.stringify(pageJsonLd));
       }
 
+      // #798 — addon-claimed extension slot HTML for the view's
+      // `extraPageMetaBar` slot (defined in `views/header.ejs`, #796).
+      // For `system-category: journal` pages, inject a journal-date pill
+      // (and mood badge if set) alongside the (Private)/(Category) badges
+      // in the navigation-title h5. The journal-entry.ejs view at
+      // /journal/<slug> retains its journal-flavored layout for operators
+      // in journal mode; this slot adds the same affordances inline when
+      // a journal entry is reached via /view/<slug> (wiki links, search).
+      const extraPageMetaBar = WikiRoutes.buildViewExtraPageMetaBar(
+        metadata as Record<string, unknown>
+      );
+
       res.render(template, {
         ...templateData,
         pageName,
@@ -2120,7 +2187,8 @@ ${panes}
         versionInfo,
         lastModified: metadata?.lastModified,
         referringPages: [], // TODO: Implement backlink detection
-        warningMessage
+        warningMessage,
+        extraPageMetaBar
       });
     } catch (error: unknown) {
       this.engine.getManager('MetricsManager')?.recordPageView?.(Date.now() - _metricsStart);

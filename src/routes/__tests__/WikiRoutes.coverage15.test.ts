@@ -499,6 +499,89 @@ describe('WikiRoutes — coverage batch 15', () => {
     });
   });
 
+  // ── #798 — buildViewExtraPageMetaBar helper ──────────────────────────────────
+
+  describe('#798 — buildViewExtraPageMetaBar (extraPageMetaBar slot)', () => {
+    test('emits journal-date pill when system-category is journal and date is set', () => {
+      const html = WikiRoutes.buildViewExtraPageMetaBar({
+        'system-category': 'journal',
+        'journal-date': '2026-05-26'
+      });
+      expect(html).toContain('badge');
+      expect(html).toContain('2026-05-26');
+      expect(html).toContain('Journal entry date');
+    });
+
+    test('emits mood badge when mood is set', () => {
+      const html = WikiRoutes.buildViewExtraPageMetaBar({
+        'system-category': 'journal',
+        'journal-date': '2026-05-26',
+        mood: 'curious'
+      });
+      expect(html).toContain('2026-05-26');
+      expect(html).toContain('curious');
+      expect(html).toContain('Mood: curious');
+    });
+
+    test('skips date pill when journal-date is unset, still emits mood badge', () => {
+      const html = WikiRoutes.buildViewExtraPageMetaBar({
+        'system-category': 'journal',
+        mood: 'tired'
+      });
+      expect(html).not.toContain('Journal entry date');
+      expect(html).toContain('Mood: tired');
+    });
+
+    test('case-insensitive match on system-category (Journal)', () => {
+      const html = WikiRoutes.buildViewExtraPageMetaBar({
+        'system-category': 'Journal',
+        'journal-date': '2026-05-26'
+      });
+      expect(html).toContain('2026-05-26');
+    });
+
+    test('returns empty string for non-journal categories', () => {
+      const html = WikiRoutes.buildViewExtraPageMetaBar({
+        'system-category': 'general',
+        'journal-date': '2026-05-26'  // present but should be ignored — wrong category
+      });
+      expect(html).toBe('');
+    });
+
+    test('returns empty string when metadata is undefined/null/empty', () => {
+      expect(WikiRoutes.buildViewExtraPageMetaBar(undefined)).toBe('');
+      expect(WikiRoutes.buildViewExtraPageMetaBar(null)).toBe('');
+      expect(WikiRoutes.buildViewExtraPageMetaBar({})).toBe('');
+    });
+
+    test('returns empty string when category is journal but neither date nor mood is set', () => {
+      const html = WikiRoutes.buildViewExtraPageMetaBar({
+        'system-category': 'journal'
+      });
+      expect(html).toBe('');
+    });
+
+    test('escapes hostile attribute breakout in journal-date title', () => {
+      const html = WikiRoutes.buildViewExtraPageMetaBar({
+        'system-category': 'journal',
+        'journal-date': '" onmouseover="alert(1)'
+      });
+      // Title attribute must not contain an unescaped quote that would close the attribute.
+      expect(html).not.toContain('onmouseover="alert(1)"');
+      expect(html).toContain('&quot;');
+    });
+
+    test('escapes hostile HTML in mood text-content', () => {
+      const html = WikiRoutes.buildViewExtraPageMetaBar({
+        'system-category': 'journal',
+        mood: '<script>alert(1)</script>'
+      });
+      // Text content must escape < and > to prevent script injection in the badge body.
+      expect(html).not.toContain('<script>alert(1)</script>');
+      expect(html).toContain('&lt;script&gt;');
+    });
+  });
+
   // ── savePage ──────────────────────────────────────────────────────────────────
 
   describe('POST /save/:page (savePage)', () => {
