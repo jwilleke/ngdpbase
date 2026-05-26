@@ -32,7 +32,9 @@ interface Surface {
 
 const SURFACES: Surface[] = [
   {
-    file: 'views/view.ejs',
+    // #795 — delete-page mutation lives in _basicView.ejs (the layout
+    // partial) since views/view.ejs became a thin shim that includes it.
+    file: 'views/_basicView.ejs',
     mustContain: '(window.csrfFetch || fetch)(`/delete/${encodeURIComponent(pageName)}`',
     mustNotContain: ['fetch(`/delete/${encodeURIComponent(pageName)}`']
   },

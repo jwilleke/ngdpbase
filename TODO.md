@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-26T00:00:00.000Z'
+lastModified: '2026-05-26T09:50:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -16,7 +16,7 @@ Current near-term priorities for ngdpbase and the sister sites tracked by `/othe
 
 **See also**: [`docs/architecture-threads.md`](./docs/architecture-threads.md) maps in-flight cross-cutting design threads (CatalogManager unification, NCM pipeline, JSON-LD render, Journal reconcile, ACL evaluator, system principal, addon platform) — issues here that belong to a thread are listed there with their dependency context. Use TODO.md for "what's open and how to prioritise"; use architecture-threads.md for "how do these issues relate to each other."
 
-**Latest release**: v3.42.0 (2026-05-25; minor) — EPIC #790 design + first sub-issues (#791 JSON-LD `@type` per system-category, #792 SchemaGenerator reconciliation; both now CLOSED).
+**Latest release**: v3.43.0 (2026-05-26; minor) — EPIC #790 Thread #4 progress: #793 `journal` system-category registered + #791 `journal → BlogPosting` JSON-LD lit up + #792 dead-code deletion landed. (Note: #791/#792 commits actually shipped here, not in v3.42.0 as previously logged — they sat untagged on master between releases. See project_log 2026-05-26-01 for the drift note.)
 
 Sister sites in scope:
 
@@ -68,7 +68,7 @@ Filed and scoped, awaiting prioritization or implementation cycles.
 
 | # | Topic | Priority hint |
 |---|---|---|
-| **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24 from #789 debug). Retire the journal addon's parallel implementations of editor/save/index/templates/tags/mood/date/storage-routing in favor of thin UI specializations over generic page primitives. **#791 and #792 CLOSED** (JSON-LD `@type` per system-category + SchemaGenerator reconciliation shipped in v3.42.0). Open sub-issues: **#793** (register `journal` as a core system-category), **#794** (refactor `views/edit.ejs` → `_basicEditor.ejs` with extension slots), **#795** (refactor `views/view.ejs` → `_basicView.ejs` with extension slots). Foundation work that also unblocks #786. | Medium — implementation order: #793 (register category) → #794 / #795 (view/edit slot refactors). |
+| **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24 from #789 debug). Retire the journal addon's parallel implementations of editor/save/index/templates/tags/mood/date/storage-routing in favor of thin UI specializations over generic page primitives. **#791, #792, #793 CLOSED** in v3.43.0 + **#795 CLOSED** in this slice (body-level extension slots in `_basicView.ejs`; header-level slots split out to #796). Open sub-issues: **#794** (refactor `views/edit.ejs` → `_basicEditor.ejs` with extension slots), **#796** (refactor `views/header.ejs` page-meta + sidebar regions → extension slots — split out from #795 due to scope). Foundation work that also unblocks #786. | Medium — implementation order: pick either #794 (editor slots) or #796 (header metabar/sidebar slots); both unlock journal addon wire-up work. |
 | #786 | Auto-journal — digester consuming CatalogManager records into journal entries | Gated by #685 + EPIC #790. Consumer-pattern; no source-specific code |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images | Low — adds sharp/libvips; do when a real driver appears |
 | #707 | Typed footnote + knowledge-graph reference index | Low — **depends on #706**; speculative |
