@@ -2,6 +2,35 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-26-04
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped #796 (header.ejs page-meta + sidebar extension slots) as **v3.43.3** patch. **Completes the EPIC #790 foundational refactor trio** (#794 editor slots, #795 view slots, #796 header slots all landed today). EPIC #790's first wave is done; only the journal-addon wire-up wave remains.
+- Current Issue: #796 (closes); EPIC #790 (parent — first-wave sub-issues all closed; second-wave wire-up sub-issues not yet filed)
+- Tests: jimstest GREEN — 6048 unit + 80 E2E. Pre-release smoke-tested 3 routes (`/`, `/view/Welcome`, `/login`) through the modified header — `/view/Welcome` grew 85002 → 85103 bytes (+101 bytes = the inline slot comments + insertion markup).
+- Semver: **patch** — same shape as #794/#795: in-place slot insertion, no addon callers yet, no user-visible change. Patch chain now v3.43.1 + v3.43.2 + v3.43.3; will consolidate into the next minor when the journal addon wires up.
+- Implementation: **in-place** slot insertion (no partial extraction), per the issue body's "likely shape". Two surgical inserts in `views/header.ejs`:
+  - `extraPageMetaBar` — inside the `<h5>` navigation-title, after the `(Private)` and system-category badges (existing block at lines ~188-198). Addons append badges/pills next to the core badges.
+  - `extraSidebarWidgets` — inside `<div class="sidebar-sticky">`, after the leftMenu + My Links blocks (line ~475). Addons append widget cards at the bottom of the sidebar. Inline guidance: wrap addon widgets in `<div class="sidebar-widget mt-2">` for consistency with `my-links-sidebar`.
+- No #727 CSRF invariant test update needed — header.ejs's existing `csrfFetch(...)` calls (page-metadata API, page-source API, display-theme update, /delete from navbar) are unchanged by the slot insertions, and none use the SURFACES-pattern `(window.csrfFetch || fetch)(...)` form anyway. Invariant test runs clean.
+- Perf baseline drift v3.43.2 → v3.43.3: **clean** — memory +1MB (+0.0%), `/` +4ms, `/view/Welcome` 0ms, `/search` +8ms, `/login` 0ms. No thresholds tripped. (Confirms my earlier "memory noise" thesis: when the process didn't run a full E2E in the baseline-capture window, memory stays stable.) Baseline file: `docs/performance/baseline-v3.43.3-2026-05-26.md`.
+- /othersites: **skipped** — patch-gate. Satellites still on v3.43.0 (last propagated minor). Three patches accumulated: v3.43.1 + v3.43.2 + v3.43.3 will all consolidate at the next minor — by then a wire-up slice will exist as the natural minor trigger.
+- Work Done:
+  - Read header.ejs (1855 LOC) around the two anchor regions (lines 170-220 for page-meta, 440-480 for sidebar). Confirmed in-place is the right approach — slot points are localized.
+  - Surveyed for tests asserting header.ejs structure (none) and CSRF SURFACES referencing header.ejs (none — header's `csrfFetch` calls don't use the SURFACES wrapper pattern).
+  - Inserted two slots with inline comments. Defensive `typeof !== 'undefined'` consumption pattern matching prior refactors.
+  - Restarted jimstest, smoke-tested three routes, ran full E2E + unit.
+  - /session-commit: committed `f2511a2c` feat + `b5d21a6d` release, tagged v3.43.3, pushed.
+- Commits:
+  - `f2511a2c` — feat(#796): add page-meta + sidebar extension slots to header.ejs
+  - `b5d21a6d` — chore: release v3.43.3
+- Files Modified:
+  - `views/header.ejs` (+19 LOC: two slot insertions with inline comments)
+  - `package.json`, `CHANGELOG.md`, `config/app-default-config.json` (version-bump mechanics)
+  - `docs/performance/baseline-v3.43.3-2026-05-26.md` (new baseline + drift section)
+  - `docs/project_log.md` (this entry — final commit)
+- **EPIC #790 status milestone**: First wave complete. All 6 originally-filed sub-issues (#791, #792, #793, #794, #795, #796) closed today. Next is the journal-addon wire-up wave: file sub-issues for wiring `addons/journal/views/journal-editor.ejs` and `addons/journal/views/journal-entry.ejs` to extend `_basicEditor` / `_basicView` and claim the `extra*` slots. Operator should decide whether to file the next wave now or defer.
+
 ## 2026-05-26-03
 
 - Agent: Claude Opus 4.7
