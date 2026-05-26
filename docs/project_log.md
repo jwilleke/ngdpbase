@@ -2,6 +2,38 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-26-02
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped #795 (`views/view.ejs` → `_basicView.ejs` refactor with body-level extension slots) as **v3.43.1** patch. Scope-split filed #796 (header.ejs metabar/sidebar slots).
+- Current Issue: #795 (closes); #796 (filed); EPIC #790 (parent, still open with #794 + #796 remaining)
+- Tests: jimstest GREEN — 6048 unit + 80 E2E both before and after the patch bump. 1 unit failure during the slice (#727 CSRF invariant test asserting `views/view.ejs` contains the delete-page `csrfFetch` snippet) — fixed in-slice with a 1-line SURFACES target update (`views/view.ejs` → `views/_basicView.ejs`). The invariant catch is working as designed.
+- Semver: **patch** — internal refactor only, no addon callers yet (those are #794 / #796 follow-up scope), no user-visible change. GH Release publish deferred (will consolidate at next minor); /othersites propagation skipped per patch-gate.
+- Scope-split decision: #795's issue body named 4 slots (`extraBodyPreContent`, `extraBodyPostContent`, `extraPageMetaBar`, `extraSidebarWidgets`) but only 2 actually map to `views/view.ejs` (147 LOC). The other 2 belong to `views/header.ejs` (1855 LOC). Mixing the header refactor into this slice would have ballooned the surface and bumped regression risk on a layout file used by every page. Filed **#796** to track the header.ejs work; commented on #795 and EPIC #790 explaining the split. Both halves remain in EPIC #790's scope.
+- Perf baseline drift v3.43.0 → v3.43.1: memory **-57.7%** (3333.8 → 1409.8 MB) — corroborates the v3.43.0 "noise" call (V8 heap returns to baseline once measurement re-starts cold-ish). `/` route +375.9% (+109ms) flagged — cold/warm cache oscillation (v3.42.0 had `/` at 140ms, v3.43.0 caught it warm at 29ms, v3.43.1 caught it cold at 138ms; net across the two releases ≈ 0). #795's refactor only touches `view.ejs` rendering — `/` (login redirect) doesn't render through `_basicView.ejs`, so this can't be a real regression. Other routes flat (`/view/Welcome` -1ms, `/search` +2ms, `/login` -2ms). Baseline file: `docs/performance/baseline-v3.43.1-2026-05-26.md`.
+- /othersites: **skipped** — patch-gate per session-commit Step 5 rule. Satellites stay on v3.43.0 until next minor consolidates the patch chain.
+- Workflow gap noted: the prior session-commit's Step 9 (`/check-todos`) edited TODO.md AFTER the Step 8 final-commit. That TODO.md edit sat uncommitted until this slice bundled it. The session-commit + check-todos chain should either commit TODO.md as part of Step 8 (before /check-todos's optional re-edit) or have /check-todos commit its own changes. Not fixing the skill in this session; bundled the orphan edit with the #795 commit.
+- Work Done:
+  - Read #794 + #795 bodies, picked #795 first as the smaller, simpler slice (147 LOC vs 821 LOC for #794).
+  - Surfaced the slot-mismatch (issue body names header.ejs regions); operator chose strict view.ejs scope.
+  - Created `views/_basicView.ejs` with the prior view.ejs content + two defensive slot insertions.
+  - Reduced `views/view.ejs` to a 6-line shim that includes `_basicView`.
+  - Verified `/view/Welcome` renders identically (HTTP 200, 85KB, article + referring-pages markers present).
+  - Caught + fixed the #727 CSRF invariant test guard (target file changed view.ejs → _basicView.ejs).
+  - Filed #796 documenting the deferred header.ejs work; commented on #795 + EPIC #790.
+  - /session-commit: committed `5d27b261` feat + `3f8988da` release, tagged v3.43.1, pushed.
+- Commits:
+  - `5d27b261` — refactor(#795): extract views/view.ejs → _basicView.ejs with body slots
+  - `3f8988da` — chore: release v3.43.1
+- Files Modified:
+  - `views/_basicView.ejs` (NEW — extracted from view.ejs, +2 slot insertions, 140 LOC)
+  - `views/view.ejs` (reduced from 147 LOC to 6-line include shim)
+  - `src/__tests__/csrf-client-fetch.invariant.test.ts` (1-line target file change with #795 comment)
+  - `TODO.md` (refreshed: #795 closed, #796 added to EPIC #790 open list; also bundles the orphan post-/check-todos edit from session 2026-05-26-01)
+  - `package.json`, `CHANGELOG.md`, `config/app-default-config.json` (version-bump mechanics)
+  - `docs/performance/baseline-v3.43.1-2026-05-26.md` (new baseline + drift section)
+  - `docs/project_log.md` (this entry — final commit)
+
 ## 2026-05-26-01
 
 - Agent: Claude Opus 4.7
