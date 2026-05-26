@@ -2,6 +2,52 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-26-11
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped #801 (retire `JournalTemplateManager`; template system was vestigial) as **v3.43.9** patch. **Net -275 LOC** across the journal addon.
+- Current Issue: #801 (closes); EPIC #790 (parent — 1 second-wave sub-issue remains: #802)
+- Tests: jimstest GREEN — **6064 unit + 80 E2E**, no flakes.
+- Semver: **patch** — pure code deletion of vestigial system; no user-visible change. GH Release publish deferred (1-patch chain since v3.43.8 propagation); /othersites skipped per patch-gate.
+- **Same survey-finding pattern as #799** (third consecutive vestigial-system slice this session): the issue body framed #801 as "move JournalTemplateManager into core TemplateManager with category filtering"; surveying revealed the entire template system was unused dead code. `tmpl.body` (template content) never applied anywhere; `getTemplate(id)` had zero callers; the `defaultTemplate` user-preference was circular (saved → read only to highlight the radio button). The deleted orphan `journal-editor.ejs` (#797) had been the only consumer of template bodies. No data to migrate (no custom journal templates on any of the 3 installed instances; the 4 BUILTIN_TEMPLATES were hardcoded in the TS file).
+- Implementation (-275 LOC across 7 files):
+  - Deleted `addons/journal/managers/JournalTemplateManager.ts` (173 LOC).
+  - `addons/journal/index.ts` — removed import, module-level variable, init block, `templateManager.listTemplates()` in profileSection hook, `defaultTemplate` field in prefs object, the `if (templates.length > 0) { ... defaultTemplate ... }` block in saveProfileSection, and the shutdown reset.
+  - `addons/journal/views/_profile-section.ejs` — deleted template-picker block.
+  - `addons/journal/views/journal-settings.ejs` — deleted template-picker block.
+  - `addons/journal/routes/editor.ts` — deleted `jtm()` helper, type import, `templates` render data field, `defaultTemplate` field in prefs payload. Follow-on commit also removed the dead `journal.defaultTemplate` write from POST /journal/settings handler (would have rewritten the pref to 'free-write' on every save with no UI to set it).
+  - `addons/journal/routes/api.ts` — deleted GET /api/journal/templates endpoint, `jtm()` helper, type import.
+  - `addons/journal/pages/c2789e26-...md` — removed Templates section, /api/journal/templates API table entry, "writing templates" feature mention in intro.
+  - `package-lock.json` — benign 3.42.0 → 3.43.8 version-string sync (carried over from satellite-pull-state on master; same harmless drift as the other satellites had).
+- Manual artifact cleanup: deleted compiled `JournalTemplateManager.js` + `.js.map` from `addons/journal/managers/`. (The `npm run clean` script only purges `src/` artifacts, not `addons/`; this is a documented quirk of the existing build setup.)
+- Two-commit slice: `0554bdfd` (main cleanup) + `2884d86d` (dead-write removal in POST /settings). Bundled because the second was a follow-on direct linter-driven cleanup, not new work — but kept as separate commits per the "don't amend without explicit operator request" policy.
+- Perf baseline drift v3.43.8 → v3.43.9: clean. Memory +2.5%, routes within noise (`/` -80% warm-cache rebound from v3.43.8 cold reading, expected). No thresholds tripped. Baseline file: `docs/performance/baseline-v3.43.9-2026-05-26.md`.
+- /othersites: **skipped** — patch-gate. 9-patch chain since v3.43.0 (the 8 propagated this morning + #801).
+- Work Done:
+  - Surveyed JournalTemplateManager consumers (4 call sites + UI).
+  - Confirmed core TemplateManager has a different `Template` interface (would have required extension).
+  - Surveyed template-body application paths — zero.
+  - Surveyed `defaultTemplate` consumers — zero (circular pref).
+  - Surveyed custom template files on all 3 instances — zero.
+  - Deleted JournalTemplateManager + all consumers + dead UI + the dead pref write.
+  - /session-commit: 2 commits + release commit (v3.43.9) + project log + TODO refresh.
+- Commits:
+  - `0554bdfd` — refactor(#801): retire JournalTemplateManager — template system was vestigial
+  - `2884d86d` — refactor(#801): remove dead `journal.defaultTemplate` write from POST /journal/settings
+  - `d2552bad` — chore: release v3.43.9
+- Files Modified (this slice):
+  - `addons/journal/managers/JournalTemplateManager.ts` (DELETED — 173 LOC)
+  - `addons/journal/index.ts` (-17 LOC: 4 removal blocks)
+  - `addons/journal/views/_profile-section.ejs` (-19 LOC: template-picker block)
+  - `addons/journal/views/journal-settings.ejs` (-20 LOC: template-picker block)
+  - `addons/journal/routes/editor.ts` (-12 LOC: jtm, render data, prefs, settings POST write)
+  - `addons/journal/routes/api.ts` (-18 LOC: /templates route + helpers)
+  - `addons/journal/pages/c2789e26-...md` (-25 LOC: Templates section + API row)
+  - `package-lock.json` (benign version-string sync)
+  - `package.json`, `CHANGELOG.md`, `config/app-default-config.json` (version-bump mechanics)
+  - `docs/performance/baseline-v3.43.9-2026-05-26.md` (new baseline)
+  - `docs/project_log.md` (this entry — final commit)
+
 ## 2026-05-26-10
 
 - Agent: Claude Opus 4.7
