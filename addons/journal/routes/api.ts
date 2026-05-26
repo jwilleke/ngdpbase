@@ -4,7 +4,6 @@
  * Mounted at /api/journal in register().
  *
  * Endpoints:
- *   GET  /api/journal/templates         — JSON list of available templates
  *   GET  /api/journal/new               — bootstrap a new entry page + redirect to /journal/:slug/edit
  *   GET  /api/journal/entries           — JSON list of own entries (paginated)
  *   GET  /api/journal/on-this-day       — JSON: same MM-DD entries from prior years
@@ -22,7 +21,6 @@ import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type UserManager from '../../../dist/src/managers/UserManager.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
 import type { JournalIndexEntry } from '../managers/JournalDataManager.js';
-import type JournalTemplateManager from '../managers/JournalTemplateManager.js';
 
 export default function apiRoutes(engine: WikiEngine, config: Record<string, unknown>): Router {
   const router = Router();
@@ -33,10 +31,6 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
 
   function jdm(): JournalDataManager | undefined {
     return engine.getManager<JournalDataManager>('JournalDataManager');
-  }
-
-  function jtm(): JournalTemplateManager | undefined {
-    return engine.getManager<JournalTemplateManager>('JournalTemplateManager');
   }
 
   function qs(v: unknown): string | undefined {
@@ -57,18 +51,6 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
     const msg = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: msg });
   }
-
-  // ── GET /api/journal/templates ───────────────────────────────────────────────
-  router.get('/templates', (req: Request, res: Response) => {
-    try {
-      const ctx = ApiContext.from(req, engine);
-      ctx.requireAuthenticated();
-      const templates = jtm()?.listTemplates() ?? [];
-      res.json({ templates });
-    } catch (err) {
-      handleError(err, res);
-    }
-  });
 
   // ── GET /api/journal/new ───────────────────────────────────────────────────
   router.get('/new', (req: Request, res: Response) => {

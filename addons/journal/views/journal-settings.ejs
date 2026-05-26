@@ -19,26 +19,6 @@
   <form method="POST" action="/journal/settings">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 
-    <%# ── Default Template ─────────────────────────────────────────────── %>
-    <% if (templates && templates.length > 0) { %>
-    <div class="mb-4">
-      <label class="form-label fw-semibold">Default Template</label>
-      <p class="text-muted small mb-2">Pre-selected when you open the new entry editor.</p>
-      <div class="journal-template-grid">
-        <% templates.forEach(function(tmpl) { %>
-          <label class="journal-template-card <%= tmpl.id === prefs.defaultTemplate ? 'selected' : '' %>"
-                 style="cursor:pointer;">
-            <input type="radio" name="defaultTemplate" value="<%= tmpl.id %>"
-                   class="visually-hidden"
-                   <%= tmpl.id === prefs.defaultTemplate ? 'checked' : '' %>>
-            <div class="journal-template-name"><%= tmpl.name %></div>
-            <div class="journal-template-desc"><%= tmpl.description %></div>
-          </label>
-        <% }); %>
-      </div>
-    </div>
-    <% } %>
-
     <%# ── Writing Tools ─────────────────────────────────────────────────── %>
     <div class="mb-4">
       <label class="form-label fw-semibold">Writing Tools</label>

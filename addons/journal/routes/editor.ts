@@ -27,7 +27,6 @@ import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type UserManager from '../../../dist/src/managers/UserManager.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
 import type { JournalIndexEntry } from '../managers/JournalDataManager.js';
-import type JournalTemplateManager from '../managers/JournalTemplateManager.js';
 import { getLeftMenu } from './helpers.js';
 
 export default function editorRoutes(engine: WikiEngine, config: Record<string, unknown>): Router {
@@ -35,10 +34,6 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
 
   function jdm(): JournalDataManager | undefined {
     return engine.getManager<JournalDataManager>('JournalDataManager');
-  }
-
-  function jtm(): JournalTemplateManager | undefined {
-    return engine.getManager<JournalTemplateManager>('JournalTemplateManager');
   }
 
   function enableVoiceToText(): boolean {
@@ -85,9 +80,7 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
 
         res.render('journal-settings', {
           currentUser:      req.userContext,
-          templates:        jtm()?.listTemplates() ?? [],
           prefs: {
-            defaultTemplate:  (prefs['journal.defaultTemplate'] as string | undefined)  ?? 'free-write',
             voiceToText:      prefs['journal.voiceToText']      !== false,
             reminderEnabled:  Boolean(prefs['journal.reminderEnabled']),
             reminderTime:     (prefs['journal.reminderTime'] as string | undefined)     ?? '20:00',

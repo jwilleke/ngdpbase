@@ -48,7 +48,6 @@ import type AddonsManager from '../../dist/src/managers/AddonsManager.js';
 import type NotificationManager from '../../dist/src/managers/NotificationManager.js';
 import type ConfigurationManager from '../../dist/src/managers/ConfigurationManager.js';
 import JournalDataManager from './managers/JournalDataManager.js';
-import JournalTemplateManager from './managers/JournalTemplateManager.js';
 import JournalPlugin from './plugins/JournalPlugin.js';
 import apiRoutes from './routes/api.js';
 import publicRoutes from './routes/public.js';
@@ -60,7 +59,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let dataManager: JournalDataManager | null = null;
-let templateManager: JournalTemplateManager | null = null;
 let reminderTimer: ReturnType<typeof setTimeout> | null = null;
 
 // #534: engine + config-derived state captured during register() so the
@@ -96,11 +94,6 @@ const journalAddon = {
     dataManager = new JournalDataManager(engine, dataPath);
     await dataManager.load();
     engine.registerManager('JournalDataManager', dataManager);
-
-    // ── 1b. JournalTemplateManager ───────────────────────────────────────────
-    templateManager = new JournalTemplateManager(engine, dataPath);
-    await templateManager.initialize();
-    engine.registerManager('JournalTemplateManager', templateManager);
 
     // ── 2. Register markup plugin ────────────────────────────────────────────
     const pluginManager = engine.getManager<PluginManager>('PluginManager');
@@ -216,12 +209,11 @@ const journalAddon = {
    * addon would scale page-render latency linearly with addon count.
    */
   async profileSection(user: AddonProfileUser): Promise<AddonProfileSection | null> {
-    if (!engineRef || !templateManager) return null;
+    if (!engineRef) return null;
 
     const stored = (user.preferences ?? {}) as Record<string, unknown>;
 
     const prefs = {
-      defaultTemplate: (stored['journal.defaultTemplate'] as string | undefined) ?? 'free-write',
       voiceToText:     stored['journal.voiceToText']     !== false,
       reminderEnabled: Boolean(stored['journal.reminderEnabled']),
       reminderTime:    (stored['journal.reminderTime'] as string | undefined) ?? '20:00',
@@ -230,7 +222,6 @@ const journalAddon = {
 
     const partialPath = path.join(__dirname, 'views', '_profile-section.ejs');
     const html = await ejs.renderFile(partialPath, {
-      templates: templateManager.listTemplates(),
       prefs,
       adminVoiceEnabled: voiceToTextEnabled
     });
@@ -268,11 +259,6 @@ const journalAddon = {
     const updated: Record<string, unknown> = { ...existing };
 
     // Per-field gating mirrors the partial's `<% if (...) %>` blocks.
-    const templates = templateManager?.listTemplates() ?? [];
-    if (templates.length > 0) {
-      const dt = body['journal.defaultTemplate'];
-      updated['journal.defaultTemplate'] = typeof dt === 'string' && dt.trim() ? dt.trim() : 'free-write';
-    }
     if (voiceToTextEnabled) {
       updated['journal.voiceToText'] = body['journal.voiceToText'] === 'on';
     }
@@ -291,7 +277,6 @@ const journalAddon = {
   async shutdown(): Promise<void> {
     if (reminderTimer) { clearTimeout(reminderTimer); reminderTimer = null; }
     dataManager = null;
-    templateManager = null;
     engineRef = null;
     voiceToTextEnabled = false; // symmetry — reset all module-level state on shutdown
   }
