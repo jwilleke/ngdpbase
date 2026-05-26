@@ -114,9 +114,6 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
         const body = req.body as Record<string, unknown>;
         const updated: Record<string, unknown> = {
           ...existing,
-          'journal.defaultTemplate': typeof body['defaultTemplate'] === 'string'
-            ? body['defaultTemplate']
-            : 'free-write',
           'journal.voiceToText':    body['voiceToText']    === 'on',
           'journal.reminderEnabled': body['reminderEnabled'] === 'on',
           'journal.reminderTime':   typeof body['reminderTime'] === 'string' && body['reminderTime'].trim()
