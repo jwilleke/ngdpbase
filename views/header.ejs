@@ -194,6 +194,14 @@
                             <% if (_catBadge) { %>
                                 <span class="badge <%= _catBadge.color %> ms-1" style="font-size:0.6em;vertical-align:middle;" title="<%= _catBadge.title %>">(<%= _catBadge.label %>)</span>
                             <% } %>
+                            <%# #796 — extension slot for addon-defined page-meta
+                                badges/pills rendered alongside (Private) and
+                                the system-category badge (e.g. journal-date
+                                pill, mood badge). Empty by default; route
+                                handlers set `extraPageMetaBar` to a
+                                pre-rendered HTML string for addon-claimed
+                                pages. %>
+                            <%- (typeof extraPageMetaBar !== 'undefined' ? extraPageMetaBar : '') %>
                         </h5>
                     <% } %>
                 </div>
@@ -473,6 +481,17 @@
                       </div>
                     </div>
                     <% } } %>
+
+                    <%# #796 — extension slot for addon-defined sidebar
+                        widgets rendered below the core sidebar content
+                        (leftMenu + My Links). Empty by default; route
+                        handlers set `extraSidebarWidgets` to a
+                        pre-rendered HTML string on pages where the
+                        addon claims sidebar real estate (e.g. journal
+                        streak counter, on-this-day panel). Wrap addon
+                        widgets in `<div class="sidebar-widget mt-2">`
+                        for visual consistency with `my-links-sidebar`. %>
+                    <%- (typeof extraSidebarWidgets !== 'undefined' ? extraSidebarWidgets : '') %>
 
                 </div>
             </nav>
