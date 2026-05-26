@@ -2,6 +2,37 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-26-03
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped #794 (`views/edit.ejs` → `_basicEditor.ejs` refactor with editor extension slots) as **v3.43.2** patch. Sibling refactor to #795 — same pattern applied to the editor template.
+- Current Issue: #794 (closes); EPIC #790 (parent, only #796 remaining open)
+- Tests: jimstest GREEN — 6048 unit + 80 E2E both pre-release (#794 refactor commit) and post-bump (release commit). E2E exercises admin-driven page-edit flows through the new shim → partial path.
+- Semver: **patch** — internal refactor only, no addon callers yet, no user-visible change. Same shape as #795 (v3.43.1). GH Release publish deferred; /othersites propagation skipped per patch-gate.
+- Slots landed in `_basicEditor.ejs`:
+  - `extraFrontmatterFields` — after the user-keywords row, before the audience block. Receives addon-defined frontmatter inputs (journal-date, mood for the journal addon).
+  - `extraBodyControls` — between the content/preview row and the attachments section. Receives addon-defined widgets adjacent to the body editor.
+  - `extraSubmitActions` — inside the submit-buttons div, after Cancel. Receives addon-defined additional buttons.
+- No #727 CSRF invariant test update needed — the editor's two `csrfFetch` calls (`/api/preview`, `form.action`) live in the `<script>` block that moved with the rest of the template into `_basicEditor.ejs`, but neither was in the SURFACES list (the editor invariants are covered by the form's `_csrf` hidden input — `<input type="hidden" name="_csrf" value="...">` at line 26 of the partial). The invariant test runs clean.
+- Perf baseline drift v3.43.1 → v3.43.2: memory **+128.5%** (1409.8 → 3222.0 MB) — same V8 post-test heap inflation pattern as v3.43.0 swing. Routes flat (`/` +5.1%, `/view/Welcome` 0%, `/search` +1.4%, `/login` +5.3%; all under thresholds). Operator confirmed earlier in session: "QUIT asking me on this assume it is Noise." Saved as memory `feedback_perf_baseline_memory_noise.md` to stop the recurring prompt across sessions. Baseline file: `docs/performance/baseline-v3.43.2-2026-05-26.md`.
+- /othersites: **skipped** — patch-gate per session-commit Step 5 rule. Satellites stay on v3.43.0 (last propagated minor) until next minor consolidates the v3.43.1 + v3.43.2 patch chain.
+- Work Done:
+  - Read views/edit.ejs (821 LOC, 34 EJS blocks, 72 form/input elements); mapped the three natural slot seams.
+  - Copied edit.ejs → _basicEditor.ejs as the seed; inserted 3 defensive slot consumptions at the mapped positions.
+  - Reduced views/edit.ejs to a 7-line shim that includes `_basicEditor`.
+  - Restarted jimstest (PID 13189 post-rebuild), verified via E2E.
+  - /session-commit: committed `860a33a0` refactor + `d2b04f0f` release, tagged v3.43.2, pushed.
+- Commits:
+  - `860a33a0` — refactor(#794): extract views/edit.ejs → _basicEditor.ejs with editor slots
+  - `d2b04f0f` — chore: release v3.43.2
+- Files Modified:
+  - `views/_basicEditor.ejs` (NEW — extracted from edit.ejs, +3 slot insertions, 841 LOC)
+  - `views/edit.ejs` (reduced from 821 LOC to 7-line include shim)
+  - `package.json`, `CHANGELOG.md`, `config/app-default-config.json` (version-bump mechanics)
+  - `docs/performance/baseline-v3.43.2-2026-05-26.md` (new baseline + drift section)
+  - `docs/project_log.md` (this entry — final commit)
+- Memory updates this session: added `feedback_perf_baseline_memory_noise.md` to stop the recurring perf-gate prompt.
+
 ## 2026-05-26-02
 
 - Agent: Claude Opus 4.7
