@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-26T15:00:00.000Z'
+lastModified: '2026-05-26T16:00:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -16,7 +16,7 @@ Current near-term priorities for ngdpbase and the sister sites tracked by `/othe
 
 **See also**: [`docs/architecture-threads.md`](./docs/architecture-threads.md) maps in-flight cross-cutting design threads (CatalogManager unification, NCM pipeline, JSON-LD render, Journal reconcile, ACL evaluator, system principal, addon platform) — issues here that belong to a thread are listed there with their dependency context. Use TODO.md for "what's open and how to prioritise"; use architecture-threads.md for "how do these issues relate to each other."
 
-**Latest release**: v3.43.6 (2026-05-26; patch, GH Release deferred) — #798 journal view wire-up via slot-injection from /view/ (Option A); journal-date + mood pills in header.ejs page-meta. Patch chain since v3.43.0: v3.43.1 #795, v3.43.2 #794, v3.43.3 #796, v3.43.4 #803, v3.43.5 #797, v3.43.6 #798 (6 patches consolidate into next minor). v3.43.0 (2026-05-26; minor): #793 + #791 + #792.
+**Latest release**: v3.43.7 (2026-05-26; patch, GH Release deferred) — #799 retire `journal-tags`; tags source from `user-keywords`. Pure code cleanup (-178 LOC); zero data to migrate (vestigial across all 3 instances). Patch chain since v3.43.0: v3.43.1 #795, v3.43.2 #794, v3.43.3 #796, v3.43.4 #803, v3.43.5 #797, v3.43.6 #798, v3.43.7 #799 (7 patches consolidate into next minor). v3.43.0 (2026-05-26; minor): #793 + #791 + #792.
 
 Sister sites in scope:
 
@@ -68,7 +68,7 @@ Filed and scoped, awaiting prioritization or implementation cycles.
 
 | # | Topic | Priority hint |
 |---|---|---|
-| **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24). **First-wave closed**: #791, #792, #793, #794, #795, #796. **Second-wave shipped**: #803 (prereq, v3.43.4), #797 (editor wire-up Option A, v3.43.5), #798 (view wire-up Option A, v3.43.6). **Remaining second-wave**: #799 (journal-tags migration), #800 (sidecar retirement), #801 (JournalTemplateManager retirement), #802 (system-location:private write-migration). All four are independent slices. | EPIC OPEN with 4 second-wave sub-issues remaining. Next-up: any independent slice; #799 pairs naturally with #800. |
+| **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24). **First-wave closed**: #791, #792, #793, #794, #795, #796. **Second-wave shipped**: #803 (prereq, v3.43.4), #797 (editor wire-up, v3.43.5), #798 (view wire-up, v3.43.6), #799 (journal-tags retirement, v3.43.7). **Remaining second-wave**: #800 (sidecar retirement — pairs naturally with #799 cleanup), #801 (JournalTemplateManager retirement), #802 (system-location:private write-migration). All three are independent. | EPIC OPEN with 3 second-wave sub-issues remaining. #800 is the natural next slice. |
 | #786 | Auto-journal — digester consuming CatalogManager records into journal entries | Gated by #685 + EPIC #790. Consumer-pattern; no source-specific code |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images | Low — adds sharp/libvips; do when a real driver appears |
 | #707 | Typed footnote + knowledge-graph reference index | Low — **depends on #706**; speculative |

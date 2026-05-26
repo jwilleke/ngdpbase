@@ -2,6 +2,50 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-26-08
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped #799 (retire `journal-tags`; tags source from `user-keywords`) as **v3.43.7** patch. Pure code cleanup — **zero data to migrate**.
+- Current Issue: #799 (closes); EPIC #790 (parent — 3 second-wave sub-issues remain)
+- Tests: jimstest GREEN — **6067 unit + 80 E2E**. No new tests added (the change is a one-line frontmatter field rename + dead-code deletion; no new test infrastructure warranted).
+- Semver: **patch** — internal cleanup; no user-visible change. GH Release publish deferred (7-patch chain: v3.43.1–v3.43.7); /othersites skipped per patch-gate.
+- **Data survey before code (critical for this slice)**:
+  - jimstest: `grep -rln "^journal-tags:" /Volumes/hd2A/jimstest-wiki/data/pages` → 0 results.
+  - fairways-base: same query → 0 results.
+  - ngdp-temp-builds: same query → 0 results.
+  - Sidecar `journal-index.json` on jimstest: 7 entries, all with `tags: []`.
+  - Conclusion: `journal-tags` was **vestigial everywhere**. The writes only happened in the `POST /journal/new` + `POST /journal/:slug/edit` handlers, whose form target (the orphaned `journal-editor.ejs`) was deleted in #797. The sidecar's `tags` field has been populated `[]` on every entry since whenever the orphan became unreachable. **No migration script written; none was needed.**
+- Implementation:
+  - `addons/journal/plugins/JournalPlugin.ts` — `tags` derived from `m['user-keywords']` instead of `m['journal-tags']`. The streak / on-this-day plugin views now reflect user-keywords on journal pages. System-category=journal filter is implicit (this branch reached via `searchByCategory('journal')`).
+  - `addons/journal/routes/editor.ts` — delete the unreachable `POST /journal/new` and `POST /journal/:slug/edit` handlers (~150 LOC). Delete the now-unused `parseTags` helper. Update the route header doc comment.
+  - `addons/journal/index.ts` — update the addon header route table to drop the retired POST endpoints.
+  - `addons/journal/pages/c2789e26-...md` (end-user help page) — same table update + an explanatory note about the unified-save switch and the field rename.
+  - Net diff: -178 LOC removed, +27 LOC of updated docs/comments. Big code reduction.
+- Out of scope (deferred to #800):
+  - Sidecar `journal-index.json`'s `tags` field still tracks an in-memory copy (always `[]` today since writes are gone).
+  - `/journal/tag/:tag` route filters on the sidecar's empty `tags` — behaviorally unchanged for now (no entry matches). #800 retires the sidecar entirely and rewrites the filter against page-index + user-keywords.
+- /othersites: **skipped** — patch-gate. 7-patch chain accumulated (v3.43.1–v3.43.7); next minor will be a substantial consolidation.
+- Perf baseline drift v3.43.6 → v3.43.7: clean. Memory -4.7%, all routes within noise (<20%). No thresholds tripped. Baseline file: `docs/performance/baseline-v3.43.7-2026-05-26.md`.
+- Workflow note: this is the second cleanup slice today where the issue body's "migration" framing turned out to require no data migration. Same pattern as #797 (the editor wrap-around framing turned out wrong — no orphan to wrap, just to delete) and #798 (the journal-entry.ejs "retire parallel" framing turned out wrong — it's a live distinct surface). Issue bodies written before reading the code overstate the migration burden; data surveys before coding consistently reveal the simpler shape.
+- Work Done:
+  - Surveyed all three instances for `journal-tags` data — zero found.
+  - Surveyed all read/write sites for the field (JournalPlugin, JournalDataManager, journal-entry.ejs, _journal-entry-card.ejs, editor.ts POST handlers, api.ts).
+  - Implemented the one-line field source change in JournalPlugin.
+  - Deleted unreachable POST handlers + unused parseTags helper.
+  - Updated route header doc + addon index header + end-user help page.
+  - /session-commit: committed `2990124b` refactor + `83368bc6` release, tagged v3.43.7, pushed.
+- Commits:
+  - `2990124b` — refactor(#799): retire journal-tags field; tags source from user-keywords
+  - `83368bc6` — chore: release v3.43.7
+- Files Modified:
+  - `addons/journal/plugins/JournalPlugin.ts` (1-line field source change + comment)
+  - `addons/journal/routes/editor.ts` (-150 LOC dead code)
+  - `addons/journal/index.ts` (route table update)
+  - `addons/journal/pages/c2789e26-...md` (help page update)
+  - `package.json`, `CHANGELOG.md`, `config/app-default-config.json` (version-bump mechanics)
+  - `docs/performance/baseline-v3.43.7-2026-05-26.md` (new baseline)
+  - `docs/project_log.md` (this entry — final commit)
+
 ## 2026-05-26-07
 
 - Agent: Claude Opus 4.7
