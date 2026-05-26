@@ -168,8 +168,12 @@ const JournalPlugin = {
             title:       ((m['title'] as string | undefined) ?? p!.title) ?? '',
             journalDate: (m['journal-date'] as string | undefined) ?? '',
             mood:        m['mood'] != null ? (m['mood'] as string) : undefined,
-            tags:        Array.isArray(m['journal-tags'])
-              ? (m['journal-tags'] as unknown[]).map(String)
+            // #799 — tags now sourced from `user-keywords` (the page-wide keyword
+            // field every page has). The legacy `journal-tags` field is retired
+            // — see EPIC #790. Filtering to system-category=journal is implicit
+            // because this branch reached here via searchByCategory('journal').
+            tags:        Array.isArray(m['user-keywords'])
+              ? (m['user-keywords'] as unknown[]).map(String)
               : undefined,
             content:     p!.content ?? undefined
           };

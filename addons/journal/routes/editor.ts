@@ -6,11 +6,16 @@
  * Endpoints:
  *   GET  /journal/settings      — user preferences form
  *   POST /journal/settings      — save user preferences
- *   GET  /journal/new           — new entry form
- *   POST /journal/new           — save new entry
- *   GET  /journal/:slug/edit    — edit form
- *   POST /journal/:slug/edit    — save updated entry
+ *   GET  /journal/new           — auto-creates today's stub entry, redirects to /edit/<slug>
+ *   GET  /journal/:slug/edit    — redirects to /edit/<slug>
  *   POST /journal/:slug/delete  — delete entry
+ *
+ * #799 / EPIC #790 retired the parallel POST /journal/new + POST /journal/:slug/edit
+ * handlers. Journal pages now save through the unified /save/<slug> pipeline.
+ * The journal-specific frontmatter UI (mood, journal-date) is injected into the
+ * generic editor via slot HTML — see WikiRoutes.buildEditorExtraFrontmatterFields
+ * (#797). Tag tracking is on the page's `user-keywords` field (not the legacy
+ * `journal-tags`).
  */
 
 import { Router, type Request, type Response } from 'express';
@@ -64,16 +69,6 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
       return;
     }
     res.status(500).send(err instanceof Error ? err.message : String(err));
-  }
-
-  function parseTags(raw: unknown): string[] {
-    if (typeof raw === 'string') {
-      return raw.split(',').map(t => t.trim()).filter(Boolean);
-    }
-    if (Array.isArray(raw)) {
-      return (raw as unknown[]).map(String).map(t => t.trim()).filter(Boolean);
-    }
-    return [];
   }
 
   // ── GET /journal/settings ────────────────────────────────────────────────────
@@ -222,91 +217,6 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
     })();
   });
 
-  // ── POST /journal/new ────────────────────────────────────────────────────────
-  router.post('/new', (req: Request, res: Response) => {
-    void (async () => {
-      try {
-        const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
-
-        const username = ctx.username!;
-        const body = req.body as Record<string, unknown>;
-        const date  = typeof body['journal-date'] === 'string'
-          ? body['journal-date']
-          : new Date().toISOString().slice(0, 10);
-        // #789: default title now per-user to mirror the per-user slug and avoid
-        // the PageManager title-uniqueness collision. Operator-supplied custom
-        // titles still win when present.
-        const title   = typeof body['title'] === 'string' && body['title'].trim()
-          ? body['title'].trim()
-          : `Journal — ${username} — ${date}`;
-        const content = (typeof body['content'] === 'string' ? body['content'] : '') || ' ';
-        const mood    = typeof body['mood'] === 'string' && body['mood'].trim()
-          ? body['mood'].trim()
-          : undefined;
-        const tags    = parseTags(body['journal-tags']);
-
-        const slug = `journal-${username}-${date}`;
-        const uuid = uuidv4();
-
-        const p = pm();
-        if (!p) { res.status(503).send('PageManager not available'); return; }
-
-        // If entry already exists for this date, redirect to standard editor
-        const existing = await p.getPageBySlug(slug);
-        if (existing) {
-          res.redirect(`/edit/${encodeURIComponent(slug)}`);
-          return;
-        }
-
-        const defaultPrivate    = config['defaultPrivate']    !== false;
-        const defaultAuthorLock = config['defaultAuthorLock'] !== false;
-
-        const metadata: Record<string, unknown> = {
-          title,
-          uuid,
-          slug,
-          'system-category': 'journal',
-          'journal-date':    date,
-          author:            username,
-          lastModified:      new Date().toISOString(),
-          ...(mood              ? { mood }                                     : {}),
-          ...(tags.length       ? { 'journal-tags': tags }                    : {}),
-          ...(defaultAuthorLock ? { 'author-lock': true }                     : {}),
-          ...(defaultPrivate    ? { 'system-location': 'private' } : {})
-        };
-
-        const wikiCtx = new WikiContext(engine, {
-          context:     WikiContext.CONTEXT.EDIT,
-          pageName:    slug,
-          content,
-          userContext: await resolveUserContext(req)
-        });
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
-        await p.savePageWithContext(wikiCtx as any, metadata);
-
-        // Update sidecar index
-        const indexEntry: JournalIndexEntry = {
-          uuid,
-          slug,
-          title,
-          author: username,
-          journalDate: date,
-          mood,
-          tags,
-          isPrivate: defaultPrivate,
-          lastModified: new Date().toISOString()
-        };
-        await jdm()?.indexEntry(indexEntry);
-
-        res.redirect(`/edit/${encodeURIComponent(slug)}`);
-      } catch (err) {
-        handleError(err, res);
-      }
-    })();
-  });
-
   // ── GET /journal/:slug/edit ──────────────────────────────────────────────────
   // Redirect to the standard page editor so preview, user preferences, and all
   // /edit features are available. (#540)
@@ -327,73 +237,6 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
     } catch (err) {
       handleError(err, res);
     }
-  });
-
-  // ── POST /journal/:slug/edit ─────────────────────────────────────────────────
-  router.post('/:slug/edit', (req: Request, res: Response) => {
-    void (async () => {
-      try {
-        const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
-
-        const slug  = sp(req.params['slug']);
-        const entry = jdm()?.getBySlug(slug);
-        if (!entry) { res.status(404).send('Journal entry not found.'); return; }
-
-        const isOwner = entry.author === ctx.username;
-        const isAdmin = (ctx.roles ?? []).includes('admin');
-        if (!isOwner && !isAdmin) { res.status(403).send('Access denied.'); return; }
-
-        const body    = req.body as Record<string, unknown>;
-        const title   = typeof body['title'] === 'string' && body['title'].trim()
-          ? body['title'].trim()
-          : entry.title;
-        const content = (typeof body['content'] === 'string' ? body['content'] : '') || ' ';
-        const mood    = typeof body['mood'] === 'string' && body['mood'].trim()
-          ? body['mood'].trim()
-          : undefined;
-        const tags    = parseTags(body['journal-tags']);
-        const now     = new Date().toISOString();
-
-        const p = pm();
-        if (!p) { res.status(503).send('PageManager not available'); return; }
-
-        const page = await p.getPage(slug);
-        const existingMeta = (page?.metadata ?? {}) as Record<string, unknown>;
-
-        const metadata: Record<string, unknown> = {
-          ...existingMeta,
-          title,
-          lastModified: now,
-          ...(mood        ? { mood }                  : {}),
-          ...(tags.length ? { 'journal-tags': tags }  : {})
-        };
-
-        const wikiCtx = new WikiContext(engine, {
-          context:     WikiContext.CONTEXT.EDIT,
-          pageName:    slug,
-          content,
-          userContext: await resolveUserContext(req)
-        });
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
-        await p.savePageWithContext(wikiCtx as any, metadata);
-
-        // Update sidecar index
-        const updated: JournalIndexEntry = {
-          ...entry,
-          title,
-          mood,
-          tags,
-          lastModified: now
-        };
-        await jdm()?.indexEntry(updated);
-
-        res.redirect(`/journal/${encodeURIComponent(slug)}`);
-      } catch (err) {
-        handleError(err, res);
-      }
-    })();
   });
 
   // ── POST /journal/:slug/delete ───────────────────────────────────────────────

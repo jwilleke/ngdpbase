@@ -25,13 +25,11 @@
  *
  * Journal routes:
  *   GET  /journal                  — timeline
- *   GET  /journal/new              — new entry form
- *   POST /journal/new              — save new entry
+ *   GET  /journal/new              — auto-create today's stub entry, redirect to /edit/<slug>
  *   GET  /journal/:slug            — view entry
- *   GET  /journal/:slug/edit       — edit form
- *   POST /journal/:slug/edit       — save updated entry
+ *   GET  /journal/:slug/edit       — redirect to /edit/<slug>
  *   POST /journal/:slug/delete     — delete entry
- *   GET  /journal/tag/:tag         — filter by tag
+ *   GET  /journal/tag/:tag         — filter by tag (sources from user-keywords per #799)
  *   GET  /journal/mood/:mood       — filter by mood
  *
  * Admin:
