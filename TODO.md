@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-25T08:15:00.000Z'
+lastModified: '2026-05-26T00:00:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -16,7 +16,7 @@ Current near-term priorities for ngdpbase and the sister sites tracked by `/othe
 
 **See also**: [`docs/architecture-threads.md`](./docs/architecture-threads.md) maps in-flight cross-cutting design threads (CatalogManager unification, NCM pipeline, JSON-LD render, Journal reconcile, ACL evaluator, system principal, addon platform) — issues here that belong to a thread are listed there with their dependency context. Use TODO.md for "what's open and how to prioritise"; use architecture-threads.md for "how do these issues relate to each other."
 
-**Latest release**: v3.41.1 (2026-05-25; patch, deferred GitHub Release) — 13 commits bundled including #788, #689, #649-Phase-1, #778-Slice-1, #722-Slice-1, plus #791 doc trail.
+**Latest release**: v3.42.0 (2026-05-25; minor) — EPIC #790 design + first sub-issues (#791 JSON-LD `@type` per system-category, #792 SchemaGenerator reconciliation; both now CLOSED).
 
 Sister sites in scope:
 
@@ -50,7 +50,8 @@ Items carrying the `in review` label — work is shipped/merged; operator verifi
 
 Items awaiting a yes/no/close or operator-only action. Not blocking other work.
 
-- _(none)_
+- [`geohazardwatch` PR #60](https://github.com/jwilleke/geohazardwatch/pull/60) — `chore(deps): update eslint monorepo to v10`. Labeled `major-bump` `needs-review` — operator decision required.
+- [#593](https://github.com/jwilleke/ngdpbase/issues/593) — Encryption alternatives. Discussion-only, no driver yet; close or move to a Decisions doc if not picking up soon.
 
 ## Sister-site top priorities — combined table
 
@@ -67,7 +68,7 @@ Filed and scoped, awaiting prioritization or implementation cycles.
 
 | # | Topic | Priority hint |
 |---|---|---|
-| **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24 from #789 debug). Retire the journal addon's parallel implementations of editor/save/index/templates/tags/mood/date/storage-routing in favor of thin UI specializations over generic page primitives. Two sub-issues filed: **#791** (config-driven JSON-LD `@type` via new `ngdpbase.schema-types` block — design finalized 2026-05-25, doc trail in `docs/schemas.md`) and **#792** (SchemaGenerator reconciliation — blocker for #791). Foundation work that also unblocks #786. | Medium — implementation order: #792 Phase 1 → #791 → register `journal` category → ProfilePage `@graph` for `user-profile`. |
+| **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24 from #789 debug). Retire the journal addon's parallel implementations of editor/save/index/templates/tags/mood/date/storage-routing in favor of thin UI specializations over generic page primitives. **#791 and #792 CLOSED** (JSON-LD `@type` per system-category + SchemaGenerator reconciliation shipped in v3.42.0). Open sub-issues: **#793** (register `journal` as a core system-category), **#794** (refactor `views/edit.ejs` → `_basicEditor.ejs` with extension slots), **#795** (refactor `views/view.ejs` → `_basicView.ejs` with extension slots). Foundation work that also unblocks #786. | Medium — implementation order: #793 (register category) → #794 / #795 (view/edit slot refactors). |
 | #786 | Auto-journal — digester consuming CatalogManager records into journal entries | Gated by #685 + EPIC #790. Consumer-pattern; no source-specific code |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images | Low — adds sharp/libvips; do when a real driver appears |
 | #707 | Typed footnote + knowledge-graph reference index | Low — **depends on #706**; speculative |

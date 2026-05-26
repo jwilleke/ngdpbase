@@ -632,6 +632,18 @@
         "label": "Profile",
         "title": "User profile page"
       }
+    },
+    "journal": {
+      "label": "journal",
+      "description": "Personal journal entries — schema.org BlogPosting at JSON-LD render time (#791)",
+      "default": false,
+      "storageLocation": "regular",
+      "enabled": true,
+      "page-badge": {
+        "color": "bg-info",
+        "label": "Journal",
+        "title": "Journal entry"
+      }
     }
   },
   "_comment_system_keywords": "System keyword definitions for controlled vocabulary (operator-curated; subject + workflow terms)",
