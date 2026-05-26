@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-26T09:50:00.000Z'
+lastModified: '2026-05-26T10:15:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -16,7 +16,7 @@ Current near-term priorities for ngdpbase and the sister sites tracked by `/othe
 
 **See also**: [`docs/architecture-threads.md`](./docs/architecture-threads.md) maps in-flight cross-cutting design threads (CatalogManager unification, NCM pipeline, JSON-LD render, Journal reconcile, ACL evaluator, system principal, addon platform) — issues here that belong to a thread are listed there with their dependency context. Use TODO.md for "what's open and how to prioritise"; use architecture-threads.md for "how do these issues relate to each other."
 
-**Latest release**: v3.43.0 (2026-05-26; minor) — EPIC #790 Thread #4 progress: #793 `journal` system-category registered + #791 `journal → BlogPosting` JSON-LD lit up + #792 dead-code deletion landed. (Note: #791/#792 commits actually shipped here, not in v3.42.0 as previously logged — they sat untagged on master between releases. See project_log 2026-05-26-01 for the drift note.)
+**Latest release**: v3.43.1 (2026-05-26; patch, GH Release deferred) — internal refactor #795 (`views/view.ejs` → `_basicView.ejs` with body-level extension slots). v3.43.0 (2026-05-26; minor): EPIC #790 Thread #4 progress — #793 + #791 + #792 all shipped (`journal` system-category registered, `journal → BlogPosting` JSON-LD lit up, dead-code deletion). Note: #791/#792 actually shipped in v3.43.0, not v3.42.0 as previously logged; they sat untagged on master between releases. See project_log 2026-05-26-01 for the drift note.
 
 Sister sites in scope:
 
