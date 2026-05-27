@@ -210,17 +210,26 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
   // ── GET /journal/:slug/edit ──────────────────────────────────────────────────
   // Redirect to the standard page editor so preview, user preferences, and all
   // /edit features are available. (#540)
+  //
+  // #804 — Existence + ownership check goes through PageManager (the canonical
+  // source) rather than JournalDataManager. JDM.getBySlug reads the search
+  // index, which PageManager.savePageWithContext does not update; bouncing
+  // through /api/journal/new → here would 404 on a just-created entry.
   router.get('/:slug/edit', (req: Request, res: Response) => {
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
         ctx.requireAuthenticated();
 
-        const slug  = sp(req.params['slug']);
-        const entry = await jdm()?.getBySlug(slug);
-        if (!entry) { res.status(404).send('Journal entry not found.'); return; }
+        const slug = sp(req.params['slug']);
+        const p = pm();
+        if (!p) { res.status(503).send('PageManager not available'); return; }
 
-        const isOwner = entry.author === ctx.username;
+        const page = await p.getPageBySlug(slug);
+        if (!page) { res.status(404).send('Journal entry not found.'); return; }
+
+        const author = (page.metadata as Record<string, unknown>)?.['author'] as string | undefined;
+        const isOwner = author === ctx.username;
         const isAdmin = (ctx.roles ?? []).includes('admin');
         if (!isOwner && !isAdmin) { res.status(403).send('Access denied.'); return; }
 
@@ -232,22 +241,26 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
   });
 
   // ── POST /journal/:slug/delete ───────────────────────────────────────────────
+  // #804 — Same fix as GET /:slug/edit: resolve via PageManager, not JDM.
   router.post('/:slug/delete', (req: Request, res: Response) => {
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
         ctx.requireAuthenticated();
 
-        const slug  = sp(req.params['slug']);
-        const entry = await jdm()?.getBySlug(slug);
-        if (!entry) { res.status(404).send('Journal entry not found.'); return; }
-
-        const isOwner = entry.author === ctx.username;
-        const isAdmin = (ctx.roles ?? []).includes('admin');
-        if (!isOwner && !isAdmin) { res.status(403).send('Access denied.'); return; }
-
+        const slug = sp(req.params['slug']);
         const p = pm();
         if (!p) { res.status(503).send('PageManager not available'); return; }
+
+        const page = await p.getPageBySlug(slug);
+        if (!page) { res.status(404).send('Journal entry not found.'); return; }
+
+        const meta = (page.metadata ?? {}) as Record<string, unknown>;
+        const author = meta['author'] as string | undefined;
+        const uuid   = meta['uuid']   as string | undefined;
+        const isOwner = author === ctx.username;
+        const isAdmin = (ctx.roles ?? []).includes('admin');
+        if (!isOwner && !isAdmin) { res.status(403).send('Access denied.'); return; }
 
         const wikiCtx = new WikiContext(engine, {
           context:     WikiContext.CONTEXT.EDIT,
@@ -258,7 +271,7 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
         await p.deletePageWithContext(wikiCtx as any);
-        await jdm()?.removeEntry(entry.uuid);
+        if (uuid) await jdm()?.removeEntry(uuid);
 
         res.redirect('/journal');
       } catch (err) {
