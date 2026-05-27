@@ -2,6 +2,41 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-27-02
+
+- Agent: Claude Opus 4.7
+- Subject: Cut **v3.44.0** consolidating minor — propagates v3.43.1–v3.43.10 to satellites. No new code; minor bump invoked specifically to trigger satellite propagation per `/session-commit` patch-gate rule. GH Release published with auto-generated notes spanning the full v3.43.0..v3.44.0 range.
+- Current Issue: none (release-event only; all issues already closed by their respective patch releases)
+- Tests: GREEN across all three instances on the release commit — **6064 unit + 80 E2E** per instance. No flakes.
+- Semver: **minor** (consolidating). Range `v3.43.0..v3.44.0` includes 6 second-wave EPIC #790 features (#797, #798, #799, #800, #801, #803) + two regression fixes from this morning (#804, #805) + 8 patch releases worth of release/log churn.
+- Propagation pattern: same `package-lock.json` version-string drift (3.42.0 → 3.43.8) on both satellites as in prior propagations — discarded and pulled cleanly. Each satellite went stop → npm install → npm run build → start → unit + E2E sequentially.
+- Perf baseline drift v3.43.10 → v3.44.0: clean. Memory +3.1%, `/` -82.9% (-121ms) + `/search` -75.5% (-114ms) — the rebound confirms yesterday's `/` +421% reading on v3.43.10 was warm-cache / heavy-E2E-load noise rather than a real regression. Baseline file: `docs/performance/baseline-v3.44.0-2026-05-27.md`.
+- /othersites: ran in satellite-only mode (jimstest re-validated by /semver Step 8a on the release commit before /othersites kicked off; jimstest-FIRST invariant honored).
+- Results table:
+
+  | Instance | Path | Port | Unit | E2E | Notes |
+  |---|---|---|---|---|---|
+  | jimstest | /Volumes/hd2A/workspaces/github/ngdpbase | 3000 | 6064/6064 | 80/80 | Release commit re-validated by /semver Step 8a before /othersites |
+  | fairways-base | /Volumes/hd2A/workspaces/github/fairways-base | 2121 | 6064/6064 | 80/80 | Lockfile drift discarded; clean pull |
+  | ngdp-temp-builds | /Volumes/hd2/ngdp-temp-builds/ngdpbase | 3001 | 6064/6064 | 80/80 | Lockfile drift discarded; clean pull |
+
+- Flakes seen: none.
+- Operator action items (carryover): stale `journal-index.json` files on all instances can be manually deleted (startup hint from #800 / EPIC #790); #802 still open (system-location:private write-side migration).
+- Work Done:
+  - Confirmed working tree clean on master, fetched origin, on master, 0 commits behind.
+  - Verified pre-release pre-flight test surface (build + unit + E2E green on tip).
+  - Bumped 3.43.10 → 3.44.0 via `dist/src/utils/version.js minor`.
+  - Captured baseline + diff vs v3.43.10 (clean — warm-cache rebound on `/` and `/search`).
+  - Release commit + annotated tag + push origin master + tag.
+  - Published GH release with `--generate-notes --notes-start-tag v3.43.0` covering the full minor range.
+  - /semver Step 8a: rebuild + restart + unit + E2E on release commit on jimstest.
+  - /othersites satellite-only: fairways-base + ngdp-temp-builds processed sequentially, each with stop → install → build → start → unit + E2E.
+- Commits:
+  - `4c2ff218` — chore: release v3.44.0
+- Files Modified:
+  - `package.json`, `config/app-default-config.json`, `CHANGELOG.md` (version bump)
+  - `docs/performance/baseline-v3.44.0-2026-05-27.md` (new)
+
 ## 2026-05-27-01
 
 - Agent: Claude Opus 4.7
