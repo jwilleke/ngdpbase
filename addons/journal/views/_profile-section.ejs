@@ -22,6 +22,15 @@
 <% } %>
 
 <div class="form-check mb-2">
+  <input class="form-check-input" type="checkbox" name="journal.defaultPrivate" id="journal_defaultPrivate"
+         <%= prefs.defaultPrivate ? 'checked' : '' %>>
+  <label class="form-check-label" for="journal_defaultPrivate">
+    <i class="fas fa-lock text-muted"></i> Default new journal entries to private
+  </label>
+  <div class="form-text">When checked (default), new entries are created with <code>private: true</code> — only you can read them. Uncheck to make new entries public by default. Existing entries unaffected; you can still toggle each entry individually in the editor.</div>
+</div>
+
+<div class="form-check mb-2">
   <input class="form-check-input" type="checkbox" name="journal.streakVisible" id="journal_streakVisible"
          <%= prefs.streakVisible ? 'checked' : '' %>>
   <label class="form-check-label" for="journal_streakVisible">

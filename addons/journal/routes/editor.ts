@@ -84,7 +84,9 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
             voiceToText:      prefs['journal.voiceToText']      !== false,
             reminderEnabled:  Boolean(prefs['journal.reminderEnabled']),
             reminderTime:     (prefs['journal.reminderTime'] as string | undefined)     ?? '20:00',
-            streakVisible:    prefs['journal.streakVisible']    !== false
+            streakVisible:    prefs['journal.streakVisible']    !== false,
+            // #802 — Default Journal Visibility. Defaults to true (privacy-first).
+            defaultPrivate:   prefs['journal.defaultPrivate']   !== false
           },
           adminVoiceEnabled: enableVoiceToText(),
           csrfToken:         req.session?.csrfToken,
@@ -119,7 +121,11 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
           'journal.reminderTime':   typeof body['reminderTime'] === 'string' && body['reminderTime'].trim()
             ? body['reminderTime'].trim()
             : '20:00',
-          'journal.streakVisible':  body['streakVisible']  === 'on'
+          'journal.streakVisible':  body['streakVisible']  === 'on',
+          // #802 — Default Journal Visibility. Absence on the submitted form
+          // means the user unchecked it (this surface always renders the field,
+          // unlike _profile-section.ejs which has admin-disabled gating).
+          'journal.defaultPrivate': body['defaultPrivate'] === 'on'
         };
 
         await userManager.updateUser(ctx.username!, { preferences: updated });
@@ -161,7 +167,15 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
         // #789: per-user title to avoid PageManager title-uniqueness collision
         // when two users journal on the same date. Mirrors the per-user slug.
         const title = `Journal — ${username} — ${date}`;
-        const defaultPrivate    = config['defaultPrivate']    !== false;
+        // #802 — Default Journal Visibility:
+        //   1. user pref `journal.defaultPrivate` (if set, wins)
+        //   2. deployment-wide `config.defaultPrivate` (fleet fallback)
+        //   3. true (privacy-first hard default)
+        const userManager = um();
+        const freshUser = userManager ? await userManager.getUser(username) : null;
+        const userPref = (freshUser?.preferences as Record<string, unknown> | undefined)?.['journal.defaultPrivate'];
+        const fleetDefaultPrivate = config['defaultPrivate'] !== false;
+        const defaultPrivate = userPref !== undefined ? userPref !== false : fleetDefaultPrivate;
         const defaultAuthorLock = config['defaultAuthorLock'] !== false;
 
         const metadata: Record<string, unknown> = {
@@ -172,8 +186,9 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
           'journal-date':    date,
           author:            username,
           lastModified:      new Date().toISOString(),
-          ...(defaultAuthorLock ? { 'author-lock': true }                                   : {}),
-          ...(defaultPrivate    ? { 'system-location': 'private' } : {})
+          ...(defaultAuthorLock ? { 'author-lock': true } : {}),
+          // #802 — canonical semantic flag (replaces legacy `system-location: 'private'`)
+          ...(defaultPrivate    ? { private: true }       : {})
         };
 
         const wikiCtx = new WikiContext(engine, {

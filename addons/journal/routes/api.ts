@@ -33,13 +33,17 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
     return engine.getManager<JournalDataManager>('JournalDataManager');
   }
 
+  function um(): UserManager | undefined {
+    return engine.getManager<UserManager>('UserManager');
+  }
+
   function qs(v: unknown): string | undefined {
     return typeof v === 'string' ? v : undefined;
   }
 
   async function resolveUserContext(req: Request): Promise<import('../../../dist/src/context/WikiContext.js').UserContext> {
-    const um = engine.getManager<UserManager>('UserManager');
-    const uc = req.userContext || (um ? await um.getCurrentUser(req) : null);
+    const userMgr = um();
+    const uc = req.userContext || (userMgr ? await userMgr.getCurrentUser(req) : null);
     return uc as import('../../../dist/src/context/WikiContext.js').UserContext;
   }
 
@@ -73,7 +77,15 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
           return;
         }
 
-        const defaultPrivate    = config['defaultPrivate']    !== false;
+        // #802 — Default Journal Visibility:
+        //   1. user pref `journal.defaultPrivate` (if set, wins)
+        //   2. deployment-wide `config.defaultPrivate` (fleet fallback)
+        //   3. true (privacy-first hard default)
+        const userManager = um();
+        const freshUser = userManager ? await userManager.getUser(username) : null;
+        const userPref = (freshUser?.preferences as Record<string, unknown> | undefined)?.['journal.defaultPrivate'];
+        const fleetDefaultPrivate = config['defaultPrivate'] !== false;
+        const defaultPrivate = userPref !== undefined ? userPref !== false : fleetDefaultPrivate;
         const defaultAuthorLock = config['defaultAuthorLock'] !== false;
         const uuid = uuidv4();
         // #789: include username so two users journaling on the same day don't
@@ -91,7 +103,8 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
           author:            username,
           lastModified:      now,
           ...(defaultAuthorLock ? { 'author-lock': true } : {}),
-          ...(defaultPrivate ? { 'system-location': 'private' } : {})
+          // #802 — canonical semantic flag (replaces legacy `system-location: 'private'`)
+          ...(defaultPrivate ? { private: true } : {})
         };
 
         const wikiContext = new WikiContext(engine, {

@@ -217,7 +217,11 @@ const journalAddon = {
       voiceToText:     stored['journal.voiceToText']     !== false,
       reminderEnabled: Boolean(stored['journal.reminderEnabled']),
       reminderTime:    (stored['journal.reminderTime'] as string | undefined) ?? '20:00',
-      streakVisible:   stored['journal.streakVisible']   !== false
+      streakVisible:   stored['journal.streakVisible']   !== false,
+      // #802 — Default Journal Visibility. Default true (privacy-first); user
+      // can flip off per-account. Read by /api/journal/new and /journal/new
+      // when seeding the stub entry.
+      defaultPrivate:  stored['journal.defaultPrivate']  !== false
     };
 
     const partialPath = path.join(__dirname, 'views', '_profile-section.ejs');
@@ -267,6 +271,7 @@ const journalAddon = {
     // _rendered marker has guaranteed the partial was on the submitted form.
     updated['journal.streakVisible']   = body['journal.streakVisible']   === 'on';
     updated['journal.reminderEnabled'] = body['journal.reminderEnabled'] === 'on';
+    updated['journal.defaultPrivate']  = body['journal.defaultPrivate']  === 'on';
     const rt = body['journal.reminderTime'];
     updated['journal.reminderTime']    = typeof rt === 'string' && rt.trim() ? rt.trim() : '20:00';
 
