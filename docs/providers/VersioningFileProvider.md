@@ -58,7 +58,10 @@ await pageManager.restoreVersion('MyPage', 5);
 
 ```
 data/pages/
-  └── 550e8400-e29b-41d4-a716-446655440000.md  (Current version)
+  ├── 550e8400-e29b-41d4-a716-446655440000.md  (Current version)
+  └── private/
+        └── {author}/
+              └── {uuid}.md                     (Private page, author-scoped subdir)
 
 data/versions/
   ├── 550e8400-e29b-41d4-a716-446655440000/
@@ -67,6 +70,18 @@ data/versions/
   │   └── v3.delta.gz    (Compressed delta from v2 → v3)
   └── versions-metadata.json
 ```
+
+## "Private" is a visibility model, not encryption
+
+Pages with `private: true` are routed to `pages/private/{author}/{uuid}.md`. This is a **visibility / ACL convention**, not cryptographic privacy. The provider's job is storage routing; the page body is still plaintext on disk and accessible to anyone with filesystem access. Plaintext leak surfaces include:
+
+- **Version history** at `pages/versions/{uuid}/` is flat at the top level (not under `private/`). Every prior revision of a "private" page sits next to public versions.
+- **`page-index.json`** denormalises `{uuid, title, slug, lastModified, author, location, creator}` for every page, private ones included.
+- **Search indices** (Lunr `data/search-index/`, or an Elasticsearch cluster) ingest the rendered content of private pages at write time. Anyone with index access reads the content.
+- **Attachments** under `data/attachments/` are flat by UUID — attachments to private pages share a directory with public ones.
+- **Backups, logs, audit** — anywhere page content is written outside `private/{author}/` is a potential leak.
+
+A future "user-private encryption" story is plausible — the per-author directory layout makes `pages/private/{author}/` a natural unit for at-rest encryption — but it requires coordinated providers for versions, search, attachments, backups, and audit, plus a key-management story. Out of scope for VFP today; tracked architecturally under EPIC #790 / #802 prerequisites.
 
 ## Version Metadata Format
 

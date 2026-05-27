@@ -90,7 +90,10 @@ BasePageProvider (abstract)
 data/
   ├── page-index.json                    # Centralized page index
   ├── pages/
-  │   ├── {uuid}.md                      # Current page version
+  │   ├── {uuid}.md                      # Current page version (public)
+  │   ├── private/
+  │   │   └── {author}/
+  │   │         └── {uuid}.md            # Private page, routed by `private: true`
   │   └── versions/
   │         └── {uuid}/
   │               ├── manifest.json       # Version metadata
@@ -106,6 +109,20 @@ data/
               └── {uuid}/
                     └── (same structure)
 ```
+
+### "Private" is a visibility model, not encryption
+
+Routing a page with `private: true` to `pages/private/{author}/` is a **visibility / ACL convention** enforced by ACLManager + the providers, not cryptographic privacy. Page bodies remain plaintext on disk, and several adjacent stores hold plaintext copies or denormalised metadata about private pages:
+
+| Surface | Path | What leaks |
+|---|---|---|
+| **Version history** | `pages/versions/{uuid}/` | Flat at the top level, NOT under `private/`. Every prior revision of a "private" page is stored next to public versions in the same directory tree. |
+| **Page index** | `page-index.json` | Denormalises `{uuid, title, slug, lastModified, author, location, creator}` for every page in the system, including private ones. |
+| **Search index** | `data/search-index/` (Lunr) or external Elasticsearch | Indexes the rendered content of private pages at save time. Anyone with index access reads private content. |
+| **Attachments** | `data/attachments/{uuid}.bin` | Flat by UUID — attachments to private pages share a directory with public ones. |
+| **Backups / logs / audit** | `data/backups/`, `data/logs/`, `data/audit/` | Anywhere page content is written outside `pages/private/{author}/` is a potential leak. |
+
+The per-author directory layout makes `pages/private/{author}/` a natural unit for at-rest encryption — an `EncryptedFileSystemProvider` wrapping FSP/VFP would be one path. But "truly private" requires coordinated encryption across versions, search, attachments, backups, and audit, plus a key-management story (per-user keys derived from passphrase / external KMS / etc.). Out of scope for VFP today; tracked architecturally under EPIC #790 / #802 prerequisites. EPIC #790's #802 (canonicalising `private: true` as THE semantic flag) is a prerequisite — once every reader agrees on a single privacy signal, an encryption layer has a reliable input.
 
 ### Component Relationships
 
