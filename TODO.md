@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-27T16:45:00.000Z'
+lastModified: '2026-05-27T18:20:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -16,7 +16,7 @@ Current near-term priorities for ngdpbase and the sister sites tracked by `/othe
 
 **See also**: [`docs/architecture-threads.md`](./docs/architecture-threads.md) maps in-flight cross-cutting design threads (CatalogManager unification, NCM pipeline, JSON-LD render, Journal reconcile, ACL evaluator, system principal, addon platform) — issues here that belong to a thread are listed there with their dependency context. Use TODO.md for "what's open and how to prioritise"; use architecture-threads.md for "how do these issues relate to each other."
 
-**Latest release**: v3.44.0 (2026-05-27; minor, GH Release published) — consolidating minor that propagated v3.43.1–v3.43.10 to satellites (no new code). All three instances green: 6064 unit + 80 E2E. Highlights of the range: EPIC #790 second-wave (#797, #798, #799, #800, #801, #803) + post-#800 regression fixes (#804, #805). v3.43.0 (2026-05-26; minor): #793 + #791 + #792.
+**Latest release**: v3.44.1 (2026-05-27; patch, GH Release deferred) — #802 Slices 0 + 1: docs framing (visibility-vs-encryption + plaintext leak surfaces) + journal addon `journal.defaultPrivate` user preference replacing deployment-wide config; both write sites now emit canonical `private: true`. Satellites still on v3.44.0; next minor consolidation pending. v3.44.0 (2026-05-27; minor): consolidating range v3.43.1–v3.43.10 propagated to satellites.
 
 Sister sites in scope:
 
@@ -68,7 +68,7 @@ Filed and scoped, awaiting prioritization or implementation cycles.
 
 | # | Topic | Priority hint |
 |---|---|---|
-| **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24). **First-wave closed**: #791, #792, #793, #794, #795, #796. **Second-wave shipped**: #803 (v3.43.4), #797 (v3.43.5), #798 (v3.43.6), #799 (v3.43.7), #800 (v3.43.8), #801 (v3.43.9). **Post-#800 regression fixes**: #804 + #805 (v3.43.10). **All propagated** to satellites via v3.44.0. **Remaining**: #802 (system-location:private write-migration). **Operator action items**: stale `journal-index.json` files on all instances can be manually deleted (startup hint from #800). Also worth a survey: similar JDM-async-caller miss patterns elsewhere that #804 + #805 may indicate (any other caller that relies on `system-location`/sidecar-era assumptions). | EPIC OPEN with 1 second-wave sub-issue remaining. |
+| **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24). **First-wave closed**: #791–#796. **Second-wave shipped**: #803 (v3.43.4), #797 (v3.43.5), #798 (v3.43.6), #799 (v3.43.7), #800 (v3.43.8), #801 (v3.43.9). **Post-#800 regression fixes**: #804 + #805 (v3.43.10). **All propagated** via v3.44.0. **#802 in flight**: Slices 0 + 1 shipped (v3.44.1) — docs framing + journal addon emits canonical `private: true` behind new `journal.defaultPrivate` user pref. **Slices 2–4 remaining**: migration script, providers read `metadata.private`, drop dual-read fallbacks. See project_log entry `2026-05-27-03` for full plan. **Operator carryover**: stale `journal-index.json` files on all instances can be manually deleted. | EPIC OPEN; #802 in flight. |
 | #786 | Auto-journal — digester consuming CatalogManager records into journal entries | Gated by #685 + EPIC #790. Consumer-pattern; no source-specific code |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images | Low — adds sharp/libvips; do when a real driver appears |
 | #707 | Typed footnote + knowledge-graph reference index | Low — **depends on #706**; speculative |

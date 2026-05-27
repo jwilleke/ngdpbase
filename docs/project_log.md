@@ -2,6 +2,49 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-27-03
+
+- Agent: Claude Opus 4.7
+- Subject: Started #802 cleanup chain — shipped **Slice 0** (docs framing the visibility-vs-encryption model) + **Slice 1** (journal addon: new `journal.defaultPrivate` user preference replaces deployment-wide config knob; both write sites now emit canonical `private: true` instead of legacy `system-location: 'private'`). Shipped as **v3.44.1** patch.
+- Current Issue: #802 (in progress — Slices 0 + 1 of 4 done; #790 EPIC parent)
+- Tests: jimstest GREEN on release commit — **6064 unit + 80 E2E**. No flakes.
+- Semver: **patch**. GH Release deferred. /othersites skipped per patch-gate.
+- **Architecture conversation that drove the framing** (worth recording — sets context for Slices 2–4):
+  - Operator pushed back on initial framing that "this is a journal-addon-only fix." Correct framing surfaced: `private: true` is the canonical semantic flag for visibility/ACL/search/UI; `system-location: 'private'` is provider-internal storage routing that leaked into user-visible page frontmatter. BasePageProvider's abstract contract is already right; the leak is in concrete providers (FSP, VFP) reading a magic field name they shouldn't have to know about. An S3Provider would have no use for that field — should consume `metadata.private === true` and decide its own storage layout.
+  - Privacy default-per-user belongs at the user-pref level, NOT as a deployment-wide config knob. "Journal entries are just pages" — so the user owns the default, with a config-level fleet fallback for users who haven't set their pref.
+  - "Private" today is a visibility model, not encryption. Per-author directory layout `pages/private/{author}/` makes encryption-at-rest possible as a future story, but real privacy requires coordinated encryption across versions, page-index, search, attachments, backups, audit. Out of scope; documented as a future EPIC prerequisite.
+- Slice 0 (commit `debe0a99`): added "Private is a visibility model, not encryption" section to both `docs/providers/VersioningFileProvider.md` and `docs/providers/VersioningFileProvider-Complete-Guide.md` with the five plaintext leak surfaces enumerated (versions, page-index, search indices, attachments, backups/logs/audit).
+- Slice 1 (commit `ddea45a9`): user pref + canonical-flag write.
+  - `addons/journal/views/_profile-section.ejs` — new "Default new journal entries to private" checkbox (renders into /profile via the addon's profileSection hook).
+  - `addons/journal/views/journal-settings.ejs` — same checkbox under a new "Visibility" form section (also on /journal/settings).
+  - `addons/journal/index.ts` — `profileSection` projects `defaultPrivate: stored['journal.defaultPrivate'] !== false` (privacy-first default); `saveProfileSection` persists `journal.defaultPrivate` per-field-gated under the existing `_rendered` marker policy.
+  - `addons/journal/routes/editor.ts` — POST /settings now persists `journal.defaultPrivate`; GET /new resolves `userPref ?? fleetConfig ?? true` and emits `{ private: true }` instead of `{ 'system-location': 'private' }`.
+  - `addons/journal/routes/api.ts` — added `um()` helper (UserManager was already imported for `resolveUserContext`); renamed the inner `const um` to `userMgr` to avoid shadowing; GET /api/journal/new same flow as editor.ts.
+- Why this is safe to ship now (no migration required yet): PageManager still mirrors `private: true` to `system-location: 'private'` for storage routing (its current line 547-548 logic). Every reader of either field still works (FSP, VFP, Lunr, ES, JDM all dual-read). Old journal entries on disk that have ONLY `system-location: 'private'` continue to work. New journal entries get `private: true` (and PageManager also still emits `system-location: 'private'` for them — that's the redundant emit that Slice 4 will remove).
+- Perf baseline drift v3.44.0 → v3.44.1: memory +3.2% (V8 post-test inflation — well-known noise per `[Perf baseline memory drift is noise]`), `/search?q=test` +300% / +111ms (37→148ms). Operator-delegated discretion: classified as warm-cache / heavy-E2E oscillation noise — release range touches only journal addon files (`addons/journal/views/`, `addons/journal/routes/`, `addons/journal/index.ts`); no path that affects `/search` render. Same oscillation shape seen at v3.43.10 (`/` +421% rebounded to -82% next baseline). Baseline file: `docs/performance/baseline-v3.44.1-2026-05-27.md`.
+- /othersites: **skipped** — patch-gate.
+- **#802 chain — where we are / where we pick up tomorrow:**
+  - ✅ Slice 0 — Docs framing (DONE — commit `debe0a99`).
+  - ✅ Slice 1 — Journal addon user pref + emit `private: true` (DONE — commit `ddea45a9`, v3.44.1).
+  - ⬜ **Slice 2 — Migration script.** Write `scripts/migrate-private-flag.ts` (CLI, idempotent): walks every page, if `system-location === 'private'` and `private !== true` adds `private: true`; drops `system-location` from frontmatter. Run pattern: explicit operator action per instance (like #800's "safe to delete sidecar" pattern). Estimate ~1 hour.
+  - ⬜ Slice 3 — Providers route off `metadata.private`. `FileSystemProvider.ts:581-583` + `VersioningFileProvider.ts:1346-1366` read `metadata.private === true`; update test assertions in `src/managers/__tests__/PageManager.test.ts:247` etc. Safe only after Slice 2 runs on every instance. Estimate ~1 hour.
+  - ⬜ Slice 4 — Drop the legacy emit (`PageManager.ts:662`) + dual-read fallbacks across `FileSystemProvider.ts:835,888`, `LunrSearchProvider.ts:276`, `ElasticsearchSearchProvider.ts:639`, `addons/journal/managers/JournalDataManager.ts:118`. Update `LunrSearchProvider.privateFilter.test.ts:331-332`. Field `system-location` is dead after this. Estimate ~1 hour.
+- Open scope question carried forward: `defaultAuthorLock` is the same deployment-wide-config shape as `defaultPrivate` was — also a candidate for user-pref promotion. Not bundled per `[Small Iterations]` / operator's "don't bundle" directive. Easy follow-up.
+- Commits:
+  - `debe0a99` — docs(#790,#802): document visibility-vs-encryption and plaintext leak surfaces
+  - `ddea45a9` — feat(#802): user pref 'Default Journal Visibility'; emit canonical private:true
+  - `5d910cc2` — chore: release v3.44.1
+- Files Modified:
+  - `docs/providers/VersioningFileProvider.md` (+22/-2)
+  - `docs/providers/VersioningFileProvider-Complete-Guide.md` (+34/-2)
+  - `addons/journal/views/_profile-section.ejs` (+9)
+  - `addons/journal/views/journal-settings.ejs` (+13)
+  - `addons/journal/index.ts` (+6/-1)
+  - `addons/journal/routes/editor.ts` (+18/-7)
+  - `addons/journal/routes/api.ts` (+19/-5)
+  - `package.json`, `config/app-default-config.json`, `CHANGELOG.md` (version bump)
+  - `docs/performance/baseline-v3.44.1-2026-05-27.md` (new)
+
 ## 2026-05-27-02
 
 - Agent: Claude Opus 4.7
