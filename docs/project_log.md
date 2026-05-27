@@ -2,6 +2,37 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-27-01
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped two `#800`-fallout fixes in the journal addon as **v3.43.10** patch: `#804` (`+ New Entry` 404) + `#805` (`/my/journal` 500). Both regressions where JDM methods became async / search-index-backed but callers were never updated.
+- Current Issue: #804, #805 (both closed by this release)
+- Tests: jimstest GREEN on **release commit** — 6064 unit + 80 E2E. Pre-release pre-flight also GREEN (same numbers). No flakes.
+- Semver: **patch** — two narrow regression fixes, no API change. GH Release publish deferred (1-patch chain since v3.43.9). /othersites skipped per patch-gate.
+- #804 — `/view/myjournal` → click **+ New Entry** → server redirected to `/journal/<slug>/edit` → 404 "Journal entry not found." Root cause: `/journal/:slug/edit` (and `/journal/:slug/delete`) used `JournalDataManager.getBySlug(slug)`, which reads `SearchManager.searchByCategory('journal')`. But `PageManager.savePageWithContext` does NOT update the search index (only `WikiRoutes` /save does). After #800 retired the sidecar and made JDM's `indexEntry` a no-op, the addon's own creation path had no remaining mechanism to register the new entry with the search index, so the just-saved page was invisible to JDM. Fix: switch both routes to `pm.getPageBySlug(slug)` — PageManager is the canonical authority on existence + author metadata; the auth + redirect check shouldn't depend on the search index at all.
+- #805 — `/my/journal` → 500 "Error loading journal list" for any authenticated user. Root cause: `WikiRoutes.myJournalPage` (`src/routes/WikiRoutes.ts:5320`) called `journalManager.listByAuthor(...)` synchronously and immediately ran `.map(...)` on the result. After #800, `listByAuthor` became async (now reads through SearchManager + PageManager), so `entries` was a Promise and `entries.map` threw `TypeError: entries.map is not a function`. Compounding bug: the local inline type at lines 5330-5334 falsely declared the method synchronous AND mis-described the entry shape (`{slug, title, date, preview}` — none of `date` or `preview` exist on `JournalIndexEntry`). Fix: add `await`, replace the inline type with `JournalIndexEntryShape` mirroring the real shape, map `e.journalDate` → `item.lastModified`, drop the nonexistent `preview` field.
+- Same #800 fallout pattern as the previous fixes in this regression chain. The pattern that should have caught both: when a manager method's signature changes (sync→async, return shape), greppable callers like the inline-typed `getManager('JournalDataManager') as { ... }` casts at the call site silently mask the change.
+- Perf baseline drift v3.43.9 → v3.43.10: memory +119.7% (post-test V8 inflation pattern, expected), `/` +118ms / +421% (operator reviewed — release range doesn't touch `/` or its render path; classified as warm-cache noise from the just-completed heavy E2E run, not a real regression). Other routes within ±6%. Baseline file: `docs/performance/baseline-v3.43.10-2026-05-27.md`.
+- /othersites: **skipped** — patch-gate.
+- Work Done:
+  - Diagnosed `#804` from first principles (followed `/api/journal/new` → redirect → `/journal/:slug/edit` → JDM lookup → searchByCategory).
+  - Filed `#804` with full call-chain + line refs.
+  - Fixed `editor.ts` (both routes) via PageManager.
+  - Restarted jimstest, operator confirmed `+ New Entry` works.
+  - Operator then reported `/my/journal` also broken — diagnosed as same #800 pattern but different surface.
+  - Filed `#805` (separate issue — different file, different fix area).
+  - Fixed `WikiRoutes.myJournalPage`, restarted, operator confirmed page renders.
+  - /session-commit: 2 fix commits + release commit (v3.43.10) + this log entry.
+- Commits:
+  - `93ec4289` — fix(#804): resolve journal /:slug/edit + /:slug/delete via PageManager, not JDM
+  - `837f3d94` — fix(#805): await JournalDataManager.listByAuthor in /my/journal
+  - `b99580f5` — chore: release v3.43.10
+- Files Modified:
+  - `addons/journal/routes/editor.ts` (+25/-12)
+  - `src/routes/WikiRoutes.ts` (+19/-7)
+  - `package.json`, `config/app-default-config.json`, `CHANGELOG.md` (version bump)
+  - `docs/performance/baseline-v3.43.10-2026-05-27.md` (new)
+
 ## 2026-05-26-11
 
 - Agent: Claude Opus 4.7
