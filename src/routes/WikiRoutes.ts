@@ -5327,22 +5327,34 @@ ${panes}
       if (!currentUser || !currentUser.isAuthenticated || !currentUser.username) {
         return res.redirect('/login?redirect=/my/journal');
       }
+      // #805 — JournalDataManager.listByAuthor became async in #800 when the
+      // sidecar was retired (it now reads through SearchManager + PageManager).
+      // The inline type below mirrors the real signature so missing-await bugs
+      // surface at compile time.
+      interface JournalIndexEntryShape {
+        uuid: string;
+        slug: string;
+        title: string;
+        author: string;
+        journalDate: string;
+        mood?: string;
+        tags: string[];
+        isPrivate: boolean;
+        lastModified: string;
+      }
       const journalManager = this.engine.getManager('JournalDataManager') as {
-        listByAuthor?: (u: string, o?: { limit?: number; offset?: number }) => Array<{
-          slug: string; title: string; date: string; preview?: string
-        }>;
+        listByAuthor?: (u: string, o?: { limit?: number; offset?: number }) => Promise<JournalIndexEntryShape[]>;
       };
       const addonsManager = this.engine.getManager('AddonsManager');
       const journalEnabled = addonsManager?.isEnabled?.('journal') ?? false;
-      const entries = journalManager?.listByAuthor
-        ? journalManager.listByAuthor(currentUser.username, { limit: 1000, offset: 0 })
+      const entries: JournalIndexEntryShape[] = journalManager?.listByAuthor
+        ? await journalManager.listByAuthor(currentUser.username, { limit: 1000, offset: 0 })
         : [];
       // Adapt journal entries to the my-list shape so we can reuse the view.
       const items = entries.map(e => ({
         title: e.title,
         uuid: e.slug,
-        lastModified: e.date,
-        preview: e.preview
+        lastModified: e.journalDate
       }));
       const commonData = await this.getCommonTemplateData(req);
       res.render('my-list', {
