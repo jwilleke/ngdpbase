@@ -164,6 +164,134 @@ describe('VersioningFileProvider', () => {
     });
   });
 
+  // #806: rebuildPageIndexFromManifests had two latent bugs surfaced during
+  // #802 Slice 2 recovery on jimstest:
+  //   1. Gated each entry on `await fs.pathExists(manifestPath)`, silently
+  //      dropping every page without a version manifest (~17K → 138 on jimstest).
+  //   2. The `updatePageInIndex` payload omitted `slug` and `filename`, so
+  //      slug-based URL lookups 404'd against the rebuilt index.
+  // This describe block locks in the fix.
+  describe('Page-index rebuild from filesystem (#806)', () => {
+    async function writeRawPage(provider, location, uuid, frontmatter) {
+      const baseDir = location === 'required-pages'
+        ? provider.requiredPagesDirectory
+        : location === 'private' && frontmatter.author
+          ? path.join(provider.pagesDirectory, 'private', frontmatter.author)
+          : provider.pagesDirectory;
+      await fs.ensureDir(baseDir);
+      const filePath = path.join(baseDir, `${uuid}.md`);
+      const fm = Object.entries({ ...frontmatter, uuid })
+        .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
+        .join('\n');
+      await fs.writeFile(filePath, `---\n${fm}\n---\n# ${frontmatter.title}\nbody\n`, 'utf8');
+      return filePath;
+    }
+
+    test('rebuild includes pages without a version manifest (regression for the 138/17K bug)', async () => {
+      // First-time init to set up directories
+      await provider.initialize();
+
+      // Drop three .md files directly to disk — no manifest.json anywhere.
+      // This simulates pre-versioning pages, or pages whose manifests were lost.
+      await writeRawPage(provider, 'pages', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        { title: 'Public One', slug: 'public-one', author: 'alice', lastModified: '2026-01-01T00:00:00.000Z' });
+      await writeRawPage(provider, 'pages', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+        { title: 'Public Two', slug: 'public-two', author: 'bob', lastModified: '2026-01-02T00:00:00.000Z' });
+      await writeRawPage(provider, 'private', 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+        { title: 'Alice Private', slug: 'alice-private', author: 'alice', private: true, lastModified: '2026-01-03T00:00:00.000Z' });
+
+      // Empty the page-index.json so canUseFastInitialization returns false
+      // and the rebuild path fires.
+      await fs.writeJson(provider.pageIndexPath, {
+        version: '1.0.0',
+        lastUpdated: '2026-01-01T00:00:00.000Z',
+        pageCount: 0,
+        pages: {}
+      });
+
+      // Reinitialize to trigger the slow path → auto-migrate → rebuild.
+      const p2 = new VersioningFileProvider(engine);
+      await p2.initialize();
+
+      // All three pages must be in the rebuilt index.
+      const idx = p2.pageIndex;
+      expect(Object.keys(idx.pages)).toEqual(
+        expect.arrayContaining([
+          'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+          'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+          'cccccccc-cccc-cccc-cccc-cccccccccccc'
+        ])
+      );
+      expect(idx.pageCount).toBeGreaterThanOrEqual(3);
+    });
+
+    test('rebuilt entries include slug and filename fields (#806 missing-fields bug)', async () => {
+      await provider.initialize();
+
+      await writeRawPage(provider, 'pages', '11111111-1111-1111-1111-111111111111',
+        { title: 'Has Slug', slug: 'has-slug', author: 'alice', lastModified: '2026-01-01T00:00:00.000Z' });
+
+      await fs.writeJson(provider.pageIndexPath, {
+        version: '1.0.0', lastUpdated: '2026-01-01T00:00:00.000Z',
+        pageCount: 0, pages: {}
+      });
+
+      const p2 = new VersioningFileProvider(engine);
+      await p2.initialize();
+
+      const entry = p2.pageIndex.pages['11111111-1111-1111-1111-111111111111'];
+      expect(entry).toBeDefined();
+      expect(entry.slug).toBe('has-slug');
+      expect(entry.filename).toBe('11111111-1111-1111-1111-111111111111.md');
+    });
+
+    test('rebuilt entries set location correctly for private pages (and capture creator)', async () => {
+      await provider.initialize();
+
+      await writeRawPage(provider, 'private', '22222222-2222-2222-2222-222222222222',
+        { title: 'Bob Private', slug: 'bob-private', author: 'bob', private: true, lastModified: '2026-01-01T00:00:00.000Z' });
+
+      await fs.writeJson(provider.pageIndexPath, {
+        version: '1.0.0', lastUpdated: '2026-01-01T00:00:00.000Z',
+        pageCount: 0, pages: {}
+      });
+
+      const p2 = new VersioningFileProvider(engine);
+      await p2.initialize();
+
+      const entry = p2.pageIndex.pages['22222222-2222-2222-2222-222222222222'];
+      expect(entry).toBeDefined();
+      expect(entry.location).toBe('private');
+      expect(entry.creator).toBe('bob');
+    });
+
+    test('private pages on disk are NOT renamed/moved into the regular pile by auto-migration (#806)', async () => {
+      // Slice 2's earlier slip moved 14 private files out of pages/private/{author}/
+      // because the auto-migration's location detection only knew about
+      // pages/{uuid}.md and required-pages/{uuid}.md. Lock in that the file
+      // stays where it was placed.
+      await provider.initialize();
+
+      const beforePath = await writeRawPage(provider, 'private', '33333333-3333-3333-3333-333333333333',
+        { title: 'Stable Private', slug: 'stable-private', author: 'alice', private: true, lastModified: '2026-01-01T00:00:00.000Z' });
+      expect(await fs.pathExists(beforePath)).toBe(true);
+
+      await fs.writeJson(provider.pageIndexPath, {
+        version: '1.0.0', lastUpdated: '2026-01-01T00:00:00.000Z',
+        pageCount: 0, pages: {}
+      });
+
+      const p2 = new VersioningFileProvider(engine);
+      await p2.initialize();
+
+      // File must still be at its original private location.
+      expect(await fs.pathExists(beforePath)).toBe(true);
+      // And NOT at the regular-pile location.
+      const wrongPath = path.join(p2.pagesDirectory, '33333333-3333-3333-3333-333333333333.md');
+      expect(await fs.pathExists(wrongPath)).toBe(false);
+    });
+  });
+
   describe('Configuration Loading', () => {
     test('should load all versioning configuration', async () => {
       await provider.initialize();

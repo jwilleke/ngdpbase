@@ -975,18 +975,30 @@ class VersioningFileProvider extends FileSystemProvider {
         }
 
         // Determine location (check which directory the page is in)
+        // #806: also check pages/private/{author}/{uuid}.md — without this the
+        // auto-migration would mis-locate (and previously even move) private
+        // pages into the regular pile.
         if (!this.pagesDirectory || !this.requiredPagesDirectory) {
           continue;
         }
         const pagesPath = path.join(this.pagesDirectory, `${uuid}.md`);
         const requiredPath = path.join(this.requiredPagesDirectory, `${uuid}.md`);
+        const author = ((pageData as PageCacheInfo).metadata as Record<string, unknown> | undefined)?.['author'] as string | undefined;
+        const privatePath = author
+          ? path.join(this.pagesDirectory, 'private', author, `${uuid}.md`)
+          : null;
 
         let location: 'pages' | 'required-pages' | 'private' = 'pages';
         let pagePath = pagesPath;
+        let creator: string | undefined;
 
         if (await fs.pathExists(requiredPath)) {
           location = 'required-pages';
           pagePath = requiredPath;
+        } else if (privatePath && await fs.pathExists(privatePath)) {
+          location = 'private';
+          pagePath = privatePath;
+          creator = author;
         }
 
         // Read current page content
@@ -999,14 +1011,21 @@ class VersioningFileProvider extends FileSystemProvider {
           content = parsed.content;
           metadata = parsed.data as PageFrontmatter;
         } else {
-          // {uuid}.md not found — the page may have a slug-based filename on disk.
+          // {uuid}.md not found — the page may have a slug-based filename on disk,
+          // OR may live under pages/private/{author}/{uuid}.md.
           // pageCache.filePath holds the actual path discovered during directory scan.
           const actualFilePath = (pageData as PageCacheInfo).filePath;
           if (actualFilePath && await fs.pathExists(actualFilePath)) {
-            // Correct location based on which directory the file actually lives in
+            // Correct location based on which directory the file actually lives in.
+            // #806: also handle the private subdir so private pages don't get
+            // renamed into the regular pile by the rename below.
             if (actualFilePath.startsWith(this.requiredPagesDirectory + path.sep)) {
               location = 'required-pages';
               pagePath = requiredPath;
+            } else if (actualFilePath.includes(`${path.sep}private${path.sep}`)) {
+              location = 'private';
+              creator = author;
+              pagePath = actualFilePath; // already correctly placed; don't rename
             } else {
               location = 'pages';
               pagePath = pagesPath;
@@ -1015,13 +1034,17 @@ class VersioningFileProvider extends FileSystemProvider {
             const parsed = matter(fileContent);
             content = parsed.content;
             metadata = parsed.data as PageFrontmatter;
-            // Rename the slug-named file to its proper UUID filename
-            await fs.rename(actualFilePath, pagePath);
-            logger.info(
-              '[VersioningFileProvider] Auto-migration: renamed slug-named file ' +
-              `"${path.basename(actualFilePath)}" → "${path.basename(pagePath)}" ` +
-              `for page "${(pageData as PageCacheInfo).title}"`
-            );
+            // Rename the slug-named file to its proper UUID filename — but
+            // ONLY if pagePath actually differs (i.e. file was slug-named).
+            // Private files already at private/{author}/{uuid}.md don't move.
+            if (actualFilePath !== pagePath) {
+              await fs.rename(actualFilePath, pagePath);
+              logger.info(
+                '[VersioningFileProvider] Auto-migration: renamed slug-named file ' +
+                `"${path.basename(actualFilePath)}" → "${path.basename(pagePath)}" ` +
+                `for page "${(pageData as PageCacheInfo).title}"`
+              );
+            }
           } else {
             logger.warn(
               '[VersioningFileProvider] Auto-migration: file not found for page ' +
@@ -1036,15 +1059,23 @@ class VersioningFileProvider extends FileSystemProvider {
         // Create v1
         await this.createInitialVersion(uuid, (pageData as PageCacheInfo).title, content, metadata, location);
 
-        // Update page index
+        // Update page index. #806: include slug + filename + (when private)
+        // creator so slug-based URL lookups work after an auto-migration pass.
+        const slugFromMeta = typeof (metadata as Record<string, unknown>)['slug'] === 'string'
+          ? ((metadata as Record<string, unknown>)['slug'] as string)
+          : undefined;
+        const filename = path.basename(pagePath);
         await this.updatePageInIndex(uuid, {
-          title: (pageData as PageCacheInfo).title,
-          uuid: uuid,
+          title:    (pageData as PageCacheInfo).title,
+          uuid,
           currentVersion: 1,
-          location: location,
+          location,
           lastModified: new Date().toISOString(),
           editor: 'system',
-          hasVersions: true
+          hasVersions: true,
+          slug:     slugFromMeta,
+          filename,
+          ...(creator ? { creator } : {})
         });
 
         migratedCount++;
@@ -1073,51 +1104,123 @@ class VersioningFileProvider extends FileSystemProvider {
   private async rebuildPageIndexFromManifests(): Promise<void> {
     let rebuiltCount = 0;
     let errorCount = 0;
+    let manifestlessCount = 0;
 
     for (const [, pageData] of this.pageCache.entries()) {
       // pageCache is keyed by title — use pageData.uuid for the actual UUID
-      const uuid = (pageData as PageCacheInfo).uuid;
+      const info = pageData as PageCacheInfo;
+      const uuid = info.uuid;
       try {
-        // Determine location
+        // Determine location from disk:
+        //   - required-pages/{uuid}.md          → 'required-pages'
+        //   - pages/private/{author}/{uuid}.md  → 'private'
+        //   - pages/{uuid}.md                   → 'pages'
+        // Prefer the cached filePath (set by FSP.refreshPageList during the
+        // slow-path init walk). If it's not present, fall back to probing
+        // candidate locations on disk so the rebuild stays correct even for
+        // pages that reached pageCache through a different code path.
         if (!this.pagesDirectory || !this.requiredPagesDirectory) {
           continue;
         }
-        const requiredPath = path.join(this.requiredPagesDirectory, `${uuid}.md`);
-        const location: 'pages' | 'required-pages' | 'private' = (await fs.pathExists(requiredPath)) ? 'required-pages' : 'pages';
 
-        // Load manifest
+        let location: 'pages' | 'required-pages' | 'private';
+        let creator: string | undefined;
+        const md = (info.metadata ?? {}) as PageFrontmatter & Record<string, unknown>;
+        const filePathFromCache = info.filePath ?? '';
+
+        // Author from frontmatter — used both to compute the candidate private
+        // path and as the creator value when location resolves to 'private'.
+        const author = typeof md['author'] === 'string' ? (md['author']) : undefined;
+
+        // Try cached path first.
+        if (filePathFromCache.startsWith(this.requiredPagesDirectory + path.sep)
+          || filePathFromCache === this.requiredPagesDirectory + path.sep + `${uuid}.md`) {
+          location = 'required-pages';
+        } else if (filePathFromCache.includes(`${path.sep}private${path.sep}`)) {
+          location = 'private';
+          const segments = filePathFromCache.split(path.sep);
+          const privateIdx = segments.lastIndexOf('private');
+          if (privateIdx >= 0 && privateIdx + 1 < segments.length - 1) {
+            creator = segments[privateIdx + 1];
+          }
+        } else if (filePathFromCache.startsWith(this.pagesDirectory + path.sep)) {
+          location = 'pages';
+        } else {
+          // No useful filePath — probe candidates on disk.
+          const requiredProbe = path.join(this.requiredPagesDirectory, `${uuid}.md`);
+          const privateProbe = author
+            ? path.join(this.pagesDirectory, 'private', author, `${uuid}.md`)
+            : null;
+          if (await fs.pathExists(requiredProbe)) {
+            location = 'required-pages';
+          } else if (privateProbe && await fs.pathExists(privateProbe)) {
+            location = 'private';
+            creator = author;
+          } else {
+            location = 'pages';
+          }
+        }
+
+        // Extract slug + filename for the index entry. The index entry shape
+        // expected by initializeFromIndex includes these (#806).
+        const slugFromMeta = typeof md['slug'] === 'string' ? (md['slug']) : undefined;
+        const filename = filePathFromCache ? path.basename(filePathFromCache) : `${uuid}.md`;
+
+        // Load manifest if present (gives us currentVersion + lastModified +
+        // editor). If absent, the page has no version history yet — write a
+        // pre-versioning entry so the page is still discoverable. Before #806
+        // the manifest check was a hard gate that silently dropped every
+        // pre-versioning page (~17K → 138 entries on jimstest).
         const versionDir = this.getVersionDirectory(uuid, location);
         const manifestPath = path.join(versionDir, 'manifest.json');
+        const hasManifest = await fs.pathExists(manifestPath);
 
-        if (await fs.pathExists(manifestPath)) {
+        let currentVersion = 1;
+        let lastModified = (md['lastModified'] as string | undefined) ?? new Date().toISOString();
+        let editor = (md['editor']) ?? (md['author']) ?? 'unknown';
+        let hasVersions = false;
+
+        if (hasManifest) {
           const manifestData = await fs.readFile(manifestPath, 'utf8');
           const manifest = JSON.parse(manifestData) as InternalManifest;
+          currentVersion = manifest.currentVersion ?? currentVersion;
+          lastModified = manifest.lastModified ?? lastModified;
+          editor = manifest.editor ?? manifest.author ?? editor;
+          hasVersions = true;
+        } else {
+          manifestlessCount++;
+        }
 
-          // Update page index
-          await this.updatePageInIndex(uuid, {
-            title: (pageData as PageCacheInfo).title,
-            uuid: uuid,
-            currentVersion: manifest.currentVersion,
-            location: location,
-            lastModified: manifest.lastModified || new Date().toISOString(),
-            editor: manifest.editor || manifest.author || 'unknown',
-            hasVersions: true
-          });
+        await this.updatePageInIndex(uuid, {
+          title:    info.title,
+          uuid,
+          currentVersion,
+          location,
+          lastModified,
+          editor,
+          hasVersions,
+          slug:     slugFromMeta,
+          filename,
+          ...(creator ? { creator } : {})
+        });
 
-          rebuiltCount++;
-
-          if (rebuiltCount % 10 === 0) {
-            logger.info(`[VersioningFileProvider] Rebuilt ${rebuiltCount}/${this.pageCache.size} index entries...`);
-          }
+        rebuiltCount++;
+        if (rebuiltCount % 1000 === 0) {
+          logger.info(`[VersioningFileProvider] Rebuilt ${rebuiltCount}/${this.pageCache.size} index entries...`);
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        logger.error(`[VersioningFileProvider] Failed to rebuild index for ${(pageData as PageCacheInfo).title} (${uuid}): ${errorMessage}`);
+        logger.error(`[VersioningFileProvider] Failed to rebuild index for ${info.title} (${uuid}): ${errorMessage}`);
         errorCount++;
       }
     }
 
-    logger.info(`[VersioningFileProvider] Page index rebuild complete: ${rebuiltCount} entries rebuilt, ${errorCount} errors`);
+    // Sanity check: surface large divergence between rebuilt count and on-disk
+    // file count so a regression in the walk path is loud.
+    logger.info(`[VersioningFileProvider] Page index rebuild complete: ${rebuiltCount} entries rebuilt (${manifestlessCount} without version manifest), ${errorCount} errors`);
+    if (rebuiltCount === 0 && this.pageCache.size > 0) {
+      logger.error(`[VersioningFileProvider] Rebuild produced 0 entries from ${this.pageCache.size} cached pages — index will be unusable for slug/title lookups`);
+    }
   }
 
   /**
