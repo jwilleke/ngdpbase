@@ -37,8 +37,7 @@ All three local checkouts share `jwilleke/ngdpbase` as their git remote — thei
 
 Items carrying the `in review` label — work is shipped/merged; operator verification is the only thing left before close. **Clear this list before starting new feature work.**
 
-- [#802](https://github.com/jwilleke/ngdpbase/issues/802) — Slice 4 retirement complete (v3.44.7). `private:true` is now the sole privacy signal; `system-location` retired from codebase + data. Verify: `/view/page-private` returns 200 unauth, `/view/mew-current-health-concerns` (or any private page) returns 403 unauth. Confirm + close. Optional cosmetic carryover: `npm run migrate:private` on satellites (0 candidates expected; doesn't gate closure).
-- [#806](https://github.com/jwilleke/ngdpbase/issues/806) — VFP page-index rebuild fixed (v3.44.8 + v3.44.9). Four latent bugs in rebuild + auto-migrate paths repaired (missing slug/filename, missing private location, hard manifest gate, autoMigrate manifest-tree default). 4 unit regressions + verified end-to-end on jimstest (17,538 entries vs backup's 17,116 — actually more complete than what was there). Ready to close.
+- _(none — #802 + #806 closed 2026-05-28)_
 
 ## Open BUGS (ngdpbase, by issue #)
 
@@ -71,7 +70,7 @@ Filed and scoped, awaiting prioritization or implementation cycles.
 
 | # | Topic | Priority hint |
 |---|---|---|
-| **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24). **First-wave closed**: #791–#796. **Second-wave shipped**: #803, #797, #798, #799, #800, #801 (across v3.43.4–9). **Post-#800 fixes**: #804 + #805 (v3.43.10). Propagated via v3.44.0. **#802 functionally complete**: Slices 0–4 shipped across v3.44.1–v3.44.7. `private: true` is the sole privacy signal; `system-location` field retired. Marked `in review` for operator sign-off. See project_log `2026-05-28-07`. Operator carryover: cosmetic satellite second-pass migration (not blocking); stale `journal-index.json` files can be deleted; VFP page-index rebuild bug filed as #806. | EPIC's #802 in review; second-wave done. |
+| **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24). **All sub-issues closed**: #791–#796 (first wave), #797–#803 (second wave), #804 + #805 (post-#800 fixes), **#802 closed 2026-05-28** (v3.44.1–v3.44.7 chain). Also closed during this work: **#806** (v3.44.8 + v3.44.9 — VFP page-index rebuild; discovered during #802 Slice 2 recovery, adjacent code area). **EPIC itself remains OPEN** pending operator review of the EPIC body's goals. Optional cosmetic carryover: `npm run migrate:private` on satellites (0 candidates expected); stale `journal-index.json` files can be deleted. | EPIC sub-issues all closed; parent open pending operator review. |
 | #786 | Auto-journal — digester consuming CatalogManager records into journal entries | Gated by #685 + EPIC #790. Consumer-pattern; no source-specific code |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images | Low — adds sharp/libvips; do when a real driver appears |
 | #707 | Typed footnote + knowledge-graph reference index | Low — **depends on #706**; speculative |
