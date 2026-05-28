@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-28T05:00:00.000Z'
+lastModified: '2026-05-28T05:20:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -68,7 +68,7 @@ Filed and scoped, awaiting prioritization or implementation cycles.
 
 | # | Topic | Priority hint |
 |---|---|---|
-| **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24). **First-wave closed**: #791–#796. **Second-wave shipped**: #803, #797, #798, #799, #800, #801 (across v3.43.4–9). **Post-#800 fixes**: #804 + #805 (v3.43.10). Propagated via v3.44.0. **#802 in flight**: Slices 0 + 1 (v3.44.1) + Slice 2 (v3.44.2) + Slice 2.5 (v3.44.3) + Slice 2 fix (v3.44.4) shipped. **Migration run on jimstest** (14 migrated + 19 cleaned). **Next**: Slice 3 (providers route off `metadata.private`) + Slice 4 (drop legacy emit + dual-read fallbacks). Operator carryover: run migration on satellites (fairways-base + ngdp-temp-builds) when convenient. See project_log `2026-05-28-03`. Separate carryover: stale `journal-index.json` files can be deleted; pre-existing VFP page-index rebuild bug discovered during recovery (worth a `[BUG]` filing). | EPIC OPEN; #802 active. |
+| **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24). **First-wave closed**: #791–#796. **Second-wave shipped**: #803, #797, #798, #799, #800, #801 (across v3.43.4–9). **Post-#800 fixes**: #804 + #805 (v3.43.10). Propagated via v3.44.0. **#802 in flight**: Slices 0 + 1 (v3.44.1) + Slice 2 (v3.44.2) + Slice 2.5 (v3.44.3) + Slice 2 fix (v3.44.4) shipped. **Migration RUN on all 3 instances**: jimstest 14+19, fairways-base 0+19, ngdp-temp-builds 0+16. **Next**: Slice 3 (providers route off `metadata.private`) + Slice 4 (drop legacy emit + dual-read fallbacks + second migration to drop system-location). See project_log `2026-05-28-04`. Separate carryovers: stale `journal-index.json` files can be deleted; pre-existing VFP page-index rebuild bug discovered during recovery (worth a `[BUG]` filing). | EPIC OPEN; #802 active. |
 | #786 | Auto-journal — digester consuming CatalogManager records into journal entries | Gated by #685 + EPIC #790. Consumer-pattern; no source-specific code |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images | Low — adds sharp/libvips; do when a real driver appears |
 | #707 | Typed footnote + knowledge-graph reference index | Low — **depends on #706**; speculative |

@@ -2,6 +2,57 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-28-04
+
+- Agent: Claude Opus 4.7
+- Subject: Propagated #802 migration to the two satellites (`fairways-base` + `ngdp-temp-builds`). Each pulled v3.44.4 (with the fix that preserves `system-location` in promote mode), ran `npm run migrate:private` from their own checkout dir so their `.env` resolved their own data path. Both completed cleanly. No new code commits; no version bump — operator-action propagation only.
+- Current Issue: #802 (in progress — Slice 2 propagated to satellites; #790 EPIC parent)
+- Tests: not re-run (no code changes in this session)
+- Semver: **skip** — no code change; pure operator-side propagation.
+- **Satellite migration results:**
+
+  | Instance | Path | Port | Migrated | Cleaned | Errors |
+  |---|---|---|---|---|---|
+  | jimstest (from earlier) | /Volumes/hd2A/workspaces/github/ngdpbase | 3000 | 14 | 19 | 0 |
+  | fairways-base | /Volumes/hd2A/workspaces/github/fairways-base | 2121 | 0 | 19 | 0 |
+  | ngdp-temp-builds | /Volumes/hd2/ngdp-temp-builds/ngdpbase | 3001 | 0 | 16 | 0 |
+
+- **fairways-base flow:**
+  - Discarded lockfile drift (`git checkout -- package-lock.json`), pulled cleanly to `2e9613ca`.
+  - Stopped server, `npm install --silent`.
+  - Backed up `data/page-index.json` to `data/page-index.json.bak-pre802` (139 entries — defensive, given the rebuild bug observed on jimstest).
+  - Dry-run: 0 migrate + 19 cleaned + 0 errors. The 19 are all documentation/system pages (the seeded copies + the required-pages canonical). No private user pages — fairways is a public reference site.
+  - Applied: same 19 stripped. Page-index NOT deleted (avoiding the VFP rebuild bug); migration only edited frontmatter, no file movement expected.
+  - Restarted server. Spot-check: `/view/page-private`, `/view/page-audience`, `/view/welcome` all return 200.
+- **ngdp-temp-builds flow:**
+  - Same git flow (lockfile discard + pull to `2e9613ca`).
+  - Stopped, installed.
+  - **No `data/page-index.json` exists on this instance** — temp-builds rebuilds the index fresh on every startup (build sandbox; small dataset). No backup needed/possible.
+  - Dry-run: 0 migrate + 16 cleaned (3 fewer than fairways — temp-builds has fewer seeded required-pages copies).
+  - Applied: same 16 stripped.
+  - Restarted. Spot-check: `/view/page-audience`, `/view/welcome` return 200; `/view/page-private` returns 404 — investigated and confirmed **pre-existing state**: 5 required-pages files (including `56729d1b` = Page Private) have never been seeded into temp-builds' `data/pages/`. Not a regression from this migration. The seeding would require an explicit "Required Pages Sync" via the admin UI; not in scope for #802.
+- **Aggregate post-#802 state across the fleet:**
+  - jimstest: 14 private user pages canonicalised (private:true + system-location:private), 19 docs cleaned.
+  - fairways-base: 19 docs cleaned (no private user pages).
+  - ngdp-temp-builds: 16 docs cleaned (subset; missing 3 seedings is pre-existing).
+  - All instances are on v3.44.4 with the fixed migration script.
+- **Backups retained** (one session as safety net):
+  - `/Volumes/hd2/jimstest-wiki/data/page-index.json.bak-pre802` (jimstest, 17,116 entries with slugs)
+  - `/Volumes/hd2A/workspaces/github/fairways-base/data/page-index.json.bak-pre802` (fairways, 139 entries)
+  - (temp-builds: no page-index exists; nothing to back up)
+- **#802 chain — where we are / where we pick up next:**
+  - ✅ Slice 0 (v3.44.1) — Docs framing.
+  - ✅ Slice 1 (v3.44.1) — Journal addon user pref + emit `private: true`.
+  - ✅ Slice 2 (v3.44.2) — Migration script for `system-location`.
+  - ✅ Slice 2.5 (v3.44.3) — stripOnly + category detection + required-pages cleanup.
+  - ✅ Slice 2 fix (v3.44.4) — Preserve `system-location` in promote mode until Slice 3.
+  - ✅ **Migration RUN on all 3 instances** (jimstest, fairways-base, ngdp-temp-builds).
+  - ⬜ **Slice 3** — Providers route off `metadata.private` (with `system-location` as back-compat read fallback). `FileSystemProvider.ts:581-583` + `VersioningFileProvider.ts:1346-1366`. Ready to start; safe now that all instances are migrated.
+  - ⬜ Slice 4 — Drop `system-location` from frontmatter (second migration pass), drop `PageManager.ts:662` legacy emit, drop dual-read fallbacks across FSP/Lunr/ES/JDM.
+  - ⬜ **Separate `[BUG]` to file** (not #802; pre-existing): VFP page-index rebuild generates incomplete index — 138 entries vs 17,116 expected, dropped slug/filename fields. Triggered by deleting `data/page-index.json` and restarting. Workaround: don't delete. Discovered on jimstest during recovery.
+- Files Modified: none in repo (operator-side propagation only).
+- Out-of-band on satellite data: `data/pages/*.md` frontmatter edits per the migration; backups of `page-index.json` retained.
+
 ## 2026-05-28-03
 
 - Agent: Claude Opus 4.7
