@@ -43,6 +43,7 @@ Items carrying the `in review` label — work is shipped/merged; operator verifi
 
 | # | Title |
 |---|---|
+| #806 | VFP page-index rebuild produces incomplete index (138 entries vs ~17K, missing slug/filename) — discovered during #802 Slice 2 recovery; medium-high severity, workaround: don't delete `page-index.json` |
 | #660 | Agent and ./docs documentation — 48 doc-stub warnings remain for source-only modules (stub-creation backlog; cosmetic, non-blocking) |
 | #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); weekly patch-check workflow watches for a fix |
 
@@ -68,7 +69,7 @@ Filed and scoped, awaiting prioritization or implementation cycles.
 
 | # | Topic | Priority hint |
 |---|---|---|
-| **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24). **First-wave closed**: #791–#796. **Second-wave shipped**: #803, #797, #798, #799, #800, #801 (across v3.43.4–9). **Post-#800 fixes**: #804 + #805 (v3.43.10). Propagated via v3.44.0. **#802 functionally complete**: Slices 0–4 shipped across v3.44.1–v3.44.7. `private: true` is the sole privacy signal; `system-location` field retired. Marked `in review` for operator sign-off. See project_log `2026-05-28-07`. Operator carryover: cosmetic satellite second-pass migration (not blocking); stale `journal-index.json` files can be deleted; pre-existing VFP page-index rebuild bug (worth a `[BUG]` filing). | EPIC's #802 in review; second-wave done. |
+| **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24). **First-wave closed**: #791–#796. **Second-wave shipped**: #803, #797, #798, #799, #800, #801 (across v3.43.4–9). **Post-#800 fixes**: #804 + #805 (v3.43.10). Propagated via v3.44.0. **#802 functionally complete**: Slices 0–4 shipped across v3.44.1–v3.44.7. `private: true` is the sole privacy signal; `system-location` field retired. Marked `in review` for operator sign-off. See project_log `2026-05-28-07`. Operator carryover: cosmetic satellite second-pass migration (not blocking); stale `journal-index.json` files can be deleted; VFP page-index rebuild bug filed as #806. | EPIC's #802 in review; second-wave done. |
 | #786 | Auto-journal — digester consuming CatalogManager records into journal entries | Gated by #685 + EPIC #790. Consumer-pattern; no source-specific code |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images | Low — adds sharp/libvips; do when a real driver appears |
 | #707 | Typed footnote + knowledge-graph reference index | Low — **depends on #706**; speculative |
