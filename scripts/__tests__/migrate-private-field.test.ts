@@ -185,7 +185,7 @@ describe('transformFrontmatter (#639 Slice D + #802 Slice 2)', () => {
 
   // ── #802 Slice 2: system-location legacy signal ────────────────────────────
 
-  test('#802 — system-location:private only → migrated; private:true set, system-location PRESERVED (until Slice 3)', () => {
+  test('#802 — system-location:private only → migrated; private:true set, system-location dropped', () => {
     const raw = [
       '---',
       'title: Journal Entry',
@@ -202,12 +202,10 @@ describe('transformFrontmatter (#639 Slice D + #802 Slice 2)', () => {
     expect(out.outcome).toBe('migrated');
     const data = fm(out.content);
     expect(data.private).toBe(true);
-    // system-location is preserved in promote mode — providers still need it
-    // for storage routing until Slice 3 ships. Slice 4 will drop it.
-    expect(data['system-location']).toBe('private');
+    expect(data['system-location']).toBeUndefined();
   });
 
-  test('#802 — private:true + system-location:private (PageManager-emitted shape) → already canonical (both kept)', () => {
+  test('#802 — private:true + system-location:private (post-Slice-3 second-pass cleanup) → migrated; system-location dropped', () => {
     const raw = [
       '---',
       'title: Locked',
@@ -222,13 +220,15 @@ describe('transformFrontmatter (#639 Slice D + #802 Slice 2)', () => {
 
     const out = transformFrontmatter(raw);
 
-    // private:true already set; system-location is a legacy field but the
-    // promote path doesn't strip it. Treated as 'already' — nothing to do.
-    expect(out.outcome).toBe('already');
-    expect(out.content).toBe(raw);
+    // Slice 4: now that providers route off `metadata.private`, the legacy
+    // `system-location:'private'` field is redundant and dropped.
+    expect(out.outcome).toBe('migrated');
+    const data = fm(out.content);
+    expect(data.private).toBe(true);
+    expect(data['system-location']).toBeUndefined();
   });
 
-  test('#802 — both legacy signals (user-keywords:private AND system-location:private) → migrated; keyword stripped, system-location kept', () => {
+  test('#802 — both legacy signals (user-keywords:private AND system-location:private) → migrated; both dropped', () => {
     const raw = [
       '---',
       'title: Doubly Legacy',
@@ -249,7 +249,7 @@ describe('transformFrontmatter (#639 Slice D + #802 Slice 2)', () => {
     const data = fm(out.content);
     expect(data.private).toBe(true);
     expect(data['user-keywords']).toEqual(['draft']);
-    expect(data['system-location']).toBe('private');
+    expect(data['system-location']).toBeUndefined();
   });
 
   test('#802 — non-private system-location value (e.g. "regular") left alone', () => {
@@ -287,8 +287,7 @@ describe('transformFrontmatter (#639 Slice D + #802 Slice 2)', () => {
     const first = transformFrontmatter(raw);
     expect(first.outcome).toBe('migrated');
     expect(fm(first.content).private).toBe(true);
-    // system-location preserved in promote mode (Slice 3 prerequisite).
-    expect(fm(first.content)['system-location']).toBe('private');
+    expect(fm(first.content)['system-location']).toBeUndefined();
 
     const second = transformFrontmatter(first.content);
     expect(second.outcome).toBe('already');
@@ -491,8 +490,7 @@ describe('transformFrontmatter (#639 Slice D + #802 Slice 2)', () => {
     expect(out.outcome).toBe('migrated');
     const data = fm(out.content);
     expect(data.private).toBe(true);
-    // system-location preserved in promote mode (Slice 3 prerequisite).
-    expect(data['system-location']).toBe('private');
+    expect(data['system-location']).toBeUndefined();
   });
 
   test('category=documentation with NO signals → non-private (no rewrite)', () => {
