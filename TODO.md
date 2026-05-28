@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-28T07:13:00.000Z'
+lastModified: '2026-05-28T07:35:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -16,7 +16,7 @@ Current near-term priorities for ngdpbase and the sister sites tracked by `/othe
 
 **See also**: [`docs/architecture-threads.md`](./docs/architecture-threads.md) maps in-flight cross-cutting design threads (CatalogManager unification, NCM pipeline, JSON-LD render, Journal reconcile, ACL evaluator, system principal, addon platform) — issues here that belong to a thread are listed there with their dependency context. Use TODO.md for "what's open and how to prioritise"; use architecture-threads.md for "how do these issues relate to each other."
 
-**Latest release**: v3.44.8 (2026-05-28; patch, GH Release deferred) — **#806 fixed.** VFP page-index rebuild path repaired across THREE latent bugs: missing slug/filename in payload; private location not detected (autoMigrate would even rename private files into the regular pile); hard manifest gate dropping pre-versioning pages. Both `autoMigrateExistingPages` AND `rebuildPageIndexFromManifests` now produce complete, lookup-correct indices. 4 new regression tests. Marked `in review`. v3.44.7: #802 complete. v3.44.6: Slice 4 Step 1. v3.44.5: Slice 3. v3.44.4: Slice 2 fix. v3.44.3: Slice 2.5. v3.44.2: Slice 2. v3.44.1: Slices 0 + 1. v3.44.0 (minor): satellite propagation.
+**Latest release**: v3.44.9 (2026-05-28; patch, GH Release deferred) — **#806 verified end-to-end on jimstest.** Follow-up to v3.44.8 that fixed a FOURTH bug surfaced during real-world test: autoMigrate's manifest-existence check defaulted to the `pages` version tree and never probed `required-pages` or `private` trees, so most pages fell through to "create v1" instead of being indexed. Re-ordered to detect location first, then probe the correct tree. Rebuild result on jimstest: **17,538 entries / 17,531 slugs** (vs backup's 17,116/1,099) — more complete than what was there before. v3.44.8: rebuild + auto-migrate location/slug/manifest-gate fixes. v3.44.7: #802 complete. v3.44.6: Slice 4 Step 1. v3.44.5: Slice 3. v3.44.4: Slice 2 fix. v3.44.3: Slice 2.5. v3.44.2: Slice 2. v3.44.1: Slices 0 + 1. v3.44.0 (minor): satellite propagation.
 
 Sister sites in scope:
 
@@ -38,7 +38,7 @@ All three local checkouts share `jwilleke/ngdpbase` as their git remote — thei
 Items carrying the `in review` label — work is shipped/merged; operator verification is the only thing left before close. **Clear this list before starting new feature work.**
 
 - [#802](https://github.com/jwilleke/ngdpbase/issues/802) — Slice 4 retirement complete (v3.44.7). `private:true` is now the sole privacy signal; `system-location` retired from codebase + data. Verify: `/view/page-private` returns 200 unauth, `/view/mew-current-health-concerns` (or any private page) returns 403 unauth. Confirm + close. Optional cosmetic carryover: `npm run migrate:private` on satellites (0 candidates expected; doesn't gate closure).
-- [#806](https://github.com/jwilleke/ngdpbase/issues/806) — VFP page-index rebuild fixed (v3.44.8). Three latent bugs in rebuild + auto-migrate paths repaired (missing slug/filename, missing private location, hard manifest gate). 4 regression tests added. Optional real-world verification: backup `page-index.json` on jimstest → delete → restart → compare new entry count + slug coverage to backup. Unit tests already cover all three failure modes.
+- [#806](https://github.com/jwilleke/ngdpbase/issues/806) — VFP page-index rebuild fixed (v3.44.8 + v3.44.9). Four latent bugs in rebuild + auto-migrate paths repaired (missing slug/filename, missing private location, hard manifest gate, autoMigrate manifest-tree default). 4 unit regressions + verified end-to-end on jimstest (17,538 entries vs backup's 17,116 — actually more complete than what was there). Ready to close.
 
 ## Open BUGS (ngdpbase, by issue #)
 

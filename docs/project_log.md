@@ -2,6 +2,41 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-28-09
+
+- Agent: Claude Opus 4.7
+- Subject: Real-world verified **#806** on jimstest. Found one more bug along the way and shipped the fix as **v3.44.9**. The rebuild now produces a more complete index than what was there before.
+- Current Issue: #806 (verified real-world; can close)
+- Tests: jimstest GREEN — 6084 unit. Real-world rebuild produced 17,538 entries / 17,531 slugs vs backup's 17,116/1,099.
+- Semver: **patch**. GH Release deferred. /othersites skipped per patch-gate.
+- **Real-world repro flow on jimstest:**
+  1. `./server.sh stop`, backup `page-index.json` (17,116 entries, 1,099 slugs).
+  2. `rm page-index.json`, restart.
+  3. First attempt with v3.44.8 fix produced only **115 entries**. Surprise — the fix wasn't enough.
+  4. Investigation: server logs showed autoMigrate logging "Created v1 for page X" for thousands of pages that already had v1 elsewhere. `Auto-migration complete: 115 pages migrated`. Then rebuild's `if (pageCount === 0)` gate was false → rebuild skipped → 115 entries.
+  5. Root cause: `autoMigrate`'s manifest-existence check called `getVersionDirectory(uuid)` which defaults to `location='pages'`. For pages in `required-pages` or `private` tiers, that probe always missed (their manifests live in different version trees). AutoMigrate then fell through to the "create v1" branch, redundantly creating spurious v1 files instead of just indexing the already-versioned page.
+  6. Stopped server before more damage; restored backup. (0 spurious v1 dirs actually got committed to disk per `find ... -newer ...` check — `createInitialVersion` is idempotent on existing manifests.)
+- **The v3.44.9 fix** (`VersioningFileProvider.ts`, +85/-13): reorder `autoMigrateExistingPages` so it determines location FIRST (by probing `pages/{uuid}.md`, `required-pages/{uuid}.md`, `pages/private/{author}/{uuid}.md` on disk), THEN checks the manifest at the correct version tree. If found → `indexExistingVersionedPage` (no v1 creation). If not → create v1 + index, using the now-known location.
+- **Second real-world repro** (with v3.44.9):
+  - Rebuild produces 17,538 entries / 17,531 slugs / 17,538 filenames.
+  - 422 entries MORE than the backup had; 16× more slug coverage (the backup was itself a stub — only 6% of entries had slugs).
+  - Zero spurious v1 dirs created on disk.
+  - All slug-based URL lookups work: `/view/page-private` 200, `/view/welcome` 200, `/view/page-audience` 200.
+  - Private ACL still gates: `/view/mew-current-health-concerns` 403 unauth.
+  - Private dirs unchanged: admin=2 jim=7 molly=5 = 14.
+- **Trade-off — slow rebuild on large datasets**: rebuilding ~17K pages from scratch took ~3 min wall-clock (server in 503 state during init). For each page, autoMigrate does ~4 fs probes + manifest read + index write. Per-page cost dominates. Normal restarts (intact index → fast-init path) are ~39s, unchanged.
+- Test impact: same 4 #806 unit tests in `VersioningFileProvider.test.ts` still pass — they cover the per-method behavior. The v3.44.9 fix only re-orders operations inside `autoMigrateExistingPages`; no test changes needed.
+- /othersites: **skipped** — patch-gate. Satellites have small datasets; the cold-start time difference is negligible.
+- Perf baseline skipped this turn — dataset just absorbed a heavy rebuild; route timings would reflect that, not the code change.
+- **#806 status:** **VERIFIED + can close.** Real-world rebuild on jimstest works correctly and outperforms the backup. Operator-side carryover: optionally do the same `stop / rm / start / verify` cycle on satellites to confirm; expected to be fast there given their small datasets.
+- **Backup retention:** `/Volumes/hd2/jimstest-wiki/data/page-index.json.bak-806-test` retained one more session as safety net.
+- Commits:
+  - `53453ce1` — fix(#806): autoMigrate probes correct version tree per page location
+  - `00dac219` — chore: release v3.44.9
+- Files Modified:
+  - `src/providers/VersioningFileProvider.ts` (+85/-13)
+  - `package.json`, `config/app-default-config.json`, `CHANGELOG.md` (version bump)
+
 ## 2026-05-28-08
 
 - Agent: Claude Opus 4.7
