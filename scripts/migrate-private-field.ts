@@ -104,13 +104,50 @@ async function* walkMarkdown(root: string): AsyncGenerator<string> {
   }
 }
 
-export type Outcome = 'migrated' | 'already' | 'non-private' | 'error';
+export type Outcome = 'migrated' | 'cleaned' | 'already' | 'non-private' | 'error';
 
 export interface TransformResult {
   outcome: Outcome;
-  /** New file contents when outcome === 'migrated'; otherwise the input unchanged. */
+  /** New file contents when outcome === 'migrated' or 'cleaned'; otherwise the input unchanged. */
   content: string;
 }
+
+export interface TransformOptions {
+  /**
+   * #802 / operator rule: required-pages must not carry per-page access
+   * controls. When true, strip:
+   *
+   *   - private:true                       (canonical private flag)
+   *   - system-location:'private'          (legacy storage hint)
+   *   - user-keywords entry 'private'      (legacy keyword spelling)
+   *   - audience:[...]                     (per-page view-access override)
+   *
+   * Without promoting to `private:true`. Outcome `'cleaned'` indicates a file
+   * was rewritten under this rule.
+   *
+   * Required-pages are system-shipped documentation seeded to every instance;
+   * they're meant to be visible to all authenticated users. Per-page gating
+   * defeats that purpose, so the script treats any such field as a violation
+   * to strip rather than preserve.
+   *
+   * Default: false (normal promote-to-canonical behaviour).
+   */
+  stripOnly?: boolean;
+}
+
+/**
+ * Categories whose pages are stored in `required-pages/` (or are seeded into
+ * `pages/` from there). These pages are part of the platform's shipped
+ * documentation/system surface and must not carry per-page access controls,
+ * regardless of which directory they happen to be on disk right now.
+ *
+ * Source: `config/app-default-config.json` → `ngdpbase.system-category.*` —
+ * any category whose `storageLocation` is `required`. Hardcoded here so the
+ * script stays standalone (no engine / no ConfigurationManager dependency).
+ * If a future category is added to config with storageLocation:required,
+ * extend this set.
+ */
+const REQUIRED_STORAGE_CATEGORIES = new Set(['documentation', 'system']);
 
 /**
  * Pure string-in/string-out frontmatter transform. Exported so it can be tested
@@ -119,10 +156,21 @@ export interface TransformResult {
  * Outcomes:
  *   - 'non-private'  — no private signal of any kind; content unchanged
  *   - 'already'      — canonical shape (private:true, no legacy signals); content unchanged
- *   - 'migrated'     — at least one legacy signal present and was consolidated
+ *   - 'migrated'     — at least one legacy signal present and was promoted to canonical
+ *   - 'cleaned'      — stripOnly mode (required-pages or category-detected):
+ *                      all private signals and per-page access controls removed,
+ *                      private:true NOT set; content rewritten
  *   - 'error'        — caller-level (read/write/parse failure); never returned here
+ *
+ * StripOnly mode is entered two ways:
+ *   1. `opts.stripOnly === true` — caller's explicit request (used when
+ *      processing the `required-pages/` directory).
+ *   2. Page's `system-category` is in REQUIRED_STORAGE_CATEGORIES — catches
+ *      seeded copies of required-pages that sit in `pages/`, e.g. jimstest's
+ *      local cache of `Page Private`. Without this, the default promote mode
+ *      would incorrectly mark those documentation pages `private: true`.
  */
-export function transformFrontmatter(raw: string): TransformResult {
+export function transformFrontmatter(raw: string, opts: TransformOptions = {}): TransformResult {
   const parsed = matter(raw);
   // gray-matter caches the parsed `data` object by input string and reuses the
   // same reference across calls — clone before mutating so we don't poison the
@@ -136,6 +184,42 @@ export function transformFrontmatter(raw: string): TransformResult {
   const hasLegacySystemLocation = data['system-location'] === 'private';
   const hasTopLevel             = data.private === true;
 
+  // Category-based stripOnly: documentation/system pages must not carry
+  // per-page access controls regardless of which directory they're in.
+  // Catches seeded copies of required-pages sitting in pages/ that would
+  // otherwise be promoted incorrectly in default mode.
+  const category = typeof data['system-category'] === 'string'
+    ? (data['system-category']).toLowerCase()
+    : '';
+  const stripOnly = opts.stripOnly === true || REQUIRED_STORAGE_CATEGORIES.has(category);
+
+  // ── stripOnly mode (required-pages, or category-detected) ────────────────
+  // No promotion: strip every private signal AND every per-page access control.
+  // Required-pages aren't allowed to carry per-page gating.
+  if (stripOnly) {
+    const hasAudience = data['audience'] !== undefined;
+
+    if (!hasLegacyKeyword && !hasLegacySystemLocation && !hasTopLevel && !hasAudience) {
+      return { outcome: 'non-private', content: raw };
+    }
+
+    delete data.private;
+    if (hasLegacyKeyword) {
+      const filtered = userKeywords.filter((kw) => kw.toLowerCase() !== 'private');
+      if (filtered.length > 0) data['user-keywords'] = filtered;
+      else delete data['user-keywords'];
+    }
+    if (hasLegacySystemLocation) {
+      delete data['system-location'];
+    }
+    if (hasAudience) {
+      delete data['audience'];
+    }
+
+    return { outcome: 'cleaned', content: matter.stringify(parsed.content, data) };
+  }
+
+  // ── promote mode (default) ──────────────────────────────────────────────────
   if (!hasLegacyKeyword && !hasLegacySystemLocation && !hasTopLevel) {
     return { outcome: 'non-private', content: raw };
   }
@@ -145,7 +229,7 @@ export function transformFrontmatter(raw: string): TransformResult {
     return { outcome: 'already', content: raw };
   }
 
-  // At least one legacy signal present — consolidate.
+  // At least one legacy signal present — consolidate to canonical.
   data.private = true;
 
   if (hasLegacyKeyword) {
@@ -170,29 +254,33 @@ interface FileResult {
   outcome: Outcome;
 }
 
-async function migrateFile(filePath: string, dryRun: boolean): Promise<FileResult> {
+async function migrateFile(filePath: string, dryRun: boolean, opts: TransformOptions = {}): Promise<FileResult> {
   const raw = await fs.readFile(filePath, 'utf8');
-  const result = transformFrontmatter(raw);
-  if (result.outcome === 'migrated' && !dryRun) {
+  const result = transformFrontmatter(raw, opts);
+  const willWrite = result.outcome === 'migrated' || result.outcome === 'cleaned';
+  if (willWrite && !dryRun) {
     await fs.writeFile(filePath, result.content, 'utf8');
   }
   return { outcome: result.outcome };
 }
 
-async function processDir(dir: string, label: string, dryRun: boolean): Promise<Record<Outcome, number>> {
-  const totals: Record<Outcome, number> = { migrated: 0, already: 0, 'non-private': 0, error: 0 };
+async function processDir(dir: string, label: string, dryRun: boolean, opts: TransformOptions = {}): Promise<Record<Outcome, number>> {
+  const totals: Record<Outcome, number> = { migrated: 0, cleaned: 0, already: 0, 'non-private': 0, error: 0 };
   if (!(await fs.pathExists(dir))) {
     console.log(`  (skip) ${label} directory not found: ${dir}`);
     return totals;
   }
-  console.log(`\n${label}: ${dir}`);
+  console.log(`\n${label}: ${dir}${opts.stripOnly ? '  [stripOnly: no page here is allowed to be private]' : ''}`);
 
   for await (const filePath of walkMarkdown(dir)) {
     try {
-      const result = await migrateFile(filePath, dryRun);
+      const result = await migrateFile(filePath, dryRun, opts);
       totals[result.outcome]++;
       if (result.outcome === 'migrated') {
         const tag = dryRun ? '[would migrate]' : '✓ migrated';
+        console.log(`  ${tag}  ${path.relative(process.cwd(), filePath)}`);
+      } else if (result.outcome === 'cleaned') {
+        const tag = dryRun ? '[would strip]' : '✓ stripped';
         console.log(`  ${tag}  ${path.relative(process.cwd(), filePath)}`);
       }
     } catch (err) {
@@ -218,26 +306,32 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
+  // pages/ uses normal promote-to-canonical behaviour.
   const pagesTotals = await processDir(pagesDir, 'pages', args.dryRun);
-  const requiredTotals = await processDir(requiredDir, 'required-pages', args.dryRun);
+  // required-pages/ uses stripOnly — no page-level access controls allowed
+  // (no private:true, no audience, etc.). System-shipped documentation must
+  // be visible to all authenticated users.
+  const requiredTotals = await processDir(requiredDir, 'required-pages', args.dryRun, { stripOnly: true });
 
   const grand = {
     migrated: pagesTotals.migrated + requiredTotals.migrated,
+    cleaned: pagesTotals.cleaned + requiredTotals.cleaned,
     already: pagesTotals.already + requiredTotals.already,
     'non-private': pagesTotals['non-private'] + requiredTotals['non-private'],
     error: pagesTotals.error + requiredTotals.error
   };
 
   console.log('\nSummary:');
-  console.log(`  Migrated:         ${grand.migrated}`);
+  console.log(`  Migrated:         ${grand.migrated}    (legacy private signal → canonical private:true)`);
+  console.log(`  Cleaned:          ${grand.cleaned}    (per-page access controls stripped; required-pages or system-category in {documentation, system})`);
   console.log(`  Already migrated: ${grand.already}`);
   console.log(`  Non-private:      ${grand['non-private']}`);
   console.log(`  Errors:           ${grand.error}`);
 
-  if (args.dryRun && grand.migrated > 0) {
+  if (args.dryRun && (grand.migrated > 0 || grand.cleaned > 0)) {
     console.log('\nRe-run without --dry-run to apply.');
   }
-  if (grand.migrated > 0 && !args.dryRun) {
+  if ((grand.migrated > 0 || grand.cleaned > 0) && !args.dryRun) {
     console.log('\nNote: data/page-index.json is NOT rewritten by this script. The index will catch up');
     console.log('on the next save of each page; or stop the server, delete page-index.json, and restart');
     console.log('to force an immediate rebuild from frontmatter.');

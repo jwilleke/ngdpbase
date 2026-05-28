@@ -291,4 +291,238 @@ describe('transformFrontmatter (#639 Slice D + #802 Slice 2)', () => {
     expect(second.outcome).toBe('already');
     expect(second.content).toBe(first.content);
   });
+
+  // ── #802 stripOnly mode (required-pages: no per-page access controls) ──────
+
+  test('stripOnly — all three legacy signals + private:true → cleaned (no private:true set, all stripped)', () => {
+    const raw = [
+      '---',
+      'title: Page Private (doc)',
+      'uuid: u1',
+      'system-category: documentation',
+      'user-keywords:',
+      '  - private',
+      '  - access control',
+      'system-location: private',
+      'private: true',
+      '---',
+      'body'
+    ].join('\n');
+
+    const out = transformFrontmatter(raw, { stripOnly: true });
+
+    expect(out.outcome).toBe('cleaned');
+    const data = fm(out.content);
+    expect(data.private).toBeUndefined();
+    expect(data['system-location']).toBeUndefined();
+    expect(data['user-keywords']).toEqual(['access control']);
+  });
+
+  test('stripOnly — audience field is stripped unconditionally', () => {
+    const raw = [
+      '---',
+      'title: Public Doc',
+      'uuid: u1',
+      'system-category: documentation',
+      'audience:',
+      '  - admin',
+      '  - editor',
+      '  - contributor',
+      '---',
+      'body'
+    ].join('\n');
+
+    const out = transformFrontmatter(raw, { stripOnly: true });
+
+    expect(out.outcome).toBe('cleaned');
+    const data = fm(out.content);
+    expect(data['audience']).toBeUndefined();
+    expect(data.private).toBeUndefined();
+  });
+
+  test('stripOnly — combined: legacy signals + audience together → all stripped, cleaned', () => {
+    const raw = [
+      '---',
+      'title: Worst Case',
+      'uuid: u1',
+      'system-category: documentation',
+      'user-keywords:',
+      '  - private',
+      'private: true',
+      'audience:',
+      '  - admin',
+      '---',
+      'body'
+    ].join('\n');
+
+    const out = transformFrontmatter(raw, { stripOnly: true });
+
+    expect(out.outcome).toBe('cleaned');
+    const data = fm(out.content);
+    expect(data.private).toBeUndefined();
+    expect(data['user-keywords']).toBeUndefined();
+    expect(data['audience']).toBeUndefined();
+  });
+
+  test('stripOnly — already-clean page → non-private (no rewrite)', () => {
+    const raw = [
+      '---',
+      'title: Plain Doc',
+      'uuid: u1',
+      'system-category: documentation',
+      'user-keywords:',
+      '  - documentation',
+      '---',
+      'body'
+    ].join('\n');
+
+    const out = transformFrontmatter(raw, { stripOnly: true });
+
+    expect(out.outcome).toBe('non-private');
+    expect(out.content).toBe(raw);
+  });
+
+  test('stripOnly — idempotent: second run on cleaned content is a no-op', () => {
+    const raw = [
+      '---',
+      'title: Page Audience (doc)',
+      'uuid: u1',
+      'system-category: documentation',
+      'audience:',
+      '  - admin',
+      '  - editor',
+      '---',
+      'body'
+    ].join('\n');
+
+    const first = transformFrontmatter(raw, { stripOnly: true });
+    expect(first.outcome).toBe('cleaned');
+    expect(fm(first.content)['audience']).toBeUndefined();
+
+    const second = transformFrontmatter(first.content, { stripOnly: true });
+    expect(second.outcome).toBe('non-private');
+    expect(second.content).toBe(first.content);
+  });
+
+  // ── Category-based stripOnly (catches seeded required-pages in pages/) ─────
+
+  test('category=documentation auto-stripOnly: user-keywords:[private] is stripped, NOT promoted to private:true', () => {
+    // Seeded copy of the "Page Private" doc sitting in pages/ — must not be
+    // promoted to private:true just because the legacy keyword is present.
+    const raw = [
+      '---',
+      'title: Page Private',
+      'uuid: u1',
+      'system-category: documentation',
+      'user-keywords:',
+      '  - private',
+      '  - page privacy',
+      '  - access control',
+      '---',
+      'body'
+    ].join('\n');
+
+    const out = transformFrontmatter(raw);  // no opts.stripOnly
+
+    expect(out.outcome).toBe('cleaned');
+    const data = fm(out.content);
+    expect(data.private).toBeUndefined();
+    expect(data['user-keywords']).toEqual(['page privacy', 'access control']);
+  });
+
+  test('category=system auto-stripOnly: private:true is stripped (system pages must not be private)', () => {
+    const raw = [
+      '---',
+      'title: System Page',
+      'uuid: u1',
+      'system-category: system',
+      'private: true',
+      'audience:',
+      '  - admin',
+      '---',
+      'body'
+    ].join('\n');
+
+    const out = transformFrontmatter(raw);  // no opts.stripOnly
+
+    expect(out.outcome).toBe('cleaned');
+    const data = fm(out.content);
+    expect(data.private).toBeUndefined();
+    expect(data['audience']).toBeUndefined();
+  });
+
+  test('category=general (regular storage) uses promote mode: legacy keyword → private:true', () => {
+    // User pages aren't required-storage; they should still get the normal
+    // promote-to-canonical treatment when carrying a legacy signal.
+    const raw = [
+      '---',
+      'title: My Notes',
+      'uuid: u1',
+      'system-category: general',
+      'user-keywords:',
+      '  - private',
+      '---',
+      'body'
+    ].join('\n');
+
+    const out = transformFrontmatter(raw);
+
+    expect(out.outcome).toBe('migrated');
+    const data = fm(out.content);
+    expect(data.private).toBe(true);
+  });
+
+  test('category=journal uses promote mode (journal entries CAN be private)', () => {
+    const raw = [
+      '---',
+      'title: Journal - jim - 2026-05-28',
+      'uuid: u1',
+      'system-category: journal',
+      'system-location: private',
+      '---',
+      'body'
+    ].join('\n');
+
+    const out = transformFrontmatter(raw);
+
+    expect(out.outcome).toBe('migrated');
+    const data = fm(out.content);
+    expect(data.private).toBe(true);
+    expect(data['system-location']).toBeUndefined();
+  });
+
+  test('category=documentation with NO signals → non-private (no rewrite)', () => {
+    const raw = [
+      '---',
+      'title: Plain Doc',
+      'uuid: u1',
+      'system-category: documentation',
+      'user-keywords:',
+      '  - documentation',
+      '---',
+      'body'
+    ].join('\n');
+
+    const out = transformFrontmatter(raw);
+
+    expect(out.outcome).toBe('non-private');
+    expect(out.content).toBe(raw);
+  });
+
+  test('case-insensitive category match: System-Category="Documentation" still triggers stripOnly', () => {
+    const raw = [
+      '---',
+      'title: Mixed Case',
+      'uuid: u1',
+      'system-category: Documentation',
+      'private: true',
+      '---',
+      'body'
+    ].join('\n');
+
+    const out = transformFrontmatter(raw);
+
+    expect(out.outcome).toBe('cleaned');
+    expect(fm(out.content).private).toBeUndefined();
+  });
 });
