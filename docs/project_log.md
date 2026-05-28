@@ -2,6 +2,48 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-28-01
+
+- Agent: Claude Opus 4.7
+- Subject: Continued #802 — shipped **Slice 2** as **v3.44.2** patch. Extended the existing `scripts/migrate-private-field.ts` (originally written for #639 Slice D) to also consolidate the `system-location: 'private'` legacy spelling into the canonical `private: true`. Three legacy spellings now converge on the canonical shape: (1) `user-keywords: [private]` (#639 legacy), (2) `system-location: 'private'` (#122/#802 legacy), (3) `private: true` (canonical).
+- Current Issue: #802 (in progress — Slices 0 + 1 + 2 of 4 done; #790 EPIC parent)
+- Tests: jimstest GREEN on release commit — **6069 unit** (+5 net new test cases in `scripts/__tests__/migrate-private-field.test.ts`). E2E skipped per conditional rule (no UI/views/plugins/addons paths touched). No flakes.
+- Semver: **patch**. GH Release deferred. /othersites skipped per patch-gate. Migration script is operator-action; not run by this release.
+- Implementation:
+  - `scripts/migrate-private-field.ts` — extended `transformFrontmatter` to detect `data['system-location'] === 'private'` alongside `user-keywords: [private]`. Conservative: only drops `system-location` when value === 'private'; other values (e.g. 'regular' seen in ES tests) left untouched. Idempotent — a page already in canonical shape returns 'already' with no rewrite.
+  - `scripts/__tests__/migrate-private-field.test.ts` — added 5 new tests covering: system-location alone → migrated; private:true + system-location:private (the PageManager-emitted shape) → migrated; both legacy signals together → migrated; non-private system-location value left alone; idempotency.
+  - `tsconfig.json` — added `scripts/migrate-private-field.ts` to include list (pre-existing config gap from when #639 Slice D added the file; surfaced now because lint-staged tried to type-check the modified file).
+- Dry-run on jimstest data: **16 candidate pages** would migrate.
+  - 15 in `pages/private/{user}/` with the standard PageManager-emitted shape (`private: true` + `system-location: 'private'`) → script drops the redundant legacy field. Clean.
+  - 1 borderline: `Page Private` documentation page (UUID `56729d1b-...`) has `user-keywords: [private, page privacy, access control]` — uses `private` as a topical keyword on a doc page ABOUT the privacy concept (system-category: documentation). This is a **#639 Slice D false-positive shape** that already existed pre-#802. Surfaced for operator review rather than running blind.
+  - Same UUID also exists in `required-pages/` (the system-category documentation auto-mirror pattern).
+- **Important — script is NOT run by this commit.** Per the #800 explicit-action pattern, operator runs the migration per-instance:
+
+  ```bash
+  npm run migrate:private:dry    # preview
+  npm run migrate:private        # apply
+  ```
+
+  Slice 3 (providers route off `metadata.private`) depends on this script having been run on every instance.
+- Perf baseline drift v3.44.1 → v3.44.2: clean. Memory -3.8% (atypical drop — V8 may have GC'd between runs; well under threshold). `/` +440% (146ms) — same oscillating warm-cache pattern across the v3.43.10/v3.44.0/v3.44.1/v3.44.2 series; release range only touches `scripts/` + `tsconfig.json`, no runtime change possible. Baseline file: `docs/performance/baseline-v3.44.2-2026-05-28.md`.
+- /othersites: **skipped** — patch-gate.
+- **#802 chain — where we are / where we pick up next:**
+  - ✅ Slice 0 — Docs framing (DONE — commit `debe0a99`, v3.44.1).
+  - ✅ Slice 1 — Journal addon user pref + emit `private: true` (DONE — commit `ddea45a9`, v3.44.1).
+  - ✅ Slice 2 — Migration script extended for `system-location` (DONE — commit `3dd78eb2`, v3.44.2).
+  - 🛑 **OPERATOR ACTION before Slice 3** — review the dry-run output, decide whether to run the migration on jimstest. The 'Page Private' doc page false-positive should be triaged: either accept the migration (page becomes private:true), pre-edit it to remove the 'private' topical keyword, or excuse it via a one-off edit. Once decided + run on jimstest, run on satellites (fairways-base, ngdp-temp-builds) before Slice 3.
+  - ⬜ Slice 3 — Providers route off `metadata.private`. `FileSystemProvider.ts:581-583` + `VersioningFileProvider.ts:1346-1366` read `metadata.private === true` instead of `metadata['system-location']`; update test assertions in `src/managers/__tests__/PageManager.test.ts:247` etc. Safe only after Slice 2 ran on every instance. Estimate ~1 hour.
+  - ⬜ Slice 4 — Drop the legacy emit (`PageManager.ts:662`) + dual-read fallbacks across `FileSystemProvider.ts:835,888`, `LunrSearchProvider.ts:276`, `ElasticsearchSearchProvider.ts:639`, `addons/journal/managers/JournalDataManager.ts:118`. Update `LunrSearchProvider.privateFilter.test.ts:331-332`. Field `system-location` is dead after this. Estimate ~1 hour.
+- Commits:
+  - `3dd78eb2` — feat(#802): extend migrate-private-field to consolidate system-location:'private'
+  - `6365aa8b` — chore: release v3.44.2
+- Files Modified:
+  - `scripts/migrate-private-field.ts` (+45/-15) — extended transformFrontmatter; updated docstring
+  - `scripts/__tests__/migrate-private-field.test.ts` (+118/-1) — added 5 new tests + updated describe block name
+  - `tsconfig.json` (+1) — added script to include list (pre-existing config gap)
+  - `package.json`, `config/app-default-config.json`, `CHANGELOG.md` (version bump)
+  - `docs/performance/baseline-v3.44.2-2026-05-28.md` (new)
+
 ## 2026-05-27-03
 
 - Agent: Claude Opus 4.7
