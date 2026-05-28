@@ -2,6 +2,71 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-28-07
+
+- Agent: Claude Opus 4.7
+- Subject: **Shipped #802 Slice 4 Steps 2 + 3 as v3.44.7. #802 is functionally complete.** Step 2 ran the second migration pass on jimstest (14 private user files stripped of legacy `system-location:'private'`; 0 errors). Step 3 retired the field from the codebase: dropped `PageManager.ts:662` legacy emit + all dual-read fallbacks across FSP, VFP, LunrSearchProvider, ElasticsearchSearchProvider, JournalDataManager. Tests updated.
+- Current Issue: #802 (functionally complete — proposing closure with `in review` label)
+- Tests: jimstest GREEN on release commit — **6080 unit + 80 E2E + 24 migration script**. ACL still gates private pages (verified via 403 on unauth `/view/mew-current-health-concerns`). No flakes.
+- Semver: **patch**. GH Release deferred. /othersites skipped per patch-gate.
+- **Step 2 — second migration pass on jimstest** (operator-action territory):
+  - Pre-pass backup: `page-index.json.bak-pre802-step2` (17,116 entries).
+  - Dry-run: 14 candidates (the dual-shape user-private files from Slice 2's first pass).
+  - Applied: 14 migrated + 0 cleaned + 0 errors. Each `pages/private/{author}/{uuid}.md` file had `system-location: 'private'` removed; `private: true` preserved.
+  - Server restart: did NOT delete page-index.json (the VFP rebuild bug discovered earlier today). File paths didn't change — Slice 3 has providers routing off `private: true`, so dropping `system-location` is non-disruptive. Index still accurate.
+  - Verification: all 14 files in `pages/private/{author}/{uuid}.md`; ZERO files retain `system-location: 'private'` in their frontmatter; `/view/mew-current-health-concerns` returns 403 to unauth requests (ACL works via `private:true`); public docs return 200.
+- **Step 3 — retire the field from the codebase** (8 source files, 2 test files; net 0 LOC):
+  - `src/managers/PageManager.ts:646-663` — removed `privateStorageLocation` derivation + the `system-location` emit. Defensive `delete rawMetadataCopy['system-location']` added so stale fields from incoming metadata get stripped on save. `if (privateStorageLocation && originalAuthor)` (line 686) changed to `if (wantsPrivate && originalAuthor)` (canonical signal).
+  - `src/providers/FileSystemProvider.ts:582-590` — savePage routing reads `metadata.private === true` only (Slice 3 fallback dropped).
+  - `src/providers/FileSystemProvider.ts:837-842` — `getRecentChanges` visibility filter reads `private:true` only.
+  - `src/providers/FileSystemProvider.ts:892-896` — `getPagesByCreator` onlyPrivate filter reads `private:true` + `user-keywords:[private]` (the latter is #639 Slice E concern; kept out of #802 scope).
+  - `src/providers/VersioningFileProvider.ts:1342-1352` — savePage location decision reads `metadata.private === true` only.
+  - `src/providers/LunrSearchProvider.ts:271-276` — `indexPage` isPrivate reads `metadata.private` + `pageData.isPrivate` (back-compat for in-memory callers, not frontmatter).
+  - `src/providers/ElasticsearchSearchProvider.ts:635-639` — same as Lunr.
+  - `addons/journal/managers/JournalDataManager.ts:118` — `loadAllEntries` isPrivate projection reads `private:true` only.
+  - `src/managers/__tests__/PageManager.test.ts:231` — "top-level private:true" test reclassified from `expect(saved['system-location']).toBe('private')` → `toBeUndefined()`.
+  - `src/providers/__tests__/LunrSearchProvider.privateFilter.test.ts:331` — "system-location: private → isPrivate true (defensive storage-hint fallback)" test inverted: now asserts `isPrivate undefined` (the fallback no longer exists).
+- **Field genealogy now complete:**
+
+  | Era | Privacy signal | Provider routing | PageManager emit |
+  |---|---|---|---|
+  | Pre-#639 | `user-keywords: [private]` (legacy) | `system-location` | `system-location` |
+  | #639 Slices A-E | `private: true` (added) | `system-location` | both fields |
+  | #802 Slice 3 | `private: true` (canonical) | `private:true` w/ fallback | both fields |
+  | **#802 Slice 4 (now)** | **`private: true` (sole signal)** | **`private:true`** | **`private:true` only** |
+
+- **Operator carryover** (cosmetic, not blocking):
+  - Run `npm run migrate:private` on fairways-base + ngdp-temp-builds. Both have 0 user-private files; the script will likely find 0 candidates (nothing was created on those instances after Slice 2's first pass that would need the second pass). Safe to skip entirely on satellites; running it is purely defensive.
+  - Pre-existing VFP page-index rebuild bug (worth a `[BUG]` filing) — still unrelated to #802.
+  - Stale `journal-index.json` files on instances can be manually deleted.
+- Perf baseline drift v3.44.6 → v3.44.7: memory +124% (V8 post-test inflation noise per established pattern). All routes clean: `/` -80.7% (recurring oscillation rebound), `/search` +1.9%, others stable. Baseline file: `docs/performance/baseline-v3.44.7-2026-05-28.md`.
+- /othersites: **skipped** — patch-gate. The #802 chain will propagate to satellites at the next minor consolidation. The runtime code changes in Steps 3 are forward-compatible: satellites can run their existing v3.44.4 code against post-#802 frontmatter (the legacy field is just absent; their providers would have used the read fallbacks they still have). No urgent satellite work.
+- **#802 chain — final state:**
+  - ✅ Slice 0 (v3.44.1) — Docs framing.
+  - ✅ Slice 1 (v3.44.1) — Journal addon user pref + emit `private: true`.
+  - ✅ Slice 2 (v3.44.2) — Migration script for `system-location`.
+  - ✅ Slice 2.5 (v3.44.3) — stripOnly + category detection + required-pages cleanup.
+  - ✅ Slice 2 fix (v3.44.4) — Preserve `system-location` until Slice 3.
+  - ✅ Migration RUN on all 3 instances.
+  - ✅ Slice 3 (v3.44.5) — Providers route off `metadata.private`.
+  - ✅ Slice 4 Step 1 (v3.44.6) — Migration script drops `system-location` again.
+  - ✅ Second migration pass run on jimstest.
+  - ✅ **Slice 4 Step 3 (v3.44.7) — Field retired from codebase.**
+- Commits:
+  - `c9e11bac` — feat(#802): retire system-location:'private' field (Slice 4 Step 3)
+  - `1c2e98a4` — chore: release v3.44.7
+- Files Modified:
+  - `src/managers/PageManager.ts` (+5/-3)
+  - `src/managers/__tests__/PageManager.test.ts` (+4/-2)
+  - `src/providers/FileSystemProvider.ts` (+6/-9)
+  - `src/providers/VersioningFileProvider.ts` (+2/-3)
+  - `src/providers/LunrSearchProvider.ts` (+4/-5)
+  - `src/providers/ElasticsearchSearchProvider.ts` (+2/-4)
+  - `src/providers/__tests__/LunrSearchProvider.privateFilter.test.ts` (+4/-5)
+  - `addons/journal/managers/JournalDataManager.ts` (+3/-1)
+  - `package.json`, `config/app-default-config.json`, `CHANGELOG.md` (version bump)
+  - `docs/performance/baseline-v3.44.7-2026-05-28.md` (new)
+
 ## 2026-05-28-06
 
 - Agent: Claude Opus 4.7
