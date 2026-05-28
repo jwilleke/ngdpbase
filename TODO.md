@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-28T08:30:00.000Z'
+lastModified: '2026-05-28T08:45:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -43,7 +43,6 @@ Items carrying the `in review` label — work is shipped/merged; operator verifi
 
 | # | Title |
 |---|---|
-| #660 | Agent and ./docs documentation — 49 doc-stub warnings remain (managers 12, plugins 9, providers 21). Structural automation shipped 2026-05-14 (3 slices); stub grind **deferred** per 2026-05-19 + 2026-05-28 triage. Re-trigger only on a real driver, coverage regression, audit need, or new-contributor friction. |
 | #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); weekly patch-check workflow watches for a fix |
 
 ## Operator-decision carryover
