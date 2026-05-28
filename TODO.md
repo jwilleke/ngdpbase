@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-28T07:50:00.000Z'
+lastModified: '2026-05-28T08:30:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -46,8 +46,6 @@ Items carrying the `in review` label — work is shipped/merged; operator verifi
 | #660 | Agent and ./docs documentation — 48 doc-stub warnings remain for source-only modules (stub-creation backlog; cosmetic, non-blocking) |
 | #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); weekly patch-check workflow watches for a fix |
 
-(#806 moved to "Waiting on Review Sign-off" — fix shipped in v3.44.8)
-
 ## Operator-decision carryover
 
 Items awaiting a yes/no/close or operator-only action. Not blocking other work.
@@ -70,8 +68,7 @@ Filed and scoped, awaiting prioritization or implementation cycles.
 
 | # | Topic | Priority hint |
 |---|---|---|
-| ~~#790~~ | **[EPIC] Journal addon — reconcile with generic page primitives** — **CLOSED 2026-05-28**. All sub-issues complete (#791–#806). Journal addon now layers thin UI/UX over generic ngdpbase page primitives; `private:true` is the sole privacy signal across the platform. Net-negative LOC across the EPIC. See `docs/project_log.md` 2026-05-26 through 2026-05-28 for the slice-by-slice trail. Optional cosmetic carryovers: `npm run migrate:private` on satellites (0 candidates expected); stale `journal-index.json` files can be manually deleted. | CLOSED. |
-| #786 | Auto-journal — digester consuming CatalogManager records into journal entries | Gated by #685 + EPIC #790. Consumer-pattern; no source-specific code |
+| #786 | Auto-journal — digester consuming CatalogManager records into journal entries | Gated by #685. (#790 closed 2026-05-28, removing one of the gates.) Consumer-pattern; no source-specific code |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images | Low — adds sharp/libvips; do when a real driver appears |
 | #707 | Typed footnote + knowledge-graph reference index | Low — **depends on #706**; speculative |
 | #706 | `knowledge-role` frontmatter field — opt-in page role | Low — sharpened to field+enum+badge; **foundational, blocks #707** |
