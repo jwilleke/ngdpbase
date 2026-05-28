@@ -43,7 +43,7 @@ Items carrying the `in review` label — work is shipped/merged; operator verifi
 
 | # | Title |
 |---|---|
-| #660 | Agent and ./docs documentation — 48 doc-stub warnings remain for source-only modules (stub-creation backlog; cosmetic, non-blocking) |
+| #660 | Agent and ./docs documentation — 49 doc-stub warnings remain (managers 12, plugins 9, providers 21). Structural automation shipped 2026-05-14 (3 slices); stub grind **deferred** per 2026-05-19 + 2026-05-28 triage. Re-trigger only on a real driver, coverage regression, audit need, or new-contributor friction. |
 | #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); weekly patch-check workflow watches for a fix |
 
 ## Operator-decision carryover
