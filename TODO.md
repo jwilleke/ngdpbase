@@ -70,7 +70,7 @@ Filed and scoped, awaiting prioritization or implementation cycles.
 
 | # | Topic | Priority hint |
 |---|---|---|
-| **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24). **All sub-issues closed**: #791–#796 (first wave), #797–#803 (second wave), #804 + #805 (post-#800 fixes), **#802 closed 2026-05-28** (v3.44.1–v3.44.7 chain). Also closed during this work: **#806** (v3.44.8 + v3.44.9 — VFP page-index rebuild; discovered during #802 Slice 2 recovery, adjacent code area). **EPIC itself remains OPEN** pending operator review of the EPIC body's goals. Optional cosmetic carryover: `npm run migrate:private` on satellites (0 candidates expected); stale `journal-index.json` files can be deleted. | EPIC sub-issues all closed; parent open pending operator review. |
+| ~~#790~~ | **[EPIC] Journal addon — reconcile with generic page primitives** — **CLOSED 2026-05-28**. All sub-issues complete (#791–#806). Journal addon now layers thin UI/UX over generic ngdpbase page primitives; `private:true` is the sole privacy signal across the platform. Net-negative LOC across the EPIC. See `docs/project_log.md` 2026-05-26 through 2026-05-28 for the slice-by-slice trail. Optional cosmetic carryovers: `npm run migrate:private` on satellites (0 candidates expected); stale `journal-index.json` files can be manually deleted. | CLOSED. |
 | #786 | Auto-journal — digester consuming CatalogManager records into journal entries | Gated by #685 + EPIC #790. Consumer-pattern; no source-specific code |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images | Low — adds sharp/libvips; do when a real driver appears |
 | #707 | Typed footnote + knowledge-graph reference index | Low — **depends on #706**; speculative |
