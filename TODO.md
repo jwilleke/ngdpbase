@@ -50,7 +50,7 @@ Items carrying the `in review` label — work is shipped/merged; operator verifi
 
 Items awaiting a yes/no/close or operator-only action. Not blocking other work.
 
-- [#593](https://github.com/jwilleke/ngdpbase/issues/593) — Encryption alternatives. Discussion-only, no driver yet; close or move to a Decisions doc if not picking up soon.
+- _(none)_
 
 ## Sister-site top priorities — combined table
 
