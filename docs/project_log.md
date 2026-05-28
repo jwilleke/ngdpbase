@@ -2,6 +2,42 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-28-08
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped **#806** as **v3.44.8** patch. The VFP page-index rebuild path was producing a stub-quality index (138 entries vs ~17K, dropped slug/filename fields) — discovered during yesterday's #802 Slice 2 recovery. Investigation surfaced THREE bugs, not two. All fixed in one slice.
+- Current Issue: #806 (marked `in review` for sign-off; #802 still `in review`)
+- Tests: jimstest GREEN — **6084 unit (+4 new)**, 80/80 E2E. ACL still gates private pages. No flakes.
+- Semver: **patch**. GH Release deferred. /othersites skipped per patch-gate.
+- **Three bugs in `VersioningFileProvider.loadOrCreatePageIndex` recovery paths:**
+  1. **Missing `slug` + `filename`** in the index payload from both `autoMigrateExistingPages:1040` AND `rebuildPageIndexFromManifests:1097`. Slug-based URL lookups would 404 after rebuild.
+  2. **Wrong location for private pages.** Both methods only probed `pages/{uuid}.md` and `required-pages/{uuid}.md` — never `pages/private/{author}/{uuid}.md`. Pages physically in the private tier ended up tagged `location='pages'` in the rebuilt index. Worse: autoMigrate's "slug-named file" branch (`fs.rename` at line 1031) would then RENAME those files out of the private tier into the regular pile. This is the same class of bug as my #802 Slice 2 slip, latent here as well.
+  3. **Hard manifest gate** in `rebuildPageIndexFromManifests:1092` — pages without a `manifest.json` got silently dropped. Pre-versioning pages or any page whose manifest was lost would never make it into the rebuilt index. This is the primary cause of the 138/17K count mismatch on jimstest.
+- **Investigation surprise:** initial fix only covered the rebuild path. Test failures showed that `autoMigrateExistingPages` runs FIRST and writes most entries with the same bugs. Had to extend the fix to both methods. The autoMigrate path was also LEAKING the rename pattern — moving private files into the regular pile during a rebuild — exactly the failure mode #802 Slice 2 introduced (and we recovered from) yesterday.
+- **The fix** (`VersioningFileProvider.ts`, +269/-38 net incl. tests):
+  - Both `autoMigrate` and `rebuild` paths now check `pages/private/{author}/{uuid}.md` as a third candidate location, with `author` pulled from frontmatter.
+  - Both paths now write `slug` (from frontmatter) and `filename` (basename of resolved page path) into the index entry.
+  - Rebuild no longer gates on manifest existence — pages without a manifest get default values (`currentVersion: 1`, `hasVersions: false`, `lastModified` from frontmatter).
+  - `autoMigrate`'s slug-name rename only fires when `actualFilePath !== pagePath` (the destination differs). Private files already at canonical private location no longer get moved.
+  - Defensive log: if rebuild produces 0 entries from non-empty pageCache, log an error so future regressions are loud.
+- **Tests** (4 new in `src/providers/__tests__/VersioningFileProvider.test.ts` "Page-index rebuild from filesystem (#806)" describe block):
+  - rebuild includes pages WITHOUT a version manifest (regression for the 138/17K count bug)
+  - rebuilt entries include slug + filename
+  - rebuilt entries set location correctly for private pages + capture creator
+  - private pages on disk are NOT renamed/moved into the regular pile by auto-migration (regression for the Slice 2-style slip)
+- Perf baseline drift v3.44.7 → v3.44.8: `/` +393% (recurring warm-cache oscillation pattern; release range touches only the VFP recovery init path, not normal route serving). All other routes within ±10%. Memory +1.2%. Baseline file: `docs/performance/baseline-v3.44.8-2026-05-28.md`.
+- /othersites: **skipped** — patch-gate.
+- **Manual verification deferred** — the safest way to validate the fix end-to-end would be to repeat the operator's repro (stop server, backup `page-index.json`, delete it, restart, compare new index entry count and slug coverage to the backup). I have NOT done that on jimstest because (a) the unit tests cover all three bugs with focused regression cases, (b) doing a real-world rebuild on jimstest still carries data-shape risk if some edge case isn't covered, and (c) the backup mechanism from yesterday's session is still in place if the operator wants to do the live test. Tagged in the TODO as carryover.
+- **#806 status:** **in review** — fix shipped + regression tests in place; operator may verify on jimstest or close on test coverage alone.
+- Commits:
+  - `6b714d56` — fix(#806): rebuild + auto-migrate paths produce complete index
+  - `8261bb4a` — chore: release v3.44.8
+- Files Modified:
+  - `src/providers/VersioningFileProvider.ts` (+85/-32)
+  - `src/providers/__tests__/VersioningFileProvider.test.ts` (+184/-6) — added 4 new tests
+  - `package.json`, `config/app-default-config.json`, `CHANGELOG.md` (version bump)
+  - `docs/performance/baseline-v3.44.8-2026-05-28.md` (new)
+
 ## 2026-05-28-07
 
 - Agent: Claude Opus 4.7

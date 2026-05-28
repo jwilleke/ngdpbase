@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-28T06:50:00.000Z'
+lastModified: '2026-05-28T07:13:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -16,7 +16,7 @@ Current near-term priorities for ngdpbase and the sister sites tracked by `/othe
 
 **See also**: [`docs/architecture-threads.md`](./docs/architecture-threads.md) maps in-flight cross-cutting design threads (CatalogManager unification, NCM pipeline, JSON-LD render, Journal reconcile, ACL evaluator, system principal, addon platform) — issues here that belong to a thread are listed there with their dependency context. Use TODO.md for "what's open and how to prioritise"; use architecture-threads.md for "how do these issues relate to each other."
 
-**Latest release**: v3.44.7 (2026-05-28; patch, GH Release deferred) — **#802 functionally complete.** Slice 4 Steps 2 + 3 shipped: second migration pass run on jimstest (14 files stripped of `system-location`), then `system-location` field retired from the codebase across PageManager + FSP + VFP + LunrSearchProvider + ElasticsearchSearchProvider + JournalDataManager. `private: true` is now the sole privacy signal — read and written. Tests updated. Operator carryover: optionally run the cosmetic second-pass migration on satellites (not blocking; 0 candidates expected). v3.44.6: Slice 4 Step 1. v3.44.5: Slice 3 (providers route off metadata.private). v3.44.4: Slice 2 fix. v3.44.3: Slice 2.5. v3.44.2: Slice 2. v3.44.1: Slices 0 + 1. v3.44.0 (minor): satellite propagation.
+**Latest release**: v3.44.8 (2026-05-28; patch, GH Release deferred) — **#806 fixed.** VFP page-index rebuild path repaired across THREE latent bugs: missing slug/filename in payload; private location not detected (autoMigrate would even rename private files into the regular pile); hard manifest gate dropping pre-versioning pages. Both `autoMigrateExistingPages` AND `rebuildPageIndexFromManifests` now produce complete, lookup-correct indices. 4 new regression tests. Marked `in review`. v3.44.7: #802 complete. v3.44.6: Slice 4 Step 1. v3.44.5: Slice 3. v3.44.4: Slice 2 fix. v3.44.3: Slice 2.5. v3.44.2: Slice 2. v3.44.1: Slices 0 + 1. v3.44.0 (minor): satellite propagation.
 
 Sister sites in scope:
 
@@ -38,14 +38,16 @@ All three local checkouts share `jwilleke/ngdpbase` as their git remote — thei
 Items carrying the `in review` label — work is shipped/merged; operator verification is the only thing left before close. **Clear this list before starting new feature work.**
 
 - [#802](https://github.com/jwilleke/ngdpbase/issues/802) — Slice 4 retirement complete (v3.44.7). `private:true` is now the sole privacy signal; `system-location` retired from codebase + data. Verify: `/view/page-private` returns 200 unauth, `/view/mew-current-health-concerns` (or any private page) returns 403 unauth. Confirm + close. Optional cosmetic carryover: `npm run migrate:private` on satellites (0 candidates expected; doesn't gate closure).
+- [#806](https://github.com/jwilleke/ngdpbase/issues/806) — VFP page-index rebuild fixed (v3.44.8). Three latent bugs in rebuild + auto-migrate paths repaired (missing slug/filename, missing private location, hard manifest gate). 4 regression tests added. Optional real-world verification: backup `page-index.json` on jimstest → delete → restart → compare new entry count + slug coverage to backup. Unit tests already cover all three failure modes.
 
 ## Open BUGS (ngdpbase, by issue #)
 
 | # | Title |
 |---|---|
-| #806 | VFP page-index rebuild produces incomplete index (138 entries vs ~17K, missing slug/filename) — discovered during #802 Slice 2 recovery; medium-high severity, workaround: don't delete `page-index.json` |
 | #660 | Agent and ./docs documentation — 48 doc-stub warnings remain for source-only modules (stub-creation backlog; cosmetic, non-blocking) |
 | #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); weekly patch-check workflow watches for a fix |
+
+(#806 moved to "Waiting on Review Sign-off" — fix shipped in v3.44.8)
 
 ## Operator-decision carryover
 
