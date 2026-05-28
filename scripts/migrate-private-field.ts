@@ -21,6 +21,11 @@
  *   npm run migrate:private              # apply changes
  *   npm run migrate:private:dry          # preview changes
  *
+ * The npm scripts auto-load `.env` via Node's `--env-file-if-exists=.env`, so
+ * `SLOW_STORAGE` from the repo's `.env` resolves the pages root automatically
+ * when invoked from the repo root. To target a non-default location, either
+ * `cd` to a deployment dir with its own `.env`, or override with `--data`.
+ *
  * Or directly:
  *   tsx scripts/migrate-private-field.ts [--dry-run] [--data <path>]
  *
