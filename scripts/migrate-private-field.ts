@@ -1,15 +1,21 @@
 /**
- * #639 Slice D: one-time migration of `user-keywords: [private]` → top-level `private: true`
+ * One-time migration of legacy private-signal spellings → canonical `private: true`.
  *
- * Walks every .md page file under the configured pages directories, and for any page
- * whose frontmatter has 'private' in the user-keywords array, rewrites the file so:
- *   - `private: true` is set at the top level
- *   - the literal 'private' entry is removed from `user-keywords`
- *   - if the array is then empty, the field is dropped entirely
+ * Walks every .md page file under the configured pages directories and rewrites
+ * frontmatter so the page ends up in the canonical shape:
+ *   - top-level `private: true` (#639 / #802 canonical semantic flag)
+ *   - NO `user-keywords: [private]` entry (#639 Slice D — retired storage hint)
+ *   - NO `system-location: 'private'` field (#802 Slice 2 — retired storage hint)
  *
- * This is the explicit complement to Slice B's implicit migration (which converts pages
- * one at a time as they're next saved). Run this when you want a deadline rather than
- * a "whenever pages are next edited" rolling migration.
+ * Three legacy spellings the script can see and consolidate:
+ *
+ *   1. `user-keywords: [..., 'private', ...]`     — #639 user-keywords-based signal
+ *   2. `system-location: 'private'`                — #122 storage-routing signal
+ *   3. `private: true`                             — canonical (already correct)
+ *
+ * Idempotent. A page already in canonical shape returns 'already' with no rewrite.
+ *
+ * Run this as the explicit, batch alternative to the implicit per-save migrations.
  *
  * Usage:
  *   npm run migrate:private              # apply changes
@@ -29,10 +35,13 @@
  *   2 — invalid arguments / missing directories
  *
  * Page-index note: this script edits .md files only. It does NOT rewrite
- * data/page-index.json. Slice A's read fallbacks make that safe — every consumer
+ * data/page-index.json. Read fallbacks across providers make that safe — every consumer
  * reads either source — and the index will catch up the next time each page is saved
  * via PageManager. If you want a hard re-sync immediately, stop the server, delete
  * page-index.json, and restart; VersioningFileProvider rebuilds it from frontmatter.
+ *
+ * Conservative: only drops `system-location` when its value is exactly `'private'`.
+ * Other values (if any exist) are left untouched.
  */
 
 import fs from 'fs-extra';
@@ -101,6 +110,12 @@ export interface TransformResult {
 /**
  * Pure string-in/string-out frontmatter transform. Exported so it can be tested
  * without touching the filesystem.
+ *
+ * Outcomes:
+ *   - 'non-private'  — no private signal of any kind; content unchanged
+ *   - 'already'      — canonical shape (private:true, no legacy signals); content unchanged
+ *   - 'migrated'     — at least one legacy signal present and was consolidated
+ *   - 'error'        — caller-level (read/write/parse failure); never returned here
  */
 export function transformFrontmatter(raw: string): TransformResult {
   const parsed = matter(raw);
@@ -112,19 +127,35 @@ export function transformFrontmatter(raw: string): TransformResult {
 
   const userKeywordsRaw = data['user-keywords'];
   const userKeywords = Array.isArray(userKeywordsRaw) ? userKeywordsRaw.map(String) : [];
-  const hasKeyword = userKeywords.some((kw) => kw.toLowerCase() === 'private');
-  const hasTopLevel = data.private === true;
+  const hasLegacyKeyword       = userKeywords.some((kw) => kw.toLowerCase() === 'private');
+  const hasLegacySystemLocation = data['system-location'] === 'private';
+  const hasTopLevel             = data.private === true;
 
-  if (!hasKeyword && !hasTopLevel) return { outcome: 'non-private', content: raw };
-  if (!hasKeyword && hasTopLevel) return { outcome: 'already', content: raw };
+  if (!hasLegacyKeyword && !hasLegacySystemLocation && !hasTopLevel) {
+    return { outcome: 'non-private', content: raw };
+  }
 
-  // hasKeyword === true. Migrate.
+  const hasLegacyToClean = hasLegacyKeyword || hasLegacySystemLocation;
+  if (!hasLegacyToClean && hasTopLevel) {
+    return { outcome: 'already', content: raw };
+  }
+
+  // At least one legacy signal present — consolidate.
   data.private = true;
-  const filtered = userKeywords.filter((kw) => kw.toLowerCase() !== 'private');
-  if (filtered.length > 0) {
-    data['user-keywords'] = filtered;
-  } else {
-    delete data['user-keywords'];
+
+  if (hasLegacyKeyword) {
+    const filtered = userKeywords.filter((kw) => kw.toLowerCase() !== 'private');
+    if (filtered.length > 0) {
+      data['user-keywords'] = filtered;
+    } else {
+      delete data['user-keywords'];
+    }
+  }
+
+  if (hasLegacySystemLocation) {
+    // Conservative: only drop when value === 'private'. Other values (if any
+    // exist in the wild) are left alone for an operator to triage.
+    delete data['system-location'];
   }
 
   return { outcome: 'migrated', content: matter.stringify(parsed.content, data) };
@@ -172,7 +203,7 @@ async function main(): Promise<void> {
   const pagesDir = resolvePagesDir(args.dataDir);
   const requiredDir = resolveRequiredDir(args.requiredDir);
 
-  console.log('#639 Slice D — Private field migration');
+  console.log('Private-field migration (#639 Slice D + #802 Slice 2)');
   console.log(`  Mode: ${args.dryRun ? 'DRY RUN (no writes)' : 'APPLY'}`);
   console.log(`  Pages directory:    ${pagesDir}`);
   console.log(`  Required directory: ${requiredDir}`);

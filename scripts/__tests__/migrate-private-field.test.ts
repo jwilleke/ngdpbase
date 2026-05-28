@@ -1,5 +1,5 @@
 /**
- * Tests for #639 Slice D — Private field migration script.
+ * Tests for the private-field migration script (#639 Slice D + #802 Slice 2).
  *
  * Tests the pure transformFrontmatter() function so we don't need to touch the
  * filesystem. Each case asserts both the outcome label and (where relevant) the
@@ -13,7 +13,7 @@ function fm(raw: string) {
   return matter(raw).data as Record<string, unknown>;
 }
 
-describe('transformFrontmatter (#639 Slice D)', () => {
+describe('transformFrontmatter (#639 Slice D + #802 Slice 2)', () => {
   test('legacy keyword-only → migrated; private:true set, keyword stripped, body preserved', () => {
     const raw = [
       '---',
@@ -177,6 +177,115 @@ describe('transformFrontmatter (#639 Slice D)', () => {
 
     const first = transformFrontmatter(raw);
     expect(first.outcome).toBe('migrated');
+
+    const second = transformFrontmatter(first.content);
+    expect(second.outcome).toBe('already');
+    expect(second.content).toBe(first.content);
+  });
+
+  // ── #802 Slice 2: system-location legacy signal ────────────────────────────
+
+  test('#802 — system-location:private only → migrated; private:true set, system-location dropped', () => {
+    const raw = [
+      '---',
+      'title: Journal Entry',
+      'uuid: u1',
+      'lastModified: "2026-01-01"',
+      'author: alice',
+      'system-location: private',
+      '---',
+      'body'
+    ].join('\n');
+
+    const out = transformFrontmatter(raw);
+
+    expect(out.outcome).toBe('migrated');
+    const data = fm(out.content);
+    expect(data.private).toBe(true);
+    expect(data['system-location']).toBeUndefined();
+  });
+
+  test('#802 — private:true + system-location:private (PageManager-emitted shape) → migrated; system-location dropped', () => {
+    const raw = [
+      '---',
+      'title: Locked',
+      'uuid: u1',
+      'lastModified: "2026-01-01"',
+      'author: alice',
+      'private: true',
+      'system-location: private',
+      '---',
+      'body'
+    ].join('\n');
+
+    const out = transformFrontmatter(raw);
+
+    expect(out.outcome).toBe('migrated');
+    const data = fm(out.content);
+    expect(data.private).toBe(true);
+    expect(data['system-location']).toBeUndefined();
+  });
+
+  test('#802 — both legacy signals (user-keywords:private AND system-location:private) → migrated; both cleared', () => {
+    const raw = [
+      '---',
+      'title: Doubly Legacy',
+      'uuid: u1',
+      'lastModified: "2026-01-01"',
+      'author: alice',
+      'user-keywords:',
+      '  - private',
+      '  - draft',
+      'system-location: private',
+      '---',
+      'body'
+    ].join('\n');
+
+    const out = transformFrontmatter(raw);
+
+    expect(out.outcome).toBe('migrated');
+    const data = fm(out.content);
+    expect(data.private).toBe(true);
+    expect(data['user-keywords']).toEqual(['draft']);
+    expect(data['system-location']).toBeUndefined();
+  });
+
+  test('#802 — non-private system-location value (e.g. "regular") left alone', () => {
+    const raw = [
+      '---',
+      'title: Public',
+      'uuid: u1',
+      'lastModified: "2026-01-01"',
+      'author: alice',
+      'system-location: regular',
+      '---',
+      'body'
+    ].join('\n');
+
+    const out = transformFrontmatter(raw);
+
+    // No private signal present (regular ≠ private), so this is non-private.
+    // We do NOT touch the field — conservative behavior.
+    expect(out.outcome).toBe('non-private');
+    expect(out.content).toBe(raw);
+  });
+
+  test('#802 — idempotent on system-location migration: second run is no-op', () => {
+    const raw = [
+      '---',
+      'title: Journal Entry',
+      'uuid: u1',
+      'lastModified: "2026-01-01"',
+      'author: alice',
+      'system-location: private',
+      '---',
+      'body'
+    ].join('\n');
+
+    const first = transformFrontmatter(raw);
+    expect(first.outcome).toBe('migrated');
+    expect(fm(first.content).private).toBe(true);
+    expect(fm(first.content)['system-location']).toBeUndefined();
 
     const second = transformFrontmatter(first.content);
     expect(second.outcome).toBe('already');

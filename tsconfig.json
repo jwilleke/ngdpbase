@@ -47,6 +47,7 @@
     "scripts/migrate-user-pages-category.ts",
     "scripts/migrate-page-created.ts",
     "scripts/migrate-page-acl-to-frontmatter.ts",
+    "scripts/migrate-private-field.ts",
     "scripts/check-docs-coverage.ts",
     "scripts/migrate-docs-frontmatter.ts",
     "scripts/fix-doc-descriptions.ts",
