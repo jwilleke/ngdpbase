@@ -2,6 +2,56 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-28-03
+
+- Agent: Claude Opus 4.7
+- Subject: **Rollback session** — shipped **v3.44.4** patch fixing a real slip in v3.44.3's migration. The Slice 2 script was dropping `system-location: 'private'` alongside the promotion to `private: true`, but Slice 3 (providers route off `metadata.private`) hadn't shipped yet. Result: when the operator ran `npm run migrate:private` on jimstest data, the next server restart's page-index rebuild placed all 14 private user files in the regular `pages/{uuid}.md` pile instead of `pages/private/{author}/{uuid}.md`. ACL still gated the pages correctly (private:true was set), but storage layout was wrong.
+- Current Issue: #802 (in progress — Slice 2 fixed; #790 EPIC parent)
+- Tests: jimstest GREEN on release commit — **6080 unit**. No flakes. Site renders correctly post-recovery (verified `/view/page-private`, `/view/page-audience`, `/view/welcome` all 200).
+- Semver: **patch**. GH Release deferred. /othersites skipped per patch-gate.
+- **Root cause of the slip:** Slice ordering. The original plan was Slice 2 (migration) safely after Slice 3 (provider update), so that dropping `system-location` from frontmatter would be safe — providers would already route off `metadata.private` by then. I shipped Slice 2 first because the operator's chain framing put it second-from-last. The system-location strip in promote mode was the bug. StripOnly mode (required-pages) stripping it was fine because required-pages can't be private anyway.
+- **Operator-run migration session:**
+  1. Operator: "run the migration" → I ran `npm run migrate:private`. 14 files migrated, 19 cleaned, 0 errors.
+  2. I backed up page-index.json (`page-index.json.bak-pre802`), deleted it, restarted to force rebuild.
+  3. Spot-check: `/view/page-private` returns 200 ✓. But `find` revealed all 14 user-private files had moved out of `pages/private/{author}/` into `pages/{uuid}.md`.
+  4. Stopped server. Operator chose rollback path.
+  5. Wrote one-off recovery script (`/tmp/recover-802-private-files.mjs`): for each of 14 UUIDs, re-added `system-location: 'private'` to frontmatter + moved file back to `pages/private/{author}/{uuid}.md`. Ran successfully: 14 restored, 0 errors. Script deleted after run.
+  6. Restarted server. **Discovered another bug**: the page-index rebuild had generated a stub-quality index — 138 entries vs 17,116 in the backup, with no `slug` or `filename` fields. Slug-based URL lookups (e.g. `/view/page-private`) 404'd. This is **a separate pre-existing VFP bug**, not #802-caused — the index-rebuild-from-frontmatter-scan path is broken. Surfaced as a follow-up.
+  7. Restored `page-index.json` from the backup (taken at the point right before the rebuild, before files moved). Files were now at their post-recovery locations, which matched the backup index's expectations. All URLs (slug + UUID) work.
+- **Script fix shipped:**
+  - `transformFrontmatter` promote mode no longer drops `system-location: 'private'`. It's preserved as a load-bearing storage-routing field until Slice 3 ships and Slice 4 cleans it up.
+  - `'already'` vs `'migrated'` classification corrected: `private: true + system-location: 'private'` (the PageManager-emitted normal shape) now returns `'already'` instead of pointlessly rewriting to the same content.
+  - StripOnly mode (required-pages, or category-detected for documentation/system pages) unchanged — those continue to strip system-location, because required-pages aren't allowed to be private at all.
+- **Tests updated:**
+  - 3 promote-mode cases changed assertion `system-location toBeUndefined()` → `toBe('private')` (field preserved).
+  - 1 shape-test reclassified `migrated` → `already` (dual-shape no-op).
+  - 24/24 in `scripts/__tests__/migrate-private-field.test.ts` pass. Full suite 6080.
+- **Discovered follow-up bug** (NOT #802; pre-existing): page-index.json rebuild path in VFP appears broken. Triggered by stopping server, deleting `data/page-index.json`, starting server. Should rebuild from frontmatter scan but instead produces a stub-quality index missing most pages and dropping slug/filename fields. Worth filing a separate `[BUG]` issue. Workaround: don't delete page-index.json — let it accumulate updates through normal save path; if you must rebuild, take a backup first.
+- Perf baseline drift v3.44.3 → v3.44.4: memory +116% (V8 post-test inflation noise, well-established pattern per memory feedback — don't ask). All routes clean: `/` -78.7% (rebound), `/search` -6.4%, others stable. Baseline file: `docs/performance/baseline-v3.44.4-2026-05-28.md`.
+- /othersites: **skipped** — patch-gate.
+- **#802 chain — where we are / where we pick up next:**
+  - ✅ Slice 0 — Docs framing (v3.44.1, commit `debe0a99`).
+  - ✅ Slice 1 — Journal addon user pref + emit `private: true` (v3.44.1, commit `ddea45a9`).
+  - ✅ Slice 2 — Migration script for `system-location` (v3.44.2, commit `3dd78eb2`).
+  - ✅ Slice 2.5 — stripOnly + category detection + required-pages cleanup (v3.44.3, commit `9ad6ff70`).
+  - ✅ Slice 2 fix — keep system-location in promote mode until Slice 3 (v3.44.4, commit `ccffb592`).
+  - ✅ **Migration RUN on jimstest** (14 files migrated to canonical private:true + system-location:private, 19 cleaned of access controls including required-pages canonical and seeded copies).
+  - ⬜ **Operator action carryover** — run migrate:private on satellites (fairways-base + ngdp-temp-builds) when convenient.
+  - ⬜ Slice 3 — Providers route off `metadata.private`. `FileSystemProvider.ts:581-583` + `VersioningFileProvider.ts:1346-1366` read `metadata.private === true` with `system-location` as a back-compat read fallback. AFTER Slice 3 ships, a future cleanup slice can drop system-location from frontmatter via a second migration pass.
+  - ⬜ Slice 4 — Drop the legacy emit (`PageManager.ts:662`) + all dual-read fallbacks across FSP/Lunr/ES/JDM.
+  - ⬜ **Separate bug to file**: VFP page-index rebuild produces incomplete index (138 entries, no slugs/filenames vs 17,116 with slugs in the working index). Pre-existing, unrelated to #802 but discovered during recovery.
+- Commits:
+  - `ccffb592` — fix(#802): keep system-location in promote mode until Slice 3 ships
+  - `890a1a83` — chore: release v3.44.4
+- Files Modified:
+  - `scripts/migrate-private-field.ts` (+19/-9) — promote mode preserves system-location; outcome classification fixed
+  - `scripts/__tests__/migrate-private-field.test.ts` (+35/-12) — 4 tests updated for new behaviour
+  - `package.json`, `config/app-default-config.json`, `CHANGELOG.md` (version bump)
+  - `docs/performance/baseline-v3.44.4-2026-05-28.md` (new)
+- **Out-of-band on jimstest data** (not in git, operator-action territory):
+  - 14 private user files restored to `pages/private/{author}/{uuid}.md` with `system-location: 'private'` re-added.
+  - `page-index.json` restored from `.bak-pre802` backup (taken just before the broken rebuild). Backup file retained at `/Volumes/hd2/jimstest-wiki/data/page-index.json.bak-pre802` for one more session as a safety net.
+
 ## 2026-05-28-02
 
 - Agent: Claude Opus 4.7

@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-28T04:22:00.000Z'
+lastModified: '2026-05-28T05:00:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -16,7 +16,7 @@ Current near-term priorities for ngdpbase and the sister sites tracked by `/othe
 
 **See also**: [`docs/architecture-threads.md`](./docs/architecture-threads.md) maps in-flight cross-cutting design threads (CatalogManager unification, NCM pipeline, JSON-LD render, Journal reconcile, ACL evaluator, system principal, addon platform) — issues here that belong to a thread are listed there with their dependency context. Use TODO.md for "what's open and how to prioritise"; use architecture-threads.md for "how do these issues relate to each other."
 
-**Latest release**: v3.44.3 (2026-05-28; patch, GH Release deferred) — #802 Slice 2.5: cleaned repo's `required-pages/` of all per-page access controls (18 audience blocks + 2 private signals stripped, 19 files / 110 deletions), added `stripOnly` mode + category-based auto-detection to `migrate-private-field.ts` so seeded copies of required-pages get cleaned not promoted, npm scripts auto-load `.env`. Dry-run on jimstest now classifies correctly: 14 migrate (legit private user pages) + 19 cleaned (doc pages). Operator-action remains to apply on each instance. v3.44.2 (2026-05-28; patch): #802 Slice 2 — extended script for `system-location` legacy spelling. v3.44.1 (2026-05-27; patch): #802 Slices 0 + 1. v3.44.0 (2026-05-27; minor): consolidating range v3.43.1–v3.43.10 propagated to satellites.
+**Latest release**: v3.44.4 (2026-05-28; patch, GH Release deferred) — #802 Slice 2 fix: rolled back system-location strip in promote mode. v3.44.3 migration had a real slip — dropping `system-location: 'private'` before Slice 3 ships caused VFP to misplace 14 private user files into the regular pile. Now promote mode preserves system-location until Slice 3; stripOnly (required-pages) still strips. Recovery applied to jimstest data. **Migration run on jimstest**: 14 migrated + 19 cleaned. **Separate bug** (not #802, pre-existing): VFP page-index rebuild generates incomplete index — worth filing. See project_log `2026-05-28-03`. v3.44.3: Slice 2.5 (required-pages cleanup + stripOnly + category detection). v3.44.2: Slice 2 (script extension). v3.44.1: Slices 0 + 1. v3.44.0 (minor): satellite propagation.
 
 Sister sites in scope:
 
@@ -68,7 +68,7 @@ Filed and scoped, awaiting prioritization or implementation cycles.
 
 | # | Topic | Priority hint |
 |---|---|---|
-| **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24). **First-wave closed**: #791–#796. **Second-wave shipped**: #803 (v3.43.4), #797 (v3.43.5), #798 (v3.43.6), #799 (v3.43.7), #800 (v3.43.8), #801 (v3.43.9). **Post-#800 fixes**: #804 + #805 (v3.43.10). All propagated via v3.44.0. **#802 in flight**: Slices 0 + 1 (v3.44.1) + Slice 2 (v3.44.2) shipped — docs framing; journal addon emits canonical `private: true` behind new `journal.defaultPrivate` user pref; migration script extended for `system-location` legacy spelling. **Blocked on operator action**: review migration dry-run (16 candidates, 1 false-positive), run `npm run migrate:private` per instance, unblock Slices 3 + 4. See project_log `2026-05-28-01`. **Carryover**: stale `journal-index.json` files can be manually deleted. | EPIC OPEN; #802 blocked on operator migration. |
+| **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24). **First-wave closed**: #791–#796. **Second-wave shipped**: #803, #797, #798, #799, #800, #801 (across v3.43.4–9). **Post-#800 fixes**: #804 + #805 (v3.43.10). Propagated via v3.44.0. **#802 in flight**: Slices 0 + 1 (v3.44.1) + Slice 2 (v3.44.2) + Slice 2.5 (v3.44.3) + Slice 2 fix (v3.44.4) shipped. **Migration run on jimstest** (14 migrated + 19 cleaned). **Next**: Slice 3 (providers route off `metadata.private`) + Slice 4 (drop legacy emit + dual-read fallbacks). Operator carryover: run migration on satellites (fairways-base + ngdp-temp-builds) when convenient. See project_log `2026-05-28-03`. Separate carryover: stale `journal-index.json` files can be deleted; pre-existing VFP page-index rebuild bug discovered during recovery (worth a `[BUG]` filing). | EPIC OPEN; #802 active. |
 | #786 | Auto-journal — digester consuming CatalogManager records into journal entries | Gated by #685 + EPIC #790. Consumer-pattern; no source-specific code |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images | Low — adds sharp/libvips; do when a real driver appears |
 | #707 | Typed footnote + knowledge-graph reference index | Low — **depends on #706**; speculative |
