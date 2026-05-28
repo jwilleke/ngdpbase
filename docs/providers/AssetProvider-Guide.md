@@ -3,6 +3,7 @@ name: AssetProvider-Guide
 description: Implementation guide for plugin authors building a new AssetProvider backend
 dateModified: '2026-05-14'
 category: providers
+code: src/managers/AssetManager.ts
 ---
 
 # AssetProvider Implementation Guide

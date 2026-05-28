@@ -3,6 +3,7 @@ name: "CalendarPlugin"
 description: "Event calendar widget powered by FullCalendar — requires the calendar add-on"
 dateModified: "2026-04-05"
 category: "plugins"
+code: addons/calendar/plugins/CalendarPlugin.js
 relatedModules: ["AddonsManager", "CalendarDataManager"]
 version: "1.0.0"
 addon: "calendar"

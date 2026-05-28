@@ -30,9 +30,9 @@ Workflow:
 <!-- AUTO:quick-nav BEGIN -->
 | Category | Count (src/) | Documented | Description |
 | ---------- | --- | --- | ------------- |
-| [Managers](#managers) | 37 | 25 | Core system managers |
-| [Plugins](#plugins) | 32 | 23 | JSPWiki-style content plugins |
-| [Providers](#providers) | 33 | 12 | Storage and service providers |
+| [Managers](#managers) | 37 | 37 | Core system managers |
+| [Plugins](#plugins) | 32 | 35 | JSPWiki-style content plugins |
+| [Providers](#providers) | 33 | 34 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
 | [Testing](#testing) | n/a | 3 | Testing guides and strategies |
 | [API](#api-reference) | n/a | Auto-gen | TypeDoc generated API reference |
@@ -50,39 +50,39 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | Module | Doc status | Description |
 | --- | --- | --- |
 | ACLManager | 📘 [doc](managers/ACLManager.md) + [guide](managers/ACLManager-Complete-Guide.md) | Per-page access control: private/author-lock/audience/role-policy evaluation via the canonical wikiContext.canAccess facade |
-| AddonsManager | ⚠️ [src/managers/AddonsManager.ts](../src/managers/AddonsManager.ts) | _no doc page yet_ |
-| AssetManager | ⚠️ [src/managers/AssetManager.ts](../src/managers/AssetManager.ts) | _no doc page yet_ |
+| AddonsManager | ✅ [doc](managers/AddonsManager.md) | Discovery, registration, lifecycle, and dependency management for optional ngdpbase add-ons |
+| AssetManager | ✅ [doc](managers/AssetManager.md) | Provider registry for the unified Digital Asset Management framework — fans search/getById/getThumbnail across all registered AssetProviders |
 | AssetService | ✅ [doc](managers/AssetService.md) | Unified DAM search facade over the AssetProvider registry; called by SearchManager and the asset-picker |
 | AttachmentManager | 📘 [doc](managers/AttachmentManager.md) + [guide](managers/AttachmentManager-Complete-Guide.md) | File attachment CRUD: upload, lookup-by-filename, per-page attachment listings, SHA-256 deduplication |
 | AuditManager | ✅ [doc](managers/AuditManager.md) | Audit trail logging: security events, access decisions, policy evaluations, with pluggable Audit*Provider backends |
-| AuthManager | ⚠️ [src/managers/AuthManager.ts](../src/managers/AuthManager.ts) | _no doc page yet_ |
-| BackgroundJobManager | ⚠️ [src/managers/BackgroundJobManager.ts](../src/managers/BackgroundJobManager.ts) | _no doc page yet_ |
+| AuthManager | ✅ [doc](managers/AuthManager.md) | Pluggable authentication provider chain — registers AuthProviders and delegates authenticate/initiate calls |
+| BackgroundJobManager | ✅ [doc](managers/BackgroundJobManager.md) | Long-running job registry + scheduler with progress reporting and polling API |
 | BackupManager | 📘 [doc](managers/BackupManager.md) + [guide](managers/BackupManager-Complete-Guide.md) | System-wide backup and restore — pages, attachments, config, search indices |
 | BaseManager | 📘 [doc](managers/BaseManager.md) + [guide](managers/BaseManager-Complete-Guide.md) | Abstract base class for all managers — engine wiring, lifecycle hooks, config accessor pattern |
 | CacheManager | 📘 [doc](managers/CacheManager.md) + [guide](managers/CacheManager-Complete-Guide.md) | Centralized cache facade with pluggable backends (NodeCache, Redis, Null) and named regions per consumer |
 | CatalogManager | ✅ [doc](managers/CatalogManager.md) | Two-registry coordinator — controlled-vocabulary providers (#424) + asset-source providers (#755). Fans out term lookup and asset queries across registered providers. |
-| CommentManager | ⚠️ [src/managers/CommentManager.ts](../src/managers/CommentManager.ts) | _no doc page yet_ |
+| CommentManager | ✅ [doc](managers/CommentManager.md) | Per-page comment storage + CRUD; sidecar JSON keyed by page UUID |
 | ConfigurationManager | 📘 [doc](managers/ConfigurationManager.md) + [guide](managers/ConfigurationManager-Complete-Guide.md) | Loads and merges app-default-config.json + app-custom-config.json; the single source of truth for runtime config |
-| EmailManager | ⚠️ [src/managers/EmailManager.ts](../src/managers/EmailManager.ts) | _no doc page yet_ |
+| EmailManager | ✅ [doc](managers/EmailManager.md) | Shared outbound email transport — pluggable provider (console / SMTP) |
 | ExportManager | 📘 [doc](managers/ExportManager.md) + [guide](managers/ExportManager-Complete-Guide.md) | Per-page export to HTML or Markdown with frontmatter stripping and link rewriting |
-| FootnoteManager | ⚠️ [src/managers/FootnoteManager.ts](../src/managers/FootnoteManager.ts) | _no doc page yet_ |
-| ImportManager | ⚠️ [src/managers/ImportManager.ts](../src/managers/ImportManager.ts) | _no doc page yet_ |
+| FootnoteManager | ✅ [doc](managers/FootnoteManager.md) | Sidecar storage + CRUD for page footnotes (migrated out of page body in |
+| ImportManager | 📘 [doc](managers/ImportManager.md) + [guide](managers/ImportManager-Complete-Guide.md) | Pluggable importer for external wiki formats — extensible converter registry (JSPWiki, MediaWiki, Confluence, …) |
 | MediaManager | 📘 [doc](managers/MediaManager.md) + [guide](managers/MediaManager-Complete-Guide.md) | Read-only external photo/video library (filesystem-backed) with EXIF indexing and keyword facets |
 | MetricsManager | 📘 [doc](managers/MetricsManager.md) + [guide](managers/MetricsManager-Complete-Guide.md) | OpenTelemetry-backed metrics: route latency histograms, engine init timing, cache hit ratios |
 | NotificationManager | 📘 [doc](managers/NotificationManager.md) + [guide](managers/NotificationManager-Complete-Guide.md) | System and per-user notifications — toast popups, persistent inbox, scheduled expiry |
-| OrganizationManager | ⚠️ [src/managers/OrganizationManager.ts](../src/managers/OrganizationManager.ts) | _no doc page yet_ |
+| OrganizationManager | ✅ [doc](managers/OrganizationManager.md) | Canonical Organization records (#617) — one file per organization, pluggable via OrganizationProvider |
 | PageManager | 📘 [doc](managers/PageManager.md) + [guide](managers/PageManager-Complete-Guide.md) | Page CRUD and storage facade over the PageProvider registry |
-| PersonManager | ⚠️ [src/managers/PersonManager.ts](../src/managers/PersonManager.ts) | _no doc page yet_ |
+| PersonManager | ✅ [doc](managers/PersonManager.md) | Canonical Person records (#617) — decoupled from User authentication identity, shared across addons |
 | PluginManager | 📘 [doc](managers/PluginManager.md) + [guide](managers/PluginManager-Complete-Guide.md) | Plugin discovery, registration, and execution; resolves `[{PluginName ...}]` markup to handler output |
 | PolicyEvaluator | ✅ [doc](managers/PolicyEvaluator.md) | Tier-2 of ACLManager — evaluates role/permission policies against principals and resources |
 | PolicyManager | ✅ [doc](managers/PolicyManager.md) | Policy CRUD and lookup — manages the role/permission ruleset that PolicyEvaluator applies |
 | PolicyValidator | ✅ [doc](managers/PolicyValidator.md) | Schema validation for policy definitions; runs at startup to refuse malformed policies |
 | RenderingManager | 📘 [doc](managers/RenderingManager.md) + [guide](managers/RenderingManager-Complete-Guide.md) | Markdown + JSPWiki-style markup rendering pipeline; orchestrates handlers and plugin invocation |
-| RoleManager | ⚠️ [src/managers/RoleManager.ts](../src/managers/RoleManager.ts) | _no doc page yet_ |
+| RoleManager | ✅ [doc](managers/RoleManager.md) | Canonical Role records — one file per (organization, namedPosition) pair (#617 follow-up) |
 | SchemaManager | 📘 [doc](managers/SchemaManager.md) + [guide](managers/SchemaManager-Complete-Guide.md) | JSON Schema registration and validation for typed entities (Person, Organization, etc.) |
 | SearchManager | 📘 [doc](managers/SearchManager.md) + [guide](managers/SearchManager-Complete-Guide.md) | Full-text page search with pluggable backends (Lunr in-process, Elasticsearch); also drives the asset-picker |
 | TemplateManager | 📘 [doc](managers/TemplateManager.md) + [guide](managers/TemplateManager-Complete-Guide.md) | Page templates for /create and theme-driven layout templates for /view |
-| ThemeManager | ⚠️ [src/managers/ThemeManager.ts](../src/managers/ThemeManager.ts) | _no doc page yet_ |
+| ThemeManager | ✅ [doc](managers/ThemeManager.md) | Manages theme discovery + active-theme selection + CSS path resolution for the page-render pipeline |
 | UserManager | 📘 [doc](managers/UserManager.md) + [guide](managers/UserManager-Complete-Guide.md) | User CRUD, sessions, authentication, profile-page binding, contact-recipient resolution |
 | ValidationManager | ✅ [doc](managers/ValidationManager.md) | Central data-integrity enforcement: UUID-based naming, YAML frontmatter validation, slug-conflict detection |
 | VariableManager | ✅ [doc](managers/VariableManager.md) | Variable expansion in content — `[{$pagename}]`, `[{$applicationname}]`, custom user variables (JSPWiki-compatible) |
@@ -98,35 +98,35 @@ JSPWiki-style content plugins in `src/plugins/`. Each plugin renders `[{PluginNa
 | Module | Doc status | Description |
 | --- | --- | --- |
 | AppHealthPlugin | ✅ [doc](plugins/AppHealthPlugin.md) | Deterministic app-health audit — lists orphan pages, broken/undefined links, and stale pages |
-| AttachmentsPlugin | ⚠️ [src/plugins/AttachmentsPlugin.ts](../src/plugins/AttachmentsPlugin.ts) | _no doc page yet_ |
+| AttachmentsPlugin | ✅ [doc](plugins/AttachmentsPlugin.md) | Shows total attachment count or a list of attachments |
 | AttachPlugin | ✅ [doc](plugins/AttachPlugin.md) | Renders wiki attachments inline — images as clickable thumbnails, other files as download links |
 | CalendarPlugin | ✅ [doc](plugins/CalendarPlugin.md) | Event calendar widget powered by FullCalendar — requires the calendar add-on |
-| CommentsPlugin | ⚠️ [src/plugins/CommentsPlugin.ts](../src/plugins/CommentsPlugin.ts) | _no doc page yet_ |
+| CommentsPlugin | ✅ [doc](plugins/CommentsPlugin.md) | Renders the page's comment list with an inline CRUD UI for authorised users |
 | ConfigAccessorPlugin | ✅ [doc](plugins/ConfigAccessorPlugin.md) | Renders configuration values inside pages — roles, features, manager settings, arbitrary config properties |
 | CounterPlugin | ✅ [doc](plugins/CounterPlugin.md) | Page-render-scoped counters: increment in place to number items or track invocations within a single render |
 | CurrentTimePlugin | ✅ [doc](plugins/CurrentTimePlugin.md) | Displays current date/time with customizable formatting |
-| FootnotesPlugin | ⚠️ [src/plugins/FootnotesPlugin.ts](../src/plugins/FootnotesPlugin.ts) | _no doc page yet_ |
+| FootnotesPlugin | ✅ [doc](plugins/FootnotesPlugin.md) | Renders footnote definitions from sidecar storage (FootnoteManager) with a CRUD UI for authorised users |
 | ImagePlugin | ✅ [doc](plugins/ImagePlugin.md) | Inline image display with alignment and caption support |
 | IndexPlugin | ✅ [doc](plugins/IndexPlugin.md) | Generates an alphabetical index of all wiki pages |
 | InsertPlugin | ✅ [doc](plugins/InsertPlugin.md) | Embed another page's content (or one section of it) into the current page at render time. |
 | LocationPlugin | ✅ [doc](plugins/LocationPlugin.md) | Renders a location as a map link or embedded map preview; supports multiple map providers + coordinates or place names |
 | MarqueePlugin | ✅ [doc](plugins/MarqueePlugin.md) | CSS-based horizontally scrolling text banner |
-| MediaGallery | ⚠️ [src/plugins/MediaGallery.ts](../src/plugins/MediaGallery.ts) | _no doc page yet_ |
-| MediaItem | ⚠️ [src/plugins/MediaItem.ts](../src/plugins/MediaItem.ts) | _no doc page yet_ |
-| MediaPlugin | ⚠️ [src/plugins/MediaPlugin.ts](../src/plugins/MediaPlugin.ts) | _no doc page yet_ |
-| MediaSearch | ⚠️ [src/plugins/MediaSearch.ts](../src/plugins/MediaSearch.ts) | _no doc page yet_ |
-| MyContributionsPlugin | ⚠️ [src/plugins/MyContributionsPlugin.ts](../src/plugins/MyContributionsPlugin.ts) | _no doc page yet_ |
+| MediaGallery | ✅ [doc](plugins/MediaGallery.md) | Displays a gallery of media items (stub — full implementation gated on MediaManager Phase 4) |
+| MediaItem | ✅ [doc](plugins/MediaItem.md) | Embeds a single media item inline (stub — full implementation gated on MediaManager Phase 4) |
+| MediaPlugin | ✅ [doc](plugins/MediaPlugin.md) | Shows total media item count or a list/album of media items, filterable by year / page / EXIF keyword |
+| MediaSearch | ✅ [doc](plugins/MediaSearch.md) | Displays media search results (stub — full implementation gated on MediaManager Phase 4) |
+| MyContributionsPlugin | ✅ [doc](plugins/MyContributionsPlugin.md) | Renders the My Contributions card from /profile inside any wiki page (#688) |
 | MyLinksPlugin | ✅ [doc](plugins/MyLinksPlugin.md) | Renders the current user's pinned pages as a scrollable list in the sidebar. |
-| PageSlideshowPlugin | ⚠️ [src/plugins/PageSlideshowPlugin.ts](../src/plugins/PageSlideshowPlugin.ts) | _no doc page yet_ |
+| PageSlideshowPlugin | ✅ [doc](plugins/PageSlideshowPlugin.md) | Bootstrap 5 carousel cycling through wiki page content with title + excerpt + Read more |
 | plugin-formatters | ✅ [doc](plugins/plugin-formatters.md) | Shared utility functions for plugin authors — consistent parameter parsing, HTML output, pagination, and date formatting across the platform. |
 | RecentChangesPlugin | ✅ [doc](plugins/RecentChangesPlugin.md) | Lists recent page changes in chronological order for "what changed lately" feeds |
 | ReferringPagesPlugin | ✅ [doc](plugins/ReferringPagesPlugin.md) | Lists pages that link to the current page |
 | SearchPlugin | ✅ [doc](plugins/SearchPlugin.md) | Embeds search results directly in pages via the [{Search ...}] markup |
 | SessionsPlugin | ✅ [doc](plugins/SessionsPlugin.md) | Shows the number of active sessions |
 | SlideshowPlugin | ✅ [doc](plugins/SlideshowPlugin.md) | Bootstrap 5 image carousel / slideshow |
-| TablePlugin | ⚠️ [src/plugins/TablePlugin.ts](../src/plugins/TablePlugin.ts) | _no doc page yet_ |
-| TabPlugin | ⚠️ [src/plugins/TabPlugin.ts](../src/plugins/TabPlugin.ts) | _no doc page yet_ |
-| TabsPlugin | ⚠️ [src/plugins/TabsPlugin.ts](../src/plugins/TabsPlugin.ts) | _no doc page yet_ |
+| TablePlugin | ✅ [doc](plugins/TablePlugin.md) | JSPWiki-compatible Table plugin — enables |
+| TabPlugin | ✅ [doc](plugins/TabPlugin.md) | Defines a single tab within a [{Tabs}] body block; rendering is handled by TabsPlugin |
+| TabsPlugin | ✅ [doc](plugins/TabsPlugin.md) | Renders Bootstrap nav-tabs from [{Tab name="..."}]content[{/Tab}] body blocks |
 | TotalPagesPlugin | ✅ [doc](plugins/TotalPagesPlugin.md) | Shows the total number of wiki pages |
 | UndefinedPagesPlugin | ✅ [doc](plugins/UndefinedPagesPlugin.md) | Lists pages that are linked to (RED-LINKs) but do not exist in the wiki |
 | UptimePlugin | ✅ [doc](plugins/UptimePlugin.md) | Shows the server uptime in human-readable format |
@@ -146,38 +146,38 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | Module | Doc status | Description |
 | --- | --- | --- |
 | AssetProvider-Guide | ✅ [doc](providers/AssetProvider-Guide.md) | Implementation guide for plugin authors building a new AssetProvider backend |
-| BaseAttachmentProvider | ⚠️ [src/providers/BaseAttachmentProvider.ts](../src/providers/BaseAttachmentProvider.ts) | _no doc page yet_ |
-| BaseAuditProvider | ⚠️ [src/providers/BaseAuditProvider.ts](../src/providers/BaseAuditProvider.ts) | _no doc page yet_ |
-| BaseAuthProvider | ⚠️ [src/providers/BaseAuthProvider.ts](../src/providers/BaseAuthProvider.ts) | _no doc page yet_ |
+| BaseAttachmentProvider | ✅ [doc](providers/BaseAttachmentProvider.md) | Abstract interface for attachment storage providers — extension surface for new attachment backends |
+| BaseAuditProvider | ✅ [doc](providers/BaseAuditProvider.md) | Abstract interface for audit-log providers — extension surface for storing audit events |
+| BaseAuthProvider | ✅ [doc](providers/BaseAuthProvider.md) | Pluggable authentication provider interface — all auth methods implement this and register with AuthManager |
 | BaseBackupProvider | ✅ [doc](providers/BaseBackupProvider.md) | Abstract base class for backup storage providers — abstracts the storage target only (#170) |
-| BaseCacheProvider | ⚠️ [src/providers/BaseCacheProvider.ts](../src/providers/BaseCacheProvider.ts) | _no doc page yet_ |
+| BaseCacheProvider | ✅ [doc](providers/BaseCacheProvider.md) | Abstract cache provider interface — extension surface for cache backends (in-process, Redis, etc.) |
 | BaseLoggingProvider | ✅ [doc](providers/BaseLoggingProvider.md) | Abstract base class for logging providers — engine-free winston transport/format factory (#169) |
 | BaseMediaProvider | ✅ [doc](providers/BaseMediaProvider.md) | Abstract base class for asset/media providers — defines the AssetService-facing interface |
-| BasePageProvider | ⚠️ [src/providers/BasePageProvider.ts](../src/providers/BasePageProvider.ts) | _no doc page yet_ |
-| BaseSearchProvider | ⚠️ [src/providers/BaseSearchProvider.ts](../src/providers/BaseSearchProvider.ts) | _no doc page yet_ |
-| BaseUserProvider | ⚠️ [src/providers/BaseUserProvider.ts](../src/providers/BaseUserProvider.ts) | _no doc page yet_ |
+| BasePageProvider | ✅ [doc](providers/BasePageProvider.md) | Abstract interface for page storage providers — the canonical extension surface for new page backends |
+| BaseSearchProvider | ✅ [doc](providers/BaseSearchProvider.md) | Abstract interface for search providers — extension surface for new search engines (Lunr, Elasticsearch, vector, etc.) |
+| BaseUserProvider | ✅ [doc](providers/BaseUserProvider.md) | Abstract user/session storage provider — extension surface for user backends (file, LDAP, IdP, etc.) |
 | BasicAttachmentProvider | 📘 [doc](providers/BasicAttachmentProvider.md) + [guide](providers/BasicAttachmentProvider-Complete-Guide.md) | File-system attachment storage with SHA-256-content-addressed dedup and per-page listings |
-| CloudAuditProvider | ⚠️ [src/providers/CloudAuditProvider.ts](../src/providers/CloudAuditProvider.ts) | _no doc page yet_ |
-| CloudflareAccessAuthProvider | ⚠️ [src/providers/CloudflareAccessAuthProvider.ts](../src/providers/CloudflareAccessAuthProvider.ts) | _no doc page yet_ |
-| DatabaseAuditProvider | ⚠️ [src/providers/DatabaseAuditProvider.ts](../src/providers/DatabaseAuditProvider.ts) | _no doc page yet_ |
+| CloudAuditProvider | ✅ [doc](providers/CloudAuditProvider.md) | Forwards audit events to an external cloud audit service |
+| CloudflareAccessAuthProvider | ✅ [doc](providers/CloudflareAccessAuthProvider.md) | Trusts the `cf-access-jwt-assertion` header when the instance sits behind Cloudflare Access |
+| DatabaseAuditProvider | ✅ [doc](providers/DatabaseAuditProvider.md) | SQL-backed audit storage — writes events to a relational database |
 | ElasticsearchSearchProvider | 📘 [doc](providers/ElasticsearchSearchProvider.md) + [guide](providers/ElasticsearchSearchProvider-Complete-Guide.md) | Elasticsearch backend for SearchManager — full-text and (optionally) vector search over pages |
-| FileAuditProvider | ⚠️ [src/providers/FileAuditProvider.ts](../src/providers/FileAuditProvider.ts) | _no doc page yet_ |
+| FileAuditProvider | ✅ [doc](providers/FileAuditProvider.md) | Appends audit events to JSONL files on local disk — the default backend |
 | FileBackupProvider | ✅ [doc](providers/FileBackupProvider.md) | Default backup storage provider — local filesystem against ngdpbase.backup.directory (#170) |
 | FileLoggingProvider | ✅ [doc](providers/FileLoggingProvider.md) | Default logging provider — winston console + rotating-file transports (#169) |
-| FileOrganizationProvider | ⚠️ [src/providers/FileOrganizationProvider.ts](../src/providers/FileOrganizationProvider.ts) | _no doc page yet_ |
-| FilePersonProvider | ⚠️ [src/providers/FilePersonProvider.ts](../src/providers/FilePersonProvider.ts) | _no doc page yet_ |
-| FileRoleProvider | ⚠️ [src/providers/FileRoleProvider.ts](../src/providers/FileRoleProvider.ts) | _no doc page yet_ |
+| FileOrganizationProvider | ✅ [doc](providers/FileOrganizationProvider.md) | File-backed Organization storage — one JSON file per organization under data/organizations/ |
+| FilePersonProvider | ✅ [doc](providers/FilePersonProvider.md) | File-backed Person storage — one JSON file per Person record under data/persons/ |
+| FileRoleProvider | ✅ [doc](providers/FileRoleProvider.md) | File-backed Role storage — one JSON file per (organization, namedPosition) pair under data/roles/ |
 | FileSystemMediaProvider | ✅ [doc](providers/FileSystemMediaProvider.md) | Read-only filesystem media library with EXIF parsing and keyword facets; the default MediaManager backend |
 | FileSystemProvider | 📘 [doc](providers/FileSystemProvider.md) + [guide](providers/FileSystemProvider-Complete-Guide.md) | UUID-based page storage on local disk with YAML frontmatter |
 | FileUserProvider | 📘 [doc](providers/FileUserProvider.md) + [guide](providers/FileUserProvider-Complete-Guide.md) | JSON-file user, role, and session storage — the default UserManager backend |
-| GoogleOIDCProvider | ⚠️ [src/providers/GoogleOIDCProvider.ts](../src/providers/GoogleOIDCProvider.ts) | _no doc page yet_ |
-| LunrSearchProvider | ⚠️ [src/providers/LunrSearchProvider.ts](../src/providers/LunrSearchProvider.ts) | _no doc page yet_ |
-| MagicLinkAuthProvider | ⚠️ [src/providers/MagicLinkAuthProvider.ts](../src/providers/MagicLinkAuthProvider.ts) | _no doc page yet_ |
-| NodeCacheProvider | ⚠️ [src/providers/NodeCacheProvider.ts](../src/providers/NodeCacheProvider.ts) | _no doc page yet_ |
-| NullAuditProvider | ⚠️ [src/providers/NullAuditProvider.ts](../src/providers/NullAuditProvider.ts) | _no doc page yet_ |
-| NullCacheProvider | ⚠️ [src/providers/NullCacheProvider.ts](../src/providers/NullCacheProvider.ts) | _no doc page yet_ |
-| PasswordAuthProvider | ⚠️ [src/providers/PasswordAuthProvider.ts](../src/providers/PasswordAuthProvider.ts) | _no doc page yet_ |
-| RedisCacheProvider | ⚠️ [src/providers/RedisCacheProvider.ts](../src/providers/RedisCacheProvider.ts) | _no doc page yet_ |
+| GoogleOIDCProvider | ✅ [doc](providers/GoogleOIDCProvider.md) | OIDC authentication via Google as the identity provider |
+| LunrSearchProvider | ✅ [doc](providers/LunrSearchProvider.md) | In-memory Lunr.js search index — default backend for SearchManager |
+| MagicLinkAuthProvider | ✅ [doc](providers/MagicLinkAuthProvider.md) | Email-based passwordless authentication — user gets a single-use verification link |
+| NodeCacheProvider | ✅ [doc](providers/NodeCacheProvider.md) | In-process LRU cache (powered by node-cache) — default backend for CacheManager |
+| NullAuditProvider | ✅ [doc](providers/NullAuditProvider.md) | Discards all audit events — for tests and minimal-config deployments where auditing is off |
+| NullCacheProvider | ✅ [doc](providers/NullCacheProvider.md) | No-op cache — every get is a miss; every set is discarded |
+| PasswordAuthProvider | ✅ [doc](providers/PasswordAuthProvider.md) | Username + password authentication with bcrypt-hashed passwords stored in the user record |
+| RedisCacheProvider | ✅ [doc](providers/RedisCacheProvider.md) | External Redis-backed cache — shared across multiple ngdpbase instances |
 | VersioningFileProvider | 📘 [doc](providers/VersioningFileProvider.md) + [guide](providers/VersioningFileProvider-Complete-Guide.md) | File-based page storage with delta-compressed version history; the default PageManager backend |
 <!-- AUTO:providers-table END -->
 
@@ -309,17 +309,11 @@ Before contributing, please review:
 Honest accounting of doc coverage. Targets are pragmatic — abstract base classes and trivial null/no-op providers don't need long-form docs, but every module should at least have a stub or appear in this index.
 
 <!-- AUTO:doc-status BEGIN -->
-**Managers:** 25/37 with quick-reference docs (68%); 18 with Complete Guides. 12 source-only:
+**Managers:** 37/37 with quick-reference docs (100%); 18 with Complete Guides.
 
-- AddonsManager, AssetManager, AuthManager, BackgroundJobManager, CommentManager, EmailManager, FootnoteManager, ImportManager, OrganizationManager, PersonManager, RoleManager, ThemeManager
+**Plugins:** 32/32 with quick-reference docs (100%).
 
-**Plugins:** 20/32 with quick-reference docs (63%). 12 source-only:
-
-- AttachmentsPlugin, CommentsPlugin, FootnotesPlugin, MediaGallery, MediaItem, MediaPlugin, MediaSearch, MyContributionsPlugin, PageSlideshowPlugin, TablePlugin, TabPlugin, TabsPlugin
-
-**Providers:** 11/33 with quick-reference docs (33%); 5 with Complete Guides. 22 source-only:
-
-- BaseAttachmentProvider, BaseAuditProvider, BaseAuthProvider, BaseCacheProvider, BasePageProvider, BaseSearchProvider, BaseUserProvider, CloudAuditProvider, CloudflareAccessAuthProvider, DatabaseAuditProvider, FileAuditProvider, FileOrganizationProvider, FilePersonProvider, FileRoleProvider, GoogleOIDCProvider, LunrSearchProvider, MagicLinkAuthProvider, NodeCacheProvider, NullAuditProvider, NullCacheProvider, PasswordAuthProvider, RedisCacheProvider
+**Providers:** 33/33 with quick-reference docs (100%); 5 with Complete Guides.
 <!-- AUTO:doc-status END -->
 
 See [issue #178](https://github.com/jwilleke/ngdpbase/issues/178) for the doc-coverage tracking issue and [#660](https://github.com/jwilleke/ngdpbase/issues/660) for the discoverability problem this index addresses.
