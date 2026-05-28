@@ -2,6 +2,50 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-28-05
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped **#802 Slice 3** as **v3.44.5** patch. `FileSystemProvider.savePage` and `VersioningFileProvider.savePage` now read `metadata.private === true` as the canonical routing signal, with `metadata['system-location'] === 'private'` kept as a back-compat read fallback. Both providers preserve their internal storage layouts; only the field they grep changes.
+- Current Issue: #802 (in progress — Slice 3 done; #790 EPIC parent)
+- Tests: jimstest GREEN on release commit — **6080 unit**. No flakes. E2E run on pre-release commit (identical code): 78 pass + 2 pre-existing skips.
+- Semver: **patch**. GH Release deferred. /othersites skipped per patch-gate.
+- **The change** (2 files, +16/-6):
+  - `src/providers/FileSystemProvider.ts:580-591` — replaced `systemLocation || 'pages'` with `isPrivate ? 'private' : 'pages'` where `isPrivate = md.private === true || md['system-location'] === 'private'`.
+  - `src/providers/VersioningFileProvider.ts:1342-1366` — replaced `systemLocation === 'private'` branch condition with `isPrivate` (same OR pattern).
+- **Why safe to ship now:**
+  - Slice 2's migration ran on all 3 instances earlier today (jimstest, fairways-base, ngdp-temp-builds). Every existing private page on disk carries BOTH `private: true` (added by migration) AND `system-location: 'private'` (preserved by the Slice 2 fix in v3.44.4).
+  - With dual-signal data, either-or routing reaches the same result. No file movement. No location mismatch on next page-index rebuild.
+  - PageManager still emits both fields, so any save through it continues to produce the dual shape — even non-migrated callers stay compatible.
+  - Slice 4 will drop the read fallback + PageManager emit together once a second migration pass strips `system-location` from frontmatter on every instance.
+- **Was NOT changed** (deferred to Slice 4):
+  - `PageManager.ts:662` — still emits `system-location: 'private'` alongside `private: true`.
+  - Dual-read fallbacks in `LunrSearchProvider`, `ElasticsearchSearchProvider`, `JournalDataManager`, `FileSystemProvider` read-side checks at lines 835 + 888 — still read either field for visibility filtering.
+  - These are all aligned to drop together in Slice 4.
+- **Test coverage gap noted**: no FSP/VFP test files exercise the routing decision directly. The change passed because Slice 2's migration ensured both signals coexist, but adding provider-level routing tests would harden the surface. Out of scope for this slice; worth a follow-up.
+- Perf baseline drift v3.44.4 → v3.44.5: clean. Memory +6.0%, all routes within ±10%, no thresholds tripped. Baseline file: `docs/performance/baseline-v3.44.5-2026-05-28.md`.
+- /othersites: **skipped** — patch-gate. Will propagate at the next minor (or via standalone `/othersites` if operator runs it).
+- **#802 chain — where we are / where we pick up next:**
+  - ✅ Slice 0 (v3.44.1) — Docs framing.
+  - ✅ Slice 1 (v3.44.1) — Journal addon user pref + emit `private: true`.
+  - ✅ Slice 2 (v3.44.2) — Migration script for `system-location`.
+  - ✅ Slice 2.5 (v3.44.3) — stripOnly + category detection + required-pages cleanup.
+  - ✅ Slice 2 fix (v3.44.4) — Preserve `system-location` in promote mode until Slice 3.
+  - ✅ Migration RUN on all 3 instances.
+  - ✅ **Slice 3 (v3.44.5) — Providers route off `metadata.private`** (this entry).
+  - ⬜ **Slice 4 — Final cleanup.** Three things, ordered:
+    1. Add a `stripSystemLocation` mode to `migrate-private-field.ts` (or a sibling script) that walks every page with `private: true` AND `system-location: 'private'` and removes the legacy field. Idempotent.
+    2. Operator runs the strip on every instance (same explicit-action pattern as Slice 2).
+    3. Drop `PageManager.ts:662` legacy emit. Drop dual-read fallbacks in FSP (lines 835, 888), LunrSearchProvider (line 276), ElasticsearchSearchProvider (line 639), JournalDataManager (line 118). Update `PageManager.test.ts:247` etc. that assert the dual-emit shape.
+  - ⬜ **Separate `[BUG]` to file** (not #802; pre-existing): VFP page-index rebuild generates incomplete index — 138 entries vs 17,116 expected, dropped slug/filename fields. Discovered on jimstest during the Slice 2 recovery.
+- Commits:
+  - `7710a230` — feat(#802): providers route off metadata.private (Slice 3)
+  - `8b576120` — chore: release v3.44.5
+- Files Modified:
+  - `src/providers/FileSystemProvider.ts` (+9/-3)
+  - `src/providers/VersioningFileProvider.ts` (+7/-3)
+  - `package.json`, `config/app-default-config.json`, `CHANGELOG.md` (version bump)
+  - `docs/performance/baseline-v3.44.5-2026-05-28.md` (new)
+
 ## 2026-05-28-04
 
 - Agent: Claude Opus 4.7
