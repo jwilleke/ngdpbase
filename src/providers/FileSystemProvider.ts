@@ -578,9 +578,16 @@ class FileSystemProvider extends BasePageProvider {
     }
 
     // Resolve file path — private pages go to pagesDirectory/private/{creator}/{uuid}.md
-    const systemLocation = (metadata as Record<string, unknown>)['system-location'] as string | undefined;
-    const pageCreator = (metadata as Record<string, unknown>).author as string | undefined;
-    const filePath = this.resolvePageFilePath(uuid, systemLocation || 'pages', pageCreator);
+    //
+    // #802 Slice 3: route off `metadata.private === true` (canonical semantic
+    // flag); `system-location === 'private'` is kept as a back-compat read
+    // fallback for pre-migration data still on disk. Slice 4 will drop the
+    // fallback after the second migration pass strips `system-location` from
+    // every page's frontmatter.
+    const md = metadata as Record<string, unknown>;
+    const isPrivate = md.private === true || md['system-location'] === 'private';
+    const pageCreator = md.author as string | undefined;
+    const filePath = this.resolvePageFilePath(uuid, isPrivate ? 'private' : 'pages', pageCreator);
     await fs.ensureDir(path.dirname(filePath));
 
     const oldPageInfo = this.resolvePageInfo(pageName);

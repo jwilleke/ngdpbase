@@ -1340,15 +1340,18 @@ class VersioningFileProvider extends FileSystemProvider {
     const uuid = pageInfo?.uuid || metadata.uuid || uuidv4();
 
     // Determine location:
-    // 1. If metadata carries 'system-location' === 'private' (set by PageManager for private pages), use 'private'
+    // 1. If page is private (#802 Slice 3: `private:true` canonical signal,
+    //    `system-location === 'private'` kept as back-compat read fallback
+    //    for pre-migration data on disk), use 'private'
     // 2. Otherwise fall back to system-category → storageLocation mapping
     const metadataRecord = metadata as Record<string, unknown>;
-    const systemLocation = metadataRecord['system-location'] as string | undefined;
+    const isPrivate = metadata.private === true
+      || metadataRecord['system-location'] === 'private';
     const newCreator = metadata.author || 'anonymous';
 
     let location: 'pages' | 'required-pages' | 'private' = 'pages';
 
-    if (systemLocation === 'private') {
+    if (isPrivate) {
       location = 'private';
     } else {
       const systemCategory = (metadataRecord['system-category'] || metadataRecord.systemCategory || 'General') as string;
