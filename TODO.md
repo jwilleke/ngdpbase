@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-28T07:35:00.000Z'
+lastModified: '2026-05-28T07:50:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -16,7 +16,7 @@ Current near-term priorities for ngdpbase and the sister sites tracked by `/othe
 
 **See also**: [`docs/architecture-threads.md`](./docs/architecture-threads.md) maps in-flight cross-cutting design threads (CatalogManager unification, NCM pipeline, JSON-LD render, Journal reconcile, ACL evaluator, system principal, addon platform) — issues here that belong to a thread are listed there with their dependency context. Use TODO.md for "what's open and how to prioritise"; use architecture-threads.md for "how do these issues relate to each other."
 
-**Latest release**: v3.44.9 (2026-05-28; patch, GH Release deferred) — **#806 verified end-to-end on jimstest.** Follow-up to v3.44.8 that fixed a FOURTH bug surfaced during real-world test: autoMigrate's manifest-existence check defaulted to the `pages` version tree and never probed `required-pages` or `private` trees, so most pages fell through to "create v1" instead of being indexed. Re-ordered to detect location first, then probe the correct tree. Rebuild result on jimstest: **17,538 entries / 17,531 slugs** (vs backup's 17,116/1,099) — more complete than what was there before. v3.44.8: rebuild + auto-migrate location/slug/manifest-gate fixes. v3.44.7: #802 complete. v3.44.6: Slice 4 Step 1. v3.44.5: Slice 3. v3.44.4: Slice 2 fix. v3.44.3: Slice 2.5. v3.44.2: Slice 2. v3.44.1: Slices 0 + 1. v3.44.0 (minor): satellite propagation.
+**Latest release**: v3.45.0 (2026-05-28; minor, GH Release published) — consolidating minor across the entire #802 + #806 chain. Wraps v3.44.1–v3.44.9. **All three instances now in sync at v3.45.0** (jimstest, fairways-base, ngdp-temp-builds). Each instance GREEN: 6084 unit + 80 E2E. EPIC #790 closed in this session. v3.44.9: #806 e2e verification. v3.44.8: #806 first fix. v3.44.7: #802 complete (`system-location` retired). v3.44.0 (prior minor): satellite propagation.
 
 Sister sites in scope:
 

@@ -2,6 +2,41 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-28-10
+
+- Agent: Claude Opus 4.7
+- Subject: Cut **v3.45.0** consolidating minor and propagated to satellites. Wraps the entire #802 + #806 patch chain (v3.44.1 → v3.44.9) into a single tagged + released minor. All three instances now in sync at v3.45.0.
+- Current Issue: none (release-event consolidation; #802 + #806 + EPIC #790 all closed earlier in session)
+- Tests: GREEN across all three instances — **6084 unit + 80 E2E** per instance. No flakes.
+- Semver: **minor** (consolidating). Range `v3.44.0..v3.45.0` includes all of:
+  - #802 chain (Slices 0 → 4): journal addon user pref, migration script with `system-location` handling + stripOnly mode + category detection, provider routing migration, PageManager legacy emit retirement, all dual-read fallbacks dropped
+  - #806 (4 root-cause bugs): VFP page-index rebuild + autoMigrate paths produce complete lookup-correct indices including private location detection
+- GH Release published with `--generate-notes --notes-start-tag v3.44.0` covering the full minor range.
+- **Propagation results:**
+
+  | Instance | Path | Port | Unit | E2E | Notes |
+  |---|---|---|---|---|---|
+  | jimstest | /Volumes/hd2A/workspaces/github/ngdpbase | 3000 | 6084/6084 | 80/80 | /semver Step 8a re-validation on release commit |
+  | fairways-base | /Volumes/hd2A/workspaces/github/fairways-base | 2121 | 6084/6084 | 80/80 | Lockfile drift discarded; clean pull from v3.44.4 → v3.45.0 |
+  | ngdp-temp-builds | /Volumes/hd2/ngdp-temp-builds/ngdpbase | 3001 | 6084/6084 | 80/80 | Lockfile drift discarded; clean pull from v3.44.4 → v3.45.0 |
+
+- Flakes seen: none.
+- Perf baseline drift v3.44.8 → v3.45.0: memory -64.6% (V8 GC rebound; classic post-test inflation noise pattern dropping during cold baseline). All routes within ±35% (absolute swings <10ms). Baseline file: `docs/performance/baseline-v3.45.0-2026-05-28.md`.
+- Pre-propagation state: jimstest was running stale v3.44.8 in-memory (last restart was during #806 e2e test, before v3.44.9 commit). Satellites were at v3.44.4 (last propagated during the #802 Slice 2 first migration). Operator asked "are othersites in sync?" — answer was no; chose to cut v3.45.0 consolidating minor and propagate via standard flow.
+- Operator carryover (cosmetic, not blocking):
+  - Satellites' on-disk data still has the dual shape (`private:true` + `system-location:'private'`) from their first migration pass. Could optionally run `npm run migrate:private` on each satellite to strip the leftover legacy field. Since their v3.45.0 code no longer reads or writes `system-location`, the leftover field is inert; cleanup is purely cosmetic.
+  - Pre-existing carryovers from earlier in session: stale `journal-index.json` files on instances can be manually deleted.
+- Backups (from real-world tests during this session) retained one more session as safety net:
+  - `/Volumes/hd2/jimstest-wiki/data/page-index.json.bak-pre802` (jimstest pre-#802 work)
+  - `/Volumes/hd2/jimstest-wiki/data/page-index.json.bak-pre802-step2` (jimstest pre-#802 Slice 4 Step 2)
+  - `/Volumes/hd2/jimstest-wiki/data/page-index.json.bak-806-test` (jimstest pre-#806 e2e test)
+  - `/Volumes/hd2A/workspaces/github/fairways-base/data/page-index.json.bak-pre802` (fairways pre-#802 work)
+- Commits:
+  - `163b6546` — chore: release v3.45.0
+- Files Modified:
+  - `package.json`, `config/app-default-config.json`, `CHANGELOG.md` (version bump)
+  - `docs/performance/baseline-v3.45.0-2026-05-28.md` (new)
+
 ## 2026-05-28-09
 
 - Agent: Claude Opus 4.7
