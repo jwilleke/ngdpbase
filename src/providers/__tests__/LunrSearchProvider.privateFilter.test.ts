@@ -324,13 +324,13 @@ describe('LunrSearchProvider.buildDocumentFromPageData — private signal source
     expect(doc.creator).toBe('alice');
   });
 
-  // #639 Slice E: user-keywords back-compat fallback removed; that test gone.
-  // system-location is kept as a defensive read since it's a different field
-  // (storage hint, not a privacy duplicate).
+  // #639 Slice E: user-keywords back-compat fallback removed.
+  // #802 Slice 4: system-location back-compat fallback retired; only
+  // `private:true` (or `pageData.isPrivate`) signals privacy.
 
-  test('system-location: private → isPrivate true (defensive storage-hint fallback)', () => {
+  test('system-location: private alone → isPrivate undefined (#802 Slice 4: fallback retired)', () => {
     const doc = buildDoc({ title: 'X', uuid: 'u1', author: 'alice', 'system-location': 'private' });
-    expect(doc.isPrivate).toBe(true);
+    expect(doc.isPrivate).toBeUndefined();
   });
 
   test('no private signals → isPrivate undefined', () => {

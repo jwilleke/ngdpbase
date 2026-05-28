@@ -115,7 +115,9 @@ class JournalDataManager extends BaseManager {
           // field is retired). Branch is implicitly journal-categorised because
           // it reached here via searchByCategory('journal').
           tags:         Array.isArray(uk) ? (uk as unknown[]).map(String) : [],
-          isPrivate:    m['private'] === true || m['system-location'] === 'private',
+          // #802 Slice 4: `private:true` is the sole privacy signal; legacy
+          // `system-location` fallback retired after the migration.
+          isPrivate:    m['private'] === true,
           lastModified: (m['lastModified'] as string | undefined) ?? ''
         } satisfies JournalIndexEntry;
       })

@@ -228,7 +228,7 @@ describe('PageManager', () => {
     // #639 Slice B: privacy normalization on save
     // ---------------------------------------------------------------------
 
-    test('savePageWithContext() — top-level private:true → emits private:true and system-location:private', async () => {
+    test('savePageWithContext() — top-level private:true → emits private:true only (#802 Slice 4: system-location retired)', async () => {
       pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
       mockConfigurationManager.getProperty.mockImplementation((key, dv) => {
         if (key === 'ngdpbase.user-keywords') return { private: { storageLocation: 'private' } };
@@ -244,7 +244,10 @@ describe('PageManager', () => {
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
       expect(saved.private).toBe(true);
-      expect(saved['system-location']).toBe('private');
+      // #802 Slice 4: PageManager no longer mirrors private:true to the
+      // legacy system-location storage hint. Providers route off
+      // `metadata.private` directly.
+      expect(saved['system-location']).toBeUndefined();
     });
 
     test('savePageWithContext() — stray user-keywords:[private] is stripped defensively but no longer triggers privacy (#639 Slice E)', async () => {

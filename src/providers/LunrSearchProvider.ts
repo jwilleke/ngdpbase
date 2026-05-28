@@ -268,12 +268,11 @@ class LunrSearchProvider extends BaseSearchProvider {
     const tags = Array.isArray(tagsRaw) ? tagsRaw.join(' ') : toStr(tagsRaw);
     const content = toStr(pageData.content);
 
-    // #639 Slice E: top-level `private: true` is canonical; system-location is
-    // a defensive storage hint (set by PageManager on save). User-keywords
-    // back-compat fallback dropped post-migration.
-    const isPrivate = metadata.private === true
-      || pageData.isPrivate === true
-      || metadata['system-location'] === 'private';
+    // #802 Slice 4: `private:true` is the sole privacy signal. Legacy
+    // `system-location:'private'` fallback retired after the migration.
+    // `pageData.isPrivate` is kept as a caller-level convenience for callers
+    // that pre-derived the flag from frontmatter (back-compat for in-memory data).
+    const isPrivate = metadata.private === true || pageData.isPrivate === true;
     const creator = typeof pageData.creator === 'string' ? pageData.creator
       : typeof metadata.author === 'string' ? metadata.author
         : undefined;

@@ -632,11 +632,9 @@ class ElasticsearchSearchProvider extends BaseSearchProvider {
       return [];
     };
 
-    // #639 Slice E: top-level `private: true` is canonical; system-location is
-    // a defensive storage hint. User-keywords back-compat fallback dropped
-    // post-migration.
-    const isPrivate = metadata.private === true
-      || metadata['system-location'] === 'private';
+    // #802 Slice 4: `private:true` is the sole privacy signal. Legacy
+    // `system-location:'private'` fallback retired after the migration.
+    const isPrivate = metadata.private === true;
     const audienceRaw = metadata['audience'];
     const audience = toStrArr(audienceRaw);
 

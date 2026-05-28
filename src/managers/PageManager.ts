@@ -646,20 +646,22 @@ class PageManager extends BaseManager implements CatalogSource {
     const wantsPrivate = !isRequiredPage && (rawMetadata as Record<string, unknown>).private === true;
     const keywordsHadPrivate = userKeywords.includes('private');
     const normalizedKeywords = userKeywords.filter(kw => kw !== 'private');
-    const privateStorageLocation = wantsPrivate ? 'private' : undefined;
 
     // Strip the existing top-level `private` so the spread below can't carry a
     // stale value when wantsPrivate is false (e.g. unsetting on a required page).
+    // Also strip any legacy `system-location` — #802 Slice 4 retired the field;
+    // providers now route off `metadata.private` directly. Defensive in case a
+    // caller passes the legacy field in.
     const rawMetadataCopy = { ...rawMetadata } as Record<string, unknown>;
     delete rawMetadataCopy.private;
+    delete rawMetadataCopy['system-location'];
 
     const metadataWithLocation: Partial<PageFrontmatter> & Record<string, unknown> = {
       ...rawMetadataCopy,
       // Only override user-keywords if we actually stripped 'private' — otherwise
       // leave the field exactly as the caller provided it (including absent).
       ...(keywordsHadPrivate ? { 'user-keywords': normalizedKeywords } : {}),
-      ...(wantsPrivate ? { private: true } : {}),
-      ...(privateStorageLocation ? { 'system-location': privateStorageLocation } : {})
+      ...(wantsPrivate ? { private: true } : {})
     };
 
     // Sanitize all string fields — trims Unicode whitespace and decodes percent-encoded
@@ -681,7 +683,7 @@ class PageManager extends BaseManager implements CatalogSource {
     }
 
     // If the page is private and the author changed (shouldn't happen normally), move the file.
-    if (privateStorageLocation && originalAuthor) {
+    if (wantsPrivate && originalAuthor) {
       const incomingAuthor = (enrichedMetadata as Record<string, unknown>).author as string | undefined ?? '';
       if (incomingAuthor && incomingAuthor !== originalAuthor) {
         const uuid = (enrichedMetadata as Record<string, unknown>).uuid as string | undefined ?? '';

@@ -579,13 +579,11 @@ class FileSystemProvider extends BasePageProvider {
 
     // Resolve file path — private pages go to pagesDirectory/private/{creator}/{uuid}.md
     //
-    // #802 Slice 3: route off `metadata.private === true` (canonical semantic
-    // flag); `system-location === 'private'` is kept as a back-compat read
-    // fallback for pre-migration data still on disk. Slice 4 will drop the
-    // fallback after the second migration pass strips `system-location` from
-    // every page's frontmatter.
+    // #802 Slice 4: `private:true` is the sole routing signal. The legacy
+    // `system-location:'private'` storage hint was retired after the second
+    // migration pass stripped it from every page on disk.
     const md = metadata as Record<string, unknown>;
-    const isPrivate = md.private === true || md['system-location'] === 'private';
+    const isPrivate = md.private === true;
     const pageCreator = md.author as string | undefined;
     const filePath = this.resolvePageFilePath(uuid, isPrivate ? 'private' : 'pages', pageCreator);
     await fs.ensureDir(path.dirname(filePath));
@@ -835,11 +833,9 @@ class FileSystemProvider extends BasePageProvider {
       if (since && new Date(lastModifiedRaw) < since) continue;
 
       // #635: visibility filter — match search-provider semantics.
-      // #639 Slice E: top-level `private: true` is canonical; system-location
-      // is a defensive storage hint. User-keywords back-compat fallback dropped
-      // post-migration.
-      const isPrivate = (md as { private?: boolean }).private === true
-        || (md as { 'system-location'?: string })['system-location'] === 'private';
+      // #802 Slice 4: `private:true` is the sole privacy signal; legacy
+      // `system-location:'private'` fallback retired after migration.
+      const isPrivate = (md as { private?: boolean }).private === true;
 
       if (!includeAll && isPrivate) {
         const creator = (md as { creator?: string }).creator
@@ -889,10 +885,12 @@ class FileSystemProvider extends BasePageProvider {
       const creator = (md as { creator?: string }).creator;
       if (author !== username && creator !== username) continue;
 
+      // #802 Slice 4: `private:true` is the sole privacy signal. Legacy
+      // `system-location` retired. User-keywords:[private] read fallback
+      // retained for now (#639 Slice E concern; out of #802 scope).
       const userKeywords = (md as { 'user-keywords'?: unknown })['user-keywords'];
       const userKeywordsArr = Array.isArray(userKeywords) ? userKeywords.map(String) : [];
       const isPrivate = (md as { private?: boolean }).private === true
-        || (md as { 'system-location'?: string })['system-location'] === 'private'
         || userKeywordsArr.includes('private');
       if (onlyPrivate && !isPrivate) continue;
 
