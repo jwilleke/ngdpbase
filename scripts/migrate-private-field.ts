@@ -2,16 +2,25 @@
  * One-time migration of legacy private-signal spellings → canonical `private: true`.
  *
  * Walks every .md page file under the configured pages directories and rewrites
- * frontmatter so the page ends up in the canonical shape:
- *   - top-level `private: true` (#639 / #802 canonical semantic flag)
- *   - NO `user-keywords: [private]` entry (#639 Slice D — retired storage hint)
- *   - NO `system-location: 'private'` field (#802 Slice 2 — retired storage hint)
+ * frontmatter so each page that was implicitly-private via a legacy spelling
+ * ALSO carries the canonical top-level `private: true` flag:
+ *   - top-level `private: true` (#639 / #802 canonical semantic flag) — ADDED
+ *   - NO `user-keywords: [private]` entry (#639 Slice D — retired keyword spelling)
+ *   - `system-location: 'private'` is PRESERVED until #802 Slice 3 ships
  *
  * Three legacy spellings the script can see and consolidate:
  *
  *   1. `user-keywords: [..., 'private', ...]`     — #639 user-keywords-based signal
- *   2. `system-location: 'private'`                — #122 storage-routing signal
+ *   2. `system-location: 'private'`                — #122 storage-routing signal (kept for now)
  *   3. `private: true`                             — canonical (already correct)
+ *
+ * IMPORTANT: `system-location: 'private'` is intentionally NOT stripped in
+ * promote mode. The current providers (FileSystemProvider, VersioningFileProvider)
+ * still read it for storage routing — dropping it before #802 Slice 3 lands
+ * would cause the page-index rebuild to misplace private files. The field
+ * will be dropped in a future cleanup slice once providers route off
+ * `metadata.private` directly. (StripOnly mode for required-pages still
+ * strips it — required-pages aren't allowed to be private at all.)
  *
  * Idempotent. A page already in canonical shape returns 'already' with no rewrite.
  *
@@ -224,12 +233,32 @@ export function transformFrontmatter(raw: string, opts: TransformOptions = {}): 
     return { outcome: 'non-private', content: raw };
   }
 
-  const hasLegacyToClean = hasLegacyKeyword || hasLegacySystemLocation;
+  // In promote mode, only the `user-keywords:[private]` spelling needs active
+  // rewriting (it gets dropped and `private:true` set). `system-location` is
+  // preserved for storage routing — so its presence alongside `private:true`
+  // is the normal PageManager-emitted dual shape, not something needing
+  // migration. Treat as 'already' so the file isn't pointlessly rewritten.
+  const hasLegacyToClean = hasLegacyKeyword;
   if (!hasLegacyToClean && hasTopLevel) {
     return { outcome: 'already', content: raw };
   }
 
-  // At least one legacy signal present — consolidate to canonical.
+  // At least one thing to do: either `user-keywords:[private]` to strip,
+  // or `system-location:'private'` without `private:true` (promote).
+  //
+  // IMPORTANT — do NOT drop `system-location: 'private'` here, even though
+  // it's technically redundant once `private: true` is set. Until Slice 3
+  // of #802 ships (FileSystemProvider + VersioningFileProvider route off
+  // `metadata.private` instead of `metadata['system-location']`), the
+  // providers still use `system-location` for storage routing. Dropping
+  // it prematurely will cause the page-index rebuild to misplace private
+  // files into the regular pile (`pages/{uuid}.md`) instead of keeping
+  // them at `pages/private/{author}/{uuid}.md`. Slice 4 will drop the
+  // field for good once the providers no longer need it.
+  //
+  // Slice 1 (journal addon emit) was safe because PageManager mirrors
+  // `private: true` → `system-location: 'private'` automatically, so the
+  // disk shape ends up identical to before; only the input changed.
   data.private = true;
 
   if (hasLegacyKeyword) {
@@ -242,9 +271,9 @@ export function transformFrontmatter(raw: string, opts: TransformOptions = {}): 
   }
 
   if (hasLegacySystemLocation) {
-    // Conservative: only drop when value === 'private'. Other values (if any
-    // exist in the wild) are left alone for an operator to triage.
-    delete data['system-location'];
+    // Keep `system-location: 'private'` in place — it's still load-bearing
+    // for provider routing until Slice 3. The field will be dropped in a
+    // future cleanup slice once the providers no longer read it.
   }
 
   return { outcome: 'migrated', content: matter.stringify(parsed.content, data) };
