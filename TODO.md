@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-28T06:25:00.000Z'
+lastModified: '2026-05-28T06:35:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -16,7 +16,7 @@ Current near-term priorities for ngdpbase and the sister sites tracked by `/othe
 
 **See also**: [`docs/architecture-threads.md`](./docs/architecture-threads.md) maps in-flight cross-cutting design threads (CatalogManager unification, NCM pipeline, JSON-LD render, Journal reconcile, ACL evaluator, system principal, addon platform) — issues here that belong to a thread are listed there with their dependency context. Use TODO.md for "what's open and how to prioritise"; use architecture-threads.md for "how do these issues relate to each other."
 
-**Latest release**: v3.44.5 (2026-05-28; patch, GH Release deferred) — #802 Slice 3: FileSystemProvider + VersioningFileProvider now route off `metadata.private === true` (canonical) with `system-location === 'private'` as back-compat read fallback. Safe because Slice 2's migration ensured every existing private page carries both flags. Migration also run on satellites (fairways-base + ngdp-temp-builds) earlier today. Remaining: Slice 4 (drop legacy emit + dual-read fallbacks + second migration to strip `system-location` from frontmatter). v3.44.4: Slice 2 fix. v3.44.3: Slice 2.5. v3.44.2: Slice 2. v3.44.1: Slices 0 + 1. v3.44.0 (minor): satellite propagation.
+**Latest release**: v3.44.6 (2026-05-28; patch, GH Release deferred) — #802 Slice 4 Step 1: migration script promote mode now drops `system-location: 'private'` (restored after the v3.44.4 rollback; safe now that Slice 3 routes off `private:true`). Next: operator runs second pass on each instance, then Step 3 (drop PageManager legacy emit + dual-read fallbacks across FSP/Lunr/ES/JDM). v3.44.5: Slice 3 (providers route off metadata.private). v3.44.4: Slice 2 fix. v3.44.3: Slice 2.5. v3.44.2: Slice 2. v3.44.1: Slices 0 + 1. v3.44.0 (minor): satellite propagation.
 
 Sister sites in scope:
 
@@ -68,7 +68,7 @@ Filed and scoped, awaiting prioritization or implementation cycles.
 
 | # | Topic | Priority hint |
 |---|---|---|
-| **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24). **First-wave closed**: #791–#796. **Second-wave shipped**: #803, #797, #798, #799, #800, #801 (across v3.43.4–9). **Post-#800 fixes**: #804 + #805 (v3.43.10). Propagated via v3.44.0. **#802 in flight**: Slices 0 + 1 (v3.44.1) + Slice 2 (v3.44.2) + Slice 2.5 (v3.44.3) + Slice 2 fix (v3.44.4) + Slice 3 (v3.44.5) shipped. Migration RUN on all 3 instances. Providers now route off `metadata.private` (canonical). **Next**: Slice 4 (second migration to strip `system-location` from frontmatter + drop PageManager legacy emit + drop dual-read fallbacks across FSP/Lunr/ES/JDM). See project_log `2026-05-28-05`. Separate carryovers: stale `journal-index.json` files can be deleted; pre-existing VFP page-index rebuild bug (worth a `[BUG]` filing). | EPIC OPEN; #802 active. |
+| **#790** | **[EPIC] Journal addon — reconcile with generic page primitives** (filed 2026-05-24). **First-wave closed**: #791–#796. **Second-wave shipped**: #803, #797, #798, #799, #800, #801 (across v3.43.4–9). **Post-#800 fixes**: #804 + #805 (v3.43.10). Propagated via v3.44.0. **#802 in flight**: Slices 0 + 1 (v3.44.1) + Slice 2 (v3.44.2) + Slice 2.5 (v3.44.3) + Slice 2 fix (v3.44.4) + Slice 3 (v3.44.5) + Slice 4 Step 1 (v3.44.6) shipped. **Next**: Slice 4 Step 2 (operator runs second migration pass per instance) → Step 3 (drop PageManager legacy emit + dual-read fallbacks). See project_log `2026-05-28-06`. Separate carryovers: stale `journal-index.json` files can be deleted; pre-existing VFP page-index rebuild bug (worth a `[BUG]` filing). | EPIC OPEN; #802 active. |
 | #786 | Auto-journal — digester consuming CatalogManager records into journal entries | Gated by #685 + EPIC #790. Consumer-pattern; no source-specific code |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images | Low — adds sharp/libvips; do when a real driver appears |
 | #707 | Typed footnote + knowledge-graph reference index | Low — **depends on #706**; speculative |

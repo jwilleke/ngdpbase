@@ -2,6 +2,41 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-28-06
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped **#802 Slice 4 Step 1** as **v3.44.6** patch. Restored the original migration intent that v3.44.4 reverted: `transformFrontmatter` promote mode now also drops `system-location: 'private'` when consolidating to canonical shape. Safe now that Slice 3 (v3.44.5) moved provider routing off the legacy field.
+- Current Issue: #802 (in progress — Slice 4 Step 1 done; #790 EPIC parent)
+- Tests: jimstest GREEN — **6080 unit**. 24/24 in `scripts/__tests__/migrate-private-field.test.ts`. No flakes.
+- Semver: **patch**. GH Release deferred. /othersites skipped per patch-gate.
+- **The change** (2 files, +38/-53):
+  - `scripts/migrate-private-field.ts` — promote mode now strips `system-location` (with the `system-location === 'private'` guard for safety); docstring updated to reflect that the field is no longer preserved.
+  - `scripts/__tests__/migrate-private-field.test.ts` — 4 tests reverted from the v3.44.4 'preserved' assertions back to 'dropped'. The "PageManager-emitted shape" test reclassified `already` → `migrated` (the legacy field is now actively cleaned up rather than left alone).
+- **Why safe now:** Slice 3 (v3.44.5) made the providers route off `metadata.private === true` with `system-location` as a back-compat read fallback. After Slice 4 Step 1 ships and the script runs on every instance, the canonical-shape pages lose their legacy field. The providers don't care because they already use the canonical signal for routing; the read-side fallback still works during the transition.
+- **Dry-run on jimstest data** (after this slice's script change): 14 candidates — exactly the user-private files carrying the dual shape from Slice 2's first pass. Stripping is non-disruptive (Slice 3 routes off `private:true`).
+- Perf baseline drift v3.44.5 → v3.44.6: `/` +437% (recurring warm-cache oscillation pattern; release range is scripts/ + tests/ only, zero runtime change), memory -55.5% (V8 GC rebound). Both classified as noise per the established pattern on this series. Baseline file: `docs/performance/baseline-v3.44.6-2026-05-28.md`.
+- /othersites: **skipped** — patch-gate.
+- **#802 chain — where we are / where we pick up next:**
+  - ✅ Slice 0 (v3.44.1) — Docs framing.
+  - ✅ Slice 1 (v3.44.1) — Journal addon user pref + emit `private: true`.
+  - ✅ Slice 2 (v3.44.2) — Migration script for `system-location` (first version).
+  - ✅ Slice 2.5 (v3.44.3) — stripOnly + category detection + required-pages cleanup.
+  - ✅ Slice 2 fix (v3.44.4) — Preserve `system-location` in promote mode (rollback to unblock Slice 3).
+  - ✅ Migration RUN on all 3 instances (first pass).
+  - ✅ Slice 3 (v3.44.5) — Providers route off `metadata.private`.
+  - ✅ **Slice 4 Step 1 (v3.44.6) — Drop `system-location` in promote mode** (this entry).
+  - ⬜ **Slice 4 Step 2 — OPERATOR ACTION: run the second pass on each instance.** Same `npm run migrate:private` command; on jimstest it'd strip system-location from 14 pages (Slice 2 dual-shape files), on satellites the count would be 0 or low (they never had user-private pages). After this runs, all private pages on disk carry ONLY `private:true`.
+  - ⬜ Slice 4 Step 3 — Code change. Drop `PageManager.ts:662` legacy emit + dual-read fallbacks across `FileSystemProvider.ts:583,835,888`, `VersioningFileProvider.ts:1346-1352` (Slice 3's read fallback), `LunrSearchProvider.ts:276`, `ElasticsearchSearchProvider.ts:639`, `addons/journal/managers/JournalDataManager.ts:118`. Update `PageManager.test.ts:231-292` shape tests + `LunrSearchProvider.privateFilter.test.ts:331` (the defensive-fallback test). After this, `system-location` is fully retired from the codebase.
+  - ⬜ Separate `[BUG]` to file (not #802; pre-existing): VFP page-index rebuild generates incomplete index.
+- Commits:
+  - `33163b09` — feat(#802): drop system-location in promote mode (Slice 4 Step 1)
+  - `9022fd02` — chore: release v3.44.6
+- Files Modified:
+  - `scripts/migrate-private-field.ts` (+19/-29)
+  - `scripts/__tests__/migrate-private-field.test.ts` (+15/-22)
+  - `package.json`, `config/app-default-config.json`, `CHANGELOG.md` (version bump)
+  - `docs/performance/baseline-v3.44.6-2026-05-28.md` (new)
+
 ## 2026-05-28-05
 
 - Agent: Claude Opus 4.7
