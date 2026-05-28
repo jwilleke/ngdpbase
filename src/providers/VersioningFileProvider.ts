@@ -965,19 +965,12 @@ class VersioningFileProvider extends FileSystemProvider {
       // pageCache is keyed by title — use pageData.uuid for the actual UUID
       const uuid = (pageData as PageCacheInfo).uuid;
       try {
-        // Check if page already has versions
-        const versionDir = this.getVersionDirectory(uuid);
-        const manifestPath = path.join(versionDir, 'manifest.json');
-
-        if (await fs.pathExists(manifestPath)) {
-          logger.debug(`[VersioningFileProvider] Page ${(pageData as PageCacheInfo).title} already has versions, skipping`);
-          continue;
-        }
-
-        // Determine location (check which directory the page is in)
-        // #806: also check pages/private/{author}/{uuid}.md — without this the
-        // auto-migration would mis-locate (and previously even move) private
-        // pages into the regular pile.
+        // #806: determine location FIRST so the manifest check probes the
+        // correct version tree. The original code defaulted to
+        // `getVersionDirectory(uuid)` (location='pages') which never found
+        // manifests for required-pages or private pages — autoMigrate would
+        // then fall through to "create v1", redundantly creating spurious v1
+        // files for every already-versioned page on jimstest.
         if (!this.pagesDirectory || !this.requiredPagesDirectory) {
           continue;
         }
@@ -999,6 +992,18 @@ class VersioningFileProvider extends FileSystemProvider {
           location = 'private';
           pagePath = privatePath;
           creator = author;
+        }
+
+        // Now check if THIS LOCATION's version tree has a manifest. Pages
+        // whose manifest lives in the correct tree are indexed without
+        // re-creating v1.
+        const versionDir = this.getVersionDirectory(uuid, location);
+        const manifestPath = path.join(versionDir, 'manifest.json');
+
+        if (await fs.pathExists(manifestPath)) {
+          await this.indexExistingVersionedPage(uuid, pageData as PageCacheInfo, manifestPath);
+          migratedCount++;
+          continue;
         }
 
         // Read current page content
@@ -1095,6 +1100,73 @@ class VersioningFileProvider extends FileSystemProvider {
     }
 
     logger.info(`[VersioningFileProvider] Auto-migration complete: ${migratedCount} pages migrated, ${errorCount} errors`);
+  }
+
+  /**
+   * #806 — Index a page that already has a version manifest (no v1 creation
+   * needed). Called by `autoMigrateExistingPages` when scanning a pageCache
+   * entry whose manifest already exists. Pulls currentVersion/lastModified/
+   * editor from the manifest, slug/filename from frontmatter + disk, and
+   * detects location across `pages/`, `pages/private/{author}/`, and
+   * `required-pages/`.
+   */
+  private async indexExistingVersionedPage(
+    uuid: string,
+    info: PageCacheInfo,
+    manifestPath: string
+  ): Promise<void> {
+    if (!this.pagesDirectory || !this.requiredPagesDirectory) return;
+
+    const md = (info.metadata ?? {}) as PageFrontmatter & Record<string, unknown>;
+    const filePathFromCache = info.filePath ?? '';
+    const author = typeof md['author'] === 'string' ? (md['author']) : undefined;
+
+    let location: 'pages' | 'required-pages' | 'private';
+    let creator: string | undefined;
+
+    if (filePathFromCache.startsWith(this.requiredPagesDirectory + path.sep)) {
+      location = 'required-pages';
+    } else if (filePathFromCache.includes(`${path.sep}private${path.sep}`)) {
+      location = 'private';
+      const segments = filePathFromCache.split(path.sep);
+      const privateIdx = segments.lastIndexOf('private');
+      if (privateIdx >= 0 && privateIdx + 1 < segments.length - 1) {
+        creator = segments[privateIdx + 1];
+      }
+    } else if (filePathFromCache.startsWith(this.pagesDirectory + path.sep)) {
+      location = 'pages';
+    } else {
+      // Probe candidate locations on disk as a fallback.
+      const requiredProbe = path.join(this.requiredPagesDirectory, `${uuid}.md`);
+      const privateProbe = author ? path.join(this.pagesDirectory, 'private', author, `${uuid}.md`) : null;
+      if (await fs.pathExists(requiredProbe)) {
+        location = 'required-pages';
+      } else if (privateProbe && await fs.pathExists(privateProbe)) {
+        location = 'private';
+        creator = author;
+      } else {
+        location = 'pages';
+      }
+    }
+
+    const manifestData = await fs.readFile(manifestPath, 'utf8');
+    const manifest = JSON.parse(manifestData) as InternalManifest;
+
+    const slugFromMeta = typeof md['slug'] === 'string' ? (md['slug']) : undefined;
+    const filename = filePathFromCache ? path.basename(filePathFromCache) : `${uuid}.md`;
+
+    await this.updatePageInIndex(uuid, {
+      title:    info.title,
+      uuid,
+      currentVersion: manifest.currentVersion ?? 1,
+      location,
+      lastModified: manifest.lastModified ?? (md['lastModified'] as string | undefined) ?? new Date().toISOString(),
+      editor:   manifest.editor ?? manifest.author ?? (md['author']) ?? 'unknown',
+      hasVersions: true,
+      slug:     slugFromMeta,
+      filename,
+      ...(creator ? { creator } : {})
+    });
   }
 
   /**
