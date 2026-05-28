@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-28T03:40:00.000Z'
+lastModified: '2026-05-28T04:22:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -16,7 +16,7 @@ Current near-term priorities for ngdpbase and the sister sites tracked by `/othe
 
 **See also**: [`docs/architecture-threads.md`](./docs/architecture-threads.md) maps in-flight cross-cutting design threads (CatalogManager unification, NCM pipeline, JSON-LD render, Journal reconcile, ACL evaluator, system principal, addon platform) — issues here that belong to a thread are listed there with their dependency context. Use TODO.md for "what's open and how to prioritise"; use architecture-threads.md for "how do these issues relate to each other."
 
-**Latest release**: v3.44.2 (2026-05-28; patch, GH Release deferred) — #802 Slice 2: extended `scripts/migrate-private-field.ts` to consolidate `system-location: 'private'` legacy spelling into canonical `private: true`. Idempotent. Operator-action to run per-instance via `npm run migrate:private`. Dry-run on jimstest shows 16 candidate pages (1 #639-era false-positive needs operator triage). v3.44.1 (2026-05-27; patch): #802 Slices 0 + 1 (docs framing + journal addon user pref + emit canonical private:true). Satellites still on v3.44.0; next minor consolidation pending. v3.44.0 (2026-05-27; minor): consolidating range v3.43.1–v3.43.10 propagated to satellites.
+**Latest release**: v3.44.3 (2026-05-28; patch, GH Release deferred) — #802 Slice 2.5: cleaned repo's `required-pages/` of all per-page access controls (18 audience blocks + 2 private signals stripped, 19 files / 110 deletions), added `stripOnly` mode + category-based auto-detection to `migrate-private-field.ts` so seeded copies of required-pages get cleaned not promoted, npm scripts auto-load `.env`. Dry-run on jimstest now classifies correctly: 14 migrate (legit private user pages) + 19 cleaned (doc pages). Operator-action remains to apply on each instance. v3.44.2 (2026-05-28; patch): #802 Slice 2 — extended script for `system-location` legacy spelling. v3.44.1 (2026-05-27; patch): #802 Slices 0 + 1. v3.44.0 (2026-05-27; minor): consolidating range v3.43.1–v3.43.10 propagated to satellites.
 
 Sister sites in scope:
 

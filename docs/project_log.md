@@ -2,6 +2,57 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-28-02
+
+- Agent: Claude Opus 4.7
+- Subject: Continued #802 — shipped **v3.44.3** patch. Three things: (1) cleaned the repo's `required-pages/` source of all per-page access controls (audience + private signals), (2) extended `migrate-private-field.ts` with a `stripOnly` mode + category-based auto-detection so seeded copies of required-pages in `pages/` are also cleaned rather than wrongly promoted, (3) made the npm scripts auto-load `.env` via `--env-file-if-exists=.env` so `npm run migrate:private[:dry]` targets `SLOW_STORAGE` correctly without manual env override.
+- Current Issue: #802 (in progress — Slice 2 extended; #790 EPIC parent)
+- Tests: jimstest GREEN on release commit — **6080 unit** (added 11 new tests: 6 stripOnly cases + 5 category-detection cases). No flakes. E2E not required (no UI/views/plugins/addons paths touched).
+- Semver: **patch**. GH Release deferred. /othersites skipped per patch-gate.
+- **Architectural conversation that drove this slice:**
+  - Operator dry-run hit a false-positive (`Page Private` doc) and a YAML parse error on stale test residue.
+  - Diagnosis surfaced that the dry-run was targeting this repo's local `./data/` (no SLOW_STORAGE in shell env) — fixed via `--env-file-if-exists=.env`.
+  - Operator then directed: "Remove the private flag and keyword from required-pages/56729d1b-..." plus "No page in required-pages/ can be private" plus "There should be no audience values in required-pages or any other page-level access controls."
+  - Rule generalized: required-pages are system-shipped documentation; they must be visible to all authenticated users. Per-page gating (private, audience) defeats that purpose. The rule applies to ANY page with `system-category` in `{documentation, system}` (the required-storage categories), regardless of which directory the page file currently sits in — that catches seeded copies in `pages/` that mirror the canonical source.
+- **Required-pages cleanup** (19 files modified, 110 deletions in repo's `required-pages/`):
+  - 18 files had `audience: [admin, editor, contributor, reader, occupant]` (the "every authenticated role" no-op pattern). Stripped wholesale — same effective access as the global default.
+  - `56729d1b-...md` (`Page Private` doc): removed `- private` from `user-keywords` (was using `private` as a topical keyword for a doc ABOUT the privacy concept, which the #639 Slice D migration would have incorrectly conflated with the legacy storage signal).
+  - `2586c69b-...md` (`Private Pages` doc): removed `private: true` from frontmatter (same kind of false-positive — doc about privacy, not a literally-private page).
+  - Body content byte-identical across all 19 files. Only frontmatter access-control fields removed.
+- **Script extension** (`scripts/migrate-private-field.ts`):
+  - New `TransformOptions.stripOnly` flag — when true, strip every private signal AND `audience` without promoting to `private: true`. New outcome label `'cleaned'` distinguishes from the standard `'migrated'` promotion.
+  - `processDir` for the `required-pages/` directory now passes `stripOnly: true`.
+  - Category-based auto-stripOnly: `transformFrontmatter` checks `data['system-category']` against `REQUIRED_STORAGE_CATEGORIES = new Set(['documentation', 'system'])` and switches to stripOnly regardless of caller's `opts.stripOnly`. Catches seeded copies of required-pages sitting in `pages/` (e.g. jimstest's `data/pages/56729d1b-...md`) — without this, default promote mode would incorrectly mark documentation pages `private: true`.
+  - Case-insensitive category match. Conservative `system-location` strip (only when value === 'private').
+- **Dry-run against jimstest data, post-extension:**
+  - Pre-extension: 15 migrate (1 of them was the doc page — would have been wrongly promoted) + 18 cleaned.
+  - Post-extension: 14 migrate (all legit private user pages in `pages/private/{user}/`) + 19 cleaned (18 required-pages canonical + 1 seeded doc copy in jimstest pages/ now correctly category-detected).
+- **Tests added** (11 new, 24 total in `migrate-private-field.test.ts`, full suite 6080):
+  - 6 stripOnly mode: all 3 legacy signals stripped + private:true cleared; audience stripped unconditionally; combined case; already-clean → non-private; idempotent.
+  - 5 category-based: documentation auto-strips; system auto-strips; general uses promote mode; journal uses promote mode (journal entries CAN be private); no-signal doc → non-private; case-insensitive match.
+- **Open carryover**: operator hasn't yet run `npm run migrate:private` against jimstest's data. The dry-run is clean and ready; operator just needs to drop the `--dry-run` flag. Per the #800 explicit-action pattern, this remains an operator decision per-instance. After running on jimstest (and fairways-base + ngdp-temp-builds via their own .env), Slice 3 (providers route off `metadata.private`) can proceed.
+- Perf baseline drift v3.44.2 → v3.44.3: clean. Memory -55.5% (rebound from the prior post-E2E inflation — V8 GC'd between runs). All route timings within ±10%, no thresholds tripped. Baseline file: `docs/performance/baseline-v3.44.3-2026-05-28.md`.
+- /othersites: **skipped** — patch-gate. Required-pages changes ARE shipped content that gets re-seeded; they'll propagate to satellites on the next minor consolidation (or sooner via /othersites if operator runs it standalone).
+- **#802 chain — where we are / where we pick up next:**
+  - ✅ Slice 0 — Docs framing (v3.44.1, commit `debe0a99`).
+  - ✅ Slice 1 — Journal addon user pref + emit `private: true` (v3.44.1, commit `ddea45a9`).
+  - ✅ Slice 2 — Migration script extended for `system-location` (v3.44.2, commit `3dd78eb2`).
+  - ✅ Slice 2.5 — stripOnly mode + category detection + required-pages cleanup (v3.44.3, commits `647f2ced` + `9ad6ff70`).
+  - 🛑 **OPERATOR ACTION before Slice 3** — run `npm run migrate:private` on each instance (jimstest, fairways-base, ngdp-temp-builds). Dry-run on jimstest data is clean. Per #800 pattern this is explicit operator action.
+  - ⬜ Slice 3 — Providers route off `metadata.private`. `FileSystemProvider.ts:581-583` + `VersioningFileProvider.ts:1346-1366` read `metadata.private === true`. Safe only after Slice 2 ran on every instance.
+  - ⬜ Slice 4 — Drop the legacy emit (`PageManager.ts:662`) + dual-read fallbacks across FSP/Lunr/ES/JDM.
+- Commits:
+  - `647f2ced` — chore(#802): auto-load .env in migrate:private npm scripts via --env-file-if-exists
+  - `9ad6ff70` — feat(#802): required-pages stripOnly + category-detected access-control strip
+  - `c2d03c27` — chore: release v3.44.3
+- Files Modified:
+  - `package.json` (+2/-2) — npm script flag
+  - `scripts/migrate-private-field.ts` (+85/-12) — stripOnly mode + category detection + docstring updates
+  - `scripts/__tests__/migrate-private-field.test.ts` (+204/-1) — 11 new tests
+  - `required-pages/*.md` (19 files, +0/-110) — access-control fields stripped
+  - `package.json`, `config/app-default-config.json`, `CHANGELOG.md` (version bump)
+  - `docs/performance/baseline-v3.44.3-2026-05-28.md` (new)
+
 ## 2026-05-28-01
 
 - Agent: Claude Opus 4.7
