@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-28T08:45:00.000Z'
+lastModified: '2026-05-30T13:35:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -16,7 +16,7 @@ Current near-term priorities for ngdpbase and the sister sites tracked by `/othe
 
 **See also**: [`docs/architecture-threads.md`](./docs/architecture-threads.md) maps in-flight cross-cutting design threads (CatalogManager unification, NCM pipeline, JSON-LD render, Journal reconcile, ACL evaluator, system principal, addon platform) — issues here that belong to a thread are listed there with their dependency context. Use TODO.md for "what's open and how to prioritise"; use architecture-threads.md for "how do these issues relate to each other."
 
-**Latest release**: v3.45.0 (2026-05-28; minor, GH Release published) — consolidating minor across the entire #802 + #806 chain. Wraps v3.44.1–v3.44.9. **All three instances now in sync at v3.45.0** (jimstest, fairways-base, ngdp-temp-builds). Each instance GREEN: 6084 unit + 80 E2E. EPIC #790 closed in this session. v3.44.9: #806 e2e verification. v3.44.8: #806 first fix. v3.44.7: #802 complete (`system-location` retired). v3.44.0 (prior minor): satellite propagation.
+**Latest release**: v3.46.0 (2026-05-30; minor, GH Release published) — shipped **#706** knowledge-role opt-in frontmatter (source/citation/concept). New top-level `ngdpbase.knowledge-role` config catalog, ValidationManager hard-reject for unrecognized values, page-badge render alongside system-category, and full search wiring (Lunr + ES indexes the field; `SearchManager.advancedSearch({ knowledgeRoles: [...] })` filters by it). **All three instances now in sync at v3.46.0** (jimstest, fairways-base, ngdp-temp-builds). Each instance GREEN: 6093 unit + 80 E2E (+9 new tests). Prior: v3.45.0 (2026-05-28) consolidating minor across the entire #802 + #806 chain.
 
 Sister sites in scope:
 
@@ -29,15 +29,17 @@ All three local checkouts share `jwilleke/ngdpbase` as their git remote — thei
 
 ## Security
 
+Dependabot live state: **0 open alerts** on the main repo and on the geohazardwatch satellite. Mitigation-only items below are tracked manually (no Dependabot alert to clear).
+
 | Source | Package | Severity | Status |
 |---|---|---|---|
-| Dependabot (GHSA-rmmh-p597-ppvv) | `showdown` | medium | ReDoS (CVE-2024-1899); tracked in #599; **no upstream patch** — mitigation only. #749 = recurring "re-check for a patch" task. **Only remaining open alert.** |
+| Manual / #599 | `showdown` | medium (CVE-2024-1899) | ReDoS in markdown link parser; **no upstream patch**. Weekly `Showdown CVE-2024-1899 Patch Check` workflow watches for one — its most-recent run on master is RED, but the failure is `Cannot find module './node_modules/showdown/package.json'` (workflow path issue, not a missed patch). Fix the workflow path so the patch check actually runs; until then we won't be auto-notified if upstream lands a fix. |
 
 ## Waiting on Review Sign-off
 
 Items carrying the `in review` label — work is shipped/merged; operator verification is the only thing left before close. **Clear this list before starting new feature work.**
 
-- _(none — #802 + #806 closed 2026-05-28)_
+- _(none — #706 closure call left to operator; browser-level UI badge eye-check is the only outstanding verification but the issue body promises were met)_
 
 ## Open BUGS (ngdpbase, by issue #)
 
@@ -68,8 +70,7 @@ Filed and scoped, awaiting prioritization or implementation cycles.
 |---|---|---|
 | #786 | Auto-journal — digester consuming CatalogManager records into journal entries | Gated by #685. (#790 closed 2026-05-28, removing one of the gates.) Consumer-pattern; no source-specific code |
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images | Low — adds sharp/libvips; do when a real driver appears |
-| #707 | Typed footnote + knowledge-graph reference index | Low — **depends on #706**; speculative |
-| #706 | `knowledge-role` frontmatter field — opt-in page role | Low — sharpened to field+enum+badge; **foundational, blocks #707** |
+| #707 | Typed footnote + knowledge-graph reference index | Low — **#706 dependency now satisfied (v3.46.0)** but issue body still calls it speculative (the LLM citation workflow "isn't proven for teams or institutions" per the 2026-05-16 brainstorm); revisit only if a real driver materializes. 4-6h scope. |
 | #686 | AddonsManager: auto-enable bundled addons in non-default addons-path dirs | Low — Domain Addon Deployment Lever 3 (Thread #7 in `docs/architecture-threads.md`) |
 | #631 | System/service principal model for non-request code paths | Low — Thread #6 in `docs/architecture-threads.md`; forward-compat hooks landed in #738 |
 | #685 | Data-ingestion framework (platform addon) | Low / Future — 2-4 weeks platform work; unblocks geohazardwatch data-source imports. **Pairs with #501** — the JSON→NCM serializer is #685's rendering counterpart; pick them up together when a driver appears. |
