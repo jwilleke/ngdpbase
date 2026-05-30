@@ -33,7 +33,7 @@ Dependabot live state: **0 open alerts** on the main repo and on the geohazardwa
 
 | Source | Package | Severity | Status |
 |---|---|---|---|
-| Manual / #599 | `showdown` | medium (CVE-2024-1899) | ReDoS in markdown link parser; **no upstream patch**. Weekly `Showdown CVE-2024-1899 Patch Check` workflow watches for one — its most-recent run on master is RED, but the failure is `Cannot find module './node_modules/showdown/package.json'` (workflow path issue, not a missed patch). Fix the workflow path so the patch check actually runs; until then we won't be auto-notified if upstream lands a fix. |
+| Manual / #599 | `showdown` | medium (CVE-2024-1899) | ReDoS in markdown link parser; **no upstream patch**. Weekly `Showdown CVE-2024-1899 Patch Check` workflow watches for one — fixed in #749 (`4c9f9a17`); last two scheduled runs (2026-05-21, 2026-05-26) GREEN. Will auto-comment on #599 when upstream lands a fix. |
 
 ## Waiting on Review Sign-off
 
