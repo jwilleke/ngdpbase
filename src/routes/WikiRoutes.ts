@@ -671,6 +671,7 @@ class WikiRoutes {
       leftMenu?: string;
       footer?: string;
       systemCategoryDefs?: Record<string, unknown>;
+      knowledgeRoleDefs?: Record<string, unknown>;
     } = {
       currentUser: userContext,
       user: userContext,       // alias
@@ -797,6 +798,11 @@ class WikiRoutes {
     // block carries { color, label, title } — categories without it (e.g.
     // `general`, `developer`) render no badge.
     templateData.systemCategoryDefs = (configManager?.getProperty('ngdpbase.system-category', {}) as Record<string, unknown>) ?? {};
+
+    // #706: knowledge-role catalog — drives the (Source) / (Citation) /
+    // (Concept) badges via the same page-badge mechanism as system-category.
+    // Pages without `knowledge-role` set render no badge.
+    templateData.knowledgeRoleDefs = (configManager?.getProperty('ngdpbase.knowledge-role', {}) as Record<string, unknown>) ?? {};
 
     return templateData;
   }

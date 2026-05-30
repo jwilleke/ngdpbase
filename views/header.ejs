@@ -184,6 +184,13 @@
                       const _catDef  = (typeof systemCategoryDefs !== 'undefined' && systemCategoryDefs && _sysCat)
                                         ? systemCategoryDefs[_sysCat] : null;
                       const _catBadge = (_catDef && typeof _catDef === 'object' && _catDef['page-badge']) ? _catDef['page-badge'] : null;
+                      // #706 knowledge-role badge — same page-badge mechanism,
+                      // orthogonal axis. Absent role → no badge (the default).
+                      const _knowRole = (typeof metadata !== 'undefined' && metadata && metadata['knowledge-role'])
+                                        ? String(metadata['knowledge-role']).toLowerCase() : '';
+                      const _knowDef  = (typeof knowledgeRoleDefs !== 'undefined' && knowledgeRoleDefs && _knowRole)
+                                        ? knowledgeRoleDefs[_knowRole] : null;
+                      const _knowBadge = (_knowDef && typeof _knowDef === 'object' && _knowDef['page-badge']) ? _knowDef['page-badge'] : null;
                     %>
                     <% if (_navTitle) { %>
                         <h5 class="mb-0 text-truncate">
@@ -193,6 +200,9 @@
                             <% } %>
                             <% if (_catBadge) { %>
                                 <span class="badge <%= _catBadge.color %> ms-1" style="font-size:0.6em;vertical-align:middle;" title="<%= _catBadge.title %>">(<%= _catBadge.label %>)</span>
+                            <% } %>
+                            <% if (_knowBadge) { %>
+                                <span class="badge <%= _knowBadge.color %> ms-1" style="font-size:0.6em;vertical-align:middle;" title="<%= _knowBadge.title %>">(<%= _knowBadge.label %>)</span>
                             <% } %>
                             <%# #796 — extension slot for addon-defined page-meta
                                 badges/pills rendered alongside (Private) and

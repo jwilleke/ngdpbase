@@ -53,6 +53,7 @@ function makeDoc(id, opts: {
   title?: string;
   content?: string;
   systemCategory?: string;
+  knowledgeRole?: string;
   userKeywords?: string;
   author?: string;
   editor?: string;
@@ -63,6 +64,7 @@ function makeDoc(id, opts: {
     content: opts.content ?? `Content for ${id}`,
     body: opts.content ?? `Content for ${id}`,
     systemCategory: opts.systemCategory ?? 'general',
+    knowledgeRole: opts.knowledgeRole ?? '',
     userKeywords: opts.userKeywords ?? '',
     tags: '',
     keywords: opts.userKeywords ?? '',
@@ -98,7 +100,7 @@ beforeEach(() => {
   provider['config'] = {
     indexDir: '/tmp',
     stemming: false,
-    boost: { title: 1, systemCategory: 1, userKeywords: 1, tags: 1, keywords: 1 },
+    boost: { title: 1, systemCategory: 1, knowledgeRole: 1, userKeywords: 1, tags: 1, keywords: 1 },
     maxResults: 100,
     snippetLength: 200
   };
@@ -343,7 +345,7 @@ describe('LunrSearchProvider.rebuild — #724 ghost reconciliation', () => {
     const prov = new LunrSearchProvider(makeEngineWithPages(['RealPage']));
     prov['config'] = {
       indexDir: '/tmp', stemming: false,
-      boost: { title: 1, systemCategory: 1, userKeywords: 1, tags: 1, keywords: 1 },
+      boost: { title: 1, systemCategory: 1, knowledgeRole: 1, userKeywords: 1, tags: 1, keywords: 1 },
       maxResults: 100, snippetLength: 200
     };
     // documentsPath stays null (initialize() not called) → no disk I/O.
@@ -365,7 +367,7 @@ describe('LunrSearchProvider.rebuild — #724 ghost reconciliation', () => {
     const prov = new LunrSearchProvider(makeEngineWithPages([]));
     prov['config'] = {
       indexDir: '/tmp', stemming: false,
-      boost: { title: 1, systemCategory: 1, userKeywords: 1, tags: 1, keywords: 1 },
+      boost: { title: 1, systemCategory: 1, knowledgeRole: 1, userKeywords: 1, tags: 1, keywords: 1 },
       maxResults: 100, snippetLength: 200
     };
     prov['documents'] = { OldGhost: makeDoc('OldGhost') };
@@ -388,6 +390,7 @@ function makeDateDoc(id, created, lastModified) {
     content: `Content for ${id}`,
     body: `Content for ${id}`,
     systemCategory: 'general',
+    knowledgeRole: '',
     userKeywords: '',
     tags: '',
     keywords: '',
@@ -415,7 +418,7 @@ describe('LunrSearchProvider.advancedSearch — dateField=created (#774)', () =>
     };
     prov['config'] = {
       indexDir: '/tmp', stemming: false,
-      boost: { title: 1, systemCategory: 1, userKeywords: 1, tags: 1, keywords: 1 },
+      boost: { title: 1, systemCategory: 1, knowledgeRole: 1, userKeywords: 1, tags: 1, keywords: 1 },
       maxResults: 100, snippetLength: 200
     };
   });

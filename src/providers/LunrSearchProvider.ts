@@ -46,6 +46,9 @@ interface LunrDocument {
   content: string;
   body: string;
   systemCategory: string;
+  /** #706: opt-in knowledge-graph role (source|citation|concept|''). Empty
+   *  string when the field is absent — the common case for most pages. */
+  knowledgeRole: string;
   userKeywords: string;
   tags: string;
   keywords: string;
@@ -76,6 +79,7 @@ interface LunrConfig {
   boost: {
     title: number;
     systemCategory: number;
+    knowledgeRole: number;
     userKeywords: number;
     tags: number;
     keywords: number;
@@ -148,6 +152,12 @@ class LunrSearchProvider extends BaseSearchProvider {
         ),
         systemCategory: configManager.getProperty<number>(
           'ngdpbase.search.provider.lunr.boost.systemcategory',
+          8
+        ),
+        // #706: knowledge-role boost — same weight as system-category since
+        // both are short, high-signal axis fields.
+        knowledgeRole: configManager.getProperty<number>(
+          'ngdpbase.search.provider.lunr.boost.knowledgerole',
           8
         ),
         userKeywords: configManager.getProperty<number>(
@@ -237,6 +247,7 @@ class LunrSearchProvider extends BaseSearchProvider {
       this.field('title', { boost: boostConfig.title });
       this.field('content');
       this.field('systemCategory', { boost: boostConfig.systemCategory });
+      this.field('knowledgeRole', { boost: boostConfig.knowledgeRole });
       this.field('userKeywords', { boost: boostConfig.userKeywords });
       this.field('tags', { boost: boostConfig.tags });
       this.field('keywords', { boost: boostConfig.keywords });
@@ -287,6 +298,7 @@ class LunrSearchProvider extends BaseSearchProvider {
       content,
       body: content,
       systemCategory: toStr(metadata['system-category']),
+      knowledgeRole: toStr(metadata['knowledge-role']),
       userKeywords,
       tags,
       keywords: `${userKeywords} ${tags}`,
@@ -426,6 +438,7 @@ class LunrSearchProvider extends BaseSearchProvider {
               wordCount: doc.content.split(/\s+/).length,
               tags: doc.tags,
               systemCategory: doc.systemCategory,
+              knowledgeRole: doc.knowledgeRole,
               userKeywords: doc.userKeywords,
               lastModified: doc.lastModified,
               created: doc.created,
@@ -469,6 +482,7 @@ class LunrSearchProvider extends BaseSearchProvider {
     const {
       query = '',
       categories = [],
+      knowledgeRoles = [],
       userKeywords = [],
       searchIn = ['all'],
       author = '',
@@ -478,6 +492,7 @@ class LunrSearchProvider extends BaseSearchProvider {
 
     // Normalize arrays
     const categoryList = Array.isArray(categories) ? categories : (categories ? [categories] : []);
+    const roleList = Array.isArray(knowledgeRoles) ? knowledgeRoles : (knowledgeRoles ? [knowledgeRoles] : []);
     const keywordList = Array.isArray(userKeywords) ? userKeywords : (userKeywords ? [userKeywords] : []);
     const searchInList = Array.isArray(searchIn) ? searchIn : (searchIn ? [searchIn] : ['all']);
 
@@ -548,6 +563,7 @@ class LunrSearchProvider extends BaseSearchProvider {
           snippet: this.documents[name].content.substring(0, this.config?.snippetLength ?? 200),
           metadata: {
             systemCategory: this.documents[name].systemCategory,
+            knowledgeRole: this.documents[name].knowledgeRole,
             userKeywords: this.documents[name].userKeywords,
             tags: this.documents[name].tags,
             lastModified: this.documents[name].lastModified,
@@ -580,6 +596,20 @@ class LunrSearchProvider extends BaseSearchProvider {
         return matches;
       });
       logger.info(`[LunrSearchProvider] Category filter: ${beforeCount} -> ${results.length} results (filter: [${categoryList.join(', ')}])`);
+    }
+
+    // #706: Filter by knowledge-role if specified (case-insensitive). Pages
+    // without a role are excluded when this filter is active — that's the
+    // whole point of opting in.
+    if (roleList.length > 0) {
+      const beforeCount = results.length;
+      const roleListLower = roleList.map(r => r.toLowerCase());
+      results = results.filter(result => {
+        const docRole = result.metadata.knowledgeRole;
+        if (!docRole || typeof docRole !== 'string') return false;
+        return roleListLower.includes(docRole.toLowerCase());
+      });
+      logger.info(`[LunrSearchProvider] Knowledge-role filter: ${beforeCount} -> ${results.length} results (filter: [${roleList.join(', ')}])`);
     }
 
     // Filter by user keywords if specified (exact word matching)

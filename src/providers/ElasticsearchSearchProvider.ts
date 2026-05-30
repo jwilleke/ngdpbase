@@ -50,6 +50,9 @@ interface EsPageDocument {
   slug: string;
   content: string;
   systemCategory: string;
+  /** #706: opt-in knowledge-graph role (source|citation|concept). Empty
+   *  string when the field is absent — the common case for most pages. */
+  knowledgeRole: string;
   systemKeywords: string[];
   userKeywords: string[];
   author: string;
@@ -78,6 +81,9 @@ const INDEX_MAPPING = {
       slug:           { type: 'keyword' as const },
       content:        { type: 'text' as const, analyzer: 'english' },
       systemCategory: { type: 'keyword' as const },
+      // #706: knowledge-role as a keyword field — supports exact-match
+      // filtering (e.g. role=source) and term aggregations for facet UIs.
+      knowledgeRole:  { type: 'keyword' as const },
       systemKeywords: { type: 'keyword' as const },
       userKeywords:   { type: 'keyword' as const },
       author:         { type: 'keyword' as const },
@@ -265,6 +271,7 @@ class ElasticsearchSearchProvider extends BaseSearchProvider {
     const {
       query = '',
       categories = [],
+      knowledgeRoles = [],
       userKeywords = [],
       systemKeywords = [],
       author = '',
@@ -296,6 +303,12 @@ class ElasticsearchSearchProvider extends BaseSearchProvider {
 
     if (categories.length > 0) {
       filter.push({ terms: { systemCategory: categories } });
+    }
+
+    // #706: knowledge-role filter — exact terms match on the keyword field.
+    // Pages without a role are excluded when this filter has entries.
+    if (knowledgeRoles.length > 0) {
+      filter.push({ terms: { knowledgeRole: knowledgeRoles } });
     }
 
     if (userKeywords.length > 0) {
@@ -650,6 +663,7 @@ class ElasticsearchSearchProvider extends BaseSearchProvider {
       slug: toStr(metadata.slug),
       content,
       systemCategory: toStr(metadata['system-category']),
+      knowledgeRole: toStr(metadata['knowledge-role']),
       systemKeywords: [...existingSystemKeywords, ...autoTagged],
       userKeywords: toStrArr(metadata['user-keywords']),
       author: toStr(metadata.author),

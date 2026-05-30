@@ -142,6 +142,7 @@ class ValidationManager extends BaseManager {
   private validSystemCategories: string[];
   private systemCategoriesConfig: SystemCategoriesConfig | null;
   private validSystemKeywords: string[];
+  private validKnowledgeRoles: string[];
   private maxUserKeywords!: number;
 
   /**
@@ -158,6 +159,9 @@ class ValidationManager extends BaseManager {
     this.validSystemCategories = [];
     this.systemCategoriesConfig = null;
     this.validSystemKeywords = [];
+    // #706: hardcoded fallback so the hard-reject enum check still works
+    // when the catalog hasn't loaded. Config overrides at initialize().
+    this.validKnowledgeRoles = ['source', 'citation', 'concept'];
   }
 
   /**
@@ -179,9 +183,11 @@ class ValidationManager extends BaseManager {
     // Load system categories and keywords from configuration
     this.loadSystemCategories(configManager);
     this.loadSystemKeywords(configManager);
+    this.loadKnowledgeRoles(configManager);
 
     logger.info('ValidationManager initialized');
     logger.info(`Loaded ${this.validSystemCategories.length} system categories: ${this.validSystemCategories.join(', ')}`);
+    logger.info(`Loaded ${this.validKnowledgeRoles.length} knowledge roles: ${this.validKnowledgeRoles.join(', ')}`);
   }
 
   /**
@@ -262,6 +268,47 @@ class ValidationManager extends BaseManager {
    */
   getValidSystemKeywords(): string[] {
     return [...this.validSystemKeywords];
+  }
+
+  /**
+   * Load knowledge-role catalog (#706) from ConfigurationManager.
+   * Mirrors loadSystemCategories(). The constructor seeds a hardcoded
+   * fallback (`['source','citation','concept']`) so the hard-reject enum
+   * check still works if the catalog can't be read.
+   */
+  loadKnowledgeRoles(configManager: ConfigurationManager | undefined): void {
+    if (!configManager) {
+      logger.warn('[ValidationManager] ConfigurationManager not available, using hardcoded knowledge roles');
+      return;
+    }
+
+    try {
+      const knowledgeRolesConfig = configManager.getProperty('ngdpbase.knowledge-role', null) as SystemCategoriesConfig | null;
+
+      if (knowledgeRolesConfig && typeof knowledgeRolesConfig === 'object') {
+        const roles: string[] = [];
+        for (const roleConfig of Object.values(knowledgeRolesConfig)) {
+          if (roleConfig.enabled !== false) {
+            roles.push(roleConfig.label);
+          }
+        }
+        if (roles.length > 0) {
+          this.validKnowledgeRoles = roles;
+          logger.info(`[ValidationManager] Loaded ${roles.length} knowledge roles from configuration`);
+        }
+      } else {
+        logger.warn('[ValidationManager] knowledge-role configuration not found, using hardcoded defaults');
+      }
+    } catch (error) {
+      logger.error('[ValidationManager] Error loading knowledge roles:', (error as Error).message);
+    }
+  }
+
+  /**
+   * Get all valid knowledge-role labels (#706).
+   */
+  getValidKnowledgeRoles(): string[] {
+    return [...this.validKnowledgeRoles];
   }
 
   /**
@@ -471,6 +518,18 @@ class ValidationManager extends BaseManager {
         if (result.warnings) {
           result.warnings.push(`System category '${metadata['system-category']}' is not in the standard list: ${this.validSystemCategories.join(', ')}`);
         }
+      }
+    }
+
+    // #706 knowledge-role validation — opt-in enum (source/citation/concept).
+    // Absent/null/empty all mean "no role" and are valid. Present with any
+    // other value is a HARD REJECT (unlike system-category, which warns).
+    const knowledgeRoleRaw = metadata['knowledge-role'];
+    if (knowledgeRoleRaw !== undefined && knowledgeRoleRaw !== null && knowledgeRoleRaw !== '') {
+      if (typeof knowledgeRoleRaw !== 'string') {
+        validationErrors.push('knowledge-role must be a string');
+      } else if (!this.validKnowledgeRoles.map(r => r.toLowerCase()).includes(knowledgeRoleRaw.toLowerCase())) {
+        validationErrors.push(`knowledge-role '${knowledgeRoleRaw}' is not a recognized role (allowed: ${this.validKnowledgeRoles.join(', ')})`);
       }
     }
 

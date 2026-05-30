@@ -51,6 +51,7 @@ function makeDoc(id, opts: {
   title?: string;
   content?: string;
   systemCategory?: string;
+  knowledgeRole?: string;
   userKeywords?: string;
   author?: string;
   editor?: string;
@@ -64,6 +65,7 @@ function makeDoc(id, opts: {
     content: opts.content ?? `Content for ${id}`,
     body: opts.content ?? `Content for ${id}`,
     systemCategory: opts.systemCategory ?? 'general',
+    knowledgeRole: opts.knowledgeRole ?? '',
     userKeywords: opts.userKeywords ?? '',
     tags: '',
     keywords: opts.userKeywords ?? '',
@@ -96,7 +98,7 @@ beforeEach(() => {
   provider['config'] = {
     indexDir: '/tmp',
     stemming: false,
-    boost: { title: 1, systemCategory: 1, userKeywords: 1, tags: 1, keywords: 1 },
+    boost: { title: 1, systemCategory: 1, knowledgeRole: 1, userKeywords: 1, tags: 1, keywords: 1 },
     maxResults: 100,
     snippetLength: 200
   };

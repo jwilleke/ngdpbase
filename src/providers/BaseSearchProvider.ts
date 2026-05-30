@@ -100,6 +100,11 @@ export interface SearchCriteria {
   /** Categories to filter by */
   categories?: string[];
 
+  /** #706: knowledge-role values to filter by (source / citation / concept).
+   *  Pages without a `knowledge-role` set are excluded when this filter has
+   *  any entries — mirrors how `categories` excludes off-axis pages. */
+  knowledgeRoles?: string[];
+
   /** User keywords to filter by */
   userKeywords?: string[];
 

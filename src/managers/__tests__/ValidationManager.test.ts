@@ -153,6 +153,59 @@ describe('ValidationManager', () => {
       expect(result.success).toBe(true);
       expect(result.warnings).toContainEqual(expect.stringContaining('is not in the standard list'));
     });
+
+    // #706 knowledge-role enum — opt-in (absent = no role) + HARD REJECT
+    // when present with a value outside the catalog. Unlike system-category,
+    // which warns; knowledge-role's enum is small and authoritative.
+    describe('knowledge-role (#706)', () => {
+      const baseMetadata = () => ({
+        title: 'Test Page',
+        uuid: uuidv4(),
+        slug: 'test-page',
+        'system-category': 'General',
+        'user-keywords': [],
+        lastModified: new Date().toISOString()
+      });
+
+      test.each(['source', 'citation', 'concept'])(
+        'should accept knowledge-role: %s',
+        (role) => {
+          const result = validationManager.validateMetadata({ ...baseMetadata(), 'knowledge-role': role });
+          expect(result.success).toBe(true);
+          expect(result.error).toBeNull();
+        }
+      );
+
+      test('should accept absent knowledge-role (the default — page outside the graph)', () => {
+        const result = validationManager.validateMetadata(baseMetadata());
+        expect(result.success).toBe(true);
+      });
+
+      test.each([null, ''])(
+        'should treat knowledge-role: %s as absent (no role)',
+        (value) => {
+          const result = validationManager.validateMetadata({ ...baseMetadata(), 'knowledge-role': value });
+          expect(result.success).toBe(true);
+        }
+      );
+
+      test('should hard-reject knowledge-role with an unrecognized value', () => {
+        const result = validationManager.validateMetadata({ ...baseMetadata(), 'knowledge-role': 'garbage' });
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("knowledge-role 'garbage' is not a recognized role");
+      });
+
+      test('should hard-reject knowledge-role that is not a string', () => {
+        const result = validationManager.validateMetadata({ ...baseMetadata(), 'knowledge-role': 42 });
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('knowledge-role must be a string');
+      });
+
+      test('should accept knowledge-role case-insensitively', () => {
+        const result = validationManager.validateMetadata({ ...baseMetadata(), 'knowledge-role': 'SOURCE' });
+        expect(result.success).toBe(true);
+      });
+    });
   });
 
   describe('validatePage', () => {

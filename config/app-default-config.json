@@ -644,6 +644,42 @@
       }
     }
   },
+  "_comment_knowledge_role": "#706 — knowledge-role: opt-in per-page position in the knowledge graph (source / citation / concept). Distinct from system-category (page-type). Absence is valid and means 'not in the graph' (the common case). Present with a value outside this catalog is HARD-REJECTED by ValidationManager. Each entry's page-badge block renders alongside the system-category badge via the v3.14.0 mechanism.",
+  "ngdpbase.knowledge-role": {
+    "source": {
+      "label": "source",
+      "description": "Authoritative primary content; body treated as immutable (step 2 of LLM-wiki build plan)",
+      "default": false,
+      "enabled": true,
+      "page-badge": {
+        "color": "bg-dark",
+        "label": "Source",
+        "title": "Source page — primary, immutable material"
+      }
+    },
+    "citation": {
+      "label": "citation",
+      "description": "Interpretive claim grounded in one or more sources",
+      "default": false,
+      "enabled": true,
+      "page-badge": {
+        "color": "bg-warning text-dark",
+        "label": "Citation",
+        "title": "Citation page — claims grounded in sources"
+      }
+    },
+    "concept": {
+      "label": "concept",
+      "description": "Synthesis drawing on multiple citations",
+      "default": false,
+      "enabled": true,
+      "page-badge": {
+        "color": "bg-danger",
+        "label": "Concept",
+        "title": "Concept page — synthesis across citations"
+      }
+    }
+  },
   "_comment_system_keywords": "System keyword definitions for controlled vocabulary (operator-curated; subject + workflow terms)",
   "ngdpbase.system-keywords": {
     "general": {

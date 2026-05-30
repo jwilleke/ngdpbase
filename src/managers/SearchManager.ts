@@ -37,6 +37,8 @@ interface SearchOptions {
 interface AdvancedSearchOptions {
   query?: string;
   categories?: string[];
+  /** #706: knowledge-role values to filter by (source / citation / concept). */
+  knowledgeRoles?: string[];
   userKeywords?: string[];
   searchIn?: string[];
   maxResults?: number;
