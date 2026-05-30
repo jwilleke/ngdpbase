@@ -2,6 +2,48 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-05-30-01
+
+- Agent: Claude Opus 4.7
+- Subject: Shipped **#706** — `knowledge-role` opt-in frontmatter field (source/citation/concept). Released as **v3.46.0** and propagated to satellites.
+- Current Issue: #706
+- Tests: GREEN across all three instances — **6093 unit + 80 E2E** per instance (was 6084 baseline; +9 new ValidationManager tests).
+- Semver: **minor** (new public surface). Range `v3.45.0..v3.46.0` covers a single `feat(#706)` commit.
+- Scope shipped (per the 2026-05-16 brainstorm comment that sharpened the issue):
+  - ValidationManager: hard-rejects unknown `knowledge-role` values when the field is present; absent/null/empty are valid (matches spec's "default is absent"). Loads catalog from config with `['source','citation','concept']` hardcoded fallback so the enum check still works pre-init.
+  - `config/app-default-config.json`: new top-level `ngdpbase.knowledge-role` catalog parallel to `system-category`, three entries with `page-badge` blocks (source → `bg-dark`, citation → `bg-warning text-dark`, concept → `bg-danger`). Memory-rule approval taken explicitly mid-conversation before edit.
+  - WikiRoutes + header.ejs: badge renders alongside the `system-category` badge using the v3.14.0 page-badge mechanism.
+  - LunrSearchProvider + ElasticsearchSearchProvider: `knowledgeRole` indexed as a keyword field, boost-equal to systemCategory; ES uses term filter, Lunr filters post-search by metadata.
+  - SearchManager + BaseSearchProvider: `advancedSearch` accepts `knowledgeRoles: string[]`; both providers honor it, pages without a role are excluded when the filter has entries.
+- Operator pivot mid-design: initial "default=concept" instruction conflicted with both Karpathy's gist (treats raw sources as a separate immutable layer) and the local `docs/planning/ideas/llm-wiki-pattern.md` ("The default is absent"). After surfacing the conflict + quoting the source materials, operator chose to **keep the existing spec** (default absent, hard-reject for unrecognized values).
+- Search bundling decision: original sharpened scope was `ValidationManager + badge` only, but new frontmatter fields require explicit wiring in five places to be searchable (no auto-discovery). Operator chose to bundle the search wiring into #706 rather than defer — keeps the feature usable from day one.
+- GH Release published with `--generate-notes --notes-start-tag v3.45.0`: <https://github.com/jwilleke/ngdpbase/releases/tag/v3.46.0>
+- **Propagation results:**
+
+  | Instance | Path | Port | Unit | E2E | Notes |
+  |---|---|---|---|---|---|
+  | jimstest | /Volumes/hd2A/workspaces/github/ngdpbase | 3000 | 6093/6093 | 80/80 | /semver Step 8a re-validation on release commit |
+  | fairways-base | /Volumes/hd2A/workspaces/github/fairways-base | 2121 | 6093/6093 | 80/80 | Lockfile drift discarded; clean pull from v3.45.0 |
+  | ngdp-temp-builds | /Volumes/hd2/ngdp-temp-builds/ngdpbase | 3001 | 6093/6093 | 80/80 | Lockfile drift discarded; clean pull from v3.45.0 |
+
+- Flakes seen: one transient timeout on `auth.spec.ts › should maintain session across page navigation` during initial pre-flight on jimstest (`page.goto('/admin/login')` exceeded 30s); passed on Playwright's built-in retry. Did NOT recur on the post-release re-validation or on either satellite's E2E. Logged as a cold-start flake, no new BUG filed (no shape match to #622 worth a datapoint).
+- Perf baseline drift v3.45.0 → v3.46.0: memory +29.8% flagged as regression candidate. Per `feedback_perf_baseline_memory_noise` this is the documented V8 post-test heap inflation pattern (not a real regression). All routes faster or in noise. Baseline file: `docs/performance/baseline-v3.46.0-2026-05-30.md`.
+- Browser-level UI smoke (visually inspecting the badge in the header on a real page with `knowledge-role: source`) deferred — pages live in VersioningFileProvider so couldn't drop a test page on disk. Wiring is a mechanical mirror of the production system-category badge path; unit tests + build + server-log catalog-load + 80 E2E across three instances cover the regression surface. Recommend operator eye-check at convenience.
+- Commits:
+  - `51bc4ba8` — feat(#706): knowledge-role frontmatter — opt-in source/citation/concept
+  - `570dcc54` — chore: release v3.46.0
+- Files Modified:
+  - `src/managers/ValidationManager.ts` (+ tests)
+  - `src/managers/SearchManager.ts`
+  - `src/providers/BaseSearchProvider.ts`
+  - `src/providers/LunrSearchProvider.ts` (+ tests, privateFilter tests fixture)
+  - `src/providers/ElasticsearchSearchProvider.ts`
+  - `src/routes/WikiRoutes.ts`
+  - `views/header.ejs`
+  - `config/app-default-config.json` (knowledge-role catalog)
+  - `package.json`, `package-lock.json`, `CHANGELOG.md` (version bump)
+  - `docs/performance/baseline-v3.46.0-2026-05-30.md` (new)
+
 ## 2026-05-28-10
 
 - Agent: Claude Opus 4.7
