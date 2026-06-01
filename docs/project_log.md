@@ -2,6 +2,22 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-06-01-04
+
+- Agent: Claude Opus 4.8
+- Subject: `/check-todos` survey + split `deferred`-labeled issues into their own section in both the command and TODO.md.
+- Current Issue: none (tooling/docs; reviewed #707 and confirmed it stays deferred)
+- Tests: none run — docs-only commit (`.claude/**` + `*.md`), pre-flight skipped per session-commit rule.
+- Work Done:
+  - Ran `/check-todos`: 1 open Dependabot alert (#599 showdown, no upstream patch); no genuinely-broken Actions (the Showdown watcher recovered 2026-05-26, the rest are Dependabot branch-update noise); #807 the only `in review` item; bugs #807/#808/#599; #809 surfaced as the single easy win. Added an Easy-wins row for #809 to TODO.md.
+  - Reviewed #707 (typed-footnote + knowledge-graph index): #706 dependency now satisfied (v3.46.0) but still speculative with no citation-heavy driver — confirmed it stays `deferred`.
+  - Added a dedicated **Deferred** section (driven by the `deferred` GitHub label) to the `/check-todos` command and to TODO.md, separating parked work from active priorities. Moved #737/#707/#645/#501/#448/#423/#421 out of the feature-work table into the new section; excluded deferred items from "recommended next moves".
+- Commits: `ab6a3e2f`
+- Files Modified:
+  - .claude/commands/check-todos.md
+  - TODO.md
+  - docs/project_log.md
+
 ## 2026-06-01-03
 
 - Agent: Claude Opus 4.8
