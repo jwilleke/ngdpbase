@@ -39,13 +39,13 @@ Dependabot live state: **1 open alert** on the main repo — #96 `showdown` (med
 
 Items carrying the `in review` label — work is shipped/merged; operator verification is the only thing left before close. **Clear this list before starting new feature work.**
 
-- _(none — #706 closure call left to operator; browser-level UI badge eye-check is the only outstanding verification but the issue body promises were met)_
+- **#807 — Media sort (slice A + D shipped, `ecc6d9cb`).** The capture-date sort fallback used `year*10000` (incomparable with epoch-ms), slamming undated items to the list extreme; now falls back to file `mtime` then Jan-1-of-year. Undated/errored/missing-folder cases now surface in `/admin/notifications`. admin-media note added clarifying Reindex/Rebuild are manual-only. **Verify:** `/media/year/2026?sort=date&order=asc` no longer leads with `Feb_20_2026_19_25_04.jpg`. Not yet released (patch candidate). Slices **B** (year-only EXIF → fabricated Jan-1 date) and **C** (filename→date fallback) split off; the literal `Feb_20` example needs operator-side exiftool backfill + Reindex.
 
 ## Open BUGS (ngdpbase, by issue #)
 
 | # | Title |
 |---|---|
-| #807 | Sorting Media files — media list sorts by filename not capture date (e.g. `Feb_20_2026_…` ahead of `2026-04-03-…` under `?sort=date&order=asc`). Conflates EXIF `DateTimeOriginal` backfill + sort logic + a docs ask (explain Reindex vs Rebuild Media). Needs a scoping pass; comment hints it may be fixed by re-indexing from the source media. |
+| #807 | Sorting Media files — **core sort fix (A) + docs (D) shipped (`ecc6d9cb`), now in review** (see Waiting on Review Sign-off). Remaining open sub-scopes: **B** year-only EXIF fabricates a Jan-1 date; **C** no filename→date fallback. |
 | #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); weekly patch-check workflow watches for a fix |
 
 ## Operator-decision carryover

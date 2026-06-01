@@ -2,6 +2,20 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-06-01-02
+
+- Agent: Claude Opus 4.8
+- Subject: **#807** scoped + shipped slice A (media date-sort fix) and slice D (admin docs note), with admin notifications for capture-date gaps and processing errors per operator direction.
+- Root cause (reproduced on the live 61,540-item jimstest index): `applyMediaSort` used `year * 10000` as the sort key for items without a parseable EXIF/QuickTime capture date — ~5 orders of magnitude below a real epoch-ms timestamp, so every undated item slammed to the extreme end of the list regardless of year. The reported `Feb_20_2026_19_25_04.jpg` (null `dateTimeOriginal`) sat at position 0 of the 2026 list.
+- Fix (commit `ecc6d9cb`):
+  - `WikiRoutes`: extracted `mediaSortDateKey` helper; undated items fall back to file `mtime` (the #606 convention `toAssetRecord` already uses), then `Date.UTC(year,0,1)` — all on the epoch-ms scale. Dropped the dead `m['createDate']` reference (never populated). Verified: `Feb_20...jpg` moved from position 0 → 78 of 128, and the rendered `/media/year/2026?sort=date&order=asc` now leads with dated files.
+  - `FileSystemMediaProvider` + `BaseMediaProvider`: count `noCaptureDate` during scan/rebuild.
+  - `MediaManager.surfaceScanNotifications`: one summary `/admin/notifications` entry + log per category for missing folders (warning), capture-date gaps (warning), and processing errors (error) — wired into both `scanFolders` and `rebuildIndex` (rebuild previously surfaced nothing).
+  - `admin-media.ejs`: note that Reindex/Rebuild run only on click (never automatically) and that anomalies appear in Notifications. (The button-difference text already existed.)
+- Tests: full suite GREEN — **6103 unit** (6093 baseline + 10 new: 7 `mediaSortDateKey`, 3 MediaManager notification). Build clean; jimstest restarted on v3.46.0 and verified live.
+- Scope decision recorded on #807: **A + D shipped**; **B** (year-only EXIF → fabricated `YYYY-01-01` via `month ?? 1`/`day ?? 1` in `extractDateTimeOriginal`) and **C** (parse capture date from filename) are separate — operator noted partial dates "may really happen" so B is accept-and-surface, not error. The literal `Feb_20...` example needs operator-side `exiftool` DateTimeOriginal backfill + Reindex to land in February; A fixes the general undated ordering.
+- Semver: bugfix → **patch** candidate (release decision left to operator; not yet bumped/propagated).
+
 ## 2026-06-01-01
 
 - Agent: Claude Opus 4.8
