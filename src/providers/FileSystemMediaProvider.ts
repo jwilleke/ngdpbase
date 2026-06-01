@@ -22,6 +22,7 @@ import { ExifTool } from 'exiftool-vendored';
 import { minimatch } from 'minimatch';
 import logger from '../utils/logger.js';
 import BaseMediaProvider, { MediaItem, ScanResult } from './BaseMediaProvider.js';
+import { parseDateFromFilename } from './mediaFilenameDate.js';
 
 /**
  * Configuration for FileSystemMediaProvider.
@@ -645,7 +646,19 @@ class FileSystemMediaProvider extends BaseMediaProvider {
       const mimeType = MIME_MAP[ext] ?? 'application/octet-stream';
 
       const orientation = typeof rawTags.Orientation === 'number' ? rawTags.Orientation : 1;
-      const captureDate = this.extractDateTimeOriginal(rawTags);
+      // Capture date: EXIF/QuickTime first; if absent, try parsing it from the
+      // filename (#809) before letting it fall to mtime. Record provenance so a
+      // filename-derived date never masquerades as authoritative EXIF metadata.
+      let captureDate = this.extractDateTimeOriginal(rawTags);
+      let captureDateSource: 'exif' | 'filename' | undefined = captureDate ? 'exif' : undefined;
+      if (captureDate === null) {
+        const fromName = parseDateFromFilename(path.basename(filePath));
+        if (fromName) {
+          captureDate = fromName;
+          captureDateSource = 'filename';
+          logger.debug(`[FileSystemMediaProvider] Recovered capture date ${fromName} from filename for ${filePath}`);
+        }
+      }
 
       // Build structured camera metadata from EXIF tags
       const cameraObj: import('../types/Asset.js').AssetCamera = {};
@@ -721,12 +734,16 @@ class FileSystemMediaProvider extends BaseMediaProvider {
           model: rawTags.Model ?? null,
           gpsLatitude: lat ?? null,
           gpsLongitude: lng ?? null,
-          dateTimeOriginal: captureDate
+          dateTimeOriginal: captureDate,
+          captureDateSource
         }
       };
 
       // #807: track items with no usable capture date so MediaManager can
       // surface a count to admins. These sort by file mtime, not capture date.
+      // #809: a date recovered from the filename counts as "has a capture date"
+      // (it is no longer mtime-sorted), so only files where BOTH EXIF and the
+      // filename failed are surfaced.
       if (captureDate === null) {
         counters.noCaptureDate++;
         logger.debug(`[FileSystemMediaProvider] No capture date for ${filePath} — will sort by mtime`);

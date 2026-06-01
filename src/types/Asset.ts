@@ -67,6 +67,11 @@ export interface AssetMetadata {
   creator?: string;
   /** EXIF Orientation value (1–8) */
   orientation?: number;
+  /** Provenance of `dateTimeOriginal`: `'exif'` = read from EXIF/QuickTime
+   *  tags; `'filename'` = parsed from the filename as a conservative fallback
+   *  (#809). Absent when the item has no capture date at all. Lets consumers
+   *  treat a filename-derived date as non-authoritative. */
+  captureDateSource?: 'exif' | 'filename';
   /** Video/audio codec (ExifTool VideoCodec) — internal compatibility hint */
   videoCodec?: string;
   /** Audio codec (ExifTool AudioFormat / AudioCodec) — internal compatibility hint */

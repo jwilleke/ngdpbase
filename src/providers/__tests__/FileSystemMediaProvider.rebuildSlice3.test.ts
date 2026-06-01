@@ -246,4 +246,61 @@ describe('FileSystemMediaProvider.rebuild() re-extracts Slice-3 fields (#771)', 
     const refreshed = (provider as unknown as { index: Record<string, { metadata: Record<string, unknown> }> }).index[id];
     expect(refreshed.metadata.dateTimeOriginal).toBe('2025-03-01 09:00:00');
   });
+
+  // --- #809: filename → capture-date fallback + provenance ---
+
+  it('#809: recovers dateTimeOriginal from the filename when EXIF has none, marked captureDateSource=filename', async () => {
+    stubFileList(['/store/PXL_20260113_123414708.jpg']);
+    stubExiftoolByPath({ '/store/PXL_20260113_123414708.jpg': { /* no capture-date tags */ } });
+
+    const id = (provider as unknown as { generateId: (p: string) => string }).generateId('/store/PXL_20260113_123414708.jpg');
+    (provider as unknown as { index: Record<string, unknown> }).index = {
+      [id]: { id, filePath: '/store/PXL_20260113_123414708.jpg', filename: 'PXL_20260113_123414708.jpg', mimeType: 'image/jpeg', year: '2026', dirPath: '/store', mtime: 1717000000000, metadata: {} }
+    };
+
+    const result = await provider.rebuild();
+
+    const refreshed = (provider as unknown as { index: Record<string, { metadata: Record<string, unknown> }> }).index[id];
+    expect(refreshed.metadata.dateTimeOriginal).toBe('2026-01-13 12:34:14');
+    expect(refreshed.metadata.captureDateSource).toBe('filename');
+    // A filename-recovered date is NOT a "no capture date" file anymore.
+    expect(result.noCaptureDate).toBe(0);
+  });
+
+  it('#809: EXIF date wins over the filename and is marked captureDateSource=exif', async () => {
+    stubFileList(['/store/PXL_20260113_123414708.jpg']);
+    stubExiftoolByPath({
+      '/store/PXL_20260113_123414708.jpg': {
+        DateTimeOriginal: { year: 2026, month: 5, day: 9, hour: 8, minute: 0, second: 0 }
+      }
+    });
+
+    const id = (provider as unknown as { generateId: (p: string) => string }).generateId('/store/PXL_20260113_123414708.jpg');
+    (provider as unknown as { index: Record<string, unknown> }).index = {
+      [id]: { id, filePath: '/store/PXL_20260113_123414708.jpg', filename: 'PXL_20260113_123414708.jpg', mimeType: 'image/jpeg', year: '2026', dirPath: '/store', mtime: 1717000000000, metadata: {} }
+    };
+
+    await provider.rebuild();
+
+    const refreshed = (provider as unknown as { index: Record<string, { metadata: Record<string, unknown> }> }).index[id];
+    expect(refreshed.metadata.dateTimeOriginal).toBe('2026-05-09 08:00:00');
+    expect(refreshed.metadata.captureDateSource).toBe('exif');
+  });
+
+  it('#809: a non-date filename with no EXIF stays undated (mtime-sorted) and is surfaced via noCaptureDate', async () => {
+    stubFileList(['/store/IMG_4654.jpg']);
+    stubExiftoolByPath({ '/store/IMG_4654.jpg': { /* no capture-date tags */ } });
+
+    const id = (provider as unknown as { generateId: (p: string) => string }).generateId('/store/IMG_4654.jpg');
+    (provider as unknown as { index: Record<string, unknown> }).index = {
+      [id]: { id, filePath: '/store/IMG_4654.jpg', filename: 'IMG_4654.jpg', mimeType: 'image/jpeg', year: '2026', dirPath: '/store', mtime: 1717000000000, metadata: {} }
+    };
+
+    const result = await provider.rebuild();
+
+    const refreshed = (provider as unknown as { index: Record<string, { metadata: Record<string, unknown> }> }).index[id];
+    expect(refreshed.metadata.dateTimeOriginal).toBeNull();
+    expect(refreshed.metadata.captureDateSource).toBeUndefined();
+    expect(result.noCaptureDate).toBe(1);
+  });
 });
