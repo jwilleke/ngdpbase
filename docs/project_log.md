@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-06-01-03
+
+- Agent: Claude Opus 4.8
+- Subject: Released **v3.46.1** (patch) shipping the #807 media date-sort fix + admin notifications, and filed the two split sub-scopes.
+- Semver: **patch** — 3.46.0 → 3.46.1. Release commit `83d9ac01`, tag `v3.46.1` pushed. GitHub Release **deferred** (patch convention; publishable later via `/release`). 8 commits in range (the #807 fix + session docs).
+- Issues filed from the #807 split: **#808** ([BUG] year-only EXIF fabricates a fake-precise Jan-1 capture date — partial-date decision) and **#809** ([FEATURE] parse capture date from filename when EXIF lacks one). #807 cross-referenced and kept `in review`.
+- Test gate (pre-bump, on jimstest): build clean, **6103 unit** + **80 E2E** GREEN. Re-validated jimstest on the release commit (Step 8a): build + restart + 6103 unit GREEN.
+- Perf baseline `docs/performance/baseline-v3.46.1-2026-06-01.md`. Drift vs v3.46.0: memory +116.2% (1522.9 → 3291.8 MB) flagged as a regression candidate — this is the documented V8 post-test heap-inflation pattern (baseline captured immediately after the full unit+E2E run), not a real regression (`feedback_perf_baseline_memory_noise`). All routes faster or in noise (`/` -80%, `/search` -72%, others ±1-2ms).
+- **Propagation (`/othersites`, satellite-only — Step 8a validated jimstest on the release commit first):**
+
+  | Instance | Path | Port | Unit | E2E | Notes |
+  |---|---|---|---|---|---|
+  | jimstest | /Volumes/hd2A/workspaces/github/ngdpbase | 3000 | 6103/6103 | 80/80 | Step 8a re-validation on release commit |
+  | fairways-base | /Volumes/hd2A/workspaces/github/fairways-base | 2121 | 6103/6103 | 80/80 | package-lock drift discarded; clean ff pull from v3.46.0 |
+  | ngdp-temp-builds | /Volumes/hd2/ngdp-temp-builds/ngdpbase | 3001 | 6103/6103 | 80/80 | package-lock drift discarded; clean ff pull from v3.46.0 |
+
+- Flakes seen: none — all three instances green on the first run of both unit and E2E.
+
 ## 2026-06-01-02
 
 - Agent: Claude Opus 4.8
