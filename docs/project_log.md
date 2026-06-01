@@ -2,6 +2,20 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-06-01-05
+
+- Agent: Claude Opus 4.8
+- Subject: Verified the new Deferred section renders correctly in `/check-todos` and synced the #501 GitHub title to its re-scoped description.
+- Current Issue: #501
+- Tests: none — GitHub-metadata-only changes, no code or docs files touched in the repo.
+- Work Done:
+  - Ran the `/check-todos` `--label deferred` query: returns exactly the 7 deferred issues (#737, #707, #645, #501, #448, #423, #421), matching the TODO.md Deferred section 1:1. Confirmed easy-win #809 is correctly excluded and no deferred item leaked into active priorities.
+  - Renamed GitHub issue **#501** title from "[FEATURE] JSON to HTML" → "[FEATURE] JSON → ngdp Compatible Markdown (NCM) serializer" to clear the stale-title drift surfaced by the Deferred render (title-only sync to the 2026-05-17 re-scope; no scope change).
+  - Posted a comment on #501 documenting the rename rationale.
+- Commits: none (GitHub metadata only)
+- Files Modified:
+  - docs/project_log.md
+
 ## 2026-06-01-04
 
 - Agent: Claude Opus 4.8
