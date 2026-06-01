@@ -2,6 +2,21 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-06-01-06
+
+- Agent: Claude Opus 4.8
+- Subject: Verified the #807 media date-sort fix on live jimstest and closed the issue; cleared it from TODO.md.
+- Current Issue: #807 (closed)
+- Tests: live-instance verification (no new code) + existing regression test `mediaSortDateKey.test.ts` GREEN in v3.46.1.
+- Work Done:
+  - Verified against running jimstest `/media/year/2026?sort=date&order=asc`: list now leads with the dated `2026-04-03-IMG_4654.jpg`; the undated `Feb_20_2026_19_25_04.jpg` sorts mid-list by `mtime` at position 73/122 instead of slamming to position 0 under the old `year*10000` key. Matches the acceptance criterion.
+  - **Closed #807** with a verification comment; remaining sub-scopes #808 (year-only EXIF) and #809 (filename→date fallback) stay open.
+  - Removed #807 from TODO.md "Waiting on Review Sign-off" (now empty) and "Open BUGS".
+- Commits: (this log + TODO cleanup)
+- Files Modified:
+  - TODO.md
+  - docs/project_log.md
+
 ## 2026-06-01-05
 
 - Agent: Claude Opus 4.8

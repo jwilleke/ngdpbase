@@ -39,14 +39,13 @@ Dependabot live state: **1 open alert** on the main repo — #96 `showdown` (med
 
 Items carrying the `in review` label — work is shipped/merged; operator verification is the only thing left before close. **Clear this list before starting new feature work.**
 
-- **#807 — Media sort (slice A + D shipped, `ecc6d9cb`).** The capture-date sort fallback used `year*10000` (incomparable with epoch-ms), slamming undated items to the list extreme; now falls back to file `mtime` then Jan-1-of-year. Undated/errored/missing-folder cases now surface in `/admin/notifications`. admin-media note added clarifying Reindex/Rebuild are manual-only. **Verify:** `/media/year/2026?sort=date&order=asc` no longer leads with `Feb_20_2026_19_25_04.jpg`. Not yet released (patch candidate). Slices **B** (year-only EXIF → fabricated Jan-1 date) and **C** (filename→date fallback) split off; the literal `Feb_20` example needs operator-side exiftool backfill + Reindex.
+- _(none)_ — #807 verified on live jimstest and **closed** 2026-06-01 (leading item is now `2026-04-03-IMG_4654.jpg`; undated `Feb_20…jpg` sorts mid-list by mtime at position 73/122).
 
 ## Open BUGS (ngdpbase, by issue #)
 
 | # | Title |
 |---|---|
-| #807 | Sorting Media files — **core sort fix (A) + docs (D) shipped (`ecc6d9cb`), now in review** (see Waiting on Review Sign-off). Sub-scopes split out: **#808** (year-only EXIF fabricates a Jan-1 date), **#809** (filename→date fallback). |
-| #808 | Media metadata: year-only EXIF fabricates a fake-precise Jan-1 capture date — needs a partial-date decision (accept/surface, not fabricate). Split from #807. |
+| #808 | Media metadata: year-only EXIF fabricates a fake-precise Jan-1 capture date — needs a partial-date decision (accept/surface, not fabricate). Split from #807 (closed). |
 | #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); weekly patch-check workflow watches for a fix |
 
 ## Easy wins (ready to ship as a single short slice)
