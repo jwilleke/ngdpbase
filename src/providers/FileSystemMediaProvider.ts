@@ -112,6 +112,8 @@ interface ScanCounters {
   updated: number;
   errors: number;
   excluded: number;
+  /** Items indexed with no usable capture date — surfaced to admins (#807) */
+  noCaptureDate: number;
 }
 
 /**
@@ -231,7 +233,7 @@ class FileSystemMediaProvider extends BaseMediaProvider {
       return { scanned: 0, added: 0, updated: 0, errors: 0 };
     }
 
-    const counters: ScanCounters = { scanned: 0, added: 0, updated: 0, errors: 0, excluded: 0 };
+    const counters: ScanCounters = { scanned: 0, added: 0, updated: 0, errors: 0, excluded: 0, noCaptureDate: 0 };
     const missingFolders: string[] = [];
     const startMs = Date.now();
     logger.info(
@@ -643,6 +645,7 @@ class FileSystemMediaProvider extends BaseMediaProvider {
       const mimeType = MIME_MAP[ext] ?? 'application/octet-stream';
 
       const orientation = typeof rawTags.Orientation === 'number' ? rawTags.Orientation : 1;
+      const captureDate = this.extractDateTimeOriginal(rawTags);
 
       // Build structured camera metadata from EXIF tags
       const cameraObj: import('../types/Asset.js').AssetCamera = {};
@@ -718,9 +721,16 @@ class FileSystemMediaProvider extends BaseMediaProvider {
           model: rawTags.Model ?? null,
           gpsLatitude: lat ?? null,
           gpsLongitude: lng ?? null,
-          dateTimeOriginal: this.extractDateTimeOriginal(rawTags)
+          dateTimeOriginal: captureDate
         }
       };
+
+      // #807: track items with no usable capture date so MediaManager can
+      // surface a count to admins. These sort by file mtime, not capture date.
+      if (captureDate === null) {
+        counters.noCaptureDate++;
+        logger.debug(`[FileSystemMediaProvider] No capture date for ${filePath} — will sort by mtime`);
+      }
 
       if (existing) {
         counters.updated++;

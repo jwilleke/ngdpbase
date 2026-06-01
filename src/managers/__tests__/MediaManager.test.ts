@@ -297,3 +297,52 @@ describe.skip('MediaManager.checkPrivatePageAccess (#634 — moved to ACLManager
   // fallback. The top-level `private: true` test above (and #634's
   // system-location test) cover the canonical paths.
 });
+
+// #807: scan/rebuild anomalies are surfaced to /admin/notifications.
+describe('MediaManager — scan/rebuild notifications (#807)', () => {
+  function makeManagerWithStubProvider(scanResult: import('../../providers/BaseMediaProvider').ScanResult) {
+    const addNotification = vi.fn(() => Promise.resolve('id'));
+    const cm = makeConfigManager();
+    const engine = {
+      getManager: vi.fn((name: string) => {
+        if (name === 'ConfigurationManager') return cm;
+        if (name === 'NotificationManager') return { addNotification };
+        return null;
+      })
+    } as unknown as WikiEngine;
+    const mgr = new MediaManager(engine);
+    (mgr as unknown as { _provider: unknown })._provider = {
+      scan: vi.fn(() => Promise.resolve(scanResult)),
+      rebuild: vi.fn(() => Promise.resolve(scanResult))
+    };
+    return { mgr, addNotification };
+  }
+
+  test('notifies admins when items have no capture date', async () => {
+    const { mgr, addNotification } = makeManagerWithStubProvider({
+      scanned: 10, added: 10, updated: 0, errors: 0, noCaptureDate: 3
+    });
+    await mgr.scanFolders();
+    expect(addNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ level: 'warning', title: 'Media files without a capture date' })
+    );
+  });
+
+  test('notifies admins (error level) when files fail to process', async () => {
+    const { mgr, addNotification } = makeManagerWithStubProvider({
+      scanned: 10, added: 8, updated: 0, errors: 2, noCaptureDate: 0
+    });
+    await mgr.rebuildIndex();
+    expect(addNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ level: 'error', title: 'Media files could not be processed' })
+    );
+  });
+
+  test('no notification when scan is clean', async () => {
+    const { mgr, addNotification } = makeManagerWithStubProvider({
+      scanned: 10, added: 10, updated: 0, errors: 0, noCaptureDate: 0
+    });
+    await mgr.scanFolders();
+    expect(addNotification).not.toHaveBeenCalled();
+  });
+});

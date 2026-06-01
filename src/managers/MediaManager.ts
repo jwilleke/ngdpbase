@@ -253,9 +253,65 @@ class MediaManager extends BaseManager implements CatalogSource {
     const result = await this.provider.rebuild(onProgress);
     logger.info(
       `[MediaManager] Rebuild complete: scanned=${result.scanned} added=${result.added} ` +
-        `updated=${result.updated} errors=${result.errors} excluded=${result.excluded ?? 0}`
+        `updated=${result.updated} errors=${result.errors} excluded=${result.excluded ?? 0} ` +
+        `noCaptureDate=${result.noCaptureDate ?? 0}`
     );
+    this.surfaceScanNotifications(result, 'Rebuild');
     return result;
+  }
+
+  /**
+   * Surface scan/rebuild anomalies to admins via /admin/notifications and the
+   * server log (#807). Missing folders, capture-date gaps, and processing
+   * errors otherwise pass silently — admins only see them if they read the log.
+   *
+   * One summary notification per category (not per file) to avoid flooding the
+   * notification centre on a large library.
+   *
+   * @param result - The ScanResult returned by the provider.
+   * @param label  - "Scan" or "Rebuild", for notification wording.
+   */
+  private surfaceScanNotifications(result: ScanResult, label: string): void {
+    const nm = this.engine.getManager('NotificationManager') as
+      | { addNotification?: (n: unknown) => Promise<string> }
+      | null;
+    const notify = (n: { level: string; title: string; message: string }): void => {
+      if (nm?.addNotification) {
+        nm.addNotification({ type: 'system', ...n }).catch(() => { /* ignore */ });
+      }
+    };
+
+    if (result.missingFolders && result.missingFolders.length > 0) {
+      for (const folder of result.missingFolders) {
+        logger.warn(`[MediaManager] Media folder not found, skipped: ${folder}`);
+        notify({
+          level: 'warning',
+          title: 'Media folder not found',
+          message: `Configured media folder does not exist on disk and was skipped during ${label.toLowerCase()}: ${folder}`
+        });
+      }
+    }
+
+    if (result.noCaptureDate && result.noCaptureDate > 0) {
+      logger.warn(
+        `[MediaManager] ${label}: ${result.noCaptureDate} media file(s) have no capture date — they sort by file modification time`
+      );
+      notify({
+        level: 'warning',
+        title: 'Media files without a capture date',
+        message: `${result.noCaptureDate} media file(s) have no usable capture date (EXIF/QuickTime) and will sort by file modification time, not capture date. ` +
+          'Backfill the capture date on the source files (e.g. with exiftool\'s DateTimeOriginal) and Reindex for accurate date sorting.'
+      });
+    }
+
+    if (result.errors > 0) {
+      logger.error(`[MediaManager] ${label}: ${result.errors} file(s) could not be processed`);
+      notify({
+        level: 'error',
+        title: 'Media files could not be processed',
+        message: `${result.errors} file(s) could not be processed during ${label.toLowerCase()} (unreadable file or metadata extraction error). See the server log for the per-file details.`
+      });
+    }
   }
 
   /**
@@ -276,23 +332,12 @@ class MediaManager extends BaseManager implements CatalogSource {
     const result = await this.provider.scan(force, onProgress);
     logger.info(
       `[MediaManager] Scan complete: scanned=${result.scanned} added=${result.added} ` +
-        `updated=${result.updated} errors=${result.errors} excluded=${result.excluded ?? 0}`
+        `updated=${result.updated} errors=${result.errors} excluded=${result.excluded ?? 0} ` +
+        `noCaptureDate=${result.noCaptureDate ?? 0}`
     );
 
-    // Surface missing folders as notifications so admins see them in /admin/notifications
-    if (result.missingFolders && result.missingFolders.length > 0) {
-      const nm = this.engine.getManager('NotificationManager') as { addNotification?: (n: unknown) => Promise<string> } | null;
-      if (nm?.addNotification) {
-        for (const folder of result.missingFolders) {
-          nm.addNotification({
-            type: 'system',
-            level: 'warning',
-            title: 'Media folder not found',
-            message: `Configured media folder does not exist on disk and was skipped during scan: ${folder}`
-          }).catch(() => { /* ignore */ });
-        }
-      }
-    }
+    // Surface missing folders, capture-date gaps, and errors to /admin/notifications (#807)
+    this.surfaceScanNotifications(result, 'Scan');
 
     return result;
   }

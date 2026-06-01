@@ -65,6 +65,8 @@ export interface ScanResult {
   errors: number;
   /** Number of files skipped by .ngdpbaseignore patterns or the ngdpbaseignore EXIF keyword */
   excluded?: number;
+  /** Number of indexed items with no usable capture date (EXIF/QuickTime) — they sort by file mtime (#807) */
+  noCaptureDate?: number;
   /** Total elapsed time in milliseconds */
   elapsedMs?: number;
   /** Folder paths that were configured but not found on disk */
