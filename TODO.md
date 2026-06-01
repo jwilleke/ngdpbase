@@ -45,7 +45,8 @@ Items carrying the `in review` label — work is shipped/merged; operator verifi
 
 | # | Title |
 |---|---|
-| #807 | Sorting Media files — **core sort fix (A) + docs (D) shipped (`ecc6d9cb`), now in review** (see Waiting on Review Sign-off). Remaining open sub-scopes: **B** year-only EXIF fabricates a Jan-1 date; **C** no filename→date fallback. |
+| #807 | Sorting Media files — **core sort fix (A) + docs (D) shipped (`ecc6d9cb`), now in review** (see Waiting on Review Sign-off). Sub-scopes split out: **#808** (year-only EXIF fabricates a Jan-1 date), **#809** (filename→date fallback). |
+| #808 | Media metadata: year-only EXIF fabricates a fake-precise Jan-1 capture date — needs a partial-date decision (accept/surface, not fabricate). Split from #807. |
 | #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); weekly patch-check workflow watches for a fix |
 
 ## Operator-decision carryover
