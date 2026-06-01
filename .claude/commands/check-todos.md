@@ -11,6 +11,7 @@ This command helps focus on high-priority and current work by showing:
 - Open PRs (ngdpbase and satellites)
 - Operator-decision carryover (e.g., recommended-close issues)
 - **Easy wins** — open issues that match the easy-win criteria below (bounded scope, no new deps, low risk)
+- **Deferred** — open issues carrying the `deferred` label, listed separately so parked work doesn't get mixed into active priorities
 - Top-priority items from sister sites (combined table — see below)
 
 ## Sister-site survey
@@ -65,8 +66,9 @@ Freshen the root `TODO.md` (moved from `docs/TODO.md` on 2026-05-16). Keep only 
 - **Sister-site top priorities (combined table)** — geohazardwatch only today; expand if more separate satellites emerge
 - **Operator-action carryover** — items awaiting yes/no/close decisions
 - **Easy wins** — open issues ready to ship as a single short slice. Survey `gh issue list --state open --limit 100 --json number,title,labels,body` and apply the easy-win filter (see below). Show issue number, title, one-line "what to do", and the rationale for why it qualifies. Cap at 5 — anything beyond that suggests the filter is too loose. Skip when the operator has explicitly carved a longer slice already (e.g., active EPIC work).
+- **Deferred** — open issues carrying the `deferred` label, kept in a **separate** section from the active priorities above (BUGS, easy wins, feature work) so parked work is visible but not treated as actionable. Survey via `gh issue list --repo jwilleke/ngdpbase --state open --label deferred --json number,title,labels,updatedAt --limit 50`. List number, title, and a one-line "parked because" reason (pull from the most recent comment / TODO note where one exists). Do **not** recommend starting these or fold them into "Recommended next moves" — they move out of this section only on an explicit operator go-ahead or when a concrete driver appears. An issue that is both `deferred` and `bug` still lists here, not under Open BUGS.
 - **TODO.md staleness check** — flag if the file's `lastModified` is older than ~2 weeks
-- **Recommended next moves** — 2-4 concrete next actions
+- **Recommended next moves** — 2-4 concrete next actions (never a `deferred`-labeled issue)
 
 ## Easy-win filter
 

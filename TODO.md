@@ -49,6 +49,12 @@ Items carrying the `in review` label — work is shipped/merged; operator verifi
 | #808 | Media metadata: year-only EXIF fabricates a fake-precise Jan-1 capture date — needs a partial-date decision (accept/surface, not fabricate). Split from #807. |
 | #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); weekly patch-check workflow watches for a fix |
 
+## Easy wins (ready to ship as a single short slice)
+
+| # | Type | What to do |
+|---|---|---|
+| #809 | enhancement | Media: parse capture date from filename when EXIF lacks one (slice C of #807). Add a conservative filename→date parser tried when `extractDateTimeOriginal` returns null; mark provenance so it's distinguishable from true EXIF; failures log to the existing admin notification. Additive helper, clear test boundary, no new deps. Not blocked on #808's partial-date decision. |
+
 ## Operator-decision carryover
 
 Items awaiting a yes/no/close or operator-only action. Not blocking other work.
@@ -67,19 +73,30 @@ Top items across the sister-site issue trackers. Excludes Dependency Dashboard n
 
 ## Notable feature work in flight (ngdpbase)
 
-Filed and scoped, awaiting prioritization or implementation cycles.
+Filed and scoped, awaiting prioritization or implementation cycles. (Items carrying the `deferred` GitHub label are listed separately below.)
 
 | # | Topic | Priority hint |
 |---|---|---|
 | #786 | Auto-journal — digester consuming CatalogManager records into journal entries | Gated by #685. (#790 closed 2026-05-28, removing one of the gates.) Consumer-pattern; no source-specific code |
-| #737 | NCM Phase-2: transcode/re-encode fetched embedded images | Low — adds sharp/libvips; do when a real driver appears |
-| #707 | Typed footnote + knowledge-graph reference index | Low — **#706 dependency now satisfied (v3.46.0)** but issue body still calls it speculative (the LLM citation workflow "isn't proven for teams or institutions" per the 2026-05-16 brainstorm); revisit only if a real driver materializes. 4-6h scope. |
 | #686 | AddonsManager: auto-enable bundled addons in non-default addons-path dirs | Low — Domain Addon Deployment Lever 3 (Thread #7 in `docs/architecture-threads.md`) |
 | #631 | System/service principal model for non-request code paths | Low — Thread #6 in `docs/architecture-threads.md`; forward-compat hooks landed in #738 |
 | #685 | Data-ingestion framework (platform addon) | Low / Future — 2-4 weeks platform work; unblocks geohazardwatch data-source imports. **Pairs with #501** — the JSON→NCM serializer is #685's rendering counterpart; pick them up together when a driver appears. |
 | #675 | Scaffolder + reference template for new addons | Low |
 | #673 | Packaged addon distribution model (npm install) | Low — affects how #685 ships |
-| #501 | JSON → ngdp Compatible Markdown serializer (re-scoped 2026-05-17 from "JSON → HTML") | Deferred — dependency #728 (NCM spec/normalizer) shipped, but **no driver today**. **Pairs with #685**: #685 is the mandatory downstream consumer (fetch/schedule) and hasn't started; #501 is the render-to-page-body counterpart. Picking up #501 in isolation risks designing the API around the inline-plugin consumer and refactoring when #685 lands. Pick them up together. Four architectural questions still open (template DSL, fetch policy, template storage, ImportManager integration shape) — a Decisions doc would unblock implementation when the driver appears. |
+
+## Deferred (`deferred` GitHub label)
+
+Parked work — visible but not actionable. Driven by the `deferred` label in GitHub (the live source of truth; run `/check-todos`). These move out only on an explicit operator go-ahead or when a concrete driver appears — they are never a "recommended next move".
+
+| # | Topic | Parked because |
+|---|---|---|
+| #737 | NCM Phase-2: transcode/re-encode fetched embedded images | Adds sharp/libvips; do when a real driver appears |
+| #707 | Typed footnote + knowledge-graph reference index | **#706 dependency now satisfied (v3.46.0)** but still speculative (the LLM citation workflow "isn't proven for teams or institutions" per the 2026-05-16 brainstorm); revisit only if a real citation-heavy driver materializes. 4-6h scope. |
+| #645 | PathPreflight: extend coverage to /mnt/tank/<share>/... autofs paths | No driver; current PathPreflight coverage is sufficient for live paths |
+| #501 | JSON → ngdp Compatible Markdown serializer (re-scoped 2026-05-17 from "JSON → HTML") | Dependency #728 (NCM spec/normalizer) shipped, but **no driver today**. **Pairs with #685**: #685 is the mandatory downstream consumer and hasn't started; #501 is the render-to-page-body counterpart. In isolation risks designing the API around the inline-plugin consumer and refactoring when #685 lands — pick them up together. Four architectural questions still open (template DSL, fetch policy, template storage, ImportManager integration shape). |
+| #448 | AuthManager: Passkey / WebAuthn auth provider | New auth provider (architectural); adds simplewebauthn. No driver |
+| #423 | Asset Manager: additional storage providers (S3, Google Drive, plugin-contributed) | New storage providers (architectural). No driver |
+| #421 | AuthManager: TOTP / 2FA auth provider | New auth provider (architectural); adds otpauth. No driver |
 
 ## How this file is maintained
 
