@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-05-30T13:35:00.000Z'
+lastModified: '2026-06-01T00:00:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -45,6 +45,7 @@ Items carrying the `in review` label — work is shipped/merged; operator verifi
 
 | # | Title |
 |---|---|
+| #807 | Sorting Media files — media list sorts by filename not capture date (e.g. `Feb_20_2026_…` ahead of `2026-04-03-…` under `?sort=date&order=asc`). Conflates EXIF `DateTimeOriginal` backfill + sort logic + a docs ask (explain Reindex vs Rebuild Media). Needs a scoping pass; comment hints it may be fixed by re-indexing from the source media. |
 | #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); weekly patch-check workflow watches for a fix |
 
 ## Operator-decision carryover
@@ -59,6 +60,7 @@ Top items across the sister-site issue trackers. Excludes Dependency Dashboard n
 
 | Repo | # | Type | Title | Notes |
 |---|---|---|---|---|
+| geohazardwatch | [#66](https://github.com/jwilleke/geohazardwatch/issues/66) | bug | Renovate still not auto-bumping ngdpbase base image after #62 | Dockerfile dep extracted but no PR opened. Satellite-local CI/infra issue. |
 | geohazardwatch | [#7](https://github.com/jwilleke/geohazardwatch/issues/7) | enhancement | Import: VolcanoDiscovery RSS | Flagged as the suggested first reference consumer for the ngdpbase #685 data-ingestion framework. |
 | geohazardwatch | [#4](https://github.com/jwilleke/geohazardwatch/issues/4), [#5](https://github.com/jwilleke/geohazardwatch/issues/5), [#6](https://github.com/jwilleke/geohazardwatch/issues/6), [#13](https://github.com/jwilleke/geohazardwatch/issues/13), [#36](https://github.com/jwilleke/geohazardwatch/issues/36) | enhancement | Other data-source imports | All cross-referenced to ngdpbase #685. Can ship bespoke or wait for framework. |
 

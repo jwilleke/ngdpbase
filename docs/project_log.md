@@ -2,6 +2,18 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-06-01-01
+
+- Agent: Claude Opus 4.8
+- Subject: `/check-todos` live survey + TODO.md refresh. No code changes.
+- Security: 0 open Dependabot alerts across ngdpbase (root + all `addons/*`), geohazardwatch, and fairways-gen2-website. #599 showdown ReDoS remains mitigation-only (no upstream patch).
+- Failing Actions: none — Showdown CVE-2024-1899 Patch Check latest run (2026-05-26, scheduled) is GREEN, confirming the #749 fix held. Remaining reds in `--status failure` are Dependabot PR-branch `dynamic` runs, not master workflows.
+- In review: none. Open PRs: none on ngdpbase; geohazardwatch #72/#73 are dep-bump noise.
+- New bug surfaced: **#807** [BUG] Sorting Media files (opened 2026-06-01) — media list sorts by filename not capture date; scope conflates EXIF `DateTimeOriginal` backfill + sort logic + a docs ask. Added to TODO.md Open Bugs; needs a scoping pass before it's actionable. Not an easy win.
+- Satellite bug surfaced: geohazardwatch **#66** (Renovate not auto-bumping ngdpbase base image after #62) — added to the combined sister-site table.
+- Easy wins: none qualify — remaining backlog is all feature/architecture/addon/deferred.
+- TODO.md refreshed: added #807, added geohazardwatch #66, bumped `lastModified` to 2026-06-01.
+
 ## 2026-05-30-01
 
 - Agent: Claude Opus 4.7
