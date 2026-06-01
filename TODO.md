@@ -29,7 +29,7 @@ All three local checkouts share `jwilleke/ngdpbase` as their git remote — thei
 
 ## Security
 
-Dependabot live state: **0 open alerts** on the main repo and on the geohazardwatch satellite. Mitigation-only items below are tracked manually (no Dependabot alert to clear).
+Dependabot live state: **1 open alert** on the main repo — #96 `showdown` (medium, GHSA-rmmh-p597-ppvv = CVE-2024-1899), the mitigation-only item tracked under #599 below (no upstream patch to apply, so it cannot be cleared). geohazardwatch and fairways-gen2-website: **0 open**. Note: the unfiltered `dependabot/alerts` query returns only the first page (newest first) and hides #96 behind newer auto-dismissed alerts — use `?state=open&per_page=100` to see it.
 
 | Source | Package | Severity | Status |
 |---|---|---|---|

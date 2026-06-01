@@ -6,7 +6,7 @@ AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version histor
 
 - Agent: Claude Opus 4.8
 - Subject: `/check-todos` live survey + TODO.md refresh. No code changes.
-- Security: 0 open Dependabot alerts across ngdpbase (root + all `addons/*`), geohazardwatch, and fairways-gen2-website. #599 showdown ReDoS remains mitigation-only (no upstream patch).
+- Security: 1 open Dependabot alert on ngdpbase — #96 `showdown` medium (GHSA-rmmh-p597-ppvv = CVE-2024-1899), which is the #599 mitigation-only item (no upstream patch). geohazardwatch and fairways-gen2-website: 0 open. **Process note:** the skill's documented query (`dependabot/alerts` without `state=`) returned `[]` because the default endpoint only fetches the first page (newest first) and #96 (created 2026-04-24) sits behind newer auto-dismissed alerts — the push banner ("1 moderate") caught the miss. Use `?state=open&per_page=100` for an accurate count.
 - Failing Actions: none — Showdown CVE-2024-1899 Patch Check latest run (2026-05-26, scheduled) is GREEN, confirming the #749 fix held. Remaining reds in `--status failure` are Dependabot PR-branch `dynamic` runs, not master workflows.
 - In review: none. Open PRs: none on ngdpbase; geohazardwatch #72/#73 are dep-bump noise.
 - New bug surfaced: **#807** [BUG] Sorting Media files (opened 2026-06-01) — media list sorts by filename not capture date; scope conflates EXIF `DateTimeOriginal` backfill + sort logic + a docs ask. Added to TODO.md Open Bugs; needs a scoping pass before it's actionable. Not an easy win.
