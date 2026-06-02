@@ -49,7 +49,7 @@ const feedsAddon = {
 
     feedManager = new FeedManager(sourceConfigs, baseDir);
 
-    // Reachable for the fetch='FeedManager.latest(...)' consumer convention (slice 5).
+    // Reachable for the fetch='FeedManager.toMarqueeText(...)' consumer convention (slice 5).
     engine.registerManager('FeedManager', feedManager);
 
     const catalogManager = engine.getManager<CatalogManager>('CatalogManager');
@@ -59,17 +59,27 @@ const feedsAddon = {
     } else {
       logger.warn('[feeds addon] CatalogManager not available — feed sources not registered');
     }
+
+    // Start the poll scheduler; stale-feed warnings route to /admin/notifications.
+    const nm = engine.getManager('NotificationManager') as
+      | { addNotification?: (n: unknown) => Promise<string> }
+      | null;
+    const notify = (n: { level: string; title: string; message: string }): void => {
+      if (nm?.addNotification) nm.addNotification({ type: 'system', ...n }).catch(() => { /* ignore */ });
+    };
+    feedManager.startScheduler({ notify });
   },
 
   status(): Promise<AddonStatusDetails> {
     const n = feedManager?.getSourceIds().length ?? 0;
     return Promise.resolve({
       healthy: true,
-      message: `${n} feed source(s) configured (geojson adapter; manual ingest — scheduler lands #685 slice 6)`
+      message: `${n} feed source(s) configured (geojson adapter; auto-poll scheduler active)`
     });
   },
 
   shutdown(): Promise<void> {
+    feedManager?.stopScheduler();
     feedManager = null;
     return Promise.resolve();
   }

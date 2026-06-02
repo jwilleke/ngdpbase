@@ -15,6 +15,8 @@ import { FeedCatalogSource } from './FeedCatalogSource.js';
 import { RecordStore } from './RecordStore.js';
 import { recordToCreativeWork } from './normalize.js';
 import { getAdapter } from './adapters/index.js';
+import { FeedScheduler } from './FeedScheduler.js';
+import type { FeedSchedulerOptions } from './FeedScheduler.js';
 import type { SourceAdapter } from './adapters/types.js';
 import type { FeedSourceConfig } from './types.js';
 import type { UpsertResult } from './RecordStore.js';
@@ -34,6 +36,7 @@ export type AdapterResolver = (name: string) => SourceAdapter | null;
 
 export class FeedManager {
   private readonly feeds: Map<string, FeedEntry> = new Map();
+  private scheduler: FeedScheduler | null = null;
 
   constructor(
     sourceConfigs: FeedSourceConfig[],
@@ -55,6 +58,20 @@ export class FeedManager {
   /** Configured source ids. */
   getSourceIds(): string[] {
     return [...this.feeds.keys()];
+  }
+
+  /** Start the poll scheduler (#685 slice 6). No-op when no sources configured. */
+  startScheduler(opts: FeedSchedulerOptions = {}): void {
+    this.stopScheduler();
+    const configs = [...this.feeds.values()].map(e => e.config);
+    this.scheduler = new FeedScheduler(configs, id => this.ingest(id), opts);
+    this.scheduler.start();
+  }
+
+  /** Stop the poll scheduler (addon shutdown). */
+  stopScheduler(): void {
+    this.scheduler?.stop();
+    this.scheduler = null;
   }
 
   /**
