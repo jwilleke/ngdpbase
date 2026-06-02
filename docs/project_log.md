@@ -2,6 +2,23 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-06-02-04
+
+- Agent: Claude Opus 4.8
+- Subject: Started #685 (data-ingestion framework) — Step 1 design doc; #631 labeled deferred.
+- Current Issue: #685 (also #631)
+- Tests: none — docs-only (design doc). No framework code yet.
+- Work Done:
+  - **#685 Step 1 — design doc** at `docs/platform/feeds/design.md`. Grounded the thread's decisions in the actual code before committing to a design: verified the `CatalogSource` contract (`src/types/Schema.ts:438`) + `CatalogManager.registerSource` (`:273`); confirmed there is **no** in-engine cron.
+  - **Scheduler decision RESOLVED** (operator: "we already have something"): reuse `BackupManager`'s `setInterval` tick+check-due pattern (`src/managers/BackupManager.ts:627`) — no cron dependency. Dropped the issue's cron-string config for `intervalMinutes`/`dailyAt`. Outbound HTTP = native `fetch` (as geohazardwatch's `import-earthquakes.js` already does).
+  - Documented prior-art extraction map (geohazardwatch addon's 3 DataManagers + 3 importers → 5 MVP adapters), 8-slice implementation plan, config schema, and the open/deferred decisions (the four #501 questions gate only the later `[DataFeed]` body-materialization slice).
+  - Stopped at code — the design doc is the human-review gate for this architecture-labelled, 2-4 wk effort. Awaiting operator review before slice 2 (addon skeleton).
+  - Earlier in session: **#631 labeled `deferred`** (foundation exists via #625/#738 but no live breakage/driver) and moved to TODO Deferred.
+- Commits: `0f004ad6` (design doc), `f020ae9c` (#631 deferred)
+- Files Modified:
+  - docs/platform/feeds/design.md (new)
+  - docs/project_log.md, TODO.md
+
 ## 2026-06-02-03
 
 - Agent: Claude Opus 4.8
