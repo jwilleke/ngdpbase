@@ -26,7 +26,8 @@ export default tseslint.config(
           "./addons/calendar/tsconfig.json",
           "./addons/elasticsearch/tsconfig.json",
           "./addons/journal/tsconfig.json",
-          "./addons/journal/tsconfig.test.json"
+          "./addons/journal/tsconfig.test.json",
+          "./addons/feeds/tsconfig.json"
         ],
         tsconfigRootDir: import.meta.dirname,
       },

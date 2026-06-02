@@ -198,10 +198,11 @@ Migration of the satellite is explicitly **post-framework** (separate satellite-
 
 ## 7. Configuration
 
-Per-instance via `app-custom-config.json`. Cron strings from the original issue body are **replaced** with interval/time fields matching the scheduler (§4.4):
+Per-instance via `app-custom-config.json`, under the **established addon namespace `ngdpbase.addons.feeds.*`** (confirmed convention — AddonsManager flattens this slice into the object passed to `register()`; `config.sources` is the per-feed map). The addon is **enabled** via `ngdpbase.addons.feeds.enabled` (default `false`). Defaults live **inline in `register()`** (like the `elasticsearch` addon) — so **`config/app-default-config.json` is not modified**; the addon is inert until enabled and a source is declared. Cron strings from the original issue body are **replaced** with interval/time fields matching the scheduler (§4.4):
 
 ```jsonc
-"ngdpbase.feeds.sources": {
+"ngdpbase.addons.feeds.enabled": true,
+"ngdpbase.addons.feeds.sources": {
   "usgs-quakes": {
     "adapter": "geojson",
     "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson",
@@ -228,7 +229,7 @@ Each slice is an independently shippable PR.
 1. **This design doc** ← you are here (Step 1, the review gate).
 2. ✅ **DONE — Platform cleanup (feeds-independent):** extracted the `fetch='Manager.method()'` convention out of `MarqueePlugin` into `pluginFormatters.ts` as `resolveManagerFetch()` (behaviour-preserving; MarqueePlugin delegates to it; +7 unit tests). Any plugin can now reuse the one shared impl.
    - **2b (deferred — security review):** an allow-list / read-only restriction on which `Manager.method`s page content may invoke. Split out of slice 2 because it is a *security-policy change* (AGENTS human-review gate) and a behaviour change — current behaviour is wide-open (any method), and all real usage already follows the `BaseManager.toMarqueeText()` convention, so a restriction is feasible but needs operator sign-off on the policy. `resolveManagerFetch` is the single chokepoint where it would be enforced.
-3. **Addon skeleton** — `addons/feeds/` (package.json, `index.ts` `register()`, FeedManager class implementing an empty CatalogSource, empty config namespace). Registers with CatalogManager; no adapters.
+3. ✅ **DONE — Addon skeleton:** `addons/feeds/` (package.json, tsconfig, `index.ts` `register()`, `FeedManager` + per-source `FeedCatalogSource` returning empty until slice 4, `config.ts` parser for the `ngdpbase.addons.feeds.sources` slice). `register()` registers FeedManager with the engine (reachable for slice 5) and a `FeedCatalogSource` per configured feed with CatalogManager. Added to `build:addons`. +11 unit tests; addon discovered cleanly (default-disabled), 6148 unit + 80 E2E green. No adapters, no scheduler.
 4. **`geojson` adapter (zero-dep) + record store + change-detection** — first vertical slice; native `JSON.parse`, hash via `DeltaStorage.calculateHash`. Validate against the USGS earthquakes GeoJSON (already the reference feed in geohazardwatch's `import-earthquakes.js`).
 5. **Inline consumer** — `FeedManager.latest()` + the `resolveManagerFetch` helper from slice 2; proves end-to-end render with **no new plugin** (e.g. `[{MarqueePlugin fetch='FeedManager.latest(...)'}]`).
 6. **Scheduler + back-off + stale-feed WARN** — recurring runtime (BackupManager pattern; NotificationManager for warnings).
