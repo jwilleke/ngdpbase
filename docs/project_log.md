@@ -2,6 +2,20 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-06-02-03
+
+- Agent: Claude Opus 4.8
+- Subject: Read-only verification of #809 and #808 against the live media library; confirmed policy, no code change.
+- Current Issue: #809, #808 (both in review)
+- Tests: none run — verification only (no code change). Logic already covered by the 6130-unit suite from v3.47.0/v3.47.1.
+- Work Done:
+  - **#809 — verified working.** Ran the shipped `parseDateFromFilename` against all 50 undated entries in the live index: **38 recover a date** (e.g. `Dec_19_2024_15_48_00`→`2024-12-19 15:48:00`, `20250105_090342`→`2025-01-05 09:03:42`, ISO-prefix names). The 12 rejections are correct conservatism (`Label_<unix>`, `Image (210).tiff`, comma-form `November 28, 2024`). Pure-function run — no file access.
+  - **#808 — read-only EXIF verification** (per the no-media-write rule; only files read, never written). Read all 20 `*-01-01 00:00:00` entries: **all 20 carry a literal `YYYY-01-01` with month/day present (=1); 0 are component-absent.** I initially over-analysed this as a 'placeholder/wrong-date' problem — operator corrected the framing.
+  - **Policy confirmed (operator):** the rule is simply **date missing MM or dd → WARN; no date → ERROR.** Dates are taken at face value; the system does NOT attempt to detect 'wrong' or 'placeholder' dates. This is exactly what shipped in v3.47.1 — **no code change needed.** The literal `01-01` files have complete month/day and are intentionally not flagged. Corrected the misleading analysis on the #808 thread.
+- Commits: none (verification + docs only)
+- Files Modified:
+  - docs/project_log.md
+
 ## 2026-06-02-02
 
 - Agent: Claude Opus 4.8
