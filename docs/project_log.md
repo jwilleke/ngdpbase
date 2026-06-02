@@ -2,6 +2,30 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-06-02-12
+
+- Agent: Claude Opus 4.8
+- Subject: Released **v3.48.0** (minor) — the #685 feeds data-ingestion framework; propagated to all instances.
+- Current Issue: #685 (in review)
+- Semver: **minor** — 3.47.1 → 3.48.0. Release commit `f89adf7f`, tag `v3.48.0` pushed, **GitHub Release published**. 24 commits in range (the #685 build-out slices 2–8 + #631/#808/#809 housekeeping). The feeds addon ships **default-disabled** — the framework is available but inert until an operator enables it + configures a source (safe minor, zero behavior change on existing instances).
+- Tests: 6198 unit + 80 E2E GREEN on every instance.
+- Perf baseline `docs/performance/baseline-v3.48.0-2026-06-02.md`. Drift vs v3.47.1: memory +73.8% (1962.7 → 3410.4 MB) flagged, but **all routes flat** (±1–5ms) → documented V8 post-test heap-inflation noise (the v3.47.1 baseline was an unusually-low capture); not a real regression (`feedback_perf_baseline_memory_noise`). Proceeded without pausing.
+- Propagation (`/othersites`, satellite-only — Step 8a validated jimstest on the release commit first):
+
+  | Instance | Path | Port | Unit | E2E | Notes |
+  |---|---|---|---|---|---|
+  | jimstest | /Volumes/hd2A/workspaces/github/ngdpbase | 3000 | 6198/6198 | 80/80 | Step 8a re-validation on release commit |
+  | fairways-base | /Volumes/hd2A/workspaces/github/fairways-base | 2121 | 6198/6198 | 80/80 | clean ff pull from v3.47.0 (skipped v3.47.1 patch) |
+  | ngdp-temp-builds | /Volumes/hd2/ngdp-temp-builds/ngdpbase | 3001 | 6198/6198 | 80/80 | clean ff pull from v3.47.0 |
+
+  Flakes seen: none.
+- What shipped: the **feeds addon** (data-ingestion framework, #685) — config → scheduled poll (back-off + stale-feed WARN) → ingest (geojson | rest-json adapters) → change-detected RecordStore (DeltaStorage hash) → render via `[Marquee fetch='FeedManager.toMarqueeText(...)']` + `[DataFeed]` plugin, all surfaced as a CatalogSource (search/JSON-LD). Default-disabled.
+- Remaining (driver-gated, tracked on #685): dep-requiring adapters (`rss-atom`/`csv`/`xls`), geohazardwatch importer migration (slice 9), #501/NCM-table unification. **Acceptance step for #685:** enable the addon + configure a real source (e.g. USGS GeoJSON), verify ingest + render live.
+- Commits: `f89adf7f` (release)
+- Files Modified:
+  - package.json, package-lock.json, config/app-default-config.json, CHANGELOG.md
+  - docs/performance/baseline-v3.48.0-2026-06-02.md, docs/project_log.md, TODO.md
+
 ## 2026-06-02-11
 
 - Agent: Claude Opus 4.8

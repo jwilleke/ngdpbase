@@ -16,7 +16,7 @@ Current near-term priorities for ngdpbase and the sister sites tracked by `/othe
 
 **See also**: [`docs/architecture-threads.md`](./docs/architecture-threads.md) maps in-flight cross-cutting design threads (CatalogManager unification, NCM pipeline, JSON-LD render, Journal reconcile, ACL evaluator, system principal, addon platform) — issues here that belong to a thread are listed there with their dependency context. Use TODO.md for "what's open and how to prioritise"; use architecture-threads.md for "how do these issues relate to each other."
 
-**Latest release**: v3.47.1 (2026-06-02; patch, GH Release deferred) — shipped **#808** partial year-only capture-date policy: year-only EXIF stays defaulted to Jan 1 but is now surfaced at **WARN** (was a silent fabrication), and genuinely undated files move to **ERROR**. jimstest GREEN at v3.47.1 (6130 unit, +7 tests); **patch → no `/othersites` propagation**, so satellites (fairways-base, ngdp-temp-builds) remain at **v3.47.0** until the next minor. Prior: v3.47.0 (2026-06-02; minor) shipped **#809** filename→capture-date fallback (`captureDateSource` provenance marker).
+**Latest release**: v3.48.0 (2026-06-02; minor, GH Release published) — shipped the **#685 feeds data-ingestion framework** (new `feeds` addon, **default-disabled**): config → scheduled poll (back-off + stale-feed WARN) → ingest (`geojson` | `rest-json` adapters) → change-detected RecordStore → render via `[Marquee fetch='FeedManager.toMarqueeText(...)']` + `[DataFeed]` plugin, all as a CatalogSource. **All three instances in sync at v3.48.0** (jimstest, fairways-base, ngdp-temp-builds), each GREEN: 6198 unit + 80 E2E. Prior: v3.47.1 (2026-06-02; patch) shipped **#808** partial-date WARN/ERROR.
 
 Sister sites in scope:
 
@@ -39,7 +39,7 @@ Dependabot live state: **1 open alert** on the main repo — #96 `showdown` (med
 
 Items carrying the `in review` label — work is shipped/merged; operator verification is the only thing left before close. **Clear this list before starting new feature work.**
 
-- _(none)_ — #809 (filename→date fallback, v3.47.0) and #808 (missing MM/dd → WARN, no date → ERROR, v3.47.1) verified and **closed** 2026-06-02.
+- **#685 — feeds data-ingestion framework (shipped v3.48.0).** New `feeds` addon, **default-disabled**. **Verify:** enable it (`ngdpbase.addons.feeds.enabled: true`) + configure a source, e.g. the USGS earthquakes GeoJSON (`adapter: geojson`), then confirm `[{DataFeed source='…'}]` / `[{MarqueePlugin fetch='FeedManager.toMarqueeText(source=…)'}]` render after a poll, and stale/error feeds surface in `/admin/notifications`. Remaining (driver-gated, tracked on #685): `rss-atom`/`csv`/`xls` adapters, geohazardwatch importer migration, #501/NCM-table unification.
 
 ## Open BUGS (ngdpbase, by issue #)
 
@@ -69,11 +69,10 @@ Filed and scoped, awaiting prioritization or implementation cycles. (Items carry
 
 | # | Topic | Priority hint |
 |---|---|---|
-| #786 | Auto-journal — digester consuming CatalogManager records into journal entries | Gated by #685. (#790 closed 2026-05-28, removing one of the gates.) Consumer-pattern; no source-specific code |
+| #786 | Auto-journal — digester consuming CatalogManager records into journal entries | Gate **#685 now shipped (v3.48.0)** — the FeedManager CatalogSource it consumes exists; consumer-pattern, no source-specific code |
 | #686 | AddonsManager: auto-enable bundled addons in non-default addons-path dirs | Low — Domain Addon Deployment Lever 3 (Thread #7 in `docs/architecture-threads.md`) |
-| #685 | Data-ingestion framework (platform addon) | Low / Future — 2-4 weeks platform work; unblocks geohazardwatch data-source imports. **Pairs with #501** — the JSON→NCM serializer is #685's rendering counterpart; pick them up together when a driver appears. |
 | #675 | Scaffolder + reference template for new addons | Low |
-| #673 | Packaged addon distribution model (npm install) | Low — affects how #685 ships |
+| #673 | Packaged addon distribution model (npm install) | Low — affects how the now-shipped #685 feeds addon distributes to satellites |
 
 ## Deferred (`deferred` GitHub label)
 
