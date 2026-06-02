@@ -39,8 +39,7 @@ Dependabot live state: **1 open alert** on the main repo — #96 `showdown` (med
 
 Items carrying the `in review` label — work is shipped/merged; operator verification is the only thing left before close. **Clear this list before starting new feature work.**
 
-- **#809 — Media filename→date fallback (shipped v3.47.0, `c5e633bb`).** Recovers a capture date from the filename when EXIF lacks one, before the mtime fallback; new `captureDateSource` provenance marker. 20 new tests; 6123 unit green on all three instances. **Verify:** run **Reindex Media** (Admin → Media), then `/media/year/2026?sort=date&order=asc` — `Feb_20_2026_19_25_04.jpg` should sort into February (the live index still holds the old null date until a re-scan).
-- **#808 — Partial year-only capture-date policy (shipped v3.47.1, `0e8f4f26`).** Year-only EXIF stays at Jan 1 but is surfaced at WARN; genuinely undated files at ERROR. 7 new tests; jimstest green. **Verify:** run **Reindex Media**, then check `/admin/notifications` for the new "Media files with a partial capture date" (WARN) — the live index has ~20 such entries (`1920-Census…`, etc.) that will re-flag on re-scan.
+- _(none)_ — #809 (filename→date fallback, v3.47.0) and #808 (missing MM/dd → WARN, no date → ERROR, v3.47.1) verified and **closed** 2026-06-02.
 
 ## Open BUGS (ngdpbase, by issue #)
 
