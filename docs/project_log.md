@@ -2,6 +2,22 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-06-02-09
+
+- Agent: Claude Opus 4.8
+- Subject: #685 slice 6 — feed poll scheduler (back-off + stale-feed WARN).
+- Current Issue: #685
+- Tests: 6176 unit (+6 scheduler) + 80 E2E GREEN. Addon still default-disabled.
+- Semver: **skip** — disabled addon, no user-facing change.
+- Work Done:
+  - `FeedScheduler` mirrors `BackupManager`'s `setInterval` 60s tick (`.unref()`'d). Per-source cadence: `intervalMinutes` (default 60) or `dailyAt` (wall-clock, once/day). Back-off: consecutive failures multiply the effective interval (capped 6×), reset on success. Stale-feed WARN: one `NotificationManager` warning when a source hasn't succeeded within 3× its interval (or never after 3 failures), cleared on recovery.
+  - Clock/notify/ingest injected → unit-tested with no real timers/network (+6: due/interval, back-off, reset, stale-once, empty, dailyAt).
+  - `FeedManager.startScheduler()/stopScheduler()` wired into addon register/shutdown; stale warnings route to `/admin/notifications`.
+- Commits: `7be4e212`
+- Files Modified:
+  - addons/feeds/src/FeedScheduler.ts (new), FeedManager.ts, index.ts, **tests**/FeedScheduler.test.ts (new)
+  - docs/platform/feeds/design.md, docs/project_log.md
+
 ## 2026-06-02-08
 
 - Agent: Claude Opus 4.8
