@@ -2,6 +2,25 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-06-02-05
+
+- Agent: Claude Opus 4.8
+- Subject: #685 slice 2 — extracted the manager-fetch convention into a shared `pluginFormatters` helper.
+- Current Issue: #685
+- Tests: 6137 unit (+7 for `resolveManagerFetch`) + 80 E2E GREEN. Behaviour-preserving; MarqueePlugin's existing `fetch=` tests unchanged and passing.
+- Semver: **skip** — internal consolidation, no user-facing change, mid-feature. Version bumps when a slice ships real behaviour.
+- Work Done:
+  - Audited first (operator's no-duplication intent): found `BaseManager.toMarqueeText()` is the standard method-name convention, `managerUtils.ts` owns the manager-side option parsing, and all real `fetch=` content usage is `…Manager.toMarqueeText(…)`. So slice 2 is purely a plugin-side extraction.
+  - Extracted `fetch='Manager.method(k=v,...)'` parse+invoke out of `MarqueePlugin` into `pluginFormatters.resolveManagerFetch(spec, context)` returning `{status:'ok'|'not-found'|'no-spec'}`. MarqueePlugin delegates; output byte-identical (preserves all three cases).
+  - **Allow-list split to slice 2b (deferred):** the wide-open "call any `Manager.method` from page content" surface is current behaviour; restricting it is a security-policy + behaviour change (AGENTS human-review gate). `resolveManagerFetch` is the single chokepoint where a future allow-list is enforced. Documented in the design doc.
+- Commits: `39b7e4fe`
+- Files Modified:
+  - src/utils/pluginFormatters.ts
+  - src/utils/**tests**/pluginFormatters.test.ts
+  - src/plugins/MarqueePlugin.ts
+  - docs/platform/feeds/design.md
+  - docs/project_log.md
+
 ## 2026-06-02-04
 
 - Agent: Claude Opus 4.8
