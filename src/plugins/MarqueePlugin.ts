@@ -23,7 +23,7 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import { escapeHtml } from '../utils/pluginFormatters.js';
+import { escapeHtml, resolveManagerFetch } from '../utils/pluginFormatters.js';
 
 // ─── unique ID counter so multiple banners on one page don't share keyframes ──
 let _idCounter = 0;
@@ -62,25 +62,15 @@ const MarqueePlugin: SimplePlugin = {
 
     // If fetch param is set, call the specified manager method to get text.
     // Syntax: fetch='ManagerName.methodName(k=v,...)' — e.g. fetch='HansDataManager.toMarqueeText(limit=3)'
-    // The raw key=value args object is passed to the method — the manager owns its own parsing.
+    // Shared convention helper (#685 slice 2); the manager owns its own arg parsing.
     if (params.fetch) {
-      const match = String(params.fetch).trim().match(/^([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)\(([^)]*)\)$/);
-      if (match && context.engine) {
-        const [, managerName, methodName, argsStr] = match;
-        const fetchArgs: Record<string, string> = {};
-        if (argsStr) {
-          for (const pair of argsStr.split(',')) {
-            const eq = pair.indexOf('=');
-            if (eq > 0) fetchArgs[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim();
-          }
-        }
-        const manager = context.engine.getManager(managerName) as Record<string, unknown> | undefined;
-        if (manager && typeof manager[methodName] === 'function') {
-          text = String(await (manager[methodName] as (o: Record<string, string>) => unknown)(fetchArgs));
-        } else {
-          return `<span class="text-muted"><em>[MarqueePlugin: fetch target '${escapeHtml(String(params.fetch))}' not found]</em></span>`;
-        }
+      const result = await resolveManagerFetch(String(params.fetch), context);
+      if (result.status === 'ok') {
+        text = result.text;
+      } else if (result.status === 'not-found') {
+        return `<span class="text-muted"><em>[MarqueePlugin: fetch target '${escapeHtml(String(params.fetch))}' not found]</em></span>`;
       }
+      // 'no-spec' (malformed / no engine) → fall through with the literal text param, as before.
     }
 
     if (!text) {

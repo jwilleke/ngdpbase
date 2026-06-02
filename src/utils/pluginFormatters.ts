@@ -475,3 +475,58 @@ export function formatPaginationLinks(
 
   return `<div class="plugin-pagination">${prev}&nbsp;&nbsp;Page ${currentPage} of ${totalPages}&nbsp;&nbsp;${next}</div>`;
 }
+
+// ---------------------------------------------------------------------------
+// Manager-fetch convention (#685 slice 2)
+// ---------------------------------------------------------------------------
+
+/** Outcome of resolveManagerFetch — lets callers reproduce their own messaging. */
+export type ManagerFetchResult =
+  | { status: 'ok'; text: string }   // method resolved and returned text
+  | { status: 'not-found' }          // spec well-formed but manager/method absent
+  | { status: 'no-spec' };           // no spec, no engine, or malformed — caller should ignore
+
+/**
+ * Resolve the `fetch='ManagerName.methodName(k=v,...)'` plugin convention to text.
+ *
+ * Extracted from MarqueePlugin (#685 slice 2) so any plugin can inline a value
+ * from a registered manager through one shared, tested implementation rather
+ * than re-parsing the spec per plugin. The canonical method is the
+ * `BaseManager.toMarqueeText()` convention; the raw `{k: v}` args object is
+ * passed straight to the method (the manager owns its own option parsing via
+ * `managerUtils.ts`).
+ *
+ * Behaviour is intentionally identical to the prior MarqueePlugin inline code:
+ * a malformed spec or missing engine yields `no-spec` (caller falls through),
+ * a well-formed spec whose target is absent yields `not-found`.
+ *
+ * NOTE (security): this resolves an arbitrary `Manager.method` from page
+ * content — same surface as the original MarqueePlugin code. An allow-list /
+ * read-only restriction is a deliberate follow-up (security-policy change,
+ * tracked separately), not folded into this behaviour-preserving extraction.
+ */
+export async function resolveManagerFetch(
+  spec: string | undefined,
+  context: { engine?: { getManager(name: string): unknown } }
+): Promise<ManagerFetchResult> {
+  if (!spec || !context.engine) return { status: 'no-spec' };
+
+  const match = String(spec).trim().match(/^([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)\(([^)]*)\)$/);
+  if (!match) return { status: 'no-spec' };
+
+  const [, managerName, methodName, argsStr] = match;
+  const fetchArgs: Record<string, string> = {};
+  if (argsStr) {
+    for (const pair of argsStr.split(',')) {
+      const eq = pair.indexOf('=');
+      if (eq > 0) fetchArgs[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim();
+    }
+  }
+
+  const manager = context.engine.getManager(managerName) as Record<string, unknown> | undefined;
+  if (manager && typeof manager[methodName] === 'function') {
+    const text = String(await (manager[methodName] as (o: Record<string, string>) => unknown)(fetchArgs));
+    return { status: 'ok', text };
+  }
+  return { status: 'not-found' };
+}

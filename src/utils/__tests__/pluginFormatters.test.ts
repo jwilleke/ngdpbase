@@ -26,7 +26,8 @@ import {
   applyPagination,
   formatPaginationLinks,
   parsePlacementParam,
-  placementClass
+  placementClass,
+  resolveManagerFetch
 } from '../pluginFormatters';
 
 // ---------------------------------------------------------------------------
@@ -503,5 +504,61 @@ describe('placementClass', () => {
     expect(placementClass('left')).toBe('plugin-placement-left');
     expect(placementClass('block')).toBe('plugin-placement-block');
     expect(placementClass('inline')).toBe('plugin-placement-inline');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveManagerFetch (#685 slice 2)
+// ---------------------------------------------------------------------------
+
+describe('resolveManagerFetch', () => {
+  const makeContext = (managers: Record<string, unknown>) => ({
+    engine: { getManager: (name: string) => managers[name] }
+  });
+
+  test('resolves a manager method and returns its text', async () => {
+    const ctx = makeContext({
+      TestManager: { toMarqueeText: async () => 'hello from manager' }
+    });
+    const r = await resolveManagerFetch('TestManager.toMarqueeText()', ctx);
+    expect(r).toEqual({ status: 'ok', text: 'hello from manager' });
+  });
+
+  test('passes key=value args to the method as an object', async () => {
+    let received: Record<string, string> | undefined;
+    const ctx = makeContext({
+      TestManager: { toMarqueeText: async (o: Record<string, string>) => { received = o; return 'x'; } }
+    });
+    await resolveManagerFetch('TestManager.toMarqueeText(limit=3,sort=date-desc)', ctx);
+    expect(received).toEqual({ limit: '3', sort: 'date-desc' });
+  });
+
+  test('stringifies a non-string return value', async () => {
+    const ctx = makeContext({ M: { count: async () => 42 } });
+    const r = await resolveManagerFetch('M.count()', ctx);
+    expect(r).toEqual({ status: 'ok', text: '42' });
+  });
+
+  test('returns not-found when the manager is absent', async () => {
+    const r = await resolveManagerFetch('NoSuchManager.toMarqueeText()', makeContext({}));
+    expect(r).toEqual({ status: 'not-found' });
+  });
+
+  test('returns not-found when the method is absent', async () => {
+    const ctx = makeContext({ TestManager: { somethingElse: () => 'x' } });
+    const r = await resolveManagerFetch('TestManager.toMarqueeText()', ctx);
+    expect(r).toEqual({ status: 'not-found' });
+  });
+
+  test('returns no-spec for a malformed spec (caller falls through)', async () => {
+    const ctx = makeContext({ TestManager: { toMarqueeText: async () => 'x' } });
+    expect(await resolveManagerFetch('not a spec', ctx)).toEqual({ status: 'no-spec' });
+    expect(await resolveManagerFetch('', ctx)).toEqual({ status: 'no-spec' });
+    expect(await resolveManagerFetch(undefined, ctx)).toEqual({ status: 'no-spec' });
+  });
+
+  test('returns no-spec when no engine is present', async () => {
+    const r = await resolveManagerFetch('TestManager.toMarqueeText()', {});
+    expect(r).toEqual({ status: 'no-spec' });
   });
 });
