@@ -2,6 +2,24 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-06-02-06
+
+- Agent: Claude Opus 4.8
+- Subject: #685 slice 3 — feeds addon skeleton (FeedManager + per-source CatalogSource).
+- Current Issue: #685
+- Tests: 6148 unit (+11 feeds) + 80 E2E GREEN. Addon discovered cleanly at startup (5 discovered / 4 loaded — feeds default-disabled).
+- Semver: **skip** — addon is default-disabled, no adapters/scheduler, no user-facing change.
+- Work Done:
+  - Studied the elasticsearch/journal addons + AddonsManager first: confirmed config namespace is `ngdpbase.addons.<name>.*` (flattened to `register(engine, config)`), enable flag `ngdpbase.addons.feeds.enabled` (default false), and addon defaults live inline in `register()` — so **no `app-default-config.json` change** (corrects the design doc's earlier `ngdpbase.feeds.*`).
+  - Created `addons/feeds/`: `package.json`, `tsconfig.json`, `index.ts` `register()`, `src/FeedManager.ts` (one `FeedCatalogSource` per source + `registerSources()`), `src/FeedCatalogSource.ts` (implements the `CatalogSource` contract; empty list/get/rebuild until slice 4), `src/config.ts` (parse+validate the sources slice; dot-path map, no JSONPath), `src/types.ts`, `__tests__/FeedManager.test.ts` (11 tests).
+  - `register()` registers FeedManager with the engine ('FeedManager', reachable for the slice-5 fetch convention) and a FeedCatalogSource per configured feed with CatalogManager.
+  - Wired into `build:addons`; added `addons/feeds/tsconfig.json` to the ESLint typed-project list (root `tsconfig.test.json` already globs addon tests).
+  - Verified: build clean (feeds compiles), full suite green, server discovers the addon without error (disabled, not loaded).
+- Commits: `f8e5577c`
+- Files Modified:
+  - addons/feeds/** (new: index.ts, src/*.ts, **tests**/FeedManager.test.ts, package.json, tsconfig.json)
+  - package.json (build:addons), eslint.config.mjs, docs/platform/feeds/design.md, docs/project_log.md
+
 ## 2026-06-02-05
 
 - Agent: Claude Opus 4.8
