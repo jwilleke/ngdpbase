@@ -2,6 +2,22 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-06-02-08
+
+- Agent: Claude Opus 4.8
+- Subject: #685 slice 5 — inline consumer (`FeedManager.toMarqueeText` via the existing `fetch=` convention).
+- Current Issue: #685
+- Tests: 6170 unit (+4) + 80 E2E GREEN. Addon still default-disabled.
+- Semver: **skip** — disabled addon, no user-facing change.
+- Work Done:
+  - Added `FeedManager.toMarqueeText({source, max, sep})` — reuses the existing `BaseManager.toMarqueeText` convention name (not a new `latest()`), returns latest-first record names (ISO `dateCreated` desc), `''` for unknown/empty source.
+  - First **visible output**: `[{MarqueePlugin fetch='FeedManager.toMarqueeText(source=usgs-quakes,max=5)'}]` renders ingested feed data through the **existing** MarqueePlugin (which already routes through the slice-2 `resolveManagerFetch`) — **no new plugin**.
+  - +4 tests incl. an end-to-end `MarqueePlugin.execute` render asserting the marquee wrapper + record names + max honoured. Design doc slice 5 marked done; `latest()` examples corrected to `toMarqueeText(...)`.
+- Commits: `9bd7b66c`
+- Files Modified:
+  - addons/feeds/src/FeedManager.ts, addons/feeds/**tests**/FeedManager.test.ts
+  - docs/platform/feeds/design.md, docs/project_log.md
+
 ## 2026-06-02-07
 
 - Agent: Claude Opus 4.8
