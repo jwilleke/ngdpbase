@@ -2,6 +2,30 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-06-02-02
+
+- Agent: Claude Opus 4.8
+- Subject: Implemented **#808** (partial year-only capture-date policy) and released **v3.47.1** (patch).
+- Current Issue: #808
+- Tests: 6130 unit GREEN (+7 new: 5 extractCaptureDate partial-detection, 1 provider-wiring, 1 MediaManager severity). E2E not run — no UI-affecting path (providers/managers/types only). Re-validated jimstest on the release commit.
+- Semver: **patch** — 3.47.0 → 3.47.1. Release commit `17b28f14`, tag `v3.47.1` pushed. **GH Release deferred** (patch convention). Feature commit `0e8f4f26`. **No `/othersites` propagation** (patch gate) — satellites stay on v3.47.0, catch up at next minor.
+- Decision (operator): partial dates are **accept + surface, not restructure**. Year-only / year+month EXIF stays stored at Jan 1 (clustering now accepted + flagged, not silent); a missing TIME component is not partial. Severity split: partial → **WARN**, genuinely undated → **ERROR** (was WARN). No metadata precision marker, no mtime-within-year sort (deliberately minimal). Recorded on #808.
+- Read-only verify: inspected the media-index JSON on FAST_STORAGE (never the media files, per the no-media-library-write rule) — found 20 entries at `*-01-01 00:00:00`, filenames confirm year-only historical photos (`1920-Census...`, `1934-...`, `parkmoor`→1935, several→1940). Implementation keys off raw-tag month/day presence, so any genuine Jan-1 self-corrects.
+- Work Done:
+  - `extractDateTimeOriginal` collapsed into `extractCaptureDate()` (returns `{date, partial}`); partial = month and/or day missing. `processFile` tallies `partialCaptureDate` vs `noCaptureDate`. `MediaManager.surfaceScanNotifications` emits WARN (partial) + ERROR (no-date). `ScanResult.partialCaptureDate` added. The #750 extractor test repointed via a `.date` helper.
+- Perf baseline `docs/performance/baseline-v3.47.1-2026-06-02.md`. Drift vs v3.47.0: memory -37.6% (improved). `/` flagged +127ms (25→152ms) but steady-state re-sampling showed 3-5ms (cold-cache first-hit artifact, same shape operator adjudicated as noise for `/search` earlier today); #808 touches only the media scan path, not the homepage. Proceeded as noise.
+- Commits: `0e8f4f26` (fix), `17b28f14` (release)
+- Files Modified:
+  - src/providers/FileSystemMediaProvider.ts
+  - src/providers/BaseMediaProvider.ts
+  - src/managers/MediaManager.ts
+  - src/providers/**tests**/FileSystemMediaProvider.extractDateTimeOriginal.test.ts
+  - src/providers/**tests**/FileSystemMediaProvider.rebuildSlice3.test.ts
+  - src/managers/**tests**/MediaManager.test.ts
+  - package.json, package-lock.json, config/app-default-config.json, CHANGELOG.md
+  - docs/performance/baseline-v3.47.1-2026-06-02.md
+  - docs/project_log.md, TODO.md
+
 ## 2026-06-02-01
 
 - Agent: Claude Opus 4.8
