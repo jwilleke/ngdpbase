@@ -148,6 +148,29 @@ This covers the ticker/badge/last-updated cases for *any* plugin — **no feed-s
 - Page versions only when the operator edits the prose (the dynamic block does not bump version history).
 - **Only consumer that materializes record→page body**, via the #501 serializer (D7) — built last (slice 6).
 
+### 5.3 Three layers — what refreshes vs what is never rewritten
+
+A `[DataFeed]` renders an **inline section/fragment** where its token sits in a host page — never a free-standing, engine-owned page. A "feed page" is simply a host page whose body is one (or more) `[{DataFeed}]` tokens. There is no engine-written page.
+
+How content stays current splits across three layers; **only the middle one is periodically overwritten**:
+
+| Layer | Where | Periodically overwritten? | By what |
+|---|---|---|---|
+| **Page file** (versioned, on disk) — operator prose + the `[{DataFeed}]` token | SLOW_STORAGE, git-versioned | **Never** by the feed | operator edits only — this is the D6 guarantee that feeds don't churn page history |
+| **Record store** | FeedManager, FAST_STORAGE | **Yes** — its whole job | the scheduler, on its interval; not versioned, not git |
+| **Rendered output** (what the viewer sees) | transient | **Recomputed, not stored** | recomputed at view time from the store on each request → always current |
+
+So a `[DataFeed]` page *displays* fresh data on a periodic basis via **view-time recompute**, not by overwriting any stored content — there is no "last content" being overwritten, because the rendered block is never persisted into the page.
+
+**Explicit rule — FeedManager never owns or rewrites a feed page.** Automatically rewriting a stored page body on a timer is the rejected path: it reintroduces version churn (D6) and, per-record, the page-index explosion (D3). FeedManager's product is **catalog records**, not pages.
+
+Two safe exceptions, both bounded:
+
+- **Write-once stub scaffold (optional, off by default):** when a source is configured, FeedManager (or a one-shot admin action) may create a stub host page once — title + a single `[{DataFeed source='X'}]` — then never touch it again. All later "updates" are the plugin's view-time recompute. One write, no churn.
+- **Render cache (optional perf):** caching a source's rendered HTML with a TTL is a *cache* overwrite, not a page version — no git churn. An optimization for hot pages, separate from the page file.
+
+If feed content needs to be searchable/exportable, that is already solved without materializing it into a page body: the records are a `CatalogSource`, hence queryable/searchable directly. Materializing a stored snapshot is only ever a deliberate, operator-triggered action — never an automatic timer.
+
 ## 6. Prior-art extraction map (geohazardwatch → feeds)
 
 | geohazardwatch (bespoke) | feeds (framework) |
