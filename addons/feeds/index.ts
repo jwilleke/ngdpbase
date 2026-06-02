@@ -28,6 +28,7 @@ import type { AddonStatusDetails } from '../../dist/src/managers/AddonsManager.j
 import logger from '../../dist/src/utils/logger.js';
 import { FeedManager } from './src/FeedManager.js';
 import { parseSourceConfigs } from './src/config.js';
+import DataFeedPlugin from './src/DataFeedPlugin.js';
 
 let feedManager: FeedManager | null = null;
 
@@ -58,6 +59,14 @@ const feedsAddon = {
       logger.info(`[feeds addon] Registered ${n} feed source(s) with CatalogManager`);
     } else {
       logger.warn('[feeds addon] CatalogManager not available — feed sources not registered');
+    }
+
+    // Register the [DataFeed] consumer plugin (#685 slice 7).
+    const pluginManager = engine.getManager('PluginManager') as
+      | { registerPlugin?: (name: string, plugin: unknown) => Promise<void> | void }
+      | null;
+    if (pluginManager?.registerPlugin) {
+      await pluginManager.registerPlugin('DataFeed', DataFeedPlugin);
     }
 
     // Start the poll scheduler; stale-feed warnings route to /admin/notifications.

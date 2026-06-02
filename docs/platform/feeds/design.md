@@ -163,7 +163,7 @@ This covers the ticker/badge/last-updated cases for *any* plugin — **no feed-s
 
 - Embedded in an operator-curated subject page; re-renders from the live store on each view.
 - Page versions only when the operator edits the prose (the dynamic block does not bump version history).
-- **Only consumer that materializes record→page body**, via the #501 serializer (D7) — built last (slice 6).
+- **Renders at view time via `pluginFormatters`** (`formatAsTable`/`parseSortParam`/`parseMaxParam`/`escapeHtml`) — table (default) or list, with `source`/`columns`/`sort`/`max`/`format` params. Cells are escaped plain text; the output is HTML, not NCM. #501 / NCM materialization is **deferred** (the `formatAsTable`-vs-NCM-table unification is tracked on #501) — needed only if feed cells must carry resolving page-links or records are written to a stored page body, neither of which has a driver (design §5.3).
 
 ### 5.3 Three layers — what refreshes vs what is never rewritten
 
@@ -238,7 +238,7 @@ Each slice is an independently shippable PR.
 4. ✅ **DONE — `geojson` adapter (zero-dep) + record store + change-detection.** `SourceAdapter` contract + `geojson` adapter (native fetch/JSON.parse; FeatureCollection/array/single; dot-path `map`), `RecordStore` (per-source JSON under FAST_STORAGE; change-detection via `DeltaStorage.calculateHash` over content excluding `fetchedAt` — D6), `recordToCreativeWork` dispatcher (Article projection; `schemaType` config-driven + validated), `FeedManager.ingest()` pipeline, `FeedCatalogSource.list()/get()` reading the store. +29 unit tests. (Scheduler is slice 6 — ingest is manual/triggered for now.)
 5. ✅ **DONE — Inline consumer:** `FeedManager.toMarqueeText({source, max, sep})` (the `BaseManager.toMarqueeText` convention) + the slice-2 `resolveManagerFetch` helper. `[{MarqueePlugin fetch='FeedManager.toMarqueeText(source=usgs-quakes,max=5)'}]` renders latest-first record names with **no new plugin**. +4 tests incl. an end-to-end MarqueePlugin render. 6170 unit + 80 E2E green.
 6. ✅ **DONE — Scheduler + back-off + stale-feed WARN.** `FeedScheduler` mirrors BackupManager's `setInterval` 60s tick (`.unref()`'d); per-source cadence via `intervalMinutes` (default 60) or `dailyAt`; consecutive failures multiply the effective interval (capped 6×), reset on success; a single WARN routes to `/admin/notifications` (NotificationManager) when a source goes stale, cleared on recovery. Injected clock/notify/ingest → fully unit-tested (+6). `FeedManager.startScheduler()/stopScheduler()` wired into addon register/shutdown. 6176 unit + 80 E2E green.
-7. **`[DataFeed source=…]`** + record→body materialization via the #501 serializer (pick up #501 here, per its defer note) — reuses `pluginFormatters` for list/sort/escape.
+7. ✅ **DONE — `[DataFeed source=…]` plugin.** Renders a source's records as a table (default) or list at view time via `pluginFormatters` (`source`/`columns`/`sort`/`max`/`format`; cells escaped). Registered with PluginManager at addon register. **#501 deferred** (operator decision 2026-06-02) — the view-time block needs no NCM; the `formatAsTable`-vs-NCM unification is filed on #501. +9 tests; 6185 unit + 80 E2E green.
 8. **Remaining adapters by dependency cost** — `rest-json` (zero-dep) next; then `rss-atom` (+XML parser, separate PR), `csv`, `xls` (+spreadsheet lib) by demand, each calling out its dependency for sign-off.
 9. **(satellite)** geohazardwatch bespoke importers → feeds migration.
 

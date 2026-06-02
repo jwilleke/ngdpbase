@@ -63,12 +63,21 @@ export function recordToCreativeWork(rec: NormalizedRecord, cfg: FeedSourceConfi
   }
 }
 
+/**
+ * Human-readable name for a record: first title-ish property, else a
+ * `<prefix> <id>` fallback. Shared by the Article projection and the
+ * `[DataFeed]` list renderer (one impl, no duplication).
+ */
+export function recordName(rec: NormalizedRecord, fallbackPrefix = ''): string {
+  return firstString(rec.properties, ['title', 'headline', 'name', 'place', 'summary'])
+    ?? `${fallbackPrefix} ${rec.sourceRecordId}`.trim();
+}
+
 export function recordToArticle(rec: NormalizedRecord, cfg: FeedSourceConfig): Article {
   const props = rec.properties;
   const landing = `/feeds/${cfg.sourceId}/${rec.sourceRecordId}`;
 
-  const name = firstString(props, ['title', 'headline', 'name', 'place', 'summary'])
-    ?? `${cfg.sourceId} ${rec.sourceRecordId}`;
+  const name = recordName(rec, cfg.sourceId);
 
   const description = firstString(props, ['description', 'summary', 'detail']);
 

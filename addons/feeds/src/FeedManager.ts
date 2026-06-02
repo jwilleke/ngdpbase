@@ -60,6 +60,12 @@ export class FeedManager {
     return [...this.feeds.keys()];
   }
 
+  /** Full normalized records for a source (with `properties`) — for the `[DataFeed]` plugin. */
+  async getRecords(sourceId: string): Promise<import('./adapters/types.js').NormalizedRecord[]> {
+    const entry = this.feeds.get(sourceId);
+    return entry ? entry.store.list() : [];
+  }
+
   /** Start the poll scheduler (#685 slice 6). No-op when no sources configured. */
   startScheduler(opts: FeedSchedulerOptions = {}): void {
     this.stopScheduler();
