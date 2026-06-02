@@ -12,7 +12,7 @@
 
 import type { SourceAdapter, RawRecord, NormalizedRecord } from './types.js';
 import type { FeedSourceConfig } from '../types.js';
-import { getByPath } from './dotpath.js';
+import { buildRecord } from './buildRecord.js';
 
 export const geojsonAdapter: SourceAdapter = {
   name: 'geojson',
@@ -32,22 +32,9 @@ export const geojsonAdapter: SourceAdapter = {
   },
 
   parse(raw: RawRecord, cfg: FeedSourceConfig): NormalizedRecord | null {
-    const idRaw = cfg.recordIdField ? getByPath(raw, cfg.recordIdField) : raw.id;
-    const sourceRecordId = typeof idRaw === 'string' || typeof idRaw === 'number' ? String(idRaw) : '';
-    if (!sourceRecordId) return null;
-
-    const properties: Record<string, unknown> = {};
-    if (cfg.map) {
-      for (const [key, path] of Object.entries(cfg.map)) {
-        properties[key] = getByPath(raw, path);
-      }
-    } else {
-      const featureProps = (raw as { properties?: unknown }).properties;
-      if (featureProps && typeof featureProps === 'object' && !Array.isArray(featureProps)) {
-        Object.assign(properties, featureProps);
-      }
-    }
-
-    return { sourceRecordId, fetchedAt: new Date().toISOString(), properties };
+    // With no map, lift the GeoJSON feature's own `properties` object.
+    const fp = (raw as { properties?: unknown }).properties;
+    const defaultProps = fp && typeof fp === 'object' && !Array.isArray(fp) ? (fp as Record<string, unknown>) : undefined;
+    return buildRecord(raw, cfg, defaultProps);
   }
 };

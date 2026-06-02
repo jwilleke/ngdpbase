@@ -6,9 +6,11 @@
 
 import type { SourceAdapter } from './types.js';
 import { geojsonAdapter } from './geojson.js';
+import { restJsonAdapter } from './restjson.js';
 
 const ADAPTERS: Record<string, SourceAdapter> = {
-  [geojsonAdapter.name]: geojsonAdapter
+  [geojsonAdapter.name]: geojsonAdapter,
+  [restJsonAdapter.name]: restJsonAdapter
 };
 
 /** Look up an adapter by name; null when unknown. */

@@ -38,6 +38,7 @@ export function parseSourceConfigs(raw: unknown): FeedSourceConfig[] {
     if (typeof v.intervalMinutes === 'number') cfg.intervalMinutes = v.intervalMinutes;
     if (typeof v.dailyAt === 'string') cfg.dailyAt = v.dailyAt;
     if (typeof v.recordIdField === 'string') cfg.recordIdField = v.recordIdField;
+    if (typeof v.itemsPath === 'string') cfg.itemsPath = v.itemsPath;
     if (v.map && typeof v.map === 'object' && !Array.isArray(v.map)) {
       const m: Record<string, string> = {};
       for (const [k, val] of Object.entries(v.map as Record<string, unknown>)) {

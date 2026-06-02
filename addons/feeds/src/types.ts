@@ -29,6 +29,8 @@ export interface FeedSourceConfig {
   schemaType?: string;
   /** Dot-path to the per-record stable id within a raw record (no JSONPath DSL — see design §7). */
   recordIdField?: string;
+  /** rest-json only: dot-path to the items array within the response (e.g. 'results'). */
+  itemsPath?: string;
   /** Optional dot-path map: normalized property → source path. Adapter may instead return shaped records. */
   map?: Record<string, string>;
 }
