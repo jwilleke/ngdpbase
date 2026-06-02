@@ -16,7 +16,7 @@ Current near-term priorities for ngdpbase and the sister sites tracked by `/othe
 
 **See also**: [`docs/architecture-threads.md`](./docs/architecture-threads.md) maps in-flight cross-cutting design threads (CatalogManager unification, NCM pipeline, JSON-LD render, Journal reconcile, ACL evaluator, system principal, addon platform) — issues here that belong to a thread are listed there with their dependency context. Use TODO.md for "what's open and how to prioritise"; use architecture-threads.md for "how do these issues relate to each other."
 
-**Latest release**: v3.46.1 (2026-06-01; patch, GH Release deferred) — shipped the **#807** media date-sort fix (undated items fall back to file mtime instead of the scale-broken `year*10000`) plus admin notifications for capture-date gaps / processing errors / missing folders, and a Reindex-vs-Rebuild "manual-only" note. **All three instances in sync at v3.46.1** (jimstest, fairways-base, ngdp-temp-builds), each GREEN: 6103 unit + 80 E2E (+10 new tests). Prior: v3.46.0 (2026-05-30; minor) shipped **#706** knowledge-role opt-in frontmatter (source/citation/concept) with full Lunr+ES search wiring.
+**Latest release**: v3.47.0 (2026-06-02; minor, GH Release published) — shipped **#809** conservative filename→capture-date fallback for media (recovers dates from names like `PXL_20260113_123414708.jpg` / `2026-04-03-IMG_4654.jpg` / `Feb_20_2026_19_25_04.jpg` when EXIF lacks one; new `captureDateSource` provenance marker so filename dates don't masquerade as EXIF). **All three instances in sync at v3.47.0** (jimstest, fairways-base, ngdp-temp-builds), each GREEN: 6123 unit (+20 new tests); 80 E2E green pre-bump. Prior: v3.46.1 (2026-06-01; patch) shipped the **#807** media date-sort fix + admin notifications.
 
 Sister sites in scope:
 
@@ -39,7 +39,7 @@ Dependabot live state: **1 open alert** on the main repo — #96 `showdown` (med
 
 Items carrying the `in review` label — work is shipped/merged; operator verification is the only thing left before close. **Clear this list before starting new feature work.**
 
-- _(none)_ — #807 verified on live jimstest and **closed** 2026-06-01 (leading item is now `2026-04-03-IMG_4654.jpg`; undated `Feb_20…jpg` sorts mid-list by mtime at position 73/122).
+- **#809 — Media filename→date fallback (shipped v3.47.0, `c5e633bb`).** Recovers a capture date from the filename when EXIF lacks one, before the mtime fallback; new `captureDateSource` provenance marker. 20 new tests; 6123 unit green on all three instances. **Verify:** run **Reindex Media** (Admin → Media), then `/media/year/2026?sort=date&order=asc` — `Feb_20_2026_19_25_04.jpg` should sort into February (the live index still holds the old null date until a re-scan).
 
 ## Open BUGS (ngdpbase, by issue #)
 
@@ -47,12 +47,6 @@ Items carrying the `in review` label — work is shipped/merged; operator verifi
 |---|---|
 | #808 | Media metadata: year-only EXIF fabricates a fake-precise Jan-1 capture date — needs a partial-date decision (accept/surface, not fabricate). Split from #807 (closed). |
 | #599 | showdown ReDoS (CVE-2024-1899) — no upstream patch (mitigation only); weekly patch-check workflow watches for a fix |
-
-## Easy wins (ready to ship as a single short slice)
-
-| # | Type | What to do |
-|---|---|---|
-| #809 | enhancement | Media: parse capture date from filename when EXIF lacks one (slice C of #807). Add a conservative filename→date parser tried when `extractDateTimeOriginal` returns null; mark provenance so it's distinguishable from true EXIF; failures log to the existing admin notification. Additive helper, clear test boundary, no new deps. Not blocked on #808's partial-date decision. |
 
 ## Operator-decision carryover
 

@@ -2,6 +2,38 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-06-02-01
+
+- Agent: Claude Opus 4.8
+- Subject: Implemented **#809** (filename→capture-date fallback for media) and released **v3.47.0** (minor), propagated to all instances.
+- Current Issue: #809 (in review)
+- Tests: 6123 unit GREEN (+20 new: 17 parser + 3 provider-wiring/provenance) on all three instances; 80 E2E GREEN pre-bump on jimstest.
+- Semver: **minor** — 3.46.1 → 3.47.0. Release commit `534831b9`, tag `v3.47.0` pushed, **GitHub Release published** (minor convention). Feature commit `c5e633bb`.
+- Work Done:
+  - New pure module `src/providers/mediaFilenameDate.ts` — `parseDateFromFilename()` with conservative anchored patterns (month-name, ISO prefix, compact `YYYYMMDD_HHMMSS` with required time/separator). Ambiguous input → null.
+  - `FileSystemMediaProvider.processFile`: try the filename when EXIF has no date, before the mtime fallback. New `metadata.captureDateSource` (`'exif'`|`'filename'`) provenance marker (added to `AssetMetadata`). `noCaptureDate` now counts only files where both EXIF and filename fail.
+  - Marked #809 `in review` with verify instructions (requires a Reindex Media to repopulate the live index).
+- Perf baseline `docs/performance/baseline-v3.47.0-2026-06-01.md`. Drift vs v3.46.1: memory -4.5% (improved). `/search` flagged +119ms (42→161ms) but steady-state re-sampling showed ~40ms (cold-cache sampling artifact); #809 touches only the media scan path, not search — operator confirmed proceed (noise).
+- Propagation (`/othersites`, satellite-only — Step 8a validated jimstest on the release commit first):
+
+  | Instance | Path | Port | Unit | Notes |
+  |---|---|---|---|---|
+  | jimstest | /Volumes/hd2A/workspaces/github/ngdpbase | 3000 | 6123/6123 | Step 8a re-validation on release commit |
+  | fairways-base | /Volumes/hd2A/workspaces/github/fairways-base | 2121 | 6123/6123 | clean ff pull from v3.46.1 |
+  | ngdp-temp-builds | /Volumes/hd2/ngdp-temp-builds/ngdpbase | 3001 | 6123/6123 | clean ff pull from v3.46.1 |
+
+  Flakes seen: none.
+- Commits: `c5e633bb` (feat), `534831b9` (release)
+- Files Modified:
+  - src/providers/mediaFilenameDate.ts (new)
+  - src/providers/**tests**/mediaFilenameDate.test.ts (new)
+  - src/providers/FileSystemMediaProvider.ts
+  - src/providers/**tests**/FileSystemMediaProvider.rebuildSlice3.test.ts
+  - src/types/Asset.ts
+  - package.json, package-lock.json, config/app-default-config.json, CHANGELOG.md
+  - docs/performance/baseline-v3.47.0-2026-06-01.md
+  - TODO.md, docs/project_log.md
+
 ## 2026-06-01-06
 
 - Agent: Claude Opus 4.8
