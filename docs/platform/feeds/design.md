@@ -26,16 +26,34 @@ This is platform infrastructure: it must not depend on geohazardwatch or any sat
 | D2 | Addon working name **`feeds`** (sibling to `calendar`/`forms`/`elasticsearch`/`journal`); contains a `FeedManager` class. | comment 2026-05-22 |
 | D3 | **Storage = CatalogSource records, NOT pages.** `FeedManager` calls `catalogManager.registerSource()` at addon `register()` time — no per-record page, no page-index explosion. | comment 2026-05-22 |
 | D4 | **Reuse #728 NCM + ImportManager** normalization/`kind` machinery; do not re-implement. | comment 2026-05-22 |
-| D5 | **Two consumer plugins**: `[Marquee source=…]` (simpler, first) and `[DataFeed source=…]` (curated subject page, later). No "one page per record" mode. | comment 2026-05-22 |
+| D5 | **Two consumption modes**: an inline value/text widget and a curated-subject-page block. No "one page per record" mode. *(Refined in §5: the inline mode reuses the existing `fetch='Manager.method()'` convention rather than a bespoke `[Marquee source=…]`; only `[DataFeed]` is a new plugin.)* | comment 2026-05-22 |
 | D6 | Change-detection **hashes the normalized record, not rendered Markdown**; any serializer used for body materialization must be deterministic. | comment 2026-05-17 |
 | D7 | Body materialization (only when an operator curates a subject page) goes through the **#501 JSON→NCM serializer**; #685 must **not** call #501's render-time fetch path. | comments 2026-05-17 / 2026-05-23 |
 
-## 3. Resolved this session (was open)
+## 3. Reuse map — build NOTHING that already exists
 
-| Topic | Resolution | Rationale |
-|---|---|---|
-| **Scheduler mechanism** | Reuse the existing **`setInterval` "tick + check-due"** pattern from `BackupManager` (`src/managers/BackupManager.ts:627` — 60s tick, runs when a source is due). **No new dependency, no cron parser.** | Operator: "we already have something on this." `BackupManager` (in-engine) and the geohazardwatch addon (`_intervals`) both schedule this way. The issue body's `"0 */1 * * *"` cron strings are dropped in favour of interval/time config (see §7). Cron-expression support can be added later if a real need appears. |
-| **Outbound HTTP client** | Native `fetch()` (Node 18+). No axios/got. | The geohazardwatch importers (`import-earthquakes.js:141`) already use native `fetch`. No new dependency. |
+**Governing constraint (operator):** do not duplicate functionality already implemented. The framework is mostly *assembly of existing parts*; the only genuinely net-new code is the wire-format adapters and the poll-loop orchestration (§3.2). Every other capability maps to an existing owner:
+
+### 3.1 Reuse — existing implementations
+
+| Capability #685 needs | Existing owner — reuse, do not rebuild |
+|---|---|
+| **Change-detection hash** (D6) | `DeltaStorage.calculateHash(content)` — sha256, `src/utils/DeltaStorage.ts:186` (already used for page `contentHash`). Hash the canonicalized normalized record with this. |
+| **Scheduler** | `BackupManager`'s `setInterval` 60s tick + check-due (`src/managers/BackupManager.ts:627`). No cron parser, **no new dependency**. The issue body's `"0 */1 * * *"` cron strings are dropped for `intervalMinutes`/`dailyAt` (§7). |
+| **Outbound HTTP** | Native `fetch()` (as `geohazardwatch/import-earthquakes.js:141` already does). No axios/got. |
+| **Manager-fetch convention** (`fetch='Manager.method()'`) | Currently a **single** impl inside `MarqueePlugin`. Extract it once into `pluginFormatters.ts` (sibling to `resolveUserParam`) with an allow-list; reuse everywhere. Do **not** write a second copy for any feed plugin. |
+| **List / count / sort / escape rendering** | `src/utils/pluginFormatters.ts` — `formatAsList`, `formatAsCount`, `parseSortParam`, `parseMaxParam`, `escapeHtml`. `[DataFeed]` renders through these. |
+| **Record → NCM page body** (D4, slice 6) | ImportManager converter registry + `normalizeToNcm` (`src/converters/ncm/`) and the #501 serializer. No bespoke Markdown. |
+| **Storage / query / JSON-LD / dereferenceable `@id`** | `CatalogManager` + `CatalogSource` (`src/types/Schema.ts:438`, `registerSource` at `CatalogManager.ts:273`). |
+| **Stale-feed / error admin warnings** | `NotificationManager` (same path MediaManager uses, `src/managers/MediaManager.ts`). |
+| **Addon lifecycle / `register()` / disable toggle** | `AddonsManager` (as `calendar`/`elasticsearch`/`journal` do). |
+
+### 3.2 Genuinely net-new (the only code worth writing)
+
+- **SourceAdapter wire parsers** — `geojson` + `rest-json` are native `JSON.parse` (**zero dependency**); `csv` is trivial or a small dep; `rss-atom` needs **XML parsing (a dependency)**; `xls` needs a **spreadsheet lib (a dependency)**.
+- **FeedManager poll orchestration** — the loop that wires the reused pieces (fetch → adapter.parse → hash-compare via `DeltaStorage` → upsert catalog records → NotificationManager on staleness).
+
+No JSONPath/mapping DSL is introduced — none exists in the repo, and adding one would duplicate normalization that ImportManager/NCM already own (see §7).
 
 ## 4. Architecture
 
@@ -58,7 +76,7 @@ This is platform infrastructure: it must not depend on geohazardwatch or any sat
    CatalogManager  ──────────────────────────┘
         ▲
         │ (consumer plugins read via CatalogManager / FeedManager)
-   [Marquee source='…']     [DataFeed source='…']
+   any plugin via fetch='FeedManager.latest(…)'   |   [DataFeed source='…']
 ```
 
 ### 4.1 SourceAdapter contract
@@ -75,7 +93,7 @@ interface SourceAdapter {
 
 `NormalizedRecord` carries `{ sourceRecordId, fetchedAt, properties: Record<string, unknown> }`. The `@type` mapping (schema.org) and `identifier` are assigned by FeedManager from `cfg`, not the adapter (keeps adapters domain-agnostic).
 
-MVP adapter order (by demand from the open geohazardwatch issues): `rss-atom` → `rest-json` → `geojson/wfs` → `csv` → `xls`. Additional adapters can be contributed without forking the framework.
+MVP adapter order is now **by dependency cost first**, then demand: `geojson` → `rest-json` (both native `JSON.parse`, **zero dep**) → `rss-atom` (**+XML parser dep**) → `csv` (trivial or small dep) → `xls` (**+spreadsheet lib dep**). Each dependency-introducing adapter is a separate PR that calls out its dependency for sign-off. Additional adapters can be contributed without forking the framework.
 
 ### 4.2 FeedManager as CatalogSource
 
@@ -106,12 +124,29 @@ Per-source on-disk record store under `FAST_STORAGE` (operational data, like the
 
 ### 4.5 Change detection (D6)
 
-`poll()` computes a stable hash of each **normalized record** (sorted keys). Compare against the stored hash; upsert only changed/new records, tombstone removed ones. The rendered Markdown is never hashed — guarantees unchanged upstream data does not churn a curated subject page's git history.
+`poll()` computes a stable hash of each **normalized record** (canonicalized with sorted keys) using the existing **`DeltaStorage.calculateHash()`** (`src/utils/DeltaStorage.ts:186`) — the same sha256 helper that backs page `contentHash`. Compare against the stored hash; upsert only changed/new records, tombstone removed ones. The rendered Markdown is never hashed — guarantees unchanged upstream data does not churn a curated subject page's git history.
 
-## 5. Consumer plugins (D5)
+## 5. Consumer surface (D5) — composition, no new plugin paradigm
 
-- **`[Marquee source='usgs-quakes' max=5]`** — `MarqueePlugin` (exists) gains a `source` handle reading the latest N records from a FeedManager source. First consumer; proves end-to-end. Renders inline; no page version churn.
-- **`[DataFeed source='usgs-quakes' since=… filter=…]`** — embedded in an operator-curated subject page; re-renders from the live store on each view. Page versions only when the operator edits the prose. **This is the only consumer that materializes record→body, and it does so via the #501 serializer (D7) — built last.**
+Two real consumption modes, both built from existing primitives — **no bespoke `source=` handle, no `BasePlugin`** (plugins here are `SimplePlugin` object literals; shared behaviour lives in `pluginFormatters.ts` by composition).
+
+### 5.1 Inline a value/text — the generic manager-fetch convention (any plugin)
+
+FeedManager is just a registered manager exposing a render-ready helper (e.g. `FeedManager.latest(sourceId, n)`). Any plugin inlines feed data through the **existing** `fetch='Manager.method()'` convention — *extracted from `MarqueePlugin` into `pluginFormatters.ts` as `resolveManagerFetch()` with an allow-list*, so it's one shared, guarded impl:
+
+```
+[{MarqueePlugin fetch='FeedManager.latest("usgs-quakes", 5)'}]
+```
+
+This covers the ticker/badge/last-updated cases for *any* plugin — **no feed-specific plugin code**. The old "`[Marquee source=…]`" idea is dropped: it was a second copy of a convention that already exists.
+
+### 5.2 Render structured records as a filterable block — `[DataFeed]`
+
+`[DataFeed source='usgs-quakes' since=… filter=…]` is the one genuinely-new consumer, because it does what the string-fetch convention cannot: a **structured query** over `CreativeWork` records + **formatted rendering** through the existing `formatAsList`/`parseSortParam`/`parseMaxParam`/`escapeHtml` in `pluginFormatters.ts`.
+
+- Embedded in an operator-curated subject page; re-renders from the live store on each view.
+- Page versions only when the operator edits the prose (the dynamic block does not bump version history).
+- **Only consumer that materializes record→page body**, via the #501 serializer (D7) — built last (slice 6).
 
 ## 6. Prior-art extraction map (geohazardwatch → feeds)
 
@@ -121,7 +156,7 @@ Per-source on-disk record store under `FAST_STORAGE` (operational data, like the
 | `import/import-hans.js`, `import-volcanoes.js` | `rest-json` adapter + source configs |
 | `managers/EarthquakeDataManager.js` etc. (per-source store) | FeedManager record store (one code path) |
 | `_intervals` ad-hoc `setInterval`s in `index.js` | FeedManager single-tick scheduler |
-| `EarthquakeList`/`EarthquakeMap` plugins | `[DataFeed]` / `[Marquee]` (generic) |
+| `EarthquakeList`/`EarthquakeMap` plugins | generic `[DataFeed]` + the `fetch=` convention |
 
 Migration of the satellite is explicitly **post-framework** (separate satellite-repo effort).
 
@@ -136,15 +171,17 @@ Per-instance via `app-custom-config.json`. Cron strings from the original issue 
     "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson",
     "intervalMinutes": 60,                 // OR  "dailyAt": "03:00"
     "type": "Event",                       // schema.org @type for this source
-    "recordId": "$.id",                    // JSONPath to the per-record stable id
-    "map": {                               // JSONPath → normalized properties
-      "magnitude": "$.properties.mag",
-      "depth_km": "$.geometry.coordinates[2]",
-      "occurredAt": "$.properties.time"
+    "recordIdField": "id",                  // dot-path to the per-record stable id
+    "map": {                                // dot-path → normalized property
+      "magnitude": "properties.mag",
+      "depth_km": "geometry.coordinates.2",
+      "occurredAt": "properties.time"
     }
   }
 }
 ```
+
+**No JSONPath/mapping-DSL engine is introduced** — none exists in the repo, and adding one would duplicate normalization that ImportManager/NCM already own. `map` uses a trivial **dot-path** lookup (a few lines, the `properties.mag` / `geometry.coordinates.2` form). Where a source needs richer shaping than dot-paths express, that's the adapter's job (it returns an already-shaped record) — not a config DSL. The `map` block is itself optional: an adapter may return records already in normalized shape.
 
 `config/app-default-config.json` ships **no** sources (empty) — the framework is inert until an operator declares one. (Per the config-catalog-change rule, the default catalog is not modified beyond adding the empty `ngdpbase.feeds.*` namespace, which needs operator sign-off at PR time.)
 
@@ -153,13 +190,14 @@ Per-instance via `app-custom-config.json`. Cron strings from the original issue 
 Each slice is an independently shippable PR.
 
 1. **This design doc** ← you are here (Step 1, the review gate).
-2. **Addon skeleton** — `addons/feeds/` (package.json, `index.ts` `register()`, FeedManager class implementing an empty CatalogSource, config namespace). Registers with CatalogManager; no adapters.
-3. **`rss-atom` adapter + record store + change-detection** — first vertical slice; validate against geohazardwatch [#7](https://github.com/jwilleke/geohazardwatch/issues/7) (VolcanoDiscovery RSS) as a fixture.
-4. **`[Marquee source=…]`** — simplest consumer; proves end-to-end render from the store.
-5. **Scheduler + back-off + stale-feed WARN** — the recurring runtime (BackupManager pattern).
-6. **`[DataFeed source=…]`** + body materialization via #501 serializer (pick up #501 here, per its defer note).
-7. **Remaining adapters** — `rest-json`, `geojson/wfs`, `csv`, `xls` by demand.
-8. **(satellite)** ve-geology → feeds migration.
+2. **Platform cleanup (feeds-independent):** extract the `fetch='Manager.method()'` convention out of `MarqueePlugin` into `pluginFormatters.ts` as `resolveManagerFetch()` + an allow-list of callable `Manager.method`s. Pure refactor + reuse; shippable on its own, benefits every plugin. *(Small; can land before or alongside slice 3.)*
+3. **Addon skeleton** — `addons/feeds/` (package.json, `index.ts` `register()`, FeedManager class implementing an empty CatalogSource, empty config namespace). Registers with CatalogManager; no adapters.
+4. **`geojson` adapter (zero-dep) + record store + change-detection** — first vertical slice; native `JSON.parse`, hash via `DeltaStorage.calculateHash`. Validate against the USGS earthquakes GeoJSON (already the reference feed in geohazardwatch's `import-earthquakes.js`).
+5. **Inline consumer** — `FeedManager.latest()` + the `resolveManagerFetch` helper from slice 2; proves end-to-end render with **no new plugin** (e.g. `[{MarqueePlugin fetch='FeedManager.latest(...)'}]`).
+6. **Scheduler + back-off + stale-feed WARN** — recurring runtime (BackupManager pattern; NotificationManager for warnings).
+7. **`[DataFeed source=…]`** + record→body materialization via the #501 serializer (pick up #501 here, per its defer note) — reuses `pluginFormatters` for list/sort/escape.
+8. **Remaining adapters by dependency cost** — `rest-json` (zero-dep) next; then `rss-atom` (+XML parser, separate PR), `csv`, `xls` (+spreadsheet lib) by demand, each calling out its dependency for sign-off.
+9. **(satellite)** geohazardwatch bespoke importers → feeds migration.
 
 ## 9. Testing strategy
 
