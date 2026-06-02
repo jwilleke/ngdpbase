@@ -15,6 +15,7 @@ import { RecordStore } from '../src/RecordStore';
 import { getByPath } from '../src/adapters/dotpath';
 import { geojsonAdapter } from '../src/adapters/geojson';
 import { recordToArticle } from '../src/normalize';
+import MarqueePlugin from '../../../src/plugins/MarqueePlugin';
 import type { SourceAdapter } from '../src/adapters/types';
 import type { FeedSourceConfig } from '../src/types';
 
@@ -203,5 +204,50 @@ describe('FeedManager (#685)', () => {
   it('ingest() throws on unknown adapter', async () => {
     const fm = new FeedManager([{ ...quakeCfg, sourceId: 'q2', adapter: 'nonesuch' }], TMP, () => null);
     await expect(fm.ingest('q2')).rejects.toThrow(/unknown adapter/);
+  });
+});
+
+describe('FeedManager.toMarqueeText (#685 slice 5 — inline consumer)', () => {
+  // Adapter returning 3 quakes with ascending times → "latest first" must reverse.
+  const multiAdapter: SourceAdapter = {
+    name: 'geojson',
+    fetch: async () => [
+      feature('a', 5.0, 'Alpha', 1_700_000_000_000),
+      feature('b', 4.5, 'Bravo', 1_700_000_500_000),
+      feature('c', 4.1, 'Charlie', 1_700_000_900_000)
+    ],
+    parse: (raw, cfg) => geojsonAdapter.parse(raw, cfg)
+  };
+
+  async function ingestedManager() {
+    const fm = new FeedManager([{ ...quakeCfg, sourceId: 'mq' }], TMP, () => multiAdapter);
+    await fm.ingest('mq');
+    return fm;
+  }
+
+  it('returns latest-first record names joined, respecting max', async () => {
+    const fm = await ingestedManager();
+    expect(await fm.toMarqueeText({ source: 'mq', max: '2', sep: ' | ' })).toBe('Charlie | Bravo');
+  });
+
+  it('defaults max to 5 and uses the bullet separator', async () => {
+    const fm = await ingestedManager();
+    expect(await fm.toMarqueeText({ source: 'mq' })).toBe('Charlie   •   Bravo   •   Alpha');
+  });
+
+  it('returns empty string for an unknown / missing source', async () => {
+    const fm = await ingestedManager();
+    expect(await fm.toMarqueeText({ source: 'nope' })).toBe('');
+    expect(await fm.toMarqueeText({})).toBe('');
+  });
+
+  it('end-to-end: MarqueePlugin fetch= renders feed data with NO new plugin', async () => {
+    const fm = await ingestedManager();
+    const ctx = { engine: { getManager: (n: string) => (n === 'FeedManager' ? fm : undefined) } };
+    const out = await MarqueePlugin.execute(ctx as never, { fetch: 'FeedManager.toMarqueeText(source=mq,max=2)' });
+    expect(out).toContain('Charlie');
+    expect(out).toContain('Bravo');
+    expect(out).not.toContain('Alpha'); // max=2
+    expect(out).toContain('ngdp-mq'); // rendered the marquee wrapper, not an error span
   });
 });

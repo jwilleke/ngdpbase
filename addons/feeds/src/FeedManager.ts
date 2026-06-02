@@ -13,6 +13,7 @@
 
 import { FeedCatalogSource } from './FeedCatalogSource.js';
 import { RecordStore } from './RecordStore.js';
+import { recordToCreativeWork } from './normalize.js';
 import { getAdapter } from './adapters/index.js';
 import type { SourceAdapter } from './adapters/types.js';
 import type { FeedSourceConfig } from './types.js';
@@ -54,6 +55,30 @@ export class FeedManager {
   /** Configured source ids. */
   getSourceIds(): string[] {
     return [...this.feeds.keys()];
+  }
+
+  /**
+   * Marquee text for a source — the `BaseManager.toMarqueeText()` convention, so
+   * `[{MarqueePlugin fetch='FeedManager.toMarqueeText(source=usgs-quakes,max=5)'}]`
+   * renders the latest records with no feed-specific plugin (#685 slice 5).
+   * Args arrive as a `{k: v}` string bag (from `resolveManagerFetch`).
+   *
+   * `source` (required) — the feed sourceId. `max` (default 5) — record count.
+   * `sep` (default '   •   ') — joiner. Returns '' for an unknown/empty source
+   * (MarqueePlugin then shows its own "no text" placeholder).
+   */
+  async toMarqueeText(opts: Record<string, string> = {}): Promise<string> {
+    const entry = opts.source ? this.feeds.get(opts.source) : undefined;
+    if (!entry) return '';
+
+    const max = Math.max(1, parseInt(opts.max ?? '', 10) || 5);
+    const sep = opts.sep ?? '   •   ';
+
+    const records = await entry.store.list();
+    const works = records.map(r => recordToCreativeWork(r, entry.config));
+    // Latest first: ISO dateCreated sorts lexically; undated records sort last.
+    works.sort((a, b) => (b.dateCreated ?? '').localeCompare(a.dateCreated ?? ''));
+    return works.slice(0, max).map(w => w.name).join(sep);
   }
 
   /**

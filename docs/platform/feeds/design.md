@@ -76,7 +76,7 @@ No JSONPath/mapping DSL is introduced — none exists in the repo, and adding on
    CatalogManager  ──────────────────────────┘
         ▲
         │ (consumer plugins read via CatalogManager / FeedManager)
-   any plugin via fetch='FeedManager.latest(…)'   |   [DataFeed source='…']
+   any plugin via fetch='FeedManager.toMarqueeText(…)'   |   [DataFeed source='…']
 ```
 
 ### 4.1 SourceAdapter contract
@@ -142,17 +142,17 @@ scheduler → fetch → normalize → RECORD STORE ──read──► presenter
 ```
 
 - **`[{DataFeed source='X'}]`** — the principal presenter: queries the store at view time, formats records via `pluginFormatters`, returns inline markup that replaces the token. Read-only, recomputed per view.
-- **`fetch='FeedManager.latest(…)'`** — the generic convention; any plugin inlines a value/ticker.
+- **`fetch='FeedManager.toMarqueeText(source=…,max=…)'`** — the generic convention; any plugin inlines a ticker/value.
 - **`CatalogManager.list()/get()`** — cross-source queries, search, JSON-LD, dereferenceable `@id` — surface the same records with no plugin at all (because FeedManager registered as a `CatalogSource`).
 
 No presenter writes to the store; the page file is never touched (§5.3).
 
 ### 5.1 Inline a value/text — the generic manager-fetch convention (any plugin)
 
-FeedManager is just a registered manager exposing a render-ready helper (e.g. `FeedManager.latest(sourceId, n)`). Any plugin inlines feed data through the **existing** `fetch='Manager.method()'` convention — *extracted from `MarqueePlugin` into `pluginFormatters.ts` as `resolveManagerFetch()` with an allow-list*, so it's one shared, guarded impl:
+FeedManager is just a registered manager exposing a render-ready helper (`FeedManager.toMarqueeText({source, max})`, the `BaseManager.toMarqueeText` convention). Any plugin inlines feed data through the **existing** `fetch='Manager.method()'` convention — *extracted from `MarqueePlugin` into `pluginFormatters.ts` as `resolveManagerFetch()` with an allow-list*, so it's one shared, guarded impl:
 
 ```
-[{MarqueePlugin fetch='FeedManager.latest("usgs-quakes", 5)'}]
+[{MarqueePlugin fetch='FeedManager.toMarqueeText(source=usgs-quakes,max=5)'}]
 ```
 
 This covers the ticker/badge/last-updated cases for *any* plugin — **no feed-specific plugin code**. The old "`[Marquee source=…]`" idea is dropped: it was a second copy of a convention that already exists.
@@ -236,7 +236,7 @@ Each slice is an independently shippable PR.
    - **2b (deferred — security review):** an allow-list / read-only restriction on which `Manager.method`s page content may invoke. Split out of slice 2 because it is a *security-policy change* (AGENTS human-review gate) and a behaviour change — current behaviour is wide-open (any method), and all real usage already follows the `BaseManager.toMarqueeText()` convention, so a restriction is feasible but needs operator sign-off on the policy. `resolveManagerFetch` is the single chokepoint where it would be enforced.
 3. ✅ **DONE — Addon skeleton:** `addons/feeds/` (package.json, tsconfig, `index.ts` `register()`, `FeedManager` + per-source `FeedCatalogSource` returning empty until slice 4, `config.ts` parser for the `ngdpbase.addons.feeds.sources` slice). `register()` registers FeedManager with the engine (reachable for slice 5) and a `FeedCatalogSource` per configured feed with CatalogManager. Added to `build:addons`. +11 unit tests; addon discovered cleanly (default-disabled), 6148 unit + 80 E2E green. No adapters, no scheduler.
 4. ✅ **DONE — `geojson` adapter (zero-dep) + record store + change-detection.** `SourceAdapter` contract + `geojson` adapter (native fetch/JSON.parse; FeatureCollection/array/single; dot-path `map`), `RecordStore` (per-source JSON under FAST_STORAGE; change-detection via `DeltaStorage.calculateHash` over content excluding `fetchedAt` — D6), `recordToCreativeWork` dispatcher (Article projection; `schemaType` config-driven + validated), `FeedManager.ingest()` pipeline, `FeedCatalogSource.list()/get()` reading the store. +29 unit tests. (Scheduler is slice 6 — ingest is manual/triggered for now.)
-5. **Inline consumer** — `FeedManager.latest()` + the `resolveManagerFetch` helper from slice 2; proves end-to-end render with **no new plugin** (e.g. `[{MarqueePlugin fetch='FeedManager.latest(...)'}]`).
+5. ✅ **DONE — Inline consumer:** `FeedManager.toMarqueeText({source, max, sep})` (the `BaseManager.toMarqueeText` convention) + the slice-2 `resolveManagerFetch` helper. `[{MarqueePlugin fetch='FeedManager.toMarqueeText(source=usgs-quakes,max=5)'}]` renders latest-first record names with **no new plugin**. +4 tests incl. an end-to-end MarqueePlugin render. 6170 unit + 80 E2E green.
 6. **Scheduler + back-off + stale-feed WARN** — recurring runtime (BackupManager pattern; NotificationManager for warnings).
 7. **`[DataFeed source=…]`** + record→body materialization via the #501 serializer (pick up #501 here, per its defer note) — reuses `pluginFormatters` for list/sort/escape.
 8. **Remaining adapters by dependency cost** — `rest-json` (zero-dep) next; then `rss-atom` (+XML parser, separate PR), `csv`, `xls` (+spreadsheet lib) by demand, each calling out its dependency for sign-off.
