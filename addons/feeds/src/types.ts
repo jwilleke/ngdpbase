@@ -17,8 +17,16 @@ export interface FeedSourceConfig {
   intervalMinutes?: number;
   /** Poll cadence — daily wall-clock time "HH:MM". */
   dailyAt?: string;
-  /** schema.org @type this source's records map to (e.g. 'Event', 'NewsArticle'). */
+  /** Domain genre/label carried as a keyword + ngdp:category (e.g. 'Event', 'Earthquake'). */
   type: string;
+  /**
+   * CreativeWork union member this source's records project to + register as
+   * (design §4.2). Default 'Article'. Must be a SUPPORTED schema type — slice 4
+   * implements 'Article'; ImageObject/VideoObject/AudioObject/DigitalDocument
+   * mappers land per media-feed driver. A configured-but-unimplemented value is
+   * rejected at parse time.
+   */
+  schemaType?: string;
   /** Dot-path to the per-record stable id within a raw record (no JSONPath DSL — see design §7). */
   recordIdField?: string;
   /** Optional dot-path map: normalized property → source path. Adapter may instead return shaped records. */

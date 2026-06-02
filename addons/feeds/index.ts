@@ -20,8 +20,10 @@
  *   ngdpbase.addons.feeds.sources.<id>.recordIdField | .map  (optional)
  */
 
+import path from 'path';
 import type { WikiEngine } from '../../dist/src/types/WikiEngine.js';
 import type CatalogManager from '../../dist/src/managers/CatalogManager.js';
+import type ConfigurationManager from '../../dist/src/managers/ConfigurationManager.js';
 import type { AddonStatusDetails } from '../../dist/src/managers/AddonsManager.js';
 import logger from '../../dist/src/utils/logger.js';
 import { FeedManager } from './src/FeedManager.js';
@@ -38,15 +40,22 @@ const feedsAddon = {
 
   async register(engine: WikiEngine, config: Record<string, unknown>): Promise<void> {
     const sourceConfigs = parseSourceConfigs(config.sources);
-    feedManager = new FeedManager(sourceConfigs);
+
+    // Record store lives under FAST_STORAGE (operational data); override via dataPath.
+    const configManager = engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const baseDir = typeof config.dataPath === 'string' && config.dataPath !== ''
+      ? config.dataPath
+      : path.join(configManager?.getInstanceDataFolder?.() ?? './data', 'feeds');
+
+    feedManager = new FeedManager(sourceConfigs, baseDir);
 
     // Reachable for the fetch='FeedManager.latest(...)' consumer convention (slice 5).
     engine.registerManager('FeedManager', feedManager);
 
     const catalogManager = engine.getManager<CatalogManager>('CatalogManager');
     if (catalogManager) {
-      const n = feedManager.registerSources(catalogManager as unknown as { registerSource(s: unknown): void });
-      logger.info(`[feeds addon] Registered ${n} feed source(s) with CatalogManager (skeleton — no adapters yet)`);
+      const n = feedManager.registerSources(catalogManager);
+      logger.info(`[feeds addon] Registered ${n} feed source(s) with CatalogManager`);
     } else {
       logger.warn('[feeds addon] CatalogManager not available — feed sources not registered');
     }
@@ -56,7 +65,7 @@ const feedsAddon = {
     const n = feedManager?.getSourceIds().length ?? 0;
     return Promise.resolve({
       healthy: true,
-      message: `${n} feed source(s) configured — skeleton (#685 slice 3), no adapters/scheduler yet`
+      message: `${n} feed source(s) configured (geojson adapter; manual ingest — scheduler lands #685 slice 6)`
     });
   },
 

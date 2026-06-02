@@ -7,6 +7,8 @@
  * malformed ones (logged by the caller), and stamps the map key as `sourceId`.
  */
 
+import logger from '../../../dist/src/utils/logger.js';
+import { SUPPORTED_SCHEMA_TYPES } from './normalize.js';
 import type { FeedSourceConfig } from './types.js';
 
 /** Returns the valid source configs; ignores anything missing the required adapter+url. */
@@ -19,11 +21,19 @@ export function parseSourceConfigs(raw: unknown): FeedSourceConfig[] {
     const v = value as Record<string, unknown>;
     if (typeof v.adapter !== 'string' || typeof v.url !== 'string' || typeof v.type !== 'string') continue;
 
+    // schemaType: default 'Article'; reject a configured-but-unimplemented value.
+    const schemaType = typeof v.schemaType === 'string' ? v.schemaType : 'Article';
+    if (!(SUPPORTED_SCHEMA_TYPES as readonly string[]).includes(schemaType)) {
+      logger.warn(`[feeds] source '${sourceId}' skipped: schemaType '${schemaType}' not yet supported (implemented: ${SUPPORTED_SCHEMA_TYPES.join(', ')})`);
+      continue;
+    }
+
     const cfg: FeedSourceConfig = {
       sourceId,
       adapter: v.adapter,
       url: v.url,
-      type: v.type
+      type: v.type,
+      schemaType
     };
     if (typeof v.intervalMinutes === 'number') cfg.intervalMinutes = v.intervalMinutes;
     if (typeof v.dailyAt === 'string') cfg.dailyAt = v.dailyAt;

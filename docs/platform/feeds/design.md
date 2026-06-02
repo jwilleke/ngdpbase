@@ -100,14 +100,18 @@ MVP adapter order is now **by dependency cost first**, then demand: `geojson` �
 `FeedManager` implements the existing `CatalogSource` interface (`src/types/Schema.ts:438`) — one registration **per feed `sourceId`** so cross-source queries can scope:
 
 ```ts
-// implemented by FeedManager, registered once per configured source
+// implemented per configured source (FeedCatalogSource), registered with CatalogManager
 sourceId:              'usgs-quakes'         // from config
-types:                 ['Event']             // schema.org @type per source (config)
+types:                 ['Article']           // from config.schemaType (default 'Article')
 currentSchemaVersion:  1
 list(query):   Promise<CatalogPage>          // reads the source's record store
 get(identifier): Promise<CreativeWork|null>
-rebuild(opts): Promise<void>                 // force a full re-fetch + re-index
+rebuild(opts): Promise<void>                 // reload the store (re-fetch is FeedManager.ingest)
 ```
+
+**`types` is declared from config at registration** and may be **any member of the CreativeWork union** (`Article | ImageObject | VideoObject | AudioObject | DigitalDocument`) — an image/thermal feed registers as `ImageObject`, a podcast as `AudioObject`, etc. (2026-06-02 decision). `CatalogManager` routes `query.types` to a source only when its declared `types` intersect (`CatalogManager.ts:309–318`), so this is load-bearing.
+
+**Slice 4 implements the `Article` projection** (the only MVP driver); other union types are added per media-feed driver — a configured-but-unimplemented `schemaType` is rejected at parse with a clear log, never silently mis-typed. The domain label (`'Event'`, `'Earthquake'`) is the separate `type` config field, carried as a `keyword` + `ngdp:category`, not the schema `@type`. Types **outside** the union (`Event`/`NewsArticle`) remain the deferred "extend the union" decision.
 
 This buys JSON-LD render, cross-source `CatalogManager.list()`, and dereferenceable `@id` URLs for free (same plumbing as pages/media/attachments).
 
@@ -207,7 +211,8 @@ Per-instance via `app-custom-config.json`, under the **established addon namespa
     "adapter": "geojson",
     "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson",
     "intervalMinutes": 60,                 // OR  "dailyAt": "03:00"
-    "type": "Event",                       // schema.org @type for this source
+    "schemaType": "Article",               // CreativeWork union member to register/project as (default 'Article')
+    "type": "Event",                       // domain genre → keyword + ngdp:category (NOT the schema @type)
     "recordIdField": "id",                  // dot-path to the per-record stable id
     "map": {                                // dot-path → normalized property
       "magnitude": "properties.mag",
@@ -220,7 +225,7 @@ Per-instance via `app-custom-config.json`, under the **established addon namespa
 
 **No JSONPath/mapping-DSL engine is introduced** — none exists in the repo, and adding one would duplicate normalization that ImportManager/NCM already own. `map` uses a trivial **dot-path** lookup (a few lines, the `properties.mag` / `geometry.coordinates.2` form). Where a source needs richer shaping than dot-paths express, that's the adapter's job (it returns an already-shaped record) — not a config DSL. The `map` block is itself optional: an adapter may return records already in normalized shape.
 
-`config/app-default-config.json` ships **no** sources (empty) — the framework is inert until an operator declares one. (Per the config-catalog-change rule, the default catalog is not modified beyond adding the empty `ngdpbase.feeds.*` namespace, which needs operator sign-off at PR time.)
+`config/app-default-config.json` is **not modified** — addon defaults live inline in `register()` (the `elasticsearch`-addon pattern), and the addon is enabled via `ngdpbase.addons.feeds.enabled` (default `false`). The framework is inert until enabled and a source is declared, so there is no default-catalog change to sign off.
 
 ## 8. Implementation order (slices)
 
@@ -230,7 +235,7 @@ Each slice is an independently shippable PR.
 2. ✅ **DONE — Platform cleanup (feeds-independent):** extracted the `fetch='Manager.method()'` convention out of `MarqueePlugin` into `pluginFormatters.ts` as `resolveManagerFetch()` (behaviour-preserving; MarqueePlugin delegates to it; +7 unit tests). Any plugin can now reuse the one shared impl.
    - **2b (deferred — security review):** an allow-list / read-only restriction on which `Manager.method`s page content may invoke. Split out of slice 2 because it is a *security-policy change* (AGENTS human-review gate) and a behaviour change — current behaviour is wide-open (any method), and all real usage already follows the `BaseManager.toMarqueeText()` convention, so a restriction is feasible but needs operator sign-off on the policy. `resolveManagerFetch` is the single chokepoint where it would be enforced.
 3. ✅ **DONE — Addon skeleton:** `addons/feeds/` (package.json, tsconfig, `index.ts` `register()`, `FeedManager` + per-source `FeedCatalogSource` returning empty until slice 4, `config.ts` parser for the `ngdpbase.addons.feeds.sources` slice). `register()` registers FeedManager with the engine (reachable for slice 5) and a `FeedCatalogSource` per configured feed with CatalogManager. Added to `build:addons`. +11 unit tests; addon discovered cleanly (default-disabled), 6148 unit + 80 E2E green. No adapters, no scheduler.
-4. **`geojson` adapter (zero-dep) + record store + change-detection** — first vertical slice; native `JSON.parse`, hash via `DeltaStorage.calculateHash`. Validate against the USGS earthquakes GeoJSON (already the reference feed in geohazardwatch's `import-earthquakes.js`).
+4. ✅ **DONE — `geojson` adapter (zero-dep) + record store + change-detection.** `SourceAdapter` contract + `geojson` adapter (native fetch/JSON.parse; FeatureCollection/array/single; dot-path `map`), `RecordStore` (per-source JSON under FAST_STORAGE; change-detection via `DeltaStorage.calculateHash` over content excluding `fetchedAt` — D6), `recordToCreativeWork` dispatcher (Article projection; `schemaType` config-driven + validated), `FeedManager.ingest()` pipeline, `FeedCatalogSource.list()/get()` reading the store. +29 unit tests. (Scheduler is slice 6 — ingest is manual/triggered for now.)
 5. **Inline consumer** — `FeedManager.latest()` + the `resolveManagerFetch` helper from slice 2; proves end-to-end render with **no new plugin** (e.g. `[{MarqueePlugin fetch='FeedManager.latest(...)'}]`).
 6. **Scheduler + back-off + stale-feed WARN** — recurring runtime (BackupManager pattern; NotificationManager for warnings).
 7. **`[DataFeed source=…]`** + record→body materialization via the #501 serializer (pick up #501 here, per its defer note) — reuses `pluginFormatters` for list/sort/escape.
