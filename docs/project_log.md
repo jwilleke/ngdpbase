@@ -2,6 +2,23 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-06-02-11
+
+- Agent: Claude Opus 4.8
+- Subject: #685 slice 8 — rest-json adapter (zero-dep) + shared buildRecord refactor.
+- Current Issue: #685
+- Tests: 6198 unit (+13) + 80 E2E GREEN. Addon still default-disabled.
+- Semver: **skip** — disabled addon, no user-facing change.
+- Work Done:
+  - `rest-json` adapter (zero-dep): generic REST GET → JSON; items array via `cfg.itemsPath` (dot-path) or auto-detected envelope key (results/data/items/records) / bare array. Item-is-record (own fields lifted when no map).
+  - Extracted `buildRecord()` + `pickItemsArray()` into `adapters/buildRecord.ts`; refactored geojson to use `buildRecord` (geojson lifts `feature.properties`, rest-json lifts the item) — eliminated the duplicated parse logic between the two adapters.
+  - `itemsPath` added to config + types.
+  - Remaining adapters (`rss-atom` +XML, `csv`, `xls` +spreadsheet lib) stay deferred — driver + dependency sign-off gated; no driver today.
+- Commits: `662f3394`
+- Files Modified:
+  - addons/feeds/src/adapters/{buildRecord,restjson}.ts (new), geojson.ts, index.ts; src/{types,config}.ts; **tests**/restjson.test.ts (new)
+  - docs/platform/feeds/design.md, docs/project_log.md
+
 ## 2026-06-02-10
 
 - Agent: Claude Opus 4.8
