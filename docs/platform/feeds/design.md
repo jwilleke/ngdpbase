@@ -130,6 +130,19 @@ Per-source on-disk record store under `FAST_STORAGE` (operational data, like the
 
 Two real consumption modes, both built from existing primitives — **no bespoke `source=` handle, no `BasePlugin`** (plugins here are `SimplePlugin` object literals; shared behaviour lives in `pluginFormatters.ts` by composition).
 
+**Data flow — one store, many read-only presenters.** The record store is the single source of truth; **only the scheduler writes to it**. Everything that surfaces feed data *reads*:
+
+```
+scheduler → fetch → normalize → RECORD STORE ──read──► presenters output content
+                                (source of truth)        (never write back)
+```
+
+- **`[{DataFeed source='X'}]`** — the principal presenter: queries the store at view time, formats records via `pluginFormatters`, returns inline markup that replaces the token. Read-only, recomputed per view.
+- **`fetch='FeedManager.latest(…)'`** — the generic convention; any plugin inlines a value/ticker.
+- **`CatalogManager.list()/get()`** — cross-source queries, search, JSON-LD, dereferenceable `@id` — surface the same records with no plugin at all (because FeedManager registered as a `CatalogSource`).
+
+No presenter writes to the store; the page file is never touched (§5.3).
+
 ### 5.1 Inline a value/text — the generic manager-fetch convention (any plugin)
 
 FeedManager is just a registered manager exposing a render-ready helper (e.g. `FeedManager.latest(sourceId, n)`). Any plugin inlines feed data through the **existing** `fetch='Manager.method()'` convention — *extracted from `MarqueePlugin` into `pluginFormatters.ts` as `resolveManagerFetch()` with an allow-list*, so it's one shared, guarded impl:
