@@ -2,6 +2,27 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-06-02-07
+
+- Agent: Claude Opus 4.8
+- Subject: #685 slice 4 — geojson adapter + record store + change-detection (first real ingestion path).
+- Current Issue: #685
+- Tests: 6166 unit (+29 feeds) + 80 E2E GREEN. Addon still default-disabled.
+- Semver: **skip** — disabled addon, no user-facing change.
+- Design decisions surfaced + made this slice:
+  - **CreativeWork union has no Event/NewsArticle.** Operator decision: feed records map to **Article** (the catalog projection; full structured data stays in the RecordStore).
+  - **schemaType is config-driven and may be ANY CreativeWork-union member** (operator: "be any type it wants? Maybe images?") — an image feed → ImageObject, podcast → AudioObject, etc. Declared at registration via `FeedCatalogSource.types` (verified load-bearing for CatalogManager query routing, `CatalogManager.ts:309–318`). Slice 4 implements the Article projection; other union types per media-feed driver (unimplemented `schemaType` rejected at parse). Domain label stays the separate `type` field (keyword + ngdp:category).
+- Work Done:
+  - `SourceAdapter` contract + zero-dep `geojson` adapter (native fetch/JSON.parse; FeatureCollection/array/single; dot-path map) + registry.
+  - `RecordStore`: per-source JSON under FAST_STORAGE; change-detection reuses `DeltaStorage.calculateHash` over record CONTENT excluding `fetchedAt` (D6 — re-ingesting identical data = zero upserts).
+  - `recordToCreativeWork` dispatcher (Article impl; `SUPPORTED_SCHEMA_TYPES` gate). `FeedManager.ingest()` pipeline (injectable adapter resolver). `FeedCatalogSource.list()/get()` read the store + project per schemaType.
+  - Note: husky eslint OOM-SIGKILLs when typed-linting all 12 feeds files at once; committed in two batches (4a adapters/store/normalize, 4b wiring/test/doc) of ~6 .ts each (slice 3's passing load) — hook honored, not bypassed.
+- Commits: `d21a7522` (4a), `393934a1` (4b)
+- Files Modified:
+  - addons/feeds/src/adapters/{types,dotpath,geojson,index}.ts (new), RecordStore.ts (new), normalize.ts (new)
+  - addons/feeds/src/{FeedManager,FeedCatalogSource,config,types}.ts, index.ts, **tests**/FeedManager.test.ts
+  - docs/platform/feeds/design.md, docs/project_log.md
+
 ## 2026-06-02-06
 
 - Agent: Claude Opus 4.8
