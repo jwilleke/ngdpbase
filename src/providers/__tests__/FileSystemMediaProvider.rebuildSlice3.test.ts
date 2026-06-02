@@ -303,4 +303,22 @@ describe('FileSystemMediaProvider.rebuild() re-extracts Slice-3 fields (#771)', 
     expect(refreshed.metadata.captureDateSource).toBeUndefined();
     expect(result.noCaptureDate).toBe(1);
   });
+
+  it('#808: a year-only EXIF date is stored at Jan 1, counted as partial (WARN), not as noCaptureDate', async () => {
+    stubFileList(['/store/1940-photo.jpg']);
+    stubExiftoolByPath({ '/store/1940-photo.jpg': { DateTimeOriginal: { year: 1940 } } });
+
+    const id = (provider as unknown as { generateId: (p: string) => string }).generateId('/store/1940-photo.jpg');
+    (provider as unknown as { index: Record<string, unknown> }).index = {
+      [id]: { id, filePath: '/store/1940-photo.jpg', filename: '1940-photo.jpg', mimeType: 'image/jpeg', year: '1940', dirPath: '/store', mtime: 1717000000000, metadata: {} }
+    };
+
+    const result = await provider.rebuild();
+
+    const refreshed = (provider as unknown as { index: Record<string, { metadata: Record<string, unknown> }> }).index[id];
+    expect(refreshed.metadata.dateTimeOriginal).toBe('1940-01-01 00:00:00');
+    expect(refreshed.metadata.captureDateSource).toBe('exif');
+    expect(result.partialCaptureDate).toBe(1);
+    expect(result.noCaptureDate).toBe(0);
+  });
 });

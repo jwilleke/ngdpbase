@@ -318,13 +318,23 @@ describe('MediaManager — scan/rebuild notifications (#807)', () => {
     return { mgr, addNotification };
   }
 
-  test('notifies admins when items have no capture date', async () => {
+  test('notifies admins (error level) when items have no capture date (#808)', async () => {
     const { mgr, addNotification } = makeManagerWithStubProvider({
       scanned: 10, added: 10, updated: 0, errors: 0, noCaptureDate: 3
     });
     await mgr.scanFolders();
     expect(addNotification).toHaveBeenCalledWith(
-      expect.objectContaining({ level: 'warning', title: 'Media files without a capture date' })
+      expect.objectContaining({ level: 'error', title: 'Media files without a capture date' })
+    );
+  });
+
+  test('notifies admins (warning level) for partial year-only capture dates (#808)', async () => {
+    const { mgr, addNotification } = makeManagerWithStubProvider({
+      scanned: 10, added: 10, updated: 0, errors: 0, noCaptureDate: 0, partialCaptureDate: 4
+    });
+    await mgr.scanFolders();
+    expect(addNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ level: 'warning', title: 'Media files with a partial capture date' })
     );
   });
 

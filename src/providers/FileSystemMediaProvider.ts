@@ -115,6 +115,8 @@ interface ScanCounters {
   excluded: number;
   /** Items indexed with no usable capture date — surfaced to admins (#807) */
   noCaptureDate: number;
+  /** Items with a partial (year-only / year+month) EXIF date, defaulted to Jan 1 — surfaced at WARN (#808) */
+  partialCaptureDate: number;
 }
 
 /**
@@ -234,7 +236,7 @@ class FileSystemMediaProvider extends BaseMediaProvider {
       return { scanned: 0, added: 0, updated: 0, errors: 0 };
     }
 
-    const counters: ScanCounters = { scanned: 0, added: 0, updated: 0, errors: 0, excluded: 0, noCaptureDate: 0 };
+    const counters: ScanCounters = { scanned: 0, added: 0, updated: 0, errors: 0, excluded: 0, noCaptureDate: 0, partialCaptureDate: 0 };
     const missingFolders: string[] = [];
     const startMs = Date.now();
     logger.info(
@@ -649,8 +651,10 @@ class FileSystemMediaProvider extends BaseMediaProvider {
       // Capture date: EXIF/QuickTime first; if absent, try parsing it from the
       // filename (#809) before letting it fall to mtime. Record provenance so a
       // filename-derived date never masquerades as authoritative EXIF metadata.
-      let captureDate = this.extractDateTimeOriginal(rawTags);
+      const exifCapture = this.extractCaptureDate(rawTags);
+      let captureDate = exifCapture?.date ?? null;
       let captureDateSource: 'exif' | 'filename' | undefined = captureDate ? 'exif' : undefined;
+      const partialExifDate = exifCapture?.partial ?? false;
       if (captureDate === null) {
         const fromName = parseDateFromFilename(path.basename(filePath));
         if (fromName) {
@@ -744,9 +748,14 @@ class FileSystemMediaProvider extends BaseMediaProvider {
       // #809: a date recovered from the filename counts as "has a capture date"
       // (it is no longer mtime-sorted), so only files where BOTH EXIF and the
       // filename failed are surfaced.
+      // #808: a year-only / year+month EXIF date is stored (defaulted to Jan 1)
+      // but tracked separately — surfaced at WARN, vs no-date at ERROR.
       if (captureDate === null) {
         counters.noCaptureDate++;
         logger.debug(`[FileSystemMediaProvider] No capture date for ${filePath} — will sort by mtime`);
+      } else if (partialExifDate) {
+        counters.partialCaptureDate++;
+        logger.debug(`[FileSystemMediaProvider] Partial capture date (${captureDate}) for ${filePath} — month/day defaulted to Jan 1`);
       }
 
       if (existing) {
@@ -798,9 +807,17 @@ class FileSystemMediaProvider extends BaseMediaProvider {
    * indexed `dateTimeOriginal: null` and silently dropped out of any
    * capture-date sort/filter — only the year facet worked (via `extractYear`).
    *
+   * Also reports whether the source tag was a **partial** date — the year was
+   * present but the month and/or day were missing and got defaulted to `01`
+   * (#808). A partial date is still stored (defaulted to Jan 1, which preserves
+   * the year facet and gives a usable sort key), but the caller surfaces it to
+   * admins at WARN level — distinct from a file with no capture date at all
+   * (ERROR). A missing **time** component (HH:MM:SS) does NOT count as partial:
+   * defaulting to `00:00:00` is harmless for day-granularity sorting.
+   *
    * Returns `null` when no field provides a usable `.year`.
    */
-  private extractDateTimeOriginal(tags: Record<string, unknown>): string | null {
+  private extractCaptureDate(tags: Record<string, unknown>): { date: string; partial: boolean } | null {
     for (const field of FileSystemMediaProvider.CAPTURE_DATE_FIELDS) {
       const dt = tags[field] as {
         year?: number; month?: number; day?: number;
@@ -808,7 +825,9 @@ class FileSystemMediaProvider extends BaseMediaProvider {
       } | null | undefined;
       if (dt && typeof dt.year === 'number') {
         const pad = (n: number): string => String(n).padStart(2, '0');
-        return `${dt.year}-${pad(dt.month ?? 1)}-${pad(dt.day ?? 1)} ${pad(dt.hour ?? 0)}:${pad(dt.minute ?? 0)}:${pad(dt.second ?? 0)}`;
+        const partial = typeof dt.month !== 'number' || typeof dt.day !== 'number';
+        const date = `${dt.year}-${pad(dt.month ?? 1)}-${pad(dt.day ?? 1)} ${pad(dt.hour ?? 0)}:${pad(dt.minute ?? 0)}:${pad(dt.second ?? 0)}`;
+        return { date, partial };
       }
     }
     return null;

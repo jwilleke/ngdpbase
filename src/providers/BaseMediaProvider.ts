@@ -67,6 +67,8 @@ export interface ScanResult {
   excluded?: number;
   /** Number of indexed items with no usable capture date (EXIF/QuickTime) — they sort by file mtime (#807) */
   noCaptureDate?: number;
+  /** Number of indexed items with a partial (year-only / year+month) EXIF date, defaulted to Jan 1 (#808) */
+  partialCaptureDate?: number;
   /** Total elapsed time in milliseconds */
   elapsedMs?: number;
   /** Folder paths that were configured but not found on disk */
