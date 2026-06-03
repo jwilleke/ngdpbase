@@ -91,66 +91,66 @@
 
                 <!-- Metadata panel -->
                 <div class="col-md-4">
-                    <div class="card bg-dark text-white">
-                        <div class="card-header bg-dark text-white border-secondary"><i class="fas fa-info-circle"></i> Details</div>
+                    <div class="card">
+                        <div class="card-header"><i class="fas fa-info-circle"></i> Details</div>
                         <ul class="list-group list-group-flush">
-                            <li class="list-group-item bg-dark text-white border-secondary d-flex justify-content-between">
-                                <span class="text-white-50">Filename</span>
+                            <li class="list-group-item d-flex justify-content-between">
+                                <span class="text-muted">Filename</span>
                                 <span class="text-end" style="max-width:60%;overflow-wrap:break-word;"><%= item.filename %></span>
                             </li>
                             <% if (item.year) { %>
-                            <li class="list-group-item bg-dark text-white border-secondary d-flex justify-content-between">
-                                <span class="text-white-50">Year</span>
+                            <li class="list-group-item d-flex justify-content-between">
+                                <span class="text-muted">Year</span>
                                 <a href="/media/year/<%= item.year %>" class="text-info"><%= item.year %></a>
                             </li>
                             <% } %>
-                            <li class="list-group-item bg-dark text-white border-secondary d-flex justify-content-between">
-                                <span class="text-white-50">Type</span>
+                            <li class="list-group-item d-flex justify-content-between">
+                                <span class="text-muted">Type</span>
                                 <span><%= item.mimeType %></span>
                             </li>
                             <% if (item.metadata && item.metadata.dateTimeOriginal) { %>
-                            <li class="list-group-item bg-dark text-white border-secondary d-flex justify-content-between">
-                                <span class="text-white-50">Date</span>
+                            <li class="list-group-item d-flex justify-content-between">
+                                <span class="text-muted">Date</span>
                                 <span><%= item.metadata.dateTimeOriginal %></span>
                             </li>
                             <% } %>
                             <% if (item.metadata && item.metadata.make) { %>
-                            <li class="list-group-item bg-dark text-white border-secondary d-flex justify-content-between">
-                                <span class="text-white-50">Camera</span>
+                            <li class="list-group-item d-flex justify-content-between">
+                                <span class="text-muted">Camera</span>
                                 <span><%= item.metadata.make %><% if (item.metadata.model) { %> <%= item.metadata.model %><% } %></span>
                             </li>
                             <% } %>
                             <% if (item.metadata && item.metadata.title) { %>
-                            <li class="list-group-item bg-dark text-white border-secondary d-flex justify-content-between">
-                                <span class="text-white-50">Title</span>
+                            <li class="list-group-item d-flex justify-content-between">
+                                <span class="text-muted">Title</span>
                                 <span><%= item.metadata.title %></span>
                             </li>
                             <% } %>
                             <% if (item.metadata && item.metadata.description) { %>
-                            <li class="list-group-item bg-dark text-white border-secondary">
-                                <span class="text-white-50 d-block">Description</span>
+                            <li class="list-group-item">
+                                <span class="text-muted d-block">Description</span>
                                 <span itemprop="description"><%= item.metadata.description %></span>
                             </li>
                             <% } %>
                             <% if (item.metadata && item.metadata.keywords) { %>
-                            <li class="list-group-item bg-dark text-white border-secondary">
-                                <span class="text-white-50 d-block">Keywords</span>
+                            <li class="list-group-item">
+                                <span class="text-muted d-block">Keywords</span>
                                 <span>
                                     <% const kw = Array.isArray(item.metadata.keywords) ? item.metadata.keywords : [item.metadata.keywords]; %>
-                                    <% kw.forEach(function(k, i) { var exists = keywordPageExists && keywordPageExists[k]; var href = exists ? '/view/' + encodeURIComponent(k) : '/edit/' + encodeURIComponent(k); %><a href="<%= href %>" class="<%= exists ? 'text-info' : 'redlink' %>" itemprop="keywords"<% if (!exists) { %> title="Create page: <%= k %>"<% } %>><%= k %></a> <a href="/media/keyword/<%= encodeURIComponent(k) %>" class="text-white-50 ms-1" title="View media album for: <%= k %>"><i class="fas fa-images" style="font-size:0.85em;"></i></a><% if (i < kw.length - 1) { %>, <% } %><% }); %>
+                                    <% kw.forEach(function(k, i) { var exists = keywordPageExists && keywordPageExists[k]; var href = exists ? '/view/' + encodeURIComponent(k) : '/edit/' + encodeURIComponent(k); %><a href="<%= href %>" class="<%= exists ? 'text-info' : 'redlink' %>" itemprop="keywords"<% if (!exists) { %> title="Create page: <%= k %>"<% } %>><%= k %></a> <a href="/media/keyword/<%= encodeURIComponent(k) %>" class="text-muted ms-1" title="View media album for: <%= k %>"><i class="fas fa-images" style="font-size:0.85em;"></i></a><% if (i < kw.length - 1) { %>, <% } %><% }); %>
                                 </span>
                             </li>
                             <% } %>
                             <% if (item.metadata && (item.metadata.gpsLatitude || item.metadata.gpsLongitude)) { %>
                             <% const lat = parseFloat(item.metadata.gpsLatitude); const lon = parseFloat(item.metadata.gpsLongitude); %>
-                            <li class="list-group-item bg-dark text-white border-secondary d-flex justify-content-between" itemprop="contentLocation" itemscope itemtype="https://schema.org/Place">
-                                <span class="text-white-50">GPS</span>
+                            <li class="list-group-item d-flex justify-content-between" itemprop="contentLocation" itemscope itemtype="https://schema.org/Place">
+                                <span class="text-muted">GPS</span>
                                 <span class="location-plugin" itemprop="geo" itemscope itemtype="https://schema.org/GeoCoordinates"><meta itemprop="latitude" content="<%= lat %>"><meta itemprop="longitude" content="<%= lon %>"><a href="https://www.openstreetmap.org/?mlat=<%= lat %>&mlon=<%= lon %>#map=13/<%= lat %>/<%= lon %>" target="_blank" rel="noopener" class="location-link text-info" title="Open in OpenStreetMap"><i class="fas fa-map-marker-alt"></i> <%= lat.toFixed(4) %>, <%= lon.toFixed(4) %></a></span>
                             </li>
                             <% } %>
                             <% if (item.linkedPageName) { %>
-                            <li class="list-group-item bg-dark text-white border-secondary d-flex justify-content-between">
-                                <span class="text-white-50">Page</span>
+                            <li class="list-group-item d-flex justify-content-between">
+                                <span class="text-muted">Page</span>
                                 <a href="/view/<%= item.linkedPageName %>" class="text-info"><%= item.linkedPageName %></a>
                             </li>
                             <% } %>
@@ -173,20 +173,20 @@
                             <i class="fas fa-info-circle"></i> Media Information
                         </button>
                         <div class="collapse" id="mediaInfoPanel">
-                            <div class="card bg-dark text-white border-secondary mt-1">
+                            <div class="card mt-1">
                                 <ul class="list-group list-group-flush">
-                                    <li class="list-group-item bg-dark text-white border-secondary">
-                                        <span class="text-white-50 d-block" style="font-size:0.8em;">Item ID</span>
+                                    <li class="list-group-item">
+                                        <span class="text-muted d-block" style="font-size:0.8em;">Item ID</span>
                                         <span class="font-monospace" style="font-size:0.85em; word-break:break-all;"><%= item.id %></span>
                                         <button class="btn btn-sm btn-outline-secondary ms-1 py-0 px-1" title="Copy ID" onclick="copyText('<%= item.id %>')"><i class="fas fa-copy"></i></button>
                                     </li>
-                                    <li class="list-group-item bg-dark text-white border-secondary">
-                                        <span class="text-white-50 d-block" style="font-size:0.8em;">URL</span>
+                                    <li class="list-group-item">
+                                        <span class="text-muted d-block" style="font-size:0.8em;">URL</span>
                                         <span class="font-monospace" style="font-size:0.85em;">/media/item/<%= item.id %></span>
                                         <button class="btn btn-sm btn-outline-secondary ms-1 py-0 px-1" title="Copy URL" onclick="copyText(window.location.origin + '/media/item/<%= item.id %>')"><i class="fas fa-copy"></i></button>
                                     </li>
-                                    <li class="list-group-item bg-dark text-white border-secondary">
-                                        <span class="text-white-50 d-block" style="font-size:0.8em;">Plugin Syntax</span>
+                                    <li class="list-group-item">
+                                        <span class="text-muted d-block" style="font-size:0.8em;">Plugin Syntax</span>
                                         <% const pluginKws = item.metadata && item.metadata.keywords ? (Array.isArray(item.metadata.keywords) ? item.metadata.keywords : [item.metadata.keywords]) : []; %>
                                         <% if (pluginKws.length > 0) { %>
                                             <% pluginKws.forEach(function(kw) { const q = String(kw).includes("'") ? '"' : "'"; const syn = "[{MediaPlugin format='list' keyword=" + q + kw + q + "}]"; %>
@@ -203,21 +203,21 @@
                                         <% } %>
                                     </li>
                                     <% if (item.filePath) { %>
-                                    <li class="list-group-item bg-dark text-white border-secondary">
-                                        <span class="text-white-50 d-block" style="font-size:0.8em;">File Path</span>
+                                    <li class="list-group-item">
+                                        <span class="text-muted d-block" style="font-size:0.8em;">File Path</span>
                                         <span class="font-monospace" style="font-size:0.75em; word-break:break-all;"><%= item.filePath %></span>
                                         <button class="btn btn-sm btn-outline-secondary ms-1 py-0 px-1" title="Copy path" data-copy="<%= item.filePath %>" onclick="copyText(this.dataset.copy)"><i class="fas fa-copy"></i></button>
                                     </li>
                                     <% } %>
                                     <% if (item.metadata && item.metadata.imageWidth && item.metadata.imageHeight) { %>
-                                    <li class="list-group-item bg-dark text-white border-secondary d-flex justify-content-between">
-                                        <span class="text-white-50">Dimensions</span>
+                                    <li class="list-group-item d-flex justify-content-between">
+                                        <span class="text-muted">Dimensions</span>
                                         <span><%= item.metadata.imageWidth %> × <%= item.metadata.imageHeight %></span>
                                     </li>
                                     <% } %>
                                     <% if (item.metadata && item.metadata.fileSize) { %>
-                                    <li class="list-group-item bg-dark text-white border-secondary d-flex justify-content-between">
-                                        <span class="text-white-50">File Size</span>
+                                    <li class="list-group-item d-flex justify-content-between">
+                                        <span class="text-muted">File Size</span>
                                         <span><%= Math.round(Number(item.metadata.fileSize) / 1024) %> KB</span>
                                     </li>
                                     <% } %>

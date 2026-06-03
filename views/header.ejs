@@ -932,7 +932,7 @@
                 const syn = kwSyntax(kw);
                 const safeKw = String(kw).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
                 const safeSyn = syn.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
-                return `<tr><td><strong>Plugin Syntax</strong><br><small class="text-white-50">${safeKw}</small></td><td><code class="small">${safeSyn}</code> <button class="btn btn-sm btn-outline-secondary py-0 px-1" title="Copy" data-syn="${safeSyn}" onclick="copyText(this.dataset.syn)"><i class="fas fa-copy"></i></button></td></tr>`;
+                return `<tr><td><strong>Plugin Syntax</strong><br><small class="text-muted">${safeKw}</small></td><td><code class="small">${safeSyn}</code> <button class="btn btn-sm btn-outline-secondary py-0 px-1" title="Copy" data-syn="${safeSyn}" onclick="copyText(this.dataset.syn)"><i class="fas fa-copy"></i></button></td></tr>`;
               }).join('')
             : `<tr><td><strong>Plugin Syntax</strong></td><td><code class="small">[{MediaPlugin format='list' keyword='current'}]</code> <button class="btn btn-sm btn-outline-secondary py-0 px-1" title="Copy" onclick="copyText(&quot;[{MediaPlugin format=&apos;list&apos; keyword=&apos;current&apos;}]&quot;)"><i class="fas fa-copy"></i></button></td></tr>`;
 
