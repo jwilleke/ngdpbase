@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-06-02T00:00:00.000Z'
+lastModified: '2026-06-03T00:00:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -16,7 +16,7 @@ Current near-term priorities for ngdpbase and the sister sites tracked by `/othe
 
 **See also**: [`docs/architecture-threads.md`](./docs/architecture-threads.md) maps in-flight cross-cutting design threads (CatalogManager unification, NCM pipeline, JSON-LD render, Journal reconcile, ACL evaluator, system principal, addon platform) — issues here that belong to a thread are listed there with their dependency context. Use TODO.md for "what's open and how to prioritise"; use architecture-threads.md for "how do these issues relate to each other."
 
-**Latest release**: v3.48.0 (2026-06-02; minor, GH Release published) — shipped the **#685 feeds data-ingestion framework** (new `feeds` addon, **default-disabled**): config → scheduled poll (back-off + stale-feed WARN) → ingest (`geojson` | `rest-json` adapters) → change-detected RecordStore → render via `[Marquee fetch='FeedManager.toMarqueeText(...)']` + `[DataFeed]` plugin, all as a CatalogSource. **All three instances in sync at v3.48.0** (jimstest, fairways-base, ngdp-temp-builds), each GREEN: 6198 unit + 80 E2E. Prior: v3.47.1 (2026-06-02; patch) shipped **#808** partial-date WARN/ERROR.
+**Latest release**: v3.48.1 (2026-06-03; patch, GH Release deferred) — fixed **#810** media-item metadata invisible in Light Mode (theme-forcing `bg-dark`/`text-white*` classes stripped for theme variables). jimstest GREEN: 6198 unit + 80 E2E. Satellites stay on v3.48.0 until the next minor (patch gate). Prior: v3.48.0 (2026-06-02; minor, GH Release published) — shipped the **#685 feeds data-ingestion framework** (new `feeds` addon, **default-disabled**): config → scheduled poll (back-off + stale-feed WARN) → ingest (`geojson` | `rest-json` adapters) → change-detected RecordStore → render via `[Marquee fetch='FeedManager.toMarqueeText(...)']` + `[DataFeed]` plugin, all as a CatalogSource. **All three instances in sync at v3.48.0** (jimstest, fairways-base, ngdp-temp-builds), each GREEN: 6198 unit + 80 E2E. Prior: v3.47.1 (2026-06-02; patch) shipped **#808** partial-date WARN/ERROR.
 
 Sister sites in scope:
 
@@ -33,12 +33,13 @@ Dependabot live state: **1 open alert** on the main repo — #96 `showdown` (med
 
 | Source | Package | Severity | Status |
 |---|---|---|---|
-| Manual / #599 | `showdown` | medium (CVE-2024-1899) | ReDoS in markdown link parser; **no upstream patch**. Weekly `Showdown CVE-2024-1899 Patch Check` workflow watches for one — fixed in #749 (`4c9f9a17`); last two scheduled runs (2026-05-21, 2026-05-26) GREEN. Will auto-comment on #599 when upstream lands a fix. |
+| Manual / #599 | `showdown` | medium (CVE-2024-1899) | ReDoS in markdown link parser; **no upstream patch**. Weekly `Showdown CVE-2024-1899 Patch Check` workflow watches for one — fixed in #749 (`4c9f9a17`); latest scheduled run (2026-06-02) GREEN. Will auto-comment on #599 when upstream lands a fix. |
 
 ## Waiting on Review Sign-off
 
 Items carrying the `in review` label — work is shipped/merged; operator verification is the only thing left before close. **Clear this list before starting new feature work.**
 
+- **#810 — Light-Mode contrast fix (shipped v3.48.1).** Media-item Details + Media Information metadata was white-on-light (invisible) in Light Mode. **Verify:** open a media item with EXIF, e.g. `/media/item/03e3f1bce55390b2b5855369e0324268`, toggle to Light Mode, confirm Filename/Year/Type/Date/Camera/GPS and the Media Information values are legible in both themes. Close once confirmed.
 - **#685 — feeds data-ingestion framework (shipped v3.48.0).** New `feeds` addon, **default-disabled**. **Verify:** enable it (`ngdpbase.addons.feeds.enabled: true`) + configure a source, e.g. the USGS earthquakes GeoJSON (`adapter: geojson`), then confirm `[{DataFeed source='…'}]` / `[{MarqueePlugin fetch='FeedManager.toMarqueeText(source=…)'}]` render after a poll, and stale/error feeds surface in `/admin/notifications`. Remaining (driver-gated, tracked on #685): `rss-atom`/`csv`/`xls` adapters, geohazardwatch importer migration, #501/NCM-table unification.
 
 ## Open BUGS (ngdpbase, by issue #)

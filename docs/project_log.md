@@ -2,6 +2,22 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-06-03-01
+
+- Agent: Claude Opus 4.8
+- Subject: Fixed **#810** — media-item metadata invisible in Light Mode (white-on-light contrast); released **v3.48.1** (patch).
+- Current Issue: #810 (set `in review`)
+- Root cause: `views/media-item.ejs` (Details panel + collapsible Media Information panel) and the JS-built Media Information modal in `views/header.ejs` hardcoded Bootstrap `bg-dark`/`text-white`/`text-white-50`/`border-secondary`. The site's custom `.card { background-color: var(--card-bg) }` loads after Bootstrap and wins, so in Light Mode the card background flips light while the `!important` `text-white*` utilities keep text white → filename/date/camera and Media Information values rendered white-on-light (invisible). Dark Mode coincidentally matched. The "mediaInfoPanel — no values" complaint was the same invisibility.
+- Fix: stripped the theme-forcing classes so the existing theme variables drive the colors, matching the working `_media-card.ejs` idiom (`text-muted` for labels). Left the deliberately-dark `_media-lightbox` fullscreen overlay untouched. Verified live: rendered page now has **0** invisible-class occurrences.
+- Semver: **patch** — 3.48.0 → 3.48.1. Release commit `0f5f1b01`, tag `v3.48.1` pushed. GitHub Release **deferred** (patch; consolidate later via `/release`). `/othersites` **skipped** per the patch gate — satellites catch up at next minor/major.
+- Tests: jimstest pre-flight on `a6ffe807` GREEN (6198 unit + 80 E2E); Step 8a re-validation on release commit `0f5f1b01` GREEN (6198 unit; E2E not re-run — view code byte-identical to the already-E2E-validated fix commit).
+- Perf baseline `docs/performance/baseline-v3.48.1-2026-06-03.md`. Drift vs v3.48.0: memory -2.0%, routes flat/improved (cold-cache noise) — no regression.
+- Commits: `a6ffe807` (fix), `0f5f1b01` (release)
+- Files Modified:
+  - views/media-item.ejs, views/header.ejs
+  - package.json, config/app-default-config.json, CHANGELOG.md
+  - docs/performance/baseline-v3.48.1-2026-06-03.md, docs/project_log.md, TODO.md
+
 ## 2026-06-02-12
 
 - Agent: Claude Opus 4.8
