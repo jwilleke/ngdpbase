@@ -39,7 +39,7 @@ Dependabot live state: **1 open alert** on the main repo — `showdown` #96 (mit
 
 Items carrying the `in review` label — work is shipped/merged; operator verification is the only thing left before close. **Clear this list before starting new feature work.**
 
-- **#813 — NCM v2 GFM-table up-convert (shipped v3.49.0).** Imported markdown pipe tables now render as styled, sortable JSPWiki tables. **Verify:** import a markdown file containing a pipe table (or convert an existing page), open it, and confirm the table is bordered/striped/hover and the column headers sort on click. Close once the rendered styling looks right.
+- _(none — #813 NCM table up-convert verified and CLOSED.)_
 
 ## Open BUGS (ngdpbase, by issue #)
 
