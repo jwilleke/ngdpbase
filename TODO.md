@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-06-08T00:00:00.000Z'
+lastModified: '2026-06-08T12:00:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -16,7 +16,7 @@ Current near-term priorities for ngdpbase and the sister sites tracked by `/othe
 
 **See also**: [`docs/architecture-threads.md`](./docs/architecture-threads.md) maps in-flight cross-cutting design threads (CatalogManager unification, NCM pipeline, JSON-LD render, Journal reconcile, ACL evaluator, system principal, addon platform) — issues here that belong to a thread are listed there with their dependency context. Use TODO.md for "what's open and how to prioritise"; use architecture-threads.md for "how do these issues relate to each other."
 
-**Latest release**: v3.48.1 (2026-06-03; patch, GH Release deferred) — fixed **#810** media-item metadata invisible in Light Mode (theme-forcing `bg-dark`/`text-white*` classes stripped for theme variables). jimstest GREEN: 6198 unit + 80 E2E. Satellites stay on v3.48.0 until the next minor (patch gate). Prior: v3.48.0 (2026-06-02; minor, GH Release published) — shipped the **#685 feeds data-ingestion framework** (new `feeds` addon, **default-disabled**): config → scheduled poll (back-off + stale-feed WARN) → ingest (`geojson` | `rest-json` adapters) → change-detected RecordStore → render via `[Marquee fetch='FeedManager.toMarqueeText(...)']` + `[DataFeed]` plugin, all as a CatalogSource. **All three instances in sync at v3.48.0** (jimstest, fairways-base, ngdp-temp-builds), each GREEN: 6198 unit + 80 E2E. Prior: v3.47.1 (2026-06-02; patch) shipped **#808** partial-date WARN/ERROR.
+**Latest release**: v3.49.0 (2026-06-08; minor, GH Release published) — shipped **#813** NCM v2 GFM-table up-convert: imported markdown pipe tables are rewritten to the JSPWiki styled form (`%%table-fit/-bordered/-striped/-hover/sortable` wrapping `||header||`/`|cell|`), so they render styled + client-side sortable. Reverses the prior NCM §2.1 "no table conversion" decision; bumps NCM_VERSION 1→2 (existing pages migrate explicitly). Config-driven via `ngdpbase.markdown.ncm.table.default-classes`. **All three instances in sync at v3.49.0** (jimstest, fairways-base, ngdp-temp-builds): 6213 unit each; jimstest 80 E2E. Prior: v3.48.1 (2026-06-03; patch) fixed **#810** media-item Light-Mode contrast. Prior: v3.48.0 (2026-06-02; minor) shipped the **#685 feeds data-ingestion framework** (new `feeds` addon, default-disabled).
 
 Sister sites in scope:
 
@@ -29,18 +29,17 @@ All three local checkouts share `jwilleke/ngdpbase` as their git remote — thei
 
 ## Security
 
-Dependabot live state: **5 open alerts** on the main repo — `showdown` #96 (mitigation-only, #599) plus **4 new `hono` alerts** (#127–130, all medium, root `package-lock.json`). The hono four are already fixed by ready-to-merge Dependabot PR **#812** (`hono` 4.12.18 → 4.12.23, mergeable/CLEAN, GitGuardian pass). geohazardwatch and fairways-gen2-website: **0 open**. Note: the unfiltered `dependabot/alerts` query returns only the first page (newest first) and hides #96 behind the newer hono alerts — use `?state=open&per_page=100` to see the full set.
+Dependabot live state: **1 open alert** on the main repo — `showdown` #96 (mitigation-only, #599). The 4 `hono` alerts (#127–130) were cleared by merging PR **#812** (`hono` 4.12.18 → 4.12.23, in v3.49.0); Dependabot auto-closes them on its next master re-scan. geohazardwatch and fairways-gen2-website: **0 open**. Note: the unfiltered `dependabot/alerts` query returns only the first page (newest first) and hides #96 — use `?state=open&per_page=100` to see the full set.
 
 | Source | Package | Severity | Status |
 |---|---|---|---|
-| #127–130 | `hono` | medium (×4 GHSA) | Fixed by **PR #812** (4.12.18 → 4.12.23) — mergeable, CI clean. **Merge to clear all four.** |
 | #96 / #599 | `showdown` | medium (CVE-2024-1899) | ReDoS in markdown link parser; **no upstream patch**. Weekly `Showdown CVE-2024-1899 Patch Check` workflow watches for one — fixed in #749 (`4c9f9a17`); latest scheduled run (2026-06-02) GREEN. Will auto-comment on #599 when upstream lands a fix. |
 
 ## Waiting on Review Sign-off
 
 Items carrying the `in review` label — work is shipped/merged; operator verification is the only thing left before close. **Clear this list before starting new feature work.**
 
-- _(none — #810 Light-Mode contrast fix and #685 feeds framework both CLOSED since the last snapshot.)_
+- **#813 — NCM v2 GFM-table up-convert (shipped v3.49.0).** Imported markdown pipe tables now render as styled, sortable JSPWiki tables. **Verify:** import a markdown file containing a pipe table (or convert an existing page), open it, and confirm the table is bordered/striped/hover and the column headers sort on click. Close once the rendered styling looks right.
 
 ## Open BUGS (ngdpbase, by issue #)
 

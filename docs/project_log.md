@@ -2,6 +2,34 @@
 
 AI agent session tracking. See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
+## 2026-06-08-01
+
+- Agent: Claude Opus 4.8
+- Subject: Shipped **#813** — NCM v2 up-converts GFM pipe tables to JSPWiki styled (sortable) tables on import; released **v3.49.0** (minor) and propagated. Also merged Dependabot **#812** (hono 4.12.18→4.12.23, clears 4 alerts) earlier in the session.
+- Current Issue: #813 (set `in review`)
+- What shipped: GFM pipe tables are rewritten on NCM normalization to the rich JSPWiki form — `||header||`/`|cell|` rows wrapped in operator-configurable style blocks (default `%%table-fit %%table-bordered %%table-striped %%table-hover %%sortable`), so imported markdown tables render styled + client-side sortable instead of plain showdown tables. **Reverses** the prior NCM §2.1 "no table conversion" decision; bumps **NCM_VERSION 1 → 2** (existing pages migrate explicitly, never silently on read).
+- Design decisions (operator-confirmed): apply to **any body NCM normalizes** (markdown/html/jspwiki import + convert-existing, via the single fixed point); **bump to v2** per the §3 profile-change rule; **config-driven** classes via `ngdpbase.markdown.ncm.table.default-classes`.
+- Implementation: new `src/converters/ncm/tables.ts` `upconvertPipeTables()` — detects GFM tables (header + `|---|` separator), emits **leading+trailing delimiters** (critical: `JSPWikiPreprocessor.parseTableRow` slices first/last cell, so a missing trailing delimiter silently drops the last column), skips fenced code blocks, idempotent (styled output has no GFM separator → re-normalize is a no-op; existing `||` tables never re-wrapped). Wired into `normalizeToNcm` fixed point; `ImportManager` now routes **markdown** through NCM (was pass-through) and preserves `importedFrom: markdown`. Spec §2.1 + version note updated.
+- Verified end-to-end through the real preprocessor: produced `<table class="table table-fit table-bordered table-striped table-hover sortable">` with all 3 columns intact.
+- Semver: **minor** — 3.48.1 → 3.49.0. Feature commit `b64f0e21`, release commit `3a35efa3`, tag `v3.49.0` pushed, **GitHub Release published**. 4 commits in range (#812 hono, TODO refresh, #813 feature, release).
+- Tests: jimstest pre-flight on `b64f0e21` GREEN (6213 unit + 80 E2E — E2E's first run hit a stale-Playwright-browser banner; `npx playwright install chromium` then 80/80). Step 8a re-validation on release commit `3a35efa3` GREEN (6213 unit; no UI paths in range, E2E not re-run).
+- Perf baseline `docs/performance/baseline-v3.49.0-2026-06-08.md`. Drift vs v3.48.1: memory +1.7%, routes ±1ms — noise, no regression.
+- Propagation (`/othersites`, satellite-only — Step 8a validated jimstest on the release commit first):
+
+  | Instance | Path | Port | Unit | E2E | Notes |
+  |---|---|---|---|---|---|
+  | jimstest | /Volumes/hd2A/workspaces/github/ngdpbase | 3000 | 6213/6213 | 80/80 | Step 8a re-validation on release commit |
+  | fairways-base | /Volumes/hd2A/workspaces/github/fairways-base | 2121 | 6213/6213 | n/a | clean ff pull; E2E not required (no UI paths in range) |
+  | ngdp-temp-builds | /Volumes/hd2/ngdp-temp-builds/ngdpbase | 3001 | 6213/6213 | n/a | clean ff pull; E2E not required |
+
+  Flakes seen: none.
+- Commits: `d73859a1` (#812 hono), `b64f0e21` (#813 feature), `3a35efa3` (release)
+- Files Modified:
+  - src/converters/ncm/tables.ts (new), src/converters/ncm/{index,normalize,types}.ts, src/managers/ImportManager.ts
+  - src/converters/**tests**/{ncm-tables (new),ncm-normalize,ncm-bridge,ncm-existing}.test.ts
+  - config/app-default-config.json, docs/NGDP-Compatible-Markdown.md
+  - package.json, CHANGELOG.md, docs/performance/baseline-v3.49.0-2026-06-08.md, docs/project_log.md, TODO.md
+
 ## 2026-06-03-01
 
 - Agent: Claude Opus 4.8
