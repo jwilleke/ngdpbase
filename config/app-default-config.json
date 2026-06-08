@@ -96,6 +96,14 @@
     "facebook.com/tr",
     "scorecardresearch.com"
   ],
+  "_comment_ncm_table": "ngdp Compatible Markdown table up-convert (#728 §2.1, NCM v2). On normalization, GFM pipe tables are rewritten to the JSPWiki styled form (||header||/|cell|) wrapped in these style blocks, giving imported tables fit/border/zebra/hover + client-side sorting. Order is preserved; set to [] to up-convert the table syntax with no style wrapper.",
+  "ngdpbase.markdown.ncm.table.default-classes": [
+    "table-fit",
+    "table-bordered",
+    "table-striped",
+    "table-hover",
+    "sortable"
+  ],
   "_comment_search_storage": "Search indexing configuration (ALL LOWERCASE)",
   "ngdpbase.search.enabled": true,
   "_comment_search_provider": "Search provider with fallback",

@@ -32,6 +32,42 @@ describe('NCM normalizeToNcm — idempotent fixed point', () => {
   });
 });
 
+describe('NCM table up-convert (§2.1, v2)', () => {
+  const doc = [
+    '---',
+    'title: T',
+    '---',
+    'Intro.',
+    '',
+    '| Feature | Abnormal | Borderline |',
+    '|---|---|---|',
+    '| Certainty | Outside range | In between |',
+    ''
+  ].join('\n');
+
+  test('GFM table in a markdown body is up-converted to the JSPWiki styled form', () => {
+    const r = normalizeToNcm(doc, 'markdown');
+    expect(r.content).toContain('%%table-fit');
+    expect(r.content).toContain('%%sortable');
+    expect(r.content).toContain('||Feature||Abnormal||Borderline||');
+    expect(r.content).toContain('|Certainty|Outside range|In between|');
+    expect(r.warnings.some(w => w.kind === 'converter-note' && /up-converted/.test(w.detail))).toBe(true);
+  });
+
+  test('up-convert is a fixed point — second pass is byte-identical and converts nothing', () => {
+    const r1 = normalizeToNcm(doc, 'markdown');
+    const r2 = normalizeToNcm(r1.content, 'ncm');
+    expect(r2.content).toBe(r1.content);
+    expect(r2.warnings.some(w => /up-converted/.test(w.detail))).toBe(false);
+  });
+
+  test('custom tableClasses option overrides the default wrapper', () => {
+    const r = normalizeToNcm(doc, 'markdown', { tableClasses: ['sortable'] });
+    expect(r.content).toContain('%%sortable');
+    expect(r.content).not.toContain('%%table-fit');
+  });
+});
+
 describe('NCM ncmVersion stamping', () => {
   test('absent → stamped with NCM_VERSION', () => {
     const r = normalizeToNcm('---\ntitle: X\n---\nbody\n', 'markdown');
@@ -45,9 +81,9 @@ describe('NCM ncmVersion stamping', () => {
   });
 
   test('present but different → preserved verbatim (no silent migration)', () => {
-    const r = normalizeToNcm('---\nncmVersion: 2\ntitle: X\n---\nb\n', 'ncm');
-    expect(r.ncmVersion).toBe(2);
-    expect(matter(r.content).data.ncmVersion).toBe(2);
+    const r = normalizeToNcm('---\nncmVersion: 99\ntitle: X\n---\nb\n', 'ncm');
+    expect(r.ncmVersion).toBe(99);
+    expect(matter(r.content).data.ncmVersion).toBe(99);
   });
 });
 

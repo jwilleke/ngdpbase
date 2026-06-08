@@ -4,7 +4,7 @@
  *   ncmToConversionResult(normalizeToNcm(content, formatId))
  */
 
-import { normalizeToNcm, ncmToConversionResult } from '../ncm/index';
+import { normalizeToNcm, ncmToConversionResult, NCM_VERSION } from '../ncm/index';
 
 describe('ncmToConversionResult bridge', () => {
   test('splits NCM frontmatter→metadata, body→content; warnings stay structured (S3 lossless)', () => {
@@ -28,7 +28,7 @@ describe('ncmToConversionResult bridge', () => {
     const cr = ncmToConversionResult(normalizeToNcm(html, 'html'));
 
     expect(cr.metadata.title).toBe('Doc');
-    expect(cr.metadata.ncmVersion).toBe(1);
+    expect(cr.metadata.ncmVersion).toBe(NCM_VERSION);
     expect(cr.content).toContain('[Ext|https://example.com|target="_blank"]');
     expect(cr.content).not.toContain('---'); // frontmatter was split out into metadata
     expect(cr.warnings.some(w => w.kind === 'link-externalized' && w.detail === 'https://example.com')).toBe(true);
@@ -38,7 +38,7 @@ describe('ncmToConversionResult bridge', () => {
     const jsp = '!!! Title\n\nText [L|http://e.com] and [WikiPage].\n';
     const cr = ncmToConversionResult(normalizeToNcm(jsp, 'jspwiki'));
     expect(cr.metadata.importedFrom).toBe('jspwiki');
-    expect(cr.metadata.ncmVersion).toBe(1);
+    expect(cr.metadata.ncmVersion).toBe(NCM_VERSION);
     expect(cr.content).toContain('[L|http://e.com|target="_blank"]');
     expect(cr.content).toContain('[WikiPage]');
   });

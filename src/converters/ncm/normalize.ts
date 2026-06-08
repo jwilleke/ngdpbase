@@ -25,6 +25,18 @@ import HtmlConverter from '../HtmlConverter.js';
 import JSPWikiConverter from '../JSPWikiConverter.js';
 import { NCM_VERSION, NcmResult, NcmSourceFormat, NcmWarning } from './types.js';
 import { normalizeLinks } from './links.js';
+import { upconvertPipeTables, DEFAULT_TABLE_CLASSES } from './tables.js';
+
+/** Options controlling normalization behaviour. */
+export interface NcmNormalizeOptions {
+  /**
+   * Style classes to wrap up-converted tables in (§2.1, NCM v2). Defaults to
+   * {@link DEFAULT_TABLE_CLASSES}. ImportManager resolves this from
+   * `ngdpbase.markdown.ncm.table.default-classes`. Pass `[]` to up-convert the
+   * table syntax without a style wrapper.
+   */
+  tableClasses?: string[];
+}
 
 /** Re-key an object with keys in stable sorted order (determinism, §3.1). */
 function sortedData(data: Record<string, unknown>): Record<string, unknown> {
@@ -43,7 +55,8 @@ function sortedData(data: Record<string, unknown>): Record<string, unknown> {
  */
 export function normalizeToNcm(
   input: string,
-  sourceFormat: NcmSourceFormat
+  sourceFormat: NcmSourceFormat,
+  options: NcmNormalizeOptions = {}
 ): NcmResult {
   const warnings: NcmWarning[] = [];
 
@@ -72,7 +85,7 @@ export function normalizeToNcm(
       body,
       (conv.metadata ?? {})
     );
-    const fixed = normalizeToNcm(assembled, 'markdown');
+    const fixed = normalizeToNcm(assembled, 'markdown', options);
     return {
       content: fixed.content,
       warnings: [...warnings, ...fixed.warnings],
@@ -90,7 +103,21 @@ export function normalizeToNcm(
   }
   const ncmVersion = Number(data.ncmVersion);
 
-  const content = matter.stringify(parsed.content, sortedData(data));
+  // §2.1 (NCM v2): up-convert GFM pipe tables to the JSPWiki styled form. This
+  // is the single place tables are normalized — the html/jspwiki path funnels
+  // its assembled doc back through here, so it inherits the same treatment.
+  // Idempotent: the output has no GFM separator row, so re-normalizing is a
+  // no-op fixed point.
+  const tableClasses = options.tableClasses ?? DEFAULT_TABLE_CLASSES;
+  const { body: tabledBody, converted } = upconvertPipeTables(parsed.content, tableClasses);
+  if (converted > 0) {
+    warnings.push({
+      kind: 'converter-note',
+      detail: `${converted} GFM table(s) up-converted to JSPWiki styled form`
+    });
+  }
+
+  const content = matter.stringify(tabledBody, sortedData(data));
 
   return { content, warnings, ncmVersion };
 }

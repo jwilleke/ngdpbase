@@ -33,7 +33,7 @@ import { v4 as uuidv4 } from 'uuid';
 import BaseManager, { BackupData } from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import { IContentConverter, ConversionResult } from '../converters/IContentConverter.js';
-import { normalizeToNcm, ncmToConversionResult } from '../converters/ncm/index.js';
+import { normalizeToNcm, ncmToConversionResult, DEFAULT_TABLE_CLASSES } from '../converters/ncm/index.js';
 import { notifyNcmConversion } from '../utils/ncmNotify.js';
 import { writeRunSummary, type ImportRunSummary } from '../utils/importRunSummary.js';
 import JSPWikiConverter from '../converters/JSPWikiConverter.js';
@@ -565,16 +565,29 @@ class ImportManager extends BaseManager {
       throw new Error(`Unknown format: ${formatId}`);
     }
 
-    // Convert content. #728 S5b: HTML/JSPWiki imports route through the NCM
-    // normalizer (NCM extends the registry — it delegates to these same
-    // converters internally, then applies §2.4 links + stamps ncmVersion),
-    // bridged back to ConversionResult. Markdown stays on MarkdownConverter
-    // (its KNOWN_FIELDS mapping is relied on; markdown→NCM parity is S3).
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+
+    // Convert content. #728: HTML/JSPWiki/Markdown imports route through the
+    // NCM normalizer (NCM extends the registry — it delegates to these same
+    // converters internally, then applies §2.4 links, the §2.1 table
+    // up-convert, and stamps ncmVersion), bridged back to ConversionResult.
     // Any other format (e.g. test mocks) keeps the direct converter path.
+    // Table style classes are operator-configurable (§2.1, NCM v2).
+    const tableClasses = configManager?.getProperty(
+      'ngdpbase.markdown.ncm.table.default-classes',
+      DEFAULT_TABLE_CLASSES
+    ) as string[] ?? DEFAULT_TABLE_CLASSES;
     const conversionResult: ConversionResult =
-      (formatId === 'html' || formatId === 'jspwiki')
-        ? ncmToConversionResult(normalizeToNcm(content, formatId))
+      (formatId === 'html' || formatId === 'jspwiki' || formatId === 'markdown')
+        ? ncmToConversionResult(normalizeToNcm(content, formatId, { tableClasses }))
         : converter.convert(content);
+
+    // The NCM markdown path does not stamp provenance the way MarkdownConverter
+    // does; preserve `importedFrom: markdown` for parity with the JSPWiki/HTML
+    // converters (which set it internally).
+    if (formatId === 'markdown' && !conversionResult.metadata['importedFrom']) {
+      conversionResult.metadata['importedFrom'] = 'markdown';
+    }
 
     // Register any extracted user-keywords (e.g., from JSPWiki %%category%% blocks) to config
     const extractedKeywords = conversionResult.metadata['user-keywords'] as string[] | undefined;

@@ -14,8 +14,12 @@
 
 /** Current NCM profile version. Bumped only when the profile changes; pages
  *  are re-normalized to a new version ONLY via an explicit migration, never
- *  silently on read (spec §3, Q4). */
-export const NCM_VERSION = 1;
+ *  silently on read (spec §3, Q4).
+ *
+ *  v2 (#728 table profile): GFM pipe tables are up-converted to the JSPWiki
+ *  styled form (`%%table-*` wrapped `||header||`/`|cell|`) — v1 left tables as
+ *  passthrough. See docs/NGDP-Compatible-Markdown.md §2.1. */
+export const NCM_VERSION = 2;
 
 /** Source content formats the normalizer accepts. */
 export type NcmSourceFormat = 'ncm' | 'markdown' | 'html' | 'jspwiki';

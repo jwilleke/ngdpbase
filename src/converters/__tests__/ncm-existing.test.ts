@@ -3,7 +3,7 @@
  * "convert existing page" composition: §2.4 links + S1 fixed point.
  */
 
-import { normalizeExistingPageToNcm } from '../ncm/index';
+import { normalizeExistingPageToNcm, NCM_VERSION } from '../ncm/index';
 import matter from 'gray-matter';
 
 describe('normalizeExistingPageToNcm', () => {
@@ -28,7 +28,7 @@ describe('normalizeExistingPageToNcm', () => {
 
   test('frontmatter-less page gains ncmVersion and stays stable', () => {
     const r1 = normalizeExistingPageToNcm('# Heading\n\nbody\n');
-    expect(matter(r1.content).data.ncmVersion).toBe(1);
+    expect(matter(r1.content).data.ncmVersion).toBe(NCM_VERSION);
     expect(normalizeExistingPageToNcm(r1.content).content).toBe(r1.content);
   });
 });
