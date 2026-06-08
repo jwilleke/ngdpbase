@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-06-03T00:00:00.000Z'
+lastModified: '2026-06-08T00:00:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -29,18 +29,18 @@ All three local checkouts share `jwilleke/ngdpbase` as their git remote — thei
 
 ## Security
 
-Dependabot live state: **1 open alert** on the main repo — #96 `showdown` (medium, GHSA-rmmh-p597-ppvv = CVE-2024-1899), the mitigation-only item tracked under #599 below (no upstream patch to apply, so it cannot be cleared). geohazardwatch and fairways-gen2-website: **0 open**. Note: the unfiltered `dependabot/alerts` query returns only the first page (newest first) and hides #96 behind newer auto-dismissed alerts — use `?state=open&per_page=100` to see it.
+Dependabot live state: **5 open alerts** on the main repo — `showdown` #96 (mitigation-only, #599) plus **4 new `hono` alerts** (#127–130, all medium, root `package-lock.json`). The hono four are already fixed by ready-to-merge Dependabot PR **#812** (`hono` 4.12.18 → 4.12.23, mergeable/CLEAN, GitGuardian pass). geohazardwatch and fairways-gen2-website: **0 open**. Note: the unfiltered `dependabot/alerts` query returns only the first page (newest first) and hides #96 behind the newer hono alerts — use `?state=open&per_page=100` to see the full set.
 
 | Source | Package | Severity | Status |
 |---|---|---|---|
-| Manual / #599 | `showdown` | medium (CVE-2024-1899) | ReDoS in markdown link parser; **no upstream patch**. Weekly `Showdown CVE-2024-1899 Patch Check` workflow watches for one — fixed in #749 (`4c9f9a17`); latest scheduled run (2026-06-02) GREEN. Will auto-comment on #599 when upstream lands a fix. |
+| #127–130 | `hono` | medium (×4 GHSA) | Fixed by **PR #812** (4.12.18 → 4.12.23) — mergeable, CI clean. **Merge to clear all four.** |
+| #96 / #599 | `showdown` | medium (CVE-2024-1899) | ReDoS in markdown link parser; **no upstream patch**. Weekly `Showdown CVE-2024-1899 Patch Check` workflow watches for one — fixed in #749 (`4c9f9a17`); latest scheduled run (2026-06-02) GREEN. Will auto-comment on #599 when upstream lands a fix. |
 
 ## Waiting on Review Sign-off
 
 Items carrying the `in review` label — work is shipped/merged; operator verification is the only thing left before close. **Clear this list before starting new feature work.**
 
-- **#810 — Light-Mode contrast fix (shipped v3.48.1).** Media-item Details + Media Information metadata was white-on-light (invisible) in Light Mode. **Verify:** open a media item with EXIF, e.g. `/media/item/03e3f1bce55390b2b5855369e0324268`, toggle to Light Mode, confirm Filename/Year/Type/Date/Camera/GPS and the Media Information values are legible in both themes. Close once confirmed.
-- **#685 — feeds data-ingestion framework (shipped v3.48.0).** New `feeds` addon, **default-disabled**. **Verify:** enable it (`ngdpbase.addons.feeds.enabled: true`) + configure a source, e.g. the USGS earthquakes GeoJSON (`adapter: geojson`), then confirm `[{DataFeed source='…'}]` / `[{MarqueePlugin fetch='FeedManager.toMarqueeText(source=…)'}]` render after a poll, and stale/error feeds surface in `/admin/notifications`. Remaining (driver-gated, tracked on #685): `rss-atom`/`csv`/`xls` adapters, geohazardwatch importer migration, #501/NCM-table unification.
+- _(none — #810 Light-Mode contrast fix and #685 feeds framework both CLOSED since the last snapshot.)_
 
 ## Open BUGS (ngdpbase, by issue #)
 
