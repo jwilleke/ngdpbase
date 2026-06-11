@@ -192,7 +192,6 @@ data/.install-complete
 pages/versions/
 required-pages/versions/
 data/page-index.json
-CLAUDE.md
 archive
 
 node_modules/
