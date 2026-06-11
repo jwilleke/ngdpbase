@@ -24402,3 +24402,19 @@ Subject: AGENTS.md implementation and project_log.md creation
   - required-pages/f1f41a47-8d0d-4d46-a5e2-6208ba42e4a0.md (SlideshowPlugin → Using SlideshowPlugin)
   - required-pages/fe7a378d-dfa5-4e37-9891-637568ebe0b4.md (inbound links)
   - required-pages/ff2c3a6d-fdfc-479f-90e3-585dc2b3abd0.md (CounterPlugin → Using CounterPlugin)
+
+## 2026-06-11-01
+
+- Agent: Claude
+- Subject: Log review + PM2 log hygiene (flush + logrotate); package-lock version sync
+- Current Issue: none
+- Tests: none run (operational/infra + pure version-string sync — no runtime surface)
+- Work Done:
+  - Reviewed live jimstest logs (FAST_STORAGE /Volumes/hd2/jimstest-wiki/data/logs/). No [error]/[fatal] in current rotation; only warnings: one-off sist2/deby EHOSTUNREACH (192.168.68.71:9200), recurring LeftMenu slow parse (~1.2s) + MarkupParser SLOW_PARSING alerts (avg ~130ms > 100ms), and a missing-page reference (Laboratory-Results-JSW.md)
+  - Found pm2-out.log and pm2-combined.log had grown to ~2.6 GB each on /Volumes/hd2 (PM2 raw streams were unrotated); pm2 flush reclaimed ~5.2 GB across all three instances
+  - Installed and configured pm2-logrotate (module, survives restarts): max_size 10M, retain 14, compress true, daily rotate at midnight — caps the raw pm2 streams going forward. Winston appN.log files already self-rotate
+  - Synced package-lock.json version string 3.48.1 → 3.49.0 (leftover from v3.49.0 release; no dependency tree changes)
+- Commits:
+  - c9af29e6 chore: sync package-lock version to 3.49.0
+- Files Modified:
+  - package-lock.json
