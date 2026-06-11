@@ -270,3 +270,5 @@ test-results/
 .release-notes-*.tmp
 # Test config composite-mode emit (issue #667)
 .tsbuildtest/
+private/
+.claude/worktrees/
