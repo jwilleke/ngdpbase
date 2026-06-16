@@ -62,4 +62,4 @@ For each related open issue:
 - `private/project_log.md` is gitignored and personal — it is appended locally only.
 - If `docs/project_log.md` still exists (pre-kit), it should have been migrated to
   `private/project_log.md` by `install-kit.sh`.
-- After committing, the natural next step is `/status`.
+- After committing, the natural next step is `/pstatus`.
