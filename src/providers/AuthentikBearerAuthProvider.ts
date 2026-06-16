@@ -101,7 +101,15 @@ export class AuthentikBearerAuthProvider implements AuthProvider {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      logger.warn(`[AuthentikBearerAuthProvider] JWT verification failed: ${message}`);
+      // Surface the underlying cause (e.g. JWKS fetch network errors like
+      // ECONNREFUSED / EHOSTUNREACH / ENOTFOUND) — "fetch failed" alone is opaque.
+      const cause = (err && typeof err === 'object' && 'cause' in err)
+        ? (err as { cause?: { code?: string; message?: string } }).cause
+        : undefined;
+      const causeStr = cause
+        ? ` (cause: ${cause.code ?? ''} ${cause.message ?? ''})`.trimEnd()
+        : '';
+      logger.warn(`[AuthentikBearerAuthProvider] JWT verification failed: ${message}${causeStr}`);
       return null;
     }
 
