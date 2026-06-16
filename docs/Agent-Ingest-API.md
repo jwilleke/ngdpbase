@@ -124,6 +124,12 @@ Set these config keys (instance custom config or env). The provider is registere
 
 The matching Authentik provider/application/service-account are provisioned by `setup-ngdpbase.mjs` in the infra repo (it prints the `audience` and the client-credentials secret).
 
+## Slash command: `/ingest-page`
+
+For agent-driven use there's a repo command at `.claude/commands/ingest-page.md`. It mints a token and posts a Markdown file in one step, resolving the page name from the doc's H1/frontmatter/filename and pulling optional `category`/`keywords` from frontmatter.
+
+It reads config from the environment (never hardcoded): `NGDPBASE_INGEST_URL`, `AUTHENTIK_TOKEN_URL`, `NGDPBASE_CLIENT_ID`, `NGDPBASE_CLIENT_SECRET`. The credentials live in the SOPS secret `apps/production/jimsmcp/ngdpbase-ingest-creds.sops.yaml` (mj-infra-flux) — see the command file for the export snippet.
+
 ## See also
 
 - [AuthentikBearerAuthProvider](providers/AuthentikBearerAuthProvider.md) — token verification
