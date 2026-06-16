@@ -59,8 +59,8 @@ jobs:
       - name: Run markdown lint
         run: |
           echo "Checking markdown files..."
-          if [ -f ".markdownlint.json" ]; then
-            npm run lint:md || echo "Warning: Markdown lint found issues"
+          if [ -f ".markdownlint.jsonc" ] || [ -f ".markdownlint.json" ]; then
+            npm run lint:md
           else
             echo "Skipping markdown lint (not configured)"
           fi
