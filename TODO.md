@@ -28,13 +28,13 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 - #825 [security] vite/launch-editor — dev-only — **fixed (override 8.0.16), pending Dependabot re-scan close**
 - #599 [security] showdown ReDoS (CVE-2024-1899) — runtime, **no upstream patch**; mitigated + weekly watch
 
-## 🟢 In progress (NCM ingest epic)
+## 🟢 In progress (NCM ingest epic) — live-verified 2026-06-16
 
 - #822 [EPIC] AI-agent markdown → NCM page ingest via Authentik OAuth
-- #818 AuthentikBearerAuthProvider — JWT verification (code shipped c81e38d1)
-- #819 POST /api/page/ingest — markdown→NCM upsert (code shipped c81e38d1)
-- #821 Tests + docs for the agent ingest flow
-- (Phase 0 #817 and Phase 3 #820 now closed)
+- #818 AuthentikBearerAuthProvider — JWT verification (shipped c81e38d1; **live-verified** against real Authentik JWKS)
+- #819 POST /api/page/ingest — markdown→NCM upsert (shipped c81e38d1; **live e2e PASSED** — real token, create 201 / update 200, author=jim, NCM table up-convert applied)
+- #821 Tests + docs (13 provider + 7 handler tests + docs guide shipped; live e2e done)
+- (Phase 0 #817 + Phase 3 #820 closed)
 
 ## ⏸ Deferred
 
