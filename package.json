@@ -107,7 +107,7 @@
     "minimatch": "^9.0.9",
     "multer": "^2.0.2",
     "node-cache": "^5.1.2",
-    "nodemailer": "^8.0.5",
+    "nodemailer": "^8.0.9",
     "pako": "^2.1.0",
     "pm2": "^7.0.1",
     "session-file-store": "^1.5.0",
@@ -169,10 +169,17 @@
     "hono": "^4.12.23",
     "fast-uri": "^3.1.2",
     "protobufjs": "^8.6.0",
+    "ws": "^8.21.0",
+    "js-yaml": "^4.2.0",
+    "@opentelemetry/core": "^2.8.0",
+    "form-data": "^4.0.6",
+    "markdown-it": "^14.2.0",
+    "vite": "^8.0.16",
+    "esbuild": "^0.28.1",
     "pm2": {
-      "ws": "^8.20.1",
+      "ws": "^8.21.0",
       "@pm2/js-api": {
-        "ws": "7.5.10"
+        "ws": "7.5.11"
       }
     }
   },
