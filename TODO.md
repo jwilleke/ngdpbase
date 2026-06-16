@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-06-11T12:00:00.000Z'
+lastModified: '2026-06-16T12:00:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -69,6 +69,7 @@ Filed and scoped, awaiting prioritization or implementation cycles. (Items carry
 
 | # | Topic | Priority hint |
 |---|---|---|
+| [#822](https://github.com/jwilleke/ngdpbase/issues/822) | AI-agent markdown→NCM ingest (epic; Phases 0–4 = [#817](https://github.com/jwilleke/ngdpbase/issues/817)–[#821](https://github.com/jwilleke/ngdpbase/issues/821)) | **In flight** — Phase 1+2 (Authentik bearer auth + `POST /api/page/ingest` upsert) committed `c81e38d1`, built + tested on jimstest. Live end-to-end blocked on Phase 0 Authentik setup ([mj-infra-flux#123](https://github.com/jwilleke/mj-infra-flux/issues/123)); Phase 3 GitOps + Phase 4 docs follow |
 | #786 | Auto-journal — digester consuming CatalogManager records into journal entries | Gate **#685 now shipped (v3.48.0)** — the FeedManager CatalogSource it consumes exists; consumer-pattern, no source-specific code |
 | #686 | AddonsManager: auto-enable bundled addons in non-default addons-path dirs | Low — Domain Addon Deployment Lever 3 (Thread #7 in `docs/architecture-threads.md`) |
 | #675 | Scaffolder + reference template for new addons | Low |
@@ -82,7 +83,7 @@ Parked work — visible but not actionable. Driven by the `deferred` label in Gi
 |---|---|---|
 | #737 | NCM Phase-2: transcode/re-encode fetched embedded images | Adds sharp/libvips; do when a real driver appears |
 | #707 | Typed footnote + knowledge-graph reference index | **#706 dependency now satisfied (v3.46.0)** but still speculative (the LLM citation workflow "isn't proven for teams or institutions" per the 2026-05-16 brainstorm); revisit only if a real citation-heavy driver materializes. 4-6h scope. |
-| #645 | PathPreflight: extend coverage to /mnt/tank/<share>/... autofs paths | No driver; current PathPreflight coverage is sufficient for live paths |
+| #645 | PathPreflight: extend coverage to `/mnt/tank/<share>/...` autofs paths | No driver; current PathPreflight coverage is sufficient for live paths |
 | #631 | System/service principal model for non-request code paths | Foundation in place (#625/#738) but no live breakage and no driver — jobs do no internal permission checks, routes gate admin before enqueue. Parked until a scheduler that acts-as-user or an audit system-vs-user requirement appears. |
 | #501 | JSON → ngdp Compatible Markdown serializer (re-scoped 2026-05-17 from "JSON → HTML") | Dependency #728 (NCM spec/normalizer) shipped, but **no driver today**. **Pairs with #685**: #685 is the mandatory downstream consumer and hasn't started; #501 is the render-to-page-body counterpart. In isolation risks designing the API around the inline-plugin consumer and refactoring when #685 lands — pick them up together. Four architectural questions still open (template DSL, fetch policy, template storage, ImportManager integration shape). |
 | #448 | AuthManager: Passkey / WebAuthn auth provider | New auth provider (architectural); adds simplewebauthn. No driver |
