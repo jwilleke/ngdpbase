@@ -72,6 +72,15 @@ function continueAfterSave(req: Request, res: Response, next: NextFunction): voi
     return;
   }
 
+  // #818 — bearer-authenticated API requests are exempt. The Authentik bearer
+  // middleware sets `req.bearerAuth` after verifying the token; such requests
+  // carry no session cookie, so CSRF (a cookie-confused-deputy defense) does
+  // not apply. Cookie/session-authenticated POSTs still require the token.
+  if ((req as Request & { bearerAuth?: boolean }).bearerAuth === true) {
+    next();
+    return;
+  }
+
   const expected = req.session?.csrfToken;
   const submitted = readSubmittedToken(req);
 

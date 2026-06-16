@@ -34,6 +34,7 @@ import { PasswordAuthProvider } from '../providers/PasswordAuthProvider.js';
 import { MagicLinkAuthProvider } from '../providers/MagicLinkAuthProvider.js';
 import { GoogleOIDCProvider } from '../providers/GoogleOIDCProvider.js';
 import { CloudflareAccessAuthProvider } from '../providers/CloudflareAccessAuthProvider.js';
+import { AuthentikBearerAuthProvider } from '../providers/AuthentikBearerAuthProvider.js';
 import type EmailManager from './EmailManager.js';
 import logger from '../utils/logger.js';
 
@@ -123,6 +124,32 @@ class AuthManager extends BaseManager {
         };
         this.providers.set('cloudflare-access', new CloudflareAccessAuthProvider(this.engine, cfConfig));
         logger.info(`[AuthManager] Registered provider: cloudflare-access (team=${teamDomain})`);
+      }
+    }
+
+    // Register Authentik bearer provider if enabled (#818). Verification-only:
+    // ngdpbase trusts Authentik-issued OAuth JWTs against the configured JWKS.
+    // No client secret is needed here — the secret lives with the agent that
+    // mints the token. Requires issuer + jwks-url + audience to be set.
+    if (configManager?.getProperty('ngdpbase.auth.authentik-bearer.enabled', false)) {
+      const issuer = configManager.getProperty('ngdpbase.auth.authentik-bearer.issuer', '') as string;
+      const jwksUrl = configManager.getProperty('ngdpbase.auth.authentik-bearer.jwks-url', '') as string;
+      const audience = configManager.getProperty('ngdpbase.auth.authentik-bearer.audience', '') as string;
+      if (!issuer || !jwksUrl || !audience) {
+        logger.error(
+          '[AuthManager] Authentik bearer provider NOT registered: ngdpbase.auth.authentik-bearer.issuer, ' +
+          '.jwks-url and .audience must all be set in custom config before enabling. (#818)'
+        );
+      } else {
+        const authentikConfig = {
+          issuer,
+          jwksUrl,
+          audience,
+          defaultRole: configManager.getProperty('ngdpbase.auth.authentik-bearer.default-role', 'occupant') as string,
+          groupMap: configManager.getProperty('ngdpbase.auth.authentik-bearer.group-map', {}) as Record<string, string>
+        };
+        this.providers.set('authentik-bearer', new AuthentikBearerAuthProvider(this.engine, authentikConfig));
+        logger.info(`[AuthManager] Registered provider: authentik-bearer (issuer=${issuer})`);
       }
     }
 

@@ -5888,6 +5888,168 @@ ${panes}
     }
   }
 
+  /**
+   * #819 — POST /api/page/ingest
+   *
+   * Authenticated JSON endpoint that accepts raw Markdown, normalizes it to
+   * NCM, and **upserts** a page authored by the caller. Built for AI agents
+   * presenting an Authentik bearer token (#818), but works with any
+   * authenticated context (e.g. a logged-in session).
+   *
+   * Body: `{ pageName, markdown, category?, keywords? }`. Upsert key is
+   * `pageName` — re-sending an edited doc updates the page in place.
+   * Permission: `page-create` (new) / `page-edit` (existing).
+   *
+   * Goes through the live server (not the out-of-process MCP write path) so the
+   * page is immediately viewable AND searchable via an in-band index update.
+   */
+  async ingestPageMarkdown(req: Request, res: Response) {
+    try {
+      const baseContext = this.createWikiContext(req);
+      const currentUser = baseContext.userContext;
+      if (!currentUser || !currentUser.isAuthenticated) {
+        return res.status(401).json({ success: false, error: 'Authentication required' });
+      }
+
+      const body = req.body as {
+        pageName?: unknown; markdown?: unknown; category?: unknown; keywords?: unknown;
+      };
+      const pageName = typeof body.pageName === 'string' ? body.pageName.trim() : '';
+      const markdown = typeof body.markdown === 'string' ? body.markdown : '';
+      if (!pageName) {
+        return res.status(400).json({ success: false, error: 'pageName is required' });
+      }
+      if (!markdown.trim()) {
+        return res.status(400).json({ success: false, error: 'markdown is required' });
+      }
+
+      // Same name validation as createPageFromTemplate — protect URL routing / YAML.
+      const invalidChars = /[/\\#?%"<>|*]/;
+      if (invalidChars.test(pageName)) {
+        return res.status(400).json({
+          success: false,
+          error: 'pageName contains invalid characters: / \\ # ? % " < > | *'
+        });
+      }
+
+      // Optional category — validate against the enabled system categories.
+      let category: string | undefined;
+      if (body.category !== undefined && body.category !== null && body.category !== '') {
+        if (typeof body.category !== 'string') {
+          return res.status(400).json({ success: false, error: 'category must be a string' });
+        }
+        const catStr = body.category;
+        const valid = this.getSystemCategories();
+        const matched = valid.find(c => c.toLowerCase() === catStr.trim().toLowerCase());
+        if (!matched) {
+          return res.status(400).json({
+            success: false,
+            error: `Invalid category "${catStr}". Valid categories: ${valid.join(', ')}`
+          });
+        }
+        category = matched;
+      }
+
+      // Optional keywords — array of strings, max 5.
+      let keywords: string[] | undefined;
+      if (body.keywords !== undefined && body.keywords !== null) {
+        if (!Array.isArray(body.keywords) || body.keywords.some(k => typeof k !== 'string')) {
+          return res.status(400).json({ success: false, error: 'keywords must be an array of strings' });
+        }
+        keywords = (body.keywords as string[]).map(k => k.trim()).filter(Boolean);
+        if (keywords.length > 5) {
+          return res.status(400).json({ success: false, error: 'Maximum 5 keywords allowed' });
+        }
+      }
+
+      const pageManager = this.engine.getManager('PageManager');
+      const existing = await pageManager.getPage(pageName);
+      const action = existing ? 'updated' : 'created';
+
+      // Permission: create vs edit, mirroring createPageFromTemplate / savePage.
+      const permission = existing ? 'page-edit' : 'page-create';
+      if (!(await baseContext.hasPermission(permission))) {
+        return res.status(403).json({
+          success: false,
+          error: `You do not have permission to ${existing ? 'edit' : 'create'} pages`
+        });
+      }
+
+      // Build frontmatter: preserve existing on update, generate on create.
+      let metadata: Record<string, unknown>;
+      if (existing) {
+        metadata = { ...(existing.metadata as Record<string, unknown>) };
+        if (category) metadata['system-category'] = category;
+        if (keywords) metadata['user-keywords'] = keywords;
+      } else {
+        metadata = this.buildNewPageMetadata(pageName, {
+          'system-category': category || undefined,
+          'user-keywords': keywords || [],
+          author: currentUser.username
+        });
+      }
+      metadata.editor = currentUser.username;
+
+      // Normalize Markdown → NCM (links + table up-convert + ncmVersion stamp),
+      // mirroring the MCP create path. savePageWithContext then sets `author`
+      // from the WikiContext user (immutable across edits — decision A).
+      const ncm = normalizeExistingPageToNcm(matter.stringify(markdown, metadata));
+      const ncmDoc = matter(ncm.content);
+      const ncmWarnings = ncm.warnings.map(w => `${w.kind}: ${w.detail}`);
+
+      const wikiContext = this.createWikiContext(req, {
+        context: WikiContext.CONTEXT.EDIT,
+        pageName,
+        content: ncmDoc.content,
+        response: res
+      });
+      await pageManager.savePageWithContext(wikiContext, ncmDoc.data as Partial<PageFrontmatter>);
+
+      // Incremental, in-band index update (mirrors createPageFromTemplate).
+      const saved = await pageManager.getPage(pageName);
+      if (!saved) {
+        logger.error(`Ingest: page "${pageName}" not retrievable immediately after save`);
+        return res.status(500).json({ success: false, error: 'Page saved but could not be reloaded' });
+      }
+      const renderingManager = this.engine.getManager('RenderingManager');
+      const searchManager = this.engine.getManager('SearchManager');
+      renderingManager.addPageToCache(pageName);
+      renderingManager.updatePageInLinkGraph(pageName, saved.content);
+      await searchManager.updatePageInIndex(pageName, {
+        name: pageName,
+        content: saved.content,
+        metadata: saved.metadata
+      });
+
+      const cacheManager = this.engine.getManager('CacheManager');
+      if (cacheManager?.isInitialized?.()) {
+        const _uuid = pageManager?.getPageUUID?.(pageName) ?? pageName;
+        await cacheManager.clear(undefined, `rendered-pages:${_uuid}:*`);
+      }
+
+      const savedMeta = saved.metadata as Record<string, unknown>;
+      const baseUrl = this.engine.getManager('ConfigurationManager')
+        ?.getProperty('ngdpbase.application.base-url', '') || '';
+      const viewPath = `/view/${encodeURIComponent(pageName)}`;
+      return res.status(existing ? 200 : 201).json({
+        success: true,
+        action,
+        title: savedMeta.title ?? pageName,
+        uuid: savedMeta.uuid ?? null,
+        slug: savedMeta.slug ?? null,
+        category: savedMeta['system-category'] ?? null,
+        keywords: savedMeta['user-keywords'] ?? [],
+        author: savedMeta.author ?? null,
+        url: baseUrl ? `${baseUrl.replace(/\/$/, '')}${viewPath}` : viewPath,
+        ncmVersion: ncm.ncmVersion,
+        ncmWarnings
+      });
+    } catch (err: unknown) {
+      logger.error('Error ingesting page markdown:', err);
+      return res.status(500).json({ success: false, error: 'Failed to ingest page' });
+    }
+  }
+
   async deleteComment(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
@@ -10316,6 +10478,9 @@ ${panes}
     app.get('/my/edits', (req: Request, res: Response) => this.myEditsPage(req, res));
     app.get('/my/shared', (req: Request, res: Response) => this.mySharedPage(req, res));
     app.post('/preferences', (req: Request, res: Response) => this.updatePreferences(req, res));
+    // #819 — agent/markdown → NCM page ingest (upsert). Auth via Authentik
+    // bearer token (#818) or an authenticated session.
+    app.post('/api/page/ingest', (req: Request, res: Response) => void this.ingestPageMarkdown(req, res));
     app.post('/api/comments/:pageUuid', (req: Request, res: Response) => void this.addComment(req, res));
     app.delete('/api/comments/:pageUuid/:commentId', (req: Request, res: Response) => void this.deleteComment(req, res));
     // #590 partial-render: returns just the inner comment-list HTML so the

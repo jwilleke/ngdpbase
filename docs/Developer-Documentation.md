@@ -32,7 +32,7 @@ Workflow:
 | ---------- | --- | --- | ------------- |
 | [Managers](#managers) | 37 | 37 | Core system managers |
 | [Plugins](#plugins) | 32 | 35 | JSPWiki-style content plugins |
-| [Providers](#providers) | 33 | 34 | Storage and service providers |
+| [Providers](#providers) | 34 | 35 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
 | [Testing](#testing) | n/a | 3 | Testing guides and strategies |
 | [API](#api-reference) | n/a | Auto-gen | TypeDoc generated API reference |
@@ -146,6 +146,7 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | Module | Doc status | Description |
 | --- | --- | --- |
 | AssetProvider-Guide | ✅ [doc](providers/AssetProvider-Guide.md) | Implementation guide for plugin authors building a new AssetProvider backend |
+| AuthentikBearerAuthProvider | ✅ [doc](providers/AuthentikBearerAuthProvider.md) | Trusts an Authentik-issued OAuth/OIDC bearer JWT on the Authorization header (Bearer scheme) |
 | BaseAttachmentProvider | ✅ [doc](providers/BaseAttachmentProvider.md) | Abstract interface for attachment storage providers — extension surface for new attachment backends |
 | BaseAuditProvider | ✅ [doc](providers/BaseAuditProvider.md) | Abstract interface for audit-log providers — extension surface for storing audit events |
 | BaseAuthProvider | ✅ [doc](providers/BaseAuthProvider.md) | Pluggable authentication provider interface — all auth methods implement this and register with AuthManager |
@@ -313,7 +314,7 @@ Honest accounting of doc coverage. Targets are pragmatic — abstract base class
 
 **Plugins:** 32/32 with quick-reference docs (100%).
 
-**Providers:** 33/33 with quick-reference docs (100%); 5 with Complete Guides.
+**Providers:** 34/34 with quick-reference docs (100%); 5 with Complete Guides.
 <!-- AUTO:doc-status END -->
 
 See [issue #178](https://github.com/jwilleke/ngdpbase/issues/178) for the doc-coverage tracking issue and [#660](https://github.com/jwilleke/ngdpbase/issues/660) for the discoverability problem this index addresses.

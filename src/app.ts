@@ -367,6 +367,49 @@ void (async (): Promise<void> => {
     })();
   });
 
+  // #818 — Authentik OAuth bearer trust for API clients. Runs AFTER the
+  // session/userContext middleware so it can override the default Anonymous
+  // context with the token's identity. Stateless: no session is created for
+  // API calls (agents present a token per request). Marks `req.bearerAuth` so
+  // the CSRF middleware skips bearer-authenticated requests (bearer auth is not
+  // cookie-based and therefore not CSRF-susceptible). No-ops when the header is
+  // absent or the provider is disabled.
+  app.use(async (req: Request, _res: Response, next: NextFunction) => {
+    try {
+      const header = req.headers['authorization'];
+      if (!header || typeof header !== 'string' || !header.startsWith('Bearer ')) { next(); return; }
+      const authManager = engine.getManager('AuthManager') as {
+        authenticate?: (id: string, creds: { token?: string }) => Promise<{ success: boolean; username?: string }>;
+        getProviders?: () => Array<{ id: string }>;
+      } | null;
+      const hasProvider = authManager?.getProviders?.().some(p => p.id === 'authentik-bearer');
+      if (!authManager?.authenticate || !hasProvider) { next(); return; }
+      const token = header.slice('Bearer '.length).trim();
+      if (!token) { next(); return; }
+      const result = await authManager.authenticate('authentik-bearer', { token });
+      if (result.success && result.username) {
+        const user = await userManager.getUser(result.username);
+        if (user?.isActive) {
+          const baseRoles = await userManager.resolveUserRoles(result.username);
+          const roles = new Set(baseRoles);
+          roles.add('Authenticated');
+          roles.add('All');
+          req.userContext = {
+            ...user,
+            roles: Array.from(roles),
+            isAuthenticated: true,
+            authenticated: true
+          };
+          (req as Request & { bearerAuth?: boolean }).bearerAuth = true;
+          logger.info(`[Authentik bearer] Authenticated API request as: ${result.username}`);
+        }
+      }
+    } catch (err) {
+      logger.warn('[Authentik bearer middleware] failed:', err);
+    }
+    next();
+  });
+
   // 5b. HTTP request duration metrics middleware
   const metricsManager = engine.getManager('MetricsManager') as {
     isEnabled(): boolean;
