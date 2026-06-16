@@ -5,9 +5,10 @@ agent_priority_level: "medium"
 blockers: []
 requires_human_review: ["major architectural changes", "security policy modifications", "deployment to production"]
 agent_autonomy_level: "high"
+kit_version: "v1.0.0-13-g3083ea6"
 ---
 
-<!-- KIT:START v1.0.0-2-g0fee417 — managed by mjs-project-template; edit below the KIT:END marker -->
+<!-- KIT:START v1.0.0-13-g3083ea6 — managed by mjs-project-template; edit below the KIT:END marker -->
 # Agent Context & Protocols
 
 This section is **managed by the kit** (`install-kit.sh`) — it is identical across repos. Put repo-specific context **below the `KIT:END` marker**; do not edit here.
