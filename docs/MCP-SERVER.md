@@ -481,6 +481,8 @@ Upload a single file as an attachment, optionally linking it to a page.
 
 Create a new wiki page. Fails if a page with that title already exists.
 
+> For a **running** instance or a remote/automated agent, prefer the HTTP endpoint `POST /api/page/ingest` ([Agent Ingest API](Agent-Ingest-API.md)) — it goes through the live server (in-band index update, immediately viewable + searchable) and authors the page as the authenticated user. This stdio tool writes the data dir directly and is best for local/offline authoring.
+
 **Parameters:**
 
 - `title` (string, required): Page title (must be unique)
