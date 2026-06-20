@@ -105,7 +105,7 @@
     "markdownlint": "^0.38.0",
     "micromatch": "^4.0.8",
     "minimatch": "^9.0.9",
-    "multer": "^2.0.2",
+    "multer": "^2.2.0",
     "node-cache": "^5.1.2",
     "nodemailer": "^8.0.9",
     "pako": "^2.1.0",
