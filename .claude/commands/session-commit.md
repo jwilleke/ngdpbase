@@ -20,9 +20,9 @@ related GitHub issues. The personal log is **never committed**.
 
 ### Step 3: Refresh `TODO.md` and commit it
 
-- Regenerate `TODO.md` from the current GitHub issue labels (same banding as `/status`:
+- Regenerate `TODO.md` from the current GitHub issue labels (same banding as `/pstatus`:
   P0 / P1 / P2 / Deferred / Needs triage). The `▶ Resume here` pointer is owned by `/wrap`; no need
-  to preserve it here. If `/status` was just run, it is already current.
+  to preserve it here. If `/pstatus` was just run, it is already current.
 - Stage and commit `TODO.md` if it changed: `docs: refresh TODO from issue labels`.
 
 ### Step 4: Journal the session (local only — NOT committed)
