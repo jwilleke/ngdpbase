@@ -32,18 +32,18 @@ Correction to the epic text: the "known v1 caveat" refers to rendered links poin
 - **Management routes** (authenticated, CSRF-protected): `GET /shares`, `POST /shares/create`, `POST /shares/:id/revoke`; Share button on the keyword album view.
 - Config: `ngdpbase.share.enabled`, `ngdpbase.share.storagedir` (additions to `config/app-default-config.json` need explicit operator approval per repo policy).
 
-## Needed decisions
+## Decisions — SIGNED OFF 2026-07-15
 
-Each has a recommendation; implementation sub-issues are created once these land.
+All six decided by the operator (recommendations accepted):
 
-| # | Decision | Recommendation | Alternatives |
-| --- | --- | --- | --- |
-| 1 | Owner-only marker | Reserved keyword `owner-only`, honored identically in media EXIF/XMP keywords and page `user-keywords`; `private: true` pages always excluded as well | `private: true` for pages plus a media-only tag (divergent rules) |
-| 2 | Who may create shares | `admin` and `editor` roles | Admin only; any authenticated user |
-| 3 | Pages with `audience` frontmatter | Exclude from shares — the author already chose a narrower audience; a link must not silently widen it | Include if the share creator is in the audience |
-| 4 | Expiry granularity | v1 fixed choices: 24 h / 7 d / 30 d / until cancelled | Arbitrary date picker |
-| 5 | Audit logging | Log create and revoke via `AuditManager`; decide separately whether anonymous access hits are logged and/or rate-limited | No logging; full access logging |
-| 6 | Architecture: in-app vs shared token service | **Build in-app (ShareManager) with an extraction seam** — see next section | Standalone token service now |
+| # | Decision | Decided |
+| --- | --- | --- |
+| 1 | Owner-only marker | Reserved keyword `owner-only`, honored identically in media EXIF/XMP keywords and page `user-keywords`; `private: true` pages always excluded as well |
+| 2 | Who may create shares | `admin` and `editor` roles |
+| 3 | Pages with `audience` frontmatter | Always excluded from shares — a link must not silently widen an author's chosen audience |
+| 4 | Expiry granularity | v1 fixed choices: 24 h / 7 d / 30 d / until cancelled |
+| 5 | Audit logging | Log create and revoke via `AuditManager`; anonymous access hits are rate-limited per token+IP and logged as aggregated counts, not per-view rows |
+| 6 | Architecture | In-app ShareManager behind a narrow `issue/validate/revoke/list` interface with typed scope objects (extraction seam); shared service only when a second real consumer exists — see next section |
 
 ## Could this be a token service shared across other apps?
 
