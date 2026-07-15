@@ -1,0 +1,8 @@
+# Trivy false positives — name collision.
+#
+# app/addons/forms/package.json is the ngdpbase forms ADDON (private,
+# name "forms", version 1.0.0), not the npm "forms" library. Trivy matches
+# by package name and flags the npm library's advisories against it.
+CVE-2021-23388
+CVE-2017-16015
+NSWG-ECO-158
