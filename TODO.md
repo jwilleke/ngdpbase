@@ -43,11 +43,11 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 
 ## ❓ Needs triage (21)
 
+- [#848](https://github.com/jwilleke/ngdpbase/issues/848) — [FEATURE] Media Manager: surface alternate-format and excluded files ("why isn't my file showing?")
 - [#843](https://github.com/jwilleke/ngdpbase/issues/843) — [FEATURE] Consider Logging App
 - [#842](https://github.com/jwilleke/ngdpbase/issues/842) — EPIC: Keyword share links — anonymous, time-limited, revocable access to media and pages by keyword
 - [#822](https://github.com/jwilleke/ngdpbase/issues/822) — [EPIC] AI-agent markdown → NCM page ingest via Authentik OAuth (Phases 1–2 shipped & live-verified; remaining: prod wiring mj-infra-flux#124)
 - [#815](https://github.com/jwilleke/ngdpbase/issues/815) — [BUG] Import preview failed: Unknown error
-- [#814](https://github.com/jwilleke/ngdpbase/issues/814) — [BUG] Media is often Not discovered
 - [#811](https://github.com/jwilleke/ngdpbase/issues/811) — [FEATURE] GitGuardian secret-leak incidents → auto-create GitHub issues (org-wide)
 - [#786](https://github.com/jwilleke/ngdpbase/issues/786) — [FEATURE] Auto-journal — digester consuming CatalogManager records into journal entries
 - [#762](https://github.com/jwilleke/ngdpbase/issues/762) — [FEATURE] CatalogSource producer roster — full candidate set across managers, addons, and external feeds
@@ -68,4 +68,4 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 ## Scanner-alert notes (not bulk-bridged)
 
 - ~23 open code-scanning alerts remain, nearly all in container-image paths (`usr/local/lib/node_modules/npm/...`, `app/node_modules/...`) — duplicative of Dependabot / base-image updates; still flagged for a dedup/triage pass (unchanged since 2026-06-16).
-- Markdown Lint CI is red on master (latest run 2026-06-21 — generated docs caught in the lint glob); no newer run has occurred.
+- Markdown Lint CI: fix open in PR #849 (CI globs now honor .markdownlintignore, real violations fixed, action bumped v19 → v24); red on master until merged.
