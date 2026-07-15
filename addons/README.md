@@ -123,4 +123,3 @@ See the [fairways-gen2-website](https://github.com/jwilleke/fairways-gen2-websit
 
 - [Issue #158](https://github.com/jwilleke/ngdpbase/issues/158) - AddonsManager specification
 - [Business Add-on MVP](../docs/planning/Business-packages/business-addon-mvp.md) - Planning docs
-

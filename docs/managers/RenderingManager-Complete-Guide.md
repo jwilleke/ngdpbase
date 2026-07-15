@@ -648,7 +648,7 @@ Updates the link graph when a page is saved.
 **Parameters:**
 
 - `pageName` (string): Name of the page
-- `links` (Array<string>): Array of linked page names
+- `links` (`Array<string>`): Array of linked page names
 
 **Returns:** `void`
 

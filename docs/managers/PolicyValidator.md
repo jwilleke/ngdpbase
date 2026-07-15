@@ -188,7 +188,7 @@ Validates all policies and detects conflicts between them.
 
 **Parameters:**
 
-- `policies` (Array<object>, optional) - Policies to validate (default: get from PolicyManager)
+- `policies` (`Array<object>`, optional) - Policies to validate (default: get from PolicyManager)
 
 **Returns:** `object`
 
@@ -237,7 +237,7 @@ Detects conflicting policies that might override each other.
 
 **Parameters:**
 
-- `policies` (Array<object>) - Policies to check
+- `policies` (`Array<object>`) - Policies to check
 
 **Returns:** `object`
 

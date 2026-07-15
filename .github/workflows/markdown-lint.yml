@@ -13,10 +13,18 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Lint markdown
-        uses: DavidAnson/markdownlint-cli2-action@v19
+        uses: DavidAnson/markdownlint-cli2-action@v24
         with:
+          # Keep in sync with .markdownlintignore (markdownlint-cli2 does not read it)
           globs: |
             **/*.md
-            !node_modules/**
+            !**/node_modules/**
             !dist/**
             !CHANGELOG.md
+            !docs/api/generated/**
+            !**/versions/**
+            !exports/**
+            !private/**
+            !docs/performance/baseline-*.md
+            !data/**
+            !.claude/**

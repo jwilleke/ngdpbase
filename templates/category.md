@@ -9,9 +9,9 @@ user-keywords: []
 
 ## Subcategories
 
-* Subcategory 1 (Description of subcategory)
-* Subcategory 2 (Description of subcategory)
-* Subcategory 3 (Description of subcategory)
+- Subcategory 1 (Description of subcategory)
+- Subcategory 2 (Description of subcategory)
+- Subcategory 3 (Description of subcategory)
 
 ## Pages in this Category
 

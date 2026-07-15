@@ -381,7 +381,7 @@ Searches for pages matching the query.
 - `query` (string) - Search query string
 - `options` (Object) - Optional search options
   - `maxResults` (number) - Maximum results to return
-  - `searchIn` (Array<string>) - Fields to search in
+  - `searchIn` (`Array<string>`) - Fields to search in
 
 **Returns:** `Promise<Array<SearchResult>>`
 
@@ -419,9 +419,9 @@ Performs advanced multi-criteria search.
 
 - `options` (Object)
   - `query` (string) - Text query (optional)
-  - `categories` (Array<string>) - Filter by categories
-  - `userKeywords` (Array<string>) - Filter by user keywords
-  - `searchIn` (Array<string>) - Fields to search in
+  - `categories` (`Array<string>`) - Filter by categories
+  - `userKeywords` (`Array<string>`) - Filter by user keywords
+  - `searchIn` (`Array<string>`) - Fields to search in
   - `maxResults` (number) - Maximum results
 
 **Returns:** `Promise<Array<SearchResult>>`
@@ -493,7 +493,7 @@ Searches for pages in multiple categories.
 
 **Parameters:**
 
-- `categories` (Array<string>) - Array of category names
+- `categories` (`Array<string>`) - Array of category names
 
 **Returns:** `Promise<Array<SearchResult>>`
 
@@ -529,7 +529,7 @@ Searches for pages with multiple user keywords.
 
 **Parameters:**
 
-- `keywords` (Array<string>) - Array of user keywords
+- `keywords` (`Array<string>`) - Array of user keywords
 
 **Returns:** `Promise<Array<SearchResult>>`
 

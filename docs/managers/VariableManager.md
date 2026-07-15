@@ -161,7 +161,7 @@ Registers a custom variable.
 
 Gets array of all available variable names.
 
-**Returns:** Array<string> - Sorted array of variable names
+**Returns:** `Array<string>` - Sorted array of variable names
 
 ##### `getDebugInfo()`
 

@@ -121,6 +121,7 @@ themes/my-theme/
 When a request comes in, EJS resolves `<%- include('header') %>` by searching `themes/<active>/partials/` first, then falling back to `views/`. Only the files you place in `partials/` are overridden — all other templates are served from `views/` unchanged.
 
 **Example use cases:**
+
 - Custom header with a different logo layout or navigation
 - Different footer with theme-specific links
 - Branded sidebar for a specific deployment

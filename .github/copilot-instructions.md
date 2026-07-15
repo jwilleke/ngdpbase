@@ -19,5 +19,3 @@ When running terminal commands, ensure the shell sources ~/.bash_profile or equi
 Key patterns: Manager-based architecture (23 managers), WikiContext for request context, Provider pattern for storage abstraction, WikiDocument DOM pipeline for parsing.
 
 See [AGENTS.md](../AGENTS.md) for detailed architecture patterns and tech stack.
-
-
