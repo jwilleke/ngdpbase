@@ -53,7 +53,7 @@ Yes in principle — but it should not start that way. Analysis:
 
 Share tokens are **capability tokens**: an unguessable string that *is* the grant ("whoever holds this may view content tagged X until date Y"). They are not identity tokens. That distinction drives the architecture:
 
-- **Identity (who are you)** is already centralized: Authentik serves OAuth/OIDC for the cluster, and ngdpbase already consumes it (`AuthentikBearerAuthProvider`, agent-ingest epic #822). Nothing here should duplicate Authentik.
+- **Identity (who are you)** is owned by the app's own `AuthManager` with pluggable providers — local users, magic links, and optional external providers such as Cloudflare Access or Authentik (`AuthentikBearerAuthProvider`, config-gated, used by the agent-ingest epic #822 on deployments that enable it). Authentik is an option, not a dependency. Either way, nothing in this epic should duplicate identity — shares are for *anonymous* visitors precisely so no identity is involved.
 - **Capability (what does this link grant)** is inherently coupled to the resource model of the app that owns the content — a share's *scope* is "ngdpbase media + pages with keyword K, minus private/owner-only". Another app (e.g. geohazardwatch) would have entirely different scope semantics. A generic service can own token issue/validate/revoke, but scope evaluation always stays app-side.
 
 ### Options
@@ -88,4 +88,4 @@ Shares are per-instance by design — a token minted on jimstest scopes jimstest
 
 - [Epic #842](https://github.com/jwilleke/ngdpbase/issues/842) — design draft and research
 - `src/providers/MagicLinkAuthProvider.ts` — in-repo token-lifecycle prior art
-- [Epic #822](https://github.com/jwilleke/ngdpbase/issues/822) — Authentik OAuth integration (identity side, not duplicated here)
+- [Epic #822](https://github.com/jwilleke/ngdpbase/issues/822) — agent ingest via the optional Authentik bearer provider (identity side, not duplicated here)
