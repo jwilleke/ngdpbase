@@ -3,25 +3,10 @@
   "git.confirmSync": false,
   "chat.agentSessionsViewLocation": "view",
   "chat.edits2.enabled": true,
-  "markdownlint.config": {
-    "default": true,
-    "MD003": {
-      "style": "consistent"
-    },
-    "MD004": {
-      "style": "dash"
-    },
-    "MD007": {
-      "indent": 2
-    },
-    "MD013": {
-      "line_length": 901,
-      "heading_line_length": 80,
-      "headings": true,
-      "code_blocks": false,
-      "tables": true,
-      "strict": false,
-      "stern": false
-    }
+  // Rules come from the canonical .markdownlint.jsonc (single source of truth);
+  // no inline markdownlint.config so editor, CLI, CI and hooks stay identical.
+  "markdownlint.ignore": ".markdownlintignore",
+  "files.associations": {
+    ".markdownlintignore": "ignore"
   }
 }
