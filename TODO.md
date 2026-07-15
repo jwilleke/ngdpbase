@@ -34,7 +34,6 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 
 ## ⏸ Deferred
 
-- [#831](https://github.com/jwilleke/ngdpbase/issues/831) — [security] gray-matter pins `js-yaml@3.x` — merge-key DoS (GHSA-h67p-54hq-rp68) — **un-defer candidate:** upstream shipped patched js-yaml 3.15.0; alert re-opened as Dependabot #170
 - [#737](https://github.com/jwilleke/ngdpbase/issues/737) — [FEATURE] NCM Phase-2: transcode/re-encode fetched embedded images (security + size hardening)
 - [#707](https://github.com/jwilleke/ngdpbase/issues/707) — [FEATURE] Typed footnote syntax + knowledge-graph reference index
 - [#645](https://github.com/jwilleke/ngdpbase/issues/645) — [FEATURE] PathPreflight: extend coverage to `/mnt/tank/<share>/...` autofs paths
