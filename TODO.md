@@ -67,5 +67,5 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 
 ## Scanner-alert notes (not bulk-bridged)
 
-- ~23 open code-scanning alerts remain, nearly all in container-image paths (`usr/local/lib/node_modules/npm/...`, `app/node_modules/...`) — duplicative of Dependabot / base-image updates; still flagged for a dedup/triage pass (unchanged since 2026-06-16).
+- Code-scanning (Trivy image scan) dedup pass done 2026-07-15: of 22 open alerts, 3 are false positives (name collision — the forms addon vs the npm `forms` library; `.trivyignore` added, dismiss pending), 18 are staleness (image last built 2026-06-08 at v3.49.0, before the June-16 dep wave — uuid/pm2/npm-bundled all fixed or floating in current sources; next release build clears them), 1 (pm2 CVE-2025-5891, low) has no upstream fix and may re-flag after rebuild.
 - Markdown Lint CI: fix open in PR #849 (CI globs now honor .markdownlintignore, real violations fixed, action bumped v19 → v24); red on master until merged.
