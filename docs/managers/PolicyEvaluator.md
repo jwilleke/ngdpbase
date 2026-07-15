@@ -131,7 +131,7 @@ Evaluates all relevant policies to make an access decision.
   - `action` (string) - Action being performed (e.g., 'page:edit', 'admin:users')
   - `userContext` (object) - User context including roles
     - `username` (string) - Username
-    - `roles` (Array<string>) - User's roles (including built-in roles)
+    - `roles` (`Array<string>`) - User's roles (including built-in roles)
     - `isAuthenticated` (boolean) - Authentication status
 
 **Returns:** `Promise<object>`
@@ -238,7 +238,7 @@ Checks if the user's roles match the policy's subject requirements.
 
 **Parameters:**
 
-- `policySubjects` (Array<object>) - Policy subjects
+- `policySubjects` (`Array<object>`) - Policy subjects
 - `userContext` (object) - User context with roles
 
 **Returns:** `boolean` - True if user matches
@@ -302,7 +302,7 @@ Checks if the resource matches the policy's resource patterns.
 
 **Parameters:**
 
-- `resources` (Array<object>) - Policy resources
+- `resources` (`Array<object>`) - Policy resources
 - `pageName` (string) - Page name to check
 
 **Returns:** `boolean` - True if resource matches
@@ -359,7 +359,7 @@ Checks if the action matches the policy's action list.
 
 **Parameters:**
 
-- `actions` (Array<string>) - Policy actions
+- `actions` (`Array<string>`) - Policy actions
 - `action` (string) - Action to check
 
 **Returns:** `boolean` - True if action matches

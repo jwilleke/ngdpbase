@@ -4,25 +4,25 @@
 
 Complete AttachmentManager System: ✅ Backend:
 
-* BaseAttachmentProvider.js - Abstract provider interface
-* BasicAttachmentProvider.js - Filesystem storage with SHA-256 hashing
-* AttachmentManager.js - Manager with permission checks and provider pattern
-* Routes: POST /attachments/upload/:page, GET /attachments/:id, DELETE /attachments/:id
+- BaseAttachmentProvider.js - Abstract provider interface
+- BasicAttachmentProvider.js - Filesystem storage with SHA-256 hashing
+- AttachmentManager.js - Manager with permission checks and provider pattern
+- Routes: POST /attachments/upload/:page, GET /attachments/:id, DELETE /attachments/:id
 
 ### ✅ Frontend
 
-* Editor upload: "Choose File" + "Upload Image" button
-* Navbar upload: More → Upload Attachment (modal)
-* Image plugin: [{Image src='/attachments/HASH' ...}]
+- Editor upload: "Choose File" + "Upload Image" button
+- Navbar upload: More → Upload Attachment (modal)
+- Image plugin: [{Image src='/attachments/HASH' ...}]
 
 ## ✅ Features
 
-* Content-based deduplication (SHA-256)
-* Schema.org CreativeWork metadata (data/attachments/BasicAttachmentProvider.json)
-* Page mentions tracking
-* Backup/restore support
-* Authenticated user access
-* Stored in data/attachments/
+- Content-based deduplication (SHA-256)
+- Schema.org CreativeWork metadata (data/attachments/BasicAttachmentProvider.json)
+- Page mentions tracking
+- Backup/restore support
+- Authenticated user access
+- Stored in data/attachments/
 
 ## ✅ Insert Image Usage
 
@@ -45,28 +45,28 @@ Automatticlly creates reference on the page used for upload:
 ✅ MIME Type Filtering - Supports wildcard patterns (e.g., image/*)
 ✅ Size Limits - Configurable max file size with human-readable parsing Configuration:
 
-* Storage directory: ./data/attachments (per planning doc)
-* Metadata file: ./data/attachments/BasicAttachmentProvider.json
-* Max file size: 10MB (configurable)
-* Allowed MIME types: image/*,text/*,application/pdf (configurable)
-* Provider: BasicAttachmentProvider (pluggable)
+- Storage directory: ./data/attachments (per planning doc)
+- Metadata file: ./data/attachments/BasicAttachmentProvider.json
+- Max file size: 10MB (configurable)
+- Allowed MIME types: image/*,text/*,application/pdf (configurable)
+- Provider: BasicAttachmentProvider (pluggable)
 
 ## Uplad Image
 
 ✅ Image Upload Migration Complete
 
-* Upload endpoint: /images/upload → /attachments/upload/:page
-* Form field name: image → file
-* Response format: Uses attachment metadata (attachmentId, url, Schema.org format)
-* Image syntax: [{Image src='/attachments/HASH' alt='filename'}]
-* The image will be:
-* Stored in /Volumes/hd3/GitHub/ngdpbase/data/attachments/
-* Content-hashed (SHA-256) for deduplication
-* Tracked in /Volumes/hd3/GitHub/ngdpbase/data/attachments/BasicAttachmentProvider.json
-* Associated with the "page" via the "mentions" array
-* Accessible at /attachments/{hash}
-* Image syntax will be:
-  * [{Image src='/attachments/abc123...' alt='yourimage.png'}]
+- Upload endpoint: /images/upload → /attachments/upload/:page
+- Form field name: image → file
+- Response format: Uses attachment metadata (attachmentId, url, Schema.org format)
+- Image syntax: [{Image src='/attachments/HASH' alt='filename'}]
+- The image will be:
+- Stored in /Volumes/hd3/GitHub/ngdpbase/data/attachments/
+- Content-hashed (SHA-256) for deduplication
+- Tracked in /Volumes/hd3/GitHub/ngdpbase/data/attachments/BasicAttachmentProvider.json
+- Associated with the "page" via the "mentions" array
+- Accessible at /attachments/{hash}
+- Image syntax will be:
+  - [{Image src='/attachments/abc123...' alt='yourimage.png'}]
 
 ## Upload Attachment Added to More Dropdown
 
@@ -87,17 +87,17 @@ Features:
 ✅ Auto-reloads the page after 2 seconds to show the attachment
 ✅ Uses the same AttachmentManager/BasicAttachmentProvider system
 
-* Both upload methods now work:
-  * Page Editor on a Page - "Choose File" + "Upload Image" for images during editing
-  * Navbar More Menu - "Upload Attachment" for any file type from any page view
+- Both upload methods now work:
+  - Page Editor on a Page - "Choose File" + "Upload Image" for images during editing
+  - Navbar More Menu - "Upload Attachment" for any file type from any page view
 
 ## Server Status
 
-* AttachmentManager initialized successfully ✅
-* BasicAttachmentProvider loaded with 0 attachments ✅
-* Directories auto-created ✅
-* Provider features active: content-deduplication, schema-org-metadata, shared-storage, page-mentions-tracking, mime-type-filtering, size-limits
-* The implementation follows all requirements from private/BasicAttachmentProvider.md and is ready for use.
+- AttachmentManager initialized successfully ✅
+- BasicAttachmentProvider loaded with 0 attachments ✅
+- Directories auto-created ✅
+- Provider features active: content-deduplication, schema-org-metadata, shared-storage, page-mentions-tracking, mime-type-filtering, size-limits
+- The implementation follows all requirements from private/BasicAttachmentProvider.md and is ready for use.
 
 ## BasicAttachmentProvider Planning
 
@@ -121,10 +121,10 @@ BasicAttachmentProvider MUST be able to backup() and restore() for src/managers/
 
 The following entries should be honored:
 
-* "ngdpbase.features.attachments.enabled": true,
-* "ngdpbase.features.attachments.maxSize": "10MB",
-* "ngdpbase.features.attachments.allowedTypes": "image/*,text/*,application/pdf", <-- Should be an array of mimetypes -->
-* "ngdpbase.features.attachments.metadatafile": "./data/attachments/BasicAttachmentProvider.json", (Matches "ngdpbase.attachment.provider" name)
+- "ngdpbase.features.attachments.enabled": true,
+- "ngdpbase.features.attachments.maxSize": "10MB",
+- "ngdpbase.features.attachments.allowedTypes": "image/*,text/*,application/pdf", <-- Should be an array of mimetypes -->
+- "ngdpbase.features.attachments.metadatafile": "./data/attachments/BasicAttachmentProvider.json", (Matches "ngdpbase.attachment.provider" name)
 
 ## BasicAttachmentProvider.json
 
@@ -135,15 +135,15 @@ Which pages attchements are used it tracked within the associated "json" like Ba
 These "json" files will include:
 *Fullpath (including filename) attachement file.
 
-* author - The author of this content or rating. Please note that author is special in that HTML 5 provides a special mechanism for indicating authorship via the rel tag. That is equivalent to this and may be used interchangeably.
-* dateCreated - The date on which the CreativeWork was created or the item was added to a DataFeed.
-* editor - Specifies the Person who edited or upladed the CreativeWork. (may be same as author)
-* dateModified - The date on which the CreativeWork was most recently modified or when the item's entry was modified within a DataFeed.
-* encodingFormat - <https://schema.org/encodingFormat>  MUST be MIME format (see [IANA site](https://www.iana.org/assignments/media-types/media-types.xhtml) and [MDN reference](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types))
-* isBasedOn - OPTIONAL - A resource from which this work is derived or from which it is a modification or adaptation. Supersedes isBasedOnUrl.
-* isFamilyFriendly - Assumed so unless set to false
-* Array of pages using the attachment
-* any other values OPTIONAL as used at <https://schema.org/CreativeWork>
+- author - The author of this content or rating. Please note that author is special in that HTML 5 provides a special mechanism for indicating authorship via the rel tag. That is equivalent to this and may be used interchangeably.
+- dateCreated - The date on which the CreativeWork was created or the item was added to a DataFeed.
+- editor - Specifies the Person who edited or upladed the CreativeWork. (may be same as author)
+- dateModified - The date on which the CreativeWork was most recently modified or when the item's entry was modified within a DataFeed.
+- encodingFormat - <https://schema.org/encodingFormat>  MUST be MIME format (see [IANA site](https://www.iana.org/assignments/media-types/media-types.xhtml) and [MDN reference](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types))
+- isBasedOn - OPTIONAL - A resource from which this work is derived or from which it is a modification or adaptation. Supersedes isBasedOnUrl.
+- isFamilyFriendly - Assumed so unless set to false
+- Array of pages using the attachment
+- any other values OPTIONAL as used at <https://schema.org/CreativeWork>
 
 ## Example of BasicAttachmentProvider.json
 
@@ -208,8 +208,8 @@ protected static final int ATTACHMENT = 10;   Link to an attachment/file uploade
 
 the MarkupParser must determine if it is an attachement and use PROP_USEATTACHMENTIMAGE is a static final String property in JSPWiki (`"jspwiki.translatorReader.useAttachmentImage"`). It is used to control whether **attachment info links** in rendered wiki pages include a small attachment image icon.[1]
 
-* Purpose: If this property is set to `true`, any links to attachments (such as file uploads or page attachments) shown in wiki output will have a small image icon appended, marking the item visually as an attachment rather than a simple link.
-* Usage:
-  * The value is loaded from `jspwiki.properties` (or overridden in custom property files or system properties) into the parser's `m_useAttachmentImage` boolean field.[2]
-  * When the parser renders an attachment link, if `m_useAttachmentImage` is `true`, an attachment icon (typically `images/attachment_small.png`) is added near the link in the HTML output.
-* Summary: Set **PROP_USEATTACHMENTIMAGE** to `true` in your configuration to display attachment icons next to every rendered attachment info link in JSPWiki.
+- Purpose: If this property is set to `true`, any links to attachments (such as file uploads or page attachments) shown in wiki output will have a small image icon appended, marking the item visually as an attachment rather than a simple link.
+- Usage:
+  - The value is loaded from `jspwiki.properties` (or overridden in custom property files or system properties) into the parser's `m_useAttachmentImage` boolean field.[2]
+  - When the parser renders an attachment link, if `m_useAttachmentImage` is `true`, an attachment icon (typically `images/attachment_small.png`) is added near the link in the HTML output.
+- Summary: Set **PROP_USEATTACHMENTIMAGE** to `true` in your configuration to display attachment icons next to every rendered attachment info link in JSPWiki.

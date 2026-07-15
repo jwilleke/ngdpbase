@@ -242,7 +242,7 @@ Merges WikiDocument DOM nodes back into Showdown-generated HTML by replacing pla
 **Parameters:**
 
 - `html` (string): Showdown-generated HTML with placeholders
-- `nodes` (Array<Element>): Array of WikiDocument DOM nodes
+- `nodes` (`Array<Element>`): Array of WikiDocument DOM nodes
 - `uuid` (string): UUID from extraction (for placeholder matching)
 
 **Returns:** `string` - Final HTML with nodes merged
