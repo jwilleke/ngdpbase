@@ -9385,13 +9385,22 @@ ${panes}
         generateUUIDs: generateUUIDs !== false
       });
 
+      // On failure, surface the per-file messages as a top-level `error` too —
+      // the dialog in admin-import.ejs only shows `error` (#815).
+      const errorSummary = !result.success && result.errors.length
+        ? result.errors.map((e: { file?: string; message: string }) =>
+          e.file ? `${e.file}: ${e.message}` : e.message
+        ).slice(0, 5).join('; ')
+        : undefined;
+
       return res.json({
         success: result.success,
         files: result.files,
         converted: result.converted,
         skipped: result.skipped,
         failed: result.failed,
-        errors: result.errors
+        errors: result.errors,
+        ...(errorSummary ? { error: errorSummary } : {})
       });
     } catch (err: unknown) {
       logger.error('Error previewing import:', err);
