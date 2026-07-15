@@ -24,8 +24,6 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 
 ## 🟡 P2
 
-- [#826](https://github.com/jwilleke/ngdpbase/issues/826) — [security] esbuild — dev-only Deno binary-integrity RCE (NPM_CONFIG_REGISTRY) — fixed (override 0.28.1), pending Dependabot re-scan close
-- [#825](https://github.com/jwilleke/ngdpbase/issues/825) — [security] vite/launch-editor — dev-only (server.fs.deny bypass; NTLM hash on Windows) — fixed (override 8.0.16), pending Dependabot re-scan close
 - [#599](https://github.com/jwilleke/ngdpbase/issues/599) — [BUG] showdown ReDoS vulnerability (CVE-2024-1899) — no upstream patch available; mitigated + weekly watch (green through 2026-07-14)
 
 ## 🔵 In review
