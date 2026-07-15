@@ -41,7 +41,13 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 - [#423](https://github.com/jwilleke/ngdpbase/issues/423) — Asset Manager: additional storage providers (S3, Google Drive, plugin-contributed)
 - [#421](https://github.com/jwilleke/ngdpbase/issues/421) — AuthManager: TOTP / 2FA auth provider
 
-## ❓ Needs triage (20)
+## ❓ Needs triage (25)
+
+- [#852](https://github.com/jwilleke/ngdpbase/issues/852) — [FEATURE] ShareManager: token lifecycle, persistence, scope filtering (#842 slice 1)
+- [#853](https://github.com/jwilleke/ngdpbase/issues/853) — [FEATURE] Public share routes: token-gated anonymous album, page, and media views (#842 slice 2)
+- [#854](https://github.com/jwilleke/ngdpbase/issues/854) — [FEATURE] Share management UI and routes for privileged users (#842 slice 3)
+- [#855](https://github.com/jwilleke/ngdpbase/issues/855) — [TEST] Share links: ShareManager unit + route tests (#842 slice 4)
+- [#856](https://github.com/jwilleke/ngdpbase/issues/856) — [DOCS] Share links: user guide + admin config reference (#842 slice 5)
 
 - [#848](https://github.com/jwilleke/ngdpbase/issues/848) — [FEATURE] Media Manager: surface alternate-format and excluded files ("why isn't my file showing?")
 - [#843](https://github.com/jwilleke/ngdpbase/issues/843) — [FEATURE] Consider Logging App
