@@ -336,7 +336,7 @@ class ImportManager extends BaseManager {
       result.success = false;
       result.errors.push({
         file: options.sourceDir,
-        message: 'Source path does not exist'
+        message: 'Source path does not exist (paths are resolved on the server, not your browser\'s machine)'
       });
       result.durationMs = Date.now() - startTime;
       return result;

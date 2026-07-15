@@ -390,7 +390,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 displayPreview(result);
                 executeBtn.disabled = false;
             } else {
-                alert('Preview failed: ' + (result.error || 'Unknown error'));
+                const detail = result.error
+                    || (Array.isArray(result.errors) && result.errors.length
+                        ? result.errors.map(e => e.file ? e.file + ': ' + e.message : e.message).join('\n')
+                        : 'Unknown error (HTTP ' + response.status + ')');
+                alert('Preview failed: ' + detail);
             }
         } catch (err) {
             alert('Preview failed: ' + err.message);
