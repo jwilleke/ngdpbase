@@ -433,7 +433,9 @@ fi
 # Always look back for the most recent link-graph entry-count + duration.
 PM2_OUT="${FAST_STORAGE:-./data}/logs/pm2-out.log"
 if [[ -f "$PM2_OUT" ]]; then
-  LINK_GRAPH_LINE=$(grep 'Link graph built with' "$PM2_OUT" | tail -1)
+  # `|| true`: a rotated/fresh log may lack the line — under `set -euo pipefail`
+  # an unguarded no-match grep silently kills the whole capture here.
+  LINK_GRAPH_LINE=$(grep 'Link graph built with' "$PM2_OUT" | tail -1 || true)
   if [[ -n "$LINK_GRAPH_LINE" ]]; then
     LINK_GRAPH_ENTRIES=$(echo "$LINK_GRAPH_LINE" | grep -oE '[0-9]+ entries' | grep -oE '[0-9]+')
   fi
