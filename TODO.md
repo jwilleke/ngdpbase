@@ -33,7 +33,7 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 
 ## 🔵 In review
 
-- [#822](https://github.com/jwilleke/ngdpbase/issues/822) — [EPIC] AI-agent markdown → NCM page ingest via Authentik OAuth (all sub-issues done incl. mj-infra-flux#124 prod wiring; awaiting prod end-to-end verify)
+- *(none)*
 
 ## ⏸ Deferred
 
