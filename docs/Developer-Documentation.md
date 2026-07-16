@@ -30,7 +30,7 @@ Workflow:
 <!-- AUTO:quick-nav BEGIN -->
 | Category | Count (src/) | Documented | Description |
 | ---------- | --- | --- | ------------- |
-| [Managers](#managers) | 37 | 38 | Core system managers |
+| [Managers](#managers) | 38 | 39 | Core system managers |
 | [Plugins](#plugins) | 32 | 36 | JSPWiki-style content plugins |
 | [Providers](#providers) | 34 | 35 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
@@ -82,6 +82,7 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | RoleManager | ✅ [doc](managers/RoleManager.md) | Canonical Role records — one file per (organization, namedPosition) pair (#617 follow-up) |
 | SchemaManager | 📘 [doc](managers/SchemaManager.md) + [guide](managers/SchemaManager-Complete-Guide.md) | JSON Schema registration and validation for typed entities (Person, Organization, etc.) |
 | SearchManager | 📘 [doc](managers/SearchManager.md) + [guide](managers/SearchManager-Complete-Guide.md) | Full-text page search with pluggable backends (Lunr in-process, Elasticsearch); also drives the asset-picker |
+| ShareManager | ✅ [doc](managers/ShareManager.md) | Share-link capability tokens (#842) — issue/validate/revoke/list + live keyword-scope resolution |
 | TemplateManager | 📘 [doc](managers/TemplateManager.md) + [guide](managers/TemplateManager-Complete-Guide.md) | Page templates for /create and theme-driven layout templates for /view |
 | ThemeManager | ✅ [doc](managers/ThemeManager.md) | Manages theme discovery + active-theme selection + CSS path resolution for the page-render pipeline |
 | UserManager | 📘 [doc](managers/UserManager.md) + [guide](managers/UserManager-Complete-Guide.md) | User CRUD, sessions, authentication, profile-page binding, contact-recipient resolution |
@@ -312,7 +313,7 @@ Before contributing, please review:
 Honest accounting of doc coverage. Targets are pragmatic — abstract base classes and trivial null/no-op providers don't need long-form docs, but every module should at least have a stub or appear in this index.
 
 <!-- AUTO:doc-status BEGIN -->
-**Managers:** 37/37 with quick-reference docs (100%); 18 with Complete Guides.
+**Managers:** 38/38 with quick-reference docs (100%); 18 with Complete Guides.
 
 **Plugins:** 32/32 with quick-reference docs (100%).
 

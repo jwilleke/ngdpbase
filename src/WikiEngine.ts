@@ -36,6 +36,7 @@ import BackgroundJobManager from './managers/BackgroundJobManager.js';
 import CatalogManager from './managers/CatalogManager.js';
 import CommentManager from './managers/CommentManager.js';
 import FootnoteManager from './managers/FootnoteManager.js';
+import ShareManager from './managers/ShareManager.js';
 import OrganizationManager from './managers/OrganizationManager.js';
 import PersonManager from './managers/PersonManager.js';
 import RoleManager from './managers/RoleManager.js';
@@ -341,6 +342,11 @@ class WikiEngine extends Engine {
     const footnoteManager = new FootnoteManager(this);
     this.registerManager('FootnoteManager', footnoteManager);
     await footnoteManager.initialize();
+
+    // Add ShareManager for share-link capability tokens (#842)
+    const shareManager = new ShareManager(this);
+    this.registerManager('ShareManager', shareManager);
+    await shareManager.initialize();
 
     // Add BackupManager to the initialization sequence (must be last)
     const backupManager = new BackupManager(this);
