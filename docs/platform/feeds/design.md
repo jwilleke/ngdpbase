@@ -1,14 +1,14 @@
 ---
 title: FeedManager — Data-Ingestion Framework Design
 category: System
-status: draft
+status: shipped (MVP, v3.48.0)
 issue: 685
-lastModified: '2026-06-02T00:00:00.000Z'
+lastModified: '2026-07-16T00:00:00.000Z'
 ---
 
 # FeedManager — Data-Ingestion Framework (Design)
 
-> **Status: DRAFT — Step 1 of #685.** This is the design gate; no framework code ships until this doc is reviewed. Tracks issue [#685](https://github.com/jwilleke/ngdpbase/issues/685). Pairs with [#501](https://github.com/jwilleke/ngdpbase/issues/501) (the JSON→NCM serializer used only at the body-materialization step) and builds on [#728](./../../NGDP-Compatible-Markdown.md) (NCM) + the CatalogManager/CatalogSource surface ([`docs/schemas.md`](../../schemas.md)).
+> **Status: SHIPPED — MVP released in v3.48.0; [#685](https://github.com/jwilleke/ngdpbase/issues/685) closed.** Slices 1–8 landed (see §8 — `rss-atom`/`csv`/`xls` adapters within slice 8 remain driver-gated, as does slice 9, the geohazardwatch importer migration). This doc remains the architectural source of truth; runtime docs live at [`docs/managers/FeedManager.md`](../../managers/FeedManager.md) and [`docs/plugins/DataFeedPlugin.md`](../../plugins/DataFeedPlugin.md), operator guide in the seeded **Using FeedManager** page. Pairs with [#501](https://github.com/jwilleke/ngdpbase/issues/501) (the JSON→NCM serializer used only at the body-materialization step) and builds on [#728](./../../NGDP-Compatible-Markdown.md) (NCM) + the CatalogManager/CatalogSource surface ([`docs/schemas.md`](../../schemas.md)).
 
 ## 1. Purpose & scope
 
