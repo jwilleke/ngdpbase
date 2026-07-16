@@ -96,22 +96,20 @@ Re-run the same command with edited `markdown` to update the page in place.
 
 Set these config keys (instance custom config or env). The provider is registered only when `enabled` is true **and** issuer + jwks-url + audience are all present. No secret is stored server-side.
 
+ngdpbase config files use **flat dotted keys**, not nested objects — a nested `{"ngdpbase": {"auth": ...}}` block is silently ignored by `ConfigurationManager.getProperty()`:
+
 ```jsonc
 {
-  "ngdpbase": {
-    "auth": {
-      "authentik-bearer": {
-        "enabled": true,
-        "issuer":   "https://auth.nerdsbythehour.com/application/o/ngdpbase/",
-        "jwks-url": "https://auth.nerdsbythehour.com/application/o/ngdpbase/jwks/",
-        "audience": "<the Authentik provider client_id>",
-        "default-role": "occupant",
-        "group-map": {}
-      }
-    }
-  }
+  "ngdpbase.auth.authentik-bearer.enabled": true,
+  "ngdpbase.auth.authentik-bearer.issuer": "https://auth.nerdsbythehour.com/application/o/ngdpbase/",
+  "ngdpbase.auth.authentik-bearer.jwks-url": "https://auth.nerdsbythehour.com/application/o/ngdpbase/jwks/",
+  "ngdpbase.auth.authentik-bearer.audience": "<the Authentik provider client_id>",
+  "ngdpbase.auth.authentik-bearer.default-role": "occupant",
+  "ngdpbase.auth.authentik-bearer.group-map": {}
 }
 ```
+
+Successful registration logs `[AuthManager] Registered provider: authentik-bearer (issuer=…)` at startup; if that line is missing, the keys were not picked up.
 
 | Key | Meaning |
 | --- | --- |
