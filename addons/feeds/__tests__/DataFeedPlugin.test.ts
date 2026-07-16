@@ -75,4 +75,50 @@ describe('[DataFeed] plugin (#685)', () => {
     expect(out).toContain('&lt;b&gt;xss&lt;/b&gt;');
     expect(out).not.toContain('<b>xss</b>');
   });
+
+  const vona: NormalizedRecord[] = [
+    { sourceRecordId: 'v1', fetchedAt: 'x', properties: { volcano: 'Kilauea', color: 'YELLOW', gvp: '332010' } },
+    { sourceRecordId: 'v2', fetchedAt: 'x', properties: { volcano: 'Great Sitkin', color: 'ORANGE', gvp: '311120' } }
+  ];
+
+  it('badge= wraps listed columns in value-classed pills', async () => {
+    const out = await exec({ source: 'q', columns: 'volcano,color', badge: 'color' }, vona);
+    expect(out).toContain('<span class="feed-badge feed-badge--yellow">YELLOW</span>');
+    expect(out).toContain('<span class="feed-badge feed-badge--orange">ORANGE</span>');
+    expect(out).not.toContain('feed-badge feed-badge--kilauea'); // unlisted column untouched
+  });
+
+  it('badge= slugs multi-word values and escapes the text', async () => {
+    const out = await exec({ source: 'q', columns: 'color', badge: 'color' }, [
+      { sourceRecordId: 'x', fetchedAt: 'x', properties: { color: 'NOT <SET>' } }
+    ]);
+    expect(out).toContain('feed-badge--not-set');
+    expect(out).toContain('NOT &lt;SET&gt;');
+  });
+
+  it('link= renders the column as an anchor from a {prop} template', async () => {
+    const out = await exec(
+      { source: 'q', columns: 'volcano,color', link: 'volcano=https://volcano.si.edu/volcano.cfm?vn={gvp}' },
+      vona
+    );
+    expect(out).toContain('<a href="https://volcano.si.edu/volcano.cfm?vn=332010" target="_blank" rel="noopener noreferrer">Kilauea</a>');
+    expect(out).toContain('vn=311120');
+  });
+
+  it('link= leaves the cell plain when a placeholder is unresolvable', async () => {
+    const out = await exec(
+      { source: 'q', columns: 'volcano', link: 'volcano=https://x.test/{missing}' },
+      vona
+    );
+    expect(out).not.toContain('<a ');
+    expect(out).toContain('Kilauea');
+  });
+
+  it('badge and link compose (linked pill)', async () => {
+    const out = await exec(
+      { source: 'q', columns: 'color', badge: 'color', link: 'color=https://x.test/{gvp}' },
+      vona
+    );
+    expect(out).toContain('<a href="https://x.test/332010" target="_blank" rel="noopener noreferrer"><span class="feed-badge feed-badge--yellow">YELLOW</span></a>');
+  });
 });

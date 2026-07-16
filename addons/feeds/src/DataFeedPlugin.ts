@@ -13,7 +13,14 @@
  *   [{DataFeed source='usgs-quakes' format='list' max='5'}]
  *
  * Params: source (required) · columns (CSV of property keys) · sort
- * ('key' | 'key-asc' | 'key-desc') · max (default 20) · format ('table'|'list').
+ * ('key' | 'key-asc' | 'key-desc') · max (default 20) · format ('table'|'list')
+ * · badge (CSV of columns whose cell renders as a value-classed pill:
+ *   `<span class="feed-badge feed-badge--<slugged-value>">VALUE</span>` — core
+ *   CSS ships variants for the aviation color codes green/yellow/orange/red)
+ * · link (whitespace-separated `column=urlTemplate` entries; `{prop}`
+ *   placeholders resolve from the record's properties, URI-encoded — e.g.
+ *   `link='volcano=https://volcano.si.edu/volcano.cfm?vn={gvp}'`. A cell whose
+ *   template has an unresolvable placeholder renders as plain text).
  */
 
 import {
@@ -51,6 +58,37 @@ function compareValues(a: unknown, b: unknown): number {
   const an = Number(as), bn = Number(bs);
   if (as !== '' && bs !== '' && !Number.isNaN(an) && !Number.isNaN(bn)) return an - bn;
   return as.localeCompare(bs);
+}
+
+/** CSS-class slug of a cell value: lowercase, alnum runs joined by '-'. */
+function valueSlug(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+/** Parse `link='col=template col2=template2'` into a column → template map. */
+function parseLinkParam(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (typeof raw !== 'string') return out;
+  for (const entry of raw.split(/\s+/)) {
+    const eq = entry.indexOf('=');
+    if (eq > 0) out[entry.slice(0, eq)] = entry.slice(eq + 1);
+  }
+  return out;
+}
+
+/**
+ * Resolve a `{prop}` URL template from a record's properties (URI-encoded).
+ * Returns null when any placeholder is missing/empty — the cell stays a plain
+ * value rather than linking to a broken URL.
+ */
+function resolveLinkTemplate(template: string, properties: Record<string, unknown>): string | null {
+  let missing = false;
+  const url = template.replace(/\{([^}]+)\}/g, (_m, prop: string) => {
+    const v = cellString(properties[prop]);
+    if (v === '') missing = true;
+    return encodeURIComponent(v);
+  });
+  return missing ? null : url;
 }
 
 /** Default columns: union of property keys across records, capped. */
@@ -99,7 +137,23 @@ const DataFeedPlugin: SimplePlugin = {
       return `<ul class="feed-list">\n${items}\n</ul>`;
     }
 
-    const rows = records.map(r => columns.map(c => escapeHtml(cellString(r.properties[c]))));
+    const badgeCols = typeof params.badge === 'string'
+      ? params.badge.split(',').map(s => s.trim()).filter(Boolean)
+      : [];
+    const linkTemplates = parseLinkParam(params.link);
+
+    const rows = records.map(r => columns.map(c => {
+      const text = escapeHtml(cellString(r.properties[c]));
+      let cell = text;
+      if (text && badgeCols.includes(c)) {
+        cell = `<span class="feed-badge feed-badge--${valueSlug(cellString(r.properties[c]))}">${text}</span>`;
+      }
+      if (text && linkTemplates[c]) {
+        const url = resolveLinkTemplate(linkTemplates[c], r.properties);
+        if (url) cell = `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${cell}</a>`;
+      }
+      return cell;
+    }));
     return formatAsTable(columns, rows, { sortable: true });
   }
 };
