@@ -30,6 +30,7 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 ## 🟡 P2
 
 - [#599](https://github.com/jwilleke/ngdpbase/issues/599) — [BUG] showdown ReDoS vulnerability (CVE-2024-1899) — no upstream patch available; mitigated + weekly watch (green through 2026-07-14)
+- [#859](https://github.com/jwilleke/ngdpbase/issues/859) — [security] Docker base image ships npm-bundled undici 6.26.0 (1 high) + tar 7.5.15 — bump Node base image
 
 ## 🔵 In review
 
@@ -70,5 +71,5 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 ## Scanner-alert notes (not bulk-bridged)
 
 - Dependabot #171 (systeminformation, high) bridged 2026-07-16 → issue #858; fixed same day (187eeaf6, lockfile bump to 5.31.17, alert state fixed, #858 closed). Dependabot #96 (showdown, medium) remains tracked by #599.
-- Code-scanning (Trivy image scan) dedup pass done 2026-07-15: of 22 open alerts, 3 are false positives (name collision — the forms addon vs the npm `forms` library; `.trivyignore` added, dismiss pending), 18 are staleness (image last built 2026-06-08 at v3.49.0, before the June-16 dep wave — uuid/pm2/npm-bundled all fixed or floating in current sources; next release build clears them), 1 (pm2 CVE-2025-5891, low) has no upstream fix and may re-flag after rebuild.
-- Markdown Lint CI: fix open in PR #849 (CI globs now honor .markdownlintignore, real violations fixed, action bumped v19 → v24); red on master until merged.
+- Code-scanning: v3.49.1 image scanned 2026-07-16 — 7 findings only: showdown ×2 (#599, no patch) + npm-bundled undici/tar from the Node base image (tracked #859, P2). None of the 22 stale v3.49.0-era alerts appear in the new analysis; GitHub should auto-close them ("no longer detected") — 0 closed as of 2026-07-16 08:30Z, recheck next /pstatus and dismiss manually if they linger.
+- Markdown Lint CI: fixed via PR #849 (merged; part of v3.49.1).
