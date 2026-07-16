@@ -30,8 +30,8 @@ Workflow:
 <!-- AUTO:quick-nav BEGIN -->
 | Category | Count (src/) | Documented | Description |
 | ---------- | --- | --- | ------------- |
-| [Managers](#managers) | 37 | 37 | Core system managers |
-| [Plugins](#plugins) | 32 | 35 | JSPWiki-style content plugins |
+| [Managers](#managers) | 37 | 38 | Core system managers |
+| [Plugins](#plugins) | 32 | 36 | JSPWiki-style content plugins |
 | [Providers](#providers) | 34 | 35 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
 | [Testing](#testing) | n/a | 3 | Testing guides and strategies |
@@ -65,6 +65,7 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | ConfigurationManager | 📘 [doc](managers/ConfigurationManager.md) + [guide](managers/ConfigurationManager-Complete-Guide.md) | Loads and merges app-default-config.json + app-custom-config.json; the single source of truth for runtime config |
 | EmailManager | ✅ [doc](managers/EmailManager.md) | Shared outbound email transport — pluggable provider (console / SMTP) |
 | ExportManager | 📘 [doc](managers/ExportManager.md) + [guide](managers/ExportManager-Complete-Guide.md) | Per-page export to HTML or Markdown with frontmatter stripping and link rewriting |
+| FeedManager | ✅ [doc](managers/FeedManager.md) | Runtime of the feeds addon (#685) — one record store + CatalogSource per configured external feed; runs the ingest pipeline (adapter fetch → parse → change-detected upsert) on a poll scheduler. |
 | FootnoteManager | ✅ [doc](managers/FootnoteManager.md) | Sidecar storage + CRUD for page footnotes (migrated out of page body in |
 | ImportManager | 📘 [doc](managers/ImportManager.md) + [guide](managers/ImportManager-Complete-Guide.md) | Pluggable importer for external wiki formats — extensible converter registry (JSPWiki, MediaWiki, Confluence, …) |
 | MediaManager | 📘 [doc](managers/MediaManager.md) + [guide](managers/MediaManager-Complete-Guide.md) | Read-only external photo/video library (filesystem-backed) with EXIF indexing and keyword facets |
@@ -105,6 +106,7 @@ JSPWiki-style content plugins in `src/plugins/`. Each plugin renders `[{PluginNa
 | ConfigAccessorPlugin | ✅ [doc](plugins/ConfigAccessorPlugin.md) | Renders configuration values inside pages — roles, features, manager settings, arbitrary config properties |
 | CounterPlugin | ✅ [doc](plugins/CounterPlugin.md) | Page-render-scoped counters: increment in place to number items or track invocations within a single render |
 | CurrentTimePlugin | ✅ [doc](plugins/CurrentTimePlugin.md) | Displays current date/time with customizable formatting |
+| DataFeedPlugin | ✅ [doc](plugins/DataFeedPlugin.md) | Render a feed source's records as a sortable table or list at view time — the curated-subject-page consumer of the feeds addon (#685 slice 7). |
 | FootnotesPlugin | ✅ [doc](plugins/FootnotesPlugin.md) | Renders footnote definitions from sidecar storage (FootnoteManager) with a CRUD UI for authorised users |
 | ImagePlugin | ✅ [doc](plugins/ImagePlugin.md) | Inline image display with alignment and caption support |
 | IndexPlugin | ✅ [doc](plugins/IndexPlugin.md) | Generates an alphabetical index of all wiki pages |
