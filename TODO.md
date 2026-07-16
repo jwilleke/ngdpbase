@@ -20,7 +20,12 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 
 ## 🟠 P1
 
-- *(none)*
+- [#842](https://github.com/jwilleke/ngdpbase/issues/842) — EPIC: Share links — anonymous, time-limited, revocable access to media and pages (v1 scope: keyword)
+- [#852](https://github.com/jwilleke/ngdpbase/issues/852) — [FEATURE] ShareManager: token lifecycle, persistence, scope filtering (#842 slice 1)
+- [#853](https://github.com/jwilleke/ngdpbase/issues/853) — [FEATURE] Public share routes: token-gated anonymous album, page, and media views (#842 slice 2)
+- [#854](https://github.com/jwilleke/ngdpbase/issues/854) — [FEATURE] Share management UI and routes for privileged users (#842 slice 3)
+- [#855](https://github.com/jwilleke/ngdpbase/issues/855) — [TEST] Share links: ShareManager unit + route tests (#842 slice 4)
+- [#856](https://github.com/jwilleke/ngdpbase/issues/856) — [DOCS] Share links: user guide + admin config reference (#842 slice 5)
 
 ## 🟡 P2
 
@@ -41,16 +46,10 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 - [#423](https://github.com/jwilleke/ngdpbase/issues/423) — Asset Manager: additional storage providers (S3, Google Drive, plugin-contributed)
 - [#421](https://github.com/jwilleke/ngdpbase/issues/421) — AuthManager: TOTP / 2FA auth provider
 
-## ❓ Needs triage (25)
+## ❓ Needs triage (19)
 
-- [#852](https://github.com/jwilleke/ngdpbase/issues/852) — [FEATURE] ShareManager: token lifecycle, persistence, scope filtering (#842 slice 1)
-- [#853](https://github.com/jwilleke/ngdpbase/issues/853) — [FEATURE] Public share routes: token-gated anonymous album, page, and media views (#842 slice 2)
-- [#854](https://github.com/jwilleke/ngdpbase/issues/854) — [FEATURE] Share management UI and routes for privileged users (#842 slice 3)
-- [#855](https://github.com/jwilleke/ngdpbase/issues/855) — [TEST] Share links: ShareManager unit + route tests (#842 slice 4)
-- [#856](https://github.com/jwilleke/ngdpbase/issues/856) — [DOCS] Share links: user guide + admin config reference (#842 slice 5)
 - [#848](https://github.com/jwilleke/ngdpbase/issues/848) — [FEATURE] Media Manager: surface alternate-format and excluded files ("why isn't my file showing?")
 - [#843](https://github.com/jwilleke/ngdpbase/issues/843) — [FEATURE] Consider Logging App
-- [#842](https://github.com/jwilleke/ngdpbase/issues/842) — EPIC: Share links — anonymous, time-limited, revocable access to media and pages (v1 scope: keyword)
 - [#822](https://github.com/jwilleke/ngdpbase/issues/822) — [EPIC] AI-agent markdown → NCM page ingest via Authentik OAuth (Phases 1–2 shipped & live-verified; remaining: prod wiring mj-infra-flux#124)
 - [#811](https://github.com/jwilleke/ngdpbase/issues/811) — [FEATURE] GitGuardian secret-leak incidents → auto-create GitHub issues (org-wide)
 - [#786](https://github.com/jwilleke/ngdpbase/issues/786) — [FEATURE] Auto-journal — digester consuming CatalogManager records into journal entries
