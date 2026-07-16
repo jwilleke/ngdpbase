@@ -13,5 +13,8 @@
   },
   "ngdpbase": {
     "type": "additive"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^5.10.1"
   }
 }

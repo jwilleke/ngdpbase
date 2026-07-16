@@ -44,12 +44,13 @@ Throws on an unknown source or unknown adapter; transport errors surface to the 
 
 Adapters are looked up by name from the static registry in `addons/feeds/src/adapters/` (injectable in tests via the `AdapterResolver` constructor param). Shipped today:
 
-| Adapter | Shape |
-|---|---|
-| `geojson` | GeoJSON FeatureCollection (e.g. USGS earthquake feeds) |
-| `rest-json` | Generic JSON array/object endpoints, with `itemsPath` + `map` dotpath field mapping |
+| Adapter | Shape | Dependency |
+|---|---|---|
+| `geojson` | GeoJSON FeatureCollection (e.g. USGS earthquake feeds) | none |
+| `rest-json` | Generic JSON array/object endpoints, with `itemsPath` + `map` dotpath field mapping | none |
+| `xml` | Generic XML documents (e.g. VAAC ash advisories, geohazardwatch#5) — parsed to plain objects so `itemsPath`/`map` dot-paths apply unchanged; attributes prefixed `@`, element text under `#text`; single repeated elements coerced to arrays | `fast-xml-parser` (itself zero-dep) |
 
-`rss-atom`, `csv`, and `xls` are planned later slices (design §3.2). There is no XML or scraping adapter yet — sources shaped that way (e.g. VAAC ash advisories, geohazardwatch#5) need either a new adapter slice here or a bespoke import outside the framework.
+`rss-atom`, `csv`, and `xls` are planned later slices (design §3.2), each a separate dependency-callout PR. Scraping (HTML index pages) remains out of scope — a source needing it wants a bespoke import or its own adapter.
 
 ## Scheduling
 
