@@ -1,8 +1,10 @@
-# Keyword Share Links — Planning (Epic #842)
+# Share Links — Planning (Epic #842)
 
 Status: planning. Tracks [epic #842](https://github.com/jwilleke/ngdpbase/issues/842). Purpose of this document: state what the feature provides, settle the decisions blocking implementation, and answer the architecture question "could this be a token service shared across other apps?"
 
-## What it provides
+The feature is generic **share links** — capability tokens granting anonymous access to a defined scope of content. The token, route, expiry, revocation, and audit machinery is scope-agnostic (decision 6); only scope *evaluation* differs per kind. v1 ships exactly one scope kind: **keyword**. See [Scope kinds roadmap](#scope-kinds-roadmap).
+
+## What it provides (v1: keyword scope)
 
 A privileged user shares everything carrying a chosen keyword — media items (EXIF/XMP keywords) and pages (`user-keywords`) — with anonymous visitors who hold an unguessable link.
 
@@ -75,6 +77,18 @@ Share tokens are **capability tokens**: an unguessable string that *is* the gran
 ### Multi-instance note (ngdpbase satellites)
 
 Shares are per-instance by design — a token minted on jimstest scopes jimstest content. Cross-instance shares are out of scope for v1; the JSON-per-share store and the interface above do not preclude them later.
+
+## Scope kinds roadmap
+
+The typed scope object from decision 6 is the extension point. Nothing below changes the token model, routes, expiry, revocation, or audit; each kind only adds a scope evaluator.
+
+| Kind | Scope object | Status | Notes |
+| --- | --- | --- | --- |
+| Keyword | `{ kind: 'keyword', keyword }` | **v1 — this epic** | Live set of media + pages carrying the keyword; exclusions per decisions 1 and 3 |
+| Single page | `{ kind: 'page', name }` | Candidate v2 | Same private/owner-only/audience exclusions, then render one page. No new token machinery |
+| Query | `{ kind: 'query', q }` | Later, on real demand | Arbitrary search query resolved per request as anonymous. Requires private/owner-only/audience filtering enforced *inside* the query path, not just at render; search-index changes silently alter what the link exposes — bigger blast radius than a keyword tag |
+
+Per the small-iterations rule, no kind beyond keyword is built until asked for; this table exists so adding one is a scope-evaluator PR, not a redesign.
 
 ## Planned sub-issues (after decisions land)
 
