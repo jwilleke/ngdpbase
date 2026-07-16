@@ -17,10 +17,13 @@
  * · badge (CSV of columns whose cell renders as a value-classed pill:
  *   `<span class="feed-badge feed-badge--<slugged-value>">VALUE</span>` — core
  *   CSS ships variants for the aviation color codes green/yellow/orange/red)
- * · link (whitespace-separated `column=urlTemplate` entries; `{prop}`
+ * · link (whitespace-separated `column=urlTemplate` entries; `:prop`
  *   placeholders resolve from the record's properties, URI-encoded — e.g.
- *   `link='volcano=https://volcano.si.edu/volcano.cfm?vn={gvp}'`. A cell whose
- *   template has an unresolvable placeholder renders as plain text).
+ *   `link='volcano=https://volcano.si.edu/volcano.cfm?vn=:gvp'`. A cell whose
+ *   template has an unresolvable placeholder renders as plain text.
+ *   NOTE: express-style `:prop`, NOT `{prop}` — the `[{...}]` token grammar
+ *   cannot contain a literal brace (RenderingManager's macroRegex is
+ *   `\[\{([^}]+)\}\]`), so a brace placeholder truncates the token).
  */
 
 import {
@@ -77,13 +80,16 @@ function parseLinkParam(raw: unknown): Record<string, string> {
 }
 
 /**
- * Resolve a `{prop}` URL template from a record's properties (URI-encoded).
- * Returns null when any placeholder is missing/empty — the cell stays a plain
- * value rather than linking to a broken URL.
+ * Resolve a `:prop` URL template from a record's properties (URI-encoded).
+ * Placeholders are express-style (`:gvp`) because the plugin-token grammar
+ * cannot carry braces. A placeholder must start with a letter/underscore, so
+ * ports (`:8080`) and the `https://` colon never match. Returns null when any
+ * placeholder is missing/empty — the cell stays a plain value rather than
+ * linking to a broken URL.
  */
 function resolveLinkTemplate(template: string, properties: Record<string, unknown>): string | null {
   let missing = false;
-  const url = template.replace(/\{([^}]+)\}/g, (_m, prop: string) => {
+  const url = template.replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, (_m, prop: string) => {
     const v = cellString(properties[prop]);
     if (v === '') missing = true;
     return encodeURIComponent(v);

@@ -96,18 +96,26 @@ describe('[DataFeed] plugin (#685)', () => {
     expect(out).toContain('NOT &lt;SET&gt;');
   });
 
-  it('link= renders the column as an anchor from a {prop} template', async () => {
+  it('link= renders the column as an anchor from a :prop template (token-safe, no braces)', async () => {
     const out = await exec(
-      { source: 'q', columns: 'volcano,color', link: 'volcano=https://volcano.si.edu/volcano.cfm?vn={gvp}' },
+      { source: 'q', columns: 'volcano,color', link: 'volcano=https://volcano.si.edu/volcano.cfm?vn=:gvp' },
       vona
     );
     expect(out).toContain('<a href="https://volcano.si.edu/volcano.cfm?vn=332010" target="_blank" rel="noopener noreferrer">Kilauea</a>');
     expect(out).toContain('vn=311120');
   });
 
+  it('link= does not treat the URL scheme colon as a placeholder', async () => {
+    const out = await exec(
+      { source: 'q', columns: 'volcano', link: 'volcano=https://x.test/v/:gvp' },
+      vona
+    );
+    expect(out).toContain('href="https://x.test/v/332010"');
+  });
+
   it('link= leaves the cell plain when a placeholder is unresolvable', async () => {
     const out = await exec(
-      { source: 'q', columns: 'volcano', link: 'volcano=https://x.test/{missing}' },
+      { source: 'q', columns: 'volcano', link: 'volcano=https://x.test/:missing' },
       vona
     );
     expect(out).not.toContain('<a ');
@@ -116,7 +124,7 @@ describe('[DataFeed] plugin (#685)', () => {
 
   it('badge and link compose (linked pill)', async () => {
     const out = await exec(
-      { source: 'q', columns: 'color', badge: 'color', link: 'color=https://x.test/{gvp}' },
+      { source: 'q', columns: 'color', badge: 'color', link: 'color=https://x.test/:gvp' },
       vona
     );
     expect(out).toContain('<a href="https://x.test/332010" target="_blank" rel="noopener noreferrer"><span class="feed-badge feed-badge--yellow">YELLOW</span></a>');

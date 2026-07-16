@@ -37,7 +37,7 @@ Requires the `feeds` addon enabled with the source configured — see [FeedManag
 | `max` | no | 20 | Record cap, applied after sorting |
 | `format` | no | `table` | `'table'` (sortable, via `formatAsTable`) or `'list'` (`<ul>` of record names) |
 | `badge` | no | — | CSV of columns rendered as value-classed pills: `<span class="feed-badge feed-badge--<slugged-value>">` — core CSS ships variants for the aviation color codes `green`/`yellow`/`orange`/`red`; unknown values get the neutral base style |
-| `link` | no | — | Whitespace-separated `column=urlTemplate` entries; `{prop}` placeholders resolve from the record's properties (URI-encoded), e.g. `link='volcano=https://volcano.si.edu/volcano.cfm?vn={gvp}'`. A cell whose template has an unresolvable placeholder stays plain text. Composes with `badge` (linked pill) |
+| `link` | no | — | Whitespace-separated `column=urlTemplate` entries; **express-style `:prop`** placeholders resolve from the record's properties (URI-encoded), e.g. `link='volcano=https://volcano.si.edu/volcano.cfm?vn=:gvp'`. A cell whose template has an unresolvable placeholder stays plain text. Composes with `badge` (linked pill). Braces are NOT usable — the `[{…}]` plugin-token grammar cannot contain a literal `}`, so a `{prop}` placeholder would truncate the token and break the page render |
 
 ## Behavior notes
 
