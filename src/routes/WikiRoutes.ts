@@ -144,6 +144,7 @@ interface IConfigManager {
   getInstanceDataFolder?(): string;
   resetToDefaults(): Promise<void> | void;
   getFencedCodeTags?(): Set<string>;
+  getBaseURL?(): string;
 }
 
 interface IVersioningProvider {
@@ -275,6 +276,7 @@ interface WikiEngine {
   getManager(name: 'NotificationManager'): NotificationManager;
   getManager(name: 'PolicyValidator'): PolicyValidator;
   getManager(name: 'RenderingManager'): RenderingManager;
+  getManager(name: 'ShareManager'): ShareManager | undefined;
   getManager(name: 'TemplateManager'): TemplateManager;
   getManager(name: 'ValidationManager'): ValidationManager;
   getManager(name: 'VariableManager'): VariableManager;
@@ -10816,6 +10818,11 @@ ${panes}
     app.get('/share/:token/file/:id', (req: Request, res: Response) => void this.shareFile(req, res));
     app.get('/share/:token/thumb/:id', (req: Request, res: Response) => void this.shareThumb(req, res));
     app.get('/share/:token/page/:name', (req: Request, res: Response) => void this.sharePage(req, res));
+
+    // Share management routes (#854) — admin/editor (epic #842 slice 3)
+    app.get('/shares', (req: Request, res: Response) => void this.sharesList(req, res));
+    app.post('/shares/create', (req: Request, res: Response) => void this.sharesCreate(req, res));
+    app.post('/shares/:id/revoke', (req: Request, res: Response) => void this.sharesRevoke(req, res));
     app.get('/admin/media', (req: Request, res: Response) => void this.adminMedia(req, res));
     app.post('/admin/media/rescan', (req: Request, res: Response) => void this.adminMediaRescan(req, res));
     app.post('/admin/media/rebuild', (req: Request, res: Response) => void this.adminMediaRebuild(req, res));
@@ -12887,6 +12894,9 @@ ${description}
       const raw = await mediaManager.listByKeyword(keyword, wikiContext);
       const { sort, order, items } = this.applyMediaSort(req, raw as unknown as Record<string, unknown>[]);
       const commonData = await this.getCommonTemplateData(req);
+      // #854: Share entry point — visible only to users who may create shares.
+      const shareManagerForAlbum = this.engine.getManager('ShareManager');
+      const canShare = !!shareManagerForAlbum?.isEnabled() && this.canManageShares(wikiContext);
       return res.render('media-keyword', {
         ...commonData,
         wikiContext,
@@ -12894,6 +12904,7 @@ ${description}
         items,
         sort,
         order,
+        canShare,
         title: `Media — ${keyword}`
       });
     } catch (err: unknown) {
@@ -13341,6 +13352,142 @@ ${description}
       });
     } catch (err: unknown) {
       logger.error('[share] Error rendering share page:', err);
+      return res.status(500).send('Internal server error');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Share management routes (#854) — privileged users (epic #842 slice 3)
+  // ---------------------------------------------------------------------------
+
+  /** Decision 2: admin and editor roles may create/manage shares. */
+  private canManageShares(wikiContext: WikiContext): boolean {
+    return !!wikiContext.userContext?.isAuthenticated && wikiContext.hasRole('admin', 'editor');
+  }
+
+  /**
+   * Absolute base for displaying share links. Prefers the canonical
+   * configured base-url; falls back to the request's own origin so the
+   * page still works on instances without an explicit base-url.
+   */
+  private shareBaseUrl(req: Request): string {
+    const configManager = this.engine.getManager('ConfigurationManager');
+    const configured = configManager?.getBaseURL?.() ?? '';
+    return (configured || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+  }
+
+  /**
+   * GET /shares
+   * Management list: own shares for editors, all shares for admins.
+   * Shows full share link, status (active/expired/revoked), and expiry.
+   */
+  async sharesList(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!this.canManageShares(wikiContext)) {
+        return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to manage shares.');
+      }
+      const shareManager = this.engine.getManager('ShareManager');
+      if (!shareManager || !shareManager.isEnabled()) {
+        return await this.renderError(req, res, 404, 'Not Found', 'Share links are disabled on this instance.');
+      }
+
+      const isAdmin = wikiContext.hasRole('admin');
+      const username = wikiContext.userContext?.username ?? '';
+      const now = Date.now();
+      const shares = shareManager.list(isAdmin ? undefined : username).map(r => ({
+        ...r,
+        status: r.revokedAt
+          ? 'revoked'
+          : (r.expiresAt && now > Date.parse(r.expiresAt)) ? 'expired' : 'active'
+      }));
+
+      const commonData = await this.getCommonTemplateData(req);
+      return res.render('shares', {
+        ...commonData,
+        wikiContext,
+        shares,
+        isAdmin,
+        baseUrl: this.shareBaseUrl(req),
+        createdId: typeof req.query.created === 'string' ? req.query.created : null,
+        revoked: req.query.revoked === '1',
+        error: typeof req.query.error === 'string' ? req.query.error : null,
+        keywordPrefill: typeof req.query.keyword === 'string' ? req.query.keyword : '',
+        title: 'Share Links'
+      });
+    } catch (err: unknown) {
+      logger.error('[share] Error rendering shares list:', err);
+      return res.status(500).send('Internal server error');
+    }
+  }
+
+  /**
+   * POST /shares/create
+   * Create a share for a keyword with a fixed expiry choice (decision 4).
+   * CSRF-validated by the app-wide middleware; admin/editor only (decision 2).
+   */
+  async sharesCreate(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!this.canManageShares(wikiContext)) {
+        return res.status(403).send('Access denied');
+      }
+      const shareManager = this.engine.getManager('ShareManager');
+      if (!shareManager || !shareManager.isEnabled()) {
+        return res.status(404).send('Not Found');
+      }
+
+      const body = req.body as Record<string, unknown>;
+      const keyword = typeof body.keyword === 'string' ? body.keyword.trim() : '';
+      if (!keyword) {
+        return res.redirect('/shares?error=keyword');
+      }
+      const ttlRaw = typeof body.ttl === 'string' ? body.ttl : '';
+      if (!['24h', '7d', '30d', 'never'].includes(ttlRaw)) {
+        return res.redirect('/shares?error=ttl');
+      }
+      const ttl = ttlRaw === 'never' ? null : (ttlRaw as '24h' | '7d' | '30d');
+
+      const record = await shareManager.issue(
+        { kind: 'keyword', keyword },
+        ttl,
+        wikiContext.userContext?.username ?? 'unknown'
+      );
+      return res.redirect(`/shares?created=${encodeURIComponent(record.id)}`);
+    } catch (err: unknown) {
+      logger.error('[share] Error creating share:', err);
+      return res.status(500).send('Internal server error');
+    }
+  }
+
+  /**
+   * POST /shares/:id/revoke
+   * Immediate revocation — creator or admin. CSRF-validated app-wide.
+   */
+  async sharesRevoke(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!this.canManageShares(wikiContext)) {
+        return res.status(403).send('Access denied');
+      }
+      const shareManager = this.engine.getManager('ShareManager');
+      if (!shareManager || !shareManager.isEnabled()) {
+        return res.status(404).send('Not Found');
+      }
+
+      const record = shareManager.get(req.params.id);
+      if (!record) {
+        return res.status(404).send('Not Found');
+      }
+      const username = wikiContext.userContext?.username ?? '';
+      if (!wikiContext.hasRole('admin') && record.createdBy !== username) {
+        return res.status(403).send('Access denied');
+      }
+
+      await shareManager.revoke(record.id, username);
+      return res.redirect('/shares?revoked=1');
+    } catch (err: unknown) {
+      logger.error('[share] Error revoking share:', err);
       return res.status(500).send('Internal server error');
     }
   }

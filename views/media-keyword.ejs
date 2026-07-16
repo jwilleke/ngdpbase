@@ -5,7 +5,23 @@
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h1><i class="fas fa-tag"></i> Media — <%= keyword %></h1>
-                <div>
+                <div class="d-flex align-items-center">
+                    <% if (typeof canShare !== 'undefined' && canShare) { %>
+                        <%# #854: Share entry point — POST /shares/create with this keyword %>
+                        <form method="post" action="/shares/create" class="d-flex align-items-center me-2">
+                            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                            <input type="hidden" name="keyword" value="<%= keyword %>">
+                            <select name="ttl" class="form-select form-select-sm me-1" style="width:auto;" aria-label="Share expiry">
+                                <option value="24h">24 hours</option>
+                                <option value="7d" selected>7 days</option>
+                                <option value="30d">30 days</option>
+                                <option value="never">Until cancelled</option>
+                            </select>
+                            <button type="submit" class="btn btn-sm btn-primary">
+                                <i class="fas fa-share-nodes"></i> Share
+                            </button>
+                        </form>
+                    <% } %>
                     <a href="/media/search" class="btn btn-sm me-2 btn-secondary">
                         <i class="fas fa-search"></i> Search
                     </a>

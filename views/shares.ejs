@@ -1,0 +1,110 @@
+<%- include('header', { pageName: 'Share Links' }) %>
+
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1><i class="fas fa-share-nodes"></i> Share Links</h1>
+        <a href="/media" class="btn btn-sm btn-secondary"><i class="fas fa-arrow-left"></i> Media</a>
+    </div>
+
+    <% if (createdId) { %>
+        <div class="alert alert-success">
+            <i class="fas fa-check-circle"></i> Share created. Copy the link below and send it to your recipients.
+        </div>
+    <% } %>
+    <% if (revoked) { %>
+        <div class="alert alert-info"><i class="fas fa-ban"></i> Share revoked. The link stopped working immediately.</div>
+    <% } %>
+    <% if (error === 'keyword') { %>
+        <div class="alert alert-danger">A keyword is required to create a share.</div>
+    <% } else if (error === 'ttl') { %>
+        <div class="alert alert-danger">Invalid expiry choice.</div>
+    <% } %>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <h2 class="h6 card-title">Create a share</h2>
+            <p class="text-muted small mb-2">Shares everything tagged with the keyword — media and pages — with anyone who has the link. Content marked <code>owner-only</code>, private pages, and audience-restricted pages are never included.</p>
+            <form method="post" action="/shares/create" class="row g-2 align-items-end">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <div class="col-auto">
+                    <label for="share-keyword" class="form-label small mb-0">Keyword</label>
+                    <input type="text" class="form-control form-control-sm" id="share-keyword" name="keyword" value="<%= keywordPrefill %>" required>
+                </div>
+                <div class="col-auto">
+                    <label for="share-ttl" class="form-label small mb-0">Expires</label>
+                    <select class="form-select form-select-sm" id="share-ttl" name="ttl">
+                        <option value="24h">24 hours</option>
+                        <option value="7d" selected>7 days</option>
+                        <option value="30d">30 days</option>
+                        <option value="never">Until cancelled</option>
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-plus"></i> Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <% if (shares.length === 0) { %>
+        <div class="alert alert-info"><i class="fas fa-info-circle"></i> No shares yet.</div>
+    <% } else { %>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>Keyword</th>
+                        <th>Link</th>
+                        <th>Status</th>
+                        <th>Expires</th>
+                        <% if (isAdmin) { %><th>Created by</th><% } %>
+                        <th>Created</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% shares.forEach(function(s) { %>
+                        <% const url = baseUrl + '/share/' + s.token; %>
+                        <tr class="<%= s.id === createdId ? 'table-success' : '' %>">
+                            <td><a href="/media/keyword/<%= encodeURIComponent(s.scope.keyword) %>"><%= s.scope.keyword %></a></td>
+                            <td>
+                                <% if (s.status === 'active') { %>
+                                    <div class="input-group input-group-sm" style="max-width: 360px;">
+                                        <input type="text" class="form-control" value="<%= url %>" readonly onclick="this.select()">
+                                        <button type="button" class="btn btn-outline-secondary" title="Copy link"
+                                                onclick="navigator.clipboard.writeText(this.previousElementSibling.value).then(() => { this.innerHTML = '<i class=&quot;fas fa-check&quot;></i>'; })">
+                                            <i class="fas fa-copy"></i>
+                                        </button>
+                                    </div>
+                                <% } else { %>
+                                    <span class="text-muted">—</span>
+                                <% } %>
+                            </td>
+                            <td>
+                                <% if (s.status === 'active') { %><span class="badge bg-success">active</span>
+                                <% } else if (s.status === 'expired') { %><span class="badge bg-secondary">expired</span>
+                                <% } else { %><span class="badge bg-danger">revoked</span><% } %>
+                            </td>
+                            <td><small><%= s.expiresAt ? new Date(s.expiresAt).toLocaleString() : 'until cancelled' %></small></td>
+                            <% if (isAdmin) { %><td><small><%= s.createdBy %></small></td><% } %>
+                            <td><small><%= new Date(s.createdAt).toLocaleString() %></small></td>
+                            <td>
+                                <% if (s.status !== 'revoked') { %>
+                                    <form method="post" action="/shares/<%= s.id %>/revoke" class="d-inline"
+                                          onsubmit="return confirm('Revoke this share? The link stops working immediately.')">
+                                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Revoke">
+                                            <i class="fas fa-ban"></i> Revoke
+                                        </button>
+                                    </form>
+                                <% } %>
+                            </td>
+                        </tr>
+                    <% }); %>
+                </tbody>
+            </table>
+        </div>
+    <% } %>
+</div>
+
+<%- include('footer') %>
