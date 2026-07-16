@@ -66,6 +66,10 @@ export default class ShareManager extends BaseManager {
   private byToken: Map<string, ShareRecord> = new Map();
   /** id → record (management path) */
   private byId: Map<string, ShareRecord> = new Map();
+  /** share id → aggregated anonymous access hits awaiting flush (decision 5) */
+  private accessCounts: Map<string, { count: number; since: number }> = new Map();
+  /** How long access counts accumulate before a lazy flush to log + audit. */
+  private static readonly ACCESS_FLUSH_MS = 5 * 60 * 1000;
 
   constructor(engine: WikiEngine) {
     super(engine);
@@ -183,6 +187,27 @@ export default class ShareManager extends BaseManager {
     return this.byId.get(id) ?? null;
   }
 
+  /**
+   * Record one anonymous access hit against the share behind `token`
+   * (decision 5: hits are logged as aggregated counts, not per-view rows).
+   * Counts flush to the log + audit trail lazily once the window elapses,
+   * and on shutdown. No-op for unknown tokens.
+   */
+  recordAccess(token: string): void {
+    const record = this.byToken.get(token);
+    if (!record) return;
+    const now = Date.now();
+    let entry = this.accessCounts.get(record.id);
+    if (!entry) {
+      entry = { count: 0, since: now };
+      this.accessCounts.set(record.id, entry);
+    }
+    entry.count++;
+    if (now - entry.since >= ShareManager.ACCESS_FLUSH_MS) {
+      void this.flushAccessCounts(record.id);
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Scope resolution — live at request time, never snapshotted
   // ---------------------------------------------------------------------------
@@ -296,6 +321,36 @@ export default class ShareManager extends BaseManager {
     }
   }
 
+  /**
+   * Flush aggregated access counts (one share, or all when `id` omitted) to
+   * the log and audit trail as a single `share_access` row each (decision 5).
+   */
+  private async flushAccessCounts(id?: string): Promise<void> {
+    const ids = id !== undefined ? [id] : [...this.accessCounts.keys()];
+    for (const shareId of ids) {
+      const entry = this.accessCounts.get(shareId);
+      if (!entry || entry.count === 0) continue;
+      this.accessCounts.delete(shareId);
+      const since = new Date(entry.since).toISOString();
+      logger.info(`[ShareManager] Share ${shareId}: ${entry.count} anonymous access hit(s) since ${since}`);
+      try {
+        const auditManager = this.engine.getManager<AuditManager>('AuditManager');
+        if (!auditManager) continue;
+        await auditManager.logAuditEvent({
+          eventType: 'share_access',
+          user: 'anonymous',
+          resource: shareId,
+          resourceType: 'share',
+          action: 'view',
+          result: 'success',
+          metadata: { count: entry.count, since }
+        });
+      } catch (err) {
+        logger.warn(`[ShareManager] Audit logging failed for share_access ${shareId}: ${String(err)}`);
+      }
+    }
+  }
+
   /** Audit create/revoke (decision 5). Never throws — shares work without audit. */
   private async audit(eventType: string, user: string, record: ShareRecord): Promise<void> {
     try {
@@ -319,5 +374,7 @@ export default class ShareManager extends BaseManager {
     }
   }
 
-  async shutdown(): Promise<void> {}
+  async shutdown(): Promise<void> {
+    await this.flushAccessCounts();
+  }
 }

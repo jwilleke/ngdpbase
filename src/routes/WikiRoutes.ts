@@ -33,6 +33,8 @@ import { shuffleArray } from '../utils/pluginFormatters.js';
 import { normalizePinnedItems, deriveCanonicalUrl } from '../utils/pinnedItems.js';
 import type { PinnedItem } from '../types/User.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
+import type ShareManager from '../managers/ShareManager.js';
+import type { ShareScope } from '../types/Share.js';
 import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../utils/ContactSubmissionLog.js';
 import { stringifyJsonLdForScript, wantsJsonLd } from '../utils/buildPageJsonLd.js';
 import { articleToPageJsonLd } from '../utils/articleToPageJsonLd.js';
@@ -324,6 +326,14 @@ interface RequestInfo {
  * 15-minute window. Exported so tests can call `.reset()` between cases.
  */
 export const contactRateLimiter = new SimpleRateLimiter({ max: 5, windowMs: 15 * 60 * 1000 });
+
+/**
+ * Module-scope rate limiter for anonymous /share/:token/* access (#853,
+ * decision 5) keyed `token:ip`. Generous budget — one album view fans out
+ * into one request per thumbnail, so a big album must fit in the window.
+ * Exported so tests can call `.reset()` between cases.
+ */
+export const shareRateLimiter = new SimpleRateLimiter({ max: 600, windowMs: 10 * 60 * 1000 });
 
 const imageStorage: StorageEngine = multer.diskStorage({
   destination: (_req: Request, _file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {
@@ -10800,6 +10810,12 @@ ${panes}
     app.get('/media/api/year/:year', (req: Request, res: Response) => void this.mediaApiYear(req, res));
     app.get('/media/file/:id', (req: Request, res: Response) => void this.mediaFile(req, res));
     app.get('/media/thumb/:id', (req: Request, res: Response) => void this.mediaThumb(req, res));
+
+    // Share routes (#853) — token-gated anonymous access (epic #842 slice 2)
+    app.get('/share/:token', (req: Request, res: Response) => void this.shareAlbum(req, res));
+    app.get('/share/:token/file/:id', (req: Request, res: Response) => void this.shareFile(req, res));
+    app.get('/share/:token/thumb/:id', (req: Request, res: Response) => void this.shareThumb(req, res));
+    app.get('/share/:token/page/:name', (req: Request, res: Response) => void this.sharePage(req, res));
     app.get('/admin/media', (req: Request, res: Response) => void this.adminMedia(req, res));
     app.post('/admin/media/rescan', (req: Request, res: Response) => void this.adminMediaRescan(req, res));
     app.post('/admin/media/rebuild', (req: Request, res: Response) => void this.adminMediaRebuild(req, res));
@@ -13066,80 +13082,90 @@ ${description}
         return res.send(JSON.stringify(cw));
       }
 
-      const filePath: string = item.filePath;
-      const rawMime: string = (item.mimeType) || 'application/octet-stream';
-      // #719: relabel video/quicktime (.mov) → video/mp4 so Chrome plays it
-      // inline. Same rationale as serveAttachment — the bitstream of most
-      // consumer .mov is H.264/AAC, which Chrome can decode; it just won't
-      // try when the MIME says video/quicktime. Genuinely incompatible
-      // files will show a player error rather than auto-download.
-      const mimeType: string = (rawMime === 'video/quicktime' || /\.mov$/i.test(filePath))
-        ? 'video/mp4'
-        : rawMime;
-
-      // On-the-fly transcode for HEIC/RAW formats that browsers can't decode natively
-      const TRANSCODE_MIMES = new Set([
-        'image/heic', 'image/heif', 'image/x-raw', 'image/x-olympus-orf',
-        'image/x-canon-cr2', 'image/x-nikon-nef', 'image/x-sony-arw', 'image/dng'
-      ]);
-      if (TRANSCODE_MIMES.has(mimeType)) {
-        const accept = req.headers.accept ?? '';
-        if (!accept.includes('image/heic') && !accept.includes('image/heif')) {
-          const format: 'webp' | 'jpeg' = accept.includes('image/webp') ? 'webp' : 'jpeg';
-          const outMime = format === 'webp' ? 'image/webp' : 'image/jpeg';
-          const buffer = await mediaManager.getTranscodedBuffer(req.params.id, format);
-          if (buffer) {
-            res.writeHead(200, {
-              'Content-Type': outMime,
-              'Content-Length': buffer.length,
-              'Cache-Control': 'public, max-age=3600'
-            });
-            return res.end(buffer);
-          }
-          // Transcode failed — fall through to serve raw file
-        }
-      }
-
-      let stat: { size: number };
-      try {
-        stat = fs.statSync(filePath);
-      } catch {
-        return res.status(404).send('Media file not found on disk');
-      }
-
-      const fileSize = stat.size;
-      const rangeHeader = req.headers.range;
-
-      if (rangeHeader) {
-        // Parse "bytes=start-end"
-        const parts = rangeHeader.replace(/bytes=/, '').split('-');
-        const start = parseInt(parts[0], 10);
-        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-        const chunkSize = end - start + 1;
-
-        res.writeHead(206, {
-          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-          'Accept-Ranges': 'bytes',
-          'Content-Length': chunkSize,
-          'Content-Type': mimeType,
-          'Content-Disposition': 'inline'
-        });
-        fs.createReadStream(filePath, { start, end }).pipe(res);
-        return;
-      }
-
-      res.writeHead(200, {
-        'Accept-Ranges': 'bytes',
-        'Content-Disposition': 'inline',
-        'Content-Length': fileSize,
-        'Content-Type': mimeType
-      });
-      fs.createReadStream(filePath).pipe(res);
-      return;
+      return await this.streamMediaItemFile(req, res, item.filePath, item.mimeType, item.id);
     } catch (err: unknown) {
       logger.error('[media] Error serving media file:', err);
       return res.status(500).send('Internal server error');
     }
+  }
+
+  /**
+   * Stream a media file to the response with HTTP Range support and
+   * on-the-fly HEIC/RAW transcode (#514). Shared by GET /media/file/:id and
+   * the token-gated GET /share/:token/file/:id (#853) — access control is
+   * the CALLER's responsibility; this helper only moves bytes.
+   */
+  private async streamMediaItemFile(req: Request, res: Response, filePath: string, itemMimeType: string | undefined, itemId: string) {
+    const rawMime: string = itemMimeType || 'application/octet-stream';
+    // #719: relabel video/quicktime (.mov) → video/mp4 so Chrome plays it
+    // inline. Same rationale as serveAttachment — the bitstream of most
+    // consumer .mov is H.264/AAC, which Chrome can decode; it just won't
+    // try when the MIME says video/quicktime. Genuinely incompatible
+    // files will show a player error rather than auto-download.
+    const mimeType: string = (rawMime === 'video/quicktime' || /\.mov$/i.test(filePath))
+      ? 'video/mp4'
+      : rawMime;
+
+    // On-the-fly transcode for HEIC/RAW formats that browsers can't decode natively
+    const TRANSCODE_MIMES = new Set([
+      'image/heic', 'image/heif', 'image/x-raw', 'image/x-olympus-orf',
+      'image/x-canon-cr2', 'image/x-nikon-nef', 'image/x-sony-arw', 'image/dng'
+    ]);
+    if (TRANSCODE_MIMES.has(mimeType)) {
+      const accept = req.headers.accept ?? '';
+      if (!accept.includes('image/heic') && !accept.includes('image/heif')) {
+        const format: 'webp' | 'jpeg' = accept.includes('image/webp') ? 'webp' : 'jpeg';
+        const outMime = format === 'webp' ? 'image/webp' : 'image/jpeg';
+        const mediaManager = this.engine.getManager('MediaManager');
+        const buffer = mediaManager ? await mediaManager.getTranscodedBuffer(itemId, format) : null;
+        if (buffer) {
+          res.writeHead(200, {
+            'Content-Type': outMime,
+            'Content-Length': buffer.length,
+            'Cache-Control': 'public, max-age=3600'
+          });
+          return res.end(buffer);
+        }
+        // Transcode failed — fall through to serve raw file
+      }
+    }
+
+    let stat: { size: number };
+    try {
+      stat = fs.statSync(filePath);
+    } catch {
+      return res.status(404).send('Media file not found on disk');
+    }
+
+    const fileSize = stat.size;
+    const rangeHeader = req.headers.range;
+
+    if (rangeHeader) {
+      // Parse "bytes=start-end"
+      const parts = rangeHeader.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const chunkSize = end - start + 1;
+
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunkSize,
+        'Content-Type': mimeType,
+        'Content-Disposition': 'inline'
+      });
+      fs.createReadStream(filePath, { start, end }).pipe(res);
+      return;
+    }
+
+    res.writeHead(200, {
+      'Accept-Ranges': 'bytes',
+      'Content-Disposition': 'inline',
+      'Content-Length': fileSize,
+      'Content-Type': mimeType
+    });
+    fs.createReadStream(filePath).pipe(res);
+    return;
   }
 
   /**
@@ -13164,6 +13190,157 @@ ${description}
       return res.send(buffer);
     } catch (err: unknown) {
       logger.error('[media] Error serving thumbnail:', err);
+      return res.status(500).send('Internal server error');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Share routes (#853) — token-gated anonymous access (epic #842 slice 2)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Common gate for every /share/:token* request (#853).
+   *
+   * - Rate-limits per token+IP BEFORE validation so invalid-token probing
+   *   burns the same budget as real traffic (decision 5).
+   * - Unknown, expired, and revoked tokens — and a disabled ShareManager —
+   *   all produce an IDENTICAL 404 so share existence never leaks.
+   * - Scope is re-validated on every request, never cached per token.
+   * - Sets `X-Robots-Tag: noindex` and records an aggregated access hit.
+   *
+   * Returns the validated scope + manager, or null after having responded.
+   */
+  private shareGate(req: Request, res: Response): { shareManager: ShareManager; scope: ShareScope } | null {
+    const notFound = (): null => {
+      res.status(404).send('Not Found');
+      return null;
+    };
+    const shareManager = this.engine.getManager('ShareManager');
+    if (!shareManager || !shareManager.isEnabled()) return notFound();
+
+    const token = req.params.token ?? '';
+    const rl = shareRateLimiter.consume(`${token}:${req.ip}`);
+    if (!rl.allowed) {
+      res.status(429)
+        .set('Retry-After', String(Math.ceil(rl.retryAfterMs / 1000)))
+        .send('Too Many Requests');
+      return null;
+    }
+
+    const scope = shareManager.validate(token);
+    if (!scope) return notFound();
+
+    res.setHeader('X-Robots-Tag', 'noindex');
+    shareManager.recordAccess(token);
+    return { shareManager, scope };
+  }
+
+  /**
+   * GET /share/:token
+   * Anonymous album view: thumbnail grid of in-scope media + list of
+   * in-scope pages. Chrome-free standalone template — no site nav.
+   */
+  async shareAlbum(req: Request, res: Response) {
+    try {
+      const gate = this.shareGate(req, res);
+      if (!gate) return;
+      const resolved = await gate.shareManager.resolveScope(gate.scope);
+      return res.render('share-album', {
+        token: req.params.token,
+        keyword: gate.scope.keyword,
+        media: resolved.media,
+        pages: resolved.pages,
+        title: `Shared — ${gate.scope.keyword}`
+      });
+    } catch (err: unknown) {
+      logger.error('[share] Error rendering share album:', err);
+      return res.status(500).send('Internal server error');
+    }
+  }
+
+  /**
+   * GET /share/:token/file/:id
+   * Stream a media file only if the item is in the share's LIVE scope.
+   */
+  async shareFile(req: Request, res: Response) {
+    try {
+      const gate = this.shareGate(req, res);
+      if (!gate) return;
+      const resolved = await gate.shareManager.resolveScope(gate.scope);
+      const item = resolved.media.find(m => m.id === req.params.id);
+      if (!item) return res.status(404).send('Not Found');
+      return await this.streamMediaItemFile(req, res, item.filePath, item.mimeType, item.id);
+    } catch (err: unknown) {
+      logger.error('[share] Error serving share file:', err);
+      return res.status(500).send('Internal server error');
+    }
+  }
+
+  /**
+   * GET /share/:token/thumb/:id
+   * Thumbnail, only if the item is in the share's LIVE scope.
+   * Cache-Control is `private` — the URL embeds the capability token, so
+   * shared caches must not store it.
+   */
+  async shareThumb(req: Request, res: Response) {
+    try {
+      const gate = this.shareGate(req, res);
+      if (!gate) return;
+      const resolved = await gate.shareManager.resolveScope(gate.scope);
+      const item = resolved.media.find(m => m.id === req.params.id);
+      if (!item) return res.status(404).send('Not Found');
+      const mediaManager = this.engine.getManager('MediaManager');
+      const size = (req.query.size as string) || '300x300';
+      const buffer = mediaManager ? await mediaManager.getThumbnailBuffer(item.id, size) : null;
+      if (!buffer) return res.status(404).send('Not Found');
+      res.set('Content-Type', 'image/webp');
+      res.set('Cache-Control', 'private, max-age=3600');
+      return res.send(buffer);
+    } catch (err: unknown) {
+      logger.error('[share] Error serving share thumbnail:', err);
+      return res.status(500).send('Internal server error');
+    }
+  }
+
+  /**
+   * GET /share/:token/page/:name
+   * Read-only rendered page, only if in the share's LIVE scope.
+   *
+   * Known v1 caveat (documented, not fixed): links inside the rendered HTML
+   * point at normal /view/ URLs the anonymous visitor may not be able to open.
+   */
+  async sharePage(req: Request, res: Response) {
+    try {
+      const gate = this.shareGate(req, res);
+      if (!gate) return;
+      const name = req.params.name;
+      const resolved = await gate.shareManager.resolveScope(gate.scope);
+      const entry = resolved.pages.find(p => p.name === name);
+      if (!entry) return res.status(404).send('Not Found');
+
+      const pageManager = this.engine.getManager('PageManager');
+      const renderingManager = this.engine.getManager('RenderingManager');
+      const markdown = pageManager
+        ? await pageManager.getPageContent(entry.name).catch(() => null)
+        : null;
+      if (markdown === null || !renderingManager) return res.status(404).send('Not Found');
+
+      const wikiContext = this.createWikiContext(req, {
+        context: WikiContext.CONTEXT.VIEW,
+        pageName: entry.name,
+        response: res
+      });
+      const html = await renderingManager.textToHTML(wikiContext, markdown);
+      return res.render('share-page', {
+        token: req.params.token,
+        keyword: gate.scope.keyword,
+        pageName: entry.name,
+        pageTitle: entry.title ?? entry.name,
+        html,
+        title: `Shared — ${entry.title ?? entry.name}`
+      });
+    } catch (err: unknown) {
+      logger.error('[share] Error rendering share page:', err);
       return res.status(500).send('Internal server error');
     }
   }

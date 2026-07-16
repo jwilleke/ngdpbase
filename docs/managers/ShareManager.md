@@ -38,9 +38,19 @@ Scope is a typed object `{ kind: 'keyword', keyword }` (`src/types/Share.ts`); f
 - Record: `id` (management handle), `token` (64-char crypto-random hex — never in management URLs), `scope`, `createdBy`, `createdAt`, `expiresAt`, `revokedAt?`.
 - Enabled flag: `ngdpbase.share.enabled` (default `true`); degrades to disabled on path-preflight failure.
 
+## Public routes (#853, slice 2)
+
+Anonymous, token-gated, re-validated per request (never cached per token); all set `X-Robots-Tag: noindex`:
+
+- `GET /share/:token` — album: thumbnail grid of in-scope media + list of in-scope pages (chrome-free standalone template)
+- `GET /share/:token/file/:id`, `GET /share/:token/thumb/:id` — stream only if the item is in the share's live scope
+- `GET /share/:token/page/:name` — read-only rendered page, only if in scope; known v1 caveat: links inside the rendered HTML point at normal `/view/` URLs
+
+Requests are rate-limited per `token:ip` (600 / 10 min, `shareRateLimiter` in WikiRoutes) *before* validation, so invalid-token probing burns the same budget.
+
 ## Audit (decision 5)
 
-`share_create` and `share_revoke` events go to [AuditManager](AuditManager.md); audit failure never blocks share operations.
+`share_create` and `share_revoke` events go to [AuditManager](AuditManager.md); audit failure never blocks share operations. Anonymous access hits are recorded via `recordAccess(token)` and flushed as aggregated `share_access` counts (one row per share per 5-minute window, plus a best-effort flush on shutdown) — never per-view rows.
 
 ## See Also
 

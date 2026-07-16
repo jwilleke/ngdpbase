@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="bg-body">
+<%# Standalone share view (#853) — deliberately chrome-free: no site nav,
+    no user menu, nothing an anonymous share visitor shouldn't see. %>
+<div class="container mt-4 mb-5">
+    <h1 class="mb-1"><i class="fas fa-share-nodes"></i> <%= keyword %></h1>
+    <p class="text-muted">Shared content — <%= media.length %> media item<%= media.length !== 1 ? 's' : '' %><% if (pages.length > 0) { %>, <%= pages.length %> page<%= pages.length !== 1 ? 's' : '' %><% } %></p>
+
+    <% if (pages.length > 0) { %>
+        <h2 class="h5 mt-4">Pages</h2>
+        <ul class="list-group mb-4">
+            <% pages.forEach(function(p) { %>
+                <li class="list-group-item">
+                    <a href="/share/<%= token %>/page/<%= encodeURIComponent(p.name) %>" class="text-decoration-none">
+                        <i class="fas fa-file-lines me-1"></i> <%= p.title || p.name %>
+                    </a>
+                </li>
+            <% }); %>
+        </ul>
+    <% } %>
+
+    <% if (media.length > 0) { %>
+        <div class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-5 g-2">
+            <% media.forEach(function(item) { %>
+                <div class="col">
+                    <a href="/share/<%= token %>/file/<%= item.id %>" target="_blank" rel="noopener" class="text-decoration-none">
+                        <div class="card h-100">
+                            <% if (item.mimeType && item.mimeType.startsWith('image/')) { %>
+                                <img
+                                    src="/share/<%= token %>/thumb/<%= item.id %>?size=300x300"
+                                    class="card-img-top"
+                                    alt="<%= item.filename %>"
+                                    style="object-fit:contain; height:160px; background:#f8f9fa;"
+                                    loading="lazy"
+                                    onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"
+                                >
+                                <div class="d-none align-items-center justify-content-center bg-body-secondary" style="height:160px;">
+                                    <i class="fas fa-image fa-3x text-muted"></i>
+                                </div>
+                            <% } else { %>
+                                <div class="d-flex align-items-center justify-content-center bg-body-secondary" style="height:160px;">
+                                    <i class="fas fa-film fa-3x text-muted"></i>
+                                </div>
+                            <% } %>
+                            <div class="card-body p-2">
+                                <small class="text-muted d-block text-truncate" title="<%= item.filename %>"><%= (item.metadata && item.metadata.caption) ? item.metadata.caption : item.filename %></small>
+                            </div>
+                        </div>
+                    </a>
+                </div>
+            <% }); %>
+        </div>
+    <% } %>
+
+    <% if (media.length === 0 && pages.length === 0) { %>
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i> Nothing is currently shared here.
+        </div>
+    <% } %>
+</div>
+</body>
+</html>
