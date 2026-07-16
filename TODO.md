@@ -71,5 +71,5 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 ## Scanner-alert notes (not bulk-bridged)
 
 - Dependabot #171 (systeminformation, high) bridged 2026-07-16 → issue #858; fixed same day (187eeaf6, lockfile bump to 5.31.17, alert state fixed, #858 closed). Dependabot #96 (showdown, medium) remains tracked by #599.
-- Code-scanning: v3.49.1 image scanned 2026-07-16 — 7 findings only: showdown ×2 (#599, no patch) + npm-bundled undici/tar from the Node base image (tracked #859, P2). None of the 22 stale v3.49.0-era alerts appear in the new analysis; GitHub should auto-close them ("no longer detected") — 0 closed as of 2026-07-16 08:30Z, recheck next /pstatus and dismiss manually if they linger.
+- Code-scanning: v3.49.1 image scanned 2026-07-16 — 7 findings only: showdown ×2 (#599, no patch) + npm-bundled undici/tar from the Node base image (tracked #859, P2). The 22 stale v3.49.0-era alerts are absent from the new analysis but GitHub has NOT auto-closed them (still 0 fixed after two /pstatus checks, ~4 h apart) — operator dismissal in the Security tab is now the honest route (bulk-dismiss as "fixed"; the 3 forms-FP ones as "false positive").
 - Markdown Lint CI: fixed via PR #849 (merged; part of v3.49.1).
