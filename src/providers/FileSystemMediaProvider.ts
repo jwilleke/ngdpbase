@@ -22,6 +22,7 @@ import { ExifTool } from 'exiftool-vendored';
 import { minimatch } from 'minimatch';
 import logger from '../utils/logger.js';
 import BaseMediaProvider, { MediaItem, ScanResult } from './BaseMediaProvider.js';
+import type { AssetMetadataPatch } from '../types/Asset.js';
 import { parseDateFromFilename } from './mediaFilenameDate.js';
 
 /**
@@ -130,7 +131,7 @@ class FileSystemMediaProvider extends BaseMediaProvider {
   // AssetProvider identity (Epic #405 Phase 1)
   readonly id = 'media-library';
   readonly displayName = 'Media Library';
-  readonly capabilities: import('../types/Asset.js').ProviderCapability[] = ['search', 'thumbnail'];
+  readonly capabilities: import('../types/Asset.js').ProviderCapability[] = ['search', 'thumbnail', 'edit'];
 
   private readonly config: FileSystemMediaProviderConfig;
   /** In-memory index: id → MediaIndexEntry */
@@ -415,6 +416,51 @@ class FileSystemMediaProvider extends BaseMediaProvider {
     });
 
     return Promise.resolve(results as MediaItem[]);
+  }
+
+  /**
+   * Write a metadata patch into the source file (and its alternate-format
+   * siblings, so e.g. a HEIC+JPG pair stays in sync), then refresh the index
+   * entry by re-reading the file — the index always reflects what is actually
+   * on disk, not what we intended to write.
+   *
+   * ExifTool's default backup behaviour is kept deliberately: the first write
+   * to a file leaves a `<name>_original` sibling. Those extensions are not in
+   * the indexable set, so scans ignore them.
+   *
+   * The re-extract records the file's new mtime, so the next scheduled scan
+   * sees an unchanged file and skips it (no churn). `alternates` is
+   * re-attached afterwards because processFile builds entries without it.
+   */
+  override async updateItemMetadata(id: string, patch: AssetMetadataPatch): Promise<MediaItem | null> {
+    const entry = this.index[id];
+    if (!entry) return null;
+
+    const tags = FileSystemMediaProvider.buildMetadataWriteTags(patch, entry.mimeType);
+    if (Object.keys(tags).length === 0) return entry;
+
+    const targets = [entry.filePath, ...(entry.alternates ?? [])];
+    for (const target of targets) {
+      await this.exiftoolInstance.write(target, tags as Parameters<ExifTool['write']>[1]);
+    }
+    logger.info(
+      `[FileSystemMediaProvider] Wrote metadata (${Object.keys(tags).join(', ')}) to ${targets.length} file(s) for ${entry.filename}`
+    );
+
+    const alternates = entry.alternates;
+    const counters: ScanCounters = { scanned: 0, added: 0, updated: 0, errors: 0, excluded: 0, noCaptureDate: 0, partialCaptureDate: 0 };
+    await this.processFile(entry.filePath, counters, true);
+    if (counters.errors > 0) {
+      throw new Error(`Metadata written but re-index failed for ${entry.filename} — run a rescan`);
+    }
+    const refreshed = this.index[id];
+    if (refreshed && alternates) {
+      refreshed.alternates = alternates;
+    }
+    await this.saveIndex();
+    // undefined here means the edit legitimately evicted the item
+    // (ngdpbaseignore keyword) — report "gone" the same as unknown id.
+    return refreshed ?? null;
   }
 
   /**

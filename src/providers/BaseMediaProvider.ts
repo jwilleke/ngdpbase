@@ -11,7 +11,7 @@
  * @module BaseMediaProvider
  */
 
-import type { AssetProvider, AssetRecord, AssetQuery, AssetPage, AssetInput, AssetMetadata } from '../types/Asset.js';
+import type { AssetProvider, AssetRecord, AssetQuery, AssetPage, AssetInput, AssetMetadata, AssetMetadataPatch } from '../types/Asset.js';
 import type {
   CreativeWork,
   ImageObject,
@@ -194,6 +194,91 @@ abstract class BaseMediaProvider implements AssetProvider {
    * @returns Array of matching MediaItem objects (may be empty).
    */
   abstract searchItems(query: string): Promise<MediaItem[]>;
+
+  /**
+   * Write user-editable descriptive metadata into the source file and refresh
+   * the index entry. Only meaningful when 'edit' is in `capabilities`.
+   *
+   * Named `updateItemMetadata` (returning MediaItem) to avoid a return-type
+   * collision with AssetProvider.updateMetadata (returning AssetRecord) —
+   * same pattern as searchItems vs search.
+   *
+   * Default implementation rejects; override in providers that support writes.
+   *
+   * @param id    - The item identifier.
+   * @param patch - Fields to change (absent = keep, null = clear).
+   * @returns The refreshed MediaItem, or null if the id is unknown (or the
+   *          edit caused the item to leave the index, e.g. an
+   *          `ngdpbaseignore` keyword).
+   */
+  updateItemMetadata(_id: string, _patch: AssetMetadataPatch): Promise<MediaItem | null> {
+    return Promise.reject(new Error(`${this.constructor.name} does not support metadata editing`));
+  }
+
+  /**
+   * Map an AssetMetadataPatch onto the ExifTool tag names to write for a file
+   * of the given MIME type. Pure — no I/O; unit-testable without ExifTool.
+   *
+   * Tag choices mirror what processFile/extractCaptureDate READ back, so a
+   * post-write re-extract round-trips every edited field:
+   *   - title            → Title (XMP-dc)
+   *   - description      → Description (XMP-dc) + ImageDescription (EXIF) —
+   *                        the index reads `Description ?? ImageDescription`
+   *   - keywords         → Keywords only — ExifTool's MWG logic mirrors it to
+   *                        XMP-dc Subject; writing both doubles the list
+   *   - dateTimeOriginal → DateTimeOriginal for images; CreateDate for
+   *                        video/audio containers (QuickTime — see #750)
+   *
+   * @throws Error if `dateTimeOriginal` is present, non-null, and unparseable.
+   */
+  protected static buildMetadataWriteTags(patch: AssetMetadataPatch, mimeType: string): Record<string, unknown> {
+    const tags: Record<string, unknown> = {};
+
+    if (patch.title !== undefined) {
+      tags.Title = patch.title;
+    }
+    if (patch.description !== undefined) {
+      tags.Description = patch.description;
+      tags.ImageDescription = patch.description;
+    }
+    if (patch.keywords !== undefined) {
+      tags.Keywords = patch.keywords === null ? null
+        : patch.keywords.map(k => k.trim()).filter(Boolean);
+    }
+    if (patch.dateTimeOriginal !== undefined) {
+      const isAV = mimeType.startsWith('video/') || mimeType.startsWith('audio/');
+      const dateTag = isAV ? 'CreateDate' : 'DateTimeOriginal';
+      tags[dateTag] = patch.dateTimeOriginal === null
+        ? null
+        : BaseMediaProvider.normalizeExifDate(patch.dateTimeOriginal);
+    }
+
+    return tags;
+  }
+
+  /**
+   * Normalize a user-supplied timestamp to ExifTool's "YYYY:MM:DD HH:MM:SS"
+   * write format. Accepts "YYYY-MM-DD HH:MM[:SS]" and ISO-8601
+   * "YYYY-MM-DDTHH:MM[:SS]"; a date-only "YYYY-MM-DD" gets 00:00:00.
+   *
+   * @throws Error on any other shape or out-of-range date parts.
+   */
+  protected static normalizeExifDate(input: string): string {
+    const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(input.trim());
+    if (!m) {
+      throw new Error(`Invalid dateTimeOriginal "${input}" — expected YYYY-MM-DD[ HH:MM[:SS]]`);
+    }
+    const [, y, mo, d, h = '00', mi = '00', s = '00'] = m;
+    const asDate = new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s));
+    if (
+      asDate.getFullYear() !== Number(y) || asDate.getMonth() !== Number(mo) - 1 ||
+      asDate.getDate() !== Number(d) || asDate.getHours() !== Number(h) ||
+      asDate.getMinutes() !== Number(mi) || asDate.getSeconds() !== Number(s)
+    ) {
+      throw new Error(`Invalid dateTimeOriginal "${input}" — date parts out of range`);
+    }
+    return `${y}:${mo}:${d} ${h}:${mi}:${s}`;
+  }
 
   /**
    * Release any resources held by the provider (open file handles, worker

@@ -10,7 +10,25 @@
  * Capabilities that an AssetProvider may declare.
  * Used to advertise which optional operations the provider supports.
  */
-export type ProviderCapability = 'upload' | 'search' | 'thumbnail' | 'stream';
+export type ProviderCapability = 'upload' | 'search' | 'thumbnail' | 'stream' | 'edit';
+
+/**
+ * Patch of user-editable descriptive metadata for an asset.
+ *
+ * Field semantics: `undefined` (absent) = leave unchanged; `null` = clear the
+ * underlying tag(s). `dateTimeOriginal` accepts "YYYY-MM-DD HH:MM[:SS]" or
+ * ISO-8601 "YYYY-MM-DDTHH:MM[:SS]" and is normalized before writing.
+ */
+export interface AssetMetadataPatch {
+  /** Human-readable title — schema.org/name */
+  title?: string | null;
+  /** Caption / description — schema.org/description */
+  description?: string | null;
+  /** Keyword / tag list — schema.org/keywords */
+  keywords?: string[] | null;
+  /** Capture timestamp override */
+  dateTimeOriginal?: string | null;
+}
 
 /**
  * GPS / geographic location data extracted from EXIF GPS tags.
@@ -392,6 +410,16 @@ export interface AssetProvider {
    * Only available when 'stream' is in capabilities.
    */
   stream?(id: string): Promise<NodeJS.ReadableStream | null>;
+
+  /**
+   * Update user-editable descriptive metadata on an asset.
+   * Only available when 'edit' is in capabilities.
+   *
+   * Writes the patch into the source file's embedded metadata (EXIF/IPTC/XMP)
+   * and refreshes the provider's index entry. Returns the refreshed record,
+   * or null if the asset was not found.
+   */
+  updateMetadata?(id: string, patch: AssetMetadataPatch): Promise<AssetRecord | null>;
 
   /**
    * Optional liveness check for the underlying storage backend.

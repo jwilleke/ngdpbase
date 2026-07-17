@@ -10853,6 +10853,7 @@ ${panes}
     app.get('/media/item/:id', (req: Request, res: Response) => void this.mediaItemDetail(req, res));
     app.get('/media/search', (req: Request, res: Response) => void this.mediaSearch(req, res));
     app.get('/media/api/item/:id', (req: Request, res: Response) => void this.mediaApiItem(req, res));
+    app.patch('/media/api/item/:id', (req: Request, res: Response) => void this.mediaApiItemUpdate(req, res));
     app.get('/media/api/year/:year', (req: Request, res: Response) => void this.mediaApiYear(req, res));
     app.get('/media/file/:id', (req: Request, res: Response) => void this.mediaFile(req, res));
     app.get('/media/thumb/:id', (req: Request, res: Response) => void this.mediaThumb(req, res));
@@ -13012,6 +13013,7 @@ ${description}
       }
 
       const commonData = await this.getCommonTemplateData(req);
+      const canEdit = !!wikiContext.userContext && (await wikiContext.hasPermission('asset-edit'));
       return res.render('media-item', {
         ...commonData,
         wikiContext,
@@ -13021,6 +13023,7 @@ ${description}
         albumKeyword,
         sortParam,
         keywordPageExists,
+        canEdit,
         title: `Media — ${item.filename}`
       });
     } catch (err: unknown) {
@@ -13080,6 +13083,82 @@ ${description}
     } catch (err: unknown) {
       logger.error('[media] Error fetching media item API:', err);
       return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  /**
+   * PATCH /media/api/item/:id
+   * Update user-editable metadata (title, description, keywords,
+   * dateTimeOriginal) — written into the source file's EXIF/IPTC/XMP by the
+   * provider, which also refreshes the media index entry.
+   *
+   * Requires the asset-edit permission. Body fields: absent = keep,
+   * null = clear.
+   */
+  async mediaApiItemUpdate(req: Request, res: Response) {
+    const mediaManager = this.engine.getManager('MediaManager');
+    if (!mediaManager) {
+      return res.status(503).json({ error: 'Media manager not enabled' });
+    }
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!wikiContext.userContext || !(await wikiContext.hasPermission('asset-edit'))) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      // ACL-aware existence check first — a private item the caller cannot
+      // see must 404, not get edited blind.
+      const existing = await mediaManager.getItem(req.params.id, wikiContext);
+      if (!existing) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const patch: import('../types/Asset.js').AssetMetadataPatch = {};
+      if ('title' in body) {
+        if (body.title !== null && typeof body.title !== 'string') {
+          return res.status(400).json({ error: 'title must be a string or null' });
+        }
+        patch.title = body.title;
+      }
+      if ('description' in body) {
+        if (body.description !== null && typeof body.description !== 'string') {
+          return res.status(400).json({ error: 'description must be a string or null' });
+        }
+        patch.description = body.description;
+      }
+      if ('keywords' in body) {
+        const kw = body.keywords;
+        if (kw !== null && !(Array.isArray(kw) && kw.every(k => typeof k === 'string'))) {
+          return res.status(400).json({ error: 'keywords must be a string array or null' });
+        }
+        patch.keywords = kw;
+      }
+      if ('dateTimeOriginal' in body) {
+        if (body.dateTimeOriginal !== null && typeof body.dateTimeOriginal !== 'string') {
+          return res.status(400).json({ error: 'dateTimeOriginal must be a string or null' });
+        }
+        patch.dateTimeOriginal = body.dateTimeOriginal;
+      }
+      if (Object.keys(patch).length === 0) {
+        return res.status(400).json({ error: 'No editable fields in request body' });
+      }
+
+      const updated = await mediaManager.updateItemMetadata(req.params.id, patch);
+      const username = wikiContext.userContext.username;
+      logger.info(`[media] ${username} edited metadata on ${req.params.id} (${Object.keys(patch).join(', ')})`);
+      if (!updated) {
+        // Edit succeeded but the item left the index (ngdpbaseignore keyword)
+        return res.json({ removed: true });
+      }
+      return res.json(updated);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.startsWith('Invalid dateTimeOriginal')) {
+        return res.status(400).json({ error: message });
+      }
+      logger.error('[media] Error updating media item metadata:', err);
+      return res.status(500).json({ error: 'Metadata update failed', detail: message });
     }
   }
 

@@ -396,6 +396,29 @@ class MediaManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * Update user-editable metadata (title, description, keywords,
+   * dateTimeOriginal) on a media item. Writes into the source file's
+   * EXIF/IPTC/XMP and refreshes the index entry.
+   *
+   * Caller is responsible for the asset-edit permission check; this method
+   * only enforces provider capability.
+   *
+   * @param id    - Item identifier.
+   * @param patch - Fields to change (absent = keep, null = clear).
+   * @returns The refreshed MediaItem, or null if the id is unknown (or the
+   *          edit evicted the item, e.g. an ngdpbaseignore keyword).
+   * @throws Error when the provider lacks the 'edit' capability, the patch is
+   *         invalid, or the underlying write fails.
+   */
+  async updateItemMetadata(id: string, patch: import('../types/Asset.js').AssetMetadataPatch): Promise<MediaItem | null> {
+    if (!this.provider) throw new Error('Media provider not configured');
+    if (!this.provider.capabilities.includes('edit')) {
+      throw new Error(`Provider ${this.provider.id} does not support metadata editing`);
+    }
+    return this.provider.updateItemMetadata(id, patch);
+  }
+
+  /**
    * List all media items for a given year, filtering out private items
    * that the current user cannot access.
    *

@@ -280,6 +280,7 @@ class UserManager extends BaseManager {
     this.permissions.set('asset-read',   'View assets (attachments)');
     this.permissions.set('asset-upload', 'Upload assets');
     this.permissions.set('asset-delete', 'Delete assets');
+    this.permissions.set('asset-edit',   'Edit asset metadata (EXIF/IPTC/XMP)');
     this.permissions.set('search-page',  'Search pages');
     this.permissions.set('search-user',  'Search users');
     this.permissions.set('user-read',    'View user list and profiles');

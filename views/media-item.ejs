@@ -92,7 +92,55 @@
                 <!-- Metadata panel -->
                 <div class="col-md-4">
                     <div class="card">
-                        <div class="card-header"><i class="fas fa-info-circle"></i> Details</div>
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span><i class="fas fa-info-circle"></i> Details</span>
+                            <% if (typeof canEdit !== 'undefined' && canEdit) { %>
+                            <button class="btn btn-sm btn-outline-secondary py-0 px-2"
+                                    type="button"
+                                    data-bs-toggle="collapse"
+                                    data-bs-target="#mediaEditPanel"
+                                    aria-expanded="false"
+                                    title="Edit metadata">
+                                <i class="fas fa-pen"></i>
+                            </button>
+                            <% } %>
+                        </div>
+                        <% if (typeof canEdit !== 'undefined' && canEdit) { %>
+                        <div class="collapse" id="mediaEditPanel">
+                            <div class="card-body border-bottom">
+                                <form id="mediaEditForm">
+                                    <div class="mb-2">
+                                        <label class="form-label mb-0" for="mediaEditTitle" style="font-size:0.85em;">Title</label>
+                                        <input type="text" class="form-control form-control-sm" id="mediaEditTitle"
+                                               value="<%= (item.metadata && item.metadata.title) ? item.metadata.title : '' %>">
+                                    </div>
+                                    <div class="mb-2">
+                                        <label class="form-label mb-0" for="mediaEditDescription" style="font-size:0.85em;">Caption / Description</label>
+                                        <textarea class="form-control form-control-sm" id="mediaEditDescription" rows="2"><%= (item.metadata && item.metadata.description) ? item.metadata.description : '' %></textarea>
+                                    </div>
+                                    <div class="mb-2">
+                                        <label class="form-label mb-0" for="mediaEditKeywords" style="font-size:0.85em;">Keywords (comma-separated)</label>
+                                        <input type="text" class="form-control form-control-sm" id="mediaEditKeywords"
+                                               value="<%= (item.metadata && item.metadata.keywords) ? (Array.isArray(item.metadata.keywords) ? item.metadata.keywords : [item.metadata.keywords]).join(', ') : '' %>">
+                                    </div>
+                                    <div class="mb-2">
+                                        <label class="form-label mb-0" for="mediaEditDate" style="font-size:0.85em;">Date taken</label>
+                                        <input type="datetime-local" class="form-control form-control-sm" id="mediaEditDate" step="1"
+                                               value="<%= (item.metadata && item.metadata.dateTimeOriginal) ? String(item.metadata.dateTimeOriginal).replace(' ', 'T') : '' %>">
+                                    </div>
+                                    <div class="d-flex align-items-center">
+                                        <button type="submit" class="btn btn-sm btn-primary" id="mediaEditSave">
+                                            <i class="fas fa-save"></i> Save
+                                        </button>
+                                        <span class="ms-2 text-danger" id="mediaEditError" style="font-size:0.85em;"></span>
+                                    </div>
+                                    <div class="text-muted mt-1" style="font-size:0.75em;">
+                                        Writes into the file's EXIF/IPTC/XMP. A one-time <code>_original</code> backup is kept beside the file.
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                        <% } %>
                         <ul class="list-group list-group-flush">
                             <li class="list-group-item d-flex justify-content-between">
                                 <span class="text-muted">Filename</span>
@@ -232,6 +280,55 @@
 </div>
 
 <script>
+// Metadata edit form (asset-edit permission only — form absent otherwise)
+(function () {
+    const form = document.getElementById('mediaEditForm');
+    if (!form) return;
+    form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const errEl = document.getElementById('mediaEditError');
+        const saveBtn = document.getElementById('mediaEditSave');
+        errEl.textContent = '';
+
+        const title = document.getElementById('mediaEditTitle').value.trim();
+        const description = document.getElementById('mediaEditDescription').value.trim();
+        const keywordsRaw = document.getElementById('mediaEditKeywords').value;
+        const keywords = keywordsRaw.split(',').map(function (k) { return k.trim(); }).filter(Boolean);
+        const dateRaw = document.getElementById('mediaEditDate').value; // "YYYY-MM-DDTHH:MM[:SS]" or ""
+
+        const patch = {
+            title: title || null,
+            description: description || null,
+            keywords: keywords.length ? keywords : null
+        };
+        if (dateRaw) patch.dateTimeOriginal = dateRaw.replace('T', ' ');
+
+        saveBtn.disabled = true;
+        try {
+            const resp = await (window.csrfFetch || fetch)('/media/api/item/<%= item.id %>', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(patch)
+            });
+            const data = await resp.json().catch(function () { return {}; });
+            if (!resp.ok) {
+                errEl.textContent = data.error || ('Save failed (' + resp.status + ')');
+                return;
+            }
+            if (data.removed) {
+                // ngdpbaseignore keyword evicted the item from the library
+                window.location.href = '/media';
+                return;
+            }
+            window.location.reload();
+        } catch (err) {
+            errEl.textContent = 'Save failed: ' + err;
+        } finally {
+            saveBtn.disabled = false;
+        }
+    });
+})();
+
 // Keyboard navigation
 (function () {
     const prev = '<% if (prevItem) { %>/media/item/<%= prevItem.id %><%= navSuffix %><% } %>';
