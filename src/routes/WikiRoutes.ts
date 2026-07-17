@@ -13446,12 +13446,30 @@ ${description}
           : (r.expiresAt && now > Date.parse(r.expiresAt)) ? 'expired' : 'active'
       }));
 
+      // Referer-aware Back link — /shares is reached from keyword albums,
+      // the page More menu, the admin dashboard, and the profile card, so a
+      // hardcoded "Media" back button lies most of the time. Same-host
+      // referers only, and never /shares itself (create/revoke redirects).
+      let backLink: string | null = null;
+      const referer = req.get('referer');
+      if (referer) {
+        try {
+          const refUrl = new URL(referer);
+          if (refUrl.host === req.get('host') && !refUrl.pathname.startsWith('/shares')) {
+            backLink = refUrl.pathname + refUrl.search;
+          }
+        } catch {
+          // unparseable referer — no back link
+        }
+      }
+
       const commonData = await this.getCommonTemplateData(req);
       return res.render('shares', {
         ...commonData,
         wikiContext,
         shares,
         isAdmin,
+        backLink,
         baseUrl: this.shareBaseUrl(req),
         createdId: typeof req.query.created === 'string' ? req.query.created : null,
         revoked: req.query.revoked === '1',

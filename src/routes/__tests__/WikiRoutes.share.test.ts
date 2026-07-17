@@ -196,6 +196,7 @@ function shareRenderStub(view: string, data: unknown): string {
     isAdmin: d?.isAdmin,
     shares: d?.shares,
     baseUrl: d?.baseUrl,
+    backLink: d?.backLink,
     html: d?.html
   });
 }
@@ -398,6 +399,34 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
       shareState.enabled = false;
       const res = await request(app).get('/shares');
       expect(res.status).toBe(404);
+    });
+
+    test('backLink follows a same-host referer', async () => {
+      mockUserContext = { ...editorUser };
+      const res = await request(app)
+        .get('/shares')
+        .set('Host', 'wiki.test')
+        .set('Referer', 'http://wiki.test/media/keyword/trip?sort=date');
+      const body = JSON.parse(res.text) as { backLink: string | null };
+      expect(body.backLink).toBe('/media/keyword/trip?sort=date');
+    });
+
+    test('backLink is null for /shares self-referer and cross-host referer', async () => {
+      mockUserContext = { ...editorUser };
+      const self = await request(app)
+        .get('/shares')
+        .set('Host', 'wiki.test')
+        .set('Referer', 'http://wiki.test/shares?created=x');
+      expect((JSON.parse(self.text) as { backLink: string | null }).backLink).toBeNull();
+
+      const cross = await request(app)
+        .get('/shares')
+        .set('Host', 'wiki.test')
+        .set('Referer', 'http://evil.example/media');
+      expect((JSON.parse(cross.text) as { backLink: string | null }).backLink).toBeNull();
+
+      const none = await request(app).get('/shares');
+      expect((JSON.parse(none.text) as { backLink: string | null }).backLink).toBeNull();
     });
   });
 
