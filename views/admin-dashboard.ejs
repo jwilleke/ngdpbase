@@ -261,6 +261,25 @@
     </div>
     <% } %>
 
+    <!-- Row 2b2: Share Manager (#842) — core feature surfaced with the add-on cards -->
+    <% if (typeof shareSummary !== 'undefined' && shareSummary) { %>
+    <div class="row">
+      <div class="col-lg-4 col-md-6 mb-4">
+        <div class="card h-100">
+          <div class="card-header">
+            <h5 class="mb-0"><i class="fas fa-share-nodes me-2"></i>Share Manager</h5>
+          </div>
+          <div class="card-body">
+            <p class="text-muted small mb-3"><%= shareSummary.active %> active of <%= shareSummary.total %> share link<%= shareSummary.total !== 1 ? 's' : '' %> (revoked and expired included in total)</p>
+            <a href="/shares" class="btn btn-sm btn-outline-primary">
+              <i class="fas fa-cog me-1"></i>Manage Share Links
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+    <% } %>
+
     <!-- Row 2c: CatalogSources registered at runtime (#780) -->
     <div class="row">
         <div class="col-12 mb-4">

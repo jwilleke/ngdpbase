@@ -289,6 +289,25 @@
                                     </a></li>
                                     <li><hr class="dropdown-divider"></li>
                                 <% } %>
+                                <%
+                                    // #842: Share entries — one per user-keyword on this page, opening
+                                    // /shares with the keyword prefilled. Shares are keyword-scoped;
+                                    // gated on the same roles that may create shares (decision 2).
+                                    const _shareKws = (typeof shareEnabled !== 'undefined' && shareEnabled
+                                        && typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated
+                                        && currentUser.roles && (currentUser.roles.includes('admin') || currentUser.roles.includes('editor'))
+                                        && typeof metadata !== 'undefined' && metadata && Array.isArray(metadata['user-keywords']))
+                                        ? metadata['user-keywords'].filter(function(k) { return k && k !== 'owner-only'; }).slice(0, 6)
+                                        : [];
+                                %>
+                                <% if (_shareKws.length > 0) { %>
+                                    <% _shareKws.forEach(function(kw) { %>
+                                        <li><a class="dropdown-item" href="/shares?keyword=<%= encodeURIComponent(kw) %>" title="Create a share link for everything tagged '<%= kw %>'">
+                                            <i class="fas fa-share-nodes"></i> Share &lsquo;<%= kw %>&rsquo;&hellip;
+                                        </a></li>
+                                    <% }); %>
+                                    <li><hr class="dropdown-divider"></li>
+                                <% } %>
                                 <% if (typeof pageName !== 'undefined' && pageName) { %>
                                     <li><a class="dropdown-item" href="/view/<%= encodeURIComponent(pageName) %>?view=reader">
                                         <i class="fas fa-book-reader"></i> Show Reader View

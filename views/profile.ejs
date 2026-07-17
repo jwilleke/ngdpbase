@@ -135,6 +135,32 @@
                         </div>
                     </div>
 
+                    <!-- #842: Share Links card — only for users who may create shares -->
+                    <% if (typeof myShares !== 'undefined' && myShares) { %>
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6><i class="fas fa-share-nodes"></i> Share Links <%- include('_help-icon', { slug: 'share-links', label: 'Share Links' }) %></h6>
+                                </div>
+                                <div class="card-body p-0">
+                                    <ul class="list-group list-group-flush">
+                                        <li class="list-group-item d-flex align-items-center justify-content-between">
+                                            <a href="/shares" class="text-decoration-none">
+                                                <i class="fas fa-share-nodes"></i> Manage My Share Links
+                                            </a>
+                                            <span>
+                                                <span class="badge bg-success" title="Active"><%= myShares.active %> active</span>
+                                                <span class="badge bg-secondary" title="Including revoked and expired"><%= myShares.total %> total</span>
+                                            </span>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <% } %>
+
                     <!-- User Preferences Section -->
                     <div class="row mb-4">
                         <div class="col-12">

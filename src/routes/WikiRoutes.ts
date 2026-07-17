@@ -684,6 +684,14 @@ class WikiRoutes {
       contactAvailable = !!recipient;
     }
 
+    // #842: header Share entries + admin dashboard card render only when
+    // ShareManager is enabled. Duck-typed — test fixtures stub getManager
+    // with catch-all objects that lack isEnabled.
+    const shareManagerForChrome = this.engine.getManager('ShareManager');
+    const shareEnabled = typeof shareManagerForChrome?.isEnabled === 'function'
+      ? shareManagerForChrome.isEnabled()
+      : false;
+
     const templateData: {
       currentUser: UserContext | null;
       user: UserContext | null;
@@ -704,6 +712,7 @@ class WikiRoutes {
       registrationRedirectPage: string;
       contactAvailable: boolean;
       contactFooterEnabled: boolean;
+      shareEnabled: boolean;
       csrfToken: string;
       currentUrl: string;
       leftMenu?: string;
@@ -714,6 +723,7 @@ class WikiRoutes {
       currentUser: userContext,
       user: userContext,       // alias
       userContext: userContext, // used by page-history.ejs and other templates
+      shareEnabled,
       csrfToken: req.session?.csrfToken || '', // #663: token for header meta + form _csrf inputs
       currentUrl: req.originalUrl || req.url || '', // #785: lets header.ejs offer "Add to My Links" for any route, not just wiki pages
       appName: configManager?.getProperty(
@@ -5144,6 +5154,22 @@ ${panes}
         ? await (addonsManager as { getProfileSections: (u: unknown) => Promise<unknown[]> }).getProfileSections(freshUser)
         : [];
 
+      // #842: "Share Links" profile section for users who may create shares.
+      let myShares: { active: number; total: number } | null = null;
+      try {
+        const shareManager = this.engine.getManager('ShareManager');
+        if (shareManager?.isEnabled() && this.canManageShares(wikiContext)) {
+          const own = shareManager.list(currentUser.username ?? '');
+          const now = Date.now();
+          myShares = {
+            total: own.length,
+            active: own.filter(r => !r.revokedAt && !(r.expiresAt && now > Date.parse(r.expiresAt))).length
+          };
+        }
+      } catch {
+        // non-fatal — section just won't show
+      }
+
       res.render('profile', {
         ...commonData,
         title: 'Profile',
@@ -5153,6 +5179,7 @@ ${panes}
         availableDateFormats: availableDateFormats,
         contributions, // #640
         addonProfileSections, // #534
+        myShares, // #842
         error: req.query.error,
         success: req.query.success,
         csrfToken: req.session.csrfToken
@@ -6441,6 +6468,22 @@ ${panes}
         // non-fatal — summary card just won't show counts
       }
 
+      // #842 — Share Manager summary card (shown under the Add-ons row).
+      let shareSummary: { active: number; total: number } | null = null;
+      try {
+        const shareManager = this.engine.getManager('ShareManager');
+        if (shareManager?.isEnabled()) {
+          const all = shareManager.list();
+          const now = Date.now();
+          shareSummary = {
+            total: all.length,
+            active: all.filter(r => !r.revokedAt && !(r.expiresAt && now > Date.parse(r.expiresAt))).length
+          };
+        }
+      } catch {
+        // non-fatal — card just won't show
+      }
+
       // #780 — registered CatalogSources at runtime (Thread #1, CatalogManager unification).
       // Pure read of in-memory Map; cheap to do per dashboard render.
       let catalogSources: Array<{ sourceId: string; types: readonly string[]; currentSchemaVersion: number; onDiskSchemaVersion?: number; isStale?: boolean }> = [];
@@ -6483,6 +6526,7 @@ ${panes}
         errorMessage: req.query.error || null,
         addonsSummary,
         addonCards,
+        shareSummary,
         catalogSources
       };
 
