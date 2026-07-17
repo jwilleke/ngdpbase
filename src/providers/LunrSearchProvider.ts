@@ -878,6 +878,19 @@ class LunrSearchProvider extends BaseSearchProvider {
   }
 
   /**
+   * Split a document's `userKeywords` string back into keywords.
+   *
+   * #862: `buildDocumentFromPageData` joins user-keywords with commas (the
+   * only safe separator — keywords may contain spaces, e.g. "grow system").
+   * Every consumer must split on commas too; the previous whitespace splits
+   * meant a page with more than one keyword NEVER matched
+   * `searchByUserKeywords`, and multi-word keywords shattered into words.
+   */
+  private splitUserKeywords(joined: string): string[] {
+    return joined.split(',').map(k => k.trim()).filter(Boolean);
+  }
+
+  /**
    * Get all unique user keywords from indexed documents
    * @returns {Promise<string[]>} List of user keywords
    */
@@ -885,12 +898,7 @@ class LunrSearchProvider extends BaseSearchProvider {
     const keywords = new Set<string>();
     Object.values(this.documents).forEach(doc => {
       if (doc.userKeywords && doc.userKeywords.trim()) {
-        doc.userKeywords.split(/[,\s]+/).forEach(keyword => {
-          const clean = keyword.trim();
-          if (clean) {
-            keywords.add(clean);
-          }
-        });
+        this.splitUserKeywords(doc.userKeywords).forEach(keyword => keywords.add(keyword));
       }
     });
     return Promise.resolve(Array.from(keywords).sort());
@@ -910,7 +918,7 @@ class LunrSearchProvider extends BaseSearchProvider {
       metadata: {
         wordCount: doc.content.split(/\s+/).length,
         systemCategory: doc.systemCategory,
-        userKeywords: doc.userKeywords.split(' ').filter((k: string) => k.trim()),
+        userKeywords: this.splitUserKeywords(doc.userKeywords),
         tags: doc.tags.split(' ').filter((t: string) => t.trim()),
         lastModified: doc.lastModified
       }
@@ -932,7 +940,7 @@ class LunrSearchProvider extends BaseSearchProvider {
         metadata: {
           wordCount: doc.content.split(/\s+/).length,
           systemCategory: doc.systemCategory,
-          userKeywords: doc.userKeywords.split(' ').filter(k => k.trim()),
+          userKeywords: this.splitUserKeywords(doc.userKeywords),
           tags: doc.tags.split(' ').filter(t => t.trim()),
           lastModified: doc.lastModified
         }
@@ -951,7 +959,9 @@ class LunrSearchProvider extends BaseSearchProvider {
     const keywordLower = keyword.toLowerCase();
     const results = Object.values(this.documents)
       .filter(doc => {
-        const docKeywordList = doc.userKeywords.toLowerCase().split(/\s+/).filter(k => k);
+        // #862: comma split — whitespace split turned 'a,b' into one token
+        // and made multi-keyword pages unmatchable.
+        const docKeywordList = this.splitUserKeywords(doc.userKeywords.toLowerCase());
         return docKeywordList.includes(keywordLower);
       })
       .map(doc => ({
@@ -962,7 +972,7 @@ class LunrSearchProvider extends BaseSearchProvider {
         metadata: {
           wordCount: doc.content.split(/\s+/).length,
           systemCategory: doc.systemCategory,
-          userKeywords: doc.userKeywords.split(' ').filter(k => k.trim()),
+          userKeywords: this.splitUserKeywords(doc.userKeywords),
           tags: doc.tags.split(' ').filter(t => t.trim()),
           lastModified: doc.lastModified
         }
