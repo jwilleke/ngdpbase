@@ -20,10 +20,8 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 
 ## 🟠 P1
 
-- [#860](https://github.com/jwilleke/ngdpbase/issues/860) — [BUG] jimstest base-url points at jimstest.nerdsbythehour.com — no DNS record, minted share links are dead (blocks #842 / #855 / #856; operator decision pending)
-- [#842](https://github.com/jwilleke/ngdpbase/issues/842) — EPIC: Keyword share links — anonymous, time-limited, revocable access to media and pages by keyword
-- [#855](https://github.com/jwilleke/ngdpbase/issues/855) — [TEST] Share links: ShareManager unit tests + route tests for public access and management (#842 slice 4)
-- [#856](https://github.com/jwilleke/ngdpbase/issues/856) — [DOCS] Share links: user guide + admin config reference (#842 slice 5)
+- [#864](https://github.com/jwilleke/ngdpbase/issues/864) — [FEATURE] Dawarich photo integration — Immich-compatible adapter on MediaManager
+- [#861](https://github.com/jwilleke/ngdpbase/issues/861) — [FEATURE] Config-gated trust proxy — real client IPs behind Cloudflare Tunnel (share rate limiter + audit)
 
 ## 🟡 P2
 
@@ -32,9 +30,7 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 
 ## 🔵 In review
 
-- [#852](https://github.com/jwilleke/ngdpbase/issues/852) — [FEATURE] ShareManager: token lifecycle, persistence, scope filtering (#842 slice 1)
-- [#853](https://github.com/jwilleke/ngdpbase/issues/853) — [FEATURE] Public share routes: token-gated anonymous album, page, and media views (#842 slice 2)
-- [#854](https://github.com/jwilleke/ngdpbase/issues/854) — [FEATURE] Share management UI and routes for privileged users (#842 slice 3)
+- *(none)*
 
 ## ⏸ Deferred
 
@@ -47,8 +43,11 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 - [#423](https://github.com/jwilleke/ngdpbase/issues/423) — Asset Manager: additional storage providers (S3, Google Drive, plugin-contributed)
 - [#421](https://github.com/jwilleke/ngdpbase/issues/421) — AuthManager: TOTP / 2FA auth provider
 
-## ❓ Needs triage (18)
+## ❓ Needs triage (21)
 
+- [#866](https://github.com/jwilleke/ngdpbase/issues/866) — [FEATURE] Edit asset metadata (title, caption, keywords, DateTimeOriginal) — write-back to source files
+- [#865](https://github.com/jwilleke/ngdpbase/issues/865) — [FEATURE] Orphan attachment report + cleanup — 86% of attachments are referenced by no page
+- [#863](https://github.com/jwilleke/ngdpbase/issues/863) — [BUG] "Login to ngdpbase"
 - [#848](https://github.com/jwilleke/ngdpbase/issues/848) — [FEATURE] Media Manager: surface alternate-format and excluded files ("why isn't my file showing?")
 - [#843](https://github.com/jwilleke/ngdpbase/issues/843) — [FEATURE] Consider Logging App
 - [#811](https://github.com/jwilleke/ngdpbase/issues/811) — [FEATURE] GitGuardian secret-leak incidents → auto-create GitHub issues (org-wide)
