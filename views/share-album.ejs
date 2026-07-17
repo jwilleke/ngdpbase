@@ -17,15 +17,30 @@
 
     <% if (pages.length > 0) { %>
         <h2 class="h5 mt-4">Pages</h2>
-        <ul class="list-group mb-4">
+        <div class="mb-4 d-flex flex-column gap-2">
             <% pages.forEach(function(p) { %>
-                <li class="list-group-item">
-                    <a href="/share/<%= token %>/page/<%= encodeURIComponent(p.name) %>" class="text-decoration-none">
-                        <i class="fas fa-file-lines me-1"></i> <%= p.title || p.name %>
-                    </a>
-                </li>
+                <div class="border rounded shadow-sm p-2">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <a href="/share/<%= token %>/page/<%= encodeURIComponent(p.name) %>" class="text-decoration-none fw-semibold">
+                            <%= p.title || p.name %>
+                        </a>
+                        <span class="badge bg-primary">page</span>
+                    </div>
+                    <% const chips = [].concat(p.category ? [p.category] : [], Array.isArray(p.keywords) ? p.keywords.slice(0, 6) : []); %>
+                    <% if (chips.length > 0) { %>
+                        <div class="mt-1">
+                            <% chips.forEach(function(c) { %><span class="badge bg-light text-dark border me-1"><%= c %></span><% }); %>
+                        </div>
+                    <% } %>
+                    <% if (p.excerpt) { %>
+                        <div class="small text-muted text-truncate"><%= p.excerpt %></div>
+                    <% } %>
+                    <% if (p.lastModified) { %>
+                        <div class="mt-1"><small class="text-muted"><%= String(p.lastModified).slice(0, 10) %></small></div>
+                    <% } %>
+                </div>
             <% }); %>
-        </ul>
+        </div>
     <% } %>
 
     <% if (media.length > 0) { %>

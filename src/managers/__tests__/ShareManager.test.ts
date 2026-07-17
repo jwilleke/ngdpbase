@@ -285,14 +285,28 @@ describe('ShareManager', () => {
   describe('resolveScope() — keyword kind', () => {
     const scope = { kind: 'keyword', keyword: 'trip' } as const;
 
-    test('returns matching media and pages', async () => {
+    test('returns matching media and pages with listing fields', async () => {
       mediaItems = [{ id: 'm1', filePath: '/x/a.jpg', metadata: { keywords: ['trip'] } }];
-      searchResults = [{ name: 'Trip Page', title: 'Trip Page' }];
-      pageMetas['Trip Page'] = { title: 'Trip Page', uuid: 'u-1', 'user-keywords': ['trip'] };
+      searchResults = [{ name: 'Trip Page', title: 'Trip Page', snippet: 'Once upon a trip...' }];
+      pageMetas['Trip Page'] = {
+        title: 'Trip Page',
+        uuid: 'u-1',
+        'user-keywords': ['trip', 'travel'],
+        'system-category': 'general',
+        lastModified: '2026-07-01T00:00:00.000Z'
+      };
 
       const r = await sm.resolveScope(scope);
       expect(r.media.map(m => m.id)).toEqual(['m1']);
-      expect(r.pages).toEqual([{ name: 'Trip Page', title: 'Trip Page', uuid: 'u-1' }]);
+      expect(r.pages).toEqual([{
+        name: 'Trip Page',
+        title: 'Trip Page',
+        uuid: 'u-1',
+        category: 'general',
+        keywords: ['trip', 'travel'],
+        excerpt: 'Once upon a trip...',
+        lastModified: '2026-07-01T00:00:00.000Z'
+      }]);
     });
 
     test('excludes media carrying the owner-only keyword (decision 1)', async () => {

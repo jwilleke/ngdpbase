@@ -271,7 +271,12 @@ export default class ShareManager extends BaseManager {
         pages.push({
           name: result.name,
           title: (result.title) ?? meta.title,
-          uuid: meta.uuid
+          uuid: meta.uuid,
+          // Search-result-style listing fields for the share album (#842).
+          category: (meta['system-category']) ?? meta.category,
+          keywords: meta['user-keywords'] ?? [],
+          excerpt: typeof result.snippet === 'string' ? result.snippet : undefined,
+          lastModified: meta.lastModified
         });
       }
     }

@@ -42,9 +42,17 @@ export interface ShareRecord {
   revokedAt?: string;
 }
 
-/** A page admitted to a share scope, minimal fields for rendering a listing. */
+/** A page admitted to a share scope, with fields for a search-result-style listing. */
 export interface SharePageEntry {
   name: string;
   title?: string;
   uuid?: string;
+  /** System category (falls back to user category) for the chip row. */
+  category?: string;
+  /** User keywords for the chip row. */
+  keywords?: string[];
+  /** Content snippet (same generator as search results). */
+  excerpt?: string;
+  /** ISO 8601 last-modified timestamp. */
+  lastModified?: string;
 }
