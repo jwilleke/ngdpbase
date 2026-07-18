@@ -13014,6 +13014,9 @@ ${description}
 
       const commonData = await this.getCommonTemplateData(req);
       const canEdit = !!wikiContext.userContext && (await wikiContext.hasPermission('asset-edit'));
+      // Keywords-field typeahead suggests the configured user-keywords catalog
+      // (same source as the page editor's keyword dropdown).
+      const userKeywords = canEdit ? this.getUserKeywordsWithDescriptions().map(k => k.label) : [];
       return res.render('media-item', {
         ...commonData,
         wikiContext,
@@ -13024,6 +13027,7 @@ ${description}
         sortParam,
         keywordPageExists,
         canEdit,
+        userKeywords,
         title: `Media — ${item.filename}`
       });
     } catch (err: unknown) {
