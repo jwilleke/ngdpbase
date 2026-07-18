@@ -118,6 +118,8 @@ interface ScanCounters {
   noCaptureDate: number;
   /** Items with a partial (year-only / year+month) EXIF date, defaulted to Jan 1 — surfaced at WARN (#808) */
   partialCaptureDate: number;
+  /** Stale index entries pruned because their file vanished from a scanned folder (#867) */
+  removed: number;
 }
 
 /**
@@ -237,15 +239,20 @@ class FileSystemMediaProvider extends BaseMediaProvider {
       return { scanned: 0, added: 0, updated: 0, errors: 0 };
     }
 
-    const counters: ScanCounters = { scanned: 0, added: 0, updated: 0, errors: 0, excluded: 0, noCaptureDate: 0, partialCaptureDate: 0 };
+    const counters: ScanCounters = { scanned: 0, added: 0, updated: 0, errors: 0, excluded: 0, noCaptureDate: 0, partialCaptureDate: 0, removed: 0 };
     const missingFolders: string[] = [];
     const startMs = Date.now();
     logger.info(
       `[FileSystemMediaProvider] Starting scan (force=${force}) — folders: [${this.config.folders.join(', ')}]`
     );
 
-    // Phase 1: collect all file paths without hitting ExifTool
+    // Phase 1: collect all file paths without hitting ExifTool.
+    // Folders that were walked completely (present on disk, no unreadable
+    // subdirectories) are eligible for stale-entry pruning afterwards (#867);
+    // a folder with read errors is skipped so a transient failure cannot
+    // prune entries whose files are still on disk.
     const allFiles: string[] = [];
+    const prunableFolders: string[] = [];
     for (const folder of this.config.folders) {
       if (!(await fs.pathExists(folder))) {
         logger.warn(`[FileSystemMediaProvider] Folder not found, skipping: ${folder}`);
@@ -256,6 +263,13 @@ class FileSystemMediaProvider extends BaseMediaProvider {
       allFiles.push(...collected.files);
       counters.excluded += collected.excluded;
       counters.errors += collected.dirErrors;
+      if (collected.dirErrors === 0) {
+        prunableFolders.push(folder);
+      } else {
+        logger.warn(
+          `[FileSystemMediaProvider] Skipping stale-entry pruning for ${folder} — ${collected.dirErrors} unreadable subdirectorie(s)`
+        );
+      }
     }
 
     // Dedup: keep only the highest-priority format per directory+stem (#515)
@@ -294,15 +308,50 @@ class FileSystemMediaProvider extends BaseMediaProvider {
       }
     }
 
+    // Phase 3 (#867): prune index entries whose file is no longer a primary
+    // in a fully-scanned folder — moved, deleted, newly ignored, or demoted
+    // to an alternate format. Item ids hash the file path, so a moved file
+    // is re-indexed under a new id and its old entry would otherwise linger
+    // forever (only rebuild() cleared them). Entries under missing or
+    // partially-read folders are kept.
+    this.pruneStaleEntries(new Set(primaryFiles), prunableFolders, counters);
+
     await this.saveIndex();
     const elapsedMs = Date.now() - startMs;
     const msPerFile = counters.scanned > 0 ? (elapsedMs / counters.scanned).toFixed(0) : 'n/a';
     logger.info(
       `[FileSystemMediaProvider] Scan complete in ${elapsedMs}ms — ` +
         `scanned=${counters.scanned} added=${counters.added} updated=${counters.updated} errors=${counters.errors} ` +
-        `(~${msPerFile}ms/file)`
+        `removed=${counters.removed} (~${msPerFile}ms/file)`
     );
     return { ...counters, elapsedMs, missingFolders };
+  }
+
+  /**
+   * Remove index entries whose file path is not among the primaries found in
+   * this scan, restricted to folders that were fully walked (#867).
+   *
+   * @param presentPaths    - All primary file paths collected in this scan.
+   * @param prunableFolders - Folders that exist and were walked without read errors.
+   * @param counters        - Scan counters; `removed` is incremented per pruned entry.
+   */
+  private pruneStaleEntries(
+    presentPaths: Set<string>,
+    prunableFolders: string[],
+    counters: ScanCounters
+  ): void {
+    if (prunableFolders.length === 0) return;
+    const prefixes = prunableFolders.map(f => (f.endsWith(path.sep) ? f : f + path.sep));
+    for (const [id, entry] of Object.entries(this.index)) {
+      if (presentPaths.has(entry.filePath)) continue;
+      if (!prefixes.some(p => entry.filePath.startsWith(p))) continue;
+      logger.debug(`[FileSystemMediaProvider] Pruning stale index entry ${id} — file gone: ${entry.filePath}`);
+      delete this.index[id];
+      counters.removed++;
+    }
+    if (counters.removed > 0) {
+      logger.info(`[FileSystemMediaProvider] Pruned ${counters.removed} stale index entrie(s) for files no longer on disk`);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -448,7 +497,7 @@ class FileSystemMediaProvider extends BaseMediaProvider {
     );
 
     const alternates = entry.alternates;
-    const counters: ScanCounters = { scanned: 0, added: 0, updated: 0, errors: 0, excluded: 0, noCaptureDate: 0, partialCaptureDate: 0 };
+    const counters: ScanCounters = { scanned: 0, added: 0, updated: 0, errors: 0, excluded: 0, noCaptureDate: 0, partialCaptureDate: 0, removed: 0 };
     await this.processFile(entry.filePath, counters, true);
     if (counters.errors > 0) {
       throw new Error(`Metadata written but re-index failed for ${entry.filename} — run a rescan`);

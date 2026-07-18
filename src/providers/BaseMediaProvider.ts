@@ -69,6 +69,8 @@ export interface ScanResult {
   noCaptureDate?: number;
   /** Number of indexed items with a partial (year-only / year+month) EXIF date, defaulted to Jan 1 (#808) */
   partialCaptureDate?: number;
+  /** Number of stale index entries pruned because their file vanished from a scanned folder (#867) */
+  removed?: number;
   /** Total elapsed time in milliseconds */
   elapsedMs?: number;
   /** Folder paths that were configured but not found on disk */

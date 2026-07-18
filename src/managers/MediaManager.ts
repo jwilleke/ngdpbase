@@ -253,7 +253,7 @@ class MediaManager extends BaseManager implements CatalogSource {
     const result = await this.provider.rebuild(onProgress);
     logger.info(
       `[MediaManager] Rebuild complete: scanned=${result.scanned} added=${result.added} ` +
-        `updated=${result.updated} errors=${result.errors} excluded=${result.excluded ?? 0} ` +
+        `updated=${result.updated} errors=${result.errors} removed=${result.removed ?? 0} excluded=${result.excluded ?? 0} ` +
         `noCaptureDate=${result.noCaptureDate ?? 0} partialCaptureDate=${result.partialCaptureDate ?? 0}`
     );
     this.surfaceScanNotifications(result, 'Rebuild');
@@ -344,7 +344,7 @@ class MediaManager extends BaseManager implements CatalogSource {
     const result = await this.provider.scan(force, onProgress);
     logger.info(
       `[MediaManager] Scan complete: scanned=${result.scanned} added=${result.added} ` +
-        `updated=${result.updated} errors=${result.errors} excluded=${result.excluded ?? 0} ` +
+        `updated=${result.updated} errors=${result.errors} removed=${result.removed ?? 0} excluded=${result.excluded ?? 0} ` +
         `noCaptureDate=${result.noCaptureDate ?? 0} partialCaptureDate=${result.partialCaptureDate ?? 0}`
     );
 
