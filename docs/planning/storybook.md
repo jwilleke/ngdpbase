@@ -1,6 +1,6 @@
 # Trip Storybook — planning & discoveries
 
-Status: dry-run validated (2026-07-18, days 1–3 of the 2026 trip west). Epic: see GitHub epic "Trip Storybook". Prototype output: `/Volumes/mjs/travel/2026-travel/2026-trip-west/storybook/` (operator volume, not in repo).
+Status: **full 24-day set generated and imported to jimstest** (2026-07-19; first import cycle done, regenerated set with operator layout feedback awaiting re-import). Epic #871; sub-issues #872 (generator), #873 (day media filter), #874 (import conflict policy / registration). Generator: `2026-trip-west/storybook/generate.py` (operator volume); import-ready output in sibling `storybook-import/` (25 slug-named NCM pages + per-day route PNGs in JSPWiki `-att/` layout for `/admin/import`).
 
 ## Concept
 
@@ -9,8 +9,19 @@ A **storybook** is a set of ordinary NCM pages telling the story of a trip: one 
 Decisions:
 
 - **Ordinary pages, not the Journal addon.** Journal is addon-gated and personal-diary UX; the storybook is a shared publication and must work on any deployment. Journal remains fine as private input notes.
-- **Page-per-day**, wake-to-sleep grouping. Day boundary = overnight-stay visit, not midnight (road-trip legs cross midnight constantly).
+- **Page-per-day**, wake-to-sleep grouping. Implemented as **overnight-gap segmentation**: a travel day = the run of drives between stationary gaps > 5 h (`SLEEP_GAP_H`); same-wake-date segments merge (a 5 h+ midday park must not split a page). A fixed clock boundary (tried first) misfires on pre-dawn departures.
 - **Generator, not a product feature (first).** A script/skill merges the data sources below and emits NCM pages; ngdpbase itself needs almost nothing new. A first-class "storybook addon" (interactive timeline, inline story editing) is parked until the generated form proves limiting.
+- **Slug page names** (`2026-trip-west-day-05`), matching the operator's page-naming convention; display titles live in the H1.
+- **Delivery = `/admin/import` folder import**, not the ingest API: no credential dance, `-att/` sidecar attachments come along (fix e822d66a), one operation for 25 pages. Select format **markdown** explicitly — auto-detect misreads NCM tables/style-blocks as jspwiki (#874).
+
+## Page layout (operator-reviewed, 2026-07-19)
+
+- **Day page**: H1 (`Day NN — date — from → to`), miles, nav, Map (route PNG only — per-stop `[{Location}]` embed dropped), **Story**, Drives table (local times, named stops), Spent table, Photos, nav again. Nav links wrapped as Bootstrap buttons (`%%btn btn-outline-primary btn-sm`) at top and bottom.
+- **Route PNG**: driven `timelinePath` polyline, saturated blue over a white casing (a red line vanishes into OSM's red/orange highways), red white-ringed **markers at every drive stop**.
+- **Photos**: `[{Image src='/media/thumb/<id>?size=…' caption='<Title>' link='/media/item/<id>'}]` — Title renders as the caption under the image; when a Description exists the image floats left (`display='float'`) so the Description sits beside it. Max 8 inline + trip-album link for the rest. Videos as ▶ links.
+- **Index page**: Story first, then a Trip Statistics table (days, miles, states count, mi/day, supercharging, spend link), full-state-name route line, day table.
+- **Link-if-exists**: generator loads all live page titles and wiki-links city/state names (drive tables, route line) only when the page exists — no generated red links.
+- **Title vs Description contract** (media metadata): Title = short headline → card labels, item h1, storybook captions (fixes 88883a2e + e822d66a); Description = long caption → item detail page + beside-photo text.
 
 ## Data sources (all validated on real data)
 
@@ -55,12 +66,14 @@ Map **display** is a separate axis: generation-time static route PNGs stored as 
 - **Per-day route image**: render `timelinePath` polyline on OSM tiles → PNG (python `staticmap`, ~750 points/day worked fine), attach to the day page. No product code.
 - **Interactive trip map** (Leaflet self-hosted, polyline + photo pins, `[{TripMap}]`): parked; only if static images feel flat.
 
-## Gaps found (candidate sub-issues)
+## Gaps found (issue status as of 2026-07-19)
 
-1. **Day-level media filtering** — MediaPlugin/media API are year- or keyword-scoped; a day page wants "photos for 2026-06-24". Interim: per-day trip keywords (`2026-trip-west-<date>`) tagged in digiKam. Real fix: date-range filter on MediaPlugin/media API.
-2. **Ingest with attachments** — the route PNGs must become page attachments at ingest; verify `/api/page/ingest` + NCM image rule cover a local-file flow (NCM fetches remote images; local sidecar files need an upload path).
-3. **Ingest auth friction** — Authentik client-credentials works but is heavy for local agent use; the planned-but-unbuilt static API key (Gap 3, dawarich plan) would simplify. MCP stdio `create_page` is the current low-friction alternative.
-4. MediaGallery/MediaSearch/MediaItem plugins are still Phase-3 stubs; MediaPlugin is the only real renderer.
+1. **Day-level media filtering** (#873, open) — MediaPlugin/media API are year- or keyword-scoped; the generator filters the trip-keyword set by capture time client-side. Real fix: date-range filter on MediaPlugin/media API.
+2. **Import ≠ save** (#874, open; the big one) — folder import writes raw page files, bypassing PageManager save semantics. Consequences seen live: hard duplicate-skip (no overwrite ⇒ regeneration requires delete-first, which loses written Story prose), format auto-detect misreads NCM as jspwiki, imported pages invisible to search until `pages.reindex`, links to them red-link until reindex, and they never appear in Recent Changes. Fix direction: route imports through PageManager save (index + link graph + change journal + versioning) with a skip/overwrite conflict option.
+3. ~~`-att/` sidecar attachments lost on markdown import~~ — **fixed** (e822d66a): attachment import runs for every format and relative refs are rewritten to `/attachments/<id>` at import time.
+4. **Ingest auth friction** (unfiled) — Authentik client-credentials is heavy for local agent use; folder import made it moot for storybook. Static API key (dawarich plan Gap 3) still the candidate if API-path publishing returns.
+5. MediaGallery/MediaSearch/MediaItem plugins are still Phase-3 stubs; MediaPlugin is the only real renderer.
+6. **Regeneration must preserve `## Story`** — not yet implemented in the prototype generator; production requirement for #872 (until then: pages become the master the moment prose is written).
 
 ## Privacy note
 
