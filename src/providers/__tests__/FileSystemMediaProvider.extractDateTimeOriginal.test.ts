@@ -159,22 +159,22 @@ describe('FileSystemMediaProvider.extractCaptureDate() — partial-date detectio
 
   it('full Y-M-D date is NOT partial', () => {
     const tags = { DateTimeOriginal: new MockExifDateTime(2024, 6, 15, 14, 30, 45) };
-    expect(provider['extractCaptureDate'](tags)).toEqual({ date: '2024-06-15 14:30:45', partial: false });
+    expect(provider['extractCaptureDate'](tags)).toEqual({ date: '2024-06-15 14:30:45', partial: false, field: 'DateTimeOriginal' });
   });
 
   it('year-only date IS partial (month + day defaulted to Jan 1)', () => {
     const tags = { DateTimeOriginal: { year: 1940 } };
-    expect(provider['extractCaptureDate'](tags)).toEqual({ date: '1940-01-01 00:00:00', partial: true });
+    expect(provider['extractCaptureDate'](tags)).toEqual({ date: '1940-01-01 00:00:00', partial: true, field: 'DateTimeOriginal' });
   });
 
   it('year+month (no day) IS partial (day defaulted)', () => {
     const tags = { CreateDate: { year: 2026, month: 4 } };
-    expect(provider['extractCaptureDate'](tags)).toEqual({ date: '2026-04-01 00:00:00', partial: true });
+    expect(provider['extractCaptureDate'](tags)).toEqual({ date: '2026-04-01 00:00:00', partial: true, field: 'CreateDate' });
   });
 
   it('full Y-M-D with only the TIME missing is NOT partial (00:00:00 default is harmless)', () => {
     const tags = { CreateDate: { year: 2022, month: 8, day: 19 } };
-    expect(provider['extractCaptureDate'](tags)).toEqual({ date: '2022-08-19 00:00:00', partial: false });
+    expect(provider['extractCaptureDate'](tags)).toEqual({ date: '2022-08-19 00:00:00', partial: false, field: 'CreateDate' });
   });
 
   it('returns null when no field has a usable year', () => {

@@ -142,6 +142,16 @@ abstract class BaseMediaProvider implements AssetProvider {
   abstract getItemsByYear(year: number): Promise<MediaItem[]>;
 
   /**
+   * Return items whose capture timestamp falls within [after, before], sorted
+   * ascending by capture date (#864). Either bound may be omitted. Items with
+   * no capture date are excluded. Default implementation returns [] so
+   * providers without date support degrade gracefully.
+   */
+  getItemsByDateRange(_after?: string, _before?: string): Promise<MediaItem[]> {
+    return Promise.resolve([]);
+  }
+
+  /**
    * Generate (or retrieve cached) thumbnail data for an item.
    *
    * @param id   - The item identifier.

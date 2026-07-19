@@ -433,6 +433,24 @@ class MediaManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * List media items whose capture timestamp falls within [after, before],
+   * ascending by capture date (#864 — Dawarich adapter). Items without a
+   * capture date are excluded by the provider. Privacy filtering applies
+   * only when a wikiContext is passed — the Dawarich compat layer calls
+   * with undefined (its map is a personal, network-restricted surface;
+   * wiki-privacy is a different axis, per the #864 decision).
+   *
+   * @param after       - Inclusive lower bound (ISO-ish string), optional.
+   * @param before      - Inclusive upper bound (ISO-ish string), optional.
+   * @param wikiContext - Caller's WikiContext (undefined = no privacy filter).
+   */
+  async listByDateRange(after?: string, before?: string, wikiContext?: WikiContext): Promise<MediaItem[]> {
+    if (!this.provider) return [];
+    const items = await this.provider.getItemsByDateRange(after, before);
+    return wikiContext ? this.filterPrivateItems(items, wikiContext) : items;
+  }
+
+  /**
    * List all media items linked to a specific wiki page, filtering out
    * private items that the current user cannot access.
    *

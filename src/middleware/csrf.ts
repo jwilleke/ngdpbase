@@ -81,6 +81,16 @@ function continueAfterSave(req: Request, res: Response, next: NextFunction): voi
     return;
   }
 
+  // #864 — the Dawarich Immich-compat routes authenticate via a custom
+  // x-api-key header (server-to-server, no session cookie). A cross-site
+  // forged request cannot attach a custom header without a CORS preflight,
+  // so the cookie-confused-deputy attack CSRF defends against cannot occur;
+  // the route's own gate still constant-time-verifies the key.
+  if (req.path === '/api/search/metadata' && typeof req.headers['x-api-key'] === 'string') {
+    next();
+    return;
+  }
+
   const expected = req.session?.csrfToken;
   const submitted = readSubmittedToken(req);
 

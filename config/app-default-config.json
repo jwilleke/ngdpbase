@@ -1735,6 +1735,9 @@
     ".dtrash",
     ".ts"
   ],
+  "ngdpbase.dawarichCompat.enabled": false,
+  "ngdpbase.dawarichCompat.apiKey": "",
+  "ngdpbase.dawarichCompat.thumbnailSize": "500x500",
   "ngdpbase.media.extensions": [
     "jpg",
     "jpeg",

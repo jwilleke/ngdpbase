@@ -390,6 +390,29 @@ class FileSystemMediaProvider extends BaseMediaProvider {
   }
 
   /**
+   * Return all items whose capture timestamp falls in [after, before],
+   * sorted ascending by capture date (#864 — Dawarich date-window queries).
+   * Bounds are ISO-ish strings compared against `metadata.dateTimeOriginal`
+   * ("YYYY-MM-DD HH:MM:SS"); either bound may be omitted. Items without a
+   * capture date are never returned.
+   */
+  getItemsByDateRange(after?: string, before?: string): Promise<MediaItem[]> {
+    const norm = (s: string): string => s.replace('T', ' ').replace(/(\.\d+)?Z?$/, '');
+    const lo = after ? norm(after) : null;
+    const hi = before ? norm(before) : null;
+    const items = Object.values(this.index)
+      .filter(item => {
+        const d = item.metadata?.dateTimeOriginal;
+        if (typeof d !== 'string' || !d) return false;
+        if (lo && d < lo) return false;
+        if (hi && d > hi) return false;
+        return true;
+      })
+      .sort((a, b) => String(a.metadata?.dateTimeOriginal).localeCompare(String(b.metadata?.dateTimeOriginal)));
+    return Promise.resolve(items);
+  }
+
+  /**
    * Retrieve all items linked to a specific wiki page.
    * Matches items where linkedPageName equals pageName OR where
    * EXIF/XMP keywords include the page name (the primary association mechanism).
@@ -749,6 +772,7 @@ class FileSystemMediaProvider extends BaseMediaProvider {
       const exifCapture = this.extractCaptureDate(rawTags);
       let captureDate = exifCapture?.date ?? null;
       let captureDateSource: 'exif' | 'filename' | undefined = captureDate ? 'exif' : undefined;
+      const captureDateField = exifCapture?.field;
       const partialExifDate = exifCapture?.partial ?? false;
       if (captureDate === null) {
         const fromName = parseDateFromFilename(path.basename(filePath));
@@ -834,7 +858,8 @@ class FileSystemMediaProvider extends BaseMediaProvider {
           gpsLatitude: lat ?? null,
           gpsLongitude: lng ?? null,
           dateTimeOriginal: captureDate,
-          captureDateSource
+          captureDateSource,
+          captureDateField
         }
       };
 
@@ -912,7 +937,7 @@ class FileSystemMediaProvider extends BaseMediaProvider {
    *
    * Returns `null` when no field provides a usable `.year`.
    */
-  private extractCaptureDate(tags: Record<string, unknown>): { date: string; partial: boolean } | null {
+  private extractCaptureDate(tags: Record<string, unknown>): { date: string; partial: boolean; field: string } | null {
     for (const field of FileSystemMediaProvider.CAPTURE_DATE_FIELDS) {
       const dt = tags[field] as {
         year?: number; month?: number; day?: number;
@@ -922,7 +947,10 @@ class FileSystemMediaProvider extends BaseMediaProvider {
         const pad = (n: number): string => String(n).padStart(2, '0');
         const partial = typeof dt.month !== 'number' || typeof dt.day !== 'number';
         const date = `${dt.year}-${pad(dt.month ?? 1)}-${pad(dt.day ?? 1)} ${pad(dt.hour ?? 0)}:${pad(dt.minute ?? 0)}:${pad(dt.second ?? 0)}`;
-        return { date, partial };
+        // `field` records WHICH literal tag matched (#864) — the Dawarich
+        // adapter needs to distinguish DateTimeOriginal from the video
+        // container-date fallbacks, which captureDateSource ('exif') lumps.
+        return { date, partial, field };
       }
     }
     return null;

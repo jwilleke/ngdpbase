@@ -90,6 +90,14 @@ export interface AssetMetadata {
    *  (#809). Absent when the item has no capture date at all. Lets consumers
    *  treat a filename-derived date as non-authoritative. */
   captureDateSource?: 'exif' | 'filename';
+  /** WHICH literal EXIF/QuickTime tag supplied `dateTimeOriginal` when
+   *  captureDateSource is 'exif' (#864): 'DateTimeOriginal' | 'CreateDate' |
+   *  'MediaCreateDate' | 'CreationDate'. Lets the Dawarich adapter apply its
+   *  strict per-type date policy (photos require DateTimeOriginal proper;
+   *  the other three are video container-creation fields). Absent on
+   *  filename-derived or dateless items, and on index entries that predate
+   *  this field (rescan populates it). */
+  captureDateField?: string;
   /** Video/audio codec (ExifTool VideoCodec) — internal compatibility hint */
   videoCodec?: string;
   /** Audio codec (ExifTool AudioFormat / AudioCodec) — internal compatibility hint */

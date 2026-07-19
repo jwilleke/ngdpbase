@@ -44,6 +44,7 @@ import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
 import { renderCommentListHtml } from '../plugins/CommentsPlugin.js';
 import WikiContext from '../context/WikiContext.js';
 import { ThemeManager, getThemeManager } from '../managers/ThemeManager.js';
+import { registerDawarichCompatRoutes } from './DawarichCompatRoutes.js';
 import type { ReportProgress } from '../managers/BackgroundJobManager.js';
 import type { WikiPage, PageFrontmatter } from '../types/Page.js';
 import type AddonsManager from '../managers/AddonsManager.js';
@@ -10857,6 +10858,10 @@ ${panes}
     app.get('/media/api/year/:year', (req: Request, res: Response) => void this.mediaApiYear(req, res));
     app.get('/media/file/:id', (req: Request, res: Response) => void this.mediaFile(req, res));
     app.get('/media/thumb/:id', (req: Request, res: Response) => void this.mediaThumb(req, res));
+
+    // Dawarich Immich-compat adapter (#864) — config-gated, x-api-key auth,
+    // must stay off the public tunnel hostname (LAN/Tailscale only).
+    registerDawarichCompatRoutes(app, this.engine);
 
     // Share routes (#853) — token-gated anonymous access (epic #842 slice 2)
     app.get('/share/:token', (req: Request, res: Response) => void this.shareAlbum(req, res));
