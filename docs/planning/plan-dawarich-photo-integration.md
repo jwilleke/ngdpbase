@@ -2,6 +2,17 @@
 
 Issue: #864
 
+> **Status: IMPLEMENTED** (2026-07-19, commit `b099c5fe`) — all three gaps landed as planned; deltas from the plan are noted inline under "Implementation notes" below. Remaining: operator runs a forced media rescan (populates `captureDateField`), swaps the jimstest test key for the SOPS-managed key, confirms the tunnel excludes the two routes, and eyeballs trip-view timezones in Dawarich.
+
+## Implementation notes (delta from plan)
+
+- **`metadata.captureDateField`** (Gap 1) holds the **literal tag name that supplied the capture date**, exactly one of the `CAPTURE_DATE_FIELDS` chain: `'DateTimeOriginal'` (true shutter time — photos), `'CreateDate'`, `'MediaCreateDate'`, `'CreationDate'` (container/file-creation times — video-typical). **Absent** when the date was filename-derived (`captureDateSource: 'filename'`), when the item has no date, or on index entries written before this field existed — a forced rescan populates it. The strict policy treats "absent" as "fails the check" (pre-rescan feed is correctly empty rather than wrongly permissive).
+- **CSRF** (not in plan): the global CSRF middleware blocked `POST /api/search/metadata`. Exemption added in `src/middleware/csrf.ts` for that exact path **only when the `x-api-key` header is present** — a custom header forces a CORS preflight, so the cookie-confused-deputy attack CSRF defends against cannot occur; the route's gate still constant-time-verifies the key.
+- **Window cache**: per-`(takenAfter, takenBefore)` in-memory cache, 60 s TTL, 50-window LRU-ish cap — matches Dawarich's page-walk access pattern.
+- **Auth ladder verified live on jimstest**: 503 (disabled) → 403 (no `x-api-key` → CSRF) → 401 (wrong key) → 200 (valid key).
+- **Privacy**: implemented as the leaning — `listByDateRange` skips `filterPrivateItems()` when called without a wikiContext; the compat layer passes undefined.
+- Files: `src/routes/DawarichCompatRoutes.ts` (new), `FileSystemMediaProvider.ts` (+`getItemsByDateRange`, `extractCaptureDate` returns `field`), `BaseMediaProvider.ts` (default impl), `MediaManager.listByDateRange`, `types/Asset.ts`, `middleware/csrf.ts`, config defaults. Tests: strict-policy matrix, Immich shape mapping, date-range bounds, per-tag provenance on scan.
+
 ## Background
 
 `maps.nerdsbythehour.com` (Dawarich, self-hosted location-history/Google-Timeline replacement) supports plotting geotagged photos on the map and inside trips, but only by talking to a real Immich or PhotoPrism instance over their native APIs — it has no "point at a folder" mode of its own.
@@ -105,7 +116,7 @@ So the only genuinely missing piece is a **query method**: nothing today filters
 
 Two changes to `FileSystemMediaProvider`, since the strict per-type policy above needs to know which literal tag supplied the date, not just `'exif' | 'filename'`:
 
-1. **Track the source tag.** Extend `extractCaptureDate()`'s return value (or add a sibling field) to record which of `CAPTURE_DATE_FIELDS` actually matched — e.g. `metadata.captureDateField: 'DateTimeOriginal' | 'CreateDate' | 'MediaCreateDate' | 'CreationDate' | null`. This is a small addition to an already-computed loop (`extractCaptureDate()` already iterates `CAPTURE_DATE_FIELDS` and returns on the first match — just also return which field matched). Existing behavior (`metadata.dateTimeOriginal`, `captureDateSource`, the year facet) is unchanged; this is additive.
+1. **Track the source tag.** ✅ Done: `extractCaptureDate()` returns `{ date, partial, field }` and `processFile()` stores `metadata.captureDateField` — the literal matching tag (`'DateTimeOriginal' | 'CreateDate' | 'MediaCreateDate' | 'CreationDate'`), absent for filename-derived/dateless items and for pre-existing index entries until a rescan. Existing behavior (`metadata.dateTimeOriginal`, `captureDateSource`, the year facet) unchanged; additive.
 
 2. **Date-range query.** Add to `BaseMediaProvider`:
 
