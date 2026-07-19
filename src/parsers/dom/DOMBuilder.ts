@@ -317,9 +317,12 @@ class DOMBuilder {
    */
   handleLink(token: Token): void {
     this.ensureParagraph();
+    const attrs = typeof token.metadata?.attrs === 'string' ? token.metadata.attrs : '';
     const link = this.wikiDocument.createElement('a', {
       class: 'wiki-link',
       'data-wiki-link': token.metadata?.link || '',
+      // Raw author attribute string — parsed and whitelisted by DOMLinkHandler
+      ...(attrs ? { 'data-wiki-attrs': attrs } : {}),
       href: `#${token.metadata?.link || ''}`
     });
     link.textContent = token.metadata?.text || token.metadata?.link || '';

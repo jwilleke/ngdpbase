@@ -363,6 +363,24 @@ class DOMLinkHandler {
         // Process link based on type
         await this.processLinkByType(linkElement, linkInfo, linkType, context);
 
+        // Apply author attributes from the third link segment
+        // ([Text|Target|class='…' …]) AFTER type processing so the custom
+        // class extends (not loses) the wiki-link base classes. Parsing and
+        // whitelisting delegate to LinkParser.parseAttributes.
+        const rawAttrs = linkElement.getAttribute('data-wiki-attrs');
+        if (rawAttrs) {
+          const parsed = this.linkParser.parseAttributes(rawAttrs);
+          for (const [name, value] of Object.entries(parsed)) {
+            if (typeof value !== 'string') continue;
+            if (name === 'class') {
+              linkElement.className = `${linkElement.className} ${value}`.trim();
+            } else {
+              linkElement.setAttribute(name, value);
+            }
+          }
+          linkElement.removeAttribute('data-wiki-attrs');
+        }
+
         processedCount++;
 
       } catch (error) {
@@ -613,9 +631,11 @@ class DOMLinkHandler {
     // Format can be:
     // - "PageName" -> display and target are same
     // - "Display|Target" -> custom display text
+    // - "Display|Target|attr='value' …" -> author attributes (whitelisted)
     const parts = element.target.split('|').map(s => s.trim());
     const displayText = parts.length > 1 ? parts[0] : parts[0];
     const linkTarget = parts.length > 1 ? parts[1] : parts[0];
+    const authorAttrString = parts.length > 2 ? parts.slice(2).join('|') : '';
 
     // Create Link object for determineLinkType (requires Link class, not LinkInfo)
     const linkObj = new Link({
@@ -752,6 +772,23 @@ class DOMLinkHandler {
       node.setAttribute('data-link-type', 'internal');
       node.setAttribute('data-target', linkTarget);
     }
+    }
+
+    // Apply author attributes from the third pipe segment AFTER the
+    // type-specific processing so a custom class EXTENDS the base classes
+    // ([Text|Page|class='btn btn-sm'] renders class="wiki-link wikipage btn
+    // btn-sm"). Parsing + whitelisting delegate to LinkParser.parseAttributes.
+    if (authorAttrString) {
+      const parsed = this.linkParser.parseAttributes(authorAttrString);
+      for (const [name, value] of Object.entries(parsed)) {
+        if (typeof value !== 'string') continue;
+        if (name === 'class') {
+          const existing = node.getAttribute('class') ?? '';
+          node.setAttribute('class', `${existing} ${value}`.trim());
+        } else {
+          node.setAttribute(name, value);
+        }
+      }
     }
 
     return node;

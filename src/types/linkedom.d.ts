@@ -38,6 +38,7 @@ declare module 'linkedom' {
     lastChild: LinkedomNode | null;
     setAttribute(name: string, value: string): void;
     getAttribute(name: string): string | null;
+    removeAttribute(name: string): void;
     appendChild(node: LinkedomNode): LinkedomNode;
     insertBefore(newNode: LinkedomNode, referenceNode: LinkedomNode | null): LinkedomNode;
     removeChild(node: LinkedomNode): LinkedomNode;

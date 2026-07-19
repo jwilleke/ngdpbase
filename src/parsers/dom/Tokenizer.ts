@@ -110,6 +110,8 @@ export interface TokenMetadata {
   link?: string;
   /** Link text (for LINK tokens) */
   text?: string;
+  /** Raw attribute string after the second pipe (for LINK tokens), e.g. `class='btn'` */
+  attrs?: string;
   /** Heading level (for HEADING tokens) */
   level?: number;
   /** List marker (* or #) (for LIST_ITEM tokens) */
@@ -757,16 +759,19 @@ export class Tokenizer {
     this.expect(']');
 
     // Check if it's a link (contains |)
-    // JSPWiki syntax: [DisplayText|Target] or [Target]
+    // JSPWiki syntax: [DisplayText|Target] or [Target] or
+    // [DisplayText|Target|attr='value' …] — everything after the second
+    // pipe is the attribute string (split('|', 2) used to DISCARD it).
     if (content.includes('|')) {
-      const parts = content.split('|', 2);
+      const parts = content.split('|');
       const displayText = parts[0].trim();
-      const target = parts[1].trim();
+      const target = (parts[1] ?? '').trim();
+      const attrs = parts.slice(2).join('|').trim();
       return {
         type: TokenType.LINK,
         value: content,
         ...pos,
-        metadata: { link: target, text: displayText }
+        metadata: { link: target, text: displayText, ...(attrs ? { attrs } : {}) }
       };
     }
 
