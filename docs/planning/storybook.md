@@ -22,6 +22,21 @@ Decisions:
 | **Media library index** | Photos/videos with captureDate, GPS EXIF, titles/captions (#866 editable) | `/media/api/year/:year`, `/media/api/item/:id` |
 | **Card statement PDF** | Spend per merchant/day | pypdf text extraction; see the trip expense page generator |
 
+## Location sources for generic deployments (capability tiers)
+
+Most installs will NOT have Dawarich or TeslaMate. Design rule: **maps degrade, storybook never breaks.** The generator unions whatever sources exist; each capability (route polyline, named stops, exact stop times) lights up only when a source provides it.
+
+| Tier | Source | Who has it | Provides |
+|---|---|---|---|
+| 0 (always) | Photo EXIF GPS + timestamps | everyone with phone photos | stop inference by time+place clustering; no route line |
+| 0 (always) | Manual stop entry | everyone | operator-typed stops, geocoded to pins via OSM search (LocationPlugin `name=` path) |
+| 1 (file import) | Google Timeline export JSON | Android / Google Maps users | visits + route polylines, local times with UTC offsets |
+| 1 (file import) | GPX / KML tracks | Garmin, Strava, Komoot, Gaia, AllTrails, car head units, GPS watches — and the practical iOS path (no usable Apple location-history export; a GPS-logger app produces GPX) | route polylines + timestamps; one parser covers the whole ecosystem |
+| 2 (live service) | Dawarich API | self-hosters | points/visits by date range, PostGIS matching, Timeline backfill |
+| 2 (live service) | Vehicle telemetry (TeslaMate, …) | EV self-hosters | enrichment only: miles, charge stops, OSM stop names — never required |
+
+Map **display** is a separate axis: generation-time static route PNGs stored as page attachments (one OSM fetch at generate time; page stays self-contained, consistent with NCM's no-render-time-fetch principle and OSM tile usage policy), plus existing LocationPlugin embeds for pins; a self-hosted Leaflet `[{TripMap}]` plugin is the later interactive upgrade.
+
 ## Hard-won timezone facts
 
 - **TeslaMate `drives.start_date`/`end_date` are naive-UTC timestamps.** A single `AT TIME ZONE 'X'` misreads them as X-local and double-shifts. Correct: treat as UTC, then convert to local-at-location (`AT TIME ZONE 'UTC' AT TIME ZONE <tz>`), or subtract the offset downstream.
