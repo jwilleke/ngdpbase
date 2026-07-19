@@ -16,7 +16,8 @@ Decisions:
 
 | Source | Provides | Access |
 |---|---|---|
-| **Google Maps Timeline export** (`Timeline.json`, semanticSegments) | Visits (placeId, latLng, arrival/departure) and driven route polylines (`timelinePath`); timestamps carry local time + UTC offset | Operator export file. 54k segments back to 2011; 582 in the 24-day trip window (160 visits) |
+| **Dawarich** (self-hosted location tracker, `maps.nerdsbythehour.com`; mj-infra-flux `apps/production/maps`, `freikin/dawarich` + PostGIS) | Live points/visits by date range via REST API (native API-key auth); PostGIS geo queries for photo↔stop matching; imports Google Timeline history for backfill | Preferred source when configured — no manual export step. Bridge auth shared with the #864 photo-integration plan |
+| **Google Maps Timeline export** (`Timeline.json`, semanticSegments) | Visits (placeId, latLng, arrival/departure) and driven route polylines (`timelinePath`); timestamps carry local time + UTC offset | Fallback when no Dawarich. Operator export file. 54k segments back to 2011; 582 in the 24-day trip window (160 visits) |
 | **TeslaMate** (Postgres on deby k8s) | Drive legs, miles, supercharger stops, odometer, and **OSM reverse-geocoded names** (named the trip's hotel directly: "Holiday Inn Express & Suites Merrillville") | Read-only psql via kubectl exec; car "Blue Moon" id 3 |
 | **Media library index** | Photos/videos with captureDate, GPS EXIF, titles/captions (#866 editable) | `/media/api/year/:year`, `/media/api/item/:id` |
 | **Card statement PDF** | Spend per merchant/day | pypdf text extraction; see the trip expense page generator |
@@ -48,4 +49,4 @@ Decisions:
 
 ## Privacy note
 
-Timeline data is ruthless — the dry-run surfaced a hospital visit on departure morning. Generator output must be operator-reviewed before sharing; consider a deny-list of place types/names the generator redacts by default.
+Timeline data is ruthless — the dry-run surfaced a hospital visit on departure morning (operator had it removed, 2026-07-19). Generator output must be operator-reviewed before sharing; consider a deny-list of place types/names the generator redacts by default (medical facilities are the first entry).
