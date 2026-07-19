@@ -19,6 +19,8 @@
   "ngdpbase.application.contact.persist.path": "",
   "ngdpbase.server.port": 3000,
   "ngdpbase.server.host": "localhost",
+  "_comment_trust_proxy": "Express 'trust proxy' setting (#861). Default false: req.ip is the direct socket peer. Behind a reverse proxy / Cloudflare Tunnel set to 'loopback' (or a hop count / subnet list) so req.ip reflects X-Forwarded-For and rate limiting / audit see real client IPs. Never true/enabled on directly-reachable instances — X-Forwarded-For is client-spoofable.",
+  "ngdpbase.server.trust-proxy": false,
   "ngdpbase.session.secret": "ngdpbase-session-secret-change-in-production",
   "ngdpbase.session.max-age": 86400000,
   "ngdpbase.session.secure": false,

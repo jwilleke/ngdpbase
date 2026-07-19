@@ -232,6 +232,18 @@ void (async (): Promise<void> => {
     getResolvedDataPath(key: string, fallback: string): string;
   };
 
+  // #861: behind a reverse proxy / Cloudflare Tunnel every request reaches Express
+  // from localhost, so req.ip is 127.0.0.1 — collapsing the share rate limiter's
+  // `token:ip` buckets and recording the tunnel's IP in audit rows. When enabled,
+  // Express derives req.ip from X-Forwarded-For. Accepts Express's native values:
+  // 'loopback', a hop count, or a subnet list. Default off — on a directly
+  // reachable instance X-Forwarded-For is client-spoofable.
+  const trustProxy = configManager.getProperty<boolean | number | string>('ngdpbase.server.trust-proxy', false);
+  if (trustProxy !== false) {
+    app.set('trust proxy', trustProxy);
+    console.log(`🔒 trust proxy enabled: ${JSON.stringify(trustProxy)}`);
+  }
+
   const activeThemeName = configManager.getProperty('ngdpbase.theme.active', 'default');
   const themesDir = path.join(projectRoot, 'themes');
   const viewsDir = path.join(projectRoot, 'views');
