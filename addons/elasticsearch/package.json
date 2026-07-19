@@ -1,5 +1,5 @@
 {
-  "name": "elasticsearch",
+  "name": "@ngdpbase/elasticsearch",
   "version": "1.0.0",
   "description": "sist2/Elasticsearch NAS asset provider for ngdpbase",
   "private": true,

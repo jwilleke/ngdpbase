@@ -1,7 +1,7 @@
 {
-  "name": "journal",
+  "name": "@ngdpbase/journal",
   "version": "1.0.0",
-  "description": "Personal journal add-on for ngdpbase — entries are wiki pages with timeline rendering",
+  "description": "Personal journal add-on for ngdpbase \u2014 entries are wiki pages with timeline rendering",
   "private": true,
   "type": "module",
   "dependencies": {

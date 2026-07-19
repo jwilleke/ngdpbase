@@ -1,7 +1,7 @@
 {
-  "name": "feeds",
+  "name": "@ngdpbase/feeds",
   "version": "0.1.0",
-  "description": "Data-ingestion framework — scheduled external feeds exposed as CatalogSources (#685)",
+  "description": "Data-ingestion framework \u2014 scheduled external feeds exposed as CatalogSources (#685)",
   "private": true,
   "type": "module",
   "devDependencies": {
