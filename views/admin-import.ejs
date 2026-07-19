@@ -494,7 +494,16 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!statusCell) return;
 
         if (event.status === 'success') {
-            statusCell.innerHTML = '<span class="badge bg-success"><i class="fas fa-check"></i> Imported</span>';
+            if (event.pageTitle) {
+                const viewUrl = '/view/' + encodeURIComponent(event.pageTitle);
+                statusCell.innerHTML = `<a class="badge bg-success text-decoration-none" href="${viewUrl}" target="_blank"><i class="fas fa-check"></i> Imported</a>`;
+                const targetCell = row.querySelector('td:nth-child(2)');
+                if (targetCell) {
+                    targetCell.innerHTML = `<a href="${viewUrl}" target="_blank">${escapeHtml(event.pageTitle)}</a>`;
+                }
+            } else {
+                statusCell.innerHTML = '<span class="badge bg-success"><i class="fas fa-check"></i> Imported</span>';
+            }
             row.classList.remove('table-warning');
             row.classList.add('table-success');
         } else if (event.status === 'skipped') {

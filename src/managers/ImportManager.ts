@@ -117,6 +117,8 @@ export interface ImportProgressEvent {
   status?: 'success' | 'skipped' | 'failed';
   /** Error message if failed */
   error?: string;
+  /** Imported page title (success only) — lets the UI link to /view/<title> */
+  pageTitle?: string;
   /** Final result (for complete event) */
   result?: unknown;
 }
@@ -426,7 +428,8 @@ class ImportManager extends BaseManager {
                 file: filePath,
                 index: i,
                 total: filesToProcess.length,
-                status: 'success'
+                status: 'success',
+                pageTitle: typeof imported.metadata?.['title'] === 'string' ? imported.metadata['title'] : undefined
               });
             }
           }
