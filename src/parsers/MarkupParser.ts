@@ -1227,10 +1227,13 @@ class MarkupParser extends BaseManager {
     while (i < lines.length) {
       const line = lines[i];
 
-      // Check for style block opening: %%class-name (on its own line)
-      const openMatch = line.match(/^\s*%%([a-zA-Z0-9_-]+)\s*$/);
+      // Check for style block opening: %%class-name (on its own line).
+      // Multiple space-separated classes are allowed (e.g. %%btn btn-sm) —
+      // they all land on the one wrapper element, matching how CSS utility
+      // frameworks compose.
+      const openMatch = line.match(/^\s*%%([a-zA-Z0-9_-]+(?:[ \t]+[a-zA-Z0-9_-]+)*)[ \t]*$/);
       if (openMatch) {
-        const className = openMatch[1];
+        const className = openMatch[1].replace(/[ \t]+/g, ' ');
         // Calculate accumulated classes from parent blocks
         const parentClasses = stack.map(s => s.className);
         stack.push({
