@@ -1,4 +1,4 @@
-<%- include('header', { pageName: (item.metadata && item.metadata.caption) ? item.metadata.caption : item.filename }) %>
+<%- include('header', { pageName: (item.metadata && item.metadata.title) ? item.metadata.title : item.filename }) %>
 <%
   const _navParts = [];
   if (albumKeyword) _navParts.push('keyword=' + encodeURIComponent(albumKeyword));
@@ -21,7 +21,7 @@
     <div class="row">
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center mb-4">
-                <h1 itemprop="name"><i class="fas <%= item.mimeType && item.mimeType.startsWith('video/') ? 'fa-film' : 'fa-image' %>"></i> <%= (item.metadata && item.metadata.caption) ? item.metadata.caption : item.filename %></h1>
+                <h1 itemprop="name"><i class="fas <%= item.mimeType && item.mimeType.startsWith('video/') ? 'fa-film' : 'fa-image' %>"></i> <%= (item.metadata && item.metadata.title) ? item.metadata.title : item.filename %></h1>
                 <div>
                     <% if (item.year) { %>
                         <a href="/media/year/<%= item.year %>" class="btn btn-sm me-2 btn-secondary">

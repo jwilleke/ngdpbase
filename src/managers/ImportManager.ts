@@ -644,6 +644,45 @@ class ImportManager extends BaseManager {
       // PageManager lookup failed — proceed with import
     }
 
+    // Import attachments from a sibling `-att/` directory — any format, not
+    // just jspwiki (#874: markdown imports carrying sidecar images, e.g.
+    // generated route maps, silently lost them). Runs before the page write
+    // so relative image refs can be rewritten to the uploaded attachment URLs.
+    let attachments: { imported: number; skipped: number; errors: string[] } | undefined;
+    let attachmentIds: Record<string, string> = {};
+    {
+      const attPageTitle = conversionResult.metadata['title'] as string;
+      try {
+        const attResult = await this.importPageAttachments(filePath, attPageTitle, options);
+        attachments = { imported: attResult.imported, skipped: attResult.skipped, errors: attResult.errors };
+        attachmentIds = attResult.idsByFilename;
+        if (attachments.errors.length > 0) {
+          conversionResult.warnings.push({
+            kind: 'import-attachment',
+            detail: `Attachment errors: ${attachments.errors.join('; ')}`
+          });
+        }
+        if (attachments.imported > 0) {
+          logger.info(`[ImportManager] Imported ${attachments.imported} attachment(s) for "${attPageTitle}"`);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        conversionResult.warnings.push({ kind: 'import-attachment', detail: `Failed to import attachments: ${msg}` });
+      }
+    }
+
+    // Rewrite relative refs to imported attachments (markdown images/links and
+    // plugin src params) to their serving URLs.
+    let rewritten = conversionResult.content;
+    for (const [filename, id] of Object.entries(attachmentIds)) {
+      const url = `/attachments/${id}`;
+      rewritten = rewritten
+        .split(`](${filename})`).join(`](${url})`)
+        .split(`src='${filename}'`).join(`src='${url}'`)
+        .split(`src="${filename}"`).join(`src="${url}"`);
+    }
+    conversionResult.content = rewritten;
+
     // Build frontmatter if we have metadata
     let finalContent = conversionResult.content;
     if (Object.keys(conversionResult.metadata).length > 0 || options.generateUUIDs !== false) {
@@ -655,27 +694,6 @@ class ImportManager extends BaseManager {
     if (written) {
       await fs.ensureDir(path.dirname(targetPath));
       await fs.writeFile(targetPath, finalContent, 'utf-8');
-    }
-
-    // Import attachments for JSPWiki pages
-    let attachments: { imported: number; skipped: number; errors: string[] } | undefined;
-    if (formatId === 'jspwiki') {
-      const pageTitle = conversionResult.metadata['title'] as string;
-      try {
-        attachments = await this.importPageAttachments(filePath, pageTitle, options);
-        if (attachments.errors.length > 0) {
-          conversionResult.warnings.push({
-            kind: 'import-attachment',
-            detail: `Attachment errors: ${attachments.errors.join('; ')}`
-          });
-        }
-        if (attachments.imported > 0) {
-          logger.info(`[ImportManager] Imported ${attachments.imported} attachment(s) for "${pageTitle}"`);
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        conversionResult.warnings.push({ kind: 'import-attachment', detail: `Failed to import attachments: ${msg}` });
-      }
     }
 
     // #728 S3: ConversionResult.warnings is structured; ImportResult.warnings
@@ -933,8 +951,8 @@ class ImportManager extends BaseManager {
     sourceFilePath: string,
     pageName: string,
     options: ImportOptions
-  ): Promise<{ imported: number; skipped: number; errors: string[] }> {
-    const stats = { imported: 0, skipped: 0, errors: [] as string[] };
+  ): Promise<{ imported: number; skipped: number; errors: string[]; idsByFilename: Record<string, string> }> {
+    const stats = { imported: 0, skipped: 0, errors: [] as string[], idsByFilename: {} as Record<string, string> };
 
     // Derive the -att/ directory from the source file path
     const ext = path.extname(sourceFilePath);
@@ -1021,8 +1039,11 @@ class ImportManager extends BaseManager {
           }
         };
 
-        await attachmentManager?.uploadAttachment(fileBuffer, fileInfo, uploadOptions);
+        const uploaded = await attachmentManager?.uploadAttachment(fileBuffer, fileInfo, uploadOptions);
         stats.imported++;
+        if (uploaded?.identifier) {
+          stats.idsByFilename[originalFilename] = uploaded.identifier;
+        }
         logger.info(`[ImportManager] Imported attachment: ${originalFilename} for page "${pageName}"`);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
