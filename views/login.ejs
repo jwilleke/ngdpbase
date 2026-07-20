@@ -5,7 +5,7 @@
         <div class="col-md-6 col-lg-4">
             <div class="card mt-5">
                 <div class="card-header text-center">
-                    <h4>Login to ngdpbase</h4>
+                    <h4>Login to <%= typeof applicationName !== 'undefined' ? applicationName : 'ngdpbase' %></h4>
                 </div>
                 <div class="card-body">
                     <% if (error) { %>
