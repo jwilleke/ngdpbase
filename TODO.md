@@ -30,7 +30,6 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 
 - [#861](https://github.com/jwilleke/ngdpbase/issues/861) — [FEATURE] Config-gated trust proxy — real client IPs behind Cloudflare Tunnel (share rate limiter + audit)
 - [#863](https://github.com/jwilleke/ngdpbase/issues/863) — [BUG] "Login to ngdpbase"
-- [#874](https://github.com/jwilleke/ngdpbase/issues/874) — [FEATURE] Import conflict policy — overwrite/update option instead of hard duplicate-skip
 - [#879](https://github.com/jwilleke/ngdpbase/issues/879) — [BUG] Import auto-detect mislabels NCM markdown as jspwiki — converter corrupts pages
 - [#880](https://github.com/jwilleke/ngdpbase/issues/880) — [BUG] Folder import bypasses save pipeline — no search index, link graph, Recent Changes, or versions
 - [#878](https://github.com/jwilleke/ngdpbase/issues/878) — [BUG] docker-build Trivy scans stale :latest on tag runs — release scan never closes master-ref alerts
