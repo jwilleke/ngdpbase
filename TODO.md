@@ -21,7 +21,6 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 ## 🟠 P1
 
 - [#599](https://github.com/jwilleke/ngdpbase/issues/599) — [BUG] showdown ReDoS vulnerability (CVE-2024-1899) — no upstream patch available; mitigated + weekly watch
-- [#870](https://github.com/jwilleke/ngdpbase/issues/870) — [BUG] attachment (PDF) to Journal
 
 ## 🟡 P2
 
@@ -32,6 +31,7 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 - [#861](https://github.com/jwilleke/ngdpbase/issues/861) — [FEATURE] Config-gated trust proxy — real client IPs behind Cloudflare Tunnel (share rate limiter + audit)
 - [#863](https://github.com/jwilleke/ngdpbase/issues/863) — [BUG] "Login to ngdpbase"
 - [#867](https://github.com/jwilleke/ngdpbase/issues/867) — [BUG] Media index never prunes orphan entries for files moved/deleted on disk
+- [#870](https://github.com/jwilleke/ngdpbase/issues/870) — [BUG] attachment (PDF) to Journal
 
 ## ⏸ Deferred
 
