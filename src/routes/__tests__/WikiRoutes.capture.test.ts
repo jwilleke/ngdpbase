@@ -86,7 +86,7 @@ describe('WikiRoutes capture (#881)', () => {
         url: 'https://example.com/a',
         pageTitle: 'Example',
         text: 'quoted',
-        pageName: expect.stringMatching(/^Captures — \d{4}-\d{2}-\d{2}$/),
+        pageName: expect.stringMatching(/^Captures — jim — \d{4}-\d{2}-\d{2}$/),
         success: false
       }));
     });

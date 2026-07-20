@@ -4074,8 +4074,8 @@ ${panes}
   /** Resolve the capture target page name from config pattern ({date}/{username} tokens). */
   private resolveCaptureDefaultPage(username: string): string {
     const configManager = this.engine.getManager('ConfigurationManager');
-    const pattern = (configManager?.getProperty('ngdpbase.capture.default-page', 'Captures — {date}'))
-      || 'Captures — {date}';
+    const pattern = (configManager?.getProperty('ngdpbase.capture.default-page', 'Captures — {username} — {date}'))
+      || 'Captures — {username} — {date}';
     const date = new Date().toISOString().slice(0, 10);
     return pattern.replace('{date}', date).replace('{username}', username);
   }
