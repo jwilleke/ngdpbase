@@ -771,6 +771,60 @@ See [OtherPage] for more.`;
       expect(mockSavePage).not.toHaveBeenCalled();
       expect(result.warnings.some(w => w.includes('will be overwritten'))).toBe(true);
     });
+
+    // Regression: pages that predate the save pipeline (raw imports) have no
+    // `author` in frontmatter. Carrying author: undefined into savePage made
+    // gray-matter/js-yaml throw "unacceptable kind of an object to dump" and
+    // the whole file failed. Undefined fields must be stripped and author
+    // falls back to the import actor.
+    it('overwrites author-less pre-pipeline pages without undefined metadata', async () => {
+      const authorlessMetadata = {
+        title: 'Existing Page',
+        uuid: 'existing-uuid-1234',
+        slug: 'existing-page',
+        'system-category': 'general'
+        // no author, no created — raw-import shape
+      };
+      conflictEngine.getManager = vi.fn((name) => {
+        if (name === 'PageManager') {
+          return {
+            getPageMetadata: vi.fn().mockResolvedValue(authorlessMetadata),
+            getPage: vi.fn().mockResolvedValue({
+              name: 'Existing Page',
+              content: 'old content',
+              metadata: authorlessMetadata
+            }),
+            savePage: mockSavePage
+          };
+        }
+        if (name === 'RenderingManager') {
+          return { addPageToCache: vi.fn(), updatePageInLinkGraph: mockUpdatePageInLinkGraph };
+        }
+        if (name === 'SearchManager') {
+          return { updatePageInIndex: mockUpdatePageInIndex };
+        }
+        if (name === 'CacheManager') {
+          return { isInitialized: () => false };
+        }
+        if (name === 'AttachmentManager') {
+          return { uploadAttachment: mockUploadAttachment };
+        }
+        return { getProperty: vi.fn().mockReturnValue('./data/pages') };
+      });
+
+      const result = await importOne({
+        dryRun: false,
+        conflictPolicy: 'overwrite',
+        actor: 'importer-user'
+      });
+
+      expect(result.written).toBe(true);
+      expect(mockSavePage).toHaveBeenCalledTimes(1);
+      const savedMetadata = mockSavePage.mock.calls[0][2];
+      expect(savedMetadata.author).toBe('importer-user');
+      expect(savedMetadata.uuid).toBe('existing-uuid-1234');
+      expect(Object.values(savedMetadata).every(v => v !== undefined)).toBe(true);
+    });
   });
 
   describe('save pipeline for new pages (#880)', () => {

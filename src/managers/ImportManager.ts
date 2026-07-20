@@ -483,6 +483,9 @@ class ImportManager extends BaseManager {
       } catch (error) {
         result.failed++;
         const errorMessage = error instanceof Error ? error.message : String(error);
+        // Log it — before this, a failed file's message lived only in the JSON
+        // result and the server log showed nothing for the failure.
+        logger.error(`[ImportManager] Import failed for ${filePath}: ${errorMessage}`);
         result.errors.push({
           file: filePath,
           message: errorMessage,
@@ -810,13 +813,21 @@ class ImportManager extends BaseManager {
       ...base,
       ...importMetadata,
       title: pageTitle,
-      // Identity + provenance fields the import must never replace:
+      // Identity + provenance fields the import must never replace. Pages that
+      // predate the save pipeline (raw imports) may lack `author` — fall back
+      // to the import actor rather than carrying undefined into the save.
       uuid: base.uuid,
-      author: base.author,
+      author: (base.author as string) || options.actor || 'unknown',
       ...(base.created !== undefined ? { created: base.created } : {}),
       ...(base.slug !== undefined ? { slug: base.slug } : {}),
       editor: options.actor || 'unknown'
     };
+    // js-yaml (via gray-matter) throws "unacceptable kind of an object to
+    // dump" on undefined values — strip them so one absent field can't fail
+    // the whole save.
+    for (const key of Object.keys(merged)) {
+      if (merged[key] === undefined) delete merged[key];
+    }
     await pageManager.savePage(pageTitle, content, merged);
     await this.indexImportedPage(pageTitle, (merged.uuid as string) || pageTitle);
   }
@@ -842,6 +853,10 @@ class ImportManager extends BaseManager {
     const metadata = this.buildImportMetadata(conversionResult, pageUuid);
     metadata.author = (metadata.author as string) || options.actor || 'unknown';
     metadata.editor = options.actor || 'unknown';
+    // See overwriteExistingPage: undefined values fail the YAML dump.
+    for (const key of Object.keys(metadata)) {
+      if (metadata[key] === undefined) delete metadata[key];
+    }
     await pageManager.savePage(pageTitle, conversionResult.content, metadata);
     await this.indexImportedPage(pageTitle, (metadata.uuid as string) || pageTitle);
   }
