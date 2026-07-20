@@ -30,6 +30,7 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 ## 🔵 In review
 
 - [#861](https://github.com/jwilleke/ngdpbase/issues/861) — [FEATURE] Config-gated trust proxy — real client IPs behind Cloudflare Tunnel (share rate limiter + audit)
+- [#863](https://github.com/jwilleke/ngdpbase/issues/863) — [BUG] "Login to ngdpbase"
 - [#867](https://github.com/jwilleke/ngdpbase/issues/867) — [BUG] Media index never prunes orphan entries for files moved/deleted on disk
 
 ## ⏸ Deferred
@@ -43,7 +44,7 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 - [#423](https://github.com/jwilleke/ngdpbase/issues/423) — Asset Manager: additional storage providers (S3, Google Drive, plugin-contributed)
 - [#421](https://github.com/jwilleke/ngdpbase/issues/421) — AuthManager: TOTP / 2FA auth provider
 
-## ❓ Needs triage (27)
+## ❓ Needs triage (26)
 
 - [#874](https://github.com/jwilleke/ngdpbase/issues/874) — [FEATURE] Import conflict policy — overwrite/update option instead of hard duplicate-skip
 - [#873](https://github.com/jwilleke/ngdpbase/issues/873) — [FEATURE] Day-level media filtering for MediaPlugin / media API
@@ -53,7 +54,6 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 - [#869](https://github.com/jwilleke/ngdpbase/issues/869) — [EPIC] Unified canonical keywords across pages, media, and external tools (digiKam-compatible)
 - [#868](https://github.com/jwilleke/ngdpbase/issues/868) — [FEATURE] Attachment metadata editing + remaining #866 follow-ups
 - [#865](https://github.com/jwilleke/ngdpbase/issues/865) — [FEATURE] Orphan attachment report + cleanup — 86% of attachments are referenced by no page
-- [#863](https://github.com/jwilleke/ngdpbase/issues/863) — [BUG] "Login to ngdpbase"
 - [#848](https://github.com/jwilleke/ngdpbase/issues/848) — [FEATURE] Media Manager: surface alternate-format and excluded files ("why isn't my file showing?")
 - [#843](https://github.com/jwilleke/ngdpbase/issues/843) — [FEATURE] Consider Logging App
 - [#811](https://github.com/jwilleke/ngdpbase/issues/811) — [FEATURE] GitGuardian secret-leak incidents → auto-create GitHub issues (org-wide)
