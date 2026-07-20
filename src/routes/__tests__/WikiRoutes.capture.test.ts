@@ -115,6 +115,28 @@ describe('WikiRoutes capture (#881)', () => {
       expect(res.render).toHaveBeenCalledWith('capture', expect.objectContaining({ success: true }));
     });
 
+    test('created pages are keyword-tagged capture; appended pages keep their keywords', async () => {
+      // create path
+      let req = createMockReq(authedUser, {}, body);
+      let res = createMockRes();
+      await wikiRoutes.captureSubmit(req, res);
+      let savedMetadata = mockSaveWithContext.mock.calls[0][1];
+      expect(savedMetadata['user-keywords']).toEqual(['capture']);
+
+      // append path — existing page keywords untouched
+      mockSaveWithContext.mockClear();
+      mockGetPage.mockResolvedValue({
+        name: body.pageName,
+        content: '# Existing\n',
+        metadata: { title: body.pageName, uuid: 'uuid-1', author: 'jim', 'user-keywords': ['journal'] }
+      });
+      req = createMockReq(authedUser, {}, body);
+      res = createMockRes();
+      await wikiRoutes.captureSubmit(req, res);
+      savedMetadata = mockSaveWithContext.mock.calls[0][1];
+      expect(savedMetadata['user-keywords']).toEqual(['journal']);
+    });
+
     test('appends to an existing page and checks page-edit', async () => {
       mockGetPage.mockResolvedValue({
         name: body.pageName,

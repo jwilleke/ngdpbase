@@ -4166,9 +4166,17 @@ ${panes}
       const newContent = existing
         ? `${existing.content.replace(/\s*$/, '')}${block}`
         : block.replace(/^\n+/, '');
+      // Pages the capture flow CREATES are keyword-tagged (default: capture)
+      // so they group under keyword search; pages captures are merely appended
+      // to keep their own keywords untouched.
+      const configManager = this.engine.getManager('ConfigurationManager');
+      const captureKeywords = (configManager?.getProperty('ngdpbase.capture.keywords', ['capture']) as string[]) ?? ['capture'];
       const metadata = existing
         ? { ...(existing.metadata as Record<string, unknown>), editor: currentUser.username }
-        : this.buildNewPageMetadata(pageName, { author: currentUser.username });
+        : this.buildNewPageMetadata(pageName, {
+          author: currentUser.username,
+          'user-keywords': captureKeywords
+        });
       if (!existing) metadata.editor = currentUser.username;
 
       const wikiContext = this.createWikiContext(req, {

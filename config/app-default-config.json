@@ -96,6 +96,7 @@
   "_comment_capture": "Bookmarklet capture (#881): optional feature, disabled by default — /capture routes 404 unless enabled per instance. default-page supports {date} and {username} tokens.",
   "ngdpbase.capture.enabled": false,
   "ngdpbase.capture.default-page": "Captures — {username} — {date}",
+  "ngdpbase.capture.keywords": ["capture"],
   "_comment_ncm_image": "ngdp Compatible Markdown embedded-image rule (#728 §2.2). Size cap reuses ngdpbase.attachment.maxsize; the accepted raster set is a fixed NCM allowlist (jpeg/png/gif/webp — SVG/RAW excluded, not configurable: NCM tightens, never loosens). ad-deny-list: hosts/host+path substrings whose images are dropped (not attached); matched case-insensitively against the URL.",
   "ngdpbase.markdown.ncm.image.ad-deny-list": [
     "doubleclick.net",
