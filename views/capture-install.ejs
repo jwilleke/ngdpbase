@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Install Capture Bookmarklet</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 42rem; margin: 0 auto; padding: 2rem 1.25rem; background: Canvas; color: CanvasText; }
+    h1 { font-size: 1.4rem; }
+    .bookmarklet { display: inline-block; padding: .6rem 1.1rem; border: 2px dashed #2563eb; border-radius: 8px; font-weight: 600; text-decoration: none; color: #2563eb; margin: 1rem 0; }
+    ol li { margin: .4rem 0; }
+    code { background: #8882; padding: .1rem .3rem; border-radius: 4px; font-size: .85em; overflow-wrap: anywhere; }
+    .note { font-size: .85rem; opacity: .8; }
+  </style>
+</head>
+<body>
+  <h1>&#128204; Capture Bookmarklet</h1>
+  <p>One-click capture of the page you're reading — URL, title, and any text you've selected — into a wiki page.</p>
+
+  <a class="bookmarklet" href="<%= bookmarklet %>" onclick="return false;">&#128204; Capture to wiki</a>
+
+  <ol>
+    <li>Drag the button above to your browser's bookmarks / favorites bar.</li>
+    <li>On any web page, optionally select some text, then click the bookmark.</li>
+    <li>A small popup opens with the capture pre-filled — adjust the target page if you like, then <strong>Save capture</strong>.</li>
+  </ol>
+
+  <p class="note">The capture is appended to the target page (created if missing) as a quoted block plus a source link — versioned, searchable, and visible in Recent Changes. Default target page comes from the <code>ngdpbase.capture.default-page</code> config pattern (<code>{date}</code> and <code>{username}</code> tokens). You must be logged in to <code><%= baseUrl %></code> for the popup to work.</p>
+</body>
+</html>

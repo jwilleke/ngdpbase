@@ -4018,29 +4018,184 @@ ${panes}
       metadata.editor = permContext.userContext?.username || 'unknown';
       await pageManager.savePageWithContext(wikiContext, metadata as Partial<PageFrontmatter>);
 
-      // Post-save sync — same block as the unified save handler (#405/#438/#245).
-      const attachmentManager = this.engine.getManager('AttachmentManager');
-      if (attachmentManager?.syncPageMentions) attachmentManager.syncPageMentions(pageName, newContent).catch(() => {});
-      const assetManager = this.engine.getManager('AssetManager');
-      if (assetManager?.syncPageAssets) assetManager.syncPageAssets(pageName, newContent).catch(() => {});
-      const renderingManager = this.engine.getManager('RenderingManager');
-      const searchManager = this.engine.getManager('SearchManager');
-      renderingManager.addPageToCache(pageName);
-      renderingManager.updatePageInLinkGraph(pageName, newContent);
-      await searchManager.updatePageInIndex(pageName, {
-        name: pageName,
-        content: newContent,
-        metadata: metadata
-      });
-      const cacheManager = this.engine.getManager('CacheManager');
-      if (cacheManager?.isInitialized?.()) {
-        const uuid = pageManager?.getPageUUID?.(pageName) ?? pageName;
-        await cacheManager.clear(undefined, `rendered-pages:${uuid}:*`);
-      }
+      await this.syncAfterProgrammaticSave(pageName, newContent, metadata);
       return undefined;
     } catch (err) {
       logger.error(`Error attaching upload to page "${pageName}":`, err);
       return 'attach-to-page failed — attachment stored but not linked';
+    }
+  }
+
+  /**
+   * Post-save sync for programmatic page saves outside the unified /save
+   * handler — same block it runs (#405/#438/#245): attachment mentions,
+   * pageAssets, render cache, link graph, search index, rendered-page cache.
+   */
+  private async syncAfterProgrammaticSave(
+    pageName: string,
+    content: string,
+    metadata: Record<string, unknown>
+  ): Promise<void> {
+    const pageManager = this.engine.getManager('PageManager');
+    const attachmentManager = this.engine.getManager('AttachmentManager');
+    if (attachmentManager?.syncPageMentions) attachmentManager.syncPageMentions(pageName, content).catch(() => {});
+    const assetManager = this.engine.getManager('AssetManager');
+    if (assetManager?.syncPageAssets) assetManager.syncPageAssets(pageName, content).catch(() => {});
+    const renderingManager = this.engine.getManager('RenderingManager');
+    const searchManager = this.engine.getManager('SearchManager');
+    renderingManager.addPageToCache(pageName);
+    renderingManager.updatePageInLinkGraph(pageName, content);
+    await searchManager.updatePageInIndex(pageName, {
+      name: pageName,
+      content,
+      metadata
+    });
+    const cacheManager = this.engine.getManager('CacheManager');
+    if (cacheManager?.isInitialized?.()) {
+      const uuid = pageManager?.getPageUUID?.(pageName) ?? pageName;
+      await cacheManager.clear(undefined, `rendered-pages:${uuid}:*`);
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // #881 — browser bookmarklet capture (URL + title + selection → page)
+  // ---------------------------------------------------------------------
+
+  /** Resolve the capture target page name from config pattern ({date}/{username} tokens). */
+  private resolveCaptureDefaultPage(username: string): string {
+    const configManager = this.engine.getManager('ConfigurationManager');
+    const pattern = (configManager?.getProperty('ngdpbase.capture.default-page', 'Captures — {date}'))
+      || 'Captures — {date}';
+    const date = new Date().toISOString().slice(0, 10);
+    return pattern.replace('{date}', date).replace('{username}', username);
+  }
+
+  /** GET /capture — popup form pre-filled from bookmarklet query params. */
+  async captureForm(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
+      if (!currentUser || !currentUser.isAuthenticated) {
+        return res.redirect(`/login?redirect=${encodeURIComponent(req.originalUrl || '/capture')}`);
+      }
+      const url = typeof req.query.url === 'string' ? req.query.url.slice(0, 2048) : '';
+      const title = typeof req.query.title === 'string' ? req.query.title.slice(0, 300) : '';
+      const text = typeof req.query.text === 'string' ? req.query.text.slice(0, 8000) : '';
+      return res.render('capture', {
+        pageName: this.resolveCaptureDefaultPage(currentUser.username || 'anonymous'),
+        url,
+        pageTitle: title,
+        text,
+        csrfToken: req.session?.csrfToken || '',
+        success: false,
+        viewUrl: '',
+        error: ''
+      });
+    } catch (err: unknown) {
+      logger.error('Error rendering capture form:', err);
+      return res.status(500).send('Error rendering capture form');
+    }
+  }
+
+  /** POST /capture — append the capture block to the target page via the save pipeline. */
+  async captureSubmit(req: Request, res: Response) {
+    try {
+      const wikiContext0 = this.createWikiContext(req);
+      const currentUser = wikiContext0.userContext;
+      if (!currentUser || !currentUser.isAuthenticated) {
+        return res.status(401).send('Authentication required');
+      }
+      const pageName = (typeof req.body.pageName === 'string' ? req.body.pageName : '').trim().slice(0, 255);
+      const url = (typeof req.body.url === 'string' ? req.body.url : '').trim().slice(0, 2048);
+      const title = (typeof req.body.title === 'string' ? req.body.title : '').trim().slice(0, 300);
+      const text: string = (typeof req.body.text === 'string' ? req.body.text : '').replace(/\r\n/g, '\n').trim().slice(0, 8000);
+
+      const renderErr = (error: string, status = 400) => res.status(status).render('capture', {
+        pageName: pageName || this.resolveCaptureDefaultPage(currentUser.username || 'anonymous'),
+        url, pageTitle: title, text,
+        csrfToken: req.session?.csrfToken || '',
+        success: false, viewUrl: '', error
+      });
+
+      if (!pageName) return renderErr('Page name is required');
+      if (url) {
+        try {
+          const parsed = new URL(url);
+          if (!parsed.protocol.startsWith('http')) return renderErr('Only http(s) URLs can be captured');
+        } catch {
+          return renderErr('Invalid URL');
+        }
+      }
+      if (!url && !text) return renderErr('Nothing to capture — no URL and no selection');
+
+      // Build the NCM block: blockquoted selection + attributed source link.
+      const date = new Date().toISOString().slice(0, 10);
+      const lines: string[] = [];
+      if (text) {
+        lines.push(...text.split('\n').map(l => `> ${l}`));
+        lines.push('');
+      }
+      if (url) {
+        // Pipes/brackets would break the NCM link segment — flatten them in the label.
+        const label = (title || url).replace(/[|[\]]/g, ' ').replace(/\s+/g, ' ').trim();
+        lines.push(`— [${label}|${url}|target='_blank'] *(captured ${date})*`);
+      } else if (title) {
+        lines.push(`— ${title} *(captured ${date})*`);
+      }
+      const block = `\n\n${lines.join('\n')}\n`;
+
+      const pageManager = this.engine.getManager('PageManager');
+      const existing = await pageManager.getPage(pageName);
+      const permission = existing ? 'page-edit' : 'page-create';
+      if (!(await wikiContext0.hasPermission(permission))) {
+        return renderErr(`You do not have permission to ${existing ? 'edit' : 'create'} this page`, 403);
+      }
+
+      const newContent = existing
+        ? `${existing.content.replace(/\s*$/, '')}${block}`
+        : block.replace(/^\n+/, '');
+      const metadata = existing
+        ? { ...(existing.metadata as Record<string, unknown>), editor: currentUser.username }
+        : this.buildNewPageMetadata(pageName, { author: currentUser.username });
+      if (!existing) metadata.editor = currentUser.username;
+
+      const wikiContext = this.createWikiContext(req, {
+        context: WikiContext.CONTEXT.EDIT,
+        pageName,
+        content: newContent,
+        response: res
+      });
+      await pageManager.savePageWithContext(wikiContext, metadata as Partial<PageFrontmatter>);
+      await this.syncAfterProgrammaticSave(pageName, newContent, metadata);
+
+      return res.render('capture', {
+        pageName, url, pageTitle: title, text: '',
+        csrfToken: req.session?.csrfToken || '',
+        success: true,
+        viewUrl: `/view/${encodeURIComponent(pageName)}`,
+        error: ''
+      });
+    } catch (err: unknown) {
+      logger.error('Error capturing to page:', err);
+      return res.status(500).send('Error capturing to page');
+    }
+  }
+
+  /** GET /capture/install — drag-to-toolbar bookmarklet installer. */
+  async captureInstall(req: Request, res: Response) {
+    try {
+      const configManager = this.engine.getManager('ConfigurationManager');
+      const configured = (configManager?.getProperty('ngdpbase.application.base-url', '')) || '';
+      const baseUrl = (configured || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+      const bookmarklet =
+        'javascript:(function(){var s=window.getSelection?String(window.getSelection()):\'\';' +
+        'var q=\'url=\'+encodeURIComponent(location.href)+\'&title=\'+encodeURIComponent(document.title)+' +
+        '\'&text=\'+encodeURIComponent(s.slice(0,4000));' +
+        `window.open('${baseUrl}/capture?'+q,'ngdpcapture','width=560,height=680');})();`;
+      return res.render('capture-install', { bookmarklet, baseUrl });
+    } catch (err: unknown) {
+      logger.error('Error rendering bookmarklet install page:', err);
+      return res.status(500).send('Error rendering bookmarklet install page');
     }
   }
 
@@ -10776,6 +10931,11 @@ ${panes}
     app.get('/attachments/browse/api', (req: Request, res: Response) => this.browseAttachmentsApi(req, res));
 
     // Attachment routes
+    // #881 — bookmarklet capture
+    app.get('/capture', (req: Request, res: Response) => this.captureForm(req, res));
+    app.post('/capture', (req: Request, res: Response) => this.captureSubmit(req, res));
+    app.get('/capture/install', (req: Request, res: Response) => this.captureInstall(req, res));
+
     app.post('/attachments/upload', (req: Request, res: Response) => {
       attachmentUpload.single('file')(req, res, (err: unknown) => {
         if (err) {

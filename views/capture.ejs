@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Capture</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; padding: 1.25rem; background: Canvas; color: CanvasText; }
+    h1 { font-size: 1.1rem; margin: 0 0 1rem; }
+    label { display: block; font-size: .8rem; font-weight: 600; margin: .75rem 0 .2rem; }
+    input, textarea { width: 100%; box-sizing: border-box; padding: .45rem .55rem; font-size: .9rem; border: 1px solid #8884; border-radius: 6px; background: Field; color: FieldText; }
+    textarea { min-height: 9rem; resize: vertical; font-family: inherit; }
+    .row-actions { margin-top: 1.1rem; display: flex; gap: .6rem; }
+    button, .btn { padding: .5rem 1rem; font-size: .9rem; border-radius: 6px; border: 1px solid #8886; cursor: pointer; text-decoration: none; color: inherit; background: ButtonFace; }
+    button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+    .alert { padding: .6rem .8rem; border-radius: 6px; margin-bottom: 1rem; font-size: .9rem; }
+    .alert-error { background: #fee2e2; color: #991b1b; }
+    .alert-success { background: #dcfce7; color: #166534; }
+    @media (prefers-color-scheme: dark) {
+      .alert-error { background: #7f1d1d; color: #fecaca; }
+      .alert-success { background: #14532d; color: #bbf7d0; }
+    }
+  </style>
+</head>
+<body>
+  <h1>&#128204; Capture</h1>
+
+  <% if (success) { %>
+    <div class="alert alert-success">Captured to <strong><%= pageName %></strong>.</div>
+    <div class="row-actions">
+      <a class="btn" href="<%= viewUrl %>" target="_blank" rel="noopener">Open page</a>
+      <button type="button" onclick="window.close()">Close</button>
+    </div>
+  <% } else { %>
+    <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+    <form method="POST" action="/capture">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <label for="pageName">Save to page</label>
+      <input id="pageName" name="pageName" value="<%= pageName %>" required>
+      <label for="title">Source title</label>
+      <input id="title" name="title" value="<%= pageTitle %>">
+      <label for="url">Source URL</label>
+      <input id="url" name="url" value="<%= url %>">
+      <label for="text">Quote / selection</label>
+      <textarea id="text" name="text"><%= text %></textarea>
+      <div class="row-actions">
+        <button type="submit" class="primary">Save capture</button>
+        <button type="button" onclick="window.close()">Cancel</button>
+      </div>
+    </form>
+  <% } %>
+</body>
+</html>
