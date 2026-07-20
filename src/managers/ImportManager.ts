@@ -43,6 +43,9 @@ import type ConfigurationManager from './ConfigurationManager.js';
 import type ValidationManager from './ValidationManager.js';
 import type PageManager from './PageManager.js';
 import type AttachmentManager from './AttachmentManager.js';
+import type RenderingManager from './RenderingManager.js';
+import type SearchManager from './SearchManager.js';
+import type CacheManager from './CacheManager.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -99,6 +102,17 @@ export interface ImportOptions {
    * Reserved for non-request code paths (#685 ingestion, background jobs).
    */
   actorIsSystem?: boolean;
+
+  /**
+   * What to do when a file's title matches an existing page (#874).
+   * `'skip'` (default) — leave the existing page untouched, report duplicate.
+   * `'overwrite'` — update the existing page in place through PageManager save
+   * semantics: UUID, author, created, and slug preserved; version bumped by
+   * the provider; `editor` = `actor`; search index and link graph updated
+   * in-band (same contract as an edit-form save / the ingest API upsert).
+   * Folder import only — URL import keeps hard-skip.
+   */
+  conflictPolicy?: 'skip' | 'overwrite';
 }
 
 /**
@@ -167,6 +181,9 @@ export interface ImportedFile {
 
   /** UUID of existing page if duplicate */
   existingPageUuid?: string;
+
+  /** True when an existing page was (or on dry run: would be) updated in place (#874) */
+  overwritten?: boolean;
 
   /** Attachment import stats (JSPWiki imports only) */
   attachments?: { imported: number; skipped: number; errors: string[] };
@@ -620,25 +637,37 @@ class ImportManager extends BaseManager {
       }
     }
 
-    // Check for duplicate page by title (metadata only - no content needed)
+    // Check for duplicate page by title (metadata only - no content needed).
+    // conflictPolicy 'overwrite' (#874) falls through instead of returning:
+    // the existing page is updated in place at the write step below.
     const pageTitle = conversionResult.metadata['title'] as string;
+    let overwriteExistingUuid: string | undefined;
     try {
       const pageManager = this.engine.getManager<PageManager>('PageManager');
       const existingMetadata = await pageManager?.getPageMetadata(pageTitle);
       if (existingMetadata) {
         const existingUuid = existingMetadata.uuid || '';
-        logger.info(`[ImportManager] Duplicate detected: "${pageTitle}" already exists as ${existingUuid}`);
-        return {
-          sourcePath: filePath,
-          targetPath,
-          format: formatId,
-          size: 0,
-          metadata: conversionResult.metadata,
-          warnings: [`Page "${pageTitle}" already exists (${existingUuid})`],
-          written: false,
-          skippedReason: 'duplicate',
-          existingPageUuid: existingUuid
-        };
+        if (options.conflictPolicy === 'overwrite') {
+          overwriteExistingUuid = existingUuid;
+          logger.info(`[ImportManager] Conflict: "${pageTitle}" exists as ${existingUuid} — overwriting per conflict policy`);
+          conversionResult.warnings.push({
+            kind: 'import-conflict',
+            detail: `Page "${pageTitle}" already exists (${existingUuid}) — ${options.dryRun ? 'will be overwritten' : 'overwritten in place'}`
+          });
+        } else {
+          logger.info(`[ImportManager] Duplicate detected: "${pageTitle}" already exists as ${existingUuid}`);
+          return {
+            sourcePath: filePath,
+            targetPath,
+            format: formatId,
+            size: 0,
+            metadata: conversionResult.metadata,
+            warnings: [`Page "${pageTitle}" already exists (${existingUuid})`],
+            written: false,
+            skippedReason: 'duplicate',
+            existingPageUuid: existingUuid
+          };
+        }
       }
     } catch {
       // PageManager lookup failed — proceed with import
@@ -689,11 +718,17 @@ class ImportManager extends BaseManager {
       finalContent = this.buildFrontmatter(conversionResult, pageUuid) + '\n\n' + conversionResult.content;
     }
 
-    // Write file (unless dry run)
+    // Write (unless dry run). Overwrite goes through PageManager save
+    // semantics (#874); new pages keep the raw file write (#880 tracks
+    // routing those through the save pipeline too).
     const written = !options.dryRun;
     if (written) {
-      await fs.ensureDir(path.dirname(targetPath));
-      await fs.writeFile(targetPath, finalContent, 'utf-8');
+      if (overwriteExistingUuid !== undefined) {
+        await this.overwriteExistingPage(pageTitle, conversionResult.content, conversionResult.metadata, options);
+      } else {
+        await fs.ensureDir(path.dirname(targetPath));
+        await fs.writeFile(targetPath, finalContent, 'utf-8');
+      }
     }
 
     // #728 S3: ConversionResult.warnings is structured; ImportResult.warnings
@@ -715,8 +750,71 @@ class ImportManager extends BaseManager {
       metadata: conversionResult.metadata,
       warnings: flatWarnings,
       written,
-      attachments
+      attachments,
+      ...(overwriteExistingUuid !== undefined
+        ? { overwritten: true, existingPageUuid: overwriteExistingUuid }
+        : {})
     };
+  }
+
+  /**
+   * Update an existing page in place from an import (#874 conflict policy
+   * 'overwrite'). Mirrors the edit-form / ingest-API save contract: UUID,
+   * author, created, and slug are preserved from the existing page; the
+   * provider bumps the version; `editor` is the import actor; the search
+   * index, link graph, and render cache are updated in-band so the result
+   * is immediately searchable and link-resolvable.
+   */
+  private async overwriteExistingPage(
+    pageTitle: string,
+    content: string,
+    importMetadata: Record<string, unknown>,
+    options: ImportOptions
+  ): Promise<void> {
+    const pageManager = this.engine.getManager<PageManager>('PageManager');
+    if (!pageManager) {
+      throw new Error('PageManager unavailable — cannot overwrite existing page');
+    }
+    const existingPage = await pageManager.getPage(pageTitle);
+    if (!existingPage) {
+      throw new Error(`Existing page "${pageTitle}" disappeared during import`);
+    }
+    const base = { ...(existingPage.metadata as Record<string, unknown>) };
+    const merged: Record<string, unknown> = {
+      ...base,
+      ...importMetadata,
+      title: pageTitle,
+      // Identity + provenance fields the import must never replace:
+      uuid: base.uuid,
+      author: base.author,
+      ...(base.created !== undefined ? { created: base.created } : {}),
+      ...(base.slug !== undefined ? { slug: base.slug } : {}),
+      editor: options.actor || 'unknown'
+    };
+    await pageManager.savePage(pageTitle, content, merged);
+
+    // In-band index/link-graph/cache update — same block as the ingest API.
+    try {
+      const saved = await pageManager.getPage(pageTitle);
+      if (saved) {
+        const renderingManager = this.engine.getManager<RenderingManager>('RenderingManager');
+        const searchManager = this.engine.getManager<SearchManager>('SearchManager');
+        renderingManager?.addPageToCache(pageTitle);
+        renderingManager?.updatePageInLinkGraph(pageTitle, saved.content);
+        await searchManager?.updatePageInIndex(pageTitle, {
+          name: pageTitle,
+          content: saved.content,
+          metadata: saved.metadata
+        });
+        const cacheManager = this.engine.getManager<CacheManager>('CacheManager');
+        if (cacheManager?.isInitialized()) {
+          const uuid = (merged.uuid as string) || pageTitle;
+          await cacheManager.clear(undefined, `rendered-pages:${uuid}:*`);
+        }
+      }
+    } catch (err) {
+      logger.warn(`[ImportManager] Post-overwrite index update failed for "${pageTitle}":`, err);
+    }
   }
 
   /**

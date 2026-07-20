@@ -9425,7 +9425,7 @@ ${panes}
         });
       }
 
-      const { sourceDir, format, limit, generateUUIDs } = req.body;
+      const { sourceDir, format, limit, generateUUIDs, conflictPolicy } = req.body;
 
       if (!sourceDir) {
         return res.status(400).json({
@@ -9439,7 +9439,9 @@ ${panes}
         sourceDir,
         format: format || 'auto',
         limit: limit ? Number(limit) : undefined,
-        generateUUIDs: generateUUIDs !== false
+        generateUUIDs: generateUUIDs !== false,
+        conflictPolicy: conflictPolicy === 'overwrite' ? 'overwrite' : 'skip',
+        actor: currentUser.username
       });
 
       // On failure, surface the per-file messages as a top-level `error` too —
@@ -9486,7 +9488,7 @@ ${panes}
         });
       }
 
-      const { sourceDir, format, limit, generateUUIDs } = req.body;
+      const { sourceDir, format, limit, generateUUIDs, conflictPolicy } = req.body;
 
       if (!sourceDir) {
         return res.status(400).json({
@@ -9501,7 +9503,9 @@ ${panes}
         format: format || 'auto',
         limit: limit ? Number(limit) : undefined,
         generateUUIDs: generateUUIDs !== false,
-        dryRun: false
+        dryRun: false,
+        conflictPolicy: conflictPolicy === 'overwrite' ? 'overwrite' : 'skip',
+        actor: currentUser.username
       });
 
       return res.json({
@@ -9541,7 +9545,7 @@ ${panes}
         return;
       }
 
-      const { sourceDir, format, limit, generateUUIDs } = req.body;
+      const { sourceDir, format, limit, generateUUIDs, conflictPolicy } = req.body;
 
       if (!sourceDir) {
         res.status(400).json({
@@ -9579,6 +9583,8 @@ ${panes}
         limit: limit ? Number(limit) : undefined,
         generateUUIDs: generateUUIDs !== false,
         dryRun: false,
+        conflictPolicy: conflictPolicy === 'overwrite' ? 'overwrite' : 'skip',
+        actor: currentUser.username,
         onProgress
       });
 

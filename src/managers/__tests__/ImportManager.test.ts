@@ -611,4 +611,145 @@ See [OtherPage] for more.`;
       await mgr.shutdown();
     });
   });
+
+  describe('conflict policy (#874)', () => {
+    const existingMetadata = {
+      title: 'Existing Page',
+      uuid: 'existing-uuid-1234',
+      author: 'original-author',
+      created: '2025-01-01T00:00:00.000Z',
+      slug: 'existing-page',
+      'system-category': 'general'
+    };
+
+    let mockSavePage;
+    let mockUpdatePageInIndex;
+    let mockUpdatePageInLinkGraph;
+    let conflictEngine;
+
+    class ConflictConverter {
+      formatId = 'conflict-test';
+      formatName = 'Conflict Test';
+      fileExtensions = ['.ctest'];
+      convert(content) {
+        return {
+          content: `CONVERTED: ${content}`,
+          metadata: { title: 'Existing Page', importedFrom: 'conflict-test' },
+          warnings: []
+        };
+      }
+      canHandle(content, filename) {
+        return filename.endsWith('.ctest');
+      }
+    }
+
+    beforeEach(() => {
+      mockSavePage = vi.fn().mockResolvedValue(undefined);
+      mockUpdatePageInIndex = vi.fn().mockResolvedValue(undefined);
+      mockUpdatePageInLinkGraph = vi.fn();
+      conflictEngine = {
+        getManager: vi.fn((name) => {
+          if (name === 'PageManager') {
+            return {
+              getPageMetadata: vi.fn().mockResolvedValue(existingMetadata),
+              getPage: vi.fn().mockResolvedValue({
+                name: 'Existing Page',
+                content: 'old content',
+                metadata: existingMetadata
+              }),
+              savePage: mockSavePage
+            };
+          }
+          if (name === 'RenderingManager') {
+            return {
+              addPageToCache: vi.fn(),
+              updatePageInLinkGraph: mockUpdatePageInLinkGraph
+            };
+          }
+          if (name === 'SearchManager') {
+            return { updatePageInIndex: mockUpdatePageInIndex };
+          }
+          if (name === 'CacheManager') {
+            return { isInitialized: () => false };
+          }
+          if (name === 'AttachmentManager') {
+            return { uploadAttachment: mockUploadAttachment };
+          }
+          return { getProperty: vi.fn().mockReturnValue('./data/pages') };
+        })
+      };
+    });
+
+    async function importOne(options = {}) {
+      const mgr = new ImportManager(conflictEngine);
+      await mgr.initialize();
+      mgr.registerConverter(new ConflictConverter());
+      const sourceFile = path.join(testDir, 'existing.ctest');
+      await fs.writeFile(sourceFile, 'new imported content');
+      const targetDir = path.join(testDir, 'out-conflict');
+      await fs.ensureDir(targetDir);
+      const result = await mgr.importSinglePage(sourceFile, {
+        sourceDir: testDir,
+        targetDir,
+        format: 'conflict-test',
+        ...options
+      });
+      await mgr.shutdown();
+      return result;
+    }
+
+    it('skips duplicates by default (policy omitted)', async () => {
+      const result = await importOne({ dryRun: false });
+      expect(result.written).toBe(false);
+      expect(result.skippedReason).toBe('duplicate');
+      expect(result.existingPageUuid).toBe('existing-uuid-1234');
+      expect(mockSavePage).not.toHaveBeenCalled();
+    });
+
+    it('skips duplicates when policy is explicitly skip', async () => {
+      const result = await importOne({ dryRun: false, conflictPolicy: 'skip' });
+      expect(result.skippedReason).toBe('duplicate');
+      expect(mockSavePage).not.toHaveBeenCalled();
+    });
+
+    it('overwrites in place via PageManager save, preserving identity fields', async () => {
+      const result = await importOne({
+        dryRun: false,
+        conflictPolicy: 'overwrite',
+        actor: 'importer-user'
+      });
+
+      expect(result.written).toBe(true);
+      expect(result.overwritten).toBe(true);
+      expect(result.skippedReason).toBeUndefined();
+      expect(result.existingPageUuid).toBe('existing-uuid-1234');
+
+      expect(mockSavePage).toHaveBeenCalledTimes(1);
+      const [savedTitle, savedContent, savedMetadata] = mockSavePage.mock.calls[0];
+      expect(savedTitle).toBe('Existing Page');
+      expect(savedContent).toContain('CONVERTED: new imported content');
+      expect(savedMetadata.uuid).toBe('existing-uuid-1234');
+      expect(savedMetadata.author).toBe('original-author');
+      expect(savedMetadata.created).toBe('2025-01-01T00:00:00.000Z');
+      expect(savedMetadata.slug).toBe('existing-page');
+      expect(savedMetadata.editor).toBe('importer-user');
+      expect(savedMetadata.importedFrom).toBe('conflict-test');
+    });
+
+    it('updates search index and link graph in-band after overwrite', async () => {
+      await importOne({ dryRun: false, conflictPolicy: 'overwrite', actor: 'importer-user' });
+      expect(mockUpdatePageInIndex).toHaveBeenCalledTimes(1);
+      expect(mockUpdatePageInIndex.mock.calls[0][0]).toBe('Existing Page');
+      expect(mockUpdatePageInLinkGraph).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports would-overwrite on dry run without saving', async () => {
+      const result = await importOne({ dryRun: true, conflictPolicy: 'overwrite' });
+      expect(result.written).toBe(false);
+      expect(result.overwritten).toBe(true);
+      expect(result.skippedReason).toBeUndefined();
+      expect(mockSavePage).not.toHaveBeenCalled();
+      expect(result.warnings.some(w => w.includes('will be overwritten'))).toBe(true);
+    });
+  });
 });

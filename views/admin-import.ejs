@@ -138,6 +138,14 @@
                             </div>
                         </div>
 
+                        <div class="mb-3">
+                            <label for="conflictPolicy" class="form-label">If a page already exists</label>
+                            <select class="form-select" id="conflictPolicy" name="conflictPolicy">
+                                <option value="skip" selected>Skip — keep the existing page</option>
+                                <option value="overwrite">Overwrite — update in place (new version; UUID and author preserved)</option>
+                            </select>
+                        </div>
+
                         <div class="d-flex gap-2">
                             <button type="submit" class="btn btn-primary" id="preview-btn">
                                 <i class="fas fa-search"></i> Preview Import
@@ -408,7 +416,11 @@ document.addEventListener('DOMContentLoaded', function() {
     executeBtn.addEventListener('click', async function() {
         if (!currentPreviewData) return;
 
-        if (!confirm('Are you sure you want to import these files? This will create new pages.')) {
+        const overwriteSelected = document.getElementById('conflictPolicy').value === 'overwrite';
+        const confirmMsg = overwriteSelected
+            ? 'Are you sure you want to import these files? Existing pages with matching titles will be OVERWRITTEN in place (a new version is created).'
+            : 'Are you sure you want to import these files? This will create new pages.';
+        if (!confirm(confirmMsg)) {
             return;
         }
 
@@ -524,13 +536,16 @@ document.addEventListener('DOMContentLoaded', function() {
         previewTbody.innerHTML = '';
         result.files.forEach(function(file) {
             const isDuplicate = file.skippedReason === 'duplicate';
+            const willOverwrite = !!file.overwritten;
             const row = document.createElement('tr');
             row.dataset.sourcePath = file.sourcePath; // Store for matching during import
-            if (isDuplicate) row.classList.add('table-warning');
+            if (isDuplicate || willOverwrite) row.classList.add('table-warning');
 
             let warningsBadge;
             if (isDuplicate) {
                 warningsBadge = '<span class="badge bg-danger">Duplicate — will skip</span>';
+            } else if (willOverwrite) {
+                warningsBadge = '<span class="badge bg-warning text-dark">Exists — will overwrite</span>';
             } else if (file.warnings && file.warnings.length > 0) {
                 warningsBadge = '<span class="badge bg-warning">' + file.warnings.length + ' warnings</span>';
             } else {
@@ -540,11 +555,13 @@ document.addEventListener('DOMContentLoaded', function() {
             // Status column shows "Ready" before import
             const statusBadge = isDuplicate
                 ? '<span class="badge bg-secondary">Will Skip</span>'
-                : '<span class="badge bg-info">Ready</span>';
+                : (willOverwrite
+                    ? '<span class="badge bg-warning text-dark">Will Overwrite</span>'
+                    : '<span class="badge bg-info">Ready</span>');
 
             row.innerHTML = `
                 <td><code>${escapeHtml(file.sourcePath)}</code></td>
-                <td><code>${isDuplicate ? escapeHtml(file.existingPageUuid || '') : escapeHtml(file.targetPath)}</code></td>
+                <td><code>${(isDuplicate || willOverwrite) ? escapeHtml(file.existingPageUuid || '') : escapeHtml(file.targetPath)}</code></td>
                 <td><span class="badge bg-secondary">${file.format}</span></td>
                 <td>${warningsBadge}</td>
                 <td>${statusBadge}</td>
