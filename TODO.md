@@ -24,12 +24,10 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 
 ## 🟡 P2
 
-- [#877](https://github.com/jwilleke/ngdpbase/issues/877) — [security] pm2 — ReDoS (low) in app dependency
 - [#599](https://github.com/jwilleke/ngdpbase/issues/599) — [BUG] showdown ReDoS vulnerability (CVE-2024-1899) — no upstream patch available; mitigated + weekly watch
 
 ## 🔵 In review
 
-- [#859](https://github.com/jwilleke/ngdpbase/issues/859) — [security] Docker base image ships npm-bundled undici 6.26.0 (1 high) + tar 7.5.15 — bump Node base image
 - [#861](https://github.com/jwilleke/ngdpbase/issues/861) — [FEATURE] Config-gated trust proxy — real client IPs behind Cloudflare Tunnel (share rate limiter + audit)
 - [#867](https://github.com/jwilleke/ngdpbase/issues/867) — [BUG] Media index never prunes orphan entries for files moved/deleted on disk
 
