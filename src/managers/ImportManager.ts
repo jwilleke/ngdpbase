@@ -55,7 +55,13 @@ export interface ImportOptions {
   /** Source directory containing files to import */
   sourceDir: string;
 
-  /** Target directory for converted files (default: data/pages) */
+  /**
+   * Target directory for converted files (default: the live pages dir).
+   * When this resolves to the live pages directory, imports go through
+   * PageManager save semantics (#880 — indexed, versioned, in Recent
+   * Changes). Any other directory means convert-to-files/export mode:
+   * raw markdown files are written there instead.
+   */
   targetDir?: string;
 
   /** Format ID or 'auto' for auto-detection */
@@ -729,13 +735,22 @@ class ImportManager extends BaseManager {
       finalContent = this.buildFrontmatter(conversionResult, pageUuid) + '\n\n' + conversionResult.content;
     }
 
-    // Write (unless dry run). Overwrite goes through PageManager save
-    // semantics (#874); new pages keep the raw file write (#880 tracks
-    // routing those through the save pipeline too).
+    // Write (unless dry run). Imports targeting the live pages directory go
+    // through PageManager save semantics (#874 overwrite, #880 create) so
+    // pages come out indexed, link-resolvable, versioned, and visible in
+    // Recent Changes. An explicit non-live targetDir keeps the raw file
+    // write — that's convert-to-files/export mode.
+    const livePagesDir = path.resolve(
+      (configManager?.getProperty('ngdpbase.page.provider.filesystem.storagedir', './data/pages') as string) ?? './data/pages'
+    );
+    const isLivePagesTarget = path.resolve(options.targetDir ?? livePagesDir) === livePagesDir;
+
     const written = !options.dryRun;
     if (written) {
       if (overwriteExistingUuid !== undefined) {
         await this.overwriteExistingPage(pageTitle, conversionResult.content, conversionResult.metadata, options);
+      } else if (isLivePagesTarget) {
+        await this.createPageThroughPipeline(pageTitle, conversionResult, pageUuid, options);
       } else {
         await fs.ensureDir(path.dirname(targetPath));
         await fs.writeFile(targetPath, finalContent, 'utf-8');
@@ -803,10 +818,43 @@ class ImportManager extends BaseManager {
       editor: options.actor || 'unknown'
     };
     await pageManager.savePage(pageTitle, content, merged);
+    await this.indexImportedPage(pageTitle, (merged.uuid as string) || pageTitle);
+  }
 
-    // In-band index/link-graph/cache update — same block as the ingest API.
+  /**
+   * Create a new page from an import through PageManager save semantics
+   * (#880): the provider assigns versioning and the page comes out indexed,
+   * link-resolvable, and visible in Recent Changes — instead of the raw file
+   * write that left pages invisible to search until a manual reindex.
+   * `author` and `editor` are the import actor (unless the source frontmatter
+   * carries an author).
+   */
+  private async createPageThroughPipeline(
+    pageTitle: string,
+    conversionResult: ConversionResult,
+    pageUuid: string | undefined,
+    options: ImportOptions
+  ): Promise<void> {
+    const pageManager = this.engine.getManager<PageManager>('PageManager');
+    if (!pageManager) {
+      throw new Error('PageManager unavailable — cannot import page');
+    }
+    const metadata = this.buildImportMetadata(conversionResult, pageUuid);
+    metadata.author = (metadata.author as string) || options.actor || 'unknown';
+    metadata.editor = options.actor || 'unknown';
+    await pageManager.savePage(pageTitle, conversionResult.content, metadata);
+    await this.indexImportedPage(pageTitle, (metadata.uuid as string) || pageTitle);
+  }
+
+  /**
+   * In-band index/link-graph/render-cache update after an import save —
+   * same contract as the ingest API. Failures are logged, not fatal: the
+   * page is saved; a manual reindex can recover the index.
+   */
+  private async indexImportedPage(pageTitle: string, uuid: string): Promise<void> {
     try {
-      const saved = await pageManager.getPage(pageTitle);
+      const pageManager = this.engine.getManager<PageManager>('PageManager');
+      const saved = await pageManager?.getPage(pageTitle);
       if (saved) {
         const renderingManager = this.engine.getManager<RenderingManager>('RenderingManager');
         const searchManager = this.engine.getManager<SearchManager>('SearchManager');
@@ -819,12 +867,11 @@ class ImportManager extends BaseManager {
         });
         const cacheManager = this.engine.getManager<CacheManager>('CacheManager');
         if (cacheManager?.isInitialized()) {
-          const uuid = (merged.uuid as string) || pageTitle;
           await cacheManager.clear(undefined, `rendered-pages:${uuid}:*`);
         }
       }
     } catch (err) {
-      logger.warn(`[ImportManager] Post-overwrite index update failed for "${pageTitle}":`, err);
+      logger.warn(`[ImportManager] Post-import index update failed for "${pageTitle}":`, err);
     }
   }
 
@@ -1256,10 +1303,10 @@ class ImportManager extends BaseManager {
   /**
    * Build YAML frontmatter from conversion result
    */
-  private buildFrontmatter(
+  private buildImportMetadata(
     result: ConversionResult,
     pageUuid?: string
-  ): string {
+  ): Record<string, unknown> {
     const frontmatter: Record<string, unknown> = {};
 
     // Normalize keyword fields to arrays before any processing.
@@ -1323,6 +1370,15 @@ class ImportManager extends BaseManager {
     // Add import metadata
     frontmatter['importedFrom'] = (result.metadata['importedFrom'] as string) || 'unknown';
     frontmatter['importedAt'] = new Date().toISOString();
+
+    return frontmatter;
+  }
+
+  private buildFrontmatter(
+    result: ConversionResult,
+    pageUuid?: string
+  ): string {
+    const frontmatter = this.buildImportMetadata(result, pageUuid);
 
     // Build YAML
     const lines = ['---'];

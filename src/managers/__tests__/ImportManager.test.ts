@@ -772,4 +772,126 @@ See [OtherPage] for more.`;
       expect(result.warnings.some(w => w.includes('will be overwritten'))).toBe(true);
     });
   });
+
+  describe('save pipeline for new pages (#880)', () => {
+    let scratchPagesDir;
+    let mockSavePage;
+    let mockUpdatePageInIndex;
+    let mockUpdatePageInLinkGraph;
+    let pipelineEngine;
+
+    class PipelineConverter {
+      formatId = 'pipeline-test';
+      formatName = 'Pipeline Test';
+      fileExtensions = ['.ptest'];
+      convert(content) {
+        return {
+          content: `CONVERTED: ${content}`,
+          metadata: { title: 'Brand New Page', importedFrom: 'pipeline-test' },
+          warnings: []
+        };
+      }
+      canHandle(content, filename) {
+        return filename.endsWith('.ptest');
+      }
+    }
+
+    beforeEach(() => {
+      scratchPagesDir = path.join(testDir, 'live-pages');
+      mockSavePage = vi.fn().mockResolvedValue(undefined);
+      mockUpdatePageInIndex = vi.fn().mockResolvedValue(undefined);
+      mockUpdatePageInLinkGraph = vi.fn();
+      pipelineEngine = {
+        getManager: vi.fn((name) => {
+          if (name === 'PageManager') {
+            return {
+              getPageMetadata: vi.fn().mockResolvedValue(null),
+              getPage: vi.fn().mockResolvedValue({
+                name: 'Brand New Page',
+                content: 'saved content',
+                metadata: { title: 'Brand New Page', uuid: 'new-uuid' }
+              }),
+              savePage: mockSavePage
+            };
+          }
+          if (name === 'RenderingManager') {
+            return { addPageToCache: vi.fn(), updatePageInLinkGraph: mockUpdatePageInLinkGraph };
+          }
+          if (name === 'SearchManager') {
+            return { updatePageInIndex: mockUpdatePageInIndex };
+          }
+          if (name === 'CacheManager') {
+            return { isInitialized: () => false };
+          }
+          if (name === 'AttachmentManager') {
+            return { uploadAttachment: mockUploadAttachment };
+          }
+          return {
+            getProperty: vi.fn((key, def) =>
+              key === 'ngdpbase.page.provider.filesystem.storagedir' ? scratchPagesDir : def)
+          };
+        })
+      };
+    });
+
+    async function importNew(options = {}) {
+      const mgr = new ImportManager(pipelineEngine);
+      await mgr.initialize();
+      mgr.registerConverter(new PipelineConverter());
+      const sourceFile = path.join(testDir, 'new-page.ptest');
+      await fs.writeFile(sourceFile, 'fresh content');
+      const result = await mgr.importSinglePage(sourceFile, {
+        sourceDir: testDir,
+        format: 'pipeline-test',
+        ...options
+      });
+      await mgr.shutdown();
+      return result;
+    }
+
+    it('creates new pages via PageManager.savePage when targeting the live pages dir', async () => {
+      const result = await importNew({ dryRun: false, actor: 'importer-user' });
+
+      expect(result.written).toBe(true);
+      expect(mockSavePage).toHaveBeenCalledTimes(1);
+      const [savedTitle, savedContent, savedMetadata] = mockSavePage.mock.calls[0];
+      expect(savedTitle).toBe('Brand New Page');
+      expect(savedContent).toContain('CONVERTED: fresh content');
+      expect(savedMetadata.title).toBe('Brand New Page');
+      expect(savedMetadata.uuid).toBeTruthy();
+      expect(savedMetadata.author).toBe('importer-user');
+      expect(savedMetadata.editor).toBe('importer-user');
+      expect(savedMetadata.importedFrom).toBe('pipeline-test');
+    });
+
+    it('updates search index and link graph in-band for new pages', async () => {
+      await importNew({ dryRun: false, actor: 'importer-user' });
+      expect(mockUpdatePageInIndex).toHaveBeenCalledTimes(1);
+      expect(mockUpdatePageInIndex.mock.calls[0][0]).toBe('Brand New Page');
+      expect(mockUpdatePageInLinkGraph).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not raw-write a file when the pipeline path is used', async () => {
+      await importNew({ dryRun: false, actor: 'importer-user' });
+      expect(await fs.pathExists(scratchPagesDir)).toBe(false);
+    });
+
+    it('explicit non-live targetDir keeps the raw file write (export mode)', async () => {
+      const exportDir = path.join(testDir, 'export-out');
+      await fs.ensureDir(exportDir);
+      const result = await importNew({ dryRun: false, targetDir: exportDir, actor: 'importer-user' });
+
+      expect(mockSavePage).not.toHaveBeenCalled();
+      expect(result.written).toBe(true);
+      expect(await fs.pathExists(result.targetPath)).toBe(true);
+      const raw = await fs.readFile(result.targetPath, 'utf-8');
+      expect(raw).toContain('CONVERTED: fresh content');
+    });
+
+    it('dry run touches nothing', async () => {
+      await importNew({ dryRun: true });
+      expect(mockSavePage).not.toHaveBeenCalled();
+      expect(mockUpdatePageInIndex).not.toHaveBeenCalled();
+    });
+  });
 });
