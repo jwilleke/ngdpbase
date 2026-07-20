@@ -201,6 +201,7 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
                 <button type="button" class="btn btn-outline-secondary" id="ap-view-grid" title="Grid view"><i class="fas fa-th"></i></button>
             </div>
         </div>
+        <div id="ap-related-kw" class="small mb-2" style="display:none;"></div>
         <div id="ap-results" class="row g-2<% if (_apMode === 'modal') { %> ap-modal-scroll<% } %>">
             <div class="col-12 text-center text-muted py-5" id="ap-placeholder">
                 <i class="fas fa-search fa-2x mb-2 d-block"></i>
@@ -468,6 +469,7 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
                 (_apTotal > AP_PAGE_SIZE ? ' \u00b7 showing ' + start + '\u2013' + end : '');
 
             _apRenderResults();
+            _apLoadRelatedKeywords(src);
 
             if (totalPages > 1) {
                 WikiPagination.renderNav(pagEl, page + 1, totalPages, function (oneBased) {
@@ -483,6 +485,38 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
     }
 
     // ------------------------------------------------------------------ card helpers
+
+    // #882: related-keywords strip — co-occurring user keywords for the first
+    // active keyword filter, ranked by shared-page count (ACL-safe server-side).
+    async function _apLoadRelatedKeywords(src) {
+        var relEl = document.getElementById('ap-related-kw');
+        if (!relEl) return;
+        relEl.style.display = 'none';
+        relEl.innerHTML = '';
+        if (src !== 'page') return;
+        var sel = _apSelectedKw(userKwEl);
+        if ((!sel || !sel.length) && _apHiddenFilters && _apHiddenFilters.keywords) {
+            var hk = _apHiddenFilters.keywords;
+            sel = Array.isArray(hk) ? hk : [hk];
+        }
+        if (!sel || !sel.length || !sel[0]) return;
+        try {
+            var r = await fetch('/api/keywords/related?keyword=' + encodeURIComponent(sel[0]));
+            if (!r.ok) return;
+            var d = await r.json();
+            if (!d.success || !Array.isArray(d.related) || !d.related.length) return;
+            relEl.innerHTML = '<span class="text-muted me-1">Related keywords:</span>' +
+                d.related.map(function (it) {
+                    var n = Number(it.count) || 0;
+                    return '<a class="badge text-bg-info text-decoration-none me-1" href="/search?types=page&keywords=' +
+                        encodeURIComponent(it.keyword) + '" title="' + n + ' shared page' + (n !== 1 ? 's' : '') + '">' +
+                        _esc(it.keyword) + ' <span class="opacity-75">' + n + '</span></a>';
+                }).join('');
+            relEl.style.display = '';
+        } catch (e) {
+            // non-fatal — strip stays hidden
+        }
+    }
 
     function _apMimeIcon(mime) {
         if (!mime) return 'fa-paperclip';

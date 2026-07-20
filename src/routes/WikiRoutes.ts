@@ -3821,6 +3821,54 @@ ${panes}
   }
 
   /**
+   * GET /api/keywords/related?keyword=<kw> (#882) — user keywords that
+   * co-occur with the given keyword, ranked by shared-page count.
+   * ACL-safe by construction: pages come from advancedSearchWithContext,
+   * so private pages the caller can't see never contribute counts.
+   */
+  async relatedKeywords(req: Request, res: Response) {
+    try {
+      const keyword = typeof req.query.keyword === 'string' ? req.query.keyword.trim() : '';
+      if (!keyword) {
+        return res.status(400).json({ success: false, error: 'keyword is required' });
+      }
+      const wikiContext = this.createWikiContext(req);
+      const searchManager = this.engine.getManager('SearchManager') as {
+        advancedSearchWithContext?: (ctx: unknown, opts: Record<string, unknown>) => Promise<Array<{
+          metadata?: { userKeywords?: string };
+        }>>;
+      } | null;
+      if (!searchManager?.advancedSearchWithContext) {
+        return res.status(503).json({ success: false, error: 'SearchManager unavailable' });
+      }
+      const hits = await searchManager.advancedSearchWithContext(wikiContext, {
+        query: '',
+        userKeywords: [keyword],
+        searchIn: ['title'],
+        maxResults: 500
+      });
+      const seed = keyword.toLowerCase();
+      const counts = new Map<string, number>();
+      for (const hit of hits) {
+        const kwStr = hit.metadata?.userKeywords;
+        if (typeof kwStr !== 'string') continue;
+        for (const k of kwStr.split(',').map(s => s.trim()).filter(Boolean)) {
+          if (k.toLowerCase() === seed) continue;
+          counts.set(k, (counts.get(k) ?? 0) + 1);
+        }
+      }
+      const related = [...counts.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, 12)
+        .map(([kw, count]) => ({ keyword: kw, count }));
+      return res.json({ success: true, keyword, pages: hits.length, related });
+    } catch (err: unknown) {
+      logger.error('Error computing related keywords:', err);
+      return res.status(500).json({ success: false, error: 'Error computing related keywords' });
+    }
+  }
+
+  /**
    * API endpoint for search suggestions
    */
   searchSuggestions(req: Request, res: Response) {
@@ -10792,6 +10840,7 @@ ${panes}
     app.post('/create', (req: Request, res: Response) => this.createPageFromTemplate(req, res));
     app.post('/delete/:page', (req: Request, res: Response) => this.deletePage(req, res));
     app.get('/search', (req: Request, res: Response) => this.searchPages(req, res));
+    app.get('/api/keywords/related', (req: Request, res: Response) => this.relatedKeywords(req, res));
     app.get('/kiosk', (req: Request, res: Response) => this.kiosk(req, res));
     app.get('/login', (req: Request, res: Response) => this.loginPage(req, res));
     app.get('/admin/login', (req: Request, res: Response) => this.adminLoginPage(req, res));
