@@ -4187,12 +4187,13 @@ ${panes}
       const configManager = this.engine.getManager('ConfigurationManager');
       const configured = (configManager?.getProperty('ngdpbase.application.base-url', '')) || '';
       const baseUrl = (configured || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+      const applicationName = (configManager?.getProperty('ngdpbase.application-name', 'ngdpbase')) || 'ngdpbase';
       const bookmarklet =
         'javascript:(function(){var s=window.getSelection?String(window.getSelection()):\'\';' +
         'var q=\'url=\'+encodeURIComponent(location.href)+\'&title=\'+encodeURIComponent(document.title)+' +
         '\'&text=\'+encodeURIComponent(s.slice(0,4000));' +
         `window.open('${baseUrl}/capture?'+q,'ngdpcapture','width=560,height=680');})();`;
-      return res.render('capture-install', { bookmarklet, baseUrl });
+      return res.render('capture-install', { bookmarklet, baseUrl, applicationName });
     } catch (err: unknown) {
       logger.error('Error rendering bookmarklet install page:', err);
       return res.status(500).send('Error rendering bookmarklet install page');

@@ -171,7 +171,8 @@ describe('WikiRoutes capture (#881)', () => {
       await wikiRoutes.captureInstall(req, res);
       expect(res.render).toHaveBeenCalledWith('capture-install', expect.objectContaining({
         bookmarklet: expect.stringContaining("window.open('http://localhost:3000/capture?'"),
-        baseUrl: 'http://localhost:3000'
+        baseUrl: 'http://localhost:3000',
+        applicationName: 'ngdpbase'
       }));
     });
   });
