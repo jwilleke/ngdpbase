@@ -53,6 +53,18 @@ describe('JSPWikiConverter', () => {
       expect(converter.canHandle('# Markdown Heading', 'page.wiki')).toBe(false);
       expect(converter.canHandle('**bold** text', 'page.wiki')).toBe(false);
     });
+
+    // #879 — YAML frontmatter means markdown/NCM even when the body contains
+    // JSPWiki-shared forms (||table||, %%style, __bold__).
+    it('should not content-detect NCM with YAML frontmatter', () => {
+      const ncm = '---\ntitle: X\nncmVersion: 2\n---\n\n||H1||H2||\n%%table-striped\n__b__\n';
+      expect(converter.canHandle(ncm, 'page.wiki')).toBe(false);
+      expect(converter.canHandle(ncm, 'exported-page')).toBe(false);
+    });
+
+    it('frontmatter guard does not override an explicit .txt extension', () => {
+      expect(converter.canHandle('---\ntitle: X\n---\n\nbody', 'page.txt')).toBe(true);
+    });
   });
 
   describe('headings conversion', () => {

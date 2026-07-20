@@ -75,6 +75,13 @@ class JSPWikiConverter implements IContentConverter {
       return true;
     }
 
+    // YAML frontmatter means markdown/NCM, never JSPWiki (#879) — NCM shares
+    // ||table|| and %%style forms with JSPWiki, so without this guard the
+    // patterns below claim NCM content and the conversion mangles it.
+    if (/^---\r?\n/.test(content)) {
+      return false;
+    }
+
     // Content-based detection: check for JSPWiki-specific patterns
     const jspwikiPatterns = [
       /^\s*!{1,3}\s+\S/m,         // JSPWiki headings (!, !!, !!!)

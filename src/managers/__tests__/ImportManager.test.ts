@@ -129,6 +129,26 @@ describe('ImportManager', () => {
       const format = importManager.detectFormat('plain text', 'file.xyz');
       expect(format).toBeNull();
     });
+
+    // #879 — NCM markdown shares ||table|| and %%style forms with JSPWiki;
+    // auto-detect must never hand .md files to the JSPWiki converter.
+    it('detects NCM .md with JSPWiki-like constructs as markdown, not jspwiki', () => {
+      const ncm = '---\ntitle: Day 3\nncmVersion: 2\n---\n\n# Day 3\n\n||From||To||\n|A|B|\n\n%%table-striped\n';
+      expect(importManager.detectFormat(ncm, 'day-3.md')).toBe('markdown');
+    });
+
+    it('extension outranks content sniffing: .md with pure JSPWiki syntax is markdown', () => {
+      expect(importManager.detectFormat('!!! Heading\n__bold__', 'page.md')).toBe('markdown');
+    });
+
+    it('frontmatter guard: extensionless NCM content is not jspwiki', () => {
+      const ncm = '---\ntitle: X\n---\n\n||H1||H2||\n';
+      expect(importManager.detectFormat(ncm, 'exported-page')).toBe('markdown');
+    });
+
+    it('still detects real JSPWiki .txt by extension', () => {
+      expect(importManager.detectFormat('!!! Heading', 'page.txt')).toBe('jspwiki');
+    });
   });
 
   describe('importSinglePage', () => {

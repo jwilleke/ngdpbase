@@ -298,6 +298,17 @@ class ImportManager extends BaseManager {
    * @returns Format ID or null if no match
    */
   detectFormat(content: string, filename: string): string | null {
+    // Extension match outranks content sniffing (#879): JSPWiki's content
+    // patterns (||table||, %%style) also occur in NCM markdown, and probing
+    // in registration order let jspwiki claim .md files — the converter then
+    // mangled them. A converter that owns the file's extension wins first;
+    // content-based detection is the fallback for extensionless/unknown files.
+    const lower = filename.toLowerCase();
+    for (const [formatId, converter] of this.converterRegistry.entries()) {
+      if (converter.fileExtensions.some(ext => lower.endsWith(ext.toLowerCase()))) {
+        return formatId;
+      }
+    }
     for (const [formatId, converter] of this.converterRegistry.entries()) {
       if (converter.canHandle(content, filename)) {
         return formatId;
