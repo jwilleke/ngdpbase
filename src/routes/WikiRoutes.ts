@@ -4167,15 +4167,19 @@ ${panes}
         ? `${existing.content.replace(/\s*$/, '')}${block}`
         : block.replace(/^\n+/, '');
       // Pages the capture flow CREATES are keyword-tagged (default: capture)
-      // so they group under keyword search; pages captures are merely appended
-      // to keep their own keywords untouched.
+      // and private by default (operator decision: captures are personal
+      // clippings — quoted excerpts don't belong on public pages unless the
+      // user targets one deliberately). Pages captures are merely appended
+      // to keep their own keywords and privacy untouched.
       const configManager = this.engine.getManager('ConfigurationManager');
       const captureKeywords = (configManager?.getProperty('ngdpbase.capture.keywords', ['capture']) as string[]) ?? ['capture'];
+      const capturePrivate = configManager?.getProperty('ngdpbase.capture.private', true) !== false;
       const metadata = existing
         ? { ...(existing.metadata as Record<string, unknown>), editor: currentUser.username }
         : this.buildNewPageMetadata(pageName, {
           author: currentUser.username,
-          'user-keywords': captureKeywords
+          'user-keywords': captureKeywords,
+          ...(capturePrivate ? { private: true } : {})
         });
       if (!existing) metadata.editor = currentUser.username;
 
