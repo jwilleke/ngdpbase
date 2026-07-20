@@ -51,6 +51,13 @@ WORKDIR /app
 # Note: g++ is needed at runtime for node-gyp if bcrypt needs recompilation
 RUN apk add --no-cache libstdc++
 
+# Replace the base image's npm with a current major (#859): the npm CLI bundled
+# with the Node image ships stale copies of tar/minimatch/glob/undici under
+# /usr/local/lib/node_modules/npm that Trivy flags on every scan. The app never
+# runs npm at runtime, but the files ship in the image either way — keep them
+# patched. npm@12 pins the major; each build picks up the latest 12.x patches.
+RUN npm install -g npm@12 && npm cache clean --force
+
 # Copy production node_modules from builder
 COPY --from=builder /app/node_modules ./node_modules
 
