@@ -60,7 +60,8 @@ describe('WikiRoutes capture (#881)', () => {
         if (name === 'AttachmentManager') return { syncPageMentions: vi.fn().mockResolvedValue(undefined) };
         if (name === 'AssetManager') return { syncPageAssets: vi.fn().mockResolvedValue(undefined) };
         if (name === 'ConfigurationManager') {
-          return { getProperty: vi.fn((key, def) => def) };
+          // Feature is default-off; these tests run with it enabled.
+          return { getProperty: vi.fn((key, def) => (key === 'ngdpbase.capture.enabled' ? true : def)) };
         }
         if (name === 'ValidationManager') return null;
         return null;
@@ -161,6 +162,40 @@ describe('WikiRoutes capture (#881)', () => {
       await wikiRoutes.captureSubmit(req, res);
       expect(res.status).toHaveBeenCalledWith(401);
       expect(mockSaveWithContext).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('feature gate — disabled by default', () => {
+    let gatedRoutes;
+
+    beforeEach(() => {
+      const gatedEngine = {
+        getManager: vi.fn((name) => {
+          if (name === 'ConfigurationManager') {
+            return { getProperty: vi.fn((key, def) => def) }; // enabled resolves to default: false
+          }
+          return null;
+        })
+      };
+      gatedRoutes = new WikiRoutes(gatedEngine as unknown as WikiEngine);
+    });
+
+    test('GET /capture is 404', async () => {
+      const res = createMockRes();
+      await gatedRoutes.captureForm(createMockReq(authedUser), res);
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    test('POST /capture is 404', async () => {
+      const res = createMockRes();
+      await gatedRoutes.captureSubmit(createMockReq(authedUser, {}, { pageName: 'X', url: 'https://a.b' }), res);
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    test('GET /capture/install is 404', async () => {
+      const res = createMockRes();
+      await gatedRoutes.captureInstall(createMockReq(authedUser), res);
+      expect(res.status).toHaveBeenCalledWith(404);
     });
   });
 

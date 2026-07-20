@@ -4061,6 +4061,16 @@ ${panes}
   // #881 — browser bookmarklet capture (URL + title + selection → page)
   // ---------------------------------------------------------------------
 
+  /**
+   * Capture is an optional feature, disabled by default (operator decision,
+   * #881): routes 404 unless ngdpbase.capture.enabled is set true in the
+   * instance config.
+   */
+  private isCaptureEnabled(): boolean {
+    const configManager = this.engine.getManager('ConfigurationManager');
+    return configManager?.getProperty('ngdpbase.capture.enabled', false) === true;
+  }
+
   /** Resolve the capture target page name from config pattern ({date}/{username} tokens). */
   private resolveCaptureDefaultPage(username: string): string {
     const configManager = this.engine.getManager('ConfigurationManager');
@@ -4073,6 +4083,7 @@ ${panes}
   /** GET /capture — popup form pre-filled from bookmarklet query params. */
   async captureForm(req: Request, res: Response) {
     try {
+      if (!this.isCaptureEnabled()) return res.status(404).send('Not found');
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
       if (!currentUser || !currentUser.isAuthenticated) {
@@ -4100,6 +4111,7 @@ ${panes}
   /** POST /capture — append the capture block to the target page via the save pipeline. */
   async captureSubmit(req: Request, res: Response) {
     try {
+      if (!this.isCaptureEnabled()) return res.status(404).send('Not found');
       const wikiContext0 = this.createWikiContext(req);
       const currentUser = wikiContext0.userContext;
       if (!currentUser || !currentUser.isAuthenticated) {
@@ -4184,6 +4196,7 @@ ${panes}
   /** GET /capture/install — drag-to-toolbar bookmarklet installer. */
   async captureInstall(req: Request, res: Response) {
     try {
+      if (!this.isCaptureEnabled()) return res.status(404).send('Not found');
       const configManager = this.engine.getManager('ConfigurationManager');
       const configured = (configManager?.getProperty('ngdpbase.application.base-url', '')) || '';
       const baseUrl = (configured || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
