@@ -879,6 +879,13 @@
       "category": "subject",
       "enabled": true,
       "restrictEditing": false
+    },
+    "capture": {
+      "label": "capture",
+      "description": "Web captures saved via the capture bookmarklet",
+      "category": "general",
+      "enabled": true,
+      "restrictEditing": false
     }
   },
   "_comment_timezones": "Available timezone options for user preferences",
