@@ -25,6 +25,7 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 ## 🟡 P2
 
 - [#599](https://github.com/jwilleke/ngdpbase/issues/599) — [BUG] showdown ReDoS vulnerability (CVE-2024-1899) — no upstream patch available; mitigated + weekly watch
+- [#878](https://github.com/jwilleke/ngdpbase/issues/878) — [BUG] docker-build Trivy scans stale :latest on tag runs — release scan never closes master-ref alerts
 
 ## 🔵 In review
 
