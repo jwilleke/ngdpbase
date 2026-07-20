@@ -32,7 +32,6 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 - [#863](https://github.com/jwilleke/ngdpbase/issues/863) — [BUG] "Login to ngdpbase"
 - [#867](https://github.com/jwilleke/ngdpbase/issues/867) — [BUG] Media index never prunes orphan entries for files moved/deleted on disk
 - [#870](https://github.com/jwilleke/ngdpbase/issues/870) — [BUG] attachment (PDF) to Journal
-- [#881](https://github.com/jwilleke/ngdpbase/issues/881) — [FEATURE] Browser bookmarklet — one-click capture of URL + selection into a page/journal
 
 ## ⏸ Deferred
 
