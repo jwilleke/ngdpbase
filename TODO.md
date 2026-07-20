@@ -21,6 +21,7 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 ## 🟠 P1
 
 - [#599](https://github.com/jwilleke/ngdpbase/issues/599) — [BUG] showdown ReDoS vulnerability (CVE-2024-1899) — no upstream patch available; mitigated + weekly watch
+- [#870](https://github.com/jwilleke/ngdpbase/issues/870) — [BUG] attachment (PDF) to Journal
 
 ## 🟡 P2
 
@@ -48,7 +49,6 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 - [#873](https://github.com/jwilleke/ngdpbase/issues/873) — [FEATURE] Day-level media filtering for MediaPlugin / media API
 - [#872](https://github.com/jwilleke/ngdpbase/issues/872) — [FEATURE] Storybook generator — Timeline + TeslaMate + media + statement → NCM day pages
 - [#871](https://github.com/jwilleke/ngdpbase/issues/871) — [EPIC] Trip Storybook — generated day-page travel stories from Timeline + TeslaMate + media + spend
-- [#870](https://github.com/jwilleke/ngdpbase/issues/870) — [BUG] attachment (PDF) to Journal
 - [#869](https://github.com/jwilleke/ngdpbase/issues/869) — [EPIC] Unified canonical keywords across pages, media, and external tools (digiKam-compatible)
 - [#868](https://github.com/jwilleke/ngdpbase/issues/868) — [FEATURE] Attachment metadata editing + remaining #866 follow-ups
 - [#865](https://github.com/jwilleke/ngdpbase/issues/865) — [FEATURE] Orphan attachment report + cleanup — 86% of attachments are referenced by no page
