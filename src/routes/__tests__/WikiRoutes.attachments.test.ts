@@ -301,4 +301,133 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       expect(mockRes.status).toHaveBeenCalledWith(500);
     });
   });
+
+  // #870 — upload with a page context must actually put the attachment ON the
+  // page: linkage is content-scan driven (#403), so the handler appends an
+  // [{ATTACH src='…'}] directive through the save pipeline.
+  describe('uploadAttachment attach-to-page (#870)', () => {
+    let mockSaveWithContext;
+    let mockGetPage;
+    let mockHasPermission;
+    let mockSyncPageMentions;
+    let mockUpdatePageInIndex;
+
+    const authedUser = { username: 'jim', isAuthenticated: true, roles: ['admin'] };
+    const pdfFile = { buffer: Buffer.from('pdf'), originalname: 'report.pdf', mimetype: 'application/pdf', size: 3 };
+
+    beforeEach(() => {
+      mockSaveWithContext = vi.fn().mockResolvedValue(undefined);
+      mockGetPage = vi.fn().mockResolvedValue({
+        name: 'Journal — jim — 2026-06-22',
+        content: '# Entry\n\nSome text\n',
+        metadata: { title: 'Journal — jim — 2026-06-22', uuid: 'page-uuid-1', author: 'jim' }
+      });
+      mockHasPermission = vi.fn().mockResolvedValue(true);
+      mockSyncPageMentions = vi.fn().mockResolvedValue(undefined);
+      mockUpdatePageInIndex = vi.fn().mockResolvedValue(undefined);
+
+      mockAttachmentManager.uploadAttachment.mockResolvedValue({
+        identifier: 'att-1',
+        filename: 'report.pdf',
+        url: '/attachments/att-1'
+      });
+
+      mockEngine.getManager.mockImplementation((name) => {
+        if (name === 'AttachmentManager') {
+          return { ...mockAttachmentManager, syncPageMentions: mockSyncPageMentions };
+        }
+        if (name === 'PageManager') {
+          return {
+            getPage: mockGetPage,
+            savePageWithContext: mockSaveWithContext,
+            getPageUUID: vi.fn().mockReturnValue('page-uuid-1')
+          };
+        }
+        if (name === 'UserManager') {
+          return { hasPermission: mockHasPermission };
+        }
+        if (name === 'RenderingManager') {
+          return { addPageToCache: vi.fn(), updatePageInLinkGraph: vi.fn() };
+        }
+        if (name === 'SearchManager') {
+          return { updatePageInIndex: mockUpdatePageInIndex };
+        }
+        if (name === 'CacheManager') {
+          return { isInitialized: () => false };
+        }
+        if (name === 'AssetManager') {
+          return { syncPageAssets: vi.fn().mockResolvedValue(undefined) };
+        }
+        return null;
+      });
+    });
+
+    test('appends an ATTACH directive through the save pipeline', async () => {
+      const mockReq = createMockReq(authedUser, { page: 'Journal — jim — 2026-06-22' }, {}, pdfFile);
+      const mockRes = createMockRes();
+
+      await wikiRoutes.uploadAttachment(mockReq, mockRes);
+
+      expect(mockSaveWithContext).toHaveBeenCalledTimes(1);
+      const savedContext = mockSaveWithContext.mock.calls[0][0];
+      expect(savedContext.content).toContain("[{ATTACH src='report.pdf'}]");
+      expect(savedContext.content).toContain('Some text');
+      expect(mockUpdatePageInIndex).toHaveBeenCalledTimes(1);
+      const jsonArg = mockRes.json.mock.calls[0][0];
+      expect(jsonArg.success).toBe(true);
+      expect(jsonArg.attachedToPage).toBe(true);
+    });
+
+    test('attachToPage=false skips the append', async () => {
+      const mockReq = createMockReq(authedUser, { page: 'Journal — jim — 2026-06-22' }, { attachToPage: 'false' }, pdfFile);
+      const mockRes = createMockRes();
+
+      await wikiRoutes.uploadAttachment(mockReq, mockRes);
+
+      expect(mockSaveWithContext).not.toHaveBeenCalled();
+      const jsonArg = mockRes.json.mock.calls[0][0];
+      expect(jsonArg.success).toBe(true);
+      expect(jsonArg.attachedToPage).toBe(false);
+    });
+
+    test('already-referenced filename does not append again but reports attached', async () => {
+      mockGetPage.mockResolvedValue({
+        name: 'P',
+        content: "# Entry\n\n[{ATTACH src='report.pdf'}]\n",
+        metadata: { title: 'P', uuid: 'page-uuid-1' }
+      });
+      const mockReq = createMockReq(authedUser, { page: 'P' }, {}, pdfFile);
+      const mockRes = createMockRes();
+
+      await wikiRoutes.uploadAttachment(mockReq, mockRes);
+
+      expect(mockSaveWithContext).not.toHaveBeenCalled();
+      expect(mockRes.json.mock.calls[0][0].attachedToPage).toBe(true);
+    });
+
+    test('missing page-edit permission stores the file but reports not linked', async () => {
+      mockHasPermission.mockImplementation((_user, action) =>
+        Promise.resolve(action !== 'page-edit'));
+      const mockReq = createMockReq(authedUser, { page: 'P' }, {}, pdfFile);
+      const mockRes = createMockRes();
+
+      await wikiRoutes.uploadAttachment(mockReq, mockRes);
+
+      expect(mockSaveWithContext).not.toHaveBeenCalled();
+      const jsonArg = mockRes.json.mock.calls[0][0];
+      expect(jsonArg.success).toBe(true);
+      expect(jsonArg.attachedToPage).toBe(false);
+      expect(jsonArg.attachNote).toContain('page-edit');
+    });
+
+    test('no page context means no attach attempt', async () => {
+      const mockReq = createMockReq(authedUser, {}, {}, pdfFile);
+      const mockRes = createMockRes();
+
+      await wikiRoutes.uploadAttachment(mockReq, mockRes);
+
+      expect(mockSaveWithContext).not.toHaveBeenCalled();
+      expect(mockRes.json.mock.calls[0][0].attachedToPage).toBe(false);
+    });
+  });
 });

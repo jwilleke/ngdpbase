@@ -3944,12 +3944,30 @@ ${panes}
         options
       );
 
+      // #870: uploading "to a page" previously only stored the file — linkage
+      // is content-scan driven (#403), so without a content reference the
+      // attachment never appeared anywhere on the page and users read the
+      // upload as failed. When a page context is present (and the client
+      // didn't opt out), append an [{ATTACH src='…'}] directive through the
+      // save pipeline so the attachment is actually on the page.
+      let attachedToPage = false;
+      let attachNote: string | undefined;
+      const wantsAttach = pageName && req.body.attachToPage !== 'false';
+      if (wantsAttach) {
+        attachNote = await this.appendAttachDirective(req, res, pageName, req.file.originalname);
+        attachedToPage = attachNote === undefined;
+      }
+
       return res.json({
         success: true,
         attachment: attachment,
         attachmentId: attachment.identifier,
         url: attachment.url,
-        message: 'File uploaded successfully'
+        attachedToPage,
+        ...(attachNote ? { attachNote } : {}),
+        message: attachedToPage
+          ? 'File uploaded and attached to page'
+          : 'File uploaded successfully'
       });
     } catch (err: unknown) {
       logger.error('Error uploading attachment:', err);
@@ -3957,6 +3975,72 @@ ${panes}
         success: false,
         error: getErrorMessage(err) || 'Error uploading file'
       });
+    }
+  }
+
+  /**
+   * Append an [{ATTACH src='<filename>'}] directive to a page through the
+   * save pipeline (#870). Returns undefined on success, or a short
+   * human-readable reason when the append was skipped (upload itself is
+   * never rolled back — the file is stored either way).
+   */
+  private async appendAttachDirective(
+    req: Request,
+    res: Response,
+    pageName: string,
+    filename: string
+  ): Promise<string | undefined> {
+    try {
+      if (filename.includes("'")) {
+        return 'filename contains a quote character — add the attachment link to the page manually';
+      }
+      const pageManager = this.engine.getManager('PageManager');
+      const page = await pageManager.getPage(pageName);
+      if (!page) {
+        return `page "${pageName}" not found — attachment stored but not linked`;
+      }
+      const permContext = this.createWikiContext(req, { pageName });
+      if (!(await permContext.hasPermission('page-edit'))) {
+        return 'no page-edit permission — attachment stored but not linked';
+      }
+      if (page.content.includes(`src='${filename}'`)) {
+        return undefined; // already referenced — nothing to append, still "attached"
+      }
+
+      const newContent = `${page.content.replace(/\s*$/, '')}\n\n[{ATTACH src='${filename}'}]\n`;
+      const wikiContext = this.createWikiContext(req, {
+        context: WikiContext.CONTEXT.EDIT,
+        pageName,
+        content: newContent,
+        response: res
+      });
+      const metadata = { ...(page.metadata as Record<string, unknown>) };
+      metadata.editor = permContext.userContext?.username || 'unknown';
+      await pageManager.savePageWithContext(wikiContext, metadata as Partial<PageFrontmatter>);
+
+      // Post-save sync — same block as the unified save handler (#405/#438/#245).
+      const attachmentManager = this.engine.getManager('AttachmentManager');
+      if (attachmentManager?.syncPageMentions) attachmentManager.syncPageMentions(pageName, newContent).catch(() => {});
+      const assetManager = this.engine.getManager('AssetManager');
+      if (assetManager?.syncPageAssets) assetManager.syncPageAssets(pageName, newContent).catch(() => {});
+      const renderingManager = this.engine.getManager('RenderingManager');
+      const searchManager = this.engine.getManager('SearchManager');
+      renderingManager.addPageToCache(pageName);
+      renderingManager.updatePageInLinkGraph(pageName, newContent);
+      await searchManager.updatePageInIndex(pageName, {
+        name: pageName,
+        content: newContent,
+        metadata: metadata
+      });
+      const cacheManager = this.engine.getManager('CacheManager');
+      if (cacheManager?.isInitialized?.()) {
+        const uuid = pageManager?.getPageUUID?.(pageName) ?? pageName;
+        await cacheManager.clear(undefined, `rendered-pages:${uuid}:*`);
+      }
+      return undefined;
+    } catch (err) {
+      logger.error(`Error attaching upload to page "${pageName}":`, err);
+      return 'attach-to-page failed — attachment stored but not linked';
     }
   }
 

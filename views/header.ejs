@@ -1762,6 +1762,13 @@ function showUploadAttachment(pageName) {
                             <label for="attachmentDescription" class="form-label">Description:</label>
                             <input type="text" class="form-control" id="attachmentDescription" placeholder="Brief description of the file">
                         </div>
+                        ${pageName ? `
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="attachToPageCheck" checked>
+                            <label class="form-check-label" for="attachToPageCheck">
+                                Attach to this page (adds a link at the end of the page)
+                            </label>
+                        </div>` : ''}
                         <div id="uploadStatus"></div>
                     </div>
                     <div class="modal-footer">
@@ -1812,6 +1819,10 @@ async function uploadAttachmentFile(uploadUrl) {
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
     formData.append('description', description);
+    const attachCheck = document.getElementById('attachToPageCheck');
+    if (attachCheck) {
+        formData.append('attachToPage', attachCheck.checked ? 'true' : 'false');
+    }
 
     statusDiv.innerHTML = '<div class="alert alert-info">Uploading...</div>';
 
@@ -1820,9 +1831,13 @@ async function uploadAttachmentFile(uploadUrl) {
         const result = await response.json();
 
         if (result.success) {
+            const attachLine = result.attachedToPage
+                ? '<small class="text-success">Attached to this page.</small><br>'
+                : (result.attachNote ? `<small class="text-warning">Not linked: ${result.attachNote}</small><br>` : '');
             statusDiv.innerHTML = `
                 <div class="alert alert-success">
                     <strong>Upload successful!</strong><br>
+                    ${attachLine}
                     <small>URL: <code>${result.url}</code></small><br>
                     <button type="button" class="btn btn-sm btn-primary mt-2" onclick="copyToClipboard('${result.url}')">
                         Copy URL
