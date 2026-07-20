@@ -32,6 +32,7 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 - [#863](https://github.com/jwilleke/ngdpbase/issues/863) — [BUG] "Login to ngdpbase"
 - [#867](https://github.com/jwilleke/ngdpbase/issues/867) — [BUG] Media index never prunes orphan entries for files moved/deleted on disk
 - [#870](https://github.com/jwilleke/ngdpbase/issues/870) — [BUG] attachment (PDF) to Journal
+- [#882](https://github.com/jwilleke/ngdpbase/issues/882) — [FEATURE] Related keywords via co-occurrence on keyword views
 
 ## ⏸ Deferred
 
@@ -44,13 +45,12 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 - [#423](https://github.com/jwilleke/ngdpbase/issues/423) — Asset Manager: additional storage providers (S3, Google Drive, plugin-contributed)
 - [#421](https://github.com/jwilleke/ngdpbase/issues/421) — AuthManager: TOTP / 2FA auth provider
 
-## ❓ Needs triage (29)
+## ❓ Needs triage (28)
 
 - [#886](https://github.com/jwilleke/ngdpbase/issues/886) — [FEATURE] OpenGraph + schema.org meta tags on page views (config-gated)
 - [#885](https://github.com/jwilleke/ngdpbase/issues/885) — [FEATURE] sitemap.xml for public instances (config-gated)
 - [#884](https://github.com/jwilleke/ngdpbase/issues/884) — [FEATURE] Search ranking: field weighting, URL tokenization, prefix typeahead, keyword-first
 - [#883](https://github.com/jwilleke/ngdpbase/issues/883) — [FEATURE] Suggested keywords from recent pages in the editor
-- [#882](https://github.com/jwilleke/ngdpbase/issues/882) — [FEATURE] Related keywords via co-occurrence on keyword views
 - [#873](https://github.com/jwilleke/ngdpbase/issues/873) — [FEATURE] Day-level media filtering for MediaPlugin / media API
 - [#872](https://github.com/jwilleke/ngdpbase/issues/872) — [FEATURE] Storybook generator — Timeline + TeslaMate + media + statement → NCM day pages
 - [#871](https://github.com/jwilleke/ngdpbase/issues/871) — [EPIC] Trip Storybook — generated day-page travel stories from Timeline + TeslaMate + media + spend
