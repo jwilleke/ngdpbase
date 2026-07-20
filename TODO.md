@@ -30,6 +30,7 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 
 - [#861](https://github.com/jwilleke/ngdpbase/issues/861) — [FEATURE] Config-gated trust proxy — real client IPs behind Cloudflare Tunnel (share rate limiter + audit)
 - [#863](https://github.com/jwilleke/ngdpbase/issues/863) — [BUG] "Login to ngdpbase"
+- [#874](https://github.com/jwilleke/ngdpbase/issues/874) — [FEATURE] Import conflict policy — overwrite/update option instead of hard duplicate-skip
 - [#878](https://github.com/jwilleke/ngdpbase/issues/878) — [BUG] docker-build Trivy scans stale :latest on tag runs — release scan never closes master-ref alerts
 - [#867](https://github.com/jwilleke/ngdpbase/issues/867) — [BUG] Media index never prunes orphan entries for files moved/deleted on disk
 
@@ -44,9 +45,10 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 - [#423](https://github.com/jwilleke/ngdpbase/issues/423) — Asset Manager: additional storage providers (S3, Google Drive, plugin-contributed)
 - [#421](https://github.com/jwilleke/ngdpbase/issues/421) — AuthManager: TOTP / 2FA auth provider
 
-## ❓ Needs triage (26)
+## ❓ Needs triage (27)
 
-- [#874](https://github.com/jwilleke/ngdpbase/issues/874) — [FEATURE] Import conflict policy — overwrite/update option instead of hard duplicate-skip
+- [#880](https://github.com/jwilleke/ngdpbase/issues/880) — [BUG] Folder import bypasses save pipeline — no search index, link graph, Recent Changes, or versions
+- [#879](https://github.com/jwilleke/ngdpbase/issues/879) — [BUG] Import auto-detect mislabels NCM markdown as jspwiki — converter corrupts pages
 - [#873](https://github.com/jwilleke/ngdpbase/issues/873) — [FEATURE] Day-level media filtering for MediaPlugin / media API
 - [#872](https://github.com/jwilleke/ngdpbase/issues/872) — [FEATURE] Storybook generator — Timeline + TeslaMate + media + statement → NCM day pages
 - [#871](https://github.com/jwilleke/ngdpbase/issues/871) — [EPIC] Trip Storybook — generated day-page travel stories from Timeline + TeslaMate + media + spend
