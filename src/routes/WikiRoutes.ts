@@ -4198,8 +4198,12 @@ ${panes}
     try {
       if (!this.isCaptureEnabled()) return res.status(404).send('Not found');
       const configManager = this.engine.getManager('ConfigurationManager');
-      const configured = (configManager?.getProperty('ngdpbase.application.base-url', '')) || '';
-      const baseUrl = (configured || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+      // The bookmarklet must target a host the *installing browser* can reach.
+      // application.base-url is the wrong source here: on jimstest it is the
+      // Cloudflare Tunnel hostname whose edge only exposes /share/* (#860) —
+      // a bookmarklet built from it 404s at the edge. The request host is by
+      // definition reachable from the browser that is installing it.
+      const baseUrl = `${req.protocol}://${req.get('host')}`.replace(/\/$/, '');
       const applicationName = (configManager?.getProperty('ngdpbase.application-name', 'ngdpbase')) || 'ngdpbase';
       const bookmarklet =
         'javascript:(function(){var s=window.getSelection?String(window.getSelection()):\'\';' +
