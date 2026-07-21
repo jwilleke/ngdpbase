@@ -924,7 +924,11 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       id: schema.identifier,
       filename: schema.name,
       name: schema.name,
-      pageUuid: schema.mentions[0]?.name || '',
+      // #865: full mentions array passed through — the health report's orphan
+      // check reads it; the legacy mapping used to strip it (pageUuid only),
+      // which made every record look orphaned to getHealthReport.
+      mentions: schema.mentions ?? [],
+      pageUuid: schema.mentions?.[0]?.name || '',
       mimeType: schema.encodingFormat,
       encodingFormat: schema.encodingFormat,
       size: schema.contentSize,
