@@ -661,12 +661,19 @@ class LunrSearchProvider extends BaseSearchProvider {
     }
 
     // #893: filter by editorial lifecycle status. A doc without a status
-    // counts as 'published' — the absent-means-published contract.
+    // counts as the catalog's default state (config `ngdpbase.status`
+    // default:true entry; falls back to 'published' without config).
     if (statusList.length > 0) {
+      const statusCatalog = this.engine.getManager<ConfigurationManager>('ConfigurationManager')
+        ?.getProperty('ngdpbase.status', null) as Record<string, { label?: string; default?: boolean }> | null;
+      const defaultEntry = statusCatalog && typeof statusCatalog === 'object'
+        ? Object.entries(statusCatalog).find(([, cfg]) => cfg.default === true)
+        : undefined;
+      const defaultStatus = defaultEntry ? (defaultEntry[1].label ?? defaultEntry[0]).toLowerCase() : 'published';
       const statusListLower = statusList.map(s => s.toLowerCase().trim()).filter(Boolean);
       results = results.filter(result => {
         const raw = result.metadata.status;
-        const docStatus = (typeof raw === 'string' && raw !== '' ? raw : 'published').toLowerCase();
+        const docStatus = (typeof raw === 'string' && raw !== '' ? raw : defaultStatus).toLowerCase();
         return statusListLower.includes(docStatus);
       });
     }

@@ -144,6 +144,7 @@ class ValidationManager extends BaseManager {
   private validSystemKeywords: string[];
   private validKnowledgeRoles: string[];
   private validStatuses: string[];
+  private defaultStatus: string;
   private maxUserKeywords!: number;
 
   /**
@@ -163,9 +164,11 @@ class ValidationManager extends BaseManager {
     // #706: hardcoded fallback so the hard-reject enum check still works
     // when the catalog hasn't loaded. Config overrides at initialize().
     this.validKnowledgeRoles = ['source', 'citation', 'concept'];
-    // #893: editorial lifecycle enum — deliberately hardcoded, not config-driven;
-    // absent means 'published'.
+    // #893: editorial lifecycle enum — loaded from `ngdpbase.status` config at
+    // initialize(); this trio is only the boot-safety fallback (same contract
+    // as knowledge-role). Absent status means the catalog's default:true entry.
     this.validStatuses = ['draft', 'review', 'published'];
+    this.defaultStatus = 'published';
   }
 
   /**
@@ -188,6 +191,7 @@ class ValidationManager extends BaseManager {
     this.loadSystemCategories(configManager);
     this.loadSystemKeywords(configManager);
     this.loadKnowledgeRoles(configManager);
+    this.loadStatuses(configManager);
 
     logger.info('ValidationManager initialized');
     logger.info(`Loaded ${this.validSystemCategories.length} system categories: ${this.validSystemCategories.join(', ')}`);
@@ -306,6 +310,56 @@ class ValidationManager extends BaseManager {
     } catch (error) {
       logger.error('[ValidationManager] Error loading knowledge roles:', (error as Error).message);
     }
+  }
+
+  /**
+   * #893: load the editorial lifecycle catalog from `ngdpbase.status` config.
+   * Entries carry label / description / order (ascending rank) / enabled and
+   * one default:true entry (the state an absent status field means). Falls
+   * back to the hardcoded trio only when config is unavailable.
+   */
+  loadStatuses(configManager: ConfigurationManager | undefined): void {
+    if (!configManager) {
+      logger.warn('[ValidationManager] ConfigurationManager not available, using fallback statuses');
+      return;
+    }
+
+    try {
+      const statusConfig = configManager.getProperty('ngdpbase.status', null) as Record<string, { label?: string; order?: number; default?: boolean; enabled?: boolean }> | null;
+
+      if (statusConfig && typeof statusConfig === 'object') {
+        const entries = Object.entries(statusConfig)
+          .filter(([, cfg]) => cfg.enabled !== false)
+          .sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0));
+        const labels = entries.map(([key, cfg]) => (cfg.label ?? key).toLowerCase());
+        if (labels.length > 0) {
+          this.validStatuses = labels;
+          const def = entries.find(([, cfg]) => cfg.default === true);
+          this.defaultStatus = def ? (def[1].label ?? def[0]).toLowerCase() : labels[labels.length - 1];
+          logger.info(`[ValidationManager] Loaded ${labels.length} statuses from configuration (default: ${this.defaultStatus})`);
+        }
+      } else {
+        logger.warn('[ValidationManager] status configuration not found, using fallback statuses');
+      }
+    } catch (error) {
+      logger.error('[ValidationManager] Error loading statuses:', (error as Error).message);
+    }
+  }
+
+  /**
+   * #893: valid status labels, ordered ascending by catalog `order`
+   * (lowest → highest lifecycle rank). Copy — callers can't mutate state.
+   */
+  getValidStatuses(): string[] {
+    return [...this.validStatuses];
+  }
+
+  /**
+   * #893: the status an ABSENT frontmatter field means (catalog default:true
+   * entry). This value is never written to frontmatter.
+   */
+  getDefaultStatus(): string {
+    return this.defaultStatus;
   }
 
   /**

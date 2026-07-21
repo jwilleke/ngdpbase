@@ -648,23 +648,41 @@ class PageManager extends BaseManager implements CatalogSource {
     let normalizedKeywords = userKeywords.filter(kw => kw !== 'private');
 
     // #893 (Slice 1 of #869): vocabulary-bucket normalization on every save.
-    // - Lifecycle terms (draft/review/published) leave BOTH keyword arrays and
-    //   become the single-valued `status:` field. An explicit status in the
-    //   incoming metadata wins; otherwise the highest state found wins
-    //   (published > review > draft).
+    // - Lifecycle terms leave BOTH keyword arrays and become the single-valued
+    //   `status:` field. An explicit status in the incoming metadata wins;
+    //   otherwise the highest state found wins (catalog `order` ascending).
     // - 'capture' is machine provenance: it moves from user-keywords into
     //   system-keywords (the automation bucket).
-    const LIFECYCLE_ORDER = ['draft', 'review', 'published'];
+    // Status catalog is config-driven (`ngdpbase.status`); the trio below is
+    // only the fallback when config is unavailable.
+    const statusCatalog = (configManager
+      ? configManager.getProperty('ngdpbase.status', null)
+      : null) as Record<string, { label?: string; order?: number; enabled?: boolean }> | null;
+    const _statusEntries = statusCatalog && typeof statusCatalog === 'object'
+      ? Object.entries(statusCatalog as Record<string, { label?: string; order?: number; default?: boolean; enabled?: boolean }>)
+        .filter(([, cfg]) => cfg.enabled !== false)
+        .sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0))
+      : [];
+    const LIFECYCLE_ORDER = _statusEntries.length > 0
+      ? _statusEntries.map(([key, cfg]) => (cfg.label ?? key).toLowerCase())
+      : ['draft', 'review', 'published'];
+    const _defaultStatusEntry = _statusEntries.find(([, cfg]) => cfg.default === true);
+    const DEFAULT_STATUS = _defaultStatusEntry
+      ? (_defaultStatusEntry[1].label ?? _defaultStatusEntry[0]).toLowerCase()
+      : LIFECYCLE_ORDER[LIFECYCLE_ORDER.length - 1];
     const rawSystemKeywords = ((rawMetadata as Record<string, unknown>)['system-keywords'] as string[] | undefined) || [];
     const foundLifecycle = [...normalizedKeywords, ...rawSystemKeywords]
       .map(kw => String(kw).toLowerCase())
       .filter(kw => LIFECYCLE_ORDER.includes(kw));
     const explicitStatus = (rawMetadata as Record<string, unknown>).status;
-    const migratedStatus = typeof explicitStatus === 'string' && explicitStatus !== ''
+    const derivedStatus = typeof explicitStatus === 'string' && explicitStatus !== ''
       ? explicitStatus
       : foundLifecycle.length > 0
         ? foundLifecycle.sort((a, b) => LIFECYCLE_ORDER.indexOf(b) - LIFECYCLE_ORDER.indexOf(a))[0]
         : undefined;
+    // The catalog default maps to ABSENCE — never write it to frontmatter
+    // (explicit caller-provided status is kept as-is only when non-default).
+    const migratedStatus = derivedStatus?.toLowerCase() === DEFAULT_STATUS ? undefined : derivedStatus;
     const keywordsHadLifecycle = normalizedKeywords.some(kw => LIFECYCLE_ORDER.includes(String(kw).toLowerCase()));
     const keywordsHadCapture = normalizedKeywords.some(kw => String(kw).toLowerCase() === 'capture');
     const systemHadLifecycle = rawSystemKeywords.some(kw => LIFECYCLE_ORDER.includes(String(kw).toLowerCase()));
@@ -686,6 +704,10 @@ class PageManager extends BaseManager implements CatalogSource {
     const rawMetadataCopy = { ...rawMetadata } as Record<string, unknown>;
     delete rawMetadataCopy.private;
     delete rawMetadataCopy['system-location'];
+    // #893: status is re-added below from migratedStatus only — deleting here
+    // keeps an explicit caller-provided default (e.g. status: published) from
+    // slipping through the spread; the default state is represented by absence.
+    delete rawMetadataCopy.status;
 
     const metadataWithLocation: Partial<PageFrontmatter> & Record<string, unknown> = {
       ...rawMetadataCopy,

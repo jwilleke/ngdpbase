@@ -399,6 +399,40 @@ describe('PageManager', () => {
       expect(saved['user-keywords']).toEqual([]);
     });
 
+    test('savePageWithContext() — explicit default status (published) maps to absence (#893)', async () => {
+      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
+      await pageManager.savePageWithContext(wikiContext, { status: 'published', 'user-keywords': ['travel'] });
+
+      const saved = pageManager.provider.savePage.mock.calls[0][2];
+      expect(saved.status).toBeUndefined();
+      expect(saved['user-keywords']).toEqual(['travel']);
+    });
+
+    test('savePageWithContext() — status catalog is config-driven: custom order wins (#893)', async () => {
+      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      mockConfigurationManager.getProperty.mockImplementation((key, dv) => {
+        if (key === 'ngdpbase.status') {
+          return {
+            idea: { label: 'idea', order: 1, enabled: true },
+            final: { label: 'final', order: 2, default: true, enabled: true }
+          };
+        }
+        if (key === 'ngdpbase.system-category') return {};
+        return dv;
+      });
+      const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
+      await pageManager.savePageWithContext(wikiContext, { 'user-keywords': ['idea', 'travel'] });
+
+      const saved = pageManager.provider.savePage.mock.calls[0][2];
+      expect(saved.status).toBe('idea');
+      expect(saved['user-keywords']).toEqual(['travel']);
+      // 'draft' is NOT in the custom catalog — stays an ordinary keyword
+      pageManager.provider.savePage.mockClear();
+      await pageManager.savePageWithContext(wikiContext, { 'user-keywords': ['draft'] });
+      expect(pageManager.provider.savePage.mock.calls[0][2]['user-keywords']).toEqual(['draft']);
+    });
+
     test('savePageWithContext() — clean vocabulary passes through untouched (#893)', async () => {
       pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
       const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };

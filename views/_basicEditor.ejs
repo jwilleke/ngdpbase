@@ -125,19 +125,25 @@
                     <div class="col-md-2">
                         <%
                             // #893 (Slice 1 of #869): editorial lifecycle status.
-                            // Absent metadata.status means 'published'. Legacy pages may
-                            // still carry draft/review/published as keywords — the save
-                            // pipeline migrates them; pre-select from either source here.
+                            // Catalog is config-driven (`ngdpbase.status`) and injected as
+                            // `statusOptions` by the edit/create routes; the fallback trio
+                            // only covers templates rendered without it. Absent
+                            // metadata.status means the catalog default. Legacy pages may
+                            // still carry lifecycle terms as keywords — the save pipeline
+                            // migrates them; pre-select from either source here.
+                            const _statusOpts = (typeof statusOptions !== 'undefined' && statusOptions && Array.isArray(statusOptions.statuses) && statusOptions.statuses.length > 0)
+                                ? statusOptions
+                                : { statuses: ['draft', 'review', 'published'], defaultStatus: 'published' };
                             const _lifecycleFromKeywords = (Array.isArray(selectedUserKeywords) ? selectedUserKeywords : [])
                                 .map(kw => String(kw).toLowerCase())
-                                .filter(kw => ['draft', 'review', 'published'].includes(kw));
+                                .filter(kw => _statusOpts.statuses.includes(kw));
                             const _currentStatus = (typeof metadata.status === 'string' && metadata.status)
                                 ? metadata.status.toLowerCase()
-                                : (_lifecycleFromKeywords[0] || 'published');
+                                : (_lifecycleFromKeywords[0] || _statusOpts.defaultStatus);
                         %>
                         <label style="font-weight:bold;">Status:</label>
                         <select class="form-select" id="pageStatus" name="status">
-                            <% ['published', 'review', 'draft'].forEach(s => { %>
+                            <% [..._statusOpts.statuses].reverse().forEach(s => { %>
                                 <option value="<%= s %>" <%= _currentStatus === s ? 'selected' : '' %>><%= s.charAt(0).toUpperCase() + s.slice(1) %></option>
                             <% }); %>
                         </select>

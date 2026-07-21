@@ -1574,6 +1574,21 @@ class WikiRoutes {
   }
 
   /**
+   * #893: editorial lifecycle options for the editor's Status select, sourced
+   * from the config-driven catalog via ValidationManager (order ascending).
+   * `defaultStatus` is the state an absent frontmatter field means.
+   */
+  private getStatusOptions(): { statuses: string[]; defaultStatus: string } {
+    const vm = this.engine.getManager('ValidationManager') as {
+      getValidStatuses?: () => string[];
+      getDefaultStatus?: () => string;
+    } | undefined;
+    const statuses = vm?.getValidStatuses ? vm.getValidStatuses() : ['draft', 'review', 'published'];
+    const defaultStatus = vm?.getDefaultStatus ? vm.getDefaultStatus() : 'published';
+    return { statuses, defaultStatus };
+  }
+
+  /**
    * #745: available media years for the asset-picker Year filter. Sourced
    * from MediaManager.getYears() (the same list /media/ uses); gracefully
    * empty if MediaManager / the provider is unavailable. Years are public
@@ -2357,6 +2372,7 @@ ${panes}
         userKeywords: userKeywords,
         maxUserKeywords: maxUserKeywords,
         defaultCategory: defaultCategory,
+        statusOptions: this.getStatusOptions(),
         availableRoles: availableRoles,
         csrfToken: req.session.csrfToken
       });
@@ -2837,6 +2853,7 @@ ${panes}
         availableRoles: availableRoles,
         pageData: pageData,
         defaultCategory: defaultCategory,
+        statusOptions: this.getStatusOptions(),
         pageAttachments: pageAttachments,
         csrfToken: req.session.csrfToken,
         isRequiredPage: pageIsRequired,
@@ -3157,13 +3174,16 @@ ${panes}
 
       // #893: editorial lifecycle status — single-valued enum, form-posted from
       // the editor's Status select. When the form posts `status-present=1` we
-      // honour the select; otherwise preserve the existing value. Absent means
-      // 'published' (default state) and is not written to frontmatter.
+      // honour the select; otherwise preserve the existing value. The catalog's
+      // default state (config `ngdpbase.status` default:true entry) maps to
+      // ABSENCE — it is never written to frontmatter.
+      const _vmStatus = this.engine.getManager('ValidationManager') as { getDefaultStatus?: () => string } | undefined;
+      const defaultStatus = _vmStatus?.getDefaultStatus ? _vmStatus.getDefaultStatus() : 'published';
       const existingStatus = typeof existingPage?.metadata?.status === 'string' ? existingPage.metadata.status : undefined;
       const submittedStatus: string | undefined = req.body['status-present'] === '1'
         ? (typeof req.body.status === 'string' && req.body.status !== '' ? req.body.status : undefined)
         : existingStatus;
-      const statusValue = submittedStatus === 'published' ? undefined : submittedStatus;
+      const statusValue = submittedStatus?.toLowerCase() === defaultStatus ? undefined : submittedStatus;
 
       // Prepare metadata ONCE, preserving UUID if editing
       // Use matchedCategory (properly capitalized) instead of submitted systemCategory

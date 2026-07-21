@@ -774,6 +774,28 @@
   "ngdpbase.catalog.ai.enabled": false,
   "ngdpbase.catalog.ai.provider": null,
   "ngdpbase.catalog.ai.threshold": 0.7,
+  "_comment_status": "Editorial lifecycle states for the status: frontmatter field (#893, Slice 1 of #869). order ranks states ascending; the default:true entry is the state an ABSENT status field means, and is not written to frontmatter. ValidationManager hard-rejects values outside this catalog.",
+  "ngdpbase.status": {
+    "draft": {
+      "label": "draft",
+      "description": "Work in progress",
+      "order": 1,
+      "enabled": true
+    },
+    "review": {
+      "label": "review",
+      "description": "Content under review",
+      "order": 2,
+      "enabled": true
+    },
+    "published": {
+      "label": "published",
+      "description": "Finalized and approved content",
+      "order": 3,
+      "default": true,
+      "enabled": true
+    }
+  },
   "_comment_user_keywords": "User keyword definitions for flexible content tagging (user-invented tags; draft/review/published/subject terms are deprecated here — see system-keywords)",
   "ngdpbase.user-keywords": {
     "default": {

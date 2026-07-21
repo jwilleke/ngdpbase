@@ -103,7 +103,37 @@ export interface TransformResult {
   notes: string[];
 }
 
-const LIFECYCLE_ORDER = ['draft', 'review', 'published'];
+/**
+ * Lifecycle order comes from the config-driven catalog (`ngdpbase.status` in
+ * config/app-default-config.json, ascending `order`). The trio fallback keeps
+ * the script standalone when run outside the repo (same pattern as
+ * migrate-private-field's hardcoded category set).
+ */
+function loadStatusCatalog(): { order: string[]; defaultStatus: string } {
+  try {
+    const cfgPath = path.join(process.cwd(), 'config', 'app-default-config.json');
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8')) as Record<string, unknown>;
+    const catalog = cfg['ngdpbase.status'] as Record<string, { label?: string; order?: number; default?: boolean; enabled?: boolean }> | undefined;
+    if (catalog && typeof catalog === 'object') {
+      const entries = Object.entries(catalog)
+        .filter(([, c]) => c.enabled !== false)
+        .sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0));
+      const labels = entries.map(([k, c]) => (c.label ?? k).toLowerCase());
+      if (labels.length > 0) {
+        const def = entries.find(([, c]) => c.default === true);
+        return {
+          order: labels,
+          defaultStatus: def ? (def[1].label ?? def[0]).toLowerCase() : labels[labels.length - 1]
+        };
+      }
+    }
+  } catch { /* fall through to default */ }
+  return { order: ['draft', 'review', 'published'], defaultStatus: 'published' };
+}
+
+const STATUS_CATALOG = loadStatusCatalog();
+const LIFECYCLE_ORDER = STATUS_CATALOG.order;
+const DEFAULT_STATUS = STATUS_CATALOG.defaultStatus;
 
 /**
  * Pure string-in/string-out frontmatter transform. Exported for tests.
@@ -141,11 +171,11 @@ export function transformFrontmatter(raw: string): TransformResult {
     const highest = lifecycleFound.sort(
       (a, b) => LIFECYCLE_ORDER.indexOf(b) - LIFECYCLE_ORDER.indexOf(a)
     )[0];
-    if (highest !== 'published') {
+    if (highest !== DEFAULT_STATUS) {
       data.status = highest;
       notes.push(`status: ${highest}`);
     } else {
-      notes.push('published keyword dropped (absent status = published)');
+      notes.push(`${DEFAULT_STATUS} keyword dropped (absent status = ${DEFAULT_STATUS})`);
     }
   } else if (lifecycleFound.length > 0) {
     notes.push(`lifecycle keywords dropped (explicit status: ${explicitStatus} kept)`);

@@ -258,6 +258,24 @@ describe('ValidationManager', () => {
         const result = validationManager.validateMetadata({ ...baseMetadata(), status: 'DRAFT' });
         expect(result.success).toBe(true);
       });
+
+      test('loadStatuses() loads catalog from config: custom labels, order, and default (#893)', () => {
+        const fakeConfig = {
+          getProperty: (key, dv) => key === 'ngdpbase.status'
+            ? {
+              final: { label: 'final', order: 2, default: true, enabled: true },
+              idea: { label: 'idea', order: 1, enabled: true },
+              retired: { label: 'retired', order: 3, enabled: false }
+            }
+            : dv
+        };
+        validationManager.loadStatuses(fakeConfig);
+        expect(validationManager.getValidStatuses()).toEqual(['idea', 'final']); // order-sorted, disabled dropped
+        expect(validationManager.getDefaultStatus()).toBe('final');
+        // enum check now uses the loaded catalog
+        expect(validationManager.validateMetadata({ ...baseMetadata(), status: 'idea' }).success).toBe(true);
+        expect(validationManager.validateMetadata({ ...baseMetadata(), status: 'draft' }).success).toBe(false);
+      });
     });
   });
 
