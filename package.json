@@ -85,7 +85,7 @@
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
     "bcrypt": "^6.0.0",
-    "body-parser": "^2.2.1",
+    "body-parser": "^2.3.0",
     "cookie-parser": "^1.4.7",
     "diff": "^8.0.3",
     "diff2html": "^3.4.56",
