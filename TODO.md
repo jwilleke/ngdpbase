@@ -47,7 +47,6 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 
 ## 🔵 In review
 
-- [#893](https://github.com/jwilleke/ngdpbase/issues/893) — [FEATURE] Slice 1 of #869 — status: frontmatter field + capture keyword migration
 - [#882](https://github.com/jwilleke/ngdpbase/issues/882) — [FEATURE] Related keywords via co-occurrence on keyword views
 - [#870](https://github.com/jwilleke/ngdpbase/issues/870) — [BUG] attachment (PDF) to Journal
 - [#867](https://github.com/jwilleke/ngdpbase/issues/867) — [BUG] Media index never prunes orphan entries for files moved/deleted on disk
