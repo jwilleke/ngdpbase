@@ -347,3 +347,70 @@ describe('AttachmentManager — CatalogSource interface (#759)', () => {
     expect(await mgr.get('missing')).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// #865 Slice 2: getHealthReport + extractLocalAttachmentRefs
+// ---------------------------------------------------------------------------
+
+describe('AttachmentManager.extractLocalAttachmentRefs (#865)', () => {
+  test('extracts local refs, skips media/external/absolute', () => {
+    const refs = AttachmentManager.extractLocalAttachmentRefs(
+      "[{Image src='a.png'}] [{ATTACH src='b.pdf'}] [{Image src='media://x'}] [{Image src='https://e/x.png'}] [{ATTACH src='/abs.pdf'}]"
+    );
+    expect([...refs].sort()).toEqual(['a.png', 'b.pdf']);
+  });
+});
+
+describe('AttachmentManager.getHealthReport (#865)', () => {
+  function makeHealthEngine(records: unknown[], diskFiles: string[], pages: Record<string, string>) {
+    const provider = {
+      getAllAttachments: vi.fn(async () => records),
+      listStorageFiles: vi.fn(async () => diskFiles)
+    };
+    const pageManager = {
+      getAllPages: vi.fn(async () => Object.keys(pages)),
+      getPage: vi.fn(async (n: string) => ({ content: pages[n] }))
+    };
+    const engine = {
+      getManager: vi.fn((name: string) => {
+        if (name === 'ConfigurationManager') return makeConfigManager();
+        if (name === 'PageManager') return pageManager;
+        return null;
+      })
+    } as unknown as WikiEngine;
+    const mgr = new AttachmentManager(engine);
+    (mgr as unknown as { attachmentProvider: unknown }).attachmentProvider = provider;
+    return mgr;
+  }
+
+  const records = [
+    { identifier: 'h1', name: 'used.png', contentSize: 10, storageLocation: '/store/h1.png',
+      mentions: [{ '@type': 'WebPage', name: 'P1', url: '/view/P1' }] },
+    { identifier: 'h2', name: 'orphan.pdf', contentSize: 99, storageLocation: '/store/h2.pdf', mentions: [] },
+    { identifier: 'h3', name: 'gone.jpg', contentSize: 5, storageLocation: '/store/h3.jpg', mentions: [] }
+  ];
+  const diskFiles = ['h1.png', 'h2.pdf', 'stray.bin'];
+  const pages = {
+    P1: "[{Image src='used.png'}] and [{ATTACH src='ghost.docx'}]",
+    P2: 'plain text mentioning orphan.pdf without markup'
+  };
+
+  test('classifies orphans, recordless, missing, broken, loose', async () => {
+    const mgr = makeHealthEngine(records, diskFiles, pages);
+    const r = await mgr.getHealthReport();
+    expect(r.totals).toEqual({ records: 3, diskFiles: 3, pagesScanned: 2 });
+    expect(r.orphans.map(o => o.identifier)).toEqual(['h2', 'h3']); // sorted by size desc
+    expect(r.recordlessFiles).toEqual(['stray.bin']);
+    expect(r.missingFiles.map(m => m.identifier)).toEqual(['h3']);
+    expect(r.brokenRefs).toEqual([{ ref: 'ghost.docx', pages: ['P1'] }]);
+    expect(r.looseTextRefs).toEqual(['orphan.pdf']);
+  });
+
+  test('empty store yields empty report without errors', async () => {
+    const mgr = makeHealthEngine([], [], {});
+    const r = await mgr.getHealthReport();
+    expect(r.totals).toEqual({ records: 0, diskFiles: 0, pagesScanned: 0 });
+    expect(r.orphans).toEqual([]);
+    expect(r.brokenRefs).toEqual([]);
+  });
+});

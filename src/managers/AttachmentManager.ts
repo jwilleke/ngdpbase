@@ -804,20 +804,30 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * @param {string} content  - Raw wiki markup content
    * @returns {Promise<void>}
    */
-  async syncPageMentions(pageName: string, content: string): Promise<void> {
-    if (!this.attachmentProvider) return;
-
-    // Extract local filenames from [{Image src='...'}] and [{ATTACH src='...'}]
+  /**
+   * Canonical local-attachment reference extraction — `[{Image src='…'}]` /
+   * `[{ATTACH src='…'}]` filenames, skipping media:// URIs, external URLs,
+   * and absolute paths. Shared by save-time mention sync, the batch
+   * reconciler (scripts/reconcile-attachment-mentions.ts mirrors it), and the
+   * #865 health report.
+   */
+  static extractLocalAttachmentRefs(content: string): Set<string> {
     const srcPattern = /\[\{(?:Image|ATTACH)\s[^}]*?src='([^']+)'/gi;
-    const referencedFilenames = new Set<string>();
+    const refs = new Set<string>();
     let match: RegExpExecArray | null;
     while ((match = srcPattern.exec(content)) !== null) {
       const src = match[1];
-      // Skip media:// URIs, external URLs, and absolute paths — not local attachments
       if (src.startsWith('media://') || src.startsWith('http://') ||
           src.startsWith('https://') || src.startsWith('/')) continue;
-      referencedFilenames.add(src);
+      refs.add(src);
     }
+    return refs;
+  }
+
+  async syncPageMentions(pageName: string, content: string): Promise<void> {
+    if (!this.attachmentProvider) return;
+
+    const referencedFilenames = AttachmentManager.extractLocalAttachmentRefs(content);
 
     // Resolve filenames → attachment identifiers
     const currentIds = new Set<string>();
@@ -849,6 +859,104 @@ class AttachmentManager extends BaseManager implements CatalogSource {
         await this.detachFromPage(id, pageName).catch(() => {});
       }
     }
+  }
+
+  /**
+   * #865 Slice 2: attachment health report — computed fresh on demand
+   * (admin-triggered; walks every page's content, a few seconds on large
+   * instances). Read-only. Trustworthy only after mentions reconciliation
+   * (run `npm run reconcile:mentions` / rely on save-time sync).
+   *
+   * Sections:
+   *  - orphans:         records no page references (empty mentions)
+   *  - recordlessFiles: disk files with no metadata record
+   *  - missingFiles:    records whose storage file is gone from disk
+   *  - brokenRefs:      page markup references naming no record (ref → pages)
+   *  - looseTextRefs:   record filenames appearing in content OUTSIDE
+   *                     canonical markup (never tracked as mentions)
+   */
+  async getHealthReport(): Promise<{
+    totals: { records: number; diskFiles: number; pagesScanned: number };
+    orphans: Array<{ identifier: string; name?: string; contentSize?: number; dateCreated?: string; author?: string }>;
+    recordlessFiles: string[];
+    missingFiles: Array<{ identifier: string; name?: string; storageLocation?: string }>;
+    brokenRefs: Array<{ ref: string; pages: string[] }>;
+    looseTextRefs: string[];
+  }> {
+    const records = this.attachmentProvider ? await this.attachmentProvider.getAllAttachments() : [];
+    const provider = this.attachmentProvider as unknown as { listStorageFiles?: () => Promise<string[]> } | null;
+    const diskFiles = provider?.listStorageFiles ? await provider.listStorageFiles() : [];
+
+    const byFilename = new Map<string, AttachmentMetadata>();
+    for (const r of records) if (r.name) byFilename.set(r.name, r);
+
+    const storageBasenames = new Set(
+      records
+        .map(r => (r as { storageLocation?: string }).storageLocation)
+        .filter((s): s is string => typeof s === 'string')
+        .map(s => s.split('/').pop() as string)
+    );
+    const diskSet = new Set(diskFiles);
+    const recordlessFiles = diskFiles.filter(f => !storageBasenames.has(f)).sort();
+    const missingFiles = records
+      .filter(r => {
+        const loc = (r as { storageLocation?: string }).storageLocation;
+        return typeof loc === 'string' && !diskSet.has(loc.split('/').pop() as string);
+      })
+      .map(r => ({ identifier: r.identifier, name: r.name, storageLocation: (r as { storageLocation?: string }).storageLocation }));
+
+    // Page scan for broken / loose references
+    const pageManager = this.engine.getManager('PageManager') as {
+      getAllPages?: () => Promise<string[]>;
+      getPage?: (n: string) => Promise<{ content?: string } | null>;
+    } | null;
+    const brokenMap = new Map<string, Set<string>>();
+    const looseTextRefs = new Set<string>();
+    let pagesScanned = 0;
+    if (pageManager?.getAllPages && pageManager.getPage) {
+      const pageNames = await pageManager.getAllPages();
+      for (const pageName of pageNames) {
+        let content = '';
+        try {
+          content = (await pageManager.getPage(pageName))?.content ?? '';
+        } catch { continue; }
+        if (!content) continue;
+        pagesScanned++;
+        const refs = AttachmentManager.extractLocalAttachmentRefs(content);
+        for (const ref of refs) {
+          if (byFilename.has(ref)) continue;
+          if (!brokenMap.has(ref)) brokenMap.set(ref, new Set());
+          brokenMap.get(ref)!.add(pageName);
+        }
+        for (const [filename] of byFilename) {
+          if (!refs.has(filename) && content.includes(filename)) looseTextRefs.add(filename);
+        }
+      }
+    }
+
+    const orphans = records
+      .filter(r => !r.mentions || r.mentions.length === 0)
+      .map(r => ({
+        identifier: r.identifier,
+        name: r.name,
+        contentSize: (r as { contentSize?: number }).contentSize,
+        dateCreated: (r as { dateCreated?: string }).dateCreated,
+        author: typeof (r as { author?: { name?: string } }).author === 'object'
+          ? (r as { author?: { name?: string } }).author?.name
+          : undefined
+      }))
+      .sort((a, b) => (b.contentSize ?? 0) - (a.contentSize ?? 0));
+
+    return {
+      totals: { records: records.length, diskFiles: diskFiles.length, pagesScanned },
+      orphans,
+      recordlessFiles,
+      missingFiles,
+      brokenRefs: [...brokenMap.entries()]
+        .map(([ref, pages]) => ({ ref, pages: [...pages].sort() }))
+        .sort((a, b) => b.pages.length - a.pages.length),
+      looseTextRefs: [...looseTextRefs].sort()
+    };
   }
 
   /**

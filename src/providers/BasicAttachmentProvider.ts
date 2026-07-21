@@ -1053,6 +1053,24 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
   }
 
   /**
+   * #865 Slice 2: basenames of all stored attachment files on disk (top-level
+   * storage dir; excludes .json bookkeeping). Used by the health report to
+   * find recordless files and missing-file records.
+   */
+  async listStorageFiles(): Promise<string[]> {
+    if (!this.storageDirectory) return [];
+    try {
+      const entries = await fs.readdir(this.storageDirectory, { withFileTypes: true });
+      return entries
+        .filter(e => e.isFile() && !e.name.toLowerCase().endsWith('.json'))
+        .map(e => e.name);
+    } catch (err) {
+      logger.warn('[BasicAttachmentProvider] listStorageFiles failed:', err);
+      return [];
+    }
+  }
+
+  /**
    * Get provider information
    * @returns Provider metadata
    */

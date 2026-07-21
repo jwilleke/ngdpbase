@@ -432,4 +432,86 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
+<%# #865 Slice 2: attachment health report — computed on demand (walks all
+    page content), so behind a button rather than on page load. %>
+<div class="container mb-4">
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-heartbeat"></i> Attachment Health</h5>
+            <button class="btn btn-sm btn-primary" id="healthScanBtn">
+                <i class="fas fa-stethoscope"></i> Run health scan
+            </button>
+        </div>
+        <div class="card-body" id="healthResults">
+            <p class="text-muted mb-0">Scans every page's content against the attachment store: orphans (no page references), recordless disk files, missing files, and broken markup references. Takes a few seconds on large wikis.</p>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    var btn = document.getElementById('healthScanBtn');
+    var out = document.getElementById('healthResults');
+    if (!btn || !out) return;
+
+    function esc(s) {
+        var d = document.createElement('div');
+        d.textContent = String(s == null ? '' : s);
+        return d.innerHTML;
+    }
+    function fmtSize(n) {
+        if (typeof n !== 'number') return '—';
+        if (n > 1048576) return (n / 1048576).toFixed(1) + ' MB';
+        if (n > 1024) return (n / 1024).toFixed(0) + ' KB';
+        return n + ' B';
+    }
+    function section(title, count, bodyHtml) {
+        return '<h6 class="mt-3">' + esc(title) + ' <span class="badge bg-secondary">' + count + '</span></h6>' +
+               (count === 0 ? '<p class="text-muted mb-2">None.</p>' : bodyHtml);
+    }
+
+    btn.addEventListener('click', async function () {
+        btn.disabled = true;
+        out.innerHTML = '<p class="text-muted mb-0"><i class="fas fa-spinner fa-spin"></i> Scanning…</p>';
+        try {
+            var resp = await fetch('/admin/attachments/health', { headers: { 'Accept': 'application/json' } });
+            var body = await resp.json();
+            if (!body.success) throw new Error(body.error || 'scan failed');
+            var r = body.report;
+            var html = '<p class="text-muted">' + r.totals.records + ' records · ' + r.totals.diskFiles +
+                       ' disk files · ' + r.totals.pagesScanned + ' pages scanned</p>';
+
+            html += section('Orphans — no page references', r.orphans.length,
+                '<div class="table-responsive" style="max-height:20rem;overflow-y:auto;"><table class="table table-sm table-striped"><thead><tr><th>File</th><th>Size</th><th>Created</th><th>Author</th></tr></thead><tbody>' +
+                r.orphans.map(function (o) {
+                    return '<tr><td><a href="/attachments/' + esc(o.identifier) + '" target="_blank"><code>' + esc(o.name || o.identifier) + '</code></a></td><td>' +
+                           fmtSize(o.contentSize) + '</td><td>' + esc((o.dateCreated || '').slice(0, 10)) + '</td><td>' + esc(o.author || '—') + '</td></tr>';
+                }).join('') + '</tbody></table></div>');
+
+            html += section('Broken references — markup names no record', r.brokenRefs.length,
+                '<div class="table-responsive" style="max-height:20rem;overflow-y:auto;"><table class="table table-sm table-striped"><thead><tr><th>Referenced file</th><th>Pages</th></tr></thead><tbody>' +
+                r.brokenRefs.map(function (b) {
+                    return '<tr><td><code>' + esc(b.ref) + '</code></td><td>' +
+                           b.pages.map(function (p) { return '<a href="/view/' + encodeURIComponent(p) + '" target="_blank">' + esc(p) + '</a>'; }).join(', ') + '</td></tr>';
+                }).join('') + '</tbody></table></div>');
+
+            html += section('Disk files with no record', r.recordlessFiles.length,
+                '<p class="mb-2" style="max-height:8rem;overflow-y:auto;">' + r.recordlessFiles.map(function (f) { return '<code class="me-2">' + esc(f) + '</code>'; }).join('') + '</p>');
+
+            html += section('Records whose file is missing from disk', r.missingFiles.length,
+                '<p class="mb-2">' + r.missingFiles.map(function (m) { return '<code class="me-2">' + esc(m.name || m.identifier) + '</code>'; }).join('') + '</p>');
+
+            html += section('Loose text references (outside [{Image}]/[{ATTACH}] markup — not tracked as mentions)', r.looseTextRefs.length,
+                '<p class="mb-0">' + r.looseTextRefs.map(function (f) { return '<code class="me-2">' + esc(f) + '</code>'; }).join('') + '</p>');
+
+            out.innerHTML = html;
+        } catch (e) {
+            out.innerHTML = '<p class="text-danger mb-0">Health scan failed: ' + esc(e.message || e) + '</p>';
+        } finally {
+            btn.disabled = false;
+        }
+    });
+})();
+</script>
+
 <%- include('footer') %>

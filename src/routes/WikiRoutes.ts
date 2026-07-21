@@ -9257,6 +9257,33 @@ ${panes}
   /**
    * Admin attachments API - return JSON for client-side refresh
    */
+  /**
+   * GET /admin/attachments/health (#865 Slice 2) — on-demand attachment
+   * health report: orphans, recordless disk files, missing-file records,
+   * broken markup references, loose text references. Read-only; walks all
+   * page content (seconds on large instances), so fetched via button, not
+   * on page load.
+   */
+  async adminAttachmentsHealth(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!wikiContext.hasRole('admin', 'editor')) {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+      }
+      const attachmentManager = this.engine.getManager('AttachmentManager') as {
+        getHealthReport?: () => Promise<unknown>;
+      } | undefined;
+      if (!attachmentManager?.getHealthReport) {
+        return res.status(503).json({ success: false, error: 'AttachmentManager unavailable' });
+      }
+      const report = await attachmentManager.getHealthReport();
+      return res.json({ success: true, report });
+    } catch (err: unknown) {
+      logger.error('Error building attachment health report:', err);
+      return res.status(500).json({ success: false, error: 'Failed to build health report' });
+    }
+  }
+
   async adminAttachmentsApi(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
@@ -11096,6 +11123,8 @@ ${panes}
     app.get('/api/admin/diff', (req: Request, res: Response) => this.adminDiffApi(req, res));
     app.get('/admin/attachments', (req: Request, res: Response) => this.adminAttachments(req, res));
     app.get('/admin/attachments/api', (req: Request, res: Response) => this.adminAttachmentsApi(req, res));
+    // #865 Slice 2: on-demand health report (registered before /:attachmentId routes)
+    app.get('/admin/attachments/health', (req: Request, res: Response) => this.adminAttachmentsHealth(req, res));
     app.delete('/admin/attachments/:attachmentId', (req: Request, res: Response) => this.adminDeleteAttachmentFromBrowser(req, res));
     app.get('/admin/import', (req: Request, res: Response) => this.adminImport(req, res));
     app.post('/admin/import/preview', (req: Request, res: Response) => this.adminImportPreview(req, res));
