@@ -928,6 +928,9 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       // check reads it; the legacy mapping used to strip it (pageUuid only),
       // which made every record look orphaned to getHealthReport.
       mentions: schema.mentions ?? [],
+      // #865: keep the canonical field name alongside the legacy filePath
+      // alias — the health report matches disk files against it.
+      storageLocation: schema.storageLocation,
       pageUuid: schema.mentions?.[0]?.name || '',
       mimeType: schema.encodingFormat,
       encodingFormat: schema.encodingFormat,
@@ -1066,7 +1069,11 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     try {
       const entries = await fs.readdir(this.storageDirectory, { withFileTypes: true });
       return entries
-        .filter(e => e.isFile() && !e.name.toLowerCase().endsWith('.json'))
+        .filter(e => e.isFile()
+          && !e.name.toLowerCase().endsWith('.json')
+          // metadata backups (.bak-reconcile / .bak-import-*) are bookkeeping,
+          // not attachments — keep them out of the recordless report
+          && !e.name.includes('.json.bak'))
         .map(e => e.name);
     } catch (err) {
       logger.warn('[BasicAttachmentProvider] listStorageFiles failed:', err);

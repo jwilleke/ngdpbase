@@ -38,4 +38,13 @@ describe('BasicAttachmentProvider.getAllAttachments (#865)', () => {
     const all = await provider.getAllAttachments();
     expect(all[0].mentions).toEqual([]);
   });
+
+  test('storageLocation passes through under its canonical name (not only filePath)', async () => {
+    const provider = makeProvider([
+      { identifier: 'h4', name: 'x.png', dateCreated: '2026-01-04', storageLocation: '/store/h4.png' }
+    ]);
+    const all = await provider.getAllAttachments();
+    expect(all[0].storageLocation).toBe('/store/h4.png');
+    expect(all[0].filePath).toBe('/store/h4.png'); // legacy alias intact
+  });
 });
