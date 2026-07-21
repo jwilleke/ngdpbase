@@ -189,6 +189,37 @@ describe('CatalogManager', () => {
       const terms = (await m.getProviderTerms('user-keywords')).terms;
       expect(terms).toEqual([]); // disabled → filtered from terms
     });
+
+    test('backup() captures the instance store; restore() writes it back (per-manager contract)', async () => {
+      const seed = { default: { label: 'default', enabled: true } };
+      const m = new CatalogManager(makeStoreEngine(seed) as unknown as WikiEngine);
+      await m.initialize();
+      const provider = m.getUserKeywordsProvider();
+      await provider.saveCatalogObject({
+        default: { label: 'default', enabled: true },
+        basketball: { label: 'basketball', enabled: true }
+      });
+
+      const backup = await m.backup();
+      expect(backup.managerName).toBe('CatalogManager');
+      expect(backup.data.vocabularyStores['user-keywords']).toEqual({
+        basketball: { label: 'basketball', enabled: true }
+      });
+
+      // Wipe the store, restore from backup, verify contents round-trip
+      await fs.remove(path.join(tmpDir, 'vocabulary', 'user-keywords.json'));
+      await m.restore(backup);
+      const store = await fs.readJson(path.join(tmpDir, 'vocabulary', 'user-keywords.json'));
+      expect(store).toEqual({ basketball: { label: 'basketball', enabled: true } });
+    });
+
+    test('backup() with no store file returns an empty store (not an error)', async () => {
+      const seed = { default: { label: 'default', enabled: true } };
+      const m = new CatalogManager(makeStoreEngine(seed) as unknown as WikiEngine);
+      await m.initialize();
+      const backup = await m.backup();
+      expect(backup.data.vocabularyStores['user-keywords']).toEqual({});
+    });
   });
 
   test('resolveUri() returns uri for known term', async () => {

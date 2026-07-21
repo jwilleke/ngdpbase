@@ -15,7 +15,7 @@
 
 import path from 'path';
 import fs from 'fs-extra';
-import BaseManager from './BaseManager.js';
+import BaseManager, { type BackupData } from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { CatalogProvider, CatalogTerm } from '../types/Catalog.js';
@@ -184,6 +184,22 @@ export class UserKeywordsCatalogProvider implements CatalogProvider {
     for (const id of Object.keys(seed)) {
       if (!(id in catalog)) store[id] = { ...seed[id], enabled: false };
     }
+    await fs.ensureDir(path.dirname(storePath));
+    await fs.writeJson(storePath, store, { spaces: 2 });
+  }
+
+  /**
+   * #896 backup contract: raw instance-store contents (NOT the merged
+   * catalog — the seed ships with the code and needs no backup).
+   */
+  async readStoreForBackup(): Promise<Record<string, UserKeywordConfig>> {
+    return this.readStore();
+  }
+
+  /** #896 restore contract: write store contents verbatim (no delta pass). */
+  async restoreStore(store: Record<string, UserKeywordConfig>): Promise<void> {
+    const storePath = this.getStorePath();
+    if (!storePath) throw new Error('UserKeywordsCatalogProvider: no store path (ConfigurationManager unavailable)');
     await fs.ensureDir(path.dirname(storePath));
     await fs.writeJson(storePath, store, { spaces: 2 });
   }
@@ -520,6 +536,53 @@ class CatalogManager extends BaseManager {
       types: s.types,
       currentSchemaVersion: s.currentSchemaVersion
     }));
+  }
+
+  // -------------------------------------------------------------------------
+  // Backup / restore (per-manager contract collected by BackupManager)
+  // -------------------------------------------------------------------------
+
+  /**
+   * #896: back up the instance vocabulary store(s). Only provider-owned
+   * instance data is included — the seed vocabulary ships with the code and
+   * the AI provider owns no terms. Keyed by provider id so future
+   * provider-owned stores slot in without a format change.
+   */
+  async backup(): Promise<BackupData> {
+    const vocabularyStores: Record<string, Record<string, UserKeywordConfig>> = {};
+    const ukProvider = this.getUserKeywordsProvider();
+    if (ukProvider) {
+      try {
+        vocabularyStores['user-keywords'] = await ukProvider.readStoreForBackup();
+      } catch (err) {
+        logger.warn('[CatalogManager] backup: user-keywords store unreadable:', err);
+      }
+    }
+    return {
+      managerName: this.constructor.name,
+      timestamp: new Date().toISOString(),
+      data: { vocabularyStores }
+    };
+  }
+
+  /**
+   * #896: restore instance vocabulary store(s) written by backup().
+   */
+  async restore(backupData: BackupData): Promise<void> {
+    await super.restore(backupData);
+    const data = backupData.data as { vocabularyStores?: Record<string, Record<string, UserKeywordConfig>> } | null;
+    const stores = data?.vocabularyStores;
+    if (!stores || typeof stores !== 'object') return;
+    const ukStore = stores['user-keywords'];
+    if (ukStore && typeof ukStore === 'object') {
+      const ukProvider = this.getUserKeywordsProvider();
+      if (!ukProvider) {
+        logger.warn('[CatalogManager] restore: user-keywords provider unavailable — store not restored');
+        return;
+      }
+      await ukProvider.restoreStore(ukStore);
+      logger.info(`[CatalogManager] restored user-keywords vocabulary store (${Object.keys(ukStore).length} entries)`);
+    }
   }
 }
 
