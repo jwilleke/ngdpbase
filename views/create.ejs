@@ -45,28 +45,25 @@
                     </div>
                     <% } %>
                     <div class="col-md-6">
-                        <label style="font-weight:bold;">User Keywords (Optional, Max <%= maxUserKeywords %>):</label>
-                        <div class="dropdown">
-                            <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start" type="button" id="userKeywordsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                                <span id="selectedUserKeywordsText">Select user keywords...</span>
-                            </button>
-                            <ul class="dropdown-menu w-100" aria-labelledby="userKeywordsDropdown">
-                                <% userKeywords.forEach(kw => {
-                                    const id = typeof kw === 'object' ? kw.id : kw;
-                                    const label = typeof kw === 'object' ? kw.label : kw;
-                                    const description = typeof kw === 'object' ? kw.description : '';
-                                %>
-                                    <li>
-                                        <div class="dropdown-item-checkbox px-3 py-2">
-                                            <div class="form-check">
-                                                <input class="form-check-input user-keyword-checkbox" type="checkbox" name="user-keywords[]" value="<%= id %>" data-label="<%= label %>" id="user-keyword-<%= id %>">
-                                                <label class="form-check-label ms-2" for="user-keyword-<%= id %>"<% if (description) { %> title="<%= description %>"<% } %>><%= label %><% if (description) { %> <small class="text-muted">- <%= description %></small><% } %></label>
-                                            </div>
-                                        </div>
-                                    </li>
-                                <% }); %>
-                            </ul>
+                        <%
+                            // #897 (Slice 5 of #869): open keyword typeahead (mirrors
+                            // _basicEditor.ejs). No cap; bucket-reserved terms excluded
+                            // from suggestions, self-correcting on save if typed.
+                            const _kwSkip = ['private', 'draft', 'review', 'published', 'capture'];
+                            const _kwCatalogLabels = (Array.isArray(userKeywords) ? userKeywords : [])
+                                .map(kw => typeof kw === 'object' ? (kw.label || kw.id) : kw)
+                                .filter(l => l && !_kwSkip.includes(String(l).toLowerCase()));
+                            const _kwObserved = (typeof userKeywordSuggestions !== 'undefined' && Array.isArray(userKeywordSuggestions) ? userKeywordSuggestions : [])
+                                .filter(l => l && !_kwSkip.includes(String(l).toLowerCase()));
+                            const _kwPool = [...new Set([..._kwCatalogLabels, ..._kwObserved])].sort((a, b) => String(a).localeCompare(String(b)));
+                        %>
+                        <label style="font-weight:bold;" for="userKeywordsInput">User Keywords (comma-separated):</label>
+                        <div class="position-relative">
+                            <input type="text" class="form-control" id="userKeywordsInput" name="user-keywords" autocomplete="off"
+                                   placeholder="Type keywords, separated by commas…" value="">
+                            <div class="dropdown-menu w-100" id="userKeywordsSuggest" style="max-height:12rem;overflow-y:auto;"></div>
                         </div>
+                        <script type="application/json" id="userKeywordsPool"><%- JSON.stringify(_kwPool) %></script>
                     </div>
                 </div>
 
@@ -146,35 +143,75 @@
             alert('System category is required');
             return false;
         }
-        // Validate user-keywords (max <%= maxUserKeywords %>, optional)
-        const checkedKeywords = document.querySelectorAll('.user-keyword-checkbox:checked').length;
-        if (checkedKeywords > <%= maxUserKeywords %>) {
-            e.preventDefault();
-            alert('Maximum <%= maxUserKeywords %> user keywords allowed');
-            return false;
+    });
+
+    // #897: keyword typeahead (open vocabulary, no cap) — mirrors _basicEditor.ejs.
+    (function () {
+        const input = document.getElementById('userKeywordsInput');
+        const menu = document.getElementById('userKeywordsSuggest');
+        const poolEl = document.getElementById('userKeywordsPool');
+        if (!input || !menu || !poolEl) return;
+        let pool = [];
+        try { pool = JSON.parse(poolEl.textContent) || []; } catch { pool = []; }
+        if (!pool.length) return;
+        let active = -1;
+
+        function tokens() {
+            return input.value.split(',').map(function (t) { return t.trim(); });
         }
-    });
-    
-    // User keyword limitation
-    const userKeywordCheckboxes = document.querySelectorAll('.user-keyword-checkbox');
-    userKeywordCheckboxes.forEach(checkbox => {
-        checkbox.addEventListener('change', function() {
-            const checkedCount = document.querySelectorAll('.user-keyword-checkbox:checked').length;
-            if (checkedCount > <%= maxUserKeywords %>) {
-                this.checked = false;
-                alert('Maximum <%= maxUserKeywords %> user keywords allowed');
+
+        function hide() { menu.classList.remove('show'); menu.innerHTML = ''; active = -1; }
+
+        function pick(label) {
+            const parts = tokens();
+            parts[parts.length - 1] = label;
+            input.value = parts.filter(Boolean).join(', ');
+            hide();
+            input.focus();
+        }
+
+        function update() {
+            const parts = tokens();
+            const current = (parts[parts.length - 1] || '').toLowerCase();
+            if (!current) { hide(); return; }
+            const chosen = parts.slice(0, -1).map(function (t) { return t.toLowerCase(); });
+            const matches = pool.filter(function (label) {
+                const l = String(label).toLowerCase();
+                return l.indexOf(current) !== -1 && l !== current && chosen.indexOf(l) === -1;
+            }).slice(0, 8);
+            if (!matches.length) { hide(); return; }
+            menu.innerHTML = '';
+            matches.forEach(function (label, i) {
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'dropdown-item py-1' + (i === active ? ' active' : '');
+                item.style.fontSize = '0.85em';
+                item.textContent = label;
+                item.addEventListener('mousedown', function (e) { e.preventDefault(); pick(label); });
+                menu.appendChild(item);
+            });
+            menu.classList.add('show');
+        }
+
+        input.addEventListener('input', function () { active = -1; update(); });
+        input.addEventListener('blur', function () { hide(); });
+        input.addEventListener('keydown', function (e) {
+            if (!menu.classList.contains('show')) return;
+            const items = menu.querySelectorAll('.dropdown-item');
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                active = e.key === 'ArrowDown'
+                    ? (active + 1) % items.length
+                    : (active - 1 + items.length) % items.length;
+                items.forEach(function (el, i) { el.classList.toggle('active', i === active); });
+            } else if ((e.key === 'Enter' || e.key === 'Tab') && active >= 0) {
+                e.preventDefault();
+                pick(items[active].textContent);
+            } else if (e.key === 'Escape') {
+                hide();
             }
-            updateSelectedUserKeywordsText();
         });
-    });
-    
-    // Removed obsolete category UI update
-    
-    function updateSelectedUserKeywordsText() {
-        const checkedKeywords = Array.from(document.querySelectorAll('.user-keyword-checkbox:checked')).map(cb => cb.dataset.label || cb.value);
-        const text = checkedKeywords.length > 0 ? checkedKeywords.join(', ') : 'Select user keywords...';
-        document.getElementById('selectedUserKeywordsText').textContent = text;
-    }
+    })();
 
     // Audience dropdown text updater (mirrors edit.ejs pattern)
     function updateSelectedAudienceText() {
@@ -187,7 +224,6 @@
     });
 
     // Initialize dropdown text
-    updateSelectedUserKeywordsText();
     updateSelectedAudienceText();
 </script>
 

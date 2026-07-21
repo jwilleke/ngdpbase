@@ -584,7 +584,6 @@
   "_comment_audit_legacy": "Legacy audit settings (moved to provider-specific config above)",
   "_comment_defaults": "Default values for page creation",
   "ngdpbase.default.system-category": "general",
-  "ngdpbase.maximum.user-keywords": 5,
   "ngdpbase.default.template.dateformat": "dd-MMM-yyyy HH:mm",
   "ngdpbase.default.timezone": "UTC",
   "_comment_system_category": "System category definitions with storage location mapping",

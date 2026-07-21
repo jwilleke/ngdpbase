@@ -120,22 +120,20 @@ describe('ValidationManager', () => {
       expect(result.success).toBe(true);
     });
 
-    test('should reject too many user keywords', () => {
-      validationManager.maxUserKeywords = 3;
-      
+    test('accepts any number of user keywords (#897 — cap retired, open vocabulary)', () => {
       const metadata = {
         title: 'Test Page',
         uuid: uuidv4(),
         slug: 'test-page',
         'system-category': 'General',
-        'user-keywords': ['one', 'two', 'three', 'four'], // Too many
+        'user-keywords': Array.from({ length: 25 }, (_, i) => `kw-${i}`),
         lastModified: new Date().toISOString()
       };
 
       const result = validationManager.validateMetadata(metadata);
-      
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Maximum 3 user keywords are allowed');
+
+      expect(result.success).toBe(true);
+      expect(result.error).toBeNull();
     });
 
     test('should warn about non-standard categories', () => {

@@ -127,7 +127,6 @@ export interface PageMetadata {
  *
  * @property {string[]} requiredMetadataFields - Required metadata fields
  * @property {string[]} validSystemCategories - Valid system category values
- * @property {number} maxUserKeywords - Maximum user keywords allowed
  * @property {number} maxCategories - Maximum categories allowed
  *
  * @see {@link BaseManager} for base functionality
@@ -145,7 +144,6 @@ class ValidationManager extends BaseManager {
   private validKnowledgeRoles: string[];
   private validStatuses: string[];
   private defaultStatus: string;
-  private maxUserKeywords!: number;
 
   /**
    * Creates a new ValidationManager instance
@@ -181,11 +179,6 @@ class ValidationManager extends BaseManager {
   async initialize(config: Record<string, unknown> = {}): Promise<void> {
     await super.initialize(config);
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-
-    // Load max keywords
-    this.maxUserKeywords = configManager
-      ? (configManager.getProperty('ngdpbase.maximum.user-keywords', 5) as number)
-      : (config.maxUserKeywords as number) || 5;
 
     // Load system categories and keywords from configuration
     this.loadSystemCategories(configManager);
@@ -608,9 +601,8 @@ class ValidationManager extends BaseManager {
       if (!Array.isArray(metadata['user-keywords'])) {
         validationErrors.push('user-keywords must be an array');
       } else {
-        if ((metadata['user-keywords'] as unknown[]).length > this.maxUserKeywords) {
-          validationErrors.push(`Maximum ${this.maxUserKeywords} user keywords are allowed, found ${(metadata['user-keywords'] as unknown[]).length}`);
-        }
+        // #897: keyword-count cap retired — user-keywords is an open
+        // vocabulary (decision 2, 2026-07-21). Shape checks only.
         for (const keyword of metadata['user-keywords']) {
           if (typeof keyword !== 'string' || keyword.trim().length === 0) {
             validationErrors.push('All user keywords must be non-empty strings');

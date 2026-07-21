@@ -1574,6 +1574,25 @@ class WikiRoutes {
   }
 
   /**
+   * #897: index-observed user keywords for the editor typeahead suggestion
+   * pool (merged client-side with the vocabulary catalog). ACL note: this is
+   * the same union-of-terms surface the asset-picker filter already exposes
+   * to all users — term strings only, no page associations.
+   */
+  private async getObservedUserKeywords(): Promise<string[]> {
+    const sm = this.engine.getManager('SearchManager') as {
+      getAllUserKeywords?: () => Promise<string[]>;
+    } | undefined;
+    if (!sm?.getAllUserKeywords) return [];
+    try {
+      const kws = await sm.getAllUserKeywords();
+      return Array.isArray(kws) ? kws : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * #893: editorial lifecycle options for the editor's Status select, sourced
    * from the config-driven catalog via ValidationManager (order ascending).
    * `defaultStatus` is the state an absent frontmatter field means.
@@ -2412,9 +2431,6 @@ ${panes}
       const userKeywords = Array.isArray(rawKeywords) ? rawKeywords : [];
 
       const configManager = this.engine.getManager('ConfigurationManager');
-      const maxUserKeywords = configManager
-        ? configManager.getProperty('ngdpbase.maximum.user-keywords', 5)
-        : 5;
 
       // Get default system category from ValidationManager (falls back to config)
       const validationManager = this.engine.getManager('ValidationManager');
@@ -2433,7 +2449,7 @@ ${panes}
         templates: templates,
         systemCategories: systemCategories,
         userKeywords: userKeywords,
-        maxUserKeywords: maxUserKeywords,
+        userKeywordSuggestions: await this.getObservedUserKeywords(),
         defaultCategory: defaultCategory,
         statusOptions: this.getStatusOptions(),
         availableRoles: availableRoles,
@@ -2866,9 +2882,6 @@ ${panes}
       const selectedUserKeywords = pageData.metadata?.['user-keywords'] || [];
 
       const configManager = this.engine.getManager('ConfigurationManager');
-      const maxUserKeywords = configManager
-        ? configManager.getProperty('ngdpbase.maximum.user-keywords', 5)
-        : 5;
 
       // Build availableRoles for the audience picker
       const rolesConfig = configManager
@@ -2912,7 +2925,7 @@ ${panes}
         selectedCategories: selectedCategories,
         userKeywords: userKeywords,
         selectedUserKeywords: selectedUserKeywords,
-        maxUserKeywords: maxUserKeywords,
+        userKeywordSuggestions: await this.getObservedUserKeywords(),
         availableRoles: availableRoles,
         pageData: pageData,
         defaultCategory: defaultCategory,
@@ -3187,11 +3200,25 @@ ${panes}
         // No keywords submitted: keep existing ones
         userKeywordsArray = existingPage?.metadata?.['user-keywords'] || [];
       } else {
-        userKeywordsArray = Array.isArray(submittedUserKeywords)
+        // #897: the open typeahead posts ONE comma-separated string; legacy
+        // checkbox forms post an array. Normalize both to a trimmed,
+        // deduplicated string array (#545/#862 shape guards). An empty
+        // submission clears the keywords.
+        const rawList = Array.isArray(submittedUserKeywords)
           ? submittedUserKeywords
           : submittedUserKeywords
-            ? [submittedUserKeywords]
+            ? String(submittedUserKeywords).split(',')
             : [];
+        const seen = new Set<string>();
+        userKeywordsArray = rawList
+          .map((kw: unknown) => String(kw).trim())
+          .filter((kw: string) => {
+            if (!kw) return false;
+            const lower = kw.toLowerCase();
+            if (seen.has(lower)) return false;
+            seen.add(lower);
+            return true;
+          });
       }
 
       // Extract audience from POST body (checkbox array)

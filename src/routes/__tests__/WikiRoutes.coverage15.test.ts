@@ -190,9 +190,10 @@ vi.mock('../../WikiEngine', () => {
           ValidationManager: {
             validateContent: vi.fn().mockResolvedValue({ isValid: true }),
             validateMetadata: vi.fn().mockResolvedValue({ isValid: true }),
-            generateValidMetadata: vi.fn().mockImplementation((title: string) => ({
+            generateValidMetadata: vi.fn().mockImplementation((title: string, options: Record<string, unknown> = {}) => ({
               title, uuid: 'test-uuid-1', 'system-category': 'general', 'user-keywords': [],
-              author: 'testuser', created: new Date().toISOString(), modified: new Date().toISOString()
+              author: 'testuser', created: new Date().toISOString(), modified: new Date().toISOString(),
+              ...options // mirror the real implementation: caller options override defaults
             })),
             getDefaultSystemCategory: vi.fn().mockReturnValue('general')
           },
@@ -643,6 +644,29 @@ describe('WikiRoutes — coverage batch 15', () => {
         .set('x-csrf-token', 'test-csrf-token')
         .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general', userKeywords: ['tech', 'science'] });
       expect(res.status).toBe(302);
+      const saved = mockPageManager.savePageWithContext.mock.calls[0][1];
+      expect(saved['user-keywords']).toEqual(['tech', 'science']);
+    });
+
+    test('#897: comma-separated typeahead value splits into a trimmed, deduped array', async () => {
+      const res = await request(app)
+        .post('/save/TestPage')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general', 'user-keywords': ' travel,  ohio , travel, , grow system ' });
+      expect(res.status).toBe(302);
+      const saved = mockPageManager.savePageWithContext.mock.calls[0][1];
+      expect(saved['user-keywords']).toEqual(['travel', 'ohio', 'grow system']);
+    });
+
+    test('#897: no cap — many keywords accepted', async () => {
+      const many = Array.from({ length: 12 }, (_, i) => `kw-${i}`).join(', ');
+      const res = await request(app)
+        .post('/save/TestPage')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general', 'user-keywords': many });
+      expect(res.status).toBe(302);
+      const saved = mockPageManager.savePageWithContext.mock.calls[0][1];
+      expect(saved['user-keywords']).toHaveLength(12);
     });
 
     test('handles save error gracefully', async () => {

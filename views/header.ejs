@@ -1670,15 +1670,7 @@ function saveEditForm() {
             console.log('System category field not found (non-admin user)');
         }
 
-        // Validate user-keywords (get max from form or use default)
-        const maxUserKeywords = 5; // Default value, should match server-side
-        const checkedKeywords = document.querySelectorAll('.user-keyword-checkbox:checked').length;
-        if (checkedKeywords > maxUserKeywords) {
-            console.log('Validation failed: too many keywords');
-            alert('Maximum ' + maxUserKeywords + ' user keywords allowed');
-            return false;
-        }
-
+        // #897: keyword cap retired (open vocabulary) — no keyword-count check.
         console.log('Validation passed, submitting form...');
         console.log('Form action:', editForm.action);
         console.log('Form method:', editForm.method);
