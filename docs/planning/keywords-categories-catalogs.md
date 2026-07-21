@@ -1,0 +1,141 @@
+---
+name: keywords-categories-catalogs
+description: "Brainstorming / planning inventory — every keyword, category, and catalog surface that exists today, the issues that shaped them, and the open tensions to resolve before further keyword work"
+dateModified: '2026-07-20'
+category: planning
+---
+
+# Keywords, Categories, Catalogs — current-state inventory and planning notes
+
+Working document for planning the future of tagging/vocabulary features. Everything in the first half is **what exists today** (verified against code, config, and issues on 2026-07-20). The second half is tensions, gaps, and directions — brainstorming, not commitments.
+
+Primary open work: **[#869 — EPIC: Unified canonical keywords across pages, media, and external tools (digiKam-compatible)](https://github.com/jwilleke/ngdpbase/issues/869)** (P1). This document is background for that epic.
+
+---
+
+## 1. The vocabularies that exist today
+
+Three config-defined controlled vocabularies plus one open (uncontrolled) vocabulary:
+
+| Vocabulary | Config key | Nature | Applied to | Notes |
+|---|---|---|---|---|
+| System categories | `ngdpbase.system-category` | Closed, operator-curated | Pages (exactly one per page) | Each entry carries label, description, `storageLocation` (regular/required), enabled flag. Default: `general` (`ngdpbase.default.system-category`) |
+| System keywords | `ngdpbase.system-keywords` | Closed, operator-curated | Pages (multi) | 13 defaults. Each entry has its own `category` facet: `content-type`, `workflow-status`, `subject` |
+| User keywords | `ngdpbase.user-keywords` | Closed but user-facing | Pages (multi, max `ngdpbase.maximum.user-keywords` = 5) | Entries: label, description, `category` facet (general/status/subject), `enabled`, `restrictEditing`. `capture` added by commit 5c43a23e (for the #881 bookmarklet) |
+| Media/attachment keywords | *(none — no catalog)* | **Open** | Media + attachment files | Stored **in the file** (EXIF/IPTC/XMP `Keywords` / `dc:subject`); digiKam-compatible; anything a camera/tool/user wrote |
+
+Confusing overlaps baked into the defaults:
+
+- `user-keywords` and `system-keywords` **duplicate terms**: draft/review/published and the whole subject list (medicine, geology, …) exist in both. The `user-keywords` comment already marks these as "deprecated here — see system-keywords", but they still ship in both catalogs.
+- The word **"category" means three things**: (1) `system-category` (page's single storage/ACL category), (2) the `category` *facet field* inside each keyword definition (general/status/subject/workflow-status), (3) `ngdpbase.storageLocation.categoryBasedStorage` mapping (System/Admin/Security → required storage). Any future doc/UI work should disambiguate these.
+
+## 2. Where each vocabulary surfaces (UI + API)
+
+### Page editor (`views/_basicEditor.ejs`)
+
+- **User Keywords** — dropdown with checkboxes (`_basicEditor.ejs:126`), one checkbox per catalog entry. Enforces the max-5 cap at submit. **Config-derived** (`getUserKeywords` path): shows every enabled catalog entry, whether or not any page uses it. `private` is filtered out of the dropdown (has its own checkbox; legacy `user-keywords: [private]` still honored for unmigrated pages).
+- **System Category** — admin-only single select.
+
+### Media item page (`views/media-item.ejs`)
+
+- **Keywords (comma-separated)** — free-text typeahead (`media-item.ejs:122`) with suggest dropdown (`mediaEditKeywordsSuggest`). Open vocabulary. Saving **writes back into the file's EXIF/IPTC/XMP** with a one-time `_original` backup (shipped in #866). This is the digiKam-compatibility path — the file itself is the source of truth, ngdp's media index just mirrors it.
+
+### Asset picker (`views/_asset-picker.ejs`, shared by /search and /attachments/browse)
+
+- `ap-user-keywords` + `ap-system-keywords` multi-selects (Pages source only, #691) — server-injected catalogs.
+- **Related keywords strip** (#882, in-review) — when a keyword filter is active, `GET /api/keywords/related?keyword=` returns co-occurring user keywords ranked by shared-page count (ACL-safe: computed over `advancedSearchWithContext` hits, private pages never counted; top 12, seed excluded). Rendered as a badge strip that chains to further keyword searches.
+- **Asymmetry worth remembering:** the search page's keyword filter list is **index-derived** (`SearchManager.getAllUserKeywords()` — union of what pages actually carry), while the edit-form picker is **config-derived** (catalog entries). A newly registered catalog term shows in the editor immediately but only appears in search filters once a visible page carries it (bit us with `capture`, #881).
+
+### Admin + self-serve keyword management (`src/routes/WikiRoutes.ts:11067–11093`)
+
+- `/admin/keywords` — CRUD over the user-keyword catalog (GET list, POST create, PUT/DELETE per id, usage count endpoint `/api/admin/keywords/:id/usage`).
+- `/user-keywords/create` — user-facing creation flow, plus `create-page/:keywordId` to spin up a keyword landing page.
+- `GET /api/user-keywords` — catalog as JSON.
+
+### Search integration
+
+- Lunr boosts (`ngdpbase.search.provider.lunr.boost`): `systemcategory` 8, `userkeywords` 6, `keywords` 4 — keywords already outrank body text; #884 plans further field-weighting/keyword-first work.
+- Page JSON-LD merges `user-keywords` + `system-keywords` into schema.org `keywords` (deduplicated) — `docs/schemas.md:315`.
+- Media: EXIF/IPTC `Keywords` → `keywords` on the ImageObject record (`docs/schemas.md:328`); PDF `Keywords`/`dc:subject` likewise for documents.
+- Page search-index entries stay page-text-only: image keywords do **not** bleed into embedding pages (parked "hybrid" idea in `docs/schemas.md:89` — revisit on operator pain).
+- Keyword accessors live on the route layer, not a manager: `WikiRoutes.getUserKeywords()` / `getUserKeywordsWithDescriptions()` (`src/routes/WikiRoutes.ts:1596/1667`) read the config catalog; `SearchManager.getAllUserKeywords()` reads the index.
+
+### Keyword share links (#842 epic, shipped)
+
+Keywords are also an **access-control scope**: `ShareManager` mints anonymous, time-limited, revocable share tokens scoped *by keyword* — token-gated album/page/media views (#852–#856). Any vocabulary redesign must keep keyword identity stable enough that outstanding share tokens don't dangle.
+
+### Journal addon
+
+Journal pages reuse the same vocabulary: journal-tags were migrated into `user-keywords` (#799) and the journal editor extends `_basicEditor.ejs` (#797) — so the page-side closed vocabulary is the *only* page tagging system left; no parallel tag namespaces.
+
+## 3. CatalogManager — the machinery layer
+
+`src/managers/CatalogManager.ts` (doc: `docs/managers/CatalogManager.md`). Two registries, both shipped:
+
+- **Vocabulary providers** (#424, closed) — `registerProvider()`; `DefaultCatalogProvider` reads `ngdpbase.system-keywords` from config; `AICatalogProvider` stub awaits an LLM addon (`ngdpbase.catalog.ai.enabled` = false, threshold 0.7). `resolveUri(term)` powers page-keyword `sameAs` links. `suggestTerms()` fan-out exists but returns `[]` until a real AI provider registers.
+- **Asset sources** (#755 epic, closed) — MediaManager / AttachmentManager / PageManager registered as `CatalogSource` producers; JSON-LD emission shipped (page embeds #765, content negotiation #766, SKOS ConceptScheme endpoint `/api/catalog/vocabulary/<scheme-id>` #767). Admin runtime-visibility dashboard shipped (#780).
+- **Not yet implemented:** SKOS-shaped terms — `CatalogTerm` gaining `altLabels`, `broader`/`narrower`, `exactMatch`/`closeMatch`, `definition`, `scopeNote`. This is the natural hook for hierarchy and synonyms (see §5).
+
+Notable: the vocabulary registry serves **system-keywords** via provider; **user-keywords** are read straight from config by the editor/admin routes and are *not* a CatalogProvider today.
+
+## 4. Issue map
+
+### Open
+
+- [#869](https://github.com/jwilleke/ngdpbase/issues/869) — **EPIC: unified canonical keywords** across pages, media, external tools (digiKam-compatible). P1. The umbrella for everything below. Carries the 2026-07-20 keyword-UI audit comment (closed vs open vocabulary analysis).
+- [#883](https://github.com/jwilleke/ngdpbase/issues/883) — Suggested keywords from recent pages in the editor. P1. Natural next slice after #882.
+- [#884](https://github.com/jwilleke/ngdpbase/issues/884) — Search ranking: field weighting, URL tokenization, prefix typeahead, keyword-first. P1.
+- [#882](https://github.com/jwilleke/ngdpbase/issues/882) — Related keywords via co-occurrence. **In review** (shipped 0531d27d, awaiting close).
+- [#868](https://github.com/jwilleke/ngdpbase/issues/868) — Attachment metadata editing + #866 follow-ups. P1. Extends the write-back path (=the open-vocabulary side).
+- [#762](https://github.com/jwilleke/ngdpbase/issues/762) — CatalogSource producer roster. P2. Asset-source side of CatalogManager.
+- [#786](https://github.com/jwilleke/ngdpbase/issues/786) — Auto-journal digester over CatalogManager records. P2.
+- [#550](https://github.com/jwilleke/ngdpbase/issues/550) — elasticsearch addon: vector/hybrid search. Deferred. Would change what "keyword search" even means (semantic neighbors vs literal tags).
+
+### Shipped / closed (context)
+
+- [#866](https://github.com/jwilleke/ngdpbase/issues/866) — media metadata write-back (title/caption/keywords/DateTimeOriginal into EXIF/IPTC/XMP). Created the open-vocabulary typeahead.
+- [#881](https://github.com/jwilleke/ngdpbase/issues/881) — browser bookmarklet (one-click capture into a page/journal); commit 5c43a23e registered `capture` in user-keywords for it (v3.54.0). Case study: a term used by pages but absent from the catalog; manual one-off sync.
+- [#842](https://github.com/jwilleke/ngdpbase/issues/842) (epic, slices #852–#856) — keyword share links: anonymous, time-limited, revocable access to media and pages **by keyword**. Keywords as an ACL scope.
+- [#691](https://github.com/jwilleke/ngdpbase/issues/691) / [#692](https://github.com/jwilleke/ngdpbase/issues/692) / [#693](https://github.com/jwilleke/ngdpbase/issues/693) / [#696](https://github.com/jwilleke/ngdpbase/issues/696) / [#744](https://github.com/jwilleke/ngdpbase/issues/744) / [#745](https://github.com/jwilleke/ngdpbase/issues/745) / [#731](https://github.com/jwilleke/ngdpbase/issues/731) — asset-picker consolidation: keyword/category multi-selects, unified /search, IA simplification, date dropdown, list-default view.
+- [#746](https://github.com/jwilleke/ngdpbase/issues/746) — keyword chips link to a keyword search.
+- [#424](https://github.com/jwilleke/ngdpbase/issues/424) — CatalogManager vocabulary provider registry (+ AI scaffold).
+- [#755](https://github.com/jwilleke/ngdpbase/issues/755) (epic, 6 slices incl. #765/#766/#767/#780) — schema.org CreativeWork model + JSON-LD/SKOS publishing.
+- [#790](https://github.com/jwilleke/ngdpbase/issues/790) (epic) / [#799](https://github.com/jwilleke/ngdpbase/issues/799) / [#797](https://github.com/jwilleke/ngdpbase/issues/797) — journal reconciliation: journal-tags migrated into user-keywords; journal editor extends `_basicEditor.ejs`.
+- [#639](https://github.com/jwilleke/ngdpbase/issues/639) / [#712](https://github.com/jwilleke/ngdpbase/issues/712) / [#802](https://github.com/jwilleke/ngdpbase/issues/802) — `private` moved out of the user-keywords array into a top-level frontmatter field (legacy fallback still honored in the editor).
+- [#507](https://github.com/jwilleke/ngdpbase/issues/507) — content-based auto-tagging for Elasticsearch (Phase 4 relates to the deby ES enrichment/vector mirror; see #550).
+
+### Bug history worth remembering (all closed — recurring failure shapes)
+
+- [#862](https://github.com/jwilleke/ngdpbase/issues/862) — `searchByUserKeywords` never matched pages with >1 keyword (comma-join vs whitespace-split). Multi-value serialization is a repeat trap.
+- [#545](https://github.com/jwilleke/ngdpbase/issues/545) — JSPWiki import stored `user-keywords` as scalar string, not array.
+- [#304](https://github.com/jwilleke/ngdpbase/issues/304) — user-keywords inconsistency (early normalization bug).
+
+## 5. Tensions and gaps (the actual planning input)
+
+1. **Closed vs open vocabulary is the core split.** Pages enforce a curated catalog; media accepts anything (and must — EXIF interop). A user can tag a photo with a keyword the page editor will never offer. Vocabulary drift is structural, not a bug. Unifying *widgets* without deciding the *vocabulary model* just hides the drift (per the #869 audit comment).
+2. **Config-derived vs index-derived lists disagree.** Editor picker shows catalog; search filters show index reality. Terms in-catalog-but-unused and in-use-but-uncatalogued both produce "where's my keyword?" confusion (#881 was exactly this).
+3. **Duplicated defaults.** draft/review/published + subject terms live in both system- and user-keyword catalogs with a deprecation note nobody can see in the UI. Needs an explicit migration/cleanup decision.
+4. **"Category" is overloaded three ways** (page system-category, keyword facet, storage mapping). Rename or namespace before adding more surface.
+5. **No hierarchy or synonyms.** All vocabularies are flat. The SKOS extension of `CatalogTerm` (`broader`/`narrower`/`altLabels`) is designed but unimplemented — it's the ready-made slot for digiKam-style hierarchical tags (`Places/Ohio/Columbus`) and alias resolution.
+6. **user-keywords bypass CatalogManager.** Only system-keywords flow through the provider registry. Unification (#869) probably wants *all* vocabularies behind CatalogProvider so addons/AI/SKOS emission see one interface.
+7. **No promotion path.** Media keywords (open) never become catalog terms (closed) except by hand (#881). Candidate flows: an admin "adopt this keyword" action off usage stats; auto-suggest from `getAllUserKeywords()` diff against catalog; AI suggestion via the dormant `AICatalogProvider` once an LLM addon exists.
+8. **Discovery features are page-only.** Related keywords (#882) and suggested keywords (#883) operate on page keywords. Media keywords have no equivalent; a unified model would give them co-occurrence and suggestions for free.
+9. **Keyword identity is load-bearing beyond tagging.** Share tokens (#842) scope access by keyword string; renaming or merging terms can orphan live share links, and media-side renames mean rewriting EXIF in files (slow-storage write policy applies). Any canonicalization plan needs a rename/merge story, not just a create story.
+10. **Multi-value serialization keeps biting** (#862 comma-vs-whitespace, #545 scalar-vs-array). A unified model should pick one canonical wire/storage shape and normalize at every boundary.
+
+## 6. Brainstorm directions (unranked, uncommitted)
+
+- **Canonical-set + open-extensions model:** one canonical keyword catalog (CatalogManager-hosted, SKOS-shaped) that pages *enforce* and media *suggests from*, with media allowed to carry extra uncatalogued terms flagged as "local".
+- **Promotion workflow:** usage-driven queue (`in-use-but-uncatalogued` report) with one-click adopt into the catalog — turns #881's manual fix into a feature.
+- **Alias/synonym layer via SKOS `altLabels`:** lets `photo`/`photograph`/`capture` resolve to one canonical term without retagging files.
+- **Hierarchical keywords (digiKam `/` paths)** mapped to SKOS `broader`/`narrower`; asset-picker filter gains subtree matching.
+- **Merge system- and user-keyword catalogs** into one catalog with a `curatorOnly`/`restrictEditing` flag per term, killing the duplicated defaults (big migration; decide early whether worth it).
+- **Retire the checkbox dropdown** for a single typeahead-with-enforcement widget once vocabulary model is unified — same interaction on pages and media, different acceptance rules.
+- **Keyword landing pages** (`/user-keywords/create-page/:keywordId` exists) as the canonical URI target for SKOS `Concept` dereferencing — ties vocabulary to the wiki itself.
+
+## 7. Suggested reading order for future sessions
+
+1. This document.
+2. #869 issue thread (audit comment has the file:line specifics).
+3. `docs/managers/CatalogManager.md` + `docs/schemas.md` §terminology note and field-mapping tables.
+4. `views/_basicEditor.ejs:126` (closed widget), `views/media-item.ejs:122` (open widget), `views/_asset-picker.ejs` (filter + related-keywords strip).
