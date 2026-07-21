@@ -133,7 +133,21 @@ Notable: the vocabulary registry serves **system-keywords** via provider; **user
 - **Retire the checkbox dropdown** for a single typeahead-with-enforcement widget once vocabulary model is unified — same interaction on pages and media, different acceptance rules.
 - **Keyword landing pages** (`/user-keywords/create-page/:keywordId` exists) as the canonical URI target for SKOS `Concept` dereferencing — ties vocabulary to the wiki itself.
 
-## 7. Suggested reading order for future sessions
+## 7. Claude's recommendations (opinionated, 2026-07-21)
+
+Ranking principle: observed operator friction first, speculative architecture last. Every recurring real-world pain in this space so far has been a *sync* problem (#881 capture, config-vs-index confusion, #862/#545 serialization) — none has been "we lack hierarchy" or "we lack SKOS". Recommend in this order:
+
+1. **Adopt the canonical-set + open-extensions model as the #869 decision — decide it now, before any more keyword features.** Pages enforce the catalog; media suggests from it but may carry extra "local" terms. This is the only model that respects both the digiKam/EXIF interop constraint (media can't be closed) and the curation value of the page catalog (pages shouldn't be open). Every slice below assumes it; #883/#884 should be built against it too, so decision cost is now, not after three more features harden the split.
+2. **Ship the promotion workflow as the first slice** — an "uncatalogued keywords" report (diff `SearchManager.getAllUserKeywords()` + media-index keywords against the catalog, with usage counts) plus one-click adopt into `/admin/keywords`. Small: the accessors, the admin CRUD, and the usage endpoint all exist. Directly converts #881-class manual syncs into a feature, and doubles as the monitoring surface for drift. This is the highest value-per-effort item on the board.
+3. **Normalize multi-value shape at every boundary in the same pass** — one canonical storage/wire shape (string array), asserted at save, import, index, and API edges. #862 and #545 were both this bug wearing different hats; cheap insurance while touching the accessors anyway.
+4. **Fold user-keywords behind a CatalogProvider.** Mechanical refactor (`WikiRoutes.getUserKeywords()` currently reads config directly), no behavior change, but it gives promotion (slice 2), SKOS emission, AI suggestion, and addons one interface instead of two. Do it before — not with — any catalog-content changes so the diff stays reviewable.
+5. **Write the rename/merge story before offering rename/merge anywhere.** Constraint from tension #9: share tokens (#842) scope by keyword string and media renames rewrite EXIF on slow storage (operator-side policy). Recommendation: renames are catalog-level with an alias left behind (old term becomes `altLabel`), share tokens resolve through aliases, EXIF rewrite is an explicit operator-triggered batch — never a side effect.
+6. **Defer the system-/user-catalog merge and full SKOS hierarchy until pain is observed.** The duplicated defaults are ugly but only confusing at config-reading depth; the merge is a big migration with ACL implications and small user-visible payoff. Hierarchy (digiKam `/` paths) is real interop surface but no operator request exists yet. Park both with explicit reopen triggers: catalog-merge when the duplication causes a user-visible bug; hierarchy when hierarchical tags actually arrive in the media library.
+7. **Widget unification last.** The checkbox dropdown vs typeahead split is cosmetic once the vocabulary model is decided — replacing widgets before the model just repaints the drift. When it happens, converge on typeahead-with-enforcement (catalog terms autocomplete + hard reject on pages, soft accept + "local" badge on media).
+
+Net: slices 2–4 are each small, independently shippable, and low risk; slice 1 is a decision, not code; slices 5–7 are sequenced constraints, not near-term work.
+
+## 8. Suggested reading order for future sessions
 
 1. This document.
 2. #869 issue thread (audit comment has the file:line specifics).
