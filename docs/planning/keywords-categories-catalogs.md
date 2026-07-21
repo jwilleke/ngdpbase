@@ -133,7 +133,32 @@ Notable: the vocabulary registry serves **system-keywords** via provider; **user
 - **Retire the checkbox dropdown** for a single typeahead-with-enforcement widget once vocabulary model is unified — same interaction on pages and media, different acceptance rules.
 - **Keyword landing pages** (`/user-keywords/create-page/:keywordId` exists) as the canonical URI target for SKOS `Concept` dereferencing — ties vocabulary to the wiki itself.
 
-## 7. Claude's recommendations (opinionated, 2026-07-21)
+## 7. DECIDED (2026-07-21) — adopted model and stepped decisions
+
+Operator adopted the five-bucket model and stepped through the follow-on decisions (recorded on [#869](https://github.com/jwilleke/ngdpbase/issues/869)):
+
+| Bucket | Author | Cardinality | Nature |
+|---|---|---|---|
+| `system-category` | operator config | one per page | storage/ACL routing only |
+| `status` (new frontmatter field) | human editorial | one per page | lifecycle: draft/review/published, default `published` |
+| flags (`private:` etc.) | human/system | booleans | operational |
+| `user-keywords` | humans, free-typed | many; **no cap** (max-5 retired) | open, canonicalized post-hoc |
+| `system-keywords` | AI/automation only | many | machine classification + provenance (`capture`) + formerly-restrictEditing terms |
+
+Stepped decisions:
+
+1. **Status** — `status:` frontmatter field; migration rewrites pages carrying draft/review/published in either keyword array; search gains a status facet.
+2. **Cap dropped** — `ngdpbase.maximum.user-keywords` retires (operator call; recommendation was raise-to-15). Watch suggestion/related-keyword quality for tag-spam.
+3. **restrictEditing terms → system-keywords** — privileged UI/automation applies them; the open user field carries no restrictions.
+4. **SKOS-lite** — `altLabels` on `CatalogTerm` when aliasing ships; keep ConceptScheme emission (#767); `broader`/`narrower` deferred. Rule: **aliases merge, concepts split** — synonyms get altLabels; homonyms (Paris (Ohio) vs Paris (Texas)) get separate qualified concepts, resolved by GPS EXIF / digiKam path / human at adopt time.
+5. **Leaves-only ingestion** — read flat IPTC/`dc:subject`; never strip `lr:hierarchicalSubject`/`digiKam:TagsList` on write-back. Guardrail task: verify #866's write path preserves those fields. Reversible — paths stay in files.
+6. **capture clean cut** — bookmarklet writes `system-keywords: [capture]`; one-time migration of existing `user-keywords: [capture]`; search filter moves facet.
+7. **Slice order** — (1) `status:` field + capture migration; (2) user-keywords behind a CatalogProvider; (3) drift report (first real join of CatalogManager's two registries: observed via asset sources minus canonical via vocabulary providers, usage counts, adopt/alias actions); widget unification after.
+8. **User-facing wiki pages** (`keywords-and-categories`, `user-keywords`, `system-keywords` required-pages — stale since 2025-10-17) — rewritten with each shipped slice, starting Slice 1.
+
+CatalogManager fit (no redesign): canonical user-keywords become a CatalogProvider (alias-table owner), AI providers write system-keywords (`AICatalogProvider`/`suggestTerms` machinery activates unchanged), drift report joins the two registries.
+
+## 7a. Claude's original recommendations (superseded by §7 decisions; kept for rationale)
 
 Ranking principle: observed operator friction first, speculative architecture last. Every recurring real-world pain in this space so far has been a *sync* problem (#881 capture, config-vs-index confusion, #862/#545 serialization) — none has been "we lack hierarchy" or "we lack SKOS". Recommend in this order:
 
