@@ -55,7 +55,12 @@
                                 .filter(l => l && !_kwSkip.includes(String(l).toLowerCase()));
                             const _kwObserved = (typeof userKeywordSuggestions !== 'undefined' && Array.isArray(userKeywordSuggestions) ? userKeywordSuggestions : [])
                                 .filter(l => l && !_kwSkip.includes(String(l).toLowerCase()));
-                            const _kwPool = [...new Set([..._kwCatalogLabels, ..._kwObserved])].sort((a, b) => String(a).localeCompare(String(b)));
+                            // Case-insensitive dedupe, first-seen casing wins ('journal' from
+                            // migrated entries vs 'Journal' from seed pages must not both appear).
+                            const _kwSeen = new Set();
+                            const _kwPool = [..._kwCatalogLabels, ..._kwObserved]
+                                .filter(l => { const k = String(l).toLowerCase(); if (_kwSeen.has(k)) return false; _kwSeen.add(k); return true; })
+                                .sort((a, b) => String(a).localeCompare(String(b)));
                         %>
                         <label style="font-weight:bold;" for="userKeywordsInput">User Keywords (comma-separated):</label>
                         <div class="position-relative">
