@@ -12942,7 +12942,14 @@ ${description}
       }
       const uncatalogued = [...uncataloguedMap.values()]
         .sort((a, b) => (b.pageCount + b.mediaCount) - (a.pageCount + a.mediaCount));
-      const unusedCatalog = keywords.filter(k => k.usageCount === 0 && k.enabled);
+      // "Unused" means unused everywhere: zero page usage AND zero media usage
+      // (a term adopted from media EXIF is in use even before any page carries it).
+      const mediaUsedNames = new Set(Object.keys(mediaKeywordCounts).map(k => k.toLowerCase()));
+      const unusedCatalog = keywords.filter(k =>
+        k.usageCount === 0 && k.enabled
+        && !mediaUsedNames.has(k.id.toLowerCase())
+        && !mediaUsedNames.has(k.label.toLowerCase())
+      );
 
       const successMessage = req.query.success as string | undefined;
       const errorMessage = req.query.error as string | undefined;
