@@ -44,6 +44,8 @@
     "migrate:vocabulary": "tsx --env-file-if-exists=.env scripts/migrate-vocabulary-slice1.ts",
     "migrate:vocabulary-store": "tsx --env-file-if-exists=.env scripts/migrate-vocabulary-store.ts",
     "migrate:vocabulary-store:dry": "tsx --env-file-if-exists=.env scripts/migrate-vocabulary-store.ts --dry-run",
+    "reconcile:mentions": "tsx --env-file-if-exists=.env scripts/reconcile-attachment-mentions.ts",
+    "reconcile:mentions:dry": "tsx --env-file-if-exists=.env scripts/reconcile-attachment-mentions.ts --dry-run",
     "migrate:vocabulary:dry": "tsx --env-file-if-exists=.env scripts/migrate-vocabulary-slice1.ts --dry-run",
     "migrate:user-pages-category": "tsx scripts/migrate-user-pages-category.ts",
     "migrate:user-pages-category:dry": "tsx scripts/migrate-user-pages-category.ts --dry-run",

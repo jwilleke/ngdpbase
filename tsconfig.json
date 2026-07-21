@@ -50,6 +50,7 @@
     "scripts/migrate-private-field.ts",
     "scripts/migrate-vocabulary-slice1.ts",
     "scripts/migrate-vocabulary-store.ts",
+    "scripts/reconcile-attachment-mentions.ts",
     "scripts/check-docs-coverage.ts",
     "scripts/migrate-docs-frontmatter.ts",
     "scripts/fix-doc-descriptions.ts",
