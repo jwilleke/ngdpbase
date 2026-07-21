@@ -206,6 +206,59 @@ describe('ValidationManager', () => {
         expect(result.success).toBe(true);
       });
     });
+
+    // #893 status enum — opt-in lifecycle (absent = published) + HARD REJECT
+    // when present with a value outside draft/review/published. Mirrors
+    // knowledge-role's contract.
+    describe('status (#893)', () => {
+      const baseMetadata = () => ({
+        title: 'Test Page',
+        uuid: uuidv4(),
+        slug: 'test-page',
+        'system-category': 'General',
+        'user-keywords': [],
+        lastModified: new Date().toISOString()
+      });
+
+      test.each(['draft', 'review', 'published'])(
+        'should accept status: %s',
+        (status) => {
+          const result = validationManager.validateMetadata({ ...baseMetadata(), status });
+          expect(result.success).toBe(true);
+          expect(result.error).toBeNull();
+        }
+      );
+
+      test('should accept absent status (the default — published)', () => {
+        const result = validationManager.validateMetadata(baseMetadata());
+        expect(result.success).toBe(true);
+      });
+
+      test.each([null, ''])(
+        'should treat status: %s as absent (published)',
+        (value) => {
+          const result = validationManager.validateMetadata({ ...baseMetadata(), status: value });
+          expect(result.success).toBe(true);
+        }
+      );
+
+      test('should hard-reject status with an unrecognized value', () => {
+        const result = validationManager.validateMetadata({ ...baseMetadata(), status: 'archived' });
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("status 'archived' is not a recognized lifecycle state");
+      });
+
+      test('should hard-reject status that is not a string', () => {
+        const result = validationManager.validateMetadata({ ...baseMetadata(), status: 42 });
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('status must be a string');
+      });
+
+      test('should accept status case-insensitively', () => {
+        const result = validationManager.validateMetadata({ ...baseMetadata(), status: 'DRAFT' });
+        expect(result.success).toBe(true);
+      });
+    });
   });
 
   describe('validatePage', () => {

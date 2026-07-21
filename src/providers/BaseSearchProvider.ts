@@ -111,6 +111,10 @@ export interface SearchCriteria {
   /** System keywords to filter by (auto-tagged or manually set — #507/#509) */
   systemKeywords?: string[];
 
+  /** Editorial lifecycle states to filter by (draft/review/published — #893).
+   *  Pages without a `status` count as 'published'. */
+  statuses?: string[];
+
   /** Fields to search in (title, content, category, keywords, or all) */
   searchIn?: string[];
 

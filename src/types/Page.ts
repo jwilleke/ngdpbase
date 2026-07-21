@@ -43,6 +43,10 @@ export interface PageFrontmatter {
   /** User-defined keywords/tags */
   'user-keywords'?: string[];
 
+  /** Machine/automation keywords (#869 bucket model): AI classification and
+   *  provenance marks (e.g. 'capture'). Operator-curated vocabulary. */
+  'system-keywords'?: string[];
+
   /** URL slug for pretty URLs */
   slug?: string;
 
@@ -60,6 +64,14 @@ export interface PageFrontmatter {
 
   /** Whether page is published/visible */
   published?: boolean;
+
+  /**
+   * Editorial lifecycle state (#893, Slice 1 of #869): 'draft' | 'review' |
+   * 'published'. Absent means 'published'. Replaces the lifecycle terms that
+   * previously lived in user-keywords / system-keywords; savePageWithContext
+   * migrates them here on save.
+   */
+  status?: string;
 
   /** Parent page UUID for hierarchical structure */
   parent?: string;

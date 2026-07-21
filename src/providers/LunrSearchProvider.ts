@@ -50,6 +50,12 @@ interface LunrDocument {
    *  string when the field is absent — the common case for most pages. */
   knowledgeRole: string;
   userKeywords: string;
+  /** #893: machine/automation keywords (comma-joined, mirrors userKeywords).
+   *  Filter-only — not an indexed text field. */
+  systemKeywords?: string;
+  /** #893: editorial lifecycle state (draft|review|published). Empty/absent
+   *  means 'published'. Filter-only. */
+  status?: string;
   tags: string;
   keywords: string;
   lastModified: string;
@@ -275,6 +281,13 @@ class LunrSearchProvider extends BaseSearchProvider {
     const userKeywords = Array.isArray(userKeywordsRaw)
       ? userKeywordsRaw.join(',')
       : toStr(userKeywordsRaw);
+    // #893: system-keywords (machine bucket) + status stored for filtering,
+    // same comma-join shape as userKeywords.
+    const systemKeywordsRaw = metadata['system-keywords'];
+    const systemKeywords = Array.isArray(systemKeywordsRaw)
+      ? systemKeywordsRaw.join(',')
+      : toStr(systemKeywordsRaw);
+    const status = toStr(metadata['status']);
     const tagsRaw = metadata['tags'];
     const tags = Array.isArray(tagsRaw) ? tagsRaw.join(' ') : toStr(tagsRaw);
     const content = toStr(pageData.content);
@@ -300,6 +313,8 @@ class LunrSearchProvider extends BaseSearchProvider {
       systemCategory: toStr(metadata['system-category']),
       knowledgeRole: toStr(metadata['knowledge-role']),
       userKeywords,
+      systemKeywords: systemKeywords || undefined,
+      status: status || undefined,
       tags,
       keywords: `${userKeywords} ${tags}`,
       lastModified: toStr(metadata.lastModified),
@@ -440,6 +455,8 @@ class LunrSearchProvider extends BaseSearchProvider {
               systemCategory: doc.systemCategory,
               knowledgeRole: doc.knowledgeRole,
               userKeywords: doc.userKeywords,
+              systemKeywords: doc.systemKeywords,
+              status: doc.status,
               lastModified: doc.lastModified,
               created: doc.created,
               author: doc.author,
@@ -484,6 +501,8 @@ class LunrSearchProvider extends BaseSearchProvider {
       categories = [],
       knowledgeRoles = [],
       userKeywords = [],
+      systemKeywords = [],
+      statuses = [],
       searchIn = ['all'],
       author = '',
       editor = ''
@@ -494,6 +513,8 @@ class LunrSearchProvider extends BaseSearchProvider {
     const categoryList = Array.isArray(categories) ? categories : (categories ? [categories] : []);
     const roleList = Array.isArray(knowledgeRoles) ? knowledgeRoles : (knowledgeRoles ? [knowledgeRoles] : []);
     const keywordList = Array.isArray(userKeywords) ? userKeywords : (userKeywords ? [userKeywords] : []);
+    const systemKeywordList = Array.isArray(systemKeywords) ? systemKeywords : (systemKeywords ? [systemKeywords] : []);
+    const statusList = Array.isArray(statuses) ? statuses : (statuses ? [statuses] : []);
     const searchInList = Array.isArray(searchIn) ? searchIn : (searchIn ? [searchIn] : ['all']);
 
     let results: SearchResult[] = [];
@@ -565,6 +586,8 @@ class LunrSearchProvider extends BaseSearchProvider {
             systemCategory: this.documents[name].systemCategory,
             knowledgeRole: this.documents[name].knowledgeRole,
             userKeywords: this.documents[name].userKeywords,
+            systemKeywords: this.documents[name].systemKeywords,
+            status: this.documents[name].status,
             tags: this.documents[name].tags,
             lastModified: this.documents[name].lastModified,
             created: this.documents[name].created,
@@ -621,6 +644,30 @@ class LunrSearchProvider extends BaseSearchProvider {
         return keywordList.some(keyword =>
           docKeywordList.includes(keyword.toLowerCase().trim())
         );
+      });
+    }
+
+    // #893: filter by system keywords (machine bucket) — mirrors the
+    // user-keyword filter's comma-join/exact-match shape.
+    if (systemKeywordList.length > 0) {
+      results = results.filter(result => {
+        const raw = result.metadata.systemKeywords;
+        const docKeywords = typeof raw === 'string' ? raw : '';
+        const docKeywordList = docKeywords.toLowerCase().split(',').map(k => k.trim()).filter(k => k);
+        return systemKeywordList.some(keyword =>
+          docKeywordList.includes(keyword.toLowerCase().trim())
+        );
+      });
+    }
+
+    // #893: filter by editorial lifecycle status. A doc without a status
+    // counts as 'published' — the absent-means-published contract.
+    if (statusList.length > 0) {
+      const statusListLower = statusList.map(s => s.toLowerCase().trim()).filter(Boolean);
+      results = results.filter(result => {
+        const raw = result.metadata.status;
+        const docStatus = (typeof raw === 'string' && raw !== '' ? raw : 'published').toLowerCase();
+        return statusListLower.includes(docStatus);
       });
     }
 
@@ -899,6 +946,22 @@ class LunrSearchProvider extends BaseSearchProvider {
     Object.values(this.documents).forEach(doc => {
       if (doc.userKeywords && doc.userKeywords.trim()) {
         this.splitUserKeywords(doc.userKeywords).forEach(keyword => keywords.add(keyword));
+      }
+    });
+    return Promise.resolve(Array.from(keywords).sort());
+  }
+
+  /**
+   * #893: all unique system keywords (machine bucket) from indexed documents.
+   * Mirrors getAllUserKeywords — same comma-join contract (#862). Previously
+   * ES-only; needed on Lunr so the asset-picker system-keywords facet includes
+   * index-derived terms like 'capture'.
+   */
+  getAllSystemKeywords(): Promise<string[]> {
+    const keywords = new Set<string>();
+    Object.values(this.documents).forEach(doc => {
+      if (doc.systemKeywords && doc.systemKeywords.trim()) {
+        this.splitUserKeywords(doc.systemKeywords).forEach(keyword => keywords.add(keyword));
       }
     });
     return Promise.resolve(Array.from(keywords).sort());

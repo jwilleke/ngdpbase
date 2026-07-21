@@ -262,12 +262,12 @@ describe('PageManager', () => {
         pageName: 'P', content: 'body',
         userContext: { username: 'alice' }
       };
-      await pageManager.savePageWithContext(wikiContext, { 'user-keywords': ['private', 'draft'] });
+      await pageManager.savePageWithContext(wikiContext, { 'user-keywords': ['private', 'notes'] });
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
       expect(saved.private).toBeUndefined();          // not promoted to private
       expect(saved['system-location']).toBeUndefined();
-      expect(saved['user-keywords']).toEqual(['draft']); // 'private' stripped defensively
+      expect(saved['user-keywords']).toEqual(['notes']); // 'private' stripped defensively
     });
 
     test('savePageWithContext() — both signals present → strips keyword, keeps top-level', async () => {
@@ -284,12 +284,12 @@ describe('PageManager', () => {
       };
       await pageManager.savePageWithContext(wikiContext, {
         private: true,
-        'user-keywords': ['private', 'draft']
+        'user-keywords': ['private', 'notes']
       });
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
       expect(saved.private).toBe(true);
-      expect(saved['user-keywords']).toEqual(['draft']);
+      expect(saved['user-keywords']).toEqual(['notes']);
     });
 
     test('savePageWithContext() — non-private save does NOT add private or system-location', async () => {
@@ -299,12 +299,12 @@ describe('PageManager', () => {
         pageName: 'Public', content: 'body',
         userContext: { username: 'alice' }
       };
-      await pageManager.savePageWithContext(wikiContext, { 'user-keywords': ['draft'] });
+      await pageManager.savePageWithContext(wikiContext, { 'user-keywords': ['notes'] });
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
       expect(saved.private).toBeUndefined();
       expect(saved['system-location']).toBeUndefined();
-      expect(saved['user-keywords']).toEqual(['draft']); // unchanged
+      expect(saved['user-keywords']).toEqual(['notes']); // unchanged
     });
 
     test('savePageWithContext() — incoming private:false strips it cleanly (no top-level private in saved metadata)', async () => {
@@ -328,10 +328,90 @@ describe('PageManager', () => {
         pageName: 'P', content: 'body',
         userContext: { username: 'alice' }
       };
-      await pageManager.savePageWithContext(wikiContext, { 'user-keywords': ['draft', 'wip'] });
+      await pageManager.savePageWithContext(wikiContext, { 'user-keywords': ['notes', 'wip'] });
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
-      expect(saved['user-keywords']).toEqual(['draft', 'wip']);
+      expect(saved['user-keywords']).toEqual(['notes', 'wip']);
+    });
+
+    // ---------------------------------------------------------------------
+    // #893 (Slice 1 of #869): vocabulary-bucket normalization on save
+    // ---------------------------------------------------------------------
+
+    test('savePageWithContext() — lifecycle keyword in user-keywords becomes status field (#893)', async () => {
+      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
+      await pageManager.savePageWithContext(wikiContext, { 'user-keywords': ['draft', 'travel'] });
+
+      const saved = pageManager.provider.savePage.mock.calls[0][2];
+      expect(saved.status).toBe('draft');
+      expect(saved['user-keywords']).toEqual(['travel']);
+    });
+
+    test('savePageWithContext() — highest lifecycle state wins across both keyword arrays (#893)', async () => {
+      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
+      await pageManager.savePageWithContext(wikiContext, {
+        'user-keywords': ['draft'],
+        'system-keywords': ['review', 'general']
+      });
+
+      const saved = pageManager.provider.savePage.mock.calls[0][2];
+      expect(saved.status).toBe('review');
+      expect(saved['user-keywords']).toEqual([]);
+      expect(saved['system-keywords']).toEqual(['general']);
+    });
+
+    test('savePageWithContext() — explicit status wins over keyword-derived lifecycle (#893)', async () => {
+      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
+      await pageManager.savePageWithContext(wikiContext, {
+        status: 'review',
+        'user-keywords': ['published']
+      });
+
+      const saved = pageManager.provider.savePage.mock.calls[0][2];
+      expect(saved.status).toBe('review');
+      expect(saved['user-keywords']).toEqual([]);
+    });
+
+    test('savePageWithContext() — capture moves user-keywords → system-keywords (#893)', async () => {
+      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
+      await pageManager.savePageWithContext(wikiContext, { 'user-keywords': ['capture', 'travel'] });
+
+      const saved = pageManager.provider.savePage.mock.calls[0][2];
+      expect(saved['user-keywords']).toEqual(['travel']);
+      expect(saved['system-keywords']).toEqual(['capture']);
+      expect(saved.status).toBeUndefined();
+    });
+
+    test('savePageWithContext() — capture does not duplicate in system-keywords (#893)', async () => {
+      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
+      await pageManager.savePageWithContext(wikiContext, {
+        'user-keywords': ['capture'],
+        'system-keywords': ['capture']
+      });
+
+      const saved = pageManager.provider.savePage.mock.calls[0][2];
+      expect(saved['system-keywords']).toEqual(['capture']);
+      expect(saved['user-keywords']).toEqual([]);
+    });
+
+    test('savePageWithContext() — clean vocabulary passes through untouched (#893)', async () => {
+      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
+      await pageManager.savePageWithContext(wikiContext, {
+        status: 'draft',
+        'user-keywords': ['travel'],
+        'system-keywords': ['general']
+      });
+
+      const saved = pageManager.provider.savePage.mock.calls[0][2];
+      expect(saved.status).toBe('draft');
+      expect(saved['user-keywords']).toEqual(['travel']);
+      expect(saved['system-keywords']).toEqual(['general']);
     });
 
     test('deletePageWithContext() should require WikiContext', async () => {

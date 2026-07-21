@@ -645,7 +645,38 @@ class PageManager extends BaseManager implements CatalogSource {
     const userKeywords = (rawMetadata['user-keywords'] || []);
     const wantsPrivate = !isRequiredPage && (rawMetadata as Record<string, unknown>).private === true;
     const keywordsHadPrivate = userKeywords.includes('private');
-    const normalizedKeywords = userKeywords.filter(kw => kw !== 'private');
+    let normalizedKeywords = userKeywords.filter(kw => kw !== 'private');
+
+    // #893 (Slice 1 of #869): vocabulary-bucket normalization on every save.
+    // - Lifecycle terms (draft/review/published) leave BOTH keyword arrays and
+    //   become the single-valued `status:` field. An explicit status in the
+    //   incoming metadata wins; otherwise the highest state found wins
+    //   (published > review > draft).
+    // - 'capture' is machine provenance: it moves from user-keywords into
+    //   system-keywords (the automation bucket).
+    const LIFECYCLE_ORDER = ['draft', 'review', 'published'];
+    const rawSystemKeywords = ((rawMetadata as Record<string, unknown>)['system-keywords'] as string[] | undefined) || [];
+    const foundLifecycle = [...normalizedKeywords, ...rawSystemKeywords]
+      .map(kw => String(kw).toLowerCase())
+      .filter(kw => LIFECYCLE_ORDER.includes(kw));
+    const explicitStatus = (rawMetadata as Record<string, unknown>).status;
+    const migratedStatus = typeof explicitStatus === 'string' && explicitStatus !== ''
+      ? explicitStatus
+      : foundLifecycle.length > 0
+        ? foundLifecycle.sort((a, b) => LIFECYCLE_ORDER.indexOf(b) - LIFECYCLE_ORDER.indexOf(a))[0]
+        : undefined;
+    const keywordsHadLifecycle = normalizedKeywords.some(kw => LIFECYCLE_ORDER.includes(String(kw).toLowerCase()));
+    const keywordsHadCapture = normalizedKeywords.some(kw => String(kw).toLowerCase() === 'capture');
+    const systemHadLifecycle = rawSystemKeywords.some(kw => LIFECYCLE_ORDER.includes(String(kw).toLowerCase()));
+    normalizedKeywords = normalizedKeywords.filter(kw => {
+      const lower = String(kw).toLowerCase();
+      return !LIFECYCLE_ORDER.includes(lower) && lower !== 'capture';
+    });
+    const normalizedSystemKeywords = rawSystemKeywords.filter(kw => !LIFECYCLE_ORDER.includes(String(kw).toLowerCase()));
+    if (keywordsHadCapture && !normalizedSystemKeywords.some(kw => String(kw).toLowerCase() === 'capture')) {
+      normalizedSystemKeywords.push('capture');
+    }
+    const vocabChanged = keywordsHadLifecycle || keywordsHadCapture || systemHadLifecycle;
 
     // Strip the existing top-level `private` so the spread below can't carry a
     // stale value when wantsPrivate is false (e.g. unsetting on a required page).
@@ -658,9 +689,11 @@ class PageManager extends BaseManager implements CatalogSource {
 
     const metadataWithLocation: Partial<PageFrontmatter> & Record<string, unknown> = {
       ...rawMetadataCopy,
-      // Only override user-keywords if we actually stripped 'private' — otherwise
-      // leave the field exactly as the caller provided it (including absent).
-      ...(keywordsHadPrivate ? { 'user-keywords': normalizedKeywords } : {}),
+      // Only override the keyword arrays if normalization actually changed them —
+      // otherwise leave the fields exactly as the caller provided (including absent).
+      ...(keywordsHadPrivate || keywordsHadLifecycle || keywordsHadCapture ? { 'user-keywords': normalizedKeywords } : {}),
+      ...(vocabChanged && (systemHadLifecycle || keywordsHadCapture) ? { 'system-keywords': normalizedSystemKeywords } : {}),
+      ...(migratedStatus !== undefined ? { status: migratedStatus } : {}),
       ...(wantsPrivate ? { private: true } : {})
     };
 

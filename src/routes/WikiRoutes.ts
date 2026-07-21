@@ -2137,7 +2137,7 @@ ${panes}
       if (catalogManager && typeof catalogManager.resolveUri === 'function' && metadata) {
         const allKws = [
           ...((metadata['user-keywords']) ?? []),
-          ...((metadata['system-keywords'] as string[] | undefined) ?? []),
+          ...((metadata['system-keywords']) ?? []),
           ...(metadata['system-category'] ? [metadata['system-category']] : [])
         ];
         for (const kw of allKws) {
@@ -3155,6 +3155,16 @@ ${panes}
       // Preserve existing author on edits — never overwrite with the editor's username
       const pageAuthor = existingPage?.metadata?.author || currentUser?.username || 'anonymous';
 
+      // #893: editorial lifecycle status — single-valued enum, form-posted from
+      // the editor's Status select. When the form posts `status-present=1` we
+      // honour the select; otherwise preserve the existing value. Absent means
+      // 'published' (default state) and is not written to frontmatter.
+      const existingStatus = typeof existingPage?.metadata?.status === 'string' ? existingPage.metadata.status : undefined;
+      const submittedStatus: string | undefined = req.body['status-present'] === '1'
+        ? (typeof req.body.status === 'string' && req.body.status !== '' ? req.body.status : undefined)
+        : existingStatus;
+      const statusValue = submittedStatus === 'published' ? undefined : submittedStatus;
+
       // Prepare metadata ONCE, preserving UUID if editing
       // Use matchedCategory (properly capitalized) instead of submitted systemCategory
       const metadata = this.buildNewPageMetadata(title || pageName, {
@@ -3163,6 +3173,7 @@ ${panes}
         ...(audienceArray.length ? { audience: audienceArray } : {}),
         ...(authorLock ? { 'author-lock': true } : {}),
         ...(privateFlag ? { private: true } : {}),
+        ...(statusValue ? { status: statusValue } : {}),
         author: pageAuthor,
         uuid: existingPage?.metadata?.uuid || undefined
       });
@@ -3179,11 +3190,11 @@ ${panes}
       const _803_managedFields = new Set<string>([
         'title', 'slug', 'uuid', 'lastModified', 'created',
         'system-category', 'system-keywords', 'user-keywords',
-        'audience', 'author-lock', 'private', 'author', 'content'
+        'audience', 'author-lock', 'private', 'author', 'content', 'status'
       ]);
       const _803_formInternal = new Set<string>([
         '_csrf', 'section', 'private-present', 'author-lock-present',
-        'categories', 'userKeywords'
+        'categories', 'userKeywords', 'status-present'
       ]);
       const _803_existingMeta = (existingPage?.metadata ?? {}) as Record<string, unknown>;
       for (const [k, v] of Object.entries(_803_existingMeta)) {
@@ -3194,6 +3205,10 @@ ${panes}
         if (typeof v === 'string' && v.trim() === '') continue;
         (metadata)[k] = v;
       }
+      // #893: 'published' is represented by ABSENCE of `status` — the step-1
+      // carry-forward above would otherwise resurrect a stale draft/review value
+      // from disk after the user set the page back to published.
+      if (!statusValue) delete (metadata).status;
 
       // Mark pages as user-modified based on their storageLocation in config
       const _catConfigManager = this.engine.getManager('ConfigurationManager');
@@ -4219,6 +4234,8 @@ ${panes}
       // clippings — quoted excerpts don't belong on public pages unless the
       // user targets one deliberately). Pages captures are merely appended
       // to keep their own keywords and privacy untouched.
+      // #893 (Slice 1 of #869): capture is machine provenance, so the flow now
+      // writes system-keywords (the automation bucket), not user-keywords.
       const configManager = this.engine.getManager('ConfigurationManager');
       const captureKeywords = (configManager?.getProperty('ngdpbase.capture.keywords', ['capture']) as string[]) ?? ['capture'];
       const capturePrivate = configManager?.getProperty('ngdpbase.capture.private', true) !== false;
@@ -4226,7 +4243,7 @@ ${panes}
         ? { ...(existing.metadata as Record<string, unknown>), editor: currentUser.username }
         : this.buildNewPageMetadata(pageName, {
           author: currentUser.username,
-          'user-keywords': captureKeywords,
+          'system-keywords': captureKeywords,
           ...(capturePrivate ? { private: true } : {})
         });
       if (!existing) metadata.editor = currentUser.username;
@@ -9441,6 +9458,14 @@ ${panes}
           : typeof rawSystemKeywords === 'string' ? [rawSystemKeywords] : []
         ).filter(k => k.trim() !== '');
 
+        // #893: editorial lifecycle status filter (draft/review/published).
+        // Pages without a status count as published (provider contract).
+        const rawStatuses = req.query.status;
+        const statuses = (Array.isArray(rawStatuses)
+          ? rawStatuses.filter((s): s is string => typeof s === 'string')
+          : typeof rawStatuses === 'string' ? [rawStatuses] : []
+        ).filter(s => s.trim() !== '');
+
         const rawSearchIn = req.query.searchIn;
         let searchIn = (Array.isArray(rawSearchIn)
           ? rawSearchIn.filter((s): s is string => typeof s === 'string')
@@ -9508,6 +9533,7 @@ ${panes}
             categories,
             userKeywords,
             systemKeywords,
+            ...(statuses.length ? { statuses } : {}),
             searchIn,
             // #745: only attach dateRange when a bound was given so the
             // common no-date path is byte-identical to before.

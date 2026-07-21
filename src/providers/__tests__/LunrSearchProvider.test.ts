@@ -55,6 +55,8 @@ function makeDoc(id, opts: {
   systemCategory?: string;
   knowledgeRole?: string;
   userKeywords?: string;
+  systemKeywords?: string;
+  status?: string;
   author?: string;
   editor?: string;
 } = {}) {
@@ -66,6 +68,8 @@ function makeDoc(id, opts: {
     systemCategory: opts.systemCategory ?? 'general',
     knowledgeRole: opts.knowledgeRole ?? '',
     userKeywords: opts.userKeywords ?? '',
+    systemKeywords: opts.systemKeywords ?? undefined,
+    status: opts.status ?? undefined,
     tags: '',
     keywords: opts.userKeywords ?? '',
     lastModified: '2026-01-01T00:00:00.000Z',
@@ -469,5 +473,82 @@ describe('LunrSearchProvider.advancedSearch — dateField=created (#774)', () =>
       dateField: 'created'
     });
     expect(results.map(r => r.name)).toEqual(['WithCreated']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #893 (Slice 1 of #869): systemKeywords + status filters, getAllSystemKeywords
+// ---------------------------------------------------------------------------
+
+describe('LunrSearchProvider.advancedSearch — systemKeywords filter (#893)', () => {
+  beforeEach(() => {
+    provider['documents'] = {
+      Captured: makeDoc('Captured', { systemKeywords: 'capture', userKeywords: 'travel' }),
+      MultiSys: makeDoc('MultiSys', { systemKeywords: 'general,capture' }),
+      Plain:    makeDoc('Plain',    { userKeywords: 'travel' })
+    };
+  });
+
+  test('filters to docs carrying the system keyword', async () => {
+    const results = await provider.advancedSearch({ systemKeywords: ['capture'] });
+    expect(results.map(r => r.name).sort()).toEqual(['Captured', 'MultiSys']);
+  });
+
+  test('comma-joined multi-keyword docs match exactly (#862 contract)', async () => {
+    const results = await provider.advancedSearch({ systemKeywords: ['general'] });
+    expect(results.map(r => r.name)).toEqual(['MultiSys']);
+  });
+
+  test('case-insensitive matching', async () => {
+    const results = await provider.advancedSearch({ systemKeywords: ['CAPTURE'] });
+    expect(results.map(r => r.name).sort()).toEqual(['Captured', 'MultiSys']);
+  });
+
+  test('no filter returns everything', async () => {
+    const results = await provider.advancedSearch({});
+    expect(results).toHaveLength(3);
+  });
+});
+
+describe('LunrSearchProvider.advancedSearch — status filter (#893)', () => {
+  beforeEach(() => {
+    provider['documents'] = {
+      Draft:     makeDoc('Draft',     { status: 'draft' }),
+      Review:    makeDoc('Review',    { status: 'review' }),
+      Published: makeDoc('Published', { status: 'published' }),
+      NoStatus:  makeDoc('NoStatus',  {})
+    };
+  });
+
+  test('filters by explicit status', async () => {
+    const results = await provider.advancedSearch({ statuses: ['draft'] });
+    expect(results.map(r => r.name)).toEqual(['Draft']);
+  });
+
+  test('absent status counts as published', async () => {
+    const results = await provider.advancedSearch({ statuses: ['published'] });
+    expect(results.map(r => r.name).sort()).toEqual(['NoStatus', 'Published']);
+  });
+
+  test('multiple statuses OR together', async () => {
+    const results = await provider.advancedSearch({ statuses: ['draft', 'review'] });
+    expect(results.map(r => r.name).sort()).toEqual(['Draft', 'Review']);
+  });
+});
+
+describe('LunrSearchProvider.getAllSystemKeywords (#893)', () => {
+  test('returns sorted unique system keywords across docs', async () => {
+    provider['documents'] = {
+      A: makeDoc('A', { systemKeywords: 'capture,general' }),
+      B: makeDoc('B', { systemKeywords: 'general' }),
+      C: makeDoc('C', {})
+    };
+    const kws = await provider.getAllSystemKeywords();
+    expect(kws).toEqual(['capture', 'general']);
+  });
+
+  test('returns empty when no docs carry system keywords', async () => {
+    provider['documents'] = { C: makeDoc('C', {}) };
+    expect(await provider.getAllSystemKeywords()).toEqual([]);
   });
 });

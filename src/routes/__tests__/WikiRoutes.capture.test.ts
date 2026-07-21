@@ -116,12 +116,14 @@ describe('WikiRoutes capture (#881)', () => {
     });
 
     test('created pages are keyword-tagged capture and private; appended pages keep their own', async () => {
-      // create path
+      // create path — #893: capture is machine provenance, written to
+      // system-keywords (the automation bucket), not user-keywords.
       let req = createMockReq(authedUser, {}, body);
       let res = createMockRes();
       await wikiRoutes.captureSubmit(req, res);
       let savedMetadata = mockSaveWithContext.mock.calls[0][1];
-      expect(savedMetadata['user-keywords']).toEqual(['capture']);
+      expect(savedMetadata['system-keywords']).toEqual(['capture']);
+      expect(savedMetadata['user-keywords']).toEqual([]);
       expect(savedMetadata.private).toBe(true);
 
       // append path — existing page keywords and privacy untouched

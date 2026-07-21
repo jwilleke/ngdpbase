@@ -143,6 +143,7 @@ class ValidationManager extends BaseManager {
   private systemCategoriesConfig: SystemCategoriesConfig | null;
   private validSystemKeywords: string[];
   private validKnowledgeRoles: string[];
+  private validStatuses: string[];
   private maxUserKeywords!: number;
 
   /**
@@ -162,6 +163,9 @@ class ValidationManager extends BaseManager {
     // #706: hardcoded fallback so the hard-reject enum check still works
     // when the catalog hasn't loaded. Config overrides at initialize().
     this.validKnowledgeRoles = ['source', 'citation', 'concept'];
+    // #893: editorial lifecycle enum — deliberately hardcoded, not config-driven;
+    // absent means 'published'.
+    this.validStatuses = ['draft', 'review', 'published'];
   }
 
   /**
@@ -530,6 +534,18 @@ class ValidationManager extends BaseManager {
         validationErrors.push('knowledge-role must be a string');
       } else if (!this.validKnowledgeRoles.map(r => r.toLowerCase()).includes(knowledgeRoleRaw.toLowerCase())) {
         validationErrors.push(`knowledge-role '${knowledgeRoleRaw}' is not a recognized role (allowed: ${this.validKnowledgeRoles.join(', ')})`);
+      }
+    }
+
+    // #893 status validation — opt-in lifecycle enum (draft/review/published).
+    // Absent/null/empty all mean 'published' and are valid. Present with any
+    // other value is a HARD REJECT (mirrors knowledge-role).
+    const statusRaw = metadata['status'];
+    if (statusRaw !== undefined && statusRaw !== null && statusRaw !== '') {
+      if (typeof statusRaw !== 'string') {
+        validationErrors.push('status must be a string');
+      } else if (!this.validStatuses.includes(statusRaw.toLowerCase())) {
+        validationErrors.push(`status '${statusRaw}' is not a recognized lifecycle state (allowed: ${this.validStatuses.join(', ')})`);
       }
     }
 
