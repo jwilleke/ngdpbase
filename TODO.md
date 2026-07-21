@@ -47,11 +47,7 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 
 ## 🔵 In review
 
-- [#894](https://github.com/jwilleke/ngdpbase/issues/894) — [FEATURE] Slice 2 of #869 — user-keywords behind a CatalogProvider
-- [#882](https://github.com/jwilleke/ngdpbase/issues/882) — [FEATURE] Related keywords via co-occurrence on keyword views
-- [#870](https://github.com/jwilleke/ngdpbase/issues/870) — [BUG] attachment (PDF) to Journal
-- [#867](https://github.com/jwilleke/ngdpbase/issues/867) — [BUG] Media index never prunes orphan entries for files moved/deleted on disk
-- [#861](https://github.com/jwilleke/ngdpbase/issues/861) — [FEATURE] Config-gated trust proxy — real client IPs behind Cloudflare Tunnel (share rate limiter + audit)
+- *(none)*
 
 ## ⏸ Deferred
 
