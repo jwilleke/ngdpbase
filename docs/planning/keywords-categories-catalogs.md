@@ -139,11 +139,13 @@ Operator adopted the five-bucket model and stepped through the follow-on decisio
 
 | Bucket | Author | Cardinality | Nature |
 |---|---|---|---|
-| `system-category` | operator config | one per page | storage/ACL routing only |
-| `status` (new frontmatter field) | human editorial | one per page | lifecycle: draft/review/published, default `published` |
-| flags (`private:` etc.) | human/system | booleans | operational |
-| `user-keywords` | humans, free-typed | many; **no cap** (max-5 retired) | open, canonicalized post-hoc |
+| `system-category` | operator config | one per page | storage/ACL routing |
+| `status` (new field) | human editorial | one per page | lifecycle: draft/review/published, default `published` |
+| flags (`private:`, `author-lock:` etc.) | human/system | booleans | operational |
+| `user-keywords` | humans, free-typed | many, suggested typeahead; **no cap** (max-5 retired) | open, canonicalized post-hoc |
 | `system-keywords` | AI/automation only | many | machine classification + provenance (`capture`) + formerly-restrictEditing terms |
+
+**Flag-name rule (operator ruling, 2026-07-21):** a flag's name is never a keyword. Terms like `author lock` or `page privacy` in `user-keywords` are bucket violations — the concept lives in the flags row, and even documentation *about* a flag tags with topical vocabulary (e.g. `access control`), not the flag's own name. Seed pages "Author Lock" and "Page Private" were retagged accordingly.
 
 Stepped decisions:
 
