@@ -20,51 +20,52 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 
 ## 🟠 P1
 
+- [#888](https://github.com/jwilleke/ngdpbase/issues/888) — [security] protobufjs <= 8.6.4 — Text Format map parsing can mutate returned map object prototype (CVE-2026-59876)
 - [#599](https://github.com/jwilleke/ngdpbase/issues/599) — [BUG] showdown ReDoS vulnerability (CVE-2024-1899) — no upstream patch available; mitigated + weekly watch
+- [#884](https://github.com/jwilleke/ngdpbase/issues/884) — [FEATURE] Search ranking: field weighting, URL tokenization, prefix typeahead, keyword-first
+- [#883](https://github.com/jwilleke/ngdpbase/issues/883) — [FEATURE] Suggested keywords from recent pages in the editor
+- [#869](https://github.com/jwilleke/ngdpbase/issues/869) — [EPIC] Unified canonical keywords across pages, media, and external tools (digiKam-compatible)
+- [#868](https://github.com/jwilleke/ngdpbase/issues/868) — [FEATURE] Attachment metadata editing + remaining #866 follow-ups
+- [#865](https://github.com/jwilleke/ngdpbase/issues/865) — [FEATURE] Orphan attachment report + cleanup — 86% of attachments are referenced by no page
+- [#811](https://github.com/jwilleke/ngdpbase/issues/811) — [FEATURE] GitGuardian secret-leak incidents → auto-create GitHub issues (org-wide)
 
 ## 🟡 P2
 
-- *(none)*
+- [#886](https://github.com/jwilleke/ngdpbase/issues/886) — [FEATURE] OpenGraph + schema.org meta tags on page views (config-gated)
+- [#873](https://github.com/jwilleke/ngdpbase/issues/873) — [FEATURE] Day-level media filtering for MediaPlugin / media API
+- [#872](https://github.com/jwilleke/ngdpbase/issues/872) — [FEATURE] Storybook generator — Timeline + TeslaMate + media + statement → NCM day pages
+- [#871](https://github.com/jwilleke/ngdpbase/issues/871) — [EPIC] Trip Storybook — generated day-page travel stories from Timeline + TeslaMate + media + spend
+- [#848](https://github.com/jwilleke/ngdpbase/issues/848) — [FEATURE] Media Manager: surface alternate-format and excluded files ("why isn't my file showing?")
+- [#843](https://github.com/jwilleke/ngdpbase/issues/843) — [FEATURE] Consider Logging App
+- [#786](https://github.com/jwilleke/ngdpbase/issues/786) — [FEATURE] Auto-journal — digester consuming CatalogManager records into journal entries
+- [#762](https://github.com/jwilleke/ngdpbase/issues/762) — [FEATURE] CatalogSource producer roster — full candidate set across managers, addons, and external feeds
+- [#686](https://github.com/jwilleke/ngdpbase/issues/686) — [FEATURE] AddonsManager: auto-enable bundled addons discovered in non-default addons-path directories
+- [#675](https://github.com/jwilleke/ngdpbase/issues/675) — [FEATURE] Scaffolder + reference template for new ngdpbase addons
+- [#673](https://github.com/jwilleke/ngdpbase/issues/673) — [FEATURE] Implement 'packaged' addon distribution model (npm install)
 
 ## 🔵 In review
 
-- [#861](https://github.com/jwilleke/ngdpbase/issues/861) — [FEATURE] Config-gated trust proxy — real client IPs behind Cloudflare Tunnel (share rate limiter + audit)
-- [#863](https://github.com/jwilleke/ngdpbase/issues/863) — [BUG] "Login to ngdpbase"
-- [#867](https://github.com/jwilleke/ngdpbase/issues/867) — [BUG] Media index never prunes orphan entries for files moved/deleted on disk
-- [#870](https://github.com/jwilleke/ngdpbase/issues/870) — [BUG] attachment (PDF) to Journal
 - [#882](https://github.com/jwilleke/ngdpbase/issues/882) — [FEATURE] Related keywords via co-occurrence on keyword views
+- [#870](https://github.com/jwilleke/ngdpbase/issues/870) — [BUG] attachment (PDF) to Journal
+- [#867](https://github.com/jwilleke/ngdpbase/issues/867) — [BUG] Media index never prunes orphan entries for files moved/deleted on disk
+- [#861](https://github.com/jwilleke/ngdpbase/issues/861) — [FEATURE] Config-gated trust proxy — real client IPs behind Cloudflare Tunnel (share rate limiter + audit)
 
 ## ⏸ Deferred
 
 - [#737](https://github.com/jwilleke/ngdpbase/issues/737) — [FEATURE] NCM Phase-2: transcode/re-encode fetched embedded images (security + size hardening)
 - [#707](https://github.com/jwilleke/ngdpbase/issues/707) — [FEATURE] Typed footnote syntax + knowledge-graph reference index
-- [#645](https://github.com/jwilleke/ngdpbase/issues/645) — [FEATURE] PathPreflight: extend coverage to `/mnt/tank/<share>/...` autofs paths
+- [#645](https://github.com/jwilleke/ngdpbase/issues/645) — [FEATURE] PathPreflight: extend coverage to /mnt/tank/&lt;share&gt;/... autofs paths
 - [#631](https://github.com/jwilleke/ngdpbase/issues/631) — [FEATURE] Define system/service principal model for non-request code paths
 - [#501](https://github.com/jwilleke/ngdpbase/issues/501) — [FEATURE] JSON → ngdp Compatible Markdown (NCM) serializer
 - [#448](https://github.com/jwilleke/ngdpbase/issues/448) — AuthManager: Passkey / WebAuthn auth provider
 - [#423](https://github.com/jwilleke/ngdpbase/issues/423) — Asset Manager: additional storage providers (S3, Google Drive, plugin-contributed)
 - [#421](https://github.com/jwilleke/ngdpbase/issues/421) — AuthManager: TOTP / 2FA auth provider
 
-## ❓ Needs triage (28)
+## ❓ Needs triage
 
-- [#886](https://github.com/jwilleke/ngdpbase/issues/886) — [FEATURE] OpenGraph + schema.org meta tags on page views (config-gated)
+11 issues awaiting a placement decision:
+
 - [#885](https://github.com/jwilleke/ngdpbase/issues/885) — [FEATURE] sitemap.xml for public instances (config-gated)
-- [#884](https://github.com/jwilleke/ngdpbase/issues/884) — [FEATURE] Search ranking: field weighting, URL tokenization, prefix typeahead, keyword-first
-- [#883](https://github.com/jwilleke/ngdpbase/issues/883) — [FEATURE] Suggested keywords from recent pages in the editor
-- [#873](https://github.com/jwilleke/ngdpbase/issues/873) — [FEATURE] Day-level media filtering for MediaPlugin / media API
-- [#872](https://github.com/jwilleke/ngdpbase/issues/872) — [FEATURE] Storybook generator — Timeline + TeslaMate + media + statement → NCM day pages
-- [#871](https://github.com/jwilleke/ngdpbase/issues/871) — [EPIC] Trip Storybook — generated day-page travel stories from Timeline + TeslaMate + media + spend
-- [#869](https://github.com/jwilleke/ngdpbase/issues/869) — [EPIC] Unified canonical keywords across pages, media, and external tools (digiKam-compatible)
-- [#868](https://github.com/jwilleke/ngdpbase/issues/868) — [FEATURE] Attachment metadata editing + remaining #866 follow-ups
-- [#865](https://github.com/jwilleke/ngdpbase/issues/865) — [FEATURE] Orphan attachment report + cleanup — 86% of attachments are referenced by no page
-- [#848](https://github.com/jwilleke/ngdpbase/issues/848) — [FEATURE] Media Manager: surface alternate-format and excluded files ("why isn't my file showing?")
-- [#843](https://github.com/jwilleke/ngdpbase/issues/843) — [FEATURE] Consider Logging App
-- [#811](https://github.com/jwilleke/ngdpbase/issues/811) — [FEATURE] GitGuardian secret-leak incidents → auto-create GitHub issues (org-wide)
-- [#786](https://github.com/jwilleke/ngdpbase/issues/786) — [FEATURE] Auto-journal — digester consuming CatalogManager records into journal entries
-- [#762](https://github.com/jwilleke/ngdpbase/issues/762) — [FEATURE] CatalogSource producer roster — full candidate set across managers, addons, and external feeds
-- [#686](https://github.com/jwilleke/ngdpbase/issues/686) — [FEATURE] AddonsManager: auto-enable bundled addons discovered in non-default addons-path directories
-- [#675](https://github.com/jwilleke/ngdpbase/issues/675) — [FEATURE] Scaffolder + reference template for new ngdpbase addons
-- [#673](https://github.com/jwilleke/ngdpbase/issues/673) — [FEATURE] Implement 'packaged' addon distribution model (npm install)
 - [#621](https://github.com/jwilleke/ngdpbase/issues/621) — [Addon] Communication Service
 - [#602](https://github.com/jwilleke/ngdpbase/issues/602) — [FEATURE] Add person-contacts addon for shared identity foundation
 - [#601](https://github.com/jwilleke/ngdpbase/issues/601) — [FEATURE] Calendar Reminders
