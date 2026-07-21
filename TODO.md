@@ -65,11 +65,6 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 - [#448](https://github.com/jwilleke/ngdpbase/issues/448) — AuthManager: Passkey / WebAuthn auth provider
 - [#423](https://github.com/jwilleke/ngdpbase/issues/423) — Asset Manager: additional storage providers (S3, Google Drive, plugin-contributed)
 - [#421](https://github.com/jwilleke/ngdpbase/issues/421) — AuthManager: TOTP / 2FA auth provider
-
-## ❓ Needs triage
-
-7 issues awaiting a placement decision:
-
 - [#602](https://github.com/jwilleke/ngdpbase/issues/602) — [FEATURE] Add person-contacts addon for shared identity foundation
 - [#600](https://github.com/jwilleke/ngdpbase/issues/600) — [FEATURE] [addon] for project management
 - [#570](https://github.com/jwilleke/ngdpbase/issues/570) — [FEATURE] Generic Addon for Physical assets
@@ -77,3 +72,7 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 - [#492](https://github.com/jwilleke/ngdpbase/issues/492) — [FEATURE] ADD-ON Recipe Manager
 - [#487](https://github.com/jwilleke/ngdpbase/issues/487) — [FEATURE] ADD-ON Condominium Unit Management System
 - [#486](https://github.com/jwilleke/ngdpbase/issues/486) — [FEATURE] ADD-ON Generic for Accounting
+
+## ❓ Needs triage
+
+- *(none)*
