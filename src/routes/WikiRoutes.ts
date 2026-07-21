@@ -1687,6 +1687,22 @@ class WikiRoutes {
   }
 
   /**
+   * #896 (Slice 4 of #869): the user-keywords provider — read/write interface
+   * for the vocabulary catalog (seed + instance store). Null when
+   * CatalogManager is unavailable.
+   */
+  private getUserKeywordsProvider(): {
+    getCatalogObject: () => Promise<Record<string, Record<string, unknown>>>;
+    saveCatalogObject: (catalog: Record<string, Record<string, unknown>>) => Promise<void>;
+  } | null {
+    const catalogManager = this.engine.getManager('CatalogManager') as {
+      getUserKeywordsProvider?: () => unknown;
+    } | undefined;
+    const provider = catalogManager?.getUserKeywordsProvider?.();
+    return provider ? provider as ReturnType<WikiRoutes['getUserKeywordsProvider']> : null;
+  }
+
+  /**
    * #894 (Slice 2 of #869): fetch the user-keywords vocabulary from
    * CatalogManager's provider registry. Returns null when CatalogManager (or
    * the provider) is unavailable so callers can fall back to config-direct.
@@ -12641,19 +12657,17 @@ ${panes}
         );
       }
 
-      // Get config manager
-      const configManager = this.engine.getManager('ConfigurationManager');
-      if (!configManager) {
+      // #896: catalog reads/writes go through the vocabulary provider (seed +
+      // instance store), never ConfigurationManager.setProperty.
+      const kwProvider = this.getUserKeywordsProvider();
+      if (!kwProvider) {
         return res.redirect(
-          '/user-keywords/create?error=' + encodeURIComponent('Configuration manager not available')
+          '/user-keywords/create?error=' + encodeURIComponent('Keyword catalog not available')
         );
       }
 
       // Get existing user-keywords
-      const existingKeywords = (configManager.getProperty('ngdpbase.user-keywords') || {}) as Record<
-        string,
-        Record<string, unknown>
-      >;
+      const existingKeywords = await kwProvider.getCatalogObject();
 
       // Check if keyword already exists
       if (existingKeywords[internalName]) {
@@ -12675,7 +12689,7 @@ ${panes}
         }
       };
 
-      await configManager.setProperty('ngdpbase.user-keywords', updatedKeywords);
+      await kwProvider.saveCatalogObject(updatedKeywords);
 
       logger.info(`[WikiRoutes] User ${currentUser.username} created user-keyword: ${internalName}`);
 
@@ -12739,12 +12753,8 @@ ${trimmedDescription}
 
       const keywordId = req.params.keywordId;
 
-      // Get config manager and find the keyword
-      const configManager = this.engine.getManager('ConfigurationManager');
-      const userKeywordsConfig = (configManager?.getProperty('ngdpbase.user-keywords') || {}) as Record<
-        string,
-        Record<string, unknown>
-      >;
+      // #896: read the catalog through the vocabulary provider
+      const userKeywordsConfig = (await this.getUserKeywordsProvider()?.getCatalogObject()) || {};
 
       const keywordConfig = userKeywordsConfig[keywordId];
       if (!keywordConfig) {
@@ -12802,14 +12812,11 @@ ${description}
   /**
    * API endpoint to get all user-keywords with page status
    */
-  apiGetUserKeywords(_req: Request, res: Response): void {
+  async apiGetUserKeywords(_req: Request, res: Response): Promise<void> {
     try {
-      const configManager = this.engine.getManager('ConfigurationManager');
       const pageManager = this.engine.getManager('PageManager');
-      const userKeywordsConfig = configManager?.getProperty('ngdpbase.user-keywords', {}) as Record<
-        string,
-        Record<string, unknown>
-      >;
+      // #896: catalog through the vocabulary provider (seed + instance store)
+      const userKeywordsConfig = (await this.getUserKeywordsProvider()?.getCatalogObject()) || {};
 
       const keywords = Object.entries(userKeywordsConfig).map(([key, config]) => {
         const label = (config.label as string) || key;
@@ -12857,12 +12864,9 @@ ${description}
         return;
       }
 
-      const configManager = this.engine.getManager('ConfigurationManager');
       const pageManager = this.engine.getManager('PageManager');
-      const userKeywordsConfig = configManager?.getProperty('ngdpbase.user-keywords', {}) as Record<
-        string,
-        Record<string, unknown>
-      >;
+      // #896: catalog through the vocabulary provider (seed + instance store)
+      const userKeywordsConfig = (await this.getUserKeywordsProvider()?.getCatalogObject()) || {};
 
       // Get all pages to find keyword usage (metadata only - no content needed)
       const allPages = pageManager ? await pageManager.getAllPages() : [];
@@ -13007,11 +13011,13 @@ ${description}
         return;
       }
 
-      const configManager = this.engine.getManager('ConfigurationManager');
-      const userKeywordsConfig = configManager?.getProperty('ngdpbase.user-keywords', {}) as Record<
-        string,
-        Record<string, unknown>
-      >;
+      // #896: catalog through the vocabulary provider (seed + instance store)
+      const kwProvider = this.getUserKeywordsProvider();
+      if (!kwProvider) {
+        res.status(503).json({ error: 'Keyword catalog not available' });
+        return;
+      }
+      const userKeywordsConfig = await kwProvider.getCatalogObject();
 
       // Check if keyword ID already exists
       if (userKeywordsConfig[id]) {
@@ -13028,7 +13034,7 @@ ${description}
         restrictEditing: restrictEditing === true
       };
 
-      await configManager.setProperty('ngdpbase.user-keywords', userKeywordsConfig);
+      await kwProvider.saveCatalogObject(userKeywordsConfig);
 
       res.json({
         success: true,
@@ -13102,11 +13108,13 @@ ${description}
       const keywordId = req.params.id;
       const { label, description, category, enabled, restrictEditing } = req.body;
 
-      const configManager = this.engine.getManager('ConfigurationManager');
-      const userKeywordsConfig = configManager?.getProperty('ngdpbase.user-keywords', {}) as Record<
-        string,
-        Record<string, unknown>
-      >;
+      // #896: catalog through the vocabulary provider (seed + instance store)
+      const kwProvider = this.getUserKeywordsProvider();
+      if (!kwProvider) {
+        res.status(503).json({ error: 'Keyword catalog not available' });
+        return;
+      }
+      const userKeywordsConfig = await kwProvider.getCatalogObject();
 
       if (!userKeywordsConfig[keywordId]) {
         res.status(404).json({ error: 'Keyword not found' });
@@ -13123,7 +13131,7 @@ ${description}
         restrictEditing: restrictEditing !== undefined ? restrictEditing : userKeywordsConfig[keywordId].restrictEditing
       };
 
-      await configManager.setProperty('ngdpbase.user-keywords', userKeywordsConfig);
+      await kwProvider.saveCatalogObject(userKeywordsConfig);
 
       res.json({
         success: true,
@@ -13155,12 +13163,14 @@ ${description}
       const keywordId = req.params.id;
       const { reassignTo, removeFromPages } = req.body;
 
-      const configManager = this.engine.getManager('ConfigurationManager');
       const pageManager = this.engine.getManager('PageManager');
-      const userKeywordsConfig = configManager?.getProperty('ngdpbase.user-keywords', {}) as Record<
-        string,
-        Record<string, unknown>
-      >;
+      // #896: catalog through the vocabulary provider (seed + instance store)
+      const kwProvider = this.getUserKeywordsProvider();
+      if (!kwProvider) {
+        res.status(503).json({ error: 'Keyword catalog not available' });
+        return;
+      }
+      const userKeywordsConfig = await kwProvider.getCatalogObject();
 
       if (!userKeywordsConfig[keywordId]) {
         res.status(404).json({ error: 'Keyword not found' });
@@ -13203,7 +13213,7 @@ ${description}
 
       // Delete the keyword from config
       delete userKeywordsConfig[keywordId];
-      await configManager.setProperty('ngdpbase.user-keywords', userKeywordsConfig);
+      await kwProvider.saveCatalogObject(userKeywordsConfig);
 
       res.json({
         success: true,
@@ -13244,12 +13254,14 @@ ${description}
         return;
       }
 
-      const configManager = this.engine.getManager('ConfigurationManager');
       const pageManager = this.engine.getManager('PageManager');
-      const userKeywordsConfig = configManager?.getProperty('ngdpbase.user-keywords', {}) as Record<
-        string,
-        Record<string, unknown>
-      >;
+      // #896: catalog through the vocabulary provider (seed + instance store)
+      const kwProvider = this.getUserKeywordsProvider();
+      if (!kwProvider) {
+        res.status(503).json({ error: 'Keyword catalog not available' });
+        return;
+      }
+      const userKeywordsConfig = await kwProvider.getCatalogObject();
 
       if (!userKeywordsConfig[sourceId]) {
         res.status(404).json({ error: 'Source keyword not found' });
@@ -13288,7 +13300,7 @@ ${description}
       // Optionally delete the source keyword
       if (deleteSource) {
         delete userKeywordsConfig[sourceId];
-        await configManager.setProperty('ngdpbase.user-keywords', userKeywordsConfig);
+        await kwProvider.saveCatalogObject(userKeywordsConfig);
       }
 
       res.json({

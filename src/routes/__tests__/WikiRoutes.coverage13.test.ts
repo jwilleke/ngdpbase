@@ -153,6 +153,19 @@ function setUserKeywords(next: Record<string, Record<string, unknown>>) {
   Object.assign(mockUserKeywordsConfig, next);
 }
 
+// #896: admin keyword CRUD now goes through CatalogManager's user-keywords
+// provider. In-memory stand-in backed by the same mutable catalog object.
+const mockUserKeywordsProvider = {
+  getCatalogObject: vi.fn(async () => ({ ...mockUserKeywordsConfig })),
+  saveCatalogObject: vi.fn(async (catalog: Record<string, Record<string, unknown>>) => {
+    setUserKeywords(catalog);
+  })
+};
+const mockCatalogManager = {
+  getUserKeywordsProvider: vi.fn(() => mockUserKeywordsProvider),
+  getProviderTerms: vi.fn(async () => null)
+};
+
 const mockConfigManager = {
   getProperty: vi.fn((key: string, defaultValue: unknown) => {
     if (key === 'ngdpbase.user-keywords') return mockUserKeywordsConfig;
@@ -186,6 +199,7 @@ vi.mock('../../WikiEngine', () => {
       getManager: vi.fn((name: string) => {
         const managers: Record<string, unknown> = {
           ConfigurationManager: mockConfigManager,
+          CatalogManager: mockCatalogManager,
           PageManager: mockPageManager,
           RenderingManager: mockRenderingManager,
           SearchManager: mockSearchManager,

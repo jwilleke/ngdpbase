@@ -133,6 +133,17 @@ const mockConfigManager = {
   getResolvedDataPath: vi.fn((_k: string, def: string) => def)
 };
 
+// #896: apiGetUserKeywords reads via CatalogManager's user-keywords provider.
+// Delegate to mockConfigManager so per-test getProperty overrides keep working.
+const mockCatalogManager = {
+  getUserKeywordsProvider: vi.fn(() => ({
+    getCatalogObject: async () =>
+      (mockConfigManager.getProperty('ngdpbase.user-keywords', {}) || {}) as Record<string, Record<string, unknown>>,
+    saveCatalogObject: async () => undefined
+  })),
+  getProviderTerms: vi.fn(async () => null)
+};
+
 const mockNotificationManager = {
   getNotifications: vi.fn().mockReturnValue([]),
   getAllNotifications: vi.fn().mockReturnValue([]),
@@ -154,6 +165,7 @@ vi.mock('../../WikiEngine', () => {
       getManager: vi.fn((name: string) => {
         const managers: Record<string, unknown> = {
           ConfigurationManager: mockConfigManager,
+          CatalogManager: mockCatalogManager,
           PageManager: mockPageManager,
           RenderingManager: mockRenderingManager,
           SearchManager: mockSearchManager,

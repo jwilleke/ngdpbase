@@ -13,6 +13,8 @@
  * Related: #424 (CatalogManager), #507 (auto-tagging), #149 (microdata itemid)
  */
 
+import path from 'path';
+import fs from 'fs-extra';
 import BaseManager from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
@@ -84,11 +86,13 @@ class DefaultCatalogProvider implements CatalogProvider {
 // (#894, Slice 2 of #869)
 // ---------------------------------------------------------------------------
 
-interface UserKeywordConfig {
+export interface UserKeywordConfig {
   label?: string;
   description?: string;
   category?: CatalogTerm['category'];
   enabled?: boolean;
+  restrictEditing?: boolean;
+  allowedRoles?: string[];
   uri?: string;
   source?: string;
 }
@@ -97,12 +101,22 @@ interface UserKeywordConfig {
  * Serves the user-keywords vocabulary (the human tagging bucket in the #869
  * five-bucket model) through the provider registry, so it shares one interface
  * with system-keywords: SKOS ConceptScheme emission at
- * /api/catalog/vocabulary/user-keywords, future altLabels aliasing, and the
- * Slice 3 drift report's canonical side. WikiRoutes' keyword accessors resolve
- * through this provider (config-direct fallback only when CatalogManager is
- * unavailable).
+ * /api/catalog/vocabulary/user-keywords, altLabels aliasing later, and the
+ * drift report's canonical side.
+ *
+ * #896: vocabulary is content, not configuration. Two layers:
+ *   - SEED — `ngdpbase.user-keywords` read from the SHIPPED defaults only
+ *     (`getDefaultProperty`), so legacy whole-catalog snapshots in instance
+ *     custom config can't shadow it (the #895 propagation bug).
+ *   - STORE — `<instance-data>/vocabulary/user-keywords.json`, read-write,
+ *     owned by this provider. Holds instance-created/adopted terms and
+ *     per-key overrides of seed entries (disable = `enabled:false` delta).
+ * `getCatalogObject()` merges the two (store wins per key);
+ * `saveCatalogObject()` diffs against the seed and persists only deltas.
+ * All catalog writes (admin CRUD, drift Adopt, import auto-register) go
+ * through this provider — never through ConfigurationManager.setProperty.
  */
-class UserKeywordsCatalogProvider implements CatalogProvider {
+export class UserKeywordsCatalogProvider implements CatalogProvider {
   readonly id = 'user-keywords';
   readonly displayName = 'User Keywords';
   readonly domain = 'user-keywords';
@@ -113,15 +127,70 @@ class UserKeywordsCatalogProvider implements CatalogProvider {
     this.engine = engine;
   }
 
-  getTerms(): Promise<CatalogTerm[]> {
+  /** Absolute path of the instance vocabulary store. */
+  getStorePath(): string | null {
     const cfg = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    if (!cfg) return Promise.resolve([]);
+    if (!cfg?.getInstanceDataFolder) return null;
+    return path.join(cfg.getInstanceDataFolder(), 'vocabulary', 'user-keywords.json');
+  }
 
-    const raw = cfg.getProperty('ngdpbase.user-keywords', {}) as Record<string, UserKeywordConfig>;
-    if (!raw || typeof raw !== 'object') return Promise.resolve([]);
+  private seedCatalog(): Record<string, UserKeywordConfig> {
+    const cfg = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    if (!cfg) return {};
+    const getDefault = (cfg as unknown as { getDefaultProperty?: (k: string, d: unknown) => unknown }).getDefaultProperty;
+    const raw = getDefault
+      ? getDefault.call(cfg, 'ngdpbase.user-keywords', {})
+      : cfg.getProperty('ngdpbase.user-keywords', {});
+    return (raw && typeof raw === 'object') ? raw as Record<string, UserKeywordConfig> : {};
+  }
 
-    return Promise.resolve(
-      Object.entries(raw)
+  private async readStore(): Promise<Record<string, UserKeywordConfig>> {
+    const storePath = this.getStorePath();
+    if (!storePath) return {};
+    try {
+      if (!(await fs.pathExists(storePath))) return {};
+      const raw = await fs.readJson(storePath) as unknown;
+      return (raw && typeof raw === 'object') ? raw as Record<string, UserKeywordConfig> : {};
+    } catch (err) {
+      logger.warn('[UserKeywordsCatalogProvider] store unreadable, treating as empty:', err);
+      return {};
+    }
+  }
+
+  /**
+   * Full catalog as an id-keyed object (seed merged with store, store wins).
+   * Includes disabled entries — callers filter as needed.
+   */
+  async getCatalogObject(): Promise<Record<string, UserKeywordConfig>> {
+    return { ...this.seedCatalog(), ...(await this.readStore()) };
+  }
+
+  /**
+   * Persist a full catalog object. Only deltas against the seed are written
+   * to the store: entries identical to their seed counterpart are omitted;
+   * seed entries absent from `catalog` are stored as `enabled:false`
+   * overrides (a seed key can't be deleted, only disabled).
+   */
+  async saveCatalogObject(catalog: Record<string, UserKeywordConfig>): Promise<void> {
+    const storePath = this.getStorePath();
+    if (!storePath) throw new Error('UserKeywordsCatalogProvider: no store path (ConfigurationManager unavailable)');
+    const seed = this.seedCatalog();
+    const store: Record<string, UserKeywordConfig> = {};
+    for (const [id, entry] of Object.entries(catalog)) {
+      const seedEntry = seed[id];
+      if (seedEntry && JSON.stringify(seedEntry) === JSON.stringify(entry)) continue;
+      store[id] = entry;
+    }
+    for (const id of Object.keys(seed)) {
+      if (!(id in catalog)) store[id] = { ...seed[id], enabled: false };
+    }
+    await fs.ensureDir(path.dirname(storePath));
+    await fs.writeJson(storePath, store, { spaces: 2 });
+  }
+
+  getTerms(): Promise<CatalogTerm[]> {
+    return this.getCatalogObject().then(catalog =>
+      Object.entries(catalog)
         .filter(([, v]) => v.enabled !== false)
         .map(([key, v]) => ({
           term: key,
@@ -312,6 +381,16 @@ class CatalogManager extends BaseManager {
    * needs per-provider access. Returns null when the schemeId doesn't match
    * a registered provider (caller renders 404).
    */
+  /**
+   * #896: typed accessor for the user-keywords provider — the write interface
+   * for the instance vocabulary store (admin CRUD, drift Adopt, import
+   * auto-register all go through it).
+   */
+  getUserKeywordsProvider(): UserKeywordsCatalogProvider | null {
+    const p = this.providers.get('user-keywords');
+    return p instanceof UserKeywordsCatalogProvider ? p : null;
+  }
+
   async getProviderTerms(schemeId: string): Promise<{ displayName: string; terms: CatalogTerm[] } | null> {
     const provider = this.providers.get(schemeId);
     if (!provider) return null;

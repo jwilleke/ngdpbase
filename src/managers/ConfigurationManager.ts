@@ -623,6 +623,17 @@ class ConfigurationManager extends BaseManager {
   }
 
   /**
+   * #896: read a property from the SHIPPED defaults only, ignoring instance
+   * custom-config overrides. Used by vocabulary providers whose seed must not
+   * be shadowed by legacy whole-catalog snapshots in instance config (the
+   * #895 propagation bug). No env-override or env-ref resolution — defaults
+   * are repo-shipped literals.
+   */
+  getDefaultProperty(key: string, defaultValue: unknown = null): unknown {
+    return this.defaultConfig?.[key] ?? defaultValue;
+  }
+
+  /**
    * Resolve environment-variable references in a string config value.
    *
    * Two forms supported (#775):

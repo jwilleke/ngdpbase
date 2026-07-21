@@ -194,12 +194,28 @@ const mockConfigManager = {
   setProperty: vi.fn().mockResolvedValue(undefined)
 };
 
+// #896: keyword CRUD now reads/writes via CatalogManager's user-keywords
+// provider. Delegate to mockConfigManager so the existing per-test
+// getProperty.mockImplementationOnce(...) injections keep working unchanged.
+const mockUserKeywordsProvider = {
+  getCatalogObject: vi.fn(async () =>
+    (mockConfigManager.getProperty('ngdpbase.user-keywords', {}) || {}) as Record<string, Record<string, unknown>>),
+  saveCatalogObject: vi.fn(async (catalog: Record<string, Record<string, unknown>>) => {
+    await mockConfigManager.setProperty('ngdpbase.user-keywords', catalog);
+  })
+};
+const mockCatalogManager = {
+  getUserKeywordsProvider: vi.fn(() => mockUserKeywordsProvider),
+  getProviderTerms: vi.fn(async () => null)
+};
+
 vi.mock('../../WikiEngine', () => {
   const MockEngine = vi.fn().mockImplementation(function () {
     return {
       getManager: vi.fn((name: string) => {
         const managers: Record<string, unknown> = {
           ConfigurationManager: mockConfigManager,
+          CatalogManager: mockCatalogManager,
           PageManager: mockPageManager,
           RenderingManager: mockRenderingManager,
           SearchManager: mockSearchManager,

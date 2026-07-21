@@ -42,6 +42,8 @@
     "migrate:private": "tsx --env-file-if-exists=.env scripts/migrate-private-field.ts",
     "migrate:private:dry": "tsx --env-file-if-exists=.env scripts/migrate-private-field.ts --dry-run",
     "migrate:vocabulary": "tsx --env-file-if-exists=.env scripts/migrate-vocabulary-slice1.ts",
+    "migrate:vocabulary-store": "tsx --env-file-if-exists=.env scripts/migrate-vocabulary-store.ts",
+    "migrate:vocabulary-store:dry": "tsx --env-file-if-exists=.env scripts/migrate-vocabulary-store.ts --dry-run",
     "migrate:vocabulary:dry": "tsx --env-file-if-exists=.env scripts/migrate-vocabulary-slice1.ts --dry-run",
     "migrate:user-pages-category": "tsx scripts/migrate-user-pages-category.ts",
     "migrate:user-pages-category:dry": "tsx scripts/migrate-user-pages-category.ts --dry-run",

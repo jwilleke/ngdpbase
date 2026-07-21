@@ -796,76 +796,12 @@
       "enabled": true
     }
   },
-  "_comment_user_keywords": "User keyword definitions for flexible content tagging (user-invented tags; draft/review/published/subject terms are deprecated here — see system-keywords)",
+  "_comment_user_keywords": "User keyword SEED vocabulary (#896): minimal shipped defaults only. Instance-created/adopted terms live in <instance-data>/vocabulary/user-keywords.json, owned by UserKeywordsCatalogProvider. Under the #869 open model users type keywords freely; the catalog curates descriptions/aliases.",
   "ngdpbase.user-keywords": {
     "default": {
       "label": "default",
       "description": "Default keyword with no special restrictions",
       "category": "general",
-      "enabled": true,
-      "restrictEditing": false
-    },
-    "medicine": {
-      "label": "medicine",
-      "description": "Medical and healthcare-related content",
-      "category": "subject",
-      "enabled": true,
-      "restrictEditing": false,
-      "schemaOrg": "MedicalEntity"
-    },
-    "geology": {
-      "label": "geology",
-      "description": "Geological and earth science content",
-      "category": "subject",
-      "enabled": true,
-      "restrictEditing": false
-    },
-    "meteorology": {
-      "label": "meteorology",
-      "description": "Weather and atmospheric science content",
-      "category": "subject",
-      "enabled": true,
-      "restrictEditing": false
-    },
-    "oceanography": {
-      "label": "oceanography",
-      "description": "Ocean and marine science content",
-      "category": "subject",
-      "enabled": true,
-      "restrictEditing": false
-    },
-    "psychology": {
-      "label": "psychology",
-      "description": "Psychological and behavioral science content",
-      "category": "subject",
-      "enabled": true,
-      "restrictEditing": false
-    },
-    "sociology": {
-      "label": "sociology",
-      "description": "Social science and society-related content",
-      "category": "subject",
-      "enabled": true,
-      "restrictEditing": false
-    },
-    "anthropology": {
-      "label": "anthropology",
-      "description": "Human culture and society content",
-      "category": "subject",
-      "enabled": true,
-      "restrictEditing": false
-    },
-    "economics": {
-      "label": "economics",
-      "description": "Economic and financial content",
-      "category": "subject",
-      "enabled": true,
-      "restrictEditing": false
-    },
-    "political-science": {
-      "label": "political-science",
-      "description": "Political science and governance content",
-      "category": "subject",
       "enabled": true,
       "restrictEditing": false
     }

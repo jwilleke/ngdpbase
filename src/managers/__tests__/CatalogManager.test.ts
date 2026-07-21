@@ -113,6 +113,84 @@ describe('CatalogManager', () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // #896 (Slice 4 of #869): seed + instance store
+  // -------------------------------------------------------------------------
+
+  describe('UserKeywordsCatalogProvider store (#896)', () => {
+    const os = require('os');
+    const path = require('path');
+    const fs = require('fs-extra');
+    let tmpDir;
+
+    function makeStoreEngine(seed, mergedOverride) {
+      const configManager = {
+        getProperty: vi.fn((key, dv) => {
+          if (key === 'ngdpbase.user-keywords') return mergedOverride ?? seed;
+          if (key === 'ngdpbase.system-keywords') return {};
+          if (key === 'ngdpbase.catalog.ai.enabled') return false;
+          return dv;
+        }),
+        getDefaultProperty: vi.fn((key, dv) => key === 'ngdpbase.user-keywords' ? seed : dv),
+        getInstanceDataFolder: vi.fn(() => tmpDir)
+      };
+      return { getManager: vi.fn((name) => name === 'ConfigurationManager' ? configManager : undefined) };
+    }
+
+    beforeEach(async () => {
+      tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ngdp-vocab-test-'));
+    });
+
+    afterEach(async () => {
+      // Teardown removes ONLY the mkdtemp-created directory — never a live data dir.
+      if (tmpDir && tmpDir.includes('ngdp-vocab-test-')) await fs.remove(tmpDir);
+    });
+
+    test('seed only (no store file): terms come from shipped defaults', async () => {
+      const seed = { default: { label: 'default', enabled: true } };
+      const m = new CatalogManager(makeStoreEngine(seed) as unknown as WikiEngine);
+      await m.initialize();
+      const { terms } = await m.getProviderTerms('user-keywords');
+      expect(terms.map(t => t.term)).toEqual(['default']);
+    });
+
+    test('seed reads DEFAULTS, not merged config — legacy snapshot cannot shadow (#895 bug)', async () => {
+      const seed = { default: { label: 'default', enabled: true } };
+      const staleMerged = { ...seed, draft: { label: 'draft', enabled: true } };
+      const m = new CatalogManager(makeStoreEngine(seed, staleMerged) as unknown as WikiEngine);
+      await m.initialize();
+      const { terms } = await m.getProviderTerms('user-keywords');
+      expect(terms.map(t => t.term)).toEqual(['default']); // draft from stale merged config ignored
+    });
+
+    test('saveCatalogObject persists only deltas; getCatalogObject merges store over seed', async () => {
+      const seed = { default: { label: 'default', enabled: true } };
+      const m = new CatalogManager(makeStoreEngine(seed) as unknown as WikiEngine);
+      await m.initialize();
+      const provider = m.getUserKeywordsProvider();
+      await provider.saveCatalogObject({
+        default: { label: 'default', enabled: true },            // identical to seed → omitted
+        basketball: { label: 'basketball', enabled: true }        // instance term → stored
+      });
+      const store = await fs.readJson(path.join(tmpDir, 'vocabulary', 'user-keywords.json'));
+      expect(Object.keys(store)).toEqual(['basketball']);
+      const catalog = await provider.getCatalogObject();
+      expect(Object.keys(catalog).sort()).toEqual(['basketball', 'default']);
+    });
+
+    test('removing a seed entry stores an enabled:false override (seed keys disable, not delete)', async () => {
+      const seed = { default: { label: 'default', enabled: true } };
+      const m = new CatalogManager(makeStoreEngine(seed) as unknown as WikiEngine);
+      await m.initialize();
+      const provider = m.getUserKeywordsProvider();
+      await provider.saveCatalogObject({}); // catalog with seed entry removed
+      const store = await fs.readJson(path.join(tmpDir, 'vocabulary', 'user-keywords.json'));
+      expect(store.default.enabled).toBe(false);
+      const terms = (await m.getProviderTerms('user-keywords')).terms;
+      expect(terms).toEqual([]); // disabled → filtered from terms
+    });
+  });
+
   test('resolveUri() returns uri for known term', async () => {
     const uri = await manager.resolveUri('geology');
     expect(uri).toBe('https://www.wikidata.org/wiki/Q1069');

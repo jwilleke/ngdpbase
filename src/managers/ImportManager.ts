@@ -1434,17 +1434,22 @@ class ImportManager extends BaseManager {
       return 0;
     }
 
-    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    if (!configManager) {
-      logger.warn('[ImportManager] ConfigurationManager not available, cannot register user-keywords');
+    // #896: catalog reads/writes go through the vocabulary provider (seed +
+    // instance store), never ConfigurationManager.setProperty. Skips (no
+    // writes) when CatalogManager is unavailable.
+    interface KeywordProviderLike {
+      getCatalogObject: () => Promise<Record<string, Record<string, unknown>>>;
+      saveCatalogObject: (c: Record<string, Record<string, unknown>>) => Promise<void>;
+    }
+    const catalogManager = this.engine.getManager('CatalogManager') as {
+      getUserKeywordsProvider?: () => KeywordProviderLike | null;
+    } | null;
+    const kwProvider: KeywordProviderLike | null = catalogManager?.getUserKeywordsProvider?.() ?? null;
+    if (!kwProvider) {
+      logger.warn('[ImportManager] keyword catalog provider unavailable — skipping keyword auto-registration');
       return 0;
     }
-
-    // Get existing user-keywords from config
-    const existingKeywords = (configManager.getProperty('ngdpbase.user-keywords') || {}) as Record<
-      string,
-      Record<string, unknown>
-    >;
+    const existingKeywords = await kwProvider.getCatalogObject();
 
     let addedCount = 0;
     const updatedKeywords = { ...existingKeywords };
@@ -1471,8 +1476,8 @@ class ImportManager extends BaseManager {
     }
 
     if (addedCount > 0) {
-      await configManager.setProperty('ngdpbase.user-keywords', updatedKeywords);
-      logger.info(`[ImportManager] Added ${addedCount} new user-keywords to config`);
+      await kwProvider.saveCatalogObject(updatedKeywords);
+      logger.info(`[ImportManager] Added ${addedCount} new user-keywords to the vocabulary store`);
     }
 
     return addedCount;
