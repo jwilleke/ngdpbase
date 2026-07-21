@@ -24,7 +24,6 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 - [#884](https://github.com/jwilleke/ngdpbase/issues/884) — [FEATURE] Search ranking: field weighting, URL tokenization, prefix typeahead, keyword-first
 - [#883](https://github.com/jwilleke/ngdpbase/issues/883) — [FEATURE] Suggested keywords from recent pages in the editor
 - [#869](https://github.com/jwilleke/ngdpbase/issues/869) — [EPIC] Unified canonical keywords across pages, media, and external tools (digiKam-compatible)
-- [#893](https://github.com/jwilleke/ngdpbase/issues/893) — [FEATURE] Slice 1 of #869 — status: frontmatter field + capture keyword migration
 - [#868](https://github.com/jwilleke/ngdpbase/issues/868) — [FEATURE] Attachment metadata editing + remaining #866 follow-ups
 - [#865](https://github.com/jwilleke/ngdpbase/issues/865) — [FEATURE] Orphan attachment report + cleanup — 86% of attachments are referenced by no page
 - [#811](https://github.com/jwilleke/ngdpbase/issues/811) — [FEATURE] GitGuardian secret-leak incidents → auto-create GitHub issues (org-wide)
@@ -48,6 +47,7 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 
 ## 🔵 In review
 
+- [#893](https://github.com/jwilleke/ngdpbase/issues/893) — [FEATURE] Slice 1 of #869 — status: frontmatter field + capture keyword migration
 - [#882](https://github.com/jwilleke/ngdpbase/issues/882) — [FEATURE] Related keywords via co-occurrence on keyword views
 - [#870](https://github.com/jwilleke/ngdpbase/issues/870) — [BUG] attachment (PDF) to Journal
 - [#867](https://github.com/jwilleke/ngdpbase/issues/867) — [BUG] Media index never prunes orphan entries for files moved/deleted on disk
