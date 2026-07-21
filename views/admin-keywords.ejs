@@ -149,6 +149,57 @@
           </div>
         </div>
       </div>
+
+      <%# #895 (Slice 3 of #869): keyword drift report — observed (pages +
+          media EXIF) vs the canonical catalog. Adopt writes the term into the
+          catalog via the existing POST /admin/keywords API. %>
+      <% if (typeof drift !== 'undefined' && drift) { %>
+      <div class="card mt-4">
+        <div class="card-header">
+          <h5 class="mb-0"><i class="fas fa-code-branch"></i> Vocabulary Drift</h5>
+        </div>
+        <div class="card-body">
+          <h6>In use but not in the catalog (<%= drift.uncatalogued.length %>)</h6>
+          <% if (drift.uncatalogued.length === 0) { %>
+            <p class="text-muted mb-3">None — every keyword in use is catalogued.</p>
+          <% } else { %>
+          <div class="table-responsive mb-3">
+            <table class="table table-sm table-striped">
+              <thead>
+                <tr><th>Keyword</th><th>Pages</th><th>Media items</th><th></th></tr>
+              </thead>
+              <tbody>
+                <% drift.uncatalogued.forEach(row => { %>
+                <tr>
+                  <td><code><%= row.term %></code></td>
+                  <td><%= row.pageCount %></td>
+                  <td><%= row.mediaCount %></td>
+                  <td>
+                    <button class="btn btn-sm btn-outline-success adopt-keyword-btn"
+                            title="Add to the catalog"
+                            data-term="<%= row.term %>">
+                      <i class="fas fa-plus"></i> Adopt
+                    </button>
+                  </td>
+                </tr>
+                <% }); %>
+              </tbody>
+            </table>
+          </div>
+          <% } %>
+          <h6>In the catalog but unused (<%= drift.unusedCatalog.length %>)</h6>
+          <% if (drift.unusedCatalog.length === 0) { %>
+            <p class="text-muted mb-0">None — every enabled catalog entry is in use.</p>
+          <% } else { %>
+            <p class="mb-0">
+              <% drift.unusedCatalog.forEach(kw => { %>
+                <span class="badge bg-secondary me-1" title="<%= kw.description || kw.id %>"><%= kw.label %></span>
+              <% }); %>
+            </p>
+          <% } %>
+        </div>
+      </div>
+      <% } %>
     </div>
   </div>
 </div>
@@ -454,6 +505,32 @@ document.addEventListener('DOMContentLoaded', function() {
     } catch (error) {
       alert('Error creating keyword: ' + error.message);
     }
+  });
+
+  // #895: adopt an observed-but-uncatalogued keyword into the catalog.
+  // Reuses POST /admin/keywords; id derived from the term (lowercase,
+  // non [a-z0-9-] runs collapsed to '-') to satisfy the id format rule.
+  document.querySelectorAll('.adopt-keyword-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+      const term = this.dataset.term;
+      const id = term.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+      if (!id) { alert('Cannot derive a valid keyword ID from "' + term + '"'); return; }
+      try {
+        const response = await csrfFetch('/admin/keywords', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, label: term, description: '', category: 'general', enabled: true })
+        });
+        const result = await response.json();
+        if (result.success) {
+          window.location.href = '/admin/keywords?success=' + encodeURIComponent('Adopted "' + term + '" into the catalog');
+        } else {
+          alert('Error: ' + result.error);
+        }
+      } catch (error) {
+        alert('Error adopting keyword: ' + error.message);
+      }
+    });
   });
 
   // Edit keyword functionality

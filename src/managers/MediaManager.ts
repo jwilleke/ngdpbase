@@ -479,6 +479,16 @@ class MediaManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * #895: all distinct media keywords with item counts, for the admin keyword
+   * drift report. Aggregate counts only (no item data) — admin-only caller;
+   * counts include private items.
+   */
+  async getAllKeywordCounts(): Promise<Record<string, number>> {
+    if (!this.provider) return {};
+    return this.provider.getAllKeywordCounts();
+  }
+
+  /**
    * Search media items, filtering out private items that the current user
    * cannot access.
    *

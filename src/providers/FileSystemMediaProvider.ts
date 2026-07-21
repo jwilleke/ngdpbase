@@ -445,6 +445,26 @@ class FileSystemMediaProvider extends BaseMediaProvider {
   }
 
   /**
+   * #895: distinct keywords across the media index with item counts. O(n)
+   * over the in-memory index; scalar keyword values count as one-element
+   * arrays (#545 shape tolerance).
+   */
+  getAllKeywordCounts(): Promise<Record<string, number>> {
+    const counts: Record<string, number> = {};
+    for (const item of Object.values(this.index)) {
+      const kw = item.metadata?.keywords;
+      if (!kw) continue;
+      const list = Array.isArray(kw) ? (kw as string[]) : [kw as string];
+      for (const k of list) {
+        const key = String(k).trim();
+        if (!key) continue;
+        counts[key] = (counts[key] || 0) + 1;
+      }
+    }
+    return Promise.resolve(counts);
+  }
+
+  /**
    * Find the first item whose filename (basename) exactly matches.
    *
    * Iterates the in-memory index; O(n) but the index is small enough that

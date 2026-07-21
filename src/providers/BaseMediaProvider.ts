@@ -184,6 +184,15 @@ abstract class BaseMediaProvider implements AssetProvider {
   }
 
   /**
+   * #895: all distinct EXIF/XMP keywords in the media index with item counts.
+   * Used by the admin keyword drift report (observed-media side). Default
+   * implementation returns an empty map; override in providers with an index.
+   */
+  getAllKeywordCounts(): Promise<Record<string, number>> {
+    return Promise.resolve({});
+  }
+
+  /**
    * Rebuild the media index from scratch, discarding all existing entries.
    *
    * Default implementation returns an empty ScanResult; override in providers

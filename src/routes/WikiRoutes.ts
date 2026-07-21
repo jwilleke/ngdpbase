@@ -12904,6 +12904,46 @@ ${description}
       const keywordsWithPages = keywords.filter(k => k.hasPage).length;
       const keywordsInUse = keywords.filter(k => k.usageCount > 0).length;
 
+      // #895 (Slice 3 of #869): drift report — observed vocabulary (page
+      // frontmatter + media EXIF keywords) diffed against the canonical
+      // catalog. Matching is case-insensitive against both catalog ids and
+      // labels. Counts include private items — this is an admin-only surface.
+      const canonicalNames = new Set<string>();
+      for (const [key, config] of Object.entries(userKeywordsConfig)) {
+        canonicalNames.add(key.toLowerCase());
+        const label = (config).label;
+        if (typeof label === 'string' && label) canonicalNames.add(label.toLowerCase());
+      }
+
+      const mediaManager = this.engine.getManager('MediaManager') as {
+        getAllKeywordCounts?: () => Promise<Record<string, number>>;
+      } | undefined;
+      let mediaKeywordCounts: Record<string, number> = {};
+      try {
+        mediaKeywordCounts = mediaManager?.getAllKeywordCounts ? await mediaManager.getAllKeywordCounts() : {};
+      } catch (err) {
+        logger.warn('[adminKeywords] media keyword counts unavailable:', err);
+      }
+
+      const uncataloguedMap = new Map<string, { term: string; pageCount: number; mediaCount: number }>();
+      for (const [kw, pages] of Object.entries(keywordUsage)) {
+        const lower = kw.toLowerCase();
+        if (canonicalNames.has(lower)) continue;
+        const row = uncataloguedMap.get(lower) ?? { term: kw, pageCount: 0, mediaCount: 0 };
+        row.pageCount += pages.length;
+        uncataloguedMap.set(lower, row);
+      }
+      for (const [kw, count] of Object.entries(mediaKeywordCounts)) {
+        const lower = kw.toLowerCase();
+        if (canonicalNames.has(lower)) continue;
+        const row = uncataloguedMap.get(lower) ?? { term: kw, pageCount: 0, mediaCount: 0 };
+        row.mediaCount += count;
+        uncataloguedMap.set(lower, row);
+      }
+      const uncatalogued = [...uncataloguedMap.values()]
+        .sort((a, b) => (b.pageCount + b.mediaCount) - (a.pageCount + a.mediaCount));
+      const unusedCatalog = keywords.filter(k => k.usageCount === 0 && k.enabled);
+
       const successMessage = req.query.success as string | undefined;
       const errorMessage = req.query.error as string | undefined;
 
@@ -12916,6 +12956,10 @@ ${description}
           enabled: enabledKeywords,
           withPages: keywordsWithPages,
           inUse: keywordsInUse
+        },
+        drift: {
+          uncatalogued,
+          unusedCatalog
         },
         successMessage,
         errorMessage,
