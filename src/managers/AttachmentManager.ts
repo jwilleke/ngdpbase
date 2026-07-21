@@ -985,6 +985,56 @@ class AttachmentManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * #865 Slice 3: guarded orphan cleanup — quarantine, never hard-delete.
+   *
+   * Recomputes the health report FRESH (never trusts a client-supplied list),
+   * then moves verified orphan records (+ their files) and recordless disk
+   * files into `<storage>/quarantine/`. Removed records are appended to a
+   * per-run manifest in the quarantine dir so the operation is reversible.
+   * `dryRun: true` returns exactly what WOULD move, touching nothing.
+   */
+  async quarantineOrphans(options: { dryRun: boolean; includeOrphans: boolean; includeRecordless: boolean }): Promise<{
+    dryRun: boolean;
+    orphansSelected: Array<{ identifier: string; name?: string; contentSize?: number }>;
+    recordlessSelected: string[];
+    quarantined: number;
+    skipped: number;
+    manifestPath: string | null;
+  }> {
+    const report = await this.getHealthReport();
+    const orphansSelected = options.includeOrphans ? report.orphans.map(o => ({
+      identifier: o.identifier, name: o.name, contentSize: o.contentSize
+    })) : [];
+    const recordlessSelected = options.includeRecordless ? [...report.recordlessFiles] : [];
+
+    const provider = this.attachmentProvider as unknown as {
+      quarantineAttachment?: (id: string, manifestPath: string) => Promise<boolean>;
+      quarantineFile?: (basename: string) => Promise<boolean>;
+      getQuarantineDir?: () => string | null;
+    } | null;
+
+    if (options.dryRun) {
+      return { dryRun: true, orphansSelected, recordlessSelected, quarantined: 0, skipped: 0, manifestPath: null };
+    }
+    if (!provider?.quarantineAttachment || !provider.quarantineFile || !provider.getQuarantineDir) {
+      throw new Error('Attachment provider does not support quarantine');
+    }
+    const qDir = provider.getQuarantineDir();
+    if (!qDir) throw new Error('Quarantine directory unavailable');
+    const manifestPath = `${qDir}/quarantined-records-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+
+    let quarantined = 0, skipped = 0;
+    for (const o of orphansSelected) {
+      if (await provider.quarantineAttachment(o.identifier, manifestPath)) quarantined++; else skipped++;
+    }
+    for (const f of recordlessSelected) {
+      if (await provider.quarantineFile(f)) quarantined++; else skipped++;
+    }
+    logger.info(`📎 [AttachmentManager] quarantine run: ${quarantined} moved, ${skipped} skipped (manifest: ${manifestPath})`);
+    return { dryRun: false, orphansSelected, recordlessSelected, quarantined, skipped, manifestPath };
+  }
+
+  /**
    * Refresh attachment list (rescan storage)
    *
    * @returns {Promise<void>}

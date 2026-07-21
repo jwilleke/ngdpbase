@@ -438,9 +438,17 @@ document.addEventListener('DOMContentLoaded', function() {
     <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h5 class="mb-0"><i class="fas fa-heartbeat"></i> Attachment Health</h5>
-            <button class="btn btn-sm btn-primary" id="healthScanBtn">
-                <i class="fas fa-stethoscope"></i> Run health scan
-            </button>
+            <div class="btn-group">
+                <button class="btn btn-sm btn-primary" id="healthScanBtn">
+                    <i class="fas fa-stethoscope"></i> Run health scan
+                </button>
+                <button class="btn btn-sm btn-outline-warning" id="quarantineDryBtn" title="Preview what a cleanup would quarantine — changes nothing">
+                    <i class="fas fa-broom"></i> Cleanup dry-run
+                </button>
+                <button class="btn btn-sm btn-danger" id="quarantineRunBtn" disabled title="Run a dry-run first">
+                    <i class="fas fa-box-archive"></i> Quarantine now
+                </button>
+            </div>
         </div>
         <div class="card-body" id="healthResults">
             <p class="text-muted mb-0">Scans every page's content against the attachment store: orphans (no page references), recordless disk files, missing files, and broken markup references. Takes a few seconds on large wikis.</p>
@@ -511,6 +519,52 @@ document.addEventListener('DOMContentLoaded', function() {
             btn.disabled = false;
         }
     });
+
+    // #865 Slice 3: quarantine cleanup — dry-run first, real run unlocked
+    // only after a dry-run has been reviewed. Server recomputes the sets;
+    // never hard-deletes (files move to <storage>/quarantine/).
+    var dryBtn = document.getElementById('quarantineDryBtn');
+    var runBtn = document.getElementById('quarantineRunBtn');
+    if (dryBtn && runBtn) {
+        async function quarantine(dryRun) {
+            dryBtn.disabled = true; runBtn.disabled = true;
+            out.innerHTML = '<p class="text-muted mb-0"><i class="fas fa-spinner fa-spin"></i> ' +
+                (dryRun ? 'Computing cleanup preview…' : 'Quarantining…') + '</p>';
+            try {
+                var resp = await csrfFetch('/admin/attachments/quarantine', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({ dryRun: dryRun, includeOrphans: true, includeRecordless: true })
+                });
+                var body = await resp.json();
+                if (!body.success) throw new Error(body.error || 'quarantine failed');
+                var r = body.result;
+                var html;
+                if (r.dryRun) {
+                    html = '<p><strong>Dry-run</strong> — nothing moved. Would quarantine <strong>' +
+                        r.orphansSelected.length + ' orphan record(s)</strong> and <strong>' +
+                        r.recordlessSelected.length + ' recordless file(s)</strong>:</p>' +
+                        '<div style="max-height:16rem;overflow-y:auto;"><ul class="mb-2">' +
+                        r.orphansSelected.map(function (o) { return '<li><code>' + esc(o.name || o.identifier) + '</code> (' + fmtSize(o.contentSize) + ')</li>'; }).join('') +
+                        r.recordlessSelected.map(function (f) { return '<li><code>' + esc(f) + '</code> <span class="text-muted">(no record)</span></li>'; }).join('') +
+                        '</ul></div>' +
+                        '<p class="text-warning mb-0">Review the list, then use <strong>Quarantine now</strong>. Files move to the quarantine folder — nothing is deleted.</p>';
+                    runBtn.disabled = false;
+                } else {
+                    html = '<p><strong>Quarantined ' + r.quarantined + '</strong> item(s), ' + r.skipped + ' skipped.</p>' +
+                        (r.manifestPath ? '<p class="text-muted mb-0">Removed records saved to <code>' + esc(r.manifestPath) + '</code> — restorable by hand.</p>' : '');
+                    runBtn.disabled = true;
+                }
+                out.innerHTML = html;
+            } catch (e) {
+                out.innerHTML = '<p class="text-danger mb-0">Cleanup failed: ' + esc(e.message || e) + '</p>';
+            } finally {
+                dryBtn.disabled = false;
+            }
+        }
+        dryBtn.addEventListener('click', function () { quarantine(true); });
+        runBtn.addEventListener('click', function () { quarantine(false); });
+    }
 })();
 </script>
 

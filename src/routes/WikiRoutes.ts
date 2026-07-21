@@ -9284,6 +9284,38 @@ ${panes}
     }
   }
 
+  /**
+   * POST /admin/attachments/quarantine (#865 Slice 3) — guarded orphan
+   * cleanup. Admin ONLY (stricter than the read-only report). Body:
+   * { dryRun, includeOrphans, includeRecordless }. The orphan/recordless
+   * sets are recomputed server-side — client selections are never trusted.
+   * Files move to <storage>/quarantine/ (reversible), never hard-deleted.
+   */
+  async adminAttachmentsQuarantine(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!wikiContext.hasRole('admin')) {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+      }
+      const attachmentManager = this.engine.getManager('AttachmentManager') as {
+        quarantineOrphans?: (o: { dryRun: boolean; includeOrphans: boolean; includeRecordless: boolean }) => Promise<unknown>;
+      } | undefined;
+      if (!attachmentManager?.quarantineOrphans) {
+        return res.status(503).json({ success: false, error: 'AttachmentManager unavailable' });
+      }
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const result = await attachmentManager.quarantineOrphans({
+        dryRun: body.dryRun !== false, // default DRY RUN — real run requires explicit dryRun:false
+        includeOrphans: body.includeOrphans !== false,
+        includeRecordless: body.includeRecordless !== false
+      });
+      return res.json({ success: true, result });
+    } catch (err: unknown) {
+      logger.error('Error running attachment quarantine:', err);
+      return res.status(500).json({ success: false, error: 'Quarantine run failed' });
+    }
+  }
+
   async adminAttachmentsApi(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
@@ -11125,6 +11157,8 @@ ${panes}
     app.get('/admin/attachments/api', (req: Request, res: Response) => this.adminAttachmentsApi(req, res));
     // #865 Slice 2: on-demand health report (registered before /:attachmentId routes)
     app.get('/admin/attachments/health', (req: Request, res: Response) => this.adminAttachmentsHealth(req, res));
+    // #865 Slice 3: guarded quarantine cleanup (POST, CSRF-protected, admin only)
+    app.post('/admin/attachments/quarantine', (req: Request, res: Response) => this.adminAttachmentsQuarantine(req, res));
     app.delete('/admin/attachments/:attachmentId', (req: Request, res: Response) => this.adminDeleteAttachmentFromBrowser(req, res));
     app.get('/admin/import', (req: Request, res: Response) => this.adminImport(req, res));
     app.post('/admin/import/preview', (req: Request, res: Response) => this.adminImportPreview(req, res));

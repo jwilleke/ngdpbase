@@ -1082,6 +1082,67 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
   }
 
   /**
+   * #865 Slice 3: move an attachment (record + stored file) into the
+   * quarantine subdirectory instead of hard-deleting. The record is removed
+   * from live metadata and appended to a per-run manifest inside quarantine/
+   * so the operation is reversible by hand. Skips (returns false) on any
+   * error — never deletes on failure (media-prune #867 precedent).
+   */
+  async quarantineAttachment(identifier: string, manifestPath: string): Promise<boolean> {
+    if (!this.storageDirectory) return false;
+    const record = this.attachmentMetadata.get(identifier);
+    if (!record) return false;
+    try {
+      const quarantineDir = path.join(this.storageDirectory, 'quarantine');
+      await fs.ensureDir(quarantineDir);
+      const loc = record.storageLocation;
+      if (typeof loc === 'string' && await fs.pathExists(loc)) {
+        await fs.move(loc, path.join(quarantineDir, path.basename(loc)), { overwrite: false });
+      }
+      // Append record to the run manifest before removing it from live metadata
+      let manifest: unknown[] = [];
+      if (await fs.pathExists(manifestPath)) {
+        manifest = await fs.readJson(manifestPath) as unknown[];
+      }
+      manifest.push(record);
+      await fs.writeJson(manifestPath, manifest, { spaces: 2 });
+      this.attachmentMetadata.delete(identifier);
+      await this.saveMetadata();
+      return true;
+    } catch (err) {
+      logger.warn(`[BasicAttachmentProvider] quarantineAttachment failed for ${identifier}:`, err);
+      return false;
+    }
+  }
+
+  /**
+   * #865 Slice 3: move a recordless disk file into quarantine. Skips on error.
+   */
+  async quarantineFile(basename: string): Promise<boolean> {
+    if (!this.storageDirectory) return false;
+    // Defensive: basename only — no path separators, no metadata/backup files
+    if (basename.includes('/') || basename.includes('..') || basename.toLowerCase().endsWith('.json') || basename.includes('.json.bak')) {
+      return false;
+    }
+    try {
+      const src = path.join(this.storageDirectory, basename);
+      if (!(await fs.pathExists(src))) return false;
+      const quarantineDir = path.join(this.storageDirectory, 'quarantine');
+      await fs.ensureDir(quarantineDir);
+      await fs.move(src, path.join(quarantineDir, basename), { overwrite: false });
+      return true;
+    } catch (err) {
+      logger.warn(`[BasicAttachmentProvider] quarantineFile failed for ${basename}:`, err);
+      return false;
+    }
+  }
+
+  /** #865 Slice 3: absolute quarantine directory path (for manifests/report). */
+  getQuarantineDir(): string | null {
+    return this.storageDirectory ? path.join(this.storageDirectory, 'quarantine') : null;
+  }
+
+  /**
    * Get provider information
    * @returns Provider metadata
    */

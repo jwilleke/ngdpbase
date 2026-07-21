@@ -422,3 +422,74 @@ describe('AttachmentManager.extractAttachmentIdRefs (#865)', () => {
     expect([...ids]).toEqual([h]);
   });
 });
+
+describe('AttachmentManager.quarantineOrphans (#865 Slice 3)', () => {
+  function makeQuarantineEngine(records: unknown[], diskFiles: string[], pages: Record<string, string>) {
+    const calls = { attachments: [] as string[], files: [] as string[] };
+    const provider = {
+      getAllAttachments: vi.fn(async () => records),
+      listStorageFiles: vi.fn(async () => diskFiles),
+      quarantineAttachment: vi.fn(async (id: string) => { calls.attachments.push(id); return true; }),
+      quarantineFile: vi.fn(async (f: string) => { calls.files.push(f); return true; }),
+      getQuarantineDir: vi.fn(() => '/store/quarantine')
+    };
+    const pageManager = {
+      getAllPages: vi.fn(async () => Object.keys(pages)),
+      getPage: vi.fn(async (n: string) => ({ content: pages[n] }))
+    };
+    const engine = {
+      getManager: vi.fn((name: string) => {
+        if (name === 'ConfigurationManager') return makeConfigManager();
+        if (name === 'PageManager') return pageManager;
+        return null;
+      })
+    } as unknown as WikiEngine;
+    const mgr = new AttachmentManager(engine);
+    (mgr as unknown as { attachmentProvider: unknown }).attachmentProvider = provider;
+    return { mgr, calls, provider };
+  }
+
+  const records = [
+    { identifier: 'used', name: 'used.png', storageLocation: '/store/used.png',
+      mentions: [{ '@type': 'WebPage', name: 'P1', url: '/view/P1' }] },
+    { identifier: 'orph', name: 'orphan.pdf', storageLocation: '/store/orph.pdf', mentions: [] }
+  ];
+  const diskFiles = ['used.png', 'orph.pdf', 'stray.bin'];
+  const pages = { P1: "[{Image src='used.png'}]" };
+
+  test('dry-run selects verified orphans + recordless, moves NOTHING', async () => {
+    const { mgr, calls } = makeQuarantineEngine(records, diskFiles, pages);
+    const r = await mgr.quarantineOrphans({ dryRun: true, includeOrphans: true, includeRecordless: true });
+    expect(r.dryRun).toBe(true);
+    expect(r.orphansSelected.map(o => o.identifier)).toEqual(['orph']);
+    expect(r.recordlessSelected).toEqual(['stray.bin']);
+    expect(r.quarantined).toBe(0);
+    expect(calls.attachments).toEqual([]);
+    expect(calls.files).toEqual([]);
+  });
+
+  test('real run quarantines exactly the recomputed sets — referenced records untouched', async () => {
+    const { mgr, calls } = makeQuarantineEngine(records, diskFiles, pages);
+    const r = await mgr.quarantineOrphans({ dryRun: false, includeOrphans: true, includeRecordless: true });
+    expect(r.quarantined).toBe(2);
+    expect(r.skipped).toBe(0);
+    expect(calls.attachments).toEqual(['orph']); // never 'used'
+    expect(calls.files).toEqual(['stray.bin']);
+    expect(r.manifestPath).toContain('/store/quarantine/quarantined-records-');
+  });
+
+  test('class toggles narrow the selection', async () => {
+    const { mgr, calls } = makeQuarantineEngine(records, diskFiles, pages);
+    const r = await mgr.quarantineOrphans({ dryRun: false, includeOrphans: false, includeRecordless: true });
+    expect(calls.attachments).toEqual([]);
+    expect(calls.files).toEqual(['stray.bin']);
+    expect(r.quarantined).toBe(1);
+  });
+
+  test('provider without quarantine support throws on real run', async () => {
+    const { mgr, provider } = makeQuarantineEngine(records, diskFiles, pages);
+    delete (provider as Record<string, unknown>).quarantineAttachment;
+    await expect(mgr.quarantineOrphans({ dryRun: false, includeOrphans: true, includeRecordless: true }))
+      .rejects.toThrow('does not support quarantine');
+  });
+});
