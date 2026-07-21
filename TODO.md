@@ -16,11 +16,10 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 
 ## 🔴 P0 — Security & Critical
 
-- *(none)*
+- [#889](https://github.com/jwilleke/ngdpbase/issues/889) — [security] brace-expansion — DoS via exponential-time expansion of consecutive non-expanding {} groups (CVE-2026-13149)
 
 ## 🟠 P1
 
-- [#888](https://github.com/jwilleke/ngdpbase/issues/888) — [security] protobufjs <= 8.6.4 — Text Format map parsing can mutate returned map object prototype (CVE-2026-59876)
 - [#599](https://github.com/jwilleke/ngdpbase/issues/599) — [BUG] showdown ReDoS vulnerability (CVE-2024-1899) — no upstream patch available; mitigated + weekly watch
 - [#884](https://github.com/jwilleke/ngdpbase/issues/884) — [FEATURE] Search ranking: field weighting, URL tokenization, prefix typeahead, keyword-first
 - [#883](https://github.com/jwilleke/ngdpbase/issues/883) — [FEATURE] Suggested keywords from recent pages in the editor
@@ -31,7 +30,9 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 
 ## 🟡 P2
 
+- [#890](https://github.com/jwilleke/ngdpbase/issues/890) — [security] body-parser < 2.3.0 — invalid limit value silently disables size enforcement (DoS) (CVE-2026-12590)
 - [#886](https://github.com/jwilleke/ngdpbase/issues/886) — [FEATURE] OpenGraph + schema.org meta tags on page views (config-gated)
+- [#885](https://github.com/jwilleke/ngdpbase/issues/885) — [FEATURE] sitemap.xml for public instances (config-gated)
 - [#873](https://github.com/jwilleke/ngdpbase/issues/873) — [FEATURE] Day-level media filtering for MediaPlugin / media API
 - [#872](https://github.com/jwilleke/ngdpbase/issues/872) — [FEATURE] Storybook generator — Timeline + TeslaMate + media + statement → NCM day pages
 - [#871](https://github.com/jwilleke/ngdpbase/issues/871) — [EPIC] Trip Storybook — generated day-page travel stories from Timeline + TeslaMate + media + spend
@@ -42,6 +43,7 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 - [#686](https://github.com/jwilleke/ngdpbase/issues/686) — [FEATURE] AddonsManager: auto-enable bundled addons discovered in non-default addons-path directories
 - [#675](https://github.com/jwilleke/ngdpbase/issues/675) — [FEATURE] Scaffolder + reference template for new ngdpbase addons
 - [#673](https://github.com/jwilleke/ngdpbase/issues/673) — [FEATURE] Implement 'packaged' addon distribution model (npm install)
+- [#601](https://github.com/jwilleke/ngdpbase/issues/601) — [FEATURE] Calendar Reminders
 
 ## 🔵 In review
 
@@ -56,6 +58,7 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 - [#707](https://github.com/jwilleke/ngdpbase/issues/707) — [FEATURE] Typed footnote syntax + knowledge-graph reference index
 - [#645](https://github.com/jwilleke/ngdpbase/issues/645) — [FEATURE] PathPreflight: extend coverage to /mnt/tank/&lt;share&gt;/... autofs paths
 - [#631](https://github.com/jwilleke/ngdpbase/issues/631) — [FEATURE] Define system/service principal model for non-request code paths
+- [#550](https://github.com/jwilleke/ngdpbase/issues/550) — [ADDON] elasticsearch: extend beyond keyword search — vector/hybrid search, config accuracy, docs
 - [#501](https://github.com/jwilleke/ngdpbase/issues/501) — [FEATURE] JSON → ngdp Compatible Markdown (NCM) serializer
 - [#448](https://github.com/jwilleke/ngdpbase/issues/448) — AuthManager: Passkey / WebAuthn auth provider
 - [#423](https://github.com/jwilleke/ngdpbase/issues/423) — Asset Manager: additional storage providers (S3, Google Drive, plugin-contributed)
@@ -63,15 +66,12 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 
 ## ❓ Needs triage
 
-11 issues awaiting a placement decision:
+8 issues awaiting a placement decision:
 
-- [#885](https://github.com/jwilleke/ngdpbase/issues/885) — [FEATURE] sitemap.xml for public instances (config-gated)
 - [#621](https://github.com/jwilleke/ngdpbase/issues/621) — [Addon] Communication Service
 - [#602](https://github.com/jwilleke/ngdpbase/issues/602) — [FEATURE] Add person-contacts addon for shared identity foundation
-- [#601](https://github.com/jwilleke/ngdpbase/issues/601) — [FEATURE] Calendar Reminders
 - [#600](https://github.com/jwilleke/ngdpbase/issues/600) — [FEATURE] [addon] for project management
 - [#570](https://github.com/jwilleke/ngdpbase/issues/570) — [FEATURE] Generic Addon for Physical assets
-- [#550](https://github.com/jwilleke/ngdpbase/issues/550) — elasticsearch addon: extend beyond keyword search — vector/hybrid search, config accuracy, docs
 - [#494](https://github.com/jwilleke/ngdpbase/issues/494) — [FEATURE] ADD-ON Request - Response System
 - [#492](https://github.com/jwilleke/ngdpbase/issues/492) — [FEATURE] ADD-ON Recipe Manager
 - [#487](https://github.com/jwilleke/ngdpbase/issues/487) — [FEATURE] ADD-ON Condominium Unit Management System
