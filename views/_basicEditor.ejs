@@ -141,7 +141,7 @@
                                 ? metadata.status.toLowerCase()
                                 : (_lifecycleFromKeywords[0] || _statusOpts.defaultStatus);
                         %>
-                        <label style="font-weight:bold;">Status:</label>
+                        <label style="font-weight:bold;">Status: <%- include('_help-icon', { slug: 'page-status', label: 'Page Status' }) %></label>
                         <select class="form-select" id="pageStatus" name="status">
                             <% [..._statusOpts.statuses].reverse().forEach(s => { %>
                                 <option value="<%= s %>" <%= _currentStatus === s ? 'selected' : '' %>><%= s.charAt(0).toUpperCase() + s.slice(1) %></option>
