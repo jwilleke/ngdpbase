@@ -80,6 +80,68 @@ class DefaultCatalogProvider implements CatalogProvider {
 }
 
 // ---------------------------------------------------------------------------
+// UserKeywordsCatalogProvider — reads ngdpbase.user-keywords from config
+// (#894, Slice 2 of #869)
+// ---------------------------------------------------------------------------
+
+interface UserKeywordConfig {
+  label?: string;
+  description?: string;
+  category?: CatalogTerm['category'];
+  enabled?: boolean;
+  uri?: string;
+  source?: string;
+}
+
+/**
+ * Serves the user-keywords vocabulary (the human tagging bucket in the #869
+ * five-bucket model) through the provider registry, so it shares one interface
+ * with system-keywords: SKOS ConceptScheme emission at
+ * /api/catalog/vocabulary/user-keywords, future altLabels aliasing, and the
+ * Slice 3 drift report's canonical side. WikiRoutes' keyword accessors resolve
+ * through this provider (config-direct fallback only when CatalogManager is
+ * unavailable).
+ */
+class UserKeywordsCatalogProvider implements CatalogProvider {
+  readonly id = 'user-keywords';
+  readonly displayName = 'User Keywords';
+  readonly domain = 'user-keywords';
+
+  private engine: WikiEngine;
+
+  constructor(engine: WikiEngine) {
+    this.engine = engine;
+  }
+
+  getTerms(): Promise<CatalogTerm[]> {
+    const cfg = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    if (!cfg) return Promise.resolve([]);
+
+    const raw = cfg.getProperty('ngdpbase.user-keywords', {}) as Record<string, UserKeywordConfig>;
+    if (!raw || typeof raw !== 'object') return Promise.resolve([]);
+
+    return Promise.resolve(
+      Object.entries(raw)
+        .filter(([, v]) => v.enabled !== false)
+        .map(([key, v]) => ({
+          term: key,
+          label: v.label ?? key,
+          uri: v.uri,
+          source: v.source ?? 'config',
+          description: v.description,
+          category: v.category,
+          enabled: v.enabled !== false
+        }))
+    );
+  }
+
+  async resolveUri(term: string): Promise<string | null> {
+    const terms = await this.getTerms();
+    return terms.find(t => t.term === term)?.uri ?? null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // AICatalogProvider — Phase 4 scaffold
 // ---------------------------------------------------------------------------
 
@@ -144,6 +206,9 @@ class CatalogManager extends BaseManager {
     // Always register the default (config-driven) provider
     const defaultProvider = new DefaultCatalogProvider(this.engine);
     this.registerProvider(defaultProvider);
+
+    // #894 (Slice 2 of #869): user-keywords vocabulary joins the registry
+    this.registerProvider(new UserKeywordsCatalogProvider(this.engine));
 
     // Register AI provider scaffold (Phase 4)
     this.aiProvider = new AICatalogProvider(this.engine);

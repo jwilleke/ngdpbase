@@ -18,10 +18,11 @@ import type { WikiEngine } from '../../types/WikiEngine';
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeMockEngine(systemKeywords = {}) {
+function makeMockEngine(systemKeywords = {}, userKeywords = {}) {
   const configManager = {
     getProperty: vi.fn((key, defaultVal) => {
       if (key === 'ngdpbase.system-keywords') return systemKeywords;
+      if (key === 'ngdpbase.user-keywords') return userKeywords;
       if (key === 'ngdpbase.catalog.ai.enabled') return false;
       if (key === 'ngdpbase.catalog.ai.threshold') return 0.7;
       return defaultVal;
@@ -72,6 +73,44 @@ describe('CatalogManager', () => {
     const geo = terms.find(t => t.term === 'geology');
     expect(geo).toBeDefined();
     expect(geo.uri).toBe('https://www.wikidata.org/wiki/Q1069');
+  });
+
+  // -------------------------------------------------------------------------
+  // #894 (Slice 2 of #869): UserKeywordsCatalogProvider
+  // -------------------------------------------------------------------------
+
+  describe('UserKeywordsCatalogProvider (#894)', () => {
+    const USER_KEYWORDS = {
+      travel: { label: 'travel', description: 'Trips and places', category: 'general', enabled: true },
+      hiddenkw: { label: 'hiddenkw', category: 'general', enabled: false }
+    };
+
+    beforeEach(async () => {
+      engine = makeMockEngine(DEFAULT_KEYWORDS, USER_KEYWORDS);
+      manager = new CatalogManager(engine as unknown as WikiEngine);
+      await manager.initialize();
+    });
+
+    test('is registered at initialize under scheme id user-keywords', async () => {
+      const result = await manager.getProviderTerms('user-keywords');
+      expect(result).not.toBeNull();
+      expect(result.displayName).toBe('User Keywords');
+    });
+
+    test('serves enabled config entries with description; disabled excluded', async () => {
+      const { terms } = await manager.getProviderTerms('user-keywords');
+      const travel = terms.find(t => t.term === 'travel');
+      expect(travel).toBeDefined();
+      expect(travel.label).toBe('travel');
+      expect(travel.description).toBe('Trips and places');
+      expect(terms.map(t => t.term)).not.toContain('hiddenkw');
+    });
+
+    test('domain-scoped: getTerms("user-keywords") includes only matching + undomained providers', async () => {
+      const terms = await manager.getTerms('user-keywords');
+      const names = terms.map(t => t.term);
+      expect(names).toContain('travel');
+    });
   });
 
   test('resolveUri() returns uri for known term', async () => {

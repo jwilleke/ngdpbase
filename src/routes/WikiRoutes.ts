@@ -1610,9 +1610,20 @@ class WikiRoutes {
    */
   async getUserKeywords() {
     try {
+      // #894 (Slice 2 of #869): the user-keywords vocabulary lives behind
+      // CatalogManager's provider registry. Resolve through it first; the
+      // config-direct read below survives only as a fallback for engines
+      // without CatalogManager (e.g. minimal test setups).
+      const catalogTerms = await this.getUserKeywordCatalogTerms();
+      if (catalogTerms && catalogTerms.length > 0) {
+        return catalogTerms
+          .map(t => t.label)
+          .sort((a, b) => a.localeCompare(b));
+      }
+
       const configManager = this.engine.getManager('ConfigurationManager');
 
-      // Try to get user keywords from configuration first
+      // Fallback: read user keywords straight from configuration
       if (configManager) {
         const userKeywordsConfig = configManager.getProperty('ngdpbase.user-keywords', null);
 
@@ -1676,11 +1687,47 @@ class WikiRoutes {
   }
 
   /**
+   * #894 (Slice 2 of #869): fetch the user-keywords vocabulary from
+   * CatalogManager's provider registry. Returns null when CatalogManager (or
+   * the provider) is unavailable so callers can fall back to config-direct.
+   */
+  private async getUserKeywordCatalogTerms(): Promise<Array<{ term: string; label: string; description?: string }> | null> {
+    const catalogManager = this.engine.getManager('CatalogManager') as {
+      getProviderTerms?: (schemeId: string) => Promise<{ displayName: string; terms: Array<{ term: string; label: string; description?: string; enabled?: boolean }> } | null>;
+    } | undefined;
+    if (!catalogManager?.getProviderTerms) return null;
+    try {
+      const result = await catalogManager.getProviderTerms('user-keywords');
+      return result?.terms ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Get user keywords with their descriptions for display in dropdowns
    * @returns Array of {id, label, description} objects sorted alphabetically
    */
-  getUserKeywordsWithDescriptions(): Array<{ id: string; label: string; description: string }> {
+  async getUserKeywordsWithDescriptions(): Promise<Array<{ id: string; label: string; description: string }>> {
     try {
+      // #894: provider registry first (same source as getUserKeywords)
+      const catalogTerms = await this.getUserKeywordCatalogTerms();
+      if (catalogTerms && catalogTerms.length > 0) {
+        const keywords = catalogTerms.map(t => ({
+          id: t.term,
+          label: t.label,
+          description: t.description || ''
+        }));
+        const sorted = keywords.sort((a, b) => a.label.localeCompare(b.label));
+        const labelCounts = new Map<string, number>();
+        for (const kw of sorted) {
+          labelCounts.set(kw.label, (labelCounts.get(kw.label) || 0) + 1);
+        }
+        return sorted.map(kw =>
+          labelCounts.get(kw.label)! > 1 ? { ...kw, label: `${kw.label} (${kw.id})` } : kw
+        );
+      }
+
       const configManager = this.engine.getManager('ConfigurationManager');
 
       if (configManager) {
@@ -2345,7 +2392,7 @@ ${panes}
       // Get categories and keywords for the form (defensive array handling)
       const rawCategories = this.getSystemCategories();
       const systemCategories = Array.isArray(rawCategories) ? rawCategories : [];
-      const rawKeywords = this.getUserKeywordsWithDescriptions();
+      const rawKeywords = await this.getUserKeywordsWithDescriptions();
       const userKeywords = Array.isArray(rawKeywords) ? rawKeywords : [];
 
       const configManager = this.engine.getManager('ConfigurationManager');
@@ -2757,7 +2804,7 @@ ${panes}
       // Get categories and keywords (defensive array handling)
       const rawCategories = this.getSystemCategories();
       const systemCategories = Array.isArray(rawCategories) ? rawCategories : [];
-      const rawKeywords = this.getUserKeywordsWithDescriptions();
+      const rawKeywords = await this.getUserKeywordsWithDescriptions();
       const userKeywords = Array.isArray(rawKeywords) ? rawKeywords : [];
 
       // If page doesn't exist, create empty page data for new page
@@ -13396,7 +13443,7 @@ ${description}
       const canEdit = !!wikiContext.userContext && (await wikiContext.hasPermission('asset-edit'));
       // Keywords-field typeahead suggests the configured user-keywords catalog
       // (same source as the page editor's keyword dropdown).
-      const userKeywords = canEdit ? this.getUserKeywordsWithDescriptions().map(k => k.label) : [];
+      const userKeywords = canEdit ? (await this.getUserKeywordsWithDescriptions()).map(k => k.label) : [];
       return res.render('media-item', {
         ...commonData,
         wikiContext,

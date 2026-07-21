@@ -18,8 +18,10 @@ export interface CatalogTerm {
   uri?: string;
   /** Provenance — 'config' | 'wikidata' | 'lcsh' | 'getty-aat' | 'usgs' etc. */
   source?: string;
+  /** Human-readable description (#894 — SKOS skos:definition candidate) */
+  description?: string;
   /** Semantic category of the term */
-  category?: 'content-type' | 'workflow-status' | 'subject' | 'access' | 'general';
+  category?: 'content-type' | 'workflow-status' | 'subject' | 'access' | 'general' | 'status' | 'provenance';
   /** True if this is the default term for its category */
   default?: boolean;
   /** False to hide the term from pickers without deleting it from config */
