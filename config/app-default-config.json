@@ -709,24 +709,6 @@
       "category": "content-type",
       "enabled": true
     },
-    "draft": {
-      "label": "draft",
-      "description": "Work in progress content",
-      "category": "workflow-status",
-      "enabled": true
-    },
-    "review": {
-      "label": "review",
-      "description": "Content under review",
-      "category": "workflow-status",
-      "enabled": true
-    },
-    "published": {
-      "label": "published",
-      "description": "Finalized and approved content",
-      "category": "workflow-status",
-      "enabled": true
-    },
     "medicine": {
       "label": "medicine",
       "description": "Medical and healthcare-related content",
@@ -780,6 +762,12 @@
       "description": "Political science and governance content",
       "category": "subject",
       "enabled": true
+    },
+    "capture": {
+      "label": "capture",
+      "description": "Machine provenance: page created by the capture bookmarklet (#881/#893)",
+      "category": "provenance",
+      "enabled": true
     }
   },
   "_comment_catalog_ai": "AI-based term suggestion (Phase 4 — requires an LLM addon to activate)",
@@ -792,27 +780,6 @@
       "label": "default",
       "description": "Default keyword with no special restrictions",
       "category": "general",
-      "enabled": true,
-      "restrictEditing": false
-    },
-    "draft": {
-      "label": "draft",
-      "description": "Work in progress content",
-      "category": "status",
-      "enabled": true,
-      "restrictEditing": false
-    },
-    "review": {
-      "label": "review",
-      "description": "Content under review",
-      "category": "status",
-      "enabled": true,
-      "restrictEditing": false
-    },
-    "published": {
-      "label": "published",
-      "description": "Finalized and approved content",
-      "category": "status",
       "enabled": true,
       "restrictEditing": false
     },
@@ -877,13 +844,6 @@
       "label": "political-science",
       "description": "Political science and governance content",
       "category": "subject",
-      "enabled": true,
-      "restrictEditing": false
-    },
-    "capture": {
-      "label": "capture",
-      "description": "Web captures saved via the capture bookmarklet",
-      "category": "general",
       "enabled": true,
       "restrictEditing": false
     }
