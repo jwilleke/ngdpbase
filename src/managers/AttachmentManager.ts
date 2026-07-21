@@ -824,6 +824,20 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     return refs;
   }
 
+  /**
+   * #865: identifier-URL references — `/attachments/<sha256>` anywhere in
+   * content (markdown images/links, raw URLs). Storybook-generated day pages
+   * embed route maps this way (`![Day 4 route](/attachments/<id>)`); these
+   * are real render-time references and count as mentions.
+   */
+  static extractAttachmentIdRefs(content: string): Set<string> {
+    const idPattern = /\/attachments\/([a-f0-9]{64})\b/g;
+    const ids = new Set<string>();
+    let match: RegExpExecArray | null;
+    while ((match = idPattern.exec(content)) !== null) ids.add(match[1]);
+    return ids;
+  }
+
   async syncPageMentions(pageName: string, content: string): Promise<void> {
     if (!this.attachmentProvider) return;
 
@@ -838,6 +852,17 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       } catch {
         // unresolvable filename — skip
       }
+    }
+
+    // #865: identifier-URL references (/attachments/<id> — markdown embeds,
+    // e.g. storybook route maps) also count. Verify each id exists before
+    // treating it as current.
+    for (const id of AttachmentManager.extractAttachmentIdRefs(content)) {
+      if (currentIds.has(id)) continue;
+      try {
+        const meta = await this.attachmentProvider.getAttachmentMetadata(id);
+        if (meta) currentIds.add(id);
+      } catch { /* unknown id — skip */ }
     }
 
     // Get identifiers currently mentioning this page

@@ -70,3 +70,23 @@ describe('toMentions (#865)', () => {
     ]);
   });
 });
+
+describe('extractAttachmentIdRefs (#865 — storybook identifier embeds)', () => {
+  const H = 'a'.repeat(64);
+  test('captures /attachments/<sha256> in markdown embeds', async () => {
+    const { extractAttachmentIdRefs } = await import('../reconcile-attachment-mentions');
+    const ids = extractAttachmentIdRefs(`![Day 4 route](/attachments/${H}) and [pdf](/attachments/${'b'.repeat(64)})`);
+    expect([...ids].sort()).toEqual([H, 'b'.repeat(64)]);
+  });
+  test('ignores non-hash attachment URLs', async () => {
+    const { extractAttachmentIdRefs } = await import('../reconcile-attachment-mentions');
+    expect(extractAttachmentIdRefs('(/attachments/short) (/attachments/UPPER)').size).toBe(0);
+  });
+  test('computeMentions counts identifier references as mentions', async () => {
+    const { computeMentions } = await import('../reconcile-attachment-mentions');
+    const records = [{ identifier: H, name: 'route.png', mentions: [] }];
+    const pages = new Map([['Day 4', `![route](/attachments/${H})`]]);
+    const r = computeMentions(records, pages);
+    expect(r.mentionsByRecord.get(H)).toEqual(['Day 4']);
+  });
+});

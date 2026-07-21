@@ -414,3 +414,11 @@ describe('AttachmentManager.getHealthReport (#865)', () => {
     expect(r.brokenRefs).toEqual([]);
   });
 });
+
+describe('AttachmentManager.extractAttachmentIdRefs (#865)', () => {
+  test('captures identifier URLs, ignores non-hash paths', () => {
+    const h = 'c'.repeat(64);
+    const ids = AttachmentManager.extractAttachmentIdRefs(`![m](/attachments/${h}) /attachments/nope`);
+    expect([...ids]).toEqual([h]);
+  });
+});

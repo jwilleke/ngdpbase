@@ -101,6 +101,19 @@ export function extractLocalAttachmentRefs(content: string): Set<string> {
   return refs;
 }
 
+/**
+ * Identifier-URL references — `/attachments/<sha256>` anywhere in content
+ * (markdown embeds like storybook route maps). Mirrors
+ * AttachmentManager.extractAttachmentIdRefs.
+ */
+export function extractAttachmentIdRefs(content: string): Set<string> {
+  const idPattern = /\/attachments\/([a-f0-9]{64})\b/g;
+  const ids = new Set<string>();
+  let m: RegExpExecArray | null;
+  while ((m = idPattern.exec(content)) !== null) ids.add(m[1]);
+  return ids;
+}
+
 export interface ReconcileResult {
   /** identifier → sorted page names that reference the record's filename */
   mentionsByRecord: Map<string, string[]>;
@@ -120,21 +133,31 @@ export function computeMentions(
   pages: Map<string, string>
 ): ReconcileResult {
   const byFilename = new Map<string, AttachmentRecord>();
+  const knownIds = new Set<string>();
   for (const r of records) {
     if (r.name && r.identifier) byFilename.set(r.name, r);
+    if (r.identifier) knownIds.add(r.identifier);
   }
 
   const mentionsByRecord = new Map<string, Set<string>>();
   const unresolvedRefs = new Set<string>();
   const looseTextRefs = new Set<string>();
 
+  const addMention = (id: string, pageName: string) => {
+    if (!mentionsByRecord.has(id)) mentionsByRecord.set(id, new Set());
+    mentionsByRecord.get(id)!.add(pageName);
+  };
+
   for (const [pageName, content] of pages) {
     const refs = extractLocalAttachmentRefs(content);
     for (const filename of refs) {
       const rec = byFilename.get(filename);
       if (!rec?.identifier) { unresolvedRefs.add(filename); continue; }
-      if (!mentionsByRecord.has(rec.identifier)) mentionsByRecord.set(rec.identifier, new Set());
-      mentionsByRecord.get(rec.identifier)!.add(pageName);
+      addMention(rec.identifier, pageName);
+    }
+    // #865: identifier-URL references (markdown embeds, storybook route maps)
+    for (const id of extractAttachmentIdRefs(content)) {
+      if (knownIds.has(id)) addMention(id, pageName);
     }
     // Report-only: known filenames appearing outside canonical markup
     for (const [filename, rec] of byFilename) {
