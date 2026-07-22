@@ -200,6 +200,33 @@ describe('MarkupParser', () => {
       expect(result).toContain('Page: MyPage');
       expect(result).toContain('User: MyUser');
     });
+
+    test('${pageslug} expands to the page slug (keyword-form) — bridges name/slug gap', async () => {
+      // Authoritative slug from PageManager metadata when available.
+      mockEngine.registerManager('PageManager', {
+        getPageMetadata: async () => ({ slug: '2026-trip-west' })
+      });
+      const result = await markupParser.parse("kw='${pageslug}'", { pageName: '2026 trip west' });
+      expect(result).toContain("kw='2026-trip-west'");
+    });
+
+    test('${pageslug} falls back to a derived slug when metadata has none', async () => {
+      mockEngine.registerManager('PageManager', { getPageMetadata: async () => ({}) });
+      mockEngine.registerManager('ValidationManager', {
+        generateSlug: (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+      });
+      const result = await markupParser.parse('[${pageslug}]', { pageName: '2026 trip west' });
+      expect(result).toContain('2026-trip-west');
+    });
+
+    test('${pageslug} not looked up when the token is absent (no page lookup)', async () => {
+      let called = false;
+      mockEngine.registerManager('PageManager', {
+        getPageMetadata: async () => { called = true; return { slug: 'x' }; }
+      });
+      await markupParser.parse('Page: ${pagename}', { pageName: 'Something' });
+      expect(called).toBe(false);
+    });
   });
 
   describe('Caching', () => {

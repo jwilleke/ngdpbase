@@ -1004,6 +1004,28 @@ class MarkupParser extends BaseManager {
       const resolvedUserName = (resolvedUserCtx?.username ?? resolvedUserCtx?.userName ?? pageCtxData.userName ?? context.userName) as string | undefined;
       if (resolvedPageName !== undefined) {
         content = content.replace(/\$\{pagename\}/gi, String(resolvedPageName));
+        // ${pageslug} — the current page's slug (keyword/URL form). Bridges the
+        // name-vs-slug gap: keywords follow slug convention ("2026-trip-west")
+        // while ${pagename} yields the display name ("2026 trip west"), so
+        // self-scoping plugins like [{Search user-keywords='${pageslug}'}] and
+        // [{MediaPlugin keyword='${pageslug}'}] match. Authoritative (stored
+        // slug) with generateSlug fallback; only looked up when the token is
+        // actually present (hot path).
+        if (/\$\{pageslug\}/i.test(content)) {
+          let slug = '';
+          try {
+            const pm = this.engine.getManager<{ getPageMetadata?: (id: string) => Promise<{ slug?: string } | null> }>('PageManager');
+            const meta = pm?.getPageMetadata ? await pm.getPageMetadata(String(resolvedPageName)) : null;
+            if (meta?.slug) slug = meta.slug;
+          } catch { /* fall through to derived slug */ }
+          if (!slug) {
+            const vm = this.engine.getManager<{ generateSlug?: (t: string) => string }>('ValidationManager');
+            slug = vm?.generateSlug
+              ? vm.generateSlug(String(resolvedPageName))
+              : String(resolvedPageName).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+          }
+          content = content.replace(/\$\{pageslug\}/gi, slug);
+        }
       }
       if (resolvedUserName !== undefined) {
         content = content.replace(/\$\{username\}/gi, String(resolvedUserName));
