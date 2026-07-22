@@ -170,7 +170,7 @@ export interface ParseContextData {
 /** Extracted JSPWiki element */
 export interface ExtractedElement {
   /** Element type */
-  type: 'variable' | 'plugin' | 'link' | 'escaped' | 'style' | 'footnote-ref' | 'footnote-def' | 'code' | 'fenced-code';
+  type: 'variable' | 'plugin' | 'link' | 'escaped' | 'style' | 'inline-style' | 'footnote-ref' | 'footnote-def' | 'code' | 'fenced-code';
   /** Original syntax */
   syntax: string;
   /** Unique ID */
@@ -199,6 +199,10 @@ export interface ExtractedElement {
   codeContent?: string;
   /** Language tag from fenced code blocks (e.g. 'javascript' from ```javascript) */
   codeLanguage?: string;
+  /** #907: inline-style variant — css | sup | sub | strike */
+  inlineVariant?: 'css' | 'sup' | 'sub' | 'strike';
+  /** #907: raw CSS declarations for inline-style variant 'css' (parenthesis body) */
+  cssRaw?: string;
 }
 
 /** Configuration manager interface for type safety */
@@ -1183,44 +1187,71 @@ class MarkupParser extends BaseManager {
    * @returns Cache key
    */
   /**
-   * #906: convert inline `%%(css) content /%` styles to
-   * `<span style="…">content</span>`, security-gated.
+   * #907: sanitize a raw inline-CSS declaration string against the security
+   * config. Returns validated `prop: val; …` (empty when disabled or nothing
+   * passes). Shared by the DOM inline-style node builder.
    *
-   * Off unless `ngdpbase.style.security.allow-inline-css` is true; when off,
-   * the wrapper is stripped so the content still reads as plain text. When on,
-   * each declaration's property must be in
-   * `ngdpbase.style.security.allowed-properties` and its value must be free of
-   * `javascript:`, `url(`, `expression(`, and angle brackets. The paren body is
-   * captured atomically so CSS containing spaces (`width: 100px`) is preserved.
+   * Gate: `ngdpbase.style.security.allow-inline-css`. Each property must be in
+   * `ngdpbase.style.security.allowed-properties`; values with `javascript:`,
+   * `url(`, `expression(`, or angle brackets are dropped.
    */
-  private convertInlineCssStyles(content: string): string {
-    if (!content.includes('%%(')) return content;
+  private sanitizeInlineCss(cssRaw: string): string {
     const cfg = this.engine.getManager<ConfigurationManagerInterface>('ConfigurationManager');
     const allow = cfg ? cfg.getProperty('ngdpbase.style.security.allow-inline-css', false) : false;
+    if (!allow) return '';
     const allowedProps = new Set(
       String(cfg?.getProperty('ngdpbase.style.security.allowed-properties', 'color,background-color,font-weight,font-style,text-align') ?? '')
         .split(',').map(p => p.trim().toLowerCase()).filter(Boolean)
     );
     const unsafe = /javascript:|url\(|expression\(|[<>]/i;
+    return cssRaw.split(';')
+      .map(d => d.trim())
+      .filter(Boolean)
+      .map(d => {
+        const idx = d.indexOf(':');
+        if (idx < 0) return null;
+        const prop = d.slice(0, idx).trim().toLowerCase();
+        const val = d.slice(idx + 1).trim();
+        if (!prop || !val || !allowedProps.has(prop) || unsafe.test(val)) return null;
+        return `${prop}: ${val}`;
+      })
+      .filter((d): d is string => d !== null)
+      .join('; ');
+  }
 
-    return content.replace(/%%\(([^)]*)\)\s*([\s\S]*?)\s*(?:\/%|%%)/g, (_m, css: string, inner: string) => {
-      if (!allow) return inner; // disabled → strip wrapper, keep content
-      const decls = css.split(';')
-        .map(d => d.trim())
-        .filter(Boolean)
-        .map(d => {
-          const idx = d.indexOf(':');
-          if (idx < 0) return null;
-          const prop = d.slice(0, idx).trim().toLowerCase();
-          const val = d.slice(idx + 1).trim();
-          if (!prop || !val || !allowedProps.has(prop) || unsafe.test(val)) return null;
-          return `${prop}: ${val}`;
-        })
-        .filter((d): d is string => d !== null);
-      if (decls.length === 0) return inner;
-      const style = decls.join('; ').replace(/"/g, '&quot;');
-      return `<span style="${style}">${inner}</span>`;
-    });
+  /**
+   * #907: build a DOM node for an inline JSPWiki style — the unified path that
+   * replaced the Step 0.55 string replacements. `variant` selects the wrapper
+   * (`css` → `<span style>`, `sup` → `<sup>`, `sub` → `<sub>`, `strike` →
+   * `<del>`); `inner` is resolved for wiki syntax via appendWikiNodes (parity
+   * with block styles). For `css` with inline CSS disabled or no safe
+   * declarations, the wrapper degrades to a plain `<span>` (content preserved,
+   * never leaked as literal markup). Used by BOTH the top-level extraction
+   * resolver and the cell/block scanner (appendWikiNodes).
+   */
+  private async buildInlineStyleNode(
+    variant: 'css' | 'sup' | 'sub' | 'strike',
+    cssRaw: string,
+    inner: string,
+    context: ParseContext | undefined,
+    wikiDocument: WikiDocument,
+    idStart: number,
+    outerId?: number
+  ): Promise<ReturnType<typeof WikiDocument.prototype.createElement>> {
+    const attrs: Record<string, string> = {};
+    if (outerId !== undefined) attrs['data-jspwiki-id'] = outerId.toString();
+    let tag: string;
+    if (variant === 'sup') tag = 'sup';
+    else if (variant === 'sub') tag = 'sub';
+    else if (variant === 'strike') tag = 'del';
+    else {
+      tag = 'span';
+      const style = this.sanitizeInlineCss(cssRaw);
+      if (style) attrs['style'] = style;
+    }
+    const el = wikiDocument.createElement(tag, attrs);
+    await this.appendWikiNodes(inner, el, context, wikiDocument, idStart);
+    return el;
   }
 
   generateCacheKey(content: string, context: ParseContextData): string {
@@ -1282,6 +1313,8 @@ class MarkupParser extends BaseManager {
       startLine: number;
       contentLines: string[];
       accumulatedClasses: string[];
+      /** #907: raw CSS for a block-form `%%(css)` opener (vs a class opener). */
+      cssRaw?: string;
     }> = [];
 
     let id = startId;
@@ -1298,12 +1331,29 @@ class MarkupParser extends BaseManager {
       if (openMatch) {
         const className = openMatch[1].replace(/[ \t]+/g, ' ');
         // Calculate accumulated classes from parent blocks
-        const parentClasses = stack.map(s => s.className);
+        const parentClasses = stack.map(s => s.className).filter(Boolean);
         stack.push({
           className,
           startLine: i,
           contentLines: [],
           accumulatedClasses: [...parentClasses, className]
+        });
+        i++;
+        continue;
+      }
+
+      // #907: block-form inline CSS opener — `%%(prop:val; …)` on its own line
+      // wrapping following block content (e.g. `%%(font-size:.9;)` around a
+      // table). Emits a styled block wrapper, symmetric with the inline form.
+      const openCssMatch = line.match(/^\s*%%(\((?:[^()]|\([^()]*\))*\))[ \t]*$/);
+      if (openCssMatch) {
+        const parentClasses = stack.map(s => s.className).filter(Boolean);
+        stack.push({
+          className: '',
+          startLine: i,
+          contentLines: [],
+          accumulatedClasses: [...parentClasses],
+          cssRaw: openCssMatch[1].slice(1, -1)
         });
         i++;
         continue;
@@ -1319,10 +1369,11 @@ class MarkupParser extends BaseManager {
           // Create element with accumulated classes (all parent + this)
           elements.push({
             type: 'style',
-            syntax: `%%${block.className}\n${blockContent}\n/%`,
+            syntax: `%%${block.cssRaw ? `(${block.cssRaw})` : block.className}\n${blockContent}\n/%`,
             className: block.className,
             styleContent: blockContent,
             accumulatedClasses: block.accumulatedClasses,
+            cssRaw: block.cssRaw, // #907: block-form inline CSS
             id: id++,
             position: block.startLine
           });
@@ -1357,7 +1408,7 @@ class MarkupParser extends BaseManager {
     while (stack.length > 0) {
       const block = stack.pop()!;
       // Prepend the opening tag and content to result
-      result.unshift(`%%${block.className}`);
+      result.unshift(`%%${block.cssRaw ? `(${block.cssRaw})` : block.className}`);
       result.push(...block.contentLines);
     }
 
@@ -1450,6 +1501,49 @@ class MarkupParser extends BaseManager {
         }
       }
       sanitized = outputLines.join('\n');
+    }
+
+    // #907: inline styles %%(css)…/%, %%sup…/%, %%sub…/%, %%strike…/% become
+    // typed `inline-style` elements resolved to DOM nodes (no more Step 0.55
+    // string passes). Innermost-first loop so nesting resolves bottom-up: the
+    // inner match's placeholder contains no %% or /%, so the outer matches next
+    // round. Content that reaches here without a close is left untouched.
+    //
+    // MUST run BEFORE the block-style stack extractor: inline `%%… /%` runs
+    // (e.g. per-row colour swatches inside a table) each carry their own `/%`,
+    // which would otherwise be mis-paired as the closing of an enclosing
+    // `%%class` block. Replacing them with placeholders first leaves the block
+    // extractor a clean open/close structure.
+    {
+      // Paren body allows one level of nested parens so functional CSS values
+      // (`url(x)`, `rgb(…)`) don't truncate extraction — they're still security-
+      // stripped at node build, but the whole style extracts and safe
+      // declarations survive rather than the run rendering as literal text.
+      // Close syntax: `/%` or `%%` (both valid JSPWiki closers, #592). The `%%`
+      // closer must NOT be another opener (`%%(`, `%%sup/sub/strike`) — that
+      // disambiguation lets a nested run's inner style match first (its content
+      // has no opener/closer), so nesting resolves bottom-up.
+      const inlinePattern = /%%(\((?:[^()]|\([^()]*\))*\)|sup|sub|strike)[ \t]+((?:(?!%%|\/%)[\s\S])*?)[ \t]*(?:\/%|%%(?!\(|sup|sub|strike))/;
+      let guard = 0;
+      let m: RegExpExecArray | null;
+      while ((m = inlinePattern.exec(sanitized)) !== null && guard++ < 5000) {
+        const head = m[1];
+        const inner = m[2] ?? '';
+        const isCss = head.startsWith('(');
+        const variant: 'css' | 'sup' | 'sub' | 'strike' = isCss ? 'css' : (head as 'sup' | 'sub' | 'strike');
+        jspwikiElements.push({
+          type: 'inline-style',
+          syntax: m[0],
+          inlineVariant: variant,
+          cssRaw: isCss ? head.slice(1, -1) : undefined,
+          inner,
+          id: id++,
+          position: m.index
+        });
+        sanitized = sanitized.slice(0, m.index)
+          + `<span data-jspwiki-placeholder="${uuid}-${id - 1}"></span>`
+          + sanitized.slice(m.index + m[0].length);
+      }
     }
 
     // Step 0.5: Extract JSPWiki style blocks %%class-name ... /%
@@ -1768,10 +1862,14 @@ class MarkupParser extends BaseManager {
                            hasPlaceholder;  // Nested block placeholder
 
     const tagName = isBlockContent ? 'div' : 'span';
-    const node = wikiDocument.createElement(tagName, {
-      'class': classString,
-      'data-jspwiki-id': element.id.toString()
-    });
+    const nodeAttrs: Record<string, string> = { 'data-jspwiki-id': element.id.toString() };
+    if (classString) nodeAttrs['class'] = classString;
+    // #907: block-form inline CSS (%%(css) … /%) — sanitised style attribute.
+    if (element.cssRaw) {
+      const style = this.sanitizeInlineCss(element.cssRaw);
+      if (style) nodeAttrs['style'] = style;
+    }
+    const node = wikiDocument.createElement(tagName, nodeAttrs);
 
     // Use innerHTML for content with placeholders (nested style block nodes — resolved by mergeDOMNodes)
     // For all other content, scan for all wiki syntax and resolve directly to DOM nodes.
@@ -1816,7 +1914,11 @@ class MarkupParser extends BaseManager {
     //   Group 3: [{$varname}]      variable (varname without $)
     //   Group 4: [{PluginName...}] plugin
     //   Group 5: [inner]           bracket (link, escaped [[, blank pass-through)
-    const wikiPattern = /`([^`\n]+)`|\[\[\{([^}]*)\}\]|\[\{\$(\w+)\}\]|\[\{([A-Za-z]\w*[^}]*)\}\]|\[([^\]]*)\](?!\()/g;
+    //   Group 6: <span data-jspwiki-placeholder="…"></span> — an already-
+    //             extracted element (e.g. #907 inline styles hoisted at the
+    //             top level that landed inside a table cell). Preserved as a
+    //             real element so mergeDOMNodes resolves it later.
+    const wikiPattern = /`([^`\n]+)`|\[\[\{([^}]*)\}\]|\[\{\$(\w+)\}\]|\[\{([A-Za-z]\w*[^}]*)\}\]|\[([^\]]*)\](?!\()|<span data-jspwiki-placeholder="([^"]*)"><\/span>/g;
 
     if (!wikiPattern.test(content)) {
       node.textContent = content;
@@ -1836,7 +1938,12 @@ class MarkupParser extends BaseManager {
 
       const elemId = idCounter++;
 
-      if (match[1] !== undefined) {
+      if (match[6] !== undefined) {
+        // #907: preserve an already-extracted placeholder span (inline style,
+        // etc.) so the final mergeDOMNodes pass can resolve it.
+        node.appendChild(wikiDocument.createElement('span', { 'data-jspwiki-placeholder': match[6] }));
+
+      } else if (match[1] !== undefined) {
         // Inline code: `content` → <code>content</code>
         const code = wikiDocument.createElement('code', {});
         code.textContent = match[1];
@@ -1939,7 +2046,7 @@ class MarkupParser extends BaseManager {
     // For cells with no wiki syntax and possible <br> content, uses a fast path.
     // Otherwise delegates to appendWikiNodes for the combined scanner.
     const populateCell = async (el: ReturnType<typeof wikiDocument.createElement>, cell: string): Promise<void> => {
-      const hasWiki = /`[^`\n]+`|\[\[\{|\[\{\$|\[\{[A-Za-z]|\[/.test(cell);
+      const hasWiki = /`[^`\n]+`|\[\[\{|\[\{\$|\[\{[A-Za-z]|\[|data-jspwiki-placeholder/.test(cell);
       if (!hasWiki) {
         // No wiki syntax — fast path with <br> support
         if (/<br\s*\/?>/.test(cell)) {
@@ -2144,6 +2251,18 @@ class MarkupParser extends BaseManager {
       // Style block: %%class-name ... /%
       return await this.createNodeFromStyleBlock(element, context, wikiDocument);
 
+    case 'inline-style':
+      // #907: inline %%(css)/sup/sub/strike … /% → DOM node
+      return await this.buildInlineStyleNode(
+        element.inlineVariant ?? 'css',
+        element.cssRaw ?? '',
+        element.inner ?? '',
+        context,
+        wikiDocument,
+        element.id * 1000,
+        element.id
+      );
+
     default: {
       logger.error(`❌ Unknown element type: ${String(element.type)}`);
       // Return error node
@@ -2287,21 +2406,11 @@ class MarkupParser extends BaseManager {
       }
     }
 
-    // Step 0.55 (moved from extractJSPWikiSyntax Phase 1): Convert inline JSPWiki styles.
-    // Must run AFTER JSPWikiPreprocessor so table cell content is already HTML — the %% chars
-    // are not HTML-special so they survive escapeHtml() intact and can be matched here.
-    // Support both closing syntaxes: /% and %%
-    preprocessed = preprocessed.replace(/%%sup\s+([\s\S]*?)\s*(?:\/%|%%)/gi, '<sup>$1</sup>');
-    preprocessed = preprocessed.replace(/%%sub\s+([\s\S]*?)\s*(?:\/%|%%)/gi, '<sub>$1</sub>');
-    preprocessed = preprocessed.replace(/%%strike\s+([\s\S]*?)\s*(?:\/%|%%)/gi, '<del>$1</del>');
-
-    // #906: inline CSS style — %%(prop:val; …) content /%. Lost when
-    // WikiStyleHandler was deprecated; restored here (the active inline-style
-    // stage). Security-gated: off unless ngdpbase.style.security.allow-inline-css,
-    // properties whitelisted by ngdpbase.style.security.allowed-properties, and
-    // values sanitised. Paren-atomic capture so CSS with spaces (`width: 100px`)
-    // is not split. When disabled the wrapper is stripped to plain content.
-    preprocessed = this.convertInlineCssStyles(preprocessed);
+    // #907: inline styles (%%(css)/sup/sub/strike … /%) are now extracted to
+    // typed `inline-style` elements in Phase 1 and resolved to DOM nodes — the
+    // former Step 0.55 string replacements (sup/sub/strike + #906
+    // convertInlineCssStyles) are retired. Any inline styles inside table cells
+    // are handled by appendWikiNodes during cell population.
 
     // Phase 2.6: Run all other registered handlers (custom/addon handlers) on preprocessed content.
     // JSPWiki syntax has already been extracted (UUID placeholders), so built-in handlers like

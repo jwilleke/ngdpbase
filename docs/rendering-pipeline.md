@@ -67,7 +67,7 @@ Final HTML Output
 6. **AttachmentHandler** (Priority: 75) - `src/parsers/handlers/AttachmentHandler.js`
    - Processes file attachments and media
 7. **WikiStyleHandler** (Priority: 70) - `src/parsers/handlers/WikiStyleHandler.js`
-   - Applies CSS classes and styling
+   - **DEPRECATED / unregistered (#907).** Historical string-based `%%…/%` style processor. All style markup — block classes, inline `%%(css)`, `%%sup/sub/strike` — now extracts to DOM nodes in `MarkupParser` Phase 1; see [WikiDocument guide → Style syntax is DOM-native too](WikiDocument-Complete-Guide.md#style-syntax--is-dom-native-too-907). Retained for reference only; add no new style behaviour here.
 8. **WikiLinkHandler** (Priority: 50) - `src/parsers/handlers/WikiLinkHandler.js`
    - Creates internal wiki page links
 

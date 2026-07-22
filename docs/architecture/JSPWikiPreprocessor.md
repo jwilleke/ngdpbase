@@ -18,8 +18,9 @@ HTTP GET /wiki/PageName
 MarkupParser.parseWithDOMExtraction()
     │
     ├─ Phase 1: extractJSPWikiSyntax()
-    │    (code blocks, fenced code, style block extraction,
-    │     emoji, status boxes — extracts to UUID placeholders)
+    │    (code blocks, fenced code, INLINE style extraction,
+    │     block style extraction, emoji, status boxes
+    │     — all extract to UUID placeholders)
     │
     ├─ Phase 2: WikiDocument DOM node creation
     │    (extracted elements → DOM nodes for placeholder restoration)
@@ -27,10 +28,6 @@ MarkupParser.parseWithDOMExtraction()
     ├─ Phase 2.5: JSPWikiPreprocessor  ← RUNS HERE
     │    (bare table syntax || / |, %%class%% style blocks → HTML)
     │    Priority: 95 — executes first among all registered handlers
-    │
-    ├─ Step 0.55: Inline style conversion
-    │    (%%sup/sub/strike%% → <sup>/<sub>/<del>)
-    │    Runs AFTER Phase 2.5 so %% patterns survive escapeHtml()
     │
     ├─ Phase 2.6: Other registered handlers
     │
@@ -48,9 +45,9 @@ JSPWikiPreprocessor runs after `extractJSPWikiSyntax()` for a critical reason: P
 
 Without Phase 2.5, Showdown wraps `|| header ||` in `<p>` tags during Phase 3, which prevents the table from being parsed. Producing the `<table>` HTML in Phase 2.5 leaves it unchanged by Showdown. ✅
 
-**Why Step 0.55 (inline %%sup/sub/strike%%) runs after Phase 2.5:**
+**Inline styles (`%%(css)`, `%%sup/sub/strike`) no longer use a post-processing pass (#907):**
 
-`JSPWikiPreprocessor.parseTable()` calls `escapeHtml()` on each cell value, which converts `<sup>` → `&lt;sup&gt;`. Since `%` is not an HTML-special character, `%%sup 2%%` text *survives* `escapeHtml()` unchanged. Step 0.55 converts those patterns to HTML *after* the table is already built. ([#592](https://github.com/jwilleke/ngdpbase/issues/592))
+Earlier revisions ran a "Step 0.55" string-replace *after* Phase 2.5 to turn `%%sup 2%%` → `<sup>2</sup>`, because `JSPWikiPreprocessor.parseTable()` `escapeHtml()`'d cell values and `%` survived unescaped. That pass — and `convertInlineCssStyles()` — are **removed**. Inline styles are now extracted to typed DOM elements in Phase 1 (`type: 'inline-style'`), *before* block extraction, so a swatch's `/%` can't be mis-paired with an enclosing block and table cells receive an inert `data-jspwiki-placeholder` span that `populateCell` restores after the table is built. See [The DOM Extraction Pipeline → Style syntax is DOM-native too](../WikiDocument-Complete-Guide.md#style-syntax--is-dom-native-too-907). ([#592](https://github.com/jwilleke/ngdpbase/issues/592), [#907](https://github.com/jwilleke/ngdpbase/issues/907))
 
 ## How JSPWikiPreprocessor Works
 

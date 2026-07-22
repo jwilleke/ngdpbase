@@ -256,6 +256,50 @@ describe('MarkupParser', () => {
       expect(result).not.toContain('position');
     });
 
+    // #907: DOM-native inline styles — nesting, table cells, block form
+    const cssOn = () => mockEngine.registerManager('ConfigurationManager', {
+      getProperty: (key, dv) => {
+        if (key === 'ngdpbase.style.security.allow-inline-css') return true;
+        if (key === 'ngdpbase.style.security.allowed-properties') return 'color,font-weight,background,font-size';
+        return dv;
+      }
+    });
+
+    test('#907: nested inline %%(css) resolves bottom-up', async () => {
+      cssOn();
+      const result = await markupParser.parse('%%(color:red) A %%(font-weight:bold) B /% C /%', { pageName: 'P' });
+      expect(result).toContain('<span style="color: red">');
+      expect(result).toContain('<span style="font-weight: bold">B</span>');
+      // inner bold span sits inside the outer red span
+      expect(result.indexOf('color: red')).toBeLessThan(result.indexOf('font-weight: bold'));
+      expect(result).not.toContain('%%(');
+    });
+
+    test('#907: inline %%(css) swatch inside a table cell renders (no leak)', async () => {
+      cssOn();
+      const result = await markupParser.parse('|| A || B ||\n|x|%%(background:#00FFFF;) Aqua /%|', { pageName: 'P' });
+      expect(result).toContain('<table');
+      expect(result).toContain('background: #00FFFF');
+      expect(result).toContain('Aqua');
+      expect(result).not.toContain('%%(');
+      expect(result).not.toContain('data-jspwiki-placeholder');
+    });
+
+    test('#907: block-form %%(css) opener wraps following content', async () => {
+      cssOn();
+      const result = await markupParser.parse('%%(font-size:.9;)\nSmall block.\n/%', { pageName: 'P' });
+      expect(result).toContain('font-size: .9');
+      expect(result).toContain('Small block.');
+    });
+
+    test('#907: %%sup/%%sub/%%strike are DOM nodes (both /% and %% closers)', async () => {
+      const a = await markupParser.parse('H%%sub 2 /%O and X%%sup 2 %% Y', { pageName: 'P' });
+      expect(a).toContain('<sub>2</sub>');
+      expect(a).toContain('<sup>2</sup>');
+      const b = await markupParser.parse('%%strike gone /%', { pageName: 'P' });
+      expect(b).toContain('<del>gone</del>');
+    });
+
     test('${pageslug} not looked up when the token is absent (no page lookup)', async () => {
       let called = false;
       mockEngine.registerManager('PageManager', {

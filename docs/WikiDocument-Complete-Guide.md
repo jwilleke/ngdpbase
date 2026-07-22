@@ -253,6 +253,32 @@ A static method that reconstructs a `WikiDocument` instance from a JSON object (
 
 This architecture ensures that Showdown only ever sees "safe" markdown, and the JSPWiki handlers only operate on the specific syntax they are designed for, preventing conflicts.
 
+### Style syntax (`%%…/%`) is DOM-native too (#907)
+
+Every `%%…/%` style construct is a first-class citizen of Phase 1 — it extracts to a typed `ExtractedElement`, resolves to a real `WikiDocument` node in Phase 2, and merges back in Phase 3. There are **no post-Showdown string passes** rewriting `%%` markup into HTML. Historically these were patched with regex string-replace steps (the removed "Step 0.55" and `convertInlineCssStyles()`); each new case meant another regex, and the passes fought each other and the markdown converter. The unified extraction replaces all of that.
+
+Two families of style markup, both handled in the extraction phase:
+
+| Form | Example | Extracted as | Resolves to |
+|---|---|---|---|
+| Block class | `%%information … /%` | `type: 'style-block'` | `<div class="information">` (or `<span>` when inline) |
+| Block inline-CSS | `%%(font-size:.9;) … /%` | `type: 'style-block'` + `cssRaw` | `<div style="…">` |
+| Inline CSS | `%%(color:red) X /%` | `type: 'inline-style'`, `inlineVariant:'css'` | `<span style="color: red">` |
+| Superscript | `%%sup 2 /%` | `type: 'inline-style'`, `inlineVariant:'sup'` | `<sup>2</sup>` |
+| Subscript | `%%sub 2 /%` | `type: 'inline-style'`, `inlineVariant:'sub'` | `<sub>2</sub>` |
+| Strikethrough | `%%strike gone /%` | `type: 'inline-style'`, `inlineVariant:'strike'` | `<del>gone</del>` |
+
+Ordering and nesting rules that make this robust:
+
+- **Inline extraction runs before block extraction.** Inline swatches like `%%(background:#0FF;) Aqua /%` become inert placeholders first, so their `/%` closers can't be mis-paired with an enclosing block (`%%sortable … /%`). This was the fix for the Color page, where hundreds of swatch closers were confusing the block matcher.
+- **Innermost-first for nesting.** The inline matcher treats `/%` and a bare `%%` as closers, but a `%%` that is itself an opener (`%%(`, `%%sup`, `%%sub`, `%%strike`) is **not** a valid closer. That disambiguation means the inner run of `%%(color:red) A %%(font-weight:bold) B /% C /%` matches first, leaving the outer run to resolve around its placeholder — nesting resolves bottom-up.
+- **Both `/%` and `%%` close** an inline run (`%%sup 2 %%` and `%%sup 2 /%` are equivalent, per #592).
+- **Placeholders are opaque to every downstream stage.** Table-cell population (`populateCell`) and inline-content walking (`appendWikiNodes`) both recognise `data-jspwiki-placeholder` spans, so a styled swatch inside a `|table cell|` merges correctly.
+
+Inline CSS is security-gated. `sanitizeInlineCss()` returns an empty style unless `ngdpbase.style.security.allow-inline-css` is `true` (default **false**); when enabled, only properties in `ngdpbase.style.security.allowed-properties` survive, and values matching `javascript:`, `url(`, `expression(`, or angle brackets are dropped.
+
+> **Deprecated:** `src/parsers/handlers/WikiStyleHandler.ts` was the pre-DOM string-based style processor. It is **unregistered** and retained only for reference/unit coverage — the live path is `MarkupParser` extraction described here. Do not add new style behaviour to `WikiStyleHandler`.
+
 ---
 
 ## Architecture
