@@ -261,9 +261,13 @@ If `{uuid}.md` exists and its `addon` frontmatter field names a **different** ad
 
 Use a freshly generated UUID for every seed page to avoid conflicts.
 
-#### Admin reseed
+#### Updating seeded pages / admin reseed
 
-There is currently no admin UI or API endpoint to trigger a reseed. To re-seed a deleted or missing page, delete the corresponding `{uuid}.md` file from the instance pages directory and restart the server. A dedicated admin reseed endpoint (`POST /admin/addons/:addonName/reseed`) is a planned future enhancement (see GitHub issue #442).
+Seeding is **first-load only**: once a page exists in the instance it is skipped on every restart (see [Idempotency](#idempotency--existing-pages-are-never-overwritten) above). Consequently, **shipping updated page content in a new addon version does not reach already-seeded instances** — existing instances keep the previously-seeded copy. This is deliberate (it protects operator edits) but means there is currently no automatic way to push addon page updates.
+
+To re-seed a page today, delete the corresponding `{uuid}.md` from the instance pages directory (or `pages/private/{creator}/{uuid}.md` for private pages) and restart the server — the current source is then re-seeded.
+
+A content-aware, edit-preserving reseed (reseed only when the addon source changed **and** the page wasn't locally edited) plus an admin endpoint `POST /admin/addons/:addonName/reseed` is proposed in [#920](https://github.com/jwilleke/ngdpbase/issues/920). (The original first-boot seeding lives in the now-closed #442.)
 
 #### Overriding the Left Menu and Footer
 
