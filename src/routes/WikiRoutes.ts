@@ -39,6 +39,7 @@ import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../
 import { stringifyJsonLdForScript, wantsJsonLd } from '../utils/buildPageJsonLd.js';
 import { articleToPageJsonLd } from '../utils/articleToPageJsonLd.js';
 import { getSuggestedKeywordSets, type RecentPageKeywords, type KeywordSetSuggestion } from '../utils/suggestedKeywords.js';
+import { normalizeKeywordValue } from '../utils/keywordNormalizer.js';
 import type { Article } from '../types/Schema.js';
 import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
@@ -12788,11 +12789,11 @@ ${panes}
       const trimmedLabel = label.trim();
       const trimmedDescription = description.trim();
 
-      // Normalize the internal name (lowercase, alphanumeric with hyphens)
-      const internalName = trimmedLabel
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '');
+      // #869: canonical keyword value via the shared normalizer (lowercase,
+      // diacritics transliterated, punctuation→hyphen, ≤64, comma-free). Because
+      // the catalog is keyed by this value, `Dining` and `dining` both resolve
+      // to `dining` — the existing-key check below then rejects the duplicate.
+      const internalName = normalizeKeywordValue(trimmedLabel);
 
       if (!internalName) {
         return res.redirect(
