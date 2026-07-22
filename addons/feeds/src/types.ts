@@ -29,10 +29,14 @@ export interface FeedSourceConfig {
   schemaType?: string;
   /** Dot-path to the per-record stable id within a raw record (no JSONPath DSL — see design §7). */
   recordIdField?: string;
-  /** rest-json only: dot-path to the items array within the response (e.g. 'results'). */
+  /** rest-json / xml / rss-atom / xml-index: dot-path to the items array (e.g. 'results', 'rss.channel.item'). */
   itemsPath?: string;
   /** csv only: field delimiter. Default ','. Use '\t' for TSV. */
   delimiter?: string;
+  /** xml-index only: regex matched against index-page hrefs to discover item URLs (e.g. 'xml_files/.*\\.xml$'). */
+  linkPattern?: string;
+  /** xml-index only: cap on item documents fetched per poll. Default 100. */
+  maxItems?: number;
   /** Optional dot-path map: normalized property → source path. Adapter may instead return shaped records. */
   map?: Record<string, string>;
 }

@@ -21,7 +21,11 @@ import type { FeedSourceConfig } from '../types.js';
 import { getByPath } from './dotpath.js';
 import { buildRecord, pickItemsArray } from './buildRecord.js';
 
-const parser = new XMLParser({
+/**
+ * Shared fast-xml-parser instance — reused by the rss-atom (#913) and xml-index
+ * (#912) adapters so XML shape rules stay identical across all XML-based feeds.
+ */
+export const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@',
   // Keep values as strings except obvious numbers/booleans; entities decoded.
@@ -31,7 +35,7 @@ const parser = new XMLParser({
 });
 
 /** XML parses a lone repeated element as an object — normalize to an array. */
-function coerceItems(located: unknown): RawRecord[] {
+export function coerceItems(located: unknown): RawRecord[] {
   if (Array.isArray(located)) return located as RawRecord[];
   if (located && typeof located === 'object') return [located as RawRecord];
   return [];
@@ -45,7 +49,7 @@ export const xmlAdapter: SourceAdapter = {
     if (!res.ok) {
       throw new Error(`feed '${cfg.sourceId}': HTTP ${res.status} ${res.statusText} from ${cfg.url}`);
     }
-    const doc: unknown = parser.parse(await res.text());
+    const doc: unknown = xmlParser.parse(await res.text());
     if (cfg.itemsPath) return coerceItems(getByPath(doc, cfg.itemsPath));
     // No itemsPath: unwrap the (single) document root, then envelope-detect.
     const root = doc && typeof doc === 'object' && !Array.isArray(doc)
