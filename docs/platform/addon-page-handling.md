@@ -39,21 +39,34 @@ On restart, comparing the addon's current `pages/` against an already-seeded ins
 | Change to `addons/<addon>/pages/` | Synced? | Why |
 |---|---|---|
 | **New** page (new UUID + slug, never seeded) | ✅ **Yes** | Neither guard matches → `savePage` seeds it |
-| **Updated** content of a seeded page | ❌ No | The idempotency guard skips any existing page — protects operator edits |
-| **Deleted** source page | ❌ No | There is no removal logic; the instance copy persists indefinitely |
+| **Updated** content of a seeded page | ⚙️ Opt-in | Skipped by default; reseeded when the reseed flag is on **and** the page is unmodified — see [Content-aware reseed](#content-aware-reseed-920) |
+| **Deleted** source page | ❌ No | There is no removal logic; the instance copy persists indefinitely ([#920](https://github.com/jwilleke/ngdpbase/issues/920) discusses a gated policy) |
 | **Renamed slug** (same UUID) | ❌ No (skipped) | The UUID guard matches — the page keeps its old slug |
 
-So **additions flow; updates, deletions, and renames do not.**
+So **additions always flow; updates flow only with reseed enabled on an unmodified page; deletions and renames do not.**
+
+### Content-aware reseed (#920)
+
+Every seeded page carries an **`addon-source-hash`** in frontmatter — the trimmed SHA-256 of the body it was seeded with. On a later boot, `seedAddonPages` compares:
+
+- `sha(current instance body)` vs the stored `addon-source-hash` → whether the operator has edited the page since seeding;
+- stored hash vs `sha(current addon source body)` → whether the source changed.
+
+When `ngdpbase.addons.page-reseed` is **`true`** (config-gated, **default `false`** so existing deployments are unaffected) and the source changed **and** the instance page is byte-identical to what was seeded (never operator-edited), the page is refreshed from source via `savePage` (UUID preserved, a revertable version recorded, hash re-stamped). If the page was locally modified, it is **skipped** and logged as *"update available … locally modified"*. Unchanged source is a no-op.
+
+> **Bootstrap limitation:** only pages seeded (or reseeded) *after* this feature landed carry an `addon-source-hash`. A page seeded by an older version has no stamp and is treated as unknown ⇒ never auto-reseeded until it gets a hash (one manual delete-and-restart stamps it). Operator edits are never at risk regardless.
+
+The admin endpoint (`POST /admin/addons/:addonName/reseed`), a dry-run, and the removed-source-page policy remain open under [#920](https://github.com/jwilleke/ngdpbase/issues/920).
 
 > **Containerized instances:** editing `addons/*/pages/` in a git repo does nothing to a running pod until the image is rebuilt/redeployed *and* the container restarts. For an image like geohazardwatch, that means bumping the addon/base-image version so the new `.md` is present, then restarting.
 
-### Why updates are frozen (by design)
+### Why updates default to frozen
 
-The idempotency guard exists so an addon upgrade can never clobber a page the operator edited in-app. The cost is that genuine content updates and removals also don't propagate. That trade-off — and a content-aware, edit-preserving fix — is tracked in **[#920](https://github.com/jwilleke/ngdpbase/issues/920)**: reseed a page only when the addon source changed *and* the page wasn't locally edited (via a stored `addon-source-hash`), plus a `POST /admin/addons/:addonName/reseed` endpoint, and a gated policy for removed source pages (leave-and-flag by default). Until that lands, use the manual workaround below.
+The idempotency guard exists so an addon upgrade can never clobber a page the operator edited in-app. By default updates therefore don't propagate. The [content-aware reseed](#content-aware-reseed-920) above lifts this **for unmodified pages only** when explicitly enabled — operator-edited pages are always left alone. Removals still never propagate.
 
-## Updating or re-seeding a page today
+## Forcing a re-seed manually
 
-There is **no admin reseed endpoint yet** ([#920](https://github.com/jwilleke/ngdpbase/issues/920)). To force a page to re-seed from current source:
+The auto-reseed only touches unmodified pages and needs an `addon-source-hash` stamp (see the bootstrap note above); there is **no admin reseed endpoint yet** ([#920](https://github.com/jwilleke/ngdpbase/issues/920)). To force any page to re-seed from current source — including an operator-edited one you want to reset:
 
 1. Delete the instance copy — `<data>/pages/{uuid}.md` (or `<data>/pages/private/{creator}/{uuid}.md` for a private page).
 2. Restart the server. `seedAddonPages` re-seeds the current source on the next boot.

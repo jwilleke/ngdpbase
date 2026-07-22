@@ -13,6 +13,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { createHash } from 'node:crypto';
 import matter from 'gray-matter';
 import BaseManager from './BaseManager.js';
 import type { BackupData } from './BaseManager.js';
@@ -614,6 +615,15 @@ class AddonsManager extends BaseManager {
 
     const files = (await fs.promises.readdir(addonPagesDir)).filter(f => f.endsWith('.md'));
     let seeded = 0;
+    let reseeded = 0;
+
+    // #920: content-aware, edit-preserving reseed of already-seeded pages.
+    // Opt-in (default false) so existing deployments' boot behavior is
+    // unchanged; when enabled, a page is refreshed from the addon source only
+    // when the source changed AND the instance copy is byte-identical to what
+    // was last seeded (i.e. never operator-edited).
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const reseedEnabled = configManager?.getProperty('ngdpbase.addons.page-reseed', false) === true;
 
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -635,47 +645,64 @@ class AddonsManager extends BaseManager {
           continue;
         }
 
-        // Skip save if a page with this slug already exists (user edits are never overwritten),
-        // but still ensure the page is present in the search index (index may not have been
-        // rebuilt since the page was seeded).
-        if (pageManager.pageExists(slug)) {
+        // Resolve an existing instance page for this seed. Prefer UUID (survives
+        // a slug rename — #908 B1), else fall back to slug. A match means the
+        // page is already seeded; by default it is left untouched (operator edits
+        // are never clobbered), with an optional edit-preserving reseed (#920).
+        const existing = (await pageManager.getPageByUUID(uuid))
+          ?? (pageManager.pageExists(slug) ? await pageManager.getPage(slug) : null);
+
+        if (existing) {
+          const existingSlug = ((existing.metadata as Record<string, unknown> | undefined)?.slug as string) || slug;
+          const srcHash = this.pageSourceHash(parsed.content);
+          const storedHash = (existing.metadata as Record<string, unknown> | undefined)?.['addon-source-hash'];
+          const liveHash = this.pageSourceHash(existing.content);
+          const unmodified = typeof storedHash === 'string' && storedHash === liveHash;
+          const sourceChanged = storedHash !== srcHash;
+
+          if (reseedEnabled && sourceChanged && unmodified) {
+            // Byte-identical to what we last seeded ⇒ never operator-edited.
+            // Source is the authority: refresh content + metadata, keep the
+            // UUID, re-stamp the hash. Goes through savePage so the versioning
+            // provider records a revertable version.
+            const reseedMetadata: Record<string, unknown> = {
+              ...(parsed.data as Record<string, unknown>),
+              addon: addonName,
+              'system-category': (parsed.data as Record<string, unknown>)['system-category'] ?? 'addon',
+              'addon-source-hash': srcHash
+            };
+            await pageManager.savePage(existingSlug, parsed.content, reseedMetadata);
+            reseeded++;
+            logger.info(`[AddonsManager] Reseeded '${existingSlug}' from ${addonName} (source changed, page unmodified)`);
+          } else if (reseedEnabled && sourceChanged && !unmodified) {
+            logger.info(`[AddonsManager] Update available for '${existingSlug}' from ${addonName} but the page was locally modified — skipped`);
+          } else {
+            logger.debug(`[AddonsManager] Page '${existingSlug}' already seeded — skipping (${addonName})`);
+          }
+
+          // Keep the search index fresh regardless (page may predate a rebuild).
           const searchManager = this.engine.getManager<SearchManager>('SearchManager');
           if (searchManager) {
-            const existingPage = await pageManager.getPage(slug);
-            if (existingPage) {
-              await searchManager.updatePageInIndex(slug, {
-                name: slug,
-                content: existingPage.content,
-                metadata: existingPage.metadata as Record<string, unknown>
+            const refreshed = await pageManager.getPage(existingSlug);
+            if (refreshed) {
+              await searchManager.updatePageInIndex(existingSlug, {
+                name: existingSlug,
+                content: refreshed.content,
+                metadata: refreshed.metadata as Record<string, unknown>
               });
             }
           }
-          logger.debug(`[AddonsManager] Page '${slug}' already exists — skipping seed for ${addonName}`);
-          continue;
-        }
-
-        // #908 B1: guard on UUID as well as slug. If a seed page's slug was
-        // changed after its UUID was first assigned (e.g. an addon rename), the
-        // page is still registered in the index under the OLD slug, so the
-        // slug check above misses it. Re-seeding would then call savePage with
-        // the SAME frontmatter UUID and collide with the provider's
-        // UUID-uniqueness guard (throwing mid-save and, before #908 B2, leaving
-        // an orphan version artifact). A UUID already in use means the page is
-        // present under another slug — skip rather than re-seed.
-        const existingByUuid = await pageManager.getPageByUUID(uuid);
-        if (existingByUuid) {
-          const metaSlug = (existingByUuid.metadata as Record<string, unknown> | undefined)?.slug;
-          const existingSlug = typeof metaSlug === 'string' ? metaSlug : existingByUuid.title;
-          logger.debug(`[AddonsManager] UUID ${uuid} already assigned to '${existingSlug}' — skipping re-seed of ${addonName}/pages/${file} (slug '${slug}')`);
           continue;
         }
 
         // Seed through PageManager so all page providers (including VersioningFileProvider)
-        // update their index correctly
+        // update their index correctly. `addon-source-hash` stamps the seeded
+        // content so a later reseed can tell an unmodified page from an edited one.
         const metadata: Record<string, unknown> = {
           ...(parsed.data as Record<string, unknown>),
           addon: addonName,
-          'system-category': (parsed.data as Record<string, unknown>)['system-category'] ?? 'addon'
+          'system-category': (parsed.data as Record<string, unknown>)['system-category'] ?? 'addon',
+          'addon-source-hash': this.pageSourceHash(parsed.content)
         };
 
         await pageManager.savePage(slug, parsed.content, metadata);
@@ -696,11 +723,21 @@ class AddonsManager extends BaseManager {
       }
     }
 
-    if (seeded > 0) {
-      logger.info(`[AddonsManager] Seeded ${seeded} page(s) from ${addonName}/pages/`);
+    if (seeded > 0 || reseeded > 0) {
+      logger.info(`[AddonsManager] Seeded ${seeded} new + reseeded ${reseeded} page(s) from ${addonName}/pages/`);
     } else {
       logger.debug(`[AddonsManager] No new pages to seed for ${addonName}`);
     }
+  }
+
+  /**
+   * #920: stable content hash of an addon page's body, used to detect whether an
+   * already-seeded instance page has been operator-edited since seeding. Trimmed
+   * so a trailing-newline difference between source and on-disk form doesn't read
+   * as a modification.
+   */
+  private pageSourceHash(content: string): string {
+    return createHash('sha256').update(String(content).trim()).digest('hex');
   }
 
   /**

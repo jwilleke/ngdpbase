@@ -1,6 +1,7 @@
 import os from 'os';
 import path from 'path';
 import fs from 'fs-extra';
+import { createHash } from 'node:crypto';
 
 describe('AddonsManager', () => {
   let tmpDir;
@@ -16,6 +17,9 @@ describe('AddonsManager', () => {
       }
       if (key === 'ngdpbase.page.provider.filesystem.storagedir') {
         return overrides.pagesDir ?? path.join(tmpDir, 'pages');
+      }
+      if (key === 'ngdpbase.addons.page-reseed') {
+        return overrides.pageReseed ?? defaultValue;
       }
       if (key.startsWith('ngdpbase.addons.')) {
         const parts = key.split('.');
@@ -879,15 +883,17 @@ describe('AddonsManager', () => {
      * uuid and slug are required for valid seed pages.
      * Omitting uuid or slug tests the skip paths.
      */
-    const writeSeedPage = async (dir, filename, { uuid, slug, title = 'Test Page', systemCategory, addonName } = {}) => {
+    const writeSeedPage = async (dir, filename, { uuid, slug, title = 'Test Page', systemCategory, addonName, body = 'Page content.' } = {}) => {
       let fm = `---\ntitle: ${title}\n`;
       if (uuid)           fm += `uuid: ${uuid}\n`;
       if (slug)           fm += `slug: ${slug}\n`;
       if (addonName)      fm += `addon: ${addonName}\n`;
       if (systemCategory) fm += `system-category: ${systemCategory}\n`;
-      fm += '---\nPage content.\n';
+      fm += '---\n' + body + '\n';
       await fs.writeFile(path.join(dir, filename), fm, 'utf8');
     };
+    // #920: reseed uses the same trimmed-sha256 of the page body.
+    const bodyHash = (s) => createHash('sha256').update(String(s).trim()).digest('hex');
 
     /**
      * Create a minimal addon directory (index.js + optional pages/ files).
@@ -977,6 +983,48 @@ describe('AddonsManager', () => {
 
       expect(pageManager.getPageByUUID).toHaveBeenCalledWith(uuid);
       expect(pageManager.savePage).not.toHaveBeenCalled();
+    });
+
+    // #920: content-aware, edit-preserving reseed --------------------------
+    const RESEED_UUID = '550e8400-e29b-41d4-a716-4466554400aa';
+    const setupReseed = async ({ sourceBody, pageBody, storedHashBody, pageReseed }) => {
+      await makeAddonWithSeedPages('reseed-addon', [
+        { filename: 'about.md', uuid: RESEED_UUID, slug: 'about', title: 'About', body: sourceBody }
+      ]);
+      const existingPage = {
+        title: 'About', uuid: RESEED_UUID, content: pageBody,
+        metadata: { slug: 'about', uuid: RESEED_UUID, 'addon-source-hash': bodyHash(storedHashBody) }
+      };
+      const configManager = makeConfigManager({ enabledAddons: ['reseed-addon'], pageReseed });
+      const pageManager = makePageManager(['about'], { about: existingPage }, { [RESEED_UUID]: existingPage });
+      const manager = new AddonsManager(makeEngineWithPageManager(configManager, pageManager));
+      await manager.initialize();
+      return pageManager;
+    };
+
+    test('#920: reseeds an unmodified page when source changed and reseed enabled', async () => {
+      const pm = await setupReseed({ sourceBody: 'New content v2', pageBody: 'Old content v1', storedHashBody: 'Old content v1', pageReseed: true });
+      expect(pm.savePage).toHaveBeenCalledWith(
+        'about',
+        expect.stringContaining('New content v2'),
+        expect.objectContaining({ 'addon-source-hash': bodyHash('New content v2') })
+      );
+    });
+
+    test('#920: does NOT reseed when the flag is off (default)', async () => {
+      const pm = await setupReseed({ sourceBody: 'New content v2', pageBody: 'Old content v1', storedHashBody: 'Old content v1', pageReseed: false });
+      expect(pm.savePage).not.toHaveBeenCalled();
+    });
+
+    test('#920: skips reseed when the page was locally modified', async () => {
+      // Live content no longer matches the stored seed hash → operator-edited.
+      const pm = await setupReseed({ sourceBody: 'New content v2', pageBody: 'Operator edited this', storedHashBody: 'Old content v1', pageReseed: true });
+      expect(pm.savePage).not.toHaveBeenCalled();
+    });
+
+    test('#920: no-op when the source is unchanged', async () => {
+      const pm = await setupReseed({ sourceBody: 'Same body', pageBody: 'Same body', storedHashBody: 'Same body', pageReseed: true });
+      expect(pm.savePage).not.toHaveBeenCalled();
     });
 
     test('seeds multiple pages from one addon', async () => {
