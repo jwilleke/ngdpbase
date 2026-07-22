@@ -209,6 +209,8 @@ Cards appear between the Add-ons summary and Page Management rows on `/admin`. T
 
 Place `.md` files in your add-on's `pages/` directory. `AddonsManager` will copy them into the instance's pages directory automatically on startup.
 
+> **Full reference:** [`addon-page-handling.md`](./addon-page-handling.md) covers where addon pages live (name-based source vs UUID-based runtime), what does and doesn't sync to an existing instance (additions ✅, updates/removals ❌), the orphan-file class, and the reseed gap ([#920](https://github.com/jwilleke/ngdpbase/issues/920)).
+
 #### When does seeding run?
 
 Seeding runs once per addon per server startup, inside `AddonsManager.loadAddon()`, immediately after the addon's `register()` function completes. It is **not** triggered by install events or file-system watchers — a server restart is required to seed new pages.
