@@ -292,6 +292,19 @@ describe('MarkupParser', () => {
       expect(result).toContain('Small block.');
     });
 
+    test('#907: HTML entities in styled content decode (no &amp;nbsp; leak)', async () => {
+      cssOn();
+      const result = await markupParser.parse('%%(background:#F5F5DC;) &nbsp; /%', { pageName: 'P' });
+      expect(result).not.toContain('&amp;nbsp;');
+      // decoded nbsp serializes as the char or &#160;/&nbsp; — never the doubled amp
+      expect(result).toMatch(/background: #F5F5DC/);
+    });
+
+    test('#907: literal entity inside a code span is preserved', async () => {
+      const result = await markupParser.parse('type `&nbsp;` here', { pageName: 'P' });
+      expect(result).toContain('<code>&amp;nbsp;</code>');
+    });
+
     test('#907: %%sup/%%sub/%%strike are DOM nodes (both /% and %% closers)', async () => {
       const a = await markupParser.parse('H%%sub 2 /%O and X%%sup 2 %% Y', { pageName: 'P' });
       expect(a).toContain('<sub>2</sub>');

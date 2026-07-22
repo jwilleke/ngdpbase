@@ -1891,6 +1891,45 @@ class MarkupParser extends BaseManager {
    * @returns HTML table element
    */
   /**
+   * Named HTML entities decoded inside DOM-built inner text (#907 follow-up).
+   * Authors write `&nbsp;`, `&copy;`, etc. as raw entities in wiki source; when
+   * that text becomes a real DOM text node its `&` would otherwise serialize to
+   * `&amp;` and the literal `&nbsp;` would show. Decoding to the actual char
+   * makes serialization round-trip correctly. Kept small on purpose — the
+   * common set; numeric `&#…;`/`&#x…;` are handled generically.
+   */
+  private static readonly NAMED_ENTITIES: Record<string, string> = {
+    nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
+    copy: '©', reg: '®', trade: '™', mdash: '—',
+    ndash: '–', hellip: '…', deg: '°', times: '×',
+    laquo: '«', raquo: '»', middot: '·'
+  };
+
+  /**
+   * Decode a small set of named + all numeric HTML entities in plain text.
+   * Single pass, so a double-encoded `&amp;nbsp;` decodes only its outer `&amp;`
+   * (never double-decodes). Text nodes re-escape on serialization, so this is
+   * display-idempotent and cannot introduce markup. Code spans are NOT run
+   * through this — literal `&nbsp;` in backticks stays literal.
+   */
+  private decodeTextEntities(s: string): string {
+    if (s.indexOf('&') === -1) return s;
+    return s.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z][a-zA-Z0-9]*);/g, (m, body: string) => {
+      if (body[0] === '#') {
+        const cp = (body[1] === 'x' || body[1] === 'X')
+          ? parseInt(body.slice(2), 16)
+          : parseInt(body.slice(1), 10);
+        if (Number.isFinite(cp) && cp > 0 && cp <= 0x10FFFF) {
+          try { return String.fromCodePoint(cp); } catch { return m; }
+        }
+        return m;
+      }
+      const named = MarkupParser.NAMED_ENTITIES[body];
+      return named !== undefined ? named : m;
+    });
+  }
+
+  /**
    * Scans `content` for all JSPWiki wiki syntax (mirrors Steps 1–4 of extractJSPWikiSyntax)
    * and appends the resolved child nodes directly to `node`. Text between matches is appended
    * as text nodes. Used by createNodeFromStyleBlock and populateCell (via createTableNode).
@@ -1921,7 +1960,7 @@ class MarkupParser extends BaseManager {
     const wikiPattern = /`([^`\n]+)`|\[\[\{([^}]*)\}\]|\[\{\$(\w+)\}\]|\[\{([A-Za-z]\w*[^}]*)\}\]|\[([^\]]*)\](?!\()|<span data-jspwiki-placeholder="([^"]*)"><\/span>/g;
 
     if (!wikiPattern.test(content)) {
-      node.textContent = content;
+      node.textContent = this.decodeTextEntities(content);
       return;
     }
 
@@ -1933,7 +1972,7 @@ class MarkupParser extends BaseManager {
 
     while ((match = wikiPattern.exec(content)) !== null) {
       if (match.index > lastIndex) {
-        node.appendChild(wikiDocument.createTextNode(content.substring(lastIndex, match.index)));
+        node.appendChild(wikiDocument.createTextNode(this.decodeTextEntities(content.substring(lastIndex, match.index))));
       }
 
       const elemId = idCounter++;
@@ -1999,7 +2038,7 @@ class MarkupParser extends BaseManager {
     }
 
     if (lastIndex < content.length) {
-      node.appendChild(wikiDocument.createTextNode(content.substring(lastIndex)));
+      node.appendChild(wikiDocument.createTextNode(this.decodeTextEntities(content.substring(lastIndex))));
     }
   }
 
