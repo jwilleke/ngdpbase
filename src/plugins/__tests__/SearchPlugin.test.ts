@@ -516,3 +516,53 @@ describe('SearchPlugin — dateField parameter (#774)', () => {
     expect(mockSearchManager.advancedSearch).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// #901: user-keywords='current' — self-scoping (name or slug by match count)
+// ---------------------------------------------------------------------------
+
+describe("SearchPlugin — user-keywords='current'", () => {
+  function makeCurrentContext(pageName, byKeyword) {
+    const mockSearchManager = {
+      advancedSearch: vi.fn(async (opts) => {
+        const kw = (opts.userKeywords && opts.userKeywords[0]) || '';
+        return byKeyword[kw] ?? [];
+      }),
+      search: vi.fn().mockResolvedValue([])
+    };
+    const engine = {
+      getManager: (name) => {
+        if (name === 'SearchManager') return mockSearchManager;
+        if (name === 'ValidationManager') return { generateSlug: (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') };
+        return null;
+      }
+    };
+    return { context: { engine, pageName, linkGraph: {}, query: {} }, mockSearchManager };
+  }
+
+  test('picks SLUG form when slug-keyword matches more pages (multi-word page)', async () => {
+    const { context, mockSearchManager } = makeCurrentContext('2026 trip west', {
+      '2026 trip west': [makeResult('Stray', 'Stray')],
+      '2026-trip-west': [makeResult('A', 'A'), makeResult('B', 'B'), makeResult('C', 'C')]
+    });
+    const html = await SearchPlugin.execute(context, { 'user-keywords': 'current', format: 'count' });
+    expect(mockSearchManager.advancedSearch).toHaveBeenCalledWith(expect.objectContaining({ userKeywords: ['2026 trip west'] }));
+    expect(mockSearchManager.advancedSearch).toHaveBeenCalledWith(expect.objectContaining({ userKeywords: ['2026-trip-west'] }));
+    expect(html).toContain('3'); // slug form won (3 > 1)
+  });
+
+  test('picks NAME form when name-keyword matches more (space-form keyword)', async () => {
+    const { context } = makeCurrentContext('grow system', {
+      'grow system': [makeResult('A', 'A'), makeResult('B', 'B')],
+      'grow-system': []
+    });
+    const html = await SearchPlugin.execute(context, { 'user-keywords': 'current', format: 'count' });
+    expect(html).toContain('2'); // name form won
+  });
+
+  test('literal user-keywords still works (no current)', async () => {
+    const { context, mockSearchManager } = makeCurrentContext('AnyPage', { travel: [makeResult('T', 'T')] });
+    await SearchPlugin.execute(context, { 'user-keywords': 'travel', format: 'count' });
+    expect(mockSearchManager.advancedSearch).toHaveBeenCalledWith(expect.objectContaining({ userKeywords: ['travel'] }));
+  });
+});

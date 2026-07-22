@@ -17,7 +17,7 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import { formatAsCount, formatAsList, parseMaxParam, applyMax, escapeHtml } from '../utils/pluginFormatters.js';
+import { formatAsCount, formatAsList, parseMaxParam, applyMax, escapeHtml, resolveCurrentKeyword, simpleSlug } from '../utils/pluginFormatters.js';
 import type { PageLink } from '../utils/pluginFormatters.js';
 
 interface MediaItem {
@@ -76,28 +76,16 @@ const MediaPlugin: SimplePlugin = {
       let resolvedKeyword: string | undefined;
 
       if (keywordParam) {
-        if (keywordParam === 'current') {
-          // #901: media EXIF keywords follow no single convention — some pages'
-          // media is tagged with the page NAME ("Dining", "Travel"), others
-          // with the SLUG ("2026-trip-west"). Resolve 'current' to whichever
-          // form actually has media, so it works regardless of how the library
-          // was tagged. Ties / both-empty fall back to the name form.
-          const name = context.pageName ?? '';
-          const vm = engine.getManager('ValidationManager') as { generateSlug?: (t: string) => string } | undefined;
-          const slug = name && vm?.generateSlug ? vm.generateSlug(name) : name;
-          const [byName, bySlug] = await Promise.all([
-            name ? mediaManager.listByKeyword(name) : Promise.resolve([]),
-            slug && slug !== name ? mediaManager.listByKeyword(slug) : Promise.resolve([])
-          ]);
-          if (bySlug.length > byName.length) {
-            resolvedKeyword = slug; items = bySlug;
-          } else {
-            resolvedKeyword = name; items = byName;
-          }
-        } else {
-          resolvedKeyword = keywordParam;
-          items = resolvedKeyword ? await mediaManager.listByKeyword(resolvedKeyword) : [];
-        }
+        // #901: 'current' adapts to whichever keyword form (page name or slug)
+        // actually has media — shared with SearchPlugin via resolveCurrentKeyword.
+        const vm = engine.getManager('ValidationManager') as { generateSlug?: (t: string) => string } | undefined;
+        const slugify = (n: string) => vm?.generateSlug ? vm.generateSlug(n) : simpleSlug(n);
+        const resolved = await resolveCurrentKeyword<MediaItem>(
+          keywordParam, context.pageName ?? '', slugify,
+          (kw) => mediaManager.listByKeyword(kw)
+        );
+        resolvedKeyword = resolved.keyword;
+        items = resolved.results;
       } else if (pageParam) {
         // Resolve 'current' to the context page name
         const pageName = pageParam === 'current' ? (context.pageName ?? '') : pageParam;

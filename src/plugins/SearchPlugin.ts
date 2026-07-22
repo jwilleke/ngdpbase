@@ -54,6 +54,8 @@ import {
   formatAsList,
   formatAsCount,
   resolveUserParam,
+  resolveCurrentKeyword,
+  simpleSlug,
   type PageLink
 } from '../utils/pluginFormatters.js';
 
@@ -332,8 +334,13 @@ const SearchPlugin: SimplePlugin = {
         searchOptions.categories = parseMultiValue(systemCategory);
       }
 
-      // Add keyword filter if specified
-      if (userKeywords) {
+      // Add keyword filter if specified. #901: `user-keywords='current'`
+      // resolves (below, after all other filters are built) to whichever form
+      // of THIS page's keyword — name or slug — matches more pages, so a
+      // keyword-landing page self-scopes regardless of tagging convention.
+      // Consistent with MediaPlugin's `keyword='current'`.
+      const ukIsCurrent = typeof userKeywords === 'string' && userKeywords.trim().toLowerCase() === 'current';
+      if (userKeywords && !ukIsCurrent) {
         searchOptions.userKeywords = parseMultiValue(userKeywords);
       }
 
@@ -353,7 +360,19 @@ const SearchPlugin: SimplePlugin = {
 
       // Execute search
       let results: SearchResult[];
-      if (systemCategory || userKeywords || author || editor || dateFrom || dateTo) {
+      if (ukIsCurrent) {
+        // #901: resolve 'current' to the page-keyword form (name or slug) with
+        // more matches, reusing the shared helper. The lookup layers the
+        // resolved keyword onto the other filters already in searchOptions, so
+        // category/date/author still apply.
+        const vm = context?.engine?.getManager?.('ValidationManager') as { generateSlug?: (t: string) => string } | undefined;
+        const slugify = (n: string) => vm?.generateSlug ? vm.generateSlug(n) : simpleSlug(n);
+        const resolved = await resolveCurrentKeyword<SearchResult>(
+          'current', context.pageName ?? '', slugify,
+          (kw) => searchManager.advancedSearch({ ...searchOptions, userKeywords: [kw] })
+        );
+        results = resolved.results;
+      } else if (systemCategory || userKeywords || author || editor || dateFrom || dateTo) {
         // Use advanced search for filtering
         results = await searchManager.advancedSearch(searchOptions);
       } else {

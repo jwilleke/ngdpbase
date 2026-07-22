@@ -27,7 +27,9 @@ import {
   formatPaginationLinks,
   parsePlacementParam,
   placementClass,
-  resolveManagerFetch
+  resolveManagerFetch,
+  resolveCurrentKeyword,
+  simpleSlug
 } from '../pluginFormatters';
 
 // ---------------------------------------------------------------------------
@@ -560,5 +562,58 @@ describe('resolveManagerFetch', () => {
   test('returns no-spec when no engine is present', async () => {
     const r = await resolveManagerFetch('TestManager.toMarqueeText()', {});
     expect(r).toEqual({ status: 'no-spec' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveCurrentKeyword + simpleSlug (#901)
+// ---------------------------------------------------------------------------
+
+describe('simpleSlug', () => {
+  test('lowercases and hyphenates', () => {
+    expect(simpleSlug('2026 Trip West')).toBe('2026-trip-west');
+    expect(simpleSlug("Molly's Cooking")).toBe('molly-s-cooking');
+    expect(simpleSlug('chemistry')).toBe('chemistry');
+  });
+});
+
+describe('resolveCurrentKeyword', () => {
+  const slug = simpleSlug;
+
+  test('non-current value → single lookup, returned as-is', async () => {
+    const calls: string[] = [];
+    const lookup = async (kw: string) => { calls.push(kw); return kw === 'travel' ? [1, 2] : []; };
+    const r = await resolveCurrentKeyword('travel', 'AnyPage', slug, lookup);
+    expect(r.keyword).toBe('travel');
+    expect(r.results).toEqual([1, 2]);
+    expect(calls).toEqual(['travel']);
+  });
+
+  test("'current' picks the form with more results (slug wins)", async () => {
+    const by: Record<string, number[]> = { '2026 trip west': [1], '2026-trip-west': [1, 2, 3, 4] };
+    const r = await resolveCurrentKeyword('current', '2026 trip west', slug, async k => by[k] ?? []);
+    expect(r.keyword).toBe('2026-trip-west');
+    expect(r.results).toHaveLength(4);
+  });
+
+  test("'current' picks name form on tie / both empty", async () => {
+    const r = await resolveCurrentKeyword('current', 'Nothing', slug, async () => []);
+    expect(r.keyword).toBe('Nothing');
+    expect(r.results).toEqual([]);
+  });
+
+  test("'current' is case-insensitive", async () => {
+    const by: Record<string, number[]> = { Dining: [1, 2, 3], dining: [1] };
+    const r = await resolveCurrentKeyword('CURRENT', 'Dining', slug, async k => by[k] ?? []);
+    expect(r.keyword).toBe('Dining');
+    expect(r.results).toHaveLength(3);
+  });
+
+  test('single-word page: name == slug after slugify, only one lookup form', async () => {
+    const calls: string[] = [];
+    const r = await resolveCurrentKeyword('current', 'chemistry', slug, async k => { calls.push(k); return [1]; });
+    // slug('chemistry') === 'chemistry' === name → slug lookup skipped
+    expect(calls).toEqual(['chemistry']);
+    expect(r.keyword).toBe('chemistry');
   });
 });

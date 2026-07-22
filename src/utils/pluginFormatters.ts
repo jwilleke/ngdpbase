@@ -146,6 +146,63 @@ export function resolveUserParam(
 }
 
 // ---------------------------------------------------------------------------
+// 'current' keyword resolution (page-scoped plugins)
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve a keyword parameter that may be the special token `current`
+ * (case-insensitive) to the page's own keyword.
+ *
+ * EXIF/media and page keywords follow no single name-vs-slug convention across
+ * a library — some content is tagged with the page NAME (`Dining`, `Travel`),
+ * some with the SLUG (`2026-trip-west`). `current` therefore adapts: it tries
+ * both the page name and its slug and keeps whichever yields more results
+ * (tie / both-empty → name form). This gives page-scoped plugins one
+ * self-scoping syntax that works regardless of how content was tagged:
+ *   [{MediaPlugin keyword='current'}]   [{Search user-keywords='current'}]
+ *
+ * Non-`current` values are looked up as-is (single lookup).
+ *
+ * @param value    Raw keyword param — `current` (any case) triggers resolution.
+ * @param pageName Current page name (from plugin context).
+ * @param slugify  Name→slug; pass `ValidationManager.generateSlug` for the
+ *                 canonical algorithm, or a simple slugifier as fallback.
+ * @param lookup   Fetch results for a keyword (e.g. `listByKeyword`, or an
+ *                 `advancedSearch`-by-keyword closure).
+ * @returns The chosen keyword string and its results (results reusable by the
+ *          caller so `current` costs at most two lookups, not three).
+ */
+export async function resolveCurrentKeyword<T>(
+  value: string,
+  pageName: string,
+  slugify: (name: string) => string,
+  lookup: (keyword: string) => Promise<T[]>
+): Promise<{ keyword: string; results: T[] }> {
+  if (value.toLowerCase() !== 'current') {
+    return { keyword: value, results: value ? await lookup(value) : [] };
+  }
+  const name = pageName ?? '';
+  const slug = name ? slugify(name) : '';
+  const [byName, bySlug] = await Promise.all([
+    name ? lookup(name) : Promise.resolve([] as T[]),
+    slug && slug !== name ? lookup(slug) : Promise.resolve([] as T[])
+  ]);
+  return bySlug.length > byName.length
+    ? { keyword: slug, results: bySlug }
+    : { keyword: name, results: byName };
+}
+
+/**
+ * Simple ASCII slugify fallback for callers without ValidationManager access.
+ * Matches `generateSlug` for the common ASCII case (spaces/punct → single
+ * hyphens, lowercased). Non-ASCII transliteration is NOT applied — pass
+ * `ValidationManager.generateSlug` when that matters.
+ */
+export function simpleSlug(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+// ---------------------------------------------------------------------------
 // Sort utilities
 // ---------------------------------------------------------------------------
 
