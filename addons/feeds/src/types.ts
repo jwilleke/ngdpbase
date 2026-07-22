@@ -31,6 +31,8 @@ export interface FeedSourceConfig {
   recordIdField?: string;
   /** rest-json only: dot-path to the items array within the response (e.g. 'results'). */
   itemsPath?: string;
+  /** csv only: field delimiter. Default ','. Use '\t' for TSV. */
+  delimiter?: string;
   /** Optional dot-path map: normalized property → source path. Adapter may instead return shaped records. */
   map?: Record<string, string>;
 }

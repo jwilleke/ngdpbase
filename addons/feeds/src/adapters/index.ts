@@ -1,19 +1,21 @@
 /**
  * Adapter registry (#685). Shipped: geojson + rest-json (zero-dep, design
- * §3.2) and xml (fast-xml-parser — the dependency-callout PR). rss-atom/csv/
- * xls land in later slices, each a separate PR that calls out any dependency
- * it introduces.
+ * §3.2), xml (fast-xml-parser — the dependency-callout PR), and csv (zero-dep,
+ * #911). rss-atom/xls land in later slices, each a separate PR that calls out
+ * any dependency it introduces.
  */
 
 import type { SourceAdapter } from './types.js';
 import { geojsonAdapter } from './geojson.js';
 import { restJsonAdapter } from './restjson.js';
 import { xmlAdapter } from './xml.js';
+import { csvAdapter } from './csv.js';
 
 const ADAPTERS: Record<string, SourceAdapter> = {
   [geojsonAdapter.name]: geojsonAdapter,
   [restJsonAdapter.name]: restJsonAdapter,
-  [xmlAdapter.name]: xmlAdapter
+  [xmlAdapter.name]: xmlAdapter,
+  [csvAdapter.name]: csvAdapter
 };
 
 /** Look up an adapter by name; null when unknown. */
