@@ -39,8 +39,15 @@ const makeMediaManager = (overrides: Partial<{
   listByKeyword: vi.fn(async (kw: string) => overrides.byKeyword?.[kw] ?? [])
 });
 
-const makeEngine = (mediaManager: unknown = null, logger: unknown = null) => ({
-  getManager: vi.fn((name: string) => name === 'MediaManager' ? mediaManager : null),
+// #901: slugify for the ValidationManager stub — matches generateSlug for ASCII.
+const slugify = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+const makeEngine = (mediaManager: unknown = null, logger: unknown = null, withValidation = false) => ({
+  getManager: vi.fn((name: string) => {
+    if (name === 'MediaManager') return mediaManager;
+    if (name === 'ValidationManager' && withValidation) return { generateSlug: slugify };
+    return null;
+  }),
   logger: logger ?? { error: vi.fn() }
 });
 
@@ -197,6 +204,34 @@ describe('MediaPlugin', () => {
       const context = { engine: makeEngine(mm), pageName: 'CurrentPage' };
       await MediaPlugin.execute(context, { keyword: 'current' });
       expect(mm.listByKeyword).toHaveBeenCalledWith('CurrentPage');
+    });
+
+    // #901: 'current' picks whichever form (name or slug) actually has media.
+    test('keyword=current picks NAME form when name-tagged media dominates', async () => {
+      const mm = makeMediaManager({ byKeyword: {
+        'Dining': [makeItem('1', 'a'), makeItem('2', 'b'), makeItem('3', 'c')],
+        'dining': [makeItem('9', 'z')]
+      } });
+      const context = { engine: makeEngine(mm, null, true), pageName: 'Dining' };
+      const out = await MediaPlugin.execute(context, { keyword: 'current', format: 'album-link' });
+      expect(out).toContain('Dining Album (3 items)');
+    });
+
+    test('keyword=current picks SLUG form when slug-tagged media dominates (multi-word page)', async () => {
+      const mm = makeMediaManager({ byKeyword: {
+        '2026 trip west': [makeItem('1', 'stray')],
+        '2026-trip-west': Array.from({ length: 5 }, (_, i) => makeItem(String(i), `m${i}`))
+      } });
+      const context = { engine: makeEngine(mm, null, true), pageName: '2026 trip west' };
+      const out = await MediaPlugin.execute(context, { keyword: 'current', format: 'album-link' });
+      expect(out).toContain('2026-trip-west Album (5 items)');
+    });
+
+    test('keyword=current falls back to name form on a tie / both empty', async () => {
+      const mm = makeMediaManager({ byKeyword: {} });
+      const context = { engine: makeEngine(mm, null, true), pageName: 'Nothing Here' };
+      const out = await MediaPlugin.execute(context, { keyword: 'current', format: 'album-link' });
+      expect(out).toContain('Nothing Here Album (0 items)');
     });
   });
 

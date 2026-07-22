@@ -76,9 +76,28 @@ const MediaPlugin: SimplePlugin = {
       let resolvedKeyword: string | undefined;
 
       if (keywordParam) {
-        // Resolve 'current' to the context page name
-        resolvedKeyword = keywordParam === 'current' ? (context.pageName ?? '') : keywordParam;
-        items = resolvedKeyword ? await mediaManager.listByKeyword(resolvedKeyword) : [];
+        if (keywordParam === 'current') {
+          // #901: media EXIF keywords follow no single convention — some pages'
+          // media is tagged with the page NAME ("Dining", "Travel"), others
+          // with the SLUG ("2026-trip-west"). Resolve 'current' to whichever
+          // form actually has media, so it works regardless of how the library
+          // was tagged. Ties / both-empty fall back to the name form.
+          const name = context.pageName ?? '';
+          const vm = engine.getManager('ValidationManager') as { generateSlug?: (t: string) => string } | undefined;
+          const slug = name && vm?.generateSlug ? vm.generateSlug(name) : name;
+          const [byName, bySlug] = await Promise.all([
+            name ? mediaManager.listByKeyword(name) : Promise.resolve([]),
+            slug && slug !== name ? mediaManager.listByKeyword(slug) : Promise.resolve([])
+          ]);
+          if (bySlug.length > byName.length) {
+            resolvedKeyword = slug; items = bySlug;
+          } else {
+            resolvedKeyword = name; items = byName;
+          }
+        } else {
+          resolvedKeyword = keywordParam;
+          items = resolvedKeyword ? await mediaManager.listByKeyword(resolvedKeyword) : [];
+        }
       } else if (pageParam) {
         // Resolve 'current' to the context page name
         const pageName = pageParam === 'current' ? (context.pageName ?? '') : pageParam;
