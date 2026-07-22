@@ -110,7 +110,21 @@
                     <% } %>
                   </td>
                   <td>
-                    <span class="badge bg-secondary"><%= keyword.usageCount %> page(s)</span>
+                    <%# #900: clickable usage badges — find all pages / media carrying this keyword %>
+                    <% if (keyword.usageCount > 0) { %>
+                      <a href="/search?types=page&keywords=<%= encodeURIComponent(keyword.id) %>"
+                         class="badge bg-secondary text-decoration-none"
+                         title="Find pages with this keyword"><%= keyword.usageCount %> page(s)</a>
+                    <% } else { %>
+                      <span class="badge bg-light text-muted">0 page(s)</span>
+                    <% } %>
+                    <% if (keyword.mediaCount > 0) { %>
+                      <a href="/media/keyword/<%= encodeURIComponent(keyword.label) %>"
+                         class="badge bg-info text-decoration-none"
+                         title="View media album for this keyword"><i class="fas fa-images"></i> <%= keyword.mediaCount %> media</a>
+                    <% } else { %>
+                      <span class="badge bg-light text-muted">0 media</span>
+                    <% } %>
                   </td>
                   <td>
                     <% if (keyword.hasPage) { %>

@@ -12973,11 +12973,35 @@ ${description}
         }
       }
 
+      // #900: media keyword counts (EXIF-derived) — fetched up front so the
+      // per-keyword rows can show media usage alongside pages. Same source the
+      // drift card uses below.
+      const mediaManagerCounts = this.engine.getManager('MediaManager') as {
+        getAllKeywordCounts?: () => Promise<Record<string, number>>;
+      } | undefined;
+      let mediaKeywordCounts: Record<string, number> = {};
+      try {
+        mediaKeywordCounts = mediaManagerCounts?.getAllKeywordCounts ? await mediaManagerCounts.getAllKeywordCounts() : {};
+      } catch (err) {
+        logger.warn('[adminKeywords] media keyword counts unavailable:', err);
+      }
+      // Case-insensitive lookup of media counts by keyword string.
+      const mediaCountLower: Record<string, number> = {};
+      for (const [kw, count] of Object.entries(mediaKeywordCounts)) {
+        const l = kw.toLowerCase();
+        mediaCountLower[l] = (mediaCountLower[l] || 0) + count;
+      }
+
       // Build keywords array with stats, sorted alphabetically by label to match the form dropdowns
       const keywords = Object.entries(userKeywordsConfig).map(([key, config]) => {
         const label = (config.label as string) || key;
         const hasPage = pageManager ? pageManager.pageExists(label) : false;
         const usageCount = keywordUsage[key]?.length || 0;
+        // Media EXIF keywords are free text — match the catalog entry's id or
+        // label, case-insensitively (a term catalogued as 'basketball' counts
+        // media tagged 'Basketball').
+        const mediaCount = (mediaCountLower[key.toLowerCase()] || 0)
+          + (label.toLowerCase() !== key.toLowerCase() ? (mediaCountLower[label.toLowerCase()] || 0) : 0);
 
         return {
           id: key,
@@ -12988,6 +13012,7 @@ ${description}
           restrictEditing: config.restrictEditing === true,
           hasPage,
           usageCount,
+          mediaCount,
           pageUrl: hasPage ? `/view/${encodeURIComponent(label)}` : null
         };
       }).sort((a, b) => a.label.localeCompare(b.label));
@@ -12996,7 +13021,7 @@ ${description}
       const totalKeywords = keywords.length;
       const enabledKeywords = keywords.filter(k => k.enabled).length;
       const keywordsWithPages = keywords.filter(k => k.hasPage).length;
-      const keywordsInUse = keywords.filter(k => k.usageCount > 0).length;
+      const keywordsInUse = keywords.filter(k => k.usageCount > 0 || k.mediaCount > 0).length;
 
       // #895 (Slice 3 of #869): drift report — observed vocabulary (page
       // frontmatter + media EXIF keywords) diffed against the canonical
@@ -13009,16 +13034,7 @@ ${description}
         if (typeof label === 'string' && label) canonicalNames.add(label.toLowerCase());
       }
 
-      const mediaManager = this.engine.getManager('MediaManager') as {
-        getAllKeywordCounts?: () => Promise<Record<string, number>>;
-      } | undefined;
-      let mediaKeywordCounts: Record<string, number> = {};
-      try {
-        mediaKeywordCounts = mediaManager?.getAllKeywordCounts ? await mediaManager.getAllKeywordCounts() : {};
-      } catch (err) {
-        logger.warn('[adminKeywords] media keyword counts unavailable:', err);
-      }
-
+      // mediaKeywordCounts already fetched above (#900) — reused here.
       const uncataloguedMap = new Map<string, { term: string; pageCount: number; mediaCount: number }>();
       for (const [kw, pages] of Object.entries(keywordUsage)) {
         const lower = kw.toLowerCase();
