@@ -654,6 +654,22 @@ class AddonsManager extends BaseManager {
           continue;
         }
 
+        // #908 B1: guard on UUID as well as slug. If a seed page's slug was
+        // changed after its UUID was first assigned (e.g. an addon rename), the
+        // page is still registered in the index under the OLD slug, so the
+        // slug check above misses it. Re-seeding would then call savePage with
+        // the SAME frontmatter UUID and collide with the provider's
+        // UUID-uniqueness guard (throwing mid-save and, before #908 B2, leaving
+        // an orphan version artifact). A UUID already in use means the page is
+        // present under another slug — skip rather than re-seed.
+        const existingByUuid = await pageManager.getPageByUUID(uuid);
+        if (existingByUuid) {
+          const metaSlug = (existingByUuid.metadata as Record<string, unknown> | undefined)?.slug;
+          const existingSlug = typeof metaSlug === 'string' ? metaSlug : existingByUuid.title;
+          logger.debug(`[AddonsManager] UUID ${uuid} already assigned to '${existingSlug}' — skipping re-seed of ${addonName}/pages/${file} (slug '${slug}')`);
+          continue;
+        }
+
         // Seed through PageManager so all page providers (including VersioningFileProvider)
         // update their index correctly
         const metadata: Record<string, unknown> = {

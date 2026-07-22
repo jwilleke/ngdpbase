@@ -1556,6 +1556,23 @@ class VersioningFileProvider extends FileSystemProvider {
       }
     }
 
+    // `created` (#754): set once on initial save and preserved by every update.
+    // Priority: explicit metadata.created (migration) > existing index entry > existing
+    // frontmatter > now. Computed here so both the on-disk write (via super.savePage)
+    // and the page-index write below use the SAME value.
+    const indexCreated = currentEntry?.created;
+    const frontmatterCreated = pageInfo?.metadata?.created;
+    const created = metadata.created ?? indexCreated ?? frontmatterCreated ?? new Date().toISOString();
+
+    // Call parent to save current content (uses FileSystemProvider path logic).
+    // #908 B2: super.savePage() runs FileSystemProvider's UUID-uniqueness guard,
+    // which THROWS if this UUID is already assigned to a different page. It must
+    // run BEFORE version creation so a conflict doesn't leave an orphan version
+    // artifact behind (the failure the addon-seed re-save exposed). Safe to
+    // reorder: createNewVersion() diffs against the version-history dir, not the
+    // {uuid}.md page file super.savePage() writes, so its baseline is unaffected.
+    await super.savePage(pageName, content, { ...metadata, uuid, created });
+
     try {
       if (pageInfo) {
         // Existing page: create new version with diff
@@ -1567,19 +1584,8 @@ class VersioningFileProvider extends FileSystemProvider {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error(`[VersioningFileProvider] Failed to create version for ${pageName}:`, errorMessage);
-      // Continue with parent savePage even if versioning fails
+      // Page content is already persisted; a versioning failure is non-fatal.
     }
-
-    // `created` (#754): set once on initial save and preserved by every update.
-    // Priority: explicit metadata.created (migration) > existing index entry > existing
-    // frontmatter > now. Computed here so both the on-disk write (via super.savePage)
-    // and the page-index write below use the SAME value.
-    const indexCreated = currentEntry?.created;
-    const frontmatterCreated = pageInfo?.metadata?.created;
-    const created = metadata.created ?? indexCreated ?? frontmatterCreated ?? new Date().toISOString();
-
-    // Call parent to save current content (uses FileSystemProvider path logic)
-    await super.savePage(pageName, content, { ...metadata, uuid, created });
 
     // Update page index — always store filename so fast init uses the correct path
     const creator = location === 'private'

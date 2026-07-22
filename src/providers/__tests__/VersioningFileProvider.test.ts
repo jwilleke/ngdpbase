@@ -371,6 +371,28 @@ describe('VersioningFileProvider', () => {
       expect(v1Meta.contentSize).toBe(Buffer.byteLength(content, 'utf8'));
     });
 
+    test('#908 B2: same-UUID conflict throws WITHOUT creating a phantom version', async () => {
+      await provider.initialize();
+      const uuid = '550e8400-e29b-41d4-a716-446655440099';
+
+      // Page 'About' owns the UUID with v1 (content A).
+      await provider.savePage('About', 'content A', { author: 'test-user', uuid, slug: 'about' });
+      const v1ContentPath = path.join(provider.pagesVersionsDir, uuid, 'v1', 'content.md');
+      expect(await fs.readFile(v1ContentPath, 'utf8')).toBe('content A');
+
+      // A different page tries to seed with the SAME UUID (the renamed-addon
+      // scenario). FileSystemProvider's UUID-uniqueness guard must throw...
+      await expect(
+        provider.savePage('Geohazardwatch About', 'content B', { author: 'test-user', uuid, slug: 'geohazardwatch-about' })
+      ).rejects.toThrow(/already assigned/i);
+
+      // ...and because super.savePage() now runs BEFORE version creation, no
+      // phantom version artifact is left behind: no v2, and v1 is untouched.
+      expect(await fs.pathExists(path.join(provider.pagesVersionsDir, uuid, 'v2'))).toBe(false);
+      expect(await fs.readFile(v1ContentPath, 'utf8')).toBe('content A');
+      expect((await provider.getVersionHistory('About')).length).toBe(1);
+    });
+
     test('should create manifest.json for new page', async () => {
       await provider.initialize();
 
@@ -1262,7 +1284,6 @@ describe('VersioningFileProvider', () => {
   });
 
   describe('Auto-migration — slug-named files', () => {
-    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const pagesDir = () => path.join(testDir, 'pages');
     const indexPath = () => path.join(testDir, 'data', 'page-index.json');
 

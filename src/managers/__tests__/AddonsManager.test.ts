@@ -912,10 +912,12 @@ describe('AddonsManager', () => {
      * Build a mock PageManager. existingSlugs controls which slugs report as existing.
      * existingPages is a map of slug → page object returned by getPage().
      */
-    const makePageManager = (existingSlugs = [], existingPages = {}) => ({
+    const makePageManager = (existingSlugs = [], existingPages = {}, existingUuids = {}) => ({
       pageExists: vi.fn((slug) => existingSlugs.includes(slug)),
       savePage: vi.fn().mockResolvedValue(undefined),
-      getPage: vi.fn((slug) => Promise.resolve(existingPages[slug] ?? null))
+      getPage: vi.fn((slug) => Promise.resolve(existingPages[slug] ?? null)),
+      // #908 B1: UUID-based idempotency lookup. existingUuids maps uuid → page.
+      getPageByUUID: vi.fn((uuid) => Promise.resolve(existingUuids[uuid] ?? null))
     });
 
     /**
@@ -952,6 +954,29 @@ describe('AddonsManager', () => {
 
       expect(pageManager.savePage).toHaveBeenCalledTimes(1);
       expect(pageManager.savePage).toHaveBeenCalledWith('home', expect.stringContaining('Page content.'), expect.objectContaining({ uuid, addon: 'seed-addon' }));
+    });
+
+    test('#908 B1: skips re-seed when UUID already exists under a different slug', async () => {
+      // Seed page carries slug 'geohazardwatch-about' but its UUID is already
+      // assigned to an existing page registered under slug 'about' (the addon
+      // was renamed after the UUID was first assigned). pageExists('geohazardwatch-about')
+      // is false, but getPageByUUID must catch it and skip the collision.
+      const uuid = '550e8400-e29b-41d4-a716-446655440077';
+      await makeAddonWithSeedPages('renamed-addon', [
+        { filename: 'about.md', uuid, slug: 'geohazardwatch-about', title: 'About' }
+      ]);
+
+      const configManager = makeConfigManager({ enabledAddons: ['renamed-addon'] });
+      const pageManager = makePageManager(
+        [],                                            // no slug match
+        {},
+        { [uuid]: { title: 'About', uuid, metadata: { slug: 'about' } } } // UUID already in use
+      );
+      const manager = new AddonsManager(makeEngineWithPageManager(configManager, pageManager));
+      await manager.initialize();
+
+      expect(pageManager.getPageByUUID).toHaveBeenCalledWith(uuid);
+      expect(pageManager.savePage).not.toHaveBeenCalled();
     });
 
     test('seeds multiple pages from one addon', async () => {
