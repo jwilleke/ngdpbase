@@ -1182,6 +1182,47 @@ class MarkupParser extends BaseManager {
    * @param context - Parse context
    * @returns Cache key
    */
+  /**
+   * #906: convert inline `%%(css) content /%` styles to
+   * `<span style="…">content</span>`, security-gated.
+   *
+   * Off unless `ngdpbase.style.security.allow-inline-css` is true; when off,
+   * the wrapper is stripped so the content still reads as plain text. When on,
+   * each declaration's property must be in
+   * `ngdpbase.style.security.allowed-properties` and its value must be free of
+   * `javascript:`, `url(`, `expression(`, and angle brackets. The paren body is
+   * captured atomically so CSS containing spaces (`width: 100px`) is preserved.
+   */
+  private convertInlineCssStyles(content: string): string {
+    if (!content.includes('%%(')) return content;
+    const cfg = this.engine.getManager<ConfigurationManagerInterface>('ConfigurationManager');
+    const allow = cfg ? cfg.getProperty('ngdpbase.style.security.allow-inline-css', false) : false;
+    const allowedProps = new Set(
+      String(cfg?.getProperty('ngdpbase.style.security.allowed-properties', 'color,background-color,font-weight,font-style,text-align') ?? '')
+        .split(',').map(p => p.trim().toLowerCase()).filter(Boolean)
+    );
+    const unsafe = /javascript:|url\(|expression\(|[<>]/i;
+
+    return content.replace(/%%\(([^)]*)\)\s*([\s\S]*?)\s*(?:\/%|%%)/g, (_m, css: string, inner: string) => {
+      if (!allow) return inner; // disabled → strip wrapper, keep content
+      const decls = css.split(';')
+        .map(d => d.trim())
+        .filter(Boolean)
+        .map(d => {
+          const idx = d.indexOf(':');
+          if (idx < 0) return null;
+          const prop = d.slice(0, idx).trim().toLowerCase();
+          const val = d.slice(idx + 1).trim();
+          if (!prop || !val || !allowedProps.has(prop) || unsafe.test(val)) return null;
+          return `${prop}: ${val}`;
+        })
+        .filter((d): d is string => d !== null);
+      if (decls.length === 0) return inner;
+      const style = decls.join('; ').replace(/"/g, '&quot;');
+      return `<span style="${style}">${inner}</span>`;
+    });
+  }
+
   generateCacheKey(content: string, context: ParseContextData): string {
     const contentHash = crypto.createHash('md5').update(content).digest('hex');
 
@@ -2253,6 +2294,14 @@ class MarkupParser extends BaseManager {
     preprocessed = preprocessed.replace(/%%sup\s+([\s\S]*?)\s*(?:\/%|%%)/gi, '<sup>$1</sup>');
     preprocessed = preprocessed.replace(/%%sub\s+([\s\S]*?)\s*(?:\/%|%%)/gi, '<sub>$1</sub>');
     preprocessed = preprocessed.replace(/%%strike\s+([\s\S]*?)\s*(?:\/%|%%)/gi, '<del>$1</del>');
+
+    // #906: inline CSS style — %%(prop:val; …) content /%. Lost when
+    // WikiStyleHandler was deprecated; restored here (the active inline-style
+    // stage). Security-gated: off unless ngdpbase.style.security.allow-inline-css,
+    // properties whitelisted by ngdpbase.style.security.allowed-properties, and
+    // values sanitised. Paren-atomic capture so CSS with spaces (`width: 100px`)
+    // is not split. When disabled the wrapper is stripped to plain content.
+    preprocessed = this.convertInlineCssStyles(preprocessed);
 
     // Phase 2.6: Run all other registered handlers (custom/addon handlers) on preprocessed content.
     // JSPWiki syntax has already been extracted (UUID placeholders), so built-in handlers like

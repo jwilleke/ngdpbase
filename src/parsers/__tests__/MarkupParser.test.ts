@@ -219,6 +219,43 @@ describe('MarkupParser', () => {
       expect(result).toContain('2026-trip-west');
     });
 
+    // #906: inline %%(css) content /% — restored after WikiStyleHandler deprecation
+    test('inline %%(css) disabled by default → wrapper stripped, content kept', async () => {
+      // MockWikiEngine returns null for ConfigurationManager → allow-inline-css false
+      const result = await markupParser.parse('%%(color:red) Red /%', { pageName: 'P' });
+      expect(result).not.toContain('%%(');
+      expect(result).not.toContain('style=');
+      expect(result).toContain('Red');
+    });
+
+    test('inline %%(css) enabled → <span style> with spaces preserved (swatch)', async () => {
+      mockEngine.registerManager('ConfigurationManager', {
+        getProperty: (key, dv) => {
+          if (key === 'ngdpbase.style.security.allow-inline-css') return true;
+          if (key === 'ngdpbase.style.security.allowed-properties') return 'display,width,background,color';
+          return dv;
+        }
+      });
+      const result = await markupParser.parse('%%(display:block; width: 100px; background:#F0F8FF;) AliceBlue /%', { pageName: 'P' });
+      expect(result).toContain('display: block');
+      expect(result).toContain('width: 100px');
+      expect(result).toContain('background: #F0F8FF');
+      expect(result).toContain('AliceBlue');
+    });
+
+    test('inline %%(css) enabled → disallowed property + unsafe value dropped', async () => {
+      mockEngine.registerManager('ConfigurationManager', {
+        getProperty: (key, dv) => {
+          if (key === 'ngdpbase.style.security.allow-inline-css') return true;
+          if (key === 'ngdpbase.style.security.allowed-properties') return 'color';
+          return dv;
+        }
+      });
+      const result = await markupParser.parse('%%(color:red; position:fixed) X /%', { pageName: 'P' });
+      expect(result).toContain('color: red');
+      expect(result).not.toContain('position');
+    });
+
     test('${pageslug} not looked up when the token is absent (no page lookup)', async () => {
       let called = false;
       mockEngine.registerManager('PageManager', {
