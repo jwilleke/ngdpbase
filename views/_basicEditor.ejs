@@ -181,6 +181,7 @@
                             <div class="dropdown-menu w-100" id="userKeywordsSuggest" style="max-height:12rem;overflow-y:auto;"></div>
                         </div>
                         <script type="application/json" id="userKeywordsPool"><%- JSON.stringify(_kwPool) %></script>
+                        <%- include('_suggested-keywords', { keywordSetSuggestions: (typeof keywordSetSuggestions !== 'undefined' ? keywordSetSuggestions : []) }) %>
                     </div>
                 </div>
 

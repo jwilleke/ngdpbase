@@ -1,0 +1,46 @@
+<%
+  // #883: one-click keyword-set suggestions from the author's recent pages.
+  // Expects `keywordSetSuggestions`: [{ keywords: string[], source, score }].
+  // Appends a clicked set's keywords into #userKeywordsInput (deduped).
+  const _kwSets = (typeof keywordSetSuggestions !== 'undefined' && Array.isArray(keywordSetSuggestions))
+    ? keywordSetSuggestions.filter(s => s && Array.isArray(s.keywords) && s.keywords.length)
+    : [];
+%>
+<% if (_kwSets.length) { %>
+<div class="mt-2" id="kwSuggestSets">
+  <small class="text-muted d-block mb-1"><i class="fas fa-lightbulb"></i> Suggested from your recent pages:</small>
+  <% _kwSets.forEach(function(s){ %>
+    <button type="button"
+            class="btn btn-sm btn-outline-secondary me-1 mb-1 kw-suggest-set"
+            data-keywords="<%= s.keywords.join(',') %>"
+            title="Add: <%= s.keywords.join(', ') %> (from &ldquo;<%= s.source %>&rdquo;)">
+      <i class="fas fa-plus"></i> <%= s.keywords.join(', ') %>
+    </button>
+  <% }); %>
+</div>
+<script>
+(function () {
+  var box = document.getElementById('userKeywordsInput');
+  var wrap = document.getElementById('kwSuggestSets');
+  if (!box || !wrap || wrap.dataset.bound) return;
+  wrap.dataset.bound = '1';
+  function current() {
+    return box.value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  }
+  wrap.addEventListener('click', function (e) {
+    var btn = e.target.closest('.kw-suggest-set');
+    if (!btn) return;
+    e.preventDefault();
+    var add = (btn.getAttribute('data-keywords') || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    var have = current();
+    var lower = new Set(have.map(function (s) { return s.toLowerCase(); }));
+    add.forEach(function (k) { if (!lower.has(k.toLowerCase())) { have.push(k); lower.add(k.toLowerCase()); } });
+    box.value = have.join(', ');
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    btn.disabled = true;
+    btn.classList.remove('btn-outline-secondary');
+    btn.classList.add('btn-secondary');
+  });
+})();
+</script>
+<% } %>

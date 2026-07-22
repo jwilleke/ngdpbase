@@ -38,6 +38,7 @@ import type { ShareScope } from '../types/Share.js';
 import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../utils/ContactSubmissionLog.js';
 import { stringifyJsonLdForScript, wantsJsonLd } from '../utils/buildPageJsonLd.js';
 import { articleToPageJsonLd } from '../utils/articleToPageJsonLd.js';
+import { getSuggestedKeywordSets, type RecentPageKeywords, type KeywordSetSuggestion } from '../utils/suggestedKeywords.js';
 import type { Article } from '../types/Schema.js';
 import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
@@ -1579,6 +1580,45 @@ class WikiRoutes {
    * the same union-of-terms surface the asset-picker filter already exposes
    * to all users — term strings only, no page associations.
    */
+  /**
+   * #883: recency-weighted keyword-set suggestions from the author's own recent
+   * pages, for one-click apply in the editor. Reads the N most-recent pages by
+   * this creator and offers each one's keyword set (minus what's already
+   * selected). Best-effort — returns [] on any failure or missing manager.
+   */
+  private async getSuggestedKeywordSetsForUser(
+    username: string | undefined,
+    currentKeywords: string[],
+    excludeTitle?: string
+  ): Promise<KeywordSetSuggestion[]> {
+    if (!username) return [];
+    const pm = this.engine.getManager('PageManager') as {
+      getPagesByCreator?: (u: string, o?: { limit?: number; sortBy?: string }) => Promise<Array<{ title: string; lastModified: string }>>;
+      getPageMetadata?: (id: string) => Promise<Record<string, unknown> | null>;
+    } | undefined;
+    if (!pm?.getPagesByCreator || !pm?.getPageMetadata) return [];
+    try {
+      const recent = await pm.getPagesByCreator(username, { limit: 20, sortBy: 'lastModified-desc' });
+      const pages: RecentPageKeywords[] = [];
+      for (const entry of recent) {
+        if (excludeTitle && entry.title === excludeTitle) continue;
+        const meta = await pm.getPageMetadata(entry.title);
+        const raw = meta?.['user-keywords'];
+        const kws = Array.isArray(raw)
+          ? raw.filter((k): k is string => typeof k === 'string' && k.length > 0 && k !== 'private')
+          : [];
+        if (kws.length) {
+          pages.push({ title: entry.title, keywords: kws, modifiedAt: Date.parse(entry.lastModified) || 0 });
+        }
+        if (pages.length >= 15) break; // enough signal; keep the render cheap
+      }
+      return getSuggestedKeywordSets(pages, currentKeywords, { maxSets: 5 });
+    } catch (err) {
+      logger.warn('[WikiRoutes] getSuggestedKeywordSetsForUser failed:', err);
+      return [];
+    }
+  }
+
   private async getObservedUserKeywords(): Promise<string[]> {
     const sm = this.engine.getManager('SearchManager') as {
       getAllUserKeywords?: () => Promise<string[]>;
@@ -2450,6 +2490,12 @@ ${panes}
         systemCategories: systemCategories,
         userKeywords: userKeywords,
         userKeywordSuggestions: await this.getObservedUserKeywords(),
+        // #883: recency-weighted keyword sets from this author's recent pages.
+        keywordSetSuggestions: await this.getSuggestedKeywordSetsForUser(
+          (commonData as { user?: { username?: string } }).user?.username,
+          [], // brand-new page — nothing selected yet
+          pageName
+        ),
         defaultCategory: defaultCategory,
         statusOptions: this.getStatusOptions(),
         availableRoles: availableRoles,
@@ -2926,6 +2972,13 @@ ${panes}
         userKeywords: userKeywords,
         selectedUserKeywords: selectedUserKeywords,
         userKeywordSuggestions: await this.getObservedUserKeywords(),
+        // #883: recency-weighted keyword sets from this author's recent pages,
+        // excluding keywords already on this page and this page itself.
+        keywordSetSuggestions: await this.getSuggestedKeywordSetsForUser(
+          (commonData as { user?: { username?: string } }).user?.username,
+          Array.isArray(selectedUserKeywords) ? selectedUserKeywords : [],
+          pageName
+        ),
         availableRoles: availableRoles,
         pageData: pageData,
         defaultCategory: defaultCategory,
