@@ -15,6 +15,7 @@ import type {
   SchemaType
 } from '../types/Schema.js';
 import { pageToArticle } from '../utils/pageToArticle.js';
+import { dedupeKeywords, normalizeKeywordValue } from '../utils/keywordNormalizer.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type CatalogManager from './CatalogManager.js';
 import type ValidationManager from './ValidationManager.js';
@@ -526,6 +527,31 @@ class PageManager extends BaseManager implements CatalogSource {
    * const meta = await pageManager.getPageMetadata('Main');
    * console.log('Author:', meta.author);
    */
+  /**
+   * #915: map of canonical keyword value → registry display title, from the
+   * user-keywords catalog. Used to snap page keywords to the vocabulary's
+   * display form on save. Best-effort — empty map when CatalogManager is
+   * unavailable, so dedup still runs (just without title-snapping).
+   */
+  private async getUserKeywordCanonicalMap(): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    try {
+      const cm = this.engine.getManager<CatalogManager>('CatalogManager') as {
+        getProviderTerms?: (domain: string) => Promise<Array<{ term: string; label?: string }>>;
+      } | undefined;
+      if (!cm?.getProviderTerms) return map;
+      const terms = await cm.getProviderTerms('user-keywords');
+      for (const t of terms) {
+        const title = t.label ?? t.term;
+        const value = normalizeKeywordValue(title);
+        if (value && !map.has(value)) map.set(value, title);
+      }
+    } catch (err) {
+      logger.warn('[PageManager] getUserKeywordCanonicalMap failed:', err);
+    }
+    return map;
+  }
+
   async getPageMetadata(identifier: string): Promise<PageFrontmatter | null> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
@@ -694,6 +720,18 @@ class PageManager extends BaseManager implements CatalogSource {
     if (keywordsHadCapture && !normalizedSystemKeywords.some(kw => String(kw).toLowerCase() === 'capture')) {
       normalizedSystemKeywords.push('capture');
     }
+
+    // #915 (dedup enforcement, #869): collapse case/space/accent variants of a
+    // user-keyword to one entry, snapping to the registry's canonical title when
+    // catalogued. Runs on every save so `Dining` and `dining` can never coexist
+    // on a page, and pages converge on the catalog's display form over time.
+    const keywordsBeforeDedup = normalizedKeywords;
+    const canonicalByValue = await this.getUserKeywordCanonicalMap();
+    normalizedKeywords = dedupeKeywords(normalizedKeywords, canonicalByValue);
+    const keywordsDeduped =
+      normalizedKeywords.length !== keywordsBeforeDedup.length ||
+      normalizedKeywords.some((k, i) => k !== keywordsBeforeDedup[i]);
+
     const vocabChanged = keywordsHadLifecycle || keywordsHadCapture || systemHadLifecycle;
 
     // Strip the existing top-level `private` so the spread below can't carry a
@@ -713,7 +751,7 @@ class PageManager extends BaseManager implements CatalogSource {
       ...rawMetadataCopy,
       // Only override the keyword arrays if normalization actually changed them —
       // otherwise leave the fields exactly as the caller provided (including absent).
-      ...(keywordsHadPrivate || keywordsHadLifecycle || keywordsHadCapture ? { 'user-keywords': normalizedKeywords } : {}),
+      ...(keywordsHadPrivate || keywordsHadLifecycle || keywordsHadCapture || keywordsDeduped ? { 'user-keywords': normalizedKeywords } : {}),
       ...(vocabChanged && (systemHadLifecycle || keywordsHadCapture) ? { 'system-keywords': normalizedSystemKeywords } : {}),
       ...(migratedStatus !== undefined ? { status: migratedStatus } : {}),
       ...(wantsPrivate ? { private: true } : {})

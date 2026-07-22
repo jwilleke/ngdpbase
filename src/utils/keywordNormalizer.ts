@@ -69,3 +69,28 @@ export function keywordsCollide(a: string, b: string): boolean {
 export function toKeywordTerm(title: string): { term: string; label: string } {
   return { term: normalizeKeywordValue(title), label: title.trim() };
 }
+
+/**
+ * Collapse a keyword list to one entry per canonical value (#869 dedup
+ * enforcement): case/space/accent variants of the same keyword are merged,
+ * first occurrence wins ordering, empties dropped. When `canonicalByValue`
+ * (value → registry title) is supplied, a kept keyword is snapped to the
+ * registry's display title so `dining` converges on catalogued `Dining`;
+ * otherwise the first-seen form is kept trimmed. Pure — the registry lookup
+ * is passed in, not fetched here.
+ */
+export function dedupeKeywords(
+  keywords: readonly string[],
+  canonicalByValue?: ReadonlyMap<string, string>
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const kw of keywords) {
+    if (typeof kw !== 'string') continue;
+    const value = normalizeKeywordValue(kw);
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    out.push(canonicalByValue?.get(value) ?? kw.trim());
+  }
+  return out;
+}

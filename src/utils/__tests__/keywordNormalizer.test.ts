@@ -7,6 +7,7 @@ import {
   isValidKeywordValue,
   keywordsCollide,
   toKeywordTerm,
+  dedupeKeywords,
   KEYWORD_VALUE_MAX
 } from '../keywordNormalizer';
 
@@ -83,5 +84,27 @@ describe('keywordsCollide', () => {
 describe('toKeywordTerm', () => {
   it('splits a title into { term (value), label (title) }', () => {
     expect(toKeywordTerm('  Fine Dining ')).toEqual({ term: 'fine-dining', label: 'Fine Dining' });
+  });
+});
+
+describe('dedupeKeywords (#915)', () => {
+  it('merges case/space/accent variants, first occurrence wins', () => {
+    expect(dedupeKeywords(['Dining', 'travel', 'dining', 'Fine  Dining', 'fine-dining']))
+      .toEqual(['Dining', 'travel', 'Fine  Dining']);
+  });
+
+  it('drops empties and trims kept forms', () => {
+    expect(dedupeKeywords(['  Travel ', '', '!!!', 'travel'])).toEqual(['Travel']);
+  });
+
+  it('snaps kept keywords to the registry title when provided', () => {
+    const registry = new Map([['dining', 'Dining'], ['travel', 'Travel']]);
+    expect(dedupeKeywords(['dining', 'HIKING', 'Travel'], registry))
+      .toEqual(['Dining', 'HIKING', 'Travel']); // known snap to title, unknown kept as-typed
+  });
+
+  it('is a no-op for an already-canonical, variant-free list', () => {
+    const list = ['travel', 'dining', 'hiking'];
+    expect(dedupeKeywords(list)).toEqual(list);
   });
 });
