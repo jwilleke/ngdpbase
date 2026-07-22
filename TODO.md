@@ -16,13 +16,11 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 
 ## 🔴 P0 — Security & Critical
 
-- [#909](https://github.com/jwilleke/ngdpbase/issues/909) — [security] sharp < 0.35.0 — inherited libvips vulnerabilities (high)
+- *(none)*
 
 ## 🟠 P1
 
 - [#599](https://github.com/jwilleke/ngdpbase/issues/599) — [BUG] showdown ReDoS vulnerability (CVE-2024-1899) — no upstream patch available
-- [#910](https://github.com/jwilleke/ngdpbase/issues/910) — [security] transitive dep bumps — fast-uri, linkify-it, hono, @hono/node-server (fixes available)
-- [#908](https://github.com/jwilleke/ngdpbase/issues/908) — [bug] Addon page seeding leaves orphaned slug-named files + UUID-conflict on re-seed after slug rename
 - [#898](https://github.com/jwilleke/ngdpbase/issues/898) — [BUG] Storybook route-map generation orphans a route.png attachment on every regeneration
 - [#884](https://github.com/jwilleke/ngdpbase/issues/884) — [FEATURE] Search ranking: field weighting, URL tokenization, prefix typeahead, keyword-first
 - [#883](https://github.com/jwilleke/ngdpbase/issues/883) — [FEATURE] Suggested keywords from recent pages in the editor
@@ -32,7 +30,7 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 
 ## 🟡 P2
 
-- [#890](https://github.com/jwilleke/ngdpbase/issues/890) — [security] body-parser < 2.3.0 — invalid limit value silently disables size enforcement (DoS) (CVE-2026-12590)
+- [#914](https://github.com/jwilleke/ngdpbase/issues/914) — [security] body-parser < 2.3.0 in addon lockfiles (calendar/forms/journal) — DoS (CVE-2026-12590)
 - [#886](https://github.com/jwilleke/ngdpbase/issues/886) — [FEATURE] OpenGraph + schema.org meta tags on page views (config-gated)
 - [#885](https://github.com/jwilleke/ngdpbase/issues/885) — [FEATURE] sitemap.xml for public instances (config-gated)
 - [#873](https://github.com/jwilleke/ngdpbase/issues/873) — [FEATURE] Day-level media filtering for MediaPlugin / media API
