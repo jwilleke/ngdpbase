@@ -181,6 +181,7 @@
                             <div class="dropdown-menu w-100" id="userKeywordsSuggest" style="max-height:12rem;overflow-y:auto;"></div>
                         </div>
                         <script type="application/json" id="userKeywordsPool"><%- JSON.stringify(_kwPool) %></script>
+                        <script src="/js/keyword-typeahead.js" defer></script>
                         <%- include('_suggested-keywords', { keywordSetSuggestions: (typeof keywordSetSuggestions !== 'undefined' ? keywordSetSuggestions : []) }) %>
                     </div>
                 </div>
@@ -483,74 +484,8 @@
         if (e.target.classList.contains('audience-checkbox')) updateSelectedAudienceText();
     });
 
-    // #897: keyword typeahead — mirrors the media-item widget (#866).
-    (function () {
-        const input = document.getElementById('userKeywordsInput');
-        const menu = document.getElementById('userKeywordsSuggest');
-        const poolEl = document.getElementById('userKeywordsPool');
-        if (!input || !menu || !poolEl) return;
-        let pool = [];
-        try { pool = JSON.parse(poolEl.textContent) || []; } catch { pool = []; }
-        if (!pool.length) return;
-        let active = -1;
-
-        function tokens() {
-            return input.value.split(',').map(function (t) { return t.trim(); });
-        }
-
-        function hide() { menu.classList.remove('show'); menu.innerHTML = ''; active = -1; }
-
-        function pick(label) {
-            const parts = tokens();
-            parts[parts.length - 1] = label;
-            input.value = parts.filter(Boolean).join(', ');
-            hide();
-            input.focus();
-        }
-
-        function update() {
-            const parts = tokens();
-            const current = (parts[parts.length - 1] || '').toLowerCase();
-            if (!current) { hide(); return; }
-            const chosen = parts.slice(0, -1).map(function (t) { return t.toLowerCase(); });
-            const matches = pool.filter(function (label) {
-                const l = String(label).toLowerCase();
-                return l.indexOf(current) !== -1 && l !== current && chosen.indexOf(l) === -1;
-            }).slice(0, 8);
-            if (!matches.length) { hide(); return; }
-            menu.innerHTML = '';
-            matches.forEach(function (label, i) {
-                const item = document.createElement('button');
-                item.type = 'button';
-                item.className = 'dropdown-item py-1' + (i === active ? ' active' : '');
-                item.style.fontSize = '0.85em';
-                item.textContent = label;
-                // mousedown fires before the input's blur, so the pick still lands
-                item.addEventListener('mousedown', function (e) { e.preventDefault(); pick(label); });
-                menu.appendChild(item);
-            });
-            menu.classList.add('show');
-        }
-
-        input.addEventListener('input', function () { active = -1; update(); });
-        input.addEventListener('blur', function () { hide(); });
-        input.addEventListener('keydown', function (e) {
-            if (!menu.classList.contains('show')) return;
-            const items = menu.querySelectorAll('.dropdown-item');
-            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                e.preventDefault();
-                active = e.key === 'ArrowDown'
-                    ? (active + 1) % items.length
-                    : (active - 1 + items.length) % items.length;
-                items.forEach(function (el, i) { el.classList.toggle('active', i === active); });
-            } else if ((e.key === 'Enter' || e.key === 'Tab') && active >= 0) {
-                e.preventDefault();
-                pick(items[active].textContent);
-            } else if (e.key === 'Escape') {
-                hide();
-            }
-        });
-    })();
+    // #897/#915: user-keywords typeahead is now shared — see
+    // /js/keyword-typeahead.js (loaded next to the keyword field above).
 
     // Insert attachment markup at cursor position
     function insertAttachmentMarkup(url, name, mimeType) {
