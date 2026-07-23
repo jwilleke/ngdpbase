@@ -70,6 +70,62 @@ export function toKeywordTerm(title: string): { term: string; label: string } {
   return { term: normalizeKeywordValue(title), label: title.trim() };
 }
 
+/**
+ * Parse hierarchical tag values (#917) into `/`-joined canonical-value paths.
+ * digiKam/Lightroom store the tag tree two ways; both are unioned + deduped:
+ *   - `XMP-lr:HierarchicalSubject` — `|`-separated (`Places|USA|Colorado|Denver`)
+ *   - `XMP-digiKam:TagsList`       — `/`-separated (`Places/USA/Colorado/Denver`)
+ * Each segment is run through `normalizeKeywordValue`, so a path becomes
+ * `places/usa/colorado/denver` (leaf = last segment). Empty segments are
+ * dropped; a value that is a scalar string is treated as a single-entry list.
+ */
+export function parseHierarchicalTags(hierarchicalSubject: unknown, tagsList: unknown): string[] {
+  const out = new Set<string>();
+  const add = (raw: unknown, sep: string): void => {
+    const list = Array.isArray(raw) ? raw : (typeof raw === 'string' ? [raw] : []);
+    for (const entry of list) {
+      if (typeof entry !== 'string') continue;
+      const segs = entry.split(sep).map(s => normalizeKeywordValue(s)).filter(Boolean);
+      if (segs.length) out.add(segs.join('/'));
+    }
+  };
+  add(hierarchicalSubject, '|');
+  add(tagsList, '/');
+  return [...out];
+}
+
+/**
+ * Build a leaf→path map from many hierarchical paths (#917) — the library-wide
+ * "where does this leaf keyword live" lookup #918 uses to place a newly-added
+ * keyword at its known hierarchical home. Leaf = last path segment; on conflict
+ * the most frequently-seen path wins (ties broken by longest, then first).
+ */
+export function buildLeafPathMap(paths: Iterable<string>): Map<string, string> {
+  const counts = new Map<string, Map<string, number>>(); // leaf → path → count
+  for (const p of paths) {
+    if (typeof p !== 'string' || !p) continue;
+    const segs = p.split('/');
+    const leaf = segs[segs.length - 1];
+    if (!leaf) continue;
+    const byPath = counts.get(leaf) ?? new Map<string, number>();
+    byPath.set(p, (byPath.get(p) ?? 0) + 1);
+    counts.set(leaf, byPath);
+  }
+  const map = new Map<string, string>();
+  for (const [leaf, byPath] of counts) {
+    let best = '', bestN = -1;
+    for (const [p, n] of byPath) {
+      if (n > bestN || (n === bestN && (p.length > best.length || (p.length === best.length && p < best)))) {
+        best = p; bestN = n;
+      }
+    }
+    // Only a genuine hierarchy is useful — a leaf whose only "path" is itself
+    // (root-level tag) carries no placement information.
+    if (best.includes('/')) map.set(leaf, best);
+  }
+  return map;
+}
+
 /** One keyword display form seen somewhere, with where it was seen (#919). */
 export interface KeywordFormStat {
   form: string;

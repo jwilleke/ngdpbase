@@ -9,6 +9,8 @@ import {
   toKeywordTerm,
   dedupeKeywords,
   groupKeywordVariants,
+  parseHierarchicalTags,
+  buildLeafPathMap,
   KEYWORD_VALUE_MAX
 } from '../keywordNormalizer';
 
@@ -85,6 +87,48 @@ describe('keywordsCollide', () => {
 describe('toKeywordTerm', () => {
   it('splits a title into { term (value), label (title) }', () => {
     expect(toKeywordTerm('  Fine Dining ')).toEqual({ term: 'fine-dining', label: 'Fine Dining' });
+  });
+});
+
+describe('parseHierarchicalTags (#917)', () => {
+  it('parses HierarchicalSubject (|) and TagsList (/) to normalized value paths', () => {
+    expect(parseHierarchicalTags('Places|USA|Colorado|Denver', undefined))
+      .toEqual(['places/usa/colorado/denver']);
+    expect(parseHierarchicalTags(undefined, 'Places/USA/Colorado/Denver'))
+      .toEqual(['places/usa/colorado/denver']);
+  });
+
+  it('unions both sources and dedupes identical paths', () => {
+    const out = parseHierarchicalTags('Places|USA|Denver', 'Places/USA/Denver');
+    expect(out).toEqual(['places/usa/denver']);
+  });
+
+  it('accepts arrays and normalizes each segment (spaces/accents)', () => {
+    const out = parseHierarchicalTags(['People|Family|José García', 'Trips|2026 Trip West'], undefined);
+    expect(out).toEqual(['people/family/jose-garcia', 'trips/2026-trip-west']);
+  });
+
+  it('drops empty segments and non-string / absent input', () => {
+    expect(parseHierarchicalTags('A||B', undefined)).toEqual(['a/b']);
+    expect(parseHierarchicalTags(undefined, undefined)).toEqual([]);
+    expect(parseHierarchicalTags(42, {})).toEqual([]);
+  });
+});
+
+describe('buildLeafPathMap (#917)', () => {
+  it('maps each leaf to its path; most-frequent path wins a conflict', () => {
+    const map = buildLeafPathMap([
+      'places/usa/colorado/denver',
+      'places/usa/colorado/denver',
+      'places/co/denver'  // minority path for the same leaf
+    ]);
+    expect(map.get('denver')).toBe('places/usa/colorado/denver');
+  });
+
+  it('omits root-only leaves (a leaf with no genuine hierarchy)', () => {
+    const map = buildLeafPathMap(['denver', 'places/usa/boulder']);
+    expect(map.has('denver')).toBe(false);        // no '/' → no placement info
+    expect(map.get('boulder')).toBe('places/usa/boulder');
   });
 });
 

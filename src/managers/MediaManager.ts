@@ -489,6 +489,16 @@ class MediaManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * #917: library-wide leaf→path map from hierarchical media tags
+   * (HierarchicalSubject / TagsList). Empty when the provider doesn't index
+   * hierarchy. Consumed by #918 to preserve digiKam tag trees on write-back.
+   */
+  async getKeywordLeafPaths(): Promise<Record<string, string>> {
+    if (!this.provider) return {};
+    return this.provider.getKeywordLeafPaths?.() ?? {};
+  }
+
+  /**
    * Search media items, filtering out private items that the current user
    * cannot access.
    *

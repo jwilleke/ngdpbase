@@ -17,6 +17,7 @@ import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs-extra';
 import { transformImage, parseSize } from '../utils/imageTransform.js';
+import { parseHierarchicalTags, buildLeafPathMap } from '../utils/keywordNormalizer.js';
 import { extractVideoFrame } from '../utils/videoFrame.js';
 import { ExifTool } from 'exiftool-vendored';
 import { minimatch } from 'minimatch';
@@ -465,6 +466,26 @@ class FileSystemMediaProvider extends BaseMediaProvider {
   }
 
   /**
+   * #917: library-wide leaf→path map built from every item's hierarchical
+   * `keywordPaths`. Keys and values are canonical-value forms; a leaf with no
+   * genuine hierarchy (only a root-level occurrence) is omitted. #918 uses this
+   * to place a newly-added keyword at its known hierarchical home.
+   */
+  getKeywordLeafPaths(): Promise<Record<string, string>> {
+    const all: string[] = [];
+    for (const item of Object.values(this.index)) {
+      const paths = item.metadata?.keywordPaths;
+      if (!Array.isArray(paths)) continue;
+      for (const p of paths) {
+        // #869 principle #5: `auto/*` is machine auto-tagging, excluded from the
+        // canonical vocabulary — so it must not seed canonical keyword placement.
+        if (typeof p === 'string' && !p.startsWith('auto/')) all.push(p);
+      }
+    }
+    return Promise.resolve(Object.fromEntries(buildLeafPathMap(all)));
+  }
+
+  /**
    * Find the first item whose filename (basename) exactly matches.
    *
    * Iterates the in-memory index; O(n) but the index is small enough that
@@ -873,6 +894,12 @@ class FileSystemMediaProvider extends BaseMediaProvider {
           imageDescription: (rawTags.ImageDescription ?? null) as string | null,
           description: rawTags.Description ?? rawTags.ImageDescription ?? null,
           keywords: rawTags.Keywords ?? null,
+          // #917: hierarchical tag paths (digiKam/Lightroom), normalized to
+          // canonical-value `/`-joined paths; omitted when the file is flat-only.
+          ...((): { keywordPaths?: string[] } => {
+            const paths = parseHierarchicalTags(rawTags.HierarchicalSubject, rawTags.TagsList);
+            return paths.length ? { keywordPaths: paths } : {};
+          })(),
           make: rawTags.Make ?? null,
           model: rawTags.Model ?? null,
           gpsLatitude: lat ?? null,

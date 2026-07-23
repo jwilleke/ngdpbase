@@ -186,6 +186,14 @@ export interface AssetRecord {
   description?: string;
   /** Controlled-vocabulary keywords / tags for categorisation — schema.org/keywords */
   keywords: string[];
+  /**
+   * Hierarchical tag paths (#917) read from XMP-lr:HierarchicalSubject and
+   * XMP-digiKam:TagsList, each a `/`-joined path of canonical keyword values
+   * (e.g. `places/usa/colorado/denver`; leaf = last segment). Present only when
+   * the file carries hierarchical tags; the flat `keywords` remain the primary
+   * surface. Used to preserve/repair digiKam tag trees on write-back (#918).
+   */
+  keywordPaths?: string[];
 
   // --- Technical ---
   /** MIME type (e.g. "image/jpeg") — schema.org/encodingFormat */

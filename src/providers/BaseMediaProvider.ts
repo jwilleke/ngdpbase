@@ -193,6 +193,14 @@ abstract class BaseMediaProvider implements AssetProvider {
   }
 
   /**
+   * #917: leaf→path map from hierarchical keyword tags. Default empty; overridden
+   * in providers that index `keywordPaths`.
+   */
+  getKeywordLeafPaths(): Promise<Record<string, string>> {
+    return Promise.resolve({});
+  }
+
+  /**
    * Rebuild the media index from scratch, discarding all existing entries.
    *
    * Default implementation returns an empty ScanResult; override in providers
