@@ -18,9 +18,13 @@
  *   `<span class="feed-badge feed-badge--<slugged-value>">VALUE</span>` — core
  *   CSS ships variants for the aviation color codes green/yellow/orange/red)
  * · link (whitespace-separated `column=urlTemplate` entries; `:prop`
- *   placeholders resolve from the record's properties, URI-encoded — e.g.
- *   `link='volcano=https://volcano.si.edu/volcano.cfm?vn=:gvp'`. A cell whose
- *   template has an unresolvable placeholder renders as plain text.
+ *   placeholders resolve from the record's properties. An *embedded* placeholder
+ *   is URI-encoded as a segment — e.g.
+ *   `link='volcano=https://volcano.si.edu/volcano.cfm?vn=:gvp'`. A *bare* template
+ *   (just `:prop`) is used verbatim, since the property already holds a full URL —
+ *   e.g. `link='title=:link'` for an RSS `<link>` (#922). A cell whose template
+ *   has an unresolvable placeholder (or a bare value that isn't a safe URL)
+ *   renders as plain text.
  *   NOTE: express-style `:prop`, NOT `{prop}` — the `[{...}]` token grammar
  *   cannot contain a literal brace (RenderingManager's macroRegex is
  *   `\[\{([^}]+)\}\]`), so a brace placeholder truncates the token).
@@ -80,14 +84,40 @@ function parseLinkParam(raw: unknown): Record<string, string> {
 }
 
 /**
- * Resolve a `:prop` URL template from a record's properties (URI-encoded).
+ * A value safe to use verbatim as an href: absolute http(s), protocol-relative
+ * (`//host`), or root-relative (`/path`). Rejects `javascript:`/`data:`/`mailto:`
+ * and anything else that would become a live or non-navigational href (#922).
+ */
+function isSafeHref(v: string): boolean {
+  return /^https?:\/\//i.test(v) || /^\/\/[^/]/.test(v) || (v.startsWith('/') && !v.startsWith('//'));
+}
+
+/**
+ * Resolve a `:prop` URL template from a record's properties.
  * Placeholders are express-style (`:gvp`) because the plugin-token grammar
  * cannot carry braces. A placeholder must start with a letter/underscore, so
  * ports (`:8080`) and the `https://` colon never match. Returns null when any
  * placeholder is missing/empty — the cell stays a plain value rather than
  * linking to a broken URL.
+ *
+ * #922: two cases —
+ *   - **Bare placeholder** (the whole template is one `:prop`): the value is
+ *     already a complete target (an RSS `<link>`, an alert id URL) and is used
+ *     VERBATIM — component-encoding it would turn `https://…` into
+ *     `https%3A%2F%2F…`, which browsers resolve as a relative path. Only a
+ *     well-formed http(s)/protocol-relative/root-relative URL is accepted (else
+ *     no link — avoids emitting a `javascript:` href).
+ *   - **Embedded placeholder(s)** in surrounding literal template text: each
+ *     substituted value is a URL *segment*, so it is percent-encoded as before.
  */
 function resolveLinkTemplate(template: string, properties: Record<string, unknown>): string | null {
+  const bare = /^:([A-Za-z_][A-Za-z0-9_]*)$/.exec(template.trim());
+  if (bare) {
+    const v = cellString(properties[bare[1]]).trim();
+    if (v === '') return null;
+    return isSafeHref(v) ? v : null;
+  }
+
   let missing = false;
   const url = template.replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, (_m, prop: string) => {
     const v = cellString(properties[prop]);

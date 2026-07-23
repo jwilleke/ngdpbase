@@ -122,6 +122,33 @@ describe('[DataFeed] plugin (#685)', () => {
     expect(out).toContain('Kilauea');
   });
 
+  it('#922: a bare :prop template uses a full-URL property verbatim (no double-encode)', async () => {
+    const r = [{ sourceRecordId: 'a', fetchedAt: 'x', properties: { title: 'Etna', link: 'https://www.volcanodiscovery.com/volcanoes/today.html' } }];
+    const out = await exec({ source: 'q', columns: 'title', link: 'title=:link' }, r);
+    expect(out).toContain('<a href="https://www.volcanodiscovery.com/volcanoes/today.html" target="_blank" rel="noopener noreferrer">Etna</a>');
+    expect(out).not.toContain('https%3A%2F%2F'); // not percent-encoded into a relative path
+  });
+
+  it('#922: an embedded :prop is still segment-encoded', async () => {
+    const r = [{ sourceRecordId: 'a', fetchedAt: 'x', properties: { gvp: '123 456' } }];
+    const out = await exec({ source: 'q', columns: 'gvp', link: 'gvp=https://x.test/v?vn=:gvp' }, r);
+    expect(out).toContain('vn=123%20456');
+  });
+
+  it('#922: a bare :prop rejects an unsafe scheme (no javascript: href)', async () => {
+    const r = [{ sourceRecordId: 'a', fetchedAt: 'x', properties: { title: 'X', link: 'javascript:alert(1)' } }];
+    const out = await exec({ source: 'q', columns: 'title', link: 'title=:link' }, r);
+    expect(out).not.toContain('javascript:');
+    expect(out).not.toContain('<a '); // no link emitted at all
+  });
+
+  it('#922: a bare :prop with a missing value stays plain text', async () => {
+    const r = [{ sourceRecordId: 'a', fetchedAt: 'x', properties: { title: 'X' } }];
+    const out = await exec({ source: 'q', columns: 'title', link: 'title=:link' }, r);
+    expect(out).not.toContain('<a ');
+    expect(out).toContain('X');
+  });
+
   it('badge and link compose (linked pill)', async () => {
     const out = await exec(
       { source: 'q', columns: 'color', badge: 'color', link: 'color=https://x.test/:gvp' },
