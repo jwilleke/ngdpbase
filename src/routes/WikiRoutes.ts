@@ -39,7 +39,7 @@ import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../
 import { stringifyJsonLdForScript, wantsJsonLd } from '../utils/buildPageJsonLd.js';
 import { articleToPageJsonLd } from '../utils/articleToPageJsonLd.js';
 import { getSuggestedKeywordSets, type RecentPageKeywords, type KeywordSetSuggestion } from '../utils/suggestedKeywords.js';
-import { normalizeKeywordValue, groupKeywordVariants, type KeywordFormStat } from '../utils/keywordNormalizer.js';
+import { normalizeKeywordValue, groupKeywordVariants, dedupeKeywords, type KeywordFormStat } from '../utils/keywordNormalizer.js';
 import type { Article } from '../types/Schema.js';
 import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
@@ -1760,6 +1760,27 @@ class WikiRoutes {
     } | undefined;
     const provider = catalogManager?.getUserKeywordsProvider?.();
     return provider ? provider as ReturnType<WikiRoutes['getUserKeywordsProvider']> : null;
+  }
+
+  /**
+   * #918: map of canonical keyword value → registry display title, from the
+   * user-keywords catalog. Used to snap keywords to the vocabulary's display
+   * form on media write-back. Best-effort — empty map when the catalog is
+   * unavailable (dedup still runs, just without title-snapping).
+   */
+  private async getUserKeywordCanonicalMap(): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    try {
+      const config = (await this.getUserKeywordsProvider()?.getCatalogObject()) || {};
+      for (const [key, entry] of Object.entries(config)) {
+        const title = (typeof entry?.label === 'string' && entry.label) ? entry.label : key;
+        const value = normalizeKeywordValue(title);
+        if (value && !map.has(value)) map.set(value, title);
+      }
+    } catch (err) {
+      logger.warn('[WikiRoutes] getUserKeywordCanonicalMap failed:', err);
+    }
+    return map;
   }
 
   /**
@@ -13808,6 +13829,16 @@ ${description}
       }
       if (Object.keys(patch).length === 0) {
         return res.status(400).json({ error: 'No editable fields in request body' });
+      }
+
+      // #918 (Slice 2 of #869): canonicalize keywords to catalog TITLES before
+      // they are written into the file's IPTC:Keywords / XMP-dc:Subject. Writing
+      // the vocabulary's display form (not a lowercase/spacing variant) is what
+      // stops digiKam growing duplicate variants on re-read — the guarantee even
+      // holds for a direct API call that bypassed the editor's typeahead. Same
+      // snap-to-title + case/space/accent de-dup the page save applies (#915).
+      if (Array.isArray(patch.keywords)) {
+        patch.keywords = dedupeKeywords(patch.keywords, await this.getUserKeywordCanonicalMap());
       }
 
       const updated = await mediaManager.updateItemMetadata(req.params.id, patch);
