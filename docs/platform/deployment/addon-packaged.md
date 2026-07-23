@@ -1,6 +1,6 @@
 # Packaged Addons (npm distribution)
 
-> See also: [`addon-architecture.md`](./addon-architecture.md) for the three distribution models, [`addon-development-guide.md`](./addon-development-guide.md) for building an addon, and [`addon-page-handling.md`](./addon-page-handling.md) for how an addon's pages seed/update. This document covers the **`packaged`** model (#673): shipping an addon as an npm package discovered from `node_modules`.
+> See also: [`addon-architecture.md`](../addon-architecture.md) for the three distribution models, [`addon-development-guide.md`](../addon-development-guide.md) for building an addon, and [`addon-page-handling.md`](../addon-page-handling.md) for how an addon's pages seed/update. This document covers the **`packaged`** model (#673): shipping an addon as an npm package discovered from `node_modules`.
 
 ---
 
@@ -16,18 +16,29 @@ It uses the **identical** slug / module / `register()` contract as `bundled` and
 |---|---|---|
 | **bundled** (`addons/<slug>/` in this repo) | First-party addons that ship *with* ngdpbase and release on its cadence (feeds, calendar, journal, forms, elasticsearch) | Coupled to ngdpbase releases; not for third parties |
 | **drop-in** (a directory in `addons-path`) | Local development, quick iteration, or a simple/private addon copied into the image / mounted as a volume | No version pinning — "whatever is in the directory at boot" (the drift that caused #672) |
-| **packaged** (`npm install`) | **Shipping an independent addon to production reproducibly** — versioned, lockfile-pinned, Renovate-tracked; installable into a *generic* ngdpbase image with no bespoke Dockerfile | Requires an npm registry + a publish step |
+| **packaged** (`npm install`) | **Production distribution of an independent addon** — versioned, lockfile-pinned, Renovate-tracked; installable into a *generic* ngdpbase image with no bespoke Dockerfile. **The recommended model for `type: 'domain'` addons in production** (see below) | Requires an npm registry + a publish step |
 
-### Recommendation
+### Policy
 
-**`packaged` is the recommended model for deploying an independent addon to production.** It's the only one that gives reproducible, version-pinned, auditable delivery, and it lets a generic `ghcr.io/jwilleke/ngdpbase` image host any addon via `npm install` rather than a per-addon `FROM ngdpbase + COPY` image. It's what the #672 version-drift outage needed.
+- **`type: 'domain'` addons → `packaged` for production, `drop-in` for development.** A domain addon is a whole downstream product built on ngdpbase (e.g. `geohazardwatch`) — the most independent kind, deployed to production, versioned on its own cadence. That is precisely the case `packaged` exists for, and precisely the case that hit the #672 version-drift outage under `drop-in`. Develop it as a `drop-in` (edit-in-place, no publish cycle); ship it to production as a `packaged` npm dependency.
+- **`bundled`** stays the model for first-party addons that are part of ngdpbase's release surface.
+- **`drop-in`** remains supported and is the right choice for local development and truly private one-offs where standing up a registry isn't worth it.
 
-**It is not the *only* supported model, and shouldn't be forced everywhere:**
+All three remain first-class — the platform makes no trust distinction between them. The recommendation is about *how to ship*, not what an addon may do.
 
-- **Keep `bundled`** for addons that are genuinely part of ngdpbase and version with it.
-- **Keep `drop-in`** for development (edit files in place, no publish/install cycle) and for a truly private one-off where standing up a registry isn't worth it.
+### Migrating a domain addon from drop-in to packaged
 
-So: recommend `packaged` for *production distribution of independent addons*; use `drop-in` while developing that same addon; `bundled` stays for core. All three remain first-class — the platform makes no trust distinction between them.
+A domain addon today typically owns its whole image (`FROM ngdpbase + WORKDIR + npm ci + COPY addons + labels`). Going packaged relocates that:
+
+| Today (drop-in image) | Packaged |
+|---|---|
+| `COPY addons ./addons` | `RUN npm install @scope/<slug>-addon@x.y.z` into a generic ngdpbase image |
+| the addon's own deps via its `npm ci` | the addon package's `dependencies` — pulled transitively by the install |
+| image `LABEL`s / branding | deployment config (`ngdpbase.application-name`, theme) or a thin wrapper image |
+| runtime data volume (quakes/HANS/etc.) | **unchanged** — stays mounted; never was in the image |
+| `NGDPBASE_VERSION` ARG bump (base image) | **still the base image pin** — but now *independent* of the addon version, each pinned + Renovate-tracked separately |
+
+Net: the bespoke per-addon image collapses to a generic base image + one `npm install` line + config. The two version axes (ngdpbase base, addon package) decouple, which is what removes the drift.
 
 ## How discovery works
 
@@ -104,11 +115,11 @@ Renovate then tracks `@jwilleke/geohazardwatch-addon` against npm semver — the
 
 ## Pages, themes, and everything else
 
-Identical to the other models. A packaged addon's `pages/` seed and update exactly as described in [`addon-page-handling.md`](./addon-page-handling.md) (first-load seed → `{uuid}.md`; opt-in reseed via `ngdpbase.addons.page-reseed`), and its `register()` gets the same engine. Only *how the addon directory arrives* differs.
+Identical to the other models. A packaged addon's `pages/` seed and update exactly as described in [`addon-page-handling.md`](../addon-page-handling.md) (first-load seed → `{uuid}.md`; opt-in reseed via `ngdpbase.addons.page-reseed`), and its `register()` gets the same engine. Only *how the addon directory arrives* differs.
 
 ## Related
 
-- [`addon-architecture.md`](./addon-architecture.md#distribution-models) — the three models table.
-- [`addon-development-guide.md`](./addon-development-guide.md) — building an addon.
-- [`addon-page-handling.md`](./addon-page-handling.md) — page seeding/reseed.
+- [`addon-architecture.md`](../addon-architecture.md#distribution-models) — the three models table.
+- [`addon-development-guide.md`](../addon-development-guide.md) — building an addon.
+- [`addon-page-handling.md`](../addon-page-handling.md) — page seeding/reseed.
 - [#673](https://github.com/jwilleke/ngdpbase/issues/673) — this feature. [#672](https://github.com/jwilleke/ngdpbase/issues/672) — the version-drift outage it addresses.

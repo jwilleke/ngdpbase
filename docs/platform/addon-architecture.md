@@ -20,7 +20,7 @@ Pick a model by how the addon is owned and shipped:
 
 - **bundled** — the addon is part of the platform's release surface (e.g. `forms`, `calendar`, `elasticsearch`, `journal`). Versioned with ngdpbase. Always available.
 - **drop-in** — the addon has its own repo and release cadence, and the operator drops it onto the filesystem at deployment time. The current model for `geohazardwatch`-style domain addons. No build-system coupling to ngdpbase.
-- **packaged** — same independent ownership as drop-in, but distributed as an npm package and pinned via the consumer's `package.json`. The right model for container deployments where reproducibility matters: one `npm install <pkg>@<version>` line in the generated Dockerfile, no cross-repo build context. **Recommended for production distribution of independent addons** — full guide: [`addon-packaged.md`](./addon-packaged.md).
+- **packaged** — same independent ownership as drop-in, but distributed as an npm package and pinned via the consumer's `package.json`. The right model for container deployments where reproducibility matters: one `npm install <pkg>@<version>` line in the generated Dockerfile, no cross-repo build context. **Recommended for production distribution of independent addons** — full guide: [`addon-packaged.md`](./deployment/addon-packaged.md).
 
 The platform makes no trust distinction between models. A `type: 'domain'` addon (see §3) can be bundled, drop-in, or packaged.
 
