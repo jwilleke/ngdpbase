@@ -121,8 +121,11 @@
                                     <div class="mb-2 position-relative">
                                         <label class="form-label mb-0" for="mediaEditKeywords" style="font-size:0.85em;">Keywords (comma-separated)</label>
                                         <input type="text" class="form-control form-control-sm" id="mediaEditKeywords" autocomplete="off"
+                                               data-kw-typeahead data-kw-menu="mediaEditKeywordsSuggest" data-kw-pool="mediaKeywordsPool"
                                                value="<%= (item.metadata && item.metadata.keywords) ? (Array.isArray(item.metadata.keywords) ? item.metadata.keywords : [item.metadata.keywords]).join(', ') : '' %>">
                                         <div class="dropdown-menu w-100" id="mediaEditKeywordsSuggest" style="max-height:12rem;overflow-y:auto;"></div>
+                                        <script type="application/json" id="mediaKeywordsPool"><%- JSON.stringify(typeof userKeywords !== 'undefined' ? userKeywords : []) %></script>
+                                        <script src="/js/keyword-typeahead.js" defer></script>
                                     </div>
                                     <div class="mb-2">
                                         <label class="form-label mb-0" for="mediaEditDate" style="font-size:0.85em;">Date taken</label>
@@ -330,74 +333,8 @@
     });
 })();
 
-// Keywords typeahead — suggests the configured user-keywords catalog for the
-// token currently being typed (text after the last comma). Absent without
-// asset-edit permission (form not rendered).
-(function () {
-    const input = document.getElementById('mediaEditKeywords');
-    const menu = document.getElementById('mediaEditKeywordsSuggest');
-    if (!input || !menu) return;
-    const catalog = <%- JSON.stringify(typeof userKeywords !== 'undefined' ? userKeywords : []) %>;
-    if (!catalog.length) return;
-    let active = -1;
-
-    function tokens() {
-        return input.value.split(',').map(function (t) { return t.trim(); });
-    }
-
-    function hide() { menu.classList.remove('show'); menu.innerHTML = ''; active = -1; }
-
-    function pick(label) {
-        const parts = tokens();
-        parts[parts.length - 1] = label;
-        input.value = parts.filter(Boolean).join(', ');
-        hide();
-        input.focus();
-    }
-
-    function update() {
-        const parts = tokens();
-        const current = (parts[parts.length - 1] || '').toLowerCase();
-        if (!current) { hide(); return; }
-        const chosen = parts.slice(0, -1).map(function (t) { return t.toLowerCase(); });
-        const matches = catalog.filter(function (label) {
-            const l = label.toLowerCase();
-            return l.indexOf(current) !== -1 && l !== current && chosen.indexOf(l) === -1;
-        }).slice(0, 8);
-        if (!matches.length) { hide(); return; }
-        menu.innerHTML = '';
-        matches.forEach(function (label, i) {
-            const item = document.createElement('button');
-            item.type = 'button';
-            item.className = 'dropdown-item py-1' + (i === active ? ' active' : '');
-            item.style.fontSize = '0.85em';
-            item.textContent = label;
-            // mousedown fires before the input's blur, so the pick still lands
-            item.addEventListener('mousedown', function (e) { e.preventDefault(); pick(label); });
-            menu.appendChild(item);
-        });
-        menu.classList.add('show');
-    }
-
-    input.addEventListener('input', function () { active = -1; update(); });
-    input.addEventListener('blur', function () { hide(); });
-    input.addEventListener('keydown', function (e) {
-        if (!menu.classList.contains('show')) return;
-        const items = menu.querySelectorAll('.dropdown-item');
-        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-            e.preventDefault();
-            active = e.key === 'ArrowDown'
-                ? (active + 1) % items.length
-                : (active - 1 + items.length) % items.length;
-            items.forEach(function (el, i) { el.classList.toggle('active', i === active); });
-        } else if ((e.key === 'Enter' || e.key === 'Tab') && active >= 0) {
-            e.preventDefault();
-            pick(items[active].textContent);
-        } else if (e.key === 'Escape') {
-            hide();
-        }
-    });
-})();
+// Keywords typeahead is the shared widget — /js/keyword-typeahead.js (#916),
+// bound via data-kw-* attrs on #mediaEditKeywords above.
 
 // Keyboard navigation
 (function () {

@@ -1,29 +1,33 @@
 /**
- * Shared user-keywords typeahead (#897, #915). Initializes on the editor
- * keyword field (#userKeywordsInput + #userKeywordsSuggest + #userKeywordsPool),
- * used by both create.ejs and _basicEditor.ejs.
+ * Shared user-keywords typeahead (#897, #915, #916). One widget for every
+ * keyword field — the page editor (create.ejs / _basicEditor.ejs) and the media
+ * item edit form (media-item.ejs) — so one vocabulary and one behavior serve
+ * pages and media alike.
  *
- * #915 additions over the original inline widget:
- *   - Case-insensitive matching that SNAPS a committed token to the vocabulary's
- *     canonical display form (typing `dining` yields catalogued `Dining`).
+ * Markup contract — any number of fields per page:
+ *   <input data-kw-typeahead data-kw-menu="<menuId>" data-kw-pool="<poolId>">
+ *   <div class="dropdown-menu" id="<menuId>"></div>
+ *   <script type="application/json" id="<poolId>">["Label A","Label B", …]</script>
+ *
+ * Behavior:
+ *   - Case-insensitive matching; a committed token SNAPS to the vocabulary's
+ *     canonical display form (typing `dining` yields catalogued `Dining`), on
+ *     both pick and blur.
  *   - Explicit-add affordance: when the current token isn't an exact vocabulary
- *     term, the dropdown offers "➕ Add new keyword: '<token>'" so creating a new
- *     keyword is a deliberate choice, not a typo side effect.
- *   - On blur, exact case-insensitive matches snap to canonical form and the
- *     list is de-duplicated case-insensitively — immediate feedback mirroring
- *     the server-side save enforcement.
+ *     term, the dropdown offers "➕ Add new keyword: '<token>'", so new keywords
+ *     are a deliberate choice, not a typo side effect.
+ *   - Case-insensitive de-dup of the field on blur.
  */
 (function () {
-  function init() {
-    var input = document.getElementById('userKeywordsInput');
-    var menu = document.getElementById('userKeywordsSuggest');
-    var poolEl = document.getElementById('userKeywordsPool');
-    if (!input || !menu || !poolEl || input.dataset.kwBound) return;
+  function bind(input) {
+    if (input.dataset.kwBound) return;
+    var menu = document.getElementById(input.getAttribute('data-kw-menu') || '');
+    var poolEl = document.getElementById(input.getAttribute('data-kw-pool') || '');
+    if (!menu || !poolEl) return;
     input.dataset.kwBound = '1';
 
     var pool = [];
     try { pool = JSON.parse(poolEl.textContent) || []; } catch (e) { pool = []; }
-    // Lowercase → canonical display label, for case-insensitive snapping.
     var byLower = {};
     pool.forEach(function (label) { byLower[String(label).toLowerCase()] = label; });
     var active = -1;
@@ -71,10 +75,7 @@
       var exact = Object.prototype.hasOwnProperty.call(byLower, current);
 
       menu.innerHTML = '';
-      matches.forEach(function (label, i) {
-        menu.appendChild(mkItem(label, label, i === active, false));
-      });
-      // Explicit-add: only when the token isn't already a known vocabulary term.
+      matches.forEach(function (label, i) { menu.appendChild(mkItem(label, label, i === active, false)); });
       if (!exact && currentRaw.length) {
         var addIdx = matches.length;
         menu.appendChild(mkItem('➕ Add new keyword: "' + currentRaw + '"', currentRaw, addIdx === active, true));
@@ -85,7 +86,6 @@
 
     input.addEventListener('input', function () { active = -1; update(); });
     input.addEventListener('blur', function () {
-      // Snap exact matches to canonical form + de-dup on leave.
       input.value = dedupeCanonical(tokens()).join(', ');
       setTimeout(hide, 120);
     });
@@ -103,6 +103,11 @@
         hide();
       }
     });
+  }
+
+  function init() {
+    var inputs = document.querySelectorAll('input[data-kw-typeahead]');
+    for (var i = 0; i < inputs.length; i++) bind(inputs[i]);
   }
 
   if (document.readyState === 'loading') {

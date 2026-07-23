@@ -176,6 +176,7 @@
                         <label style="font-weight:bold;" for="userKeywordsInput">User Keywords (comma-separated): <%- include('_help-icon', { slug: 'user-keywords', label: 'User Keywords' }) %></label>
                         <div class="position-relative">
                             <input type="text" class="form-control" id="userKeywordsInput" name="user-keywords" autocomplete="off"
+                                   data-kw-typeahead data-kw-menu="userKeywordsSuggest" data-kw-pool="userKeywordsPool"
                                    placeholder="Type keywords, separated by commas…"
                                    value="<%= _kwSelected.join(', ') %>">
                             <div class="dropdown-menu w-100" id="userKeywordsSuggest" style="max-height:12rem;overflow-y:auto;"></div>
