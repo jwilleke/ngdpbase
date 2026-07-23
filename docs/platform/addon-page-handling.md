@@ -39,7 +39,7 @@ On restart, comparing the addon's current `pages/` against an already-seeded ins
 | Change to `addons/<addon>/pages/` | Synced? | Why |
 |---|---|---|
 | **New** page (new UUID + slug, never seeded) | ✅ **Yes** | Neither guard matches → `savePage` seeds it |
-| **Updated** content of a seeded page | ⚙️ Opt-in | Skipped by default; reseeded when the reseed flag is on **and** the page is unmodified — see [Content-aware reseed](#content-aware-reseed-920) |
+| **Updated** content of a seeded page | ⚙️ Opt-in | Skipped by default; reseeded when the reseed flag is on **and** the page is unmodified (or a legacy no-hash page) — see [Content-aware reseed](#content-aware-reseed-920) |
 | **Deleted** source page | ❌ No | There is no removal logic; the instance copy persists indefinitely ([#920](https://github.com/jwilleke/ngdpbase/issues/920) discusses a gated policy) |
 | **Renamed slug** (same UUID) | ❌ No (skipped) | The UUID guard matches — the page keeps its old slug |
 
@@ -54,7 +54,7 @@ Every seeded page carries an **`addon-source-hash`** in frontmatter — the trim
 
 When `ngdpbase.addons.page-reseed` is **`true`** (config-gated, **default `false`** so existing deployments are unaffected) and the source changed **and** the instance page is byte-identical to what was seeded (never operator-edited), the page is refreshed from source via `savePage` (UUID preserved, a revertable version recorded, hash re-stamped). If the page was locally modified, it is **skipped** and logged as *"update available … locally modified"*. Unchanged source is a no-op.
 
-> **Bootstrap limitation:** only pages seeded (or reseeded) *after* this feature landed carry an `addon-source-hash`. A page seeded by an older version has no stamp and is treated as unknown ⇒ never auto-reseeded until it gets a hash (one manual delete-and-restart stamps it). Operator edits are never at risk regardless.
+**Legacy pages (no `addon-source-hash`).** Pages seeded *before* this feature landed carry no stamp, so their edit-state can't be proven. Because addon pages are addon-owned content the operator opted to sync, a legacy page whose body differs from the current source **is reseeded from source** on the first enabled pass (adopting source authority) and then stamped — its prior content is kept as a revertable version, so a pre-hash hand-edit is recoverable. A legacy page already identical to source is a no-op. From the second pass on, every page is hashed and fully edit-preserving (a divergent hashed page is treated as an operator edit and skipped). If you want a legacy page to *keep* a local edit through the first enabled pass, stamp it first or leave `page-reseed` off until after you've reviewed.
 
 The admin endpoint (`POST /admin/addons/:addonName/reseed`), a dry-run, and the removed-source-page policy remain open under [#920](https://github.com/jwilleke/ngdpbase/issues/920).
 

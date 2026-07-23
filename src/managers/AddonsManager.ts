@@ -653,28 +653,42 @@ class AddonsManager extends BaseManager {
           ?? (pageManager.pageExists(slug) ? await pageManager.getPage(slug) : null);
 
         if (existing) {
-          const existingSlug = ((existing.metadata as Record<string, unknown> | undefined)?.slug as string) || slug;
+          const existingMeta = (existing.metadata as Record<string, unknown> | undefined) ?? {};
+          const existingSlug = (existingMeta.slug as string) || slug;
           const srcHash = this.pageSourceHash(parsed.content);
-          const storedHash = (existing.metadata as Record<string, unknown> | undefined)?.['addon-source-hash'];
+          const storedHash = existingMeta['addon-source-hash'];
           const liveHash = this.pageSourceHash(existing.content);
-          const unmodified = typeof storedHash === 'string' && storedHash === liveHash;
-          const sourceChanged = storedHash !== srcHash;
+          const hasHash = typeof storedHash === 'string' && storedHash.length > 0;
+          // "unmodified" = the live body is byte-identical to what we last
+          // seeded (⇒ never operator-edited). A legacy page (seeded before the
+          // #920 hash existed) has no stamp — we can't prove it was edited, and
+          // since these are addon-owned pages the operator opted to sync, we
+          // treat it as reseedable too (previous content is kept as a revertable
+          // version, so an old hand-edit is recoverable).
+          const unmodified = hasHash && storedHash === liveHash;
+          const legacy = !hasHash;
+          // Reseed only matters when the live body actually differs from source.
+          const sourceDiffers = srcHash !== liveHash;
 
-          if (reseedEnabled && sourceChanged && unmodified) {
-            // Byte-identical to what we last seeded ⇒ never operator-edited.
-            // Source is the authority: refresh content + metadata, keep the
-            // UUID, re-stamp the hash. Goes through savePage so the versioning
-            // provider records a revertable version.
+          if (reseedEnabled && sourceDiffers && (unmodified || legacy)) {
+            // Source is the authority. Merge existing metadata (preserve operator
+            // /pipeline extras + original `created`) with the source's declared
+            // fields, adopt the source body, keep the UUID, stamp the hash. Goes
+            // through savePage so the versioning provider records a revertable
+            // version.
             const reseedMetadata: Record<string, unknown> = {
+              ...existingMeta,
               ...(parsed.data as Record<string, unknown>),
               addon: addonName,
-              'system-category': (parsed.data as Record<string, unknown>)['system-category'] ?? 'addon',
+              'system-category': (parsed.data as Record<string, unknown>)['system-category'] ?? existingMeta['system-category'] ?? 'addon',
               'addon-source-hash': srcHash
             };
             await pageManager.savePage(existingSlug, parsed.content, reseedMetadata);
             reseeded++;
-            logger.info(`[AddonsManager] Reseeded '${existingSlug}' from ${addonName} (source changed, page unmodified)`);
-          } else if (reseedEnabled && sourceChanged && !unmodified) {
+            logger.info(legacy
+              ? `[AddonsManager] Reseeded legacy '${existingSlug}' from ${addonName} (no prior source-hash; previous content kept in version history)`
+              : `[AddonsManager] Reseeded '${existingSlug}' from ${addonName} (source changed, page unmodified)`);
+          } else if (reseedEnabled && sourceDiffers && hasHash && !unmodified) {
             logger.info(`[AddonsManager] Update available for '${existingSlug}' from ${addonName} but the page was locally modified — skipped`);
           } else {
             logger.debug(`[AddonsManager] Page '${existingSlug}' already seeded — skipping (${addonName})`);

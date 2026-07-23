@@ -987,14 +987,15 @@ describe('AddonsManager', () => {
 
     // #920: content-aware, edit-preserving reseed --------------------------
     const RESEED_UUID = '550e8400-e29b-41d4-a716-4466554400aa';
+    // storedHashBody: pass null to simulate a LEGACY page (seeded before #920,
+    // no addon-source-hash stamp).
     const setupReseed = async ({ sourceBody, pageBody, storedHashBody, pageReseed }) => {
       await makeAddonWithSeedPages('reseed-addon', [
         { filename: 'about.md', uuid: RESEED_UUID, slug: 'about', title: 'About', body: sourceBody }
       ]);
-      const existingPage = {
-        title: 'About', uuid: RESEED_UUID, content: pageBody,
-        metadata: { slug: 'about', uuid: RESEED_UUID, 'addon-source-hash': bodyHash(storedHashBody) }
-      };
+      const metadata = { slug: 'about', uuid: RESEED_UUID };
+      if (storedHashBody !== null) metadata['addon-source-hash'] = bodyHash(storedHashBody);
+      const existingPage = { title: 'About', uuid: RESEED_UUID, content: pageBody, metadata };
       const configManager = makeConfigManager({ enabledAddons: ['reseed-addon'], pageReseed });
       const pageManager = makePageManager(['about'], { about: existingPage }, { [RESEED_UUID]: existingPage });
       const manager = new AddonsManager(makeEngineWithPageManager(configManager, pageManager));
@@ -1019,6 +1020,27 @@ describe('AddonsManager', () => {
     test('#920: skips reseed when the page was locally modified', async () => {
       // Live content no longer matches the stored seed hash → operator-edited.
       const pm = await setupReseed({ sourceBody: 'New content v2', pageBody: 'Operator edited this', storedHashBody: 'Old content v1', pageReseed: true });
+      expect(pm.savePage).not.toHaveBeenCalled();
+    });
+
+    test('#920: reseeds a LEGACY page (no source-hash) when source differs', async () => {
+      // Pre-#920 seed: no addon-source-hash. Addon-owned content the operator
+      // opted to sync → reseeded from source (revertable via version history).
+      const pm = await setupReseed({ sourceBody: 'New content v2', pageBody: 'Old content v1', storedHashBody: null, pageReseed: true });
+      expect(pm.savePage).toHaveBeenCalledWith(
+        'about',
+        expect.stringContaining('New content v2'),
+        expect.objectContaining({ 'addon-source-hash': bodyHash('New content v2') })
+      );
+    });
+
+    test('#920: legacy page is a no-op when it already matches source', async () => {
+      const pm = await setupReseed({ sourceBody: 'Same body', pageBody: 'Same body', storedHashBody: null, pageReseed: true });
+      expect(pm.savePage).not.toHaveBeenCalled();
+    });
+
+    test('#920: legacy page not reseeded when the flag is off', async () => {
+      const pm = await setupReseed({ sourceBody: 'New content v2', pageBody: 'Old content v1', storedHashBody: null, pageReseed: false });
       expect(pm.savePage).not.toHaveBeenCalled();
     });
 
