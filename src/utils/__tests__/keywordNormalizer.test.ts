@@ -8,6 +8,7 @@ import {
   keywordsCollide,
   toKeywordTerm,
   dedupeKeywords,
+  groupKeywordVariants,
   KEYWORD_VALUE_MAX
 } from '../keywordNormalizer';
 
@@ -84,6 +85,71 @@ describe('keywordsCollide', () => {
 describe('toKeywordTerm', () => {
   it('splits a title into { term (value), label (title) }', () => {
     expect(toKeywordTerm('  Fine Dining ')).toEqual({ term: 'fine-dining', label: 'Fine Dining' });
+  });
+});
+
+describe('groupKeywordVariants (#919)', () => {
+  it('clusters forms sharing a canonical value; ignores single-form values', () => {
+    const groups = groupKeywordVariants([
+      { form: 'Dining', catalogued: true, catalogId: 'dining', pageCount: 3 },
+      { form: 'dining', mediaCount: 5 },
+      { form: 'Fine  Dining', pageCount: 1 },      // distinct value → own (single) group, dropped
+      { form: 'Travel', pageCount: 10 }            // single form → dropped
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].value).toBe('dining');
+    expect(groups[0].forms.map(f => f.form).sort()).toEqual(['Dining', 'dining']);
+  });
+
+  it('picks the catalogued form as canonical, else the most-used', () => {
+    const [g] = groupKeywordVariants([
+      { form: 'dining', mediaCount: 99 },
+      { form: 'Dining', catalogued: true, catalogId: 'dining', pageCount: 1 }
+    ]);
+    expect(g.canonicalForm).toBe('Dining'); // catalogued wins over higher-count 'dining'
+    expect(g.canonicalId).toBe('dining');
+
+    const [g2] = groupKeywordVariants([
+      { form: 'hiking', mediaCount: 2 },
+      { form: 'Hiking', pageCount: 9 } // neither catalogued → top count
+    ]);
+    expect(g2.canonicalForm).toBe('Hiking');
+  });
+
+  it('folds space/accent/punctuation variants (stronger than lowercase)', () => {
+    const [g] = groupKeywordVariants([
+      { form: 'Fine Dining', pageCount: 1 },
+      { form: 'fine-dining', mediaCount: 1 },
+      { form: 'Fine  Dining', pageCount: 1 }
+    ]);
+    expect(g.value).toBe('fine-dining');
+    expect(g.forms).toHaveLength(3);
+  });
+
+  it('mergeable only when canonical + another form are both catalog terms', () => {
+    const cat = groupKeywordVariants([
+      { form: 'Dining', catalogued: true, catalogId: 'dining' },
+      { form: 'DINING', catalogued: true, catalogId: 'dining-2' }
+    ])[0];
+    expect(cat.mergeable).toBe(true);
+
+    const media = groupKeywordVariants([
+      { form: 'Dining', catalogued: true, catalogId: 'dining' },
+      { form: 'dining', mediaCount: 4 } // observed only → not mergeable via page-retag
+    ])[0];
+    expect(media.mergeable).toBe(false);
+  });
+
+  it('sums counts across duplicate forms and drops empty/symbol forms', () => {
+    const [g] = groupKeywordVariants([
+      { form: 'Dining', pageCount: 2 },
+      { form: 'Dining', mediaCount: 3 }, // same form → summed, not a variant on its own
+      { form: 'dining', pageCount: 1 },
+      { form: '   ', pageCount: 9 },
+      { form: '!!!', pageCount: 9 }
+    ]);
+    const dining = g.forms.find(f => f.form === 'Dining');
+    expect(dining).toMatchObject({ pageCount: 2, mediaCount: 3 });
   });
 });
 

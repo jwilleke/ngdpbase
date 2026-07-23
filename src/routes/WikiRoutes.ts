@@ -39,7 +39,7 @@ import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../
 import { stringifyJsonLdForScript, wantsJsonLd } from '../utils/buildPageJsonLd.js';
 import { articleToPageJsonLd } from '../utils/articleToPageJsonLd.js';
 import { getSuggestedKeywordSets, type RecentPageKeywords, type KeywordSetSuggestion } from '../utils/suggestedKeywords.js';
-import { normalizeKeywordValue } from '../utils/keywordNormalizer.js';
+import { normalizeKeywordValue, groupKeywordVariants, type KeywordFormStat } from '../utils/keywordNormalizer.js';
 import type { Article } from '../types/Schema.js';
 import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
@@ -13115,6 +13115,17 @@ ${description}
         && !mediaUsedNames.has(k.label.toLowerCase())
       );
 
+      // #919 (Slice 4 of #869): variant/duplicate lint. Feed every keyword
+      // display form seen anywhere — catalog labels, page frontmatter, media
+      // EXIF — into the pure variant grouper (groups by canonical value, folds
+      // case/space/accent/punctuation; clusters with 2+ distinct forms).
+      const variantForms: KeywordFormStat[] = [
+        ...Object.entries(userKeywordsConfig).map(([key, config]) => ({ form: (config.label as string) || key, catalogued: true, catalogId: key })),
+        ...Object.entries(keywordUsage).map(([kw, pages]) => ({ form: kw, pageCount: pages.length })),
+        ...Object.entries(mediaKeywordCounts).map(([kw, count]) => ({ form: kw, mediaCount: count }))
+      ];
+      const variants = groupKeywordVariants(variantForms);
+
       const successMessage = req.query.success as string | undefined;
       const errorMessage = req.query.error as string | undefined;
 
@@ -13130,7 +13141,8 @@ ${description}
         },
         drift: {
           uncatalogued,
-          unusedCatalog
+          unusedCatalog,
+          variants
         },
         successMessage,
         errorMessage,

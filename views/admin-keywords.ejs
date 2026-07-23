@@ -214,6 +214,62 @@
         </div>
       </div>
       <% } %>
+
+      <%# #919 (Slice 4 of #869): variant/duplicate lint. Clusters of keyword
+          forms that normalize to one canonical value but differ in display
+          (case/space/accent). Page-side merge offered when both forms are
+          catalog terms; media is read-only (fix variants in digiKam). %>
+      <% if (typeof drift !== 'undefined' && drift && Array.isArray(drift.variants)) { %>
+      <div class="card mt-4">
+        <div class="card-header">
+          <h5 class="mb-0"><i class="fas fa-clone"></i> Variant keywords (<%= drift.variants.length %>)</h5>
+        </div>
+        <div class="card-body">
+          <% if (drift.variants.length === 0) { %>
+            <p class="text-muted mb-0">None — no case/space/accent variants of the same keyword found across pages, media, or the catalog.</p>
+          <% } else { %>
+          <p class="text-muted small">Each row is one canonical keyword written in more than one way. Consolidate page usages onto the canonical form; media keywords are read-only (correct them in digiKam).</p>
+          <div class="table-responsive">
+            <table class="table table-sm">
+              <thead>
+                <tr><th>Canonical value</th><th>Forms in use (pages + media)</th><th></th></tr>
+              </thead>
+              <tbody>
+                <% drift.variants.forEach(v => { %>
+                <tr>
+                  <td><code><%= v.value %></code></td>
+                  <td>
+                    <% v.forms.forEach(f => { %>
+                      <span class="badge <%= f.form === v.canonicalForm ? 'bg-success' : 'bg-secondary' %> me-1 mb-1"
+                            title="<%= f.catalogued ? 'catalog term' : 'observed' %> — <%= f.pageCount %> page(s), <%= f.mediaCount %> media">
+                        <%= f.form %>
+                        <span class="opacity-75">(<%= f.pageCount + f.mediaCount %>)</span><% if (f.form === v.canonicalForm) { %> ★<% } %>
+                      </span>
+                    <% }); %>
+                  </td>
+                  <td class="text-nowrap">
+                    <% if (v.mergeable) { %>
+                      <% v.forms.filter(f => f.catalogId && f.form !== v.canonicalForm).forEach(f => { %>
+                        <button class="btn btn-sm btn-outline-primary merge-variant-btn mb-1"
+                                title="Retag pages using '<%= f.form %>' onto '<%= v.canonicalForm %>'"
+                                data-source="<%= f.catalogId %>" data-target="<%= v.canonicalId %>"
+                                data-source-label="<%= f.form %>" data-target-label="<%= v.canonicalForm %>">
+                          <i class="fas fa-arrow-right"></i> merge <code><%= f.form %></code>
+                        </button>
+                      <% }); %>
+                    <% } else { %>
+                      <span class="text-muted small">report-only</span>
+                    <% } %>
+                  </td>
+                </tr>
+                <% }); %>
+              </tbody>
+            </table>
+          </div>
+          <% } %>
+        </div>
+      </div>
+      <% } %>
     </div>
   </div>
 </div>
@@ -711,6 +767,33 @@ document.addEventListener('DOMContentLoaded', function() {
     } catch (error) {
       alert('Error consolidating keywords: ' + error.message);
     }
+  });
+
+  // #919: one-click merge of a catalogued variant onto its canonical form.
+  document.querySelectorAll('.merge-variant-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+      const sourceId = this.dataset.source;
+      const targetId = this.dataset.target;
+      const sLabel = this.dataset.sourceLabel || sourceId;
+      const tLabel = this.dataset.targetLabel || targetId;
+      if (sourceId === targetId) return;
+      if (!confirm(`Merge variant "${sLabel}" into "${tLabel}"?\nRetags all pages using "${sLabel}" and removes the "${sLabel}" catalog term.`)) return;
+      try {
+        const response = await csrfFetch('/admin/keywords/consolidate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sourceId, targetId, deleteSource: true })
+        });
+        const result = await response.json();
+        if (result.success) {
+          window.location.href = '/admin/keywords?success=' + encodeURIComponent(result.message);
+        } else {
+          alert('Error: ' + (result.error || 'merge failed'));
+        }
+      } catch (error) {
+        alert('Error merging variant: ' + error.message);
+      }
+    });
   });
 });
 </script>
