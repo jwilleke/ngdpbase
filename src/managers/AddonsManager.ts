@@ -14,6 +14,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { createHash } from 'node:crypto';
+import { minimatch } from 'minimatch';
 import matter from 'gray-matter';
 import BaseManager from './BaseManager.js';
 import type { BackupData } from './BaseManager.js';
@@ -296,6 +297,8 @@ class AddonsManager extends BaseManager {
 
   /** Resolved absolute paths to addons directories */
   private resolvedAddonsPaths: string[];
+  /** #673: npm package globs (from `node_modules:` addons-path entries) to discover from node_modules. */
+  private npmAddonPatterns: string[] = [];
 
   /** Stylesheets registered by add-ons via registerStylesheet() */
   private registeredStylesheets: Array<{ url: string; addonName: string }>;
@@ -353,8 +356,18 @@ class AddonsManager extends BaseManager {
         : [String(raw)];
     }
 
-    // Resolve every entry to an absolute path
-    this.resolvedAddonsPaths = this.addonsPaths.map(p => path.resolve(p));
+    // Split entries into filesystem directories and npm-package references
+    // (#673 packaged model). An entry prefixed `node_modules:` is a glob of
+    // npm packages to discover from node_modules (e.g. `node_modules:@jwilleke/*-addon`);
+    // everything else is a directory path resolved to absolute (bundled/drop-in).
+    const NPM_PREFIX = 'node_modules:';
+    this.resolvedAddonsPaths = this.addonsPaths
+      .filter(p => !p.startsWith(NPM_PREFIX))
+      .map(p => path.resolve(p));
+    this.npmAddonPatterns = this.addonsPaths
+      .filter(p => p.startsWith(NPM_PREFIX))
+      .map(p => p.slice(NPM_PREFIX.length).trim())
+      .filter(Boolean);
 
     // Discover and load add-ons
     await this.discoverAddons();
@@ -370,11 +383,13 @@ class AddonsManager extends BaseManager {
    * Discover available add-ons by scanning all configured addons directories.
    */
   async discoverAddons(): Promise<void> {
-    if (this.resolvedAddonsPaths.length === 0) {
-      return;
-    }
     for (const dirPath of this.resolvedAddonsPaths) {
       await this.scanAddonsDirectory(dirPath);
+    }
+    // #673: packaged (npm) discovery — runs after directory scans, so a
+    // bundled/drop-in addon of the same name wins the duplicate-skip.
+    for (const pattern of this.npmAddonPatterns) {
+      await this.scanNpmAddons(pattern);
     }
   }
 
@@ -397,97 +412,120 @@ class AddonsManager extends BaseManager {
       return;
     }
 
-    // Scan for add-on directories
+    // Scan for add-on directories; each subdir is one addon.
     const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-
     for (const entry of entries) {
-      // Skip hidden files/folders and non-directories
-      if (!entry.isDirectory() || entry.name.startsWith('.')) {
-        continue;
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+      if (entry.name === 'shared') continue; // reserved for shared utilities
+      await this.registerAddonFromDir(path.join(dirPath, entry.name), dirPath);
+    }
+  }
+
+  /**
+   * #673 (packaged model): discover addons published as npm packages, matching a
+   * `node_modules:<glob>` addons-path entry (e.g. `node_modules:@jwilleke/*-addon`).
+   * Each matching package is loaded through the same slug/module/register()
+   * contract as bundled and drop-in addons — only discovery differs.
+   */
+  private async scanNpmAddons(pattern: string): Promise<void> {
+    const nmRoot = this.findNodeModules();
+    if (!nmRoot) {
+      logger.debug(`[AddonsManager] npm addon discovery: no node_modules found for '${pattern}'`);
+      return;
+    }
+    for (const pkgDir of this.resolveNpmAddonDirs(nmRoot, pattern)) {
+      await this.registerAddonFromDir(pkgDir, `npm:${pattern}`);
+    }
+  }
+
+  /** Locate the node_modules directory (app root / cwd). */
+  private findNodeModules(): string | null {
+    const nm = path.resolve(process.cwd(), 'node_modules');
+    return fs.existsSync(nm) && fs.statSync(nm).isDirectory() ? nm : null;
+  }
+
+  /** Expand a `@scope/glob` (or bare `glob`) pattern to package directories. */
+  private resolveNpmAddonDirs(nmRoot: string, pattern: string): string[] {
+    let baseDir = nmRoot;
+    let nameGlob = pattern;
+    if (pattern.startsWith('@')) {
+      const slash = pattern.indexOf('/');
+      const scope = slash > 0 ? pattern.slice(0, slash) : pattern;
+      nameGlob = slash > 0 ? pattern.slice(slash + 1) : '*';
+      baseDir = path.join(nmRoot, scope);
+    }
+    if (!fs.existsSync(baseDir)) return [];
+    const out: string[] = [];
+    for (const entry of fs.readdirSync(baseDir, { withFileTypes: true })) {
+      if (entry.isDirectory() && !entry.name.startsWith('.') && minimatch(entry.name, nameGlob)) {
+        out.push(path.join(baseDir, entry.name));
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Load a single addon from its directory (index.js/ts + optional package.json
+   * `ngdpbase` manifest) and register it. Shared by directory scans and npm
+   * (#673) discovery; `sourceLabel` is for logging only. Duplicate names are
+   * skipped — since npm discovery runs last, a bundled/drop-in addon wins.
+   */
+  private async registerAddonFromDir(addonPath: string, sourceLabel: string): Promise<void> {
+    const folderName = path.basename(addonPath);
+    const indexPath = path.join(addonPath, 'index.js');
+    const indexTsPath = path.join(addonPath, 'index.ts');
+
+    if (!(fs.existsSync(indexPath) || fs.existsSync(indexTsPath))) {
+      logger.warn(`Add-on ${folderName} missing index.js/index.ts, skipping`);
+      return;
+    }
+
+    try {
+      const modulePath = fs.existsSync(indexPath) ? indexPath : indexTsPath;
+      const rawModule = (await import(modulePath)) as AddonModule | { default: AddonModule };
+      const addonModule: AddonModule = 'default' in rawModule ? rawModule.default : rawModule;
+
+      if (!addonModule.name) {
+        logger.warn(`Add-on in ${folderName} missing 'name' field, using folder name`);
+        addonModule.name = folderName;
+      }
+      if (typeof addonModule.register !== 'function') {
+        logger.error(`Add-on ${addonModule.name} missing required register() function, skipping`);
+        return;
+      }
+      if (this.addons.has(addonModule.name)) {
+        logger.warn(`[AddonsManager] Duplicate add-on name '${addonModule.name}' from ${sourceLabel} — skipping (already loaded)`);
+        return;
       }
 
-      // Skip 'shared' folder (reserved for shared utilities)
-      if (entry.name === 'shared') {
-        continue;
+      const enabled = this.isEnabled(addonModule.name);
+
+      let manifest: AddonManifest | null = null;
+      const pkgPath = path.join(addonPath, 'package.json');
+      if (fs.existsSync(pkgPath)) {
+        try {
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as Record<string, unknown>;
+          manifest = (pkg.ngdpbase as AddonManifest) ?? null;
+        } catch {
+          logger.warn(`[AddonsManager] Could not parse package.json for ${folderName}`);
+        }
       }
 
-      const addonPath = path.join(dirPath, entry.name);
-      const indexPath = path.join(addonPath, 'index.js');
-      const indexTsPath = path.join(addonPath, 'index.ts');
+      this.addons.set(addonModule.name, {
+        path: addonPath,
+        module: addonModule,
+        enabled,
+        loaded: false,
+        error: null,
+        manifest
+      });
 
-      // Check for index file
-      const hasIndex = fs.existsSync(indexPath) || fs.existsSync(indexTsPath);
-      if (!hasIndex) {
-        logger.warn(
-          `Add-on ${entry.name} missing index.js/index.ts, skipping`
-        );
-        continue;
-      }
-
-      try {
-        // Load the add-on module using dynamic import
-        const modulePath = fs.existsSync(indexPath) ? indexPath : indexTsPath;
-        const rawModule = (await import(modulePath)) as
-          | AddonModule
-          | { default: AddonModule };
-        const addonModule: AddonModule =
-          'default' in rawModule ? rawModule.default : rawModule;
-
-        // Validate required fields
-        if (!addonModule.name) {
-          logger.warn(
-            `Add-on in ${entry.name} missing 'name' field, using folder name`
-          );
-          addonModule.name = entry.name;
-        }
-
-        if (typeof addonModule.register !== 'function') {
-          logger.error(
-            `Add-on ${addonModule.name} missing required register() function, skipping`
-          );
-          continue;
-        }
-
-        // Warn if a later path tries to register a name already discovered
-        if (this.addons.has(addonModule.name)) {
-          logger.warn(
-            `[AddonsManager] Duplicate add-on name '${addonModule.name}' found in ${dirPath} — skipping (already loaded from another path)`
-          );
-          continue;
-        }
-
-        // Check if enabled in configuration
-        const enabled = this.isEnabled(addonModule.name);
-
-        // Read ngdpbase manifest from package.json (if present)
-        let manifest: AddonManifest | null = null;
-        const pkgPath = path.join(addonPath, 'package.json');
-        if (fs.existsSync(pkgPath)) {
-          try {
-            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as Record<string, unknown>;
-            manifest = (pkg.ngdpbase as AddonManifest) ?? null;
-          } catch {
-            logger.warn(`[AddonsManager] Could not parse package.json for ${entry.name}`);
-          }
-        }
-
-        // Store the add-on entry
-        this.addons.set(addonModule.name, {
-          path: addonPath,
-          module: addonModule,
-          enabled,
-          loaded: false,
-          error: null,
-          manifest
-        });
-
-        logger.info(
-          `📦 Discovered add-on: ${addonModule.name} v${addonModule.version || 'unknown'} ` +
-            `[${enabled ? 'enabled' : 'disabled'}] (${dirPath})`
-        );
-      } catch (err) {
-        logger.error(`Failed to load add-on from ${entry.name}:`, err);
-      }
+      logger.info(
+        `📦 Discovered add-on: ${addonModule.name} v${addonModule.version || 'unknown'} ` +
+          `[${enabled ? 'enabled' : 'disabled'}] (${sourceLabel})`
+      );
+    } catch (err) {
+      logger.error(`Failed to load add-on from ${folderName} (${sourceLabel}):`, err);
     }
   }
 

@@ -2,7 +2,7 @@
 
 Internal reference for the ngdpbase addon subsystem. Covers load order, manager contracts, config resolution, type setup, and integration points. For build-your-own-addon instructions, see [`addon-development-guide.md`](./addon-development-guide.md). For the slug-naming rules every addon must follow (and what breaks if you rename one), see [`addon-identity-contract.md`](./addon-identity-contract.md).
 
-**Three distribution models, one slug + module + load contract:** addons reach a running ngdpbase instance as **`bundled`** (in this repo's `addons/<slug>/`), **`drop-in`** (any directory listed in the `addons-path` config), or **`packaged`** (`npm install` — documented but not yet implemented). Names locked in by #668. Pick by how the addon is owned and shipped — see the [Distribution Models](#distribution-models) table immediately below.
+**Three distribution models, one slug + module + load contract:** addons reach a running ngdpbase instance as **`bundled`** (in this repo's `addons/<slug>/`), **`drop-in`** (any directory listed in the `addons-path` config), or **`packaged`** (`npm install`, discovered from `node_modules` via a `node_modules:<glob>` `addons-path` entry — #673). Names locked in by #668. Pick by how the addon is owned and shipped — see the [Distribution Models](#distribution-models) table immediately below.
 
 ---
 
@@ -14,7 +14,7 @@ ngdpbase recognises three ways an addon can reach a running instance. The slug, 
 |---|---|---|---|
 | **bundled** | `addons/<slug>/` inside the ngdpbase repo | Ships with each ngdpbase release | Implemented |
 | **drop-in** | Any directory listed in the `ngdpbase.managers.addons-manager.addons-path` config (e.g. `/opt/external-addons/addons/<slug>/`) | Independent repo, deployed at install/restart time | Implemented |
-| **packaged** | `node_modules/<scope>/<slug>-addon/` via `npm install` | Independent repo, npm-versioned and lockfile-pinned | Not implemented — `AddonsManager.scanAddonsDirectory()` only scans configured directory paths today; supporting `node_modules` would mean a new loader path or pointing `addons-path` at `node_modules/<scope>/`. No active driver, kept here as a documented option. |
+| **packaged** | `node_modules/<scope>/<slug>-addon/` via `npm install` | Independent repo, npm-versioned and lockfile-pinned | **Implemented (#673).** Add a `node_modules:<glob>` entry to `addons-path` — e.g. `"node_modules:@jwilleke/*-addon"`. `AddonsManager` expands the glob against `node_modules` and loads each matching package through the same slug/module/`register()` contract; discovery runs after the directory scans, so a bundled/drop-in addon of the same name wins a collision. |
 
 Pick a model by how the addon is owned and shipped:
 

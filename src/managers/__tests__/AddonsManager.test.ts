@@ -100,6 +100,63 @@ describe('AddonsManager', () => {
     });
   });
 
+  describe('npm (packaged) discovery (#673)', () => {
+    const origCwd = process.cwd();
+    afterEach(() => process.chdir(origCwd));
+
+    const writePkg = async (rel, name) => {
+      const dir = path.join(tmpDir, 'node_modules', rel);
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, 'index.js'),
+        `module.exports = { name: '${name}', version: '2.0.0', register: () => {} };`, 'utf8');
+      await fs.writeFile(path.join(dir, 'package.json'),
+        JSON.stringify({ name: rel, version: '2.0.0', ngdpbase: { slug: name } }), 'utf8');
+      return dir;
+    };
+
+    test('discovers a scoped npm-package addon via a node_modules: pattern', async () => {
+      await writePkg('@t/sample-addon', 'sample');
+      await writePkg('@t/other-addon', 'other');
+      // a package that does not match the glob must be ignored
+      await writePkg('@t/not-matching', 'nope');
+
+      process.chdir(tmpDir); // findNodeModules resolves cwd/node_modules
+      const configManager = makeConfigManager({ addonsPath: ['node_modules:@t/*-addon'], enabledAddons: ['sample'] });
+      const manager = new AddonsManager(makeEngine(configManager));
+      await manager.initialize();
+
+      expect(manager.getAddonNames()).toEqual(expect.arrayContaining(['sample', 'other']));
+      expect(manager.getAddonNames()).not.toContain('nope');
+    });
+
+    test('a node_modules: pattern with no matches is a no-op', async () => {
+      process.chdir(tmpDir);
+      const configManager = makeConfigManager({ addonsPath: ['node_modules:@none/*-addon'] });
+      const manager = new AddonsManager(makeEngine(configManager));
+      await manager.initialize();
+      expect(manager.getAddonNames()).toEqual([]);
+    });
+
+    test('directory scan wins a name collision over npm discovery', async () => {
+      // drop-in addon named 'dup'
+      const dropDir = path.join(tmpDir, 'addons', 'dup');
+      await fs.mkdir(dropDir, { recursive: true });
+      await fs.writeFile(path.join(dropDir, 'index.js'),
+        "module.exports = { name: 'dup', version: '1.0.0', register: () => {} };", 'utf8');
+      // npm package also named 'dup'
+      await writePkg('@t/dup-addon', 'dup');
+
+      process.chdir(tmpDir);
+      const configManager = makeConfigManager({ addonsPath: [path.join(tmpDir, 'addons'), 'node_modules:@t/*-addon'] });
+      const manager = new AddonsManager(makeEngine(configManager));
+      await manager.initialize();
+
+      // discovered exactly once — npm discovery runs after the directory scan,
+      // so the drop-in registration wins and the npm duplicate is skipped.
+      expect(manager.getAddonNames().filter(n => n === 'dup')).toHaveLength(1);
+    });
+  });
+
   describe('addon discovery', () => {
     test('discovers addon with valid index.js', async () => {
       // Create addon directory structure
