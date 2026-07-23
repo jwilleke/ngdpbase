@@ -29,6 +29,7 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 
 ## 🟡 P2
 
+- [#921](https://github.com/jwilleke/ngdpbase/issues/921) — [FEATURE] Dawarich timeline as live storybook source (Tier-2) — /timeline + /tracks into the generator
 - [#920](https://github.com/jwilleke/ngdpbase/issues/920) — [FEATURE] Content-aware addon page reseed (edit-preserving) + admin reseed endpoint
 - [#919](https://github.com/jwilleke/ngdpbase/issues/919) — [FEATURE] Keyword variant/duplicate lint report with merge suggestions (#869)
 - [#918](https://github.com/jwilleke/ngdpbase/issues/918) — [FEATURE] Operator-initiated keyword write-back to media files (titles) (#869)
