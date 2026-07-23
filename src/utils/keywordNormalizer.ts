@@ -95,6 +95,75 @@ export function parseHierarchicalTags(hierarchicalSubject: unknown, tagsList: un
 }
 
 /**
+ * Reconcile a file's hierarchical tag tree against an edited flat keyword list
+ * (#918). Preserves the operator's digiKam hierarchy through an ngdpbase edit —
+ * paths are kept in their original DISPLAY form (never rewritten to slugs, which
+ * would corrupt the tree on re-read).
+ *
+ * Rules (only when the file already carries hierarchy — a flat-only file gets
+ * `null`, i.e. leave it flat):
+ *   - a KEPT keyword keeps its existing path (`~WHO/Crotty/Lyman …` stays);
+ *   - a REMOVED keyword's path is dropped;
+ *   - `auto/*` machine-tag paths are always preserved untouched (principle #5);
+ *   - a NEW keyword lands at the ROOT as a single-segment path in its display
+ *     form. (Cross-library placement at a known leaf path — via #917's leaf map
+ *     in display form — is a later refinement; root is the safe default.)
+ *
+ * `hierarchicalSubject`/`tagsList` are the file's current raw tag values (string
+ * or string[]). Returns the new values for BOTH encodings, or null to leave the
+ * file's hierarchy untouched.
+ */
+export function reconcileHierarchicalTags(
+  keywords: readonly string[],
+  hierarchicalSubject: unknown,
+  tagsList: unknown
+): { hierarchicalSubject: string[]; tagsList: string[] } | null {
+  // Collect existing paths as display-segment arrays, deduped by value-path so
+  // the `|` and `/` encodings of the same path collapse to one.
+  const existing = new Map<string, string[]>();
+  const collect = (raw: unknown, sep: string): void => {
+    const list = Array.isArray(raw) ? raw : (typeof raw === 'string' ? [raw] : []);
+    for (const e of list) {
+      if (typeof e !== 'string') continue;
+      const segs = e.split(sep).map(s => s.trim()).filter(Boolean);
+      const vpath = segs.map(normalizeKeywordValue).filter(Boolean).join('/');
+      if (segs.length && vpath && !existing.has(vpath)) existing.set(vpath, segs);
+    }
+  };
+  collect(hierarchicalSubject, '|');
+  collect(tagsList, '/');
+  if (existing.size === 0) return null; // flat-only file — impose no tree
+
+  const wantValues = new Set(keywords.map(normalizeKeywordValue).filter(Boolean));
+  const kept: string[][] = [];
+  const keptLeafValues = new Set<string>();
+  for (const segs of existing.values()) {
+    const rootVal = normalizeKeywordValue(segs[0]);
+    const leafVal = normalizeKeywordValue(segs[segs.length - 1]);
+    if (rootVal === 'auto') { kept.push(segs); continue; } // machine tag — untouched
+    if (wantValues.has(leafVal)) { kept.push(segs); keptLeafValues.add(leafVal); }
+    // else: removed keyword → drop this path
+  }
+  // New keywords not already represented by a kept path's leaf → add at root.
+  for (const kw of keywords) {
+    const v = normalizeKeywordValue(kw);
+    if (v && !keptLeafValues.has(v)) { kept.push([kw.trim()]); keptLeafValues.add(v); }
+  }
+  // Dedupe by value-path, preserving order.
+  const seen = new Set<string>();
+  const finalSegs = kept.filter(segs => {
+    const vp = segs.map(normalizeKeywordValue).filter(Boolean).join('/');
+    if (!vp || seen.has(vp)) return false;
+    seen.add(vp);
+    return true;
+  });
+  return {
+    hierarchicalSubject: finalSegs.map(s => s.join('|')),
+    tagsList: finalSegs.map(s => s.join('/'))
+  };
+}
+
+/**
  * Build a leaf→path map from many hierarchical paths (#917) — the library-wide
  * "where does this leaf keyword live" lookup #918 uses to place a newly-added
  * keyword at its known hierarchical home. Leaf = last path segment; on conflict

@@ -11,6 +11,7 @@ import {
   groupKeywordVariants,
   parseHierarchicalTags,
   buildLeafPathMap,
+  reconcileHierarchicalTags,
   KEYWORD_VALUE_MAX
 } from '../keywordNormalizer';
 
@@ -129,6 +130,43 @@ describe('buildLeafPathMap (#917)', () => {
     const map = buildLeafPathMap(['denver', 'places/usa/boulder']);
     expect(map.has('denver')).toBe(false);        // no '/' → no placement info
     expect(map.get('boulder')).toBe('places/usa/boulder');
+  });
+});
+
+describe('reconcileHierarchicalTags (#918)', () => {
+  it('returns null for a flat-only file (imposes no tree)', () => {
+    expect(reconcileHierarchicalTags(['Denver'], undefined, undefined)).toBeNull();
+    expect(reconcileHierarchicalTags(['Denver'], '', [])).toBeNull();
+  });
+
+  it('keeps a kept keyword’s path in display form; drops a removed one', () => {
+    const hs = ['Places|USA|Colorado|Denver', 'Places|USA|Colorado|Boulder'];
+    const out = reconcileHierarchicalTags(['Denver'], hs, undefined)!;
+    expect(out.hierarchicalSubject).toEqual(['Places|USA|Colorado|Denver']); // Boulder dropped
+    expect(out.tagsList).toEqual(['Places/USA/Colorado/Denver']);            // both encodings emitted
+  });
+
+  it('preserves auto/* machine-tag paths untouched', () => {
+    const hs = ['~WHO|Crotty|Lyman Earl Crotty (1884-1947)', 'auto|en-US|person'];
+    // editing keywords to something unrelated must not drop the auto path
+    const out = reconcileHierarchicalTags(['Sunset'], hs, undefined)!;
+    expect(out.hierarchicalSubject).toContain('auto|en-US|person');
+    expect(out.hierarchicalSubject).not.toContain('~WHO|Crotty|Lyman Earl Crotty (1884-1947)'); // Crotty removed
+    expect(out.hierarchicalSubject).toContain('Sunset'); // new keyword at root
+  });
+
+  it('adds a new keyword at root in display form', () => {
+    const out = reconcileHierarchicalTags(['Denver', 'Hiking'], 'Places|USA|Colorado|Denver', undefined)!;
+    expect(out.hierarchicalSubject).toEqual(['Places|USA|Colorado|Denver', 'Hiking']);
+  });
+
+  it('dedupes the |-encoded and /-encoded copies of the same path', () => {
+    const out = reconcileHierarchicalTags(
+      ['Denver'],
+      'Places|USA|Denver',
+      'Places/USA/Denver'
+    )!;
+    expect(out.hierarchicalSubject).toEqual(['Places|USA|Denver']); // one path, not two
   });
 });
 

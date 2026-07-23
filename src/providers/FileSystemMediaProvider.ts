@@ -17,7 +17,7 @@ import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs-extra';
 import { transformImage, parseSize } from '../utils/imageTransform.js';
-import { parseHierarchicalTags, buildLeafPathMap } from '../utils/keywordNormalizer.js';
+import { parseHierarchicalTags, buildLeafPathMap, reconcileHierarchicalTags } from '../utils/keywordNormalizer.js';
 import { extractVideoFrame } from '../utils/videoFrame.js';
 import { ExifTool } from 'exiftool-vendored';
 import { minimatch } from 'minimatch';
@@ -550,6 +550,25 @@ class FileSystemMediaProvider extends BaseMediaProvider {
     if (!entry) return null;
 
     const tags = FileSystemMediaProvider.buildMetadataWriteTags(patch, entry.mimeType);
+
+    // #918: when the keyword list is edited AND the file already carries a
+    // digiKam/Lightroom tag tree, reconcile the hierarchy in DISPLAY form so an
+    // ngdpbase edit preserves it instead of flattening it (kept keyword keeps
+    // its path, removed drops it, auto/* untouched, new lands at root). A
+    // flat-only file is left flat (reconcile → null).
+    if (patch.keywords !== undefined && patch.keywords !== null) {
+      try {
+        const current = await this.exiftoolInstance.read(entry.filePath);
+        const hier = reconcileHierarchicalTags(patch.keywords, current.HierarchicalSubject, current.TagsList);
+        if (hier) {
+          tags.HierarchicalSubject = hier.hierarchicalSubject;
+          tags.TagsList = hier.tagsList;
+        }
+      } catch (err) {
+        logger.warn(`[FileSystemMediaProvider] hierarchical reconcile skipped for ${entry.filename}:`, err);
+      }
+    }
+
     if (Object.keys(tags).length === 0) return entry;
 
     const targets = [entry.filePath, ...(entry.alternates ?? [])];
