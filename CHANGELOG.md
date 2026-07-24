@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Future enhancements
 
+## [3.65.0] - 2026-07-24
+
+### Added
+
+- Canonical addon identity (#927/#928): `package.json` `ngdpbase.slug` is now the single authoritative addon identity, resolved the same import-free way in every layer (`AddonsManager` discovery/`isEnabled`/dedup, and `ConfigurationManager`'s boot-time validator) via a shared `resolveAddonSlug()`. Fixes the drift class behind #672, #924/#925, and the slug half of #926 — `module.name` is now a display label validated against the declared slug at load time, not the source of identity.
+
 ## [3.64.0] - 2026-07-24
 
 ### Planned
