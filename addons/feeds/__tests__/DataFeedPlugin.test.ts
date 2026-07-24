@@ -233,4 +233,52 @@ describe('[DataFeed] plugin (#685)', () => {
     expect(out).toContain('"lat":4,"lon":4');
     expect(out).not.toContain('"lat":5,"lon":5');
   });
+
+  const activity: NormalizedRecord[] = [
+    { sourceRecordId: 'p1', fetchedAt: 'x', properties: { title: 'Popocatépetl Volcano Volcanic Ash Advisory', summary: 'VAAC: WASHINGTON ... DTG: 20260724/1321Z' } },
+    { sourceRecordId: 'p2', fetchedAt: 'x', properties: { title: 'Volcanoes Today, 24 Jul 2026', summary: 'Etna volcano, Fuego, Krakatau...' } },
+    { sourceRecordId: 'p3', fetchedAt: 'x', properties: { title: 'Sheveluch Volcano Volcanic Ash Advisory', summary: 'VA ADVISORY\nVOLCANO: SHEVELUCH 300270' } }
+  ];
+
+  it('exclude= drops records whose column matches the pattern (geohazardwatch#159)', async () => {
+    const out = await exec(
+      { source: 'q', columns: 'title', exclude: 'summary~VAAC:|VA ADVISORY|DTG:' },
+      activity
+    );
+    expect(out).not.toContain('Popocatépetl');
+    expect(out).not.toContain('Sheveluch');
+    expect(out).toContain('Volcanoes Today');
+  });
+
+  it('exclude= match is case-insensitive', async () => {
+    const out = await exec(
+      { source: 'q', columns: 'title', exclude: 'summary~vaac:' },
+      activity
+    );
+    expect(out).not.toContain('Popocatépetl');
+  });
+
+  it('exclude= with no `~` separator is ignored (no filtering)', async () => {
+    const out = await exec({ source: 'q', columns: 'title', exclude: 'summary VAAC' }, activity);
+    expect(out).toContain('Popocatépetl');
+    expect(out).toContain('Sheveluch');
+    expect(out).toContain('Volcanoes Today');
+  });
+
+  it('exclude= with an invalid regex is ignored (no filtering, no throw)', async () => {
+    const out = await exec({ source: 'q', columns: 'title', exclude: 'summary~(unclosed' }, activity);
+    expect(out).toContain('Popocatépetl');
+  });
+
+  it('exclude= that matches every record still reports "no records"', async () => {
+    const out = await exec({ source: 'q', exclude: 'summary~.' }, activity);
+    expect(out).toContain('no records for feed');
+  });
+
+  it('exclude= referencing a column absent from the record is a no-op match (record kept)', async () => {
+    const out = await exec({ source: 'q', columns: 'title', exclude: 'nonexistent~anything' }, activity);
+    expect(out).toContain('Popocatépetl');
+    expect(out).toContain('Sheveluch');
+    expect(out).toContain('Volcanoes Today');
+  });
 });
