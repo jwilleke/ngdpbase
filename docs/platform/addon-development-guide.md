@@ -265,11 +265,14 @@ Use a freshly generated UUID for every seed page to avoid conflicts.
 
 #### Updating seeded pages / admin reseed
 
-Seeding is **first-load only**: once a page exists in the instance it is skipped on every restart (see [Idempotency](#idempotency--existing-pages-are-never-overwritten) above). Consequently, **shipping updated page content in a new addon version does not reach already-seeded instances** — existing instances keep the previously-seeded copy. This is deliberate (it protects operator edits) but means there is currently no automatic way to push addon page updates.
+By default seeding is **first-load only**: once a page exists in the instance it is skipped on every restart (see [Idempotency](#idempotency--existing-pages-are-never-overwritten) above), so operator edits are never clobbered.
 
-To re-seed a page today, delete the corresponding `{uuid}.md` from the instance pages directory (or `pages/private/{creator}/{uuid}.md` for private pages) and restart the server — the current source is then re-seeded.
+**Pushing updated addon page content is supported** two ways ([#920](https://github.com/jwilleke/ngdpbase/issues/920)):
 
-A content-aware, edit-preserving reseed (reseed only when the addon source changed **and** the page wasn't locally edited) plus an admin endpoint `POST /admin/addons/:addonName/reseed` is proposed in [#920](https://github.com/jwilleke/ngdpbase/issues/920). (The original first-boot seeding lives in the now-closed #442.)
+- **Content-aware boot reseed** — set `ngdpbase.addons.page-reseed: true` (default `false`). On each boot, a page is refreshed from source only when the source changed **and** the instance copy is unmodified since seed (edited pages are skipped). Reseed keeps the UUID and records a revertable version. Safe to leave on ("keep addon pages in sync") or flip on → restart → off for a one-time sync.
+- **On-demand via the admin UI** — **Required Pages Sync** at `/admin/required-pages` ([#513](https://github.com/jwilleke/ngdpbase/issues/513)) lists addon pages with status, previews would-update / would-skip, and applies on demand with no restart.
+
+(The original first-boot seeding lives in the now-closed #442. There is no dedicated `POST /admin/addons/:addonName/reseed` REST route — the Required Pages Sync surface is the entry point.)
 
 #### Overriding the Left Menu and Footer
 
