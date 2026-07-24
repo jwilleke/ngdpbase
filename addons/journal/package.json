@@ -19,6 +19,7 @@
     "node": ">=24"
   },
   "ngdpbase": {
+    "slug": "journal",
     "type": "additive"
   }
 }

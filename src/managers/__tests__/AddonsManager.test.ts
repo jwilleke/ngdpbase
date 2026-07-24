@@ -187,6 +187,47 @@ describe('AddonsManager', () => {
       expect(manager.getAddonNames()).toContain('test-addon');
     });
 
+    test('#927: registry is keyed on the declared slug, not the module name', async () => {
+      // Folder + module name 'gadget', but the addon declares slug 'widget'.
+      const addonDir = path.join(tmpDir, 'gadget');
+      await fs.mkdir(addonDir);
+      await fs.writeFile(
+        path.join(addonDir, 'index.js'),
+        "module.exports = { name: 'gadget', version: '1.0.0', register: async () => {} };",
+        'utf8'
+      );
+      await fs.writeFile(
+        path.join(addonDir, 'package.json'),
+        JSON.stringify({ name: 'gadget', ngdpbase: { slug: 'widget' } }),
+        'utf8'
+      );
+
+      const manager = new AddonsManager(makeEngine(makeConfigManager()));
+      await manager.initialize();
+
+      // Identity is the slug; the module name is not an identity.
+      expect(manager.hasAddon('widget')).toBe(true);
+      expect(manager.hasAddon('gadget')).toBe(false);
+      expect(manager.getAddonNames()).toContain('widget');
+    });
+
+    test('#927: a directory addon named `<x>-addon` keeps that verbatim identity', async () => {
+      const addonDir = path.join(tmpDir, 'shiny-addon');
+      await fs.mkdir(addonDir);
+      await fs.writeFile(
+        path.join(addonDir, 'index.js'),
+        "module.exports = { name: 'shiny-addon', version: '1.0.0', register: async () => {} };",
+        'utf8'
+      );
+
+      const manager = new AddonsManager(makeEngine(makeConfigManager()));
+      await manager.initialize();
+
+      // No slug declared, directory source → verbatim, NOT stripped to 'shiny'.
+      expect(manager.hasAddon('shiny-addon')).toBe(true);
+      expect(manager.hasAddon('shiny')).toBe(false);
+    });
+
     test('skips hidden directories', async () => {
       const hiddenDir = path.join(tmpDir, '.hidden-addon');
       await fs.mkdir(hiddenDir);

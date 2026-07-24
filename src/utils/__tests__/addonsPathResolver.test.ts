@@ -10,7 +10,8 @@ import {
   splitAddonsPath,
   findNodeModulesDir,
   matchNpmPackageDirs,
-  deriveAddonSlugFromPackageDirName
+  deriveAddonSlugFromPackageDirName,
+  resolveAddonSlug
 } from '../addonsPathResolver';
 
 describe('splitAddonsPath', () => {
@@ -94,5 +95,60 @@ describe('deriveAddonSlugFromPackageDirName', () => {
 
   test('only strips a trailing suffix, not an embedded one', () => {
     expect(deriveAddonSlugFromPackageDirName('addon-tools')).toBe('addon-tools');
+  });
+});
+
+describe('resolveAddonSlug (#927 canonical identity)', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'resolve-addon-slug-test-'));
+  });
+
+  afterEach(async () => {
+    await fs.remove(tmpDir).catch(() => {});
+  });
+
+  const seed = async (dirName: string, ngdpbase?: Record<string, unknown>) => {
+    const dir = path.join(tmpDir, dirName);
+    await fs.ensureDir(dir);
+    if (ngdpbase !== undefined) {
+      await fs.writeJson(path.join(dir, 'package.json'), { name: dirName, ngdpbase });
+    }
+    return dir;
+  };
+
+  test('declared ngdpbase.slug wins over the folder name (directory)', async () => {
+    const dir = await seed('geohazardwatch-addon', { slug: 'geohazardwatch' });
+    expect(resolveAddonSlug(dir, 'directory')).toBe('geohazardwatch');
+  });
+
+  test('declared ngdpbase.slug wins over the folder name (npm)', async () => {
+    const dir = await seed('weird-pkg-name', { slug: 'geohazardwatch' });
+    expect(resolveAddonSlug(dir, 'npm')).toBe('geohazardwatch');
+  });
+
+  test('directory fallback is the folder name VERBATIM (never strips -addon)', async () => {
+    const dir = await seed('test-addon'); // no package.json
+    expect(resolveAddonSlug(dir, 'directory')).toBe('test-addon');
+  });
+
+  test('npm fallback strips the conventional trailing -addon', async () => {
+    const dir = await seed('geohazardwatch-addon'); // no package.json
+    expect(resolveAddonSlug(dir, 'npm')).toBe('geohazardwatch');
+  });
+
+  test('blank/whitespace slug is ignored, falls back per source', async () => {
+    const dir = await seed('sample-addon', { slug: '   ' });
+    expect(resolveAddonSlug(dir, 'directory')).toBe('sample-addon');
+    expect(resolveAddonSlug(dir, 'npm')).toBe('sample');
+  });
+
+  test('invalid/unreadable package.json falls back per source', async () => {
+    const dir = path.join(tmpDir, 'broken-addon');
+    await fs.ensureDir(dir);
+    await fs.writeFile(path.join(dir, 'package.json'), '{ not json', 'utf8');
+    expect(resolveAddonSlug(dir, 'directory')).toBe('broken-addon');
+    expect(resolveAddonSlug(dir, 'npm')).toBe('broken');
   });
 });

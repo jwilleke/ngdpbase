@@ -1285,6 +1285,72 @@ describe('ConfigurationManager', () => {
     });
   });
 
+  describe('configured-addons-exist guard — canonical slug identity (#927)', () => {
+    /**
+     * #927: the validator now resolves an addon's identity from the declared
+     * `package.json` `ngdpbase.slug` — the SAME import-free rule AddonsManager
+     * registers under — instead of the folder name. These prove the enabled
+     * `<id>` must match the slug, not the folder.
+     */
+    const writeAddonDefault = async (extra: Record<string, unknown>) => {
+      await fs.writeJson(
+        path.join(tempDir, 'config', 'app-default-config.json'),
+        {
+          'ngdpbase.application-name': 'TestWiki',
+          'ngdpbase.application.base-url': 'http://localhost:3000',
+          'ngdpbase.application.contact.enabled': true,
+          'ngdpbase.application.contact.page': '',
+          'ngdpbase.application.contact.recipient': '',
+          ...extra
+        },
+        { spaces: 2 }
+      );
+    };
+
+    const seedDirAddonWithSlug = async (root: string, folder: string, slug: string) => {
+      const dir = path.join(root, folder);
+      await fs.ensureDir(dir);
+      await fs.writeFile(path.join(dir, 'index.js'), '// stub addon');
+      await fs.writeJson(path.join(dir, 'package.json'), { name: folder, ngdpbase: { slug } });
+    };
+
+    test('enabling the declared slug (not the folder name) satisfies the guard', async () => {
+      const addonsRoot = path.join(tempDir, 'addons');
+      // folder 'geohazardwatch' but the addon declares slug 've-geology'
+      await seedDirAddonWithSlug(addonsRoot, 'geohazardwatch', 've-geology');
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': [addonsRoot],
+        'ngdpbase.addons.ve-geology.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+
+    test('enabling the folder name when a different slug is declared throws', async () => {
+      const addonsRoot = path.join(tempDir, 'addons');
+      await seedDirAddonWithSlug(addonsRoot, 'geohazardwatch', 've-geology');
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': [addonsRoot],
+        'ngdpbase.addons.geohazardwatch.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).rejects.toThrow(/Refusing to start.*geohazardwatch.*#672/s);
+    });
+
+    test('a directory addon named `<x>-addon` keeps that verbatim identity (no -addon strip)', async () => {
+      const addonsRoot = path.join(tempDir, 'addons');
+      const dir = path.join(addonsRoot, 'test-addon');
+      await fs.ensureDir(dir);
+      await fs.writeFile(path.join(dir, 'index.js'), '// stub addon'); // no package.json → verbatim folder
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': [addonsRoot],
+        'ngdpbase.addons.test-addon.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+  });
+
   // ─────────────────────────────────────────────────────────────────────────
   // #775 — env-var-ref resolution in getProperty / getMaskedProperty
   // ─────────────────────────────────────────────────────────────────────────

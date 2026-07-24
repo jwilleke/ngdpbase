@@ -9,7 +9,7 @@ import {
   splitAddonsPath,
   findNodeModulesDir,
   matchNpmPackageDirs,
-  deriveAddonSlugFromPackageDirName
+  resolveAddonSlug
 } from '../utils/addonsPathResolver.js';
 
 interface ConfigManagerBackupData extends BackupData {
@@ -227,10 +227,10 @@ class ConfigurationManager extends BaseManager {
    * `addons-path` entry — either a directory (bundled/drop-in) or, per
    * #673/#924, an npm package matched by a `node_modules:<glob>` entry.
    * The discovery logic mirrors what `AddonsManager` does at runtime —
-   * directory/package name + `index.js` or `index.ts` present — but
-   * without importing the modules (boot-time speed;
-   * `ConfigurationManager.initialize()` runs before any managers). The
-   * directory-vs-npm-pattern split and npm glob matching are shared with
+   * directory/package present with `index.js` or `index.ts` — but without
+   * importing the modules (boot-time speed; `ConfigurationManager.initialize()`
+   * runs before any managers). The directory-vs-npm-pattern split, npm glob
+   * matching, AND the canonical-identity resolution are all shared with
    * `AddonsManager` via `utils/addonsPathResolver.ts` so the two can no
    * longer drift out of sync (#924: they had, and packaged addons could
    * never boot as a result).
@@ -241,18 +241,16 @@ class ConfigurationManager extends BaseManager {
    * `AddonsManager` silently treated the addon as disabled and registered
    * none of its plugins/managers.
    *
-   * False-positive consideration: for directories, an addon whose
-   * directory name differs from its module's `name:` field would be
-   * flagged here as "missing" even though it'd register at runtime. For
-   * npm packages, the identity used here is derived from the package
-   * directory name alone (stripping a conventional trailing `-addon`
-   * suffix — see `deriveAddonSlugFromPackageDirName`), not from importing
-   * the module, so a package that doesn't follow that naming convention or
-   * whose module exports a different `name` has the same class of
-   * imprecision. Both are rare in practice (the name is the conventional
-   * identity); when it does happen, either rename to match, or remove the
-   * `enabled` key (the addon will still load by its real name since the
-   * registration check is on the module's `name` field).
+   * #927: identity here is the canonical slug — `package.json`
+   * `ngdpbase.slug`, else the folder name minus a conventional trailing
+   * `-addon` (`resolvePackagedAddonSlug`). This is the EXACT same import-free
+   * resolution `AddonsManager.registerAddonFromDir()` uses as its registry
+   * key and `isEnabled` lookup, so this check is now precise rather than a
+   * guess: an enabled `<id>` is known iff the runtime would register under
+   * that same `<id>`. The only residual imprecision is a module whose
+   * exported `name` disagrees with its slug — but since #927 makes the slug
+   * (not `name`) the runtime identity too, that disagreement no longer
+   * affects either layer's `<id>`; it only earns a load-time warning.
    */
   private assertConfiguredAddonsExist(): void {
     if (!this.mergedConfig) return;
@@ -285,10 +283,14 @@ class ConfigurationManager extends BaseManager {
       try { entries = fs.readdirSync(dirPath, { withFileTypes: true }); } catch { continue; }
       for (const entry of entries) {
         if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'shared') continue;
-        const indexJs = path.join(dirPath, entry.name, 'index.js');
-        const indexTs = path.join(dirPath, entry.name, 'index.ts');
+        const addonDir = path.join(dirPath, entry.name);
+        const indexJs = path.join(addonDir, 'index.js');
+        const indexTs = path.join(addonDir, 'index.ts');
         if (fs.existsSync(indexJs) || fs.existsSync(indexTs)) {
-          knownAddons.add(entry.name);
+          // #927: resolve identity the same import-free way AddonsManager
+          // registers it — package.json ngdpbase.slug, else the folder name
+          // verbatim (directory addons are not stripped).
+          knownAddons.add(resolveAddonSlug(addonDir, 'directory'));
         }
       }
     }
@@ -304,7 +306,11 @@ class ConfigurationManager extends BaseManager {
             const indexJs = path.join(pkgDir, 'index.js');
             const indexTs = path.join(pkgDir, 'index.ts');
             if (!fs.existsSync(indexJs) && !fs.existsSync(indexTs)) continue;
-            knownAddons.add(deriveAddonSlugFromPackageDirName(path.basename(pkgDir)));
+            // #927: identity is the statically-declared slug, resolved the
+            // exact same import-free way AddonsManager registers it — so this
+            // is now an exact match, not the folder-name-derived guess #925
+            // had to fall back to.
+            knownAddons.add(resolveAddonSlug(pkgDir, 'npm'));
           }
         }
       }

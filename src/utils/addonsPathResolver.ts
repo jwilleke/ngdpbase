@@ -92,3 +92,39 @@ export function deriveAddonSlugFromPackageDirName(dirName: string): string {
   const suffix = '-addon';
   return dirName.endsWith(suffix) ? dirName.slice(0, -suffix.length) : dirName;
 }
+
+/**
+ * Canonical identity for an addon directory (#927), resolved the SAME
+ * import-free way in every layer (discovery, `isEnabled`, the boot-time
+ * validator) so the four historical identities (folder name, module `name`,
+ * config key, manifest slug) can no longer drift:
+ *
+ *   canonicalId = package.json `ngdpbase.slug`  ??  deriveAddonSlugFromPackageDirName(folder)
+ *
+ * Reads `package.json` statically — never imports the module — which is what
+ * lets the boot validator compute the exact id the runtime will register
+ * under, instead of guessing. The module's exported `name` is a display
+ * label validated against this at load time, not a source of identity.
+ */
+export function resolveAddonSlug(
+  addonDir: string,
+  source: 'directory' | 'npm'
+): string {
+  const dirName = path.basename(addonDir);
+  const pkgPath = path.join(addonDir, 'package.json');
+  try {
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as {
+      ngdpbase?: { slug?: unknown };
+    };
+    const slug = pkg?.ngdpbase?.slug;
+    if (typeof slug === 'string' && slug.trim()) return slug.trim();
+  } catch {
+    /* no/invalid package.json — fall back to the folder-derived id */
+  }
+  // Fallback when no slug is declared. npm packages follow the
+  // `@scope/<slug>-addon` publishing convention, so strip the conventional
+  // trailing `-addon`. A plain directory (bundled/drop-in) addon's folder
+  // name IS its identity verbatim — an addon may legitimately be named
+  // `something-addon` on disk — so never strip there.
+  return source === 'npm' ? deriveAddonSlugFromPackageDirName(dirName) : dirName;
+}

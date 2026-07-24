@@ -15,6 +15,7 @@
     "node": ">=24"
   },
   "ngdpbase": {
+    "slug": "elasticsearch",
     "type": "additive"
   }
 }
