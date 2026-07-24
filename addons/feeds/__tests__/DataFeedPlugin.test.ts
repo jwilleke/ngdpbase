@@ -156,4 +156,81 @@ describe('[DataFeed] plugin (#685)', () => {
     );
     expect(out).toContain('<a href="https://x.test/332010" target="_blank" rel="noopener noreferrer"><span class="feed-badge feed-badge--yellow">YELLOW</span></a>');
   });
+
+  const hotspots: NormalizedRecord[] = [
+    { sourceRecordId: 'h1', fetchedAt: 'x', properties: { latitude: 44.789, longitude: -1.225, frp: 65.2, confidence: 'h' } },
+    { sourceRecordId: 'h2', fetchedAt: 'x', properties: { latitude: 68.615, longitude: 156.989, frp: 12.1, confidence: 'n' } },
+    { sourceRecordId: 'h3', fetchedAt: 'x', properties: { latitude: 'not-a-number', longitude: -1.0, frp: 5, confidence: 'l' } }
+  ];
+
+  it('format=map renders a Leaflet container, vendored assets, and one point per valid record (geohazardwatch#162)', async () => {
+    const out = await exec({ source: 'q', format: 'map', columns: 'frp,confidence' }, hotspots);
+    expect(out).toContain('<div id="datafeed-map-');
+    expect(out).toContain('/addons/feeds/vendor/leaflet/leaflet.css');
+    expect(out).toContain('/addons/feeds/vendor/leaflet/leaflet.js');
+    expect(out).toContain('"lat":44.789');
+    expect(out).toContain('"lat":68.615');
+  });
+
+  it('format=map skips records with a non-numeric or missing lat/lon', async () => {
+    const out = await exec({ source: 'q', format: 'map' }, hotspots);
+    // h3 (invalid latitude) must be dropped — only h1 and h2 are mappable.
+    expect(out.match(/"radius":/g)).toHaveLength(2);
+  });
+
+  it('format=map reports no mappable records rather than an empty map when all lat/lon are invalid', async () => {
+    const out = await exec(
+      { source: 'q', format: 'map' },
+      [{ sourceRecordId: 'x', fetchedAt: 'x', properties: { latitude: 'nope', longitude: 'nope' } }]
+    );
+    expect(out).toContain('no mappable records');
+  });
+
+  it('format=map defaults lat/lon column names to latitude/longitude', async () => {
+    const out = await exec({ source: 'q', format: 'map' }, hotspots);
+    expect(out).toContain('"lat":44.789,"lon":-1.225');
+  });
+
+  it('format=map honours custom lat/lon column names', async () => {
+    const custom = [{ sourceRecordId: 'x', fetchedAt: 'x', properties: { y: 10, x: 20 } }];
+    const out = await exec({ source: 'q', format: 'map', lat: 'y', lon: 'x' }, custom);
+    expect(out).toContain('"lat":10,"lon":20');
+  });
+
+  it('format=map sizeBy scales marker radius between records, largest FRP gets the largest radius', async () => {
+    const out = await exec({ source: 'q', format: 'map', sizeBy: 'frp' }, hotspots);
+    // h1 (frp 65.2, the max among valid points) should get max radius (20);
+    // h2 (frp 12.1, the min among valid points) should get min radius (4).
+    expect(out).toMatch(/"lat":44\.789,"lon":-1\.225,"radius":20/);
+    expect(out).toMatch(/"lat":68\.615,"lon":156\.989,"radius":4/);
+  });
+
+  it('format=map without sizeBy uses a fixed radius for every point', async () => {
+    const out = await exec({ source: 'q', format: 'map' }, hotspots);
+    expect(out).toMatch(/"radius":6.*"radius":6/s);
+  });
+
+  it('format=map popup content is drawn from columns= and HTML-escaped', async () => {
+    const xss = [{ sourceRecordId: 'x', fetchedAt: 'x', properties: { latitude: 1, longitude: 2, note: '<script>alert(1)</script>' } }];
+    const out = await exec({ source: 'q', format: 'map', columns: 'note' }, xss);
+    expect(out).toContain('&lt;script&gt;alert(1)&lt;/script');
+    expect(out).not.toContain('<script>alert(1)</script>');
+  });
+
+  it('format=map defaults max to 500 (higher than table/list default of 20)', async () => {
+    const many = Array.from({ length: 30 }, (_, i) => (
+      { sourceRecordId: `p${i}`, fetchedAt: 'x', properties: { latitude: i, longitude: i } }
+    ));
+    const out = await exec({ source: 'q', format: 'map' }, many);
+    expect(out).toContain('"lat":29,"lon":29'); // the 30th point survived — table/list's max=20 would have dropped it
+  });
+
+  it('format=map respects an explicit max override', async () => {
+    const many = Array.from({ length: 30 }, (_, i) => (
+      { sourceRecordId: `p${i}`, fetchedAt: 'x', properties: { latitude: i, longitude: i } }
+    ));
+    const out = await exec({ source: 'q', format: 'map', max: '5', sort: 'latitude-asc' }, many);
+    expect(out).toContain('"lat":4,"lon":4');
+    expect(out).not.toContain('"lat":5,"lon":5');
+  });
 });

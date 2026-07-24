@@ -11,9 +11,19 @@
  *   [{DataFeed source='usgs-quakes'}]
  *   [{DataFeed source='usgs-quakes' columns='place,magnitude,depth_km' sort='magnitude-desc' max='10'}]
  *   [{DataFeed source='usgs-quakes' format='list' max='5'}]
+ *   [{DataFeed source='firms-viirs' format='map' lat='latitude' lon='longitude' columns='frp,confidence,acq_date' sizeBy='frp'}]
  *
  * Params: source (required) · columns (CSV of property keys) · sort
- * ('key' | 'key-asc' | 'key-desc') · max (default 20) · format ('table'|'list')
+ * ('key' | 'key-asc' | 'key-desc') · max (default 20, 500 for format='map')
+ * · format ('table'|'list'|'map')
+ * · lat / lon (property keys holding coordinates, default 'latitude'/'longitude' —
+ *   format='map' only; records with a missing/non-numeric value in either are
+ *   silently skipped, not an error)
+ * · sizeBy (format='map' only — a numeric column scaled linearly to marker
+ *   radius 4–20px across the rendered records; omitted = fixed 6px radius)
+ * · height / lat0 / lon0 / zoom (format='map' only — map container height in
+ *   px and initial view; defaults are a full-world view: height 450,
+ *   center [20, 0], zoom 2)
  * · badge (CSV of columns whose cell renders as a value-classed pill:
  *   `<span class="feed-badge feed-badge--<slugged-value>">VALUE</span>` — core
  *   CSS ships variants for the aviation color codes green/yellow/orange/red)
@@ -42,7 +52,11 @@ import type { NormalizedRecord } from './adapters/types.js';
 import { recordName } from './normalize.js';
 
 const DEFAULT_MAX = 20;
+const DEFAULT_MAP_MAX = 500;
 const MAX_DEFAULT_COLUMNS = 6;
+const MIN_MARKER_RADIUS = 4;
+const MAX_MARKER_RADIUS = 20;
+const FIXED_MARKER_RADIUS = 6;
 
 interface FeedRecordSource {
   getRecords?: (sourceId: string) => Promise<NormalizedRecord[]>;
@@ -127,6 +141,34 @@ function resolveLinkTemplate(template: string, properties: Record<string, unknow
   return missing ? null : url;
 }
 
+/**
+ * Safely embed a JSON value inside a `<script>` block: escapes any literal
+ * `</script` sequence in the serialized output so a record's own text (e.g.
+ * an RSS description) can never prematurely close the tag and inject markup.
+ */
+function jsonScriptSafe(value: unknown): string {
+  return JSON.stringify(value).replace(/<\/script/gi, '<\\/script');
+}
+
+/**
+ * Linear-scale a numeric column to a marker radius (format='map', `sizeBy`).
+ * All-equal or non-numeric values collapse to the fixed radius rather than
+ * dividing by zero or producing NaN.
+ */
+function buildRadiusScaler(records: NormalizedRecord[], column: string | undefined): (r: NormalizedRecord) => number {
+  if (!column) return () => FIXED_MARKER_RADIUS;
+  const values = records.map(r => Number(r.properties[column])).filter(Number.isFinite);
+  if (values.length === 0) return () => FIXED_MARKER_RADIUS;
+  const min = Math.min(...values), max = Math.max(...values);
+  if (max === min) return () => FIXED_MARKER_RADIUS;
+  return (r: NormalizedRecord) => {
+    const v = Number(r.properties[column]);
+    if (!Number.isFinite(v)) return MIN_MARKER_RADIUS;
+    const t = (v - min) / (max - min);
+    return MIN_MARKER_RADIUS + t * (MAX_MARKER_RADIUS - MIN_MARKER_RADIUS);
+  };
+}
+
 /** Default columns: union of property keys across records, capped. */
 function defaultColumns(records: NormalizedRecord[]): string[] {
   const seen: string[] = [];
@@ -166,11 +208,76 @@ const DataFeedPlugin: SimplePlugin = {
       });
     }
 
-    records = applyMax(records, parseMaxParam(params.max as string | number | undefined, DEFAULT_MAX));
+    const format = String(params.format ?? '').toLowerCase();
+    records = applyMax(records, parseMaxParam(params.max as string | number | undefined, format === 'map' ? DEFAULT_MAP_MAX : DEFAULT_MAX));
 
-    if (String(params.format ?? '').toLowerCase() === 'list') {
+    if (format === 'list') {
       const items = records.map(r => `<li>${escapeHtml(recordName(r, source))}</li>`).join('\n');
       return `<ul class="feed-list">\n${items}\n</ul>`;
+    }
+
+    if (format === 'map') {
+      const latCol = typeof params.lat === 'string' && params.lat.trim() ? params.lat.trim() : 'latitude';
+      const lonCol = typeof params.lon === 'string' && params.lon.trim() ? params.lon.trim() : 'longitude';
+      const sizeByCol = typeof params.sizeBy === 'string' && params.sizeBy.trim() ? params.sizeBy.trim() : undefined;
+
+      // Filter to mappable records first — the radius scaler must compute its
+      // min/max only over records that will actually be plotted, otherwise a
+      // record dropped for bad coordinates can still skew the scale of the
+      // ones that are shown.
+      const mappable = records.filter(r =>
+        Number.isFinite(Number(r.properties[latCol])) && Number.isFinite(Number(r.properties[lonCol]))
+      );
+      const radiusOf = buildRadiusScaler(mappable, sizeByCol);
+
+      type MapPoint = { lat: number; lon: number; radius: number; popup: string };
+      const points: MapPoint[] = mappable.map(r => {
+        const popup = columns
+          .map(c => `<strong>${escapeHtml(c)}:</strong> ${escapeHtml(cellString(r.properties[c]))}`)
+          .join('<br>');
+        return { lat: Number(r.properties[latCol]), lon: Number(r.properties[lonCol]), radius: radiusOf(r), popup };
+      });
+
+      if (points.length === 0) {
+        return muted(`[DataFeed: no mappable records for feed '${source}' — check the lat/lon params]`);
+      }
+
+      const mapId = 'datafeed-map-' + Math.random().toString(36).slice(2, 8);
+      const height = Number(params.height) || 450;
+      const centerLat = Number(params.lat0) || 20;
+      const centerLon = Number(params.lon0) || 0;
+      const zoom = Number(params.zoom) || 2;
+
+      return `
+<div class="datafeed-map">
+  <div id="${mapId}" style="height:${height}px;width:100%;"></div>
+</div>
+<link rel="stylesheet" href="/addons/feeds/vendor/leaflet/leaflet.css">
+<script src="/addons/feeds/vendor/leaflet/leaflet.js"></script>
+<script>
+(function () {
+  var POINTS = ${jsonScriptSafe(points)};
+  function initMap() {
+    if (typeof L === 'undefined') { setTimeout(initMap, 100); return; }
+    var map = L.map('${mapId}').setView([${centerLat}, ${centerLon}], ${zoom});
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 18
+    }).addTo(map);
+    POINTS.forEach(function (p) {
+      L.circleMarker([p.lat, p.lon], {
+        radius: p.radius, color: '#e63946', fillColor: '#e63946',
+        fillOpacity: 0.6, weight: 1
+      }).bindPopup(p.popup).addTo(map);
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initMap);
+  } else {
+    initMap();
+  }
+})();
+</script>`.trim();
     }
 
     const badgeCols = typeof params.badge === 'string'

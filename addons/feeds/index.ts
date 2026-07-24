@@ -21,6 +21,8 @@
  */
 
 import path from 'path';
+import { fileURLToPath } from 'url';
+import express from 'express';
 import type { WikiEngine } from '../../dist/src/types/WikiEngine.js';
 import type CatalogManager from '../../dist/src/managers/CatalogManager.js';
 import type ConfigurationManager from '../../dist/src/managers/ConfigurationManager.js';
@@ -29,6 +31,9 @@ import logger from '../../dist/src/utils/logger.js';
 import { FeedManager } from './src/FeedManager.js';
 import { parseSourceConfigs } from './src/config.js';
 import DataFeedPlugin from './src/DataFeedPlugin.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 let feedManager: FeedManager | null = null;
 
@@ -68,6 +73,12 @@ const feedsAddon = {
     if (pluginManager?.registerPlugin) {
       await pluginManager.registerPlugin('DataFeed', DataFeedPlugin);
     }
+
+    // Vendored Leaflet for [{DataFeed format='map'}] (geohazardwatch#162) — matching
+    // the calendar/journal/forms addon convention of serving each addon's own
+    // public/ dir at /addons/<name>, so map rendering works for any consumer of
+    // this addon with no per-consumer vendoring required.
+    engine.app?.use('/addons/feeds', express.static(path.join(__dirname, 'public')));
 
     // Start the poll scheduler; stale-feed warnings route to /admin/notifications.
     const nm = engine.getManager('NotificationManager') as
