@@ -1322,6 +1322,83 @@ class AddonsManager extends BaseManager {
   }
 
   /**
+   * #930: addon-seeded instance pages whose source file the addon **no longer
+   * ships** ("source removed"). Leave-and-flag — this only *detects*; nothing is
+   * deleted here. The admin surface surfaces these and offers an opt-in,
+   * versioned removal.
+   *
+   * Enumeration uses the indexed `system-category: addon` (via the search index)
+   * to narrow to addon pages — a small candidate set — instead of scanning the
+   * whole page store. Each candidate is attributed to its addon via the `addon`
+   * frontmatter stamp and diffed against that addon's CURRENT source UUID set.
+   * If search is unavailable, returns `[]` (detection is best-effort, never a
+   * source of deletions).
+   */
+  async findOrphanedAddonPages(): Promise<Array<{
+    addonName: string;
+    uuid: string;
+    slug: string;
+    title: string;
+    userModified: boolean;
+  }>> {
+    const pageManager = this.engine.getManager<PageManager>('PageManager');
+    if (!pageManager) return [];
+    const searchManager = this.engine.getManager<SearchManager>('SearchManager');
+
+    // Current source UUID set for each enabled addon that ships pages.
+    const sourceUuidsByAddon = new Map<string, Set<string>>();
+    for (const { name, pagesDir } of this.getEnabledAddonPagesDirectories()) {
+      const set = new Set<string>();
+      try {
+        for (const f of await fs.promises.readdir(pagesDir)) {
+          if (!f.endsWith('.md')) continue;
+          try {
+            const u = (matter(await fs.promises.readFile(path.join(pagesDir, f), 'utf8')).data.uuid) as string | undefined;
+            if (u) set.add(u);
+          } catch { /* skip unreadable/invalid source file */ }
+        }
+      } catch { /* addon ships no pages/ dir */ }
+      sourceUuidsByAddon.set(name, set);
+    }
+    if (sourceUuidsByAddon.size === 0) return [];
+
+    // Narrow to addon-category pages via the index (cheap); no search ⇒ no detection.
+    let candidateNames: string[] = [];
+    if (searchManager) {
+      try {
+        candidateNames = (await searchManager.searchByCategory('addon'))
+          .map(r => r.name)
+          .filter((n): n is string => typeof n === 'string' && n.length > 0);
+      } catch { candidateNames = []; }
+    }
+
+    const orphans: Array<{ addonName: string; uuid: string; slug: string; title: string; userModified: boolean }> = [];
+    const seen = new Set<string>();
+    for (const name of candidateNames) {
+      if (seen.has(name)) continue;
+      seen.add(name);
+      const page = await pageManager.getPage(name);
+      if (!page) continue;
+      const meta = (page.metadata as Record<string, unknown> | undefined) ?? {};
+      const addonName = meta.addon as string | undefined;
+      const uuid = (meta.uuid as string | undefined) ?? pageManager.getPageUUID(name) ?? undefined;
+      if (!addonName || !uuid) continue;
+      const sourceSet = sourceUuidsByAddon.get(addonName);
+      if (!sourceSet) continue; // not an enabled addon (or ships no pages) — don't flag
+      if (!sourceSet.has(uuid)) {
+        orphans.push({
+          addonName,
+          uuid,
+          slug: (meta.slug as string) || name,
+          title: (meta.title as string) || name,
+          userModified: meta['user-modified'] === true
+        });
+      }
+    }
+    return orphans;
+  }
+
+  /**
    * Check if an add-on exists (discovered)
    */
   hasAddon(addonName: string): boolean {

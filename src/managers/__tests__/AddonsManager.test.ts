@@ -1509,4 +1509,80 @@ describe('AddonsManager', () => {
       expect(r.message).toMatch(/not found/i);
     });
   });
+
+  // #930: removed-source-page detection ------------------------------------
+  describe('#930: findOrphanedAddonPages', () => {
+    const uuidKept = '11111111-1111-4111-8111-111111111111';
+    const uuidOrphan = '22222222-2222-4222-8222-222222222222';
+
+    // Engine exposing the managers findOrphanedAddonPages depends on.
+    const makeFullEngine = (configManager, { getPage, searchByCategory }) => ({
+      getManager: vi.fn((name) => {
+        if (name === 'ConfigurationManager') return configManager;
+        if (name === 'PageManager') {
+          return {
+            getPage,
+            getPageUUID: () => null,
+            // seedAddonPages needs these during initialize(); no-op so seeding is quiet.
+            getPageByUUID: async () => null,
+            pageExists: () => false,
+            savePage: async () => {}
+          };
+        }
+        if (name === 'SearchManager') return searchByCategory ? { searchByCategory } : null;
+        return null;
+      })
+    });
+
+    // Addon shipping only the `kept` page in source (uuidOrphan is NOT in source).
+    const seedAddon = async () => {
+      const root = path.join(tmpDir, 'addons');
+      const pagesDir = path.join(root, 'demo', 'pages');
+      await fs.mkdir(pagesDir, { recursive: true });
+      await fs.writeFile(path.join(root, 'demo', 'index.js'),
+        "module.exports = { name: 'demo', version: '1.0.0', register: async () => {} };", 'utf8');
+      await fs.writeFile(path.join(pagesDir, 'kept.md'),
+        `---\nuuid: ${uuidKept}\nslug: kept\ntitle: Kept\n---\nkept body`, 'utf8');
+      return root;
+    };
+
+    test('flags a live addon page whose source was removed; keeps present ones', async () => {
+      const root = await seedAddon();
+      const configManager = makeConfigManager({ addonsPath: [root], enabledAddons: ['demo'] });
+      const getPage = vi.fn(async (name) => {
+        if (name === 'kept') return { content: 'x', metadata: { addon: 'demo', uuid: uuidKept, slug: 'kept', title: 'Kept' } };
+        if (name === 'gone') return { content: 'x', metadata: { addon: 'demo', uuid: uuidOrphan, slug: 'gone', title: 'Gone' } };
+        return null;
+      });
+      const searchByCategory = vi.fn(async () => [{ name: 'kept' }, { name: 'gone' }]);
+
+      const manager = new AddonsManager(makeFullEngine(configManager, { getPage, searchByCategory }));
+      await manager.initialize();
+
+      const orphans = await manager.findOrphanedAddonPages();
+      expect(orphans).toEqual([
+        expect.objectContaining({ addonName: 'demo', uuid: uuidOrphan, slug: 'gone', title: 'Gone' })
+      ]);
+    });
+
+    test('returns [] when the search index is unavailable (best-effort, never guesses deletions)', async () => {
+      const root = await seedAddon();
+      const configManager = makeConfigManager({ addonsPath: [root], enabledAddons: ['demo'] });
+      const getPage = vi.fn(async () => null);
+      const manager = new AddonsManager(makeFullEngine(configManager, { getPage, searchByCategory: null }));
+      await manager.initialize();
+      expect(await manager.findOrphanedAddonPages()).toEqual([]);
+    });
+
+    test('does not flag a page still shipped in source', async () => {
+      const root = await seedAddon();
+      const configManager = makeConfigManager({ addonsPath: [root], enabledAddons: ['demo'] });
+      const getPage = vi.fn(async (name) =>
+        name === 'kept' ? { content: 'x', metadata: { addon: 'demo', uuid: uuidKept, slug: 'kept', title: 'Kept' } } : null);
+      const searchByCategory = vi.fn(async () => [{ name: 'kept' }]);
+      const manager = new AddonsManager(makeFullEngine(configManager, { getPage, searchByCategory }));
+      await manager.initialize();
+      expect(await manager.findOrphanedAddonPages()).toEqual([]);
+    });
+  });
 });

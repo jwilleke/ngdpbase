@@ -394,6 +394,68 @@
     </div>
     <% } %>
 
+    <!-- Orphaned Addon Pages Section (#930: source removed) -->
+    <% if (typeof orphanedAddonPages !== 'undefined' && orphanedAddonPages.length > 0) { %>
+    <div class="row mt-2">
+        <div class="col-12">
+            <div class="card mb-4 border-danger">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-unlink me-2 text-danger"></i>Addon Pages — Source Removed</h5>
+                    <small class="text-muted">These pages were seeded by an addon that <strong>no longer ships the source page</strong>.
+                        They are <strong>left in place</strong> (never auto-deleted). Remove one only if you're sure it's obsolete —
+                        removal keeps a revertable version.</small>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0" id="orphanedAddonPagesTable">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Title</th>
+                                    <th>Addon</th>
+                                    <th>Slug</th>
+                                    <th>Note</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% orphanedAddonPages.forEach(page => { %>
+                                <tr data-uuid="<%= page.uuid %>" class="orphan-row">
+                                    <td>
+                                        <strong><%= page.title %></strong>
+                                        <br><small class="text-muted font-monospace"><%= page.uuid %></small>
+                                    </td>
+                                    <td><span class="badge bg-secondary"><%= page.addonName %></span></td>
+                                    <td><code><%= page.slug || '—' %></code></td>
+                                    <td>
+                                        <span class="badge bg-danger">Source removed</span>
+                                        <% if (page.userModified) { %>
+                                        <br><span class="badge bg-secondary mt-1"><i class="fas fa-user-edit me-1"></i>User Edited</span>
+                                        <% } %>
+                                    </td>
+                                    <td>
+                                        <% if (page.slug) { %>
+                                        <a href="/view/<%= encodeURIComponent(page.slug) %>"
+                                           class="btn btn-sm btn-outline-secondary" target="_blank">
+                                            <i class="fas fa-external-link-alt"></i>
+                                        </a>
+                                        <% } %>
+                                        <button class="btn btn-sm btn-outline-danger"
+                                                onclick="removeOrphan('<%= page.uuid %>', '<%= page.title.replace(/'/g, '\\\'') %>')"
+                                                title="Delete this orphaned page (a revertable version is kept)">
+                                            <i class="fas fa-trash"></i> Remove
+                                        </button>
+                                    </td>
+                                </tr>
+                                <% }); %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <% } %>
+
     <!-- Diff Modal -->
     <div class="modal fade" id="diffModal" tabindex="-1" aria-labelledby="diffModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-scrollable">
@@ -602,6 +664,34 @@ async function doSync(uuids, statusMsg, force = false) {
             }
             // Reload to update summary badges
             setTimeout(() => location.reload(), 2000);
+        } else {
+            showToast(`✗ Error: ${result.error}`);
+        }
+    } catch (err) {
+        showToast(`✗ Network error: ${err.message}`);
+    }
+}
+
+// #930: remove a single orphaned addon page (source removed). Opt-in, per-row,
+// server re-verifies it's actually an orphan before deleting; keeps a version.
+async function removeOrphan(uuid, title) {
+    if (!confirm(`Remove orphaned addon page "${title}"?\n\nIts addon no longer ships this page. A revertable version is kept, so this can be undone.`)) return;
+    showToast(`Removing "${title}"…`);
+    try {
+        const response = await csrfFetch('/admin/required-pages/sync', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': CSRF_TOKEN
+            },
+            body: JSON.stringify({ removeOrphans: [uuid] })
+        });
+        const result = await response.json();
+        if (result.success) {
+            showToast(`✓ ${result.message}`);
+            const row = document.querySelector(`tr.orphan-row[data-uuid="${uuid}"]`);
+            if (row) row.remove();
+            setTimeout(() => location.reload(), 1500);
         } else {
             showToast(`✗ Error: ${result.error}`);
         }
