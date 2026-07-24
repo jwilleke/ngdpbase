@@ -16,6 +16,12 @@
  * Params: source (required) · columns (CSV of property keys) · sort
  * ('key' | 'key-asc' | 'key-desc') · max (default 20, 500 for format='map')
  * · format ('table'|'list'|'map')
+ * · exclude ('column~pattern' — a record is dropped when that column's string
+ *   value matches the case-insensitive regex `pattern`; e.g.
+ *   `exclude='summary~VAAC:|VA ADVISORY|DTG:'` drops re-published VAAC
+ *   bulletins from a general news feed, geohazardwatch#159. One rule per
+ *   plugin call — invalid/unparseable exclude params are ignored (no
+ *   filtering), not an error)
  * · lat / lon (property keys holding coordinates, default 'latitude'/'longitude' —
  *   format='map' only; records with a missing/non-numeric value in either are
  *   silently skipped, not an error)
@@ -142,6 +148,25 @@ function resolveLinkTemplate(template: string, properties: Record<string, unknow
 }
 
 /**
+ * Parse `exclude='column~pattern'` into a column + compiled regex. Returns
+ * null on missing/malformed input (no `~`, empty column/pattern, or an
+ * invalid regex) — the caller treats null as "no filtering", never an error.
+ */
+function parseExcludeParam(raw: unknown): { column: string; pattern: RegExp } | null {
+  if (typeof raw !== 'string') return null;
+  const tilde = raw.indexOf('~');
+  if (tilde <= 0) return null;
+  const column = raw.slice(0, tilde).trim();
+  const patternSource = raw.slice(tilde + 1).trim();
+  if (!column || !patternSource) return null;
+  try {
+    return { column, pattern: new RegExp(patternSource, 'i') };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Safely embed a JSON value inside a `<script>` block: escapes any literal
  * `</script` sequence in the serialized output so a record's own text (e.g.
  * an RSS description) can never prematurely close the tag and inject markup.
@@ -193,6 +218,12 @@ const DataFeedPlugin: SimplePlugin = {
     if (!fm?.getRecords) return muted('[DataFeed: feeds addon not available]');
 
     let records = await fm.getRecords(source);
+
+    const exclude = parseExcludeParam(params.exclude);
+    if (exclude) {
+      records = records.filter(r => !exclude.pattern.test(cellString(r.properties[exclude.column])));
+    }
+
     if (records.length === 0) return muted(`[DataFeed: no records for feed '${source}']`);
 
     const columns = typeof params.columns === 'string' && params.columns.trim()
