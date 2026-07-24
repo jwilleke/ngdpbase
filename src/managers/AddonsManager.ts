@@ -14,8 +14,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { createHash } from 'node:crypto';
-import { minimatch } from 'minimatch';
 import matter from 'gray-matter';
+import {
+  splitAddonsPath,
+  findNodeModulesDir,
+  matchNpmPackageDirs
+} from '../utils/addonsPathResolver.js';
 import BaseManager from './BaseManager.js';
 import type { BackupData } from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -360,14 +364,11 @@ class AddonsManager extends BaseManager {
     // (#673 packaged model). An entry prefixed `node_modules:` is a glob of
     // npm packages to discover from node_modules (e.g. `node_modules:@jwilleke/*-addon`);
     // everything else is a directory path resolved to absolute (bundled/drop-in).
-    const NPM_PREFIX = 'node_modules:';
-    this.resolvedAddonsPaths = this.addonsPaths
-      .filter(p => !p.startsWith(NPM_PREFIX))
-      .map(p => path.resolve(p));
-    this.npmAddonPatterns = this.addonsPaths
-      .filter(p => p.startsWith(NPM_PREFIX))
-      .map(p => p.slice(NPM_PREFIX.length).trim())
-      .filter(Boolean);
+    // Shared with ConfigurationManager's boot-time addon-exists check (#924)
+    // so the two can no longer drift.
+    const { directories, npmPatterns } = splitAddonsPath(this.addonsPaths);
+    this.resolvedAddonsPaths = directories.map(p => path.resolve(p));
+    this.npmAddonPatterns = npmPatterns;
 
     // Discover and load add-ons
     await this.discoverAddons();
@@ -440,28 +441,12 @@ class AddonsManager extends BaseManager {
 
   /** Locate the node_modules directory (app root / cwd). */
   private findNodeModules(): string | null {
-    const nm = path.resolve(process.cwd(), 'node_modules');
-    return fs.existsSync(nm) && fs.statSync(nm).isDirectory() ? nm : null;
+    return findNodeModulesDir();
   }
 
   /** Expand a `@scope/glob` (or bare `glob`) pattern to package directories. */
   private resolveNpmAddonDirs(nmRoot: string, pattern: string): string[] {
-    let baseDir = nmRoot;
-    let nameGlob = pattern;
-    if (pattern.startsWith('@')) {
-      const slash = pattern.indexOf('/');
-      const scope = slash > 0 ? pattern.slice(0, slash) : pattern;
-      nameGlob = slash > 0 ? pattern.slice(slash + 1) : '*';
-      baseDir = path.join(nmRoot, scope);
-    }
-    if (!fs.existsSync(baseDir)) return [];
-    const out: string[] = [];
-    for (const entry of fs.readdirSync(baseDir, { withFileTypes: true })) {
-      if (entry.isDirectory() && !entry.name.startsWith('.') && minimatch(entry.name, nameGlob)) {
-        out.push(path.join(baseDir, entry.name));
-      }
-    }
-    return out;
+    return matchNpmPackageDirs(nmRoot, pattern);
   }
 
   /**

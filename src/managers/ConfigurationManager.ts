@@ -4,6 +4,13 @@ import { WikiConfig } from '../types/Config.js';
 import logger from '../utils/logger.js';
 import BaseManager, { BackupData } from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
+import {
+  NPM_ADDON_PREFIX,
+  splitAddonsPath,
+  findNodeModulesDir,
+  matchNpmPackageDirs,
+  deriveAddonSlugFromPackageDirName
+} from '../utils/addonsPathResolver.js';
 
 interface ConfigManagerBackupData extends BackupData {
   customConfig: Partial<WikiConfig> | null;
@@ -216,12 +223,17 @@ class ConfigurationManager extends BaseManager {
 
   /**
    * #672: refuse to start if any `ngdpbase.addons.<id>.enabled = true` key
-   * references an `<id>` that has no matching addon directory in any
-   * configured `addons-path`. The discovery logic mirrors what
-   * `AddonsManager.scanAddonsDirectory()` does at runtime — directory name
-   * + `index.js` or `index.ts` present — but without importing the modules
-   * (boot-time speed; `ConfigurationManager.initialize()` runs before any
-   * managers).
+   * references an `<id>` that has no matching addon in any configured
+   * `addons-path` entry — either a directory (bundled/drop-in) or, per
+   * #673/#924, an npm package matched by a `node_modules:<glob>` entry.
+   * The discovery logic mirrors what `AddonsManager` does at runtime —
+   * directory/package name + `index.js` or `index.ts` present — but
+   * without importing the modules (boot-time speed;
+   * `ConfigurationManager.initialize()` runs before any managers). The
+   * directory-vs-npm-pattern split and npm glob matching are shared with
+   * `AddonsManager` via `utils/addonsPathResolver.ts` so the two can no
+   * longer drift out of sync (#924: they had, and packaged addons could
+   * never boot as a result).
    *
    * Catches the failure mode that caused the 2026-05-10 geohazardwatch.com
    * outage: the deploy configmap had `ngdpbase.addons.ve-geology.enabled =
@@ -229,12 +241,17 @@ class ConfigurationManager extends BaseManager {
    * `AddonsManager` silently treated the addon as disabled and registered
    * none of its plugins/managers.
    *
-   * False-positive consideration: an addon whose directory name differs
-   * from its module's `name:` field would be flagged here as "missing"
-   * even though it'd register at runtime. This is rare in practice (the
-   * directory name is the conventional identity); when it does happen,
-   * either rename the directory to match the module, or remove the
-   * `enabled` key (the addon will load by directory name anyway since the
+   * False-positive consideration: for directories, an addon whose
+   * directory name differs from its module's `name:` field would be
+   * flagged here as "missing" even though it'd register at runtime. For
+   * npm packages, the identity used here is derived from the package
+   * directory name alone (stripping a conventional trailing `-addon`
+   * suffix — see `deriveAddonSlugFromPackageDirName`), not from importing
+   * the module, so a package that doesn't follow that naming convention or
+   * whose module exports a different `name` has the same class of
+   * imprecision. Both are rare in practice (the name is the conventional
+   * identity); when it does happen, either rename to match, or remove the
+   * `enabled` key (the addon will still load by its real name since the
    * registration check is on the module's `name` field).
    */
   private assertConfiguredAddonsExist(): void {
@@ -248,15 +265,16 @@ class ConfigurationManager extends BaseManager {
     }
     if (enabledIds.length === 0) return;
 
-    // 2. Resolve addons-path (string or string[]; default './addons') —
-    // matching AddonsManager.initialize() lines 210-219.
+    // 2. Resolve addons-path (string or string[]; default './addons') into
+    // filesystem directories vs. `node_modules:<glob>` npm patterns —
+    // matching AddonsManager.initialize().
     const raw = this.getProperty('ngdpbase.managers.addons-manager.addons-path', './addons');
-    const paths = Array.isArray(raw) ? (raw as string[]) : [raw as string];
-    const resolvedPaths = paths.map(p => path.resolve(p));
+    const { directories, npmPatterns } = splitAddonsPath(raw);
+    const resolvedPaths = directories.map(p => path.resolve(p));
 
     // 3. Enumerate addon directories. Directory name + index.{js,ts} must
-    // be present, matching AddonsManager.scanAddonsDirectory() lines
-    // 263-287. No module loading at this stage.
+    // be present, matching AddonsManager.scanAddonsDirectory(). No module
+    // loading at this stage.
     const knownAddons = new Set<string>();
     for (const dirPath of resolvedPaths) {
       if (!fs.existsSync(dirPath)) continue;
@@ -275,7 +293,24 @@ class ConfigurationManager extends BaseManager {
       }
     }
 
-    // 4. Diff. Any enabled id without a matching directory is a misconfig.
+    // 3b. #673/#924: enumerate npm-packaged addons matching each
+    // `node_modules:<glob>` pattern, mirroring AddonsManager.scanNpmAddons().
+    // No module import here either (see false-positive note above).
+    if (npmPatterns.length > 0) {
+      const nmRoot = findNodeModulesDir();
+      if (nmRoot) {
+        for (const pattern of npmPatterns) {
+          for (const pkgDir of matchNpmPackageDirs(nmRoot, pattern)) {
+            const indexJs = path.join(pkgDir, 'index.js');
+            const indexTs = path.join(pkgDir, 'index.ts');
+            if (!fs.existsSync(indexJs) && !fs.existsSync(indexTs)) continue;
+            knownAddons.add(deriveAddonSlugFromPackageDirName(path.basename(pkgDir)));
+          }
+        }
+      }
+    }
+
+    // 4. Diff. Any enabled id without a matching directory/package is a misconfig.
     const unknown = enabledIds.filter(id => !knownAddons.has(id));
     if (unknown.length === 0) return;
 
@@ -286,10 +321,11 @@ class ConfigurationManager extends BaseManager {
       return guess ? `"${id}" (did you mean "${guess}"?)` : `"${id}"`;
     });
 
+    const searchedIn = [...resolvedPaths, ...npmPatterns.map(p => `${NPM_ADDON_PREFIX}${p}`)];
     throw new Error(
       '[ConfigurationManager] Refusing to start: ' +
       `'ngdpbase.addons.<id>.enabled = true' references unknown addon(s): ${suggestions.join(', ')}. ` +
-      `Available addons in [${resolvedPaths.map(p => `"${p}"`).join(', ')}]: ` +
+      `Available addons in [${searchedIn.map(p => `"${p}"`).join(', ')}]: ` +
       `${known.length ? known.join(', ') : '(none discovered)'}. ` +
       'Either rename the config key to match a discovered addon, or remove the enabled key. (#672)'
     );

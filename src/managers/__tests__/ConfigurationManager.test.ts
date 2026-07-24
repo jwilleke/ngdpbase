@@ -1165,6 +1165,126 @@ describe('ConfigurationManager', () => {
     });
   });
 
+  describe('configured-addons-exist guard — packaged (npm) addons (#673/#924)', () => {
+    /**
+     * #924: this guard used to resolve every addons-path entry — including
+     * `node_modules:<glob>` npm patterns — as a literal directory, so any
+     * enabled packaged addon was always "unknown" and crashed boot. These
+     * tests cover the fix: npm patterns are matched the same way
+     * `AddonsManager.scanNpmAddons()` does, via the shared
+     * `utils/addonsPathResolver.ts`.
+     */
+    const writeAddonDefault = async (extra: Record<string, unknown>) => {
+      await fs.writeJson(
+        path.join(tempDir, 'config', 'app-default-config.json'),
+        {
+          'ngdpbase.application-name': 'TestWiki',
+          'ngdpbase.application.base-url': 'http://localhost:3000',
+          'ngdpbase.application.contact.enabled': true,
+          'ngdpbase.application.contact.page': '',
+          'ngdpbase.application.contact.recipient': '',
+          ...extra
+        },
+        { spaces: 2 }
+      );
+    };
+
+    const seedAddonDir = async (root: string, name: string) => {
+      const dir = path.join(root, name);
+      await fs.ensureDir(dir);
+      await fs.writeFile(path.join(dir, 'index.js'), '// stub addon');
+    };
+
+    /**
+     * Seed a fake npm-installed addon package under `<tempDir>/node_modules/<rel>`
+     * (e.g. `rel = '@t/geohazardwatch-addon'`). `beforeEach` already
+     * `process.chdir(tempDir)`s, matching `findNodeModulesDir()`'s
+     * cwd-relative resolution.
+     */
+    const seedNpmAddon = async (rel: string, opts: { withIndex?: boolean } = {}) => {
+      const dir = path.join(tempDir, 'node_modules', rel);
+      await fs.ensureDir(dir);
+      if (opts.withIndex !== false) {
+        await fs.writeFile(path.join(dir, 'index.js'), '// stub addon', 'utf8');
+      }
+      await fs.writeJson(path.join(dir, 'package.json'), { name: rel, version: '1.0.0' });
+      return dir;
+    };
+
+    test('enabled key matches a discovered npm-packaged addon does not throw', async () => {
+      await seedNpmAddon('@t/geohazardwatch-addon');
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': ['node_modules:@t/*-addon'],
+        'ngdpbase.addons.geohazardwatch.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+
+    test('enabled key with no matching npm package throws and lists the pattern searched', async () => {
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': ['node_modules:@t/*-addon'],
+        'ngdpbase.addons.geohazardwatch.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).rejects.toThrow(/Refusing to start.*geohazardwatch.*#672/s);
+      await expect(cm.initialize()).rejects.toThrow(/node_modules:@t\/\*-addon/);
+    });
+
+    test('mixed directory + npm addons-path: both kinds satisfy their own enabled keys', async () => {
+      const addonsRoot = path.join(tempDir, 'addons');
+      await seedAddonDir(addonsRoot, 'calendar');
+      await seedNpmAddon('@t/geohazardwatch-addon');
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': [addonsRoot, 'node_modules:@t/*-addon'],
+        'ngdpbase.addons.calendar.enabled': true,
+        'ngdpbase.addons.geohazardwatch.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+
+    test('npm package without index.js/index.ts is not considered a known addon', async () => {
+      await seedNpmAddon('@t/geohazardwatch-addon', { withIndex: false });
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': ['node_modules:@t/*-addon'],
+        'ngdpbase.addons.geohazardwatch.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).rejects.toThrow(/geohazardwatch/);
+    });
+
+    test('a node_modules: pattern with no matches is harmless when nothing is enabled', async () => {
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': ['node_modules:@t/*-addon']
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+
+    test('no node_modules directory at all is handled gracefully (not a crash)', async () => {
+      // No seedNpmAddon call at all — <tempDir>/node_modules never gets created.
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': ['node_modules:@t/*-addon'],
+        'ngdpbase.addons.geohazardwatch.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).rejects.toThrow(/Refusing to start.*geohazardwatch.*#672/s);
+    });
+
+    test('package folder not following the `-addon` naming convention is matched by its literal folder name', async () => {
+      // Naming-convention caveat documented on assertConfiguredAddonsExist:
+      // identity here is folder-name-derived, not the module's real `name`.
+      await seedNpmAddon('@t/oddball');
+      await writeAddonDefault({
+        'ngdpbase.managers.addons-manager.addons-path': ['node_modules:@t/*'],
+        'ngdpbase.addons.oddball.enabled': true
+      });
+      const cm = new ConfigurationManager(mockEngine);
+      await expect(cm.initialize()).resolves.not.toThrow();
+    });
+  });
+
   // ─────────────────────────────────────────────────────────────────────────
   // #775 — env-var-ref resolution in getProperty / getMaskedProperty
   // ─────────────────────────────────────────────────────────────────────────
