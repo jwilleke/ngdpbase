@@ -8830,6 +8830,17 @@ ${panes}
         current: addonComparison.filter(p => p.status === 'current').length
       };
 
+      // #930: addon pages whose source the addon no longer ships ("source
+      // removed"). Leave-and-flag — surfaced for the operator, never auto-deleted.
+      let orphanedAddonPages: Array<{ addonName: string; uuid: string; slug: string; title: string; userModified: boolean }> = [];
+      if (addonsManager) {
+        try {
+          orphanedAddonPages = await addonsManager.findOrphanedAddonPages();
+        } catch (orphanErr) {
+          logger.warn(`[adminRequiredPages] orphan detection failed: ${String(orphanErr)}`);
+        }
+      }
+
       const commonData = await this.getCommonTemplateData(req);
       return res.render('admin-required-pages', {
         ...commonData,
@@ -8838,6 +8849,7 @@ ${panes}
         counts,
         addonComparison,
         addonCounts,
+        orphanedAddonPages,
         csrfToken: req.session.csrfToken,
         successMessage: req.query.success || null,
         errorMessage: req.query.error || null
@@ -8886,14 +8898,16 @@ ${panes}
         reconcile?: { sourceUuid: string; liveUuid: string }[];
         adoptUuid?: { sourceUuid: string; liveUuid: string }[];
         pushToSource?: string[];
+        removeOrphans?: string[];
       };
       const uuids = Array.isArray(body.uuids) ? body.uuids : [];
       const forceSync = body.force === true;
       const reconcileItems = Array.isArray(body.reconcile) ? body.reconcile : [];
       const adoptItems = Array.isArray(body.adoptUuid) ? body.adoptUuid : [];
       const pushToSourceUuids = Array.isArray(body.pushToSource) ? body.pushToSource : [];
+      const removeOrphanUuids = Array.isArray(body.removeOrphans) ? body.removeOrphans : [];
 
-      if (uuids.length === 0 && reconcileItems.length === 0 && adoptItems.length === 0 && pushToSourceUuids.length === 0) {
+      if (uuids.length === 0 && reconcileItems.length === 0 && adoptItems.length === 0 && pushToSourceUuids.length === 0 && removeOrphanUuids.length === 0) {
         return res.status(400).json({ success: false, error: 'No pages selected' });
       }
 
@@ -9072,6 +9086,27 @@ ${panes}
         }
       }
 
+      // #930: opt-in removal of orphaned addon pages (source removed). Re-verify
+      // each is CURRENTLY an orphan server-side before deleting — never trust the
+      // client list — and delete via PageManager so a revertable version is kept.
+      const removedOrphans: string[] = [];
+      if (removeOrphanUuids.length > 0) {
+        const addonsMgr = this.engine.getManager('AddonsManager');
+        const currentOrphans = addonsMgr ? await addonsMgr.findOrphanedAddonPages() : [];
+        const orphanUuidSet = new Set(currentOrphans.map((o: { uuid: string }) => o.uuid));
+        const pm = this.engine.getManager('PageManager');
+        for (const uuid of removeOrphanUuids) {
+          if (!orphanUuidSet.has(uuid)) {
+            logger.warn(`[adminSyncRequiredPages] refused orphan removal for ${uuid} — not currently a source-removed addon page`);
+            continue;
+          }
+          if (await pm.deletePage(uuid)) {
+            removedOrphans.push(uuid);
+            logger.info(`[adminSyncRequiredPages] removed orphaned addon page ${uuid} by ${currentUser.username}`);
+          }
+        }
+      }
+
       const pageManager = this.engine.getManager('PageManager');
       await pageManager.refreshPageList();
 
@@ -9100,13 +9135,15 @@ ${panes}
       const parts: string[] = [];
       if (synced.length > 0) parts.push(`${synced.length} page${synced.length !== 1 ? 's' : ''} synced`);
       if (protected_.length > 0) parts.push(`${protected_.length} skipped (user-edited — use Push to Source or diff first)`);
+      if (removedOrphans.length > 0) parts.push(`${removedOrphans.length} orphaned addon page${removedOrphans.length !== 1 ? 's' : ''} removed`);
 
       return res.json({
         success: true,
         message: parts.join('; ') || 'Nothing to sync',
         synced: synced.length,
         uuids: synced,
-        protected: protected_
+        protected: protected_,
+        removedOrphans
       });
     } catch (err: unknown) {
       logger.error('Error syncing required pages:', err);
