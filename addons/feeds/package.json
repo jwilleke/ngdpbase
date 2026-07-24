@@ -16,6 +16,7 @@
     "type": "additive"
   },
   "dependencies": {
+    "express": "^5.2.1",
     "fast-xml-parser": "^5.10.1"
   }
 }
