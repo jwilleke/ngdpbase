@@ -12,6 +12,7 @@
     "node": ">=24"
   },
   "ngdpbase": {
+    "slug": "feeds",
     "type": "additive"
   },
   "dependencies": {

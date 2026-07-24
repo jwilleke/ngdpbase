@@ -40,6 +40,8 @@ A domain addon today typically owns its whole image (`FROM ngdpbase + WORKDIR + 
 
 Net: the bespoke per-addon image collapses to a generic base image + one `npm install` line + config. The two version axes (ngdpbase base, addon package) decouple, which is what removes the drift.
 
+> **Audit every deployment artifact that references the addon's drop-in path directly — not just the main Dockerfile.** CronJobs, init containers, sidecars, and debug/exec scripts that hardcode the old drop-in layout (e.g. `workingDir: /opt/<slug>`, `node addons/<slug>/import/*.js`) break **silently on their next scheduled run** rather than at deploy time, because the packaged model changes where the addon's files physically live (`node_modules/<scope>/<slug>-addon/`, not `addons/<slug>/` or `/opt/<slug>/`). Image-automation (e.g. Flux) will happily bump such a job's pinned tag to the new packaged image with nothing positioned to catch the broken path. Grep your whole deployment — every manifest, not just the app Deployment — for the old path before cutting over. (Surfaced in geohazardwatch#152: a daily data-import CronJob was a second, independent consumer of `/opt/geohazardwatch` and was not on the migration checklist.)
+
 ## How discovery works
 
 Add a `node_modules:<glob>` entry to `addons-path`:
@@ -76,18 +78,20 @@ A packaged addon is an ordinary npm package whose installed directory satisfies 
 
 - Package name convention: `@<scope>/<slug>-addon` (so the `*-addon` glob catches it).
 - `main` must resolve to an `index.js` (or the discovery falls back to `index.js`/`index.ts` in the package root).
-- The optional `ngdpbase` block is read into the addon's `manifest` (same as a drop-in's `package.json` `ngdpbase` block).
+- `ngdpbase.slug` is the addon's **canonical identity** (#927): it is the registry key, the `ngdpbase.addons.<slug>.enabled` config-gate key, the dependency-reference name, and what the boot-time validator matches — all resolved from `package.json` *without importing the module*. **Declare it.** If omitted, identity falls back to the package directory name minus a trailing `-addon` (so `@jwilleke/geohazardwatch-addon` → `geohazardwatch`), but relying on that couples your identity to the package folder name — declaring `slug` is authoritative and explicit.
 
 **`index.js`** — the module contract, unchanged across all three models:
 
 ```js
 module.exports = {
-  name: 'geohazardwatch',           // the addon slug — the config-gate key
+  name: 'geohazardwatch',           // display label; MUST equal ngdpbase.slug
   version: '1.4.2',
   register(engine, config) { /* … */ },
-  dependencies: []                  // optional addon deps
+  dependencies: []                  // optional addon deps (referenced by slug)
 };
 ```
+
+The module's exported `name` is a display label, not the identity — at load time `AddonsManager` warns (errors for `type: 'domain'`) if `name !== slug`. Keep them equal.
 
 The addon is still gated by `ngdpbase.addons.<name>.enabled` — installing the package makes it *discoverable*, not automatically active.
 

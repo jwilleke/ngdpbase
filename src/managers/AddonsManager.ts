@@ -18,7 +18,8 @@ import matter from 'gray-matter';
 import {
   splitAddonsPath,
   findNodeModulesDir,
-  matchNpmPackageDirs
+  matchNpmPackageDirs,
+  resolveAddonSlug
 } from '../utils/addonsPathResolver.js';
 import BaseManager from './BaseManager.js';
 import type { BackupData } from './BaseManager.js';
@@ -205,6 +206,15 @@ export interface AddonProfileSectionEntry extends AddonProfileSection {
  * All fields are optional — omitting the key entirely is valid.
  */
 export interface AddonManifest {
+  /**
+   * Canonical addon identity (#927). Authoritative id used as the registry
+   * key, the `ngdpbase.addons.<slug>.enabled` config key, dependency
+   * references, and the boot-time validator's match — read statically from
+   * `package.json` with no module import. When absent, identity falls back
+   * to the package/folder name (minus a conventional trailing `-addon`).
+   * The module's exported `name` is a display label and must equal this.
+   */
+  slug?: string;
   /** 'domain' = this addon IS the site identity; 'additive' = augments an existing wiki */
   type?: 'domain' | 'additive';
   /**
@@ -418,7 +428,7 @@ class AddonsManager extends BaseManager {
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
       if (entry.name === 'shared') continue; // reserved for shared utilities
-      await this.registerAddonFromDir(path.join(dirPath, entry.name), dirPath);
+      await this.registerAddonFromDir(path.join(dirPath, entry.name), dirPath, 'directory');
     }
   }
 
@@ -435,7 +445,7 @@ class AddonsManager extends BaseManager {
       return;
     }
     for (const pkgDir of this.resolveNpmAddonDirs(nmRoot, pattern)) {
-      await this.registerAddonFromDir(pkgDir, `npm:${pattern}`);
+      await this.registerAddonFromDir(pkgDir, `npm:${pattern}`, 'npm');
     }
   }
 
@@ -452,10 +462,17 @@ class AddonsManager extends BaseManager {
   /**
    * Load a single addon from its directory (index.js/ts + optional package.json
    * `ngdpbase` manifest) and register it. Shared by directory scans and npm
-   * (#673) discovery; `sourceLabel` is for logging only. Duplicate names are
-   * skipped — since npm discovery runs last, a bundled/drop-in addon wins.
+   * (#673) discovery; `sourceLabel` is for logging only. `source` selects the
+   * no-slug identity fallback (#927): a directory addon's folder name is its
+   * identity verbatim, while an npm package strips the conventional `-addon`
+   * suffix. Duplicate ids are skipped — since npm discovery runs last, a
+   * bundled/drop-in addon wins.
    */
-  private async registerAddonFromDir(addonPath: string, sourceLabel: string): Promise<void> {
+  private async registerAddonFromDir(
+    addonPath: string,
+    sourceLabel: string,
+    source: 'directory' | 'npm'
+  ): Promise<void> {
     const folderName = path.basename(addonPath);
     const indexPath = path.join(addonPath, 'index.js');
     const indexTsPath = path.join(addonPath, 'index.ts');
@@ -478,12 +495,6 @@ class AddonsManager extends BaseManager {
         logger.error(`Add-on ${addonModule.name} missing required register() function, skipping`);
         return;
       }
-      if (this.addons.has(addonModule.name)) {
-        logger.warn(`[AddonsManager] Duplicate add-on name '${addonModule.name}' from ${sourceLabel} — skipping (already loaded)`);
-        return;
-      }
-
-      const enabled = this.isEnabled(addonModule.name);
 
       let manifest: AddonManifest | null = null;
       const pkgPath = path.join(addonPath, 'package.json');
@@ -496,7 +507,32 @@ class AddonsManager extends BaseManager {
         }
       }
 
-      this.addons.set(addonModule.name, {
+      // #927: canonical identity is the statically-declared slug (resolved the
+      // SAME import-free way the boot validator uses), NOT the imported
+      // module.name. The registry key, isEnabled config lookup, dedup and
+      // dependency references all key off this. module.name is a display
+      // label validated against it below.
+      const canonicalId = resolveAddonSlug(addonPath, source);
+      if (addonModule.name !== canonicalId) {
+        const msg =
+          `[AddonsManager] Add-on identity mismatch in ${folderName}: module name ` +
+          `'${addonModule.name}' != canonical slug '${canonicalId}' (from package.json ` +
+          `ngdpbase.slug or folder name). Using '${canonicalId}' as identity; config key is ` +
+          `ngdpbase.addons.${canonicalId}.enabled. Align the module's name with the slug.`;
+        // A domain addon's identity IS the site identity — a mismatch there is
+        // far more dangerous, so surface it at error level.
+        if (manifest?.type === 'domain') logger.error(msg);
+        else logger.warn(msg);
+      }
+
+      if (this.addons.has(canonicalId)) {
+        logger.warn(`[AddonsManager] Duplicate add-on '${canonicalId}' from ${sourceLabel} — skipping (already loaded)`);
+        return;
+      }
+
+      const enabled = this.isEnabled(canonicalId);
+
+      this.addons.set(canonicalId, {
         path: addonPath,
         module: addonModule,
         enabled,
@@ -505,8 +541,9 @@ class AddonsManager extends BaseManager {
         manifest
       });
 
+      const label = addonModule.name === canonicalId ? canonicalId : `${canonicalId} (name: ${addonModule.name})`;
       logger.info(
-        `📦 Discovered add-on: ${addonModule.name} v${addonModule.version || 'unknown'} ` +
+        `📦 Discovered add-on: ${label} v${addonModule.version || 'unknown'} ` +
           `[${enabled ? 'enabled' : 'disabled'}] (${sourceLabel})`
       );
     } catch (err) {
