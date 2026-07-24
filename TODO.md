@@ -17,15 +17,15 @@ Generated priority mirror of open GitHub issues — the `P0` / `P1` / `P2` / `de
 <!-- RESUME:START -->
 ## ▶ Resume here — 2026-07-24
 
-- Last worked on: released **v3.66.0** (ships #929/#930/#931 = full #920 addon-page-sync residual), propagated all 4 instances. Also closed stale #869 keyword epic + 5 shipped sub-issues.
-- Branch / state: master, clean, 0 unpushed, on v3.66.0 tag. 1 pre-existing stash.
-- Running / in-flight: 4 pm2 servers up (jimstest:3000, fairways-base:2121, temp-build:3001, ngdpbase-veg:3333) — persist across shutdown. No workflows/agents I started.
-- Parked / half-done: 1 pre-existing stash `wip: single-evaluator refactor (#711)` — NOT mine, untouched. Untracked generated VAAC file in geohazardwatch checkout.
+- Last worked on: unblocked and merged **PR #937** (`[DataFeed] exclude=` param). It was `CONFLICTING` because #936 (`format='map'`) had landed in the same two files; rebased onto master, kept both sides (all conflicts were purely additive), build clean, 35/35 plugin tests pass. Squashed to `259e7f24`.
+- Branch / state: master, clean, 0 unpushed, 1 pre-existing stash.
+- Running / in-flight: 4 pm2 servers online, all still on **v3.66.0** (jimstest:3000, The Fairways, GeoHazardWatch, ngdpbase temp build) — persist across shutdown. No workflows or background agents. CI all green, 0 open PRs.
+- Parked / half-done: 1 pre-existing stash `wip: full single-evaluator refactor (parked — see #711 follow-up)` — NOT from this session, untouched.
 - Next steps:
-  - **3 open PRs from another actor await review/merge** — #937 (DataFeed exclude= param), #936 (DataFeed format='map' Leaflet), #935 (dependabot postcss bump). Confirm intent before merging — they appeared mid-session, not from this work.
-  - Security decision on #599 (showdown ReDoS, upstream-blocked): pick mitigation or formally accept.
-  - #898 orphan route.png bug — tractable P1, reproduce first.
-- Blockers / significant notes: **Concurrent activity on this repo** — v3.65.0 was released by another process mid-session, and feeds PRs #936/#937 appeared from another session/agent. Coordinate before releasing/merging to avoid races.
+  - **Propagate v3.67.0.** Another session tagged `v3.67.0` (`3c7aed1c`) at the end of this one — it ships both feeds features (#936 `format='map'`, #937 `exclude=`). The tag exists but **nothing is running it**: all 4 pm2 instances are still on v3.66.0. Build + `./server.sh restart jimstest` + full suite on the released code FIRST, then satellites via `/othersites`. geohazardwatch#159/#162 unblock once the release flows through GHCR + Renovate.
+  - Security decision on #599 (showdown ReDoS, upstream-blocked, no patched version exists): pick a mitigation or formally accept the risk.
+  - #898 orphan `route.png` bug — bounded P1, reproduce before proposing.
+- Blockers / significant notes: **#599 cannot be fixed by upgrading** — `showdown` is already at latest (2.1.0) and `first_patched_version` is null. It stays a standing P1 until a mitigation lands (worker-thread timeout / input cap / migrate off showdown). Also: **concurrent actors are actively pushing to this repo** — v3.67.0 landed on origin/master during this very `/wrap`, after #936/#937 had appeared unprompted earlier. Always `git fetch` and re-check `gh pr list` before releasing, merging, or assuming local master is current.
 <!-- RESUME:END -->
 
 ## 🔴 P0 — Security & Critical
