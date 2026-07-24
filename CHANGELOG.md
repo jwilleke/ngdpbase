@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Future enhancements
 
+## [3.67.0] - 2026-07-24
+
+### Added
+
+- `[DataFeed]` plugin: `exclude='column~pattern'` (#159) — drops any record whose column matches a case-insensitive regex, matching the existing `badge=`/`link=` declarative-param style. Motivated by geohazardwatch#159 (dropping VAAC bulletins re-published inside a general news feed).
+- `[DataFeed]` plugin: `format='map'` (#162) — renders any feed source as a Leaflet map instead of only table/list. Vendors Leaflet into the `feeds` addon's own `public/` (served at `/addons/feeds/vendor/leaflet/`, same convention as `calendar`/`journal`/`forms`) so map rendering works for any consumer with zero per-consumer setup. `lat`/`lon` select coordinate columns, `sizeBy` linearly scales marker radius from a numeric column. Motivated by geohazardwatch#162 (wildfire map) — a generic capability rather than a bespoke plugin.
+
 ## [3.66.0] - 2026-07-24
 
 ### Planned
