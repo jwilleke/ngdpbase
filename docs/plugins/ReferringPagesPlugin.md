@@ -3,7 +3,7 @@ name: ReferringPagesPlugin
 description: Lists pages that link to the current page
 dateModified: '2025-12-18'
 category: plugins
-code: src/plugins/ReferringPagesPlugin.ts
+code: src/plugins/referringPagesPlugin.ts
 relatedModules:
   - PluginManager
   - LinkGraph
