@@ -13,7 +13,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { createHash } from 'node:crypto';
+import { pageSourceHash, evaluateSeededAddonPage } from '../utils/addonPageSync.js';
 import matter from 'gray-matter';
 import {
   splitAddonsPath,
@@ -715,22 +715,24 @@ class AddonsManager extends BaseManager {
         if (existing) {
           const existingMeta = (existing.metadata as Record<string, unknown> | undefined) ?? {};
           const existingSlug = (existingMeta.slug as string) || slug;
-          const srcHash = this.pageSourceHash(parsed.content);
+          const srcHash = pageSourceHash(parsed.content);
           const storedHash = existingMeta['addon-source-hash'];
-          const liveHash = this.pageSourceHash(existing.content);
           const hasHash = typeof storedHash === 'string' && storedHash.length > 0;
-          // "unmodified" = the live body is byte-identical to what we last
-          // seeded (⇒ never operator-edited). A legacy page (seeded before the
-          // #920 hash existed) has no stamp — we can't prove it was edited, and
-          // since these are addon-owned pages the operator opted to sync, we
-          // treat it as reseedable too (previous content is kept as a revertable
-          // version, so an old hand-edit is recoverable).
-          const unmodified = hasHash && storedHash === liveHash;
+          // A legacy page (seeded before the #920 hash existed) has no stamp —
+          // treated as reseedable since the previous body is kept as a
+          // revertable version. Used only to pick the log message below.
           const legacy = !hasHash;
-          // Reseed only matters when the live body actually differs from source.
-          const sourceDiffers = srcHash !== liveHash;
+          // #931: single shared evaluator — the Required Pages Sync admin
+          // surface computes status the identical way, so boot + UI cannot
+          // disagree. `outdated` = source changed and the live body is
+          // unmodified-since-seed (or legacy); `locally-modified` = edited, skip.
+          const status = evaluateSeededAddonPage({
+            sourceContent: parsed.content,
+            liveContent: existing.content,
+            storedHash: typeof storedHash === 'string' ? storedHash : undefined
+          });
 
-          if (reseedEnabled && sourceDiffers && (unmodified || legacy)) {
+          if (reseedEnabled && status === 'outdated') {
             // Source is the authority. Merge existing metadata (preserve operator
             // /pipeline extras + original `created`) with the source's declared
             // fields, adopt the source body, keep the UUID, stamp the hash. Goes
@@ -748,7 +750,7 @@ class AddonsManager extends BaseManager {
             logger.info(legacy
               ? `[AddonsManager] Reseeded legacy '${existingSlug}' from ${addonName} (no prior source-hash; previous content kept in version history)`
               : `[AddonsManager] Reseeded '${existingSlug}' from ${addonName} (source changed, page unmodified)`);
-          } else if (reseedEnabled && sourceDiffers && hasHash && !unmodified) {
+          } else if (reseedEnabled && status === 'locally-modified') {
             logger.info(`[AddonsManager] Update available for '${existingSlug}' from ${addonName} but the page was locally modified — skipped`);
           } else {
             logger.debug(`[AddonsManager] Page '${existingSlug}' already seeded — skipping (${addonName})`);
@@ -776,7 +778,7 @@ class AddonsManager extends BaseManager {
           ...(parsed.data as Record<string, unknown>),
           addon: addonName,
           'system-category': (parsed.data as Record<string, unknown>)['system-category'] ?? 'addon',
-          'addon-source-hash': this.pageSourceHash(parsed.content)
+          'addon-source-hash': pageSourceHash(parsed.content)
         };
 
         await pageManager.savePage(slug, parsed.content, metadata);
@@ -802,16 +804,6 @@ class AddonsManager extends BaseManager {
     } else {
       logger.debug(`[AddonsManager] No new pages to seed for ${addonName}`);
     }
-  }
-
-  /**
-   * #920: stable content hash of an addon page's body, used to detect whether an
-   * already-seeded instance page has been operator-edited since seeding. Trimmed
-   * so a trailing-newline difference between source and on-disk form doesn't read
-   * as a modification.
-   */
-  private pageSourceHash(content: string): string {
-    return createHash('sha256').update(String(content).trim()).digest('hex');
   }
 
   /**

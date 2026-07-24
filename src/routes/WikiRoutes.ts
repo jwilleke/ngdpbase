@@ -26,6 +26,7 @@ import { createPatch } from 'diff';
 import { exec } from 'child_process';
 import { Request, Response, Application } from 'express';
 import SchemaGenerator from '../utils/SchemaGenerator.js';
+import { pageSourceHash, evaluateSeededAddonPage } from '../utils/addonPageSync.js';
 import logger from '../utils/logger.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
 import { extractSection, spliceSection } from '../utils/SectionUtils.js';
@@ -8800,11 +8801,21 @@ ${panes}
               status = 'new';
             } else {
               const destContent: string = await fse.readFile(destPath, 'utf8');
-              const { data: destData } = matter(destContent);
-              userModified = destData['user-modified'] === true;
-              status = normalizeForCompare(sourceContent) !== normalizeForCompare(destContent)
-                ? 'modified'
-                : 'current';
+              const destParsed = matter(destContent) as { data: Record<string, unknown>; content: string };
+              const srcParsed = matter(sourceContent) as { data: Record<string, unknown>; content: string };
+              // #931: identical evaluator + body-only hash the boot pass uses, so
+              // the sync-UI status and the on-boot reseed can never disagree.
+              // `locally-modified` (hash differs from the seed stamp) OR an explicit
+              // `user-modified` flag both mark the page as edit-protected here.
+              const seedStatus = evaluateSeededAddonPage({
+                sourceContent: srcParsed.content,
+                liveContent: destParsed.content,
+                storedHash: typeof destParsed.data['addon-source-hash'] === 'string'
+                  ? (destParsed.data['addon-source-hash'])
+                  : undefined
+              });
+              userModified = destParsed.data['user-modified'] === true || seedStatus === 'locally-modified';
+              status = seedStatus === 'current' ? 'current' : 'modified';
             }
 
             addonComparison.push({ addonName, uuid, title, slug, lastModified, status, userModified });
@@ -8891,19 +8902,32 @@ ${panes}
       // Build a combined UUID → source-file-path map covering both required-pages/ and
       // enabled addon pages/ directories. Required-pages takes precedence on collision.
       const sourceFileMap = new Map<string, string>();
+      // #931: which UUIDs are addon-sourced (→ addon name), so the sync stamps
+      // `addon` + `addon-source-hash` on write and uses hash-based edit
+      // protection — keeping the UI apply consistent with the boot reseed.
+      const addonSourceUuids = new Map<string, string>();
       const addonsManagerPost = this.engine.getManager('AddonsManager');
       if (addonsManagerPost) {
-        for (const { pagesDir } of addonsManagerPost.getEnabledAddonPagesDirectories()) {
+        for (const { name: addonName, pagesDir } of addonsManagerPost.getEnabledAddonPagesDirectories()) {
           if (await fse.pathExists(pagesDir)) {
             for (const f of (await fse.readdir(pagesDir))) {
-              if (f.endsWith('.md')) sourceFileMap.set(path.basename(f, '.md'), path.join(pagesDir, f));
+              if (f.endsWith('.md')) {
+                const u = path.basename(f, '.md');
+                sourceFileMap.set(u, path.join(pagesDir, f));
+                addonSourceUuids.set(u, addonName);
+              }
             }
           }
         }
       }
-      // Required-pages overrides addon pages on UUID collision
+      // Required-pages overrides addon pages on UUID collision (and reclaims the
+      // identity — such a UUID is treated as a required page, not an addon one).
       for (const f of (await fse.readdir(requiredDirResolved))) {
-        if (f.endsWith('.md')) sourceFileMap.set(path.basename(f, '.md'), path.join(requiredDirResolved, f));
+        if (f.endsWith('.md')) {
+          const u = path.basename(f, '.md');
+          sourceFileMap.set(u, path.join(requiredDirResolved, f));
+          addonSourceUuids.delete(u);
+        }
       }
 
       const synced: string[] = [];
@@ -8913,10 +8937,18 @@ ${panes}
        * Write source content to dest, stripping user-modified so a synced page
        * immediately shows as 'current' on the next Required Pages Sync load.
        */
-      const syncFile = async (srcPath: string, dstPath: string): Promise<void> => {
+      const syncFile = async (srcPath: string, dstPath: string, addonName?: string): Promise<void> => {
         const raw: string = await fse.readFile(srcPath, 'utf8');
         const parsed = matter(raw) as { data: Record<string, unknown>; content: string };
         delete parsed.data['user-modified'];
+        // #931: for an addon-sourced page, stamp the provenance + content hash the
+        // boot reseed relies on, so a UI sync leaves the page in the same state a
+        // boot reseed would (otherwise the next boot sees it as legacy/unstamped).
+        if (addonName) {
+          parsed.data['addon'] = addonName;
+          parsed.data['addon-source-hash'] = pageSourceHash(parsed.content);
+          if (!parsed.data['system-category']) parsed.data['system-category'] = 'addon';
+        }
         const cleaned: string = matter.stringify(parsed.content, parsed.data);
         await fse.writeFile(dstPath, cleaned, 'utf8');
       };
@@ -8928,17 +8960,33 @@ ${panes}
         const fileName = `${uuid}.md`;
         const sourcePath = sourceFileMap.get(uuid) ?? path.join(requiredDirResolved, fileName);
         const destPath = path.join(pagesDirResolved, fileName);
+        const addonName = addonSourceUuids.get(uuid);
 
         if (await fse.pathExists(sourcePath)) {
           if (!forceSync && await fse.pathExists(destPath)) {
             const liveRaw: string = await fse.readFile(destPath, 'utf8');
-            const liveParsed = matter(liveRaw) as { data: Record<string, unknown> };
-            if (liveParsed.data['user-modified'] === true) {
+            const liveParsed = matter(liveRaw) as { data: Record<string, unknown>; content: string };
+            let isProtected = liveParsed.data['user-modified'] === true;
+            // #931: addon pages are also protected when the live body diverges
+            // from the seed stamp (hash-based, same signal the boot pass + UI use)
+            // — not only when the explicit user-modified flag is set.
+            if (!isProtected && addonName) {
+              const srcParsed = matter(await fse.readFile(sourcePath, 'utf8')) as { data: Record<string, unknown>; content: string };
+              const st = evaluateSeededAddonPage({
+                sourceContent: srcParsed.content,
+                liveContent: liveParsed.content,
+                storedHash: typeof liveParsed.data['addon-source-hash'] === 'string'
+                  ? (liveParsed.data['addon-source-hash'])
+                  : undefined
+              });
+              isProtected = st === 'locally-modified';
+            }
+            if (isProtected) {
               protected_.push(uuid);
               continue;
             }
           }
-          await syncFile(sourcePath, destPath);
+          await syncFile(sourcePath, destPath, addonName);
           synced.push(uuid);
         }
       }
