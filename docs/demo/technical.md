@@ -2,18 +2,17 @@
 
 **Audience:** Developers, architects, technical evaluators
 **Duration:** 25–35 minutes
-**Servers needed:** ngdpbase (port 3000), fairways-base (port 2121), ngdpbase-veg (port 3333)
+**Servers needed:** ngdpbase (port 3000), fairways-base (port 2121)
 
 ---
 
 ## Before You Start
 
-Verify all three instances are running:
+Verify both instances are running:
 
 ```bash
 curl -s http://localhost:3000/api/health | jq .status
 curl -s http://localhost:2121/api/health | jq .status
-curl -s http://localhost:3333/api/health | jq .status
 ```
 
 Sign in to each instance as an admin user. Have a second browser tab open to the source repo.
@@ -30,7 +29,6 @@ Open it in a separate browser window at the start of the session and leave it ru
 Demo Sites
 
 - <http://jminim4:3000/view/Welcome>
-- <http://jminim4:3333/view/volcanoes-and-earthquakes>
 - <http://localhost:2121/view/home>
 
 ---

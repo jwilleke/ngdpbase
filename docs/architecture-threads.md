@@ -244,7 +244,7 @@ EPIC #790 (Journal reconcile)
                   └── Slice 4 — Tier 3 evaluator deletion ◄── NOT FILED
                             │
                             ├── needs: parity test (every (user, action) decision matches pre-migration)
-                            └── needs: satellite migration (fairways-base, ngdpbase-veg, ngdp-temp-builds)
+                            └── needs: satellite migration (fairways-base, ngdp-temp-builds)
 ```
 
 **Drift risks:**

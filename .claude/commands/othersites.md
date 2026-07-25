@@ -14,7 +14,7 @@ All three are checkouts of `jwilleke/ngdpbase`. Each has its own `.env` with `PR
 
 This table is the **single source of truth** for the instance list. Other skills should link here rather than keep their own copy — `/semver`, `/check-addons` and `/session-commit-local` all drifted out of sync until v3.67.1.
 
-The `geohazardwatch` repo is a separate satellite with its own tracker and is **not** part of `/othersites` scope today. Its locally-running instance listens on **port 3333** and runs out of `/Volumes/hd2A/workspaces/github/ngdpbase-veg` — the directory of the retired "ve-geology" instance (retired 2026-05-25). Despite the path name and its `.env` still saying `PROJECT_NAME="ve-geology"`, that checkout is **not** an `/othersites` target: pulling and building in it swaps `dist/` under a running GeoHazardWatch server, staging a version nobody chose to deploy. It updates via GHCR + Renovate.
+The `geohazardwatch` repo is a separate satellite with its own tracker and is **not** part of `/othersites` scope today. Its locally-running instance listens on **port 3333**; do not pull, build, or restart it from this flow — it updates via GHCR + Renovate, and building in its working directory swaps `dist/` under a running server, staging a version nobody chose to deploy.
 
 ## Mode
 

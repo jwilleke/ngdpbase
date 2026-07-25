@@ -24,7 +24,7 @@ In-scope local checkouts of `jwilleke/ngdpbase`:
 - `ngdpbase` (port 3000, "jimstest" — this repo)
 - `ngdp-temp-builds` (no separate issue tracker)
 
-(`ngdpbase-veg` / "ve-geology" was retired 2026-05-25; its port 3333 is now served by `GeoHazardWatch`, a separate satellite with its own issue tracker.)
+(Port 3333 is served by `GeoHazardWatch`, a separate satellite with its own issue tracker.)
 
 Separate satellites with their own issue tracker:
 

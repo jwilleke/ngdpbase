@@ -69,15 +69,6 @@ Unchanged from last report. Mix of feature work for the `fairways` addon (#15 / 
 - **Working tree**: 1 untracked file (`docs/planning/plan-addon-accounting.md`) — expected operator working notes.
 - **Addons**: match main ngdpbase. No drift.
 
-### ngdpbase-veg (local checkout — port 3333)
-
-- **Local path**: `/Volumes/hd2A/workspaces/github/ngdpbase-veg`
-- **`PROJECT_NAME`**: `ve-geology` (port 3333)
-- **Branch**: `master` at `0349ff59`. **6 commits behind** origin/master.
-- **Server**: HTTP 302 on `http://localhost:3333/` — healthy.
-- **Working tree**: clean.
-- **Addons**: match main ngdpbase. No drift.
-
 ### ngdp-temp-builds (local checkout — port 3001)
 
 - **Local path**: `/Volumes/hd2/ngdp-temp-builds/ngdpbase`
@@ -107,7 +98,6 @@ PR #769 closes 3 of the 4 remaining alerts on merge. The `showdown` mitigation-o
 | Target | `actions/checkout` | `actions/setup-node` | `actions/upload-artifact` |
 |---|---|---|---|
 | ngdpbase | v5 | v5 | v4 |
-| ngdpbase-veg | v5 | v5 | v4 |
 | fairways-base | v5 | v5 | v4 |
 | ngdp-temp-builds | v5 | v5 | v4 |
 | **fairways-gen2-website** | **v4** ⚠️ | **v4** ⚠️ | (none) |

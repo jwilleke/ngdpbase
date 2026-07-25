@@ -41,7 +41,7 @@ These don't have their own issue tracker; their issues are filed against the par
 3. **Server reachability** — `curl -s -o /dev/null -w "%{http_code}" http://localhost:<port>/` to confirm the instance is reachable. Note the `PROJECT_NAME` from `.env` so the report identifies which logical instance this is.
    - `fairways-base` — port 2121 ("The Fairways")
    - `ngdp-temp-builds` — port 3001 ("ngdpbase temp build")
-   - (port 3333 is **not** ours — "ve-geology" was retired 2026-05-25 and that port now serves the separate **GeoHazardWatch** satellite, which has its own tracker. Do not survey or build it here.)
+   - (port 3333 serves the separate **GeoHazardWatch** satellite, which has its own tracker — do not survey or build it here.)
 4. **Addon drift** — list `ls <path>/addons/` and compare against the parent ngdpbase's `addons/` — flag any addon present in one but not the other.
 
 ## Per-addon Dependabot breakdown (main ngdpbase repo)

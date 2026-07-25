@@ -143,7 +143,7 @@ Sister ngdpbase installs (e.g., The Fairways, the temp build) need to be told ab
 - `/Volumes/hd2A/workspaces/github/ngdpbase` (port 3000, "jimstest" — the source of truth)
 - `/Volumes/hd2/ngdp-temp-builds/ngdpbase` (port 3001, "ngdpbase temp build")
 
-**Do not propagate to `/Volumes/hd2A/workspaces/github/ngdpbase-veg`.** The "ve-geology" instance was retired 2026-05-25. That directory is now the working directory of the locally-running **GeoHazardWatch** instance on port 3333 — a separate satellite with its own tracker, updated via the GHCR + Renovate delivery chain, *not* by this flow. Building in it replaces `dist/` underneath a running server, which silently stages a version the operator never chose to deploy. This skill previously listed it as a propagation target; that was stale and cost a wasted rebuild during the v3.67.1 release.
+**Propagate only to the three instances above.** In particular, the locally-running **GeoHazardWatch** instance on port 3333 is a separate satellite with its own tracker, updated via the GHCR + Renovate delivery chain — *not* by this flow. Building in its working directory replaces `dist/` underneath a running server, silently staging a version the operator never chose to deploy.
 
 If a site has uncommitted local diffs that block the pull (typically `package-lock.json` from a prior build, or the seed required-pages file from an auto-migration), the pattern that's worked across past releases is `git checkout -- <file>` for the known-identical-to-master files, then re-run the pull. Untracked working notes in `private/` and similar are fine to leave alone.
 
