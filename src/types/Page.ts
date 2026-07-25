@@ -82,6 +82,21 @@ export interface PageFrontmatter {
   /** Name of the add-on that originally seeded this page, if any */
   addon?: string;
 
+  /**
+   * #946 — name of the agent token that CREATED this page, if any.
+   * Immutable: a durable fact about the page's origin, never overwritten by a
+   * later edit. Server-owned; stripped from caller-supplied frontmatter.
+   */
+  'created-via-token'?: string;
+
+  /**
+   * #946 — name of the agent token used for the MOST RECENT revision.
+   * Cleared when a human writes, so it always answers "is this currently
+   * agent-maintained?" rather than "was it ever". Pairs with `editor`, as
+   * `created-via-token` pairs with `author`. Server-owned.
+   */
+  'via-token'?: string;
+
   /** Roles or usernames allowed to view this page (front matter access control) */
   audience?: string[];
 
