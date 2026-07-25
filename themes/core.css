@@ -1439,3 +1439,42 @@ table[data-zebra] tbody tr.zebra-hover,
   vertical-align: top;
   margin: 0.25rem;
 }
+
+/* [DataFeed badge=…] value pills (feeds addon, #685), and any page using the
+   `feed-badge` classes directly via an inline style run (#938).
+   Variants cover the aviation color codes; unknown values fall back to the
+   neutral base.
+
+   #941: these lived only in public/css/style.css, which is loaded by two admin
+   views and by no rendered page — so every badge shipped unstyled. They belong
+   here, in the stylesheet the theme chain actually loads. */
+.feed-badge {
+  display: inline-block;
+  padding: 0.1em 0.6em;
+  border-radius: 0.8em;
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background-color: #6c757d;
+  color: #fff;
+}
+
+.feed-badge--green {
+  background-color: #2e7d32;
+  color: #fff;
+}
+
+.feed-badge--yellow {
+  background-color: #f9c800;
+  color: #212121;
+}
+
+.feed-badge--orange {
+  background-color: #ef6c00;
+  color: #fff;
+}
+
+.feed-badge--red {
+  background-color: #c62828;
+  color: #fff;
+}

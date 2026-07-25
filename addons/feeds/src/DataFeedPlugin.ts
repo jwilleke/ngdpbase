@@ -32,7 +32,10 @@
  *   center [20, 0], zoom 2)
  * · badge (CSV of columns whose cell renders as a value-classed pill:
  *   `<span class="feed-badge feed-badge--<slugged-value>">VALUE</span>` — core
- *   CSS ships variants for the aviation color codes green/yellow/orange/red)
+ *   CSS ships variants for the aviation color codes green/yellow/orange/red.
+ *   NOTE: those rules live in `themes/core.css`. Until #941 they sat only in
+ *   `public/css/style.css`, which no rendered page loads, so every badge shipped
+ *   unstyled — keep them in the theme chain, not in that file.)
  * · link (whitespace-separated `column=urlTemplate` entries; `:prop`
  *   placeholders resolve from the record's properties. An *embedded* placeholder
  *   is URI-encoded as a segment — e.g.
