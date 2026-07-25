@@ -644,10 +644,42 @@ class PageManager extends BaseManager implements CatalogSource {
     const isSystemCategory = ['documentation', 'system'].includes(incomingCategory.toLowerCase());
     const defaultAuthor = isSystemCategory ? 'system' : 'anonymous';
 
+    // #946: agent provenance. Two axes — creation and latest revision.
+    //
+    //   created-via-token  set on create only, NEVER changes. A durable fact
+    //                      about the page's origin: an agent made it.
+    //   via-token          reflects the LATEST write, and is CLEARED when a
+    //                      human writes. Without clearing, a page a person has
+    //                      since taken over would read as permanently
+    //                      agent-written.
+    //
+    // Both are server-owned: any value supplied by the caller is discarded,
+    // never merged. A provenance marker a user can forge or strip is not a
+    // provenance marker. (Same rule as `addon` — see docs/planning/addons.md.)
+    const viaToken = (wikiContext.userContext as { viaToken?: { name: string } } | undefined)?.viaToken;
+    const existingCreatedVia = (existingPage?.metadata as Record<string, unknown> | undefined)?.['created-via-token'];
+
     const rawMetadata: Partial<PageFrontmatter> = {
       ...metadata,
       author: originalAuthor || wikiContext.userContext?.username || metadata.author || defaultAuthor
     };
+
+    // Strip caller-supplied provenance before stamping our own.
+    delete (rawMetadata as Record<string, unknown>)['via-token'];
+    delete (rawMetadata as Record<string, unknown>)['created-via-token'];
+
+    if (typeof existingCreatedVia === 'string' && existingCreatedVia) {
+      // Immutable — carry the original creation stamp forward untouched.
+      (rawMetadata as Record<string, unknown>)['created-via-token'] = existingCreatedVia;
+    } else if (!existingPage && viaToken) {
+      (rawMetadata as Record<string, unknown>)['created-via-token'] = viaToken.name;
+    }
+
+    if (viaToken) {
+      (rawMetadata as Record<string, unknown>)['via-token'] = viaToken.name;
+    }
+    // else: left absent — a human wrote this revision, so any prior stamp is
+    // deliberately not carried forward.
 
     // Determine if this is a required page by checking the system-category config.
     // Required pages (storageLocation === 'required') cannot be marked private.

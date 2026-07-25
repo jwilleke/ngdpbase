@@ -5691,9 +5691,20 @@ ${panes}
         // non-fatal — section just won't show
       }
 
+      // #946: only render the Agent Tokens card when the feature is enabled.
+      // The card is entirely client-driven against /api/tokens, so no token
+      // data is passed into the template — the secret must never reach a
+      // rendered page, only the one-time mint response.
+      const agentTokensEnabled = Boolean(
+        this.engine.getManager('AgentTokenManager') &&
+        this.engine.getManager<{ getProperty(k: string, d: unknown): unknown }>('ConfigurationManager')
+          ?.getProperty('ngdpbase.auth.agent-token.enabled', false)
+      );
+
       res.render('profile', {
         ...commonData,
         title: 'Profile',
+        agentTokensEnabled, // #946
         user: freshUser || currentUser, // Use fresh user data if available
         permissions: userPermissions,
         availableTimezones: availableTimezones,
@@ -6463,6 +6474,132 @@ ${panes}
    * Goes through the live server (not the out-of-process MCP write path) so the
    * page is immediately viewable AND searchable via an in-band index update.
    */
+  /**
+   * GET /api/tokens — list live agent tokens (#946).
+   *
+   * Returns the caller's own tokens. An admin may pass `?all=true` to see every
+   * user's, for incident response. Hashes are never returned.
+   */
+  async listAgentTokens(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const user = wikiContext.userContext;
+      if (!user?.isAuthenticated || !user.username) {
+        return res.status(401).json({ success: false, error: 'Authentication required' });
+      }
+      const manager = this.engine.getManager('AgentTokenManager') as import('../managers/AgentTokenManager.js').default | null;
+      if (!manager) {
+        return res.status(503).json({ success: false, error: 'Agent tokens are not enabled' });
+      }
+
+      const allParam = (req.query as Record<string, unknown>).all;
+      const wantsAll = typeof allParam === 'string' && allParam === 'true';
+      if (wantsAll) {
+        if (!wikiContext.hasRole('admin')) {
+          return res.status(403).json({ success: false, error: 'Admin role required to list all tokens' });
+        }
+        return res.json({ success: true, tokens: manager.listAll() });
+      }
+      return res.json({ success: true, tokens: manager.listForOwner(user.username) });
+    } catch (err) {
+      logger.error('[api/tokens] list failed:', err);
+      return res.status(500).json({ success: false, error: 'Could not list tokens' });
+    }
+  }
+
+  /**
+   * POST /api/tokens — mint a token for the caller (#946).
+   *
+   * Always minted for the *caller*: an admin cannot mint on someone else's
+   * behalf, so a token always traces to a person who chose to delegate.
+   * The cleartext is returned here and never again.
+   */
+  async mintAgentToken(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const user = wikiContext.userContext;
+      if (!user?.isAuthenticated || !user.username) {
+        return res.status(401).json({ success: false, error: 'Authentication required' });
+      }
+      const manager = this.engine.getManager('AgentTokenManager') as import('../managers/AgentTokenManager.js').default | null;
+      if (!manager) {
+        return res.status(503).json({ success: false, error: 'Agent tokens are not enabled' });
+      }
+
+      const body = req.body as { name?: unknown; scopes?: unknown; ttlHours?: unknown };
+      const name = typeof body.name === 'string' ? body.name : '';
+      const scopes = Array.isArray(body.scopes)
+        ? body.scopes.filter((s): s is string => typeof s === 'string')
+        : ['page-ingest'];
+      const ttlHours = body.ttlHours === undefined ? undefined : Number(body.ttlHours);
+
+      const result = await manager.mint(user.username, name, scopes, ttlHours);
+
+      // Audit before the cleartext leaves the process, so the record exists
+      // even if the response never reaches the caller.
+      logger.info(
+        `[api/tokens] Minted token ${result.record.id} for ${user.username} ` +
+        `(name="${result.record.name}", scopes=[${result.record.scopes.join(',')}], expires=${result.record.expiresAt})`
+      );
+
+      return res.status(201).json({
+        success: true,
+        token: result.token,
+        warning: 'This token is shown once and cannot be retrieved again.',
+        record: result.record
+      });
+    } catch (err) {
+      // mint() throws caller-safe validation messages (bad scope, over limit,
+      // TTL too long) — surface them as 400 rather than a generic 500.
+      const message = err instanceof Error ? err.message : 'Could not mint token';
+      logger.warn(`[api/tokens] mint rejected: ${message}`);
+      return res.status(400).json({ success: false, error: message });
+    }
+  }
+
+  /**
+   * DELETE /api/tokens/:id — revoke a token (#946).
+   *
+   * The owner may revoke their own; an admin may revoke anyone's. Effective
+   * immediately — verification reads the store per request.
+   */
+  async revokeAgentToken(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const user = wikiContext.userContext;
+      if (!user?.isAuthenticated || !user.username) {
+        return res.status(401).json({ success: false, error: 'Authentication required' });
+      }
+      const manager = this.engine.getManager('AgentTokenManager') as import('../managers/AgentTokenManager.js').default | null;
+      if (!manager) {
+        return res.status(503).json({ success: false, error: 'Agent tokens are not enabled' });
+      }
+
+      const id = req.params.id;
+      const record = manager.getById(id);
+      if (!record) {
+        return res.status(404).json({ success: false, error: 'Token not found' });
+      }
+
+      const isOwner = record.owner === user.username;
+      if (!isOwner && !wikiContext.hasRole('admin')) {
+        // Same response as a missing token — do not confirm the existence of
+        // another user's token to a caller who may not see it.
+        return res.status(404).json({ success: false, error: 'Token not found' });
+      }
+
+      const revoked = await manager.revoke(id, user.username);
+      if (!revoked) {
+        return res.status(409).json({ success: false, error: 'Token is already revoked' });
+      }
+      logger.info(`[api/tokens] Token ${id} (owner=${record.owner}) revoked by ${user.username}`);
+      return res.json({ success: true, id });
+    } catch (err) {
+      logger.error('[api/tokens] revoke failed:', err);
+      return res.status(500).json({ success: false, error: 'Could not revoke token' });
+    }
+  }
+
   async ingestPageMarkdown(req: Request, res: Response) {
     try {
       const baseContext = this.createWikiContext(req);
@@ -7005,6 +7142,28 @@ ${panes}
         // non-fatal — card just won't show
       }
 
+      // #946 — Agent API Tokens oversight card. Admins may list and revoke any
+      // user's tokens (incident response, offboarding) but never mint on
+      // someone's behalf, so this is read + revoke only. Summary is computed
+      // server-side; the token rows are fetched client-side from
+      // /api/tokens?all=true so no token data is embedded in the page.
+      let agentTokenSummary: { live: number; owners: number } | null = null;
+      try {
+        const atm = this.engine.getManager('AgentTokenManager') as
+          import('../managers/AgentTokenManager.js').default | null;
+        const enabled = this.engine.getManager<{ getProperty(k: string, d: unknown): unknown }>('ConfigurationManager')
+          ?.getProperty('ngdpbase.auth.agent-token.enabled', false);
+        if (atm && enabled) {
+          const live = atm.listAll();
+          agentTokenSummary = {
+            live: live.length,
+            owners: new Set(live.map(t => t.owner)).size
+          };
+        }
+      } catch {
+        // non-fatal — card just won't show
+      }
+
       // #780 — registered CatalogSources at runtime (Thread #1, CatalogManager unification).
       // Pure read of in-memory Map; cheap to do per dashboard render.
       let catalogSources: Array<{ sourceId: string; types: readonly string[]; currentSchemaVersion: number; onDiskSchemaVersion?: number; isStale?: boolean }> = [];
@@ -7048,6 +7207,7 @@ ${panes}
         addonsSummary,
         addonCards,
         shareSummary,
+        agentTokenSummary, // #946
         catalogSources
       };
 
@@ -11226,6 +11386,12 @@ ${panes}
     // #819 — agent/markdown → NCM page ingest (upsert). Auth via Authentik
     // bearer token (#818) or an authenticated session.
     app.post('/api/page/ingest', (req: Request, res: Response) => void this.ingestPageMarkdown(req, res));
+    // #946 — user-delegated agent API tokens. Any authenticated user manages
+    // their own; admins may additionally list/revoke anyone's, but may never
+    // mint on another user's behalf.
+    app.get('/api/tokens', (req: Request, res: Response) => void this.listAgentTokens(req, res));
+    app.post('/api/tokens', (req: Request, res: Response) => void this.mintAgentToken(req, res));
+    app.delete('/api/tokens/:id', (req: Request, res: Response) => void this.revokeAgentToken(req, res));
     app.post('/api/comments/:pageUuid', (req: Request, res: Response) => void this.addComment(req, res));
     app.delete('/api/comments/:pageUuid/:commentId', (req: Request, res: Response) => void this.deleteComment(req, res));
     // #590 partial-render: returns just the inner comment-list HTML so the

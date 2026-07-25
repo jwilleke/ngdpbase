@@ -280,6 +280,40 @@
     </div>
     <% } %>
 
+    <!-- Row 2b-ii: Agent API Tokens oversight (#946) -->
+    <% if (typeof agentTokenSummary !== 'undefined' && agentTokenSummary) { %>
+    <div class="row">
+        <div class="col-12 mb-4">
+            <div class="card">
+                <div class="card-body py-2">
+                    <details id="agent-tokens-admin">
+                        <summary class="d-flex align-items-center gap-2" style="cursor: pointer;">
+                            <i class="fas fa-robot"></i>
+                            <strong>Agent API Tokens</strong>
+                            <span class="text-muted small">
+                                across <%= agentTokenSummary.owners %> user<%= agentTokenSummary.owners !== 1 ? 's' : '' %>
+                            </span>
+                            <span class="badge bg-secondary ms-auto"><%= agentTokenSummary.live %> live</span>
+                        </summary>
+                        <div class="mt-3">
+                            <p class="text-muted small mb-2">
+                                Every live delegated token on this instance. A token can only ever do what its
+                                owner can do, and stops working the moment it is revoked or expires. You may
+                                revoke any token here — for incident response or offboarding — but tokens can
+                                only be <em>created</em> by their owner, from their own profile page, so every
+                                token traces to someone who chose to delegate.
+                            </p>
+                            <div id="agent-tokens-admin-list">
+                                <p class="text-muted small mb-0">Loading…</p>
+                            </div>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </div>
+    </div>
+    <% } %>
+
     <!-- Row 2c: CatalogSources registered at runtime (#780) -->
     <div class="row">
         <div class="col-12 mb-4">
@@ -1154,5 +1188,85 @@ async function dashboardMediaRebuild() {
     }
 })();
 </script>
+
+<% if (typeof agentTokenSummary !== 'undefined' && agentTokenSummary) { %>
+<script>
+// #946: admin oversight for delegated agent tokens. Read + revoke only —
+// minting stays with the owner, so a token always traces to a person who
+// chose to delegate. Rows are fetched client-side so no token data is
+// embedded in the rendered page.
+(function () {
+    const CSRF = '<%= csrfToken %>';
+    const details = document.getElementById('agent-tokens-admin');
+    const listEl  = document.getElementById('agent-tokens-admin-list');
+    if (!details || !listEl) return;
+    let loaded = false;
+
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+
+    function expiresIn(iso) {
+        const ms = Date.parse(iso) - Date.now();
+        if (!Number.isFinite(ms) || ms <= 0) return 'expired';
+        const hours = Math.floor(ms / 3600000);
+        return hours >= 1 ? 'in ' + hours + 'h' : 'in ' + Math.max(1, Math.round(ms / 60000)) + 'm';
+    }
+
+    async function refresh() {
+        try {
+            const res = await fetch('/api/tokens?all=true');
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const tokens = (await res.json()).tokens || [];
+            if (tokens.length === 0) {
+                listEl.innerHTML = '<p class="text-muted small mb-0">No live tokens.</p>';
+                return;
+            }
+            listEl.innerHTML =
+                '<div class="table-responsive"><table class="table table-sm align-middle mb-0">' +
+                '<thead><tr><th>Owner</th><th>Name</th><th>Prefix</th><th>Permissions</th><th>Expires</th><th>Last used</th><th></th></tr></thead><tbody>' +
+                tokens.map((t) =>
+                    '<tr>' +
+                    '<td><strong>' + esc(t.owner) + '</strong></td>' +
+                    '<td>' + esc(t.name) + '</td>' +
+                    '<td><code class="small">' + esc(t.prefix) + '\u2026</code></td>' +
+                    '<td><span class="small text-muted">' + esc((t.scopes || []).join(', ')) + '</span></td>' +
+                    '<td class="small">' + esc(expiresIn(t.expiresAt)) + '</td>' +
+                    '<td class="small text-muted">' + (t.lastUsedAt ? esc(new Date(t.lastUsedAt).toLocaleString()) : 'never') + '</td>' +
+                    '<td class="text-end"><button class="btn btn-sm btn-outline-danger agent-token-admin-revoke" ' +
+                        'data-id="' + esc(t.id) + '" data-owner="' + esc(t.owner) + '">Revoke</button></td>' +
+                    '</tr>'
+                ).join('') +
+                '</tbody></table></div>';
+        } catch (err) {
+            listEl.innerHTML = '<p class="text-danger small mb-0">Could not load tokens.</p>';
+        }
+    }
+
+    // Only fetch when the section is actually opened.
+    details.addEventListener('toggle', () => {
+        if (details.open && !loaded) { loaded = true; refresh(); }
+    });
+
+    listEl.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.agent-token-admin-revoke');
+        if (!btn) return;
+        if (!window.confirm('Revoke this token belonging to ' + btn.dataset.owner +
+                            '? Any agent using it stops working immediately.')) return;
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/tokens/' + encodeURIComponent(btn.dataset.id), {
+                method: 'DELETE',
+                headers: { 'X-CSRF-Token': CSRF }
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            await refresh();
+        } catch (err) {
+            btn.disabled = false;
+        }
+    });
+})();
+</script>
+<% } %>
 
 <%- include('footer') %>

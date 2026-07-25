@@ -353,6 +353,33 @@ class ACLManager extends BaseManager {
       rename: 'page-rename',
       upload: 'asset-upload'
     };
+
+    // #946 Tier -1: agent-token scope ceiling.
+    //
+    // A delegated token may only ever exercise a SUBSET of its owner's rights,
+    // so this is a hard ceiling checked BEFORE every other tier — not a tier of
+    // its own. It must precede tier 1, because frontmatter `access` overrides
+    // global policies and returns directly; a scope check living at tier 2
+    // would simply never run on a page whose frontmatter grants the action.
+    //
+    // Absent `viaToken` means an ordinary session/password request, which this
+    // does not constrain at all.
+    const viaToken = (userContext as { viaToken?: { id: string; name: string; scopes: string[] } } | undefined)?.viaToken;
+    if (viaToken) {
+      const required = actionMap[action.toLowerCase()] || action;
+      if (!viaToken.scopes.includes(required)) {
+        this.logAccessDecision({
+          user: userContext, pageName, action, allowed: false, reason: 'token_scope_deny',
+          context: { wikiContext: wikiContext.context, token: viaToken.id, scopes: viaToken.scopes }
+        });
+        logger.info(
+          `[ACL] token ${viaToken.id} ("${viaToken.name}") lacks scope '${required}' ` +
+          `(has: ${viaToken.scopes.join(',') || 'none'}) — denied`
+        );
+        return { allowed: false, reason: 'token_scope_deny' };
+      }
+    }
+
     const policyAction = actionMap[action.toLowerCase()] || action;
 
     // Tier 0: private — hard constraint, not overridable by front matter.

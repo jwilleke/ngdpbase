@@ -554,6 +554,27 @@ class UserManager extends BaseManager {
       return false;
     }
 
+    // #946: agent-token scope ceiling for CAPABILITY checks.
+    //
+    // This is a second enforcement point, not a duplicate. ACLManager's ceiling
+    // covers page-resource checks (checkPagePermissionWithContext); this one
+    // covers capability checks, which reach here via WikiContext.hasPermission
+    // and never touch ACLManager at all. POST /api/page/ingest uses exactly
+    // that path — without this, a token scoped `page-read` could create pages.
+    //
+    // Only applies when the caller passed a resolved context carrying a token;
+    // an ordinary session request is unaffected.
+    if (typeof usernameOrContext === 'object' && usernameOrContext !== null) {
+      const viaToken = (usernameOrContext as { viaToken?: { id: string; name: string; scopes: string[] } }).viaToken;
+      if (viaToken && !viaToken.scopes.includes(action)) {
+        logger.info(
+          `[UserManager] token ${viaToken.id} ("${viaToken.name}") lacks scope '${action}' ` +
+          `(has: ${viaToken.scopes.join(',') || 'none'}) — denied`
+        );
+        return false;
+      }
+    }
+
     let userContext: UserContext;
 
     // Fast path: caller already has a resolved userContext — trust it.

@@ -30,6 +30,7 @@ import AuditManager from './managers/AuditManager.js';
 import AddonsManager from './managers/AddonsManager.js';
 import ImportManager from './managers/ImportManager.js';
 import AuthManager from './managers/AuthManager.js';
+import AgentTokenManager from './managers/AgentTokenManager.js';
 import EmailManager from './managers/EmailManager.js';
 import MetricsManager from './managers/MetricsManager.js';
 import BackgroundJobManager from './managers/BackgroundJobManager.js';
@@ -217,6 +218,12 @@ class WikiEngine extends Engine {
       this.registerManager('EmailManager', emailManager);
       await emailManager.initialize();
     }
+
+    // #946: must precede AuthManager — AgentTokenAuthProvider resolves this
+    // manager from the engine when it registers.
+    const agentTokenManager = new AgentTokenManager(this);
+    this.registerManager('AgentTokenManager', agentTokenManager);
+    await agentTokenManager.initialize();
 
     const authManager = new AuthManager(this);
     this.registerManager('AuthManager', authManager);

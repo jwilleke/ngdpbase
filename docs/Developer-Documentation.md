@@ -30,9 +30,9 @@ Workflow:
 <!-- AUTO:quick-nav BEGIN -->
 | Category | Count (src/) | Documented | Description |
 | ---------- | --- | --- | ------------- |
-| [Managers](#managers) | 38 | 39 | Core system managers |
+| [Managers](#managers) | 39 | 40 | Core system managers |
 | [Plugins](#plugins) | 32 | 36 | JSPWiki-style content plugins |
-| [Providers](#providers) | 34 | 35 | Storage and service providers |
+| [Providers](#providers) | 35 | 36 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
 | [Testing](#testing) | n/a | 3 | Testing guides and strategies |
 | [API](#api-reference) | n/a | Auto-gen | TypeDoc generated API reference |
@@ -51,6 +51,7 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | --- | --- | --- |
 | ACLManager | 📘 [doc](managers/ACLManager.md) + [guide](managers/ACLManager-Complete-Guide.md) | Per-page access control: private/author-lock/audience/role-policy evaluation via the canonical wikiContext.canAccess facade |
 | AddonsManager | ✅ [doc](managers/AddonsManager.md) | Discovery, registration, lifecycle, and dependency management for optional ngdpbase add-ons |
+| AgentTokenManager | ✅ [doc](managers/AgentTokenManager.md) | Mints, verifies and revokes user-delegated agent API tokens |
 | AssetManager | ✅ [doc](managers/AssetManager.md) | Provider registry for the unified Digital Asset Management framework — fans search/getById/getThumbnail across all registered AssetProviders |
 | AssetService | ✅ [doc](managers/AssetService.md) | Unified DAM search facade over the AssetProvider registry; called by SearchManager and the asset-picker |
 | AttachmentManager | 📘 [doc](managers/AttachmentManager.md) + [guide](managers/AttachmentManager-Complete-Guide.md) | File attachment CRUD: upload, lookup-by-filename, per-page attachment listings, SHA-256 deduplication |
@@ -148,6 +149,7 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 <!-- AUTO:providers-table BEGIN -->
 | Module | Doc status | Description |
 | --- | --- | --- |
+| AgentTokenAuthProvider | ✅ [doc](providers/AgentTokenAuthProvider.md) | Verifies a user-delegated agent API token presented on the Authorization header (Bearer scheme) |
 | AssetProvider-Guide | ✅ [doc](providers/AssetProvider-Guide.md) | Implementation guide for plugin authors building a new AssetProvider backend |
 | AuthentikBearerAuthProvider | ✅ [doc](providers/AuthentikBearerAuthProvider.md) | Trusts an Authentik-issued OAuth/OIDC bearer JWT on the Authorization header (Bearer scheme) |
 | BaseAttachmentProvider | ✅ [doc](providers/BaseAttachmentProvider.md) | Abstract interface for attachment storage providers — extension surface for new attachment backends |
@@ -313,11 +315,11 @@ Before contributing, please review:
 Honest accounting of doc coverage. Targets are pragmatic — abstract base classes and trivial null/no-op providers don't need long-form docs, but every module should at least have a stub or appear in this index.
 
 <!-- AUTO:doc-status BEGIN -->
-**Managers:** 38/38 with quick-reference docs (100%); 18 with Complete Guides.
+**Managers:** 39/39 with quick-reference docs (100%); 18 with Complete Guides.
 
 **Plugins:** 32/32 with quick-reference docs (100%).
 
-**Providers:** 34/34 with quick-reference docs (100%); 5 with Complete Guides.
+**Providers:** 35/35 with quick-reference docs (100%); 5 with Complete Guides.
 <!-- AUTO:doc-status END -->
 
 See [issue #178](https://github.com/jwilleke/ngdpbase/issues/178) for the doc-coverage tracking issue and [#660](https://github.com/jwilleke/ngdpbase/issues/660) for the discoverability problem this index addresses.
