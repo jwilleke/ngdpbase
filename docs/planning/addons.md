@@ -80,7 +80,10 @@ The 3-tier evaluator in `ACLManager.checkPagePermissionWithContext`:
 - **Tier 1** — frontmatter `audience` / `access`; **overrides global policies** and returns directly
 - **Tier 2** — global policies via `PolicyEvaluator` (fallback only when no frontmatter audience set)
 
-**Proposal:** the seeder stamps `access: { edit: ['admin'] }` on seeded pages, defaulting only when the addon source doesn't declare its own `access` (same pattern `system-category` already uses, so a domain addon can deliberately ship a community-editable page).
+> **SUPERSEDED 2026-07-25 — see §8.** Category-based policy is the better mechanism and is already the
+> intended design; this frontmatter stamp is retained only as the way to express *per-page exceptions*.
+
+**Proposal (superseded):** the seeder stamps `access: { edit: ['admin'] }` on seeded pages, defaulting only when the addon source doesn't declare its own `access` (same pattern `system-category` already uses, so a domain addon can deliberately ship a community-editable page).
 
 Why this is the right mechanism:
 
@@ -140,8 +143,9 @@ Live list. Tick as they settle. Recommendations are mine; override freely.
 
 - [ ] **4. Discriminator** — use the `addon` field (unconditionally stamped, `Page.ts:82`),
   NOT `system-category` (unreliable — see §2).
-- [ ] **5. Mechanism** — seeder stamps `access: { edit: ['admin'] }`. Needs no `PolicyEvaluator`
-  change; Tier 1 frontmatter overrides global policies and is hash-neutral (see §3).
+- [ ] **5. Mechanism** — ~~seeder stamps `access: { edit: ['admin'] }`~~ **SUPERSEDED (§8)**: implement
+  category resource matching in `PolicyEvaluator` (#945) and govern by category. Frontmatter `access`
+  remains for per-page exceptions only.
 - [ ] **6. Addon override allowed?** Recommend yes — stamp only when the source is silent, mirroring
   how `system-category` defaults, so a domain addon can ship a deliberately community-editable page.
 - [ ] **7. Which principal?** Recommend role `admin`. Open: do domain sites need a `content-admin` /
@@ -162,6 +166,8 @@ Live list. Tick as they settle. Recommendations are mine; override freely.
 
 ### Triage
 
+- [x] **18. Policy category resources never match** — filed as **#945** (bug/security/P1). Blocks the
+  category-based model in §8.
 - [ ] **12. File the orphan-detector hole as a bug.** `findOrphanedAddonPages` narrows candidates via
   `searchManager.searchByCategory('addon')`, so a seeded page whose `system-category` is not `addon`
   (e.g. the `forms` page declaring `documentation`) can never be reported as orphaned. Also
@@ -183,3 +189,49 @@ Live list. Tick as they settle. Recommendations are mine; override freely.
 - [x] One domain addon per site, permanently (2026-07-25) — see §1.
 - [x] No dedicated page class for domain addons — see §4.
 - [x] Page ACLs deprecated; frontmatter `audience`/`access` is the only Tier 1 surface — see §3.
+
+---
+
+## 8. Course correction: addon pages are just system pages (2026-07-25)
+
+Operator challenge: *"I am just not sure we need to make these any different than regular pages … they could just be system pages with a different provenance. Am I missing something?"*
+
+**Correct, and the shipped config already assumes exactly that model.** Of the 9 default policies in
+`ngdpbase.access.policies`, eight target `{type:'page', pattern:'*'}` by role. Exactly one carries a
+class distinction, and it does so by **category**:
+
+```json
+{ "id": "deny-anonymous-system-pages", "priority": 90, "effect": "deny",
+  "subjects": [{ "type": "role", "value": "anonymous" }],
+  "resources": [{ "type": "category", "value": "system" },
+                { "type": "category", "value": "admin" }] }
+```
+
+Pages stay pages; the access distinction rides on category. No special page class — which is also why
+§4 (dedicated page class) was already dropped.
+
+### But it does not work — filed as #945
+
+`PolicyEvaluator.matchesResource` handles only `type: 'page'`. A category resource carries `.value`,
+not `.pattern`, so the loop skips it and returns false. That deny is the only one in the whole set, so
+`anonymous-read-only` (prio 50, allow, `*`) wins. Verified live on jimstest: anonymous gets HTTP 200
+and a full 101 KB render of `wiki-documentation` (`system-category: system`).
+
+### Consequences for this plan
+
+- The work item is **implement category resource matching**, not invent an addon-page mechanism.
+  Smaller, more general, and it fixes a live security-shaped bug rather than routing around it.
+- §3's `access: { edit: ['admin'] }` seeder stamp is **superseded as the primary mechanism**. Frontmatter
+  `access` keeps its place for per-page exceptions.
+- What remains genuinely unique to addon pages is **provenance and the upstream lifecycle** — reseed, the
+  `locally-modified` one-way door, orphan detection. That is content *sync*, not *access*. Access is
+  ordinary page/category policy.
+- Settled shape: **addon pages = system pages + `addon` provenance**; end-user addon documentation =
+  `documentation` category (which `addons/forms` already does).
+
+### Interaction to watch
+
+Do not simply switch the seeder default from `system-category: addon` to `system` —
+`findOrphanedAddonPages` queries `searchByCategory('addon')` and would stop finding anything. Either keep
+`addon` as its own category and add it to the deny policy alongside `system`/`admin`, or make orphan
+detection key on the `addon` field, which also fixes the `documentation`-page hole in §2 / item 12.
