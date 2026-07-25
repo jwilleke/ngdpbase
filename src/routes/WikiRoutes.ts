@@ -7142,6 +7142,28 @@ ${panes}
         // non-fatal — card just won't show
       }
 
+      // #946 — Agent API Tokens oversight card. Admins may list and revoke any
+      // user's tokens (incident response, offboarding) but never mint on
+      // someone's behalf, so this is read + revoke only. Summary is computed
+      // server-side; the token rows are fetched client-side from
+      // /api/tokens?all=true so no token data is embedded in the page.
+      let agentTokenSummary: { live: number; owners: number } | null = null;
+      try {
+        const atm = this.engine.getManager('AgentTokenManager') as
+          import('../managers/AgentTokenManager.js').default | null;
+        const enabled = this.engine.getManager<{ getProperty(k: string, d: unknown): unknown }>('ConfigurationManager')
+          ?.getProperty('ngdpbase.auth.agent-token.enabled', false);
+        if (atm && enabled) {
+          const live = atm.listAll();
+          agentTokenSummary = {
+            live: live.length,
+            owners: new Set(live.map(t => t.owner)).size
+          };
+        }
+      } catch {
+        // non-fatal — card just won't show
+      }
+
       // #780 — registered CatalogSources at runtime (Thread #1, CatalogManager unification).
       // Pure read of in-memory Map; cheap to do per dashboard render.
       let catalogSources: Array<{ sourceId: string; types: readonly string[]; currentSchemaVersion: number; onDiskSchemaVersion?: number; isStale?: boolean }> = [];
@@ -7185,6 +7207,7 @@ ${panes}
         addonsSummary,
         addonCards,
         shareSummary,
+        agentTokenSummary, // #946
         catalogSources
       };
 
