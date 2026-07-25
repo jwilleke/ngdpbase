@@ -114,3 +114,72 @@ Admin-only editing narrows this to a small, informed audience, which makes it fa
 3. Should the second-domain-addon guard and duplicate-slug collision both become boot failures? (§1)
 4. Does `capabilities[]` in `AddonManifest` do anything today? It is declared but appears unused — candidate home for "which platform surfaces this domain addon takes over" (home route, site identity, nav, theme, search scope).
 5. Domain addons ship drop-in/packaged with their own repos, so the platform has no test signal on them. A conformance kit (contract tests an addon repo runs in its own CI) plus a manifest `requiresNgdpbase: ">=3.67"` boot check would close it — packaged gets version pinning free via npm, drop-in has nothing.
+
+---
+
+## 7. Open decisions (checklist)
+
+Live list. Tick as they settle. Recommendations are mine; override freely.
+
+### Blocking — operator call
+
+- [x] **3. Is geohazardwatch's data volume real?** RESOLVED 2026-07-25 — it is a `hostPath`
+  (`/mnt/tank/jims/data/systems/geohazardwatch`, `type: DirectoryOrCreate`) mounted at `/app/data`
+  on the single-node `deby` k3s cluster. Not a PVC, not an `emptyDir`. 175 pages on disk. Page
+  edits persist across pod restarts and image bumps, so admin-only editing is worth building.
+- [ ] **1. Turn on `ngdpbase.addons.page-reseed` for geohazardwatch?** Currently unset, so its 14
+  addon pages (incl. `geohazardwatch-home`, `left-menu-content`, `footer-content`) have been frozen
+  since first boot — source changes never reach the live site. Turning it on is a real content
+  change to a production site. Check `findOrphanedAddonPages` / Required Pages Sync first to see
+  which are already `locally-modified`.
+- [ ] **2. GeoHazardWatch pod version skew.** A stray rebuild during the v3.67.1 release staged
+  3.67.1 on disk while the process runs 3.66.0. Restart deliberately, revert its `dist/`, or leave
+  it to the next Renovate redeploy.
+
+### Design — admin-only editing of addon pages
+
+- [ ] **4. Discriminator** — use the `addon` field (unconditionally stamped, `Page.ts:82`),
+  NOT `system-category` (unreliable — see §2).
+- [ ] **5. Mechanism** — seeder stamps `access: { edit: ['admin'] }`. Needs no `PolicyEvaluator`
+  change; Tier 1 frontmatter overrides global policies and is hash-neutral (see §3).
+- [ ] **6. Addon override allowed?** Recommend yes — stamp only when the source is silent, mirroring
+  how `system-category` defaults, so a domain addon can ship a deliberately community-editable page.
+- [ ] **7. Which principal?** Recommend role `admin`. Open: do domain sites need a `content-admin` /
+  site-owner role distinct from full admin?
+- [ ] **8. Does `view` stay open?** Recommend yes — `access` is per-action, so `view` falls through
+  to audience/Tier 2 and pages stay publicly readable.
+- [ ] **9. Backfill existing seeded pages?** Recommend yes, one-time, keyed on UUID match against
+  addon sources. Otherwise pages seeded before the stamp existed are silently unprotected.
+
+### Consistency — turns warnings into boot failures
+
+- [ ] **10. Second domain addon → refuse to boot** instead of warn-and-downgrade (§1).
+- [ ] **11. Duplicate addon slug → refuse to boot** instead of first-occurrence-wins.
+- [ ] **17. Data-dir preflight → refuse to boot** if the mounted data dir looks empty/unmounted.
+  `DirectoryOrCreate` on a NAS path silently creates an empty local dir when the mount is down; the
+  app then boots, re-seeds addon pages, and looks fine while 175 pages are invisible. Same family as
+  deferred #645. All three are the #672 fail-fast precedent.
+
+### Triage
+
+- [ ] **12. File the orphan-detector hole as a bug.** `findOrphanedAddonPages` narrows candidates via
+  `searchManager.searchByCategory('addon')`, so a seeded page whose `system-category` is not `addon`
+  (e.g. the `forms` page declaring `documentation`) can never be reported as orphaned. Also
+  `no search ⇒ no detection`. Same root cause as §2.
+- [ ] **13. Priority of #940** (inline code spans leak a raw placeholder) relative to this work.
+
+### Parked unless revisited
+
+- [ ] **14. `capabilities[]`.** The "never two domain addons" decision substantially weakens the case —
+  it was pitched to detect conflicting claims between two domain addons. Only earns its keep as a
+  description of which surfaces the single domain addon owns.
+- [ ] **15. Conformance kit + `requiresNgdpbase` boot check.** Real gap (drop-in addons have no
+  version pinning), but infrastructure rather than user-facing value. Park until version skew bites.
+- [ ] **16. Is page metadata user-writable / is `addon` protected?** Cheap to verify; gates whether
+  #4 is sufficient on its own.
+
+### Settled
+
+- [x] One domain addon per site, permanently (2026-07-25) — see §1.
+- [x] No dedicated page class for domain addons — see §4.
+- [x] Page ACLs deprecated; frontmatter `audience`/`access` is the only Tier 1 surface — see §3.
