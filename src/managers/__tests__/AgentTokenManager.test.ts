@@ -50,7 +50,8 @@ describe('AgentTokenManager (#946)', () => {
       expect(token.length).toBeGreaterThan(40);
       expect(record.owner).toBe('jim');
       expect(record.name).toBe('claude-laptop');
-      expect(record.scopes).toEqual(['page-ingest']);
+      // 'page-ingest' is an alias — stored expanded to real action names.
+      expect(record.scopes).toEqual(['page-create', 'page-edit']);
       expect((record as Record<string, unknown>).hash).toBeUndefined();
       expect(record.prefix.startsWith('ngdp_at_')).toBe(true);
     });
@@ -122,7 +123,7 @@ describe('AgentTokenManager (#946)', () => {
       const { token } = await m.mint('jim', 'claude-laptop', ['page-ingest']);
       const record = await m.verify(token);
       expect(record?.owner).toBe('jim');
-      expect(record?.scopes).toEqual(['page-ingest']);
+      expect(record?.scopes).toEqual(['page-create', 'page-edit']);
     });
 
     test('rejects an unknown token', async () => {
@@ -253,5 +254,33 @@ describe('AgentTokenManager (#946)', () => {
       const justAfterExpiry = Date.now() + 2 * 3_600_000;
       expect(await m.purgeExpired(justAfterExpiry)).toBe(0);
     });
+  });
+});
+
+describe('scope aliases (#946 — found by live testing)', () => {
+  test('page-ingest expands to the real action names', async () => {
+    // Scopes are compared against action names by both permission paths.
+    // `page-ingest` is not an action, so an unexpanded value matched nothing
+    // and every ingest was denied — caught only against a running server.
+    const m = await makeManager();
+    const { record } = await m.mint('jim', 'x', ['page-ingest']);
+    expect(record.scopes).toEqual(['page-create', 'page-edit']);
+  });
+
+  test('explicit action names pass through unchanged', async () => {
+    const m = await makeManager();
+    const { record } = await m.mint('jim', 'x', ['page-read', 'page-edit']);
+    expect(record.scopes).toEqual(['page-read', 'page-edit']);
+  });
+
+  test('expansion de-duplicates', async () => {
+    const m = await makeManager();
+    const { record } = await m.mint('jim', 'x', ['page-ingest', 'page-edit']);
+    expect(record.scopes).toEqual(['page-create', 'page-edit']);
+  });
+
+  test('an alias cannot smuggle in an admin scope', async () => {
+    const m = await makeManager();
+    await expect(m.mint('jim', 'x', ['page-ingest', 'admin-system'])).rejects.toThrow(/admin/i);
   });
 });

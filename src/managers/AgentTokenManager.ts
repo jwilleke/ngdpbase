@@ -40,6 +40,29 @@ const TOKEN_BYTES = 32;
 /** Actions a token may never carry, however privileged its owner (#946 decision 3). */
 const FORBIDDEN_SCOPE_PREFIX = 'admin-';
 
+/**
+ * Convenience aliases expanded at mint time.
+ *
+ * Scopes are compared against *action names* (`page-create`, `page-edit`, …)
+ * because that is what both permission paths ask for. `page-ingest` reads well
+ * in an API call but is not itself an action, so it is expanded and stored in
+ * its expanded form — the store always holds real action names.
+ */
+const SCOPE_ALIASES: Record<string, string[]> = {
+  'page-ingest': ['page-create', 'page-edit']
+};
+
+/** Expand any aliases and de-duplicate, preserving order. */
+function expandScopes(scopes: string[]): string[] {
+  const out: string[] = [];
+  for (const scope of scopes) {
+    for (const expanded of SCOPE_ALIASES[scope] ?? [scope]) {
+      if (!out.includes(expanded)) out.push(expanded);
+    }
+  }
+  return out;
+}
+
 export interface AgentTokenRecord {
   id: string;
   owner: string;
@@ -168,8 +191,11 @@ class AgentTokenManager extends BaseManager {
       throw new Error('At least one scope is required');
     }
 
+    const effectiveScopes = expandScopes(scopes);
+
     // admin-* is refused outright rather than warned (#946 decision 3).
-    const forbidden = scopes.filter(s => s.startsWith(FORBIDDEN_SCOPE_PREFIX));
+    // Checked after expansion so an alias can never smuggle one in.
+    const forbidden = effectiveScopes.filter(s => s.startsWith(FORBIDDEN_SCOPE_PREFIX));
     if (forbidden.length > 0) {
       throw new Error(`Tokens cannot carry admin scopes: ${forbidden.join(', ')}`);
     }
@@ -196,7 +222,7 @@ class AgentTokenManager extends BaseManager {
       name: name.trim(),
       hash: sha256(token),
       prefix: token.slice(0, TOKEN_PREFIX.length + 4),
-      scopes: [...scopes],
+      scopes: effectiveScopes,
       createdAt: new Date(now).toISOString(),
       expiresAt: new Date(now + ttl * 3_600_000).toISOString(),
       lastUsedAt: null,
