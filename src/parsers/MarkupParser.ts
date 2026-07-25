@@ -199,10 +199,12 @@ export interface ExtractedElement {
   codeContent?: string;
   /** Language tag from fenced code blocks (e.g. 'javascript' from ```javascript) */
   codeLanguage?: string;
-  /** #907: inline-style variant — css | sup | sub | strike */
-  inlineVariant?: 'css' | 'sup' | 'sub' | 'strike';
+  /** #907: inline-style variant — css | sup | sub | strike | class (#938) */
+  inlineVariant?: 'css' | 'sup' | 'sub' | 'strike' | 'class';
   /** #907: raw CSS declarations for inline-style variant 'css' (parenthesis body) */
   cssRaw?: string;
+  /** #938: space-separated class list for inline-style variant 'class' */
+  classNames?: string;
 }
 
 /** Configuration manager interface for type safety */
@@ -1230,13 +1232,14 @@ class MarkupParser extends BaseManager {
    * resolver and the cell/block scanner (appendWikiNodes).
    */
   private async buildInlineStyleNode(
-    variant: 'css' | 'sup' | 'sub' | 'strike',
+    variant: 'css' | 'sup' | 'sub' | 'strike' | 'class',
     cssRaw: string,
     inner: string,
     context: ParseContext | undefined,
     wikiDocument: WikiDocument,
     idStart: number,
-    outerId?: number
+    outerId?: number,
+    classNames?: string
   ): Promise<ReturnType<typeof WikiDocument.prototype.createElement>> {
     const attrs: Record<string, string> = {};
     if (outerId !== undefined) attrs['data-jspwiki-id'] = outerId.toString();
@@ -1244,6 +1247,12 @@ class MarkupParser extends BaseManager {
     if (variant === 'sup') tag = 'sup';
     else if (variant === 'sub') tag = 'sub';
     else if (variant === 'strike') tag = 'del';
+    else if (variant === 'class') {
+      // #938: class names are already constrained to [A-Za-z][\w-]* runs by the
+      // extraction regex, so there is nothing injectable to escape here.
+      tag = 'span';
+      if (classNames) attrs['class'] = classNames;
+    }
     else {
       tag = 'span';
       const style = this.sanitizeInlineCss(cssRaw);
@@ -1524,18 +1533,50 @@ class MarkupParser extends BaseManager {
       // disambiguation lets a nested run's inner style match first (its content
       // has no opener/closer), so nesting resolves bottom-up.
       const inlinePattern = /%%(\((?:[^()]|\([^()]*\))*\)|sup|sub|strike)[ \t]+((?:(?!%%|\/%)[\s\S])*?)[ \t]*(?:\/%|%%(?!\(|sup|sub|strike))/;
+      // #938: bare class-name runs — `%%feed-badge feed-badge--green GREEN/%`.
+      // Inner content is `[^\n]` (SAME LINE ONLY), unlike the variants above.
+      // That restriction is load-bearing, not cosmetic: this extractor runs
+      // BEFORE extractStyleBlocksWithStack, so a multi-line inner would let a
+      // *block* opener (`%%table-fit` alone on its line) match here and swallow
+      // the block's closing `/%`. A block opener's `/%` is always on a later
+      // line, so confining the match to one line makes that impossible.
+      // No conflict the other way either: the block opener regex is anchored
+      // `^\s*%%…$`, so a same-line run was never a block-opener candidate.
+      const inlineClassPattern = /%%([A-Za-z][\w-]*(?:[ \t]+[A-Za-z][\w-]*)*)[ \t]+((?:(?!%%|\/%)[^\n])*?)[ \t]*(?:\/%|%%(?!\(|sup|sub|strike))/;
       let guard = 0;
-      let m: RegExpExecArray | null;
-      while ((m = inlinePattern.exec(sanitized)) !== null && guard++ < 5000) {
+      for (;;) {
+        if (guard++ >= 5000) break;
+        const mVariant = inlinePattern.exec(sanitized);
+        const mClass = inlineClassPattern.exec(sanitized);
+        // Earliest match wins. Nesting still resolves bottom-up regardless of
+        // which pattern hits: both forbid `%%`/`/%` inside their inner group,
+        // so only an innermost run can match on any given round.
+        let m: RegExpExecArray;
+        let isClass: boolean;
+        if (mVariant && mClass) {
+          isClass = mClass.index < mVariant.index;
+          m = isClass ? mClass : mVariant;
+        } else if (mClass) {
+          isClass = true;
+          m = mClass;
+        } else if (mVariant) {
+          isClass = false;
+          m = mVariant;
+        } else {
+          break;
+        }
         const head = m[1];
         const inner = m[2] ?? '';
-        const isCss = head.startsWith('(');
-        const variant: 'css' | 'sup' | 'sub' | 'strike' = isCss ? 'css' : (head as 'sup' | 'sub' | 'strike');
+        const isCss = !isClass && head.startsWith('(');
+        const variant: 'css' | 'sup' | 'sub' | 'strike' | 'class' = isClass
+          ? 'class'
+          : (isCss ? 'css' : (head as 'sup' | 'sub' | 'strike'));
         jspwikiElements.push({
           type: 'inline-style',
           syntax: m[0],
           inlineVariant: variant,
           cssRaw: isCss ? head.slice(1, -1) : undefined,
+          classNames: isClass ? head.replace(/[ \t]+/g, ' ') : undefined,
           inner,
           id: id++,
           position: m.index
@@ -2292,6 +2333,7 @@ class MarkupParser extends BaseManager {
 
     case 'inline-style':
       // #907: inline %%(css)/sup/sub/strike … /% → DOM node
+      // #938: plus bare class runs → <span class="…">
       return await this.buildInlineStyleNode(
         element.inlineVariant ?? 'css',
         element.cssRaw ?? '',
@@ -2299,7 +2341,8 @@ class MarkupParser extends BaseManager {
         context,
         wikiDocument,
         element.id * 1000,
-        element.id
+        element.id,
+        element.classNames
       );
 
     default: {
