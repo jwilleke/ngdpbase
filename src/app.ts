@@ -379,26 +379,48 @@ void (async (): Promise<void> => {
     })();
   });
 
-  // #818 — Authentik OAuth bearer trust for API clients. Runs AFTER the
+  // #818 / #946 — bearer trust for API clients. Runs AFTER the
   // session/userContext middleware so it can override the default Anonymous
   // context with the token's identity. Stateless: no session is created for
   // API calls (agents present a token per request). Marks `req.bearerAuth` so
   // the CSRF middleware skips bearer-authenticated requests (bearer auth is not
   // cookie-based and therefore not CSRF-susceptible). No-ops when the header is
-  // absent or the provider is disabled.
+  // absent or no bearer provider is enabled.
+  //
+  // #946: this previously hardcoded 'authentik-bearer', so a second bearer
+  // provider would never be consulted. It now tries each registered
+  // bearer-capable provider in turn and takes the first success, letting the
+  // in-app agent-token provider and Authentik coexist (or run alone, or
+  // neither).
+  const BEARER_PROVIDER_IDS = ['authentik-bearer', 'agent-token'];
   app.use(async (req: Request, _res: Response, next: NextFunction) => {
     try {
       const header = req.headers['authorization'];
       if (!header || typeof header !== 'string' || !header.startsWith('Bearer ')) { next(); return; }
       const authManager = engine.getManager('AuthManager') as {
-        authenticate?: (id: string, creds: { token?: string }) => Promise<{ success: boolean; username?: string }>;
+        authenticate?: (id: string, creds: { token?: string }) => Promise<{
+          success: boolean;
+          username?: string;
+          viaToken?: { id: string; name: string; scopes: string[] };
+        }>;
         getProviders?: () => Array<{ id: string }>;
       } | null;
-      const hasProvider = authManager?.getProviders?.().some(p => p.id === 'authentik-bearer');
-      if (!authManager?.authenticate || !hasProvider) { next(); return; }
+      const registered = new Set((authManager?.getProviders?.() ?? []).map(p => p.id));
+      const candidates = BEARER_PROVIDER_IDS.filter(id => registered.has(id));
+      if (!authManager?.authenticate || candidates.length === 0) { next(); return; }
       const token = header.slice('Bearer '.length).trim();
       if (!token) { next(); return; }
-      const result = await authManager.authenticate('authentik-bearer', { token });
+
+      let result: { success: boolean; username?: string; viaToken?: { id: string; name: string; scopes: string[] } } = { success: false };
+      let matchedProvider = '';
+      for (const providerId of candidates) {
+        const attempt = await authManager.authenticate(providerId, { token });
+        if (attempt.success && attempt.username) {
+          result = attempt;
+          matchedProvider = providerId;
+          break;
+        }
+      }
       if (result.success && result.username) {
         const user = await userManager.getUser(result.username);
         if (user?.isActive) {
@@ -410,14 +432,19 @@ void (async (): Promise<void> => {
             ...user,
             roles: Array.from(roles),
             isAuthenticated: true,
-            authenticated: true
+            authenticated: true,
+            // #946: scopes ride on userContext so they reach both the ACL
+            // scope gate and the save path (for via-token provenance) through
+            // the WikiContext the route handler already builds. Roles above are
+            // resolved live per request — a token never carries a snapshot.
+            ...(result.viaToken ? { viaToken: result.viaToken } : {})
           };
           (req as Request & { bearerAuth?: boolean }).bearerAuth = true;
-          logger.info(`[Authentik bearer] Authenticated API request as: ${result.username}`);
+          logger.info(`[bearer:${matchedProvider}] Authenticated API request as: ${result.username}`);
         }
       }
     } catch (err) {
-      logger.warn('[Authentik bearer middleware] failed:', err);
+      logger.warn('[bearer middleware] failed:', err);
     }
     next();
   });

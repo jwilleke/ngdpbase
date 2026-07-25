@@ -35,12 +35,24 @@ import { MagicLinkAuthProvider } from '../providers/MagicLinkAuthProvider.js';
 import { GoogleOIDCProvider } from '../providers/GoogleOIDCProvider.js';
 import { CloudflareAccessAuthProvider } from '../providers/CloudflareAccessAuthProvider.js';
 import { AuthentikBearerAuthProvider } from '../providers/AuthentikBearerAuthProvider.js';
+import { AgentTokenAuthProvider } from '../providers/AgentTokenAuthProvider.js';
 import type EmailManager from './EmailManager.js';
 import logger from '../utils/logger.js';
 
 export interface AuthenticateResult {
   success: boolean;
   username?: string;
+  /**
+   * #946 — set by token-based providers. Carries the delegating token's
+   * identity and scopes so the caller can enforce the scope ceiling and stamp
+   * page provenance. Roles are deliberately NOT included: they are resolved
+   * live from the user record, so a token never holds a snapshot of authority.
+   */
+  viaToken?: {
+    id: string;
+    name: string;
+    scopes: string[];
+  };
 }
 
 class AuthManager extends BaseManager {
@@ -153,6 +165,15 @@ class AuthManager extends BaseManager {
       }
     }
 
+    // Register the in-app agent token provider (#946). Unlike authentik-bearer
+    // this needs no external IdP — users mint their own delegated credentials —
+    // so it registers whenever enabled, with no further required config. Both
+    // bearer providers may be active at once; the middleware tries each.
+    if (configManager?.getProperty('ngdpbase.auth.agent-token.enabled', false)) {
+      this.providers.set('agent-token', new AgentTokenAuthProvider(this.engine));
+      logger.info('[AuthManager] Registered provider: agent-token');
+    }
+
     // Load required-factors chain
     const factors = configManager?.getProperty('ngdpbase.auth.required-factors', ['password']);
     this.requiredFactors = Array.isArray(factors) ? (factors as string[]) : ['password'];
@@ -190,7 +211,11 @@ class AuthManager extends BaseManager {
         }
       }
 
-      return { success: true, username: result.username };
+      // #946: pass through a token provider's viaToken detail, if any.
+      const viaToken = (result as { viaToken?: { id: string; name: string; scopes: string[] } }).viaToken;
+      return viaToken
+        ? { success: true, username: result.username, viaToken }
+        : { success: true, username: result.username };
     } catch (err) {
       logger.error(`[AuthManager] Error authenticating via ${providerId}:`, err);
       return { success: false };
