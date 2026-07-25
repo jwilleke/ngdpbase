@@ -178,6 +178,16 @@ describe('MarkupParser inline class styles (#938)', () => {
 
   // ── malformed / edge cases stay inert ─────────────────────────────────────
 
+  test('the two-opener form does not emit an empty span (#938 review)', async () => {
+    // `%%a %%b X/%` is not the multi-class syntax. The second `%%` must not be
+    // read as A's closer — that produced `<span class="feed-badge"></span>`
+    // followed by stray text. The inner run is a well-formed style of its own,
+    // so it renders; the unclosed outer stays literal.
+    const result = await parser.parse('x %%feed-badge %%feed-badge--green GREEN/% y');
+    expect(result).not.toContain('<span class="feed-badge"></span>');
+    expect(result).toContain('<span class="feed-badge--green">GREEN</span>');
+  });
+
   test('an unclosed inline run is left as literal text', async () => {
     const result = await parser.parse('Some %%feed-badge GREEN with no close');
     expect(result).toContain('%%feed-badge');

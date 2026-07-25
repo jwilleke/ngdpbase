@@ -1532,7 +1532,15 @@ class MarkupParser extends BaseManager {
       // closer must NOT be another opener (`%%(`, `%%sup/sub/strike`) — that
       // disambiguation lets a nested run's inner style match first (its content
       // has no opener/closer), so nesting resolves bottom-up.
-      const inlinePattern = /%%(\((?:[^()]|\([^()]*\))*\)|sup|sub|strike)[ \t]+((?:(?!%%|\/%)[\s\S])*?)[ \t]*(?:\/%|%%(?!\(|sup|sub|strike))/;
+      // The `%%` closer must not itself be an opener. #938 widened what counts
+      // as an opener to include bare class names, so the lookahead has to
+      // exclude `%%class ` too — otherwise `%%a %%b X/%` reads the second `%%`
+      // as A's closer and emits an empty `<span class="a">` followed by the
+      // rest as stray text.
+      const NOT_AN_OPENER = String.raw`(?!\(|sup|sub|strike|[A-Za-z][\w-]*[ \t])`;
+      const inlinePattern = new RegExp(
+        String.raw`%%(\((?:[^()]|\([^()]*\))*\)|sup|sub|strike)[ \t]+((?:(?!%%|\/%)[\s\S])*?)[ \t]*(?:\/%|%%${NOT_AN_OPENER})`
+      );
       // #938: bare class-name runs — `%%feed-badge feed-badge--green GREEN/%`.
       // Inner content is `[^\n]` (SAME LINE ONLY), unlike the variants above.
       // That restriction is load-bearing, not cosmetic: this extractor runs
@@ -1542,7 +1550,9 @@ class MarkupParser extends BaseManager {
       // line, so confining the match to one line makes that impossible.
       // No conflict the other way either: the block opener regex is anchored
       // `^\s*%%…$`, so a same-line run was never a block-opener candidate.
-      const inlineClassPattern = /%%([A-Za-z][\w-]*(?:[ \t]+[A-Za-z][\w-]*)*)[ \t]+((?:(?!%%|\/%)[^\n])*?)[ \t]*(?:\/%|%%(?!\(|sup|sub|strike))/;
+      const inlineClassPattern = new RegExp(
+        String.raw`%%([A-Za-z][\w-]*(?:[ \t]+[A-Za-z][\w-]*)*)[ \t]+((?:(?!%%|\/%)[^\n])*?)[ \t]*(?:\/%|%%${NOT_AN_OPENER})`
+      );
       let guard = 0;
       for (;;) {
         if (guard++ >= 5000) break;
