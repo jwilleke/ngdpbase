@@ -135,14 +135,15 @@ This is non-negotiable: never propagate a release to satellites while jimstest i
 
 **Step 8b — Propagate to the satellites.**
 
-Sister ngdpbase installs (e.g., The Fairways, ve-geology) need to be told about the new release. Invoke the `/othersites` skill — defined in `.claude/commands/othersites.md`. It knows the list of installs and the update sequence (`git pull` → `./server.sh stop` → `npm run build` → `./server.sh start` → unit tests + E2E per site → file `[BUG]` issues for any failures). Because Step 8a already validated jimstest on the release commit, `/othersites` may run in satellite-only mode here (skip jimstest) — that skip is valid *only* because Step 8a was performed on the final code.
+Sister ngdpbase installs (e.g., The Fairways, the temp build) need to be told about the new release. Invoke the `/othersites` skill — defined in `.claude/commands/othersites.md`. It knows the list of installs and the update sequence (`git pull` → `./server.sh stop` → `npm run build` → `./server.sh start` → unit tests + E2E per site → file `[BUG]` issues for any failures). Because Step 8a already validated jimstest on the release commit, `/othersites` may run in satellite-only mode here (skip jimstest) — that skip is valid *only* because Step 8a was performed on the final code.
 
-The current sites tracked there are:
+`/othersites` owns the instance list — treat it as the single source of truth and do not maintain a competing list here. As of v3.67.1 it tracks three:
 
 - `/Volumes/hd2A/workspaces/github/fairways-base` (port 2121, "The Fairways")
-- `/Volumes/hd2A/workspaces/github/ngdpbase-veg` (port 3333, "ve-geology")
 - `/Volumes/hd2A/workspaces/github/ngdpbase` (port 3000, "jimstest" — the source of truth)
-- `/Volumes/hd2/ngdp-temp-builds/` (additional builds; ports in their `.env` files)
+- `/Volumes/hd2/ngdp-temp-builds/ngdpbase` (port 3001, "ngdpbase temp build")
+
+**Do not propagate to `/Volumes/hd2A/workspaces/github/ngdpbase-veg`.** The "ve-geology" instance was retired 2026-05-25. That directory is now the working directory of the locally-running **GeoHazardWatch** instance on port 3333 — a separate satellite with its own tracker, updated via the GHCR + Renovate delivery chain, *not* by this flow. Building in it replaces `dist/` underneath a running server, which silently stages a version the operator never chose to deploy. This skill previously listed it as a propagation target; that was stale and cost a wasted rebuild during the v3.67.1 release.
 
 If a site has uncommitted local diffs that block the pull (typically `package-lock.json` from a prior build, or the seed required-pages file from an auto-migration), the pattern that's worked across past releases is `git checkout -- <file>` for the known-identical-to-master files, then re-run the pull. Untracked working notes in `private/` and similar are fine to leave alone.
 

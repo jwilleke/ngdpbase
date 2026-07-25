@@ -96,9 +96,8 @@ Precondition for running: jimstest pre-flight (Step 3) must be green and any sem
 Targets:
 
 - `fairways-base` (port 2121, "The Fairways")
-- `ngdpbase-veg` (port 3333, "ve-geology")
 - `ngdp-temp-builds/ngdpbase` (port 3001, "ngdpbase temp build")
-- `geohazardwatch` (separate repo, if affected)
+- `geohazardwatch` (separate repo, if affected — including the local instance on port 3333, which runs from the old `ngdpbase-veg` directory and updates via GHCR + Renovate, not via `/othersites`)
 
 `/othersites` runs the same `git pull` → `./server.sh stop` → `npm run build` → `./server.sh start` → `npm test` → `npm run test:e2e` cycle on each. Note that the current `/othersites` skill also includes jimstest in its instance list — invoking it after Step 3 will re-process jimstest, which is harmless but redundant. (If repetition becomes annoying, update `/othersites` to skip jimstest when called from this command.)
 

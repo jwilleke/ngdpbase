@@ -10,7 +10,6 @@ Survey health of ngdpbase-adjacent repositories and local instances that fall ou
 |---|---|---|---|---|
 | `fairways-gen2-website` | separate-repo satellite | `/Volumes/hd2A/workspaces/github/fairways-gen2-website` | `jwilleke/fairways-gen2-website` | own tracker |
 | `fairways-base` | local checkout of ngdpbase | `/Volumes/hd2A/workspaces/github/fairways-base` | `jwilleke/ngdpbase` | issues land in ngdpbase |
-| `ngdpbase-veg` | local checkout of ngdpbase | `/Volumes/hd2A/workspaces/github/ngdpbase-veg` | `jwilleke/ngdpbase` | issues land in ngdpbase |
 | `ngdp-temp-builds` | local checkout of ngdpbase | `/Volumes/hd2/ngdp-temp-builds/ngdpbase` | `jwilleke/ngdpbase` | issues land in ngdpbase |
 
 **Explicitly out of scope** — these are already covered elsewhere and including them here would double-report:
@@ -33,7 +32,7 @@ Run in parallel where possible:
 5. **Per failing PR**: include the failing-job exit message — `gh run view <id> --log-failed | grep -E "##\\[error\\]|MODULE_NOT_FOUND|Cannot find|npm error" | head -10` — so the report explains *why*, not just *which*.
 6. **Local checkout state** — `git -C <path> status --short` (uncommitted changes / untracked files) + `git -C <path> log --oneline -3` (recent commits on the working branch).
 
-### For local-only checkouts (`fairways-base`, `ngdpbase-veg`, `ngdp-temp-builds`)
+### For local-only checkouts (`fairways-base`, `ngdp-temp-builds`)
 
 These don't have their own issue tracker; their issues are filed against the parent repo (`jwilleke/ngdpbase`). Survey is local-instance health:
 
@@ -41,8 +40,8 @@ These don't have their own issue tracker; their issues are filed against the par
 2. **Local build artefact health** — `cd <path> && npm test 2>&1 | tail -5` (unit-test pass count; do NOT run E2E here — that's `/othersites` scope).
 3. **Server reachability** — `curl -s -o /dev/null -w "%{http_code}" http://localhost:<port>/` to confirm the instance is reachable. Note the `PROJECT_NAME` from `.env` so the report identifies which logical instance this is.
    - `fairways-base` — port 2121 ("The Fairways")
-   - `ngdpbase-veg` — port 3333 ("ve-geology")
    - `ngdp-temp-builds` — port 3001 ("ngdpbase temp build")
+   - (port 3333 is **not** ours — "ve-geology" was retired 2026-05-25 and that port now serves the separate **GeoHazardWatch** satellite, which has its own tracker. Do not survey or build it here.)
 4. **Addon drift** — list `ls <path>/addons/` and compare against the parent ngdpbase's `addons/` — flag any addon present in one but not the other.
 
 ## Per-addon Dependabot breakdown (main ngdpbase repo)
