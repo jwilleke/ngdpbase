@@ -1582,32 +1582,6 @@
       ]
     },
     {
-      "id": "deny-anonymous-system-pages",
-      "name": "Deny Anonymous System Pages",
-      "description": "Block anonymous access to system and admin category pages",
-      "priority": 90,
-      "effect": "deny",
-      "subjects": [
-        {
-          "type": "role",
-          "value": "anonymous"
-        }
-      ],
-      "resources": [
-        {
-          "type": "category",
-          "value": "system"
-        },
-        {
-          "type": "category",
-          "value": "admin"
-        }
-      ],
-      "actions": [
-        "*"
-      ]
-    },
-    {
       "id": "default-view-for-all",
       "name": "Default View Access for All",
       "description": "Fallback - all authenticated users can at minimum view pages",

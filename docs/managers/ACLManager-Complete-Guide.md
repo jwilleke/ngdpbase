@@ -79,13 +79,24 @@ Default policy evaluation order (by priority, highest first):
 
 | id | priority | role | effect | actions |
 |---|---|---|---|---|
-| `deny-anonymous-system-pages` | 90 | anonymous | deny | `*` on system/admin categories |
 | `admin-full-access` | 100 | admin | allow | all |
 | `editor-permissions` | 80 | editor | allow | read/write/create/delete |
 | `contributor-permissions` | 70 | contributor | allow | read/create/edit |
 | `reader-permissions` | 60 | reader | allow | `page:read`, `attachment:read`, `search:all`, `export:pages` |
 | `anonymous-read-only` | 50 | anonymous | allow | `page:read` |
 | `default-view-for-all` | 1 | All | allow | `page:read` |
+
+> **Removed 2026-07-25:** `deny-anonymous-system-pages` (priority 90, deny, `*` on `system`/`admin`
+> categories). It had never functioned — `PolicyEvaluator.matchesResource` matches only
+> `type: 'page'` resources, and anonymous users carry the role `Anonymous` while the policy named
+> `anonymous` (subject matching is case-sensitive). Rather than make it work, it was deleted: the
+> `system` category marks platform-owned content (site chrome, user documentation, privacy notice,
+> request-access), not restricted content, so enforcing the rule would have blanked the sidebar and
+> footer for every anonymous visitor. See #945 (closed as `wontfix`).
+>
+> Consequence: **there are no `deny` policies in the default catalog.** Access restriction is carried
+> by page `private` (tier 0), author-lock (tier 0.5), and frontmatter `audience`/`access` (tier 1) —
+> not by global policy.
 
 `ngdpbase.access.policies.default-policy: "deny"` — if no policy matches, access is denied.
 
