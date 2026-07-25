@@ -16,9 +16,9 @@
     <% themeFontUrls.forEach(function(url) { %><link rel="stylesheet" href="<%= url %>">
     <% }); %><% } %>
     <!-- Theme: variables must load before core so selectors can resolve them -->
-    <link rel="stylesheet" href="<%= typeof variablesCssPath !== 'undefined' ? variablesCssPath : '/themes/default/css/variables.css' %>?v=3.0.5">
-    <link rel="stylesheet" href="<%= typeof coreCssPath !== 'undefined' ? coreCssPath : '/themes/core.css' %>?v=3.0.5">
-    <link rel="stylesheet" href="<%= typeof locationCssPath !== 'undefined' ? locationCssPath : '/themes/plugins/location.css' %>?v=3.0.5">
+    <link rel="stylesheet" href="<%= typeof variablesCssPath !== 'undefined' ? variablesCssPath : '/themes/default/css/variables.css' %>?v=3.0.6">
+    <link rel="stylesheet" href="<%= typeof coreCssPath !== 'undefined' ? coreCssPath : '/themes/core.css' %>?v=3.0.6">
+    <link rel="stylesheet" href="<%= typeof locationCssPath !== 'undefined' ? locationCssPath : '/themes/plugins/location.css' %>?v=3.0.6">
     <!-- Add-on stylesheets (registered via AddonsManager.registerStylesheet()) -->
     <% if (typeof addonStylesheets !== 'undefined' && addonStylesheets && addonStylesheets.length) { %>
     <% addonStylesheets.forEach(function(url) { %><link rel="stylesheet" href="<%= url %>">
