@@ -5691,9 +5691,20 @@ ${panes}
         // non-fatal — section just won't show
       }
 
+      // #946: only render the Agent Tokens card when the feature is enabled.
+      // The card is entirely client-driven against /api/tokens, so no token
+      // data is passed into the template — the secret must never reach a
+      // rendered page, only the one-time mint response.
+      const agentTokensEnabled = Boolean(
+        this.engine.getManager('AgentTokenManager') &&
+        this.engine.getManager<{ getProperty(k: string, d: unknown): unknown }>('ConfigurationManager')
+          ?.getProperty('ngdpbase.auth.agent-token.enabled', false)
+      );
+
       res.render('profile', {
         ...commonData,
         title: 'Profile',
+        agentTokensEnabled, // #946
         user: freshUser || currentUser, // Use fresh user data if available
         permissions: userPermissions,
         availableTimezones: availableTimezones,

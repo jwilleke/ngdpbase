@@ -161,6 +161,74 @@
                     </div>
                     <% } %>
 
+                    <!-- #946: Agent API Tokens — delegate your own permissions to an agent -->
+                    <% if (typeof agentTokensEnabled !== 'undefined' && agentTokensEnabled) { %>
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header d-flex align-items-center justify-content-between">
+                                    <h6 class="mb-0"><i class="fas fa-robot"></i> Agent API Tokens</h6>
+                                    <button type="button" class="btn btn-sm btn-primary" id="agent-token-new-btn">
+                                        <i class="fas fa-plus"></i> New token
+                                    </button>
+                                </div>
+                                <div class="card-body">
+                                    <p class="text-muted small">
+                                        A token lets an agent act as you over the API. It can never do anything you
+                                        cannot already do, and it stops working the moment you revoke it or it expires.
+                                    </p>
+
+                                    <!-- Mint form — hidden until "New token" is pressed -->
+                                    <form id="agent-token-form" class="border rounded p-3 mb-3 d-none">
+                                        <div class="row g-2 align-items-end">
+                                            <div class="col-md-4">
+                                                <label class="form-label small mb-1" for="agent-token-name">Name</label>
+                                                <input type="text" class="form-control form-control-sm" id="agent-token-name"
+                                                       placeholder="claude-laptop" required>
+                                                <div class="form-text">So you recognise it later.</div>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label small mb-1" for="agent-token-scopes">Permissions</label>
+                                                <select class="form-select form-select-sm" id="agent-token-scopes">
+                                                    <option value="page-ingest" selected>Create and edit pages</option>
+                                                    <option value="page-read">Read only</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-md-2">
+                                                <label class="form-label small mb-1" for="agent-token-ttl">Hours</label>
+                                                <input type="number" class="form-control form-control-sm" id="agent-token-ttl"
+                                                       value="24" min="1" max="24">
+                                            </div>
+                                            <div class="col-md-2 d-grid">
+                                                <button type="submit" class="btn btn-sm btn-success" id="agent-token-create-btn">Create</button>
+                                            </div>
+                                        </div>
+                                        <div class="alert alert-danger mt-2 mb-0 py-2 small d-none" id="agent-token-error"></div>
+                                    </form>
+
+                                    <!-- One-time secret display -->
+                                    <div class="alert alert-warning d-none" id="agent-token-result">
+                                        <div class="fw-bold mb-1">
+                                            <i class="fas fa-triangle-exclamation"></i>
+                                            Copy this now — it cannot be shown again.
+                                        </div>
+                                        <div class="input-group input-group-sm">
+                                            <input type="text" class="form-control font-monospace" id="agent-token-secret" readonly>
+                                            <button class="btn btn-outline-secondary" type="button" id="agent-token-copy-btn">
+                                                <i class="fas fa-copy"></i> Copy
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div id="agent-token-list" class="table-responsive">
+                                        <p class="text-muted small mb-0">Loading…</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <% } %>
+
                     <!-- User Preferences Section -->
                     <div class="row mb-4">
                         <div class="col-12">
@@ -677,5 +745,131 @@ document.addEventListener('DOMContentLoaded', function() {
     setInterval(updateDateTimePreview, 30000);
 });
 </script>
+
+<% if (typeof agentTokensEnabled !== 'undefined' && agentTokensEnabled) { %>
+<script>
+// #946: Agent API Tokens card. Entirely client-driven against /api/tokens —
+// the secret is only ever in the one-time mint response, never rendered
+// server-side into the page.
+(function () {
+    const CSRF = '<%= csrfToken %>';
+    const form     = document.getElementById('agent-token-form');
+    const newBtn   = document.getElementById('agent-token-new-btn');
+    const listEl   = document.getElementById('agent-token-list');
+    const resultEl = document.getElementById('agent-token-result');
+    const secretEl = document.getElementById('agent-token-secret');
+    const errorEl  = document.getElementById('agent-token-error');
+    if (!form || !listEl) return;
+
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+
+    function showError(message) {
+        errorEl.textContent = message;
+        errorEl.classList.remove('d-none');
+    }
+
+    function expiresIn(iso) {
+        const ms = Date.parse(iso) - Date.now();
+        if (!Number.isFinite(ms) || ms <= 0) return 'expired';
+        const hours = Math.floor(ms / 3600000);
+        if (hours >= 1) return 'in ' + hours + 'h';
+        return 'in ' + Math.max(1, Math.round(ms / 60000)) + 'm';
+    }
+
+    async function refresh() {
+        try {
+            const res = await fetch('/api/tokens');
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            const tokens = data.tokens || [];
+            if (tokens.length === 0) {
+                listEl.innerHTML = '<p class="text-muted small mb-0">No active tokens.</p>';
+                return;
+            }
+            listEl.innerHTML =
+                '<table class="table table-sm align-middle mb-0">' +
+                '<thead><tr><th>Name</th><th>Prefix</th><th>Permissions</th><th>Expires</th><th>Last used</th><th></th></tr></thead><tbody>' +
+                tokens.map((t) =>
+                    '<tr>' +
+                    '<td>' + esc(t.name) + '</td>' +
+                    '<td><code class="small">' + esc(t.prefix) + '…</code></td>' +
+                    '<td><span class="small text-muted">' + esc((t.scopes || []).join(', ')) + '</span></td>' +
+                    '<td class="small">' + esc(expiresIn(t.expiresAt)) + '</td>' +
+                    '<td class="small text-muted">' + (t.lastUsedAt ? esc(new Date(t.lastUsedAt).toLocaleString()) : 'never') + '</td>' +
+                    '<td class="text-end"><button class="btn btn-sm btn-outline-danger agent-token-revoke" data-id="' + esc(t.id) + '">Revoke</button></td>' +
+                    '</tr>'
+                ).join('') +
+                '</tbody></table>';
+        } catch (err) {
+            listEl.innerHTML = '<p class="text-danger small mb-0">Could not load tokens.</p>';
+        }
+    }
+
+    newBtn?.addEventListener('click', () => {
+        form.classList.toggle('d-none');
+        errorEl.classList.add('d-none');
+        if (!form.classList.contains('d-none')) document.getElementById('agent-token-name').focus();
+    });
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        errorEl.classList.add('d-none');
+        const btn = document.getElementById('agent-token-create-btn');
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/tokens', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF },
+                body: JSON.stringify({
+                    name: document.getElementById('agent-token-name').value,
+                    scopes: [document.getElementById('agent-token-scopes').value],
+                    ttlHours: Number(document.getElementById('agent-token-ttl').value) || undefined
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                showError(data.error || ('Could not create token (HTTP ' + res.status + ')'));
+                return;
+            }
+            secretEl.value = data.token;
+            resultEl.classList.remove('d-none');
+            form.classList.add('d-none');
+            document.getElementById('agent-token-name').value = '';
+            await refresh();
+        } catch (err) {
+            showError('Could not create token.');
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
+    document.getElementById('agent-token-copy-btn')?.addEventListener('click', async () => {
+        secretEl.select();
+        try { await navigator.clipboard.writeText(secretEl.value); } catch { document.execCommand('copy'); }
+    });
+
+    listEl.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.agent-token-revoke');
+        if (!btn) return;
+        if (!window.confirm('Revoke this token? Any agent using it stops working immediately.')) return;
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/tokens/' + encodeURIComponent(btn.dataset.id), {
+                method: 'DELETE',
+                headers: { 'X-CSRF-Token': CSRF }
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            await refresh();
+        } catch (err) {
+            btn.disabled = false;
+        }
+    });
+
+    refresh();
+})();
+</script>
+<% } %>
 
 <%- include('footer') %>
