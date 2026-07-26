@@ -228,8 +228,8 @@ Live list. Tick as they settle. Recommendations are mine; override freely.
 
 - [x] **28. uuid in frontmatter, slug in the source filename, uuid in the instance store** — the two are separate questions. Seeder ignores filenames, so uuid source filenames cost readability for no functional gain. `geohazardwatch` has the right convention; the bundled addons are the outliers.
 - [x] **29. The addon owns the uuid and it stays mandatory** — identity must be stable and global, decided by the publisher. Platform-generated uuids would be instance-local and unmatched across installs.
-- [x] **30. Duplicate-uuid gap** — filed as **#951** (bug/P2).
-- [ ] **31. Missing uuid should fail loudly** — currently `logger.warn`; consider fail-fast for `type: 'domain'`, per the #672 precedent.
+- [x] **30. Page-level seeding failures are too quiet** — filed as **#951** (bug/P2), covering both the undetected duplicate uuid and the type-blind missing-uuid warning.
+- [x] **31. Missing uuid should be type-aware, not fail-fast** — folded into **#951**. Skipping the page is correct; failing boot because a *third-party* addon shipped one malformed file would turn an authoring typo into an outage. The #672 fail-fast precedent does not transfer — that was the operator's own config, which the operator can fix. Instead: `error` for `type: 'domain'`, `warn` for additive, matching the existing `:524` identity-mismatch precedent.
 - [ ] **32. Scaffolder should stamp uuids** (#675) and CI should assert `basename(file) === frontmatter.slug`.
 
 ### Parked unless revisited
@@ -448,8 +448,12 @@ The right analogy is a package name: the **publisher** owns it, decides it once,
 
 The design is right; the enforcement is too quiet.
 
-1. **No duplicate-uuid guard.** The seed loop has none. Two source pages sharing a uuid — the obvious copy-paste mistake when creating a page — means the second matches the first's already-seeded page and is silently skipped or reseeded over. One page simply never appears, with nothing logged as an error. Cross-addon collisions have the same shape and are worse, since neither addon knows about the other. **Filed as #951.**
-2. **A missing uuid is only a `logger.warn`.** For a domain addon whose home page fails to appear, that is a boot-level problem reported at warn level. Arguably should follow the #672 fail-fast precedent, at least for `type: 'domain'`.
+1. **No duplicate-uuid guard.** The seed loop has none. Two source pages sharing a uuid — the obvious copy-paste mistake when creating a page — means the second matches the first's already-seeded page and is silently skipped or reseeded over. One page simply never appears, and the only trace is a `debug` line phrased as normal operation. With reseed enabled it is worse: the two files fight over one page and the winner depends on filesystem ordering. Cross-addon collisions have the same shape and are worse still, since neither addon knows about the other.
+2. **A missing uuid is type-blind and only a `logger.warn`.** Better than (1) — it names the file and the reason — but a domain addon's home page failing to seed is a broken site, while the same failure in an additive addon is a missing help page. `AddonsManager.ts:524` already draws exactly that distinction for identity mismatch (`error` for domain, `warn` otherwise); page seeding should follow it. A boot-time warn is also invisible afterwards.
+
+Both are the same defect — **the seeder's page-level failures are too quiet** — with the same fix site, so they are tracked together in **#951** rather than as separate issues.
+
+**Explicitly rejected: fail-fast on boot.** Refusing to start because a third-party addon shipped one malformed page turns an authoring typo into an outage. The #672 precedent does not transfer: that was the operator's *own* config naming a nonexistent addon, which the operator can fix. A vendor's malformed file is not in the operator's control. Skip the page, report loudly, surface it after boot.
 3. **No tooling to generate one.** Authors hand-roll uuids, which is exactly why copy-paste duplicates happen. The addon scaffolder (#675) should stamp a fresh uuid into every generated page — the real fix for both problems above, since it removes the manual step.
 
 ### Guardrail
