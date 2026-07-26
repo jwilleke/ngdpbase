@@ -212,6 +212,16 @@ Live list. Tick as they settle. Recommendations are mine; override freely.
   `no search ⇒ no detection`. Same root cause as §2.
 - [ ] **13. Priority of #940** (inline code spans leak a raw placeholder) relative to this work.
 
+### Seeded-page classification (§9)
+
+- [x] **19. Feature UI pages are `system`** — infrastructure, not content.
+- [x] **20. Domain content is `general`, instance-owned from day one** — "purely seeded"; the addon provides a starting corpus then lets go.
+- [x] **21. Help/docs pages are `documentation`.**
+- [x] **22. Demo/showcase treated as content** — `general`, instance-owned.
+- [ ] **23. Legal** — `documentation` or `system`. Narrowed to two; identical `storageLocation: required` either way, so labelling only.
+- [ ] **24. Site chrome** — OPEN. `system`, a new `template`/`chrome` category, or move to the theme layer. Leaning toward a new category: fragments are embedded everywhere and never a destination, unlike every other kind.
+- [ ] **25. Feature-UI fragility** — `myjournal` *is* the journal screen and nothing regenerates it if deleted. Leave as pages / promote to routes / regenerate-if-missing.
+
 ### Parked unless revisited
 
 - [ ] **14. `capabilities[]`.** The "never two domain addons" decision substantially weakens the case —
@@ -273,3 +283,72 @@ Do not simply switch the seeder default from `system-category: addon` to `system
 `findOrphanedAddonPages` queries `searchByCategory('addon')` and would stop finding anything. Either keep
 `addon` as its own category and add it to the deny policy alongside `system`/`admin`, or make orphan
 detection key on the `addon` field, which also fixes the `documentation`-page hole in §2 / item 12.
+
+---
+
+## 9. What seeded pages actually are — a taxonomy (2026-07-26)
+
+Addon-seeded pages are not one thing. Enumerating all 23 across the four bundled addons and `geohazardwatch` gives six distinct purposes — and **"explain the addon" is the minority use, 4 of 23.**
+
+| Purpose | Count | Examples |
+|---|---|---|
+| **Feature UI** — the page *is* the app screen | 5 | `myjournal` (`[{Journal}]`), `calendar`, `makeareservation` (`[{ReservationFormPlugin}]`), `upcomingevents`, `externalassetsearch` |
+| **Domain content** — editorial subject matter | 8 | `earthquakes`, `volcanoes`, `tsunamis`, `landslides`, `volcano-activity` |
+| **Help / docs** | 4 | `calendarhelp`, `journalhelp`, `using-formplugin`, `externalassetsearchadmin` |
+| **Site chrome** | 2 | `footer-content`, `left-menu-content` |
+| **Demo / showcase** | 2 | `geology-demo`, `geohazardwatch-plugins` |
+| **Legal** | 1 | `attribution` |
+
+### The root problem
+
+The taxonomy exists in reality, but the platform has **one label for all of it**: the seeder defaults every page to `system-category: addon` (`AddonsManager.ts` ~L775) unless the source declares otherwise. Six kinds of page with six sensible policies get flattened into one bucket — which is why update, ownership and edit rules have been so hard to reason about.
+
+Fixing the classification is therefore upstream of fixing the update mechanism.
+
+### DECISION (2026-07-26): category per purpose
+
+| Purpose | `system-category` | Ownership | Notes |
+|---|---|---|---|
+| Feature UI | **`system`** | platform/addon | Infrastructure, not content. See the fragility note below. |
+| Domain content | **`general`** | **instance**, from day one | "Purely seeded" — the addon provides a starting corpus and then lets go. |
+| Help / docs | **`documentation`** | addon | End-user documentation, exactly as the existing category describes. |
+| Demo / showcase | **`general`** | **instance** | Same treatment as domain content. |
+| Legal | `documentation` *or* `system` | addon | **Narrowed, not settled** — see below. |
+| Site chrome | **OPEN** | — | No decision yet. Analysis below. |
+
+All four target categories already exist in the `ngdpbase.system-category` catalog, so this needs no new category — only correct assignment at the source. Note `system` and `documentation` both carry `storageLocation: required`, while `general` is `regular`; that is a real storage consequence of the mapping, not just a label change.
+
+### Open: Legal
+
+`attribution` is a single page and could reasonably be either. `documentation` if it is read as user-facing reference; `system` if it is treated as a required page the operator must not casually delete. The `storageLocation: required` value is identical for both, so the practical difference is small — it is a labelling question, not a behavioural one.
+
+### Open: Site chrome — the genuinely hard one
+
+`footer-content` and `left-menu-content` do not fit any existing category, and the reason is structural: **they are the only seeded pages that are rendered *into* other pages rather than visited.** Nobody navigates to `/view/left-menu-content` to read it.
+
+That difference has real consequences today:
+
+- `WikiRoutes.ts` (~L759) loads `left-menu-content` per request and runs it through the full ACL evaluator; on denial it sets `templateData.leftMenu = ''`. A permissions decision on a *fragment* silently empties the sidebar for that user — the failure mode found while investigating #945.
+- They are content-editable, which is desirable (operators want to edit their own nav), but they are also load-bearing, which is not (a broken edit degrades every page on the site).
+
+Three candidate resolutions:
+
+1. **`system`** — matches "infrastructure, not content", reuses an existing category. But conflates platform config pages with view fragments.
+2. **A new `template` / `chrome` category** — honest about the distinct property, and would let the platform treat fragments correctly: skip audience evaluation, fail soft when missing, exclude from search and page listings. Costs a catalog entry and a migration.
+3. **Not pages at all** — move into the theme layer. Most robust, but forfeits the ability for an operator to edit their own navigation through the wiki, which is arguably the point of the platform.
+
+Leaning toward (2): the defining property — embedded everywhere, never a destination — is genuinely unlike the other five, and (1) would hide that inside a category that already means something else.
+
+### Fragility note: Feature UI pages
+
+Classifying them `system` is right, but does not by itself fix the underlying problem: **`myjournal` *is* the journal screen.** If a user edits it badly or deletes it, the feature has no front door and nothing regenerates it. It looks like content and behaves like infrastructure.
+
+Options, not yet decided:
+
+- leave as pages (status quo — fragile)
+- promote to real routes/templates (robust, but loses "the user can rearrange their own screen")
+- keep as pages but **regenerate if missing** — self-healing without ever overwriting an edit, which fits the instance-owns-its-pages model
+
+### Incidental finding
+
+`system-category` is inconsistent in the `geohazardwatch` source — some pages declare `addon`, several declare nothing at all. Since `findOrphanedAddonPages` narrows candidates via `searchByCategory('addon')`, any page not carrying that exact category is invisible to orphan detection. Re-categorising per this decision would make that hole worse, not better, which is a further argument for keying orphan detection on the `addon` field instead (§7 item 12).
