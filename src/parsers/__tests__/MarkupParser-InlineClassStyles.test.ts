@@ -70,8 +70,8 @@ describe('MarkupParser inline class styles (#938)', () => {
     expect(result).toContain('<span class="feed-badge">GREEN</span>');
   });
 
-  test('multiple space-separated classes land on one span', async () => {
-    const result = await parser.parse('%%feed-badge feed-badge--green GREEN/%');
+  test('multiple DOT-separated classes land on one span', async () => {
+    const result = await parser.parse('%%feed-badge.feed-badge--green GREEN/%');
     expect(result).toContain('<span class="feed-badge feed-badge--green">GREEN</span>');
   });
 
@@ -95,7 +95,7 @@ describe('MarkupParser inline class styles (#938)', () => {
 
   test('multi-class span renders inside a table cell', async () => {
     const result = await parser.parse(
-      '|| Level || Code ||\n| NORMAL | %%feed-badge feed-badge--green GREEN/% |'
+      '|| Level || Code ||\n| NORMAL | %%feed-badge.feed-badge--green GREEN/% |'
     );
     expect(result).toContain('<span class="feed-badge feed-badge--green">GREEN</span>');
   });
@@ -104,9 +104,9 @@ describe('MarkupParser inline class styles (#938)', () => {
     const result = await parser.parse([
       '%%table-fit table-bordered table-striped table-hover sortable',
       '|| Level || Aviation Code || Meaning ||',
-      '| NORMAL | %%feed-badge feed-badge--green GREEN/% | typical background |',
-      '| ADVISORY | %%feed-badge feed-badge--yellow YELLOW/% | elevated unrest |',
-      '| WARNING | %%feed-badge feed-badge--red RED/% | eruption imminent |',
+      '| NORMAL | %%feed-badge.feed-badge--green GREEN/% | typical background |',
+      '| ADVISORY | %%feed-badge.feed-badge--yellow YELLOW/% | elevated unrest |',
+      '| WARNING | %%feed-badge.feed-badge--red RED/% | eruption imminent |',
       '/%'
     ].join('\n'));
     expect(result).toContain('<span class="feed-badge feed-badge--green">GREEN</span>');
@@ -208,5 +208,98 @@ describe('MarkupParser inline class styles (#938)', () => {
     // part of the emitted class list.
     const result = await parser.parse('%%feed-badge onload=x GREEN/%');
     expect(result).not.toMatch(/<span[^>]*onload/);
+  });
+  // ── #944: content must survive intact ─────────────────────────────────────
+  //
+  // The #939 form accepted space-separated classes inline and greedily ate the
+  // content: `%%lead Hello there/%` produced class="lead Hello" with only
+  // "there" as the body. Every fixture in the original suite used SINGLE-WORD
+  // content, so nothing caught it. These use multi-word content deliberately.
+
+  describe('multi-word content (#944 regression)', () => {
+    test('two-word content stays in the body', async () => {
+      const result = await parser.parse('%%lead Hello there/%');
+      expect(result).toContain('<span class="lead">Hello there</span>');
+    });
+
+    test('four-word content stays in the body', async () => {
+      const result = await parser.parse('%%lead one two three four/%');
+      expect(result).toContain('<span class="lead">one two three four</span>');
+    });
+
+    test('content containing words that look like class names is not absorbed', async () => {
+      const result = await parser.parse('%%small this small text/%');
+      expect(result).toContain('<span class="small">this small text</span>');
+    });
+
+    test('punctuated sentence content survives', async () => {
+      const result = await parser.parse('%%tip Use the markup, then reload./%');
+      expect(result).toContain('<span class="tip">Use the markup, then reload.</span>');
+    });
+
+    test('dotted multi-class with multi-word content', async () => {
+      const result = await parser.parse('%%btn.btn-info.btn-xs Click me now/%');
+      expect(result).toContain('<span class="btn btn-info btn-xs">Click me now</span>');
+    });
+
+    test('space-separated classes are NO LONGER treated as classes inline', async () => {
+      // Deliberate behaviour change: only the first token is the class.
+      const result = await parser.parse('%%feed-badge feed-badge--green GREEN/%');
+      expect(result).toContain('<span class="feed-badge">feed-badge--green GREEN</span>');
+    });
+
+    test('block form still takes space-separated classes', async () => {
+      // Unambiguous there — the class list is the whole line.
+      const result = await parser.parse('%%table-fit table-bordered\n|| A ||\n| 1 |\n/%');
+      expect(result).toContain('table-fit');
+      expect(result).toContain('table-bordered');
+    });
+
+    test('empty content still yields a bare classed span (icon idiom)', async () => {
+      const result = await parser.parse('%%icon-user /%');
+      expect(result).toContain('<span class="icon-user"></span>');
+    });
+  });
+});
+
+describe('code spans are opaque to style extraction (#940/#944)', () => {
+  let p: MarkupParser;
+  beforeEach(async () => { p = new MarkupParser(new MockEngine() as never); await p.initialize(); });
+  afterEach(async () => { await p.shutdown(); });
+
+  test('a run does NOT close on a /% that lives inside a code span', async () => {
+    // The haddock-styles reproducer. Before the fix the run swallowed into the
+    // backticks and closed on the inner `/%`, tearing the span apart; the
+    // orphaned backtick then paired with a later one and every downstream
+    // extraction leaked an unrestored placeholder.
+    const result = await p.parse('you can use %%tip Use the `%~%style../%` markup.');
+    expect(result).not.toContain('data-jspwiki-placeholder');
+    expect(result).toContain('<code>');
+  });
+
+  test('two such lines together produce no leaked placeholders', async () => {
+    // Minimal cross-line reproducer — neither line leaked in isolation.
+    const result = await p.parse(
+      'you can use %%tip-a Use the `%~%style../%` markup. \\\n' +
+      'And even add or %%tip-b overwriting .header , .footer, etc. /% styles with `%~%add-css`.'
+    );
+    expect(result).not.toContain('data-jspwiki-placeholder');
+  });
+
+  test('a complete style run inside backticks stays literal', async () => {
+    const result = await p.parse('x `%%strike Some text here /%` y');
+    expect(result).not.toContain('data-jspwiki-placeholder');
+    expect(result).toContain('%%strike Some text here /%');
+  });
+
+  test('percent signs inside code spans survive verbatim', async () => {
+    const result = await p.parse('`100% of %% and /%` done');
+    expect(result).toContain('100% of %% and /%');
+  });
+
+  test('a real style OUTSIDE backticks still renders alongside one inside', async () => {
+    const result = await p.parse('`%%lead nope/%` and %%lead yes please/%');
+    expect(result).toContain('<span class="lead">yes please</span>');
+    expect(result).toContain('%%lead nope/%');
   });
 });

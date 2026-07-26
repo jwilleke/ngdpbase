@@ -1512,6 +1512,29 @@ class MarkupParser extends BaseManager {
       sanitized = outputLines.join('\n');
     }
 
+    // #940/#944: mask `%` inside inline code spans before ANY style extraction.
+    //
+    // A style run must never close on a `/%` that belongs to a code span. On
+    // docs/haddock-styles this line:
+    //
+    //   you can use %%tip-predefinedStyles Use the `%~%style../%` markup.
+    //
+    // let the run swallow into the backticks and close on the `/%` *inside*
+    // them. That tore the code span apart; the orphaned backtick then paired
+    // with a later one, forming a <code> spanning lines, and every subsequent
+    // extraction landed in that broken context — 81 unrestored placeholders
+    // across the page, none of which reproduced when any single line was
+    // rendered alone.
+    //
+    // Masking rather than extracting: code spans cannot be pulled out here,
+    // because the block-style extractor below must still see raw backtick
+    // pairs (table-cell content is resolved by appendWikiNodes, which needs
+    // them intact). Substituting a same-length sentinel for `%` preserves
+    // every offset while making the span invisible to the style patterns.
+    // Restored immediately after block extraction, before backtick handling.
+    const CODE_PCT = ' ';
+    sanitized = sanitized.replace(/`[^`\n]*`/g, (span) => span.replace(/%/g, CODE_PCT));
+
     // #907: inline styles %%(css)…/%, %%sup…/%, %%sub…/%, %%strike…/% become
     // typed `inline-style` elements resolved to DOM nodes (no more Step 0.55
     // string passes). Innermost-first loop so nesting resolves bottom-up: the
@@ -1537,7 +1560,7 @@ class MarkupParser extends BaseManager {
       // exclude `%%class ` too — otherwise `%%a %%b X/%` reads the second `%%`
       // as A's closer and emits an empty `<span class="a">` followed by the
       // rest as stray text.
-      const NOT_AN_OPENER = String.raw`(?!\(|sup|sub|strike|[A-Za-z][\w-]*[ \t])`;
+      const NOT_AN_OPENER = String.raw`(?!\(|sup|sub|strike|[A-Za-z][\w-]*(?:\.[A-Za-z][\w-]*)*[ \t])`;
       const inlinePattern = new RegExp(
         String.raw`%%(\((?:[^()]|\([^()]*\))*\)|sup|sub|strike)[ \t]+((?:(?!%%|\/%)[\s\S])*?)[ \t]*(?:\/%|%%${NOT_AN_OPENER})`
       );
@@ -1550,8 +1573,19 @@ class MarkupParser extends BaseManager {
       // line, so confining the match to one line makes that impossible.
       // No conflict the other way either: the block opener regex is anchored
       // `^\s*%%…$`, so a same-line run was never a block-opener candidate.
+      // #944: the class token runs up to the FIRST space — everything after it
+      // is content. Multiple classes are DOT-separated (`%%btn.btn-info.btn-xs`),
+      // matching JSPWiki and what docs/haddock-styles documents.
+      //
+      // The original #939 form accepted space-separated classes inline
+      // (`[A-Za-z][\w-]*(?:[ \t]+[A-Za-z][\w-]*)*`) and silently ate the
+      // content: `%%lead Hello there/%` produced `class="lead Hello"` with only
+      // "there" as the body, and `%%lead one two three four/%` swallowed three
+      // words. Inline, space-separation is inherently ambiguous — nothing marks
+      // where the class list ends and the content begins. Block form keeps
+      // spaces because there the class list IS the whole line.
       const inlineClassPattern = new RegExp(
-        String.raw`%%([A-Za-z][\w-]*(?:[ \t]+[A-Za-z][\w-]*)*)[ \t]+((?:(?!%%|\/%)[^\n])*?)[ \t]*(?:\/%|%%${NOT_AN_OPENER})`
+        String.raw`%%([A-Za-z][\w-]*(?:\.[A-Za-z][\w-]*)*)[ \t]+((?:(?!%%|\/%)[^\n])*?)[ \t]*(?:\/%|%%${NOT_AN_OPENER})`
       );
       let guard = 0;
       for (;;) {
@@ -1586,7 +1620,8 @@ class MarkupParser extends BaseManager {
           syntax: m[0],
           inlineVariant: variant,
           cssRaw: isCss ? head.slice(1, -1) : undefined,
-          classNames: isClass ? head.replace(/[ \t]+/g, ' ') : undefined,
+          // #944: `btn.btn-info.btn-xs` -> `class="btn btn-info btn-xs"`.
+          classNames: isClass ? head.replace(/\./g, ' ') : undefined,
           inner,
           id: id++,
           position: m.index
@@ -1605,6 +1640,14 @@ class MarkupParser extends BaseManager {
     const styleResult = this.extractStyleBlocksWithStack(sanitized, jspwikiElements, uuid, id);
     sanitized = styleResult.content;
     id = styleResult.nextId;
+
+    // #940/#944: un-mask the `%` characters hidden inside code spans above.
+    // Both style extractors have run, so the sentinel has served its purpose
+    // and the literal text must be intact before backtick handling turns these
+    // spans into <code>.
+    if (sanitized.includes(CODE_PCT)) {
+      sanitized = sanitized.split(CODE_PCT).join('%');
+    }
 
     // Inline code spans — CommonMark variable-length backtick delimiters
     // (#753). A run of N backticks opens; a run of *exactly* N backticks
