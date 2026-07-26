@@ -190,9 +190,15 @@
                                             <div class="col-md-4">
                                                 <label class="form-label small mb-1" for="agent-token-scopes">Permissions</label>
                                                 <select class="form-select form-select-sm" id="agent-token-scopes">
-                                                    <option value="page-ingest" selected>Create and edit pages</option>
                                                     <option value="page-read">Read only</option>
+                                                    <option value="page-ingest" selected>Create and edit pages</option>
+                                                    <option value="page-ingest,page-rename">Create, edit and rename</option>
+                                                    <option value="page-ingest,page-rename,page-delete">Create, edit, rename and delete</option>
                                                 </select>
+                                                <div class="form-text">
+                                                    A token can never exceed your own permissions.
+                                                    Deleted pages stay recoverable from the trash.
+                                                </div>
                                             </div>
                                             <div class="col-md-2">
                                                 <label class="form-label small mb-1" for="agent-token-ttl">Hours</label>
@@ -824,7 +830,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF },
                 body: JSON.stringify({
                     name: document.getElementById('agent-token-name').value,
-                    scopes: [document.getElementById('agent-token-scopes').value],
+                    // The picker offers combined options ("page-ingest,page-rename"),
+                    // so split rather than sending one comma-joined string as a single scope.
+                    scopes: document.getElementById('agent-token-scopes').value.split(','),
                     ttlHours: Number(document.getElementById('agent-token-ttl').value) || undefined
                 })
             });
