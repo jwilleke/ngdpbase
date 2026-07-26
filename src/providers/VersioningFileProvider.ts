@@ -219,6 +219,9 @@ class VersioningFileProvider extends FileSystemProvider {
   /** Days a soft-deleted page stays recoverable before purge; 0 = keep forever (#947) */
   private deleteRetentionDays: number;
 
+  /** Hourly tick that expires tombstones past the retention window (#947) */
+  private deletePurgeTimer: ReturnType<typeof setInterval> | null;
+
   /**
    * Create a new VersioningFileProvider
    * @param engine - The WikiEngine instance
@@ -249,6 +252,7 @@ class VersioningFileProvider extends FileSystemProvider {
     this.versionCache = new Map();
     this.versionCacheSize = 50;
     this.deleteRetentionDays = 30;
+    this.deletePurgeTimer = null;
   }
 
   /**
@@ -298,18 +302,11 @@ class VersioningFileProvider extends FileSystemProvider {
       await this.loadOrCreatePageIndex();
     }
 
-    // #947: expire tombstones past the retention window. Runs at boot rather
-    // than on a timer because there is no central maintenance scheduler yet —
-    // a long-running server therefore only purges when it restarts. Acceptable
-    // while the failure mode is "deleted pages are recoverable for longer than
-    // configured"; a scheduled sweep belongs with the trash UI follow-up.
-    try {
-      await this.purgeExpiredDeletedPages();
-    } catch (error) {
-      // Never let purge failure block startup — the pages are still on disk.
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error('[VersioningFileProvider] Delete-retention purge failed at startup', { error: errorMessage });
-    }
+    // #947: expire tombstones past the retention window — once at boot, then
+    // on an hourly tick so a long-running server does not sit on expired
+    // tombstones until someone restarts it.
+    await this.runRetentionPurge('startup');
+    this.startDeletePurgeScheduler();
 
     logger.info('[VersioningFileProvider] Initialized with versioning enabled');
     logger.info(`[VersioningFileProvider] Delta storage: ${this.deltaStorageEnabled ? 'enabled' : 'disabled'}`);
@@ -1845,6 +1842,69 @@ class VersioningFileProvider extends FileSystemProvider {
       logger.error(`[VersioningFileProvider] Failed to delete page: ${identifier}`, { error: errorMessage });
       return false;
     }
+  }
+
+  /**
+   * Run the retention purge, swallowing any failure (#947).
+   *
+   * Purge is housekeeping: it must never take down startup or kill the
+   * scheduler tick. Nothing is lost when it fails — the tombstones are still
+   * on disk and the next run will pick them up.
+   *
+   * @param trigger - Where the run came from, for the log line
+   */
+  private async runRetentionPurge(trigger: 'startup' | 'scheduled'): Promise<void> {
+    try {
+      await this.purgeExpiredDeletedPages();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`[VersioningFileProvider] Delete-retention purge failed (${trigger})`, { error: errorMessage });
+    }
+  }
+
+  /**
+   * Start the hourly tombstone-expiry tick (#947).
+   *
+   * Follows the scheduler shape BackupManager already uses: a plain
+   * `setInterval` with `unref()` so it never holds the process open. Hourly
+   * rather than BackupManager's per-minute tick because the work is
+   * time-window based, not time-of-day based — there is no specific minute it
+   * has to catch, and a page expiring up to an hour late is meaningless
+   * against a retention measured in days.
+   *
+   * Skipped entirely when retention is disabled, so a `0` config leaves no
+   * timer running at all.
+   */
+  private startDeletePurgeScheduler(): void {
+    this.stopDeletePurgeScheduler();
+
+    if (!this.deleteRetentionDays || this.deleteRetentionDays <= 0) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      void this.runRetentionPurge('scheduled');
+    }, 60 * 60 * 1000);
+
+    timer.unref(); // don't prevent process exit
+    this.deletePurgeTimer = timer;
+    logger.info(`[VersioningFileProvider] Delete-retention purge scheduled hourly (${this.deleteRetentionDays}-day window)`);
+  }
+
+  /** Stop the tombstone-expiry tick (#947). */
+  private stopDeletePurgeScheduler(): void {
+    if (this.deletePurgeTimer) {
+      clearInterval(this.deletePurgeTimer);
+      this.deletePurgeTimer = null;
+    }
+  }
+
+  /**
+   * Shut down the provider, stopping the retention scheduler (#947).
+   */
+  shutdown(): void {
+    this.stopDeletePurgeScheduler();
+    super.shutdown();
   }
 
   /**

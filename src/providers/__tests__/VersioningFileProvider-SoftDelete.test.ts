@@ -270,6 +270,57 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
     expect(provider['pageIndex'].deletedPages[freshUuid]).toBeDefined();
   });
 
+  test('an hourly scheduler expires tombstones without needing a restart', async () => {
+    vi.useFakeTimers();
+    try {
+      const { uuid, title } = await seedPage();
+      await provider.deletePage(title, 'jim');
+
+      // Backdate past the 30-day window, then let the hourly tick fire.
+      provider['pageIndex'].deletedPages[uuid].deletedAt =
+        new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
+
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+      vi.useRealTimers();
+
+      // The tick fires synchronously but the purge itself does real fs work,
+      // which fake timers do not gate — wait for it to settle rather than
+      // asserting into a race.
+      for (let i = 0; i < 100 && provider['pageIndex'].deletedPages[uuid]; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+
+      expect(provider['pageIndex'].deletedPages[uuid]).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('the scheduler tick does not hold the process open', async () => {
+    await provider.initialize();
+    // unref'd like BackupManager's scheduler — otherwise the server can't exit.
+    expect(provider['deletePurgeTimer']).not.toBeNull();
+    expect(typeof provider['deletePurgeTimer'].unref).toBe('function');
+  });
+
+  test('shutdown stops the retention scheduler', async () => {
+    await provider.initialize();
+    expect(provider['deletePurgeTimer']).not.toBeNull();
+
+    provider.shutdown();
+
+    expect(provider['deletePurgeTimer']).toBeNull();
+  });
+
+  test('retention of 0 starts no scheduler at all', async () => {
+    await provider.initialize();
+    provider.shutdown();
+    provider['deleteRetentionDays'] = 0;
+    provider['startDeletePurgeScheduler']();
+
+    expect(provider['deletePurgeTimer']).toBeNull();
+  });
+
   test('retention of 0 keeps tombstones forever', async () => {
     const { uuid, title } = await seedPage();
     await provider.deletePage(title, 'jim');
