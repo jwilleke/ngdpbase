@@ -164,16 +164,20 @@ Live list. Tick as they settle. Recommendations are mine; override freely.
 
 ### Blocking — operator call
 
+> **geohazardwatch items (1, 2) are being handled separately by the operator** and are not
+> blocking anything in this document. They are retained for context only; nothing here waits
+> on them.
+
 - [x] **3. Is geohazardwatch's data volume real?** RESOLVED 2026-07-25 — it is a `hostPath`
   (`/mnt/tank/jims/data/systems/geohazardwatch`, `type: DirectoryOrCreate`) mounted at `/app/data`
   on the single-node `deby` k3s cluster. Not a PVC, not an `emptyDir`. 175 pages on disk. Page
   edits persist across pod restarts and image bumps, so admin-only editing is worth building.
-- [ ] **1. Turn on `ngdpbase.addons.page-reseed` for geohazardwatch?** Currently unset, so its 14
+- [~] **1. (OPERATOR — handled separately) Turn on `ngdpbase.addons.page-reseed` for geohazardwatch?** Currently unset, so its 14
   addon pages (incl. `geohazardwatch-home`, `left-menu-content`, `footer-content`) have been frozen
   since first boot — source changes never reach the live site. Turning it on is a real content
   change to a production site. Check `findOrphanedAddonPages` / Required Pages Sync first to see
   which are already `locally-modified`.
-- [ ] **2. GeoHazardWatch pod version skew.** A stray rebuild during the v3.67.1 release staged
+- [~] **2. (OPERATOR — handled separately) GeoHazardWatch pod version skew.** A stray rebuild during the v3.67.1 release staged
   3.67.1 on disk while the process runs 3.66.0. Restart deliberately, revert its `dist/`, or leave
   it to the next Renovate redeploy.
 
