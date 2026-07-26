@@ -12,6 +12,44 @@ A **Domain addon** is a specific packaging of ngdpbase plus **industry-specific 
 
 Consequence: "addon pages" on a domain site span **several addon names**, not one. Any ownership or ACL rule should therefore key on "page was seeded by an addon", with per-addon override available — not on a single addon identity.
 
+### The two addon types
+
+Every addon is exactly one of two types, declared in its `package.json` `ngdpbase` manifest:
+
+```jsonc
+{ "ngdpbase": { "type": "domain" } }   // or "additive" — the default when unset
+```
+
+| | **Domain** | **Additive** |
+|---|---|---|
+| Purpose | **Is** the site's identity and reason for existing | **Augments** a site that already has its own identity |
+| Answers | "What *is* this site?" | "What else can this site do?" |
+| Per instance | **Exactly one**, permanently (decision below) | Any number |
+| Examples | `geohazardwatch` (volcano/geology), a condo-management build | `calendar`, `forms`, `journal`, `elasticsearch` |
+| Ownership | Its own repo and release cadence | Ships with the platform, or independently |
+| Removing it | Leaves a generic wiki with orphaned content | Leaves the site intact, minus one capability |
+
+The clearest test: **remove the addon and ask what is left.** Remove `calendar` from The Fairways and it is still The Fairways. Remove `geohazardwatch` from geohazardwatch.com and there is no site — just an empty platform.
+
+A Domain addon is a *distribution*: ngdpbase plus the industry-specific addons that do not exist in core. So "the domain addon's pages" on a real instance may span several addon names, which is why ownership rules key on "was seeded by an addon" rather than on one addon identity (see §2).
+
+**Distribution model is orthogonal.** `bundled` / `drop-in` / `packaged` describes *how the code arrives*; `domain` / `additive` describes *what it means to the site*. A domain addon may be bundled, drop-in or packaged — geohazardwatch is packaged (npm), while all four bundled addons are additive. The platform makes no trust distinction between models.
+
+### What `type: 'domain'` actually does today
+
+Being honest about the gap between the concept and its current mechanics — three behaviours, all in `src/managers/AddonsManager.ts`:
+
+1. **Single-domain guard** (~L998). The first addon declaring `type: 'domain'` is recorded as `domainAddonName`. A second is **downgraded to `additive` with a `logger.warn`** and loads anyway. See the decision below for why that failure mode is now wrong.
+2. **`domainDefaults` injection** (~L1086). Manifest config keys are applied via `setRuntimeProperty` before `register()`, skipping any key the operator has explicitly set. Ephemeral — this boot only, never written to disk.
+3. **Identity-mismatch severity** (~L524). When an addon's module `name` disagrees with its canonical slug, a domain addon logs at **error** while an additive one logs at **warn** — on the reasoning that a domain addon's identity *is* the site's identity.
+
+Two caveats worth knowing before leaning on the type:
+
+- **`domainDefaults` is not type-gated.** `applyDomainDefaults` checks only that the key exists, so an *additive* addon shipping `domainDefaults` has them applied identically. The name implies a restriction the code does not enforce.
+- **Theme deployment is not type-gated either.** Any addon shipping `theme/theme.json` gets it copied on first load (#443).
+
+So `type: 'domain'` currently earns a guard, a log level, and a config-injection hook that additive addons can also use. It is closer to a **declaration of intent** than an enforced capability. That is worth knowing when deciding whether to build on it: if a future rule needs to distinguish the two, it will mostly need writing from scratch rather than hooking into existing enforcement.
+
 ### DECISION (2026-07-25): one Domain addon per site, permanently
 
 There will never be two domain addons in the same site. This is a product decision, not a defensive guess.
