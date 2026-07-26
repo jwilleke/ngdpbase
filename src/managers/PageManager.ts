@@ -292,12 +292,17 @@ class PageManager extends BaseManager implements CatalogSource {
       const dataDir = path.dirname(pagesDirResolved);
       const installCompletePath = path.join(dataDir, '.install-complete');
 
-      // Check conditions: skip if install is already complete AND pages exist
+      // Check conditions: skip SEEDING if install is already complete AND pages
+      // exist — but not silently. #954: this used to return outright, which made
+      // the function a first-install seeder and nothing else. A required page
+      // deleted later was never noticed, never re-seeded and never reported, at
+      // any point, ever. Established instances now get an integrity check.
       const installComplete: boolean = await fse.pathExists(installCompletePath);
       if (installComplete) {
         const existing: string[] = await fse.readdir(pagesDirResolved).catch(() => []);
         if (existing.filter((f: string) => f.endsWith('.md')).length > 0) {
           logger.debug('[PageManager] Required pages seed skipped — installation already complete');
+          await this.reportMissingRequiredPages(configManager, pagesDirResolved);
           return;
         }
       }
@@ -381,6 +386,95 @@ class PageManager extends BaseManager implements CatalogSource {
       }
     } catch (err) {
       logger.error('[PageManager] Failed to seed required pages:', err);
+    }
+  }
+
+  /**
+   * Report required pages that are missing from an established instance (#954).
+   *
+   * `seedRequiredPages` only ever ran on a fresh install, so a required page
+   * deleted afterwards was invisible forever — no log, no notification, no
+   * re-seed. The page simply stopped existing and nothing said so.
+   *
+   * **Reports; never re-seeds.** Silently restoring pages at boot would fight
+   * the operator: a required page can be deleted deliberately, and since #947 a
+   * delete is a recoverable soft delete, so resurrecting a copy at boot would
+   * leave a live page *and* a tombstone of the same thing. Detection is the
+   * missing capability here; the remedy is already available through the admin
+   * Required Pages Sync tool, and choosing to apply it belongs to the operator.
+   *
+   * Best-effort: a failure here must never block startup.
+   *
+   * @param configManager - For the required-pages directory and category catalog
+   * @param pagesDirResolved - Live page storage directory
+   */
+  private async reportMissingRequiredPages(
+    configManager: ConfigurationManager,
+    pagesDirResolved: string
+  ): Promise<void> {
+    try {
+      const requiredDirRaw: string = configManager.getProperty(
+        'ngdpbase.page.provider.filesystem.requiredpagesdir',
+        './required-pages'
+      ) as string;
+      const requiredDir = path.isAbsolute(requiredDirRaw)
+        ? requiredDirRaw
+        : path.join(process.cwd(), requiredDirRaw);
+
+      if (!(await fse.pathExists(requiredDir))) return;
+
+      // github-only pages live in the source tree by design and are never
+      // seeded, so their absence is correct rather than a defect.
+      const systemCategories = configManager.getProperty('ngdpbase.system-category', {}) as
+        Record<string, { storageLocation?: string }>;
+      const githubOnlyCategories = new Set(
+        Object.entries(systemCategories)
+          .filter(([, cfg]) => cfg.storageLocation === 'github')
+          .map(([key]) => key)
+      );
+
+      const files: string[] = (await fse.readdir(requiredDir)).filter((f: string) => f.endsWith('.md'));
+      const missing: string[] = [];
+
+      for (const file of files) {
+        if (await fse.pathExists(path.join(pagesDirResolved, file))) continue;
+
+        const raw: string = await fse.readFile(path.join(requiredDir, file), 'utf8');
+        const parsed = matter(raw) as { data: Record<string, unknown>; content: string };
+        const category = parsed.data['system-category'] as string | undefined;
+        if (category && githubOnlyCategories.has(category)) continue;
+
+        const title = typeof parsed.data['title'] === 'string' ? parsed.data['title'] : file;
+        missing.push(title);
+      }
+
+      if (missing.length === 0) {
+        logger.debug('[PageManager] Required-pages integrity check passed');
+        return;
+      }
+
+      logger.warn(
+        `[PageManager] ${missing.length} required page(s) missing from storage: ${missing.join(', ')}. ` +
+        'They are NOT re-seeded automatically — use the admin Required Pages Sync tool to restore ' +
+        'any that were removed by accident (#954).'
+      );
+
+      try {
+        const notificationManager = this.engine.getManager<NotificationManager>('NotificationManager');
+        await notificationManager?.createNotification?.({
+          type: 'system',
+          level: 'warning',
+          title: 'Required pages missing',
+          message:
+            `${missing.length} required page${missing.length === 1 ? '' : 's'} ` +
+            `${missing.length === 1 ? 'is' : 'are'} missing from storage: ${missing.join(', ')}. ` +
+            'Restore from Admin → Required Pages Sync if this was not intentional.'
+        });
+      } catch {
+        // non-fatal
+      }
+    } catch (err) {
+      logger.error('[PageManager] Required-pages integrity check failed:', err);
     }
   }
 
