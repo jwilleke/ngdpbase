@@ -261,3 +261,45 @@ describe('MarkupParser inline class styles (#938)', () => {
     });
   });
 });
+
+describe('code spans are opaque to style extraction (#940/#944)', () => {
+  let p: MarkupParser;
+  beforeEach(async () => { p = new MarkupParser(new MockEngine() as never); await p.initialize(); });
+  afterEach(async () => { await p.shutdown(); });
+
+  test('a run does NOT close on a /% that lives inside a code span', async () => {
+    // The haddock-styles reproducer. Before the fix the run swallowed into the
+    // backticks and closed on the inner `/%`, tearing the span apart; the
+    // orphaned backtick then paired with a later one and every downstream
+    // extraction leaked an unrestored placeholder.
+    const result = await p.parse('you can use %%tip Use the `%~%style../%` markup.');
+    expect(result).not.toContain('data-jspwiki-placeholder');
+    expect(result).toContain('<code>');
+  });
+
+  test('two such lines together produce no leaked placeholders', async () => {
+    // Minimal cross-line reproducer — neither line leaked in isolation.
+    const result = await p.parse(
+      'you can use %%tip-a Use the `%~%style../%` markup. \\\n' +
+      'And even add or %%tip-b overwriting .header , .footer, etc. /% styles with `%~%add-css`.'
+    );
+    expect(result).not.toContain('data-jspwiki-placeholder');
+  });
+
+  test('a complete style run inside backticks stays literal', async () => {
+    const result = await p.parse('x `%%strike Some text here /%` y');
+    expect(result).not.toContain('data-jspwiki-placeholder');
+    expect(result).toContain('%%strike Some text here /%');
+  });
+
+  test('percent signs inside code spans survive verbatim', async () => {
+    const result = await p.parse('`100% of %% and /%` done');
+    expect(result).toContain('100% of %% and /%');
+  });
+
+  test('a real style OUTSIDE backticks still renders alongside one inside', async () => {
+    const result = await p.parse('`%%lead nope/%` and %%lead yes please/%');
+    expect(result).toContain('<span class="lead">yes please</span>');
+    expect(result).toContain('%%lead nope/%');
+  });
+});

@@ -1512,6 +1512,29 @@ class MarkupParser extends BaseManager {
       sanitized = outputLines.join('\n');
     }
 
+    // #940/#944: mask `%` inside inline code spans before ANY style extraction.
+    //
+    // A style run must never close on a `/%` that belongs to a code span. On
+    // docs/haddock-styles this line:
+    //
+    //   you can use %%tip-predefinedStyles Use the `%~%style../%` markup.
+    //
+    // let the run swallow into the backticks and close on the `/%` *inside*
+    // them. That tore the code span apart; the orphaned backtick then paired
+    // with a later one, forming a <code> spanning lines, and every subsequent
+    // extraction landed in that broken context — 81 unrestored placeholders
+    // across the page, none of which reproduced when any single line was
+    // rendered alone.
+    //
+    // Masking rather than extracting: code spans cannot be pulled out here,
+    // because the block-style extractor below must still see raw backtick
+    // pairs (table-cell content is resolved by appendWikiNodes, which needs
+    // them intact). Substituting a same-length sentinel for `%` preserves
+    // every offset while making the span invisible to the style patterns.
+    // Restored immediately after block extraction, before backtick handling.
+    const CODE_PCT = ' ';
+    sanitized = sanitized.replace(/`[^`\n]*`/g, (span) => span.replace(/%/g, CODE_PCT));
+
     // #907: inline styles %%(css)…/%, %%sup…/%, %%sub…/%, %%strike…/% become
     // typed `inline-style` elements resolved to DOM nodes (no more Step 0.55
     // string passes). Innermost-first loop so nesting resolves bottom-up: the
@@ -1617,6 +1640,14 @@ class MarkupParser extends BaseManager {
     const styleResult = this.extractStyleBlocksWithStack(sanitized, jspwikiElements, uuid, id);
     sanitized = styleResult.content;
     id = styleResult.nextId;
+
+    // #940/#944: un-mask the `%` characters hidden inside code spans above.
+    // Both style extractors have run, so the sentinel has served its purpose
+    // and the literal text must be intact before backtick handling turns these
+    // spans into <code>.
+    if (sanitized.includes(CODE_PCT)) {
+      sanitized = sanitized.split(CODE_PCT).join('%');
+    }
 
     // Inline code spans — CommonMark variable-length backtick delimiters
     // (#753). A run of N backticks opens; a run of *exactly* N backticks
