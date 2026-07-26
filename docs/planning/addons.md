@@ -221,7 +221,7 @@ Live list. Tick as they settle. Recommendations are mine; override freely.
 - [ ] **23. Legal** — `documentation` or `system`. Narrowed to two; identical `storageLocation: required` either way, so labelling only.
 - [x] **24. Site chrome is `system`** — RESOLVED: already a core concept. Core ships `leftmenu`/`footer` as required pages categorised `system`; the addon pages are a slug-convention *override*. No new category needed.
 - [ ] **26. Chrome override should be explicit config, not slug convention** — `ngdpbase.chrome.left-menu-page` / `.footer-page`, set by a domain addon via `domainDefaults`. Today an operator can edit `LeftMenu` and see no effect because `left-menu-content` silently wins.
-- [ ] **27. Chrome fragments are ACL-evaluated as destinations** — a permission decision on a fragment blanks the sidebar/footer site-wide, silently (`WikiRoutes.ts:779`, `:829`). Latent (needs a trigger) but site-wide when it fires. Its own defect, not part of the addon-page work.
+- [x] **27. Chrome fragments are ACL-evaluated as destinations** — filed as **#950** (bug/P2). A permission decision on a fragment blanks the sidebar/footer site-wide, silently (`WikiRoutes.ts:779`, `:829`). Latent — needs a trigger, and the default catalog has no deny rules — hence P2 rather than P1.
 - [ ] **25. Feature-UI fragility** — `myjournal` *is* the journal screen and nothing regenerates it if deleted. Leave as pages / promote to routes / regenerate-if-missing.
 
 ### Parked unless revisited
@@ -374,7 +374,7 @@ The footer path is identical (`:829`). So a permission decision on a *fragment* 
 
 It needs a trigger (frontmatter `audience`/`access` on the chrome page, `private: true`, or a custom deny policy — the default catalog now contains no deny rules), so it is latent rather than currently firing. But when it fires it is site-wide, silent, and presents as "the nav disappeared for some users" with nothing pointing at a permissions cause.
 
-Tracked as its own defect, not part of the addon-page work: fragments should fail soft and log, and arguably should not be audience-gated at all — nobody navigates to `/view/left-menu-content`.
+Filed as **#950** (bug/P2) — deliberately P2 rather than P1 because it is latent: it needs a trigger, and the default policy catalog contains no deny rules since #945 removed the only one. The issue records both the narrow fix (fail soft and log) and the broader design question it contains: whether fragments should be audience-gated at all.
 
 ### Note on an earlier draft
 
