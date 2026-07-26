@@ -118,10 +118,12 @@ The 3-tier evaluator in `ACLManager.checkPagePermissionWithContext`:
 - **Tier 1** — frontmatter `audience` / `access`; **overrides global policies** and returns directly
 - **Tier 2** — global policies via `PolicyEvaluator` (fallback only when no frontmatter audience set)
 
-> **SUPERSEDED 2026-07-25 — see §8.** Category-based policy is the better mechanism and is already the
-> intended design; this frontmatter stamp is retained only as the way to express *per-page exceptions*.
+> **REINSTATED 2026-07-26.** Briefly marked superseded by §8 in favour of category-based policy;
+> that was a reasoning error, corrected in §8 below. Category policy answered a *different*
+> question (anonymous **read** of system pages) and was itself abandoned as #945 `wontfix`. The
+> argument below is unrefuted and this remains the mechanism.
 
-**Proposal (superseded):** the seeder stamps `access: { edit: ['admin'] }` on seeded pages, defaulting only when the addon source doesn't declare its own `access` (same pattern `system-category` already uses, so a domain addon can deliberately ship a community-editable page).
+**Proposal:** the seeder stamps `access: { edit: ['admin'] }` on seeded pages, defaulting only when the addon source doesn't declare its own `access` (same pattern `system-category` already uses, so a domain addon can deliberately ship a community-editable page).
 
 Why this is the right mechanism:
 
@@ -183,18 +185,26 @@ Live list. Tick as they settle. Recommendations are mine; override freely.
 
 ### Design — admin-only editing of addon pages
 
-- [ ] **4. Discriminator** — use the `addon` field (unconditionally stamped, `Page.ts:82`),
+> **DECIDED 2026-07-26: yes, only admins may edit addon pages.** §3 is reinstated as the mechanism
+> (§8's supersession was a reasoning error — see the correction there). Items 4–6, 8 and 9 below
+> adopt their stated recommendations as a consequence; **item 7 remains genuinely open** as a
+> product question.
+
+- [x] **4. Discriminator** — use the `addon` field (unconditionally stamped, `Page.ts:82`),
   NOT `system-category` (unreliable — see §2).
-- [ ] **5. Mechanism** — ~~seeder stamps `access: { edit: ['admin'] }`~~ **SUPERSEDED (§8)**: implement
-  category resource matching in `PolicyEvaluator` (#945) and govern by category. Frontmatter `access`
-  remains for per-page exceptions only.
-- [ ] **6. Addon override allowed?** Recommend yes — stamp only when the source is silent, mirroring
+- [x] **5. Mechanism** — seeder stamps `access: { edit: ['admin'] }`. **Reinstated 2026-07-26**: the
+  §8 supersession in favour of category matching was a reasoning error, and that route was abandoned
+  anyway (#945 `wontfix`). An admin-only-edit rule is inexpressible as a global policy —
+  `PolicyEvaluator.ts:255` matches a slug glob and addon slugs share no prefix — so frontmatter is
+  the only surface that can express it. Tier 1 overrides global policies, is hash-neutral, and is
+  per-action.
+- [x] **6. Addon override allowed?** Recommend yes — stamp only when the source is silent, mirroring
   how `system-category` defaults, so a domain addon can ship a deliberately community-editable page.
-- [ ] **7. Which principal?** Recommend role `admin`. Open: do domain sites need a `content-admin` /
+- [ ] **7. Which principal? — STILL OPEN (product question).** Role `admin` is the working default. Open: do domain sites need a `content-admin` /
   site-owner role distinct from full admin?
-- [ ] **8. Does `view` stay open?** Recommend yes — `access` is per-action, so `view` falls through
+- [x] **8. Does `view` stay open?** Recommend yes — `access` is per-action, so `view` falls through
   to audience/Tier 2 and pages stay publicly readable.
-- [ ] **9. Backfill existing seeded pages?** Recommend yes, one-time, keyed on UUID match against
+- [x] **9. Backfill existing seeded pages?** Recommend yes, one-time, keyed on UUID match against
   addon sources. Otherwise pages seeded before the stamp existed are silently unprotected.
 
 ### Consistency — turns warnings into boot failures
@@ -279,12 +289,28 @@ not `.pattern`, so the loop skips it and returns false. That deny is the only on
 `anonymous-read-only` (prio 50, allow, `*`) wins. Verified live on jimstest: anonymous gets HTTP 200
 and a full 101 KB render of `wiki-documentation` (`system-category: system`).
 
+### CORRECTION (2026-07-26): §8 conflated two different questions
+
+The conclusions below were partly wrong and are corrected here rather than silently edited.
+
+| Question | Mechanism | Status |
+|---|---|---|
+| Should **anonymous** *read* system-category pages? | category deny policy | Answered — no such rule wanted. #945 closed `wontfix`, dead policy deleted. |
+| Should only **admins** *edit* addon pages? | per-page edit restriction | **DECIDED 2026-07-26: yes.** Untouched by the above. |
+
+`deny-anonymous-system-pages` was a **read** deny for **anonymous**. It could never have delivered
+admin-only **editing** for **all non-admins**. The two were solutions to different problems, not
+alternatives to one — so category matching never "superseded" the frontmatter stamp, and its
+cancellation leaves the stamp intact.
+
+§3's own argument also still stands, unrefuted: policy resources match only a slug glob
+(`PolicyEvaluator.ts:255`) and addon slugs share no common prefix, so an admin-only-edit rule is
+**inexpressible as a global policy**. Frontmatter is the only surface that can express it.
+
 ### Consequences for this plan
 
-- The work item is **implement category resource matching**, not invent an addon-page mechanism.
-  Smaller, more general, and it fixes a live security-shaped bug rather than routing around it.
-- §3's `access: { edit: ['admin'] }` seeder stamp is **superseded as the primary mechanism**. Frontmatter
-  `access` keeps its place for per-page exceptions.
+- **§3 is reinstated** as the mechanism for admin-only editing. The work item is the seeder stamp,
+  not category resource matching.
 - What remains genuinely unique to addon pages is **provenance and the upstream lifecycle** — reseed, the
   `locally-modified` one-way door, orphan detection. That is content *sync*, not *access*. Access is
   ordinary page/category policy.
