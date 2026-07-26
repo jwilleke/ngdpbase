@@ -1009,6 +1009,29 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * Every indexed page carrying an `addon` provenance stamp.
+   * Used by addon orphan detection; reads the in-memory index, no disk I/O.
+   * Returns [] on providers that do not maintain a page index.
+   */
+  getAddonSeededIndexEntries(): Array<{ uuid: string; addon: string; slug?: string; title: string }> {
+    const p = this.provider as unknown as {
+      getAddonSeededIndexEntries?: () => Array<{ uuid: string; addon: string; slug?: string; title: string }>;
+    } | null;
+    return p?.getAddonSeededIndexEntries?.() ?? [];
+  }
+
+  /**
+   * Set the `addon` stamp on an existing index entry without rewriting the page.
+   * Used by the boot-time back-fill. Returns false when unsupported or unchanged.
+   */
+  async setIndexAddon(uuid: string, addonName: string): Promise<boolean> {
+    const p = this.provider as unknown as {
+      setIndexAddon?: (uuid: string, addonName: string) => Promise<boolean>;
+    } | null;
+    return (await p?.setIndexAddon?.(uuid, addonName)) ?? false;
+  }
+
+  /**
    * Pages owned by a given user (#640).
    *
    * Authorization: callers MUST verify the requesting user is allowed to ask
