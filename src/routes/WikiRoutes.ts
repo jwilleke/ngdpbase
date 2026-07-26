@@ -546,6 +546,89 @@ class WikiRoutes {
    * @param {object} options - Additional context options (pageName, content, context type)
    * @returns {WikiContext} WikiContext instance
    */
+  /**
+   * Resolve a site-chrome page (LeftMenu, Footer) — #952.
+   *
+   * Chrome used to be resolved by **slug convention**: a page named
+   * `left-menu-content` silently beat the core `LeftMenu`. That is a trap —
+   * an operator edits `LeftMenu`, the save succeeds, and nothing changes,
+   * with no feedback anywhere.
+   *
+   * Resolution order:
+   *   1. The configured page, when `configKey` is set to a non-empty slug.
+   *      Authoritative: if that page is missing, we do NOT silently fall back
+   *      to the legacy chain, because doing so would reintroduce the same
+   *      invisible-substitution problem the config exists to remove.
+   *   2. Otherwise the legacy chain, logged at info so the shadowing is
+   *      discoverable in logs during migration.
+   *
+   * The config key defaults to **empty**, not to the core page name. Defaulting
+   * it to `leftmenu` would change behaviour on upgrade for any instance relying
+   * on the convention — geohazardwatch's navigation would silently revert to
+   * core's. Empty preserves today's behaviour exactly and makes explicit
+   * configuration opt-in.
+   *
+   * @param configKey   e.g. `ngdpbase.chrome.left-menu-page`
+   * @param legacySlugs override-first chain, e.g. ['left-menu-content', 'LeftMenu']
+   * @param label       human label for log messages
+   */
+  private async resolveChromePage(
+    configKey: string,
+    legacySlugs: string[],
+    label: string
+  ): Promise<WikiPage | null> {
+    const pageManager = this.engine.getManager<import('../managers/PageManager.js').default>('PageManager');
+    if (!pageManager) return null;
+
+    const configManager = this.engine.getManager<{ getProperty(k: string, d: string): string }>('ConfigurationManager');
+    const raw = configManager?.getProperty(configKey, '');
+    const configured = typeof raw === 'string' ? raw.trim() : '';
+
+    if (configured) {
+      const page = await pageManager.getPage(configured);
+      if (!page) {
+        // ERROR, not warn: this is the operator's OWN configuration naming a
+        // page that does not exist — unambiguous misconfiguration, nobody
+        // else's fault, and site-wide in effect (no nav or no footer on every
+        // page). Same reasoning as #672, which refuses to boot when operator
+        // config names a nonexistent addon. We stop short of failing boot
+        // because chrome degrades rather than breaking, but it must not be
+        // filed alongside routine warnings.
+        //
+        // Deliberately does NOT fall through to the legacy chain: silently
+        // substituting a page the operator did not choose is the exact problem
+        // this config removes (#952).
+        logger.error(
+          `[${label}] ${configKey} is set to '${configured}' but no such page exists — ` +
+          `${label} will be empty on every page. Fix the setting or create the page.`
+        );
+      }
+      return page ?? null;
+    }
+
+    // Legacy slug-convention chain (deprecated).
+    for (const slug of legacySlugs) {
+      const page = await pageManager.getPage(slug);
+      if (!page) continue;
+      if (slug !== legacySlugs[legacySlugs.length - 1]) {
+        logger.info(
+          `[${label}] Using '${slug}' via the legacy slug convention, shadowing ` +
+          `'${legacySlugs[legacySlugs.length - 1]}'. Set ${configKey} to make this explicit (#952).`
+        );
+      }
+      return page;
+    }
+
+    // Nothing found via the legacy chain either. Warn rather than error: on a
+    // fresh instance this simply means the page has not been created yet,
+    // which is not a misconfiguration.
+    logger.warn(
+      `[${label}] No ${label} page found (tried ${legacySlugs.map(s => `'${s}'`).join(', ')}) — ` +
+      `${label} will be empty. Create one, or set ${configKey}.`
+    );
+    return null;
+  }
+
   createWikiContext(req: Request, options: WikiContextOptions = {}): WikiContext {
     // #625 Step 1 — theme is resolved lazily by WikiContext.activeTheme/themeInfo
     // getters on first access. Permission-only callers (route handlers that just
@@ -756,14 +839,17 @@ class WikiRoutes {
       contactFooterEnabled
     };
 
-    // Load LeftMenu — prefer 'left-menu-content' page (instance/addon override) over 'LeftMenu'
-    // Use getPage() (returns null) rather than getPageContent() (throws) so the ?? fallback works
+    // Load LeftMenu — #952: resolved via explicit config, with the legacy
+    // slug-convention chain as a deprecated fallback.
     try {
-      const leftMenuPage = await pageManager.getPage('left-menu-content')
-        ?? await pageManager.getPage('LeftMenu');
-      if (!leftMenuPage) {
-        logger.warn('[LeftMenu] LeftMenu page not found — sidebar will be empty. Create a "LeftMenu" page to populate navigation.');
-      }
+      const leftMenuPage = await this.resolveChromePage(
+        'ngdpbase.chrome.left-menu-page',
+        ['left-menu-content', 'LeftMenu'],
+        'LeftMenu'
+      );
+      // #952: resolveChromePage owns the diagnostics — a second message here
+      // told the operator to create a "LeftMenu" page even when the config
+      // pointed at a different page entirely, which was actively misleading.
       const leftMenuContent = leftMenuPage?.content ?? null;
       logger.info(
         `[TEMPLATE] Loading LeftMenu for user=${
@@ -803,11 +889,14 @@ class WikiRoutes {
       templateData.leftMenu = '';
     }
 
-    // Load Footer — prefer 'footer-content' page (instance/addon override) over 'Footer'
-    // Use getPage() (returns null) rather than getPageContent() (throws) so the ?? fallback works
+    // Load Footer — #952: resolved via explicit config, with the legacy
+    // slug-convention chain as a deprecated fallback.
     try {
-      const footerPage = await pageManager.getPage('footer-content')
-        ?? await pageManager.getPage('Footer');
+      const footerPage = await this.resolveChromePage(
+        'ngdpbase.chrome.footer-page',
+        ['footer-content', 'Footer'],
+        'Footer'
+      );
       const footerContent = footerPage?.content ?? null;
       logger.info(
         `[TEMPLATE] Loading Footer for user=${
