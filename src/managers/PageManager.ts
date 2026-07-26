@@ -878,11 +878,13 @@ class PageManager extends BaseManager implements CatalogSource {
     }
 
     const identifier = wikiContext.pageName;
+    const deletedBy = wikiContext.userContext?.username || 'anonymous';
 
-    // Future: Could add audit logging here using wikiContext.userContext
-    logger.info(`[PageManager] Deleting page: ${identifier} by user: ${wikiContext.userContext?.username || 'anonymous'}`);
+    logger.info(`[PageManager] Deleting page: ${identifier} by user: ${deletedBy}`);
 
-    return this.provider.deletePage(identifier);
+    // #947: pass the acting user through so the tombstone records who deleted
+    // the page. Providers that predate soft delete ignore the extra argument.
+    return this.provider.deletePage(identifier, deletedBy);
   }
 
   /**

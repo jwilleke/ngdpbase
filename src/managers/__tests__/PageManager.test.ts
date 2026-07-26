@@ -464,7 +464,8 @@ describe('PageManager', () => {
 
       await pageManager.deletePageWithContext(wikiContext);
 
-      expect(pageManager.provider.deletePage).toHaveBeenCalledWith('Test Page');
+      // #947: the acting user is passed through so the tombstone records who deleted it
+      expect(pageManager.provider.deletePage).toHaveBeenCalledWith('Test Page', 'testuser');
     });
   });
 

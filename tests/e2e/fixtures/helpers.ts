@@ -66,6 +66,47 @@ async function deletePage(page, pageName) {
         `(delete status ${status}, /view status ${verify.status()})`
     );
   }
+
+  // #947: a delete is now a soft delete — the page file and its full version
+  // history are retained for the retention window (30 days by default). That
+  // is right for real content and wrong for test fixtures: without this step
+  // every E2E run would leave tombstones and version directories behind for a
+  // month, which is #724's "187 stale NGDPBASE-test-* pages" all over again,
+  // just one level down where nobody would look for it.
+  //
+  // Purge only what THIS helper just deleted, matched by exact title. Never a
+  // blanket "purge everything in the trash" — that would destroy real deleted
+  // pages on whatever instance the suite happens to run against.
+  await purgeDeletedPage(page, pageName, csrfToken);
+}
+
+/**
+ * Permanently remove a soft-deleted test page and its versions (#947).
+ *
+ * Best-effort by design: the page is already gone from every user-visible
+ * surface by the time this runs, so a purge failure is a storage-hygiene
+ * problem, not a correctness one, and must not fail an otherwise-passing test.
+ * A provider without soft delete answers 501 and this is a no-op.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @param {string} pageName - Exact title of the page just deleted
+ * @param {string} csrfToken - Token already obtained by the caller
+ */
+async function purgeDeletedPage(page, pageName, csrfToken) {
+  try {
+    const listRes = await page.request.get('/api/admin/deleted-pages');
+    if (listRes.status() !== 200) return;
+
+    const body = await listRes.json();
+    const match = (body.pages || []).find((p) => p.title === pageName);
+    if (!match) return;
+
+    await page.request.delete(`/api/admin/deleted-pages/${encodeURIComponent(match.uuid)}`, {
+      headers: { Accept: 'application/json', 'X-CSRF-Token': csrfToken }
+    });
+  } catch {
+    // Storage hygiene only — never break a test run over it.
+  }
 }
 
 /**
@@ -197,6 +238,7 @@ export {
   waitForPageReady,
   createPage,
   deletePage,
+  purgeDeletedPage,
   deletePages,
   navigateToPage,
   performSearch,

@@ -61,6 +61,8 @@
   "ngdpbase.page.provider.versioning.indexfile": "${FAST_STORAGE}/page-index.json",
   "ngdpbase.page.provider.filesystem.encoding": "utf-8",
   "ngdpbase.page.provider.filesystem.autosave": true,
+  "_comment_page_delete": "Days a soft-deleted page stays restorable before it is purged along with its version history (#947). Set 0 to keep deleted pages forever.",
+  "ngdpbase.page.delete.retentiondays": 30,
   "_comment_page_chrome": "Pages excluded from tab injection or footer rendering",
   "ngdpbase.page.notabs": [
     "LeftMenu",
