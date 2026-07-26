@@ -24,15 +24,35 @@ const sessionHeaders = async (request) => ({
   'X-CSRF-Token': await csrf(request)
 });
 
-/** Mint a token for the logged-in admin, or skip if the feature is disabled. */
+/**
+ * Whether agent tokens are available on the instance under test.
+ *
+ * The feature ships DISABLED (`ngdpbase.auth.agent-token.enabled: false`), so
+ * "off" is the default state of any instance — jimstest enables it, The
+ * Fairways does not. Probing `GET /api/tokens` is the precise check: it answers
+ * 200 only when the feature is on for this caller.
+ *
+ * The first version of this spec guessed at the disabled-state status codes
+ * (404/501) and guessed wrong — the route answers 403 — so every test ran
+ * against a feature that was not there and the suite failed on The Fairways
+ * during release propagation. Probe the real thing instead of enumerating codes.
+ */
+async function tokensAvailable(request) {
+  try {
+    return (await request.get('/api/tokens', { headers: await sessionHeaders(request) })).status() === 200;
+  } catch {
+    return false;
+  }
+}
+
+/** Mint a token for the logged-in admin. */
 async function mint(request, name, scopes) {
   const res = await request.post('/api/tokens', {
     headers: { ...(await sessionHeaders(request)), 'Content-Type': 'application/json' },
     data: { name, scopes, ttlHours: 1 }
   });
-  if (res.status() === 404 || res.status() === 501) return null;
-  const body = await res.json();
-  if (!body.success) throw new Error(`mint failed: ${JSON.stringify(body)}`);
+  const body = await res.json().catch(() => ({}));
+  if (!body.success) throw new Error(`mint failed (${res.status()}): ${JSON.stringify(body)}`);
   return { token: body.token, id: body.record?.id ?? body.id };
 }
 
@@ -48,7 +68,7 @@ async function mint(request, name, scopes) {
 const minted: string[] = [];
 const pages: string[] = [];
 
-/** Mint and register for cleanup. Returns null when the feature is disabled. */
+/** Mint and register for cleanup. */
 async function mintTracked(request, name, scopes) {
   const m = await mint(request, name, scopes);
   if (m?.id) minted.push(m.id);
@@ -73,6 +93,13 @@ async function makeTrackedPage(request, title, content = 'seed content') {
 test.describe.configure({ mode: 'serial' });
 
 test.describe('#946 slice 2 — agent token page mutations', () => {
+  // Skip the whole suite where the feature is off, rather than per test: the
+  // page-conflict case does not mint, so it would otherwise run alone against an
+  // instance with no token feature at all and prove nothing useful.
+  test.beforeEach(async ({ request }) => {
+    test.skip(!(await tokensAvailable(request)), 'agent tokens disabled on this instance');
+  });
+
   test.afterEach(async ({ request }) => {
     const headers = await sessionHeaders(request);
 
@@ -94,7 +121,6 @@ test.describe('#946 slice 2 — agent token page mutations', () => {
 
   test('a token scoped to delete can delete, and the page is recoverable', async ({ request }) => {
     const minted = await mintTracked(request, `${PREFIX}-del`, ['page-ingest', 'page-delete']);
-    test.skip(!minted, 'agent tokens disabled on this instance');
 
     const title = `${PREFIX}-delete-${Date.now()}`;
     await makeTrackedPage(request, title);
@@ -115,7 +141,6 @@ test.describe('#946 slice 2 — agent token page mutations', () => {
 
   test('a token WITHOUT page-delete is refused (scope ceiling holds on the real path)', async ({ request }) => {
     const minted = await mintTracked(request, `${PREFIX}-noscope`, ['page-ingest']);
-    test.skip(!minted, 'agent tokens disabled on this instance');
 
     const title = `${PREFIX}-refused-${Date.now()}`;
     await makeTrackedPage(request, title);
@@ -133,7 +158,6 @@ test.describe('#946 slice 2 — agent token page mutations', () => {
 
   test('a token scoped to rename can rename', async ({ request }) => {
     const minted = await mintTracked(request, `${PREFIX}-ren`, ['page-ingest', 'page-rename']);
-    test.skip(!minted, 'agent tokens disabled on this instance');
 
     const from = `${PREFIX}-from-${Date.now()}`;
     const to = `${PREFIX}-to-${Date.now()}`;
