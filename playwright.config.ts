@@ -89,7 +89,7 @@ export default defineConfig({
     // Chromium tests (main browser) - excludes files owned by dedicated viewport projects
     {
       name: 'chromium',
-      testIgnore: /admin-maintenance\.spec\.(js|ts)|mobile-navigation\.spec\.(js|ts)/,
+      testIgnore: /admin-maintenance\.spec\.(js|ts)|mobile-navigation\.spec\.(js|ts)|agent-token-mutations\.spec\.(js|ts)/,
       use: {
         browserName: 'chromium',
         // Use setup project for authenticated tests
@@ -109,8 +109,31 @@ export default defineConfig({
       dependencies: ['setup']
     },
 
+    // Agent-token tests get their own project for the same reason maintenance
+    // does: they cannot share the run with parallel specs.
+    //
+    // Two distinct conflicts, both observed rather than theorised. (1) Every
+    // test mints against the same admin user and the cap is 10 LIVE tokens, so
+    // concurrency exhausts a shared budget. (2) The specs create, delete and
+    // purge pages in a tight loop; page-index writes are serialized through a
+    // write queue, and that churn pushed `pages.spec.ts` page creation and
+    // `search.spec.ts` header search past their timeouts — the full suite went
+    // from consistently green to flaky across three consecutive runs, while the
+    // token spec passed 7/7 in isolation every time.
+    {
+      name: 'chromium-agent-tokens',
+      testMatch: /agent-token-mutations\.spec\.(js|ts)/,
+      use: {
+        browserName: 'chromium',
+        storageState: './tests/e2e/.auth/user.json'
+      },
+      dependencies: ['chromium']
+    },
+
     // Admin maintenance tests run LAST since they toggle server-wide maintenance mode
-    // which would cause other parallel tests to get 503 responses
+    // which would cause other parallel tests to get 503 responses — including the
+    // agent-token project above, hence the chain rather than both depending on
+    // 'chromium' and racing each other.
     {
       name: 'chromium-maintenance',
       testMatch: /admin-maintenance\.spec\.(js|ts)/,
@@ -118,7 +141,7 @@ export default defineConfig({
         browserName: 'chromium',
         storageState: './tests/e2e/.auth/user.json'
       },
-      dependencies: ['chromium']
+      dependencies: ['chromium-agent-tokens']
     }
   ],
 
