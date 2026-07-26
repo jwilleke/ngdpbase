@@ -50,6 +50,22 @@ interface PageIndexEntry {
   audienceRoles?: string[];
   /** True when the page's frontmatter has `private: true` (canonical since #639 Slice E / v3.7.0) */
   isPrivate?: boolean;
+  /**
+   * Name of the add-on that seeded this page, mirrored from `PageFrontmatter.addon`.
+   *
+   * Indexed so provenance can be queried without reading every page file — the
+   * orphan detector previously narrowed candidates via
+   * `searchByCategory('addon')`, which missed any seeded page carrying a
+   * different `system-category` (e.g. the `forms` page declaring
+   * `documentation`) and returned nothing at all when SearchManager was
+   * unavailable.
+   *
+   * Optional because indexes written before this field exists will not have it;
+   * page frontmatter remains the source of truth, and entries gain it on their
+   * next save. `AddonsManager` back-fills seeded pages at boot so detection is
+   * not blind on existing instances.
+   */
+  addon?: string;
 }
 
 /**
@@ -751,6 +767,45 @@ class VersioningFileProvider extends FileSystemProvider {
    * that includes editor / currentVersion / hasVersions — fields the
    * RecentChangesPlugin's "full" format needs. Same visibility rules.
    */
+  /**
+   * Every indexed page carrying an `addon` provenance stamp.
+   *
+   * Reads the in-memory page index — no disk I/O and no dependency on
+   * SearchManager. That matters: the orphan detector used to narrow candidates
+   * with `searchByCategory('addon')`, which both missed seeded pages carrying a
+   * different `system-category` and returned nothing at all when search was
+   * unavailable.
+   *
+   * Entries written before `addon` was indexed simply will not appear;
+   * `AddonsManager` back-fills seeded pages at boot.
+   */
+  getAddonSeededIndexEntries(): Array<{ uuid: string; addon: string; slug?: string; title: string }> {
+    if (!this.pageIndex) return [];
+    const out: Array<{ uuid: string; addon: string; slug?: string; title: string }> = [];
+    for (const entry of Object.values(this.pageIndex.pages)) {
+      if (typeof entry.addon === 'string' && entry.addon.length > 0) {
+        out.push({ uuid: entry.uuid, addon: entry.addon, slug: entry.slug, title: entry.title });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Set the `addon` stamp on an existing index entry without rewriting the page.
+   * Used by the boot-time back-fill so detection works on instances whose pages
+   * were seeded before the field existed.
+   *
+   * Returns true when the entry was found and changed.
+   */
+  async setIndexAddon(uuid: string, addonName: string): Promise<boolean> {
+    if (!this.pageIndex) return false;
+    const entry = this.pageIndex.pages[uuid];
+    if (!entry || entry.addon === addonName) return false;
+    entry.addon = addonName;
+    await this.savePageIndex();
+    return true;
+  }
+
   async getRecentChanges(options: RecentChangesOptions = {}): Promise<RecentChangeEntry[]> {
     if (!this.pageIndex) {
       return [];
@@ -1609,7 +1664,10 @@ class VersioningFileProvider extends FileSystemProvider {
       author: metadata.author ? String(metadata.author) : undefined,
       hasVersions: true,
       audienceRoles: Array.isArray(ar) && ar.length ? (ar as string[]) : undefined,
-      isPrivate: isPrivateFlag
+      isPrivate: isPrivateFlag,
+      addon: typeof (metadata as Record<string, unknown>).addon === 'string'
+        ? ((metadata as Record<string, unknown>).addon as string)
+        : undefined
     });
 
     logger.info(`[VersioningFileProvider] Saved page '${pageName}' with versioning`);

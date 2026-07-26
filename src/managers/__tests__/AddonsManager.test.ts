@@ -1516,13 +1516,20 @@ describe('AddonsManager', () => {
     const uuidOrphan = '22222222-2222-4222-8222-222222222222';
 
     // Engine exposing the managers findOrphanedAddonPages depends on.
-    const makeFullEngine = (configManager, { getPage, searchByCategory }) => ({
+    //
+    // Candidates now come from the page index's `addon` stamp
+    // (getAddonSeededIndexEntries), NOT from searchByCategory('addon'). The
+    // SearchManager slot is retained only to prove detection no longer depends
+    // on it.
+    const makeFullEngine = (configManager, { getPage, indexEntries = [], searchByCategory = null }) => ({
       getManager: vi.fn((name) => {
         if (name === 'ConfigurationManager') return configManager;
         if (name === 'PageManager') {
           return {
             getPage,
             getPageUUID: () => null,
+            getAddonSeededIndexEntries: () => indexEntries,
+            setIndexAddon: async () => false,
             // seedAddonPages needs these during initialize(); no-op so seeding is quiet.
             getPageByUUID: async () => null,
             pageExists: () => false,
@@ -1554,9 +1561,12 @@ describe('AddonsManager', () => {
         if (name === 'gone') return { content: 'x', metadata: { addon: 'demo', uuid: uuidOrphan, slug: 'gone', title: 'Gone' } };
         return null;
       });
-      const searchByCategory = vi.fn(async () => [{ name: 'kept' }, { name: 'gone' }]);
+      const indexEntries = [
+        { uuid: uuidKept, addon: 'demo', slug: 'kept', title: 'Kept' },
+        { uuid: uuidOrphan, addon: 'demo', slug: 'gone', title: 'Gone' }
+      ];
 
-      const manager = new AddonsManager(makeFullEngine(configManager, { getPage, searchByCategory }));
+      const manager = new AddonsManager(makeFullEngine(configManager, { getPage, indexEntries }));
       await manager.initialize();
 
       const orphans = await manager.findOrphanedAddonPages();
@@ -1565,11 +1575,59 @@ describe('AddonsManager', () => {
       ]);
     });
 
-    test('returns [] when the search index is unavailable (best-effort, never guesses deletions)', async () => {
+    test('detects orphans with NO SearchManager at all', async () => {
+      // Previously this asserted the opposite — no search meant no detection,
+      // which silently disabled the feature whenever search was unavailable.
+      // Candidates now come from the page index, so search is irrelevant.
       const root = await seedAddon();
       const configManager = makeConfigManager({ addonsPath: [root], enabledAddons: ['demo'] });
       const getPage = vi.fn(async () => null);
-      const manager = new AddonsManager(makeFullEngine(configManager, { getPage, searchByCategory: null }));
+      const indexEntries = [{ uuid: uuidOrphan, addon: 'demo', slug: 'gone', title: 'Gone' }];
+      const manager = new AddonsManager(
+        makeFullEngine(configManager, { getPage, indexEntries, searchByCategory: null })
+      );
+      await manager.initialize();
+      expect(await manager.findOrphanedAddonPages()).toEqual([
+        expect.objectContaining({ addonName: 'demo', uuid: uuidOrphan, slug: 'gone' })
+      ]);
+    });
+
+    test('detects an orphan whose system-category is NOT "addon"', async () => {
+      // The hole this replaced: searchByCategory('addon') never saw a seeded
+      // page declaring another category — addons/forms ships one declaring
+      // `documentation`. The index stamp is category-independent.
+      const root = await seedAddon();
+      const configManager = makeConfigManager({ addonsPath: [root], enabledAddons: ['demo'] });
+      const getPage = vi.fn(async () => ({
+        content: 'x',
+        metadata: { addon: 'demo', uuid: uuidOrphan, slug: 'gone', title: 'Gone', 'system-category': 'documentation' }
+      }));
+      const indexEntries = [{ uuid: uuidOrphan, addon: 'demo', slug: 'gone', title: 'Gone' }];
+      const manager = new AddonsManager(makeFullEngine(configManager, { getPage, indexEntries }));
+      await manager.initialize();
+      expect(await manager.findOrphanedAddonPages()).toHaveLength(1);
+    });
+
+    test('carries user-modified through from the page', async () => {
+      const root = await seedAddon();
+      const configManager = makeConfigManager({ addonsPath: [root], enabledAddons: ['demo'] });
+      const getPage = vi.fn(async () => ({
+        content: 'x',
+        metadata: { addon: 'demo', uuid: uuidOrphan, slug: 'gone', title: 'Gone', 'user-modified': true }
+      }));
+      const indexEntries = [{ uuid: uuidOrphan, addon: 'demo', slug: 'gone', title: 'Gone' }];
+      const manager = new AddonsManager(makeFullEngine(configManager, { getPage, indexEntries }));
+      await manager.initialize();
+      const orphans = await manager.findOrphanedAddonPages();
+      expect(orphans[0].userModified).toBe(true);
+    });
+
+    test('ignores index entries belonging to an addon that is not enabled', async () => {
+      const root = await seedAddon();
+      const configManager = makeConfigManager({ addonsPath: [root], enabledAddons: ['demo'] });
+      const getPage = vi.fn(async () => null);
+      const indexEntries = [{ uuid: uuidOrphan, addon: 'some-other-addon', slug: 'gone', title: 'Gone' }];
+      const manager = new AddonsManager(makeFullEngine(configManager, { getPage, indexEntries }));
       await manager.initialize();
       expect(await manager.findOrphanedAddonPages()).toEqual([]);
     });
@@ -1579,8 +1637,8 @@ describe('AddonsManager', () => {
       const configManager = makeConfigManager({ addonsPath: [root], enabledAddons: ['demo'] });
       const getPage = vi.fn(async (name) =>
         name === 'kept' ? { content: 'x', metadata: { addon: 'demo', uuid: uuidKept, slug: 'kept', title: 'Kept' } } : null);
-      const searchByCategory = vi.fn(async () => [{ name: 'kept' }]);
-      const manager = new AddonsManager(makeFullEngine(configManager, { getPage, searchByCategory }));
+      const indexEntries = [{ uuid: uuidKept, addon: 'demo', slug: 'kept', title: 'Kept' }];
+      const manager = new AddonsManager(makeFullEngine(configManager, { getPage, indexEntries }));
       await manager.initialize();
       expect(await manager.findOrphanedAddonPages()).toEqual([]);
     });

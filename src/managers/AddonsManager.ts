@@ -384,6 +384,17 @@ class AddonsManager extends BaseManager {
     await this.discoverAddons();
     await this.loadAddons();
 
+    // Runs after loading so every enabled addon's pages/ dir is known. Cheap —
+    // walks only addon source pages, never the whole page tree — and makes
+    // orphan detection work on instances seeded before `addon` was indexed.
+    try {
+      await this.backfillIndexAddonStamps();
+    } catch (err) {
+      // Never let a back-fill failure block startup; detection simply stays
+      // as blind as it was before.
+      logger.warn('[AddonsManager] Could not back-fill addon index stamps:', err);
+    }
+
     logger.info(
       `Initialized with ${this.addons.size} add-on(s) discovered, ` +
         `${this.getLoadedCount()} loaded`
@@ -1343,7 +1354,8 @@ class AddonsManager extends BaseManager {
   }>> {
     const pageManager = this.engine.getManager<PageManager>('PageManager');
     if (!pageManager) return [];
-    const searchManager = this.engine.getManager<SearchManager>('SearchManager');
+    // Deliberately no SearchManager dependency — see the candidate-selection
+    // comment below.
 
     // Current source UUID set for each enabled addon that ships pages.
     const sourceUuidsByAddon = new Map<string, Set<string>>();
@@ -1362,40 +1374,76 @@ class AddonsManager extends BaseManager {
     }
     if (sourceUuidsByAddon.size === 0) return [];
 
-    // Narrow to addon-category pages via the index (cheap); no search ⇒ no detection.
-    let candidateNames: string[] = [];
-    if (searchManager) {
-      try {
-        candidateNames = (await searchManager.searchByCategory('addon'))
-          .map(r => r.name)
-          .filter((n): n is string => typeof n === 'string' && n.length > 0);
-      } catch { candidateNames = []; }
-    }
+    // Candidates come from the page index's `addon` stamp, not from
+    // `searchByCategory('addon')`.
+    //
+    // The category route had two holes: a seeded page declaring any other
+    // `system-category` (the `forms` page declares `documentation`) was never a
+    // candidate, and when SearchManager was unavailable detection silently
+    // returned nothing. The §9 re-categorisation would have widened the first
+    // hole further. `addon` is stamped unconditionally by the seeder, so it is
+    // the reliable discriminator.
+    const indexed = pageManager.getAddonSeededIndexEntries();
 
     const orphans: Array<{ addonName: string; uuid: string; slug: string; title: string; userModified: boolean }> = [];
     const seen = new Set<string>();
-    for (const name of candidateNames) {
-      if (seen.has(name)) continue;
-      seen.add(name);
-      const page = await pageManager.getPage(name);
-      if (!page) continue;
-      const meta = (page.metadata as Record<string, unknown> | undefined) ?? {};
-      const addonName = meta.addon as string | undefined;
-      const uuid = (meta.uuid as string | undefined) ?? pageManager.getPageUUID(name) ?? undefined;
-      if (!addonName || !uuid) continue;
-      const sourceSet = sourceUuidsByAddon.get(addonName);
+    for (const entry of indexed) {
+      if (seen.has(entry.uuid)) continue;
+      seen.add(entry.uuid);
+      const sourceSet = sourceUuidsByAddon.get(entry.addon);
       if (!sourceSet) continue; // not an enabled addon (or ships no pages) — don't flag
-      if (!sourceSet.has(uuid)) {
-        orphans.push({
-          addonName,
-          uuid,
-          slug: (meta.slug as string) || name,
-          title: (meta.title as string) || name,
-          userModified: meta['user-modified'] === true
-        });
-      }
+      if (sourceSet.has(entry.uuid)) continue; // still shipped upstream
+
+      // Only read the page for the few that are actually orphaned, to pick up
+      // `user-modified` — the index does not carry it.
+      let userModified = false;
+      try {
+        const page = await pageManager.getPage(entry.slug || entry.title);
+        const meta = (page?.metadata as Record<string, unknown> | undefined) ?? {};
+        userModified = meta['user-modified'] === true;
+      } catch { /* page unreadable — still report it as orphaned */ }
+
+      orphans.push({
+        addonName: entry.addon,
+        uuid: entry.uuid,
+        slug: entry.slug || entry.title,
+        title: entry.title,
+        userModified
+      });
     }
     return orphans;
+  }
+
+  /**
+   * Back-fill the page index's `addon` stamp for pages seeded before the field
+   * was indexed.
+   *
+   * Without this, orphan detection is blind on any existing instance: the field
+   * is written on save, and seeded pages are deliberately not re-saved once
+   * they exist. Cheap — it walks only each addon's own source pages (tens of
+   * files), never the whole page tree.
+   */
+  private async backfillIndexAddonStamps(): Promise<void> {
+    const pageManager = this.engine.getManager<PageManager>('PageManager');
+    if (!pageManager?.setIndexAddon) return;
+
+    let stamped = 0;
+    for (const { name, pagesDir } of this.getEnabledAddonPagesDirectories()) {
+      let files: string[] = [];
+      try {
+        files = (await fs.promises.readdir(pagesDir)).filter(f => f.endsWith('.md'));
+      } catch { continue; }
+      for (const f of files) {
+        try {
+          const uuid = matter(await fs.promises.readFile(path.join(pagesDir, f), 'utf8')).data.uuid as string | undefined;
+          if (!uuid) continue;
+          if (await pageManager.setIndexAddon(uuid, name)) stamped++;
+        } catch { /* skip unreadable source file */ }
+      }
+    }
+    if (stamped > 0) {
+      logger.info(`[AddonsManager] Back-filled 'addon' index stamp on ${stamped} seeded page(s)`);
+    }
   }
 
   /**
