@@ -70,8 +70,8 @@ describe('MarkupParser inline class styles (#938)', () => {
     expect(result).toContain('<span class="feed-badge">GREEN</span>');
   });
 
-  test('multiple space-separated classes land on one span', async () => {
-    const result = await parser.parse('%%feed-badge feed-badge--green GREEN/%');
+  test('multiple DOT-separated classes land on one span', async () => {
+    const result = await parser.parse('%%feed-badge.feed-badge--green GREEN/%');
     expect(result).toContain('<span class="feed-badge feed-badge--green">GREEN</span>');
   });
 
@@ -95,7 +95,7 @@ describe('MarkupParser inline class styles (#938)', () => {
 
   test('multi-class span renders inside a table cell', async () => {
     const result = await parser.parse(
-      '|| Level || Code ||\n| NORMAL | %%feed-badge feed-badge--green GREEN/% |'
+      '|| Level || Code ||\n| NORMAL | %%feed-badge.feed-badge--green GREEN/% |'
     );
     expect(result).toContain('<span class="feed-badge feed-badge--green">GREEN</span>');
   });
@@ -104,9 +104,9 @@ describe('MarkupParser inline class styles (#938)', () => {
     const result = await parser.parse([
       '%%table-fit table-bordered table-striped table-hover sortable',
       '|| Level || Aviation Code || Meaning ||',
-      '| NORMAL | %%feed-badge feed-badge--green GREEN/% | typical background |',
-      '| ADVISORY | %%feed-badge feed-badge--yellow YELLOW/% | elevated unrest |',
-      '| WARNING | %%feed-badge feed-badge--red RED/% | eruption imminent |',
+      '| NORMAL | %%feed-badge.feed-badge--green GREEN/% | typical background |',
+      '| ADVISORY | %%feed-badge.feed-badge--yellow YELLOW/% | elevated unrest |',
+      '| WARNING | %%feed-badge.feed-badge--red RED/% | eruption imminent |',
       '/%'
     ].join('\n'));
     expect(result).toContain('<span class="feed-badge feed-badge--green">GREEN</span>');
@@ -208,5 +208,56 @@ describe('MarkupParser inline class styles (#938)', () => {
     // part of the emitted class list.
     const result = await parser.parse('%%feed-badge onload=x GREEN/%');
     expect(result).not.toMatch(/<span[^>]*onload/);
+  });
+  // ── #944: content must survive intact ─────────────────────────────────────
+  //
+  // The #939 form accepted space-separated classes inline and greedily ate the
+  // content: `%%lead Hello there/%` produced class="lead Hello" with only
+  // "there" as the body. Every fixture in the original suite used SINGLE-WORD
+  // content, so nothing caught it. These use multi-word content deliberately.
+
+  describe('multi-word content (#944 regression)', () => {
+    test('two-word content stays in the body', async () => {
+      const result = await parser.parse('%%lead Hello there/%');
+      expect(result).toContain('<span class="lead">Hello there</span>');
+    });
+
+    test('four-word content stays in the body', async () => {
+      const result = await parser.parse('%%lead one two three four/%');
+      expect(result).toContain('<span class="lead">one two three four</span>');
+    });
+
+    test('content containing words that look like class names is not absorbed', async () => {
+      const result = await parser.parse('%%small this small text/%');
+      expect(result).toContain('<span class="small">this small text</span>');
+    });
+
+    test('punctuated sentence content survives', async () => {
+      const result = await parser.parse('%%tip Use the markup, then reload./%');
+      expect(result).toContain('<span class="tip">Use the markup, then reload.</span>');
+    });
+
+    test('dotted multi-class with multi-word content', async () => {
+      const result = await parser.parse('%%btn.btn-info.btn-xs Click me now/%');
+      expect(result).toContain('<span class="btn btn-info btn-xs">Click me now</span>');
+    });
+
+    test('space-separated classes are NO LONGER treated as classes inline', async () => {
+      // Deliberate behaviour change: only the first token is the class.
+      const result = await parser.parse('%%feed-badge feed-badge--green GREEN/%');
+      expect(result).toContain('<span class="feed-badge">feed-badge--green GREEN</span>');
+    });
+
+    test('block form still takes space-separated classes', async () => {
+      // Unambiguous there — the class list is the whole line.
+      const result = await parser.parse('%%table-fit table-bordered\n|| A ||\n| 1 |\n/%');
+      expect(result).toContain('table-fit');
+      expect(result).toContain('table-bordered');
+    });
+
+    test('empty content still yields a bare classed span (icon idiom)', async () => {
+      const result = await parser.parse('%%icon-user /%');
+      expect(result).toContain('<span class="icon-user"></span>');
+    });
   });
 });

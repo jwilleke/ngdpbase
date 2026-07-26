@@ -1537,7 +1537,7 @@ class MarkupParser extends BaseManager {
       // exclude `%%class ` too — otherwise `%%a %%b X/%` reads the second `%%`
       // as A's closer and emits an empty `<span class="a">` followed by the
       // rest as stray text.
-      const NOT_AN_OPENER = String.raw`(?!\(|sup|sub|strike|[A-Za-z][\w-]*[ \t])`;
+      const NOT_AN_OPENER = String.raw`(?!\(|sup|sub|strike|[A-Za-z][\w-]*(?:\.[A-Za-z][\w-]*)*[ \t])`;
       const inlinePattern = new RegExp(
         String.raw`%%(\((?:[^()]|\([^()]*\))*\)|sup|sub|strike)[ \t]+((?:(?!%%|\/%)[\s\S])*?)[ \t]*(?:\/%|%%${NOT_AN_OPENER})`
       );
@@ -1550,8 +1550,19 @@ class MarkupParser extends BaseManager {
       // line, so confining the match to one line makes that impossible.
       // No conflict the other way either: the block opener regex is anchored
       // `^\s*%%…$`, so a same-line run was never a block-opener candidate.
+      // #944: the class token runs up to the FIRST space — everything after it
+      // is content. Multiple classes are DOT-separated (`%%btn.btn-info.btn-xs`),
+      // matching JSPWiki and what docs/haddock-styles documents.
+      //
+      // The original #939 form accepted space-separated classes inline
+      // (`[A-Za-z][\w-]*(?:[ \t]+[A-Za-z][\w-]*)*`) and silently ate the
+      // content: `%%lead Hello there/%` produced `class="lead Hello"` with only
+      // "there" as the body, and `%%lead one two three four/%` swallowed three
+      // words. Inline, space-separation is inherently ambiguous — nothing marks
+      // where the class list ends and the content begins. Block form keeps
+      // spaces because there the class list IS the whole line.
       const inlineClassPattern = new RegExp(
-        String.raw`%%([A-Za-z][\w-]*(?:[ \t]+[A-Za-z][\w-]*)*)[ \t]+((?:(?!%%|\/%)[^\n])*?)[ \t]*(?:\/%|%%${NOT_AN_OPENER})`
+        String.raw`%%([A-Za-z][\w-]*(?:\.[A-Za-z][\w-]*)*)[ \t]+((?:(?!%%|\/%)[^\n])*?)[ \t]*(?:\/%|%%${NOT_AN_OPENER})`
       );
       let guard = 0;
       for (;;) {
@@ -1586,7 +1597,8 @@ class MarkupParser extends BaseManager {
           syntax: m[0],
           inlineVariant: variant,
           cssRaw: isCss ? head.slice(1, -1) : undefined,
-          classNames: isClass ? head.replace(/[ \t]+/g, ' ') : undefined,
+          // #944: `btn.btn-info.btn-xs` -> `class="btn btn-info btn-xs"`.
+          classNames: isClass ? head.replace(/\./g, ' ') : undefined,
           inner,
           id: id++,
           position: m.index
