@@ -669,6 +669,46 @@ class AddonsManager extends BaseManager {
    * @param addonName  Name of the add-on (for logging)
    * @param addonPath  Filesystem path to the add-on directory
    */
+  /**
+   * Surface a page-level seed failure beyond the boot log (#951).
+   *
+   * A boot-time log line is invisible ten minutes later, which is how a page
+   * that never seeded stays missing for weeks. Raising an operator
+   * notification makes the failure outlive the boot it happened on.
+   *
+   * Deliberately NOT fail-fast. Refusing to start because a third-party addon
+   * shipped one malformed page turns an authoring typo into an outage, and the
+   * #672 precedent does not transfer — that was the operator's own config
+   * naming a nonexistent addon, which the operator can fix. A vendor's
+   * malformed file is not in the operator's control. Skip the page, report
+   * loudly, surface it after boot.
+   *
+   * Best-effort: notification failure must never break seeding.
+   */
+  private recordSeedFailure(
+    addonName: string,
+    file: string,
+    reason: 'missing-or-invalid-uuid' | 'duplicate-uuid' | 'missing-slug',
+    isDomain: boolean
+  ): void {
+    try {
+      const notificationManager = this.engine.getManager<{
+        createNotification?: (n: Record<string, unknown>) => Promise<unknown>;
+          }>('NotificationManager');
+
+      void notificationManager?.createNotification?.({
+        type: 'system',
+        level: isDomain ? 'error' : 'warning',
+        title: `Add-on page not seeded (${addonName})`,
+        message:
+          `${addonName}/pages/${file} was skipped: ${reason}. The page will not appear on this site.` +
+          (isDomain ? ' This is a domain add-on, so the site may be incomplete.' : '')
+      })?.catch?.(() => { /* non-fatal */ });
+    } catch {
+      // non-fatal
+    }
+  }
+
   private async seedAddonPages(addonName: string, addonPath: string): Promise<void> {
     const addonPagesDir = path.join(addonPath, 'pages');
 
@@ -698,6 +738,25 @@ class AddonsManager extends BaseManager {
 
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+    // #951: a domain addon's page failing to seed is a broken site; the same
+    // failure in an additive addon is a missing help page. Line ~535 already
+    // draws exactly this distinction for identity mismatch — page seeding now
+    // follows it instead of flattening both to `warn`.
+    const isDomain = this.addons.get(addonName)?.manifest?.type === 'domain';
+    const reportSkip = (message: string): void => {
+      if (isDomain) logger.error(message);
+      else logger.warn(message);
+    };
+
+    // #951: guard against two source pages sharing a uuid — the obvious
+    // copy-paste mistake when creating a page from an existing one. Without
+    // this the second file matches the first's already-seeded page and is
+    // silently skipped, so ONE PAGE SIMPLY NEVER APPEARS and the only trace is
+    // a debug line phrased as normal operation. With reseed enabled it is
+    // worse: the two files fight over one page and the winner depends on
+    // filesystem ordering.
+    const seenUuids = new Map<string, string>();
+
     for (const file of files) {
       const src = path.join(addonPagesDir, file);
       try {
@@ -707,12 +766,31 @@ class AddonsManager extends BaseManager {
         const slug = parsed.data.slug as string | undefined;
 
         if (!uuid || !uuidPattern.test(uuid)) {
-          logger.warn(`[AddonsManager] Skipping ${addonName}/pages/${file} — missing or invalid uuid in frontmatter`);
+          reportSkip(
+            `[AddonsManager] Skipping ${addonName}/pages/${file} — missing or invalid uuid in ` +
+            'frontmatter. The addon owns page uuids and they are mandatory; this page will not appear.'
+          );
+          this.recordSeedFailure(addonName, file, 'missing-or-invalid-uuid', isDomain);
           continue;
         }
 
+        const duplicateOf = seenUuids.get(uuid.toLowerCase());
+        if (duplicateOf) {
+          reportSkip(
+            `[AddonsManager] Skipping ${addonName}/pages/${file} — uuid ${uuid} is already used by ` +
+            `${duplicateOf}. Two source pages cannot share a uuid: one of them would never appear, ` +
+            'and with reseed enabled they fight over the same page. Give this page its own uuid.'
+          );
+          this.recordSeedFailure(addonName, file, 'duplicate-uuid', isDomain);
+          continue;
+        }
+        seenUuids.set(uuid.toLowerCase(), file);
+
         if (!slug) {
-          logger.warn(`[AddonsManager] Skipping ${addonName}/pages/${file} — missing slug in frontmatter`);
+          reportSkip(
+            `[AddonsManager] Skipping ${addonName}/pages/${file} — missing slug in frontmatter`
+          );
+          this.recordSeedFailure(addonName, file, 'missing-slug', isDomain);
           continue;
         }
 
