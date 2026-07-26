@@ -169,9 +169,12 @@ export interface PageProvider extends BaseProvider {
   /**
    * Delete a page
    * @param identifier - Page UUID or title
+   * @param deletedBy - Username performing the delete; recorded on the tombstone
+   *                    by providers that support soft delete (#947). Optional so
+   *                    providers written before soft delete stay compatible.
    * @returns True if deleted, false if not found
    */
-  deletePage(identifier: string): Promise<boolean>;
+  deletePage(identifier: string, deletedBy?: string): Promise<boolean>;
 
   /**
    * Move a private page from one creator's directory to another's.

@@ -151,7 +151,27 @@ interface IConfigManager {
   getBaseURL?(): string;
 }
 
+/**
+ * Soft-delete surface a page provider may expose (#947). All optional — a
+ * provider without these simply has no trash, and the routes answer 501.
+ */
+interface IDeletedPageEntry {
+  uuid: string;
+  title: string;
+  slug?: string;
+  currentVersion: number;
+  deletedAt: string;
+  deletedBy: string;
+}
+
+type RestoreResult =
+  | { ok: true; title: string }
+  | { ok: false; reason: 'not-found' | 'title-conflict' | 'slug-conflict' | 'file-missing' | 'error'; detail?: string };
+
 interface IVersioningProvider {
+  getDeletedPages?(): IDeletedPageEntry[];
+  restoreDeletedPage?(uuid: string): Promise<RestoreResult>;
+  purgeDeletedPage?(uuid: string): Promise<boolean>;
   getVersionHistory?(name: string, limit?: number): Promise<IVersionEntry[]>;
   compareVersions?(name: string, v1: number, v2: number): Promise<IComparisonResult | null>;
   restoreVersion?(name: string, version: number, options?: { author?: string; comment?: string }): Promise<number>;
@@ -11427,6 +11447,17 @@ ${panes}
       this.restorePageVersion(req, res)
     );
 
+    // #947 trash API — admin-only, enforced inside each handler
+    app.get('/api/admin/deleted-pages', (req: Request, res: Response) =>
+      this.listDeletedPages(req, res)
+    );
+    app.post('/api/admin/deleted-pages/:uuid/restore', (req: Request, res: Response) =>
+      this.restoreDeletedPage(req, res)
+    );
+    app.delete('/api/admin/deleted-pages/:uuid', (req: Request, res: Response) =>
+      this.purgeDeletedPage(req, res)
+    );
+
     // Public routes
     app.get('/', (req: Request, res: Response) => this.homePage(req, res));
     app.get('/view/:page', (req: Request, res: Response) => this.viewPage(req, res));
@@ -12907,6 +12938,140 @@ ${panes}
         error: 'Internal server error',
         details: getErrorMessage(error)
       });
+    }
+  }
+
+  /**
+   * Guard for the #947 trash endpoints: admin-only, JSON responses.
+   *
+   * Deleted pages are visible across every author and every audience, so
+   * listing or restoring them is strictly `admin-system`. It deliberately does
+   * NOT fall back to the per-page delete ACL — being allowed to delete your own
+   * page does not imply being allowed to browse everything anyone else deleted.
+   *
+   * @returns The provider when the caller is authorised, otherwise null (the
+   *          response has already been sent)
+   */
+  private async requireTrashAdmin(req: Request, res: Response): Promise<IVersioningProvider | null> {
+    if (!req.userContext?.isAuthenticated) {
+      res.status(401).json({ error: 'Authentication required' });
+      return null;
+    }
+
+    const userManager = this.engine.getManager('UserManager');
+    const isAdmin = await userManager?.hasPermission(req.userContext.username, 'admin-system');
+    if (!isAdmin) {
+      res.status(403).json({ error: 'Access denied', message: 'Administrator access required' });
+      return null;
+    }
+
+    const provider = this.engine.getManager('PageManager')?.provider as IVersioningProvider | undefined;
+    if (!provider || typeof provider.getDeletedPages !== 'function') {
+      res.status(501).json({
+        error: 'Soft delete not supported',
+        message: 'Current page provider does not retain deleted pages'
+      });
+      return null;
+    }
+
+    return provider;
+  }
+
+  /**
+   * GET /api/admin/deleted-pages
+   * List soft-deleted pages awaiting restore or purge (#947).
+   */
+  async listDeletedPages(req: Request, res: Response) {
+    try {
+      const provider = await this.requireTrashAdmin(req, res);
+      if (!provider) return;
+
+      const pages = provider.getDeletedPages!().map((entry) => ({
+        uuid: entry.uuid,
+        title: entry.title,
+        slug: entry.slug,
+        deletedAt: entry.deletedAt,
+        deletedBy: entry.deletedBy,
+        currentVersion: entry.currentVersion
+      }));
+
+      return res.json({ success: true, count: pages.length, pages });
+    } catch (error: unknown) {
+      logger.error(`Error listing deleted pages: ${getErrorMessage(error)}`);
+      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+    }
+  }
+
+  /**
+   * POST /api/admin/deleted-pages/:uuid/restore
+   * Restore a soft-deleted page, with its version history (#947).
+   */
+  async restoreDeletedPage(req: Request, res: Response) {
+    try {
+      const provider = await this.requireTrashAdmin(req, res);
+      if (!provider) return;
+
+      const { uuid } = req.params;
+      const result = await provider.restoreDeletedPage!(uuid);
+
+      if (!result.ok) {
+        // A name collision is the caller's to resolve, not ours to paper over:
+        // 409 with the offending value rather than a silent rename.
+        const status = result.reason === 'not-found' ? 404
+          : result.reason === 'title-conflict' || result.reason === 'slug-conflict' ? 409
+            : 500;
+        return res.status(status).json({
+          success: false,
+          error: result.reason,
+          detail: result.detail
+        });
+      }
+
+      // Bring the derived indexes back in step with the restored page. Delete
+      // pulled it out of the search index and the link graph; without this the
+      // page is readable but unfindable until the next full rebuild.
+      const pageManager = this.engine.getManager('PageManager');
+      const restored = await pageManager?.getPage(result.title);
+      if (restored) {
+        await this.engine.getManager('SearchManager')?.updatePageInIndex(result.title, {
+          name: result.title,
+          content: restored.content,
+          metadata: restored.metadata
+        });
+        this.engine.getManager('RenderingManager')?.updatePageInLinkGraph?.(result.title, restored.content);
+      }
+
+      logger.info(`[WikiRoutes] User ${req.userContext!.username} restored deleted page ${uuid} ('${result.title}')`);
+      return res.json({ success: true, uuid, title: result.title });
+    } catch (error: unknown) {
+      logger.error(`Error restoring deleted page: ${getErrorMessage(error)}`);
+      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+    }
+  }
+
+  /**
+   * DELETE /api/admin/deleted-pages/:uuid
+   * Permanently destroy a soft-deleted page and its versions (#947).
+   *
+   * The only irreversible page operation left in the app.
+   */
+  async purgeDeletedPage(req: Request, res: Response) {
+    try {
+      const provider = await this.requireTrashAdmin(req, res);
+      if (!provider) return;
+
+      const { uuid } = req.params;
+      const purged = await provider.purgeDeletedPage!(uuid);
+
+      if (!purged) {
+        return res.status(404).json({ success: false, error: 'not-found' });
+      }
+
+      logger.warn(`[WikiRoutes] User ${req.userContext!.username} PERMANENTLY purged page ${uuid}`);
+      return res.json({ success: true, uuid });
+    } catch (error: unknown) {
+      logger.error(`Error purging deleted page: ${getErrorMessage(error)}`);
+      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
     }
   }
 

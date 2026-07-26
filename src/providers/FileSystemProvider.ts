@@ -296,6 +296,11 @@ class FileSystemProvider extends BasePageProvider {
         if (entry.isDirectory()) {
           if (entry.name.startsWith('.')) continue; // Skip hidden dirs
           if (entry.name === 'versions') continue; // Skip version snapshot dirs
+          // #947: soft-deleted pages are relocated here. They MUST stay out of
+          // the scan — this walk is what rebuilds the caches on every boot, so
+          // a tombstoned file left in place would silently resurrect itself on
+          // the next restart, index flag or not.
+          if (entry.name === 'deleted') continue;
           out.push(...(await this.walkDir(full)));
         } else if (entry.isFile()) {
           out.push(full);
@@ -320,7 +325,7 @@ class FileSystemProvider extends BasePageProvider {
    * @returns {PageCacheInfo|null} Page info or null if not found
    * @private
    */
-  private resolvePageInfo(identifier: string): PageCacheInfo | null {
+  protected resolvePageInfo(identifier: string): PageCacheInfo | null {
     if (!identifier || typeof identifier !== 'string') return null;
 
     // 1. Try UUID index first
@@ -687,19 +692,7 @@ class FileSystemProvider extends BasePageProvider {
       await fs.unlink(info.filePath);
 
       // Remove from all caches and indexes
-      // Ensure title is string for cache operations (YAML may have parsed as number)
-      const titleStr = String(info.title);
-      this.pageCache.delete(titleStr);
-      this.contentCache.delete(titleStr);
-      this.titleIndex.delete(titleStr.toLowerCase());
-      if (info.uuid) {
-        this.uuidIndex.delete(info.uuid);
-      }
-      // Remove slug from index if it existed
-      const slug = info.metadata?.slug;
-      if (slug) {
-        this.slugIndex.delete(String(slug).toLowerCase());
-      }
+      this.evictFromCaches(info);
 
       logger.info(`[FileSystemProvider] Deleted page '${info.title}' (${info.uuid})`);
       return true;
@@ -712,6 +705,75 @@ class FileSystemProvider extends BasePageProvider {
       }
       return false;
     }
+  }
+
+  /**
+   * Drop a page from every in-memory cache and lookup index, leaving the file
+   * on disk untouched.
+   *
+   * Split out of {@link deletePage} for #947: the soft-delete path needs the
+   * exact same cache teardown (so the page disappears from view, listing,
+   * search and resolution) while relocating the file instead of unlinking it.
+   * Keeping one implementation means a future cache can't be added to delete
+   * and forgotten in soft-delete.
+   *
+   * @param info - Resolved page info for the page to evict
+   */
+  protected evictFromCaches(info: PageCacheInfo): void {
+    // Ensure title is string for cache operations (YAML may have parsed as number)
+    const titleStr = String(info.title);
+    this.pageCache.delete(titleStr);
+    this.contentCache.delete(titleStr);
+    this.titleIndex.delete(titleStr.toLowerCase());
+    if (info.uuid) {
+      this.uuidIndex.delete(info.uuid);
+    }
+    // Remove slug from index if it existed
+    const slug = info.metadata?.slug;
+    if (slug) {
+      this.slugIndex.delete(String(slug).toLowerCase());
+    }
+  }
+
+  /**
+   * Re-register a page in every in-memory cache and lookup index.
+   *
+   * The inverse of {@link evictFromCaches}, used by the #947 restore path so a
+   * recovered page is immediately resolvable without a provider reload.
+   *
+   * @param info - Resolved page info for the page to register
+   * @param content - Page body (frontmatter already stripped)
+   */
+  protected addToCaches(info: PageCacheInfo, content: string): void {
+    const titleStr = String(info.title);
+    this.pageCache.set(titleStr, info);
+    this.contentCache.set(titleStr, content);
+    this.titleIndex.set(titleStr.toLowerCase(), titleStr);
+    if (info.uuid) {
+      this.uuidIndex.set(info.uuid, titleStr);
+    }
+    const slug = info.metadata?.slug;
+    if (slug) {
+      this.slugIndex.set(String(slug).toLowerCase(), titleStr);
+    }
+  }
+
+  /**
+   * Whether a title or slug is currently claimed by a live page.
+   *
+   * Used by the #947 restore path: a tombstoned page keeps its title and slug
+   * only in the tombstone record, so nothing stops a NEW page from taking them
+   * while the old one sits in the trash. Restoring blind would put two pages on
+   * one title, so restore checks first and refuses.
+   *
+   * @param title - Title to test
+   * @param slug - Slug to test (optional)
+   * @returns The conflicting field, or null when both are free
+   */
+  protected findLiveNameConflict(title: string, slug?: string): 'title' | 'slug' | null {
+    if (this.titleIndex.has(String(title).toLowerCase())) return 'title';
+    if (slug && this.slugIndex.has(String(slug).toLowerCase())) return 'slug';
+    return null;
   }
 
   /**

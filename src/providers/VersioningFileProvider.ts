@@ -71,11 +71,35 @@ interface PageIndexEntry {
 /**
  * Page index structure
  */
+/**
+ * A soft-deleted page (#947).
+ *
+ * Deliberately stored in its OWN map rather than as a `deleted: true` flag on
+ * the live `pages` record. Better than twenty-odd call sites in this file
+ * iterating `pageIndex.pages` to list, count, search and report — every one of
+ * them would need a filter, and the first one anybody forgot would leak a
+ * deleted page back into a listing. A separate map makes the exclusion
+ * structural: existing consumers cannot see tombstones at all.
+ */
+interface DeletedPageEntry extends PageIndexEntry {
+  /** When the page was deleted (ISO 8601) */
+  deletedAt: string;
+  /** Username that deleted it, or 'unknown' when the caller supplied no context */
+  deletedBy: string;
+  /** Absolute path the page file occupied before deletion — where restore puts it back */
+  deletedFrom: string;
+}
+
 interface PageIndex {
   version: string;
   lastUpdated: string;
   pageCount: number;
   pages: Record<string, PageIndexEntry>;
+  /**
+   * Soft-deleted pages awaiting restore or purge (#947). Optional because
+   * indexes written before this feature have no such key.
+   */
+  deletedPages?: Record<string, DeletedPageEntry>;
 }
 
 
@@ -192,6 +216,9 @@ class VersioningFileProvider extends FileSystemProvider {
   private versionCache: Map<string, string>;
   private versionCacheSize: number;
 
+  /** Days a soft-deleted page stays recoverable before purge; 0 = keep forever (#947) */
+  private deleteRetentionDays: number;
+
   /**
    * Create a new VersioningFileProvider
    * @param engine - The WikiEngine instance
@@ -221,6 +248,7 @@ class VersioningFileProvider extends FileSystemProvider {
     // Version cache for performance (LRU cache)
     this.versionCache = new Map();
     this.versionCacheSize = 50;
+    this.deleteRetentionDays = 30;
   }
 
   /**
@@ -270,10 +298,24 @@ class VersioningFileProvider extends FileSystemProvider {
       await this.loadOrCreatePageIndex();
     }
 
+    // #947: expire tombstones past the retention window. Runs at boot rather
+    // than on a timer because there is no central maintenance scheduler yet —
+    // a long-running server therefore only purges when it restarts. Acceptable
+    // while the failure mode is "deleted pages are recoverable for longer than
+    // configured"; a scheduled sweep belongs with the trash UI follow-up.
+    try {
+      await this.purgeExpiredDeletedPages();
+    } catch (error) {
+      // Never let purge failure block startup — the pages are still on disk.
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error('[VersioningFileProvider] Delete-retention purge failed at startup', { error: errorMessage });
+    }
+
     logger.info('[VersioningFileProvider] Initialized with versioning enabled');
     logger.info(`[VersioningFileProvider] Delta storage: ${this.deltaStorageEnabled ? 'enabled' : 'disabled'}`);
     logger.info(`[VersioningFileProvider] Compression: ${this.compressionEnabled ? 'enabled' : 'disabled'}`);
     logger.info(`[VersioningFileProvider] Max versions: ${this.maxVersions}, Retention: ${this.retentionDays} days`);
+    logger.info(`[VersioningFileProvider] Deleted-page retention: ${this.deleteRetentionDays > 0 ? `${this.deleteRetentionDays} days` : 'kept forever'}`);
   }
 
   /**
@@ -601,6 +643,13 @@ class VersioningFileProvider extends FileSystemProvider {
     this.retentionDays = configManager.getProperty(
       'ngdpbase.page.provider.versioning.retentiondays',
       365
+    ) as number;
+
+    // #947: how long a soft-deleted page stays recoverable before purge.
+    // 0 means keep tombstones forever.
+    this.deleteRetentionDays = configManager.getProperty(
+      'ngdpbase.page.delete.retentiondays',
+      30
     ) as number;
 
     // Storage optimization settings
@@ -1389,24 +1438,6 @@ class VersioningFileProvider extends FileSystemProvider {
   }
 
   /**
-   * Remove a page from the page index
-   * @param uuid - Page UUID
-   */
-  private removePageFromIndex(uuid: string): Promise<void> {
-    if (!this.pageIndex) {
-      throw new Error('Page index not initialized');
-    }
-
-    if (this.pageIndex.pages[uuid]) {
-      delete this.pageIndex.pages[uuid];
-      this.pageIndex.pageCount--;
-      logger.info(`[VersioningFileProvider] Removed page ${uuid} from index`);
-      return this.savePageIndex();
-    }
-    return Promise.resolve();
-  }
-
-  /**
    * Rename a UUID in the page index (used by adopt-UUID operations that move a file to a new UUID).
    * Updates the index entry key and uuid field, then persists the index.
    * No-op if oldUuid is not in the index.
@@ -1732,11 +1763,31 @@ class VersioningFileProvider extends FileSystemProvider {
   }
 
   /**
-   * Delete a page and its version history
+   * Soft-delete a page (#947).
+   *
+   * Before this change a delete was the one destructive content action with no
+   * undo: the page file, every stored version AND the index entry were removed
+   * outright, so `POST /api/page/:identifier/restore/:version` had nothing left
+   * to restore from and no way to resolve the identifier. Recovery depended
+   * entirely on whatever backup retention a deployment happened to have.
+   *
+   * Now the page file is MOVED into a `deleted/` directory beside its storage
+   * root, the version directory is left completely untouched, and the index
+   * entry moves from `pages` to `deletedPages` with the metadata restore needs.
+   *
+   * The file has to move rather than stay put: the boot scan
+   * (`FileSystemProvider.walkDir`) rebuilds the caches from disk, so a file
+   * left in `pages/` would be re-indexed on the next restart and the page would
+   * silently come back to life. `walkDir` skips `deleted/` for that reason.
+   *
+   * Purging for real happens in {@link purgeExpiredDeletedPages} once the
+   * retention window expires.
+   *
    * @param identifier - Page UUID or title
+   * @param deletedBy - Username performing the delete (audit trail)
    * @returns True if deleted, false if not found
    */
-  async deletePage(identifier: string): Promise<boolean> {
+  async deletePage(identifier: string, deletedBy = 'unknown'): Promise<boolean> {
     // Get page info before deleting
     const pageData = await this.getPage(identifier);
     if (!pageData) {
@@ -1751,30 +1802,210 @@ class VersioningFileProvider extends FileSystemProvider {
       (pageData.metadata?.['system-category']?.toLowerCase() === 'system' ? 'required-pages' : 'pages');
 
     try {
-      // Call parent to delete main file and clear caches
-      const deleted = await super.deletePage(identifier);
-      if (!deleted) {
+      const info = this.resolvePageInfo(identifier);
+      if (!info) {
+        logger.warn(`[VersioningFileProvider] Cannot delete - unresolvable: ${identifier}`);
         return false;
       }
 
-      // Delete version directory if it exists
-      const versionDir = this.getVersionDirectory(uuid, location);
-      const versionDirExists = await fs.pathExists(versionDir);
-      if (versionDirExists) {
-        await fs.remove(versionDir);
-        logger.info(`[VersioningFileProvider] Deleted version directory for ${uuid}`);
+      const sourcePath = info.filePath;
+      const trashDir = this.getDeletedDirectory(location);
+      const trashPath = path.join(trashDir, `${uuid}.md`);
+
+      await fs.ensureDir(trashDir);
+      await fs.move(sourcePath, trashPath, { overwrite: true });
+
+      // Same cache teardown the hard delete used to do — the page must vanish
+      // from view, listing, search and identifier resolution immediately.
+      this.evictFromCaches(info);
+
+      // Move the index entry into the tombstone map. The version directory is
+      // deliberately NOT touched: it is the whole point of the exercise.
+      const existing = this.pageIndex?.pages[uuid];
+      if (this.pageIndex && existing) {
+        this.pageIndex.deletedPages ??= {};
+        this.pageIndex.deletedPages[uuid] = {
+          ...existing,
+          deletedAt: new Date().toISOString(),
+          deletedBy,
+          deletedFrom: sourcePath
+        };
+        delete this.pageIndex.pages[uuid];
+        this.pageIndex.pageCount = Object.keys(this.pageIndex.pages).length;
+        await this.savePageIndex();
       }
 
-      // Remove from page index
-      await this.removePageFromIndex(uuid);
-
-      logger.info(`[VersioningFileProvider] Deleted page '${identifier}' with all versions`);
+      logger.info(
+        `[VersioningFileProvider] Soft-deleted page '${identifier}' (${uuid}) by ${deletedBy}; ` +
+        'versions retained for restore'
+      );
       return true;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error(`[VersioningFileProvider] Failed to delete page: ${identifier}`, { error: errorMessage });
       return false;
     }
+  }
+
+  /**
+   * Directory holding soft-deleted page files for a storage location (#947).
+   *
+   * Private pages land in the same `pages/deleted/` directory as public ones
+   * rather than keeping their `private/{creator}/` nesting — the tombstone
+   * records the original path in `deletedFrom`, so restore puts the file back
+   * exactly where it came from without the trash layout having to mirror the
+   * live one.
+   */
+  private getDeletedDirectory(location: 'pages' | 'required-pages' | 'private'): string {
+    const base = location === 'required-pages'
+      ? this.requiredPagesDirectory
+      : this.pagesDirectory;
+
+    if (!base) {
+      throw new Error('Storage directories not initialized');
+    }
+
+    return path.join(base, 'deleted');
+  }
+
+  /**
+   * List soft-deleted pages, newest deletion first (#947).
+   *
+   * @returns Tombstone records awaiting restore or purge
+   */
+  getDeletedPages(): DeletedPageEntry[] {
+    const deleted = this.pageIndex?.deletedPages;
+    if (!deleted) return [];
+    // Tie-break on title: two pages deleted in the same millisecond are common
+    // (a script, or a user clearing several pages) and an unstable sort makes
+    // the trash listing jump around between requests for no visible reason.
+    return Object.values(deleted).sort((a, b) => {
+      const delta = new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime();
+      return delta !== 0 ? delta : String(a.title).localeCompare(String(b.title));
+    });
+  }
+
+  /**
+   * Restore a soft-deleted page, with its full version history (#947).
+   *
+   * Refuses when the page's title or slug has been claimed by a live page since
+   * the delete. Restoring anyway would put two pages on one title and corrupt
+   * the lookup indexes, and picking a new name silently is worse — the caller
+   * gets a clear conflict and decides.
+   *
+   * @param uuid - UUID of the deleted page
+   * @returns Result describing success, or why the restore was refused
+   */
+  async restoreDeletedPage(uuid: string): Promise<{ ok: true; title: string } | { ok: false; reason: 'not-found' | 'title-conflict' | 'slug-conflict' | 'file-missing' | 'error'; detail?: string }> {
+    const entry = this.pageIndex?.deletedPages?.[uuid];
+    if (!entry || !this.pageIndex) {
+      return { ok: false, reason: 'not-found' };
+    }
+
+    const conflict = this.findLiveNameConflict(entry.title, entry.slug);
+    if (conflict) {
+      logger.warn(
+        `[VersioningFileProvider] Cannot restore ${uuid}: ${conflict} '${conflict === 'title' ? entry.title : entry.slug}' is in use by a live page`
+      );
+      return {
+        ok: false,
+        reason: conflict === 'title' ? 'title-conflict' : 'slug-conflict',
+        detail: conflict === 'title' ? entry.title : entry.slug
+      };
+    }
+
+    const trashPath = path.join(this.getDeletedDirectory(entry.location), `${uuid}.md`);
+    if (!(await fs.pathExists(trashPath))) {
+      logger.error(`[VersioningFileProvider] Tombstone for ${uuid} has no file at ${trashPath}`);
+      return { ok: false, reason: 'file-missing', detail: trashPath };
+    }
+
+    try {
+      await fs.ensureDir(path.dirname(entry.deletedFrom));
+      await fs.move(trashPath, entry.deletedFrom, { overwrite: false });
+
+      // Re-register in the live caches so the page resolves immediately,
+      // without waiting for a provider reload.
+      const raw = await fs.readFile(entry.deletedFrom, this.encoding);
+      const parsed = matter(raw);
+      this.addToCaches(
+        {
+          title: entry.title,
+          uuid,
+          filePath: entry.deletedFrom,
+          metadata: parsed.data as PageFrontmatter
+        },
+        parsed.content
+      );
+
+      const { deletedAt: _deletedAt, deletedBy: _deletedBy, deletedFrom: _deletedFrom, ...live } = entry;
+      this.pageIndex.pages[uuid] = live;
+      delete this.pageIndex.deletedPages?.[uuid];
+      this.pageIndex.pageCount = Object.keys(this.pageIndex.pages).length;
+      await this.savePageIndex();
+
+      logger.info(`[VersioningFileProvider] Restored page '${entry.title}' (${uuid}) with version history`);
+      return { ok: true, title: entry.title };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      logger.error(`[VersioningFileProvider] Failed to restore ${uuid}`, { error: detail });
+      return { ok: false, reason: 'error', detail };
+    }
+  }
+
+  /**
+   * Permanently destroy a soft-deleted page: file, versions and tombstone (#947).
+   *
+   * This is the only path that still does what the old `deletePage` did. It is
+   * never reached by a normal delete — only by an explicit purge or by
+   * retention expiry.
+   *
+   * @param uuid - UUID of the deleted page
+   * @returns True when something was purged
+   */
+  async purgeDeletedPage(uuid: string): Promise<boolean> {
+    const entry = this.pageIndex?.deletedPages?.[uuid];
+    if (!entry || !this.pageIndex) return false;
+
+    try {
+      const trashPath = path.join(this.getDeletedDirectory(entry.location), `${uuid}.md`);
+      await fs.remove(trashPath);
+      await fs.remove(this.getVersionDirectory(uuid, entry.location));
+      delete this.pageIndex.deletedPages?.[uuid];
+      await this.savePageIndex();
+      logger.info(`[VersioningFileProvider] Purged deleted page '${entry.title}' (${uuid}) and its versions`);
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`[VersioningFileProvider] Failed to purge ${uuid}`, { error: errorMessage });
+      return false;
+    }
+  }
+
+  /**
+   * Purge soft-deleted pages past the retention window (#947).
+   *
+   * A retention of 0 disables purging entirely — tombstones are kept until an
+   * admin removes them explicitly.
+   *
+   * @returns Number of pages purged
+   */
+  async purgeExpiredDeletedPages(): Promise<number> {
+    if (!this.deleteRetentionDays || this.deleteRetentionDays <= 0) return 0;
+
+    const cutoff = Date.now() - this.deleteRetentionDays * 24 * 60 * 60 * 1000;
+    let purged = 0;
+
+    for (const entry of this.getDeletedPages()) {
+      if (new Date(entry.deletedAt).getTime() < cutoff) {
+        if (await this.purgeDeletedPage(entry.uuid)) purged++;
+      }
+    }
+
+    if (purged > 0) {
+      logger.info(`[VersioningFileProvider] Purged ${purged} page(s) past the ${this.deleteRetentionDays}-day delete retention`);
+    }
+    return purged;
   }
 
   /**

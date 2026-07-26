@@ -187,27 +187,12 @@ describe('VersioningFileProvider - Write Queue', () => {
     expect(written.pageCount).toBe(1);
   });
 
-  test('removePageFromIndex triggers serialized save', async () => {
-    // First add a page
-    provider['pageIndex'].pages['to-remove'] = {
-      title: 'Remove Me',
-      uuid: 'to-remove',
-      currentVersion: 1,
-      location: 'pages',
-      lastModified: new Date().toISOString(),
-      editor: 'test',
-      hasVersions: true
-    };
-    provider['pageIndex'].pageCount = 1;
-    await provider['savePageIndex']();
-
-    // Now remove it
-    await provider['removePageFromIndex']('to-remove');
-
-    const written = await fs.readJson(indexPath);
-    expect(written.pages['to-remove']).toBeUndefined();
-    expect(written.pageCount).toBe(0);
-  });
+  // The former `removePageFromIndex triggers serialized save` test was removed
+  // with #947: that method no longer exists, because a delete now MOVES the
+  // index entry into `deletedPages` rather than dropping it. The replacement
+  // coverage lives in VersioningFileProvider.test.ts, which runs a real
+  // initialize() — this harness hand-wires only the fields savePageIndex needs,
+  // so it cannot exercise a full delete.
 
   test('savePageIndex throws if page index not initialized', async () => {
     provider['pageIndex'] = null;

@@ -144,7 +144,7 @@ abstract class BasePageProvider {
    * @param {string} identifier - Page UUID or title
    * @returns {Promise<boolean>} True if deleted, false if not found
    */
-  abstract deletePage(identifier: string): Promise<boolean>;
+  abstract deletePage(identifier: string, deletedBy?: string): Promise<boolean>;
 
   /**
    * Move a private page from one creator's directory to another's.
