@@ -587,12 +587,20 @@ class WikiRoutes {
     if (configured) {
       const page = await pageManager.getPage(configured);
       if (!page) {
-        // Loud: the operator named a page that does not exist. Falling through
-        // to the legacy chain here would hide the misconfiguration behind a
-        // page they did not choose.
-        logger.warn(
+        // ERROR, not warn: this is the operator's OWN configuration naming a
+        // page that does not exist — unambiguous misconfiguration, nobody
+        // else's fault, and site-wide in effect (no nav or no footer on every
+        // page). Same reasoning as #672, which refuses to boot when operator
+        // config names a nonexistent addon. We stop short of failing boot
+        // because chrome degrades rather than breaking, but it must not be
+        // filed alongside routine warnings.
+        //
+        // Deliberately does NOT fall through to the legacy chain: silently
+        // substituting a page the operator did not choose is the exact problem
+        // this config removes (#952).
+        logger.error(
           `[${label}] ${configKey} is set to '${configured}' but no such page exists — ` +
-          `${label} will be empty. Fix the setting or create the page.`
+          `${label} will be empty on every page. Fix the setting or create the page.`
         );
       }
       return page ?? null;
@@ -610,6 +618,14 @@ class WikiRoutes {
       }
       return page;
     }
+
+    // Nothing found via the legacy chain either. Warn rather than error: on a
+    // fresh instance this simply means the page has not been created yet,
+    // which is not a misconfiguration.
+    logger.warn(
+      `[${label}] No ${label} page found (tried ${legacySlugs.map(s => `'${s}'`).join(', ')}) — ` +
+      `${label} will be empty. Create one, or set ${configKey}.`
+    );
     return null;
   }
 
@@ -831,9 +847,9 @@ class WikiRoutes {
         ['left-menu-content', 'LeftMenu'],
         'LeftMenu'
       );
-      if (!leftMenuPage) {
-        logger.warn('[LeftMenu] LeftMenu page not found — sidebar will be empty. Create a "LeftMenu" page to populate navigation.');
-      }
+      // #952: resolveChromePage owns the diagnostics — a second message here
+      // told the operator to create a "LeftMenu" page even when the config
+      // pointed at a different page entirely, which was actively misleading.
       const leftMenuContent = leftMenuPage?.content ?? null;
       logger.info(
         `[TEMPLATE] Loading LeftMenu for user=${
