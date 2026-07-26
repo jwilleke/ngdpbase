@@ -25,21 +25,36 @@ const sessionHeaders = async (request) => ({
 });
 
 /**
- * Whether agent tokens are available on the instance under test.
+ * Whether agent tokens actually WORK on the instance under test.
  *
- * The feature ships DISABLED (`ngdpbase.auth.agent-token.enabled: false`), so
- * "off" is the default state of any instance — jimstest enables it, The
- * Fairways does not. Probing `GET /api/tokens` is the precise check: it answers
- * 200 only when the feature is on for this caller.
+ * Not "can I mint one" — that is the wrong question, and asking it is what made
+ * this spec fail on The Fairways during v3.70.0 propagation. Minting succeeds
+ * even when the feature is disabled (#981), so a mint probe reports available
+ * on instances where no token can ever authenticate.
  *
- * The first version of this spec guessed at the disabled-state status codes
- * (404/501) and guessed wrong — the route answers 403 — so every test ran
- * against a feature that was not there and the suite failed on The Fairways
- * during release propagation. Probe the real thing instead of enumerating codes.
+ * The honest check is end to end: mint, then make one bearer-authenticated
+ * request and see whether the middleware recognised it. When the provider is
+ * unregistered the request never gets `req.bearerAuth`, falls through to the
+ * CSRF guard, and comes back 403 "invalid CSRF token" — which is exactly the
+ * misleading symptom #981 is about.
  */
-async function tokensAvailable(request) {
+async function tokensUsable(request): Promise<boolean> {
   try {
-    return (await request.get('/api/tokens', { headers: await sessionHeaders(request) })).status() === 200;
+    const res = await request.post('/api/tokens', {
+      headers: { ...(await sessionHeaders(request)), 'Content-Type': 'application/json' },
+      data: { name: `${PREFIX}-probe`, scopes: ['page-read'], ttlHours: 1 }
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!body.success) return false;
+
+    // A GET is enough: it proves the bearer middleware authenticated the token.
+    const probe = await request.get('/api/tokens', {
+      headers: { Authorization: `Bearer ${body.token}`, Accept: 'application/json' }
+    });
+    const ok = probe.status() === 200;
+
+    await request.delete(`/api/tokens/${body.record?.id}`, { headers: await sessionHeaders(request) }).catch(() => {});
+    return ok;
   } catch {
     return false;
   }
@@ -97,7 +112,7 @@ test.describe('#946 slice 2 — agent token page mutations', () => {
   // page-conflict case does not mint, so it would otherwise run alone against an
   // instance with no token feature at all and prove nothing useful.
   test.beforeEach(async ({ request }) => {
-    test.skip(!(await tokensAvailable(request)), 'agent tokens disabled on this instance');
+    test.skip(!(await tokensUsable(request)), 'agent tokens not usable on this instance (see #981)');
   });
 
   test.afterEach(async ({ request }) => {
