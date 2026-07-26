@@ -1,5 +1,5 @@
 import { test as setup, expect } from '@playwright/test';
-import { waitForServerReady } from './fixtures/helpers';
+import { waitForServerReady, TEST_PAGE_PREFIX } from './fixtures/helpers';
 
 const STORAGE_STATE = './tests/e2e/.auth/user.json';
 
@@ -40,4 +40,49 @@ setup('authenticate', async ({ page }) => {
 
   // Save authentication state
   await page.context().storageState({ path: STORAGE_STATE });
+
+  // #947: sweep away soft-deleted test pages left by earlier runs.
+  //
+  // deletePage() purges each page it deletes, so a current run cleans up after
+  // itself. This catches the back-catalogue: runs from before that landed, and
+  // any run where the purge step failed. Without it those tombstones and their
+  // version directories sit in storage for the whole retention window — the
+  // same slow accumulation as #724, one level down where nobody looks.
+  //
+  // Scoped strictly to the NGDPBASE-test prefix. It must never purge anything
+  // else: the suite runs against real instances, and a blanket trash-empty
+  // would destroy genuinely deleted pages an operator was still holding.
+  await purgeStaleTestPages(page);
 });
+
+/**
+ * Purge soft-deleted pages matching the E2E test prefix (#947).
+ *
+ * Best-effort: a provider without soft delete answers 501, and a failure here
+ * is storage hygiene, not correctness — it must never block the suite.
+ *
+ * @param {import('@playwright/test').Page} page - Authenticated page
+ */
+async function purgeStaleTestPages(page) {
+  try {
+    const listRes = await page.request.get('/api/admin/deleted-pages');
+    if (listRes.status() !== 200) return;
+
+    const body = await listRes.json();
+    const stale = (body.pages || []).filter((p) => String(p.title).startsWith(TEST_PAGE_PREFIX));
+    if (stale.length === 0) return;
+
+    const tokenRes = await page.request.get('/login');
+    const match = (await tokenRes.text()).match(/<meta name="csrf-token" content="([^"]+)"/);
+    if (!match) return;
+
+    for (const entry of stale) {
+      await page.request.delete(`/api/admin/deleted-pages/${encodeURIComponent(entry.uuid)}`, {
+        headers: { Accept: 'application/json', 'X-CSRF-Token': match[1] }
+      });
+    }
+    console.log(`[auth.setup] Purged ${stale.length} stale ${TEST_PAGE_PREFIX}-* tombstone(s)`);
+  } catch {
+    // Never fail the suite over cleanup of prior runs.
+  }
+}
