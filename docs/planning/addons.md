@@ -224,6 +224,14 @@ Live list. Tick as they settle. Recommendations are mine; override freely.
 - [x] **27. Chrome fragments are ACL-evaluated as destinations** — filed as **#950** (bug/P2). A permission decision on a fragment blanks the sidebar/footer site-wide, silently (`WikiRoutes.ts:779`, `:829`). Latent — needs a trigger, and the default catalog has no deny rules — hence P2 rather than P1.
 - [ ] **25. Feature-UI fragility** — `myjournal` *is* the journal screen and nothing regenerates it if deleted. Leave as pages / promote to routes / regenerate-if-missing.
 
+### Page identity (§10)
+
+- [x] **28. uuid in frontmatter, slug in the source filename, uuid in the instance store** — the two are separate questions. Seeder ignores filenames, so uuid source filenames cost readability for no functional gain. `geohazardwatch` has the right convention; the bundled addons are the outliers.
+- [x] **29. The addon owns the uuid and it stays mandatory** — identity must be stable and global, decided by the publisher. Platform-generated uuids would be instance-local and unmatched across installs.
+- [x] **30. Duplicate-uuid gap** — filed as **#951** (bug/P2).
+- [ ] **31. Missing uuid should fail loudly** — currently `logger.warn`; consider fail-fast for `type: 'domain'`, per the #672 precedent.
+- [ ] **32. Scaffolder should stamp uuids** (#675) and CI should assert `basename(file) === frontmatter.slug`.
+
 ### Parked unless revisited
 
 - [ ] **14. `capabilities[]`.** The "never two domain addons" decision substantially weakens the case —
@@ -393,3 +401,57 @@ Options, not yet decided:
 ### Incidental finding
 
 `system-category` is inconsistent in the `geohazardwatch` source — some pages declare `addon`, several declare nothing at all. Since `findOrphanedAddonPages` narrows candidates via `searchByCategory('addon')`, any page not carrying that exact category is invisible to orphan detection. Re-categorising per this decision would make that hole worse, not better, which is a further argument for keying orphan detection on the `addon` field instead (§7 item 12).
+
+---
+
+## 10. Page identity: uuid and filenames (2026-07-26)
+
+Two decisions that are easy to conflate but are not the same question.
+
+### DECISION: uuid in frontmatter, slug in the filename
+
+| | Convention | Audience |
+|---|---|---|
+| **Identity** | frontmatter `uuid`, supplied by the addon author | machines |
+| **Addon source filename** | `<slug>.md` | humans reviewing a git repo |
+| **Instance store filename** | `<uuid>.md` | machines |
+
+The instance store is machine-managed, so uuid filenames are right there: stable across renames, collision-free, never needing a rename when a slug changes. That is settled and unchanged.
+
+Addon source is **human-authored and code-reviewed**, so slug filenames are right there:
+
+- a PR diff showing `geohazardwatch-home.md` is reviewable; one showing `4bf246b9-ebcc-4774-8175-427c275d407c.md` is not
+- `git log --follow left-menu-content.md` is meaningful history; on a uuid filename it is meaningless
+- blame, merge conflicts and directory listings all degrade to opacity under uuids
+
+And critically, **the seeder ignores filenames entirely** — it globs `*.md` and keys on frontmatter `uuid`, falling back to `slug`. Uuid filenames in source therefore buy nothing functional.
+
+This makes `geohazardwatch` the correct convention and the four bundled addons the outliers, which is the opposite of the initial framing of "addons seed pages which are not uuid". Identity is already uuid-governed everywhere; only the *filename* differs.
+
+Note #908 ("orphaned slug-named files") was about the **instance store**, not addon source, so it does not argue for uuid source filenames.
+
+### DECISION: the addon owns the uuid, and it stays mandatory
+
+`AddonsManager` already requires a valid frontmatter `uuid` and skips pages without one (~L698). That is correct and should stay.
+
+The uuid is the page's identity **across every instance that installs the addon**, which is what makes the update model possible at all:
+
+- reseed needs "this page, the one I shipped last time" — matched by uuid so a slug rename does not orphan it
+- orphan detection compares the source uuid set against instance pages' uuids
+- one page shipped to fifty instances stays *the same page* everywhere
+
+The alternative — platform generates a uuid on first seed — sounds friendlier but is strictly worse: the uuid becomes instance-local, the same page acquires fifty identities, and nothing can be matched across them. That forces a fallback to slug matching, which breaks on rename.
+
+The right analogy is a package name: the **publisher** owns it, decides it once, and never changes it.
+
+### Gaps in enforcement
+
+The design is right; the enforcement is too quiet.
+
+1. **No duplicate-uuid guard.** The seed loop has none. Two source pages sharing a uuid — the obvious copy-paste mistake when creating a page — means the second matches the first's already-seeded page and is silently skipped or reseeded over. One page simply never appears, with nothing logged as an error. Cross-addon collisions have the same shape and are worse, since neither addon knows about the other. **Filed as #951.**
+2. **A missing uuid is only a `logger.warn`.** For a domain addon whose home page fails to appear, that is a boot-level problem reported at warn level. Arguably should follow the #672 fail-fast precedent, at least for `type: 'domain'`.
+3. **No tooling to generate one.** Authors hand-roll uuids, which is exactly why copy-paste duplicates happen. The addon scaffolder (#675) should stamp a fresh uuid into every generated page — the real fix for both problems above, since it removes the manual step.
+
+### Guardrail
+
+With slug filenames, the filename can drift from frontmatter `slug` after a rename. A CI or scaffolder check asserting `basename(file) === frontmatter.slug` keeps the human-legible convention honest without giving up uuid identity.
