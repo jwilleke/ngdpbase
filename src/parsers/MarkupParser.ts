@@ -1532,7 +1532,10 @@ class MarkupParser extends BaseManager {
     // them intact). Substituting a same-length sentinel for `%` preserves
     // every offset while making the span invisible to the style patterns.
     // Restored immediately after block extraction, before backtick handling.
-    const CODE_PCT = ' ';
+    //
+    // Written as an escape, never as a literal NUL byte in this file: a raw NUL
+    // makes grep treat MarkupParser.ts as binary and silently suppress matches.
+    const CODE_PCT = '\u0000';
     sanitized = sanitized.replace(/`[^`\n]*`/g, (span) => span.replace(/%/g, CODE_PCT));
 
     // #907: inline styles %%(css)…/%, %%sup…/%, %%sub…/%, %%strike…/% become
@@ -1645,8 +1648,28 @@ class MarkupParser extends BaseManager {
     // Both style extractors have run, so the sentinel has served its purpose
     // and the literal text must be intact before backtick handling turns these
     // spans into <code>.
+    // The sweep must cover the extracted elements too, not just `sanitized`.
+    // Both extractors above MOVE text out of `sanitized` into ExtractedElement
+    // fields, so a masked `%` that was carried into an element's content would
+    // survive every later pass and reach the browser as a raw NUL byte. That is
+    // exactly what shipped in the first cut of this fix: the page rendered
+    // correctly (0 leaks, all code spans intact) while emitting 40 stray NULs.
+    // Un-masking is 1 char -> 1 char, so no recorded offset moves.
+    const unmask = (value: string): string => value.split(CODE_PCT).join('%');
     if (sanitized.includes(CODE_PCT)) {
-      sanitized = sanitized.split(CODE_PCT).join('%');
+      sanitized = unmask(sanitized);
+    }
+    for (const element of jspwikiElements) {
+      const fields = element as unknown as Record<string, unknown>;
+      for (const [key, value] of Object.entries(fields)) {
+        if (typeof value === 'string' && value.includes(CODE_PCT)) {
+          fields[key] = unmask(value);
+        } else if (Array.isArray(value)) {
+          fields[key] = (value as unknown[]).map((item) =>
+            typeof item === 'string' && item.includes(CODE_PCT) ? unmask(item) : item
+          );
+        }
+      }
     }
 
     // Inline code spans — CommonMark variable-length backtick delimiters

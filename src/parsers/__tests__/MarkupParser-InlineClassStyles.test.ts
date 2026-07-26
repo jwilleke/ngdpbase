@@ -302,4 +302,33 @@ describe('code spans are opaque to style extraction (#940/#944)', () => {
     expect(result).toContain('<span class="lead">yes please</span>');
     expect(result).toContain('%%lead nope/%');
   });
+
+  // The masking sentinel must never reach the output. The first cut of this fix
+  // un-masked only the working buffer, not the text the extractors had already
+  // MOVED into ExtractedElement fields, so the live page rendered perfectly —
+  // 0 leaks, every code span intact — while emitting 40 raw NUL bytes. Every
+  // existing assertion above passed, because a NUL is invisible to `toContain`.
+  const SENTINEL = '\u0000';
+
+  test.each([
+    ['single-line reproducer', 'you can use %%tip Use the `%~%style../%` markup.'],
+    ['cross-line reproducer',
+      'you can use %%tip-a Use the `%~%style../%` markup. \\\n' +
+      'And even add or %%tip-b overwriting .header , .footer, etc. /% styles with `%~%add-css`.'],
+    ['style run wholly inside backticks', 'x `%%strike Some text here /%` y'],
+    ['bare percents in a code span', '`100% of %% and /%` done'],
+    ['style inside and outside backticks', '`%%lead nope/%` and %%lead yes please/%'],
+    ['code span inside a table cell', '| a | `%%lead x/%` | %%lead y here/% |']
+  ])('emits no masking sentinel: %s', async (_name, input) => {
+    expect(await p.parse(input)).not.toContain(SENTINEL);
+  });
+
+  test('percent inside a code span carried into a style body is restored', async () => {
+    // The exact path that leaked: the `%` is masked, then the inline-style
+    // extractor moves the whole body into an element, so un-masking `sanitized`
+    // alone never touches it.
+    const result = await p.parse('%%lead see the `50%` rate/%');
+    expect(result).not.toContain(SENTINEL);
+    expect(result).toContain('50%');
+  });
 });
