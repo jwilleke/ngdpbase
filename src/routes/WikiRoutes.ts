@@ -3866,6 +3866,37 @@ ${panes}
    * Delete a page
    */
   /**
+   * Resolve an addon page's identity from its source (#964).
+   *
+   * An addon page's identity is its **frontmatter uuid**, never its filename.
+   * Addon sources ship under descriptive, human-reviewable names
+   * (`geohazardwatch-hans.md`) — and per `docs/planning/addons.md` §10 that is
+   * the *correct* convention, because a PR diff and `git log --follow` on a
+   * slug filename are reviewable where a uuid filename is opaque. Only
+   * `required-pages/` is uuid-named, and there the filename genuinely is the
+   * identity.
+   *
+   * Deriving the uuid from an addon filename produced a fake identity like
+   * `"geohazardwatch-hans"`, compared it against `data/pages/geohazardwatch-hans.md`
+   * — a path that never exists — so every such page showed as `new` forever and
+   * a sync wrote a duplicate under the wrong filename.
+   *
+   * Note this is invisible on any instance whose addons all happen to use uuid
+   * filenames, which is why it went unnoticed: the four bundled addons do.
+   *
+   * @param sourceContent - Raw addon page file contents
+   * @returns The frontmatter uuid, or '' when absent or unparseable
+   */
+  static addonSourceUuid(sourceContent: string): string {
+    try {
+      const uuid = matter(sourceContent).data?.uuid;
+      return typeof uuid === 'string' ? uuid.trim() : '';
+    } catch {
+      return '';
+    }
+  }
+
+  /**
    * Log loudly when a permission decision blanks site chrome (#950).
    *
    * `LeftMenu` and `Footer` are fragments rendered into every page, not
@@ -9364,19 +9395,35 @@ ${panes}
           const addonFiles: string[] = (await fse.readdir(pagesDir)).filter((f: string) => f.endsWith('.md'));
 
           for (const file of addonFiles) {
-            const uuid = path.basename(file, '.md');
             const sourcePath = path.join(pagesDir, file);
             const sourceContent: string = await fse.readFile(sourcePath, 'utf8');
 
-            let title = uuid;
+            // #964: an addon page's identity is its FRONTMATTER uuid, never its
+            // filename. Addon sources ship under descriptive, human-reviewable
+            // names (`geohazardwatch-hans.md`) — unlike `required-pages/`, where
+            // the filename genuinely is the uuid. Deriving the uuid from the
+            // filename produced a fake identity like "geohazardwatch-hans" and
+            // then compared against `data/pages/geohazardwatch-hans.md`, a path
+            // that never exists, so every addon page showed as `new` forever and
+            // syncing wrote a duplicate under the wrong filename.
+            let uuid = WikiRoutes.addonSourceUuid(sourceContent);
+            let title = file;
             let slug = '';
             let lastModified = '';
             try {
               const { data } = matter(sourceContent);
-              title = (data.title as string) || uuid;
+              title = (data.title as string) || file;
               slug = (data.slug as string) || '';
               lastModified = (data.lastModified as string) || '';
             } catch { /* use defaults */ }
+            uuid = uuid || '';
+
+            if (!uuid) {
+              // Mandatory and addon-owned (#951). Without it there is nothing to
+              // compare against, so skip rather than invent an identity.
+              logger.warn(`[admin/required-pages] Skipping ${addonName}/pages/${file} — no frontmatter uuid (#964)`);
+              continue;
+            }
             if (!lastModified) {
               try {
                 const stat = await fse.stat(sourcePath);
@@ -9384,7 +9431,9 @@ ${panes}
               } catch { /* leave empty */ }
             }
 
-            const destPath = path.join(pagesDirResolved, file);
+            // The instance store is uuid-named, so the destination is
+            // `<uuid>.md` — not the addon's source filename.
+            const destPath = path.join(pagesDirResolved, `${uuid}.md`);
             let status: 'new' | 'modified' | 'current';
             let userModified = false;
 
@@ -9516,11 +9565,16 @@ ${panes}
         for (const { name: addonName, pagesDir } of addonsManagerPost.getEnabledAddonPagesDirectories()) {
           if (await fse.pathExists(pagesDir)) {
             for (const f of (await fse.readdir(pagesDir))) {
-              if (f.endsWith('.md')) {
-                const u = path.basename(f, '.md');
-                sourceFileMap.set(u, path.join(pagesDir, f));
-                addonSourceUuids.set(u, addonName);
+              if (!f.endsWith('.md')) continue;
+              // #964: key on the frontmatter uuid, not the source filename.
+              const full = path.join(pagesDir, f);
+              const u = WikiRoutes.addonSourceUuid(await fse.readFile(full, 'utf8'));
+              if (!u) {
+                logger.warn(`[admin/required-pages] Skipping ${addonName}/pages/${f} — no frontmatter uuid (#964)`);
+                continue;
               }
+              sourceFileMap.set(u, full);
+              addonSourceUuids.set(u, addonName);
             }
           }
         }
