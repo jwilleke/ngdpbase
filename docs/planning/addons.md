@@ -220,7 +220,7 @@ Live list. Tick as they settle. Recommendations are mine; override freely.
 - [x] **22. Demo/showcase treated as content** — `general`, instance-owned.
 - [ ] **23. Legal** — `documentation` or `system`. Narrowed to two; identical `storageLocation: required` either way, so labelling only.
 - [x] **24. Site chrome is `system`** — RESOLVED: already a core concept. Core ships `leftmenu`/`footer` as required pages categorised `system`; the addon pages are a slug-convention *override*. No new category needed.
-- [ ] **26. Chrome override should be explicit config, not slug convention** — `ngdpbase.chrome.left-menu-page` / `.footer-page`, set by a domain addon via `domainDefaults`. Today an operator can edit `LeftMenu` and see no effect because `left-menu-content` silently wins.
+- [x] **26. Chrome override should be explicit config, not slug convention** — filed as **#952** (bug/P1). `ngdpbase.chrome.left-menu-page` / `.footer-page`, set by a domain addon via `domainDefaults`. Filed as a bug rather than an enhancement because the current behaviour actively misleads: an operator edits `LeftMenu`, the save succeeds, and nothing changes because `left-menu-content` silently wins. Unlike #950 it needs **no trigger** — it is live today wherever an addon ships chrome pages.
 - [x] **27. Chrome fragments are ACL-evaluated as destinations** — filed as **#950** (bug/P2). A permission decision on a fragment blanks the sidebar/footer site-wide, silently (`WikiRoutes.ts:779`, `:829`). Latent — needs a trigger, and the default catalog has no deny rules — hence P2 rather than P1.
 - [ ] **25. Feature-UI fragility** — `myjournal` *is* the journal screen and nothing regenerates it if deleted. Leave as pages / promote to routes / regenerate-if-missing.
 
@@ -358,7 +358,7 @@ The override is a **slug convention** — implicit, undiscoverable, and silently
 
 That is live today on geohazardwatch. It is arguably a worse trap than anything in the update story, because the operator's action appears to succeed.
 
-**Proposed:** make the override explicit configuration rather than convention.
+**Filed as #952 (bug/P1).** Make the override explicit configuration rather than convention.
 
 ```jsonc
 "ngdpbase.chrome.left-menu-page": "leftmenu",   // core default
@@ -366,6 +366,8 @@ That is live today on geohazardwatch. It is arguably a worse trap than anything 
 ```
 
 A domain addon points these at its own pages via `domainDefaults` — which exists precisely so an addon can set instance config the operator can still override. That gives one page per job, a discoverable setting, a way to point back at core's version, and an admin surface that can say "LeftMenu is overridden by left-menu-content (geohazardwatch)".
+
+Rated P1 — higher than #950 — because it needs no trigger. #950 is latent (it requires someone to restrict a chrome page, and the default catalog has no deny rules); this one is live on any instance running an addon that ships chrome pages, `geohazardwatch` included. The two are the same two pages with unrelated causes.
 
 #### Separate concern: fragments run through the full ACL evaluator
 
