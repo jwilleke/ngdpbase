@@ -361,6 +361,26 @@ export const contactRateLimiter = new SimpleRateLimiter({ max: 5, windowMs: 15 *
  */
 export const shareRateLimiter = new SimpleRateLimiter({ max: 600, windowMs: 10 * 60 * 1000 });
 
+/**
+ * Rate limiter for token-authenticated page mutations (#946 slice 2), keyed by
+ * token id so one runaway agent cannot starve another.
+ *
+ * Deferred in slice 1 on the grounds that ingest is an idempotent upsert — a
+ * repeated create/edit converges. Delete and rename are neither idempotent nor
+ * self-correcting, and a token runs unattended for up to 24 hours, so a loop
+ * has real consequences.
+ *
+ * #947 softened the worst case considerably: a delete is now recoverable for
+ * the retention window rather than destroying version history outright. That
+ * lowers the severity but does not remove the need — a delete loop still churns
+ * every page it touches into the trash, and rename has no such safety net at
+ * all.
+ *
+ * 60/minute is far above any legitimate agent editing rate and far below what
+ * a runaway loop would produce.
+ */
+export const agentMutationRateLimiter = new SimpleRateLimiter({ max: 60, windowMs: 60 * 1000 });
+
 const imageStorage: StorageEngine = multer.diskStorage({
   destination: (_req: Request, _file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {
     const uploadDir = path.join(__dirname, '../../public/images');
@@ -3843,6 +3863,274 @@ ${panes}
   /**
    * Delete a page
    */
+  /**
+   * Guard shared by the #946 slice-2 mutation endpoints.
+   *
+   * Applies the token rate limit before anything else, then resolves the page
+   * and checks the caller's permission for `action`. Returns null once a
+   * response has been sent.
+   */
+  private async prepareApiPageMutation(
+    req: Request,
+    res: Response,
+    action: 'delete' | 'rename'
+  ): Promise<{ pageData: WikiPage; wikiContext: WikiContext; pageName: string } | null> {
+    const identifier = req.params.identifier;
+
+    if (!req.userContext?.isAuthenticated) {
+      res.status(401).json({ error: 'Authentication required' });
+      return null;
+    }
+
+    // Rate limit token-authenticated mutations only. A human clicking Delete is
+    // bounded by being a human; an unattended token is not.
+    const viaToken = (req.userContext as { viaToken?: { id?: string } }).viaToken;
+    if (viaToken?.id) {
+      const verdict = agentMutationRateLimiter.consume(viaToken.id);
+      if (!verdict.allowed) {
+        res.set('Retry-After', String(Math.ceil(verdict.retryAfterMs / 1000)));
+        res.status(429).json({
+          error: 'Rate limit exceeded',
+          message: `Too many page mutations for this token. Retry in ${Math.ceil(verdict.retryAfterMs / 1000)}s.`
+        });
+        return null;
+      }
+    }
+
+    const pageManager = this.engine.getManager('PageManager');
+    const pageData = await pageManager?.getPage(identifier);
+    if (!pageData) {
+      res.status(404).json({ error: 'Page not found', identifier });
+      return null;
+    }
+
+    // Resolve to the canonical title: the identifier may be a uuid or slug, and
+    // every downstream index is keyed by title.
+    const pageName = (pageData.metadata?.title) || identifier;
+
+    const wikiContext = this.createWikiContext(req, {
+      context: WikiContext.CONTEXT.NONE,
+      pageName,
+      response: res
+    });
+    (wikiContext as { pageMetadata: unknown }).pageMetadata = pageData.metadata ?? null;
+    (wikiContext as { content: string | null }).content = pageData.content;
+
+    // Required pages stay admin-only, matching the form route.
+    if (await this.isRequiredPage(pageName)) {
+      const userManager = this.engine.getManager('UserManager');
+      const isAdmin = await userManager?.hasPermission(req.userContext.username, 'admin-system');
+      if (!isAdmin) {
+        res.status(403).json({ error: 'Access denied', message: 'Only administrators can modify this page' });
+        return null;
+      }
+      return { pageData, wikiContext, pageName };
+    }
+
+    const allowed = await this.engine
+      .getManager('ACLManager')
+      ?.checkPagePermissionWithContext(wikiContext, action);
+    if (!allowed) {
+      res.status(403).json({ error: 'Access denied', message: `You do not have permission to ${action} this page` });
+      return null;
+    }
+
+    return { pageData, wikiContext, pageName };
+  }
+
+  /**
+   * DELETE /api/page/:identifier — delete a page (#946 slice 2).
+   *
+   * The JSON counterpart to `POST /delete/:page`. Slice 1 shipped tokens that
+   * could carry `page-delete`, but nothing behind it: deletion existed only as
+   * a session/form-shaped route returning HTML or a redirect. Letting agents
+   * drive that would have worked mechanically — bearer requests are CSRF-exempt
+   * — but it is an accidental API with no stable contract.
+   *
+   * Since #947 a delete is recoverable for the retention window, so this is no
+   * longer the irreversible operation the original slice-2 analysis assumed.
+   */
+  async apiDeletePage(req: Request, res: Response) {
+    const _metricsStart = Date.now();
+    try {
+      const prepared = await this.prepareApiPageMutation(req, res, 'delete');
+      if (!prepared) return;
+      const { pageData, wikiContext, pageName } = prepared;
+
+      const uuid = (pageData.metadata as { uuid?: string } | undefined)?.uuid ?? pageName;
+      const referringPages = this.engine.getManager('RenderingManager')?.getReferringPages(pageName) ?? [];
+
+      await this.auditPageDelete(req, wikiContext, pageName, uuid);
+
+      const deleted = await this.engine.getManager('PageManager')?.deletePageWithContext(wikiContext);
+      if (!deleted) {
+        return res.status(500).json({ error: 'Delete failed', pageName });
+      }
+
+      await this.reconcileIndexesAfterDelete(pageName, uuid, referringPages);
+      this.engine.getManager('MetricsManager')?.recordPageDelete?.(Date.now() - _metricsStart);
+
+      logger.info(`[WikiRoutes] API delete of '${pageName}' (${uuid}) by ${req.userContext!.username}`);
+      return res.json({ success: true, pageName, uuid, recoverable: true });
+    } catch (error: unknown) {
+      logger.error(`API delete failed: ${getErrorMessage(error)}`);
+      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+    }
+  }
+
+  /**
+   * POST /api/page/:identifier/rename — rename a page (#946 slice 2).
+   *
+   * Body: `{ "newTitle": "..." }`
+   *
+   * There was no rename route at all before this — renaming was a side effect
+   * of saving with a changed `metadata.title`, reachable only through the edit
+   * form. This exposes it directly and reuses that same save path, so rename
+   * semantics stay identical however they are invoked.
+   *
+   * Unlike delete, a rename has no safety net: #947 does not cover it, and the
+   * old title is simply gone. Hence the conflict check below.
+   */
+  async apiRenamePage(req: Request, res: Response) {
+    try {
+      const prepared = await this.prepareApiPageMutation(req, res, 'rename');
+      if (!prepared) return;
+      const { pageData, wikiContext, pageName } = prepared;
+
+      const newTitle = typeof req.body?.newTitle === 'string' ? req.body.newTitle.trim() : '';
+      if (!newTitle) {
+        return res.status(400).json({ error: 'newTitle is required' });
+      }
+      if (newTitle === pageName) {
+        return res.status(400).json({ error: 'newTitle is the same as the current title' });
+      }
+
+      const pageManager = this.engine.getManager('PageManager');
+
+      // Refuse rather than overwrite. Saving onto an existing title would merge
+      // two pages into one and lose the target's content silently.
+      const existing = await pageManager?.getPage(newTitle);
+      if (existing) {
+        return res.status(409).json({
+          error: 'Title already in use',
+          message: `A page titled '${newTitle}' already exists`
+        });
+      }
+
+      const oldReferringPages = this.engine.getManager('RenderingManager')?.getReferringPages(pageName) ?? [];
+      const metadata = { ...(pageData.metadata ?? {}), title: newTitle };
+
+      (wikiContext as { content: string | null }).content = pageData.content;
+      await pageManager.savePageWithContext(wikiContext, metadata);
+
+      // Same index reconciliation the form save performs on a rename.
+      const renderingManager = this.engine.getManager('RenderingManager');
+      const searchManager = this.engine.getManager('SearchManager');
+      renderingManager?.removePageFromLinkGraph(pageName);
+      renderingManager?.addPageToCache(newTitle);
+      renderingManager?.updatePageInLinkGraph(newTitle, pageData.content);
+      await searchManager?.removePageFromIndex(pageName);
+      await searchManager?.updatePageInIndex(newTitle, {
+        name: newTitle,
+        content: pageData.content,
+        metadata
+      });
+
+      const cacheManager = this.engine.getManager('CacheManager');
+      if (cacheManager?.isInitialized?.()) {
+        // The uuid is stable across a rename, so one clear covers both titles.
+        const uuid = pageManager?.getPageUUID?.(newTitle) ?? newTitle;
+        await cacheManager.clear(undefined, `rendered-pages:${uuid}:*`);
+        for (const refPage of oldReferringPages) {
+          const refUUID = pageManager?.getPageUUID?.(refPage) ?? refPage;
+          await cacheManager.clear(undefined, `rendered-pages:${refUUID}:*`);
+        }
+      }
+
+      logger.info(`[WikiRoutes] API rename '${pageName}' → '${newTitle}' by ${req.userContext!.username}`);
+      return res.json({ success: true, from: pageName, to: newTitle });
+    } catch (error: unknown) {
+      logger.error(`API rename failed: ${getErrorMessage(error)}`);
+      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+    }
+  }
+
+  /**
+   * Drop a deleted page from every derived index and cache (#946 slice 2).
+   *
+   * Extracted from {@link deletePage} so the JSON API delete performs exactly
+   * the same reconciliation. Two copies of this would drift, and the symptom of
+   * drift is a deleted page that still appears in search — silent and slow to
+   * notice.
+   *
+   * @param pageName - Title the page was deleted under
+   * @param uuid - Page uuid, captured before deletion emptied the cache
+   * @param referringPages - Pages that linked to it, captured before the link graph entry went
+   */
+  private async reconcileIndexesAfterDelete(
+    pageName: string,
+    uuid: string,
+    referringPages: string[]
+  ): Promise<void> {
+    logger.debug('🔄 Updating indexes after deletion...');
+    const pageManager = this.engine.getManager('PageManager');
+    this.engine.getManager('RenderingManager')?.removePageFromLinkGraph(pageName);
+    await this.engine.getManager('SearchManager')?.removePageFromIndex(pageName);
+
+    // Clear rendered cache for deleted page and any pages that linked to it
+    const cacheManager = this.engine.getManager('CacheManager');
+    if (cacheManager?.isInitialized?.()) {
+      await cacheManager.clear(undefined, `rendered-pages:${uuid}:*`);
+      for (const refPage of referringPages) {
+        const refUUID = pageManager?.getPageUUID?.(refPage) ?? refPage;
+        await cacheManager.clear(undefined, `rendered-pages:${refUUID}:*`);
+      }
+    }
+  }
+
+  /**
+   * Record a delete in the audit trail BEFORE it executes (#946 slice 2).
+   *
+   * Deliberately pre-execution: the audit entry has to survive the thing it
+   * describes. It captures the page name, uuid and — when the caller is an
+   * agent — the token id, so a destructive token can be traced to the token
+   * rather than only to the user who minted it.
+   *
+   * Best-effort: a failing audit backend must not block the delete.
+   */
+  private async auditPageDelete(
+    req: Request,
+    wikiContext: { userContext?: { username?: string } | null },
+    pageName: string,
+    uuid: string
+  ): Promise<void> {
+    try {
+      const auditManager = this.engine.getManager('AuditManager') as {
+        logAuditEvent?: (event: Record<string, unknown>) => Promise<string>;
+      } | null;
+      if (!auditManager?.logAuditEvent) return;
+
+      const viaToken = (req.userContext as { viaToken?: { id?: string; name?: string } } | undefined)?.viaToken;
+
+      await auditManager.logAuditEvent({
+        eventType: 'page.delete',
+        user: wikiContext.userContext?.username ?? 'unknown',
+        ipAddress: req.ip,
+        action: 'page-delete',
+        result: 'attempted',
+        severity: viaToken ? 'high' : 'medium',
+        metadata: {
+          pageName,
+          uuid,
+          viaTokenId: viaToken?.id ?? null,
+          viaTokenName: viaToken?.name ?? null
+        }
+      });
+    } catch (auditErr) {
+      logger.warn(`Audit log failed for page.delete of '${pageName}':`, auditErr);
+    }
+  }
+
   async deletePage(req: Request, res: Response) {
     const _metricsStart = Date.now();
     try {
@@ -3860,7 +4148,6 @@ ${panes}
       const currentUser = wikiContext.userContext;
       const pageManager = this.engine.getManager('PageManager');
       const renderingManager = this.engine.getManager('RenderingManager');
-      const searchManager = this.engine.getManager('SearchManager');
       const userManager = this.engine.getManager('UserManager');
       const aclManager = this.engine.getManager('ACLManager');
 
@@ -3924,25 +4211,18 @@ ${panes}
       // Capture referring pages before deletion removes the link graph entry
       const _deleteRefPages = renderingManager.getReferringPages(pageName);
 
+      // Audit BEFORE the delete executes (#946 slice 2). Writing it afterwards
+      // would lose the page name and uuid on any path where the delete
+      // succeeded but the process died before the audit landed — exactly the
+      // case an investigator needs.
+      await this.auditPageDelete(req, wikiContext, pageName, _deleteUUID);
+
       // Delete the page using WikiContext (includes audit logging with user info)
       const deleteResult = await pageManager.deletePageWithContext(wikiContext);
       logger.debug(`🗑️ Delete result: ${deleteResult}`);
 
       if (deleteResult) {
-        // Use incremental removal instead of full rebuilds for performance
-        logger.debug('🔄 Updating indexes after deletion...');
-        renderingManager.removePageFromLinkGraph(pageName);
-        await searchManager.removePageFromIndex(pageName);
-
-        // Clear rendered cache for deleted page and any pages that linked to it
-        const cacheManager = this.engine.getManager('CacheManager');
-        if (cacheManager?.isInitialized?.()) {
-          await cacheManager.clear(undefined, `rendered-pages:${_deleteUUID}:*`);
-          for (const refPage of _deleteRefPages) {
-            const refUUID = pageManager?.getPageUUID?.(refPage) ?? refPage;
-            await cacheManager.clear(undefined, `rendered-pages:${refUUID}:*`);
-          }
-        }
+        await this.reconcileIndexesAfterDelete(pageName, _deleteUUID, _deleteRefPages);
 
         logger.debug(`✅ Page deleted successfully: ${pageName}`);
         this.engine.getManager('MetricsManager')?.recordPageDelete?.(Date.now() - _metricsStart);
@@ -11445,6 +11725,14 @@ ${panes}
     );
     app.post('/api/page/:identifier/restore/:version', (req: Request, res: Response) =>
       this.restorePageVersion(req, res)
+    );
+
+    // #946 slice 2 — JSON mutation API for agent tokens (and anyone else)
+    app.delete('/api/page/:identifier', (req: Request, res: Response) =>
+      this.apiDeletePage(req, res)
+    );
+    app.post('/api/page/:identifier/rename', (req: Request, res: Response) =>
+      this.apiRenamePage(req, res)
     );
 
     // #947 trash API — admin-only, enforced inside each handler
