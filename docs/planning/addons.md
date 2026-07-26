@@ -185,10 +185,22 @@ Live list. Tick as they settle. Recommendations are mine; override freely.
 
 ### Design — admin-only editing of addon pages
 
-> **DECIDED 2026-07-26: yes, only admins may edit addon pages.** §3 is reinstated as the mechanism
-> (§8's supersession was a reasoning error — see the correction there). Items 4–6, 8 and 9 below
-> adopt their stated recommendations as a consequence; **item 7 remains genuinely open** as a
-> product question.
+> **DECIDED 2026-07-26: yes, only admins may edit addon pages** — principal `admin`, **no new role**.
+> §3 is reinstated as the mechanism (§8's supersession was a reasoning error — see the correction
+> there). All of items 4–9 are now settled.
+>
+> The role ladder already expresses the intent, so nothing new is needed:
+>
+> | Role | Ordinary pages | Addon pages |
+> |---|---|---|
+> | `reader` | read | read |
+> | `contributor` — *the content-admin* | read, create, edit | read only |
+> | `editor` | + delete, rename | read only |
+> | `admin` — unrestricted | everything | **edit** |
+>
+> The point of the stamp is precisely to hold `contributor` and `editor` out of addon pages while
+> leaving them full authority over ordinary content. `view` stays open to everyone (item 8), so
+> addon pages remain readable — they are simply not editable below `admin`.
 
 - [x] **4. Discriminator** — use the `addon` field (unconditionally stamped, `Page.ts:82`),
   NOT `system-category` (unreliable — see §2).
@@ -200,7 +212,7 @@ Live list. Tick as they settle. Recommendations are mine; override freely.
   per-action.
 - [x] **6. Addon override allowed?** Recommend yes — stamp only when the source is silent, mirroring
   how `system-category` defaults, so a domain addon can ship a deliberately community-editable page.
-- [ ] **7. Which principal? — STILL OPEN (product question).** Role `admin` is the working default. Open: do domain sites need a `content-admin` /
+- [x] **7. Which principal? — `admin`. DECIDED 2026-07-26: no new role.** The existing ladder already covers it — `contributor` *is* the content-admin for ordinary pages, and full `admin` is unrestricted ("god"). Inventing a `content-admin` /
   site-owner role distinct from full admin?
 - [x] **8. Does `view` stay open?** Recommend yes — `access` is per-action, so `view` falls through
   to audience/Tier 2 and pages stay publicly readable.
