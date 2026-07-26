@@ -219,7 +219,9 @@ Live list. Tick as they settle. Recommendations are mine; override freely.
 - [x] **21. Help/docs pages are `documentation`.**
 - [x] **22. Demo/showcase treated as content** — `general`, instance-owned.
 - [ ] **23. Legal** — `documentation` or `system`. Narrowed to two; identical `storageLocation: required` either way, so labelling only.
-- [ ] **24. Site chrome** — OPEN. `system`, a new `template`/`chrome` category, or move to the theme layer. Leaning toward a new category: fragments are embedded everywhere and never a destination, unlike every other kind.
+- [x] **24. Site chrome is `system`** — RESOLVED: already a core concept. Core ships `leftmenu`/`footer` as required pages categorised `system`; the addon pages are a slug-convention *override*. No new category needed.
+- [ ] **26. Chrome override should be explicit config, not slug convention** — `ngdpbase.chrome.left-menu-page` / `.footer-page`, set by a domain addon via `domainDefaults`. Today an operator can edit `LeftMenu` and see no effect because `left-menu-content` silently wins.
+- [ ] **27. Chrome fragments are ACL-evaluated as destinations** — a permission decision on a fragment blanks the sidebar/footer site-wide, silently (`WikiRoutes.ts:779`, `:829`). Latent (needs a trigger) but site-wide when it fires. Its own defect, not part of the addon-page work.
 - [ ] **25. Feature-UI fragility** — `myjournal` *is* the journal screen and nothing regenerates it if deleted. Leave as pages / promote to routes / regenerate-if-missing.
 
 ### Parked unless revisited
@@ -322,22 +324,61 @@ All four target categories already exist in the `ngdpbase.system-category` catal
 
 `attribution` is a single page and could reasonably be either. `documentation` if it is read as user-facing reference; `system` if it is treated as a required page the operator must not casually delete. The `storageLocation: required` value is identical for both, so the practical difference is small — it is a labelling question, not a behavioural one.
 
-### Open: Site chrome — the genuinely hard one
+### RESOLVED (2026-07-26): Site chrome is already core, and is `system`
 
-`footer-content` and `left-menu-content` do not fit any existing category, and the reason is structural: **they are the only seeded pages that are rendered *into* other pages rather than visited.** Nobody navigates to `/view/left-menu-content` to read it.
+The question "should site chrome be folded into ngdpbase?" turns out to be already answered — **it is.** Core ships both pages as required pages:
 
-That difference has real consequences today:
+```text
+title: Footer     system-category: system   slug: footer
+title: LeftMenu   system-category: system   slug: leftmenu
+```
 
-- `WikiRoutes.ts` (~L759) loads `left-menu-content` per request and runs it through the full ACL evaluator; on denial it sets `templateData.leftMenu = ''`. A permissions decision on a *fragment* silently empties the sidebar for that user — the failure mode found while investigating #945.
-- They are content-editable, which is desirable (operators want to edit their own nav), but they are also load-bearing, which is not (a broken edit degrades every page on the site).
+and `WikiRoutes` resolves chrome as an **override chain**:
 
-Three candidate resolutions:
+```js
+getPage('left-menu-content') ?? getPage('LeftMenu')   // WikiRoutes.ts:762
+getPage('footer-content')    ?? getPage('Footer')     // WikiRoutes.ts:809
+```
 
-1. **`system`** — matches "infrastructure, not content", reuses an existing category. But conflates platform config pages with view fragments.
-2. **A new `template` / `chrome` category** — honest about the distinct property, and would let the platform treat fragments correctly: skip audience evaluation, fail soft when missing, exclude from search and page listings. Costs a catalog entry and a migration.
-3. **Not pages at all** — move into the theme layer. Most robust, but forfeits the ability for an operator to edit their own navigation through the wiki, which is arguably the point of the platform.
+So chrome is a core concept that core already categorises `system`, and the `geohazardwatch` pages are an *override*, not the primary. **Item 24 closes: chrome is `system`.** An earlier draft of this document leaned toward inventing a `template`/`chrome` category; that was reasoning about the addon pages in isolation without checking that core already owned the concept.
 
-Leaning toward (2): the defining property — embedded everywhere, never a destination — is genuinely unlike the other five, and (1) would hide that inside a category that already means something else.
+#### But the override mechanism is a trap
+
+The override is a **slug convention** — implicit, undiscoverable, and silently authoritative. The failure mode:
+
+> An operator edits `LeftMenu` — the page core ships, categorised `system`, which looks authoritative — and nothing changes on the site, because `left-menu-content` exists and wins. No warning, no indication, two pages for one job.
+
+That is live today on geohazardwatch. It is arguably a worse trap than anything in the update story, because the operator's action appears to succeed.
+
+**Proposed:** make the override explicit configuration rather than convention.
+
+```jsonc
+"ngdpbase.chrome.left-menu-page": "leftmenu",   // core default
+"ngdpbase.chrome.footer-page": "footer"
+```
+
+A domain addon points these at its own pages via `domainDefaults` — which exists precisely so an addon can set instance config the operator can still override. That gives one page per job, a discoverable setting, a way to point back at core's version, and an admin surface that can say "LeftMenu is overridden by left-menu-content (geohazardwatch)".
+
+#### Separate concern: fragments run through the full ACL evaluator
+
+Independent of ownership, both chrome pages are permission-checked as if they were destinations, and blank on denial:
+
+```js
+const canViewLeftMenu = leftMenuCtx !== null
+  && await aclManager.checkPagePermissionWithContext(leftMenuCtx, 'view');   // :779
+…
+} else { templateData.leftMenu = ''; }
+```
+
+The footer path is identical (`:829`). So a permission decision on a *fragment* silently empties the sidebar or footer on **every page of the site**, for whichever users are affected — the failure mode found while investigating #945.
+
+It needs a trigger (frontmatter `audience`/`access` on the chrome page, `private: true`, or a custom deny policy — the default catalog now contains no deny rules), so it is latent rather than currently firing. But when it fires it is site-wide, silent, and presents as "the nav disappeared for some users" with nothing pointing at a permissions cause.
+
+Tracked as its own defect, not part of the addon-page work: fragments should fail soft and log, and arguably should not be audience-gated at all — nobody navigates to `/view/left-menu-content`.
+
+### Note on an earlier draft
+
+This section originally argued for inventing a `template`/`chrome` category, on the grounds that these pages are the only seeded pages *rendered into* other pages rather than visited. That observation is still true and is why the fragment-ACL concern above is real — but it does not need a new category, because core already ships `leftmenu`/`footer` as `system`. The lesson: check whether the platform already owns a concept before designing around the addon's copy of it.
 
 ### Fragility note: Feature UI pages
 
