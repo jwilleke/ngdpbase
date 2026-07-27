@@ -365,14 +365,20 @@ Fixing the classification is therefore upstream of fixing the update mechanism.
 | Domain content | **`general`** | **instance**, from day one | "Purely seeded" — the addon provides a starting corpus and then lets go. |
 | Help / docs | **`documentation`** | addon | End-user documentation, exactly as the existing category describes. |
 | Demo / showcase | **`general`** | **instance** | Same treatment as domain content. |
-| Legal | `documentation` *or* `system` | addon | **Narrowed, not settled** — see below. |
+| Legal | **`documentation`** | addon | Settled 2026-07-27 — see below. |
 | Site chrome | **OPEN** | — | No decision yet. Analysis below. |
 
 All four target categories already exist in the `ngdpbase.system-category` catalog, so this needs no new category — only correct assignment at the source. Note `system` and `documentation` both carry `storageLocation: required`, while `general` is `regular`; that is a real storage consequence of the mapping, not just a label change.
 
-### Open: Legal
+### RESOLVED (2026-07-27): Legal is `documentation`
 
-`attribution` is a single page and could reasonably be either. `documentation` if it is read as user-facing reference; `system` if it is treated as a required page the operator must not casually delete. The `storageLocation: required` value is identical for both, so the practical difference is small — it is a labelling question, not a behavioural one.
+**Operator decision: `documentation`.**
+
+`attribution` is a single page and could reasonably have been either. `documentation` reads it as user-facing reference; `system` would have treated it as infrastructure the operator must not casually delete. Both carry `storageLocation: required`, so the practical difference is nil — it was a labelling question, not a behavioural one, and it had already cost more attention than the decision was worth.
+
+`documentation` is also the more honest description: `attribution` is something a reader is meant to *read*, which is what the category says, whereas `system` is reserved for pages that are infrastructure rather than content.
+
+This closes the last open item in §9. The only remaining undecided question in this document is tracked elsewhere; §9 itself is now fully settled.
 
 ### RESOLVED (2026-07-26): Site chrome is already core, and is `system`
 
