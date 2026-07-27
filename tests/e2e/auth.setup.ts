@@ -52,8 +52,67 @@ setup('authenticate', async ({ page }) => {
   // Scoped strictly to the NGDPBASE-test prefix. It must never purge anything
   // else: the suite runs against real instances, and a blanket trash-empty
   // would destroy genuinely deleted pages an operator was still holding.
+  //
+  // #970: delete LIVE leftovers first, then purge tombstones — in that order,
+  // so pages deleted a moment ago are purged in the same run rather than
+  // waiting for the next one.
+  await deleteStaleLiveTestPages(page);
   await purgeStaleTestPages(page);
 });
+
+/**
+ * Delete live pages left behind by a run that crashed before its cleanup (#970).
+ *
+ * The existing tombstone sweep below only ever saw pages a run had *already*
+ * deleted. A run that died earlier — a thrown assertion, a timeout, a killed
+ * process — left its pages fully live in the index, visible in listings and
+ * search and indistinguishable from real content, with nothing to remove them
+ * ever. Four `NGDPBASE-test-LocationTest-*` pages from weeks earlier were found
+ * that way on 2026-07-26, alongside two from a failed run the same day.
+ *
+ * This is #724's failure mode in the one form neither existing protection
+ * reached: #724 hardened `deletePage()` to fail loudly, which only helps when
+ * the test gets as far as `afterAll`.
+ *
+ * Runs at SETUP rather than teardown deliberately — it cleans the *previous*
+ * run's mess, so it still works when the current run is the one that crashes.
+ *
+ * Deleting is cheap and reversible now that delete is a soft delete (#947): a
+ * mistake sits in the trash for the retention window, and the tombstone sweep
+ * that follows clears the storage. Strictly prefix-scoped, and best-effort —
+ * storage hygiene must never fail the suite.
+ *
+ * @param {import('@playwright/test').Page} page - Authenticated page
+ */
+async function deleteStaleLiveTestPages(page) {
+  try {
+    // `/api/page-suggestions` matches on substring, so filter to a real prefix
+    // match below — never trust it to have scoped this for us.
+    const res = await page.request.get(
+      `/api/page-suggestions?q=${encodeURIComponent(TEST_PAGE_PREFIX)}&limit=500`
+    );
+    if (res.status() !== 200) return;
+
+    const body = await res.json();
+    const stale = (body.suggestions || [])
+      .map((s) => String(s.name ?? s.title ?? ''))
+      .filter((name) => name.startsWith(TEST_PAGE_PREFIX));
+    if (stale.length === 0) return;
+
+    const tokenRes = await page.request.get('/login');
+    const match = (await tokenRes.text()).match(/<meta name="csrf-token" content="([^"]+)"/);
+    if (!match) return;
+
+    for (const name of stale) {
+      await page.request.post(`/delete/${encodeURIComponent(name)}`, {
+        headers: { Accept: 'application/json', 'X-CSRF-Token': match[1] }
+      });
+    }
+    console.log(`[auth.setup] Deleted ${stale.length} stale live ${TEST_PAGE_PREFIX}-* page(s)`);
+  } catch {
+    // Never fail the suite over cleanup of prior runs.
+  }
+}
 
 /**
  * Purge soft-deleted pages matching the E2E test prefix (#947).
