@@ -39,4 +39,25 @@ export interface FeedSourceConfig {
   maxItems?: number;
   /** Optional dot-path map: normalized property → source path. Adapter may instead return shaped records. */
   map?: Record<string, string>;
+  /**
+   * Keep only the newest record per distinct value of this normalized property
+   * (#989) — e.g. 'volcanoName' to hold one advisory per volcano. Records that
+   * lack the property are never grouped and always survive, so a typo here is a
+   * no-op rather than a feed-wiping collapse.
+   */
+  dedupeBy?: string;
+  /**
+   * Discard records older than this many hours. Applied after `dedupeBy`, so it
+   * reads as "this entity has not been reissued within N hours". Records with no
+   * resolvable date are kept — unknown age is not evidence of staleness. Must be
+   * > 0; config-parse rejects anything else.
+   */
+  maxAgeHours?: number;
+  /**
+   * Property holding the record's timestamp, for `dedupeBy` ordering and
+   * `maxAgeHours`. Defaults to the conventional chain
+   * (`occurredAt` → `time` → `date` → `pubDate` → `published`), which is also
+   * what the catalog projection's `dateCreated` uses.
+   */
+  dedupeDateField?: string;
 }

@@ -83,7 +83,34 @@ All under `ngdpbase.addons.feeds.*` (flat dotted keys in instance config):
 }
 ```
 
-Per source: `adapter` + `url` + `type` (schema.org `@type`) are required — entries missing any are skipped with a log line. Optional: `schemaType` (default `Article`; must be an implemented type or the source is skipped), `intervalMinutes` | `dailyAt`, `recordIdField`, `itemsPath`, `map` (dotpath field mapping for `rest-json`).
+Per source: `adapter` + `url` + `type` (schema.org `@type`) are required — entries missing any are skipped with a log line. Optional: `schemaType` (default `Article`; must be an implemented type or the source is skipped), `intervalMinutes` | `dailyAt`, `recordIdField`, `itemsPath`, `map` (dotpath field mapping for `rest-json`), `delimiter` (`csv`), `linkPattern` + `maxItems` (`xml-index`).
+
+### Record shaping — `dedupeBy` / `maxAgeHours` (#989)
+
+Some sources publish many timestamped documents per named entity — every ash advisory ever issued for a volcano, every reading from a station — where only the newest per entity is wanted. Two optional keys express that, applied generically after adapter mapping and before the store:
+
+| Key | Effect |
+|---|---|
+| `dedupeBy` | Keep only the **newest record per distinct value** of this normalized property |
+| `maxAgeHours` | Discard records older than N hours. Applied *after* grouping, so it reads as "this entity has not been reissued within N hours" |
+| `dedupeDateField` | Property holding the record's timestamp. Defaults to the same chain the catalog projection uses: `occurredAt` → `time` → `date` → `pubDate` → `published` |
+
+```jsonc
+"ngdpbase.addons.feeds.sources.vaac.dedupeBy": "volcanoName",
+"ngdpbase.addons.feeds.sources.vaac.maxAgeHours": 48
+```
+
+Both are no-ops when unset, and either can be used without the other — `maxAgeHours` alone is a plain age filter.
+
+**Shaping is destructive.** `RecordStore.upsertAll()` replaces the store rather than merging, so a record dropped here is removed on the next poll. Every ambiguous case therefore resolves toward keeping the record:
+
+- A record **lacking** the `dedupeBy` property is never grouped and always survives. A typo in `dedupeBy` is a no-op, not a feed-wiping collapse into one bucket.
+- A record with **no resolvable date** is kept by `maxAgeHours` — unknown age is not evidence of staleness.
+- Within a group an undated record never displaces a dated one, and among all-undated records the first wins, so results are stable across polls instead of flapping on upstream ordering.
+- `maxAgeHours` must be a number > 0; anything else is rejected at config-parse with a warning rather than coerced.
+- If shaping discards *every* record of a non-empty batch, ingest logs a warning — legitimate for a genuinely stale feed, but indistinguishable from a misconfiguration, so it is never silent.
+
+Known limitation: an adapter still fetches and parses everything before shaping sees it. For `xml-index` that means up to `maxItems` item fetches per poll to keep a handful of current records — an adapter-level efficiency concern tracked separately, not addressed by these keys.
 
 ## Related
 

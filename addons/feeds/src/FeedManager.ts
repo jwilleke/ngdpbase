@@ -11,8 +11,10 @@
  * (BackupManager pattern) lands in slice 6.
  */
 
+import logger from '../../../dist/src/utils/logger.js';
 import { FeedCatalogSource } from './FeedCatalogSource.js';
 import { RecordStore } from './RecordStore.js';
+import { shapeRecords } from './dedupe.js';
 import { recordToCreativeWork } from './normalize.js';
 import { getAdapter } from './adapters/index.js';
 import { FeedScheduler } from './FeedScheduler.js';
@@ -120,6 +122,25 @@ export class FeedManager {
       .map(r => adapter.parse(r, entry.config))
       .filter((r): r is NonNullable<typeof r> => r !== null);
 
-    return entry.store.upsertAll(normalized);
+    // Per-source shaping — keep-latest-per-group / max-age (#989). A no-op
+    // unless the source configures it.
+    const shaped = shapeRecords(normalized, entry.config);
+    if (shaped.droppedDuplicates || shaped.droppedStale) {
+      logger.debug(
+        `[feeds] ${sourceId}: shaped ${normalized.length} → ${shaped.records.length} records ` +
+        `(${shaped.droppedDuplicates} older-in-group, ${shaped.droppedStale} stale)`
+      );
+    }
+    // upsertAll REPLACES the store, so shaping everything away empties the
+    // source. Legitimate for a genuinely stale feed, but indistinguishable from
+    // a misconfigured dedupeBy/maxAgeHours — say so rather than silently wiping.
+    if (normalized.length > 0 && shaped.records.length === 0) {
+      logger.warn(
+        `[feeds] ${sourceId}: shaping discarded all ${normalized.length} records — ` +
+        'the store will be emptied. Check dedupeBy/maxAgeHours for this source.'
+      );
+    }
+
+    return entry.store.upsertAll(shaped.records);
   }
 }

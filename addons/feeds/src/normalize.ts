@@ -51,6 +51,33 @@ function toIso(value: unknown): string | undefined {
 }
 
 /**
+ * A record's timestamp, as ISO 8601 — the single definition of "when did this
+ * happen" for the whole addon (#989).
+ *
+ * Both the catalog projection (`dateCreated`, below) and the ingest-time
+ * dedupe/max-age shaping resolve dates through here, so "newest" can never mean
+ * two different things in two places.
+ *
+ * A source may name the field explicitly with `dedupeDateField`; otherwise the
+ * first *present* property of the conventional chain is used. Note the chain
+ * picks the first defined VALUE and then parses it — an unparseable
+ * `occurredAt` yields undefined rather than falling through to `time`. That is
+ * long-standing behaviour and is preserved deliberately: silently ranking on a
+ * different field than the source declared is worse than declining to rank.
+ *
+ * @param rec - Normalized record
+ * @param cfg - Source config (only `dedupeDateField` is read)
+ * @returns ISO 8601 string, or undefined when no date resolves
+ */
+export function recordDateIso(rec: NormalizedRecord, cfg?: Pick<FeedSourceConfig, 'dedupeDateField'>): string | undefined {
+  const props = rec.properties;
+  const raw = cfg?.dedupeDateField
+    ? props[cfg.dedupeDateField]
+    : props.occurredAt ?? props.time ?? props.date ?? props.pubDate ?? props.published;
+  return toIso(raw);
+}
+
+/**
  * Project a record to the CreativeWork subtype declared by the source's
  * `schemaType`. Dispatches per type; only 'Article' is implemented today
  * (config-parse guarantees `schemaType` is supported, so the default is safe).
@@ -81,7 +108,7 @@ export function recordToArticle(rec: NormalizedRecord, cfg: FeedSourceConfig): A
 
   const description = firstString(props, ['description', 'summary', 'detail']);
 
-  const dateCreated = toIso(props.occurredAt ?? props.time ?? props.date ?? props.pubDate ?? props.published);
+  const dateCreated = recordDateIso(rec, cfg);
 
   const article: Article = {
     '@type': 'Article',

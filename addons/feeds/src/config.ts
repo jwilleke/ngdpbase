@@ -39,6 +39,27 @@ export function parseSourceConfigs(raw: unknown): FeedSourceConfig[] {
     if (typeof v.dailyAt === 'string') cfg.dailyAt = v.dailyAt;
     if (typeof v.recordIdField === 'string') cfg.recordIdField = v.recordIdField;
     if (typeof v.itemsPath === 'string') cfg.itemsPath = v.itemsPath;
+
+    // Adapter-specific keys. These are declared on FeedSourceConfig and read by
+    // the csv / xml-index adapters, but were never carried through here — so a
+    // configured `linkPattern` silently never reached the adapter and xml-index
+    // sources could not be configured at all from app config (#989).
+    if (typeof v.delimiter === 'string') cfg.delimiter = v.delimiter;
+    if (typeof v.linkPattern === 'string') cfg.linkPattern = v.linkPattern;
+    if (typeof v.maxItems === 'number' && Number.isFinite(v.maxItems) && v.maxItems > 0) cfg.maxItems = v.maxItems;
+
+    // Record shaping (#989). Validated rather than coerced: shaping runs before
+    // upsertAll(), which REPLACES the store, so a bad value here deletes records
+    // rather than merely mis-rendering them.
+    if (typeof v.dedupeBy === 'string' && v.dedupeBy.trim()) cfg.dedupeBy = v.dedupeBy.trim();
+    if (typeof v.dedupeDateField === 'string' && v.dedupeDateField.trim()) cfg.dedupeDateField = v.dedupeDateField.trim();
+    if (v.maxAgeHours !== undefined) {
+      if (typeof v.maxAgeHours === 'number' && Number.isFinite(v.maxAgeHours) && v.maxAgeHours > 0) {
+        cfg.maxAgeHours = v.maxAgeHours;
+      } else {
+        logger.warn(`[feeds] source '${sourceId}': ignoring maxAgeHours=${JSON.stringify(v.maxAgeHours)} — must be a number > 0`);
+      }
+    }
     if (v.map && typeof v.map === 'object' && !Array.isArray(v.map)) {
       const m: Record<string, string> = {};
       for (const [k, val] of Object.entries(v.map as Record<string, unknown>)) {
