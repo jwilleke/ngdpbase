@@ -110,6 +110,81 @@ describe('#971 addon page access stamping', () => {
     expect(meta['addon-source-hash']).toBe(pageSourceHash('body'));
   });
 
+  describe('legacy backfill (#971)', () => {
+    /** Stand up a manager whose PageManager already has this page seeded. */
+    const withExisting = (meta: Record<string, unknown>, content = 'existing body') => {
+      (manager as { engine: unknown }).engine = {
+        getManager: (n: string) => {
+          if (n === 'PageManager') {
+            return {
+              getPageByUUID: vi.fn().mockResolvedValue({ metadata: meta, content }),
+              pageExists: vi.fn().mockReturnValue(true),
+              getPage: vi.fn().mockResolvedValue({ metadata: meta, content }),
+              savePage
+            };
+          }
+          if (n === 'ConfigurationManager') return { getProperty: (_k: string, d: unknown) => d };
+          if (n === 'SearchManager') return { updatePageInIndex: vi.fn().mockResolvedValue(undefined) };
+          return null;
+        }
+      };
+    };
+
+    test('stamps access on a page seeded before stamping existed', async () => {
+      withExisting({ uuid: UUID(1), slug: 'calendarhelp', 'system-category': 'documentation' });
+      await write('a.md', { uuid: UUID(1), slug: 'calendarhelp', 'system-category': 'documentation' });
+
+      await manager.seedAddonPages('demo', tmpDir);
+
+      expect(metaFor('calendarhelp')?.access).toEqual({ edit: ['admin'] });
+    });
+
+    test('leaves the body untouched, so the reseed hash cannot shift', async () => {
+      withExisting({ uuid: UUID(2), slug: 'x', 'system-category': 'system' }, 'ORIGINAL BODY');
+      await write('a.md', { uuid: UUID(2), slug: 'x', 'system-category': 'system' });
+
+      await manager.seedAddonPages('demo', tmpDir);
+
+      const call = savePage.mock.calls.find((c) => c[0] === 'x');
+      expect(call?.[1]).toBe('ORIGINAL BODY');
+    });
+
+    test('does NOT touch a page that already has access', async () => {
+      // An operator who widened it must keep their setting.
+      withExisting({ uuid: UUID(3), slug: 'open', 'system-category': 'system', access: { edit: ['contributor'] } });
+      await write('a.md', { uuid: UUID(3), slug: 'open', 'system-category': 'system' });
+
+      await manager.seedAddonPages('demo', tmpDir);
+
+      expect(savePage).not.toHaveBeenCalled();
+    });
+
+    test('does NOT lock a general page — domain content stays instance-owned', async () => {
+      withExisting({ uuid: UUID(4), slug: 'earthquakes', 'system-category': 'general' });
+      await write('a.md', { uuid: UUID(4), slug: 'earthquakes', 'system-category': 'general' });
+
+      await manager.seedAddonPages('demo', tmpDir);
+
+      expect(savePage).not.toHaveBeenCalled();
+    });
+
+    test('preserves the rest of the existing metadata', async () => {
+      withExisting({
+        uuid: UUID(5), slug: 'keep', 'system-category': 'system',
+        created: '2020-01-01', 'addon-source-hash': 'abc', title: 'Keep Me'
+      });
+      await write('a.md', { uuid: UUID(5), slug: 'keep', 'system-category': 'system' });
+
+      await manager.seedAddonPages('demo', tmpDir);
+
+      const meta = metaFor('keep');
+      expect(meta.created).toBe('2020-01-01');
+      expect(meta['addon-source-hash']).toBe('abc');
+      expect(meta.title).toBe('Keep Me');
+      expect(meta.access).toEqual({ edit: ['admin'] });
+    });
+  });
+
   test('view is left alone so pages stay publicly readable', async () => {
     await write('a.md', { uuid: UUID(7), slug: 'readable', 'system-category': 'system' });
     await manager.seedAddonPages('demo', tmpDir);
