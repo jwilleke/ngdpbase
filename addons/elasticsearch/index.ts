@@ -122,11 +122,10 @@ const elasticsearchAddon = {
     if (!provider) {
       return { healthy: false, message: 'Provider not initialised' };
     }
-    const healthy = await provider.healthCheck();
-    return {
-      healthy,
-      message: healthy ? 'sist2 reachable' : 'sist2 unreachable — check es-url / sist2-url config'
-    };
+    // #998: report WHICH dependency failed. The old message blamed
+    // es-url/sist2-url for every failure, including a missing index — which was
+    // the actual fault on jimstest and is not fixed by either of those keys.
+    return provider.healthCheckDetailed();
   },
 
   /** Cleanup on graceful shutdown. */

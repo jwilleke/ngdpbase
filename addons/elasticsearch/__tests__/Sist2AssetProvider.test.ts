@@ -17,6 +17,9 @@ function makeClient(overrides = {}) {
   return {
     search: vi.fn(),
     get: vi.fn(),
+    // #998: healthCheck now verifies the configured index exists. Defaults to
+    // present so unrelated tests are unaffected.
+    indices: { exists: vi.fn().mockResolvedValue(true) },
     ...overrides
   } as unknown as Client;
 }
@@ -288,25 +291,61 @@ describe('getThumbnail()', () => {
 // healthCheck()
 // ---------------------------------------------------------------------------
 
-describe('healthCheck()', () => {
-  test('returns true when sist2 /i responds 200', async () => {
+describe('healthCheck() — #998', () => {
+  // The bug this replaced: healthCheck pinged only the sist2 UI, so a provider
+  // whose configured index had been renamed away reported "sist2 reachable"
+  // while every search returned nothing. A health check that cannot fail for
+  // the most likely misconfiguration is worse than none — it turns a broken
+  // feature into a confidently healthy one.
+
+  test('healthy when the index exists and sist2 responds', async () => {
     mockFetch.mockResolvedValue({ ok: true });
-    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(makeClient(), 'elasticsearch-nas', 'http://sist2:4090', []);
 
+    const result = await provider.healthCheckDetailed();
+    expect(result.healthy).toBe(true);
+    expect(result.message).toContain('elasticsearch-nas');
     expect(await provider.healthCheck()).toBe(true);
-    expect(mockFetch).toHaveBeenCalledWith('http://sist2:4090/i');
   });
 
-  test('returns false when sist2 /i responds non-200', async () => {
+  test('UNHEALTHY when the configured index does not exist', async () => {
+    // The exact jimstest failure: cluster up, sist2 up, index absent.
+    mockFetch.mockResolvedValue({ ok: true });
+    const client = makeClient({ indices: { exists: vi.fn().mockResolvedValue(false) } });
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+
+    const result = await provider.healthCheckDetailed();
+    expect(result.healthy).toBe(false);
+    // Must name the index AND the key that fixes it.
+    expect(result.message).toContain("'sist2'");
+    expect(result.message).toContain('es-index');
+  });
+
+  test('reports Elasticsearch unreachable distinctly from a missing index', async () => {
+    // Different fixes: one is config, the other is infrastructure.
+    const client = makeClient({
+      indices: { exists: vi.fn().mockRejectedValue(new Error('ECONNREFUSED')) }
+    });
+    const provider = new Sist2AssetProvider(client, 'elasticsearch-nas', 'http://sist2:4090', []);
+
+    const result = await provider.healthCheckDetailed();
+    expect(result.healthy).toBe(false);
+    expect(result.message).toContain('es-url');
+  });
+
+  test('reports sist2 down while noting search still works', async () => {
     mockFetch.mockResolvedValue({ ok: false, status: 503 });
-    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(makeClient(), 'elasticsearch-nas', 'http://sist2:4090', []);
 
-    expect(await provider.healthCheck()).toBe(false);
+    const result = await provider.healthCheckDetailed();
+    expect(result.healthy).toBe(false);
+    expect(result.message).toContain('search works');
+    expect(result.message).toContain('thumbnails');
   });
 
-  test('returns false on network error', async () => {
+  test('returns false on a sist2 network error', async () => {
     mockFetch.mockRejectedValue(new Error('ECONNREFUSED'));
-    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(makeClient(), 'elasticsearch-nas', 'http://sist2:4090', []);
 
     expect(await provider.healthCheck()).toBe(false);
   });

@@ -182,10 +182,12 @@ export class Sist2AssetProvider implements AssetProvider {
     }
 
     // --- sort ---
-    type SortOrder = 'asc' | 'desc';
+    // The `as SortOrder` casts here were removed by ESLint 10's
+    // no-unnecessary-type-assertion (they genuinely were redundant), which left
+    // the alias orphaned — tsc TS6196. Same shape as the #961 migration.
     const sort: SortCombinations[] = query.sort === 'caption'
-      ? [{ name: { order: (query.order ?? 'asc') as SortOrder } }]
-      : [{ mtime: { order: (query.order ?? 'desc') as SortOrder } }];
+      ? [{ name: { order: (query.order ?? 'asc') } }]
+      : [{ mtime: { order: (query.order ?? 'desc') } }];
 
     const esQuery: QueryDslQueryContainer = {
       bool: {
@@ -280,13 +282,65 @@ export class Sist2AssetProvider implements AssetProvider {
   // healthCheck
   // ---------------------------------------------------------------------------
 
-  async healthCheck(): Promise<boolean> {
+  /**
+   * Report whether this provider can actually return results (#998).
+   *
+   * Previously this pinged only the sist2 UI, which says nothing about whether
+   * the configured Elasticsearch index exists. On jimstest that produced a
+   * provider reporting "sist2 reachable" while `es-index` named an index that
+   * had been renamed away — every search returned zero results, silently, and
+   * ~2 million indexed documents were unreachable with nothing to indicate why.
+   *
+   * A health check that cannot fail for the most likely misconfiguration is
+   * worse than none: it converts a broken feature into a confidently healthy
+   * one.
+   *
+   * Checks both dependencies and names which one failed, since they have
+   * different fixes — a missing index is a config error, an unreachable sist2
+   * is an infrastructure one.
+   *
+   * @returns Health, plus a message identifying the specific failure
+   */
+  async healthCheckDetailed(): Promise<{ healthy: boolean; message: string }> {
+    let indexExists = false;
     try {
-      const res = await fetch(`${this.sist2Url}/i`);
-      return res.ok;
-    } catch {
-      return false;
+      indexExists = await this.esClient.indices.exists({ index: this.esIndex });
+    } catch (err) {
+      return {
+        healthy: false,
+        message: `Elasticsearch unreachable — check es-url (${err instanceof Error ? err.message : String(err)})`
+      };
     }
+
+    if (!indexExists) {
+      return {
+        healthy: false,
+        message: `Elasticsearch index '${this.esIndex}' does not exist — check es-index. `
+          + 'Searches will return nothing until this is corrected.'
+      };
+    }
+
+    let sist2Ok = false;
+    try {
+      sist2Ok = (await fetch(`${this.sist2Url}/i`)).ok;
+    } catch {
+      sist2Ok = false;
+    }
+
+    if (!sist2Ok) {
+      // Search still works; only file/thumbnail serving is affected.
+      return {
+        healthy: false,
+        message: `Index '${this.esIndex}' is present, but sist2 is unreachable at ${this.sist2Url} `
+          + '— search works, thumbnails and file serving will not.'
+      };
+    }
+
+    return { healthy: true, message: `Index '${this.esIndex}' present, sist2 reachable` };
+  }
+
+  async healthCheck(): Promise<boolean> {
+    return (await this.healthCheckDetailed()).healthy;
   }
 
   // ---------------------------------------------------------------------------
@@ -340,7 +394,7 @@ export class Sist2AssetProvider implements AssetProvider {
     if (!raw || typeof raw !== 'object') return undefined;
     const r = raw as Record<string, { buckets?: Array<{ key: string | number; doc_count: number; key_as_string?: string }> }>;
 
-    const toBuckets = (name: string) =>
+    const toBuckets = (name: string): Array<{ key: string; count: number }> =>
       (r[name]?.buckets ?? []).map((b) => ({
         key: String(b.key_as_string ?? b.key),
         count: b.doc_count
