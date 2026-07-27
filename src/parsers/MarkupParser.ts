@@ -9,6 +9,7 @@ import DOMVariableHandler from './dom/handlers/DOMVariableHandler.js';
 import DOMPluginHandler from './dom/handlers/DOMPluginHandler.js';
 import DOMLinkHandler from './dom/handlers/DOMLinkHandler.js';
 import logger from '../utils/logger.js';
+import { guardShowdownInput } from '../utils/showdownGuard.js';
 import SecurityFilter from './filters/SecurityFilter.js';
 import SpamFilter from './filters/SpamFilter.js';
 import ValidationFilter from './filters/ValidationFilter.js';
@@ -2597,11 +2598,16 @@ class MarkupParser extends BaseManager {
       }
     }
 
-    // Phase 3: Let Showdown parse the sanitized markdown
+    // Phase 3: Let Showdown parse the sanitized markdown.
+    //
+    // #599: guard the input first. showdown 2.1.0 backtracks catastrophically on
+    // unclosed link openers — 12 KB of `[](` blocks the event loop for 16s — and
+    // no patched release exists or is coming. See src/utils/showdownGuard.ts.
+    const guarded = guardShowdownInput(preprocessed);
     const renderingManager = this.engine.getManager<RenderingManagerInterface>('RenderingManager');
     let showdownHtml: string;
     if (renderingManager && renderingManager.converter) {
-      showdownHtml = renderingManager.converter.makeHtml(preprocessed);
+      showdownHtml = renderingManager.converter.makeHtml(guarded);
     } else {
       // Fallback if RenderingManager not available (testing)
       const converter = new showdown.Converter({
@@ -2612,7 +2618,7 @@ class MarkupParser extends BaseManager {
         ghCodeBlocks: true,
         ghHeaderIds: true
       });
-      showdownHtml = converter.makeHtml(preprocessed);
+      showdownHtml = converter.makeHtml(guarded);
     }
     logger.debug('📝 Showdown processed markdown');
 
