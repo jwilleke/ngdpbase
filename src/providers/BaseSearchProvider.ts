@@ -88,6 +88,18 @@ export interface SearchOptions {
 
   /** WikiContext for the current request — used to filter private search results */
   wikiContext?: SearchWikiContext;
+
+  /**
+   * #884: treat the LAST query term as a prefix, for as-you-type search.
+   *
+   * Opt-in. A user who has typed "volc" wants Volcano; a user who submitted
+   * "volc" deliberately does not want every word starting with it, so this is
+   * never applied to a completed search.
+   *
+   * Only the last term is widened — earlier terms are complete words the user
+   * has finished typing.
+   */
+  prefixLastTerm?: boolean;
 }
 
 /**

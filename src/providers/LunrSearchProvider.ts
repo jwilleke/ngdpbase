@@ -40,6 +40,75 @@ type LunrSearchResult = lunr.Index.Result;
 /**
  * Document structure for indexing
  */
+/**
+ * Widen the last term of a query to a prefix match (#884).
+ *
+ * Lunr's `*` wildcard, applied only to the final term: someone mid-word wants
+ * completions, someone who submitted a finished query does not. Earlier terms
+ * are words the user has already finished typing and stay exact.
+ *
+ * Left alone when the last term already carries Lunr syntax — a wildcard, a
+ * field scope (`title:x`), or a presence operator (`+`/`-`). Appending `*` to
+ * those either duplicates an existing wildcard or corrupts the operator, and
+ * silently mangling a query the caller wrote deliberately is worse than not
+ * helping.
+ *
+ * @param query - Raw user query
+ * @returns The query with its last term widened, or unchanged
+ */
+export function applyPrefixToLastTerm(query: string): string {
+  const trimmed = query.trim();
+  if (!trimmed) return query;
+
+  const parts = trimmed.split(/\s+/);
+  const last = parts[parts.length - 1];
+
+  if (last.includes('*') || last.includes(':') || last.startsWith('+') || last.startsWith('-')) {
+    return query;
+  }
+  // A term Lunr would tokenise away entirely gains nothing from a wildcard.
+  if (!/[a-z0-9]/i.test(last)) return query;
+
+  parts[parts.length - 1] = `${last}*`;
+  return parts.join(' ');
+}
+
+/**
+ * Split URLs found in page content into searchable word tokens (#884).
+ *
+ * A URL indexed as one opaque string only ever matches if the reader types it
+ * in full. Splitting on the separators that carry no meaning — `[/:._\-?&=#]`
+ * — turns `https://en.wikipedia.org/wiki/Volcano` into `en wikipedia org wiki
+ * volcano`, so the domain and the path words each become findable terms.
+ *
+ * Deliberately conservative about what counts as a URL: only `http(s)://`
+ * matches. Bare domains would drag in ordinary prose containing dots, and
+ * abbreviations like "e.g." would tokenise into noise.
+ *
+ * Numeric-only and single-character fragments are dropped — port numbers, path
+ * ids and `v2`-style noise add index weight without ever being searched for.
+ *
+ * @param content - Page body
+ * @returns Space-joined tokens, or '' when the page links nowhere
+ */
+export function tokenizeUrls(content: string): string {
+  if (!content || !content.includes('://')) return '';
+
+  const urls = content.match(/https?:\/\/[^\s)<>"'\]]+/gi);
+  if (!urls) return '';
+
+  const seen = new Set<string>();
+  for (const url of urls) {
+    for (const raw of url.replace(/^https?:\/\//i, '').split(/[/:._\-?&=#]+/)) {
+      const token = raw.toLowerCase();
+      if (token.length < 2) continue;
+      if (/^\d+$/.test(token)) continue;
+      seen.add(token);
+    }
+  }
+  return [...seen].join(' ');
+}
+
 interface LunrDocument {
   id: string;
   title: string;
@@ -58,6 +127,10 @@ interface LunrDocument {
   status?: string;
   tags: string;
   keywords: string;
+  /** #884: URLs found in the body, split into their component words so a
+   *  domain or path segment is a searchable term. Empty when the page links
+   *  nowhere — the common case for prose pages. */
+  urlTokens: string;
   lastModified: string;
   /** ISO 8601 page creation timestamp (#754, v3.33.0). Optional because
    *  pre-migration synthetic test data may omit it. Indexed so #774's
@@ -84,6 +157,7 @@ interface LunrConfig {
   stemming: boolean;
   boost: {
     title: number;
+    urlTokens?: number;
     systemCategory: number;
     knowledgeRole: number;
     userKeywords: number;
@@ -177,6 +251,13 @@ class LunrSearchProvider extends BaseSearchProvider {
         keywords: configManager.getProperty<number>(
           'ngdpbase.search.provider.lunr.boost.keywords',
           4
+        ),
+        // #884: below every metadata field and above raw content. A domain
+        // match is a real signal — someone searching "wikipedia" wants pages
+        // citing it — but weaker than a page actually being *about* the term.
+        urlTokens: configManager.getProperty<number>(
+          'ngdpbase.search.provider.lunr.boost.urltokens',
+          3
         )
       },
       maxResults: configManager.getProperty<number>(
@@ -257,6 +338,8 @@ class LunrSearchProvider extends BaseSearchProvider {
       this.field('userKeywords', { boost: boostConfig.userKeywords });
       this.field('tags', { boost: boostConfig.tags });
       this.field('keywords', { boost: boostConfig.keywords });
+      // #884: URLs are otherwise only matchable as one opaque string.
+      this.field('urlTokens', { boost: boostConfig.urlTokens ?? 3 });
       Object.values(docs).forEach(doc => { this.add(doc); });
     });
   }
@@ -317,6 +400,7 @@ class LunrSearchProvider extends BaseSearchProvider {
       status: status || undefined,
       tags,
       keywords: `${userKeywords} ${tags}`,
+      urlTokens: tokenizeUrls(content),
       lastModified: toStr(metadata.lastModified),
       created: toStr(metadata.created) || undefined,
       uuid: toStr(metadata.uuid),
@@ -410,7 +494,8 @@ class LunrSearchProvider extends BaseSearchProvider {
 
     try {
       const maxResults = options.maxResults || this.config?.maxResults || 50;
-      const results: LunrSearchResult[] = this.searchIndex.search(query);
+      const effectiveQuery = options.prefixLastTerm ? applyPrefixToLastTerm(query) : query;
+      const results: LunrSearchResult[] = this.searchIndex.search(effectiveQuery);
 
       // Extract user context for private-page filtering
       const wikiContext = options.wikiContext;
