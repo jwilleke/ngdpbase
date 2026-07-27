@@ -972,7 +972,11 @@ class MarkupParser extends BaseManager {
       // Fall back to basic markdown conversion
       const renderingManager = this.engine.getManager<RenderingManagerInterface>('RenderingManager');
       if (renderingManager && renderingManager.converter) {
-        return renderingManager.converter.makeHtml(content);
+        // Guarded like every other makeHtml entry point (#1000). A degraded
+        // path is still reachable with attacker-supplied content — POST
+        // /api/preview renders an arbitrary request body — so "this only runs
+        // when the parser is disabled" is not a reason to skip the guard.
+        return renderingManager.converter.makeHtml(guardShowdownInput(content));
       }
       return content;
     }

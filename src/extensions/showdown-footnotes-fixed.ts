@@ -12,6 +12,7 @@
  */
 
 import showdown from 'showdown';
+import { guardShowdownInput } from '../utils/showdownGuard.js';
 
 /**
  * Showdown extension filter object
@@ -35,7 +36,11 @@ function showdownFootnotesFixed(): ShowdownFilter[] {
       return text.replace(
         /^\[\^([\d\w-]+)\]:\s*((\n+(\s{2,4}|\t).+)+)$/mg,
         function (_str: string, name: string, rawContent: string, _: string, padding: string): string {
-          const content = converter.makeHtml(rawContent.replace(new RegExp('^' + padding, 'gm'), ''));
+          // Guarded independently (#1000). This is a SEPARATE Converter from the
+          // one RenderingManager owns, so it does not inherit the caller's
+          // guard — and re-guarding already-escaped text is a no-op, since the
+          // escape leaves no `](` for the guard to find.
+          const content = converter.makeHtml(guardShowdownInput(rawContent.replace(new RegExp('^' + padding, 'gm'), '')));
           return '<div class="footnote" id="footnote-' + name + '"><a href="#footnote-' + name + '"><sup>[' + name + ']</sup></a>:' + content + '</div>';
         }
       );
