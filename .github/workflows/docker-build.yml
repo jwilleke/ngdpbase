@@ -96,6 +96,10 @@ jobs:
           context: .
           file: ./docker/Dockerfile
           platforms: linux/amd64
+          # MUST be explicit. The Dockerfile's last stage is `devtools`, which
+          # retains npm — an untargeted build would silently publish that as the
+          # deployed image and undo #956 (#1001).
+          target: runtime
           push: ${{ github.event_name != 'pull_request' }}
           load: true
           tags: ${{ github.event_name == 'pull_request' && steps.img.outputs.ref || steps.meta.outputs.tags }}
@@ -167,6 +171,19 @@ jobs:
         if: always()
         run: docker rm -f ngdpbase-smoke 2>/dev/null || true
 
+      # #1001: assert the runtime image really has no npm. #956 removed it and
+      # nothing checked, so a later edit could put it back unnoticed — and the
+      # inverse (an untargeted build shipping the devtools stage) is exactly the
+      # failure this pair of assertions exists to catch.
+      - name: Assert runtime image has no npm
+        run: |
+          if docker run --rm --entrypoint sh ${{ steps.img.outputs.ref }} \
+               -c 'command -v npm || command -v npx' 2>/dev/null; then
+            echo "FAILED: npm/npx present in the runtime image (#956, #1001)."
+            exit 1
+          fi
+          echo "Runtime image has no npm/npx, as expected."
+
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
@@ -188,6 +205,87 @@ jobs:
           # under refs/tags/v* never auto-closes master alerts (#878).
           ref: refs/heads/master
           sha: ${{ github.sha }}
+
+      # =====================================================================
+      # Devtools variant (#1001)
+      # =====================================================================
+      # Published as :<version>-devtools. Identical to the runtime image except
+      # npm is retained, for consumers that build FROM ngdpbase and need to
+      # `npm install` an addon into the derived layer — the packaged-addon model
+      # in docs/platform/deployment/addon-packaged.md.
+      #
+      # Deliberately NOT Trivy-uploaded. It carries npm's vendored tree on
+      # purpose, so scanning it would re-open exactly the alerts #956 closed and
+      # then report them against master. It is a build input, never deployed.
+      - name: Docker meta (devtools)
+        id: meta-devtools
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.DOCKER_REGISTRY }}/${{ env.REGISTRY_USER }}/${{ env.DOCKER_IMAGE_NAME }}
+          flavor: |
+            suffix=-devtools,onlatest=true
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master' }}
+          labels: |
+            org.opencontainers.image.title=ngdpbase-devtools
+            org.opencontainers.image.description=ngdpbase with npm retained — for derived builds only, not for deployment
+            org.opencontainers.image.vendor=ngdpbase Project
+
+      - name: Resolve devtools image reference
+        id: img-devtools
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "ref=${{ env.DOCKER_IMAGE_NAME }}:pr-${{ github.event.pull_request.number }}-devtools" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ env.DOCKER_REGISTRY }}/${{ env.REGISTRY_USER }}/${{ env.DOCKER_IMAGE_NAME }}:latest-devtools" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push devtools image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          platforms: linux/amd64
+          target: devtools
+          push: ${{ github.event_name != 'pull_request' }}
+          load: true
+          tags: ${{ github.event_name == 'pull_request' && steps.img-devtools.outputs.ref || steps.meta-devtools.outputs.tags }}
+          labels: ${{ steps.meta-devtools.outputs.labels }}
+          build-args: |
+            NODE_VERSION=${{ env.DOCKER_NODE_VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The regression check that would have caught #1001 before it shipped:
+      # prove the derived-build path actually works, rather than assuming it.
+      - name: Assert devtools image can run npm and build FROM
+        run: |
+          docker run --rm --entrypoint sh ${{ steps.img-devtools.outputs.ref }} \
+            -c 'npm --version && npx --version' \
+            || { echo "FAILED: npm/npx missing from the devtools image (#1001)."; exit 1; }
+
+          # Prove a derived image can install a package — the flow #956 broke.
+          # Empty build context on purpose: nothing is COPYed, and pointing this
+          # at /tmp or the repo root would ship a large context for no reason.
+          CTX="$(mktemp -d)"
+          cat > "$CTX/Dockerfile" <<'EOF'
+          ARG BASE
+          FROM ${BASE}
+          WORKDIR /derived
+          RUN npm install --no-audit --no-fund is-number@7.0.0 \
+              && node -e "require('/derived/node_modules/is-number')"
+          EOF
+          docker build \
+            --build-arg BASE=${{ steps.img-devtools.outputs.ref }} \
+            -t ngdpbase-derived-check "$CTX" \
+            || { echo "FAILED: cannot build FROM the devtools image (#1001)."; exit 1; }
+          docker rmi -f ngdpbase-derived-check 2>/dev/null || true
+          rm -rf "$CTX"
+          echo "Derived-build path verified."
 
       - name: Image digest
         run: |

@@ -70,10 +70,24 @@ RUN apk add --no-cache libstdc++
 # it removes this entire class of finding permanently instead of re-triaging it
 # every time npm's vendored tree falls behind.
 #
-# Tradeoff: `docker exec <container> npm ...` no longer works. That was never a
-# supported flow — the image is a runtime, not a build environment — but it is a
-# real behaviour change for anyone who relied on it. Reinstate with
-# `npm install -g npm@12` in a derived image if genuinely needed.
+# Tradeoff: nothing in THIS image can run npm any more. That covers two flows,
+# and the second one is load-bearing (#1001):
+#
+#   1. `docker exec <container> npm ...` — never a supported flow. The image is
+#      a runtime, not a build environment.
+#   2. Building `FROM ghcr.io/jwilleke/ngdpbase:<version>` and then running
+#      `npm install <addon>` — this IS supported. It is the packaged-addon
+#      deployment model documented in
+#      docs/platform/deployment/addon-packaged.md, and it is how geohazardwatch
+#      is built. #956 broke it, in a patch release, and the break surfaced as a
+#      red release build downstream.
+#
+# Flow 2 is restored by the `devtools` stage below rather than by putting npm
+# back here, so the deployed image still carries none of npm's vendored CVEs.
+# Derived images build FROM the `-devtools` tag instead.
+#
+# (The original note here suggested reinstating with `npm install -g npm@12` in
+# a derived image. That cannot work — there is no npm left to run it with.)
 RUN rm -rf /usr/local/lib/node_modules/npm \
            /usr/local/bin/npm \
            /usr/local/bin/npx \
@@ -159,6 +173,40 @@ VOLUME ["/app/data"]
 # Start command - direct node execution (no PM2)
 # PM2 is removed for K8s compatibility - K8s handles process management
 CMD ["node", "dist/src/app.js"]
+
+# =============================================================================
+# Stage 3: Devtools — build-capable variant, published as :<version>-devtools
+# =============================================================================
+#
+# Identical to `runtime` in every respect except that npm/npx are present.
+# Exists for images built FROM ngdpbase that need to install something into the
+# derived layer — the packaged-addon model (#1001). Not for deployment: it
+# carries npm's vendored dependency tree, which is the whole thing #956 removed.
+#
+# Which tag to use:
+#
+#   ghcr.io/jwilleke/ngdpbase:X.Y.Z            deploy this
+#   ghcr.io/jwilleke/ngdpbase:X.Y.Z-devtools   build FROM this
+#
+# A derived image built FROM `-devtools` inherits npm. If the final artifact is
+# going to be deployed, drop npm again in the derived Dockerfile's last stage
+# with the same `rm -rf` as the runtime stage above.
+#
+# npm is copied from `builder` rather than reinstalled, so the version is
+# exactly the one the base node image shipped — no network fetch, no separate
+# version axis to track.
+FROM runtime AS devtools
+
+COPY --from=builder /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+
+# The node images ship these as relative symlinks into lib/node_modules; recreate
+# them the same way so `npm` and `npx` resolve on PATH.
+RUN ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -sf ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && npm --version
+
+LABEL org.opencontainers.image.title="ngdpbase-devtools"
+LABEL org.opencontainers.image.description="ngdpbase with npm retained — for derived builds only, not for deployment"
 
 # =============================================================================
 # Configuration and Installation
