@@ -106,16 +106,35 @@ Publish is a normal `npm publish` (typically from the addon repo's CI on a versi
 
 ## Deploying
 
-In a generic ngdpbase image (or a thin layer on it):
+In a generic ngdpbase image (or a thin layer on it). **Build FROM the `-devtools` tag** — the plain runtime tag has no npm:
 
 ```dockerfile
-FROM ghcr.io/jwilleke/ngdpbase:3.62.1
+FROM ghcr.io/jwilleke/ngdpbase:3.62.1-devtools
 WORKDIR /app
 RUN npm install @jwilleke/geohazardwatch-addon@1.4.2
 # addons-path includes "node_modules:@jwilleke/*-addon"; enable the addon in config
 ```
 
 Renovate then tracks `@jwilleke/geohazardwatch-addon` against npm semver — the addon version and the ngdpbase base-image version bump **independently**, each lockfile/tag-pinned. No cross-repo build context, no directory drift.
+
+### Which base tag
+
+Two tags are published per release, from the same build:
+
+| Tag | Has npm | Use for |
+|---|---|---|
+| `ghcr.io/jwilleke/ngdpbase:X.Y.Z` | no | **deploying** — this is what runs in production |
+| `ghcr.io/jwilleke/ngdpbase:X.Y.Z-devtools` | yes | **building FROM** — derived images that `npm install` an addon |
+
+npm was removed from the runtime image in [#956](https://github.com/jwilleke/ngdpbase/issues/956) so the deployed artifact carries none of npm's vendored CVEs. That is worth keeping, but it also broke this page's `npm install` step — see [#1001](https://github.com/jwilleke/ngdpbase/issues/1001). The `-devtools` variant restores the build capability without putting npm back into what you deploy.
+
+A derived image built `FROM …-devtools` **inherits npm**, so the addon image you ship carries it too. If that matters for your scan posture, drop it again in the derived Dockerfile's final stage:
+
+```dockerfile
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+```
+
+Renovate tracks the two tags as one version axis — a `-devtools` pin bumps on the same releases as the plain tag.
 
 ## Pages, themes, and everything else
 
