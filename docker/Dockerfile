@@ -51,12 +51,33 @@ WORKDIR /app
 # Note: g++ is needed at runtime for node-gyp if bcrypt needs recompilation
 RUN apk add --no-cache libstdc++
 
-# Replace the base image's npm with a current major (#859): the npm CLI bundled
-# with the Node image ships stale copies of tar/minimatch/glob/undici under
-# /usr/local/lib/node_modules/npm that Trivy flags on every scan. The app never
-# runs npm at runtime, but the files ship in the image either way — keep them
-# patched. npm@12 pins the major; each build picks up the latest 12.x patches.
-RUN npm install -g npm@12 && npm cache clean --force
+# Remove npm and npx from the runtime image entirely (#956).
+#
+# #859 replaced the base image's npm with npm@12 so its bundled dependencies
+# would be current. That stopped working as a strategy: npm@12.0.1 — the latest
+# release — still bundles `tar 7.5.19` and `brace-expansion 5.0.7`, each exactly
+# one patch below the fix (7.5.21 and 5.0.8). Chasing npm's bundle lag means
+# living with whatever CVEs its vendored tree carries, on npm's release
+# schedule rather than ours.
+#
+# The runtime does not use npm. CMD is `node dist/src/app.js`, HEALTHCHECK is
+# `node -e`, and every dependency is copied pre-installed from the builder
+# stage. The `npm:` strings in AddonsManager are a source *label* for addons
+# resolved under node_modules, not a shell-out. Nothing in docker-compose, the
+# k8s manifests or the deploy scripts execs npm inside the container.
+#
+# So npm is dead weight that only contributes vulnerable files to scans. Deleting
+# it removes this entire class of finding permanently instead of re-triaging it
+# every time npm's vendored tree falls behind.
+#
+# Tradeoff: `docker exec <container> npm ...` no longer works. That was never a
+# supported flow — the image is a runtime, not a build environment — but it is a
+# real behaviour change for anyone who relied on it. Reinstate with
+# `npm install -g npm@12` in a derived image if genuinely needed.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/bin/npm \
+           /usr/local/bin/npx \
+    && rm -rf /root/.npm /root/.npmrc 2>/dev/null || true
 
 # Copy production node_modules from builder
 COPY --from=builder /app/node_modules ./node_modules
