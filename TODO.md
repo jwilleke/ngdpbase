@@ -89,25 +89,25 @@ Only two qualify — most of the P2 band is addon proposals or storybook sub-iss
 
 > Parked. Not actionable, and never a "next move" without an explicit go-ahead.
 
-- [#999](https://github.com/jwilleke/ngdpbase/issues/999) — [FEATURE] Attachment metadata editing + video CreateDate verification (split from #868)
-- [#868](https://github.com/jwilleke/ngdpbase/issues/868) — [FEATURE] deby ES-mirror: push-on-edit vs periodic re-sync for metadata edits
-- [#737](https://github.com/jwilleke/ngdpbase/issues/737) — [FEATURE] NCM Phase-2: transcode/re-encode fetched embedded images (security + size hardening)
-- [#707](https://github.com/jwilleke/ngdpbase/issues/707) — [FEATURE] Typed footnote syntax + knowledge-graph reference index
-- [#645](https://github.com/jwilleke/ngdpbase/issues/645) — [FEATURE] PathPreflight: extend coverage to `/mnt/tank/<share>/...` autofs paths
-- [#631](https://github.com/jwilleke/ngdpbase/issues/631) — [FEATURE] Define system/service principal model for non-request code paths
-- [#621](https://github.com/jwilleke/ngdpbase/issues/621) — [Addon] Communication Service
-- [#602](https://github.com/jwilleke/ngdpbase/issues/602) — [ADDON] Add person-contacts addon for shared identity foundation
-- [#600](https://github.com/jwilleke/ngdpbase/issues/600) — [FEATURE] [addon] for project management
-- [#570](https://github.com/jwilleke/ngdpbase/issues/570) — [FEATURE] Generic Addon for Physical assets
-- [#550](https://github.com/jwilleke/ngdpbase/issues/550) — [ADDON] elasticsearch: extend beyond keyword search — vector/hybrid search, config accuracy, docs
-- [#501](https://github.com/jwilleke/ngdpbase/issues/501) — [FEATURE] JSON → ngdp Compatible Markdown (NCM) serializer
-- [#494](https://github.com/jwilleke/ngdpbase/issues/494) — [FEATURE] ADD-ON Request - Response System
-- [#492](https://github.com/jwilleke/ngdpbase/issues/492) — [FEATURE] ADD-ON Recipe Manager
-- [#487](https://github.com/jwilleke/ngdpbase/issues/487) — [FEATURE] ADD-ON Condominium Unit Management System
-- [#486](https://github.com/jwilleke/ngdpbase/issues/486) — [FEATURE] ADD-ON Generic for Accounting
-- [#448](https://github.com/jwilleke/ngdpbase/issues/448) — AuthManager: Passkey / WebAuthn auth provider
-- [#423](https://github.com/jwilleke/ngdpbase/issues/423) — Asset Manager: additional storage providers (S3, Google Drive, plugin-contributed)
-- [#421](https://github.com/jwilleke/ngdpbase/issues/421) — AuthManager: TOTP / 2FA auth provider
+- [#999](https://github.com/jwilleke/ngdpbase/issues/999) — [FEATURE] Attachment metadata editing + video CreateDate verification (split from #868) — *parked: attachment IDs are content hashes, so an embedded write breaks them — embedded write **backed out** (`ffe16c0d`); PATCH route works but is **parked** on `feat/999-patch-route`; video CreateDate check **done***
+- [#868](https://github.com/jwilleke/ngdpbase/issues/868) — [FEATURE] deby ES-mirror: push-on-edit vs periodic re-sync for metadata edits — *parked: rests on `es-enrichment-pipeline`, which may be dropped*
+- [#737](https://github.com/jwilleke/ngdpbase/issues/737) — [FEATURE] NCM Phase-2: transcode/re-encode fetched embedded images (security + size hardening) — *parked: no driver*
+- [#707](https://github.com/jwilleke/ngdpbase/issues/707) — [FEATURE] Typed footnote syntax + knowledge-graph reference index — *parked: no driver*
+- [#645](https://github.com/jwilleke/ngdpbase/issues/645) — [FEATURE] PathPreflight: extend coverage to `/mnt/tank/<share>/...` autofs paths — *parked: no driver*
+- [#631](https://github.com/jwilleke/ngdpbase/issues/631) — [FEATURE] Define system/service principal model for non-request code paths — *parked: no driver*
+- [#621](https://github.com/jwilleke/ngdpbase/issues/621) — [Addon] Communication Service — *parked: addon proposal — needs a design pass*
+- [#602](https://github.com/jwilleke/ngdpbase/issues/602) — [ADDON] Add person-contacts addon for shared identity foundation — *parked: addon proposal — needs a design pass*
+- [#600](https://github.com/jwilleke/ngdpbase/issues/600) — [FEATURE] [addon] for project management — *parked: addon proposal — needs a design pass*
+- [#570](https://github.com/jwilleke/ngdpbase/issues/570) — [FEATURE] Generic Addon for Physical assets — *parked: addon proposal — needs a design pass*
+- [#550](https://github.com/jwilleke/ngdpbase/issues/550) — [ADDON] elasticsearch: extend beyond keyword search — vector/hybrid search, config accuracy, docs — *parked: same — the embeddings it would query come from `es-enrichment-pipeline`*
+- [#501](https://github.com/jwilleke/ngdpbase/issues/501) — [FEATURE] JSON → ngdp Compatible Markdown (NCM) serializer — *parked: no driver*
+- [#494](https://github.com/jwilleke/ngdpbase/issues/494) — [FEATURE] ADD-ON Request - Response System — *parked: addon proposal — needs a design pass*
+- [#492](https://github.com/jwilleke/ngdpbase/issues/492) — [FEATURE] ADD-ON Recipe Manager — *parked: addon proposal — needs a design pass*
+- [#487](https://github.com/jwilleke/ngdpbase/issues/487) — [FEATURE] ADD-ON Condominium Unit Management System — *parked: addon proposal — needs a design pass*
+- [#486](https://github.com/jwilleke/ngdpbase/issues/486) — [FEATURE] ADD-ON Generic for Accounting — *parked: addon proposal — needs a design pass*
+- [#448](https://github.com/jwilleke/ngdpbase/issues/448) — AuthManager: Passkey / WebAuthn auth provider — *parked: architectural — new auth provider*
+- [#423](https://github.com/jwilleke/ngdpbase/issues/423) — Asset Manager: additional storage providers (S3, Google Drive, plugin-contributed) — *parked: architectural — new storage providers*
+- [#421](https://github.com/jwilleke/ngdpbase/issues/421) — AuthManager: TOTP / 2FA auth provider — *parked: architectural — new auth provider*
 
 ## ➡️ Recommended next moves
 
