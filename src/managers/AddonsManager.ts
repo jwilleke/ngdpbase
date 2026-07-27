@@ -861,25 +861,87 @@ class AddonsManager extends BaseManager {
           // gets re-added on the next boot. Setting `access` to something else
           // (a wider principal list) is preserved, and is the supported way to
           // open a page up.
+          // #1003: `system-category` drift. A category-only edit in an addon
+          // source never reached an already-seeded page — `evaluateSeededAddonPage`
+          // compares BODY content, so a metadata-only change never flips a page
+          // to `outdated` and the reseed branch below never runs. Categories set
+          // at first seed were therefore frozen forever, which is how all 16
+          // geohazardwatch pages stayed on the flattened `addon` default after
+          // their source was corrected per addons.md §9.
+          //
+          // Corrected here, independent of the body-hash comparison and of
+          // `reseedEnabled` — reseed governs overwriting CONTENT, and a category
+          // is metadata, the same argument #971 made for `access`.
+          //
+          // `addon-source-category` records the source value last propagated —
+          // the category analogue of `addon-source-hash`. It makes this
+          // one-time-PER-DRIFT rather than every-boot: once the source value has
+          // been applied, an operator who re-categorizes the page keeps their
+          // choice, and the addon only speaks again when ITS value changes.
+          // Without that marker this would revert an operator's category on
+          // every restart.
+          const sourceCategoryRaw = (parsed.data as Record<string, unknown>)['system-category'];
+          const sourceCategory = typeof sourceCategoryRaw === 'string' ? sourceCategoryRaw : undefined;
+          const liveCategory = existingMeta['system-category'];
+          const appliedCategory = existingMeta['addon-source-category'];
+          const categoryDrifted = sourceCategory !== undefined
+            && sourceCategory !== liveCategory
+            && appliedCategory !== sourceCategory;
+
+          // Source first, then whatever the page already carries — matching the
+          // reseed path below. The original order here was existing-first, so a
+          // corrected source category was ignored in favour of the stale live
+          // one even though the right value was sitting in `parsed.data` (#1003).
+          // Narrow rather than String()-coerce: a non-string category is
+          // malformed frontmatter, and coercing an object would both log
+          // "[object Object]" and silently classify it as unclassified
+          // without saying so. Treat it as unclassified explicitly.
+          const rawCategory = sourceCategoryRaw ?? liveCategory ?? 'addon';
+          const backfillCategory = typeof rawCategory === 'string' ? rawCategory : 'addon';
+
+          // Both corrections go through ONE savePage so a page needing each does
+          // not get two versions for what is a single reconciliation.
+          const metaPatch: Record<string, unknown> = {};
+          const reasons: string[] = [];
+
+          if (categoryDrifted) {
+            metaPatch['system-category'] = sourceCategory;
+            metaPatch['addon-source-category'] = sourceCategory;
+            reasons.push(`system-category ${JSON.stringify(liveCategory ?? null)} → '${sourceCategory}' (#1003)`);
+          }
+
+          // #971 backfill: pages seeded before `access` stamping existed carry
+          // none, so §3's admin-only editing simply does not apply to them —
+          // they are silently unprotected while looking identical to pages that
+          // are.
+          //
+          // Fires once. After the stamp lands the condition is false forever.
+          // The exception is an operator who DELETES `access` outright — that
+          // gets re-added on the next boot. Setting `access` to something else
+          // (a wider principal list) is preserved, and is the supported way to
+          // open a page up.
           if (existingMeta.access === undefined) {
-            // Narrow rather than String()-coerce: a non-string category is
-            // malformed frontmatter, and coercing an object would both log
-            // "[object Object]" and silently classify it as unclassified
-            // without saying so. Treat it as unclassified explicitly.
-            const rawCategory = existingMeta['system-category']
-              ?? (parsed.data as Record<string, unknown>)['system-category'] ?? 'addon';
-            const backfillCategory = typeof rawCategory === 'string' ? rawCategory : 'addon';
             const backfillAccess = this.defaultAddonPageAccess(backfillCategory);
             if (backfillAccess) {
-              await pageManager.savePage(existingSlug, existing.content, {
-                ...existingMeta,
-                access: backfillAccess
-              });
-              logger.info(
-                `[AddonsManager] Backfilled access on '${existingSlug}' (${addonName}, ` +
-                `category=${backfillCategory}) — edit restricted to ${backfillAccess.edit.join(', ')} (#971)`
-              );
+              metaPatch.access = backfillAccess;
+              reasons.push(`access edit=[${backfillAccess.edit.join(', ')}] for category='${backfillCategory}' (#971)`);
             }
+          }
+
+          if (Object.keys(metaPatch).length > 0) {
+            // Metadata-only: the body is passed through untouched, and
+            // pageSourceHash covers the body alone, so this cannot disturb the
+            // #920 reseed comparison or mark the page locally-modified.
+            await pageManager.savePage(existingSlug, existing.content, {
+              ...existingMeta,
+              ...metaPatch
+            });
+            // Keep the in-memory copy consistent — the reseed branch below reads
+            // existingMeta again, and would otherwise re-apply a stale category.
+            Object.assign(existingMeta, metaPatch);
+            logger.info(
+              `[AddonsManager] Reconciled '${existingSlug}' (${addonName}): ${reasons.join('; ')}`
+            );
           }
 
           const srcHash = pageSourceHash(parsed.content);
@@ -920,6 +982,9 @@ class AddonsManager extends BaseManager {
               ...(parsed.data as Record<string, unknown>),
               addon: addonName,
               'system-category': reseedCategory,
+              // #1003: keep the marker truthful — it must always name the source
+              // category most recently applied, whichever path applied it.
+              ...(typeof reseedCategory === 'string' ? { 'addon-source-category': reseedCategory } : {}),
               ...(reseedAccess ? { access: reseedAccess } : {}),
               'addon-source-hash': srcHash
             };
@@ -962,6 +1027,12 @@ class AddonsManager extends BaseManager {
           ...(parsed.data as Record<string, unknown>),
           addon: addonName,
           'system-category': seedCategory,
+          // #1003: record the source category applied at seed time. Without
+          // this a freshly seeded page has no marker, so the first time an
+          // operator re-categorized it the drift check on the next boot would
+          // read that as "the addon's value has not been applied yet" and
+          // revert them.
+          'addon-source-category': seedCategory,
           ...(seedAccess ? { access: seedAccess } : {}),
           'addon-source-hash': pageSourceHash(parsed.content)
         };
