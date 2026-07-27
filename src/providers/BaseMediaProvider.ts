@@ -12,6 +12,7 @@
  */
 
 import type { AssetProvider, AssetRecord, AssetQuery, AssetPage, AssetInput, AssetMetadata, AssetMetadataPatch } from '../types/Asset.js';
+import { buildMetadataWriteTags, normalizeExifDate } from '../utils/assetMetadataTags.js';
 import type {
   CreativeWork,
   ImageObject,
@@ -245,6 +246,14 @@ abstract class BaseMediaProvider implements AssetProvider {
   }
 
   /**
+   * Delegates to `utils/assetMetadataTags` (#999).
+   *
+   * The mapping moved there so attachments and media share ONE implementation
+   * — two copies of the #866 decisions (keywords-only, dual description tags,
+   * CreateDate for A/V) would drift, and each of those is subtly wrong in a way
+   * that is hard to notice.
+   *
+   * Original contract, unchanged:
    * Map an AssetMetadataPatch onto the ExifTool tag names to write for a file
    * of the given MIME type. Pure — no I/O; unit-testable without ExifTool.
    *
@@ -261,52 +270,15 @@ abstract class BaseMediaProvider implements AssetProvider {
    * @throws Error if `dateTimeOriginal` is present, non-null, and unparseable.
    */
   protected static buildMetadataWriteTags(patch: AssetMetadataPatch, mimeType: string): Record<string, unknown> {
-    const tags: Record<string, unknown> = {};
-
-    if (patch.title !== undefined) {
-      tags.Title = patch.title;
-    }
-    if (patch.description !== undefined) {
-      tags.Description = patch.description;
-      tags.ImageDescription = patch.description;
-    }
-    if (patch.keywords !== undefined) {
-      tags.Keywords = patch.keywords === null ? null
-        : patch.keywords.map(k => k.trim()).filter(Boolean);
-    }
-    if (patch.dateTimeOriginal !== undefined) {
-      const isAV = mimeType.startsWith('video/') || mimeType.startsWith('audio/');
-      const dateTag = isAV ? 'CreateDate' : 'DateTimeOriginal';
-      tags[dateTag] = patch.dateTimeOriginal === null
-        ? null
-        : BaseMediaProvider.normalizeExifDate(patch.dateTimeOriginal);
-    }
-
-    return tags;
+    return buildMetadataWriteTags(patch, mimeType);
   }
 
   /**
-   * Normalize a user-supplied timestamp to ExifTool's "YYYY:MM:DD HH:MM:SS"
-   * write format. Accepts "YYYY-MM-DD HH:MM[:SS]" and ISO-8601
-   * "YYYY-MM-DDTHH:MM[:SS]"; a date-only "YYYY-MM-DD" gets 00:00:00.
-   *
-   * @throws Error on any other shape or out-of-range date parts.
+   * @deprecated Use `normalizeExifDate` from `utils/assetMetadataTags`.
+   * Kept as a thin delegate so existing subclasses and tests keep working.
    */
   protected static normalizeExifDate(input: string): string {
-    const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(input.trim());
-    if (!m) {
-      throw new Error(`Invalid dateTimeOriginal "${input}" — expected YYYY-MM-DD[ HH:MM[:SS]]`);
-    }
-    const [, y, mo, d, h = '00', mi = '00', s = '00'] = m;
-    const asDate = new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s));
-    if (
-      asDate.getFullYear() !== Number(y) || asDate.getMonth() !== Number(mo) - 1 ||
-      asDate.getDate() !== Number(d) || asDate.getHours() !== Number(h) ||
-      asDate.getMinutes() !== Number(mi) || asDate.getSeconds() !== Number(s)
-    ) {
-      throw new Error(`Invalid dateTimeOriginal "${input}" — date parts out of range`);
-    }
-    return `${y}:${mo}:${d} ${h}:${mi}:${s}`;
+    return normalizeExifDate(input);
   }
 
   /**

@@ -1,6 +1,8 @@
 import BaseAttachmentProvider, { FileInfo, User, AttachmentResult } from './BaseAttachmentProvider.js';
 import { AttachmentMetadata } from '../types/index.js';
 import type { AssetProvider, AssetRecord, AssetQuery, AssetPage, AssetInput, AssetMetadata } from '../types/Asset.js';
+import type { AssetMetadataPatch } from '../types/Asset.js';
+import { buildMetadataWriteTags, supportsEmbeddedMetadata } from '../utils/assetMetadataTags.js';
 import type { CreativeWork, DigitalDocument } from '../types/Schema.js';
 import sharp from 'sharp';
 import { ExifTool } from 'exiftool-vendored';
@@ -1212,7 +1214,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
 
   readonly id = 'local';
   readonly displayName = 'Local Attachments';
-  readonly capabilities: import('../types/Asset.js').ProviderCapability[] = ['upload', 'search', 'stream', 'thumbnail'];
+  readonly capabilities: import('../types/Asset.js').ProviderCapability[] = ['upload', 'search', 'stream', 'thumbnail', 'edit'];
 
   /**
    * AssetProvider.getThumbnail() — generate (and cache) a JPEG thumbnail for image attachments.
@@ -1529,7 +1531,8 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       dateModified: schema.dateModified,
       author: schema.author?.name,
       description: schema.description,
-      keywords: [],
+      // #999: surfaces both upload-extracted and user-edited keywords.
+      keywords: schema.documentKeywords ?? [],
       dimensions,
       mentions: (schema.mentions ?? []).map(m => m.name ?? '').filter(Boolean),
       isPrivate: schema.isPrivate,
@@ -1587,6 +1590,87 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     const total = items.length;
     const page = items.slice(offset, offset + pageSize).map(s => this.schemaToAssetRecord(s));
     return Promise.resolve({ results: page, total, hasMore: offset + page.length < total });
+  }
+
+  /**
+   * AssetProvider.updateMetadata() — edit an attachment's descriptive metadata (#999).
+   *
+   * The attachment counterpart of `FileSystemMediaProvider.updateItemMetadata`,
+   * sharing its ExifTool tag mapping via `utils/assetMetadataTags` so the #866
+   * decisions (keywords-only, dual description tags, `CreateDate` for A/V) live
+   * in one place instead of being reimplemented here and drifting.
+   *
+   * Two things differ from media, both because attachments are not a curated
+   * library:
+   *
+   * 1. **Not every attachment can carry embedded metadata.** A page can hold a
+   *    `.zip`, a `.csv`, a `.json`. Writing EXIF to those either fails or
+   *    corrupts them, so the write is attempted only for types that support it
+   *    and the edit is still persisted as sidecar metadata either way. An edit
+   *    silently doing nothing would be worse than one that is honest about
+   *    where it was stored.
+   *
+   * 2. **A failed embedded write must not lose the edit.** ExifTool can fail on
+   *    a malformed-but-readable file. The sidecar is written regardless and the
+   *    failure is logged, so the user's text survives even when the file will
+   *    not take it.
+   *
+   * @param id - Attachment identifier
+   * @param patch - Fields to change; `null` clears, omission leaves alone
+   * @returns The refreshed record, or null when the attachment is unknown
+   */
+  async updateMetadata(id: string, patch: AssetMetadataPatch): Promise<AssetRecord | null> {
+    const schema = this.attachmentMetadata.get(id);
+    if (!schema) {
+      logger.warn(`[BasicAttachmentProvider] Cannot update metadata — unknown attachment: ${id}`);
+      return null;
+    }
+
+    // Throws on an unparseable date BEFORE anything is persisted, so a bad
+    // input cannot leave the sidecar and the file disagreeing.
+    const tags = buildMetadataWriteTags(patch, schema.encodingFormat);
+
+    if (Object.keys(tags).length > 0 && supportsEmbeddedMetadata(schema.encodingFormat)) {
+      try {
+        await this.exiftool().write(schema.storageLocation, tags);
+        logger.info(
+          `[BasicAttachmentProvider] Wrote ${Object.keys(tags).join(', ')} to ${schema.name} (${id})`
+        );
+      } catch (err) {
+        logger.warn(
+          `[BasicAttachmentProvider] Embedded write failed for ${schema.name} (${id}) — `
+          + `keeping the edit in stored metadata only: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    } else if (Object.keys(tags).length > 0) {
+      logger.debug(
+        `[BasicAttachmentProvider] ${schema.encodingFormat} cannot carry embedded metadata — `
+        + `storing the edit for ${schema.name} (${id}) as attachment metadata only`
+      );
+    }
+
+    // Persist onto the same fields the upload-time extractor populates, so an
+    // edited value and an extracted one are indistinguishable downstream.
+    if (patch.title !== undefined) {
+      schema.documentTitle = patch.title ?? undefined;
+    }
+    if (patch.description !== undefined) {
+      schema.description = patch.description ?? undefined;
+    }
+    if (patch.keywords !== undefined) {
+      schema.documentKeywords = patch.keywords === null
+        ? undefined
+        : patch.keywords.map(k => k.trim()).filter(Boolean);
+    }
+    if (patch.dateTimeOriginal !== undefined) {
+      schema.documentDateCreated = patch.dateTimeOriginal ?? undefined;
+    }
+    schema.dateModified = new Date().toISOString();
+
+    this.attachmentMetadata.set(id, schema);
+    await this.saveMetadata();
+
+    return this.schemaToAssetRecord(schema);
   }
 
   /**
