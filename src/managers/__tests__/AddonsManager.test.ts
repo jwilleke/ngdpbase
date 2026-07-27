@@ -1074,7 +1074,9 @@ describe('AddonsManager', () => {
       const pageManager = makePageManager(
         [],                                            // no slug match
         {},
-        { [uuid]: { title: 'About', uuid, metadata: { slug: 'about' } } } // UUID already in use
+        // `access` present so the #971 backfill is a no-op — this case is about
+        // UUID collision detection, not access stamping.
+        { [uuid]: { title: 'About', uuid, metadata: { slug: 'about', access: { edit: ['admin'] } } } } // UUID already in use
       );
       const manager = new AddonsManager(makeEngineWithPageManager(configManager, pageManager));
       await manager.initialize();
@@ -1091,7 +1093,12 @@ describe('AddonsManager', () => {
       await makeAddonWithSeedPages('reseed-addon', [
         { filename: 'about.md', uuid: RESEED_UUID, slug: 'about', title: 'About', body: sourceBody }
       ]);
-      const metadata = { slug: 'about', uuid: RESEED_UUID };
+      // `access` present so the #971 backfill is a no-op here: these cases are
+      // about RESEED behaviour (does addon content overwrite the page?), and a
+      // metadata-only backfill save would muddy the "savePage never called"
+      // assertions without testing anything they exist to test. Backfill has
+      // its own coverage in AddonsManager-AccessStamp.test.ts.
+      const metadata = { slug: 'about', uuid: RESEED_UUID, access: { edit: ['admin'] } };
       if (storedHashBody !== null) metadata['addon-source-hash'] = bodyHash(storedHashBody);
       const existingPage = { title: 'About', uuid: RESEED_UUID, content: pageBody, metadata };
       const configManager = makeConfigManager({ enabledAddons: ['reseed-addon'], pageReseed });
@@ -1219,7 +1226,9 @@ describe('AddonsManager', () => {
       const configManager = makeConfigManager({ enabledAddons: ['idem-addon'] });
       // pageExists returns true for 'idem-home' — simulates a user-edited page
       const pageManager = makePageManager(['idem-home'], {
-        'idem-home': { content: 'existing content', metadata: { title: 'User Edited', 'system-category': 'addon' } }
+        // `access` present so the #971 backfill is a no-op — this asserts that
+        // CONTENT is never overwritten, which the backfill does not do.
+        'idem-home': { content: 'existing content', metadata: { title: 'User Edited', 'system-category': 'addon', access: { edit: ['admin'] } } }
       });
       const manager = new AddonsManager(makeEngineWithPageManager(configManager, pageManager));
       await manager.initialize();
@@ -1234,7 +1243,9 @@ describe('AddonsManager', () => {
       ]);
 
       const configManager = makeConfigManager({ enabledAddons: ['reindex-addon'] });
-      const existingPage = { content: 'existing content', metadata: { title: 'Test', 'system-category': 'addon' } };
+      // `access` present so the #971 backfill is a no-op — this is about search
+      // re-indexing, not access stamping.
+      const existingPage = { content: 'existing content', metadata: { title: 'Test', 'system-category': 'addon', access: { edit: ['admin'] } } };
       const pageManager = makePageManager(['reindex-page'], { 'reindex-page': existingPage });
       const searchManager = makeSearchManager();
       const manager = new AddonsManager(makeEngineWithPageManager(configManager, pageManager, searchManager));

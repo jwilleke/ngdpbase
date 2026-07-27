@@ -838,6 +838,50 @@ class AddonsManager extends BaseManager {
         if (existing) {
           const existingMeta = (existing.metadata as Record<string, unknown> | undefined) ?? {};
           const existingSlug = (existingMeta.slug as string) || slug;
+
+          // #971 backfill: pages seeded before `access` stamping existed carry
+          // none, so §3's admin-only editing simply does not apply to them —
+          // they are silently unprotected while looking identical to pages that
+          // are. §2 called for exactly this: a one-time pass keyed on uuid match
+          // against addon sources, which is what resolving `existing` above
+          // already did.
+          //
+          // Runs regardless of the reseed setting. Reseed governs whether the
+          // addon may overwrite page CONTENT — a different and much riskier
+          // question than attaching the protection the page should have shipped
+          // with. Gating the backfill behind an opt-in that defaults to false
+          // would leave every existing deployment permanently unprotected.
+          //
+          // Metadata-only: the body is passed through untouched, and
+          // pageSourceHash covers the body alone, so this cannot disturb the
+          // #920 reseed comparison or mark the page locally-modified.
+          //
+          // Fires once. After the stamp lands the condition is false forever.
+          // The exception is an operator who DELETES `access` outright — that
+          // gets re-added on the next boot. Setting `access` to something else
+          // (a wider principal list) is preserved, and is the supported way to
+          // open a page up.
+          if (existingMeta.access === undefined) {
+            // Narrow rather than String()-coerce: a non-string category is
+            // malformed frontmatter, and coercing an object would both log
+            // "[object Object]" and silently classify it as unclassified
+            // without saying so. Treat it as unclassified explicitly.
+            const rawCategory = existingMeta['system-category']
+              ?? (parsed.data as Record<string, unknown>)['system-category'] ?? 'addon';
+            const backfillCategory = typeof rawCategory === 'string' ? rawCategory : 'addon';
+            const backfillAccess = this.defaultAddonPageAccess(backfillCategory);
+            if (backfillAccess) {
+              await pageManager.savePage(existingSlug, existing.content, {
+                ...existingMeta,
+                access: backfillAccess
+              });
+              logger.info(
+                `[AddonsManager] Backfilled access on '${existingSlug}' (${addonName}, ` +
+                `category=${backfillCategory}) — edit restricted to ${backfillAccess.edit.join(', ')} (#971)`
+              );
+            }
+          }
+
           const srcHash = pageSourceHash(parsed.content);
           const storedHash = existingMeta['addon-source-hash'];
           const hasHash = typeof storedHash === 'string' && storedHash.length > 0;
