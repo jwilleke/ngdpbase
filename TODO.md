@@ -20,7 +20,7 @@ Live mirror of open GitHub issues and PRs, in the section order `/check-todos-lo
 |---|---|---|---|---|
 | ngdpbase | `package-lock.json` | medium | showdown | GHSA-rmmh-p597-ppvv |
 
-No addon path carries an open alert. `geohazardwatch` and `fairways-gen2-website`: 0 open. Local checkouts share ngdpbase state and are not queried.
+No addon path carries an open alert. `fairways-gen2-website`: 0 open. Local checkouts share ngdpbase state and are not queried; `geohazardwatch` is out of scope (operator, 2026-07-27).
 
 > **No open tracking issue.** #599 was closed after the ReDoS guard shipped (`92763a37`). showdown is abandoned upstream — advisory `first_patched_version: null`, registry untouched since 2023-07-31 — so this cannot clear by upgrading.
 
@@ -34,15 +34,7 @@ No addon path carries an open alert. `geohazardwatch` and `fairways-gen2-website
 
 ## 🔀 Open PRs
 
-- *(none in ngdpbase or geohazardwatch)*
-
-## 🛰 Sister sites — geohazardwatch
-
-| # | Labels | Title |
-|---|---|---|
-| [#177](https://github.com/jwilleke/geohazardwatch/issues/177) | bug, P1 | Seeded pages non-compliant with ngdpbase addon decisions — tracked from #972 |
-| [#149](https://github.com/jwilleke/geohazardwatch/issues/149) | security, P2 | showdown ReDoS — same advisory as above |
-| [#148](https://github.com/jwilleke/geohazardwatch/issues/148) | bug, P2 | Tag-push trigger for publish-image.yml did not fire |
+- *(none)*
 
 ## 🧭 Operator-action carryover
 

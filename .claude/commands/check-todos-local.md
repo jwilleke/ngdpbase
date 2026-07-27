@@ -24,13 +24,11 @@ In-scope local checkouts of `jwilleke/ngdpbase`:
 - `ngdpbase` (port 3000, "jimstest" — this repo)
 - `ngdp-temp-builds` (no separate issue tracker)
 
-(Port 3333 is served by `GeoHazardWatch`, a separate satellite with its own issue tracker.)
-
 Separate satellites with their own issue tracker:
 
-- `jwilleke/geohazardwatch`
+- *(none in scope)*
 
-When surveying, include a **combined top-priority table** spanning the separate satellite(s). Filter rules:
+When a separate satellite IS in scope, include a **combined top-priority table** spanning it. Filter rules:
 
 - Bugs always count; enhancements only if very recent, very impactful, or labeled `in review` / `needs-review`.
 - Exclude noise: Renovate Dependency Dashboard issues, dependency-bump PRs already handled in normal flow.
@@ -39,6 +37,10 @@ When surveying, include a **combined top-priority table** spanning the separate 
 Out of scope (per operator clarification):
 
 - `jwilleke/mj-infra-flux` — not part of `/othersites` scope.
+- `jwilleke/geohazardwatch` — **do not survey** (operator, 2026-07-27). Its issues, PRs and
+  Dependabot alerts are not reported here. Port 3333 runs it locally, but it is updated through
+  the GHCR + Renovate delivery chain and tracked in its own repo. Cross-repo work that genuinely
+  belongs to ngdpbase still lands as an ngdpbase issue (e.g. #972), which is where it surfaces.
 
 ## Usage
 
@@ -54,7 +56,6 @@ Freshen the root `TODO.md` (moved from `docs/TODO.md` on 2026-05-16). Keep only 
   1. **Main ngdpbase repo** — `gh api repos/jwilleke/ngdpbase/dependabot/alerts --jq '[.[] | select(.state == "open") | {number, path: .dependency.manifest_path, package: .security_vulnerability.package.name, severity: .security_advisory.severity, ghsa: .security_advisory.ghsa_id}]'`
   2. **Sliced by addon path** — group the main-repo result by `manifest_path` prefix. Show root `package.json` separately from each `addons/*/package.json`. This surfaces the case where the same GHSA is open across multiple sibling addons (the pattern that produced ngdpbase PR #769 — 4 sibling `uuid` alerts only one of which had an auto-PR).
   3. **Separate-repo satellites** — same query against each satellite that has its own Dependabot state:
-     - `gh api repos/jwilleke/geohazardwatch/dependabot/alerts --jq '[.[] | select(.state == "open") | ...]'`
      - `gh api repos/jwilleke/fairways-gen2-website/dependabot/alerts --jq '[.[] | select(.state == "open") | ...]'`
   4. **Local-only checkouts** (`fairways-base`, `ngdp-temp-builds`) — **skip the API call**: they share `jwilleke/ngdpbase`'s alert state and would double-count.
 
@@ -63,7 +64,7 @@ Freshen the root `TODO.md` (moved from `docs/TODO.md` on 2026-05-16). Keep only 
 - **Waiting on Review Sign-off** — issues carrying the `in review` label: work is shipped/merged; operator verification is the only thing between the issue and closure. For each item include shipped version (if any), what changed in one line, and how to verify (URL, command, file to inspect). This is the section the operator should clear first each session.
 - **Open PRs** — ngdpbase + satellites
 - **Open BUGS** — ngdpbase, count + top by issue # / recency
-- **Sister-site top priorities (combined table)** — geohazardwatch only today; expand if more separate satellites emerge
+- **Sister-site top priorities (combined table)** — omit entirely while no separate satellite is in scope; reinstate if one is added
 - **Operator-action carryover** — items awaiting yes/no/close decisions
 - **Easy wins** — open issues ready to ship as a single short slice. Survey `gh issue list --state open --limit 100 --json number,title,labels,body` and apply the easy-win filter (see below). Show issue number, title, one-line "what to do", and the rationale for why it qualifies. Cap at 5 — anything beyond that suggests the filter is too loose. Skip when the operator has explicitly carved a longer slice already (e.g., active EPIC work).
 - **Deferred** — open issues carrying the `deferred` label, kept in a **separate** section from the active priorities above (BUGS, easy wins, feature work) so parked work is visible but not treated as actionable. Survey via `gh issue list --repo jwilleke/ngdpbase --state open --label deferred --json number,title,labels,updatedAt --limit 50`. List number, title, and a one-line "parked because" reason (pull from the most recent comment / TODO note where one exists). Do **not** recommend starting these or fold them into "Recommended next moves" — they move out of this section only on an explicit operator go-ahead or when a concrete driver appears. An issue that is both `deferred` and `bug` still lists here, not under Open BUGS.
