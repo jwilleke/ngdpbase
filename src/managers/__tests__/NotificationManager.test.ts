@@ -66,7 +66,7 @@ describe('NotificationManager', () => {
     mockEngine = createMockEngine(tempDir);
 
     // Initialize NotificationManager
-    notificationManager = new NotificationManager(mockEngine as unknown as WikiEngine);
+    notificationManager = new NotificationManager(mockEngine);
     await notificationManager.initialize({});
   });
 

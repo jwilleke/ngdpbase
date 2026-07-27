@@ -489,7 +489,7 @@ class ConfigurationManager extends BaseManager {
     defaultConfig: WikiConfig,
     customConfig: Partial<WikiConfig>
   ): WikiConfig {
-    const result = { ...defaultConfig } as WikiConfig;
+    const result = { ...defaultConfig };
 
     for (const key of Object.keys(customConfig)) {
       const customValue = customConfig[key];
@@ -724,7 +724,7 @@ class ConfigurationManager extends BaseManager {
       const varName = bareMatch[1];
       if (varName in process.env) {
         this._envRefHitCount++;
-        return process.env[varName] as string;
+        return process.env[varName];
       }
       this._envRefMissCount++;
       throw new Error(
@@ -1299,7 +1299,7 @@ class ConfigurationManager extends BaseManager {
    * console.log('Customized settings:', Object.keys(customSettings));
    */
   getCustomProperties(): Partial<WikiConfig> {
-    return { ...this.customConfig } as Partial<WikiConfig>;
+    return { ...this.customConfig };
   }
 
   /**

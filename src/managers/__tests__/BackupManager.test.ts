@@ -56,7 +56,7 @@ describe('BackupManager', () => {
     });
     mockEngine.getRegisteredManagers.mockReturnValue([]);
 
-    bm = new BackupManager(mockEngine as unknown as WikiEngine);
+    bm = new BackupManager(mockEngine);
     await bm.initialize();
   });
 
@@ -68,7 +68,7 @@ describe('BackupManager', () => {
   describe('Initialization', () => {
     test('throws when ConfigurationManager is missing', async () => {
       const noConfigEngine = { getManager: vi.fn(() => null), getRegisteredManagers: vi.fn(() => []) };
-      const manager = new BackupManager(noConfigEngine as unknown as WikiEngine);
+      const manager = new BackupManager(noConfigEngine);
 
       await expect(manager.initialize()).rejects.toThrow('BackupManager requires ConfigurationManager');
     });
@@ -350,7 +350,7 @@ describe('BackupManager', () => {
   describe('updateAutoBackupConfig()', () => {
     test('throws when ConfigurationManager is not available', async () => {
       const noConfigEngine = { getManager: vi.fn(() => null), getRegisteredManagers: vi.fn(() => []) };
-      const manager = new BackupManager(noConfigEngine as unknown as WikiEngine);
+      const manager = new BackupManager(noConfigEngine);
       // Initialize would throw, so call updateAutoBackupConfig directly on uninitialized instance
       // by monkey-patching engine after construction using the underlying engine field
       (manager as unknown as { engine: typeof noConfigEngine }).engine = noConfigEngine;
@@ -433,7 +433,7 @@ describe('BackupManager', () => {
       (bm as unknown as { autoBackupTime: string }).autoBackupTime = '02:00';
       (bm as unknown as { autoBackupDays: string }).autoBackupDays = 'daily';
 
-      const spy = vi.spyOn(bm, 'createBackup').mockResolvedValue(undefined as unknown as Awaited<ReturnType<typeof bm.createBackup>>);
+      const spy = vi.spyOn(bm, 'createBackup').mockResolvedValue(undefined);
       await callScheduledBackup(bm);
 
       expect(spy).toHaveBeenCalled();
@@ -445,7 +445,7 @@ describe('BackupManager', () => {
       (bm as unknown as { autoBackupTime: string }).autoBackupTime = '02:00';
       (bm as unknown as { autoBackupDays: string }).autoBackupDays = 'monthly';
 
-      const spy = vi.spyOn(bm, 'createBackup').mockResolvedValue(undefined as unknown as Awaited<ReturnType<typeof bm.createBackup>>);
+      const spy = vi.spyOn(bm, 'createBackup').mockResolvedValue(undefined);
       await callScheduledBackup(bm);
 
       expect(spy).toHaveBeenCalled();
@@ -456,7 +456,7 @@ describe('BackupManager', () => {
       (bm as unknown as { autoBackupTime: string }).autoBackupTime = '02:00';
       (bm as unknown as { autoBackupDays: string }).autoBackupDays = 'monthly';
 
-      const spy = vi.spyOn(bm, 'createBackup').mockResolvedValue(undefined as unknown as Awaited<ReturnType<typeof bm.createBackup>>);
+      const spy = vi.spyOn(bm, 'createBackup').mockResolvedValue(undefined);
       await callScheduledBackup(bm);
 
       expect(spy).not.toHaveBeenCalled();
@@ -468,7 +468,7 @@ describe('BackupManager', () => {
       (bm as unknown as { autoBackupTime: string }).autoBackupTime = '02:00';
       (bm as unknown as { autoBackupDays: string }).autoBackupDays = 'Mon,Wed,Fri';
 
-      const spy = vi.spyOn(bm, 'createBackup').mockResolvedValue(undefined as unknown as Awaited<ReturnType<typeof bm.createBackup>>);
+      const spy = vi.spyOn(bm, 'createBackup').mockResolvedValue(undefined);
       await callScheduledBackup(bm);
 
       expect(spy).toHaveBeenCalled();
@@ -479,7 +479,7 @@ describe('BackupManager', () => {
       (bm as unknown as { autoBackupTime: string }).autoBackupTime = '02:00';
       (bm as unknown as { autoBackupDays: string }).autoBackupDays = 'daily';
 
-      const spy = vi.spyOn(bm, 'createBackup').mockResolvedValue(undefined as unknown as Awaited<ReturnType<typeof bm.createBackup>>);
+      const spy = vi.spyOn(bm, 'createBackup').mockResolvedValue(undefined);
       await callScheduledBackup(bm);
 
       expect(spy).not.toHaveBeenCalled();

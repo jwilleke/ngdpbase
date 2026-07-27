@@ -28,7 +28,7 @@ import type { WikiEngine } from '../../types/WikiEngine';
 function makeEngine(): WikiEngine {
   return {
     getManager: vi.fn(() => null)
-  } as unknown as WikiEngine;
+  };
 }
 
 async function makeInitializedManager(): Promise<VariableManager> {

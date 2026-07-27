@@ -176,7 +176,7 @@ export class GoogleOIDCProvider implements AuthProvider {
         await userManager.updateUser(existing.username, {
           lastLogin: new Date().toISOString(),
           loginCount: (existing.loginCount ?? 0) + 1
-        } as Parameters<typeof userManager.updateUser>[1]);
+        });
       } catch {
         // best-effort — do not fail login if update fails
       }

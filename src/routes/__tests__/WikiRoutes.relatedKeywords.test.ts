@@ -35,7 +35,7 @@ describe('WikiRoutes relatedKeywords (#882)', () => {
         return null;
       })
     };
-    wikiRoutes = new WikiRoutes(mockEngine as unknown as WikiEngine);
+    wikiRoutes = new WikiRoutes(mockEngine);
   });
 
   test('400 without keyword', async () => {
@@ -84,7 +84,7 @@ describe('WikiRoutes relatedKeywords (#882)', () => {
 
   test('503 when SearchManager unavailable', async () => {
     const engine = { getManager: vi.fn(() => null) };
-    const routes = new WikiRoutes(engine as unknown as WikiEngine);
+    const routes = new WikiRoutes(engine);
     const res = createMockRes();
     await routes.relatedKeywords(createMockReq({ keyword: 'x' }), res);
     expect(res.status).toHaveBeenCalledWith(503);

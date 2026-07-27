@@ -55,7 +55,7 @@ describe('FileSystemMediaProvider.getAllKeywordCounts (#895)', () => {
   }
 
   beforeEach(() => {
-    provider = new FileSystemMediaProvider(minimalConfig as never);
+    provider = new FileSystemMediaProvider(minimalConfig);
   });
 
   it('counts keywords across items', async () => {

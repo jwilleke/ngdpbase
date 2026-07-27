@@ -12,7 +12,7 @@ function makeEngine(notificationManager?: unknown): WikiEngine {
       if (name === 'NotificationManager') return notificationManager ?? null;
       return null;
     })
-  } as unknown as WikiEngine;
+  };
 }
 
 async function makeManager(notificationManager?: unknown): Promise<BackgroundJobManager> {

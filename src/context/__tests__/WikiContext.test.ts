@@ -37,7 +37,7 @@ describe('WikiContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    context = new WikiContext(mockEngine as unknown as WikiEngine, {
+    context = new WikiContext(mockEngine, {
       context: WikiContext.CONTEXT.VIEW,
       pageName: 'TestPage',
       content: 'Test content with [{$pagename}]',
@@ -69,7 +69,7 @@ describe('WikiContext', () => {
     });
 
     test('should use defaults for optional properties', () => {
-      const minimalContext = new WikiContext(mockEngine as unknown as WikiEngine);
+      const minimalContext = new WikiContext(mockEngine);
       expect(minimalContext.context).toBe(WikiContext.CONTEXT.NONE);
       expect(minimalContext.pageName).toBeNull();
       expect(minimalContext.content).toBeNull();
@@ -83,7 +83,7 @@ describe('WikiContext', () => {
     });
 
     test('should return NONE for default context', () => {
-      const defaultContext = new WikiContext(mockEngine as unknown as WikiEngine);
+      const defaultContext = new WikiContext(mockEngine);
       expect(defaultContext.getContext()).toBe(WikiContext.CONTEXT.NONE);
     });
   });
@@ -167,7 +167,7 @@ describe('WikiContext', () => {
     });
 
     test('should handle missing request object', () => {
-      const contextWithoutRequest = new WikiContext(mockEngine as unknown as WikiEngine, {
+      const contextWithoutRequest = new WikiContext(mockEngine, {
         pageName: 'Test'
       });
 
@@ -218,7 +218,7 @@ describe('WikiContext', () => {
     });
 
     test('instance hasRole delegates to static implementation', () => {
-      const ctx = new WikiContext(mockEngine as unknown as WikiEngine, {
+      const ctx = new WikiContext(mockEngine, {
         userContext: { roles: ['editor'] }
       });
       expect(ctx.hasRole('editor')).toBe(WikiContext.userHasRole(ctx.userContext, 'editor'));
@@ -227,36 +227,36 @@ describe('WikiContext', () => {
 
   describe('hasRole', () => {
     test('returns true when user carries one of the given roles', () => {
-      const ctx = new WikiContext(mockEngine as unknown as WikiEngine, {
+      const ctx = new WikiContext(mockEngine, {
         userContext: { roles: ['editor', 'reader'] }
       });
       expect(ctx.hasRole('admin', 'editor')).toBe(true);
     });
 
     test('returns true for single-arg role match', () => {
-      const ctx = new WikiContext(mockEngine as unknown as WikiEngine, {
+      const ctx = new WikiContext(mockEngine, {
         userContext: { roles: ['admin'] }
       });
       expect(ctx.hasRole('admin')).toBe(true);
     });
 
     test('returns false when user has none of the given roles', () => {
-      const ctx = new WikiContext(mockEngine as unknown as WikiEngine, {
+      const ctx = new WikiContext(mockEngine, {
         userContext: { roles: ['reader'] }
       });
       expect(ctx.hasRole('admin', 'editor')).toBe(false);
     });
 
     test('returns false when userContext is null', () => {
-      const ctx = new WikiContext(mockEngine as unknown as WikiEngine);
+      const ctx = new WikiContext(mockEngine);
       expect(ctx.hasRole('admin')).toBe(false);
     });
 
     test('returns false when roles is missing or empty', () => {
-      const noRoles = new WikiContext(mockEngine as unknown as WikiEngine, {
+      const noRoles = new WikiContext(mockEngine, {
         userContext: { username: 'alice' }
       });
-      const emptyRoles = new WikiContext(mockEngine as unknown as WikiEngine, {
+      const emptyRoles = new WikiContext(mockEngine, {
         userContext: { roles: [] }
       });
       expect(noRoles.hasRole('admin')).toBe(false);
@@ -264,7 +264,7 @@ describe('WikiContext', () => {
     });
 
     test('returns false when called with no role names', () => {
-      const ctx = new WikiContext(mockEngine as unknown as WikiEngine, {
+      const ctx = new WikiContext(mockEngine, {
         userContext: { roles: ['admin'] }
       });
       expect(ctx.hasRole()).toBe(false);
@@ -282,7 +282,7 @@ describe('WikiContext', () => {
           return mockEngine.getManager(name);
         })
       };
-      const ctx = new WikiContext(engineWithUser as unknown as WikiEngine, {
+      const ctx = new WikiContext(engineWithUser, {
         userContext: { username: 'alice', roles: ['editor'] }
       });
 
@@ -307,7 +307,7 @@ describe('WikiContext', () => {
           return mockEngine.getManager(name);
         })
       };
-      const ctx = new WikiContext(engineWithUser as unknown as WikiEngine);
+      const ctx = new WikiContext(engineWithUser);
 
       const result = await ctx.hasPermission('admin-system');
 
@@ -316,7 +316,7 @@ describe('WikiContext', () => {
     });
 
     test('returns false when UserManager is not available', async () => {
-      const ctx = new WikiContext(mockEngine as unknown as WikiEngine, {
+      const ctx = new WikiContext(mockEngine, {
         userContext: { username: 'alice', roles: ['admin'] }
       });
       // mockEngine returns null for UserManager
@@ -332,7 +332,7 @@ describe('WikiContext', () => {
           return mockEngine.getManager(name);
         })
       };
-      const ctx = new WikiContext(engine as unknown as WikiEngine, {
+      const ctx = new WikiContext(engine, {
         userContext: { username: 'alice', roles: ['editor'] }
       });
 
@@ -355,7 +355,7 @@ describe('WikiContext', () => {
           return mockEngine.getManager(name);
         })
       };
-      const ctx = new WikiContext(engine as unknown as WikiEngine, {
+      const ctx = new WikiContext(engine, {
         userContext: { username: 'alice', roles: ['editor'] }
       });
 
@@ -378,7 +378,7 @@ describe('WikiContext', () => {
           return mockEngine.getManager(name);
         })
       };
-      const ctx = new WikiContext(engine as unknown as WikiEngine, {
+      const ctx = new WikiContext(engine, {
         userContext: { username: 'alice', roles: ['editor'] }
       });
 
@@ -406,7 +406,7 @@ describe('WikiContext', () => {
           return mockEngine.getManager(name);
         })
       };
-      const ctx = new WikiContext(engineWithAcl as unknown as WikiEngine, {
+      const ctx = new WikiContext(engineWithAcl, {
         pageName: 'Main',
         userContext: { username: 'alice', roles: ['editor'] }
       });
@@ -427,7 +427,7 @@ describe('WikiContext', () => {
           return mockEngine.getManager(name);
         })
       };
-      const ctx = new WikiContext(engineWithAcl as unknown as WikiEngine, {
+      const ctx = new WikiContext(engineWithAcl, {
         userContext: { username: 'alice', roles: ['admin'] }
       });
 
@@ -439,7 +439,7 @@ describe('WikiContext', () => {
 
     test('returns false when ACLManager is not available', async () => {
       // mockEngine returns null for ACLManager
-      const ctx = new WikiContext(mockEngine as unknown as WikiEngine, {
+      const ctx = new WikiContext(mockEngine, {
         pageName: 'Main',
         userContext: { username: 'alice', roles: ['admin'] }
       });
@@ -457,7 +457,7 @@ describe('WikiContext', () => {
           return mockEngine.getManager(name);
         })
       };
-      const ctx = new WikiContext(engine as unknown as WikiEngine, {
+      const ctx = new WikiContext(engine, {
         pageName: 'Main',
         userContext: { username: 'alice', roles: ['editor'] }
       });
@@ -487,7 +487,7 @@ describe('WikiContext', () => {
           return mockEngine.getManager(name);
         })
       };
-      const ctx = new WikiContext(engineWithAcl as unknown as WikiEngine, {
+      const ctx = new WikiContext(engineWithAcl, {
         pageName: 'Main',
         userContext: { username: 'alice', roles: ['editor'] }
       });
@@ -516,7 +516,7 @@ describe('WikiContext', () => {
           return mockEngine.getManager(name);
         })
       };
-      const ctx = new WikiContext(engineWithAcl as unknown as WikiEngine, {
+      const ctx = new WikiContext(engineWithAcl, {
         pageName: 'Main',
         userContext: { username: 'alice', roles: ['editor'] }
       });
@@ -543,7 +543,7 @@ describe('WikiContext', () => {
           return mockEngine.getManager(name);
         })
       };
-      const ctx = new WikiContext(engineWithAcl as unknown as WikiEngine, {
+      const ctx = new WikiContext(engineWithAcl, {
         pageName: 'Main',
         userContext: { username: 'alice', roles: ['editor'] }
       });
@@ -574,7 +574,7 @@ describe('WikiContext', () => {
           return mockEngine.getManager(name);
         })
       };
-      const ctx = new WikiContext(engineWithAcl as unknown as WikiEngine, {
+      const ctx = new WikiContext(engineWithAcl, {
         pageName: 'Main',
         userContext: { username: 'alice', roles: ['editor'] }
       });
@@ -598,7 +598,7 @@ describe('WikiContext', () => {
         })
       };
       // No pageName on this context.
-      const ctx = new WikiContext(engineWithAcl as unknown as WikiEngine, {
+      const ctx = new WikiContext(engineWithAcl, {
         userContext: { username: 'alice', roles: ['admin'] }
       });
 
@@ -611,26 +611,26 @@ describe('WikiContext', () => {
 
   describe('getPrincipals', () => {
     test('returns roles plus username for authenticated user', () => {
-      const ctx = new WikiContext(mockEngine as unknown as WikiEngine, {
+      const ctx = new WikiContext(mockEngine, {
         userContext: { username: 'alice', roles: ['editor', 'reader'] }
       });
       expect(ctx.getPrincipals()).toEqual(['editor', 'reader', 'alice']);
     });
 
     test('returns roles only when no username present', () => {
-      const ctx = new WikiContext(mockEngine as unknown as WikiEngine, {
+      const ctx = new WikiContext(mockEngine, {
         userContext: { roles: ['anonymous'] }
       });
       expect(ctx.getPrincipals()).toEqual(['anonymous']);
     });
 
     test('returns empty array when userContext is null', () => {
-      const ctx = new WikiContext(mockEngine as unknown as WikiEngine);
+      const ctx = new WikiContext(mockEngine);
       expect(ctx.getPrincipals()).toEqual([]);
     });
 
     test('returns just username when roles is missing', () => {
-      const ctx = new WikiContext(mockEngine as unknown as WikiEngine, {
+      const ctx = new WikiContext(mockEngine, {
         userContext: { username: 'alice' }
       });
       expect(ctx.getPrincipals()).toEqual(['alice']);
@@ -638,7 +638,7 @@ describe('WikiContext', () => {
 
     test('returned array is a copy — does not alias userContext.roles', () => {
       const roles = ['editor'];
-      const ctx = new WikiContext(mockEngine as unknown as WikiEngine, {
+      const ctx = new WikiContext(mockEngine, {
         userContext: { username: 'alice', roles }
       });
       const principals = ctx.getPrincipals();

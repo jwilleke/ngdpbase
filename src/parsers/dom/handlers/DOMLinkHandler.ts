@@ -358,7 +358,7 @@ class DOMLinkHandler {
         });
 
         // Determine link type
-        const linkType = this.linkParser.determineLinkType(linkObj) as LinkType;
+        const linkType = this.linkParser.determineLinkType(linkObj);
 
         // Process link based on type
         await this.processLinkByType(linkElement, linkInfo, linkType, context);
@@ -645,7 +645,7 @@ class DOMLinkHandler {
     });
 
     // Determine link type (internal, external, interwiki, email, anchor)
-    const linkType = this.linkParser.determineLinkType(linkObj) as LinkType;
+    const linkType = this.linkParser.determineLinkType(linkObj);
 
     // Create anchor element with base attributes
     const node = wikiDocument.createElement('a', {

@@ -57,7 +57,7 @@ describe('MarkupParser FilterChain integration (#596)', () => {
   let parser: MarkupParser;
 
   beforeEach(async () => {
-    parser = new MarkupParser(new MockEngine() as never);
+    parser = new MarkupParser(new MockEngine());
     await parser.initialize();
   });
 

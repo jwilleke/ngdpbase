@@ -64,10 +64,10 @@ describe('DeltaStorage', () => {
     });
 
     test('should throw TypeError for non-string inputs', () => {
-      expect(() => DeltaStorage.createDiff(null as unknown as string, 'foo')).toThrow(TypeError);
-      expect(() => DeltaStorage.createDiff('foo', null as unknown as string)).toThrow(TypeError);
-      expect(() => DeltaStorage.createDiff(123 as unknown as string, 'foo')).toThrow(TypeError);
-      expect(() => DeltaStorage.createDiff('foo', 456 as unknown as string)).toThrow(TypeError);
+      expect(() => DeltaStorage.createDiff(null, 'foo')).toThrow(TypeError);
+      expect(() => DeltaStorage.createDiff('foo', null)).toThrow(TypeError);
+      expect(() => DeltaStorage.createDiff(123, 'foo')).toThrow(TypeError);
+      expect(() => DeltaStorage.createDiff('foo', 456)).toThrow(TypeError);
     });
   });
 

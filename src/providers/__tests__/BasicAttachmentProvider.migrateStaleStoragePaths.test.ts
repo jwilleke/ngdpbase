@@ -75,7 +75,7 @@ describe('BasicAttachmentProvider.migrateStaleStoragePaths()', () => {
 
   beforeEach(async () => {
     storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'attach-migrate-test-'));
-    provider = new BasicAttachmentProvider(makeEngine(storageDir) as unknown as WikiEngine);
+    provider = new BasicAttachmentProvider(makeEngine(storageDir));
     await provider.initialize();
     // Initialize ran migrate once over an empty map — reset metadata for each test.
     (provider as any).attachmentMetadata.clear();
@@ -193,7 +193,7 @@ describe('BasicAttachmentProvider.migrateStaleStoragePaths()', () => {
 
   it('skips silently when storageDirectory is not yet set', async () => {
     const orphanProvider = new BasicAttachmentProvider(
-      makeEngine(storageDir) as unknown as WikiEngine
+      makeEngine(storageDir)
     );
     // Don't initialize — storageDirectory stays null per the constructor.
     const orphanSave = vi.spyOn(orphanProvider as any, 'saveMetadata').mockResolvedValue(undefined);

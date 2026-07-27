@@ -43,7 +43,7 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
   let wikiRoutes;
 
   beforeEach(() => {
-    wikiRoutes = new WikiRoutes(mockEngine as unknown as WikiEngine);
+    wikiRoutes = new WikiRoutes(mockEngine);
     vi.clearAllMocks();
   });
 

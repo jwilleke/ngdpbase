@@ -227,7 +227,7 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
     });
     const { default: WikiEngine } = await import('../../WikiEngine');
     const engine = new WikiEngine();
-    const routes = new WikiRoutes(engine as unknown as ConstructorParameters<typeof WikiRoutes>[0]);
+    const routes = new WikiRoutes(engine);
     routes.registerRoutes(app);
   });
 

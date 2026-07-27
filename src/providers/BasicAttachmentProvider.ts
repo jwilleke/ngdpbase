@@ -597,7 +597,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     const schemaMetadata = await this.storeAttachmentInternal(
       fileBuffer,
       fileInfo,
-      metadata as Partial<SchemaCreativeWork>,
+      metadata,
       user,
       storeOptions
     );

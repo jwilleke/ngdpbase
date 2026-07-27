@@ -863,7 +863,7 @@ class WikiRoutes {
       ),
       // Theme owns favicon/logo; config key only overrides when explicitly set in custom config
       // (app-default-config.json sets a fallback but should not win over a theme's own assets)
-      faviconPath: (configManager?.getCustomProperty('ngdpbase.favicon-path') as string) || themePaths.faviconPath,
+      faviconPath: (configManager?.getCustomProperty('ngdpbase.favicon-path')) || themePaths.faviconPath,
       pages: await pageManager.getAllPages(),
       activeTheme: themePaths.activeTheme,
       coreCssPath: themePaths.coreCssPath,
@@ -2505,7 +2505,7 @@ ${panes}
       // in journal mode; this slot adds the same affordances inline when
       // a journal entry is reached via /view/<slug> (wiki links, search).
       const extraPageMetaBar = WikiRoutes.buildViewExtraPageMetaBar(
-        metadata as Record<string, unknown>
+        metadata
       );
 
       res.render(template, {
@@ -3111,7 +3111,7 @@ ${panes}
       // round-trips through unified /save (#803 preservation). Mood + tags
       // pickers can layer on in a follow-up slice.
       const extraFrontmatterFields = WikiRoutes.buildEditorExtraFrontmatterFields(
-        pageData.metadata as Record<string, unknown>
+        pageData.metadata
       );
 
       res.render('edit', {
@@ -4751,7 +4751,7 @@ ${panes}
       });
       const metadata = { ...(page.metadata as Record<string, unknown>) };
       metadata.editor = permContext.userContext?.username || 'unknown';
-      await pageManager.savePageWithContext(wikiContext, metadata as Partial<PageFrontmatter>);
+      await pageManager.savePageWithContext(wikiContext, metadata);
 
       await this.syncAfterProgrammaticSave(pageName, newContent, metadata);
       return undefined;
@@ -4926,7 +4926,7 @@ ${panes}
         content: newContent,
         response: res
       });
-      await pageManager.savePageWithContext(wikiContext, metadata as Partial<PageFrontmatter>);
+      await pageManager.savePageWithContext(wikiContext, metadata);
       await this.syncAfterProgrammaticSave(pageName, newContent, metadata);
 
       return res.render('capture', {
@@ -6145,7 +6145,7 @@ ${panes}
 
       // #640: contributions counts for the "My Contributions" card
       const contributions = currentUser.username
-        ? await this.getMyContributionsCounts(currentUser.username, freshUser as { preferences?: Record<string, unknown> } | null)
+        ? await this.getMyContributionsCounts(currentUser.username, freshUser)
         : { pages: undefined, private: undefined, journal: undefined, links: undefined };
 
       // #534: addon-contributed profile sections.
@@ -7192,7 +7192,7 @@ ${panes}
         content: ncmDoc.content,
         response: res
       });
-      await pageManager.savePageWithContext(wikiContext, ncmDoc.data as Partial<PageFrontmatter>);
+      await pageManager.savePageWithContext(wikiContext, ncmDoc.data);
 
       // Incremental, in-band index update (mirrors createPageFromTemplate).
       const saved = await pageManager.getPage(pageName);
@@ -11145,7 +11145,7 @@ ${panes}
       if (!page) {
         return res.status(404).json({ success: false, error: `Page not found: ${pageName}` });
       }
-      const original = matter.stringify(page.content, page.metadata as Record<string, unknown>);
+      const original = matter.stringify(page.content, page.metadata);
       const ncm = normalizeExistingPageToNcm(original);
       // S5a-ii: dry-run image localization (preview must not persist).
       const img = await this.localizePageImages(ncm.content, pageName, wikiContext.userContext, true);
@@ -11183,7 +11183,7 @@ ${panes}
       if (!page) {
         return res.status(404).json({ success: false, error: `Page not found: ${pageName}` });
       }
-      const original = matter.stringify(page.content, page.metadata as Record<string, unknown>);
+      const original = matter.stringify(page.content, page.metadata);
       const ncm = normalizeExistingPageToNcm(original);
       // S5a-ii: real image localization (persists attachments via AttachmentManager).
       const img = await this.localizePageImages(ncm.content, pageName, wikiContext.userContext, false);
@@ -11192,7 +11192,7 @@ ${panes}
         return res.json({ success: true, page: pageName, changed: false, warnings });
       }
       const split = matter(img.content);
-      await pageManager?.savePage(pageName, split.content, split.data as Record<string, unknown>);
+      await pageManager?.savePage(pageName, split.content, split.data);
       return res.json({
         success: true,
         page: pageName,
@@ -11759,7 +11759,7 @@ ${panes}
       }
 
       // Generate Schema.org JSON-LD using SchemaGenerator
-      const schema = SchemaGenerator.generateOrganizationSchema(organization as Record<string, unknown>, {
+      const schema = SchemaGenerator.generateOrganizationSchema(organization, {
         baseUrl: `${req.protocol}://${req.get('host')}`
       });
 

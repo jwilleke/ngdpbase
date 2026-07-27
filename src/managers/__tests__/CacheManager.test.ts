@@ -53,7 +53,7 @@ describe('CacheManager', () => {
       return config[key] !== undefined ? config[key] : defaultValue;
     });
 
-    cm = new CacheManager(mockEngine as unknown as WikiEngine);
+    cm = new CacheManager(mockEngine);
     await cm.initialize();
   });
 
@@ -66,7 +66,7 @@ describe('CacheManager', () => {
   describe('Initialization', () => {
     test('should throw when ConfigurationManager is missing', async () => {
       const emptyEngine = { getManager: vi.fn(() => null) };
-      const manager = new CacheManager(emptyEngine as unknown as WikiEngine);
+      const manager = new CacheManager(emptyEngine);
 
       await expect(manager.initialize()).rejects.toThrow('CacheManager requires ConfigurationManager');
     });
@@ -81,7 +81,7 @@ describe('CacheManager', () => {
         return defaultValue;
       });
 
-      const disabledCm = new CacheManager(mockEngine as unknown as WikiEngine);
+      const disabledCm = new CacheManager(mockEngine);
       await disabledCm.initialize();
 
       expect(disabledCm.isInitialized()).toBe(true);
@@ -101,7 +101,7 @@ describe('CacheManager', () => {
         return defaultValue;
       });
 
-      const fallbackCm = new CacheManager(mockEngine as unknown as WikiEngine);
+      const fallbackCm = new CacheManager(mockEngine);
       await fallbackCm.initialize();
 
       // Should have fallen back gracefully (still initialized)
@@ -131,7 +131,7 @@ describe('CacheManager', () => {
           return defaultValue;
         });
 
-        const testCm = new CacheManager(mockEngine as unknown as WikiEngine);
+        const testCm = new CacheManager(mockEngine);
         await testCm.initialize();
 
         // getConfig() exposes the resolved provider class name
@@ -278,7 +278,7 @@ describe('CacheManager', () => {
         })
       };
 
-      const r = CacheManager.getCacheForManager(engineWithCm as unknown as WikiEngine, 'my-manager');
+      const r = CacheManager.getCacheForManager(engineWithCm, 'my-manager');
       expect(r).toBeDefined();
       expect(typeof r.get).toBe('function');
     });
@@ -288,7 +288,7 @@ describe('CacheManager', () => {
         getManager: vi.fn(() => null)
       };
 
-      const r = CacheManager.getCacheForManager(engineWithoutCm as unknown as WikiEngine, 'my-manager');
+      const r = CacheManager.getCacheForManager(engineWithoutCm, 'my-manager');
       expect(r).toBeDefined();
       // NullCacheProvider-backed — get returns undefined
       expect(typeof r.get).toBe('function');
@@ -302,7 +302,7 @@ describe('CacheManager', () => {
         })
       };
 
-      const r = CacheManager.getCacheForManager(engineWithCm as unknown as WikiEngine);
+      const r = CacheManager.getCacheForManager(engineWithCm);
       expect(r).toBeDefined();
     });
   });

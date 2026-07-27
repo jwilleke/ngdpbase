@@ -184,6 +184,23 @@ export interface PageProvider extends BaseProvider {
   movePrivatePage(uuid: string, oldCreator: string, newCreator: string): Promise<void>;
 
   /**
+   * Read a page's file exactly as stored — frontmatter and body, unparsed and
+   * unsanitised. Optional capability: only providers backed by a filesystem can
+   * offer it, so callers must feature-detect rather than assume.
+   *
+   * Declared here rather than asserted at the call site. It was previously
+   * widened inline with `as PageProvider & { getRawFile?: ... }`, which
+   * typescript-eslint 8.65 flags as an unnecessary assertion and its autofixer
+   * removes — breaking the build, because the assertion was in fact
+   * load-bearing. Putting the optional member on the interface where it belongs
+   * satisfies both the compiler and the rule, instead of picking a side.
+   *
+   * @param identifier - UUID, slug, or title
+   * @returns The file path and raw contents, or null when unsupported/unknown
+   */
+  getRawFile?(identifier: string): Promise<{ filePath: string; content: string } | null>;
+
+  /**
    * Evict a single page from the provider's in-memory content/metadata cache.
    * @param identifier - UUID, slug, or title
    * @returns resolved page title if an entry was evicted, null otherwise

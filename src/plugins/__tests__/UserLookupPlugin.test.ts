@@ -108,7 +108,7 @@ describe('UserLookupPlugin', () => {
 
   test('returns error message when UserManager unavailable', async () => {
     const ctx = { pageName: 'Test', linkGraph: {}, engine: { getManager: vi.fn().mockReturnValue(null) } };
-    const html = await UserLookupPlugin.execute(ctx as never, {});
+    const html = await UserLookupPlugin.execute(ctx, {});
     expect(html).toContain('plugin-error');
     expect(html).toContain('UserManager not available');
   });

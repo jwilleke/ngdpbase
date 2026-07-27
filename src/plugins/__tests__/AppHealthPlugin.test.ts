@@ -39,7 +39,7 @@ describe('AppHealthPlugin', () => {
   it('detects orphan pages (no inbound links)', async () => {
     // A links to B. B has an inbound link; A and C do not.
     const ctx = makeContext(['A', 'B', 'C'], { B: ['A'] });
-    const html = await AppHealthPlugin.execute!(ctx as never, {});
+    const html = await AppHealthPlugin.execute!(ctx, {});
     expect(html).toContain('Orphan pages (2)');
     expect(html).toContain('>A</a>');
     expect(html).toContain('>C</a>');
@@ -48,7 +48,7 @@ describe('AppHealthPlugin', () => {
 
   it('detects broken / undefined links (linked-to but missing)', async () => {
     const ctx = makeContext(['A'], { Ghost: ['A'] });
-    const html = await AppHealthPlugin.execute!(ctx as never, { checks: 'broken' });
+    const html = await AppHealthPlugin.execute!(ctx, { checks: 'broken' });
     expect(html).toContain('Broken / undefined links (1)');
     expect(html).toContain('href="/edit/Ghost"');
     expect(html).not.toContain('Orphan pages');
@@ -59,7 +59,7 @@ describe('AppHealthPlugin', () => {
       { title: 'Old', lastModified: daysAgo(400) },
       { title: 'New', lastModified: daysAgo(2) }
     ]);
-    const html = await AppHealthPlugin.execute!(ctx as never, { checks: 'stale', staleDays: '365' });
+    const html = await AppHealthPlugin.execute!(ctx, { checks: 'stale', staleDays: '365' });
     expect(html).toContain('Stale pages (no edit in 365d) (1)');
     expect(html).toContain('>Old</a>');
     expect(html).not.toContain('>New</a>');
@@ -67,7 +67,7 @@ describe('AppHealthPlugin', () => {
 
   it('applies exclude regex', async () => {
     const ctx = makeContext(['Main', 'Lonely'], {});
-    const html = await AppHealthPlugin.execute!(ctx as never, {
+    const html = await AppHealthPlugin.execute!(ctx, {
       checks: 'orphans',
       exclude: '^Main$'
     });
@@ -81,7 +81,7 @@ describe('AppHealthPlugin', () => {
       { title: 'A', lastModified: daysAgo(500) },
       { title: 'B', lastModified: daysAgo(1) }
     ]);
-    const html = await AppHealthPlugin.execute!(ctx as never, { format: 'count' });
+    const html = await AppHealthPlugin.execute!(ctx, { format: 'count' });
     expect(html).toContain('Orphans: 2');
     expect(html).toContain('Broken links: 1');
     expect(html).toContain('Stale: 1');
@@ -89,7 +89,7 @@ describe('AppHealthPlugin', () => {
 
   it('staleDays=0 disables the stale check', async () => {
     const ctx = makeContext(['A'], {}, [{ title: 'A', lastModified: daysAgo(999) }]);
-    const html = await AppHealthPlugin.execute!(ctx as never, {
+    const html = await AppHealthPlugin.execute!(ctx, {
       checks: 'stale',
       staleDays: '0'
     });
@@ -99,7 +99,7 @@ describe('AppHealthPlugin', () => {
 
   it('degrades when getRecentChanges is unavailable', async () => {
     const ctx = makeContext(['A'], {}, null); // no getRecentChanges on PageManager
-    const html = await AppHealthPlugin.execute!(ctx as never, { checks: 'stale' });
+    const html = await AppHealthPlugin.execute!(ctx, { checks: 'stale' });
     expect(html).toContain('Skipped');
   });
 
@@ -109,14 +109,14 @@ describe('AppHealthPlugin', () => {
       pageName: 'X',
       linkGraph: {}
     };
-    const html = await AppHealthPlugin.execute!(ctx as never, {});
+    const html = await AppHealthPlugin.execute!(ctx, {});
     expect(html).toContain('PageManager not available');
   });
 
   it('caps each section at max', async () => {
     const pages = Array.from({ length: 10 }, (_, i) => `Orphan${i}`);
     const ctx = makeContext(pages, {});
-    const html = await AppHealthPlugin.execute!(ctx as never, {
+    const html = await AppHealthPlugin.execute!(ctx, {
       checks: 'orphans',
       max: '3'
     });

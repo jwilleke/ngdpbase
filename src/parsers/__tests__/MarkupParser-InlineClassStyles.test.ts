@@ -55,7 +55,7 @@ describe('MarkupParser inline class styles (#938)', () => {
   let parser: MarkupParser;
 
   beforeEach(async () => {
-    parser = new MarkupParser(new MockEngine() as never);
+    parser = new MarkupParser(new MockEngine());
     await parser.initialize();
   });
 
@@ -264,7 +264,7 @@ describe('MarkupParser inline class styles (#938)', () => {
 
 describe('code spans are opaque to style extraction (#940/#944)', () => {
   let p: MarkupParser;
-  beforeEach(async () => { p = new MarkupParser(new MockEngine() as never); await p.initialize(); });
+  beforeEach(async () => { p = new MarkupParser(new MockEngine()); await p.initialize(); });
   afterEach(async () => { await p.shutdown(); });
 
   test('a run does NOT close on a /% that lives inside a code span', async () => {

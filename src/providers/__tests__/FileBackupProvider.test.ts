@@ -25,7 +25,7 @@ describe('FileBackupProvider (#170)', () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fbp-test-'));
     vi.clearAllMocks();
     mockConfigManager.getResolvedDataPath.mockImplementation(() => tmpDir);
-    provider = new FileBackupProvider(mockEngine as unknown as WikiEngine);
+    provider = new FileBackupProvider(mockEngine);
     await provider.initialize();
   });
 
@@ -40,7 +40,7 @@ describe('FileBackupProvider (#170)', () => {
 
   test('throws if ConfigurationManager is missing', async () => {
     const p = new FileBackupProvider(
-      { getManager: () => null } as unknown as WikiEngine
+      { getManager: () => null }
     );
     await expect(p.initialize()).rejects.toThrow('requires ConfigurationManager');
   });

@@ -67,7 +67,7 @@ describe('WikiRoutes capture (#881)', () => {
         return null;
       })
     };
-    wikiRoutes = new WikiRoutes(mockEngine as unknown as WikiEngine);
+    wikiRoutes = new WikiRoutes(mockEngine);
   });
 
   describe('GET /capture', () => {
@@ -203,7 +203,7 @@ describe('WikiRoutes capture (#881)', () => {
           return null;
         })
       };
-      gatedRoutes = new WikiRoutes(gatedEngine as unknown as WikiEngine);
+      gatedRoutes = new WikiRoutes(gatedEngine);
     });
 
     test('GET /capture is 404', async () => {

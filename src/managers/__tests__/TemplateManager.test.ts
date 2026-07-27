@@ -10,7 +10,7 @@ import TemplateManager from '../TemplateManager';
 import type { WikiEngine } from '../../types/WikiEngine';
 
 function makeEngine(): WikiEngine {
-  return { getManager: vi.fn(() => null) } as unknown as WikiEngine;
+  return { getManager: vi.fn(() => null) };
 }
 
 let tmpDir: string;

@@ -668,9 +668,9 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       // sort=date needs metadata.lastModified, so even with no query/filters
       // the handler must go through SearchManager to get it.
       const search = makeSearchManager([
-        { name: 'Old',    metadata: { lastModified: '2024-01-01' } } as never,
-        { name: 'Newest', metadata: { lastModified: '2026-05-01' } } as never,
-        { name: 'Middle', metadata: { lastModified: '2025-06-01' } } as never
+        { name: 'Old',    metadata: { lastModified: '2024-01-01' } },
+        { name: 'Newest', metadata: { lastModified: '2026-05-01' } },
+        { name: 'Middle', metadata: { lastModified: '2025-06-01' } }
       ]);
       const pageManager = makePageManager();
       const routes = makeRoutesWithPages(makeAssetService(), pageManager, search);

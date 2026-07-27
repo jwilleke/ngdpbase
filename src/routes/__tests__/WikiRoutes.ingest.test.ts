@@ -109,43 +109,43 @@ describe('WikiRoutes.ingestPageMarkdown() — POST /api/page/ingest (#819)', () 
   afterEach(() => vi.restoreAllMocks());
 
   test('401 when unauthenticated', async () => {
-    const routes = new WikiRoutes(makeEngine({ getPage: vi.fn() }) as never);
+    const routes = new WikiRoutes(makeEngine({ getPage: vi.fn() }));
     installContextSpy(routes);
     const res = createRes();
-    await routes.ingestPageMarkdown(createReq({ isAuthenticated: false }, { pageName: 'X', markdown: 'y' }), res as never);
+    await routes.ingestPageMarkdown(createReq({ isAuthenticated: false }, { pageName: 'X', markdown: 'y' }), res);
     expect(res.status).toHaveBeenCalledWith(401);
   });
 
   test('400 when pageName missing', async () => {
-    const routes = new WikiRoutes(makeEngine({ getPage: vi.fn() }) as never);
+    const routes = new WikiRoutes(makeEngine({ getPage: vi.fn() }));
     installContextSpy(routes);
     const res = createRes();
-    await routes.ingestPageMarkdown(createReq(AUTHED, { markdown: 'body' }), res as never);
+    await routes.ingestPageMarkdown(createReq(AUTHED, { markdown: 'body' }), res);
     expect(res.status).toHaveBeenCalledWith(400);
   });
 
   test('400 when markdown missing', async () => {
-    const routes = new WikiRoutes(makeEngine({ getPage: vi.fn() }) as never);
+    const routes = new WikiRoutes(makeEngine({ getPage: vi.fn() }));
     installContextSpy(routes);
     const res = createRes();
-    await routes.ingestPageMarkdown(createReq(AUTHED, { pageName: 'My Doc' }), res as never);
+    await routes.ingestPageMarkdown(createReq(AUTHED, { pageName: 'My Doc' }), res);
     expect(res.status).toHaveBeenCalledWith(400);
   });
 
   test('400 when pageName has invalid characters', async () => {
-    const routes = new WikiRoutes(makeEngine({ getPage: vi.fn() }) as never);
+    const routes = new WikiRoutes(makeEngine({ getPage: vi.fn() }));
     installContextSpy(routes);
     const res = createRes();
-    await routes.ingestPageMarkdown(createReq(AUTHED, { pageName: 'bad/name', markdown: 'body' }), res as never);
+    await routes.ingestPageMarkdown(createReq(AUTHED, { pageName: 'bad/name', markdown: 'body' }), res);
     expect(res.status).toHaveBeenCalledWith(400);
   });
 
   test('403 when caller lacks permission', async () => {
     const pm = { getPage: vi.fn().mockResolvedValue(null), savePageWithContext: vi.fn(), getPageUUID: vi.fn() };
-    const routes = new WikiRoutes(makeEngine(pm) as never);
+    const routes = new WikiRoutes(makeEngine(pm));
     installContextSpy(routes, false);
     const res = createRes();
-    await routes.ingestPageMarkdown(createReq(AUTHED, { pageName: 'My Doc', markdown: '# Hi' }), res as never);
+    await routes.ingestPageMarkdown(createReq(AUTHED, { pageName: 'My Doc', markdown: '# Hi' }), res);
     expect(res.status).toHaveBeenCalledWith(403);
     expect(pm.savePageWithContext).not.toHaveBeenCalled();
   });
@@ -158,13 +158,13 @@ describe('WikiRoutes.ingestPageMarkdown() — POST /api/page/ingest (#819)', () 
       getPageUUID: vi.fn().mockReturnValue('uuid-doc-1')
     };
     const engine = makeEngine(pm);
-    const routes = new WikiRoutes(engine as never);
+    const routes = new WikiRoutes(engine);
     installContextSpy(routes, true);
     const res = createRes();
 
     await routes.ingestPageMarkdown(
       createReq(AUTHED, { pageName: 'My Doc', markdown: '# My Doc\n\nHello world.', category: 'documentation', keywords: ['api'] }),
-      res as never
+      res
     );
 
     expect(res.status).toHaveBeenCalledWith(201);
@@ -189,13 +189,13 @@ describe('WikiRoutes.ingestPageMarkdown() — POST /api/page/ingest (#819)', () 
       savePageWithContext: vi.fn().mockResolvedValue(undefined),
       getPageUUID: vi.fn().mockReturnValue('uuid-doc-1')
     };
-    const routes = new WikiRoutes(makeEngine(pm) as never);
+    const routes = new WikiRoutes(makeEngine(pm));
     installContextSpy(routes, true);
     const res = createRes();
 
     await routes.ingestPageMarkdown(
       createReq(AUTHED, { pageName: 'My Doc', markdown: '# My Doc\n\nUpdated body.' }),
-      res as never
+      res
     );
 
     expect(res.status).toHaveBeenCalledWith(200);

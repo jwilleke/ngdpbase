@@ -106,7 +106,7 @@ class WikiStyleHandler extends BaseSyntaxHandler {
    * @param context - Initialization context
    */
   protected async onInitialize(context: InitializationContext): Promise<void> {
-    this.engine = context.engine as WikiEngine | undefined ?? null;
+    this.engine = context.engine ?? null;
 
     // Load modular configuration from multiple sources
     this.loadModularStyleConfiguration();

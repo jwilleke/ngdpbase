@@ -137,7 +137,7 @@ describe('pageToArticle()', () => {
       uuid: 'p7',
       lastModified: '2024-01-01',
       'user-keywords': 'red, blue green'
-    } as unknown as PageFrontmatter);
+    });
     expect(out.keywords).toEqual(['red', 'blue', 'green']);
   });
 
@@ -163,7 +163,7 @@ describe('pageToArticle()', () => {
     const out = pageToArticle('LegacyPage', {
       title: 'LegacyPage',
       lastModified: '2024-01-01'
-    } as unknown as PageFrontmatter);
+    });
     expect(out.identifier).toBe('LegacyPage');
   });
 
@@ -173,7 +173,7 @@ describe('pageToArticle()', () => {
       uuid: 'p10',
       lastModified: '2024-01-01',
       language: 'fr'
-    } as unknown as PageFrontmatter);
+    });
     expect(out.inLanguage).toBe('fr');
   });
 

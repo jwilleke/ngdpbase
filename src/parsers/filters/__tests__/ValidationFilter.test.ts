@@ -180,7 +180,7 @@ describe('ValidationFilter', () => {
   describe('addValidationRule()', () => {
     test('returns false when validator is not a function', () => {
       const f = makeFilter();
-      expect(f.addValidationRule('bad', 'notafunction' as unknown as () => boolean, 'msg')).toBe(false);
+      expect(f.addValidationRule('bad', 'notafunction', 'msg')).toBe(false);
     });
 
     test('adds custom rule and returns true', () => {

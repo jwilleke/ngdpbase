@@ -91,7 +91,7 @@ describe('PageManager.seedRequiredPages() — github-only filtering', () => {
     );
 
     const engine = makeEngine();
-    await new PageManager(engine as unknown as WikiEngine).initialize();
+    await new PageManager(engine).initialize();
 
     expect(await seededFiles()).toContain('aaaaaaaa-0000-0000-0000-000000000001.md');
   });
@@ -103,7 +103,7 @@ describe('PageManager.seedRequiredPages() — github-only filtering', () => {
     );
 
     const engine = makeEngine();
-    await new PageManager(engine as unknown as WikiEngine).initialize();
+    await new PageManager(engine).initialize();
 
     expect(await seededFiles()).not.toContain('aaaaaaaa-0000-0000-0000-000000000002.md');
   });
@@ -115,7 +115,7 @@ describe('PageManager.seedRequiredPages() — github-only filtering', () => {
     );
 
     const engine = makeEngine();
-    await new PageManager(engine as unknown as WikiEngine).initialize();
+    await new PageManager(engine).initialize();
 
     expect(await seededFiles()).toContain('aaaaaaaa-0000-0000-0000-000000000003.md');
   });
@@ -127,7 +127,7 @@ describe('PageManager.seedRequiredPages() — github-only filtering', () => {
     );
 
     const engine = makeEngine();
-    await new PageManager(engine as unknown as WikiEngine).initialize();
+    await new PageManager(engine).initialize();
 
     expect(await seededFiles()).toContain('aaaaaaaa-0000-0000-0000-000000000004.md');
   });
@@ -147,7 +147,7 @@ describe('PageManager.seedRequiredPages() — github-only filtering', () => {
     );
 
     const engine = makeEngine();
-    await new PageManager(engine as unknown as WikiEngine).initialize();
+    await new PageManager(engine).initialize();
 
     const files = await seededFiles();
     expect(files).toContain('aaaaaaaa-0000-0000-0000-000000000005.md');
@@ -164,7 +164,7 @@ describe('PageManager.seedRequiredPages() — github-only filtering', () => {
     );
 
     const engine = makeEngine();
-    await new PageManager(engine as unknown as WikiEngine).initialize();
+    await new PageManager(engine).initialize();
 
     // Should not seed the new page when install is complete and pages exist
     expect(await seededFiles()).not.toContain('aaaaaaaa-0000-0000-0000-000000000008.md');
@@ -182,7 +182,7 @@ describe('PageManager.seedRequiredPages() — github-only filtering', () => {
     );
 
     const engine = makeEngine({ 'ngdpbase.system-category': customCategories });
-    await new PageManager(engine as unknown as WikiEngine).initialize();
+    await new PageManager(engine).initialize();
 
     expect(await seededFiles()).not.toContain('aaaaaaaa-0000-0000-0000-000000000009.md');
   });

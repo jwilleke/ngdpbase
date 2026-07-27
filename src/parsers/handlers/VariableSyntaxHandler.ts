@@ -63,7 +63,7 @@ class VariableSyntaxHandler extends BaseSyntaxHandler {
    * @param context - Initialization context
    */
   protected async onInitialize(context: InitializationContext): Promise<void> {
-    this.engine = context.engine as WikiEngine | undefined ?? null;
+    this.engine = context.engine ?? null;
     this.variableManager = this.engine?.getManager('VariableManager') as VariableManager | undefined ?? null;
 
     if (!this.variableManager) {

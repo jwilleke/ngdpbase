@@ -170,7 +170,7 @@ class AttachmentHandler extends BaseSyntaxHandler {
    * @param context - Initialization context
    */
   protected async onInitialize(context: InitializationContext): Promise<void> {
-    this.engine = context.engine as WikiEngine | undefined ?? null;
+    this.engine = context.engine ?? null;
 
     // Load modular configuration from multiple sources
     this.loadModularConfiguration();
@@ -260,7 +260,7 @@ class AttachmentHandler extends BaseSyntaxHandler {
       const matchInfo = matches[i];
 
       try {
-        const replacement = await this.handleAttachment(matchInfo, context as AttachmentParseContext);
+        const replacement = await this.handleAttachment(matchInfo, context);
 
         processedContent =
           processedContent.slice(0, matchInfo.index) +

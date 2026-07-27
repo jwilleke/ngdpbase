@@ -369,7 +369,7 @@ describe('WikiRoutes — additional coverage', () => {
 
     const { default: WikiEngine } = await import('../../WikiEngine');
     const engine = new WikiEngine();
-    wikiRoutes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+    wikiRoutes = new WikiRoutes(engine);
     wikiRoutes.registerRoutes(app);
   });
 

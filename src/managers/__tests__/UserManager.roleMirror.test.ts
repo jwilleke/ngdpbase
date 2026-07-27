@@ -136,7 +136,7 @@ function makeEngine(mocks: ReturnType<typeof makeMocks>, configManager: ReturnTy
 async function newUserManager(mocks: ReturnType<typeof makeMocks>) {
   const configManager = makeConfigManager();
   const engine = makeEngine(mocks, configManager);
-  const manager = new UserManager(engine as unknown as WikiEngine);
+  const manager = new UserManager(engine);
   await manager.initialize();
   return manager;
 }

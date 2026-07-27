@@ -573,7 +573,7 @@ class FileSystemMediaProvider extends BaseMediaProvider {
 
     const targets = [entry.filePath, ...(entry.alternates ?? [])];
     for (const target of targets) {
-      await this.exiftoolInstance.write(target, tags as Parameters<ExifTool['write']>[1]);
+      await this.exiftoolInstance.write(target, tags);
     }
     logger.info(
       `[FileSystemMediaProvider] Wrote metadata (${Object.keys(tags).join(', ')}) to ${targets.length} file(s) for ${entry.filename}`

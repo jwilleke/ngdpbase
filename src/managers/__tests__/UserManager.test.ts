@@ -54,7 +54,7 @@ describe('UserManager', () => {
       return config[key] !== undefined ? config[key] : defaultValue;
     });
 
-    userManager = new UserManager(mockEngine as unknown as WikiEngine);
+    userManager = new UserManager(mockEngine);
     await userManager.initialize();
   });
 
@@ -67,7 +67,7 @@ describe('UserManager', () => {
   describe('Initialization', () => {
     test('should require ConfigurationManager', async () => {
       const engineWithoutConfig = { getManager: vi.fn(() => null) };
-      const manager = new UserManager(engineWithoutConfig as unknown as WikiEngine);
+      const manager = new UserManager(engineWithoutConfig);
 
       await expect(manager.initialize()).rejects.toThrow('UserManager requires ConfigurationManager');
     });
@@ -454,7 +454,7 @@ describe('UserManager', () => {
         return defaultValue;
       });
 
-      const manager = new UserManager(mockEngine as unknown as WikiEngine);
+      const manager = new UserManager(mockEngine);
       await manager.initialize();
 
       expect(manager.providerClass).toBe('FileUserProvider');
@@ -478,7 +478,7 @@ describe('UserManager', () => {
 
   describe('Error Handling', () => {
     test('should handle missing provider gracefully', async () => {
-      const uninitializedManager = new UserManager(mockEngine as unknown as WikiEngine);
+      const uninitializedManager = new UserManager(mockEngine);
 
       // Operations should fail gracefully
       await expect(uninitializedManager.getUser('test')).rejects.toThrow();
@@ -487,7 +487,7 @@ describe('UserManager', () => {
 
   describe('Session methods', () => {
     test('deleteSession() throws when no provider', async () => {
-      const mgr = new UserManager(mockEngine as unknown as WikiEngine);
+      const mgr = new UserManager(mockEngine);
       await expect(mgr.deleteSession('sid')).rejects.toThrow('Provider not initialized');
     });
 
@@ -498,7 +498,7 @@ describe('UserManager', () => {
     });
 
     test('deleteUserSessions() throws when no provider', async () => {
-      const mgr = new UserManager(mockEngine as unknown as WikiEngine);
+      const mgr = new UserManager(mockEngine);
       await expect(mgr.deleteUserSessions('bob')).rejects.toThrow('Provider not initialized');
     });
 
@@ -519,7 +519,7 @@ describe('UserManager', () => {
 
   describe('backup() and restore()', () => {
     test('backup() returns placeholder when no provider', async () => {
-      const mgr = new UserManager(mockEngine as unknown as WikiEngine);
+      const mgr = new UserManager(mockEngine);
       const result = await mgr.backup();
       expect(result.managerName).toBe('UserManager');
       expect(result.data).toBeNull();
@@ -549,7 +549,7 @@ describe('UserManager', () => {
     });
 
     test('restore() throws when no provider', async () => {
-      const mgr = new UserManager(mockEngine as unknown as WikiEngine);
+      const mgr = new UserManager(mockEngine);
       await expect(mgr.restore({ managerName: 'UserManager', timestamp: '', providerClass: null, data: null })).rejects.toThrow('No provider');
     });
 

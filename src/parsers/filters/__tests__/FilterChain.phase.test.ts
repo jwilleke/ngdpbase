@@ -44,21 +44,21 @@ describe('FilterChain phase routing (#614)', () => {
   });
 
   test('process() with phase=markup runs only markup filters', async () => {
-    const out = await chain.process('seed', { pageName: 'X' } as never, 'markup');
+    const out = await chain.process('seed', { pageName: 'X' }, 'markup');
     expect(out).toBe('seed [markup-A]');
     expect(markupFilter.ranWith).toEqual(['seed']);
     expect(htmlFilter.ranWith).toEqual([]);
   });
 
   test('process() with phase=html runs only html filters', async () => {
-    const out = await chain.process('seed', { pageName: 'X' } as never, 'html');
+    const out = await chain.process('seed', { pageName: 'X' }, 'html');
     expect(out).toBe('seed [html-B]');
     expect(markupFilter.ranWith).toEqual([]);
     expect(htmlFilter.ranWith).toEqual(['seed']);
   });
 
   test('process() without phase runs all enabled filters (backwards-compat)', async () => {
-    const out = await chain.process('seed', { pageName: 'X' } as never);
+    const out = await chain.process('seed', { pageName: 'X' });
     // Both ran; order depends on priority (both are 50, so insertion order).
     expect(markupFilter.ranWith.length).toBe(1);
     expect(htmlFilter.ranWith.length).toBe(1);
@@ -67,17 +67,17 @@ describe('FilterChain phase routing (#614)', () => {
   });
 
   test('collectErrors() with phase=markup returns only markup errors', async () => {
-    const errors = await chain.collectErrors('seed', { pageName: 'X' } as never, 'markup');
+    const errors = await chain.collectErrors('seed', { pageName: 'X' }, 'markup');
     expect(errors.map(e => e.filterId)).toEqual(['markup-A']);
   });
 
   test('collectErrors() with phase=html returns only html errors', async () => {
-    const errors = await chain.collectErrors('seed', { pageName: 'X' } as never, 'html');
+    const errors = await chain.collectErrors('seed', { pageName: 'X' }, 'html');
     expect(errors.map(e => e.filterId)).toEqual(['html-B']);
   });
 
   test('collectErrors() without phase returns errors from both phases', async () => {
-    const errors = await chain.collectErrors('seed', { pageName: 'X' } as never);
+    const errors = await chain.collectErrors('seed', { pageName: 'X' });
     const ids = errors.map(e => e.filterId).sort();
     expect(ids).toEqual(['html-B', 'markup-A']);
   });

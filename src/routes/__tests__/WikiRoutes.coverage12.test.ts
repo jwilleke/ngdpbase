@@ -369,7 +369,7 @@ describe('WikiRoutes — coverage batch 12', () => {
     app = buildApp();
     const { default: WikiEngine } = await import('../../WikiEngine');
     const engine = new WikiEngine();
-    const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+    const routes = new WikiRoutes(engine);
     routes.registerRoutes(app);
   });
 
@@ -829,7 +829,7 @@ describe('WikiRoutes — coverage batch 12', () => {
         next();
       });
       const engine = new WikiEngine();
-      const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+      const routes = new WikiRoutes(engine);
       routes.registerRoutes(testApp);
 
       const res = await request(testApp).get('/api/sessions/list');
@@ -886,7 +886,7 @@ describe('WikiRoutes — coverage batch 12', () => {
         next();
       });
       const engine = new WikiEngine();
-      const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+      const routes = new WikiRoutes(engine);
       routes.registerRoutes(testApp);
 
       const res = await request(testApp).get('/api/sessions/list');
@@ -972,7 +972,7 @@ describe('WikiRoutes — coverage batch 12', () => {
         next();
       });
       const engine = new WikiEngine();
-      const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+      const routes = new WikiRoutes(engine);
       routes.registerRoutes(testApp);
 
       const res = await request(testApp).delete('/api/sessions/does-not-exist').set('X-CSRF-Token', 'test-csrf-token');
@@ -997,7 +997,7 @@ describe('WikiRoutes — coverage batch 12', () => {
         next();
       });
       const engine = new WikiEngine();
-      const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+      const routes = new WikiRoutes(engine);
       routes.registerRoutes(testApp);
 
       const res = await request(testApp).delete('/api/sessions/my-own-sid').set('X-CSRF-Token', 'test-csrf-token');
@@ -1025,7 +1025,7 @@ describe('WikiRoutes — coverage batch 12', () => {
         next();
       });
       const engine = new WikiEngine();
-      const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+      const routes = new WikiRoutes(engine);
       routes.registerRoutes(testApp);
 
       const res = await request(testApp).delete('/api/sessions/my-own-sid?confirm-self=1').set('X-CSRF-Token', 'test-csrf-token');
@@ -1055,7 +1055,7 @@ describe('WikiRoutes — coverage batch 12', () => {
         next();
       });
       const engine = new WikiEngine();
-      const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+      const routes = new WikiRoutes(engine);
       routes.registerRoutes(testApp);
 
       const res = await request(testApp).delete('/api/sessions/anon-target-sid').set('X-CSRF-Token', 'test-csrf-token');

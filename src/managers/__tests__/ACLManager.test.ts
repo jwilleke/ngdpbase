@@ -52,7 +52,7 @@ describe('ACLManager', () => {
     // Clear mocks
     vi.clearAllMocks();
 
-    aclManager = new ACLManager(mockEngine as unknown as WikiEngine);
+    aclManager = new ACLManager(mockEngine);
     await aclManager.initialize();
   });
 
@@ -385,7 +385,7 @@ describe('ACLManager', () => {
           return null;
         })
       };
-      const localACL = new ACLManager(localEngine as unknown as WikiEngine);
+      const localACL = new ACLManager(localEngine);
       await localACL.initialize();
       expect(await localACL.canUserAccessPage(userContext, 'Ghost', 'view')).toBe(false);
     });
@@ -406,7 +406,7 @@ describe('ACLManager', () => {
           return null;
         })
       };
-      const localACL = new ACLManager(localEngine as unknown as WikiEngine);
+      const localACL = new ACLManager(localEngine);
       await localACL.initialize();
       expect(await localACL.canUserAccessPage(userContext, 'Other', 'view')).toBe(true);
     });
@@ -427,7 +427,7 @@ describe('ACLManager', () => {
           return null;
         })
       };
-      const localACL = new ACLManager(localEngine as unknown as WikiEngine);
+      const localACL = new ACLManager(localEngine);
       await localACL.initialize();
       expect(await localACL.canUserAccessPage(userContext, 'Restricted', 'view')).toBe(false);
     });
@@ -446,7 +446,7 @@ describe('ACLManager', () => {
           return null;
         })
       };
-      const localACL = new ACLManager(localEngine as unknown as WikiEngine);
+      const localACL = new ACLManager(localEngine);
       await localACL.initialize();
       // No audience / access set → falls through to Tier 2 / default. The
       // important assertion is that it doesn't throw on null userContext.
@@ -476,7 +476,7 @@ describe('ACLManager', () => {
           return null;
         })
       };
-      const localACL = new ACLManager(localEngine as unknown as WikiEngine);
+      const localACL = new ACLManager(localEngine);
       await localACL.initialize();
       // bob is not alice, not admin → Tier 0 denies.
       expect(await localACL.canUserAccessPage(userContext, 'Secret', 'view')).toBe(false);
@@ -557,7 +557,7 @@ describe('ACLManager', () => {
 
   describe('Initialization', () => {
     test('should initialize without errors', async () => {
-      const newAclManager = new ACLManager(mockEngine as unknown as WikiEngine);
+      const newAclManager = new ACLManager(mockEngine);
 
       await expect(newAclManager.initialize()).resolves.not.toThrow();
     });
@@ -575,7 +575,7 @@ describe('ACLManager', () => {
         return defaultValue;
       });
 
-      const newAclManager = new ACLManager(mockEngine as unknown as WikiEngine);
+      const newAclManager = new ACLManager(mockEngine);
       await newAclManager.initialize();
 
       expect(newAclManager.accessPolicies.size).toBe(2);
@@ -592,7 +592,7 @@ describe('ACLManager', () => {
           return null; // no UserManager
         })
       };
-      const mgr = new ACLManager(noUmEngine as unknown as WikiEngine);
+      const mgr = new ACLManager(noUmEngine);
       await mgr.initialize();
 
       const result = await mgr.checkDefaultPermission('view', { username: 'user1', roles: [] });
@@ -717,7 +717,7 @@ describe('ACLManager', () => {
     });
 
     test('handles null/undefined gracefully', () => {
-      expect(aclManager.removeACLMarkup(null as unknown as string)).toBe(null);
+      expect(aclManager.removeACLMarkup(null)).toBe(null);
     });
 
     test('removes multiple ACL blocks in one pass', () => {
@@ -767,7 +767,7 @@ describe('ACLManager', () => {
 
     test('returns allowed when context available, no ConfigurationManager', async () => {
       const noConfigEngine = { getManager: vi.fn(() => null) };
-      const mgr = new ACLManager(noConfigEngine as unknown as WikiEngine);
+      const mgr = new ACLManager(noConfigEngine);
 
       const result = await mgr.checkContextRestrictions(
         { username: 'user1', roles: ['editor'] },
@@ -995,17 +995,17 @@ describe('ACLManager', () => {
         allowed: true,
         reason: 'default_allow',
         context: {}
-      } as never);
+      });
     });
 
     test('handles anonymous user', () => {
-      aclManager.logAccessDecision(null as never, 'TestPage', 'view', false, 'no_user');
+      aclManager.logAccessDecision(null, 'TestPage', 'view', false, 'no_user');
     });
   });
 
   describe('checkPagePermissionWithContext() — additional branches', () => {
     test('throws when wikiContext is null', async () => {
-      await expect(aclManager.checkPagePermissionWithContext(null as never, 'view')).rejects.toThrow();
+      await expect(aclManager.checkPagePermissionWithContext(null, 'view')).rejects.toThrow();
     });
 
     test('Tier 3 — role match in page ACL', async () => {
@@ -1048,7 +1048,7 @@ describe('ACLManager', () => {
   describe('performStandardACLCheck()', () => {
     test('throws when UserManager is not available', async () => {
       const noUmEngine = { getManager: vi.fn((name: string) => name === 'ConfigurationManager' ? mockConfigurationManager : null) };
-      const mgr = new ACLManager(noUmEngine as unknown as WikiEngine);
+      const mgr = new ACLManager(noUmEngine);
       await mgr.initialize();
       await expect(mgr.performStandardACLCheck('TestPage', 'view', { username: 'u', roles: [] }, '')).rejects.toThrow('UserManager not available');
     });
@@ -1117,7 +1117,7 @@ describe('ACLManager', () => {
           return null;
         })
       };
-      mgrWithNM = new ACLManager(engineWithNM as unknown as WikiEngine);
+      mgrWithNM = new ACLManager(engineWithNM);
       await mgrWithNM.initialize();
       // Set up config so checkHolidayRestrictions triggers notify (missing dates config)
       mockConfigurationManager.getProperty.mockImplementation((key: string, dv: unknown) => {
@@ -1221,7 +1221,7 @@ describe('ACLManager', () => {
   describe('initializeAuditLogging()', () => {
     test('returns early when ConfigurationManager is not available', async () => {
       const noConfigEngine = { getManager: vi.fn(() => null) };
-      const mgr = new ACLManager(noConfigEngine as unknown as WikiEngine);
+      const mgr = new ACLManager(noConfigEngine);
       await expect(mgr.initializeAuditLogging()).resolves.not.toThrow();
     });
 
@@ -1239,7 +1239,7 @@ describe('ACLManager', () => {
   describe('loadAccessPolicies()', () => {
     test('returns early when ConfigurationManager is not available', async () => {
       const noConfigEngine = { getManager: vi.fn(() => null) };
-      const mgr = new ACLManager(noConfigEngine as unknown as WikiEngine);
+      const mgr = new ACLManager(noConfigEngine);
       await expect(mgr.loadAccessPolicies()).resolves.not.toThrow();
     });
 

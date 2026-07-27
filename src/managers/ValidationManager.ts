@@ -552,7 +552,7 @@ class ValidationManager extends BaseManager {
 
     // UUID validation
 
-    if (!metadata.uuid || !validateUuid(metadata.uuid as string)) {
+    if (!metadata.uuid || !validateUuid(metadata.uuid)) {
       validationErrors.push('uuid must be a valid RFC 4122 UUID v4');
     }
 
@@ -978,7 +978,7 @@ class ValidationManager extends BaseManager {
 
     // Fix UUID if missing or invalid
 
-    if (!metadata.uuid || !validateUuid(metadata.uuid as string)) {
+    if (!metadata.uuid || !validateUuid(metadata.uuid)) {
       fixes.metadata.uuid = uuidv4();
     }
 

@@ -46,7 +46,7 @@ describe('BasicAttachmentProvider — getAttachment() disk-scan fallback', () =>
 
   beforeEach(async () => {
     storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'attach-test-'));
-    provider = new BasicAttachmentProvider(makeEngine(storageDir) as unknown as WikiEngine);
+    provider = new BasicAttachmentProvider(makeEngine(storageDir));
     await provider.initialize();
   });
 
@@ -133,7 +133,7 @@ describe('BasicAttachmentProvider — getAttachment() stale storageLocation fall
 
   beforeEach(async () => {
     storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'attach-stale-test-'));
-    provider = new BasicAttachmentProvider(makeEngine(storageDir) as unknown as WikiEngine);
+    provider = new BasicAttachmentProvider(makeEngine(storageDir));
     await provider.initialize();
   });
 

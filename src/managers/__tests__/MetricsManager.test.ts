@@ -217,7 +217,7 @@ describe('MetricsManager', () => {
         external: 1000000,
         arrayBuffers: 500000
       };
-      const memUsageSpy = vi.spyOn(process, 'memoryUsage').mockReturnValue(fakeMem as ReturnType<typeof process.memoryUsage>);
+      const memUsageSpy = vi.spyOn(process, 'memoryUsage').mockReturnValue(fakeMem);
 
       const observe = vi.fn();
       callback({ observe });

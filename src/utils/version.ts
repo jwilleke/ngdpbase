@@ -311,7 +311,7 @@ function main(): void {
     case 'patch':
     case 'minor':
     case 'major':
-      newVersion = incrementVersion(currentVersion, command as VersionIncrementType);
+      newVersion = incrementVersion(currentVersion, command);
       break;
 
     case 'set':

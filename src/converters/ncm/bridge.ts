@@ -26,7 +26,7 @@ export function ncmToConversionResult(ncm: NcmResult): ConversionResult {
   const parsed = matter(ncm.content);
   return {
     content: parsed.content,
-    metadata: parsed.data as Record<string, unknown>,
+    metadata: parsed.data,
     // #728 S3: ConversionResult.warnings is now structured, so this is
     // lossless — NcmWarning {kind,detail} is assignable to ConversionWarning.
     warnings: ncm.warnings
