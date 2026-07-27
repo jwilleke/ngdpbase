@@ -56,18 +56,18 @@ describe('WikiRoutes.adminImportPreview() — POST /admin/import/preview (#815)'
   afterEach(() => vi.restoreAllMocks());
 
   test('403 when caller lacks admin-system', async () => {
-    const routes = new WikiRoutes(makeEngine({}) as never);
+    const routes = new WikiRoutes(makeEngine({}));
     installContextSpy(routes, false);
     const res = createRes();
-    await routes.adminImportPreview(createReq(ADMIN, { sourceDir: '/x' }), res as never);
+    await routes.adminImportPreview(createReq(ADMIN, { sourceDir: '/x' }), res);
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
   test('400 when sourceDir missing', async () => {
-    const routes = new WikiRoutes(makeEngine({}) as never);
+    const routes = new WikiRoutes(makeEngine({}));
     installContextSpy(routes);
     const res = createRes();
-    await routes.adminImportPreview(createReq(ADMIN, {}), res as never);
+    await routes.adminImportPreview(createReq(ADMIN, {}), res);
     expect(res.status).toHaveBeenCalledWith(400);
   });
 
@@ -79,10 +79,10 @@ describe('WikiRoutes.adminImportPreview() — POST /admin/import/preview (#815)'
       skipped: 0,
       failed: 0,
       errors: [{ file: '/Users/jim/Downloads/LD2450.md', message: 'Source path does not exist' }]
-    }) as never);
+    }));
     installContextSpy(routes);
     const res = createRes();
-    await routes.adminImportPreview(createReq(ADMIN, { sourceDir: '/Users/jim/Downloads/LD2450.md' }), res as never);
+    await routes.adminImportPreview(createReq(ADMIN, { sourceDir: '/Users/jim/Downloads/LD2450.md' }), res);
     const payload = res.json.mock.calls[0][0];
     expect(payload.success).toBe(false);
     expect(payload.error).toContain('/Users/jim/Downloads/LD2450.md: Source path does not exist');
@@ -93,10 +93,10 @@ describe('WikiRoutes.adminImportPreview() — POST /admin/import/preview (#815)'
     const errors = Array.from({ length: 8 }, (_, i) => ({ file: `/f${i}.md`, message: `boom ${i}` }));
     const routes = new WikiRoutes(makeEngine({
       success: false, files: [], converted: 0, skipped: 0, failed: 8, errors
-    }) as never);
+    }));
     installContextSpy(routes);
     const res = createRes();
-    await routes.adminImportPreview(createReq(ADMIN, { sourceDir: '/dir' }), res as never);
+    await routes.adminImportPreview(createReq(ADMIN, { sourceDir: '/dir' }), res);
     const payload = res.json.mock.calls[0][0];
     expect(payload.error.split(';')).toHaveLength(5);
     expect(payload.error).toContain('/f0.md: boom 0');
@@ -111,10 +111,10 @@ describe('WikiRoutes.adminImportPreview() — POST /admin/import/preview (#815)'
       skipped: 0,
       failed: 0,
       errors: []
-    }) as never);
+    }));
     installContextSpy(routes);
     const res = createRes();
-    await routes.adminImportPreview(createReq(ADMIN, { sourceDir: '/dir' }), res as never);
+    await routes.adminImportPreview(createReq(ADMIN, { sourceDir: '/dir' }), res);
     const payload = res.json.mock.calls[0][0];
     expect(payload.success).toBe(true);
     expect(payload).not.toHaveProperty('error');

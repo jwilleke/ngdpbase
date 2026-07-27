@@ -71,7 +71,7 @@ describe('FileSystemMediaProvider.rebuild() re-extracts Slice-3 fields (#771)', 
   let provider: FileSystemMediaProvider;
 
   beforeEach(() => {
-    provider = new FileSystemMediaProvider(minimalConfig as never);
+    provider = new FileSystemMediaProvider(minimalConfig);
     vi.mocked(fs.stat).mockResolvedValue({ mtimeMs: 1717000000000, mtime: new Date('2024-05-29') } as never);
   });
 

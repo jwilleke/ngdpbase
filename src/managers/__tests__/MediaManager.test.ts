@@ -20,7 +20,7 @@ function makeEngine(configOverrides: Record<string, unknown> = {}): WikiEngine {
       if (name === 'ConfigurationManager') return cm;
       return null;
     })
-  } as unknown as WikiEngine;
+  };
 }
 
 async function makeInitializedManager(configOverrides: Record<string, unknown> = {}): Promise<MediaManager> {

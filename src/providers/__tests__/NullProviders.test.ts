@@ -13,7 +13,7 @@ import NullCacheProvider from '../NullCacheProvider';
 import type { WikiEngine } from '../../types/WikiEngine';
 
 function makeEngine(): WikiEngine {
-  return { getManager: vi.fn(() => null) } as unknown as WikiEngine;
+  return { getManager: vi.fn(() => null) };
 }
 
 // ─── NullAuditProvider ──────────────────────────────────────────────────────

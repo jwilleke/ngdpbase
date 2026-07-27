@@ -62,6 +62,6 @@ describe('ReferringPagesPlugin', () => {
   });
 
   test('initialize() does not throw', () => {
-    expect(() => ReferringPagesPlugin.initialize?.({} as never)).not.toThrow();
+    expect(() => ReferringPagesPlugin.initialize?.({})).not.toThrow();
   });
 });

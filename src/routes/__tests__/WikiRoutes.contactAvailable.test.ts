@@ -174,7 +174,7 @@ describe('WikiRoutes.getCommonTemplateData — contactAvailable derivation (#670
 
     const { default: WikiEngine } = await import('../../WikiEngine');
     const engine = new WikiEngine();
-    routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+    routes = new WikiRoutes(engine);
   });
 
   afterEach(() => {

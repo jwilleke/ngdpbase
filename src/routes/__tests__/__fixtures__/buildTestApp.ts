@@ -138,7 +138,7 @@ export function buildTestApp(options: BuildTestAppOptions = {}): Express {
         ? stubRender
         : () => '<html>stub</html>';
     app.use((_req: Request, res: Response, next: NextFunction) => {
-      res.render = ((
+      res.render = (
         view: string,
         data: unknown,
         cb?: (err: Error | null, str?: string) => void
@@ -146,7 +146,7 @@ export function buildTestApp(options: BuildTestAppOptions = {}): Express {
         const html = renderBody(view, data);
         if (cb) cb(null, html);
         else res.send(html);
-      }) as unknown as typeof res.render;
+      };
       next();
     });
   }

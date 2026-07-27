@@ -157,7 +157,7 @@ describe('LinkParserHandler', () => {
   describe('handle()', () => {
     test('throws because handle() should not be called directly', async () => {
       const handler = new LinkParserHandler();
-      await expect(handler.handle([] as unknown as RegExpMatchArray, ctx)).rejects.toThrow();
+      await expect(handler.handle([] as unknown, ctx)).rejects.toThrow();
     });
   });
 

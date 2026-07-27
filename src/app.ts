@@ -166,7 +166,7 @@ void (async (): Promise<void> => {
   // 4. Initialize the WikiEngine
   try {
     console.log('🚀 Initializing ngdpbase Engine...');
-    engine = new WikiEngine() as unknown as IWikiEngine;
+    engine = new WikiEngine();
     engine.app = app; // expose Express app to add-ons before initialization (#359)
     await engine.initialize();
     engineRef = engine;

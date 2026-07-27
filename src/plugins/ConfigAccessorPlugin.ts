@@ -1069,10 +1069,31 @@ function displaySystemCategories(
 
 const SENSITIVE_KEY_PATTERNS = /secret|password|token|credential/i;
 
-function safeStr(value: unknown): string {
+/**
+ * Stringify an arbitrary config value for display.
+ *
+ * `String(unknown)` on a plain object yields `[object Object]`, which is
+ * useless in a config table and is what `no-base-to-string` flags. Objects go
+ * through JSON; everything else is narrowed explicitly rather than cast, so the
+ * remaining `String()` call is provably safe rather than merely silenced.
+ *
+ * @param value - Any config value
+ * @param indent - JSON indent for object values; omit for compact output
+ */
+function safeStr(value: unknown, indent?: number): string {
   if (value === undefined || value === null) return '';
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value as string | number | boolean);
+  // Narrow positively rather than by exclusion: listing what IS safe to pass to
+  // String() is provable, where "everything except object" still leaves the
+  // compiler holding `unknown`.
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return String(value);
+  }
+  // Symbols throw on implicit conversion; functions stringify to their source,
+  // which is noise in a config table.
+  if (typeof value === 'symbol') return value.toString();
+  if (typeof value === 'function') return '[function]';
+  return JSON.stringify(value, null, indent) ?? '';
 }
 
 function maskIfSensitive(key: string, value: unknown, isAdmin: boolean): string {
@@ -1245,7 +1266,7 @@ function displayFeatures(configManager: ConfigurationManager): string {
     if (otherProps.length > 0) {
       html += '      <table class="table table-sm mb-0 mt-1"><tbody>\n';
       for (const [subkey, value] of otherProps.sort()) {
-        const valStr = typeof value === 'object' ? JSON.stringify(value) : String(value as string | number | boolean);
+        const valStr = safeStr(value);
         html += `        <tr><td style="width:40%"><code class="text-muted">${escapeHtml(subkey)}</code></td>`;
         html += `<td><small>${escapeHtml(valStr)}</small></td></tr>\n`;
       }
@@ -1351,7 +1372,7 @@ function displayConfigValue(
 
       const items = matchingKeys.map(k => {
         const val = allProps[k];
-        const valStr = typeof val === 'object' ? JSON.stringify(val) : String(val as string | number | boolean);
+        const valStr = safeStr(val);
         return processedBefore + escapeHtml(valStr) + processedAfter;
       }).join('');
       // Convert newlines to <br> for HTML rendering
@@ -1392,9 +1413,7 @@ function displayConfigValue(
 
     for (const matchKey of displayKeys) {
       const value = allProps[matchKey];
-      const displayValue = typeof value === 'object' ?
-        JSON.stringify(value, null, 2) :
-        String(value as string | number | boolean);
+      const displayValue = safeStr(value, 2);
 
       html += '            <tr>\n';
       html += `              <td><code>${escapeHtml(matchKey)}</code></td>\n`;
@@ -1433,15 +1452,13 @@ function displayConfigValue(
     const processedBefore = processEscapeSequences(before);
     const processedAfter = processEscapeSequences(afterStr);
 
-    const valStr = typeof value === 'object' ? JSON.stringify(value) : String(value as string | number | boolean);
+    const valStr = safeStr(value);
     // Escape the value, process escape sequences in before/after
     // Wrap in span to ensure it's treated as inline HTML
     return `<span class="config-value">${processedBefore}${escapeHtml(valStr)}${processedAfter}</span>`;
   }
 
-  const valStr = typeof value === 'object'
-    ? JSON.stringify(value, null, 2)
-    : String(value as string | number | boolean);
+  const valStr = safeStr(value, 2);
 
   // table='true': render single key as a one-row table (matches wildcard table format)
   if (forceTable) {
@@ -1540,9 +1557,7 @@ function displayManagerConfig(configManager: ConfigurationManager, managerName: 
     html += '          <tbody>\n';
 
     for (const [key, value] of configEntries) {
-      const displayValue = typeof value === 'object' ?
-        JSON.stringify(value, null, 2) :
-        String(value as string | number | boolean);
+      const displayValue = safeStr(value, 2);
 
       html += '            <tr>\n';
       html += `              <td><code>${escapeHtml(key)}</code></td>\n`;
@@ -1603,9 +1618,7 @@ function displayFeatureConfig(configManager: ConfigurationManager, featureName: 
     html += '          <tbody>\n';
 
     for (const [key, value] of configEntries) {
-      const displayValue = typeof value === 'object' ?
-        JSON.stringify(value, null, 2) :
-        String(value as string | number | boolean);
+      const displayValue = safeStr(value, 2);
 
       html += '            <tr>\n';
       html += `              <td><code>${escapeHtml(key)}</code></td>\n`;
@@ -1688,7 +1701,7 @@ const ConfigAccessorPlugin: SimplePlugin = {
         return displayPermissions(userManager);
 
       case 'user-summary':
-        return displayUserSummary(context as ExtendedPluginContext, userManager);
+        return displayUserSummary(context, userManager);
 
       case 'actions':
         return displayActions(configManager, valueonly, before, after);

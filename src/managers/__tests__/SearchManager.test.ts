@@ -67,13 +67,13 @@ describe('SearchManager', () => {
     // Clear mocks
     vi.clearAllMocks();
 
-    searchManager = new SearchManager(mockEngine as unknown as WikiEngine);
+    searchManager = new SearchManager(mockEngine);
     await searchManager.initialize();
   });
 
   describe('Initialization', () => {
     test('should initialize without errors', async () => {
-      const newSearchManager = new SearchManager(mockEngine as unknown as WikiEngine);
+      const newSearchManager = new SearchManager(mockEngine);
       await expect(newSearchManager.initialize()).resolves.not.toThrow();
     });
 
@@ -92,7 +92,7 @@ describe('SearchManager', () => {
         getManager: vi.fn().mockReturnValue(null)
       };
 
-      const newSearchManager = new SearchManager(badEngine as unknown as WikiEngine);
+      const newSearchManager = new SearchManager(badEngine);
       await expect(newSearchManager.initialize()).rejects.toThrow('SearchManager requires ConfigurationManager');
     });
   });
@@ -270,7 +270,7 @@ describe('SearchManager', () => {
         })
       };
 
-      const disabledSearchManager = new SearchManager(disabledEngine as unknown as WikiEngine);
+      const disabledSearchManager = new SearchManager(disabledEngine);
       await disabledSearchManager.initialize();
 
       // When disabled, initialize() returns early without loading provider
@@ -469,7 +469,7 @@ describe('SearchManager', () => {
     });
 
     test('returns [] for null criteria', async () => {
-      expect(await searchManager.multiSearch(null as never)).toEqual([]);
+      expect(await searchManager.multiSearch(null)).toEqual([]);
     });
   });
 
@@ -499,7 +499,7 @@ describe('SearchManager', () => {
     const wikiCtx = { pageName: 'Test', content: '', userContext: { username: 'alice', roles: ['user'] } };
 
     test('throws when wikiContext is null', async () => {
-      await expect(searchManager.searchWithContext(null as never, 'query')).rejects.toThrow('requires a WikiContext');
+      await expect(searchManager.searchWithContext(null, 'query')).rejects.toThrow('requires a WikiContext');
     });
 
     test('returns [] when provider is null', async () => {
@@ -523,7 +523,7 @@ describe('SearchManager', () => {
     const wikiCtx = { pageName: 'Test', content: '', userContext: { username: 'alice', roles: ['user'] } };
 
     test('throws when wikiContext is null', async () => {
-      await expect(searchManager.advancedSearchWithContext(null as never, {})).rejects.toThrow('requires a WikiContext');
+      await expect(searchManager.advancedSearchWithContext(null, {})).rejects.toThrow('requires a WikiContext');
     });
 
     test('returns [] when provider is null', async () => {
@@ -591,11 +591,11 @@ describe('SearchManager', () => {
 
   describe('searchByKeywords()', () => {
     test('returns [] for null input', async () => {
-      expect(await searchManager.searchByKeywords(null as never)).toEqual([]);
+      expect(await searchManager.searchByKeywords(null)).toEqual([]);
     });
 
     test('returns [] for non-array input', async () => {
-      expect(await searchManager.searchByKeywords('not-an-array' as never)).toEqual([]);
+      expect(await searchManager.searchByKeywords('not-an-array')).toEqual([]);
     });
 
     test('calls search with joined keywords', async () => {

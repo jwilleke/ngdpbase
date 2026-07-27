@@ -661,9 +661,9 @@ class PageManager extends BaseManager implements CatalogSource {
    * when the page is unknown or the provider doesn't support raw reads.
    */
   async getRawPageContent(identifier: string): Promise<{ filePath: string; content: string } | null> {
-    const provider = this.provider as PageProvider & {
-      getRawFile?: (id: string) => Promise<{ filePath: string; content: string } | null>;
-    } | null;
+    // `getRawFile` is an optional capability declared on the PageProvider
+    // interface — feature-detect, never assume.
+    const provider = this.provider;
     if (!provider?.getRawFile) return null;
     return provider.getRawFile(identifier);
   }
@@ -887,7 +887,7 @@ class PageManager extends BaseManager implements CatalogSource {
     // characters (e.g. %09 → tab) before they reach the provider (#296)
     const validationManager = this.engine.getManager<ValidationManager>('ValidationManager');
     const enrichedMetadata = validationManager
-      ? validationManager.sanitizeMetadata(metadataWithLocation as Record<string, unknown>) as Partial<PageFrontmatter>
+      ? validationManager.sanitizeMetadata(metadataWithLocation) as Partial<PageFrontmatter>
       : metadataWithLocation;
 
     // Enforce uniqueness before delegating to provider — PageManager is the single

@@ -53,7 +53,7 @@ export default class DeltaStorage {
       throw new TypeError('Both oldContent and newContent must be strings');
     }
 
-    return Diff(oldContent, newContent) as DiffTuple[];
+    return Diff(oldContent, newContent);
   }
 
   /**

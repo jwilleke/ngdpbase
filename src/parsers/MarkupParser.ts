@@ -364,7 +364,7 @@ function getErrorMessage(error: unknown): string {
     return error;
   }
   if (error && typeof error === 'object' && 'message' in error) {
-    const msg = (error as { message: unknown }).message;
+    const msg = (error).message;
     if (typeof msg === 'string') {
       return msg;
     }
@@ -2114,8 +2114,8 @@ class MarkupParser extends BaseManager {
         const varElement = { type: 'variable' as const, syntax: match[0], varName: `$${match[3]}`, id: elemId, position: match.index };
         try {
           node.appendChild(await this.domVariableHandler.createNodeFromExtract(
-            varElement as Parameters<typeof this.domVariableHandler.createNodeFromExtract>[0],
-            handlerContext as Parameters<typeof this.domVariableHandler.createNodeFromExtract>[1],
+            varElement,
+            handlerContext,
             wikiDocument
           ));
         } catch { node.appendChild(wikiDocument.createTextNode(match[0])); }
@@ -2125,7 +2125,7 @@ class MarkupParser extends BaseManager {
         const pluginElement = { type: 'plugin' as const, syntax: match[0], inner: match[4].trim(), id: elemId, position: match.index };
         try {
           node.appendChild(await this.domPluginHandler.createNodeFromExtract(
-            pluginElement as Parameters<typeof this.domPluginHandler.createNodeFromExtract>[0],
+            pluginElement,
             handlerContext as Parameters<typeof this.domPluginHandler.createNodeFromExtract>[1],
             wikiDocument
           ));
@@ -2143,8 +2143,8 @@ class MarkupParser extends BaseManager {
           const linkElement = { type: 'link' as const, syntax: match[0], target: inner.trim(), id: elemId, position: match.index };
           try {
             node.appendChild(await this.domLinkHandler.createNodeFromExtract(
-              linkElement as Parameters<typeof this.domLinkHandler.createNodeFromExtract>[0],
-              {} as Parameters<typeof this.domLinkHandler.createNodeFromExtract>[1],
+              linkElement,
+              {},
               wikiDocument
             ));
           } catch { node.appendChild(wikiDocument.createTextNode(match[0])); }
@@ -2319,7 +2319,7 @@ class MarkupParser extends BaseManager {
       // Variable: [{$username}]
       return await this.domVariableHandler.createNodeFromExtract(
         element as unknown as Parameters<typeof this.domVariableHandler.createNodeFromExtract>[0],
-        handlerContext as Parameters<typeof this.domVariableHandler.createNodeFromExtract>[1],
+        handlerContext,
         wikiDocument
       );
 
@@ -2335,7 +2335,7 @@ class MarkupParser extends BaseManager {
       // Link: [HomePage] or [Display|Target]
       return await this.domLinkHandler.createNodeFromExtract(
         element as unknown as Parameters<typeof this.domLinkHandler.createNodeFromExtract>[0],
-        handlerContext as Parameters<typeof this.domLinkHandler.createNodeFromExtract>[1],
+        handlerContext,
         wikiDocument
       );
 

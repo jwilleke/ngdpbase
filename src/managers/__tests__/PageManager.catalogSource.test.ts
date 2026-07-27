@@ -35,7 +35,7 @@ function makeEngine({ configOverrides = {}, catalogManager = null }: EngineHooks
       if (name === 'CatalogManager') return catalogManager;
       return null;
     })
-  } as unknown as WikiEngine;
+  };
 }
 
 function makeMockProvider(overrides: Partial<PageProvider> = {}): PageProvider {
@@ -55,7 +55,7 @@ function makeMockProvider(overrides: Partial<PageProvider> = {}): PageProvider {
     refreshPageList: vi.fn().mockResolvedValue(undefined),
     getProviderInfo: vi.fn().mockReturnValue({ name: 'MockProvider', version: '1.0.0', description: 'mock', features: [] }),
     ...overrides
-  } as unknown as PageProvider;
+  };
 }
 
 function installProvider(mgr: PageManager, provider: PageProvider): void {

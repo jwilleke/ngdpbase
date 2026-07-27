@@ -50,7 +50,7 @@ describe('CatalogManager', () => {
 
   beforeEach(async () => {
     engine = makeMockEngine(DEFAULT_KEYWORDS);
-    manager = new CatalogManager(engine as unknown as WikiEngine);
+    manager = new CatalogManager(engine);
     await manager.initialize();
   });
 
@@ -87,7 +87,7 @@ describe('CatalogManager', () => {
 
     beforeEach(async () => {
       engine = makeMockEngine(DEFAULT_KEYWORDS, USER_KEYWORDS);
-      manager = new CatalogManager(engine as unknown as WikiEngine);
+      manager = new CatalogManager(engine);
       await manager.initialize();
     });
 
@@ -148,7 +148,7 @@ describe('CatalogManager', () => {
 
     test('seed only (no store file): terms come from shipped defaults', async () => {
       const seed = { default: { label: 'default', enabled: true } };
-      const m = new CatalogManager(makeStoreEngine(seed) as unknown as WikiEngine);
+      const m = new CatalogManager(makeStoreEngine(seed));
       await m.initialize();
       const { terms } = await m.getProviderTerms('user-keywords');
       expect(terms.map(t => t.term)).toEqual(['default']);
@@ -157,7 +157,7 @@ describe('CatalogManager', () => {
     test('seed reads DEFAULTS, not merged config — legacy snapshot cannot shadow (#895 bug)', async () => {
       const seed = { default: { label: 'default', enabled: true } };
       const staleMerged = { ...seed, draft: { label: 'draft', enabled: true } };
-      const m = new CatalogManager(makeStoreEngine(seed, staleMerged) as unknown as WikiEngine);
+      const m = new CatalogManager(makeStoreEngine(seed, staleMerged));
       await m.initialize();
       const { terms } = await m.getProviderTerms('user-keywords');
       expect(terms.map(t => t.term)).toEqual(['default']); // draft from stale merged config ignored
@@ -165,7 +165,7 @@ describe('CatalogManager', () => {
 
     test('saveCatalogObject persists only deltas; getCatalogObject merges store over seed', async () => {
       const seed = { default: { label: 'default', enabled: true } };
-      const m = new CatalogManager(makeStoreEngine(seed) as unknown as WikiEngine);
+      const m = new CatalogManager(makeStoreEngine(seed));
       await m.initialize();
       const provider = m.getUserKeywordsProvider();
       await provider.saveCatalogObject({
@@ -180,7 +180,7 @@ describe('CatalogManager', () => {
 
     test('removing a seed entry stores an enabled:false override (seed keys disable, not delete)', async () => {
       const seed = { default: { label: 'default', enabled: true } };
-      const m = new CatalogManager(makeStoreEngine(seed) as unknown as WikiEngine);
+      const m = new CatalogManager(makeStoreEngine(seed));
       await m.initialize();
       const provider = m.getUserKeywordsProvider();
       await provider.saveCatalogObject({}); // catalog with seed entry removed
@@ -192,7 +192,7 @@ describe('CatalogManager', () => {
 
     test('backup() captures the instance store; restore() writes it back (per-manager contract)', async () => {
       const seed = { default: { label: 'default', enabled: true } };
-      const m = new CatalogManager(makeStoreEngine(seed) as unknown as WikiEngine);
+      const m = new CatalogManager(makeStoreEngine(seed));
       await m.initialize();
       const provider = m.getUserKeywordsProvider();
       await provider.saveCatalogObject({
@@ -215,7 +215,7 @@ describe('CatalogManager', () => {
 
     test('backup() with no store file returns an empty store (not an error)', async () => {
       const seed = { default: { label: 'default', enabled: true } };
-      const m = new CatalogManager(makeStoreEngine(seed) as unknown as WikiEngine);
+      const m = new CatalogManager(makeStoreEngine(seed));
       await m.initialize();
       const backup = await m.backup();
       expect(backup.data.vocabularyStores['user-keywords']).toEqual({});
@@ -259,7 +259,7 @@ describe('CatalogManager — registerProvider', () => {
 
   beforeEach(async () => {
     const engine = makeMockEngine({ general: { label: 'general', enabled: true } });
-    manager = new CatalogManager(engine as unknown as WikiEngine);
+    manager = new CatalogManager(engine);
     await manager.initialize();
   });
 
@@ -403,7 +403,7 @@ describe('CatalogManager — asset-source registry (#758)', () => {
 
   beforeEach(async () => {
     const engine = makeMockEngine({});
-    manager = new CatalogManager(engine as unknown as WikiEngine);
+    manager = new CatalogManager(engine);
     await manager.initialize();
   });
 

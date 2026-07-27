@@ -16,7 +16,7 @@ function item(over: Partial<MediaItem> & { metadata?: Record<string, unknown> })
     mimeType: 'image/jpeg',
     ...over,
     metadata: { dateTimeOriginal: '2026-06-24 12:02:46', ...over.metadata }
-  } as MediaItem;
+  };
 }
 
 describe('applyStrictDatePolicy (#864)', () => {

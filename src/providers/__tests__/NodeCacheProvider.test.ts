@@ -30,7 +30,7 @@ function makeEngine(overrides: Record<string, unknown> = {}): WikiEngine {
   };
   return {
     getManager: vi.fn((name: string) => name === 'ConfigurationManager' ? configManager : null)
-  } as unknown as WikiEngine;
+  };
 }
 
 describe('NodeCacheProvider', () => {

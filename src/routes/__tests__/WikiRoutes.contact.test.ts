@@ -224,7 +224,7 @@ describe('WikiRoutes — GET /contact (#658 iteration 2)', () => {
     });
     const { default: WikiEngine } = await import('../../WikiEngine');
     const engine = new WikiEngine();
-    const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+    const routes = new WikiRoutes(engine);
     routes.registerRoutes(app);
   });
 
@@ -355,7 +355,7 @@ describe('WikiRoutes — POST /contact (#658 iteration 3)', () => {
     });
     const { default: WikiEngine } = await import('../../WikiEngine');
     const engine = new WikiEngine();
-    const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+    const routes = new WikiRoutes(engine);
     routes.registerRoutes(app);
 
     // Reset module-scope rate limiter between tests so we don't trip
@@ -533,7 +533,7 @@ describe('WikiRoutes — /contact mail-disabled honesty (#670 Phase B)', () => {
     });
     const { default: WikiEngine } = await import('../../WikiEngine');
     const engine = new WikiEngine();
-    const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+    const routes = new WikiRoutes(engine);
     routes.registerRoutes(app);
 
     contactRateLimiter.reset();
@@ -635,7 +635,7 @@ describe('WikiRoutes — POST /contact submission persistence (#670 Phase C)', (
     });
     const { default: WikiEngine } = await import('../../WikiEngine');
     const engine = new WikiEngine();
-    const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+    const routes = new WikiRoutes(engine);
     routes.registerRoutes(app);
 
     contactRateLimiter.reset();
@@ -823,7 +823,7 @@ describe('WikiRoutes — POST /contact configurable anti-spam (#670 Phase E)', (
     });
     const { default: WikiEngine } = await import('../../WikiEngine');
     const engine = new WikiEngine();
-    const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+    const routes = new WikiRoutes(engine);
     routes.registerRoutes(app);
 
     contactRateLimiter.reset();

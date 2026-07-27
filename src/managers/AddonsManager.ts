@@ -898,7 +898,7 @@ class AddonsManager extends BaseManager {
               await searchManager.updatePageInIndex(existingSlug, {
                 name: existingSlug,
                 content: refreshed.content,
-                metadata: refreshed.metadata as Record<string, unknown>
+                metadata: refreshed.metadata
               });
             }
           }

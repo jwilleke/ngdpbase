@@ -470,7 +470,7 @@ class WikiContext {
       // metadata is loaded internally (the current WikiContext's
       // pageMetadata describes a DIFFERENT page).
       promise = this.aclManager.canUserAccessPage(
-        this.userContext as Parameters<ACLManager['canUserAccessPage']>[0],
+        this.userContext,
         pageNameOverride,
         action
       );
@@ -645,7 +645,7 @@ class WikiContext {
       // WikiContext stays the single source of truth across the parse run.
       // The pageContext snapshot above is kept as a back-compat fallback for
       // callers that aren't ParseContext (or test fixtures that pass raw options).
-      wikiContext: this as unknown
+      wikiContext: this
     };
   }
 

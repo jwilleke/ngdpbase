@@ -26,17 +26,6 @@ interface CacheStatistics {
 }
 
 /**
- * NodeCache internal stats structure
- */
-interface NodeCacheStats {
-  keys: number;
-  ksize: number;
-  vsize: number;
-  hits: number;
-  misses: number;
-}
-
-/**
  * Extended backup data for NodeCacheProvider
  */
 interface NodeCacheBackupData extends BackupData {
@@ -289,7 +278,7 @@ class NodeCacheProvider extends BaseCacheProvider {
           hitRate: 0
         });
       }
-      const nodeStats = this.cache.getStats() as NodeCacheStats;
+      const nodeStats = this.cache.getStats();
 
       return Promise.resolve({
         hits: this.statistics.hits,

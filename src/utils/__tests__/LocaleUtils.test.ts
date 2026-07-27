@@ -70,7 +70,7 @@ describe('LocaleUtils', () => {
     });
 
     test('returns empty string for null date', () => {
-      expect(LocaleUtils.formatTime(null as unknown as Date)).toBe('');
+      expect(LocaleUtils.formatTime(null)).toBe('');
     });
 
     test('falls back to en-US for invalid locale', () => {
@@ -205,7 +205,7 @@ describe('LocaleUtils', () => {
     });
 
     test('returns empty string for null date', () => {
-      expect(LocaleUtils.formatDate(null as unknown as Date)).toBe('');
+      expect(LocaleUtils.formatDate(null)).toBe('');
     });
   });
 });

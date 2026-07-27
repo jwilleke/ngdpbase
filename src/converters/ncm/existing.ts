@@ -29,7 +29,7 @@ export function normalizeExistingPageToNcm(raw: string): NcmResult {
   const warnings: NcmWarning[] = [];
   const parsed = matter(raw);
   const body = normalizeLinks(parsed.content, warnings);
-  const reassembled = matter.stringify(body, parsed.data as Record<string, unknown>);
+  const reassembled = matter.stringify(body, parsed.data);
   const fixed = normalizeToNcm(reassembled, 'markdown');
   return {
     content: fixed.content,

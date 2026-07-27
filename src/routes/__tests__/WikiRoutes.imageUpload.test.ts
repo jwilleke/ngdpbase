@@ -70,7 +70,7 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
     app = buildTestApp({ withCsrf: true });
 
     // Create WikiRoutes instance
-    wikiRoutes = new WikiRoutes(mockEngine as unknown as WikiEngine);
+    wikiRoutes = new WikiRoutes(mockEngine);
 
     // Register routes
     wikiRoutes.registerRoutes(app);

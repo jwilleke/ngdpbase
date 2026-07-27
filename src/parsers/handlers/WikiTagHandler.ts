@@ -122,7 +122,7 @@ class WikiTagHandler extends BaseSyntaxHandler {
    * @param context - Initialization context
    */
   protected async onInitialize(context: InitializationContext): Promise<void> {
-    this.engine = context.engine as WikiEngine | undefined ?? null;
+    this.engine = context.engine ?? null;
 
     // Load handler-specific configuration
     const markupParser = context.engine?.getManager('MarkupParser') as MarkupParser | undefined;
@@ -171,7 +171,7 @@ class WikiTagHandler extends BaseSyntaxHandler {
       const matchInfo = matches[i];
 
       try {
-        const replacement = await this.handleTag(matchInfo, context as WikiTagParseContext);
+        const replacement = await this.handleTag(matchInfo, context);
 
         processedContent =
           processedContent.slice(0, matchInfo.index) +

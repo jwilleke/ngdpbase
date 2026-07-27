@@ -361,7 +361,7 @@ describe('WikiRoutes — coverage batch 6', () => {
     app = buildApp();
     const { default: WikiEngine } = await import('../../WikiEngine');
     const engine = new WikiEngine();
-    const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+    const routes = new WikiRoutes(engine);
     routes.registerRoutes(app);
   });
 

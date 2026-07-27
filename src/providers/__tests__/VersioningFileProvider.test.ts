@@ -1258,7 +1258,7 @@ describe('VersioningFileProvider', () => {
         title: 'Speed',
         uuid: 'eeeeeeee-0000-0000-0000-000000000005',
         author: 'admin'
-      } as never);
+      });
 
       // Inject a stale duplicate directly into the in-memory index
       const staleUuid = 'ffffffff-0000-0000-0000-000000000006';
@@ -1276,7 +1276,7 @@ describe('VersioningFileProvider', () => {
         title: 'Speed',
         uuid: 'eeeeeeee-0000-0000-0000-000000000005',
         author: 'admin'
-      } as never);
+      });
 
       expect(provider.pageIndex!.pages[staleUuid]).toBeUndefined();
       expect(provider.pageIndex!.pages['eeeeeeee-0000-0000-0000-000000000005']).toBeDefined();

@@ -103,7 +103,7 @@ class LinkParserHandler extends BaseSyntaxHandler {
    */
   protected async onInitialize(context: InitializationContext): Promise<void> {
     try {
-      this.engine = context.engine as WikiEngine | undefined ?? null;
+      this.engine = context.engine ?? null;
 
       // Initialize LinkParser with page names from PageManager
       await this.initializeLinkParser();

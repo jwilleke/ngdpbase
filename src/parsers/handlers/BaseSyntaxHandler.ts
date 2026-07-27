@@ -716,7 +716,7 @@ abstract class BaseSyntaxHandler {
       pattern: this.pattern,
        
       priority: overrides.priority !== undefined ? overrides.priority : this.priority,
-      options: { ...this.options, ...overrides } as Required<HandlerOptions>,
+      options: { ...this.options, ...overrides },
       version: overrides.version || this.version,
       description: overrides.description || this.description,
       dependencies: [...this.dependencies]

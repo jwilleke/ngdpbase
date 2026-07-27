@@ -81,7 +81,7 @@ describe('FileSystemMediaProvider.scan() prunes stale index entries (#867)', () 
   }
 
   beforeEach(() => {
-    provider = new FileSystemMediaProvider(minimalConfig as never);
+    provider = new FileSystemMediaProvider(minimalConfig);
     vi.mocked(fs.pathExists).mockResolvedValue(true as never);
     vi.mocked(fs.stat).mockResolvedValue({ mtimeMs: 1717000000000, mtime: new Date('2024-05-29') } as never);
   });

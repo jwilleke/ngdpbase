@@ -54,9 +54,9 @@ describe('VersionCompression', () => {
     });
 
     test('should throw TypeError for invalid content type', () => {
-      expect(() => VersionCompression.compress(null as unknown as string)).toThrow(TypeError);
-      expect(() => VersionCompression.compress(123 as unknown as string)).toThrow(TypeError);
-      expect(() => VersionCompression.compress({} as unknown as string)).toThrow(TypeError);
+      expect(() => VersionCompression.compress(null)).toThrow(TypeError);
+      expect(() => VersionCompression.compress(123)).toThrow(TypeError);
+      expect(() => VersionCompression.compress({})).toThrow(TypeError);
     });
 
     test('should throw RangeError for invalid compression level', () => {

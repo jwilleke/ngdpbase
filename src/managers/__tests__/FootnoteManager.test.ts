@@ -42,7 +42,7 @@ describe('FootnoteManager', () => {
       return defaultValue;
     });
 
-    fm = new FootnoteManager(mockEngine as unknown as WikiEngine);
+    fm = new FootnoteManager(mockEngine);
     await fm.initialize();
   });
 
@@ -64,7 +64,7 @@ describe('FootnoteManager', () => {
         });
         mockConfigManager.getResolvedDataPath.mockReturnValue(disabledDir);
 
-        const disabledFm = new FootnoteManager(mockEngine as unknown as WikiEngine);
+        const disabledFm = new FootnoteManager(mockEngine);
         await disabledFm.initialize();
 
         expect(disabledFm.isEnabled()).toBe(false);

@@ -1064,7 +1064,7 @@ class VersioningFileProvider extends FileSystemProvider {
 
     for (const [, pageData] of this.pageCache.entries()) {
       // pageCache is keyed by title — use pageData.uuid for the actual UUID
-      const uuid = (pageData as PageCacheInfo).uuid;
+      const uuid = (pageData).uuid;
       try {
         // #806: determine location FIRST so the manifest check probes the
         // correct version tree. The original code defaulted to
@@ -1077,7 +1077,7 @@ class VersioningFileProvider extends FileSystemProvider {
         }
         const pagesPath = path.join(this.pagesDirectory, `${uuid}.md`);
         const requiredPath = path.join(this.requiredPagesDirectory, `${uuid}.md`);
-        const author = ((pageData as PageCacheInfo).metadata as Record<string, unknown> | undefined)?.['author'] as string | undefined;
+        const author = ((pageData).metadata as Record<string, unknown> | undefined)?.['author'] as string | undefined;
         const privatePath = author
           ? path.join(this.pagesDirectory, 'private', author, `${uuid}.md`)
           : null;
@@ -1102,7 +1102,7 @@ class VersioningFileProvider extends FileSystemProvider {
         const manifestPath = path.join(versionDir, 'manifest.json');
 
         if (await fs.pathExists(manifestPath)) {
-          await this.indexExistingVersionedPage(uuid, pageData as PageCacheInfo, manifestPath);
+          await this.indexExistingVersionedPage(uuid, pageData, manifestPath);
           migratedCount++;
           continue;
         }
@@ -1115,12 +1115,12 @@ class VersioningFileProvider extends FileSystemProvider {
           const fileContent = await fs.readFile(pagePath, 'utf8');
           const parsed = matter(fileContent);
           content = parsed.content;
-          metadata = parsed.data as PageFrontmatter;
+          metadata = parsed.data;
         } else {
           // {uuid}.md not found — the page may have a slug-based filename on disk,
           // OR may live under pages/private/{author}/{uuid}.md.
           // pageCache.filePath holds the actual path discovered during directory scan.
-          const actualFilePath = (pageData as PageCacheInfo).filePath;
+          const actualFilePath = (pageData).filePath;
           if (actualFilePath && await fs.pathExists(actualFilePath)) {
             // Correct location based on which directory the file actually lives in.
             // #806: also handle the private subdir so private pages don't get
@@ -1139,7 +1139,7 @@ class VersioningFileProvider extends FileSystemProvider {
             const fileContent = await fs.readFile(actualFilePath, 'utf8');
             const parsed = matter(fileContent);
             content = parsed.content;
-            metadata = parsed.data as PageFrontmatter;
+            metadata = parsed.data;
             // Rename the slug-named file to its proper UUID filename — but
             // ONLY if pagePath actually differs (i.e. file was slug-named).
             // Private files already at private/{author}/{uuid}.md don't move.
@@ -1148,13 +1148,13 @@ class VersioningFileProvider extends FileSystemProvider {
               logger.info(
                 '[VersioningFileProvider] Auto-migration: renamed slug-named file ' +
                 `"${path.basename(actualFilePath)}" → "${path.basename(pagePath)}" ` +
-                `for page "${(pageData as PageCacheInfo).title}"`
+                `for page "${(pageData).title}"`
               );
             }
           } else {
             logger.warn(
               '[VersioningFileProvider] Auto-migration: file not found for page ' +
-              `"${(pageData as PageCacheInfo).title}" (uuid: ${uuid}); ` +
+              `"${(pageData).title}" (uuid: ${uuid}); ` +
               `expected "${pagePath}"` +
               (actualFilePath ? `, also checked "${actualFilePath}"` : '') +
               ' — creating v1 with empty content'
@@ -1163,7 +1163,7 @@ class VersioningFileProvider extends FileSystemProvider {
         }
 
         // Create v1
-        await this.createInitialVersion(uuid, (pageData as PageCacheInfo).title, content, metadata, location);
+        await this.createInitialVersion(uuid, (pageData).title, content, metadata, location);
 
         // Update page index. #806: include slug + filename + (when private)
         // creator so slug-based URL lookups work after an auto-migration pass.
@@ -1172,7 +1172,7 @@ class VersioningFileProvider extends FileSystemProvider {
           : undefined;
         const filename = path.basename(pagePath);
         await this.updatePageInIndex(uuid, {
-          title:    (pageData as PageCacheInfo).title,
+          title:    (pageData).title,
           uuid,
           currentVersion: 1,
           location,
@@ -1192,7 +1192,7 @@ class VersioningFileProvider extends FileSystemProvider {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         const errorStack = error instanceof Error ? error.stack : undefined;
-        logger.error(`[VersioningFileProvider] Failed to migrate page ${(pageData as PageCacheInfo).title} (${uuid}): ${errorMessage}`);
+        logger.error(`[VersioningFileProvider] Failed to migrate page ${(pageData).title} (${uuid}): ${errorMessage}`);
         if (errorStack) {
           logger.debug(errorStack);
         }
@@ -1261,7 +1261,7 @@ class VersioningFileProvider extends FileSystemProvider {
       uuid,
       currentVersion: manifest.currentVersion ?? 1,
       location,
-      lastModified: manifest.lastModified ?? (md['lastModified'] as string | undefined) ?? new Date().toISOString(),
+      lastModified: manifest.lastModified ?? (md['lastModified']) ?? new Date().toISOString(),
       editor:   manifest.editor ?? manifest.author ?? (md['author']) ?? 'unknown',
       hasVersions: true,
       slug:     slugFromMeta,
@@ -1281,7 +1281,7 @@ class VersioningFileProvider extends FileSystemProvider {
 
     for (const [, pageData] of this.pageCache.entries()) {
       // pageCache is keyed by title — use pageData.uuid for the actual UUID
-      const info = pageData as PageCacheInfo;
+      const info = pageData;
       const uuid = info.uuid;
       try {
         // Determine location from disk:
@@ -2554,7 +2554,7 @@ class VersioningFileProvider extends FileSystemProvider {
       editor: editor,
       comment: comment,
       changeType: 'restored'
-    } as ExtendedMetadata);
+    });
 
     // Get the new version number for logging
     const location = this.pageIndex?.pages[uuid]?.location || 'pages';

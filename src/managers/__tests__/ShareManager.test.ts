@@ -162,7 +162,7 @@ describe('ShareManager', () => {
 
     test('rejects an invalid ttl', async () => {
       await expect(
-        sm.issue({ kind: 'keyword', keyword: 'k' }, '2h' as unknown as '24h', 'u')
+        sm.issue({ kind: 'keyword', keyword: 'k' }, '2h', 'u')
       ).rejects.toThrow(/invalid ttl/);
     });
 

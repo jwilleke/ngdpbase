@@ -68,7 +68,7 @@ describe('VersioningFileProvider - Write Queue', () => {
       config: {}
     };
 
-    provider = new VersioningFileProvider(engine as unknown as WikiEngine);
+    provider = new VersioningFileProvider(engine);
 
     // Manually set up the internal state needed for savePageIndex
     // Access private fields via bracket notation for testing

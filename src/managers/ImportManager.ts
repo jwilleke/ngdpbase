@@ -817,7 +817,7 @@ class ImportManager extends BaseManager {
       // predate the save pipeline (raw imports) may lack `author` — fall back
       // to the import actor rather than carrying undefined into the save.
       uuid: base.uuid,
-      author: (base.author as string) || options.actor || 'unknown',
+      author: (base.author) || options.actor || 'unknown',
       ...(base.created !== undefined ? { created: base.created } : {}),
       ...(base.slug !== undefined ? { slug: base.slug } : {}),
       editor: options.actor || 'unknown'
@@ -851,7 +851,7 @@ class ImportManager extends BaseManager {
       throw new Error('PageManager unavailable — cannot import page');
     }
     const metadata = this.buildImportMetadata(conversionResult, pageUuid);
-    metadata.author = (metadata.author as string) || options.actor || 'unknown';
+    metadata.author = (metadata.author) || options.actor || 'unknown';
     metadata.editor = options.actor || 'unknown';
     // See overwriteExistingPage: undefined values fail the YAML dump.
     for (const key of Object.keys(metadata)) {
@@ -1363,8 +1363,8 @@ class ImportManager extends BaseManager {
         frontmatter['uuid'] = uuid;
       }
       frontmatter['slug'] = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-      frontmatter['system-category'] = (result.metadata['system-category'] as string) || 'general';
-      frontmatter['user-keywords'] = (result.metadata['user-keywords'] as string[]) || [];
+      frontmatter['system-category'] = (result.metadata['system-category']) || 'general';
+      frontmatter['user-keywords'] = (result.metadata['user-keywords']) || [];
       frontmatter['lastModified'] = new Date().toISOString();
     }
 
@@ -1383,7 +1383,7 @@ class ImportManager extends BaseManager {
     }
 
     // Add import metadata
-    frontmatter['importedFrom'] = (result.metadata['importedFrom'] as string) || 'unknown';
+    frontmatter['importedFrom'] = (result.metadata['importedFrom']) || 'unknown';
     frontmatter['importedAt'] = new Date().toISOString();
 
     return frontmatter;

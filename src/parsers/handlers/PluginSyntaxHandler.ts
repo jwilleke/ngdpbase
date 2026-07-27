@@ -102,7 +102,7 @@ class PluginSyntaxHandler extends BaseSyntaxHandler {
    * @param context - Initialization context
    */
   protected async onInitialize(context: InitializationContext): Promise<void> {
-    this.engine = context.engine as WikiEngine | undefined ?? null;
+    this.engine = context.engine ?? null;
 
     // Load handler-specific configuration
     const markupParser = context.engine?.getManager('MarkupParser') as MarkupParser | undefined;

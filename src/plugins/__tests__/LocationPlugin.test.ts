@@ -43,7 +43,7 @@ describe('Location (via PluginManager)', () => {
       logger
     };
 
-    pm = new PluginManager(engine as unknown as WikiEngine);
+    pm = new PluginManager(engine);
     if (!pm.engine) pm.engine = engine;
     await pm.registerPlugins();
 

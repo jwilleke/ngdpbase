@@ -184,18 +184,18 @@ describe('articleToPageJsonLd — schema-types map (#791)', () => {
   };
 
   test('no map → @type unchanged (falls through to article["@type"])', () => {
-    const out = articleToPageJsonLd({ ...baseArticle, 'ngdp:category': 'documentation' } as unknown as Parameters<typeof articleToPageJsonLd>[0]);
+    const out = articleToPageJsonLd({ ...baseArticle, 'ngdp:category': 'documentation' });
     expect(out['@type']).toBe('Article');
   });
 
   test('empty map → @type unchanged', () => {
-    const out = articleToPageJsonLd({ ...baseArticle, 'ngdp:category': 'documentation' } as unknown as Parameters<typeof articleToPageJsonLd>[0], {});
+    const out = articleToPageJsonLd({ ...baseArticle, 'ngdp:category': 'documentation' }, {});
     expect(out['@type']).toBe('Article');
   });
 
   test('matching category → @type overridden with mapped subtype', () => {
     const out = articleToPageJsonLd(
-      { ...baseArticle, 'ngdp:category': 'documentation' } as unknown as Parameters<typeof articleToPageJsonLd>[0],
+      { ...baseArticle, 'ngdp:category': 'documentation' },
       { documentation: 'TechArticle', developer: 'TechArticle', journal: 'BlogPosting' }
     );
     expect(out['@type']).toBe('TechArticle');
@@ -203,7 +203,7 @@ describe('articleToPageJsonLd — schema-types map (#791)', () => {
 
   test('journal → BlogPosting per shipped defaults', () => {
     const out = articleToPageJsonLd(
-      { ...baseArticle, 'ngdp:category': 'journal' } as unknown as Parameters<typeof articleToPageJsonLd>[0],
+      { ...baseArticle, 'ngdp:category': 'journal' },
       { documentation: 'TechArticle', developer: 'TechArticle', journal: 'BlogPosting' }
     );
     expect(out['@type']).toBe('BlogPosting');
@@ -211,7 +211,7 @@ describe('articleToPageJsonLd — schema-types map (#791)', () => {
 
   test('unmapped category → @type falls through to "Article"', () => {
     const out = articleToPageJsonLd(
-      { ...baseArticle, 'ngdp:category': 'general' } as unknown as Parameters<typeof articleToPageJsonLd>[0],
+      { ...baseArticle, 'ngdp:category': 'general' },
       { documentation: 'TechArticle' }
     );
     expect(out['@type']).toBe('Article');
@@ -219,7 +219,7 @@ describe('articleToPageJsonLd — schema-types map (#791)', () => {
 
   test('article without ngdp:category → @type falls through to "Article" even with map', () => {
     const out = articleToPageJsonLd(
-      baseArticle as unknown as Parameters<typeof articleToPageJsonLd>[0],
+      baseArticle,
       { documentation: 'TechArticle' }
     );
     expect(out['@type']).toBe('Article');
@@ -227,7 +227,7 @@ describe('articleToPageJsonLd — schema-types map (#791)', () => {
 
   test('empty-string mapping → falls through to "Article" (treats empty as no-mapping)', () => {
     const out = articleToPageJsonLd(
-      { ...baseArticle, 'ngdp:category': 'documentation' } as unknown as Parameters<typeof articleToPageJsonLd>[0],
+      { ...baseArticle, 'ngdp:category': 'documentation' },
       { documentation: '' }
     );
     expect(out['@type']).toBe('Article');
@@ -235,7 +235,7 @@ describe('articleToPageJsonLd — schema-types map (#791)', () => {
 
   test('articleSection is set from ngdp:category regardless of @type override', () => {
     const out = articleToPageJsonLd(
-      { ...baseArticle, 'ngdp:category': 'documentation' } as unknown as Parameters<typeof articleToPageJsonLd>[0],
+      { ...baseArticle, 'ngdp:category': 'documentation' },
       { documentation: 'TechArticle' }
     );
     expect(out.articleSection).toBe('documentation');
@@ -247,7 +247,7 @@ describe('articleToPageJsonLd — schema-types map (#791)', () => {
     // The runtime lookup is permissive — type system narrows to the
     // PageJsonLd['@type'] union at consumer destructure time.
     const out = articleToPageJsonLd(
-      { ...baseArticle, 'ngdp:category': 'faq' } as unknown as Parameters<typeof articleToPageJsonLd>[0],
+      { ...baseArticle, 'ngdp:category': 'faq' },
       { faq: 'FAQPage' }
     );
     expect(out['@type']).toBe('FAQPage');

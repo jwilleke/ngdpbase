@@ -19,10 +19,10 @@
 import Engine from '../Engine';
 import type BaseManager from '../../managers/BaseManager';
 
-const makeManager = (name = 'TestManager'): BaseManager => ({
+const makeManager = (name = 'TestManager'): BaseManager => (({
   name,
   shutdown: vi.fn().mockResolvedValue(undefined)
-} as unknown as BaseManager);
+}));
 
 describe('Engine', () => {
   let engine: Engine;
@@ -43,22 +43,22 @@ describe('Engine', () => {
 
   describe('initialize()', () => {
     test('initializes with empty config', async () => {
-      await engine.initialize({} as never);
+      await engine.initialize({});
       expect(engine.isConfigured()).toBe(true);
     });
 
     test('initializes with config object', async () => {
-      await engine.initialize({ applicationName: 'TestWiki' } as never);
+      await engine.initialize({ applicationName: 'TestWiki' });
       expect(engine.isConfigured()).toBe(true);
     });
 
     test('throws if called a second time', async () => {
-      await engine.initialize({} as never);
-      await expect(engine.initialize({} as never)).rejects.toThrow('already initialized');
+      await engine.initialize({});
+      await expect(engine.initialize({})).rejects.toThrow('already initialized');
     });
 
     test('stores config properties', async () => {
-      await engine.initialize({ workDir: '/my/path' } as never);
+      await engine.initialize({ workDir: '/my/path' });
       expect(engine.getProperty('workDir')).toBe('/my/path');
     });
   });
@@ -100,17 +100,17 @@ describe('Engine', () => {
 
   describe('getProperty()', () => {
     test('returns null for missing key', async () => {
-      await engine.initialize({} as never);
+      await engine.initialize({});
       expect(engine.getProperty('missing')).toBeNull();
     });
 
     test('returns default value for missing key', async () => {
-      await engine.initialize({} as never);
+      await engine.initialize({});
       expect(engine.getProperty('missing', 'default')).toBe('default');
     });
 
     test('returns stored config value', async () => {
-      await engine.initialize({ appName: 'MyApp' } as never);
+      await engine.initialize({ appName: 'MyApp' });
       expect(engine.getProperty('appName')).toBe('MyApp');
     });
 
@@ -126,7 +126,7 @@ describe('Engine', () => {
     });
 
     test('returns map of all config properties', async () => {
-      await engine.initialize({ key1: 'val1', key2: 42 } as never);
+      await engine.initialize({ key1: 'val1', key2: 42 });
       const props = engine.getProperties();
       expect(props.get('key1')).toBe('val1');
       expect(props.get('key2')).toBe(42);
@@ -139,31 +139,31 @@ describe('Engine', () => {
     });
 
     test('returns true after initialization', async () => {
-      await engine.initialize({} as never);
+      await engine.initialize({});
       expect(engine.isConfigured()).toBe(true);
     });
   });
 
   describe('getApplicationName()', () => {
     test('returns "ngdpbase" by default', async () => {
-      await engine.initialize({} as never);
+      await engine.initialize({});
       expect(engine.getApplicationName()).toBe('ngdpbase');
     });
 
     test('returns configured application name', async () => {
-      await engine.initialize({ applicationName: 'MyWiki' } as never);
+      await engine.initialize({ applicationName: 'MyWiki' });
       expect(engine.getApplicationName()).toBe('MyWiki');
     });
   });
 
   describe('getWorkDir()', () => {
     test('returns "./" by default', async () => {
-      await engine.initialize({} as never);
+      await engine.initialize({});
       expect(engine.getWorkDir()).toBe('./');
     });
 
     test('returns configured work dir', async () => {
-      await engine.initialize({ workDir: '/data/wiki' } as never);
+      await engine.initialize({ workDir: '/data/wiki' });
       expect(engine.getWorkDir()).toBe('/data/wiki');
     });
   });
@@ -175,7 +175,7 @@ describe('Engine', () => {
     });
 
     test('returns config object after initialization', async () => {
-      await engine.initialize({ key: 'value' } as never);
+      await engine.initialize({ key: 'value' });
       expect(engine.getConfig()).toEqual(expect.objectContaining({ key: 'value' }));
     });
   });
@@ -218,7 +218,7 @@ describe('Engine', () => {
       const mgr2 = makeManager('M2');
       engine.registerManager('M1', mgr1);
       engine.registerManager('M2', mgr2);
-      await engine.initialize({} as never);
+      await engine.initialize({});
 
       await engine.shutdown();
 
@@ -227,7 +227,7 @@ describe('Engine', () => {
     });
 
     test('marks engine as not initialized', async () => {
-      await engine.initialize({} as never);
+      await engine.initialize({});
       await engine.shutdown();
       expect(engine.isConfigured()).toBe(false);
     });
@@ -235,7 +235,7 @@ describe('Engine', () => {
     test('does not throw if managers have no shutdown method', async () => {
       const mgrNoShutdown = { name: 'Lean' } as unknown as BaseManager;
       engine.registerManager('Lean', mgrNoShutdown);
-      await engine.initialize({} as never);
+      await engine.initialize({});
       await expect(engine.shutdown()).resolves.not.toThrow();
     });
   });

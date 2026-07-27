@@ -92,7 +92,7 @@ describe('UserManager', () => {
       })
     };
 
-    userManager = new UserManager(mockEngine as unknown as WikiEngine);
+    userManager = new UserManager(mockEngine);
   });
 
   describe('constructor', () => {
@@ -110,7 +110,7 @@ describe('UserManager', () => {
       const engineWithoutConfig = {
         getManager: vi.fn().mockReturnValue(null)
       };
-      const manager = new UserManager(engineWithoutConfig as unknown as WikiEngine);
+      const manager = new UserManager(engineWithoutConfig);
 
       await expect(manager.initialize()).rejects.toThrow('UserManager requires ConfigurationManager');
     });
@@ -370,7 +370,7 @@ describe('UserManager', () => {
         return defaultValue;
       });
 
-      const newManager = new UserManager(mockEngine as unknown as WikiEngine);
+      const newManager = new UserManager(mockEngine);
       await expect(newManager.initialize()).rejects.toThrow();
     });
   });

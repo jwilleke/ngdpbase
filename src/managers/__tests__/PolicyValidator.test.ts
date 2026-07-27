@@ -21,7 +21,7 @@ const mockPolicyManager = {
 function makeEngine(): WikiEngine {
   return {
     getManager: vi.fn((name: string) => name === 'PolicyManager' ? mockPolicyManager : null)
-  } as unknown as WikiEngine;
+  };
 }
 
 async function makeValidator(): Promise<PolicyValidator> {

@@ -180,7 +180,7 @@ class RegionCache {
       }
     }
 
-    return value as T;
+    return value;
   }
 
   /**

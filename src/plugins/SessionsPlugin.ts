@@ -67,7 +67,7 @@ const SessionsPlugin: SimplePlugin = {
       }
 
       const baseUrl = `http://${host}:${port}`;
-      const fetchFn: FetchFunction = fetch as FetchFunction;
+      const fetchFn: FetchFunction = fetch;
       const property = String(params.property || 'count').toLowerCase();
 
       // property=users — list authenticated users + anonymous count

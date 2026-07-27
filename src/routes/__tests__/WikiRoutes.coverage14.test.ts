@@ -375,7 +375,7 @@ describe('WikiRoutes — coverage batch 14', () => {
     app = buildApp();
     const { default: WikiEngine } = await import('../../WikiEngine');
     const engine = new WikiEngine();
-    const routes = new WikiRoutes(engine as unknown as Parameters<typeof WikiRoutes>[0]);
+    const routes = new WikiRoutes(engine);
     routes.registerRoutes(app);
   });
 
@@ -705,7 +705,7 @@ describe('WikiRoutes — coverage batch 14', () => {
           { version: 1, date: '2024-01-01', author: 'admin', comment: 'Initial' }
         ])
       };
-      mockPageManager.provider = mockProvider as unknown as Record<string, unknown>;
+      mockPageManager.provider = mockProvider;
       const res = await request(app).get('/api/page/test-page/versions');
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -733,7 +733,7 @@ describe('WikiRoutes — coverage batch 14', () => {
       const mockProvider = {
         getPageVersion: vi.fn().mockResolvedValue({ content: '# V1', metadata: {} })
       };
-      mockPageManager.provider = mockProvider as unknown as Record<string, unknown>;
+      mockPageManager.provider = mockProvider;
       const res = await request(app).get('/api/page/test-page/version/1');
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -756,7 +756,7 @@ describe('WikiRoutes — coverage batch 14', () => {
       const mockProvider = {
         compareVersions: vi.fn().mockResolvedValue({ version1: 1, version2: 2, diff: [] })
       };
-      mockPageManager.provider = mockProvider as unknown as Record<string, unknown>;
+      mockPageManager.provider = mockProvider;
       const res = await request(app).get('/api/page/test-page/compare/1/2');
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -794,7 +794,7 @@ describe('WikiRoutes — coverage batch 14', () => {
       const mockProvider = {
         restoreVersion: vi.fn().mockResolvedValue(5)
       };
-      mockPageManager.provider = mockProvider as unknown as Record<string, unknown>;
+      mockPageManager.provider = mockProvider;
       const res = await request(app)
         .post('/api/page/test-page/restore/3')
         .set('x-csrf-token', 'test-csrf-token')
@@ -817,7 +817,7 @@ describe('WikiRoutes — coverage batch 14', () => {
       const mockProvider = {
         getVersionHistory: vi.fn().mockRejectedValue(new Error('not found'))
       };
-      mockPageManager.provider = mockProvider as unknown as Record<string, unknown>;
+      mockPageManager.provider = mockProvider;
       mockPageManager.pageExists.mockReturnValue(false);
       const res = await request(app).get('/history/NonExistentPage');
       expect(res.status).toBe(404);
@@ -827,7 +827,7 @@ describe('WikiRoutes — coverage batch 14', () => {
       const mockProvider = {
         getVersionHistory: vi.fn().mockRejectedValue(new Error('Not implemented'))
       };
-      mockPageManager.provider = mockProvider as unknown as Record<string, unknown>;
+      mockPageManager.provider = mockProvider;
       mockPageManager.pageExists.mockReturnValue(true);
       const res = await request(app).get('/history/TestPage');
       expect(res.status).toBe(501);
@@ -852,7 +852,7 @@ describe('WikiRoutes — coverage batch 14', () => {
       const mockProvider = {
         compareVersions: vi.fn().mockResolvedValue({ version1: 1, version2: 2, diff: [] })
       };
-      mockPageManager.provider = mockProvider as unknown as Record<string, unknown>;
+      mockPageManager.provider = mockProvider;
       mockPageManager.pageExists.mockReturnValue(false);
       const res = await request(app).get('/diff/TestPage?v1=1&v2=2');
       expect(res.status).toBe(404);
@@ -862,7 +862,7 @@ describe('WikiRoutes — coverage batch 14', () => {
       const mockProvider = {
         compareVersions: vi.fn().mockResolvedValue({ version1: 1, version2: 2, diff: [] })
       };
-      mockPageManager.provider = mockProvider as unknown as Record<string, unknown>;
+      mockPageManager.provider = mockProvider;
       mockPageManager.pageExists.mockReturnValue(true);
       const res = await request(app).get('/diff/TestPage?v1=1&v2=2');
       expect(res.status).toBe(200);

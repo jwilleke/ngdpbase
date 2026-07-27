@@ -39,7 +39,7 @@ describe('TablePlugin', () => {
   });
 
   test('initialize() does not throw', () => {
-    expect(() => TablePlugin.initialize?.({} as never)).not.toThrow();
+    expect(() => TablePlugin.initialize?.({})).not.toThrow();
   });
 });
 
