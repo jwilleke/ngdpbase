@@ -19,7 +19,7 @@ describe('WikiEngine', () => {
     }
     try {
       await fs.remove(testDir);
-    } catch (err) {
+    } catch {
       // Directory might not exist
     }
   });

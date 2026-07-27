@@ -366,7 +366,7 @@ const SearchPlugin: SimplePlugin = {
         // resolved keyword onto the other filters already in searchOptions, so
         // category/date/author still apply.
         const vm = context?.engine?.getManager?.('ValidationManager') as { generateSlug?: (t: string) => string } | undefined;
-        const slugify = (n: string) => vm?.generateSlug ? vm.generateSlug(n) : simpleSlug(n);
+        const slugify = (n: string): string => vm?.generateSlug ? vm.generateSlug(n) : simpleSlug(n);
         const resolved = await resolveCurrentKeyword<SearchResult>(
           'current', context.pageName ?? '', slugify,
           (kw) => searchManager.advancedSearch({ ...searchOptions, userKeywords: [kw] })

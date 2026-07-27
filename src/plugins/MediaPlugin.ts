@@ -79,7 +79,7 @@ const MediaPlugin: SimplePlugin = {
         // #901: 'current' adapts to whichever keyword form (page name or slug)
         // actually has media — shared with SearchPlugin via resolveCurrentKeyword.
         const vm = engine.getManager('ValidationManager') as { generateSlug?: (t: string) => string } | undefined;
-        const slugify = (n: string) => vm?.generateSlug ? vm.generateSlug(n) : simpleSlug(n);
+        const slugify = (n: string): string => vm?.generateSlug ? vm.generateSlug(n) : simpleSlug(n);
         const resolved = await resolveCurrentKeyword<MediaItem>(
           keywordParam, context.pageName ?? '', slugify,
           (kw) => mediaManager.listByKeyword(kw)

@@ -1,5 +1,4 @@
 import UserManager from '../managers/UserManager';
-import type { WikiEngine } from '../types/WikiEngine';
 
 // Mock fs module
 vi.mock('fs', () => ({
@@ -332,8 +331,9 @@ describe('UserManager', () => {
 
     test('should create session for user', async () => {
       const user = { username: 'testuser', roles: ['reader'] };
-      // createSession delegates to provider
-      const session = await userManager.createSession(user);
+      // createSession delegates to provider; called for the side effect only —
+      // the returned session is not asserted here.
+      await userManager.createSession(user);
       // With mocked provider, session creation is handled by provider
       // Verify the method doesn't throw
       expect(userManager.provider.createSession).toBeDefined();
