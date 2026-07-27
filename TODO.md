@@ -20,7 +20,7 @@ Generated priority mirror of open GitHub issues and pull requests — the `P0` /
 
 ## 🟠 P1
 
-- [#998](https://github.com/jwilleke/ngdpbase/issues/998) — [BUG] elasticsearch addon points at a non-existent index — External Asset Search silently returns nothing
+- [#998](https://github.com/jwilleke/ngdpbase/issues/998) — [BUG] elasticsearch addon: sist2 SOURCE index misconfigured — External Asset Search silently returns nothing
 - [#967](https://github.com/jwilleke/ngdpbase/issues/967) — [BUG] Inline multi-class style content needs migrating to the dotted form after v3.68.3
 - [#898](https://github.com/jwilleke/ngdpbase/issues/898) — [BUG] Storybook route-map generation orphans a route.png attachment on every regeneration
 - [#884](https://github.com/jwilleke/ngdpbase/issues/884) — [FEATURE] Search ranking: field weighting, URL tokenization, prefix typeahead, keyword-first
@@ -53,7 +53,7 @@ Generated priority mirror of open GitHub issues and pull requests — the `P0` /
 ## ⏸ Deferred
 
 - [#999](https://github.com/jwilleke/ngdpbase/issues/999) — [FEATURE] Attachment metadata editing + video CreateDate verification (split from #868) — *parked: attachment IDs are content hashes, so an embedded write breaks them — embedded write **backed out** (`ffe16c0d`); PATCH route works but is **parked** on `feat/999-patch-route`; video CreateDate check **done***
-- [#868](https://github.com/jwilleke/ngdpbase/issues/868) — [FEATURE] deby ES-mirror: push-on-edit vs periodic re-sync for metadata edits — *parked: rests on `es-enrichment-pipeline`, dormant since April and 7.5% complete*
+- [#868](https://github.com/jwilleke/ngdpbase/issues/868) — [FEATURE] embeddings MIRROR index: push-on-edit vs periodic re-sync for metadata edits — *parked: rests on `es-enrichment-pipeline`, dormant since April and 7.5% complete — unrelated to #998, which is the sist2 source index*
 - [#737](https://github.com/jwilleke/ngdpbase/issues/737) — [FEATURE] NCM Phase-2: transcode/re-encode fetched embedded images (security + size hardening) — *parked: no driver*
 - [#707](https://github.com/jwilleke/ngdpbase/issues/707) — [FEATURE] Typed footnote syntax + knowledge-graph reference index — *parked: no driver*
 - [#645](https://github.com/jwilleke/ngdpbase/issues/645) — [FEATURE] PathPreflight: extend coverage to `/mnt/tank/<share>/...` autofs paths — *parked: no driver*
