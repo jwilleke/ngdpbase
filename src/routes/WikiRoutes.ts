@@ -3866,6 +3866,30 @@ ${panes}
    * Delete a page
    */
   /**
+   * Whether agent tokens are usable on this instance (#981).
+   *
+   * Must be the SAME condition `AuthManager` uses to register the
+   * `agent-token` provider, because a token that cannot authenticate must not
+   * be issuable. `AgentTokenManager` is registered unconditionally in
+   * `WikiEngine`, so checking only for the manager — which is what the mint
+   * route used to do — reports "available" on every instance, including the
+   * ones where the provider was never registered.
+   *
+   * The result on a default (disabled) instance was a token that mints with a
+   * 201, is stored, is shown once with "copy this now", and can never be used.
+   * Worse, using it failed as `Forbidden — invalid CSRF token`, because the
+   * bearer middleware never set `req.bearerAuth` and the request fell through
+   * to the CSRF guard — pointing the operator at entirely the wrong subsystem.
+   */
+  private agentTokensEnabled(): boolean {
+    return Boolean(
+      this.engine.getManager('AgentTokenManager') &&
+      this.engine.getManager<{ getProperty(k: string, d: unknown): unknown }>('ConfigurationManager')
+        ?.getProperty('ngdpbase.auth.agent-token.enabled', false)
+    );
+  }
+
+  /**
    * Resolve an addon page's identity from its source (#964).
    *
    * An addon page's identity is its **frontmatter uuid**, never its filename.
@@ -6949,7 +6973,9 @@ ${panes}
       if (!user?.isAuthenticated || !user.username) {
         return res.status(401).json({ success: false, error: 'Authentication required' });
       }
-      const manager = this.engine.getManager('AgentTokenManager') as import('../managers/AgentTokenManager.js').default | null;
+      const manager = this.agentTokensEnabled()
+        ? this.engine.getManager('AgentTokenManager') as import('../managers/AgentTokenManager.js').default | null
+        : null;
       if (!manager) {
         return res.status(503).json({ success: false, error: 'Agent tokens are not enabled' });
       }
@@ -6983,7 +7009,9 @@ ${panes}
       if (!user?.isAuthenticated || !user.username) {
         return res.status(401).json({ success: false, error: 'Authentication required' });
       }
-      const manager = this.engine.getManager('AgentTokenManager') as import('../managers/AgentTokenManager.js').default | null;
+      const manager = this.agentTokensEnabled()
+        ? this.engine.getManager('AgentTokenManager') as import('../managers/AgentTokenManager.js').default | null
+        : null;
       if (!manager) {
         return res.status(503).json({ success: false, error: 'Agent tokens are not enabled' });
       }
@@ -7032,7 +7060,9 @@ ${panes}
       if (!user?.isAuthenticated || !user.username) {
         return res.status(401).json({ success: false, error: 'Authentication required' });
       }
-      const manager = this.engine.getManager('AgentTokenManager') as import('../managers/AgentTokenManager.js').default | null;
+      const manager = this.agentTokensEnabled()
+        ? this.engine.getManager('AgentTokenManager') as import('../managers/AgentTokenManager.js').default | null
+        : null;
       if (!manager) {
         return res.status(503).json({ success: false, error: 'Agent tokens are not enabled' });
       }

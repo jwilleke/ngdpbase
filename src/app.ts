@@ -393,7 +393,7 @@ void (async (): Promise<void> => {
   // in-app agent-token provider and Authentik coexist (or run alone, or
   // neither).
   const BEARER_PROVIDER_IDS = ['authentik-bearer', 'agent-token'];
-  app.use(async (req: Request, _res: Response, next: NextFunction) => {
+  app.use(async (req: Request, res: Response, next: NextFunction) => {
     try {
       const header = req.headers['authorization'];
       if (!header || typeof header !== 'string' || !header.startsWith('Bearer ')) { next(); return; }
@@ -407,8 +407,34 @@ void (async (): Promise<void> => {
       } | null;
       const registered = new Set((authManager?.getProviders?.() ?? []).map(p => p.id));
       const candidates = BEARER_PROVIDER_IDS.filter(id => registered.has(id));
-      if (!authManager?.authenticate || candidates.length === 0) { next(); return; }
       const token = header.slice('Bearer '.length).trim();
+
+      // #981: an ngdp_at_ token is unambiguously an agent token. If it cannot
+      // be authenticated — feature disabled, provider unregistered, token
+      // revoked or expired — say THAT, rather than falling through to the CSRF
+      // guard and answering `Forbidden — invalid CSRF token`. The old
+      // behaviour sent operators debugging CSRF configuration over a token
+      // problem, which is about as misleading as an error can be.
+      const looksLikeAgentToken = token.startsWith('ngdp_at_');
+      const rejectAgentToken = (reason: string): void => {
+        logger.warn(`[bearer] rejected agent token — ${reason}`);
+        res.status(401).json({
+          success: false,
+          error: 'Invalid or unusable agent token',
+          message: reason
+        });
+      };
+
+      if (!authManager?.authenticate || candidates.length === 0) {
+        if (looksLikeAgentToken) {
+          rejectAgentToken(
+            'agent tokens are not enabled on this instance (ngdpbase.auth.agent-token.enabled)'
+          );
+          return;
+        }
+        next();
+        return;
+      }
       if (!token) { next(); return; }
 
       let result: { success: boolean; username?: string; viaToken?: { id: string; name: string; scopes: string[] } } = { success: false };
@@ -442,6 +468,13 @@ void (async (): Promise<void> => {
           (req as Request & { bearerAuth?: boolean }).bearerAuth = true;
           logger.info(`[bearer:${matchedProvider}] Authenticated API request as: ${result.username}`);
         }
+      }
+
+      // #981: same reasoning as above, for a token that reached a registered
+      // provider and was still refused.
+      if (!(req as Request & { bearerAuth?: boolean }).bearerAuth && looksLikeAgentToken) {
+        rejectAgentToken('token is invalid, revoked, expired, or its owner is inactive');
+        return;
       }
     } catch (err) {
       logger.warn('[bearer middleware] failed:', err);
