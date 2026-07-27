@@ -13,6 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Future enhancements
 
+## [4.0.1] - 2026-07-27
+
+### Fixed
+
+- **#1003** — `system-category` changes in an addon source now reach already-seeded pages. `evaluateSeededAddonPage` compares page *bodies*, so a category-only source edit never marked a page `outdated` and the reseed path never ran — categories set at first seed were frozen permanently. Adds a drift check independent of the body hash and of `reseed`, with a new `addon-source-category` marker (the category analogue of `addon-source-hash`) that makes the correction one-time-per-drift: once the addon's value has been applied, an operator who re-categorizes the page keeps their choice until the addon's own value changes again.
+- **#1003** — the #971 `access` backfill resolved a page's category from the stale live value before the addon source's current one, while the reseed path resolved the same field source-first. Now source-first in both.
+
+  **Operators upgrading with addon pages whose category was corrected upstream:** the two bugs compounded, so pages that should be instance-owned (`system-category: general`) may carry an `access: { edit: ['admin'] }` stamp derived from their stale category. This release clears such a stamp on next boot, but only when all of: the category actually drifted, the corrected category warrants no stamp, the addon source declares no `access` of its own, and the live value is byte-identical to what the stale category would have produced. An `access` value you set yourself is preserved — with one caveat worth knowing: a value you set that happens to equal `{ edit: ['admin'] }` exactly, on a page whose category also drifted, is indistinguishable from the machine's output and will be cleared.
+
+### Changed
+
+- `docs/planning/addons.md` §9 — the Legal purpose (the `attribution` page) is settled as `system-category: documentation`. §9 now has no open items.
+
 ## [4.0.0] - 2026-07-27
 
 ### ⚠️ BREAKING — the published Docker image no longer has npm
