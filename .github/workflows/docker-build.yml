@@ -4,6 +4,18 @@ on:
   push:
     tags:
       - 'v*'
+  # #956: validate Dockerfile changes BEFORE they reach a release tag. Until
+  # now the image built only on `v*` or manual dispatch, so a broken Dockerfile
+  # was discovered during a release build — the worst possible moment. Scoped to
+  # the paths that can actually break the image, so ordinary PRs pay nothing.
+  #
+  # A PR run builds, smoke-tests and scans locally. It never pushes, never moves
+  # `latest`, and never uploads SARIF (that would overwrite master's
+  # code-scanning alerts with a PR's results — the inverse of #878).
+  pull_request:
+    paths:
+      - 'docker/**'
+      - '.github/workflows/docker-build.yml'
   workflow_dispatch:
     inputs:
       push_to_registry:
@@ -59,7 +71,19 @@ jobs:
             org.opencontainers.image.description=JSPWiki-inspired file-based wiki platform
             org.opencontainers.image.vendor=ngdpbase Project
 
+      # PR runs have nothing in a registry to refer to, so the image is tagged
+      # and scanned locally instead of by its published `:latest` name.
+      - name: Resolve image reference
+        id: img
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "ref=${{ env.DOCKER_IMAGE_NAME }}:pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ env.DOCKER_REGISTRY }}/${{ env.REGISTRY_USER }}/${{ env.DOCKER_IMAGE_NAME }}:latest" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.DOCKER_REGISTRY }}
@@ -72,9 +96,9 @@ jobs:
           context: .
           file: ./docker/Dockerfile
           platforms: linux/amd64
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           load: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ github.event_name == 'pull_request' && steps.img.outputs.ref || steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             NODE_VERSION=${{ env.DOCKER_NODE_VERSION }}
@@ -88,7 +112,7 @@ jobs:
             -p 3000:3000 \
             -e HEADLESS_INSTALL=true \
             -e NODE_ENV=production \
-            ${{ env.DOCKER_REGISTRY }}/${{ env.REGISTRY_USER }}/${{ env.DOCKER_IMAGE_NAME }}:latest
+            ${{ steps.img.outputs.ref }}
 
       - name: Smoke test — wait for healthy
         run: |
@@ -146,12 +170,16 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.DOCKER_REGISTRY }}/${{ env.REGISTRY_USER }}/${{ env.DOCKER_IMAGE_NAME }}:latest
+          image-ref: ${{ steps.img.outputs.ref }}
           format: 'sarif'
           output: 'trivy-results.sarif'
           trivyignores: '.trivyignore'
 
+      # Never on a PR: code-scanning alerts live per-ref, and uploading a PR's
+      # results under refs/heads/master would rewrite master's alert state from
+      # an unmerged branch.
       - name: Upload Trivy results to GitHub Security
+        if: github.event_name != 'pull_request'
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
