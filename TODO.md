@@ -36,12 +36,6 @@ No addon path carries an open alert. `geohazardwatch` and `fairways-gen2-website
 
 - *(none in ngdpbase or geohazardwatch)*
 
-## 🐛 Open BUGS
-
-- [#998](https://github.com/jwilleke/ngdpbase/issues/998) — [BUG] elasticsearch addon points at a non-existent index — External Asset Search silently returns nothing
-- [#967](https://github.com/jwilleke/ngdpbase/issues/967) — [BUG] Inline multi-class style content needs migrating to the dotted form after v3.68.3
-- [#898](https://github.com/jwilleke/ngdpbase/issues/898) — [BUG] Storybook route-map generation orphans a route.png attachment on every regeneration
-
 ## 🛰 Sister sites — geohazardwatch
 
 | # | Labels | Title |
