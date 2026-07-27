@@ -903,11 +903,58 @@ class AddonsManager extends BaseManager {
           // not get two versions for what is a single reconciliation.
           const metaPatch: Record<string, unknown> = {};
           const reasons: string[] = [];
+          // Removal, not an assignment — carried separately because spreading
+          // `access: undefined` would leave the key present for the YAML
+          // serializer to render, which is not the same as deleting it.
+          let clearAccess = false;
 
           if (categoryDrifted) {
             metaPatch['system-category'] = sourceCategory;
             metaPatch['addon-source-category'] = sourceCategory;
             reasons.push(`system-category ${JSON.stringify(liveCategory ?? null)} → '${sourceCategory}' (#1003)`);
+
+            // #1003 remediation: undo an `access` stamp that only exists because
+            // Bug 1 resolved the category from the stale live value.
+            //
+            // The 12 geohazardwatch pages §9 designates instance-owned were
+            // stamped admin-only because they still read `addon` when the #971
+            // backfill ran. Correcting the category alone does not release them:
+            // that backfill fires only on `access === undefined`, so it never
+            // revisits a page it already stamped.
+            //
+            // Loosening a permission, so the conditions are deliberately narrow —
+            // ALL must hold:
+            //   * the category drifted (⇒ this is a page the bug operated on)
+            //   * the CORRECTED category maps to no stamp at all (`general`)
+            //   * the source does not declare its own `access` — an addon's
+            //     explicit value is authoritative and is never removed
+            //   * the live `access` is byte-identical to what the STALE category
+            //     would have produced ⇒ it is the machine's output
+            //
+            // The last is the honest limit of this: frontmatter cannot prove
+            // authorship, so an operator who independently set exactly
+            // `{edit:['admin']}` on a page whose category also drifted is
+            // indistinguishable from the bug's output and would be cleared. That
+            // is the narrowest rule available, not a perfect one.
+            //
+            // Self-limiting: once cleared, the next boot sees `access` undefined
+            // with category `general`, and defaultAddonPageAccess returns nothing
+            // for `general` — so it stays cleared rather than oscillating.
+            const correctedDefault = this.defaultAddonPageAccess(sourceCategory);
+            const staleDefault = this.defaultAddonPageAccess(
+              typeof liveCategory === 'string' ? liveCategory : 'addon'
+            );
+            const sourceDeclaresAccess = (parsed.data as Record<string, unknown>)['access'] !== undefined;
+            const looksMachineStamped = staleDefault !== undefined
+              && JSON.stringify(existingMeta.access) === JSON.stringify(staleDefault);
+
+            if (correctedDefault === undefined && !sourceDeclaresAccess && looksMachineStamped) {
+              clearAccess = true;
+              reasons.push(
+                `cleared access edit=[${staleDefault.edit.join(', ')}] stamped from the stale ` +
+                `category '${String(liveCategory)}' — '${sourceCategory}' is instance-owned (#1003)`
+              );
+            }
           }
 
           // #971 backfill: pages seeded before `access` stamping existed carry
@@ -928,17 +975,19 @@ class AddonsManager extends BaseManager {
             }
           }
 
-          if (Object.keys(metaPatch).length > 0) {
+          if (Object.keys(metaPatch).length > 0 || clearAccess) {
             // Metadata-only: the body is passed through untouched, and
             // pageSourceHash covers the body alone, so this cannot disturb the
             // #920 reseed comparison or mark the page locally-modified.
-            await pageManager.savePage(existingSlug, existing.content, {
-              ...existingMeta,
-              ...metaPatch
-            });
+            const reconciled: Record<string, unknown> = { ...existingMeta, ...metaPatch };
+            if (clearAccess) delete reconciled.access;
+
+            await pageManager.savePage(existingSlug, existing.content, reconciled);
             // Keep the in-memory copy consistent — the reseed branch below reads
-            // existingMeta again, and would otherwise re-apply a stale category.
+            // existingMeta again, and would otherwise re-apply a stale category
+            // or resurrect the access we just cleared.
             Object.assign(existingMeta, metaPatch);
+            if (clearAccess) delete existingMeta.access;
             logger.info(
               `[AddonsManager] Reconciled '${existingSlug}' (${addonName}): ${reasons.join('; ')}`
             );

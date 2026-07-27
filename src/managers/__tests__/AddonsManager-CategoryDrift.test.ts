@@ -185,6 +185,109 @@ describe('#1003 system-category drift', () => {
     });
   });
 
+  describe('remediation — clearing an access stamp Bug 1 produced (#1003)', () => {
+    // Correcting the category alone does not release the 12 geohazardwatch
+    // pages: #971's backfill fires only on `access === undefined`, so it never
+    // revisits a page it already stamped. This is a permission-LOOSENING pass,
+    // so every guard below matters.
+
+    test('clears a stamp that exactly matches the stale category default', async () => {
+      withExisting({
+        uuid: UUID(5), slug: 'wildfires',
+        'system-category': 'addon', access: { edit: ['admin'] }
+      });
+      await write('a.md', { uuid: UUID(5), slug: 'wildfires', 'system-category': 'general' });
+
+      await manager.seedAddonPages('demo', tmpDir);
+
+      const meta = metaFor('wildfires');
+      expect(meta?.['system-category']).toBe('general');
+      // Absent, not present-and-undefined — the key must not reach the YAML.
+      expect(meta).not.toHaveProperty('access');
+    });
+
+    test('does NOT clear when the corrected category still warrants a stamp', async () => {
+      withExisting({
+        uuid: UUID(6), slug: 'attribution',
+        'system-category': 'addon', access: { edit: ['admin'] }
+      });
+      await write('a.md', { uuid: UUID(6), slug: 'attribution', 'system-category': 'documentation' });
+
+      await manager.seedAddonPages('demo', tmpDir);
+
+      expect(metaFor('attribution')?.access).toEqual({ edit: ['admin'] });
+    });
+
+    test('does NOT clear an operator-widened access — it is not the machine stamp', async () => {
+      withExisting({
+        uuid: UUID(7), slug: 'community',
+        'system-category': 'addon', access: { edit: ['contributor'] }
+      });
+      await write('a.md', { uuid: UUID(7), slug: 'community', 'system-category': 'general' });
+
+      await manager.seedAddonPages('demo', tmpDir);
+
+      expect(metaFor('community')?.access).toEqual({ edit: ['contributor'] });
+    });
+
+    test("does NOT clear when the source declares its own access — the addon's value is authoritative", async () => {
+      withExisting({
+        uuid: UUID(8), slug: 'declared',
+        'system-category': 'addon', access: { edit: ['admin'] }
+      });
+      await write('a.md', {
+        uuid: UUID(8), slug: 'declared',
+        'system-category': 'general', access: { edit: ['admin'] }
+      });
+
+      await manager.seedAddonPages('demo', tmpDir);
+
+      expect(metaFor('declared')?.access).toEqual({ edit: ['admin'] });
+    });
+
+    test('does NOT clear when the category did not drift — out of scope', async () => {
+      // Already `general` with an admin stamp: whatever put it there, it was
+      // not the Bug 1 path, so this pass has no business touching it.
+      withExisting({
+        uuid: UUID(9), slug: 'untouched',
+        'system-category': 'general', 'addon-source-category': 'general',
+        access: { edit: ['admin'] }
+      });
+      await write('a.md', { uuid: UUID(9), slug: 'untouched', 'system-category': 'general' });
+
+      await manager.seedAddonPages('demo', tmpDir);
+
+      expect(savePage).not.toHaveBeenCalled();
+    });
+
+    test('the #971 backfill does not re-stamp it in the same pass', async () => {
+      withExisting({
+        uuid: UUID(1), slug: 'onepass',
+        'system-category': 'addon', access: { edit: ['admin'] }
+      });
+      await write('a.md', { uuid: UUID(1), slug: 'onepass', 'system-category': 'general' });
+
+      await manager.seedAddonPages('demo', tmpDir);
+
+      expect(savePage.mock.calls.filter(c => c[0] === 'onepass')).toHaveLength(1);
+      expect(metaFor('onepass')).not.toHaveProperty('access');
+    });
+
+    test('stays cleared on the next boot rather than oscillating', async () => {
+      // Post-remediation state: category corrected, marker stamped, no access.
+      // `general` maps to no default, so #971 has nothing to re-add.
+      withExisting({
+        uuid: UUID(2), slug: 'settled',
+        'system-category': 'general', 'addon-source-category': 'general'
+      });
+      await write('a.md', { uuid: UUID(2), slug: 'settled', 'system-category': 'general' });
+
+      await manager.seedAddonPages('demo', tmpDir);
+
+      expect(savePage).not.toHaveBeenCalled();
+    });
+  });
+
   describe('Bug 1 — access backfill resolves the category source-first', () => {
     test('uses the CORRECTED source category, not the stale live one', async () => {
       // The compounding failure: live `addon` (→ admin-only) but source says
