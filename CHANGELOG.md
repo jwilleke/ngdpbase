@@ -13,6 +13,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Future enhancements
 
+## [4.0.0] - 2026-07-27
+
+### ⚠️ BREAKING — the published Docker image no longer has npm
+
+`ghcr.io/jwilleke/ngdpbase:X.Y.Z` cannot be built `FROM` any more. npm was removed from the runtime image in v3.70.3 (#956) so the deployed artifact stops carrying npm's vendored CVEs, and that stands — but it also broke the **packaged-addon deployment model**, where a derived image runs `npm install <addon>` on top of the base image.
+
+**Migration:** derived builds change one line, to the new build-capable variant.
+
+```diff
+-FROM ghcr.io/jwilleke/ngdpbase:4.0.0
++FROM ghcr.io/jwilleke/ngdpbase:4.0.0-devtools
+ RUN npm install @scope/my-addon@1.2.3
+```
+
+| Tag | npm | Use for |
+|---|---|---|
+| `:X.Y.Z` | no | **deploying** — unchanged, still npm-free |
+| `:X.Y.Z-devtools` | yes | **building FROM** — derived images that install an addon |
+
+An image built `FROM …-devtools` inherits npm; drop it again in your final stage if that matters for your scan posture. See `docs/platform/deployment/addon-packaged.md`.
+
+**Why this is a major and v3.70.3 should have been one too.** Removing a documented capability from a published artifact is a breaking change to a public interface. Shipping it as a *patch* is what caused the outage: Renovate's auto-merge policy keys on bump type, so a patch base-image bump read as "safe, no review" and merged itself downstream, surfacing as a red release build (#1001). Deployments that only consume the runtime image are unaffected and can upgrade normally.
+
+### Fixed
+
+- **#1001** — `devtools` image variant restoring the derived-build path. Both build targets are now pinned explicitly; without that an untargeted build takes the Dockerfile's last stage and would have silently published the npm-carrying image as `:latest`. Adds assertions that the runtime image has *no* npm and that the devtools image can actually be built `FROM`.
+- **#1000** — showdown ReDoS guard (CVE-2024-1899) now applied at *every* `makeHtml()` call site. #599 guarded only the primary render path; the parser-disabled fallback, the no-parser fallback, and the footnote extension's own `Converter` instance still passed raw text, and `POST /api/preview` reaches them with an arbitrary request body. Adds a structural test that fails on any unguarded call site. No upstream patch exists for the CVE.
+
+### Added
+
+- **#989** — `FeedManager` per-source record shaping: `dedupeBy` (keep the newest record per group key), `maxAgeHours` (discard stale records, applied after grouping so it means "not reissued"), and `dedupeDateField`. Adapter-agnostic. Also fixes `linkPattern` / `maxItems` / `delimiter` never reaching adapters through config parsing, which made `xml-index` sources unconfigurable.
+
 ## [3.71.0] - 2026-07-27
 
 ### Planned
