@@ -3,6 +3,7 @@
  */
 
 import BaseManager from './BaseManager.js';
+import { guardShowdownInput } from '../utils/showdownGuard.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PageManager from './PageManager.js';
 import type PluginManager from './PluginManager.js';
@@ -371,7 +372,9 @@ class RenderingManager extends BaseManager {
     if (!this.converter) {
       throw new Error('Markdown converter not initialized');
     }
-    const html = this.converter.makeHtml(expandedContent);
+    // #599: same ReDoS guard as the MarkupParser path — this legacy route
+    // reaches the identical unpatched showdown converter.
+    const html = this.converter.makeHtml(guardShowdownInput(expandedContent));
 
     // Step 5: Post-process tables with styling
     const finalHtml = this.postProcessTables(html);
