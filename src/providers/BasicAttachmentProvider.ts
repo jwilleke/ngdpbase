@@ -1,8 +1,6 @@
 import BaseAttachmentProvider, { FileInfo, User, AttachmentResult } from './BaseAttachmentProvider.js';
 import { AttachmentMetadata } from '../types/index.js';
 import type { AssetProvider, AssetRecord, AssetQuery, AssetPage, AssetInput, AssetMetadata } from '../types/Asset.js';
-import type { AssetMetadataPatch } from '../types/Asset.js';
-import { buildMetadataWriteTags, supportsEmbeddedMetadata } from '../utils/assetMetadataTags.js';
 import type { CreativeWork, DigitalDocument } from '../types/Schema.js';
 import sharp from 'sharp';
 import { ExifTool } from 'exiftool-vendored';
@@ -1214,7 +1212,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
 
   readonly id = 'local';
   readonly displayName = 'Local Attachments';
-  readonly capabilities: import('../types/Asset.js').ProviderCapability[] = ['upload', 'search', 'stream', 'thumbnail', 'edit'];
+  readonly capabilities: import('../types/Asset.js').ProviderCapability[] = ['upload', 'search', 'stream', 'thumbnail'];
 
   /**
    * AssetProvider.getThumbnail() — generate (and cache) a JPEG thumbnail for image attachments.
@@ -1592,86 +1590,26 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     return Promise.resolve({ results: page, total, hasMore: offset + page.length < total });
   }
 
-  /**
-   * AssetProvider.updateMetadata() — edit an attachment's descriptive metadata (#999).
-   *
-   * The attachment counterpart of `FileSystemMediaProvider.updateItemMetadata`,
-   * sharing its ExifTool tag mapping via `utils/assetMetadataTags` so the #866
-   * decisions (keywords-only, dual description tags, `CreateDate` for A/V) live
-   * in one place instead of being reimplemented here and drifting.
-   *
-   * Two things differ from media, both because attachments are not a curated
-   * library:
-   *
-   * 1. **Not every attachment can carry embedded metadata.** A page can hold a
-   *    `.zip`, a `.csv`, a `.json`. Writing EXIF to those either fails or
-   *    corrupts them, so the write is attempted only for types that support it
-   *    and the edit is still persisted as sidecar metadata either way. An edit
-   *    silently doing nothing would be worse than one that is honest about
-   *    where it was stored.
-   *
-   * 2. **A failed embedded write must not lose the edit.** ExifTool can fail on
-   *    a malformed-but-readable file. The sidecar is written regardless and the
-   *    failure is logged, so the user's text survives even when the file will
-   *    not take it.
-   *
-   * @param id - Attachment identifier
-   * @param patch - Fields to change; `null` clears, omission leaves alone
-   * @returns The refreshed record, or null when the attachment is unknown
-   */
-  async updateMetadata(id: string, patch: AssetMetadataPatch): Promise<AssetRecord | null> {
-    const schema = this.attachmentMetadata.get(id);
-    if (!schema) {
-      logger.warn(`[BasicAttachmentProvider] Cannot update metadata — unknown attachment: ${id}`);
-      return null;
-    }
-
-    // Throws on an unparseable date BEFORE anything is persisted, so a bad
-    // input cannot leave the sidecar and the file disagreeing.
-    const tags = buildMetadataWriteTags(patch, schema.encodingFormat);
-
-    if (Object.keys(tags).length > 0 && supportsEmbeddedMetadata(schema.encodingFormat)) {
-      try {
-        await this.exiftool().write(schema.storageLocation, tags);
-        logger.info(
-          `[BasicAttachmentProvider] Wrote ${Object.keys(tags).join(', ')} to ${schema.name} (${id})`
-        );
-      } catch (err) {
-        logger.warn(
-          `[BasicAttachmentProvider] Embedded write failed for ${schema.name} (${id}) — `
-          + `keeping the edit in stored metadata only: ${err instanceof Error ? err.message : String(err)}`
-        );
-      }
-    } else if (Object.keys(tags).length > 0) {
-      logger.debug(
-        `[BasicAttachmentProvider] ${schema.encodingFormat} cannot carry embedded metadata — `
-        + `storing the edit for ${schema.name} (${id}) as attachment metadata only`
-      );
-    }
-
-    // Persist onto the same fields the upload-time extractor populates, so an
-    // edited value and an extracted one are indistinguishable downstream.
-    if (patch.title !== undefined) {
-      schema.documentTitle = patch.title ?? undefined;
-    }
-    if (patch.description !== undefined) {
-      schema.description = patch.description ?? undefined;
-    }
-    if (patch.keywords !== undefined) {
-      schema.documentKeywords = patch.keywords === null
-        ? undefined
-        : patch.keywords.map(k => k.trim()).filter(Boolean);
-    }
-    if (patch.dateTimeOriginal !== undefined) {
-      schema.documentDateCreated = patch.dateTimeOriginal ?? undefined;
-    }
-    schema.dateModified = new Date().toISOString();
-
-    this.attachmentMetadata.set(id, schema);
-    await this.saveMetadata();
-
-    return this.schemaToAssetRecord(schema);
-  }
+  // #999: `updateMetadata` was implemented here and then BACKED OUT.
+  //
+  // Attachment IDs are CONTENT HASHES — see `calculateHash`, and note the
+  // stored filename is `<sha256>.<ext>`. Media items are not content-addressed;
+  // attachments are. Writing embedded metadata (EXIF/IPTC/XMP) rewrites the
+  // file, so the id and filename no longer match the bytes they name:
+  //
+  //     id       c3939c4391744bc8006f726c4e8333...
+  //     file sha c7ae23c100d515d5...      <- after a single metadata write
+  //
+  // Nothing errors; dedup and any integrity check simply stop being true.
+  //
+  // Do not re-add an embedded write here without first settling the design
+  // question on #999: sidecar-only (keep the edit in stored metadata, never
+  // touch the file), or re-hash and re-key on edit (honest, but the id changes,
+  // so URLs change and existing page links break).
+  //
+  // The tag mapping itself lives in `utils/assetMetadataTags` and is fine — the
+  // problem is not how the tags are built, it is that this provider must not
+  // write them into the file.
 
   /**
    * AssetProvider.getById() — returns AssetRecord for the given attachment ID.
