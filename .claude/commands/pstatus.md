@@ -18,6 +18,10 @@ recommends what to do next. It does not start work.
   - `gh api "/repos/{owner}/{repo}/code-scanning/alerts?state=open"` (ignore a 404 — feature off)
   - any other scanner signal available (e.g. GitGuardian)
 - `gh issue list --state open --limit 100 --json number,title,labels`
+- `gh pr list --state open --limit 50 --json number,title,isDraft,mergeStateStatus,createdAt,labels`
+  — `gh issue list` does **not** return PRs, so without this they are invisible to every band
+  below. A merge-ready security PR can sit open across repeated `/pstatus` runs and never be
+  mentioned once.
 - `git log --oneline -5`
 - Read the last entries of `private/project_log.md` for session continuity.
 
@@ -52,6 +56,11 @@ has served its purpose, so regenerating a bands-only `TODO.md` here is expected:
   decision to close; takes precedence over an issue's priority band so it surfaces as "ready for your call")
 - `⏸ Deferred`
 - `❓ Needs triage` (count + titles)
+- `🔀 Open PRs` — every open pull request, newest first. Mark each `draft`, `ready`, or
+  `conflicted` from `isDraft` / `mergeStateStatus`, and flag any open more than 7 days as stale.
+  Dependency-bump PRs (Dependabot / Renovate) belong here too: they are frequently
+  security-relevant and are exactly the kind of thing that goes unnoticed, because the
+  corresponding scanner alert often looks *already tracked* by an unrelated issue.
 
 **One issue per line — never bundle.** Each issue gets its OWN bullet, starting with a full clickable
 GitHub link. No grouping headers that pack several refs onto one bullet, no comma-separated runs of
@@ -59,14 +68,22 @@ issues, no bare `#<num>`. Each line:
 
 `- [#<num>](https://github.com/{owner}/{repo}/issues/<num>) — <title>`
 
+PRs use the same one-per-line rule with the `/pull/` path:
+
+`- [#<num>](https://github.com/{owner}/{repo}/pull/<num>) — <title> *(ready | draft | conflicted)*`
+
 ### Step 5: Brief the user
 
 Print the ranked bands, then a single **"Do this next"** recommendation — the highest-value
 P0 (else the top P1, and so on) with one line of why. Stop. Do not begin the work.
 
+A **merge-ready PR outranks starting new work** when it carries a security fix or a dependency
+bump: it is finished work sitting one click from shipping, so leaving it open while beginning
+something else is strictly worse than merging it first.
+
 ## `/pstatus --all` (portfolio sweep — read-only, no writes)
 
 - Resolve the active repo list: `gh repo list <owner> --no-archived --source --limit 200 --json nameWithOwner`.
-- For each repo, gather open Dependabot alerts + open issues labeled `P0`.
-- Print a cross-repo table: `repo | open P0 | open security alerts | top item`.
+- For each repo, gather open Dependabot alerts + open issues labeled `P0` + open PRs.
+- Print a cross-repo table: `repo | open P0 | open security alerts | open PRs | top item`.
 - Recommend which repo needs attention first. Create no issues in sweep mode.
