@@ -47,11 +47,26 @@ async function tokensUsable(request): Promise<boolean> {
     const body = await res.json().catch(() => ({}));
     if (!body.success) return false;
 
-    // A GET is enough: it proves the bearer middleware authenticated the token.
-    const probe = await request.get('/api/tokens', {
-      headers: { Authorization: `Bearer ${body.token}`, Accept: 'application/json' }
+    // The probe MUST be a mutating request. A GET proves nothing: CSRF skips
+    // safe methods outright, so a bearer GET returns 200 even when the bearer
+    // middleware never authenticated the token — which is exactly how the
+    // previous probe reported "usable" on an instance where it was not.
+    //
+    // A bearer POST with no CSRF header is the real question: it succeeds only
+    // when `req.bearerAuth` was set, and answers 403 "invalid CSRF token" when
+    // it was not (#981).
+    const probe = await request.post('/api/tokens', {
+      headers: { Authorization: `Bearer ${body.token}`, 'Content-Type': 'application/json' },
+      data: { name: `${PREFIX}-probe2`, scopes: ['page-read'], ttlHours: 1 }
     });
-    const ok = probe.status() === 200;
+    // 403 means CSRF rejected it, i.e. bearer auth did not happen. Any other
+    // answer (201 mint, or a 4xx from the route's own rules) means it did.
+    const ok = probe.status() !== 403;
+
+    const probeBody = await probe.json().catch(() => ({}));
+    if (probeBody?.record?.id) {
+      await request.delete(`/api/tokens/${probeBody.record.id}`, { headers: await sessionHeaders(request) }).catch(() => {});
+    }
 
     await request.delete(`/api/tokens/${body.record?.id}`, { headers: await sessionHeaders(request) }).catch(() => {});
     return ok;
