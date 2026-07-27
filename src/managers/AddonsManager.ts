@@ -670,6 +670,40 @@ class AddonsManager extends BaseManager {
    * @param addonPath  Filesystem path to the add-on directory
    */
   /**
+   * Default edit-protection for a seeded addon page (#971, addons.md §3).
+   *
+   * §3 settled the mechanism: the seeder stamps frontmatter `access`, which
+   * Tier 1 of the evaluator honours directly, needs no `PolicyEvaluator`
+   * change, and is hash-neutral (`pageSourceHash` covers the body only, so
+   * adding metadata cannot disturb the #920 reseed comparison).
+   *
+   * §9 settled *who owns what*, and the two must be read together. A blanket
+   * admin lock would contradict the operator's decision that domain content
+   * pages "should be normal pages, purely seeded by the addon" — the addon
+   * provides a starting corpus and then lets go. So the default follows §9's
+   * ownership column rather than locking everything:
+   *
+   * | Category | Purpose | Default |
+   * |---|---|---|
+   * | `system` | Feature UI, site chrome — infrastructure | admin-only edit |
+   * | `documentation` | Help / docs — addon-owned | admin-only edit |
+   * | `general` | Domain content, demo — **instance-owned** | no stamp |
+   * | anything else | unclassified, treated as addon-owned | admin-only edit |
+   *
+   * An addon can always override by declaring its own `access`, which is the
+   * documented escape hatch in §3 and the reason the default is a default.
+   *
+   * @param category - The page's resolved `system-category`
+   * @returns The access object to stamp, or undefined to leave the page unprotected
+   */
+  private defaultAddonPageAccess(category: unknown): { edit: string[] } | undefined {
+    // Instance-owned per §9 — seeded as a starting point, then editable by
+    // whoever normally edits pages on this site.
+    if (category === 'general') return undefined;
+    return { edit: ['admin'] };
+  }
+
+  /**
    * Surface a page-level seed failure beyond the boot log (#951).
    *
    * A boot-time log line is invisible ten minutes later, which is how a page
@@ -827,11 +861,22 @@ class AddonsManager extends BaseManager {
             // fields, adopt the source body, keep the UUID, stamp the hash. Goes
             // through savePage so the versioning provider records a revertable
             // version.
+            const reseedCategory = (parsed.data as Record<string, unknown>)['system-category']
+              ?? existingMeta['system-category'] ?? 'addon';
+            // #971: source first, then whatever the page already carries — an
+            // operator who deliberately opened a page up must not have that
+            // reverted by a routine reseed. Only a page with no `access` at all
+            // (seeded before this existed) picks up the default.
+            const reseedAccess = (parsed.data as Record<string, unknown>)['access']
+              ?? existingMeta['access']
+              ?? this.defaultAddonPageAccess(reseedCategory);
+
             const reseedMetadata: Record<string, unknown> = {
               ...existingMeta,
               ...(parsed.data as Record<string, unknown>),
               addon: addonName,
-              'system-category': (parsed.data as Record<string, unknown>)['system-category'] ?? existingMeta['system-category'] ?? 'addon',
+              'system-category': reseedCategory,
+              ...(reseedAccess ? { access: reseedAccess } : {}),
               'addon-source-hash': srcHash
             };
             await pageManager.savePage(existingSlug, parsed.content, reseedMetadata);
@@ -863,10 +908,17 @@ class AddonsManager extends BaseManager {
         // Seed through PageManager so all page providers (including VersioningFileProvider)
         // update their index correctly. `addon-source-hash` stamps the seeded
         // content so a later reseed can tell an unmodified page from an edited one.
+        const seedCategory = (parsed.data as Record<string, unknown>)['system-category'] ?? 'addon';
+        // #971: stamp `access` only when the source is silent, so an addon can
+        // ship a deliberately community-editable page.
+        const seedAccess = (parsed.data as Record<string, unknown>)['access']
+          ?? this.defaultAddonPageAccess(seedCategory);
+
         const metadata: Record<string, unknown> = {
           ...(parsed.data as Record<string, unknown>),
           addon: addonName,
-          'system-category': (parsed.data as Record<string, unknown>)['system-category'] ?? 'addon',
+          'system-category': seedCategory,
+          ...(seedAccess ? { access: seedAccess } : {}),
           'addon-source-hash': pageSourceHash(parsed.content)
         };
 
