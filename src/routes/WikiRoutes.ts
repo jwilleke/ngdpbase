@@ -758,7 +758,8 @@ class WikiRoutes {
    */
   async getCommonTemplateData(req: Request): Promise<TemplateData> {
     const userManager = this.engine.getManager('UserManager');
-    const aclManager = this.engine.getManager('ACLManager');
+    // #950: ACLManager is no longer needed here — site chrome is not
+    // permission-checked. Nothing else in this method consults it.
     const renderingManager = this.engine.getManager('RenderingManager');
     const pageManager = this.engine.getManager('PageManager');
     const configManager = this.engine.getManager('ConfigurationManager');
@@ -910,12 +911,21 @@ class WikiRoutes {
           pageMetadata: leftMenuPage?.metadata ?? undefined
         })
         : null;
-      const canViewLeftMenu = leftMenuCtx !== null
-        && await aclManager.checkPagePermissionWithContext(leftMenuCtx, 'view');
-      logger.info(`[TEMPLATE] LeftMenu ACL decision: ${canViewLeftMenu}`);
-      this.warnOnChromeDenial('LeftMenu', canViewLeftMenu, leftMenuCtx !== null, userContext);
+      // #950: chrome renders unconditionally — the ACL check is gone.
+      //
+      // A fragment is never a destination, so denying it protected nothing:
+      // every page it links to still enforces its own ACL, and a link the user
+      // cannot follow yields a comprehensible 403. What the check actually did
+      // was delete the sidebar from EVERY page of the site, silently, for
+      // whoever it denied.
+      //
+      // The frontmatter is not ignored quietly — warnOnChromeRestriction
+      // reports any audience/access/private on a chrome page, so an operator
+      // who restricted one learns it is no longer honoured rather than
+      // discovering it when the nav mysteriously reappears.
+      this.warnOnChromeRestriction('LeftMenu', leftMenuPage?.metadata);
 
-      if (canViewLeftMenu && leftMenuCtx !== null && leftMenuContent !== null) {
+      if (leftMenuCtx !== null && leftMenuContent !== null) {
         templateData.leftMenu = await renderingManager.textToHTML(
           leftMenuCtx,
           leftMenuContent
@@ -955,12 +965,10 @@ class WikiRoutes {
           pageMetadata: footerPage?.metadata ?? undefined
         })
         : null;
-      const canViewFooter = footerCtx !== null
-        && await aclManager.checkPagePermissionWithContext(footerCtx, 'view');
-      logger.info(`[TEMPLATE] Footer ACL decision: ${canViewFooter}`);
-      this.warnOnChromeDenial('Footer', canViewFooter, footerCtx !== null, userContext);
+      // #950: see the LeftMenu note above — chrome renders unconditionally.
+      this.warnOnChromeRestriction('Footer', footerPage?.metadata);
 
-      if (canViewFooter && footerCtx !== null && footerContent !== null) {
+      if (footerCtx !== null && footerContent !== null) {
         templateData.footer = await renderingManager.textToHTML(
           footerCtx,
           footerContent
@@ -3921,42 +3929,47 @@ ${panes}
   }
 
   /**
-   * Log loudly when a permission decision blanks site chrome (#950).
+   * Warn when a chrome page carries access control that is no longer honoured (#950).
    *
-   * `LeftMenu` and `Footer` are fragments rendered into every page, not
-   * destinations that are visited. When the ACL evaluator denies one, the
-   * fragment is replaced with an empty string and the affected user loses the
-   * sidebar or footer on **every page of the site** — previously with nothing
-   * at warn or error, and the decision logged at `info` looking exactly like
-   * ordinary traffic. It presents as "the nav disappeared for some users" with
-   * nothing pointing at permissions.
+   * `LeftMenu` and `Footer` used to run the full ACL evaluator, and a denial
+   * replaced the fragment with an empty string — so an affected user lost the
+   * sidebar or footer on EVERY page of the site, with nothing logged above
+   * `info` and nothing pointing at permissions as the cause.
    *
-   * This does not change the gating behaviour. Whether fragments should be
-   * audience-gated at all is the broader design question in #950 and is an
-   * operator call, not a side effect of adding a log line. It only makes the
-   * failure visible, and distinguishes it from the ordinary "no chrome page
-   * configured" case, which is not a problem at all.
+   * That gating is removed. A fragment is never a destination: denying it
+   * protected nothing, because the pages it links to still enforce their own
+   * ACLs, and a link the user cannot follow returns a comprehensible 403.
    *
-   * @param label - Chrome slot being rendered, for the message
-   * @param allowed - The ACL verdict
-   * @param pageExists - Whether a chrome page was resolved at all
-   * @param userContext - Who the decision applied to
+   * The failure mode of removing it is the mirror image — frontmatter that
+   * silently stops working — so a restriction on a chrome page is reported
+   * rather than dropped in silence. `private: true` is called out by name
+   * because it is a hard constraint everywhere else in the evaluator, and an
+   * operator who set it has the strongest expectation of enforcement.
+   *
+   * @param label - Chrome slot being rendered
+   * @param metadata - The chrome page's frontmatter, if a page was resolved
    */
-  private warnOnChromeDenial(
+  private warnOnChromeRestriction(
     label: 'LeftMenu' | 'Footer',
-    allowed: boolean,
-    pageExists: boolean,
-    userContext: { username?: string; roles?: string[] } | null | undefined
+    metadata: unknown
   ): void {
-    // No chrome page configured is normal — say nothing.
-    if (!pageExists || allowed) return;
+    const meta = metadata as {
+      audience?: unknown; access?: unknown; private?: unknown;
+    } | null | undefined;
+    if (!meta) return;
+
+    const restrictions: string[] = [];
+    if (Array.isArray(meta.audience) && meta.audience.length > 0) restrictions.push('audience');
+    if (meta.access && typeof meta.access === 'object') restrictions.push('access');
+    if (meta.private === true) restrictions.push('private:true');
+    if (restrictions.length === 0) return;
 
     logger.warn(
-      `[TEMPLATE] ${label} suppressed by a permission decision — this user sees NO ${label} on ` +
-      `every page of the site. user=${userContext?.username ?? 'anonymous'} ` +
-      `roles=[${userContext?.roles?.join(',') ?? ''}]. ` +
-      'Site chrome is a fragment, not a destination: check for frontmatter audience/access or ' +
-      `private:true on the ${label} page, or a deny policy covering it (#950).`
+      `[TEMPLATE] ${label} declares ${restrictions.join(', ')}, which is NOT enforced — site ` +
+      'chrome renders for everyone (#950). A fragment is not a destination, so gating it only ' +
+      'removed navigation site-wide without protecting the pages it links to; those still ' +
+      'enforce their own ACLs. Move the restriction to the linked pages, or keep sensitive ' +
+      `content out of ${label}.`
     );
   }
 
