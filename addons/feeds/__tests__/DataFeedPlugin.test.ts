@@ -18,21 +18,21 @@ const ctxWith = (records: NormalizedRecord[]) => ({
 }) as never;
 
 const exec = (params: Record<string, unknown>, records = recs) =>
-  DataFeedPlugin.execute!(ctxWith(records), params as never) as Promise<string>;
+  DataFeedPlugin.execute!(ctxWith(records), params) as Promise<string>;
 
 describe('[DataFeed] plugin (#685)', () => {
   it('errors when source is missing', async () => {
-    expect(await exec({})).toContain('source is required');
+    expect(await exec({})).toContain('source parameter is required');
   });
 
   it('errors when the feeds addon / FeedManager is absent', async () => {
     const ctx = { engine: { getManager: () => undefined } } as never;
-    const out = await DataFeedPlugin.execute!(ctx, { source: 'x' } as never);
-    expect(out).toContain('not available');
+    const out = await DataFeedPlugin.execute!(ctx, { source: 'x' });
+    expect(out).toContain('feeds addon is not enabled');
   });
 
   it('reports an empty source', async () => {
-    expect(await exec({ source: 'q' }, [])).toContain('no records for feed');
+    expect(await exec({ source: 'q' }, [])).toContain('No records are currently available');
   });
 
   it('renders a table with default columns (union of property keys)', async () => {
@@ -183,7 +183,7 @@ describe('[DataFeed] plugin (#685)', () => {
       { source: 'q', format: 'map' },
       [{ sourceRecordId: 'x', fetchedAt: 'x', properties: { latitude: 'nope', longitude: 'nope' } }]
     );
-    expect(out).toContain('no mappable records');
+    expect(out).toContain('No mappable records are currently available');
   });
 
   it('format=map defaults lat/lon column names to latitude/longitude', async () => {
@@ -272,7 +272,7 @@ describe('[DataFeed] plugin (#685)', () => {
 
   it('exclude= that matches every record still reports "no records"', async () => {
     const out = await exec({ source: 'q', exclude: 'summary~.' }, activity);
-    expect(out).toContain('no records for feed');
+    expect(out).toContain('No records are currently available');
   });
 
   it('exclude= referencing a column absent from the record is a no-op match (record kept)', async () => {
@@ -280,5 +280,62 @@ describe('[DataFeed] plugin (#685)', () => {
     expect(out).toContain('Popocatépetl');
     expect(out).toContain('Sheveluch');
     expect(out).toContain('Volcanoes Today');
+  });
+
+  // ── #963: empty-state copy ────────────────────────────────────────────────
+
+  describe('empty-state copy (#963)', () => {
+    it('never leaks the internal source id or bracket-debug style to a visitor', async () => {
+      // The original read `[DataFeed: no records for feed 'tsunami-alerts']` on
+      // a live public page. Both the brackets and the feed id were the defect.
+      const out = await exec({ source: 'tsunami-alerts' }, []);
+      expect(out).not.toContain('tsunami-alerts');
+      expect(out).not.toContain('[DataFeed');
+    });
+
+    it('empty= replaces the default copy for a feed with no records', async () => {
+      const out = await exec(
+        { source: 'tsunami-alerts', empty: 'No tsunami messages are currently active for the US.' },
+        []
+      );
+      expect(out).toContain('No tsunami messages are currently active for the US.');
+      expect(out).not.toContain('No records are currently available');
+    });
+
+    it('empty= also covers format=map with nothing mappable', async () => {
+      const out = await exec(
+        { source: 'q', format: 'map', empty: 'Nothing to plot right now.' },
+        [{ sourceRecordId: 'x', fetchedAt: 'x', properties: { latitude: 'nope', longitude: 'nope' } }]
+      );
+      expect(out).toContain('Nothing to plot right now.');
+    });
+
+    it('empty= is HTML-escaped like any other author-supplied value', async () => {
+      const out = await exec({ source: 'q', empty: '<script>alert(1)</script>' }, []);
+      expect(out).not.toContain('<script>');
+      expect(out).toContain('&lt;script&gt;');
+    });
+
+    it('a blank or whitespace-only empty= falls back to the default copy', async () => {
+      expect(await exec({ source: 'q', empty: '   ' }, [])).toContain('No records are currently available');
+      expect(await exec({ source: 'q', empty: '' }, [])).toContain('No records are currently available');
+    });
+
+    // The two branches below are broken configuration, NOT empty states. If
+    // empty= applied to them, a page could answer "No tsunami messages are
+    // currently active" while the feeds addon was switched off entirely —
+    // reading as a confirmed all-clear when nothing was ever checked.
+    it('empty= does NOT mask a missing source param', async () => {
+      const out = await exec({ empty: 'All clear.' }, []);
+      expect(out).not.toContain('All clear.');
+      expect(out).toContain('source parameter is required');
+    });
+
+    it('empty= does NOT mask a disabled feeds addon', async () => {
+      const ctx = { engine: { getManager: () => undefined } } as never;
+      const out = await DataFeedPlugin.execute!(ctx, { source: 'x', empty: 'All clear.' });
+      expect(out).not.toContain('All clear.');
+      expect(out).toContain('feeds addon is not enabled');
+    });
   });
 });

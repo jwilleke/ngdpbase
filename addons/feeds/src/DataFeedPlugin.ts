@@ -16,6 +16,13 @@
  * Params: source (required) · columns (CSV of property keys) · sort
  * ('key' | 'key-asc' | 'key-desc') · max (default 20, 500 for format='map')
  * · format ('table'|'list'|'map')
+ * · empty (copy shown when the feed has nothing to render, #963 — e.g.
+ *   `empty='No tsunami messages are currently active for the US.'`. Defaults to
+ *   a generic sentence. Applies ONLY to the legitimate empty states (no
+ *   records; no mappable records) — deliberately NOT to a missing `source` or a
+ *   disabled feeds addon, because a page that answered "nothing is active" when
+ *   the addon is switched off would read as a confirmed all-clear. Author copy
+ *   is HTML-escaped like any other cell value)
  * · exclude ('column~pattern' — a record is dropped when that column's string
  *   value matches the case-insensitive regex `pattern`; e.g.
  *   `exclude='summary~VAAC:|VA ADVISORY|DTG:'` drops re-published VAAC
@@ -56,6 +63,7 @@ import {
   applyMax,
   formatAsTable
 } from '../../../dist/src/utils/pluginFormatters.js';
+import logger from '../../../dist/src/utils/logger.js';
 import type { SimplePlugin, PluginContext, PluginParams } from '../../../dist/src/plugins/types.js';
 import type { NormalizedRecord } from './adapters/types.js';
 import { recordName } from './normalize.js';
@@ -214,11 +222,20 @@ const DataFeedPlugin: SimplePlugin = {
   description: 'Render a feed source\'s records as a table or list (#685)',
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    // #963: page-supplied copy for the legitimate "there is nothing to show"
+    // state. Deliberately NOT applied to the two failure branches below — a
+    // page that rendered "No tsunami messages are currently active" when the
+    // feeds addon is actually switched off would be worse than the raw
+    // diagnostic, because it reads as a confirmed all-clear.
+    const emptyOverride = typeof params.empty === 'string' && params.empty.trim()
+      ? params.empty.trim()
+      : null;
+
     const source = String(params.source ?? '').trim();
-    if (!source) return muted('[DataFeed: source is required]');
+    if (!source) return muted('DataFeed: a source parameter is required.');
 
     const fm = context.engine?.getManager?.('FeedManager') as FeedRecordSource | undefined;
-    if (!fm?.getRecords) return muted('[DataFeed: feeds addon not available]');
+    if (!fm?.getRecords) return muted('DataFeed: the feeds addon is not enabled on this site.');
 
     let records = await fm.getRecords(source);
 
@@ -227,7 +244,12 @@ const DataFeedPlugin: SimplePlugin = {
       records = records.filter(r => !exclude.pattern.test(cellString(r.properties[exclude.column])));
     }
 
-    if (records.length === 0) return muted(`[DataFeed: no records for feed '${source}']`);
+    // A feed with zero current records is an expected state, not an error — an
+    // alerts feed is empty precisely when nothing is wrong. The rendered copy
+    // says so plainly and carries no internal source id (#963).
+    if (records.length === 0) {
+      return muted(emptyOverride ?? 'No records are currently available for this feed.');
+    }
 
     const columns = typeof params.columns === 'string' && params.columns.trim()
       ? params.columns.split(',').map(c => c.trim()).filter(Boolean)
@@ -273,7 +295,15 @@ const DataFeedPlugin: SimplePlugin = {
       });
 
       if (points.length === 0) {
-        return muted(`[DataFeed: no mappable records for feed '${source}' — check the lat/lon params]`);
+        // Two different causes land here: genuinely no records carry
+        // coordinates, or lat/lon name columns that do not exist. A visitor can
+        // act on neither, so the page gets plain copy and the actionable
+        // detail goes to the server log for whoever maintains the page (#963).
+        logger.warn(
+          `[DataFeed] no mappable records for feed '${source}' — ` +
+          `${records.length} record(s) had no finite value in both '${latCol}' and '${lonCol}'`
+        );
+        return muted(emptyOverride ?? 'No mappable records are currently available for this feed.');
       }
 
       const mapId = 'datafeed-map-' + Math.random().toString(36).slice(2, 8);
