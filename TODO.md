@@ -43,7 +43,6 @@ Scanner state: 1 open Dependabot alert (#96) + 2 open code-scanning alerts (#34,
 
 ## 🔵 In review
 
-- [#963](https://github.com/jwilleke/ngdpbase/issues/963) — [FEATURE] DataFeedPlugin: friendlier empty-state message + optional empty= override — *shipped in `1017c1a2`; closes when a geohazardwatch build takes a base image carrying it*
 - [#969](https://github.com/jwilleke/ngdpbase/issues/969) — [FEATURE] Admin trash view — restore and purge soft-deleted pages from the UI — *shipped in `323eac34`; populated table/restore/purge unverified — jimstest has zero deleted pages*
 - [#1004](https://github.com/jwilleke/ngdpbase/issues/1004) — [BUG] How can a user see all of his captures? — *`/my/captures` shipped in `41c5717c`; held open until the populated list is confirmed on an instance that has real captures*
 
