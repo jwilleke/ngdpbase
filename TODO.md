@@ -22,7 +22,6 @@ Scanner state: 1 open Dependabot alert (#96) + 2 open code-scanning alerts (#34,
 
 ## 🟠 P1
 
-- [#1004](https://github.com/jwilleke/ngdpbase/issues/1004) — [BUG] How can a user see all of his captures?
 - [#998](https://github.com/jwilleke/ngdpbase/issues/998) — [BUG] elasticsearch addon: sist2 SOURCE index misconfigured — External Asset Search silently returns nothing
 - [#898](https://github.com/jwilleke/ngdpbase/issues/898) — [BUG] Storybook route-map generation orphans a route.png attachment on every regeneration
 
@@ -47,7 +46,7 @@ Scanner state: 1 open Dependabot alert (#96) + 2 open code-scanning alerts (#34,
 
 ## 🔵 In review
 
-- *(none — #1003 closed 2026-07-28 after verification)*
+- [#1004](https://github.com/jwilleke/ngdpbase/issues/1004) — [BUG] How can a user see all of his captures? — *`/my/captures` shipped in `41c5717c`; held open until the populated list is confirmed on an instance that has real captures*
 
 ## ⏸ Deferred
 
