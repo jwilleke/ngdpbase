@@ -48,9 +48,17 @@ The manual walkthrough below still applies — read it to understand what the
 generated files do, and for anything the scaffolder does not emit (routes,
 views, themes, static assets).
 
-> **Not yet included:** a published template repository, CI workflows, and
-> Renovate config for generated addons. Those are tracked as the remaining
-> phases of [#675](https://github.com/jwilleke/ngdpbase/issues/675).
+### Or start from the template repository
+
+[`jwilleke/ngdpbase-addon-template`](https://github.com/jwilleke/ngdpbase-addon-template)
+is a working addon in a repo — a `[{Greet}]` plugin, a `GreeterDataManager` and
+a seeded page — plus the things an addon repo needs that the scaffolder does not
+emit: a wrapper `Dockerfile`, Renovate config tracking the base image, and a
+`CONTRIBUTING.md` carrying the addon-rename checklist.
+
+It is a GitHub template repository, so *Use this template* gives you a clean
+history. Prefer `npm run create:addon` when you just want an addon directory;
+prefer the template when you want a whole repository with deployment wiring.
 
 ---
 
