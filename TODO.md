@@ -27,7 +27,6 @@ Scanner state: 1 open Dependabot alert (#96) + 2 open code-scanning alerts (#34,
 
 ## 🟡 P2
 
-- [#1005](https://github.com/jwilleke/ngdpbase/issues/1005) — [FEATURE] GitGuardian bridge — deploy the receiver (split from #811)
 - [#969](https://github.com/jwilleke/ngdpbase/issues/969) — [FEATURE] Admin trash view — restore and purge soft-deleted pages from the UI
 - [#963](https://github.com/jwilleke/ngdpbase/issues/963) — [FEATURE] DataFeedPlugin: friendlier empty-state message + optional empty= override
 - [#921](https://github.com/jwilleke/ngdpbase/issues/921) — [FEATURE] Dawarich timeline as live storybook source (Tier-2) — /timeline + /tracks into the generator
