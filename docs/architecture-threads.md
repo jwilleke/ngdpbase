@@ -31,7 +31,7 @@ Update this doc when: a thread crosses a milestone, a new sub-issue is filed, an
 
 ### 1. CatalogManager unification
 
-**Status:** design ratified (#755 closed 2026-05-20); implementation dispersed across multiple sub-issues; admin visibility absent.
+**Status:** design ratified (#755 closed 2026-05-20); four producers registered (PageManager, MediaManager, AttachmentManager, plus per-feed sources from the feeds addon); admin visibility shipped via #780. Remaining: consumers (#786) and the undecided candidate producers tracked in #762.
 
 **Driver:** the 2026-05-20 ratified decision (schemas.md) that asset sources unify at the Manager layer behind a `CatalogSource` interface hosted by CatalogManager. Each Manager (PageManager, MediaManager, AttachmentManager) implements `CatalogSource`; CatalogManager exposes `getCreativeWork`, `listCreativeWorks`, `checkSchemaVersions`, `registerSource`. Producers stay diverse (FileSystemMediaProvider vs Sist2 vs S3-backed); the CatalogSource layer makes them queryable uniformly.
 
@@ -40,9 +40,9 @@ Update this doc when: a thread crosses a milestone, a new sub-issue is filed, an
 | # | Title | State | Role |
 |---|---|---|---|
 | #755 | [EPIC] Metadata schemas ratified — CreativeWork model + JSON-LD publishing | CLOSED 2026-05-20 | Parent design |
-| #685 | Generic data-ingestion framework | OPEN | **Bottleneck** — fetch/schedule plumbing; produces external-source CatalogSources |
-| #762 | CatalogSource producer roster | OPEN | Enumerates what #685 + Managers + addons should register |
-| #780 | Admin dashboard: registered catalog sources at runtime | OPEN | Surfaces `CatalogManager.getSourceInfo()` + `checkSchemaVersions()` in admin UI |
+| #685 | Generic data-ingestion framework | CLOSED | **Shipped as the `feeds` addon** — `FeedManager.registerSources()` registers one CatalogSource per configured feed |
+| #762 | CatalogSource producer roster | OPEN | Living inventory; reconciled 2026-07-28. Every candidate manager now exists — the open question is which should register |
+| #780 | Admin dashboard: registered catalog sources at runtime | CLOSED | Surfaces the live registry — the right view for per-feed sources, which are deployment-specific and not statically enumerable |
 | #786 | Auto-journal — digester | OPEN | Consumer of CatalogManager records |
 
 **Dependency graph:**
@@ -53,13 +53,13 @@ Update this doc when: a thread crosses a milestone, a new sub-issue is filed, an
         │   PageManager / MediaManager / AttachmentManager
         │   already implement CatalogSource.types
         │
-        ├── #685 (data-ingestion framework) ◄────── BLOCKS ┐
-        │                                                  │
-        ├── #762 (producer roster)             enumerates ─┤
-        │                                                  │
-        ├── #780 (admin runtime registry UI)               │
-        │                                                  │
-        └── #786 (auto-journal consumer)        BLOCKS ────┘
+        ├── #685 (data-ingestion framework, CLOSED — the `feeds` addon)
+        │                                                  
+        ├── #762 (producer roster) ◄── OPEN; living inventory
+        │                                                  
+        ├── #780 (admin runtime registry UI, CLOSED)
+        │                                                  
+        └── #786 (auto-journal consumer) ◄── OPEN
               │
               └── also gated on EPIC #790 (Journal reconcile)
 ```
@@ -67,10 +67,10 @@ Update this doc when: a thread crosses a milestone, a new sub-issue is filed, an
 **Drift risks:**
 
 - `CatalogManager.list({ types: ['Article'] })` works today because PageManager declares `types: ['Article']`. If/when `types` grows to include subtypes (per #791 Decision D1 = B), the filter logic in #780 must follow.
-- Operators can't see what's registered at runtime; tribal-knowledge problem. #780 ships visibility — until then, drift is invisible.
+- Per-feed CatalogSources are registered from instance config, so what is registered differs per deployment and cannot be enumerated in any document. #780's runtime view is the only accurate answer — treat #762 as the inventory of *what could*, never *what does*.
 - No integration test exercises `CatalogManager.list → result conforms to CreativeWork shape`. Per-Manager unit tests pass; cross-Manager contract is untested.
 
-**What "done" looks like:** #685 ships → #762's enumeration is real (not aspirational) → #780 surfaces it in admin UI → #786 consumes records reliably. Closing this thread requires the unified pipeline to be the ONLY path (no per-Manager-direct callers in production code).
+**What "done" looks like:** #685 shipped, #780 shipped, #762's enumeration is now grounded in managers that exist. What remains is #786 consuming records reliably, and a decision on which candidate producers register. Closing this thread requires the unified pipeline to be the ONLY path (no per-Manager-direct callers in production code) — not yet true.
 
 ---
 
