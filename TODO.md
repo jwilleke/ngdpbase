@@ -27,6 +27,7 @@ Scanner state: 1 open Dependabot alert (#96) + 2 open code-scanning alerts (#34,
 
 ## 🟡 P2
 
+- [#1006](https://github.com/jwilleke/ngdpbase/issues/1006) — [FEATURE] BaseManager.getStats() — one uniform "what do you hold" contract across managers
 - [#969](https://github.com/jwilleke/ngdpbase/issues/969) — [FEATURE] Admin trash view — restore and purge soft-deleted pages from the UI
 - [#963](https://github.com/jwilleke/ngdpbase/issues/963) — [FEATURE] DataFeedPlugin: friendlier empty-state message + optional empty= override
 - [#921](https://github.com/jwilleke/ngdpbase/issues/921) — [FEATURE] Dawarich timeline as live storybook source (Tier-2) — /timeline + /tracks into the generator
