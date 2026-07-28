@@ -12064,6 +12064,8 @@ ${panes}
     app.post('/admin/restart', (req: Request, res: Response) => this.adminRestart(req, res));
     app.post('/admin/reindex', (req: Request, res: Response) => this.adminReindex(req, res));
     app.get('/admin/events', (req: Request, res: Response) => this.adminEvents(req, res));
+    // #969 — human surface over the #947 deleted-pages API
+    app.get('/admin/trash', (req: Request, res: Response) => this.adminTrash(req, res));
     app.get('/admin/required-pages', (req: Request, res: Response) =>
       this.adminRequiredPages(req, res)
     );
@@ -13453,6 +13455,90 @@ ${panes}
     }
 
     return provider;
+  }
+
+  /**
+   * GET /admin/trash — the human surface over the #947 deleted-pages API (#969).
+   *
+   * Renders server-side rather than fetching client-side, so the page is
+   * useful with the list already present: an admin arriving here has usually
+   * just deleted the wrong page and wants to see it immediately.
+   *
+   * Same `admin-system` gate as the API, but answers in HTML — a 403 rendered
+   * as raw JSON in a browser tab is a dead end.
+   */
+  async adminTrash(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
+
+      if (!currentUser?.isAuthenticated) {
+        return res.redirect('/login?redirect=' + encodeURIComponent('/admin/trash'));
+      }
+      if (!(await wikiContext.hasPermission('admin-system'))) {
+        return res.status(403).send('Access denied');
+      }
+
+      const provider = this.engine.getManager('PageManager')?.provider as IVersioningProvider | undefined;
+      const configManager = this.engine.getManager('ConfigurationManager');
+      const retentionDays = Number(
+        configManager?.getProperty('ngdpbase.page.delete.retentiondays', 30) ?? 30
+      );
+
+      const commonData = await this.getCommonTemplateData(req);
+
+      // A provider without soft-delete is not an error state to hide — say so,
+      // because "trash is empty" and "this provider never keeps deleted pages"
+      // look identical to an operator and mean very different things.
+      if (!provider || typeof provider.getDeletedPages !== 'function') {
+        return res.render('admin-trash', {
+          ...commonData,
+          title: 'Trash',
+          supported: false,
+          retentionDays,
+          pages: [],
+          csrfToken: req.session?.csrfToken || ''
+        });
+      }
+
+      const now = Date.now();
+      const pages = provider.getDeletedPages().map((entry) => {
+        const deletedAtMs = new Date(entry.deletedAt).getTime();
+        // retention 0 means keep forever — there is no purge date to show, and
+        // rendering one would be a lie the operator might plan around.
+        const purgeAt = retentionDays > 0
+          ? new Date(deletedAtMs + retentionDays * 24 * 60 * 60 * 1000).toISOString()
+          : null;
+        const daysLeft = purgeAt
+          ? Math.ceil((new Date(purgeAt).getTime() - now) / (24 * 60 * 60 * 1000))
+          : null;
+        return {
+          uuid: entry.uuid,
+          title: entry.title,
+          slug: entry.slug,
+          deletedAt: entry.deletedAt,
+          deletedBy: entry.deletedBy,
+          currentVersion: entry.currentVersion,
+          purgeAt,
+          // Negative means the retention window already elapsed — the sweep
+          // simply has not run yet. Surfaced as "due" rather than a negative
+          // countdown, which reads as a bug.
+          daysLeft
+        };
+      });
+
+      return res.render('admin-trash', {
+        ...commonData,
+        title: 'Trash',
+        supported: true,
+        retentionDays,
+        pages,
+        csrfToken: req.session?.csrfToken || ''
+      });
+    } catch (error: unknown) {
+      logger.error(`Error rendering trash view: ${getErrorMessage(error)}`);
+      return res.status(500).send('Error loading trash');
+    }
   }
 
   /**

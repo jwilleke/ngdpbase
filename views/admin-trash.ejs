@@ -1,0 +1,306 @@
+<%- include('header', { title: 'Trash' }) %>
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-12">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>
+          <i class="fas fa-trash-alt"></i>
+          Trash
+        </h2>
+        <a href="/admin" class="btn btn-secondary">
+          <i class="fas fa-arrow-left"></i> Back to Dashboard
+        </a>
+      </div>
+
+      <div id="trash-alert" class="d-none"></div>
+
+      <% if (!supported) { %>
+        <div class="alert alert-warning">
+          <h5 class="alert-heading"><i class="fas fa-exclamation-triangle"></i> Soft delete is not available</h5>
+          <p class="mb-0">
+            The active page provider does not retain deleted pages, so there is nothing to restore.
+            Deleting a page on this provider removes it immediately. This is a provider capability,
+            not a setting &mdash; the versioning provider is the one that keeps tombstones.
+          </p>
+        </div>
+      <% } else { %>
+
+        <p class="text-muted">
+          Deleted pages keep their file and their full version history, so restoring one brings
+          it back complete.
+          <% if (retentionDays > 0) { %>
+            They are purged automatically <strong><%= retentionDays %> days</strong> after deletion.
+          <% } else { %>
+            Automatic purging is <strong>disabled</strong> (<code>ngdpbase.page.delete.retentiondays</code>
+            is <code>0</code>), so pages stay here until an administrator purges them.
+          <% } %>
+        </p>
+
+        <% if (pages.length === 0) { %>
+          <div class="card">
+            <div class="card-body text-center py-5">
+              <i class="fas fa-check-circle fa-2x text-success mb-3"></i>
+              <h5>Trash is empty</h5>
+              <p class="text-muted mb-0">
+                No deleted pages are waiting to be restored or purged.
+                <% if (retentionDays > 0) { %>
+                  Anything deleted from now on will appear here for <%= retentionDays %> days.
+                <% } else { %>
+                  Anything deleted from now on will appear here and stay until purged.
+                <% } %>
+              </p>
+            </div>
+          </div>
+        <% } else { %>
+
+          <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <span><strong><%= pages.length %></strong> deleted page<%= pages.length === 1 ? '' : 's' %></span>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-striped mb-0 align-middle">
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Deleted by</th>
+                    <th>Deleted</th>
+                    <th class="text-center">Version</th>
+                    <th>Purge</th>
+                    <th class="text-end">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% pages.forEach(p => { %>
+                    <tr id="trash-row-<%= p.uuid %>">
+                      <td>
+                        <strong><%= p.title %></strong>
+                        <% if (p.slug) { %>
+                          <div class="small text-muted"><code><%= p.slug %></code></div>
+                        <% } %>
+                      </td>
+                      <td><%= p.deletedBy %></td>
+                      <td>
+                        <span title="<%= p.deletedAt %>"><%= new Date(p.deletedAt).toLocaleString() %></span>
+                      </td>
+                      <td class="text-center"><span class="badge bg-secondary">v<%= p.currentVersion %></span></td>
+                      <td>
+                        <% if (p.purgeAt === null) { %>
+                          <span class="text-muted">never</span>
+                        <% } else if (p.daysLeft !== null && p.daysLeft <= 0) { %>
+                          <span class="badge bg-danger" title="<%= p.purgeAt %>">due</span>
+                        <% } else if (p.daysLeft !== null && p.daysLeft <= 3) { %>
+                          <span class="badge bg-warning text-dark" title="<%= p.purgeAt %>">
+                            <%= p.daysLeft %> day<%= p.daysLeft === 1 ? '' : 's' %> left
+                          </span>
+                        <% } else { %>
+                          <span class="text-muted" title="<%= p.purgeAt %>"><%= p.daysLeft %> days left</span>
+                        <% } %>
+                      </td>
+                      <td class="text-end text-nowrap">
+                        <button type="button"
+                                class="btn btn-sm btn-outline-primary"
+                                data-action="restore"
+                                data-uuid="<%= p.uuid %>"
+                                data-title="<%= p.title %>">
+                          <i class="fas fa-undo"></i> Restore
+                        </button>
+                        <button type="button"
+                                class="btn btn-sm btn-outline-danger"
+                                data-action="purge"
+                                data-uuid="<%= p.uuid %>"
+                                data-title="<%= p.title %>">
+                          <i class="fas fa-times"></i> Purge
+                        </button>
+                      </td>
+                    </tr>
+                  <% }); %>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        <% } %>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<!--
+  Purge confirmation. Deliberately a modal requiring the page title to be typed
+  rather than a confirm() — purge is the only irreversible page operation left
+  in the app, and a one-click OK does not read like one. Typing the title also
+  makes it impossible to purge the wrong row by muscle memory.
+-->
+<div class="modal fade" id="purgeModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title"><i class="fas fa-exclamation-triangle"></i> Permanently purge page</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p>
+          This permanently destroys <strong id="purge-title"></strong> and every version of it.
+          <strong>It cannot be undone</strong> &mdash; there is no second trash.
+        </p>
+        <p class="mb-2">Type the page title to confirm:</p>
+        <input type="text" class="form-control" id="purge-confirm-input" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="purge-confirm-btn" disabled>
+          <i class="fas fa-times"></i> Purge permanently
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var alertBox = document.getElementById('trash-alert');
+
+  function showAlert(kind, html) {
+    alertBox.className = 'alert alert-' + kind + ' alert-dismissible fade show';
+    alertBox.innerHTML = html +
+      '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>';
+    alertBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function dropRow(uuid) {
+    var row = document.getElementById('trash-row-' + uuid);
+    if (row) row.remove();
+    if (!document.querySelectorAll('tr[id^="trash-row-"]').length) {
+      // Last row gone — reload so the empty state renders rather than leaving
+      // an empty table with a "1 deleted page" header.
+      window.location.reload();
+    }
+  }
+
+  // #727: every mutation goes through csrfFetch so the app-wide CSRF
+  // middleware does not reject it with an opaque text/plain 403.
+  function send(url, method) {
+    return (window.csrfFetch || fetch)(url, {
+      method: method,
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (body) {
+        return { status: r.status, body: body };
+      });
+    });
+  }
+
+  function restore(uuid, title) {
+    send('/api/admin/deleted-pages/' + encodeURIComponent(uuid) + '/restore', 'POST')
+      .then(function (res) {
+        if (res.status === 200 && res.body.success) {
+          showAlert('success',
+            '<i class="fas fa-check-circle"></i> Restored <strong>' + escapeHtml(res.body.title || title) +
+            '</strong>. <a href="/view/' + encodeURIComponent(res.body.title || title) + '" class="alert-link">Open it</a>.');
+          dropRow(uuid);
+          return;
+        }
+        // A name collision is the one failure a human can actually fix, so it
+        // gets an instruction rather than an error code. The provider cannot
+        // restore under a different title, so the live page must move first.
+        if (res.status === 409) {
+          var what = res.body.error === 'slug-conflict' ? 'slug' : 'title';
+          showAlert('warning',
+            '<i class="fas fa-exclamation-triangle"></i> Could not restore <strong>' + escapeHtml(title) +
+            '</strong>: a live page already uses that ' + what +
+            (res.body.detail ? ' (<code>' + escapeHtml(res.body.detail) + '</code>)' : '') +
+            '. Rename or delete that page, then restore this one again.');
+          return;
+        }
+        if (res.status === 404) {
+          showAlert('warning', '<i class="fas fa-exclamation-triangle"></i> <strong>' +
+            escapeHtml(title) + '</strong> is no longer in the trash. It may have been purged already.');
+          dropRow(uuid);
+          return;
+        }
+        showAlert('danger', '<i class="fas fa-times-circle"></i> Restore failed: ' +
+          escapeHtml(res.body.error || res.body.message || ('HTTP ' + res.status)));
+      })
+      .catch(function (err) {
+        showAlert('danger', '<i class="fas fa-times-circle"></i> Restore failed: ' + escapeHtml(err.message));
+      });
+  }
+
+  function purge(uuid, title) {
+    send('/api/admin/deleted-pages/' + encodeURIComponent(uuid), 'DELETE')
+      .then(function (res) {
+        if (res.status === 200 && res.body.success) {
+          showAlert('success', '<i class="fas fa-check-circle"></i> Permanently purged <strong>' +
+            escapeHtml(title) + '</strong>.');
+          dropRow(uuid);
+          return;
+        }
+        if (res.status === 404) {
+          showAlert('warning', '<i class="fas fa-exclamation-triangle"></i> <strong>' +
+            escapeHtml(title) + '</strong> was already gone.');
+          dropRow(uuid);
+          return;
+        }
+        showAlert('danger', '<i class="fas fa-times-circle"></i> Purge failed: ' +
+          escapeHtml(res.body.error || res.body.message || ('HTTP ' + res.status)));
+      })
+      .catch(function (err) {
+        showAlert('danger', '<i class="fas fa-times-circle"></i> Purge failed: ' + escapeHtml(err.message));
+      });
+  }
+
+  // ── purge confirmation modal ──────────────────────────────────────────────
+  var modalEl = document.getElementById('purgeModal');
+  var modal = modalEl && window.bootstrap ? new window.bootstrap.Modal(modalEl) : null;
+  var confirmInput = document.getElementById('purge-confirm-input');
+  var confirmBtn = document.getElementById('purge-confirm-btn');
+  var pending = null;
+
+  if (confirmInput) {
+    confirmInput.addEventListener('input', function () {
+      confirmBtn.disabled = !pending || confirmInput.value.trim() !== pending.title;
+    });
+  }
+
+  if (confirmBtn) {
+    confirmBtn.addEventListener('click', function () {
+      if (!pending || confirmInput.value.trim() !== pending.title) return;
+      var target = pending;
+      if (modal) modal.hide();
+      purge(target.uuid, target.title);
+    });
+  }
+
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    var uuid = btn.getAttribute('data-uuid');
+    var title = btn.getAttribute('data-title');
+
+    if (btn.getAttribute('data-action') === 'restore') {
+      restore(uuid, title);
+      return;
+    }
+
+    pending = { uuid: uuid, title: title };
+    document.getElementById('purge-title').textContent = title;
+    confirmInput.value = '';
+    confirmBtn.disabled = true;
+    if (modal) {
+      modal.show();
+    } else if (window.confirm('Permanently purge "' + title + '"? This cannot be undone.')) {
+      // Bootstrap absent (or JS-disabled chrome) — still gated, just plainer.
+      purge(uuid, title);
+    }
+  });
+})();
+</script>
+
+<%- include('footer') %>
