@@ -32,13 +32,13 @@ A domain addon today typically owns its whole image (`FROM ngdpbase + WORKDIR + 
 
 | Today (drop-in image) | Packaged |
 |---|---|
-| `COPY addons ./addons` | `RUN npm install @scope/<slug>-addon@x.y.z` into a generic ngdpbase image |
+| `COPY addons ./addons` | `npm install @scope/<slug>-addon@x.y.z` in a builder stage, then `COPY --from=` its `node_modules` into a generic ngdpbase image (see [Deploying](#deploying)) |
 | the addon's own deps via its `npm ci` | the addon package's `dependencies` — pulled transitively by the install |
 | image `LABEL`s / branding | deployment config (`ngdpbase.application-name`, theme) or a thin wrapper image |
 | runtime data volume (quakes/HANS/etc.) | **unchanged** — stays mounted; never was in the image |
 | `NGDPBASE_VERSION` ARG bump (base image) | **still the base image pin** — but now *independent* of the addon version, each pinned + Renovate-tracked separately |
 
-Net: the bespoke per-addon image collapses to a generic base image + one `npm install` line + config. The two version axes (ngdpbase base, addon package) decouple, which is what removes the drift.
+Net: the bespoke per-addon image collapses to a generic base image + a two-stage install + config. The two version axes (ngdpbase base, addon package) decouple, which is what removes the drift.
 
 > **Audit every deployment artifact that references the addon's drop-in path directly — not just the main Dockerfile.** CronJobs, init containers, sidecars, and debug/exec scripts that hardcode the old drop-in layout (e.g. `workingDir: /opt/<slug>`, `node addons/<slug>/import/*.js`) break **silently on their next scheduled run** rather than at deploy time, because the packaged model changes where the addon's files physically live (`node_modules/<scope>/<slug>-addon/`, not `addons/<slug>/` or `/opt/<slug>/`). Image-automation (e.g. Flux) will happily bump such a job's pinned tag to the new packaged image with nothing positioned to catch the broken path. Grep your whole deployment — every manifest, not just the app Deployment — for the old path before cutting over. (Surfaced in geohazardwatch#152: a daily data-import CronJob was a second, independent consumer of `/opt/geohazardwatch` and was not on the migration checklist.)
 
@@ -106,35 +106,67 @@ Publish is a normal `npm publish` (typically from the addon repo's CI on a versi
 
 ## Deploying
 
-In a generic ngdpbase image (or a thin layer on it). **Build FROM the `-devtools` tag** — the plain runtime tag has no npm:
+The ngdpbase runtime image has **no npm** — it was removed in [#956](https://github.com/jwilleke/ngdpbase/issues/956) so the deployed artifact carries none of npm's vendored CVEs. So the install cannot happen in the image you ship. Do it in a **separate build stage** and copy the result across:
 
 ```dockerfile
-FROM ghcr.io/jwilleke/ngdpbase:3.62.1-devtools
+ARG NGDPBASE_VERSION=4.0.1
+ARG NODE_VERSION=24
+
+# Stage 1: a plain Node image — still has npm
+FROM node:${NODE_VERSION}-alpine AS addon-installer
 WORKDIR /app
-RUN npm install @jwilleke/geohazardwatch-addon@1.4.2
+RUN npm install @jwilleke/geohazardwatch-addon@1.4.2 --omit=dev
+
+# Stage 2: the runtime — no npm needed or present
+FROM ghcr.io/jwilleke/ngdpbase:${NGDPBASE_VERSION}
+WORKDIR /app
+COPY --from=addon-installer /app/node_modules/. ./node_modules/
 # addons-path includes "node_modules:@jwilleke/*-addon"; enable the addon in config
 ```
 
+**The trailing `/.` is load-bearing.** `COPY --from=… /app/node_modules/. ./node_modules/` copies the *contents* into the destination, merging with the runtime image's existing `node_modules` from ngdpbase's own build. Without it the copy replaces the directory and takes ngdpbase's own dependencies with it. Because the addon still lands at `node_modules/@scope/<slug>-addon`, the existing `node_modules:@jwilleke/*-addon` glob finds it with no config change.
+
+The image you deploy therefore contains no npm at all — the security property #956 bought is preserved end to end, not just for ngdpbase's own image.
+
 Renovate then tracks `@jwilleke/geohazardwatch-addon` against npm semver — the addon version and the ngdpbase base-image version bump **independently**, each lockfile/tag-pinned. No cross-repo build context, no directory drift.
 
-### Which base tag
+> This is the pattern `jwilleke/geohazardwatch` uses; its `Dockerfile` is the working reference implementation.
+
+### Installing from a private registry
+
+If the addon lives in GitHub Packages (the recommendation under [Publishing](#publishing)), stage 1 needs a token. Mount it as a BuildKit secret so it never lands in an image layer, and remove the `.npmrc` in the **same** `RUN` — a later layer deleting it does not remove it from the earlier one:
+
+```dockerfile
+# syntax=docker/dockerfile:1.4
+FROM node:${NODE_VERSION}-alpine AS addon-installer
+WORKDIR /app
+COPY .npmrc ./
+RUN --mount=type=secret,id=github_token \
+    NODE_AUTH_TOKEN="$(cat /run/secrets/github_token)" \
+    npm install @jwilleke/geohazardwatch-addon@1.4.2 --omit=dev && \
+    rm -f .npmrc
+```
+
+Built with `docker build --secret id=github_token,env=GITHUB_TOKEN …`. The credential never reaches stage 2 at all, since only `node_modules` is copied across.
+
+### If you genuinely need npm in the derived layer
 
 Two tags are published per release, from the same build:
 
 | Tag | Has npm | Use for |
 |---|---|---|
-| `ghcr.io/jwilleke/ngdpbase:X.Y.Z` | no | **deploying** — this is what runs in production |
-| `ghcr.io/jwilleke/ngdpbase:X.Y.Z-devtools` | yes | **building FROM** — derived images that `npm install` an addon |
+| `ghcr.io/jwilleke/ngdpbase:X.Y.Z` | no | **deploying**, and the base of the two-stage build above |
+| `ghcr.io/jwilleke/ngdpbase:X.Y.Z-devtools` | yes | an escape hatch — derived builds that must run npm *in the ngdpbase layer itself* |
 
-npm was removed from the runtime image in [#956](https://github.com/jwilleke/ngdpbase/issues/956) so the deployed artifact carries none of npm's vendored CVEs. That is worth keeping, but it also broke this page's `npm install` step — see [#1001](https://github.com/jwilleke/ngdpbase/issues/1001). The `-devtools` variant restores the build capability without putting npm back into what you deploy.
+`-devtools` exists ([#1001](https://github.com/jwilleke/ngdpbase/issues/1001)) because removing npm broke the ability to build `FROM` the image at all. It is a lower-friction one-line change, but it is **not** the recommended shape: an image built `FROM …-devtools` inherits npm, so the addon image you ship carries npm's vendored CVEs even though ngdpbase's own image does not.
 
-A derived image built `FROM …-devtools` **inherits npm**, so the addon image you ship carries it too. If that matters for your scan posture, drop it again in the derived Dockerfile's final stage:
+If you use it and the result is deployed, drop npm again in the final stage:
 
 ```dockerfile
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 ```
 
-Renovate tracks the two tags as one version axis — a `-devtools` pin bumps on the same releases as the plain tag.
+At which point you have done more work than the two-stage build for the same outcome — hence the recommendation above. Renovate tracks the two tags as one version axis; a `-devtools` pin bumps on the same releases as the plain tag.
 
 ## Pages, themes, and everything else
 
