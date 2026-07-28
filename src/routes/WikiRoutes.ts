@@ -12256,6 +12256,11 @@ ${panes}
     app.get('/media/search', (req: Request, res: Response) => void this.mediaSearch(req, res));
     app.get('/media/api/item/:id', (req: Request, res: Response) => void this.mediaApiItem(req, res));
     app.patch('/media/api/item/:id', (req: Request, res: Response) => void this.mediaApiItemUpdate(req, res));
+    // #999: attachment metadata editing — same contract and permission as the
+    // media route above. Sidecar-only on the provider side; see
+    // BasicAttachmentProvider.updateMetadata.
+    app.patch('/attachments/api/:attachmentId', (req: Request, res: Response) =>
+      void this.attachmentApiMetadataUpdate(req, res));
     app.get('/media/api/year/:year', (req: Request, res: Response) => void this.mediaApiYear(req, res));
     app.get('/media/file/:id', (req: Request, res: Response) => void this.mediaFile(req, res));
     app.get('/media/thumb/:id', (req: Request, res: Response) => void this.mediaThumb(req, res));
@@ -14714,6 +14719,130 @@ ${description}
    * Requires the asset-edit permission. Body fields: absent = keep,
    * null = clear.
    */
+  /**
+   * PATCH /attachments/api/:attachmentId — edit an attachment's metadata (#999).
+   *
+   * The attachment counterpart of `mediaApiItemUpdate`. Same permission
+   * (`asset-edit`), same body contract, and the same keyword canonicalization —
+   * the part that matters most and is easiest to drop when porting a route.
+   *
+   * The two differ only in what the PROVIDER does with the patch: media writes
+   * through to the file, attachments store it beside the file because their id
+   * is a hash of the bytes. That asymmetry lives entirely in the provider; this
+   * route is unaware of it.
+   */
+  async attachmentApiMetadataUpdate(req: Request, res: Response) {
+    const attachmentManager = this.engine.getManager('AttachmentManager');
+    if (!attachmentManager) {
+      return res.status(503).json({ error: 'Attachment manager not enabled' });
+    }
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!wikiContext.userContext || !(await wikiContext.hasPermission('asset-edit'))) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const existing = await attachmentManager.getAttachmentMetadata(req.params.attachmentId);
+      if (!existing) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+
+      const parsed = this.parseAssetMetadataPatch(req.body);
+      if ('error' in parsed) {
+        return res.status(400).json({ error: parsed.error });
+      }
+
+      // #918/#915: snap keywords to catalog TITLES. Attachments do not write
+      // these into the file, but they still feed search and the keyword catalog,
+      // so an uncanonicalized variant would fragment the vocabulary just the
+      // same — and this route never went through the editor typeahead.
+      if (Array.isArray(parsed.value.keywords)) {
+        parsed.value.keywords = dedupeKeywords(
+          parsed.value.keywords,
+          await this.getUserKeywordCanonicalMap()
+        );
+      }
+
+      const updated = await attachmentManager.updateAssetMetadata(
+        req.params.attachmentId,
+        parsed.value,
+        wikiContext.userContext
+      );
+      if (!updated) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+
+      logger.info(
+        `[attachments] ${wikiContext.userContext.username} edited metadata on `
+        + `${req.params.attachmentId} (${Object.keys(parsed.value).join(', ')})`
+      );
+      return res.json(updated);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      // A bad date is the caller's mistake, not a server fault.
+      if (message.startsWith('Invalid dateTimeOriginal')) {
+        return res.status(400).json({ error: message });
+      }
+      if (message.startsWith('Permission denied')) {
+        return res.status(403).json({ error: message });
+      }
+      if (message.includes('does not support metadata editing')) {
+        return res.status(501).json({ error: message });
+      }
+      logger.error('[attachments] Error updating attachment metadata:', err);
+      return res.status(500).json({ error: 'Metadata update failed', detail: message });
+    }
+  }
+
+  /**
+   * Validate an asset-metadata PATCH body into an `AssetMetadataPatch` (#999).
+   *
+   * Shared by the media and attachment routes so the two cannot drift on the
+   * contract that matters: **absent means keep, explicit `null` means clear.**
+   * That is why every field is tested with `in` rather than truthiness —
+   * `{ description: null }` and `{}` must not behave alike.
+   *
+   * @param body - Raw request body
+   * @returns The patch, or an error message for a 400
+   */
+  private parseAssetMetadataPatch(
+    body: unknown
+  ): { value: import('../types/Asset.js').AssetMetadataPatch } | { error: string } {
+    const b = (body ?? {}) as Record<string, unknown>;
+    const patch: import('../types/Asset.js').AssetMetadataPatch = {};
+
+    if ('title' in b) {
+      if (b.title !== null && typeof b.title !== 'string') {
+        return { error: 'title must be a string or null' };
+      }
+      patch.title = b.title;
+    }
+    if ('description' in b) {
+      if (b.description !== null && typeof b.description !== 'string') {
+        return { error: 'description must be a string or null' };
+      }
+      patch.description = b.description;
+    }
+    if ('keywords' in b) {
+      const kw = b.keywords;
+      if (kw !== null && !(Array.isArray(kw) && kw.every(k => typeof k === 'string'))) {
+        return { error: 'keywords must be a string array or null' };
+      }
+      patch.keywords = kw;
+    }
+    if ('dateTimeOriginal' in b) {
+      if (b.dateTimeOriginal !== null && typeof b.dateTimeOriginal !== 'string') {
+        return { error: 'dateTimeOriginal must be a string or null' };
+      }
+      patch.dateTimeOriginal = b.dateTimeOriginal;
+    }
+
+    if (Object.keys(patch).length === 0) {
+      return { error: 'No editable fields in request body' };
+    }
+    return { value: patch };
+  }
+
   async mediaApiItemUpdate(req: Request, res: Response) {
     const mediaManager = this.engine.getManager('MediaManager');
     if (!mediaManager) {
@@ -14732,36 +14861,14 @@ ${description}
         return res.status(404).json({ error: 'Not found' });
       }
 
-      const body = (req.body ?? {}) as Record<string, unknown>;
-      const patch: import('../types/Asset.js').AssetMetadataPatch = {};
-      if ('title' in body) {
-        if (body.title !== null && typeof body.title !== 'string') {
-          return res.status(400).json({ error: 'title must be a string or null' });
-        }
-        patch.title = body.title;
+      // #999: shared with the attachment route so the two cannot drift on
+      // "absent means keep, explicit null means clear". Error strings are
+      // unchanged from the inline version this replaced.
+      const parsed = this.parseAssetMetadataPatch(req.body);
+      if ('error' in parsed) {
+        return res.status(400).json({ error: parsed.error });
       }
-      if ('description' in body) {
-        if (body.description !== null && typeof body.description !== 'string') {
-          return res.status(400).json({ error: 'description must be a string or null' });
-        }
-        patch.description = body.description;
-      }
-      if ('keywords' in body) {
-        const kw = body.keywords;
-        if (kw !== null && !(Array.isArray(kw) && kw.every(k => typeof k === 'string'))) {
-          return res.status(400).json({ error: 'keywords must be a string array or null' });
-        }
-        patch.keywords = kw;
-      }
-      if ('dateTimeOriginal' in body) {
-        if (body.dateTimeOriginal !== null && typeof body.dateTimeOriginal !== 'string') {
-          return res.status(400).json({ error: 'dateTimeOriginal must be a string or null' });
-        }
-        patch.dateTimeOriginal = body.dateTimeOriginal;
-      }
-      if (Object.keys(patch).length === 0) {
-        return res.status(400).json({ error: 'No editable fields in request body' });
-      }
+      const patch = parsed.value;
 
       // #918 (Slice 2 of #869): canonicalize keywords to catalog TITLES before
       // they are written into the file's IPTC:Keywords / XMP-dc:Subject. Writing

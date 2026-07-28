@@ -1,6 +1,6 @@
 import BaseAttachmentProvider, { FileInfo, User, AttachmentResult } from './BaseAttachmentProvider.js';
 import { AttachmentMetadata } from '../types/index.js';
-import type { AssetProvider, AssetRecord, AssetQuery, AssetPage, AssetInput, AssetMetadata } from '../types/Asset.js';
+import type { AssetProvider, AssetRecord, AssetQuery, AssetPage, AssetInput, AssetMetadata, AssetMetadataPatch } from '../types/Asset.js';
 import type { CreativeWork, DigitalDocument } from '../types/Schema.js';
 import sharp from 'sharp';
 import { ExifTool } from 'exiftool-vendored';
@@ -1519,6 +1519,10 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       id: schema.identifier,
       providerId: this.id,
       filename: schema.name,
+      // #999: the human title, kept separate from `filename`. `schema.name` is
+      // the stored filename and is referenced by `[{ATTACH src='...'}]` markup,
+      // so an edited title must never be written back into it.
+      name: schema.documentTitle,
       encodingFormat: schema.encodingFormat,
       contentSize: schema.contentSize,
       url: `/attachments/${schema.identifier}`,
@@ -1590,26 +1594,92 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     return Promise.resolve({ results: page, total, hasMore: offset + page.length < total });
   }
 
-  // #999: `updateMetadata` was implemented here and then BACKED OUT.
-  //
-  // Attachment IDs are CONTENT HASHES — see `calculateHash`, and note the
-  // stored filename is `<sha256>.<ext>`. Media items are not content-addressed;
-  // attachments are. Writing embedded metadata (EXIF/IPTC/XMP) rewrites the
-  // file, so the id and filename no longer match the bytes they name:
-  //
-  //     id       c3939c4391744bc8006f726c4e8333...
-  //     file sha c7ae23c100d515d5...      <- after a single metadata write
-  //
-  // Nothing errors; dedup and any integrity check simply stop being true.
-  //
-  // Do not re-add an embedded write here without first settling the design
-  // question on #999: sidecar-only (keep the edit in stored metadata, never
-  // touch the file), or re-hash and re-key on edit (honest, but the id changes,
-  // so URLs change and existing page links break).
-  //
-  // The tag mapping itself lives in `utils/assetMetadataTags` and is fine — the
-  // problem is not how the tags are built, it is that this provider must not
-  // write them into the file.
+  /**
+   * AssetProvider.updateMetadata() — edit an attachment's descriptive metadata (#999).
+   *
+   * **SIDECAR ONLY. This must never write into the file.**
+   *
+   * Attachment IDs are CONTENT HASHES — see `calculateHash`, and note the
+   * stored filename is `<sha256>.<ext>`. Media items are not content-addressed;
+   * attachments are. Writing embedded metadata (EXIF/IPTC/XMP) rewrites the
+   * file, so the id and filename stop matching the bytes they name:
+   *
+   *     id       c3939c4391744bc8006f726c4e8333...
+   *     file sha c7ae23c100d515d5...      <- after a single metadata write
+   *
+   * Nothing errors; dedup and any integrity check simply stop being true. An
+   * earlier version of this method did exactly that and was backed out
+   * (`ffe16c0d`); the failure was only caught because restoring a test file
+   * with `cmp` failed on a byte comparison.
+   *
+   * Operator decision (2026-07-28): sidecar over re-hash-and-re-key. Re-keying
+   * would be more honest — the file and its name would stay in agreement — but
+   * the id is the URL, so every existing `[{ATTACH}]` reference on every page
+   * would break on an edit. Content addressing is worth more than embedded
+   * fidelity here.
+   *
+   * **The consequence, which is real:** an attachment's ngdpbase metadata and
+   * its embedded metadata diverge after an edit, and a download carries the
+   * file's original values. Media items do not behave this way. If embedded
+   * fidelity matters for a given file, it belongs in the media library, which
+   * is not content-addressed and does write through.
+   *
+   * The tag mapping in `utils/assetMetadataTags` is deliberately NOT used here.
+   * It is correct, and it is for providers that write to files.
+   *
+   * @param id - Attachment identifier (content hash)
+   * @param patch - Fields to change; `null` clears, omission leaves alone
+   * @returns The refreshed record, or null when the attachment is unknown
+   * @throws Error when `dateTimeOriginal` is present but unparseable
+   */
+  async updateMetadata(id: string, patch: AssetMetadataPatch): Promise<AssetRecord | null> {
+    const schema = this.attachmentMetadata.get(id);
+    if (!schema) {
+      logger.warn(`[BasicAttachmentProvider] Cannot update metadata - attachment not found: ${id}`);
+      return null;
+    }
+
+    // Validate before mutating anything, so a bad date cannot leave a partial edit.
+    let normalizedDate: string | undefined;
+    if (patch.dateTimeOriginal !== undefined && patch.dateTimeOriginal !== null) {
+      const parsedDate = new Date(patch.dateTimeOriginal);
+      if (Number.isNaN(parsedDate.getTime())) {
+        throw new Error(`Invalid dateTimeOriginal: ${patch.dateTimeOriginal}`);
+      }
+      normalizedDate = parsedDate.toISOString();
+    }
+
+    // `title` goes to documentTitle, NOT to schema.name — `name` is the stored
+    // FILENAME here, and it feeds both `insertSnippet` and the `[{ATTACH
+    // src='...'}]` markup on every page referencing this attachment. Writing a
+    // title into it would silently break those references.
+    if (patch.title !== undefined) {
+      if (patch.title === null) delete schema.documentTitle;
+      else schema.documentTitle = patch.title;
+    }
+    if (patch.description !== undefined) {
+      if (patch.description === null) delete schema.description;
+      else schema.description = patch.description;
+    }
+    if (patch.keywords !== undefined) {
+      if (patch.keywords === null) delete schema.documentKeywords;
+      else schema.documentKeywords = patch.keywords;
+    }
+    if (patch.dateTimeOriginal !== undefined) {
+      if (patch.dateTimeOriginal === null) delete schema.documentDateCreated;
+      else schema.documentDateCreated = normalizedDate;
+    }
+
+    schema.dateModified = new Date().toISOString();
+    this.attachmentMetadata.set(id, schema);
+    await this.saveMetadata();
+
+    logger.info(
+      `[BasicAttachmentProvider] Updated metadata for ${id} `
+      + `(${Object.keys(patch).join(', ')}) — sidecar only, file untouched (#999)`
+    );
+    return this.schemaToAssetRecord(schema);
+  }
 
   /**
    * AssetProvider.getById() — returns AssetRecord for the given attachment ID.

@@ -671,6 +671,65 @@ class AttachmentManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * Edit an attachment's descriptive metadata (#999).
+   *
+   * Distinct from `updateAttachmentMetadata`, which takes an
+   * `AttachmentMetadata` shape and returns a boolean. This takes the same
+   * `AssetMetadataPatch` the media route uses — absent means keep, explicit
+   * `null` means clear — and returns the refreshed record.
+   *
+   * **Sidecar only for attachments.** Unlike the media equivalent, this does
+   * not write into the file: attachment IDs are content hashes, so an embedded
+   * write would break the id↔bytes invariant. See
+   * `BasicAttachmentProvider.updateMetadata` for the full reasoning.
+   *
+   * Gated on `asset-edit`, the same permission `PATCH /media/api/item/:id`
+   * uses — this is asset metadata editing, and it should not require a
+   * *different* right depending on whether the file happens to be a page
+   * attachment or a media-library item.
+   *
+   * Note the older `updateAttachmentMetadata` still gates on
+   * `attachment:upload`. Two paths edit attachment metadata under two different
+   * permissions; that divergence predates this method and is left alone rather
+   * than changed as a side effect of adding a route.
+   *
+   * @param attachmentId - Attachment identifier
+   * @param patch - Fields to change; `null` clears, omission leaves alone
+   * @param context - Caller, for the permission check
+   * @returns The refreshed record, or null when the attachment is unknown
+   * @throws Error when the caller lacks `asset-edit`, or the provider cannot edit
+   */
+  async updateAssetMetadata(
+    attachmentId: string,
+    patch: import('../types/Asset.js').AssetMetadataPatch,
+    context?: UserContext
+  ): Promise<import('../types/Asset.js').AssetRecord | null> {
+    if (!this.attachmentProvider) {
+      throw new Error('Attachment provider not initialized');
+    }
+
+    const allowed = await this.checkPermission('asset-edit', context);
+    if (!allowed) {
+      throw new Error('Permission denied: You do not have permission to edit attachment metadata');
+    }
+
+    const provider = this.attachmentProvider as BaseAttachmentProvider & {
+      updateMetadata?: (
+        id: string,
+        patch: import('../types/Asset.js').AssetMetadataPatch
+      ) => Promise<import('../types/Asset.js').AssetRecord | null>;
+    };
+
+    if (typeof provider.updateMetadata !== 'function') {
+      // Optional capability — a provider without it must say so rather than
+      // silently accepting an edit that goes nowhere.
+      throw new Error('Attachment provider does not support metadata editing');
+    }
+
+    return provider.updateMetadata(attachmentId, patch);
+  }
+
+  /**
    * Check if an attachment exists
    *
    * @param {string} attachmentId - Attachment identifier
