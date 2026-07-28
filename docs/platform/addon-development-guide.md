@@ -4,6 +4,56 @@
 
 ---
 
+## Quick start: scaffold a new addon (#675)
+
+The fastest path to a working addon is to generate one, then edit it:
+
+```bash
+npm run create:addon -- --id volcano-watch
+```
+
+That writes `addons/volcano-watch/` containing a manifest with the correct
+canonical slug, an `index.ts` that registers a manager and a plugin, a seed page
+with a freshly generated UUID, and a `README.md`. Enable it and restart, and the
+addon loads and its page seeds.
+
+```bash
+# name the plugins and managers up front, and write somewhere else
+npm run create:addon -- --id volcano-watch --type domain \
+  --plugins VolcanoMap,VolcanoList --managers VolcanoData \
+  --target ../volcano-watch
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--id` | *(required)* | Canonical slug — lowercase, digits, single dashes |
+| `--type` | `additive` | `additive` augments a wiki; `domain` means the addon **is** the site |
+| `--plugins` | one, named from the id | Comma-separated plugin names |
+| `--managers` | one, named from the id | Comma-separated manager names |
+| `--target` | `addons/<id>` | Output directory |
+| `--force` | off | Write into a non-empty directory |
+
+Two things the scaffolder gets right that are easy to get wrong by hand:
+
+- **Identity.** The `ngdpbase.slug` in `package.json` and the `name` exported
+  from `index.ts` are emitted from one value, so they cannot disagree — the
+  mismatch [#927](https://github.com/jwilleke/ngdpbase/issues/927) exists to
+  catch. A trailing `-addon` in `--id` is rejected, because `AddonsManager`
+  strips it when deriving identity and the config key would not match the folder.
+- **Page UUIDs.** Seed pages get a real v4 UUID, generated and validated with the
+  same library the page validator uses. A hand-copied or placeholder UUID makes
+  `AddonsManager` skip the page silently.
+
+The manual walkthrough below still applies — read it to understand what the
+generated files do, and for anything the scaffolder does not emit (routes,
+views, themes, static assets).
+
+> **Not yet included:** a published template repository, CI workflows, and
+> Renovate config for generated addons. Those are tracked as the remaining
+> phases of [#675](https://github.com/jwilleke/ngdpbase/issues/675).
+
+---
+
 ## Prerequisites
 
 - ngdpbase instance running locally (`./server.sh start`)
