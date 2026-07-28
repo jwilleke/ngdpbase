@@ -201,7 +201,8 @@ Tracked in [#397](https://github.com/jwilleke/ngdpbase/issues/397).
 | Phase 2 | ✅ Done | The Fairways — shipped as a satellite deployment, not an in-repo addon |
 | Phase 3 | ✅ Done | GeoHazardWatch — satellite repo, wrapper image, its own release cadence |
 | Phase 4 | ✅ Done | Distribution + deploy: `packaged` npm model [#673](https://github.com/jwilleke/ngdpbase/issues/673), canonical k8s base [#674](https://github.com/jwilleke/ngdpbase/issues/674), canonical addon identity [#927](https://github.com/jwilleke/ngdpbase/issues/927) |
-| Phase 5 | Open | Authoring ergonomics: scaffolder [#675](https://github.com/jwilleke/ngdpbase/issues/675), auto-enable addons found in non-default `addons-path` dirs [#686](https://github.com/jwilleke/ngdpbase/issues/686) |
+| Phase 5 | ✅ Done | Authoring: `npm run create:addon` scaffolder + [`ngdpbase-addon-template`](https://github.com/jwilleke/ngdpbase-addon-template) [#675](https://github.com/jwilleke/ngdpbase/issues/675) |
+| Phase 6 | Open | Discovery: auto-enable addons found in non-default `addons-path` dirs [#686](https://github.com/jwilleke/ngdpbase/issues/686) |
 
 Phases 2 and 3 completed in a different shape than planned: both domains ship as satellites rather than `addons/<name>/` directories here. See [`architecture-threads.md` § Addon platform maturation](../architecture-threads.md) for the thread that tracks what is still open.
 
@@ -233,7 +234,7 @@ Phases 2 and 3 completed in a different shape than planned: both domains ship as
 | [#398](https://github.com/jwilleke/ngdpbase/issues/398) | This document |
 | [#405](https://github.com/jwilleke/ngdpbase/issues/405) | DAM Epic — unified AssetProvider |
 | [#673](https://github.com/jwilleke/ngdpbase/issues/673) | `packaged` addon distribution (npm) — how satellites consume the platform |
-| [#675](https://github.com/jwilleke/ngdpbase/issues/675) | Addon scaffolder + reference template — **open** |
+| [#675](https://github.com/jwilleke/ngdpbase/issues/675) | Addon scaffolder + reference template — done; see [`ngdpbase-addon-template`](https://github.com/jwilleke/ngdpbase-addon-template) |
 | [#686](https://github.com/jwilleke/ngdpbase/issues/686) | Auto-enable addons discovered in non-default `addons-path` dirs — **open** |
 
 ---

@@ -1,7 +1,7 @@
 ---
 title: Architecture Threads (in-flight, cross-cutting)
 status: living document
-lastModified: 2026-05-25T11:30:00Z
+lastModified: 2026-07-28T10:45:00Z
 ---
 
 # Architecture Threads
@@ -297,9 +297,9 @@ EPIC #790 (Journal reconcile)
 
 ### 7. Addon platform maturation
 
-**Status:** partial implementation. Deploy + theme-auto-copy mechanics shipped via #674 + #443 + #682 (Levers 1+2); distribution + scaffolding + non-default-path discovery still open. Theme-policy decision (#444) closed 2026-05-25 as superseded-by-practice.
+**Status:** near-complete. Deploy + theme-auto-copy shipped via #674 + #443 + #682 (Levers 1+2); distribution shipped via #673 (`node_modules:<glob>` discovery in `AddonsManager`); scaffolding shipped via #675 (`npm run create:addon` + [`ngdpbase-addon-template`](https://github.com/jwilleke/ngdpbase-addon-template), 2026-07-28). **Non-default-path auto-discovery (#686) is the only piece still open.** Theme-policy decision (#444) closed 2026-05-25 as superseded-by-practice.
 
-**Driver:** addon ecosystem maturation — moving from "ngdpbase-internal addons (calendar, forms, journal, elasticsearch)" to "third-party addons that operators can `npx create-ngdpbase-addon`, ship as `@scope/<slug>-addon`, `npm install`, and run." Each open issue addresses a different step in the addon lifecycle (distribute → scaffold → discover → theme). Lockup risk: #673's distribution-model NAME is locked in by `docs/platform/addon-architecture.md` (commit `4788c30d`) but the loader code doesn't exist yet.
+**Driver:** addon ecosystem maturation — moving from "ngdpbase-internal addons (calendar, forms, journal, elasticsearch)" to "third-party addons that operators can `npx create-ngdpbase-addon`, ship as `@scope/<slug>-addon`, `npm install`, and run." Each issue addresses a different step in the addon lifecycle (distribute → scaffold → discover → theme); all but discovery have now shipped.
 
 **Composing issues:**
 
@@ -308,8 +308,8 @@ EPIC #790 (Journal reconcile)
 | #682 | [EPIC] Domain Addon Deployment — easy deploy path for satellites | CLOSED | Parent EPIC — Levers 1 + 2 shipped satellite-side |
 | #674 | Canonical k8s manifest templates (Kustomize base + Flux + downstream-image layering) | CLOSED | **Deploy path** — Kustomize bases/overlays for downstream operators |
 | #443 | Auto-deploy addon theme files on first load + admin dashboard | CLOSED | **Theme mechanism** — auto-copy from `addons/<name>/themes/` to instance `themes/` |
-| #673 | Implement `packaged` addon distribution model (npm install) | OPEN | **Distribution** — loader for `node_modules/<scope>/<slug>-addon/` discovery |
-| #675 | Scaffolder + reference template for new ngdpbase addons | OPEN | **Scaffold** — `npx create-ngdpbase-addon` backed by reference repo |
+| #673 | Implement `packaged` addon distribution model (npm install) | CLOSED | **Distribution** — `node_modules:<glob>` entries in `addons-path` are discovered by `AddonsManager` |
+| #675 | Scaffolder + reference template for new ngdpbase addons | CLOSED 2026-07-28 | **Scaffold** — `npm run create:addon` (`scripts/create-addon.ts`) + the `ngdpbase-addon-template` repo |
 | #686 | AddonsManager auto-enable bundled addons discovered in non-default `addons-path` dirs | OPEN | **Discovery** — Lever 3 of #682; wrapper-image pattern (`/opt/<name>/`) defaults to `enabled: true` |
 | #444 | Resolve addon themes: load directly vs copy (domain-addon special case) | CLOSED 2026-05-25 (superseded-by-practice) | **Theme policy resolved** — #443's auto-copy mechanism has operated ~1 year without complaint; the load-vs-copy question was answered de facto. Refile if a specific driver surfaces (domain addon with theme-size or write-frequency concern). |
 
@@ -324,9 +324,9 @@ EPIC #790 (Journal reconcile)
 
 addon lifecycle steps:
         │
-        ├── Distribute:  #673 (packaged npm-install loader)    ◄── OPEN; name locked by doc, code missing
+        ├── Distribute:  #673 (packaged npm-install loader, CLOSED)
         │                       │
-        │                       └── companion: #675 (scaffolder) ◄── OPEN; needs #673's publishing path
+        │                       └── companion: #675 (scaffolder, CLOSED 2026-07-28)
         │
         ├── Deploy:      #674 (Kustomize manifests, CLOSED)
         │
@@ -339,11 +339,12 @@ addon lifecycle steps:
 
 **Drift risks:**
 
-- **#673's distribution-model name (`packaged`) is locked in by `docs/platform/addon-architecture.md` (§ Distribution Models, commit `4788c30d`) but the loader code doesn't exist.** Canonical doc-vs-code drift. Operators reading the doc will reasonably expect `packaged` to work today; it doesn't.
 - **#686 is the only open piece of EPIC #682**; design memory for Lever 3's exact semantics fades the longer it sits. If Levers 1+2 implementation deviated from the design, Lever 3 may need to follow that drift, not the original spec.
-- **No reference template repo exists** for #675 to point at. Once #673 lands, #675 needs an actual `create-ngdpbase-addon-template` repo (probably under `jwilleke/`) to scaffold from. Filing it now would be premature, but worth noting it's the next thing #675 will need.
+- **The template repo and the scaffolder can drift.** `ngdpbase-addon-template` was generated BY `npm run create:addon`, so today they agree by construction. Nothing enforces that: a change to the generator's templates does not update the repo. The template's CI catches the identity and page-UUID invariants, not divergence from the generator.
 
-**What "done" looks like:** A third-party operator can run `npx create-ngdpbase-addon my-addon` → push to npm as `@scope/my-addon-addon` → `npm install @scope/my-addon-addon` on their deployment → ngdpbase discovers it from `node_modules/@scope/my-addon-addon/`, auto-enables it (because non-default `addons-path`), auto-deploys its themes, and runs it without further config. The four open issues + the closed companions cover those four lifecycle steps.
+**What "done" looks like:** A third-party operator can run `npm run create:addon -- --id my-addon` → push to npm as `@scope/my-addon-addon` → `npm install` it on their deployment → ngdpbase discovers it from `node_modules/@scope/my-addon-addon/`, auto-enables it (because non-default `addons-path`), auto-deploys its themes, and runs it without further config.
+
+Every step of that chain works today **except auto-enable**: the operator must still author `ngdpbase.addons.<slug>.enabled: true`. That is #686, and it is all that stands between this thread and retirement.
 
 ---
 

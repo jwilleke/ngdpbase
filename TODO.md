@@ -40,7 +40,6 @@ Scanner state: 1 open Dependabot alert (#96) + 2 open code-scanning alerts (#34,
 - [#786](https://github.com/jwilleke/ngdpbase/issues/786) — [FEATURE] Auto-journal — digester consuming CatalogManager records into journal entries
 - [#762](https://github.com/jwilleke/ngdpbase/issues/762) — [FEATURE] CatalogSource producer roster — full candidate set across managers, addons, and external feeds
 - [#686](https://github.com/jwilleke/ngdpbase/issues/686) — [FEATURE] AddonsManager: auto-enable bundled addons discovered in non-default addons-path directories
-- [#675](https://github.com/jwilleke/ngdpbase/issues/675) — [FEATURE] Scaffolder + reference template for new ngdpbase addons
 - [#601](https://github.com/jwilleke/ngdpbase/issues/601) — [FEATURE] Calendar Reminders
 
 ## 🔵 In review
