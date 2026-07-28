@@ -4819,6 +4819,18 @@ ${panes}
     return configManager?.getProperty('ngdpbase.capture.enabled', false) === true;
   }
 
+  /**
+   * System-keywords the capture flow stamps on pages it creates (#881/#893).
+   * Read from config rather than hardcoded so an instance that renamed its
+   * capture keyword still gets a working /my/captures view (#1004) — the write
+   * side and the read side must consult the same key or they drift.
+   */
+  private getCaptureKeywords(): string[] {
+    const configManager = this.engine.getManager('ConfigurationManager');
+    const configured = configManager?.getProperty('ngdpbase.capture.keywords', ['capture']) as string[] | undefined;
+    return Array.isArray(configured) && configured.length > 0 ? configured : ['capture'];
+  }
+
   /** Resolve the capture target page name from config pattern ({date}/{username} tokens). */
   private resolveCaptureDefaultPage(username: string): string {
     const configManager = this.engine.getManager('ConfigurationManager');
@@ -4922,7 +4934,7 @@ ${panes}
       // #893 (Slice 1 of #869): capture is machine provenance, so the flow now
       // writes system-keywords (the automation bucket), not user-keywords.
       const configManager = this.engine.getManager('ConfigurationManager');
-      const captureKeywords = (configManager?.getProperty('ngdpbase.capture.keywords', ['capture']) as string[]) ?? ['capture'];
+      const captureKeywords = this.getCaptureKeywords();
       const capturePrivate = configManager?.getProperty('ngdpbase.capture.private', true) !== false;
       const metadata = existing
         ? { ...(existing.metadata as Record<string, unknown>), editor: currentUser.username }
@@ -6237,6 +6249,7 @@ ${panes}
     links: number | undefined;
     edits: number | undefined;
     shared: number | undefined;
+    captures: number | undefined;
   }> {
     const counts: {
       pages: number | undefined;
@@ -6245,11 +6258,12 @@ ${panes}
       links: number | undefined;
       edits: number | undefined;
       shared: number | undefined;
-    } = { pages: undefined, private: undefined, journal: undefined, links: undefined, edits: undefined, shared: undefined };
+      captures: number | undefined;
+    } = { pages: undefined, private: undefined, journal: undefined, links: undefined, edits: undefined, shared: undefined, captures: undefined };
 
     try {
       const pageManager = this.engine.getManager('PageManager') as unknown as {
-        getPagesByCreator?: (u: string, o?: { onlyPrivate?: boolean }) => Promise<unknown[]>;
+        getPagesByCreator?: (u: string, o?: { onlyPrivate?: boolean; systemKeywords?: string[] }) => Promise<unknown[]>;
         getPagesByEditor?: (u: string) => Promise<unknown[]>;
         getPagesSharedWith?: (principals: string[]) => Promise<unknown[]>;
       };
@@ -6258,6 +6272,12 @@ ${panes}
         const privateOnly = await pageManager.getPagesByCreator(username, { onlyPrivate: true });
         counts.pages = all.length;
         counts.private = privateOnly.length;
+        // #1004: only counted when capture is enabled — the card row is hidden
+        // otherwise, and an unused count is a wasted index scan on every profile view.
+        if (this.isCaptureEnabled()) {
+          const captures = await pageManager.getPagesByCreator(username, { systemKeywords: this.getCaptureKeywords() });
+          counts.captures = captures.length;
+        }
       }
       if (pageManager?.getPagesByEditor) {
         const edits = await pageManager.getPagesByEditor(username);
@@ -6317,10 +6337,31 @@ ${panes}
     });
   }
 
+  /**
+   * GET /my/captures — pages the bookmarklet capture flow created for the
+   * current user (#1004). 404s when capture is disabled, matching the /capture
+   * routes: a "My Captures" page on an instance with no capture feature is a
+   * dead end, not a discovery.
+   *
+   * NOT restricted to private pages even though captures default to private —
+   * `ngdpbase.capture.private` can be false, and a capture the user later made
+   * public is still a capture.
+   */
+  async myCapturesPage(req: Request, res: Response) {
+    if (!this.isCaptureEnabled()) return res.status(404).send('Not found');
+    return this.renderMyContributionsList(req, res, {
+      title: 'My Captures',
+      icon: 'fa-bookmark',
+      onlyPrivate: false,
+      systemKeywords: this.getCaptureKeywords(),
+      emptyMessage: 'You haven\'t captured anything yet. Install the capture bookmarklet from /capture/install to clip pages from your browser.'
+    });
+  }
+
   private async renderMyContributionsList(
     req: Request,
     res: Response,
-    spec: { title: string; icon: string; onlyPrivate: boolean; emptyMessage: string }
+    spec: { title: string; icon: string; onlyPrivate: boolean; emptyMessage: string; systemKeywords?: string[] }
   ) {
     try {
       const wikiContext = this.createWikiContext(req);
@@ -6329,12 +6370,15 @@ ${panes}
         return res.redirect('/login?redirect=' + encodeURIComponent(req.originalUrl));
       }
       const pageManager = this.engine.getManager('PageManager') as unknown as {
-        getPagesByCreator?: (u: string, o?: { onlyPrivate?: boolean }) => Promise<Array<{
+        getPagesByCreator?: (u: string, o?: { onlyPrivate?: boolean; systemKeywords?: string[] }) => Promise<Array<{
           title: string; uuid: string; lastModified: string; isPrivate?: boolean; editor?: string
         }>>;
       };
       const items = pageManager?.getPagesByCreator
-        ? await pageManager.getPagesByCreator(currentUser.username, { onlyPrivate: spec.onlyPrivate })
+        ? await pageManager.getPagesByCreator(currentUser.username, {
+          onlyPrivate: spec.onlyPrivate,
+          ...(spec.systemKeywords ? { systemKeywords: spec.systemKeywords } : {})
+        })
         : [];
       const commonData = await this.getCommonTemplateData(req);
       res.render('my-list', {
@@ -11926,6 +11970,8 @@ ${panes}
     app.get('/my/private', (req: Request, res: Response) => this.myPrivatePagesPage(req, res));
     app.get('/my/journal', (req: Request, res: Response) => this.myJournalPage(req, res));
     app.get('/my/links', (req: Request, res: Response) => this.myLinksPage(req, res));
+    // #1004 — captures made by the #881 bookmarklet; 404s when capture is off
+    app.get('/my/captures', (req: Request, res: Response) => this.myCapturesPage(req, res));
     // #640 Phase 2
     app.get('/my/edits', (req: Request, res: Response) => this.myEditsPage(req, res));
     app.get('/my/shared', (req: Request, res: Response) => this.mySharedPage(req, res));

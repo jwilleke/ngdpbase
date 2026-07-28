@@ -38,7 +38,7 @@ interface ExtendedPluginContext extends PluginContext {
 }
 
 interface PageManagerLike {
-  getPagesByCreator?: (u: string, o?: { onlyPrivate?: boolean }) => Promise<unknown[]>;
+  getPagesByCreator?: (u: string, o?: { onlyPrivate?: boolean; systemKeywords?: string[] }) => Promise<unknown[]>;
   getPagesByEditor?: (u: string) => Promise<unknown[]>;
   getPagesSharedWith?: (principals: string[]) => Promise<unknown[]>;
 }
@@ -54,6 +54,8 @@ interface ContributionCounts {
   links?: number;
   edits?: number;
   shared?: number;
+  /** #1004 — set only on a self-view of an instance with capture enabled. */
+  captures?: number;
 }
 
 const MyContributionsPlugin: SimplePlugin = {
@@ -142,6 +144,19 @@ async function getContributionCounts(
       if (viewerForSelfView) {
         const privateOnly = await pageManager.getPagesByCreator(target, { onlyPrivate: true });
         counts.private = privateOnly.length;
+
+        // #1004: captures are personal clippings, so the row is self-view only
+        // — same reasoning as `private`. Left undefined when capture is off, so
+        // renderCard drops the row entirely rather than showing a dead link.
+        const configManager = engine?.getManager('ConfigurationManager') as
+          | { getProperty(key: string, def: unknown): unknown }
+          | undefined;
+        if (configManager?.getProperty('ngdpbase.capture.enabled', false) === true) {
+          const configured = configManager.getProperty('ngdpbase.capture.keywords', ['capture']) as string[] | undefined;
+          const systemKeywords = Array.isArray(configured) && configured.length > 0 ? configured : ['capture'];
+          const captures = await pageManager.getPagesByCreator(target, { systemKeywords });
+          counts.captures = captures.length;
+        }
       }
     }
     if (pageManager?.getPagesByEditor) {
@@ -186,6 +201,11 @@ function renderCard(target: string, counts: ContributionCounts, isSelfView: bool
     ? [
       { href: '/my/private', icon: 'fa-eye-slash', label: 'Private Pages',       value: counts.private },
       { href: '/my/pages',   icon: 'fa-file-alt',  label: "Pages I've Authored", value: counts.pages   },
+      // #1004 — dropped entirely when capture is disabled (count stays undefined),
+      // rather than rendered as an em-dash row linking to a 404.
+      ...(counts.captures !== undefined
+        ? [{ href: '/my/captures', icon: 'fa-bookmark', label: 'My Captures', value: counts.captures }]
+        : []),
       { href: '/my/journal', icon: 'fa-book',      label: 'Journal Entries',     value: counts.journal },
       { href: '/my/links',   icon: 'fa-link',      label: 'My Links',            value: counts.links   },
       { href: '/my/edits',   icon: 'fa-history',   label: "Pages I've Edited",   value: counts.edits   },

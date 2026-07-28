@@ -99,6 +99,16 @@ export interface GetPagesByCreatorOptions {
   onlyPrivate?: boolean;
   /** Sort order. Default `lastModified-desc`. */
   sortBy?: 'lastModified-desc' | 'title-asc';
+  /**
+   * Only include pages carrying at least ONE of these `system-keywords` (#1004).
+   * Matched case-insensitively. Omitted or empty means no keyword filter.
+   *
+   * Read from page frontmatter, not from a denormalised index field: the page
+   * index has no system-keywords column, and adding one would leave every
+   * pre-existing page invisible to this filter until its next save (the #1003
+   * failure mode). Frontmatter is the source of truth and needs no back-fill.
+   */
+  systemKeywords?: string[];
 }
 
 /**

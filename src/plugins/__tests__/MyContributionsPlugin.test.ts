@@ -287,4 +287,77 @@ describe('MyContributionsPlugin', () => {
       expect(result).toContain('My Contributions');
     });
   });
+
+  // #1004: the plugin card and /profile's card must agree — a Captures row on
+  // one and not the other is exactly the drift the file's own "duplication is
+  // intentional for v1" note warns about.
+  describe('captures row (#1004)', () => {
+    function withCapture(opts: {
+      username?: string;
+      viewing?: string;
+      enabled: boolean;
+      keywords?: string[];
+      captureCount?: number;
+    }) {
+      const getPagesByCreator = vi.fn().mockImplementation(
+        async (_u: string, o?: { systemKeywords?: string[]; onlyPrivate?: boolean }) =>
+          o?.systemKeywords
+            ? new Array(opts.captureCount ?? 2).fill({})
+            : [{}, {}, {}]
+      );
+      const ctx = makeContext({ username: opts.username ?? 'alice' });
+      const managers: Record<string, unknown> = {
+        PageManager: {
+          getPagesByCreator,
+          getPagesByEditor: vi.fn().mockResolvedValue([]),
+          getPagesSharedWith: vi.fn().mockResolvedValue([])
+        },
+        JournalDataManager: { countByAuthor: () => 0 },
+        UserManager: { getUser: vi.fn().mockImplementation(async (u: string) => ({ username: u })) },
+        ConfigurationManager: {
+          getProperty: (key: string, def: unknown) => {
+            if (key === 'ngdpbase.capture.enabled') return opts.enabled;
+            if (key === 'ngdpbase.capture.keywords') return opts.keywords ?? def;
+            return def;
+          }
+        }
+      };
+      (ctx.engine as { getManager: (n: string) => unknown }).getManager = (name: string) => managers[name];
+      return { ctx, getPagesByCreator };
+    }
+
+    test('renders a linked Captures row on a self-view when capture is enabled', async () => {
+      const { ctx } = withCapture({ enabled: true, captureCount: 4 });
+      const result = await MyContributionsPlugin.execute!(ctx, {}) as string;
+      expect(result).toContain('/my/captures');
+      expect(result).toContain('My Captures');
+      expect(result).toContain('4');
+    });
+
+    test('omits the row entirely when capture is disabled', async () => {
+      const { ctx, getPagesByCreator } = withCapture({ enabled: false });
+      const result = await MyContributionsPlugin.execute!(ctx, {}) as string;
+      expect(result).toContain('My Contributions');
+      expect(result).not.toContain('/my/captures');
+      // and does not pay for a scan it will not display
+      expect(getPagesByCreator).not.toHaveBeenCalledWith('alice', expect.objectContaining({
+        systemKeywords: expect.anything()
+      }));
+    });
+
+    test('passes the instance\'s configured keywords through', async () => {
+      const { ctx, getPagesByCreator } = withCapture({ enabled: true, keywords: ['clipping'] });
+      await MyContributionsPlugin.execute!(ctx, {});
+      expect(getPagesByCreator).toHaveBeenCalledWith('alice', expect.objectContaining({
+        systemKeywords: ['clipping']
+      }));
+    });
+
+    test('never appears when viewing another user (captures are personal)', async () => {
+      const { ctx } = withCapture({ username: 'bob', enabled: true });
+      const result = await MyContributionsPlugin.execute!(ctx, { username: 'alice' }) as string;
+      expect(result).not.toContain('/my/captures');
+      expect(result).not.toContain('My Captures');
+    });
+  });
 });

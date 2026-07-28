@@ -223,6 +223,101 @@ describe('WikiRoutes capture (#881)', () => {
       await gatedRoutes.captureInstall(createMockReq(authedUser), res);
       expect(res.status).toHaveBeenCalledWith(404);
     });
+
+    // #1004: the read surface is gated exactly like the write surface. A
+    // "My Captures" page on an instance with no capture feature is a dead end.
+    test('GET /my/captures is 404', async () => {
+      const res = createMockRes();
+      await gatedRoutes.myCapturesPage(createMockReq(authedUser), res);
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+  });
+
+  describe('GET /my/captures (#1004)', () => {
+    let mockGetPagesByCreator;
+
+    const capturesRoutes = (configOverrides = {}) => {
+      mockGetPagesByCreator = vi.fn().mockResolvedValue([
+        { title: 'Captures — jim — 2026-07-28', uuid: 'u1', lastModified: '2026-07-28T00:00:00.000Z', isPrivate: true }
+      ]);
+      const engine = {
+        getManager: vi.fn((name) => {
+          if (name === 'PageManager') return { getPagesByCreator: mockGetPagesByCreator };
+          if (name === 'ConfigurationManager') {
+            return {
+              getProperty: vi.fn((key, def) => {
+                if (key === 'ngdpbase.capture.enabled') return true;
+                if (key in configOverrides) return configOverrides[key];
+                return def;
+              })
+            };
+          }
+          return null;
+        })
+      };
+      return new WikiRoutes(engine);
+    };
+
+    const myReq = (userContext = authedUser) => ({
+      ...createMockReq(userContext),
+      path: '/my/captures',
+      originalUrl: '/my/captures'
+    });
+
+    test('redirects anonymous callers to login', async () => {
+      const res = createMockRes();
+      await capturesRoutes().myCapturesPage(myReq(null), res);
+      expect(res.redirect).toHaveBeenCalledWith('/login?redirect=' + encodeURIComponent('/my/captures'));
+      expect(mockGetPagesByCreator).not.toHaveBeenCalled();
+    });
+
+    test('scopes the query to the caller and filters by the capture keyword', async () => {
+      const res = createMockRes();
+      await capturesRoutes().myCapturesPage(myReq(), res);
+      expect(mockGetPagesByCreator).toHaveBeenCalledWith('jim', expect.objectContaining({
+        systemKeywords: ['capture']
+      }));
+    });
+
+    test('uses the instance\'s configured keyword, not a hardcoded "capture"', async () => {
+      const res = createMockRes();
+      await capturesRoutes({ 'ngdpbase.capture.keywords': ['clipping', 'inbox'] })
+        .myCapturesPage(myReq(), res);
+      expect(mockGetPagesByCreator).toHaveBeenCalledWith('jim', expect.objectContaining({
+        systemKeywords: ['clipping', 'inbox']
+      }));
+    });
+
+    test('falls back to ["capture"] when the config value is empty or malformed', async () => {
+      const res = createMockRes();
+      await capturesRoutes({ 'ngdpbase.capture.keywords': [] }).myCapturesPage(myReq(), res);
+      expect(mockGetPagesByCreator).toHaveBeenCalledWith('jim', expect.objectContaining({
+        systemKeywords: ['capture']
+      }));
+    });
+
+    test('does NOT restrict to private pages — capture.private may be false', async () => {
+      const res = createMockRes();
+      await capturesRoutes().myCapturesPage(myReq(), res);
+      expect(mockGetPagesByCreator).toHaveBeenCalledWith('jim', expect.objectContaining({
+        onlyPrivate: false
+      }));
+    });
+
+    test('renders the shared my-list view with the returned items', async () => {
+      const res = createMockRes();
+      const routes = capturesRoutes();
+      // Site chrome needs a fully-wired engine (theme, addons, email, …) that is
+      // irrelevant here — stub it so the assertion is about what this handler
+      // contributes to the render, not about the shared template payload.
+      vi.spyOn(routes, 'getCommonTemplateData').mockResolvedValue({});
+      await routes.myCapturesPage(myReq(), res);
+      expect(res.render).toHaveBeenCalledWith('my-list', expect.objectContaining({
+        title: 'My Captures',
+        listKind: 'pages',
+        items: [expect.objectContaining({ uuid: 'u1' })]
+      }));
+    });
   });
 
   describe('GET /capture/install', () => {

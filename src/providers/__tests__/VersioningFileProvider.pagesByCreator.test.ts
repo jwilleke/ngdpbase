@@ -194,6 +194,141 @@ describe('VersioningFileProvider.getPagesByCreator (#640)', () => {
   });
 });
 
+// ─── #1004: systemKeywords filter (backs /my/captures) ───────────────────
+
+/**
+ * The index carries no system-keywords column, so the filter reads frontmatter
+ * through getPageMetadata → resolvePageInfo → uuidIndex + pageCache. Seeding
+ * those two maps exercises the real lookup path rather than stubbing the
+ * method out; a test that stubbed getPageMetadata would still pass if the
+ * production code looked the page up by the wrong key.
+ */
+function seedMetadata(
+  provider: ReturnType<typeof makeProvider>,
+  entries: Array<{ uuid: string; title: string; systemKeywords?: string[] }>
+) {
+  const p = provider as unknown as {
+    uuidIndex: Map<string, string>;
+    pageCache: Map<string, { title: string; uuid: string; metadata: Record<string, unknown> }>;
+  };
+  for (const e of entries) {
+    p.uuidIndex.set(e.uuid, e.title);
+    p.pageCache.set(e.title, {
+      title: e.title,
+      uuid: e.uuid,
+      metadata: e.systemKeywords ? { 'system-keywords': e.systemKeywords } : {}
+    });
+  }
+}
+
+describe('VersioningFileProvider.getPagesByCreator systemKeywords filter (#1004)', () => {
+  const captureIndex = {
+    version: '1', lastUpdated: '', pageCount: 3,
+    pages: {
+      u1: baseEntry({ uuid: 'u1', title: 'Captures — alice — 2026-07-28', author: 'alice' }),
+      u2: baseEntry({ uuid: 'u2', title: 'Ordinary Page', author: 'alice' }),
+      u3: baseEntry({ uuid: 'u3', title: 'Captures — alice — 2026-07-27', author: 'alice' })
+    }
+  };
+
+  test('returns only pages carrying the keyword', async () => {
+    const p = makeProvider();
+    p.pageIndex = { ...captureIndex };
+    seedMetadata(p, [
+      { uuid: 'u1', title: 'Captures — alice — 2026-07-28', systemKeywords: ['capture'] },
+      { uuid: 'u2', title: 'Ordinary Page', systemKeywords: ['general'] },
+      { uuid: 'u3', title: 'Captures — alice — 2026-07-27', systemKeywords: ['capture'] }
+    ]);
+    const result = await p.getPagesByCreator('alice', { systemKeywords: ['capture'] });
+    expect(result.map(e => e.uuid).sort()).toEqual(['u1', 'u3']);
+  });
+
+  test('matches case-insensitively in both directions', async () => {
+    const p = makeProvider();
+    p.pageIndex = { ...captureIndex };
+    seedMetadata(p, [
+      { uuid: 'u1', title: 'Captures — alice — 2026-07-28', systemKeywords: ['Capture'] },
+      { uuid: 'u2', title: 'Ordinary Page', systemKeywords: ['general'] },
+      { uuid: 'u3', title: 'Captures — alice — 2026-07-27', systemKeywords: ['capture'] }
+    ]);
+    const result = await p.getPagesByCreator('alice', { systemKeywords: ['CAPTURE'] });
+    expect(result.map(e => e.uuid).sort()).toEqual(['u1', 'u3']);
+  });
+
+  test('ORs across multiple keywords (instance may configure several)', async () => {
+    const p = makeProvider();
+    p.pageIndex = { ...captureIndex };
+    seedMetadata(p, [
+      { uuid: 'u1', title: 'Captures — alice — 2026-07-28', systemKeywords: ['capture'] },
+      { uuid: 'u2', title: 'Ordinary Page', systemKeywords: ['general'] },
+      { uuid: 'u3', title: 'Captures — alice — 2026-07-27', systemKeywords: ['clipping'] }
+    ]);
+    const result = await p.getPagesByCreator('alice', { systemKeywords: ['capture', 'clipping'] });
+    expect(result.map(e => e.uuid).sort()).toEqual(['u1', 'u3']);
+  });
+
+  test('excludes pages with no system-keywords at all', async () => {
+    const p = makeProvider();
+    p.pageIndex = { ...captureIndex };
+    seedMetadata(p, [
+      { uuid: 'u1', title: 'Captures — alice — 2026-07-28', systemKeywords: ['capture'] },
+      { uuid: 'u2', title: 'Ordinary Page' },
+      { uuid: 'u3', title: 'Captures — alice — 2026-07-27' }
+    ]);
+    const result = await p.getPagesByCreator('alice', { systemKeywords: ['capture'] });
+    expect(result.map(e => e.uuid)).toEqual(['u1']);
+  });
+
+  test('omitted or empty filter returns everything (no accidental filtering)', async () => {
+    const p = makeProvider();
+    p.pageIndex = { ...captureIndex };
+    seedMetadata(p, [
+      { uuid: 'u1', title: 'Captures — alice — 2026-07-28', systemKeywords: ['capture'] },
+      { uuid: 'u2', title: 'Ordinary Page' },
+      { uuid: 'u3', title: 'Captures — alice — 2026-07-27', systemKeywords: ['capture'] }
+    ]);
+    expect(await p.getPagesByCreator('alice')).toHaveLength(3);
+    expect(await p.getPagesByCreator('alice', { systemKeywords: [] })).toHaveLength(3);
+    expect(await p.getPagesByCreator('alice', { systemKeywords: ['  '] })).toHaveLength(3);
+  });
+
+  test('does not leak another user\'s captures', async () => {
+    const p = makeProvider();
+    p.pageIndex = {
+      version: '1', lastUpdated: '', pageCount: 2,
+      pages: {
+        u1: baseEntry({ uuid: 'u1', title: 'AliceCapture', author: 'alice' }),
+        u2: baseEntry({ uuid: 'u2', title: 'BobCapture', author: 'bob' })
+      }
+    };
+    seedMetadata(p, [
+      { uuid: 'u1', title: 'AliceCapture', systemKeywords: ['capture'] },
+      { uuid: 'u2', title: 'BobCapture', systemKeywords: ['capture'] }
+    ]);
+    const result = await p.getPagesByCreator('alice', { systemKeywords: ['capture'] });
+    expect(result.map(e => e.title)).toEqual(['AliceCapture']);
+  });
+
+  test('combines with onlyPrivate rather than overriding it', async () => {
+    const p = makeProvider();
+    p.pageIndex = {
+      version: '1', lastUpdated: '', pageCount: 2,
+      pages: {
+        u1: baseEntry({ uuid: 'u1', title: 'PublicCapture', author: 'alice' }),
+        u2: baseEntry({ uuid: 'u2', title: 'PrivateCapture', author: 'alice', isPrivate: true })
+      }
+    };
+    seedMetadata(p, [
+      { uuid: 'u1', title: 'PublicCapture', systemKeywords: ['capture'] },
+      { uuid: 'u2', title: 'PrivateCapture', systemKeywords: ['capture'] }
+    ]);
+    const both = await p.getPagesByCreator('alice', { systemKeywords: ['capture'] });
+    const privateOnly = await p.getPagesByCreator('alice', { systemKeywords: ['capture'], onlyPrivate: true });
+    expect(both).toHaveLength(2);
+    expect(privateOnly.map(e => e.title)).toEqual(['PrivateCapture']);
+  });
+});
+
 // ─── #640 Phase 2: getPagesByEditor + getPagesSharedWith ─────────────────
 
 function makeProviderWith(pages: Record<string, ReturnType<typeof makePageEntry>>) {

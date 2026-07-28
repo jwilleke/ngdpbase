@@ -911,12 +911,22 @@ class VersioningFileProvider extends FileSystemProvider {
     const limit = typeof options.limit === 'number' && options.limit > 0 ? options.limit : 1000;
     const onlyPrivate = options.onlyPrivate === true;
     const sortBy = options.sortBy ?? 'lastModified-desc';
+    const wantedSystemKeywords = VersioningFileProvider.normalizeSystemKeywordFilter(options.systemKeywords);
 
     const entries: RecentChangeEntry[] = [];
     for (const idx of Object.values(this.pageIndex.pages)) {
       const matches = idx.author === username || idx.creator === username;
       if (!matches) continue;
       if (onlyPrivate && !idx.isPrivate) continue;
+
+      // #1004: the index carries no system-keywords column, so the keyword
+      // filter reads frontmatter. getPageMetadata resolves from the in-memory
+      // page cache, so this is a map lookup per candidate, not a disk read —
+      // and the candidate set is already narrowed to one user's own pages.
+      if (wantedSystemKeywords) {
+        const md = await this.getPageMetadata(idx.uuid);
+        if (!VersioningFileProvider.hasAnySystemKeyword(md, wantedSystemKeywords)) continue;
+      }
 
       entries.push({
         title: idx.title,

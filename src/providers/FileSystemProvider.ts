@@ -925,6 +925,34 @@ class FileSystemProvider extends BasePageProvider {
   }
 
   /**
+   * Lower-case and de-blank a caller-supplied system-keyword filter (#1004).
+   * Returns null when there is nothing to filter on, so callers can skip the
+   * per-page work entirely rather than testing against an empty set.
+   */
+  protected static normalizeSystemKeywordFilter(input?: string[]): Set<string> | null {
+    if (!Array.isArray(input)) return null;
+    const wanted = new Set(
+      input.map(kw => String(kw).trim().toLowerCase()).filter(kw => kw.length > 0)
+    );
+    return wanted.size > 0 ? wanted : null;
+  }
+
+  /**
+   * True when the page's frontmatter `system-keywords` contains at least one of
+   * `wanted` (case-insensitive) — the OR semantics #1004 needs, because an
+   * instance may configure several capture keywords and a page carries whichever
+   * was active when it was written.
+   */
+  protected static hasAnySystemKeyword(
+    metadata: PageFrontmatter | Record<string, unknown> | null | undefined,
+    wanted: Set<string>
+  ): boolean {
+    const raw = (metadata as { 'system-keywords'?: unknown } | null | undefined)?.['system-keywords'];
+    if (!Array.isArray(raw)) return false;
+    return raw.some(kw => wanted.has(String(kw).trim().toLowerCase()));
+  }
+
+  /**
    * Pages owned by a user (#640). Base implementation: walks pageCache and
    * matches by metadata.author OR metadata.creator. VersioningFileProvider
    * overrides with the pageIndex-backed version which carries denormalised
@@ -939,6 +967,7 @@ class FileSystemProvider extends BasePageProvider {
     const limit = typeof options.limit === 'number' && options.limit > 0 ? options.limit : 1000;
     const onlyPrivate = options.onlyPrivate === true;
     const sortBy = options.sortBy ?? 'lastModified-desc';
+    const wantedSystemKeywords = FileSystemProvider.normalizeSystemKeywordFilter(options.systemKeywords);
 
     const entries: RecentChangeEntry[] = [];
     for (const info of this.pageCache.values()) {
@@ -946,6 +975,8 @@ class FileSystemProvider extends BasePageProvider {
       const author = (md as { author?: string }).author;
       const creator = (md as { creator?: string }).creator;
       if (author !== username && creator !== username) continue;
+
+      if (wantedSystemKeywords && !FileSystemProvider.hasAnySystemKeyword(md, wantedSystemKeywords)) continue;
 
       // #802 Slice 4: `private:true` is the sole privacy signal. Legacy
       // `system-location` retired. User-keywords:[private] read fallback

@@ -97,6 +97,19 @@
                                                 <%= typeof contributions !== 'undefined' && contributions && contributions.pages !== undefined ? contributions.pages : '–' %>
                                             </span>
                                         </li>
+                                        <%# #1004: Captures row appears only when the capture feature is enabled.
+                                            getMyContributionsCounts leaves `captures` undefined when it is off, so the
+                                            absence of the count IS the feature gate — no separate flag to keep in sync. %>
+                                        <% if (typeof contributions !== 'undefined' && contributions && contributions.captures !== undefined) { %>
+                                        <li class="list-group-item d-flex align-items-center justify-content-between">
+                                            <a href="/my/captures" class="text-decoration-none">
+                                                <i class="fas fa-bookmark"></i> My Captures
+                                            </a>
+                                            <span class="badge bg-secondary">
+                                                <%= contributions.captures %>
+                                            </span>
+                                        </li>
+                                        <% } %>
                                         <li class="list-group-item d-flex align-items-center justify-content-between">
                                             <a href="/my/journal" class="text-decoration-none">
                                                 <i class="fas fa-book"></i> Journal Entries
