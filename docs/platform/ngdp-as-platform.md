@@ -10,19 +10,21 @@
 ngdpbase is a **clone-and-extend wiki platform** built on Node.js / Express / TypeScript.
 You clone the repo, configure it, and add domain-specific logic through its extension system — without modifying core.
 
-Two planned deployments:
+Two deployments, both live:
 
-| Project | Repo | Description |
-|---------|------|-------------|
-| Fairways Gen2 | [jwilleke/fairways-gen2-website](https://github.com/jwilleke/fairways-gen2-website) | Condo association site — role-per-unit, private pages, contact data |
-| Volcano Wiki | [#357](https://github.com/jwilleke/ngdpbase/issues/357) | Volcano science data platform — 2,661 structured records, maps, infoboxes |
+| Project | Where | Description |
+|---------|-------|-------------|
+| The Fairways | [operator guide](../demo/the-fairways-operator.md) | Condo/HOA community site — role-per-unit, private pages, contact data |
+| GeoHazardWatch | [jwilleke/geohazardwatch](https://github.com/jwilleke/geohazardwatch) | Volcano and earthquake data — the project's reference deployment (see [`Deployment.md`](./Deployment.md)). Formerly "Volcano Wiki" / `ve-geology` |
+
+Neither lives in this repo. Both are **satellite** deployments that consume ngdpbase as a base image or npm dependency — the model described in [`deployment/addon-packaged.md`](./deployment/addon-packaged.md). The original plan put each domain in an `addons/<name>/` directory here; that was superseded once domain addons started shipping on their own release cadence.
 
 The key insight: **ngdpbase provides horizontal infrastructure; add-ons provide vertical domain logic.**
 
 ```
 ┌──────────────────────────────────────────────────────┐
 │  Domain Layer (Add-ons)                               │
-│  volcano-wiki/   fairways/   future-addon/            │
+│  geohazardwatch   the-fairways   your-addon           │
 ├──────────────────────────────────────────────────────┤
 │  Presentation Layer (Plugins + Themes)                │
 │  VolcanoInfobox   EmbedPlugin   fairways-theme        │
@@ -196,8 +198,12 @@ Tracked in [#397](https://github.com/jwilleke/ngdpbase/issues/397).
 |-------|--------|-------------|
 | Phase 0 | ✅ Done | `registerPlugin()` [#358](https://github.com/jwilleke/ngdpbase/issues/358), `engine.expressApp` [#359](https://github.com/jwilleke/ngdpbase/issues/359) |
 | Phase 1 | ✅ Done | Addon development guide + `addons/calendar/` — event calendar with FullCalendar UI |
-| Phase 2 | Planned | Fairways Gen2 — `addons/fairways/`, EmbedPlugin, fairways theme |
-| Phase 3 | Next | Volcano Wiki — `addons/volcano-wiki/`, VolcanoDataManager, bulk importer, plugins |
+| Phase 2 | ✅ Done | The Fairways — shipped as a satellite deployment, not an in-repo addon |
+| Phase 3 | ✅ Done | GeoHazardWatch — satellite repo, wrapper image, its own release cadence |
+| Phase 4 | ✅ Done | Distribution + deploy: `packaged` npm model [#673](https://github.com/jwilleke/ngdpbase/issues/673), canonical k8s base [#674](https://github.com/jwilleke/ngdpbase/issues/674), canonical addon identity [#927](https://github.com/jwilleke/ngdpbase/issues/927) |
+| Phase 5 | Open | Authoring ergonomics: scaffolder [#675](https://github.com/jwilleke/ngdpbase/issues/675), auto-enable addons found in non-default `addons-path` dirs [#686](https://github.com/jwilleke/ngdpbase/issues/686) |
+
+Phases 2 and 3 completed in a different shape than planned: both domains ship as satellites rather than `addons/<name>/` directories here. See [`architecture-threads.md` § Addon platform maturation](../architecture-threads.md) for the thread that tracks what is still open.
 
 ---
 
@@ -222,12 +228,14 @@ Tracked in [#397](https://github.com/jwilleke/ngdpbase/issues/397).
 
 | Issue | Description |
 |-------|-------------|
-| [#357](https://github.com/jwilleke/ngdpbase/issues/357) | Volcano Wiki |
 | [#394](https://github.com/jwilleke/ngdpbase/issues/394) | Optional-capability framework (done) |
 | [#397](https://github.com/jwilleke/ngdpbase/issues/397) | Add-on admin panel pattern |
 | [#398](https://github.com/jwilleke/ngdpbase/issues/398) | This document |
 | [#405](https://github.com/jwilleke/ngdpbase/issues/405) | DAM Epic — unified AssetProvider |
+| [#673](https://github.com/jwilleke/ngdpbase/issues/673) | `packaged` addon distribution (npm) — how satellites consume the platform |
+| [#675](https://github.com/jwilleke/ngdpbase/issues/675) | Addon scaffolder + reference template — **open** |
+| [#686](https://github.com/jwilleke/ngdpbase/issues/686) | Auto-enable addons discovered in non-default `addons-path` dirs — **open** |
 
 ---
 
-Last updated: 2026-03-29 | Repo: [jwilleke/ngdpbase](https://github.com/jwilleke/ngdpbase)
+Last updated: 2026-07-28 | Repo: [jwilleke/ngdpbase](https://github.com/jwilleke/ngdpbase)

@@ -56,7 +56,18 @@ When `ngdpbase.addons.page-reseed` is **`true`** (config-gated, **default `false
 
 **Legacy pages (no `addon-source-hash`).** Pages seeded *before* this feature landed carry no stamp, so their edit-state can't be proven. Because addon pages are addon-owned content the operator opted to sync, a legacy page whose body differs from the current source **is reseeded from source** on the first enabled pass (adopting source authority) and then stamped — its prior content is kept as a revertable version, so a pre-hash hand-edit is recoverable. A legacy page already identical to source is a no-op. From the second pass on, every page is hashed and fully edit-preserving (a divergent hashed page is treated as an operator edit and skipped). If you want a legacy page to *keep* a local edit through the first enabled pass, stamp it first or leave `page-reseed` off until after you've reviewed.
 
-**On-demand reseed (admin UI).** Beyond the boot-time pass, addon pages are surfaced in **Required Pages Sync** at `/admin/required-pages` (shipped in [#513](https://github.com/jwilleke/ngdpbase/issues/513)): an "Addon Pages" section lists each page's status (`new` / `modified` / `current`), the status table **is** the dry-run/preview, and per-status / per-selection buttons apply on demand — no restart, no persistent `page-reseed` flag. Operator-edited pages are protected and skipped there too. So the admin surface and dry-run are **done**; what remains open under [#920](https://github.com/jwilleke/ngdpbase/issues/920) is narrower: the **removed-source-page policy** ([#930](https://github.com/jwilleke/ngdpbase/issues/930)) and unifying the sync-UI / boot modified-detection ([#931](https://github.com/jwilleke/ngdpbase/issues/931)). There is no dedicated `POST /admin/addons/:addonName/reseed` REST route — the Required Pages Sync surface is the entry point.
+**On-demand reseed (admin UI).** Beyond the boot-time pass, addon pages are surfaced in **Required Pages Sync** at `/admin/required-pages` (shipped in [#513](https://github.com/jwilleke/ngdpbase/issues/513)): an "Addon Pages" section lists each page's status (`new` / `modified` / `current`), the status table **is** the dry-run/preview, and per-status / per-selection buttons apply on demand — no restart, no persistent `page-reseed` flag. Operator-edited pages are protected and skipped there too. There is no dedicated `POST /admin/addons/:addonName/reseed` REST route — the Required Pages Sync surface is the entry point.
+
+[#920](https://github.com/jwilleke/ngdpbase/issues/920) is **closed**, along with both follow-ups it had been holding open:
+
+- **Removed-source-page policy** ([#930](https://github.com/jwilleke/ngdpbase/issues/930)) — see [Source-removed pages](#source-removed-pages-930) below.
+- **Unified modified-detection** ([#931](https://github.com/jwilleke/ngdpbase/issues/931)) — the boot pass and the sync UI both call `evaluateSeededAddonPage()` in `src/utils/addonPageSync.ts`, so a page cannot be reported `modified` by one surface and `current` by the other.
+
+### Source-removed pages (#930)
+
+When an addon stops shipping a page it previously seeded, the instance copy is **left in place and flagged** — nothing is deleted automatically. `AddonsManager.findOrphanedAddonPages()` narrows candidates via the indexed `system-category: addon`, attributes each to its addon through the `addon` frontmatter stamp, and diffs against that addon's current source UUID set. Detection is best-effort: with no search index available it returns `[]` rather than guessing, because a detection bug must never become a deletion.
+
+Removal is **opt-in, per page, from Required Pages Sync**. The server re-verifies that each selected page is still genuinely source-removed before acting — the client's list is never trusted — and deletes through `PageManager` so a revertable version is kept. Pages the operator has edited are reported with `userModified` set so the flag can be weighed before removing anything.
 
 > **Containerized instances:** editing `addons/*/pages/` in a git repo does nothing to a running pod until the image is rebuilt/redeployed *and* the container restarts. For an image like geohazardwatch, that means bumping the addon/base-image version so the new `.md` is present, then restarting.
 
@@ -66,7 +77,11 @@ The idempotency guard exists so an addon upgrade can never clobber a page the op
 
 ## Forcing a re-seed manually
 
-The auto-reseed only touches unmodified pages and needs an `addon-source-hash` stamp (see the bootstrap note above); there is **no admin reseed endpoint yet** ([#920](https://github.com/jwilleke/ngdpbase/issues/920)). To force any page to re-seed from current source — including an operator-edited one you want to reset:
+The boot-time auto-reseed only touches unmodified pages and needs an `addon-source-hash` stamp (see the bootstrap note above).
+
+**Try the admin surface first.** For an unmodified page, Required Pages Sync at `/admin/required-pages` reseeds on demand with no restart and no config change — see [On-demand reseed](#content-aware-reseed-920) above.
+
+The manual route below is for the case the admin surface deliberately refuses: forcing an **operator-edited** page back to source. To force any page to re-seed from current source, including one you want to reset:
 
 1. Delete the instance copy — `<data>/pages/{uuid}.md` (or `<data>/pages/private/{creator}/{uuid}.md` for a private page).
 2. Restart the server. `seedAddonPages` re-seeds the current source on the next boot.

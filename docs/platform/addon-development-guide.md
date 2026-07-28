@@ -362,8 +362,11 @@ puts the files there.
 
 > Drift note: because first-boot copy is a snapshot, theme changes you ship in
 > a later add-on release are **not** picked up until an operator clicks
-> Redeploy. Direct-load (no-copy) resolution for domain add-ons is tracked as a
-> separate design discussion in #444 and is not implemented.
+> Redeploy. Direct-load (no-copy) resolution for domain add-ons is **not
+> implemented and is not planned** — [#444](https://github.com/jwilleke/ngdpbase/issues/444)
+> was closed 2026-05-25 as superseded-by-practice, the auto-copy mechanism
+> having run about a year without a complaint. Refile it if a concrete driver
+> appears (a domain addon with theme-size or write-frequency concerns).
 
 ---
 
