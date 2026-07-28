@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-07-28T06:00:00.000Z'
+lastModified: '2026-07-28T06:30:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -21,7 +21,7 @@ slug: ngdpbase-todo
 - Parked / half-done: none
 - Next steps:
   - Verify #1003 + #972 on geohazardwatch once it takes a v4.0.1+ base image: all 16 seeded pages should carry their addons.md §9 category, and the 12 `general` ones should have NO `access` key. That one boot closes both
-  - Otherwise `/pstatus` and pick from P1: #998 (sist2 index), #898 (route.png orphans), #884 and #811 (both shipped code, issues never updated — may just need closing)
+  - Otherwise `/pstatus` and pick from P1: #998 (sist2 index) or #898 (route.png orphans) — the only two P1s left
 - Blockers / significant notes: nothing blocking. Two habits worth carrying forward from this session — (1) read commit *types* in the release range before accepting a requested bump; a `feat(...)` under a `patch` request is the tell, and that check is what stopped v4.1.0 shipping as 4.0.2. (2) When clearing a change to proceed, verify it does something, not just that it breaks nothing — #1003 existed because I checked frontmatter edits were reseed-neutral and never checked they took effect
 <!-- RESUME:END -->
 
@@ -35,11 +35,10 @@ Generated priority mirror of open GitHub issues and pull requests — the `P0` /
 
 - [#998](https://github.com/jwilleke/ngdpbase/issues/998) — [BUG] elasticsearch addon: sist2 SOURCE index misconfigured — External Asset Search silently returns nothing
 - [#898](https://github.com/jwilleke/ngdpbase/issues/898) — [BUG] Storybook route-map generation orphans a route.png attachment on every regeneration
-- [#884](https://github.com/jwilleke/ngdpbase/issues/884) — [FEATURE] Search ranking: field weighting, URL tokenization, prefix typeahead, keyword-first
-- [#811](https://github.com/jwilleke/ngdpbase/issues/811) — [FEATURE] GitGuardian secret-leak incidents → auto-create GitHub issues (org-wide)
 
 ## 🟡 P2
 
+- [#1005](https://github.com/jwilleke/ngdpbase/issues/1005) — [FEATURE] GitGuardian bridge — deploy the receiver (split from #811)
 - [#972](https://github.com/jwilleke/ngdpbase/issues/972) — [EPIC] geohazardwatch addon compliance with addons.md decisions — coordination
 - [#969](https://github.com/jwilleke/ngdpbase/issues/969) — [FEATURE] Admin trash view — restore and purge soft-deleted pages from the UI
 - [#963](https://github.com/jwilleke/ngdpbase/issues/963) — [FEATURE] DataFeedPlugin: friendlier empty-state message + optional empty= override
