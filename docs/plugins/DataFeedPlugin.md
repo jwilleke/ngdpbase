@@ -25,6 +25,8 @@ Requires the `feeds` addon enabled with the source configured — see [FeedManag
 [{DataFeed source='usgs-quakes'}]
 [{DataFeed source='usgs-quakes' columns='place,magnitude,depth_km' sort='magnitude-desc' max='10'}]
 [{DataFeed source='usgs-quakes' format='list' max='5'}]
+[{DataFeed source='volcano-news' exclude='summary~VAAC:|VA ADVISORY|DTG:'}]
+[{DataFeed source='firms-viirs' format='map' lat='latitude' lon='longitude' columns='frp,confidence,acq_date' sizeBy='frp'}]
 ```
 
 ## Parameters
@@ -34,8 +36,13 @@ Requires the `feeds` addon enabled with the source configured — see [FeedManag
 | `source` | yes | — | The feed `sourceId` from `ngdpbase.addons.feeds.sources.<id>` |
 | `columns` | no | union of property keys across records, capped at 6 | CSV of record property keys to show as table columns |
 | `sort` | no | first column, descending | `'key'`, `'key-asc'`, or `'key-desc'` — numeric compare when both sides parse as numbers, else locale string compare |
-| `max` | no | 20 | Record cap, applied after sorting |
-| `format` | no | `table` | `'table'` (sortable, via `formatAsTable`) or `'list'` (`<ul>` of record names) |
+| `max` | no | 20 (**500** when `format='map'`) | Record cap, applied after sorting |
+| `format` | no | `table` | `'table'` (sortable, via `formatAsTable`), `'list'` (`<ul>` of record names), or `'map'` (Leaflet, see below) |
+| `exclude` | no | — | One `column~pattern` rule; a record is dropped when that column's string value matches the case-insensitive regex `pattern`, e.g. `exclude='summary~VAAC:\|VA ADVISORY\|DTG:'`. **One rule per plugin call.** A missing `~`, an empty side, or an invalid regex yields *no filtering* rather than an error — a silently ineffective rule looks identical to a rule that matched nothing |
+| `lat` / `lon` | no | `latitude` / `longitude` | `format='map'` only — property keys holding coordinates. Records with a missing or non-numeric value in either are skipped, not an error |
+| `sizeBy` | no | — | `format='map'` only — a numeric column scaled linearly to marker radius 4–20px across the plotted records; omitted gives a fixed 6px radius. The scale is computed over *mappable* records only, so a record dropped for bad coordinates cannot skew it |
+| `height` | no | 450 | `format='map'` only — map container height in px |
+| `lat0` / `lon0` / `zoom` | no | 20 / 0 / 2 | `format='map'` only — initial view; the defaults are a full-world view |
 | `badge` | no | — | CSV of columns rendered as value-classed pills: `<span class="feed-badge feed-badge--<slugged-value>">` — core CSS ships variants for the aviation color codes `green`/`yellow`/`orange`/`red`; unknown values get the neutral base style |
 | `link` | no | — | Whitespace-separated `column=urlTemplate` entries; **express-style `:prop`** placeholders resolve from the record's properties (URI-encoded), e.g. `link='volcano=https://volcano.si.edu/volcano.cfm?vn=:gvp'`. A cell whose template has an unresolvable placeholder stays plain text. Composes with `badge` (linked pill). Braces are NOT usable — the `[{…}]` plugin-token grammar cannot contain a literal `}`, so a `{prop}` placeholder would truncate the token and break the page render |
 | `empty` | no | *"No records are currently available for this feed."* | Copy shown when the feed has nothing to render (#963). Applies to the two **legitimate** empty states only — no records, and no mappable records under `format='map'`. HTML-escaped like any cell value; a blank or whitespace-only value falls back to the default |
