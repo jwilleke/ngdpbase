@@ -122,6 +122,20 @@ describe('generated addon', () => {
     expect(pkg.name).toBe('@ngdpbase/volcano-watch');
   });
 
+  test('declares the types its generated code actually needs', async () => {
+    // index.ts imports node builtins, so without @types/node the addon cannot
+    // be typechecked standalone — it only appears to work inside a checkout
+    // that already has them. The template repo's CI caught this.
+    await scaffoldAddon(opts());
+    const dir = path.join(tmp, 'volcano-watch');
+    const pkg = await fs.readJson(path.join(dir, 'package.json'));
+    const index = await fs.readFile(path.join(dir, 'index.ts'), 'utf8');
+
+    expect(index).toMatch(/from 'path'|from "path"/);
+    expect(pkg.devDependencies['@types/node']).toBeDefined();
+    expect(pkg.devDependencies.typescript).toBeDefined();
+  });
+
   test('the exported name equals the manifest slug', async () => {
     // AddonsManager warns loudly when these disagree, because the config key
     // follows the slug. The scaffolder must never emit that mismatch.

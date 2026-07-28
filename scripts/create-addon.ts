@@ -88,6 +88,14 @@ function packageJson(o: ScaffoldOptions): string {
     private: true,
     type: 'module',
     engines: { node: '>=24' },
+    // The generated index.ts imports node builtins ('path', 'url'), so an
+    // addon that declares no @types/node cannot be typechecked on its own —
+    // it only appears to work inside a checkout that already has them. CI in
+    // the template repo caught exactly that.
+    devDependencies: {
+      '@types/node': '^24.0.0',
+      typescript: '^5.0.0'
+    },
     // The `ngdpbase` block is read statically, with no module import — it is
     // what makes the slug authoritative before any code runs (#927).
     ngdpbase: {
