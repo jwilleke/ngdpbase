@@ -13,6 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Future enhancements
 
+## [4.1.0] - 2026-07-28
+
+### Added
+
+- **#999** — attachment metadata editing. `PATCH /attachments/api/:attachmentId` accepts the same `AssetMetadataPatch` body as the media route (`title` / `description` / `keywords` / `dateTimeOriginal`), under the same `asset-edit` permission, with the same contract: **a field absent means keep, an explicit `null` means clear.** Body parsing is now shared between the two routes so they cannot drift on that.
+
+  **Attachment edits are stored beside the file, not written into it** — unlike media items, which write through to embedded EXIF/IPTC/XMP. Attachment IDs are content hashes (`<sha256>.<ext>` is the stored filename), so an embedded write would rewrite the bytes and the id would stop naming them, silently invalidating dedup and any integrity check. Re-keying on edit was the alternative and was rejected: the id *is* the URL, so every existing `[{ATTACH}]` reference would break.
+
+  The practical consequence: after an edit, an attachment's ngdpbase metadata and its embedded metadata diverge, and a **download carries the file's original values**. If embedded fidelity matters for a given file, it belongs in the media library, which is not content-addressed and does write through.
+
+### Changed
+
+- `docs/platform/deployment/addon-packaged.md` now recommends the **two-stage build** for packaged addons — install the addon in a plain `node:alpine` stage, then `COPY --from=… /app/node_modules/. ./node_modules/` into the ngdpbase runtime stage. The image you deploy ends up with no npm at all, so the v3.70.3 removal holds end to end rather than only for ngdpbase's own image. The `-devtools` tag remains available as an escape hatch for builds that must run npm in the ngdpbase layer itself, but is no longer the recommendation: a derived image built from it inherits npm and ships its vendored CVEs.
+
 ## [4.0.1] - 2026-07-27
 
 ### Fixed
