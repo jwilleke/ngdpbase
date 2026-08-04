@@ -49,6 +49,7 @@ Scanner state: 1 open Dependabot alert + 2 open code-scanning alerts, all three 
 
 ## 🔵 In review
 
+- [#1018](https://github.com/jwilleke/ngdpbase/issues/1018) — [FEATURE] Capturee Changes — *shipped in `4b572012`; capture blocks are now heading + unquoted prose + date + `----`. Open question on the issue: trailing rule on the last entry, or separator before each entry instead*
 - [#1019](https://github.com/jwilleke/ngdpbase/issues/1019) — [BUG] Magic link is consumed by a GET — email security scanners burn the token before the user clicks — *fixed in `a022aa55`; verification split into a side-effect-free GET interstitial + a CSRF-guarded POST. Happy path not live-verified — magic-link is disabled on jimstest with no mail provider*
 - [#1017](https://github.com/jwilleke/ngdpbase/issues/1017) — [BUG] /save resets system-keywords to the config default — every human edit destroys machine provenance — *fixed in `d025c692`; all 7 capture pages backfilled to `system-keywords: [capture]` on disk. #1008 closed as its symptom. Remaining: `/admin/reindex` for the 3 backfilled pages, whose tag badges still read the stale index*
 - [#969](https://github.com/jwilleke/ngdpbase/issues/969) — [FEATURE] Admin trash view — restore and purge soft-deleted pages from the UI — *shipped in `323eac34`, released in v4.2.0; populated table, restore, purge and the 409 path unverified — jimstest has zero deleted pages*
@@ -75,8 +76,6 @@ Scanner state: 1 open Dependabot alert + 2 open code-scanning alerts, all three 
 
 ## ❓ Needs triage
 
-1 issue awaiting a placement decision.
-
-- [#1018](https://github.com/jwilleke/ngdpbase/issues/1018) — [FEATURE] Capturee Changes — *capture block formatting: drop the `>` prefixes, promote the source link to an `##` header, move `(captured <date>)` below it, separate entries with `----`*
+- *(none — every open issue has a placement label)*
 
 No open pull requests — [#1009](https://github.com/jwilleke/ngdpbase/pull/1009), [#1011](https://github.com/jwilleke/ngdpbase/pull/1011), [#1012](https://github.com/jwilleke/ngdpbase/pull/1012) and [#1013](https://github.com/jwilleke/ngdpbase/pull/1013) all merged 2026-08-04. Open PRs are ranked into the bands above alongside issues; there is no separate PR section.
