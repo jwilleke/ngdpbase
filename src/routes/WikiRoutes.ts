@@ -4923,9 +4923,8 @@ ${panes}
       }
       if (!url && !text) return renderErr('Nothing to capture — no URL and no selection');
 
-      // Build the NCM block (#1018): the source becomes an `##` heading, the
-      // selection follows as plain prose, then the capture date, then a `----`
-      // rule closing the entry off from the next one.
+      // Build the NCM entry (#1018): the source becomes an `##` heading, the
+      // selection follows as plain prose, then the capture date.
       //
       //   ## [Title|https://…|target='_blank']
       //
@@ -4933,12 +4932,9 @@ ${panes}
       //
       //   *(captured 2026-08-04)*
       //
-      //   ----
-      //
-      // Blank lines between every part are load-bearing, not cosmetic. In
-      // Markdown a line of dashes directly under text makes that text a setext
-      // heading, so `*(captured …)*` followed immediately by `----` would render
-      // the date line as an H2 instead of drawing a rule.
+      // The `----` separator is emitted BEFORE each entry except the first on
+      // the page (see newContent below), so entries are divided without the
+      // page ending on a dangling rule.
       const date = new Date().toISOString().slice(0, 10);
       const lines: string[] = [];
       if (url) {
@@ -4952,8 +4948,8 @@ ${panes}
         // #1018: no `> ` prefix — the selection reads as the page's own prose.
         lines.push(...text.split('\n'), '');
       }
-      lines.push(`*(captured ${date})*`, '', '----');
-      const block = `\n\n${lines.join('\n')}\n`;
+      lines.push(`*(captured ${date})*`);
+      const entry = lines.join('\n');
 
       const pageManager = this.engine.getManager('PageManager');
       const existing = await pageManager.getPage(pageName);
@@ -4962,9 +4958,14 @@ ${panes}
         return renderErr(`You do not have permission to ${existing ? 'edit' : 'create'} this page`, 403);
       }
 
+      // #1018: separator BEFORE each entry except the first on the page. The
+      // blank lines around `----` are load-bearing, not cosmetic — in Markdown
+      // a line of dashes directly beneath text turns that text into a setext
+      // heading, so without the gap the previous entry's `*(captured …)*` would
+      // render as an H2 instead of a rule being drawn.
       const newContent = existing
-        ? `${existing.content.replace(/\s*$/, '')}${block}`
-        : block.replace(/^\n+/, '');
+        ? `${existing.content.replace(/\s*$/, '')}\n\n----\n\n${entry}\n`
+        : `${entry}\n`;
       // Pages the capture flow CREATES are keyword-tagged (default: capture)
       // and private by default (operator decision: captures are personal
       // clippings — quoted excerpts don't belong on public pages unless the
