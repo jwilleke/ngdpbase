@@ -16,7 +16,7 @@ Generated priority mirror of open GitHub issues and pull requests — the `P0` /
 
 ## 🔴 P0 — Security & Critical
 
-- [#1008](https://github.com/jwilleke/ngdpbase/issues/1008) — [BUG] Captures — *not all capture pages appear in `/my/captures`; the search query for the same pages returns more. Regression against the `/my/captures` list shipped in v4.2.0 (#1004)*
+- *(none)*
 
 Scanner state: 1 open Dependabot alert + 2 open code-scanning alerts, all three the accepted `showdown` CVE.
 
@@ -48,6 +48,8 @@ Scanner state: 1 open Dependabot alert + 2 open code-scanning alerts, all three 
 
 ## 🔵 In review
 
+- [#1017](https://github.com/jwilleke/ngdpbase/issues/1017) — [BUG] /save resets system-keywords to the config default — every human edit destroys machine provenance — *fixed in `d025c692`; backfill of the two damaged capture pages still needs operator approval*
+- [#1008](https://github.com/jwilleke/ngdpbase/issues/1008) — [BUG] Captures — *symptom of #1017, fixed in `d025c692`; the two pages that already lost the mark stay missing until backfilled*
 - [#969](https://github.com/jwilleke/ngdpbase/issues/969) — [FEATURE] Admin trash view — restore and purge soft-deleted pages from the UI — *shipped in `323eac34`, released in v4.2.0; populated table, restore, purge and the 409 path unverified — jimstest has zero deleted pages*
 
 ## ⏸ Deferred
