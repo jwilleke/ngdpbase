@@ -5495,7 +5495,19 @@ ${panes}
   }
 
   /**
-   * Verify a magic link token — GET /auth/magic-link/verify
+   * Show the magic-link sign-in confirmation — GET /auth/magic-link/verify
+   *
+   * #1019: this GET is DELIBERATELY side-effect free. Enterprise mail security
+   * (Defender Safe Links, Proofpoint, …) pre-fetches every URL in an incoming
+   * message to scan it, so anything consumed here is consumed before the human
+   * ever clicks. The token is validated for display only; consumption and the
+   * session both happen on the POST below, behind a per-session CSRF token that
+   * a scanner following the link has no way to produce.
+   *
+   * `authManager.authenticate()` is safe to call here because
+   * `MagicLinkAuthProvider.verify()` does not consume — it explicitly leaves
+   * that to `consumeToken()`. Validating now means a dead token shows the
+   * "expired" message immediately rather than after the user clicks a button.
    */
   async verifyMagicLink(req: Request, res: Response) {
     try {
@@ -5506,7 +5518,41 @@ ${panes}
         return res.redirect('/login?error=Invalid+link');
       }
 
-      // Get redirect before consuming (token is deleted in consumeToken)
+      const result = await authManager.authenticate('magic-link', { token });
+      if (!result.success) {
+        return res.redirect('/login?error=Link+expired+or+already+used');
+      }
+
+      const commonData = await this.getCommonTemplateData(req);
+      return res.render('magic-link-confirm', {
+        ...commonData,
+        token,
+        username: result.username,
+        error: ''
+      });
+    } catch (err: unknown) {
+      logger.error('Error rendering magic link confirmation:', err);
+      return res.redirect('/login?error=Verification+failed');
+    }
+  }
+
+  /**
+   * Complete a magic link sign-in — POST /auth/magic-link/verify
+   *
+   * #1019: the only place the token is consumed and a session created. Reached
+   * from the interstitial rendered by the GET above; the app-wide CSRF
+   * middleware has already rejected any POST without this session's token.
+   */
+  async completeMagicLink(req: Request, res: Response) {
+    try {
+      const token = req.body?.token as string;
+      const authManager = this.engine.getManager('AuthManager');
+
+      if (!token || !authManager) {
+        return res.redirect('/login?error=Invalid+link');
+      }
+
+      // Read the redirect before consuming — consumeToken() deletes the entry.
       const redirect = authManager.getMagicLinkRedirect(token);
 
       const result = await authManager.authenticate('magic-link', { token });
@@ -5530,7 +5576,7 @@ ${panes}
         res.redirect(redirect || '/');
       });
     } catch (err: unknown) {
-      logger.error('Error verifying magic link:', err);
+      logger.error('Error completing magic link login:', err);
       res.redirect('/login?error=Verification+failed');
     }
   }
@@ -11975,7 +12021,11 @@ ${panes}
     app.get('/admin/login', (req: Request, res: Response) => this.adminLoginPage(req, res));
     app.post('/login', (req: Request, res: Response) => this.processLogin(req, res));
     app.post('/auth/magic-link', (req: Request, res: Response) => this.requestMagicLink(req, res));
+    // #1019: GET renders a confirmation interstitial and consumes nothing;
+    // POST is where the token is spent. Splitting them is what stops an email
+    // scanner's pre-fetch from burning the link.
     app.get('/auth/magic-link/verify', (req: Request, res: Response) => this.verifyMagicLink(req, res));
+    app.post('/auth/magic-link/verify', (req: Request, res: Response) => this.completeMagicLink(req, res));
     app.post('/auth/oauth/google', (req: Request, res: Response) => void this.initiateGoogleOIDC(req, res));
     app.get('/auth/oauth/google/callback', (req: Request, res: Response) => void this.verifyGoogleOIDCCallback(req, res));
     app.get('/logout', (req: Request, res: Response) => this.processLogout(req, res));

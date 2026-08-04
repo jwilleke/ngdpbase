@@ -8,6 +8,12 @@
  *   2. verify()    — validate token (exists + not expired), return AuthResult
  *   3. consumeToken() — delete token after session is created (single-use guarantee)
  *
+ * `verify()` being side-effect free is load-bearing, not incidental (#1019): the
+ * route layer calls it twice, once on the GET that renders the sign-in
+ * confirmation page and again on the POST that completes the login. Only the
+ * POST consumes. Moving consumption into verify() would reintroduce the bug
+ * where a mail scanner's link pre-fetch burns the token before the user clicks.
+ *
  * Tokens are in-memory only — lost on restart, acceptable for the default 15-min TTL.
  *
  * @see AuthManager

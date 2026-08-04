@@ -508,13 +508,96 @@ describe('WikiRoutes — coverage batch 14', () => {
       expect(res.headers.location).toContain('/login?error=');
     });
 
-    test('logs in and redirects when token is valid', async () => {
+    // #1019 — the GET must be side-effect free. Mail security scanners
+    // (Defender Safe Links, Proofpoint) pre-fetch every URL in an incoming
+    // message; anything spent here is spent before the human ever clicks.
+
+    test('#1019 — valid token renders the confirmation page instead of logging in', async () => {
       mockUserContext = null;
       mockAuthManager.authenticate.mockResolvedValue({ success: true, username: 'testuser' });
       mockAuthManager.getMagicLinkRedirect.mockReturnValue('/dashboard');
       const res = await request(app).get('/auth/magic-link/verify?token=valid-token');
+      // Used to be a 302 straight into a session — that redirect IS the bug.
+      expect(res.status).toBe(200);
+    });
+
+    test('#1019 — GET does not consume the token', async () => {
+      mockUserContext = null;
+      mockAuthManager.consumeToken.mockClear();
+      mockAuthManager.authenticate.mockResolvedValue({ success: true, username: 'testuser' });
+      await request(app).get('/auth/magic-link/verify?token=valid-token');
+      expect(mockAuthManager.consumeToken).not.toHaveBeenCalled();
+    });
+
+    test('#1019 — a scanner pre-fetch leaves the link usable for the real click', async () => {
+      mockUserContext = null;
+      mockAuthManager.consumeToken.mockClear();
+      mockAuthManager.authenticate.mockResolvedValue({ success: true, username: 'testuser' });
+      mockAuthManager.getMagicLinkRedirect.mockReturnValue('/dashboard');
+
+      // Scanner pre-fetches the link, twice for good measure.
+      await request(app).get('/auth/magic-link/verify?token=valid-token');
+      await request(app).get('/auth/magic-link/verify?token=valid-token');
+      expect(mockAuthManager.consumeToken).not.toHaveBeenCalled();
+
+      // The user then clicks through the interstitial.
+      const res = await request(app)
+        .post('/auth/magic-link/verify')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ token: 'valid-token' });
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe('/dashboard');
+      expect(mockAuthManager.consumeToken).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('POST /auth/magic-link/verify (completeMagicLink)', () => {
+    test('redirects to login when no token provided', async () => {
+      mockUserContext = null;
+      const res = await request(app)
+        .post('/auth/magic-link/verify')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({});
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toContain('/login?error=');
+    });
+
+    test('redirects to login when AuthManager not available', async () => {
+      mockUserContext = null;
+      includeAuthManager = false;
+      const res = await request(app)
+        .post('/auth/magic-link/verify')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ token: 'abc123' });
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toContain('/login?error=');
+    });
+
+    test('redirects and consumes nothing when authentication fails', async () => {
+      mockUserContext = null;
+      mockAuthManager.consumeToken.mockClear();
+      mockAuthManager.authenticate.mockResolvedValue({ success: false });
+      const res = await request(app)
+        .post('/auth/magic-link/verify')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ token: 'abc123' });
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toContain('/login?error=');
+      expect(mockAuthManager.consumeToken).not.toHaveBeenCalled();
+    });
+
+    test('consumes the token and redirects to the stored target on success', async () => {
+      mockUserContext = null;
+      mockAuthManager.consumeToken.mockClear();
+      mockAuthManager.authenticate.mockResolvedValue({ success: true, username: 'testuser' });
+      mockAuthManager.getMagicLinkRedirect.mockReturnValue('/dashboard');
+      const res = await request(app)
+        .post('/auth/magic-link/verify')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ token: 'valid-token' });
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe('/dashboard');
+      expect(mockAuthManager.consumeToken).toHaveBeenCalledWith('magic-link', 'valid-token');
     });
   });
 
