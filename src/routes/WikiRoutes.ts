@@ -4923,20 +4923,36 @@ ${panes}
       }
       if (!url && !text) return renderErr('Nothing to capture — no URL and no selection');
 
-      // Build the NCM block: blockquoted selection + attributed source link.
+      // Build the NCM block (#1018): the source becomes an `##` heading, the
+      // selection follows as plain prose, then the capture date, then a `----`
+      // rule closing the entry off from the next one.
+      //
+      //   ## [Title|https://…|target='_blank']
+      //
+      //   selection text
+      //
+      //   *(captured 2026-08-04)*
+      //
+      //   ----
+      //
+      // Blank lines between every part are load-bearing, not cosmetic. In
+      // Markdown a line of dashes directly under text makes that text a setext
+      // heading, so `*(captured …)*` followed immediately by `----` would render
+      // the date line as an H2 instead of drawing a rule.
       const date = new Date().toISOString().slice(0, 10);
       const lines: string[] = [];
-      if (text) {
-        lines.push(...text.split('\n').map(l => `> ${l}`));
-        lines.push('');
-      }
       if (url) {
         // Pipes/brackets would break the NCM link segment — flatten them in the label.
         const label = (title || url).replace(/[|[\]]/g, ' ').replace(/\s+/g, ' ').trim();
-        lines.push(`— [${label}|${url}|target='_blank'] *(captured ${date})*`);
+        lines.push(`## [${label}|${url}|target='_blank']`, '');
       } else if (title) {
-        lines.push(`— ${title} *(captured ${date})*`);
+        lines.push(`## ${title}`, '');
       }
+      if (text) {
+        // #1018: no `> ` prefix — the selection reads as the page's own prose.
+        lines.push(...text.split('\n'), '');
+      }
+      lines.push(`*(captured ${date})*`, '', '----');
       const block = `\n\n${lines.join('\n')}\n`;
 
       const pageManager = this.engine.getManager('PageManager');

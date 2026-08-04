@@ -100,19 +100,98 @@ describe('WikiRoutes capture (#881)', () => {
       text: 'line one\nline two'
     };
 
-    test('creates a missing page with blockquote and source link', async () => {
+    test('creates a missing page with a heading source link and unquoted selection', async () => {
       const req = createMockReq(authedUser, {}, body);
       const res = createMockRes();
       await wikiRoutes.captureSubmit(req, res);
 
       expect(mockSaveWithContext).toHaveBeenCalledTimes(1);
       const savedContext = mockSaveWithContext.mock.calls[0][0];
-      expect(savedContext.content).toContain('> line one');
-      expect(savedContext.content).toContain('> line two');
+      expect(savedContext.content).toContain('line one');
+      expect(savedContext.content).toContain('line two');
       expect(savedContext.content).toContain("[An Article|https://example.com/article|target='_blank']");
       expect(mockHasPermission).toHaveBeenCalledWith(expect.anything(), 'page-create');
       expect(mockUpdatePageInIndex).toHaveBeenCalledTimes(1);
       expect(res.render).toHaveBeenCalledWith('capture', expect.objectContaining({ success: true }));
+    });
+
+    // ── #1018 — capture block shape ────────────────────────────────────────
+
+    test('#1018 — the selection is NOT blockquoted', async () => {
+      const req = createMockReq(authedUser, {}, body);
+      const res = createMockRes();
+      await wikiRoutes.captureSubmit(req, res);
+
+      const content = mockSaveWithContext.mock.calls[0][0].content as string;
+      expect(content).not.toContain('> line one');
+      expect(content).not.toContain('> line two');
+      expect(content).toMatch(/^line one$/m);
+      expect(content).toMatch(/^line two$/m);
+    });
+
+    test('#1018 — the source link is an ## heading, not an em-dash line', async () => {
+      const req = createMockReq(authedUser, {}, body);
+      const res = createMockRes();
+      await wikiRoutes.captureSubmit(req, res);
+
+      const content = mockSaveWithContext.mock.calls[0][0].content as string;
+      expect(content).toContain("## [An Article|https://example.com/article|target='_blank']");
+      expect(content).not.toContain('— [An Article');
+    });
+
+    test('#1018 — the captured date sits at the bottom, followed by a ---- rule', async () => {
+      const req = createMockReq(authedUser, {}, body);
+      const res = createMockRes();
+      await wikiRoutes.captureSubmit(req, res);
+
+      const content = mockSaveWithContext.mock.calls[0][0].content as string;
+      expect(content).toMatch(/\*\(captured \d{4}-\d{2}-\d{2}\)\*\n\n----\n?$/);
+      // The date must no longer ride along on the source-link line.
+      expect(content).not.toMatch(/target='_blank'\].*captured/);
+    });
+
+    test('#1018 — a blank line separates the date from the rule (setext-heading guard)', async () => {
+      const req = createMockReq(authedUser, {}, body);
+      const res = createMockRes();
+      await wikiRoutes.captureSubmit(req, res);
+
+      const content = mockSaveWithContext.mock.calls[0][0].content as string;
+      // `*(captured …)*` immediately above `----` would render as an H2, not a
+      // rule. The blank line is what keeps it a horizontal rule.
+      expect(content).not.toMatch(/\*\(captured \d{4}-\d{2}-\d{2}\)\*\n----/);
+    });
+
+    test('#1018 — appending a second capture separates the two entries', async () => {
+      mockSaveWithContext.mockClear();
+      mockGetPage.mockResolvedValue({
+        name: body.pageName,
+        content: "## [First|https://example.com/1|target='_blank']\n\nearlier text\n\n*(captured 2026-08-04)*\n\n----\n",
+        metadata: { title: body.pageName, uuid: 'uuid-1', author: 'jim' }
+      });
+      const req = createMockReq(authedUser, {}, body);
+      const res = createMockRes();
+      await wikiRoutes.captureSubmit(req, res);
+
+      const content = mockSaveWithContext.mock.calls[0][0].content as string;
+      expect((content.match(/^----$/gm) ?? [])).toHaveLength(2);
+      expect(content.indexOf('## [First')).toBeLessThan(content.indexOf('## [An Article'));
+      mockGetPage.mockResolvedValue(null);
+    });
+
+    test('#1018 — a capture with no URL still gets a heading, date and rule', async () => {
+      mockSaveWithContext.mockClear();
+      const req = createMockReq(authedUser, {}, {
+        pageName: body.pageName,
+        title: 'Just a title',
+        text: 'some selection'
+      });
+      const res = createMockRes();
+      await wikiRoutes.captureSubmit(req, res);
+
+      const content = mockSaveWithContext.mock.calls[0][0].content as string;
+      expect(content).toContain('## Just a title');
+      expect(content).toContain('some selection');
+      expect(content).toMatch(/\*\(captured \d{4}-\d{2}-\d{2}\)\*\n\n----\n?$/);
     });
 
     test('created pages are keyword-tagged capture and private; appended pages keep their own', async () => {
@@ -153,7 +232,7 @@ describe('WikiRoutes capture (#881)', () => {
 
       const savedContext = mockSaveWithContext.mock.calls[0][0];
       expect(savedContext.content).toContain('Old capture');
-      expect(savedContext.content.indexOf('Old capture')).toBeLessThan(savedContext.content.indexOf('> line one'));
+      expect(savedContext.content.indexOf('Old capture')).toBeLessThan(savedContext.content.indexOf('line one'));
       expect(mockHasPermission).toHaveBeenCalledWith(expect.anything(), 'page-edit');
     });
 
