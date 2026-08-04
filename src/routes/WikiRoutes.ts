@@ -3477,6 +3477,28 @@ ${panes}
       // Preserve existing author on edits — never overwrite with the editor's username
       const pageAuthor = existingPage?.metadata?.author || currentUser?.username || 'anonymous';
 
+      // #1017: system-keywords is the automation/provenance bucket (#893) — no
+      // editor posts it, so an edit must PRESERVE what is on disk. Without this,
+      // generateValidMetadata seeds the catalog default (`general`) and the #803
+      // carry-forward below cannot restore the real value, because it only fills
+      // keys that are ABSENT from metadata and this one is already present. That
+      // silently destroyed the capture mark on first edit (#1008) and would do
+      // the same to any other machine tag, e.g. the #507 auto-tags.
+      //
+      // An existing empty array is preserved as empty — that is a real state, not
+      // a reason to re-seed defaults. Only a genuinely new page (or an existing
+      // one with no such field at all) falls through to the catalog default.
+      // Scalar coercion mirrors the view path's JSPWiki-import guard at line 2310.
+      // Typed as string[] on PageFrontmatter, but frontmatter comes off disk — read
+      // it as unknown so the scalar branch below is a real runtime guard rather
+      // than dead code the compiler narrows away.
+      const existingSystemKeywords: unknown = existingPage?.metadata?.['system-keywords'];
+      const preservedSystemKeywords: string[] | undefined = Array.isArray(existingSystemKeywords)
+        ? existingSystemKeywords.map(String)
+        : typeof existingSystemKeywords === 'string' && existingSystemKeywords.trim()
+          ? existingSystemKeywords.split(/[\s,]+/).filter(Boolean)
+          : undefined;
+
       // #893: editorial lifecycle status — single-valued enum, form-posted from
       // the editor's Status select. When the form posts `status-present=1` we
       // honour the select; otherwise preserve the existing value. The catalog's
@@ -3495,6 +3517,7 @@ ${panes}
       const metadata = this.buildNewPageMetadata(title || pageName, {
         'system-category': matchedCategory,
         'user-keywords': userKeywordsArray,
+        ...(preservedSystemKeywords ? { 'system-keywords': preservedSystemKeywords } : {}),
         ...(audienceArray.length ? { audience: audienceArray } : {}),
         ...(authorLock ? { 'author-lock': true } : {}),
         ...(privateFlag ? { private: true } : {}),

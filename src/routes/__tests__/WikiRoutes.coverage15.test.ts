@@ -192,6 +192,11 @@ vi.mock('../../WikiEngine', () => {
             validateMetadata: vi.fn().mockResolvedValue({ isValid: true }),
             generateValidMetadata: vi.fn().mockImplementation((title: string, options: Record<string, unknown> = {}) => ({
               title, uuid: 'test-uuid-1', 'system-category': 'general', 'user-keywords': [],
+              // #1017: the real generateValidMetadata (ValidationManager.ts) seeds
+              // system-keywords from the catalog default BEFORE spreading caller
+              // options. The mock must do the same — without the seed the /save
+              // clobber this file's #1017 tests cover cannot reproduce here.
+              'system-keywords': ['general'],
               author: 'testuser', created: new Date().toISOString(), modified: new Date().toISOString(),
               ...options // mirror the real implementation: caller options override defaults
             })),
@@ -784,6 +789,85 @@ describe('WikiRoutes — coverage batch 15', () => {
       expect(metadata).not.toHaveProperty('section');
       expect(metadata).not.toHaveProperty('categories');
       expect(metadata).not.toHaveProperty('userKeywords'); // camelCase alias handled by managed flow
+    });
+
+    // ── #1017 — /save must not clobber the system-keywords provenance bucket ──
+    //
+    // system-keywords is machine-written (#893) and no editor posts it, so the
+    // #803 carry-forward above cannot protect it: that loop only fills keys that
+    // are ABSENT from metadata, and generateValidMetadata has already seeded this
+    // one with the catalog default. Before the fix, any human edit replaced the
+    // real value with ['general'] — which is how capture pages silently vanished
+    // from /my/captures (#1008).
+
+    function existingPageWithSystemKeywords(systemKeywords: unknown) {
+      return () => Promise.resolve({
+        content: '# Existing',
+        metadata: {
+          title: 'TestPage', uuid: 'uuid-1', 'system-category': 'general',
+          'user-keywords': [], author: 'adminuser',
+          ...(systemKeywords === undefined ? {} : { 'system-keywords': systemKeywords })
+        },
+        filePath: '/data/pages/TestPage.md'
+      });
+    }
+
+    async function saveAndReadMetadata() {
+      const res = await request(app)
+        .post('/save/TestPage')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general' });
+      expect(res.status).toBe(302);
+      return mockPageManager.savePageWithContext.mock.calls[0][1] as Record<string, unknown>;
+    }
+
+    test('#1017 — existing system-keywords survive an edit that does not post them', async () => {
+      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.getPage.mockImplementationOnce(existingPageWithSystemKeywords(['capture']));
+      const metadata = await saveAndReadMetadata();
+      // The regression: this used to come back as ['general'], losing the capture mark.
+      expect(metadata['system-keywords']).toEqual(['capture']);
+    });
+
+    test('#1017 — every existing system keyword survives, not just the first', async () => {
+      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.getPage.mockImplementationOnce(
+        existingPageWithSystemKeywords(['general', 'capture', 'auto-tagged'])
+      );
+      const metadata = await saveAndReadMetadata();
+      expect(metadata['system-keywords']).toEqual(['general', 'capture', 'auto-tagged']);
+    });
+
+    test('#1017 — an existing EMPTY array is preserved, not re-seeded with the default', async () => {
+      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.getPage.mockImplementationOnce(existingPageWithSystemKeywords([]));
+      const metadata = await saveAndReadMetadata();
+      // Empty is a real state a page can be in — re-seeding 'general' here would
+      // silently re-tag pages the operator had deliberately cleared.
+      expect(metadata['system-keywords']).toEqual([]);
+    });
+
+    test('#1017 — a scalar on-disk value is coerced to an array, not dropped', async () => {
+      mockPageManager.savePageWithContext.mockClear();
+      // JSPWiki imports can store keyword fields as space/comma-separated scalars;
+      // the view path coerces the same way.
+      mockPageManager.getPage.mockImplementationOnce(existingPageWithSystemKeywords('capture general'));
+      const metadata = await saveAndReadMetadata();
+      expect(metadata['system-keywords']).toEqual(['capture', 'general']);
+    });
+
+    test('#1017 — an existing page with no system-keywords field still gets the catalog default', async () => {
+      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.getPage.mockImplementationOnce(existingPageWithSystemKeywords(undefined));
+      const metadata = await saveAndReadMetadata();
+      expect(metadata['system-keywords']).toEqual(['general']);
+    });
+
+    test('#1017 — a NEW page still gets the catalog default', async () => {
+      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.getPage.mockImplementationOnce(() => Promise.resolve(null));
+      const metadata = await saveAndReadMetadata();
+      expect(metadata['system-keywords']).toEqual(['general']);
     });
   });
 
