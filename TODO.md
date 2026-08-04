@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-08-04T00:00:00.000Z'
+lastModified: '2026-08-04T12:00:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -18,19 +18,21 @@ Generated priority mirror of open GitHub issues and pull requests — the `P0` /
 
 - *(none)*
 
-Scanner state: 1 open Dependabot alert + 2 open code-scanning alerts, all three the accepted `showdown` CVE.
+Scanner state: 1 open Dependabot alert + 2 open code-scanning alerts, all three the accepted `showdown` CVE. Unchanged since the last run — the whole 2026-08-04 dependency wave is closed.
 
-- `ip-address` alerts #189/#190 **fixed** — PR [#1009](https://github.com/jwilleke/ngdpbase/pull/1009) merged as `c1eb5c50` (10.2.0 → 10.4.0); tracking issue [#1010](https://github.com/jwilleke/ngdpbase/issues/1010) closed.
-- The 14-alert wave the #1009 re-scan opened (`undici`, `fast-uri`, `brace-expansion`, `hono` — 3 high + 11 medium) is fixed and tracked in [#1016](https://github.com/jwilleke/ngdpbase/issues/1016): PRs [#1012](https://github.com/jwilleke/ngdpbase/pull/1012), [#1011](https://github.com/jwilleke/ngdpbase/pull/1011) and [#1013](https://github.com/jwilleke/ngdpbase/pull/1013) merged, plus a `brace-expansion` root override and an addon-local `undici` override for `addons/elasticsearch`.
 - Alerts [#96](https://github.com/jwilleke/ngdpbase/security/dependabot/96), [#34](https://github.com/jwilleke/ngdpbase/security/code-scanning/34) and [#33](https://github.com/jwilleke/ngdpbase/security/code-scanning/33) — the same `showdown` CVE-2024-1899 ReDoS with no upstream patch. Tracked and accepted in closed [#1000](https://github.com/jwilleke/ngdpbase/issues/1000) — the exploitable path is neutralised in-app by `src/utils/showdownGuard.ts` since v3.71.0. No new tracking issue; these alerts cannot be closed by upgrading.
 
 ## 🟠 P1
 
+- [#1019](https://github.com/jwilleke/ngdpbase/issues/1019) — [BUG] Magic link is consumed by a GET — email security scanners burn the token before the user clicks
 - [#998](https://github.com/jwilleke/ngdpbase/issues/998) — [BUG] elasticsearch addon: sist2 SOURCE index misconfigured — External Asset Search silently returns nothing
 - [#898](https://github.com/jwilleke/ngdpbase/issues/898) — [BUG] Storybook route-map generation orphans a route.png attachment on every regeneration
 
 ## 🟡 P2
 
+- [#1022](https://github.com/jwilleke/ngdpbase/issues/1022) — [FEATURE] Magic link: optional device/state binding + record IP and User-Agent at redemption
+- [#1021](https://github.com/jwilleke/ngdpbase/issues/1021) — [FEATURE] Magic link: close the non-atomic verify→consume window (one token can mint two sessions)
+- [#1020](https://github.com/jwilleke/ngdpbase/issues/1020) — [FEATURE] Magic link: add an IP-based request throttle (per-email throttle already exists)
 - [#1006](https://github.com/jwilleke/ngdpbase/issues/1006) — [FEATURE] BaseManager.getStats() — one uniform "what do you hold" contract across managers
 - [#921](https://github.com/jwilleke/ngdpbase/issues/921) — [FEATURE] Dawarich timeline as live storybook source (Tier-2) — /timeline + /tracks into the generator
 - [#886](https://github.com/jwilleke/ngdpbase/issues/886) — [FEATURE] OpenGraph + schema.org meta tags on page views (config-gated)
@@ -48,8 +50,7 @@ Scanner state: 1 open Dependabot alert + 2 open code-scanning alerts, all three 
 
 ## 🔵 In review
 
-- [#1017](https://github.com/jwilleke/ngdpbase/issues/1017) — [BUG] /save resets system-keywords to the config default — every human edit destroys machine provenance — *fixed in `d025c692`; backfill of the two damaged capture pages still needs operator approval*
-- [#1008](https://github.com/jwilleke/ngdpbase/issues/1008) — [BUG] Captures — *symptom of #1017, fixed in `d025c692`; the two pages that already lost the mark stay missing until backfilled*
+- [#1017](https://github.com/jwilleke/ngdpbase/issues/1017) — [BUG] /save resets system-keywords to the config default — every human edit destroys machine provenance — *fixed in `d025c692`; all 7 capture pages backfilled to `system-keywords: [capture]` on disk. #1008 closed as its symptom. Remaining: `/admin/reindex` for the 3 backfilled pages, whose tag badges still read the stale index*
 - [#969](https://github.com/jwilleke/ngdpbase/issues/969) — [FEATURE] Admin trash view — restore and purge soft-deleted pages from the UI — *shipped in `323eac34`, released in v4.2.0; populated table, restore, purge and the 409 path unverified — jimstest has zero deleted pages*
 
 ## ⏸ Deferred
@@ -76,6 +77,6 @@ Scanner state: 1 open Dependabot alert + 2 open code-scanning alerts, all three 
 
 1 issue awaiting a placement decision.
 
-- [#1007](https://github.com/jwilleke/ngdpbase/issues/1007) — [FEATURE] Impovements for Magiclink and Maybe other providers
+- [#1018](https://github.com/jwilleke/ngdpbase/issues/1018) — [FEATURE] Capturee Changes — *capture block formatting: drop the `>` prefixes, promote the source link to an `##` header, move `(captured <date>)` below it, separate entries with `----`*
 
 No open pull requests — [#1009](https://github.com/jwilleke/ngdpbase/pull/1009), [#1011](https://github.com/jwilleke/ngdpbase/pull/1011), [#1012](https://github.com/jwilleke/ngdpbase/pull/1012) and [#1013](https://github.com/jwilleke/ngdpbase/pull/1013) all merged 2026-08-04. Open PRs are ranked into the bands above alongside issues; there is no separate PR section.
