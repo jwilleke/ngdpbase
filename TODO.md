@@ -6,7 +6,7 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-08-04T12:00:00.000Z'
+lastModified: '2026-08-04T13:00:00.000Z'
 slug: ngdpbase-todo
 ---
 
@@ -18,7 +18,7 @@ Generated priority mirror of open GitHub issues and pull requests — the `P0` /
 
 - *(none)*
 
-Scanner state: 1 open Dependabot alert + 2 open code-scanning alerts, all three the accepted `showdown` CVE. Unchanged since the last run — the whole 2026-08-04 dependency wave is closed.
+Scanner state: 1 open Dependabot alert + 2 open code-scanning alerts, all three the accepted `showdown` CVE. Unchanged — the whole 2026-08-04 dependency wave is closed and shipped in v4.3.0.
 
 - Alerts [#96](https://github.com/jwilleke/ngdpbase/security/dependabot/96), [#34](https://github.com/jwilleke/ngdpbase/security/code-scanning/34) and [#33](https://github.com/jwilleke/ngdpbase/security/code-scanning/33) — the same `showdown` CVE-2024-1899 ReDoS with no upstream patch. Tracked and accepted in closed [#1000](https://github.com/jwilleke/ngdpbase/issues/1000) — the exploitable path is neutralised in-app by `src/utils/showdownGuard.ts` since v3.71.0. No new tracking issue; these alerts cannot be closed by upgrading.
 
@@ -44,14 +44,12 @@ Scanner state: 1 open Dependabot alert + 2 open code-scanning alerts, all three 
 - [#786](https://github.com/jwilleke/ngdpbase/issues/786) — [FEATURE] Auto-journal — digester consuming CatalogManager records into journal entries
 - [#762](https://github.com/jwilleke/ngdpbase/issues/762) — [FEATURE] CatalogSource producer roster — full candidate set across managers, addons, and external feeds
 - [#686](https://github.com/jwilleke/ngdpbase/issues/686) — [FEATURE] AddonsManager: auto-enable bundled addons discovered in non-default addons-path directories
-- [#602](https://github.com/jwilleke/ngdpbase/issues/602) — [ADDON] Add person-contacts addon for shared identity foundation
+- [#602](https://github.com/jwilleke/ngdpbase/issues/602) — [ADDON] Add person-contacts addon for shared identity foundation — *carries BOTH `P2` and `deferred`; kept in P2 pending your call on which to drop*
 - [#601](https://github.com/jwilleke/ngdpbase/issues/601) — [FEATURE] Calendar Reminders
 
 ## 🔵 In review
 
-- [#1018](https://github.com/jwilleke/ngdpbase/issues/1018) — [FEATURE] Capturee Changes — *shipped in `4b572012` + `b534e7d5`; capture blocks are heading + unquoted prose + date, with `----` between entries and never trailing. Not yet exercised through a real bookmarklet capture*
-- [#1019](https://github.com/jwilleke/ngdpbase/issues/1019) — [BUG] Magic link is consumed by a GET — email security scanners burn the token before the user clicks — *fixed in `a022aa55`; verification split into a side-effect-free GET interstitial + a CSRF-guarded POST. Happy path not live-verified — magic-link is disabled on jimstest with no mail provider*
-- [#1017](https://github.com/jwilleke/ngdpbase/issues/1017) — [BUG] /save resets system-keywords to the config default — every human edit destroys machine provenance — *fixed in `d025c692`, released in v4.3.0; all 7 capture pages backfilled and the search index rebuilt, so frontmatter and index now agree everywhere. #1008 closed as its symptom. Nothing outstanding*
+- [#1019](https://github.com/jwilleke/ngdpbase/issues/1019) — [BUG] Magic link is consumed by a GET — email security scanners burn the token before the user clicks — *fixed in `a022aa55`, released in v4.3.0; verification split into a side-effect-free GET interstitial + a CSRF-guarded POST. Happy path still not live-verified — magic-link is disabled on jimstest with no mail provider*
 - [#969](https://github.com/jwilleke/ngdpbase/issues/969) — [FEATURE] Admin trash view — restore and purge soft-deleted pages from the UI — *shipped in `323eac34`, released in v4.2.0; populated table, restore, purge and the 409 path unverified — jimstest has zero deleted pages*
 
 ## ⏸ Deferred
