@@ -24,6 +24,7 @@ import type {
   ProviderCapability
 } from '../../../dist/src/types/Asset.js';
 import type { Sist2Document } from './types.js';
+import logger from '../../../dist/src/utils/logger.js';
 
 /**
  * Document types sist2 treats as "document" for mimeCategory filtering.
@@ -70,6 +71,19 @@ export class Sist2AssetProvider implements AssetProvider {
      */
     private readonly hiddenPaths: string[] | null = null
   ) {}
+
+  /**
+   * Last error thrown by an Elasticsearch search, or null if the most recent
+   * one succeeded (#998 follow-up).
+   *
+   * Exists so a failing search is not invisible. `healthCheckDetailed()` checks
+   * index existence and reachability, which are necessary but not sufficient —
+   * the aggregation bug that motivated this had a present index on a reachable
+   * cluster and still failed every query. Recording the failure here lets the
+   * health check report what the last search actually did, rather than only
+   * what the dependencies look like.
+   */
+  private lastSearchError: { message: string; at: string } | null = null;
 
   // ---------------------------------------------------------------------------
   // search
@@ -209,25 +223,47 @@ export class Sist2AssetProvider implements AssetProvider {
     //
     //   illegal_argument_exception: Fielddata is disabled on [extension]
     //
-    // `search()` has no try/catch, so that reached AssetManager, which caught
-    // it, logged a warn, and contributed zero results — leaving ~2M indexed
-    // documents unreachable from the picker while the health check correctly
-    // reported the provider green.
+    // The error reached AssetManager, which caught it, logged a warn and
+    // contributed zero results — leaving ~2M indexed documents unreachable from
+    // the picker while the health check correctly reported the provider green.
     //
     // Computing facets nobody renders, at the cost of the feature itself, is
     // not a trade worth making. If a facet UI returns, restore this from git
     // history and resolve the field names against the target index's mapping
     // rather than assuming sist2's.
-    const response = await this.esClient.search<Sist2Document>({
-      index: this.esIndex,
-      body: {
-        query: esQuery,
-        sort,
-        size,
-        from,
-        _source: true
-      }
-    });
+    let response;
+    try {
+      response = await this.esClient.search<Sist2Document>({
+        index: this.esIndex,
+        body: {
+          query: esQuery,
+          sort,
+          size,
+          from,
+          _source: true
+        }
+      });
+      this.lastSearchError = null;
+    } catch (err) {
+      // A rejected query must not look like "no matching files" (#998).
+      //
+      // Previously this threw to AssetManager, which logged at `warn` and moved
+      // on — so a broken provider was indistinguishable from an empty result
+      // set, and the admin panel still showed green because the index existed
+      // and the cluster was reachable. That is how the aggregation fault stayed
+      // invisible for as long as it did.
+      //
+      // Record it so `healthCheckDetailed()` can report it, log at `error`
+      // because a search that cannot run is not a warning, and return an empty
+      // page so one broken provider does not take down the merged search.
+      const message = err instanceof Error ? err.message : String(err);
+      this.lastSearchError = { message, at: new Date().toISOString() };
+      logger.error(
+        `[Sist2AssetProvider] Search failed against index '${this.esIndex}' — `
+        + `returning no results. This is a query or mapping fault, not an empty index: ${message}`
+      );
+      return { results: [], total: 0, hasMore: false };
+    }
 
     const hits = response.hits.hits;
     const total =
@@ -335,6 +371,18 @@ export class Sist2AssetProvider implements AssetProvider {
         healthy: false,
         message: `Index '${this.esIndex}' is present, but sist2 is unreachable at ${this.sist2Url} `
           + '— search works, thumbnails and file serving will not.'
+      };
+    }
+
+    // Dependencies are fine — but "the index exists and the cluster answers"
+    // was already true during the aggregation fault, when every search failed.
+    // If the last search actually run threw, say so: that is the symptom the
+    // operator cares about, and it is not inferable from the checks above.
+    if (this.lastSearchError) {
+      return {
+        healthy: false,
+        message: `Index '${this.esIndex}' present and sist2 reachable, but the last search FAILED `
+          + `at ${this.lastSearchError.at}: ${this.lastSearchError.message}`
       };
     }
 

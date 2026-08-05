@@ -256,6 +256,64 @@ describe('search()', () => {
     // The results themselves are unaffected — that is the whole point.
     expect(page.results).toHaveLength(1);
   });
+
+  // ── #998 follow-up — a failed query must not masquerade as "no results" ──
+  //
+  // Before this, search() had no try/catch: an ES rejection propagated to
+  // AssetManager, which logged a warn and moved on. A broken provider was
+  // indistinguishable from an empty index, and health stayed green because the
+  // index existed and the cluster answered. That is precisely how the
+  // aggregation fault hid.
+
+  test('#998 — an ES error returns an empty page instead of throwing', async () => {
+    const client = makeClient({
+      search: vi.fn().mockRejectedValue(new Error('search_phase_execution_exception'))
+    });
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+
+    // One broken provider must not take down the merged asset search.
+    const page = await provider.search({ query: 'jpg' });
+
+    expect(page).toEqual({ results: [], total: 0, hasMore: false });
+  });
+
+  test('#998 — a failed search turns the health check UNHEALTHY', async () => {
+    const client = makeClient({
+      search: vi.fn().mockRejectedValue(new Error('Fielddata is disabled on [extension]'))
+    });
+    mockFetch.mockResolvedValue({ ok: true });
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+
+    // Dependencies are fine — index exists, sist2 answers — so the pre-existing
+    // checks alone would report green, exactly as they did during the outage.
+    await expect(provider.healthCheckDetailed()).resolves.toMatchObject({ healthy: true });
+
+    await provider.search({ query: 'jpg' });
+
+    const health = await provider.healthCheckDetailed();
+    expect(health.healthy).toBe(false);
+    expect(health.message).toContain('last search FAILED');
+    expect(health.message).toContain('Fielddata is disabled on [extension]');
+  });
+
+  test('#998 — a later successful search clears the unhealthy state', async () => {
+    const doc = makeSist2Doc();
+    const search = vi.fn()
+      .mockRejectedValueOnce(new Error('transient cluster blip'))
+      .mockResolvedValueOnce(makeSearchResponse([doc], 1));
+    const client = makeClient({ search });
+    mockFetch.mockResolvedValue({ ok: true });
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+
+    await provider.search({ query: 'jpg' });
+    await expect(provider.healthCheckDetailed()).resolves.toMatchObject({ healthy: false });
+
+    // Recovery must not require a restart — a transient failure that latched
+    // permanently would be its own false alarm.
+    const page = await provider.search({ query: 'jpg' });
+    expect(page.results).toHaveLength(1);
+    await expect(provider.healthCheckDetailed()).resolves.toMatchObject({ healthy: true });
+  });
 });
 
 // ---------------------------------------------------------------------------
