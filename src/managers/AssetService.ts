@@ -26,7 +26,14 @@ export interface AssetSearchOptions {
   /** Free-text query — case-insensitive substring / keyword match */
   query?: string;
   /** Restrict results to one store (omit for both) */
-  types?: ('attachment' | 'media')[];
+  /**
+   * Asset provider ids to search, e.g. `['local']`, `['sist2']`. A single id
+   * narrows to that provider; omitted or more than one searches all registered
+   * providers. Values are real provider ids since the picker dropdown became
+   * registry-driven; the caller resolves the legacy `attachment` / `media`
+   * aliases before this point.
+   */
+  types?: string[];
   /** Filter media results to a specific year */
   year?: number;
   /** Number of results per page (default 48) */
@@ -85,9 +92,14 @@ class AssetService extends BaseManager {
    * Search across all registered asset providers with pagination.
    *
    * Translates AssetSearchOptions into an AssetManager query:
-   *   - types=['attachment'] → providerId='local'
-   *   - types=['media']      → providerId='media-library'
-   *   - types omitted/both   → no providerId (search all providers)
+   *   - types=['<providerId>'] → that provider only
+   *   - types omitted or >1    → no providerId (search all providers)
+   *
+   * `types` carries provider ids directly now that the picker dropdown is built
+   * from the registry, so there is no id translation left to do here — the
+   * previous `attachment`→`local` / `media`→`media-library` table only knew
+   * about two hardcoded providers and made every addon-registered one
+   * unselectable.
    *
    * All sorting, pagination, fan-out, and health-check logic lives in
    * AssetManager.  AssetService is a pure translation layer.
@@ -102,10 +114,7 @@ class AssetService extends BaseManager {
       return { results: [], total: 0, hasMore: false };
     }
 
-    let providerId: string | undefined;
-    if (types?.length === 1) {
-      providerId = types[0] === 'attachment' ? 'local' : 'media-library';
-    }
+    const providerId: string | undefined = types?.length === 1 ? types[0] : undefined;
 
     return assetManager.search({
       query, year, mimeCategory, pageSize, offset, sort, order, userRoles, username,

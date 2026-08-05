@@ -847,7 +847,12 @@ class WikiRoutes {
       footer?: string;
       systemCategoryDefs?: Record<string, unknown>;
       knowledgeRoleDefs?: Record<string, unknown>;
+      assetPickerSources?: Array<{ id: string; label: string }>;
     } = {
+      // Supplied here rather than per-route so every surface embedding
+      // `_asset-picker` gets the same source list — the standalone /search page
+      // and the editor's Browse Assets modal alike.
+      assetPickerSources: this.getPickerAssetSources(),
       currentUser: userContext,
       user: userContext,       // alias
       userContext: userContext, // used by page-history.ejs and other templates
@@ -1794,6 +1799,50 @@ class WikiRoutes {
    * empty if MediaManager / the provider is unavailable. Years are public
    * (per MediaManager.getYears — no wikiContext filtering needed).
    */
+  /**
+   * Search-capable asset providers, for the picker's source dropdown.
+   *
+   * The dropdown used to hardcode `attachment` and `media`, so a provider
+   * registered by an addon — the sist2 external index — was unreachable from
+   * the UI no matter what it contained. Anything with the `search` capability
+   * now appears automatically, labelled with its own `displayName`.
+   *
+   * Returns the provider's real id as the value, so `types=<id>` needs no
+   * translation table. The legacy `attachment` / `media` values are still
+   * accepted as aliases — see `normalizeAssetSource`.
+   *
+   * @returns Provider id + label pairs, empty when AssetManager is unavailable
+   */
+  private getPickerAssetSources(): Array<{ id: string; label: string }> {
+    const am = this.engine.getManager('AssetManager') as {
+      getProviders?: () => Array<{ id: string; displayName?: string; capabilities?: string[] }>;
+    } | undefined;
+    if (!am?.getProviders) return [];
+    try {
+      return am.getProviders()
+        .filter(p => Array.isArray(p.capabilities) && p.capabilities.includes('search'))
+        .map(p => ({ id: p.id, label: p.displayName || p.id }));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Map a submitted `types` value onto a provider id.
+   *
+   * `attachment` and `media` predate the registry-driven dropdown and are still
+   * used by bookmarks, the legacy `tab=` query param, and saved picker state,
+   * so they keep resolving to the providers they always meant.
+   *
+   * @param {string} value - Raw `types` value from the query string
+   * @returns {string} Provider id, or the input unchanged when it is not an alias
+   */
+  static normalizeAssetSource(value: string): string {
+    if (value === 'attachment') return 'local';
+    if (value === 'media') return 'media-library';
+    return value;
+  }
+
   private async getPickerYears(): Promise<number[]> {
     const mm = this.engine.getManager('MediaManager') as { getYears?: () => Promise<number[]> } | undefined;
     if (!mm?.getYears) return [];
@@ -10815,9 +10864,26 @@ ${panes}
         return res.json({ success: true, results, total, hasMore: offset + pageSize < total, capped });
       }
 
-      const types = typesParam
-        ? (typesParam.split(',').filter(t => t === 'attachment' || t === 'media'))
+      // Source values are provider ids now that the picker dropdown is built
+      // from the AssetManager registry. `attachment` / `media` still resolve —
+      // bookmarks, the legacy `tab=` param and saved picker state use them.
+      // Unknown ids are dropped rather than passed through, so a stale
+      // bookmark degrades to an all-provider search instead of an empty one.
+      //
+      // Validation falls back to the two built-in providers when the registry
+      // is unavailable. Without that floor, an unreachable AssetManager would
+      // filter out every value and silently disable the source filter — a
+      // worse failure than the one this dropdown change set out to fix.
+      const registeredIds = this.getPickerAssetSources().map(s => s.id);
+      const knownProviderIds = new Set(
+        registeredIds.length > 0 ? registeredIds : ['local', 'media-library']
+      );
+      const providerIds = typesParam
+        ? typesParam.split(',')
+          .map(t => WikiRoutes.normalizeAssetSource(t.trim()))
+          .filter(t => knownProviderIds.has(t))
         : undefined;
+      const types = providerIds && providerIds.length > 0 ? providerIds : undefined;
       // #720/#745: mimeCategory + year parsed once at the top of the handler
       // (shared with the all-sources branch); reused here.
 

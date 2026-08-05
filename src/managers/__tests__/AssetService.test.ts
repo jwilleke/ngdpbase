@@ -194,29 +194,46 @@ describe('AssetService.search()', () => {
   // ---------------------------------------------------------------------------
 
   describe('types filter translation', () => {
-    it('types=["attachment"] passes providerId="local" to AssetManager', async () => {
+    // `types` now carries provider ids straight through. The old
+    // attachment→local / media→media-library table lived here and knew about
+    // exactly two providers, which is why an addon-registered one could never
+    // be selected. Alias resolution moved to WikiRoutes, where the query string
+    // is parsed — see WikiRoutes.normalizeAssetSource.
+
+    it('types=["local"] passes providerId="local" to AssetManager', async () => {
       const assetManagerSearch = vi.fn().mockResolvedValue(makeAssetPage());
       const { service } = makeService({ assetManagerSearch });
 
-      await service.search({ types: ['attachment'] });
+      await service.search({ types: ['local'] });
 
       expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ providerId: 'local' }));
     });
 
-    it('types=["media"] passes providerId="media-library" to AssetManager', async () => {
+    it('types=["media-library"] passes providerId="media-library" to AssetManager', async () => {
       const assetManagerSearch = vi.fn().mockResolvedValue(makeAssetPage());
       const { service } = makeService({ assetManagerSearch });
 
-      await service.search({ types: ['media'] });
+      await service.search({ types: ['media-library'] });
 
       expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ providerId: 'media-library' }));
     });
 
-    it('types=["attachment","media"] does not pass providerId (search all)', async () => {
+    it('an addon-registered provider id is passed through unchanged', async () => {
+      // The point of the change: no allow-list here, so a provider the service
+      // has never heard of is still selectable.
       const assetManagerSearch = vi.fn().mockResolvedValue(makeAssetPage());
       const { service } = makeService({ assetManagerSearch });
 
-      await service.search({ types: ['attachment', 'media'] });
+      await service.search({ types: ['sist2'] });
+
+      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ providerId: 'sist2' }));
+    });
+
+    it('two provider ids do not pass providerId (search all)', async () => {
+      const assetManagerSearch = vi.fn().mockResolvedValue(makeAssetPage());
+      const { service } = makeService({ assetManagerSearch });
+
+      await service.search({ types: ['local', 'media-library'] });
 
       const callArg = assetManagerSearch.mock.calls[0][0];
       expect(callArg).not.toHaveProperty('providerId');

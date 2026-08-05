@@ -75,10 +75,26 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
          selects a min-width and full-width on xs). -->
     <div class="row g-2 mt-1 ap-filters">
         <div class="col-auto">
+            <%#
+              Source list is registry-driven: every AssetManager provider
+              declaring the `search` capability becomes an option, labelled with
+              its own displayName. Hardcoding this list is what made the sist2
+              external index unreachable from the UI regardless of what it held.
+
+              Pages and Users are NOT asset providers — they are served by
+              SearchManager / UserManager — so they stay hardcoded below.
+
+              Option values are provider ids (`local`, `media-library`,
+              `sist2`). The older `attachment` / `media` values still work as
+              aliases server-side for bookmarks and the legacy `tab=` param.
+            %>
+            <% var _apSources = (typeof assetPickerSources !== 'undefined' && Array.isArray(assetPickerSources))
+                 ? assetPickerSources : []; %>
             <select id="ap-source" class="form-select" title="Asset source">
                 <option value="">All sources</option>
-                <option value="attachment">Attachments only</option>
-                <option value="media">Media library only</option>
+                <% _apSources.forEach(function (s) { %>
+                <option value="<%= s.id %>"><%= s.label %></option>
+                <% }); %>
                 <option value="page">Pages</option>
                 <option value="user">Users</option>
             </select>

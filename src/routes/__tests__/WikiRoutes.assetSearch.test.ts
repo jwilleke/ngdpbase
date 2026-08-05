@@ -135,9 +135,12 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
 
       await routes.assetSearch(req, res);
 
+      // Legacy `attachment` / `media` resolve to provider ids at the route
+      // boundary, so bookmarks and the old `tab=` param keep working while the
+      // service sees real ids.
       expect(service.search).toHaveBeenCalledWith(expect.objectContaining({
         query: 'beach',
-        types: ['attachment', 'media'],
+        types: ['local', 'media-library'],
         year: 2023,
         pageSize: 20,
         offset: 40
@@ -165,7 +168,11 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       await routes.assetSearch(req, res);
 
       const call = service.search.mock.calls[0][0];
-      expect(call.types).toEqual(['media', 'attachment']);
+      // Aliases resolve in submitted order, garbage is dropped. This engine
+      // mock has no AssetManager, so validation falls back to the two built-in
+      // provider ids — the filter must keep working when the registry is
+      // unreachable.
+      expect(call.types).toEqual(['media-library', 'local']);
     });
 
     it('caps pageSize at 200', async () => {
