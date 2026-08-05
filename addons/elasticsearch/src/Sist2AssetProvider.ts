@@ -16,13 +16,11 @@ import type { Client, estypes } from '@elastic/elasticsearch';
 type QueryDslQueryContainer = estypes.QueryDslQueryContainer;
 type QueryDslTextQueryType = estypes.QueryDslTextQueryType;
 type SortCombinations = estypes.SortCombinations;
-type AggregationsCalendarInterval = estypes.AggregationsCalendarInterval;
 import type {
   AssetProvider,
   AssetRecord,
   AssetPage,
   AssetQuery,
-  AssetAggregations,
   ProviderCapability
 } from '../../../dist/src/types/Asset.js';
 import type { Sist2Document } from './types.js';
@@ -197,21 +195,29 @@ export class Sist2AssetProvider implements AssetProvider {
       }
     };
 
-    // --- aggregations (#520) ---
-    const aggs = {
-      by_mime: { terms: { field: 'mime', size: 20 } },
-      by_year: {
-        date_histogram: {
-          field: 'mtime',
-          calendar_interval: 'year' as AggregationsCalendarInterval,
-          format: 'yyyy',
-          order: { _key: 'desc' as 'asc' | 'desc' }
-        }
-      },
-      by_folder: { terms: { field: 'path', size: 20 } },
-      by_extension: { terms: { field: 'extension', size: 20 } }
-    };
-
+    // #998: aggregations are NOT requested.
+    //
+    // They were added for the asset-picker facet sidebar (#520), which #745
+    // then removed — see the note in `views/_asset-picker.ejs`. Nothing has
+    // consumed them since: no view, route, addon page or client script reads
+    // `AssetPage.aggregations`.
+    //
+    // Meanwhile they were the sole reason External Asset Search returned
+    // nothing. `by_extension` aggregated on `extension`, which is a `text`
+    // field in `elasticsearch-nas` (it is a keyword in a native sist2 index),
+    // so every query died with:
+    //
+    //   illegal_argument_exception: Fielddata is disabled on [extension]
+    //
+    // `search()` has no try/catch, so that reached AssetManager, which caught
+    // it, logged a warn, and contributed zero results — leaving ~2M indexed
+    // documents unreachable from the picker while the health check correctly
+    // reported the provider green.
+    //
+    // Computing facets nobody renders, at the cost of the feature itself, is
+    // not a trade worth making. If a facet UI returns, restore this from git
+    // history and resolve the field names against the target index's mapping
+    // rather than assuming sist2's.
     const response = await this.esClient.search<Sist2Document>({
       index: this.esIndex,
       body: {
@@ -219,8 +225,7 @@ export class Sist2AssetProvider implements AssetProvider {
         sort,
         size,
         from,
-        _source: true,
-        aggs
+        _source: true
       }
     });
 
@@ -234,13 +239,10 @@ export class Sist2AssetProvider implements AssetProvider {
       .filter((h) => h._source !== undefined)
       .map((h) => this._hitToRecord(h._id ?? '', h._source as Sist2Document));
 
-    const aggregations = this._mapAggregations(response.aggregations);
-
     return {
       results,
       total,
-      hasMore: from + results.length < total,
-      ...(aggregations ? { aggregations } : {})
+      hasMore: from + results.length < total
     };
   }
 
@@ -386,32 +388,10 @@ export class Sist2AssetProvider implements AssetProvider {
     return [...paths];
   }
 
-  // ---------------------------------------------------------------------------
-  // _mapAggregations
-  // ---------------------------------------------------------------------------
-
-  private _mapAggregations(raw: unknown): AssetAggregations | undefined {
-    if (!raw || typeof raw !== 'object') return undefined;
-    const r = raw as Record<string, { buckets?: Array<{ key: string | number; doc_count: number; key_as_string?: string }> }>;
-
-    const toBuckets = (name: string): Array<{ key: string; count: number }> =>
-      (r[name]?.buckets ?? []).map((b) => ({
-        key: String(b.key_as_string ?? b.key),
-        count: b.doc_count
-      }));
-
-    const byMime = toBuckets('by_mime');
-    const byYear = toBuckets('by_year');
-    const byFolder = toBuckets('by_folder');
-    const byExtension = toBuckets('by_extension');
-
-    const result: AssetAggregations = {};
-    if (byMime.length) result.byMime = byMime;
-    if (byYear.length) result.byYear = byYear;
-    if (byFolder.length) result.byFolder = byFolder;
-    if (byExtension.length) result.byExtension = byExtension;
-    return Object.keys(result).length ? result : undefined;
-  }
+  // #998: `_mapAggregations` removed alongside the aggregation request in
+  // `search()`. It mapped ES bucket output into `AssetAggregations`, which no
+  // consumer has read since the facet sidebar was removed in #745. Recoverable
+  // from git history if a facet UI returns.
 
   // ---------------------------------------------------------------------------
   // _hitToRecord

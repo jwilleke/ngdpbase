@@ -205,6 +205,57 @@ describe('search()', () => {
     expect(page.results).toHaveLength(1);
     expect(page.results[0].providerId).toBe('sist2');
   });
+
+  // ── #998 — no aggregations are requested ─────────────────────────────────
+  //
+  // These facets (#520) fed the asset-picker sidebar that #745 deleted, so
+  // nothing has read `AssetPage.aggregations` since. On `elasticsearch-nas`
+  // the `by_extension` terms agg targeted a `text` field and every query died
+  // with "Fielddata is disabled on [extension]". `search()` has no try/catch,
+  // so AssetManager caught it, logged a warn, and the provider contributed
+  // zero results — ~2M documents unreachable while health reported green.
+  //
+  // Re-adding an aggregation re-arms that failure for any index whose mapping
+  // does not match sist2's, so it must not come back unnoticed.
+
+  test('#998 — search() requests no aggregations', async () => {
+    const client = makeClient({
+      search: vi.fn().mockResolvedValue(makeSearchResponse([], 0))
+    });
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+
+    await provider.search({ query: 'jpg' });
+
+    const body = client.search.mock.calls[0][0].body;
+    expect(body.aggs).toBeUndefined();
+    expect(body.aggregations).toBeUndefined();
+  });
+
+  test('#998 — no aggregations requested even with filters applied', async () => {
+    const client = makeClient({
+      search: vi.fn().mockResolvedValue(makeSearchResponse([], 0))
+    });
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [1, 2]);
+
+    await provider.search({ query: 'jpg', mimeCategory: 'image', year: 2024, extension: 'jpg' });
+
+    const body = client.search.mock.calls[0][0].body;
+    expect(body.aggs).toBeUndefined();
+  });
+
+  test('#998 — the returned page carries no aggregations key', async () => {
+    const doc = makeSist2Doc();
+    const client = makeClient({
+      search: vi.fn().mockResolvedValue(makeSearchResponse([doc], 1))
+    });
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+
+    const page = await provider.search({});
+
+    expect(page).not.toHaveProperty('aggregations');
+    // The results themselves are unaffected — that is the whole point.
+    expect(page.results).toHaveLength(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
