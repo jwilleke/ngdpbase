@@ -56,19 +56,20 @@ If anything fails, **stop**. Fix the failures and start again from Step 1. The w
 
 ### Step 5: Bump the version with `version.ts`
 
-ngdpbase ships its own version tool at `src/utils/version.ts` which keeps `package.json`, `config/app-default-config.json`, and `CHANGELOG.md` in lockstep. **Do not** edit those files by hand.
+ngdpbase ships its own version tool at `src/utils/version.ts` which keeps `package.json`, `package-lock.json`, `config/app-default-config.json`, and `CHANGELOG.md` in lockstep. **Do not** edit those files by hand.
 
 Run sequentially:
 
-- `node dist/src/utils/version.js <bump>` — bumps all three files in one shot. Output looks like `Version updated: 3.3.6 → 3.3.7`.
-- Stage the three updated files: `git add package.json config/app-default-config.json CHANGELOG.md`.
-  - Stage `package-lock.json` too only if it actually changed (rare for version-only edits).
+- `node dist/src/utils/version.js <bump>` — bumps all four files in one shot. Output looks like `Version updated: 3.3.6 → 3.3.7`.
+- Stage all four updated files: `git add package.json package-lock.json config/app-default-config.json CHANGELOG.md`.
+
+`package-lock.json` now **always** changes on a bump — the tool writes the two places the lockfile mirrors the project version (top-level `version` and `packages[""].version`). Before this, it was left stale, npm rewrote it on the next `npm install`, and every satellite checkout showed a two-line lockfile diff that had to be inspected and discarded by hand at each release. If you see that diff on a satellite now, it is **not** the old benign drift — investigate it.
 
 ### Step 5a: Capture a performance baseline + diff vs previous (#611)
 
 After the version bump (so the new `<VERSION>` is reflected in the filename) and before the release commit, capture a baseline snapshot **and** diff it against the most recent prior baseline in one shot:
 
-- `npm run test:baseline:compare` — runs `scripts/baseline-profile.sh --compare`. Writes `docs/performance/baseline-v<VERSION>-<DATE>.md` (or `-r2.md` etc. if a same-day same-version baseline already exists), then appends a "## Drift vs <previous>" section to it and prints the same table to stdout.
+- `npm run test:baseline:compare` — runs `scripts/baseline-profile.sh --compare`. Writes `docs/performance/baseline-v<VERSION>-<DATE>.md` (or `-r2.md` etc. if a same-day same-version baseline already exists), then appends a `## Drift vs <previous>` section to it and prints the same table to stdout.
 - Stage the new file: `git add docs/performance/baseline-v<VERSION>-*.md`.
 
 The plain `npm run test:baseline` is still available for non-release captures (just measure, no diff). Use `npm run test:baseline:cold` to also stop/start the server first (slower; only do this when a restart is already part of the plan).
@@ -145,7 +146,9 @@ Sister ngdpbase installs (e.g., The Fairways, the temp build) need to be told ab
 
 **Propagate only to the three instances above.** In particular, the locally-running **GeoHazardWatch** instance on port 3333 is a separate satellite with its own tracker, updated via the GHCR + Renovate delivery chain — *not* by this flow. Building in its working directory replaces `dist/` underneath a running server, silently staging a version the operator never chose to deploy.
 
-If a site has uncommitted local diffs that block the pull (typically `package-lock.json` from a prior build, or the seed required-pages file from an auto-migration), the pattern that's worked across past releases is `git checkout -- <file>` for the known-identical-to-master files, then re-run the pull. Untracked working notes in `private/` and similar are fine to leave alone.
+If a site has uncommitted local diffs that block the pull (typically the seed required-pages file from an auto-migration), the pattern that's worked across past releases is `git checkout -- <file>` for the known-identical-to-master files, then re-run the pull. Untracked working notes in `private/` and similar are fine to leave alone.
+
+**Read the diff before discarding it.** `package-lock.json` used to show up here every release as a benign two-line version-string drift, and reflexive `git checkout --` became the habit. Step 5 now keeps the lockfile in lockstep, so that drift should no longer appear — a lockfile diff on a satellite today is a real change worth reading, not the old noise.
 
 ### Step 9: Report
 

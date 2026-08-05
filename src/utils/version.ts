@@ -35,6 +35,7 @@ function findProjectRoot(): string {
 
 const PROJECT_ROOT = findProjectRoot();
 const PACKAGE_JSON_PATH = path.join(PROJECT_ROOT, 'package.json');
+const PACKAGE_LOCK_PATH = path.join(PROJECT_ROOT, 'package-lock.json');
 const CHANGELOG_PATH = path.join(PROJECT_ROOT, 'CHANGELOG.md');
 const APP_CONFIG_PATH = path.join(PROJECT_ROOT, 'config/app-default-config.json');
 
@@ -107,6 +108,72 @@ function updateAppConfig(newVersion: string): void {
   } catch (error) {
     console.warn('Warning: Could not update app-default-config.json:', (error as Error).message);
   }
+}
+
+/**
+ * Update the version fields in package-lock.json.
+ *
+ * The lockfile mirrors the project version in two places — the top-level
+ * `version` and the root package entry `packages[""].version` — and npm rewrites
+ * both on the next `npm install`. Leaving them behind meant every satellite
+ * checkout showed a two-line `package-lock.json` diff after any build, which had
+ * to be inspected and discarded by hand at every release. Keeping them in
+ * lockstep here removes the drift at the source.
+ *
+ * A parse → mutate → `JSON.stringify(…, null, 2)` round-trip is byte-identical
+ * to npm's own formatting for this lockfile, so this rewrites exactly the two
+ * version lines and nothing else. Dependency resolution is untouched: only the
+ * project's own version is edited, never any package entry.
+ *
+ * Warns rather than fails — a missing or unparseable lockfile must not abort a
+ * release, matching how a missing app-default-config.json is handled.
+ *
+ * @param {string} newVersion - New version string
+ */
+function updatePackageLock(newVersion: string): void {
+  try {
+    if (!fs.existsSync(PACKAGE_LOCK_PATH)) {
+      console.warn('Warning: package-lock.json not found, skipping');
+      return;
+    }
+    const content = fs.readFileSync(PACKAGE_LOCK_PATH, 'utf8');
+    const lock = applyVersionToLock(JSON.parse(content) as PackageLock, newVersion);
+    fs.writeFileSync(PACKAGE_LOCK_PATH, JSON.stringify(lock, null, 2) + '\n');
+    console.log(`Updated package-lock.json with version ${newVersion}`);
+  } catch (error) {
+    console.warn('Warning: Could not update package-lock.json:', (error as Error).message);
+  }
+}
+
+/**
+ * Minimal shape of the parts of package-lock.json this tool touches.
+ */
+export interface PackageLock {
+  version?: string;
+  lockfileVersion?: number;
+  packages?: Record<string, { version?: string; [key: string]: unknown }>;
+  [key: string]: unknown;
+}
+
+/**
+ * Set the project's own version in a parsed lockfile — the pure half of
+ * {@link updatePackageLock}, split out so the mapping is testable without
+ * touching the filesystem.
+ *
+ * Writes exactly two fields: the top-level `version` and the root package entry
+ * `packages[""].version`. Dependency entries are never touched — only npm may
+ * change those, and rewriting one here would corrupt resolution.
+ *
+ * @param {PackageLock} lock - Parsed lockfile (mutated in place and returned)
+ * @param {string} newVersion - New version string
+ * @returns {PackageLock} The same object, for convenient chaining
+ */
+export function applyVersionToLock(lock: PackageLock, newVersion: string): PackageLock {
+  lock.version = newVersion;
+  // lockfileVersion 1 has no `packages` map — guard rather than assume v2/v3.
+  const rootEntry = lock.packages?.[''];
+  if (rootEntry) rootEntry.version = newVersion;
+  return lock;
 }
 
 /**
@@ -333,6 +400,9 @@ function main(): void {
     // Update package.json
     packageData.version = newVersion;
     writePackageJson(packageData);
+
+    // Update package-lock.json (its two version fields mirror package.json)
+    updatePackageLock(newVersion);
 
     // Update app-default-config.json
     updateAppConfig(newVersion);
