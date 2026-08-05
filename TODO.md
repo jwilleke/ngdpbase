@@ -6,30 +6,31 @@ user-keywords:
 - planning
 - roadmap
 uuid: 124f3d52-75a0-4e61-8008-de37d1da4ef6
-lastModified: '2026-08-04T13:00:00.000Z'
+lastModified: '2026-08-05T18:00:00.000Z'
 slug: ngdpbase-todo
 ---
 
 # Project Development TODO
 
 <!-- RESUME:START -->
-## ▶ Resume here — 2026-08-04
+## ▶ Resume here — 2026-08-05
 
-- Last worked on: released **v4.3.0** (4.2.0 → 4.3.0, 15 commits). Shipped the post-#1009 dependency wave (#1016), the `/save` provenance-loss fix (#1017), the magic-link GET-consumption fix (#1019) and the capture block restructure (#1018). Also split #1007 into #1019–#1022 and reranked PRs into the priority bands in `/pstatus`.
-- Branch / state: `master`, clean, 0 unpushed, 0 stashes. Tag `v4.3.0` pushed, GitHub Release published, all CI green including the v4.3.0 Docker build.
-- Running / in-flight: none from this session. The four pm2 instances run continuously and were all restarted onto 4.3.0 — jimstest (:3000), The Fairways (:2121), temp build (:3001); GeoHazardWatch (:3333) untouched, it updates via the GHCR + Renovate chain.
+- Last worked on: released **v4.4.0** (4.3.0 → 4.4.0, 7 commits). Root-caused and fixed #998 (the `by_extension` aggregation on a `text` field was zeroing the whole provider), closed the robustness gap behind it, and shipped #1023 — the picker source dropdown is now built from the AssetManager registry, so **External Asset Index** is directly selectable.
+- Branch / state: `master`, clean, 0 unpushed, 0 stashes. Tag `v4.4.0` pushed, GitHub Release published.
+- Running / in-flight: none from this session. All three ngdpbase instances restarted onto 4.4.0 — jimstest (:3000), The Fairways (:2121), temp build (:3001). GeoHazardWatch (:3333) untouched; it updates via the GHCR + Renovate chain.
 - Parked / half-done: none.
 - Next steps:
-  - **#998** — elasticsearch addon, sist2 SOURCE index misconfigured. Silent failure (External Asset Search returns empty rather than erroring), so it hides. Likely needs the live `deby` cluster to reproduce — treat as an investigation session, not a quick fix.
-  - Then **#898** — storybook route-map orphans a `route.png` per regeneration.
+  - **Verify the picker** — `/search` logged in → source **External Asset Index** → search `jpg`. NAS files should return with the NAS path as the description line. This is the last unverified hop for #998 and #1023, and it cannot be done from an agent session.
+  - **#898** is the only remaining P1 and it is **blocked**: the storybook generator is not in this repo, so the first task is locating the producer (operator-side / cross-repo), not writing code.
   - Drop one label from **#602** — it carries both `P2` and `deferred`, so its band is ambiguous. Kept in P2 and annotated rather than moved silently.
 - Blockers / significant notes:
-  - Two v4.3.0 changes are **live but never exercised by a human**: the magic-link happy path (#1019 — needs `ngdpbase.auth.magic-link.enabled` plus a mail provider; disabled on jimstest, so only error paths were verified) and a real bookmarklet capture (#1018 — unit-tested only). Both need the operator; neither can be checked from an agent session.
-  - `/admin/reindex` is unreachable from an agent session — no CLI, every `rebuildIndex` path is behind an authenticated HTTP route, and the Chrome extension is not connected. The workaround used this session: **stop the server → delete `documents.json` → start**. Deleting it while the server runs is a silent no-op, because the live process re-persists its in-memory map before the new one boots. The boot log distinguishes them: `No persisted documents found` (cold, correct) vs `Loaded N documents from disk` (fast path, delete ignored).
-  - Root `package-lock.json` on master carries a stale `version` field — `version.ts` does not touch it. That is the source of the recurring benign satellite lockfile drift at every release; it is not a satellite problem.
+  - Three shipped changes are **live but never exercised by a human**: NAS results in the picker (#998/#1023), the magic-link happy path (#1019 — needs magic-link enabled plus a mail provider), and a real bookmarklet capture (#1018). All need the operator.
+  - **Addon changes: vitest resolves the compiled `.js`.** Verifying a test actually fails requires stashing the `.ts` AND recompiling the addon — a `.ts`-only stash still passes. Hit twice now (#963, #998).
+  - `/admin/reindex` is unreachable from an agent session. Workaround: **stop the server → delete `documents.json` → start**. Deleting it while the server runs is a silent no-op — the live process re-persists its in-memory map before the new one boots. Boot log tells them apart: `No persisted documents found` (cold, correct) vs `Loaded N documents from disk` (delete ignored).
+  - The recurring satellite `package-lock.json` drift is **fixed** (`da4c44af`) and confirmed gone — v4.4.0 was the first propagation where `npm install` produced no lockfile diff on either satellite. A lockfile diff there now is a real change worth reading.
 <!-- RESUME:END -->
 
-Generated priority mirror of open GitHub issues and pull requests — the `P0` / `P1` / `P2` / `in-review` / `deferred` labels are the source of truth. Issues and PRs are ranked in the same bands by the same priority; within a band, PRs sort above issues. Regenerated by `/pstatus` (2026-08-04, at v4.3.0). For live state run `/pstatus`. Prior hand-curated narrative is in this file's git history.
+Generated priority mirror of open GitHub issues and pull requests — the `P0` / `P1` / `P2` / `in-review` / `deferred` labels are the source of truth. Issues and PRs are ranked in the same bands by the same priority; within a band, PRs sort above issues. Regenerated by `/pstatus` (2026-08-05, at v4.4.0). For live state run `/pstatus`. Prior hand-curated narrative is in this file's git history.
 
 ## 🔴 P0 — Security & Critical
 
@@ -41,8 +42,7 @@ Scanner state: 1 open Dependabot alert + 2 open code-scanning alerts, all three 
 
 ## 🟠 P1
 
-- [#998](https://github.com/jwilleke/ngdpbase/issues/998) — [BUG] elasticsearch addon: sist2 SOURCE index misconfigured — External Asset Search silently returns nothing
-- [#898](https://github.com/jwilleke/ngdpbase/issues/898) — [BUG] Storybook route-map generation orphans a route.png attachment on every regeneration
+- [#898](https://github.com/jwilleke/ngdpbase/issues/898) — [BUG] Storybook route-map generation orphans a route.png attachment on every regeneration — *blocked: the generator is not in this repo; first task is locating the producer (operator-side / cross-repo)*
 
 ## 🟡 P2
 
@@ -66,6 +66,8 @@ Scanner state: 1 open Dependabot alert + 2 open code-scanning alerts, all three 
 
 ## 🔵 In review
 
+- [#998](https://github.com/jwilleke/ngdpbase/issues/998) — [BUG] elasticsearch addon: sist2 SOURCE index misconfigured — External Asset Search silently returns nothing — *fixed in `22a88de7` + `41c837ea`, released in v4.4.0. Root cause was the `by_extension` aggregation on a `text` field, not provider selection. Needs your eyeball: `/search` → External Asset Index → NAS paths appear*
+- [#1023](https://github.com/jwilleke/ngdpbase/issues/1023) — [FEATURE] Asset-picker source dropdown built from the provider registry — *shipped in `94fd1d27`, released in v4.4.0; External Asset Index is now directly selectable. Same eyeball as #998*
 - [#1019](https://github.com/jwilleke/ngdpbase/issues/1019) — [BUG] Magic link is consumed by a GET — email security scanners burn the token before the user clicks — *fixed in `a022aa55`, released in v4.3.0; verification split into a side-effect-free GET interstitial + a CSRF-guarded POST. Happy path still not live-verified — magic-link is disabled on jimstest with no mail provider*
 - [#969](https://github.com/jwilleke/ngdpbase/issues/969) — [FEATURE] Admin trash view — restore and purge soft-deleted pages from the UI — *shipped in `323eac34`, released in v4.2.0; populated table, restore, purge and the 409 path unverified — jimstest has zero deleted pages*
 
