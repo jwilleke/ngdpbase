@@ -43,6 +43,7 @@ Scanner state: 1 open Dependabot alert + 2 open code-scanning alerts, all three 
 ## 🟠 P1
 
 - [#898](https://github.com/jwilleke/ngdpbase/issues/898) — [BUG] Storybook route-map generation orphans a route.png attachment on every regeneration — *blocked: the generator is not in this repo; first task is locating the producer (operator-side / cross-repo)*
+- [#1024](https://github.com/jwilleke/ngdpbase/issues/1024) — [BUG] Wiki-link section anchors broken: [Page#slug] renders as redlink to /edit/ — *fixed in `05911227`, verified live on :3000; awaiting `in-review` label*
 
 ## 🟡 P2
 
