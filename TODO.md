@@ -42,9 +42,9 @@ Scanner state: 1 open Dependabot alert (#96) + 2 open code-scanning alerts (#33,
 - [#886](https://github.com/jwilleke/ngdpbase/issues/886) — [FEATURE] OpenGraph + schema.org meta tags on page views (config-gated)
 - [#921](https://github.com/jwilleke/ngdpbase/issues/921) — [FEATURE] Dawarich timeline as live storybook source (Tier-2) — /timeline + /tracks into the generator
 - [#1006](https://github.com/jwilleke/ngdpbase/issues/1006) — [FEATURE] BaseManager.getStats() — one uniform 'what do you hold' contract across managers
-- [#1020](https://github.com/jwilleke/ngdpbase/issues/1020) — [FEATURE] Magic link: add an IP-based request throttle (per-email throttle already exists)
-- [#1021](https://github.com/jwilleke/ngdpbase/issues/1021) — [FEATURE] Magic link: close the non-atomic verify→consume window (one token can mint two sessions)
+- [#1021](https://github.com/jwilleke/ngdpbase/issues/1021) — [FEATURE] Magic link: close the non-atomic verify→consume window (one token can mint two sessions) — *more reachable now that magic link is a public signup path*
 - [#1022](https://github.com/jwilleke/ngdpbase/issues/1022) — [FEATURE] Magic link: optional device/state binding + record IP and User-Agent at redemption
+- [#1026](https://github.com/jwilleke/ngdpbase/issues/1026) — [FEATURE] Magic-link registration — passwordless signup as the only account path — *code shipped in `e96df90c`/`394b954c`; needs a release, then Resend secrets + Cloudflare route. Infra PR open: [mj-infra-flux#149](https://github.com/jwilleke/mj-infra-flux/pull/149)*
 
 ## 🔵 In review
 
