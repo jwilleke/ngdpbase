@@ -49,9 +49,7 @@ Scanner state: 1 open Dependabot alert (#96) + 2 open code-scanning alerts (#33,
 ## 🔵 In review
 
 - [#969](https://github.com/jwilleke/ngdpbase/issues/969) — [FEATURE] Admin trash view — restore and purge soft-deleted pages from the UI
-- [#998](https://github.com/jwilleke/ngdpbase/issues/998) — [BUG] elasticsearch addon: sist2 SOURCE index misconfigured — External Asset Search silently returns nothing — *shipped in v4.4.0; the picker hop has never been exercised by a human*
 - [#1019](https://github.com/jwilleke/ngdpbase/issues/1019) — [BUG] Magic link is consumed by a GET — email security scanners burn the token before the user clicks — *needs magic-link enabled plus a mail provider to verify*
-- [#1023](https://github.com/jwilleke/ngdpbase/issues/1023) — [FEATURE] Asset-picker source dropdown should be built from the provider registry, not hardcoded — *shipped in v4.4.0, same unverified hop as #998*
 - [#1024](https://github.com/jwilleke/ngdpbase/issues/1024) — [BUG] Wiki-link section anchors broken: [Page#slug] renders as redlink to /edit/ — *fixed in `05911227`, verified live on :3000; new "Using Links" page synced*
 
 ## ⏸ Deferred
