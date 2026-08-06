@@ -128,6 +128,11 @@
                     <a class="btn btn-outline-primary btn-sm me-2" href="/login?redirect=<%= encodeURIComponent(typeof pageName !== 'undefined' && pageName ? `/view/${pageName}` : '/') %>"><i class="fas fa-sign-in-alt"></i> Login</a>
                     <% if (typeof allowRegistration === 'undefined' || allowRegistration) { %>
                         <a class="btn btn-primary btn-sm" href="/register"><i class="fas fa-user-plus"></i> Register</a>
+                    <% } else if (typeof magicLinkSignup !== 'undefined' && magicLinkSignup) { %>
+                        <%# #1026: the password form is off but signup IS open via magic link.
+                            Sending visitors to "Request access" here would tell them registration
+                            is closed when in fact anyone can create an account with an email. %>
+                        <a class="btn btn-primary btn-sm" href="/login?redirect=<%= encodeURIComponent(typeof pageName !== 'undefined' && pageName ? `/view/${pageName}` : '/') %>"><i class="fas fa-envelope"></i> Sign up with email</a>
                     <% } else { %>
                         <a class="btn btn-outline-primary btn-sm" href="/view/<%= typeof registrationRedirectPage !== 'undefined' && registrationRedirectPage ? registrationRedirectPage : 'request-access' %>"><i class="fas fa-user-plus"></i> Request access</a>
                     <% } %>

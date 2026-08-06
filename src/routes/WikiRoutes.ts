@@ -800,6 +800,12 @@ class WikiRoutes {
     // where magic link is the only signup path, a Register button pointing at
     // /register would land the visitor on a 404.
     const allowRegistration = this.isPasswordRegistrationEnabled();
+
+    // #1026: signup is still open when the password form is off but magic-link
+    // auto-provision is on. Without this the header falls through to "Request
+    // access" and the seeded page tells the visitor registration is closed —
+    // exactly wrong on an instance where anyone can sign up with an email.
+    const magicLinkSignup = this.isMagicLinkSignupEnabled();
     const registrationRedirectPage = (configManager?.getProperty(
       'ngdpbase.application.registration.redirect-page',
       'request-access'
@@ -855,6 +861,7 @@ class WikiRoutes {
       addonStylesheets: string[];
       capabilities: Record<string, boolean>;
       allowRegistration: boolean;
+      magicLinkSignup: boolean;
       registrationRedirectPage: string;
       contactAvailable: boolean;
       contactFooterEnabled: boolean;
@@ -898,6 +905,7 @@ class WikiRoutes {
       addonStylesheets,
       capabilities: this.engine.getCapabilities?.() ?? {},
       allowRegistration,
+      magicLinkSignup,
       registrationRedirectPage,
       contactAvailable,
       contactFooterEnabled
@@ -6247,6 +6255,35 @@ ${panes}
     res.set('Retry-After', String(Math.ceil(rl.retryAfterMs / 1000)));
     res.status(429).send('Too many requests. Please try again later.');
     return false;
+  }
+
+  /**
+   * Whether a visitor with no account can obtain one via a magic link (#1026).
+   *
+   * All three must hold: the master registration policy, the magic-link
+   * provider being enabled, and its auto-provision toggle. Used by the header
+   * so an instance with the password form off still advertises that signup is
+   * available rather than sending visitors to a "registration is closed" page.
+   */
+  private isMagicLinkSignupEnabled(): boolean {
+    const configManager = this.engine.getManager('ConfigurationManager');
+
+    const allowReg = (configManager?.getProperty(
+      'ngdpbase.application.registration',
+      true
+    ) as boolean | undefined) ?? true;
+    if (!allowReg) return false;
+
+    const magicLinkEnabled = (configManager?.getProperty(
+      'ngdpbase.auth.magic-link.enabled',
+      false
+    ) as boolean | undefined) ?? false;
+    if (!magicLinkEnabled) return false;
+
+    return (configManager?.getProperty(
+      'ngdpbase.auth.magic-link.auto-provision',
+      false
+    ) as boolean | undefined) ?? false;
   }
 
   private isPasswordRegistrationEnabled(): boolean {

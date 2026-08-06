@@ -36,7 +36,7 @@
                                     <% } %>
                                     <p><strong>Account Type:</strong> 
                                         <% if (user.isExternal) { %>
-                                            <span class="badge bg-info text-dark">OAuth/External</span>
+                                            <span class="badge bg-info text-dark">Passwordless</span>
                                         <% } else { %>
                                             <span class="badge bg-primary">Local Account</span>
                                         <% } %>
@@ -542,10 +542,16 @@
                             </div>
                             <% } else { %>
                             <div class="col-md-6">
+                                <%# #1026: isExternal covers every passwordless account, not just
+                                    OAuth — magic-link signups are external too, and telling those
+                                    users to go change a password at "their OAuth provider" names a
+                                    provider that does not exist. Wording now describes the account
+                                    accurately without asserting how it was created. %>
                                 <div class="alert alert-info">
-                                    <h5><i class="fas fa-info-circle"></i> OAuth Account</h5>
-                                    <p class="mb-0">Your account is managed by an external OAuth provider. 
-                                    Password changes must be made through your OAuth provider's system.</p>
+                                    <h5><i class="fas fa-info-circle"></i> Passwordless account</h5>
+                                    <p class="mb-0">This account has no password. You sign in with an email
+                                    sign-in link, or through an external identity provider — so there is
+                                    nothing to change here.</p>
                                 </div>
                             </div>
                             <% } %>
