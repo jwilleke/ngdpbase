@@ -33,8 +33,22 @@ Two related keys, both in your instance config at
 
 | Key | Default | Description |
 |---|---|---|
-| `ngdpbase.application.registration` | `true` | Master toggle. `false` disables `/register` and changes the header button. |
-| `ngdpbase.application.registration.redirect-page` | `"request-access"` | Slug of the wiki page the **Request access** button links to. Operator-editable through the normal page-edit UI. |
+| `ngdpbase.application.registration` | `true` | Master toggle. `false` disables **every** signup path and changes the header button. |
+| `ngdpbase.application.registration.password` | `true` | Password `/register` form only (#1026). `false` 404s the form while leaving other signup paths working. |
+| `ngdpbase.application.registration.redirect-page` | `"request-access"` | Slug of the page the **Request access** button links to. Operator-editable through the normal page-edit UI. |
+
+### How the layers fit together
+
+Registration is a master policy with one toggle per mechanism beneath it. The master answers *may any path create an account*; each mechanism answers *may this particular door*.
+
+```text
+master : application.registration             = true
+  ├ password form : registration.password     = true
+  ├ magic link    : auth.magic-link.auto-provision = false
+  └ google oidc   : auth.google-oidc.auto-provision
+```
+
+With the master `false`, every mechanism below it is off regardless of its own setting.
 
 ### Minimal example — disable self-registration
 
@@ -107,6 +121,39 @@ admin → navigate → Edit). Edit history, ACLs, and reverts all work as usual.
 
 - **Embedded contact form on the redirect page** — drop a `[{Form …}]` plugin invocation onto whichever page the button lands on. See [`docs/admin/email-setup.md`](./email-setup.md) for the contact-form recipient resolution rules. Form submissions route to whichever address `ngdpbase.application.contact.recipient` resolves to.
 - **External link** — redirect to a SaaS form (Google Forms, Typeform, etc.) by linking out from the page body. The header button still lands the visitor on the configured `redirect-page` first.
+
+---
+
+## Magic-link-only signup (#1026)
+
+To run an instance where an **email link is the only way to get an account** — no passwords issued to self-registered users at all:
+
+```json
+{
+  "ngdpbase.application.registration": true,
+  "ngdpbase.application.registration.password": false,
+  "ngdpbase.auth.magic-link.enabled": true,
+  "ngdpbase.auth.magic-link.auto-provision": true,
+  "ngdpbase.auth.magic-link.registration.default-role": "contributor",
+  "ngdpbase.mail.enabled": true,
+  "ngdpbase.application.base-url": "https://wiki.example.com"
+}
+```
+
+| Key | Default | Description |
+|---|---|---|
+| `ngdpbase.auth.magic-link.auto-provision` | `false` | `true` lets an address with no account receive a link and have the account created when that link is verified. |
+| `ngdpbase.auth.magic-link.registration.default-role` | `"reader"` | Role given to those accounts. An unknown role name falls back to `reader` with a warning. |
+
+Behaviour worth knowing:
+
+- **The account is created on verify, not on request.** An address nobody controls never becomes an account, and requests sprayed at other people's addresses leave nothing behind.
+- **These accounts have no password.** They are created `isExternal`, which stores an empty password hash; `verifyPassword` compares a SHA-256 digest against it and a digest is never empty, so no password input can ever log them in.
+- **Unknown addresses stay unenumerable.** A known and an unknown address get the same response, status and timing. Only the recipient sees the difference.
+- **`base-url` must be set explicitly** or the magic-link provider refuses to register at all (#642) — a token in a URL is a credential and must not point at the localhost default.
+- **Tokens live in memory.** A restart invalidates every outstanding link.
+
+> **Anti-abuse.** Open magic-link signup means anyone can make the instance send mail to any address they type. `POST /register` and `POST /auth/magic-link` share the per-IP budget in `ngdpbase.mail.rate-limit.*` — keep it enabled on any public instance. Relay free tiers are commonly ~100 sends/day, and an unthrottled script exhausts that quickly enough that links stop arriving for real users.
 
 ---
 

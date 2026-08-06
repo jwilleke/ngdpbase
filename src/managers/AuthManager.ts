@@ -252,6 +252,21 @@ class AuthManager extends BaseManager {
   }
 
   /**
+   * Create the account behind a new-user magic-link token (#1026).
+   *
+   * Must be called before `authenticate('magic-link', …)` on the completing
+   * POST, because the account has to exist before a session names it. No-op
+   * for a token belonging to an existing user.
+   *
+   * @returns false if the token is unusable — treat as a failed sign-in
+   */
+  async provisionMagicLinkUser(token: string): Promise<boolean> {
+    const provider = this.providers.get('magic-link') as MagicLinkAuthProvider | undefined;
+    if (!provider) return false;
+    return provider.provisionIfNew(token);
+  }
+
+  /**
    * Generate Google OIDC authorization URL and store state nonce.
    * Returns the URL to redirect the browser to.
    */

@@ -25,6 +25,7 @@ import type {
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type UserManager from '../managers/UserManager.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
+import { deriveUsername } from '../utils/deriveUsername.js';
 import logger from '../utils/logger.js';
 
 export interface GoogleOIDCConfig {
@@ -236,24 +237,12 @@ export class GoogleOIDCProvider implements AuthProvider {
 
   /**
    * Derive a username from an email address, de-duping if already taken.
+   *
+   * Delegates to the shared helper (#1026) so magic-link auto-provisioning
+   * derives the same username for the same address that OIDC would.
    */
-  private async deriveUsername(email: string, userManager: UserManager): Promise<string> {
-    const base = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '-');
-    let candidate = base;
-    let n = 2;
-    while (await this.usernameExists(candidate, userManager)) {
-      candidate = `${base}-${n++}`;
-    }
-    return candidate;
-  }
-
-  private async usernameExists(username: string, userManager: UserManager): Promise<boolean> {
-    try {
-      const u = await userManager.getUser(username);
-      return u !== undefined;
-    } catch {
-      return false;
-    }
+  private deriveUsername(email: string, userManager: UserManager): Promise<string> {
+    return deriveUsername(email, userManager);
   }
 
   private cleanupExpired(): void {

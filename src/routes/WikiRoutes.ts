@@ -381,6 +381,23 @@ export const shareRateLimiter = new SimpleRateLimiter({ max: 600, windowMs: 10 *
  */
 export const agentMutationRateLimiter = new SimpleRateLimiter({ max: 60, windowMs: 60 * 1000 });
 
+/**
+ * Per-IP limiter for the two account-signup surfaces (#1026, closes #1020):
+ * `POST /register` and `POST /auth/magic-link`.
+ *
+ * Both were previously unlimited from a single source. The magic-link path had
+ * only a 1-per-email-per-60s throttle inside the provider, which a caller
+ * sidesteps entirely by varying the address — and since each request sends
+ * mail, that made an open instance a mail-sending primitive aimed at arbitrary
+ * third parties. With a typical relay free tier around 100 sends/day, one
+ * script also exhausts the quota and links stop arriving for real users.
+ *
+ * Deliberately shares the `ngdpbase.mail.rate-limit.*` config the contact form
+ * uses — `app-default-config.json` already names re-enabled `/register` as an
+ * intended consumer of those flags. Exported so tests can call `.reset()`.
+ */
+export const signupRateLimiter = new SimpleRateLimiter({ max: 5, windowMs: 15 * 60 * 1000 });
+
 const imageStorage: StorageEngine = multer.diskStorage({
   destination: (_req: Request, _file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {
     const uploadDir = path.join(__dirname, '../../public/images');
@@ -778,10 +795,11 @@ class WikiRoutes {
     const addonsManager = this.engine.getManager('AddonsManager');
     const addonStylesheets: string[] = addonsManager?.getRegisteredStylesheets?.() ?? [];
 
-    const allowRegistration = (configManager?.getProperty(
-      'ngdpbase.application.registration',
-      true
-    ) as boolean) ?? true;
+    // Drives the header's Register / Request access button. Reads the password
+    // mechanism specifically (#1026), not the master policy: on an instance
+    // where magic link is the only signup path, a Register button pointing at
+    // /register would land the visitor on a 404.
+    const allowRegistration = this.isPasswordRegistrationEnabled();
     const registrationRedirectPage = (configManager?.getProperty(
       'ngdpbase.application.registration.redirect-page',
       'request-access'
@@ -5542,6 +5560,11 @@ ${panes}
    */
   async requestMagicLink(req: Request, res: Response) {
     try {
+      // #1026 (closes #1020): per-IP budget. The provider's own throttle is
+      // per-email, which a caller varying the address bypasses entirely — and
+      // every request here sends mail to an address the caller chose.
+      if (!this.enforceSignupRateLimit(req, res, 'requestMagicLink')) return;
+
       const { email, redirect = '/' } = req.body;
       const authManager = this.engine.getManager('AuthManager');
 
@@ -5620,6 +5643,18 @@ ${panes}
 
       // Read the redirect before consuming — consumeToken() deletes the entry.
       const redirect = authManager.getMagicLinkRedirect(token);
+
+      // #1026: for a link issued to an address with no account, create it now.
+      // Deliberately on the POST, not the GET above — a mail scanner following
+      // the link must not be able to bring an account into existence, for the
+      // same reason it must not consume the token (#1019).
+      // Optional call: an AuthManager without the capability has nothing to
+      // provision, which is not a sign-in failure. Only an explicit false —
+      // the provider tried to create the account and could not — is fatal.
+      const provisioned = await authManager.provisionMagicLinkUser?.(token);
+      if (provisioned === false) {
+        return res.redirect('/login?error=Link+expired+or+already+used');
+      }
 
       const result = await authManager.authenticate('magic-link', { token });
       if (!result.success) {
@@ -6166,21 +6201,81 @@ ${panes}
   }
 
   /**
+   * Whether the password `/register` form is available (#1026).
+   *
+   * Two layers, mirroring the model `GoogleOIDCProvider` already uses:
+   * `ngdpbase.application.registration` is the master policy — when it is
+   * false, no path may create an account. Below it,
+   * `ngdpbase.application.registration.password` turns off *this mechanism*
+   * only, so an instance can allow signup while making magic link the sole
+   * way in. Defaults to true, so existing deploys are unchanged.
+   */
+  /**
+   * Per-IP rate limit for the account-signup surfaces (#1026, closes #1020).
+   *
+   * Shares the `ngdpbase.mail.rate-limit.*` config with the contact form, so an
+   * operator tunes one budget for every unauthenticated mail-sending form.
+   *
+   * @returns true when the request may proceed; when false, a 429 has already
+   *          been sent and the caller must return immediately
+   */
+  private enforceSignupRateLimit(req: Request, res: Response, what: string): boolean {
+    const configManager = this.engine.getManager('ConfigurationManager');
+
+    const enabled = (configManager?.getProperty(
+      'ngdpbase.mail.rate-limit.enabled',
+      true
+    ) as boolean | undefined) ?? true;
+    if (!enabled) return true;
+
+    const max = (configManager?.getProperty(
+      'ngdpbase.mail.rate-limit.max-submissions',
+      5
+    ) as number | undefined) ?? 5;
+    const windowMin = (configManager?.getProperty(
+      'ngdpbase.mail.rate-limit.window-minutes',
+      15
+    ) as number | undefined) ?? 15;
+
+    signupRateLimiter.configure({ max, windowMs: windowMin * 60 * 1000 });
+
+    const limitKey = req.ip || 'unknown';
+    const rl = signupRateLimiter.consume(limitKey);
+    if (rl.allowed) return true;
+
+    logger.warn(`[${what}] rate limited ip=${limitKey}`);
+    res.set('Retry-After', String(Math.ceil(rl.retryAfterMs / 1000)));
+    res.status(429).send('Too many requests. Please try again later.');
+    return false;
+  }
+
+  private isPasswordRegistrationEnabled(): boolean {
+    const configManager = this.engine.getManager('ConfigurationManager');
+    const allowReg = (configManager?.getProperty(
+      'ngdpbase.application.registration',
+      true
+    ) as boolean | undefined) ?? true;
+    if (!allowReg) return false;
+
+    return (configManager?.getProperty(
+      'ngdpbase.application.registration.password',
+      true
+    ) as boolean | undefined) ?? true;
+  }
+
+  /**
    * Registration page
    *
    * Returns 404 when self-registration is disabled
-   * (`ngdpbase.application.registration: false`). Operators who lock down
-   * registration repurpose the header button to a "Request access" wiki page
-   * — see `getCommonTemplateData()` and `views/header.ejs`.
+   * (`ngdpbase.application.registration: false`) or when the password
+   * mechanism specifically is off (`…registration.password: false`, #1026).
+   * Operators who lock down registration repurpose the header button to a
+   * "Request access" wiki page — see `getCommonTemplateData()` and
+   * `views/header.ejs`.
    */
   async registerPage(req: Request, res: Response) {
     try {
-      const configManager = this.engine.getManager('ConfigurationManager');
-      const allowReg = (configManager?.getProperty(
-        'ngdpbase.application.registration',
-        true
-      ) as boolean | undefined) ?? true;
-      if (!allowReg) {
+      if (!this.isPasswordRegistrationEnabled()) {
         res.status(404).send('Not found');
         return;
       }
@@ -6203,21 +6298,21 @@ ${panes}
    * Process registration
    *
    * Returns 404 when self-registration is disabled
-   * (`ngdpbase.application.registration: false`). Defence in depth — the GET
-   * route also 404s, but rejecting the POST keeps the flag honest if the
-   * route is somehow reachable (test harness, future refactor).
+   * (`ngdpbase.application.registration: false`) or when the password
+   * mechanism is off (`…registration.password: false`, #1026). Defence in
+   * depth — the GET route also 404s, but rejecting the POST keeps the flags
+   * honest if the route is somehow reachable (test harness, future refactor).
    */
   async processRegister(req: Request, res: Response) {
     try {
-      const configManager = this.engine.getManager('ConfigurationManager');
-      const allowReg = (configManager?.getProperty(
-        'ngdpbase.application.registration',
-        true
-      ) as boolean | undefined) ?? true;
-      if (!allowReg) {
+      if (!this.isPasswordRegistrationEnabled()) {
         res.status(404).send('Not found');
         return;
       }
+
+      // #1026: 404 first, then rate limit — an instance with the form off
+      // should look identical whether or not the caller is being throttled.
+      if (!this.enforceSignupRateLimit(req, res, 'processRegister')) return;
 
       const { username, email, displayName, password, confirmPassword } =
         req.body;

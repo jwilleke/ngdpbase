@@ -31,13 +31,21 @@ import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import type UserManager from '../managers/UserManager.js';
 import type { MailProvider } from '../mail/MailProvider.js';
+import { deriveUsername } from '../utils/deriveUsername.js';
 import logger from '../utils/logger.js';
 
 interface TokenEntry {
+  /**
+   * The account this token signs in as. For a new account (#1026) this is the
+   * name derived at request time and reserved for creation on verify — it does
+   * not exist as a user yet.
+   */
   username: string;
   email: string;
   redirect: string;
   expiresAt: number; // Date.now() + ttlMs
+  /** True when verifying this token must create the account first (#1026) */
+  isNewUser: boolean;
 }
 
 export interface MagicLinkConfig {
@@ -81,20 +89,32 @@ export class MagicLinkAuthProvider implements AuthProvider {
       if (!userManager) return;
 
       const user = await userManager.getUserByEmail(email);
-      if (!user) {
+      if (!user && !this.isAutoProvisionEnabled()) {
         // Silent — do not reveal whether email is registered
         logger.debug(`[MagicLinkAuthProvider] No user for email (silent): ${email}`);
         return;
       }
 
+      // #1026: with auto-provision on, an unknown email still gets a link — but
+      // the account is NOT created here. It is created when the link is
+      // verified, so an address nobody controls never becomes an account and a
+      // spray of requests at other people's addresses leaves nothing behind.
+      // The caller-visible response is identical either way, which is what
+      // keeps the anti-enumeration property intact.
+      const isNewUser = !user;
+      const username = user
+        ? user.username
+        : await deriveUsername(email, userManager);
+
       const token = crypto.randomBytes(32).toString('hex');
       const expiresAt = Date.now() + this.config.ttlMs;
 
       this.tokens.set(token, {
-        username: user.username,
+        username,
         email,
         redirect: context.redirect || '/',
-        expiresAt
+        expiresAt,
+        isNewUser
       });
 
       this.rateLimitMap.set(email, Date.now());
@@ -129,7 +149,10 @@ export class MagicLinkAuthProvider implements AuthProvider {
       });
 
       this.cleanupExpired();
-      logger.info(`[MagicLinkAuthProvider] Link sent to ${email} for user ${user.username}`);
+      logger.info(
+        `[MagicLinkAuthProvider] Link sent to ${email} ` +
+        (user ? `for user ${user.username}` : '(new account — provisioned on verify)')
+      );
     } catch (err) {
       logger.error('[MagicLinkAuthProvider] Error in initiate:', err);
     }
@@ -166,6 +189,109 @@ export class MagicLinkAuthProvider implements AuthProvider {
    */
   getTokenRedirect(token: string): string {
     return this.tokens.get(token)?.redirect || '/';
+  }
+
+  /**
+   * Create the account behind a new-user token (#1026).
+   *
+   * Called from the POST that completes sign-in, never from the GET — so a mail
+   * scanner pre-fetching the link cannot bring an account into existence, for
+   * the same reason it cannot consume the token (#1019).
+   *
+   * The account is created with `isExternal: true`, which stores an empty
+   * password hash. `UserManager.verifyPassword` compares `sha256(pw + salt)`
+   * against that hash and a digest is never the empty string, so these accounts
+   * cannot be logged into with a password by any input — magic link is
+   * structurally their only way in.
+   *
+   * Idempotent: a token whose account already exists is a no-op, so a double
+   * submit cannot fail the second time.
+   *
+   * @returns true if the token is usable (existing user, or newly created)
+   */
+  async provisionIfNew(token: string): Promise<boolean> {
+    const entry = this.tokens.get(token);
+    if (!entry) return false;
+    if (!entry.isNewUser) return true;
+
+    const userManager = this.engine.getManager<UserManager>('UserManager');
+    if (!userManager) return false;
+
+    // Re-check: the name was derived when the link was requested and something
+    // else may have claimed it since.
+    const existing = await userManager.getUserByEmail(entry.email);
+    if (existing) {
+      entry.username = existing.username;
+      entry.isNewUser = false;
+      return true;
+    }
+
+    const username = await deriveUsername(entry.email, userManager);
+    const role = this.resolveDefaultRole(userManager);
+
+    try {
+      await userManager.createUser({
+        username,
+        email: entry.email,
+        displayName: username,
+        password: '',
+        roles: [role],
+        isExternal: true,
+        isActive: true
+      });
+    } catch (err) {
+      logger.error(`[MagicLinkAuthProvider] Failed to provision ${entry.email}:`, err);
+      return false;
+    }
+
+    entry.username = username;
+    entry.isNewUser = false;
+    logger.info(`[MagicLinkAuthProvider] Provisioned new user: ${username} (${entry.email}) role=${role}`);
+    return true;
+  }
+
+  /** Whether an unknown email may create an account by verifying a link (#1026). */
+  private isAutoProvisionEnabled(): boolean {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+
+    // `ngdpbase.application.registration` is the master override — when self-
+    // registration is off, no path may create an account, exactly as
+    // GoogleOIDCProvider treats it. The provider toggle sits below it.
+    const allowReg = (configManager?.getProperty?.(
+      'ngdpbase.application.registration',
+      true
+    ) as boolean | undefined) ?? true;
+    if (!allowReg) return false;
+
+    return (configManager?.getProperty?.(
+      'ngdpbase.auth.magic-link.auto-provision',
+      false
+    ) as boolean | undefined) ?? false;
+  }
+
+  /**
+   * Role for auto-provisioned users. An unknown role name falls back to
+   * `reader` with a warning — a typo should degrade to read-only, not throw
+   * mid-signup or silently mint a more privileged account than intended.
+   */
+  private resolveDefaultRole(userManager: UserManager): string {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const configured = (configManager?.getProperty?.(
+      'ngdpbase.auth.magic-link.registration.default-role',
+      'reader'
+    ) as string | undefined) ?? 'reader';
+
+    if (configured === 'reader') return 'reader';
+
+    if (userManager.getRole?.(configured) == null) {
+      logger.warn(
+        `[MagicLinkAuthProvider] Unknown role "${configured}" in ` +
+        'ngdpbase.auth.magic-link.registration.default-role — falling back to "reader"'
+      );
+      return 'reader';
+    }
+
+    return configured;
   }
 
   private isRateLimited(email: string): boolean {

@@ -5,7 +5,7 @@
 import express from 'express';
 import request from 'supertest';
 import path from 'path';
-import WikiRoutes from '../WikiRoutes';
+import WikiRoutes, { signupRateLimiter } from '../WikiRoutes';
 
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
@@ -372,6 +372,9 @@ describe('WikiRoutes — coverage batch 14', () => {
   beforeEach(async () => {
     mockUserContext = { ...adminUser };
     resetMocks();
+    // #1026: the signup limiter is module-scope, so budget spent by one case
+    // would otherwise 429 the next one in this file.
+    signupRateLimiter.reset();
     app = buildApp();
     const { default: WikiEngine } = await import('../../WikiEngine');
     const engine = new WikiEngine();
