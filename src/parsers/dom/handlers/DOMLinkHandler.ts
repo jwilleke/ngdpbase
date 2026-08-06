@@ -591,9 +591,15 @@ class DOMLinkHandler {
   processAnchorLink(linkElement: LinkedomElement, linkInfo: LinkInfo, _context: RenderContext): void {
     const anchor = linkInfo.target || linkInfo.text;
 
+    // Resolve "#section=Heading Name" to a slug (#1024); "#slug" passes through
+    const rawAnchor = anchor.startsWith('#') ? anchor.slice(1) : anchor;
+    const href = rawAnchor.startsWith('section=')
+      ? `#${headingSlug(rawAnchor.slice('section='.length))}`
+      : anchor;
+
     // Set href
-     
-    linkElement.setAttribute('href', anchor);
+
+    linkElement.setAttribute('href', href);
 
     // Set class
      
@@ -658,8 +664,16 @@ class DOMLinkHandler {
     // Process based on link type
     switch (linkType) {
     case 'internal': {
-      // Internal wiki link - check if page exists
-      const pageName = linkTarget;
+      // Internal wiki link - check if page exists.
+      // Split off any section fragment first: "PageName#slug" or
+      // "PageName#section=Heading Name" (#1024). Without this the fragment is
+      // treated as part of the page name and every section link redlinks.
+      const hashIdx = linkTarget.indexOf('#');
+      const pageName = hashIdx === -1 ? linkTarget : linkTarget.slice(0, hashIdx);
+      const rawFragment = hashIdx === -1 ? '' : linkTarget.slice(hashIdx + 1);
+      const fragment = rawFragment.startsWith('section=')
+        ? headingSlug(rawFragment.slice('section='.length))
+        : rawFragment;
       let matchedPage: string | null = null;
 
       if (this.pageNameMatcher && this.pageNames.size > 0) {
@@ -673,10 +687,11 @@ class DOMLinkHandler {
       const exists = matchedPage !== null;
       const targetPage = matchedPage || pageName;
 
-      // Set href
-      const href = exists
+      // Set href (append fragment if present)
+      const base = exists
         ? `/view/${encodeURIComponent(targetPage)}`
         : `/edit/${encodeURIComponent(pageName)}`;
+      const href = fragment ? `${base}#${fragment}` : base;
       node.setAttribute('href', href);
 
       // Set class
@@ -756,8 +771,13 @@ class DOMLinkHandler {
     }
 
     case 'anchor': {
-      // Anchor link
-      node.setAttribute('href', linkTarget);
+      // Same-page anchor link. "#section=Heading Name" resolves to a slug the
+      // same way the cross-page form does (#1024); a bare "#slug" passes through.
+      const rawAnchor = linkTarget.slice(1);
+      const href = rawAnchor.startsWith('section=')
+        ? `#${headingSlug(rawAnchor.slice('section='.length))}`
+        : linkTarget;
+      node.setAttribute('href', href);
       node.setAttribute('class', 'wiki-link anchor-link');
       node.setAttribute('data-link-type', 'anchor');
       node.setAttribute('data-target', linkTarget);

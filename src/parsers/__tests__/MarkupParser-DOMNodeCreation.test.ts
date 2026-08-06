@@ -447,6 +447,80 @@ describe('MarkupParser - DOM Node Creation (Phase 2)', () => {
       expect(node.getAttribute('href')).toContain('edit');
       expect(node.getAttribute('data-jspwiki-id')).toBe('6');
     });
+
+    // Section anchors (#1024) — the fragment must be split off the page name,
+    // otherwise the whole string is treated as a page and always redlinks.
+    test('creates node for internal link with section slug', async () => {
+      const element = {
+        type: 'link',
+        target: 'The Elements|HomePage#the-elements',
+        id: 7
+      };
+
+      const context = {
+        pageName: 'TestPage'
+      };
+
+      const node = await linkHandler.createNodeFromExtract(element, context, wikiDocument);
+
+      expect(node.getAttribute('href')).toBe('/view/HomePage#the-elements');
+      expect(node.getAttribute('class')).toContain('wikipage');
+      expect(node.getAttribute('class')).not.toContain('redlink');
+      expect(node.getAttribute('data-jspwiki-id')).toBe('7');
+    });
+
+    test('resolves #section=Heading Name to a slug on internal links', async () => {
+      const element = {
+        type: 'link',
+        target: 'The Elements|HomePage#section=The Elemental Ingredients',
+        id: 8
+      };
+
+      const context = {
+        pageName: 'TestPage'
+      };
+
+      const node = await linkHandler.createNodeFromExtract(element, context, wikiDocument);
+
+      expect(node.getAttribute('href')).toBe('/view/HomePage#the-elemental-ingredients');
+      expect(node.getAttribute('class')).toContain('wikipage');
+      expect(node.getAttribute('data-jspwiki-id')).toBe('8');
+    });
+
+    test('keeps the section fragment on a red link', async () => {
+      const element = {
+        type: 'link',
+        target: 'Missing|NonExistentPage123456789#some-heading',
+        id: 9
+      };
+
+      const context = {
+        pageName: 'TestPage'
+      };
+
+      const node = await linkHandler.createNodeFromExtract(element, context, wikiDocument);
+
+      expect(node.getAttribute('href')).toBe('/edit/NonExistentPage123456789#some-heading');
+      expect(node.getAttribute('class')).toContain('redlink');
+      expect(node.getAttribute('title')).toBe('Create page: NonExistentPage123456789');
+    });
+
+    test('resolves #section=Heading Name on same-page anchor links', async () => {
+      const element = {
+        type: 'link',
+        target: 'Jump|#section=The Elemental Ingredients',
+        id: 10
+      };
+
+      const context = {
+        pageName: 'TestPage'
+      };
+
+      const node = await linkHandler.createNodeFromExtract(element, context, wikiDocument);
+
+      expect(node.getAttribute('href')).toBe('#the-elemental-ingredients');
+      expect(node.getAttribute('class')).toContain('anchor-link');
+    });
   });
 
   describe('Integration: All node types maintain data-jspwiki-id', () => {
