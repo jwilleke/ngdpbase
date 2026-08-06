@@ -48,7 +48,6 @@ Scanner state: 1 open Dependabot alert (#96) + 2 open code-scanning alerts (#33,
 
 ## 🔵 In review
 
-- [#969](https://github.com/jwilleke/ngdpbase/issues/969) — [FEATURE] Admin trash view — restore and purge soft-deleted pages from the UI
 - [#1019](https://github.com/jwilleke/ngdpbase/issues/1019) — [BUG] Magic link is consumed by a GET — email security scanners burn the token before the user clicks — *needs magic-link enabled plus a mail provider to verify*
 
 ## ⏸ Deferred
