@@ -47,8 +47,7 @@ Scanner state: 1 open Dependabot alert (#96) + 2 open code-scanning alerts (#33,
 
 ## 🔵 In review
 
-- [#1019](https://github.com/jwilleke/ngdpbase/issues/1019) — [BUG] Magic link is consumed by a GET — email security scanners burn the token before the user clicks — *fix shipped; the scanner-safe path has now been exercised with real mail via Resend on the demo*
-- [#1026](https://github.com/jwilleke/ngdpbase/issues/1026) — [FEATURE] Magic-link registration — passwordless signup as the only account path — *shipped in v4.5.0/v4.5.1, verified end-to-end against a real mailbox on ngdpbase-demo*
+- *(none)*
 
 ## ⏸ Deferred
 
