@@ -66,9 +66,13 @@ Edit each for:
 - **`image:`** in `deployment.yaml` — point at your chosen tag from step 1.
 - **`resources:`** — the starters set conservative requests/limits; tune for your cluster.
 
-### 3. Pre-supply the anchor Organization (critical for HEADLESS_INSTALL)
+### 3. Anchor Organization — optional (#1027)
 
-Add the Organization JSON-LD as a key in the same ConfigMap as `app-custom-config.json`, then mount both via `subPath`. See [Headless §1](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#1-anchor-organization-json-ld-must-be-pre-supplied) for the exact pattern. Skipping this is the single most common failure mode — the admin user gets created but resolves as Anonymous because role binding silently skips when there's no anchor org.
+**You can skip this.** The instance seeds its own anchor Organization from `ngdpbase.application.base-url` and `ngdpbase.application-name` when none exists, and adopts an existing record when there is exactly one. This used to be the single most common failure mode; it is now handled in-app. See [Headless §1](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#1-anchor-organization--seeded-automatically-since-1027).
+
+Pre-supply one only when you want to control the `@id` exactly, or ship a richer record (address, contact points) from first boot. The pattern below still works and takes precedence over seeding.
+
+> **Trade-off worth knowing.** A ConfigMap key mounted via `subPath` is **read-only**, so `/admin/organizations` cannot save edits to it — correcting the org then needs a redeploy. If you want the org editable in the UI, let the instance seed it instead, or write the file onto the data volume rather than mounting it. Deployment manifests are the wrong home for something an operator edits.
 
 ```yaml
 apiVersion: v1

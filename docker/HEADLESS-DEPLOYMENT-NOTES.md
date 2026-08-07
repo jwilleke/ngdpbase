@@ -6,9 +6,15 @@ These all surface specifically under `HEADLESS_INSTALL=true` (Docker / Kubernete
 
 ---
 
-## 1. Anchor Organization JSON-LD must be pre-supplied
+## 1. Anchor Organization — seeded automatically since #1027
 
-**Symptom.** Headless install creates the user and a Person record, but `/app/data/roles/` stays empty. Logged-in admin user resolves to `Anonymous|All` — no Edit button, no admin dashboard, ACL log shows `user=Anonymous` despite a successful login.
+> **Fixed in-app.** You no longer need to pre-supply anything. `OrganizationManager.getInstallOrg()` resolves the anchor in three tiers: the configured `ngdpbase.application.organization.file`; failing that, the sole existing organization record; failing that, a minimal record seeded from `ngdpbase.application.base-url` and `ngdpbase.application-name`.
+>
+> Pre-supplying is now **optional** — do it only to control the `@id` exactly, or to ship a richer record (address, contact points) from the start. Everything below is kept because it is still the fastest way to recognise this failure on an instance running an older version, and because the seeded record is deliberately minimal.
+>
+> One case still resolves to nothing on purpose: **several organization records with no `organization.file` key**. Picking one arbitrarily could bind every role to the wrong organization, so it warns and declines. Name the anchor explicitly there.
+
+**Symptom** (pre-#1027, or the several-records case above)**.** Headless install creates the user and a Person record, but `/app/data/roles/` stays empty. Logged-in admin user resolves to `Anonymous|All` — no Edit button, no admin dashboard, ACL log shows `user=Anonymous` despite a successful login.
 
 **Root cause.** `UserManager.createDefaultAdmin` calls `applyRoleDiff(username, [], ['admin'])`, which calls `syncRoleAdd`. `syncRoleAdd`'s JSDoc:
 

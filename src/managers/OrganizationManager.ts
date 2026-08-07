@@ -144,7 +144,81 @@ class OrganizationManager extends BaseManager {
     return this.provider;
   }
 
-  /** Return the install's anchor org, or null if no `.file` is configured. */
+  /**
+   * Create the anchor organization from the instance's own identity (#1027).
+   *
+   * Written to the organizations storage directory like any other record, so it
+   * is editable through the admin UI afterwards. That is the point: an org
+   * supplied by the deployment (a mounted ConfigMap file, say) is read-only and
+   * cannot be corrected without a redeploy. Application configuration should
+   * not require editing deployment manifests.
+   *
+   * Filename follows the convention the install wizard uses — the base-url host
+   * with dots as hyphens — so an instance seeded here and one installed through
+   * the wizard are indistinguishable afterwards.
+   */
+  private async seedAnchorOrganization(
+    configManager: ConfigurationManager | null | undefined
+  ): Promise<Organization | null> {
+    const baseUrl = (configManager?.getBaseURL?.() ?? '').trim();
+    if (!baseUrl) {
+      logger.warn(
+        '🏢 Cannot seed an anchor organization: ngdpbase.application.base-url is not set. ' +
+        'Role assignment is inoperative until an organization exists. (#1027)'
+      );
+      return null;
+    }
+
+    const url = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+    const name = (configManager?.getProperty('ngdpbase.application-name', '') as string) || url;
+
+    try {
+      // Delegates to the same path the install wizard uses, so a seeded
+      // instance and a wizard-installed one are indistinguishable afterwards:
+      // same filename convention (filenameFromOrg), same record shape, same
+      // idempotency. Passing no address or contact details leaves those fields
+      // off entirely — buildAddress/buildContactPoints return undefined for
+      // empty input — which is deliberate. Inventing them would put fabricated
+      // data on what may be a public instance; they are the operator's to add
+      // through /admin/organizations.
+      const created = await this.seedFromConfig({ orgName: name, orgUrl: url });
+      if (created) {
+        logger.info(
+          `🏢 Seeded the install's anchor organization: ${created.name} (${created['@id']}). ` +
+          'Edit it under /admin/organizations. (#1027)'
+        );
+      }
+      return created;
+    } catch (error) {
+      logger.warn(
+        '🏢 Failed to seed the anchor organization: ' +
+        (error instanceof Error ? error.message : String(error)) +
+        ' — role assignment is inoperative. (#1027)'
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Return the install's anchor org, resolving or seeding one if needed (#1027).
+   *
+   * Three tiers, in order:
+   *
+   *   1. `ngdpbase.application.organization.file` names it — what the install
+   *      wizard writes.
+   *   2. No key, but exactly one org record exists — adopt it. An install with
+   *      a single organization has no ambiguity about which one anchors it, and
+   *      requiring a config key to state the obvious is what left headless
+   *      deployments silently unable to assign any role.
+   *   3. Nothing at all — seed a minimal record from the instance's own
+   *      identity. An instance always belongs to *something*; having no anchor
+   *      is never the correct end state, it just breaks role assignment.
+   *
+   * Deliberately never writes the config key back. Instance config is a
+   * read-only mount on containerised deployments, so a resolution strategy that
+   * depends on persisting a key would work locally and fail exactly where this
+   * problem actually bites.
+   */
   async getInstallOrg(): Promise<Organization | null> {
     if (this.installOrgCache.valid) {
       this.getMetrics()?.recordCacheLookup({ manager: 'OrganizationManager', cache: 'installOrg', result: 'hit' });
@@ -154,7 +228,32 @@ class OrganizationManager extends BaseManager {
     const provider = this.requireProvider();
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     const filename = configManager?.getProperty('ngdpbase.application.organization.file', '') as string;
-    const value = filename ? await provider.getByFile(filename) : null;
+    let value = filename ? await provider.getByFile(filename) : null;
+
+    if (!value && !filename) {
+      const existing = await provider.list();
+
+      if (existing.length === 1) {
+        // Tier 2: one record, no ambiguity about which anchors the install.
+        value = existing[0];
+        logger.info(
+          `🏢 Adopted the only organization record as the install anchor: ${value['@id']}. ` +
+          'Set ngdpbase.application.organization.file to make this explicit. (#1027)'
+        );
+      } else if (existing.length === 0) {
+        // Tier 3: nothing to adopt, so create one from the instance's identity.
+        value = await this.seedAnchorOrganization(configManager);
+      } else {
+        // Several records and nothing naming the anchor. Deliberately resolves
+        // to null: picking one arbitrarily could bind every role to the wrong
+        // organization, and seeding an additional record would add to the very
+        // ambiguity being reported. The operator has to say which one.
+        logger.warn(
+          `🏢 ${existing.length} organization records exist but none is named as the install anchor. ` +
+          'Set ngdpbase.application.organization.file — role assignment is inoperative until you do. (#1027)'
+        );
+      }
+    }
 
     // #1027: without an anchor org, UserManager.syncRoleAdd cannot attach a
     // Person to a Role, so NO role — including `admin` on the default admin
