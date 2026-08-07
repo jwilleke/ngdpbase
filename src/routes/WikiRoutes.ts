@@ -8914,9 +8914,37 @@ ${panes}
       }
 
       const configManager = this.engine.getManager('ConfigurationManager');
-      const defaultProperties = configManager.getDefaultProperties();
-      const customProperties = configManager.getCustomProperties();
-      const mergedProperties = configManager.getAllProperties();
+
+      // Secret values are STRIPPED here, not hidden in the view. Nothing on the
+      // deny-list is ever serialised into the page, so "view source" reveals
+      // nothing and a read-only admin never receives the value at all. An admin
+      // who needs one fetches that single key from adminRevealSecret below.
+      const secretKeys = this.getSecretConfigKeys();
+      const strip = (props: unknown): Record<string, unknown> => {
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries((props ?? {}) as Record<string, unknown>)) {
+          out[k] = secretKeys.has(k) ? null : v;
+        }
+        return out;
+      };
+
+      const defaultProperties = strip(configManager.getDefaultProperties());
+      const customProperties = strip(configManager.getCustomProperties());
+      const merged = (configManager.getAllProperties() ?? {}) as Record<string, unknown>;
+      const mergedProperties = strip(merged);
+
+      // "Is this configured?" is the question an operator actually has, and it
+      // must be answerable WITHOUT revealing anything — otherwise checking
+      // whether SMTP is set up means unmasking a live credential. Borrowed from
+      // yourphr's Secret.IsSet().
+      const secretIsSet: Record<string, boolean> = {};
+      for (const k of secretKeys) {
+        const v = merged[k];
+        // Deliberately no String(v): an object would stringify to
+        // "[object Object]" and read as "configured" on the strength of a
+        // placeholder. Only a genuine scalar value counts as set.
+        secretIsSet[k] = v !== undefined && v !== null && v !== '';
+      }
 
       const commonData = await this.getCommonTemplateData(req);
 
@@ -8928,6 +8956,9 @@ ${panes}
         defaultProperties,
         customProperties,
         mergedProperties,
+        secretKeys: Array.from(secretKeys),
+        secretIsSet,
+        canRevealSecrets: await wikiContext.hasPermission('admin-system'),
         csrfToken: req.session.csrfToken
       };
 
@@ -8935,6 +8966,79 @@ ${panes}
     } catch (err: unknown) {
       logger.error('Error loading admin configuration:', err);
       res.status(500).send('Error loading configuration management');
+    }
+  }
+
+  /**
+   * Config keys whose values must never be rendered on the configuration screen.
+   *
+   * A deny-list rather than a pattern match, deliberately: `*password*` would
+   * also catch `application.registration.password` and `auth.password.enabled`,
+   * both booleans. Masking those teaches an operator to click "reveal" without
+   * thinking, which is the failure this is meant to prevent.
+   */
+  private getSecretConfigKeys(): Set<string> {
+    const configManager = this.engine.getManager('ConfigurationManager');
+    const keys = configManager?.getProperty('ngdpbase.config.secret-keys', []);
+    if (!Array.isArray(keys)) return new Set();
+
+    // Trimmed and de-duplicated, but NOT lowercased: ngdpbase config keys are
+    // case-sensitive and include camelCase (`ngdpbase.dawarichCompat.apiKey`),
+    // so normalising case here would silently stop matching them.
+    return new Set(
+      keys
+        .filter((k): k is string => typeof k === 'string')
+        .map((k) => k.trim())
+        .filter((k) => k !== '')
+    );
+  }
+
+  /**
+   * Reveal one secret config value — GET /api/admin/config/secret/:key
+   *
+   * Deliberately one key per request, fetched on demand. The alternative —
+   * shipping every value and hiding it behind `type="password"` — puts the
+   * secret in the HTML, where view-source defeats it entirely.
+   *
+   * Requires `admin-system`, so a read-only admin (`admin-read`) can see the
+   * configuration screen with secrets masked but has no way to unmask one.
+   * Every reveal is logged with the requesting user.
+   */
+  async adminRevealSecret(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
+
+      if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
+        res.status(403).json({ success: false, error: 'Permission denied' });
+        return;
+      }
+
+      const key = req.params.key;
+      if (!this.getSecretConfigKeys().has(key)) {
+        // Only keys on the deny-list are readable here. Without this the route
+        // would be a general config-read API that bypasses the screen entirely.
+        res.status(404).json({ success: false, error: 'Not a masked configuration key' });
+        return;
+      }
+
+      const configManager = this.engine.getManager('ConfigurationManager');
+      const value: unknown = configManager?.getProperty(key, '');
+
+      logger.info(`🔓 [adminRevealSecret] ${currentUser.username} revealed config key: ${key}`);
+
+      // A secret is a scalar in every real case; JSON for anything else beats
+      // "[object Object]", which would look like a value and is not one.
+      const rendered =
+        value === null || value === undefined ? ''
+          : typeof value === 'string' ? value
+            : typeof value === 'number' || typeof value === 'boolean' ? String(value)
+              : JSON.stringify(value) ?? '';
+
+      res.json({ success: true, key, value: rendered });
+    } catch (err: unknown) {
+      logger.error('Error revealing configuration secret:', err);
+      res.status(500).json({ success: false, error: 'Failed to read configuration value' });
     }
   }
 
@@ -12309,6 +12413,10 @@ ${panes}
     app.post('/admin/backup/config', (req: Request, res: Response) => void this.adminBackupConfig(req, res));
     app.get('/admin/configuration', (req: Request, res: Response) =>
       this.adminConfiguration(req, res)
+    );
+    // One masked value per request, on demand — see adminRevealSecret.
+    app.get('/api/admin/config/secret/:key', (req: Request, res: Response) =>
+      this.adminRevealSecret(req, res)
     );
     app.post('/admin/configuration', (req: Request, res: Response) =>
       this.adminUpdateConfiguration(req, res)

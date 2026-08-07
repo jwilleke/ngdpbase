@@ -23,6 +23,15 @@
   "ngdpbase.server.host": "localhost",
   "_comment_trust_proxy": "Express 'trust proxy' setting (#861). Default false: req.ip is the direct socket peer. Behind a reverse proxy / Cloudflare Tunnel set to 'loopback' (or a hop count / subnet list) so req.ip reflects X-Forwarded-For and rate limiting / audit see real client IPs. Never true/enabled on directly-reachable instances — X-Forwarded-For is client-spoofable.",
   "ngdpbase.server.trust-proxy": false,
+  "_comment_config_secret_keys": "Config keys masked on the Admin Configuration screen until an admin with admin-system explicitly reveals one. Deliberately SHORT and a DENY-list, not a pattern match: masking everything that merely LOOKS secret would hide booleans like application.registration.password and auth.password.enabled, and an operator who has to click through those learns to reveal reflexively. A mistake here shows a value to an already-authenticated admin on their own screen — small blast radius, so a short explicit list is the safe default. A read-only admin (admin-read without admin-system) never receives these values at all: they are stripped server-side, not hidden with CSS. Entries need not exist in this file; listing a key that is env-only is harmless and future-proofs it.",
+  "ngdpbase.config.secret-keys": [
+    "ngdpbase.session.secret",
+    "ngdpbase.user.security.passwordsalt",
+    "ngdpbase.user.security.defaultpassword",
+    "ngdpbase.mail.provider.smtp.pass",
+    "ngdpbase.auth.google-oidc.client-secret",
+    "ngdpbase.dawarichCompat.apiKey"
+  ],
   "ngdpbase.session.secret": "ngdpbase-session-secret-change-in-production",
   "ngdpbase.session.max-age": 86400000,
   "ngdpbase.session.secure": false,

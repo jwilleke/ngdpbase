@@ -74,7 +74,29 @@
                                                     <code><%= key %></code>
                                                 </td>
                                                 <td>
-                                                    <% if (typeof value === 'object') { %>
+                                                    <%# Secrets are stripped server-side, so there is no value here to hide —
+                                                        view-source shows nothing. Reveal fetches the single key on demand and
+                                                        the button only renders for admins who may call that endpoint. %>
+                                                    <% if (secretKeys.includes(key)) { %>
+                                                        <%# "Is it configured?" is answerable without revealing anything —
+                                                            otherwise checking whether SMTP is set up means unmasking a
+                                                            live credential. %>
+                                                        <% if (!secretIsSet[key]) { %>
+                                                            <code class="text-muted">(not set)</code>
+                                                        <% } else { %>
+                                                        <code class="secret-value" data-key="<%= key %>">••••••••</code>
+                                                        <% if (canRevealSecrets) { %>
+                                                            <button type="button"
+                                                                    class="btn btn-link btn-sm p-0 ms-2 reveal-secret"
+                                                                    data-key="<%= key %>"
+                                                                    title="Reveal this value">
+                                                                <i class="fas fa-eye"></i>
+                                                            </button>
+                                                        <% } else { %>
+                                                            <span class="badge bg-secondary ms-2">hidden</span>
+                                                        <% } %>
+                                                        <% } %>
+                                                    <% } else if (typeof value === 'object') { %>
                                                         <code><%= JSON.stringify(value) %></code>
                                                     <% } else { %>
                                                         <code><%= value %></code>
@@ -302,6 +324,39 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }, 3000);
     }
+
+    // Reveal a masked config value. The value is NOT on the page — this fetches
+    // the one key, so nothing is exposed until an admin asks for it, and the
+    // server re-checks the permission on every call.
+    document.querySelectorAll('.reveal-secret').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var key = btn.getAttribute('data-key');
+            var cell = document.querySelector('.secret-value[data-key="' + CSS.escape(key) + '"]');
+            if (!cell) return;
+
+            // Second click re-masks, so a revealed value does not linger on a
+            // screen someone walks away from.
+            if (cell.dataset.revealed === '1') {
+                cell.textContent = '••••••••';
+                cell.dataset.revealed = '0';
+                btn.innerHTML = '<i class="fas fa-eye"></i>';
+                return;
+            }
+
+            fetch('/api/admin/config/secret/' + encodeURIComponent(key))
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (!data.success) {
+                        showAlert(data.error || 'Could not reveal value', 'danger');
+                        return;
+                    }
+                    cell.textContent = data.value === '' ? '(empty)' : data.value;
+                    cell.dataset.revealed = '1';
+                    btn.innerHTML = '<i class="fas fa-eye-slash"></i>';
+                })
+                .catch(function() { showAlert('Could not reveal value', 'danger'); });
+        });
+    });
 });
 </script>
 
