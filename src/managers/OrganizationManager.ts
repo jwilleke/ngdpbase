@@ -118,6 +118,22 @@ class OrganizationManager extends BaseManager {
           'Restore it from backup, or unset \'ngdpbase.application.organization.file\' if the anchor was intentionally removed.'
         );
       }
+    } else if (installComplete && !anchorFile) {
+      // #1027: the invariant above only fires when a file is NAMED but absent.
+      // An empty key had nothing to validate, so the case that actually breaks
+      // instances passed startup in silence — every role assignment then fails
+      // in UserManager.syncRoleAdd, including `admin` on the default admin.
+      //
+      // Warn rather than throw: instances are running in this state right now,
+      // and turning a silent misconfiguration into a boot failure would take
+      // them down rather than tell them what is wrong.
+      logger.warn(
+        '🏢 No anchor Organization configured on a completed install ' +
+        '(ngdpbase.application.organization.file is empty). Role assignment is INOPERATIVE: ' +
+        'no user can be granted any role, including admin. Headless installs must pre-supply ' +
+        'the Organization JSON-LD file in the organizations storage directory and name it in ' +
+        'that config key. (#1027)'
+      );
     }
 
     logger.info(`🏢 OrganizationManager initialized (${(await this.provider.list()).length} orgs)`);
@@ -139,6 +155,24 @@ class OrganizationManager extends BaseManager {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     const filename = configManager?.getProperty('ngdpbase.application.organization.file', '') as string;
     const value = filename ? await provider.getByFile(filename) : null;
+
+    // #1027: without an anchor org, UserManager.syncRoleAdd cannot attach a
+    // Person to a Role, so NO role — including `admin` on the default admin
+    // account — is ever assigned. That used to happen in complete silence: the
+    // null is cached as valid, so this resolves once and stays null for the
+    // process lifetime with nothing logged. Warn here, where the cause is
+    // known; the caller only sees an absent role.
+    if (!value) {
+      logger.warn(
+        filename
+          ? `🏢 Anchor Organization file "${filename}" did not resolve — role assignment is inoperative. ` +
+            'Check the file exists in the organizations storage directory. (#1027)'
+          : '🏢 No anchor Organization configured (ngdpbase.application.organization.file is empty) — ' +
+            'role assignment is inoperative: no user can be granted any role, including admin. ' +
+            'Headless installs must pre-supply the Organization JSON-LD file. (#1027)'
+      );
+    }
+
     this.installOrgCache = { value, valid: true };
     return value;
   }

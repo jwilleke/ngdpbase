@@ -1296,18 +1296,36 @@ class UserManager extends BaseManager {
    * when role storage is degraded.
    */
   private async syncRoleAdd(username: string, roleName: string): Promise<void> {
+    // #1027: every abandon path below used to `return` in silence, so a failed
+    // role assignment was indistinguishable from a successful one — the caller
+    // gets no error and the user simply never has the role. Each now says why.
     const roleManager = this.engine.getManager<RoleManager>('RoleManager');
     const personManager = this.engine.getManager<PersonManager>('PersonManager');
-    if (!roleManager || !personManager) return;
+    if (!roleManager || !personManager) {
+      logger.warn(`🔑 Cannot add role ${roleName} to ${username}: RoleManager or PersonManager unavailable (#1027)`);
+      return;
+    }
     try {
       const person = await personManager.getByIdentifier(username);
-      if (!person) return;
+      if (!person) {
+        logger.warn(`🔑 Cannot add role ${roleName} to ${username}: no Person record for that username (#1027)`);
+        return;
+      }
       const installOrg = await this.engine
         .getManager<OrganizationManager>('OrganizationManager')
         ?.getInstallOrg();
-      if (!installOrg) return;
+      if (!installOrg) {
+        logger.warn(
+          `🔑 Cannot add role ${roleName} to ${username}: no anchor Organization — ` +
+          'set ngdpbase.application.organization.file and supply the JSON-LD file (#1027)'
+        );
+        return;
+      }
       const role = await this.getOrCreateRoleRecord(roleManager, installOrg, roleName);
-      if (!role) return;
+      if (!role) {
+        logger.warn(`🔑 Cannot add role ${roleName} to ${username}: role record could not be created (#1027)`);
+        return;
+      }
       const memberIds = new Set((role.member ?? []).map((m) => m['@id']));
       if (memberIds.has(person['@id'])) return;
       const newMembers = [...(role.member ?? []), { '@id': person['@id'] }];
@@ -1321,16 +1339,34 @@ class UserManager extends BaseManager {
   private async syncRoleRemove(username: string, roleName: string): Promise<void> {
     const roleManager = this.engine.getManager<RoleManager>('RoleManager');
     const personManager = this.engine.getManager<PersonManager>('PersonManager');
-    if (!roleManager || !personManager) return;
+    // #1027: same silent-abandon problem as syncRoleAdd. A revocation that
+    // quietly does nothing is the more dangerous direction of the two — the
+    // operator believes access was removed when it was not.
+    if (!roleManager || !personManager) {
+      logger.warn(`🔑 Cannot remove role ${roleName} from ${username}: RoleManager or PersonManager unavailable (#1027)`);
+      return;
+    }
     try {
       const person = await personManager.getByIdentifier(username);
-      if (!person) return;
+      if (!person) {
+        logger.warn(`🔑 Cannot remove role ${roleName} from ${username}: no Person record for that username (#1027)`);
+        return;
+      }
       const installOrg = await this.engine
         .getManager<OrganizationManager>('OrganizationManager')
         ?.getInstallOrg();
-      if (!installOrg) return;
+      if (!installOrg) {
+        logger.warn(
+          `🔑 Cannot remove role ${roleName} from ${username}: no anchor Organization — ` +
+          'the role may still be in effect (#1027)'
+        );
+        return;
+      }
       const role = await roleManager.getByOrgAndPosition(installOrg['@id'], roleName);
-      if (!role) return;
+      if (!role) {
+        // Not an error: nothing to revoke if the role record never existed.
+        return;
+      }
       const before = role.member ?? [];
       const after = before.filter((m) => m['@id'] !== person['@id']);
       if (after.length === before.length) return;
