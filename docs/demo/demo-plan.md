@@ -48,15 +48,13 @@ The guard is correct — a key naming a non-existent addon is far more often a t
 1. Release ngdpbase (minor — new permission surface)
 2. Flux bumps the demo to that image
 3. Set `ngdpbase.addons.demo.enabled: true` in `app-custom-config.json` **on the volume** — one line, over SSH or through `/admin/configuration`, no manifest edit and no PR
-4. Set the demo account password in the same `app-custom-config.json`, then restart — the addon seeds `admindemo` and the Welcome page publishes it automatically
+4. Put the demo password in `<FAST_STORAGE>/.env` on the volume, then restart — the addon seeds `admindemo` and the Welcome page publishes it automatically
 
-```json
-"ngdpbase.addons.demo.admin-account.password": "whatever-you-publish"
+```bash
+NGDPBASE_DEMO_ADMIN_PASSWORD=whatever-you-publish
 ```
 
-**Not `.env` — not on this deployment.** The key ships as `${NGDPBASE_DEMO_ADMIN_PASSWORD}`, and `.env` is sourced by `./server.sh` with `set -a`. The container image runs `node dist/src/app.js` directly and there is no dotenv dependency, so a `.env` file inside a pod is never read. Supplying it as a real environment variable would mean a Secret plus an `env:` block in the deployment — a manifest edit and a mj-infra-flux PR, which is exactly what putting app configuration on the volume was meant to avoid. A literal in `app-custom-config.json` overrides the env-ref and is editable through `/admin/configuration`.
-
-`.env` remains the right answer for direct installs started through `./server.sh`.
+`.env` works here because the app loads it itself at startup (`src/bootstrap-env.ts`), not only through `./server.sh`. That was not true before: the image runs `node dist/src/app.js` directly and `server.sh` is not even in it, so a `.env` on the volume used to be silently inert and the value could only come from a Secret plus an `env:` block in the deployment — a manifest edit and a mj-infra-flux PR, for something that is plainly application configuration. Now it sits on the volume next to `app-custom-config.json`, needing neither.
 
 The Welcome page carries `[{DemoLogin}]`, which reads the same key the account is seeded from. Rotate the password and the page follows; there is no copy to keep in step.
 

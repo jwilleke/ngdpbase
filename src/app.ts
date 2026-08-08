@@ -7,6 +7,12 @@
  * __dirname resolves to dist/src/ after compilation.
  */
 
+// MUST stay first. Side-effecting module that loads .env into process.env;
+// ES imports are hoisted, so this is the only reliable way to populate the
+// environment before any other module's top-level code runs. See that file's
+// header for why containers need it and how precedence works.
+import './bootstrap-env.js';
+
 import path from 'path';
 import express, { Request, Response, NextFunction } from 'express';
 import cookieParser from 'cookie-parser';

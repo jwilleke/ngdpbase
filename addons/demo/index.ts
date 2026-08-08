@@ -19,22 +19,16 @@
  *   ngdpbase.addons.demo.admin-account.email
  *   ngdpbase.addons.demo.admin-account.display-name
  *
- * No password ships. This password is meant to be PUBLISHED on the Welcome
- * page — pick it accordingly and never reuse a real one. Two ways to supply
- * it, and which one applies depends on how the instance starts:
+ * No password ships. Set `NGDPBASE_DEMO_ADMIN_PASSWORD` in the instance
+ * `.env` — repo root or `$FAST_STORAGE/.env`, whichever suits. Both are read
+ * on every launch path: `./server.sh` sources them, and the app loads them
+ * itself at startup (`src/bootstrap-env.ts`), so containers work too. On
+ * Kubernetes that means a file on the persistent volume — no Secret, no
+ * manifest change, no GitOps PR.
  *
- *   1. `NGDPBASE_DEMO_ADMIN_PASSWORD` in `.env` — repo root or
- *      `$FAST_STORAGE/.env`. Works ONLY when launched through `./server.sh`,
- *      which sources both with `set -a`. The container image runs
- *      `node dist/src/app.js` directly and there is no dotenv dependency, so
- *      a `.env` file inside a container is never read.
- *   2. A literal value for the config key in `app-custom-config.json`. This
- *      is the one to use on Kubernetes: the file lives on the PVC and is
- *      editable through /admin/configuration or over SSH, so it needs no
- *      Secret, no manifest change and no GitOps PR.
- *
- * The Welcome page renders whichever is in force via [{DemoLogin}], so the
- * published credentials cannot drift from the account that exists.
+ * This password is meant to be PUBLISHED on the Welcome page. Pick it
+ * accordingly and never reuse a real one. The page renders whatever is in
+ * force via [{DemoLogin}], so it cannot drift from the account that exists.
  *
  * With the variable unset the addon seeds no account and logs why — it does
  * not stop the boot, because a demo missing its dashboard login is still a
