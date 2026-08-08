@@ -26,10 +26,11 @@ Showing the software to someone who has not installed it. That means:
 | Pages moved from core `required-pages/` into `addons/demo/pages/` | done |
 | `author-lock: true` on Welcome and Feature Tour, Sandbox left open | done |
 | `ngdpbase.addons.demo.enabled` in the config catalog (default `false`) | done |
-| `admin-read` permission in core | **not started** |
-| `demo-admin` role via `domainDefaults` | **not started** |
-| `admindemo` account + credentials on the Welcome page | **not started** |
-| Red warning on the Welcome page about visibility | **not started** |
+| `admin-read` permission in core | done |
+| 25 admin read paths accept it; 50 mutating routes untouched | done |
+| `demo-admin` role registered by the addon | done |
+| Red warning on the Welcome page about visibility | done |
+| `admindemo` account created on the demo instance | **not started** — operator |
 | Enable the addon on the demo instance (mj-infra-flux) | **not started** |
 
 ## The read-only dashboard
@@ -61,7 +62,9 @@ Roles are collections of permissions. A read/write distinction belongs *in* that
 }
 ```
 
-Shipped via the addon's `domainDefaults`, so enabling the addon is the only step.
+Registered by the addon's `register()`, **not** `domainDefaults`. That distinction is load-bearing: `applyDomainDefaults` uses `setRuntimeProperty`, which is whole-key replacement. Declaring `ngdpbase.access.policies` there would replace all eight shipped policies — including `admin-full-access` — and lock the operator out of their own instance. The addon reads the current roles and policies, appends its own if absent, and writes back.
+
+Both halves are needed. A role's inline `permissions[]` is what `ConfigAccessorPlugin` renders on the Roles page; `PolicyEvaluator` decides real access from `ngdpbase.access.policies`. The addon adds a `demo-admin-access` policy at priority 90 — below `admin-full-access` at 100, so it can never widen what an admin already has.
 
 Deliberately absent:
 

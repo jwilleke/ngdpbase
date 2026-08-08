@@ -306,17 +306,20 @@ Defined in `config/app-default-config.json` under `ngdpbase.permissions` and `ng
 | `user-edit` | admin, user-admin | edit user records |
 | `user-create` | admin | create new users |
 | `user-delete` | admin | delete users |
-| `admin-system` | admin | admin gates (`/admin/*`) |
+| `admin-read` | admin, demo-admin | **view** admin screens — read-only (#1029) |
+| `admin-system` | admin | admin gates (`/admin/*`) — view **and** change |
 | `admin-roles` | admin | role management |
 | `asset-upload` | editor, contributor, admin | upload media/attachments |
 | `search-user` | admin, user-admin | search users via API |
 
 To add a permission:
 
-1. Define it under `ngdpbase.permissions.<name>` in `app-default-config.json`.
-2. Grant it to roles via `ngdpbase.roles.definitions.<role>.permissions`.
-3. Add a policy under `ngdpbase.policies` if you need resource-pattern or priority-aware behavior.
+1. Define it under `ngdpbase.permissions.definitions.<name>` in `app-default-config.json`.
+2. Grant it to roles via `ngdpbase.roles.definitions.<role>.permissions`. **This is display only** — `ConfigAccessorPlugin` renders the role × permission matrix from it. It grants nothing.
+3. **Add the action to a policy under `ngdpbase.access.policies`.** This is what actually enforces. `PolicyEvaluator.evaluateAccess()` reads the policies, *not* the inline arrays from step 2 — so a permission added only there is displayed and never granted, and one added only here is granted but invisible on the Roles page. Steps 2 and 3 must move together; the config file calls this display-vs-enforcement drift.
 4. Reference it via `wikiContext.hasPermission('<name>')` or `wikiContext.canAccess('<page-action>')`.
+
+> Worked example: `admin-read` (#1029) needed all three — the catalogue entry, the `admin` role's matrix entry, and `admin-full-access.actions`.
 
 ---
 
