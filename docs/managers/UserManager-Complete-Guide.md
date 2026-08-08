@@ -261,8 +261,10 @@ Creates a new user account.
   - `email` (string, required) - Email address
   - `displayName` (string, optional) - Display name
   - `password` (string, required for local users)
-  - `roles` (array, default: ['reader']) - User roles
-  - `isExternal` (boolean, default: false) - OAuth user flag
+  - `roles` (array, default: ['reader']) - Initial roles, applied through `RoleManager`
+  - `isActive` (boolean, default: true) - Whether the account may sign in
+  - `isExternal` (boolean, default: false) - Identity owned by an external provider; the stored hash is empty and no password will ever match
+  - `profileLocked` (boolean, default: false) - Freeze password, email and display name against self-service change; for shared accounts whose credentials are published (#1029)
   - `acceptLanguage` (string, optional) - Browser language
 
 **Returns:** User object (without password)
@@ -493,30 +495,48 @@ console.log(currentUser.roles); // ["editor", "Authenticated", "All"]
 
 ## Data Structures
 
-### User Object
+### User record
+
+The `User` interface in `src/types/User.ts` is authoritative; this is an illustration.
 
 ```javascript
 {
   username: "john",
   email: "john@example.com",
   displayName: "John Doe",
-  password: "hashed_password", // SHA-256 hash
-  roles: ["editor"],
+  password: "hashed_password", // SHA-256 of password + salt; "" when isExternal
   isActive: true,
   isSystem: false,
-  isExternal: false, // true for OAuth users
-  provider: null, // "google", "github" for OAuth users
+  isExternal: false,
+  profileLocked: undefined,    // omitted unless the account is locked
+  profilePage: "John Doe",
+  allowedAuthMethods: undefined, // e.g. ["password"] to pin an emergency fallback
   createdAt: "2025-10-11T12:00:00.000Z",
   lastLogin: "2025-10-11T14:30:00.000Z",
   loginCount: 15,
   preferences: {
-    locale: "en-us",
+    locale: "en-US",
     dateFormat: "MM/DD/YYYY",
     timeFormat: "12h",
-    timezone: "utc"
+    timezone: "UTC"
   }
 }
 ```
+
+`roles` is **not** part of the record. It was removed in #617 iteration 3b — role membership is owned by `RoleManager` as `OrganizationRole` records. Call `resolveUserRoles(username)`.
+
+#### Account flags
+
+| Flag | Meaning | Enforced at |
+|---|---|---|
+| `isActive` | Account may sign in | Authentication |
+| `isSystem` | Account cannot be deleted — nothing more | `deleteUser` |
+| `isExternal` | Identity owned by an external provider; empty hash, no password can match | Password paths |
+| `profileLocked` | Password, email and display name frozen against self-service change (#1029) | `POST /profile` |
+
+Independent by design — none implies another, and none restricts an administrator. `isSystem` in particular is set on `admin`, which must keep self-service password change, so it can never come to mean "immutable". `profileLocked` covers email specifically because magic-link login resolves accounts by address: a shared account without it can be taken over by repointing the email, whatever its password.
+
+See [UserManager.md](UserManager.md#account-flags) for the fuller rationale.
 
 ### Role Object
 

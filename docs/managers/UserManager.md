@@ -114,20 +114,47 @@ const sessionId = await userManager.createSession('john');
 }
 ```
 
-## User Object Structure
+## User record
+
+Defined by the `User` interface in `src/types/User.ts`, which is the authoritative list.
 
 ```javascript
 {
   username: "john",
   email: "john@example.com",
   displayName: "John Doe",
-  roles: ["editor"],
+  password: "<sha256 hash>",   // empty string for external accounts
   isActive: true,
-  isExternal: false,  // true for OAuth users
+  isSystem: false,
+  isExternal: false,
+  profileLocked: undefined,
+  profilePage: "John Doe",
   createdAt: "2025-10-11T12:00:00.000Z",
-  lastLogin: "2025-10-11T14:30:00.000Z"
+  lastLogin: "2025-10-11T14:30:00.000Z",
+  loginCount: 15,
+  preferences: { locale: "en-US", timezone: "UTC" }
 }
 ```
+
+**Roles are not on the record.** `User.roles[]` is deprecated as of #617 iteration 3b — membership is owned by `RoleManager` as `OrganizationRole` records. Read a user's roles with `resolveUserRoles(username)`; never from this object.
+
+### Account flags
+
+The four booleans each answer a different question, and they are deliberately independent — none implies another.
+
+| Flag | Meaning | Set by | Enforced at |
+|---|---|---|---|
+| `isActive` | Account may sign in at all | Admin, or `createUser` | Authentication |
+| `isSystem` | Account cannot be deleted | `createDefaultAdmin` (`admin`) | `deleteUser` |
+| `isExternal` | Identity owned by an external provider (OAuth, magic-link auto-provision) | The auth provider | Password paths — an external account has an empty hash and can never match a password |
+| `profileLocked` | Password, email and display name are frozen against self-service change (#1029) | `createUser`, for shared accounts | `POST /profile` |
+
+Two pairings are worth stating explicitly, because both look interchangeable and are not:
+
+- **`isSystem` is not "protected".** It means one thing: `deleteUser` refuses. It is set on `admin`, an account that must keep self-service password change — so it can never grow to imply immutability.
+- **`profileLocked` is not `isExternal`.** An external account has no password to change; a locked account has one, published deliberately, that must not change. `profileLocked` also covers email, which is the field that matters most: magic-link login resolves an account by address, so an unlocked shared account can be taken over by repointing its email regardless of the password.
+
+Neither flag restricts administrators. `/admin/users/<name>/edit` requires `user-edit` and consults neither, so a locked or system account is always recoverable.
 
 ## Related Managers
 
