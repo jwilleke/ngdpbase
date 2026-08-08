@@ -98,7 +98,7 @@ Deliberately absent:
 
 ## Open questions
 
-- ~~**Should the Welcome page publish the `admindemo` credentials, or should they be handed out on request?**~~ **Resolved: publish.** `admindemo` / `admin123`, printed on the Welcome page. Handing them out on request is not a demo. The `/admin/logs` exposure stands — anyone signed in can read visitor email addresses until the next pod restart — and the red warning on the Welcome page covers it.
+- ~~**Should the Welcome page publish the `admindemo` credentials, or should they be handed out on request?**~~ **Resolved: publish.** `admindemo`, with the password the operator sets in `NGDPBASE_DEMO_ADMIN_PASSWORD`, printed on the Welcome page. No default ships — the addon seeds no account at all rather than one with a guessable password, and says so in the log. Handing them out on request is not a demo. The `/admin/logs` exposure stands — anyone signed in can read visitor email addresses until the next pod restart — and the red warning on the Welcome page covers it.
 
   Publishing a shared password only works if the holder cannot take the account over, so it is seeded with `profileLocked`: password, email and display name are refused on `/profile`. **Email is the reason the lock covers more than the password.** Magic-link login resolves an account by address, so a visitor who repointed `admindemo`'s email at their own inbox would have permanent exclusive access and the published password would stop working for everyone else. A password-only lock looks right and leaves that open. An administrator can still change all three through `/admin/users/admindemo/edit`, which needs `user-edit`.
 

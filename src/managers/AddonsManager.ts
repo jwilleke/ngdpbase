@@ -659,7 +659,19 @@ class AddonsManager extends BaseManager {
         // created a directory named `${FAST_STORAGE}` on disk. Without this,
         // an operator putting an addon secret in .env gets the literal string
         // "$MY_VAR" as the value — silently, which is worse than unsupported.
-        setDeep(config, key.slice(prefix.length), configManager.getProperty(key));
+        // Per-key tolerance: a bare `$VAR` ref naming an unset variable throws.
+        // One such key must not take the whole addon down — an addon whose
+        // optional API token is unconfigured should still load its pages and
+        // routes. Warn loudly and omit the key so the addon's own default or
+        // its "not configured" branch takes over.
+        try {
+          setDeep(config, key.slice(prefix.length), configManager.getProperty(key));
+        } catch (error) {
+          logger.warn(
+            `[AddonsManager] ${addonName}: config key '${key}' could not be resolved and was omitted — ` +
+            (error instanceof Error ? error.message : String(error))
+          );
+        }
       }
     }
 

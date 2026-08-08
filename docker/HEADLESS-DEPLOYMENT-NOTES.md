@@ -62,7 +62,7 @@ sudo rm /path/to/data/persons/<orphan-uuid>.json   # if applicable
 kubectl -n <ns> scale deploy/<name> --replicas=1
 ```
 
-The user will be reset to `admin` / `admin123` for the first login. Pages, attachments, and search index survive — only the user account is rebuilt.
+The user is rebuilt as `admin` with the password from `NGDPBASE_ADMIN_PASSWORD`, so that variable must still be set when you do this. Pages, attachments, and search index survive — only the user account is rebuilt.
 
 ---
 
@@ -299,6 +299,6 @@ For a clean first deploy under HEADLESS_INSTALL=true:
 3. Author the Deployment with `dnsConfig.options.ndots: "1"` (§5), `envFrom:` referencing both the env ConfigMap and the secrets Secret (§10), and the two `subPath` mounts for the JSON config + Organization file.
 4. Apply, wait for first pod Ready. The boot log should show `OrganizationManager initialized (1 orgs)`, `Created Person record for admin`, `Created default admin user`, and an Add-on loaded line.
 5. Verify `/app/data/roles/admin.json` exists and its `member` array references the same UUID as `/app/data/persons/<uuid>.json`.
-6. Log in as `admin` / `admin123` and change the password immediately.
+6. Log in as `admin` with the password you set in `NGDPBASE_ADMIN_PASSWORD`, and change it immediately.
 
 If steps 5-6 don't work, you've probably hit one of §1, §2, or §3 — re-check the ConfigMap and use the cleanup recipe from §2 to re-trigger `createDefaultAdmin`.

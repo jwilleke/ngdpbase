@@ -44,6 +44,7 @@
     "src/**/*.ts",
     "src/**/*.js",
     "src/plugins/**/*.ts",
+    "scripts/seed-e2e-test-data.ts",
     "scripts/migrate-user-pages-category.ts",
     "scripts/migrate-page-created.ts",
     "scripts/migrate-page-acl-to-frontmatter.ts",

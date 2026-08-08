@@ -15,18 +15,19 @@
  *   ngdpbase.addons.demo.enabled                   — true/false (default: false)
  *   ngdpbase.addons.demo.admin-account.enabled     — seed the shared admin account
  *   ngdpbase.addons.demo.admin-account.username    — default "admindemo"
- *   ngdpbase.addons.demo.admin-account.password    — default "admin123"
+ *   ngdpbase.addons.demo.admin-account.password    — NGDPBASE_DEMO_ADMIN_PASSWORD, no default
  *   ngdpbase.addons.demo.admin-account.email
  *   ngdpbase.addons.demo.admin-account.display-name
  *
- * The default password is public by design — it is printed on the Welcome
- * page. For a demo whose password you do NOT publish, override the key in
- * app-custom-config.json with a bare env-ref and put the value in `.env`:
+ * No password ships. Set NGDPBASE_DEMO_ADMIN_PASSWORD in the instance `.env`;
+ * the config key already points at it. This password is meant to be PUBLISHED
+ * on the Welcome page, so pick it accordingly and never reuse a real one.
  *
- *   "ngdpbase.addons.demo.admin-account.password": "$NGDPBASE_DEMO_ADMIN_PASSWORD"
- *
- * Bare `$VAR` is strict (#775) — an unset variable throws at startup naming
- * the key, so a typo cannot quietly seed the account with the literal string.
+ * With the variable unset the addon seeds no account and logs why — it does
+ * not stop the boot, because a demo missing its dashboard login is still a
+ * working wiki. The key uses the `${VAR}` brace form for exactly that reason:
+ * bare `$VAR` is strict (#775) and would throw inside getAddonConfig, taking
+ * the whole addon down — pages included — over an optional password.
  *
  * Pages in `pages/` are seeded by AddonsManager on startup and listed in
  * /admin/required-pages for on-demand sync. `Demo Sandbox` is deliberately
@@ -40,15 +41,17 @@ import type UserManager from '../../dist/src/managers/UserManager.js';
 import logger from '../../dist/src/utils/logger.js';
 
 /**
- * Defaults for the shared account, published on the demo's Welcome page.
+ * Defaults for the shared account.
  *
- * Exported so the tests assert against these rather than restating the values
- * as literals — a duplicated credential string is both a drift risk and a
- * recurring secret-scanner false positive.
+ * There is deliberately no password here. It comes from
+ * NGDPBASE_DEMO_ADMIN_PASSWORD via the config key, for the same reason the
+ * core admin bootstrap password no longer ships one: a credential committed to
+ * this repository ends up live on somebody's public instance.
+ *
+ * Exported so the tests assert against these rather than restating them.
  */
 export const ADMIN_DEFAULTS = {
   username: 'admindemo',
-  password: 'admin123',
   email: 'admindemo@example.com',
   displayName: 'Demo Administrator'
 };
@@ -102,9 +105,30 @@ async function seedAdminAccount(
     return;
   }
 
+  // No fallback. An unset NGDPBASE_DEMO_ADMIN_PASSWORD means no account rather
+  // than an account with a guessable password — but it is NOT fatal: a demo
+  // missing its dashboard login is still a working wiki, so say so clearly and
+  // let the rest of the addon load.
+  //
+  // The key ships as the ${VAR} brace form, which is silent on a missing
+  // variable and leaves the placeholder intact — so "unset" arrives here as
+  // the literal "${NGDPBASE_DEMO_ADMIN_PASSWORD}", not as an empty string.
+  // Seeding an account with that as its password would be worse than seeding
+  // none, since it is a perfectly guessable credential.
+  const configured = readString(account, 'password', '');
+  const password = configured.startsWith('${') ? '' : configured;
+  if (!password) {
+    logger.warn(
+      `[demo addon] No password configured for "${username}" — the shared admin account was NOT created. ` +
+      'Set NGDPBASE_DEMO_ADMIN_PASSWORD in the instance .env (it is meant to be published on the ' +
+      'Welcome page, so do not reuse a real password), then restart.'
+    );
+    return;
+  }
+
   await userManager.createUser({
     username,
-    password: readString(account, 'password', ADMIN_DEFAULTS.password),
+    password,
     email: readString(account, 'email', ADMIN_DEFAULTS.email),
     displayName: readString(account, 'display-name', ADMIN_DEFAULTS.displayName),
     roles: ['demo-admin'],

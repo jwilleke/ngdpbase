@@ -38,7 +38,6 @@ The **UserManager** handles user authentication, authorization, role management,
 │    - ConfigurationManager.getProperty()                 │
 │    - ngdpbase.user.provider.storagedir                   │
 │    - ngdpbase.user.security.passwordsalt                 │
-│    - ngdpbase.user.security.defaultpassword              │
 │    - ngdpbase.user.defaults.timezone                     │
 │    - ngdpbase.roles.definitions (role metadata)          │
 └───────────────────┬─────────────────────────────────────┘
@@ -52,9 +51,13 @@ The **UserManager** handles user authentication, authorization, role management,
                     │
                     ▼
 ┌─────────────────────────────────────────────────────────┐
-│ 4. Create Default Admin (if no users exist)            │
+│ 4. Create Bootstrap Admin (only if no users exist)     │
+│    - Reads ngdpbase.user.security.defaultpassword HERE, │
+│      not at step 2: it is a bare env-ref and throws     │
+│      when unset, which would stop every existing        │
+│      install from booting                               │
 │    - Username: admin                                    │
-│    - Password: from config (default: admin123)          │
+│    - Password: NGDPBASE_ADMIN_PASSWORD (no default)     │
 │    - Role: admin                                        │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -113,7 +116,7 @@ The **UserManager** handles user authentication, authorization, role management,
 {
   "_comment_user_security": "User security settings (ALL LOWERCASE)",
   "ngdpbase.user.security.passwordsalt": "ngdpbase-salt",
-  "ngdpbase.user.security.defaultpassword": "admin123",
+  "ngdpbase.user.security.defaultpassword": "$NGDPBASE_ADMIN_PASSWORD",
   "ngdpbase.user.security.sessionexpiration": 86400000
 }
 ```
@@ -177,7 +180,7 @@ Authenticates a user with username/password credentials.
 **Example:**
 
 ```javascript
-const user = await userManager.authenticateUser('admin', 'admin123');
+const user = await userManager.authenticateUser('admin', process.env.NGDPBASE_ADMIN_PASSWORD);
 if (user) {
   console.log(`Authenticated: ${user.displayName}`);
 }

@@ -209,12 +209,12 @@ When `HEADLESS_INSTALL=true` is set:
 - Copies required startup pages to `data/pages/` automatically
 - Copies example configs to `data/config/` automatically
 - Creates `.install-complete` marker file
-- Uses default admin credentials (`admin` / `admin123`)
+- Creates the `admin` account with the password from `NGDPBASE_ADMIN_PASSWORD`
 - App is immediately ready for use - no wizard required
 
 ### Security Note
 
-The default admin password (`admin123`) should be changed immediately after first login. The wiki will display a security warning on the console until you change it.
+Pass `NGDPBASE_ADMIN_PASSWORD` into the container before the first start — ngdpbase ships no default admin password, and a headless install with it unset refuses to start rather than creating a guessable account. Change the password after first login; the console warns until you do.
 
 ### Pre-configuring Settings (Optional)
 

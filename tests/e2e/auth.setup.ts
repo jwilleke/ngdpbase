@@ -15,6 +15,9 @@ setup('authenticate', async ({ page }) => {
 
   // Test credentials from env or defaults
   const adminUser = process.env.E2E_ADMIN_USER || 'admin';
+  // Local throwaway instances were bootstrapped with this before ngdpbase
+  // stopped shipping a default admin password. A FRESH e2e instance now needs
+  // NGDPBASE_ADMIN_PASSWORD set at first boot, and E2E_ADMIN_PASS set to match.
   const adminPass = process.env.E2E_ADMIN_PASS || 'admin123';
 
   // Navigate to admin login page (always shows password form regardless of OAuth config)

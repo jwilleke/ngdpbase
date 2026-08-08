@@ -603,8 +603,10 @@ class InstallService {
    * - Creates .install-complete marker
    * - Skips wizard entirely
    *
-   * Note: WikiEngine creates default admin (admin/admin123) automatically.
-   * User is prompted to change password on first login (existing behavior).
+   * Note: WikiEngine creates the `admin` account automatically, using
+   * NGDPBASE_ADMIN_PASSWORD. There is no default — a headless install with
+   * that variable unset refuses to start. User is prompted to change the
+   * password on first login (existing behavior).
    *
    * Custom config: the operator must provide
    * `INSTANCE_DATA_FOLDER/config/app-custom-config.json` (e.g., via a Docker

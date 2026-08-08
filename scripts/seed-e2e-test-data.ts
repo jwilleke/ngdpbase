@@ -2,7 +2,8 @@
  * Seed E2E Test Data
  *
  * Prepares the data directory for E2E tests. Simple file operations only.
- * WikiEngine will create the default admin (admin/admin123) on startup.
+ * WikiEngine creates the admin account on startup using NGDPBASE_ADMIN_PASSWORD.
+ * Set that variable (and E2E_ADMIN_PASS to match) before seeding a fresh instance.
  *
  * Usage:
  *   node scripts/seed-e2e-test-data.js
@@ -53,10 +54,10 @@ async function seedTestData() {
     console.log('✅ Installation marked complete');
 
     console.log('\n🎉 E2E test data ready!');
-    console.log('   WikiEngine will create default admin (admin/admin123) on startup');
+    console.log('   WikiEngine will create the admin user from NGDPBASE_ADMIN_PASSWORD on startup');
 
   } catch (error) {
-    console.error('❌ Failed:', error.message);
+    console.error('❌ Failed:', error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
 }

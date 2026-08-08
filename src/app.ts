@@ -627,22 +627,17 @@ void (async (): Promise<void> => {
   }
   console.log(`🌐 Visit: ${baseURL}`);
 
+  // The password itself is never echoed. It used to be, because it was the
+  // shipped, publicly-known 'admin123' and printing it gave away nothing.
+  // ngdpbase no longer ships a default: every bootstrap password is now
+  // operator-supplied, so echoing one would write a live credential into the
+  // logs — and /admin/logs is readable by anyone holding `admin-read`, which
+  // is exactly what the read-only demo role grants (#1029).
   const isDefaultPassword = await userManager.isAdminUsingDefaultPassword();
   if (isDefaultPassword) {
-    const defaultPassword = configManager.getProperty('ngdpbase.user.security.defaultpassword', 'admin123');
-
-    // Only echo the password when it is the shipped, publicly-known default.
-    // Printing 'admin123' tells an attacker nothing they could not read in the
-    // repository; printing an operator-supplied one writes a live credential
-    // into the logs — and /admin/logs is readable by anyone holding
-    // `admin-read`, which is exactly what a read-only demo role grants (#1029).
-    if (defaultPassword === 'admin123') {
-      console.log(`⚠️  Use user 'admin' and password '${defaultPassword}' to login.`);
-      console.log('⚠️  SECURITY WARNING: Change the admin password immediately!');
-    } else {
-      console.log('⚠️  The admin account is still using the password configured in');
-      console.log("⚠️  'ngdpbase.user.security.defaultpassword'. Change it, or rotate that value.");
-    }
+    console.log('⚠️  The admin account is still using the bootstrap password from');
+    console.log("⚠️  'ngdpbase.user.security.defaultpassword' (NGDPBASE_ADMIN_PASSWORD).");
+    console.log('⚠️  Change it, or rotate that value.');
   }
 
   console.log('='.repeat(60) + '\n');

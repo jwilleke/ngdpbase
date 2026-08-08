@@ -8,6 +8,8 @@ import { test, expect } from '@playwright/test';
 
 // Test credentials - use env vars or defaults
 const TEST_USER = process.env.E2E_ADMIN_USER || 'admin';
+// See auth.setup.ts — legacy bootstrap value for the existing local test
+// instances; a fresh one needs NGDPBASE_ADMIN_PASSWORD + E2E_ADMIN_PASS.
 const TEST_PASS = process.env.E2E_ADMIN_PASS || 'admin123';
 
 /**

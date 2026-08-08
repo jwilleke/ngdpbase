@@ -140,8 +140,36 @@ describe('UserManager', () => {
       await userManager.initialize();
 
       expect(userManager.passwordSalt).toBe('test-salt');
-      expect(userManager.defaultPassword).toBe('admin123');
       // sessionExpiration and defaultTimezone were removed as dead code (declared but never used)
+    });
+
+    test('the startup default-password check tolerates an unresolvable key', async () => {
+      // app.ts calls isAdminUsingDefaultPassword() on EVERY boot. The key
+      // ships as the bare env-ref "$NGDPBASE_ADMIN_PASSWORD", and a bare ref
+      // THROWS when the variable is unset — the normal state on an existing
+      // install, whose admin was created long ago. If this check propagated
+      // that, upgrading would take the instance down. It must simply report
+      // "not using the bootstrap password" and move on.
+      await userManager.initialize();
+      mockConfigManager.getProperty.mockImplementation(() => {
+        throw new Error('references unset env var NGDPBASE_ADMIN_PASSWORD');
+      });
+
+      await expect(userManager.isAdminUsingDefaultPassword()).resolves.toBe(false);
+    });
+
+    test('refuses to bootstrap an admin when no password is configured', async () => {
+      // The whole point of dropping the shipped 'admin123': an unattended
+      // install must fail loudly rather than quietly create an account whose
+      // credentials are published in this repository (#1033).
+      mockConfigManager.getProperty.mockImplementation((key, defaultValue) => {
+        if (key === 'ngdpbase.user.provider') return 'fileuserprovider';
+        if (key === 'ngdpbase.user.provider.default') return 'fileuserprovider';
+        if (key === 'ngdpbase.roles.definitions') return {};
+        return defaultValue;
+      });
+
+      await expect(userManager.initialize()).rejects.toThrow(/NGDPBASE_ADMIN_PASSWORD/);
     });
   });
 
@@ -261,6 +289,9 @@ describe('UserManager', () => {
         if (key === 'ngdpbase.user.provider') return 'fileuserprovider';
         if (key === 'ngdpbase.user.provider.default') return 'fileuserprovider';
         if (key === 'ngdpbase.roles.definitions') return {};
+        // The store starts empty here, so initialize() bootstraps an admin —
+        // which now refuses to proceed without a configured password.
+        if (key === 'ngdpbase.user.security.defaultpassword') return 'test-bootstrap-pw';
         return defaultValue;
       });
 

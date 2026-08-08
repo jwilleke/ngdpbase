@@ -194,7 +194,7 @@ kubectl exec -n <your-namespace> deploy/ngdpbase -- cat /app/data/roles/admin.js
 # `member` array should reference a UUID that matches a file in /app/data/persons/
 ```
 
-Log in via the ingress hostname as `admin` / `admin123` and change the password immediately.
+Log in via the ingress hostname as `admin`, using the password supplied in `NGDPBASE_ADMIN_PASSWORD`, and change it immediately.
 
 If the boot log is missing one of those lines, you've probably hit §1, §2, or §3 from the gotchas doc. The cleanup recipe in §2 re-triggers `createDefaultAdmin` cleanly without destroying pages or attachments.
 

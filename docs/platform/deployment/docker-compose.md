@@ -69,7 +69,7 @@ If you'd rather not click through the browser install wizard, drop a config at `
 }
 ```
 
-Then add `HEADLESS_INSTALL=true` to the environment (`.env`, or directly under `environment:` in the compose file). Headless install creates the default `admin` / `admin123` user — change the password on first login.
+Then add `HEADLESS_INSTALL=true` to the environment (`.env`, or directly under `environment:` in the compose file), and set `NGDPBASE_ADMIN_PASSWORD` alongside it. Headless install creates the `admin` user with that password; with the variable unset it refuses to start, because ngdpbase ships no default admin password. Change the password on first login.
 
 If you set `HEADLESS_INSTALL=true` and also want a pre-named Organization (avoiding the wizard's seed step), pre-supply the JSON-LD file at `./data/organizations/<name>.json` and point at it from the custom config. See [Headless deployment gotchas §1](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#1-anchor-organization-json-ld-must-be-pre-supplied) for the exact shape — skipping this leaves the admin user with no role bindings and they resolve as Anonymous despite a successful login.
 

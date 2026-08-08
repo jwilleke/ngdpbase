@@ -62,7 +62,7 @@ If you'd rather not click through the browser install wizard, drop a config at `
 }
 ```
 
-Set `HEADLESS_INSTALL=true` in the environment (or `.env`) to also skip the wizard at runtime. Headless mode creates the default `admin` / `admin123` user automatically — change the password immediately after first login.
+Set `HEADLESS_INSTALL=true` in the environment (or `.env`) to also skip the wizard at runtime, and set `NGDPBASE_ADMIN_PASSWORD` alongside it. Headless mode creates the `admin` user with that password; with the variable unset it refuses to start, because ngdpbase ships no default admin password. Change the password immediately after first login.
 
 If you go headless and want a pre-named Organization (rather than the wizard-driven seed), pre-supply the JSON-LD file too. See [Headless deployment gotchas §1](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#1-anchor-organization-json-ld-must-be-pre-supplied) for the exact shape.
 
@@ -130,8 +130,8 @@ tail -n 200 ${FAST_STORAGE:-./data}/logs/ngdpbase.log
 Then in a browser:
 
 1. Open `http://localhost:3000` — you should see the front page (or the install wizard if you skipped step 4).
-2. Log in as `admin` (password: `admin123` for headless, or whatever you set in the wizard).
-3. Change the admin password immediately if you used `admin123`.
+2. Log in as `admin` (password: `NGDPBASE_ADMIN_PASSWORD` for headless, or whatever you set in the wizard).
+3. Change the admin password immediately if the bootstrap value is shared with anyone.
 4. Confirm the admin dashboard loads (`/admin`) and addons appear under **Add-ons**.
 
 If the front page returns 200 but the admin user resolves as `Anonymous`, you've probably hit [Headless deployment gotchas §1](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#1-anchor-organization-json-ld-must-be-pre-supplied) (missing anchor Organization). Stop the server, supply the JSON-LD, restart.

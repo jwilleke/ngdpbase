@@ -100,7 +100,7 @@ When `HEADLESS_INSTALL=true`:
 - Copies required startup pages to `data/pages/`
 - Copies example configs to `data/config/`
 - Creates `.install-complete` marker
-- Uses default admin credentials (`admin` / `admin123`)
+- Creates the `admin` account with the password from `NGDPBASE_ADMIN_PASSWORD`
 - App is immediately ready - no wizard required
 
 ### First Login
@@ -108,7 +108,7 @@ When `HEADLESS_INSTALL=true`:
 After deployment, login with default credentials:
 
 - **Username:** `admin`
-- **Password:** `admin123`
+- **Password:** the value of `NGDPBASE_ADMIN_PASSWORD` — supply it from a Secret; there is no default
 
 **Important:** Change the admin password immediately after first login. The wiki displays a security warning until you do.
 

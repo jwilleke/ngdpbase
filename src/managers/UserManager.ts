@@ -158,7 +158,6 @@ interface RoleCreateData {
  * @property {Map<string, Role>} roles - Role definitions
  * @property {Map<string, string>} permissions - Permission definitions
  * @property {string} passwordSalt - Salt for password hashing
- * @property {string} defaultPassword - Default password for new admin user
  * @property {number} sessionExpiration - Session expiration time in milliseconds
  * @property {string} defaultTimezone - Default timezone for users
  *
@@ -176,7 +175,6 @@ class UserManager extends BaseManager {
   private roles: Map<string, Role> = new Map();
   private permissions: Map<string, string> = new Map();
   private passwordSalt?: string;
-  private defaultPassword?: string;
 
   /**
    * Creates a new UserManager instance
@@ -243,7 +241,14 @@ class UserManager extends BaseManager {
 
     // Load configuration settings (for business logic)
     this.passwordSalt = configManager.getProperty('ngdpbase.user.security.passwordsalt', 'amdwiki-salt') as string;
-    this.defaultPassword = configManager.getProperty('ngdpbase.user.security.defaultpassword', 'admin123') as string;
+
+    // NOT read here on purpose. `ngdpbase.user.security.defaultpassword` ships
+    // as the bare env-ref "$NGDPBASE_ADMIN_PASSWORD", and a bare ref throws
+    // when the variable is unset (#775). Reading it on every startup would
+    // therefore refuse to boot every existing install whose operator has no
+    // such variable — even though those installs already have an admin and
+    // will never use the value. It is read where it is actually needed, in
+    // createDefaultAdmin(), which runs only when the user store is empty.
 
     // Load role definitions from config
     const roleDefinitions = configManager.getProperty('ngdpbase.roles.definitions', {}) as Record<string, Role>;
@@ -376,8 +381,47 @@ class UserManager extends BaseManager {
   }
 
   /**
-   * Check if admin user still has the default password
-   * @returns {Promise<boolean>} True if admin has default password
+   * Read the configured bootstrap password.
+   *
+   * Ships as the bare env-ref "$NGDPBASE_ADMIN_PASSWORD", so this THROWS when
+   * the variable is unset — deliberately, at the one moment it matters. Call
+   * it only where a missing value should stop the boot; use
+   * `tryGetBootstrapPassword()` for the advisory checks.
+   *
+   * @throws When the configured value is an env-ref naming an unset variable.
+   */
+  private getBootstrapPassword(): string {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const value = configManager?.getProperty('ngdpbase.user.security.defaultpassword');
+    if (typeof value !== 'string' || value === '') {
+      throw new Error(
+        "No admin bootstrap password is configured. Set NGDPBASE_ADMIN_PASSWORD in the instance's .env, " +
+        "or give 'ngdpbase.user.security.defaultpassword' a literal value in app-custom-config.json. " +
+        'ngdpbase no longer ships a default admin password.'
+      );
+    }
+    return value;
+  }
+
+  /**
+   * Same, but null instead of throwing. For callers that merely want to WARN
+   * about the bootstrap password still being in force — an install with no
+   * such variable set is the normal case there, not an error.
+   */
+  private tryGetBootstrapPassword(): string | null {
+    try {
+      return this.getBootstrapPassword();
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Check whether the admin account still has the configured bootstrap
+   * password. False when none is configured — there is then no shipped,
+   * well-known credential to warn about.
+   *
+   * @returns {Promise<boolean>} True if admin still has the bootstrap password
    */
   async isAdminUsingDefaultPassword(): Promise<boolean> {
     try {
@@ -388,7 +432,10 @@ class UserManager extends BaseManager {
       if (!adminUser) {
         return false;
       }
-      const defaultPassword = this.defaultPassword || 'admin123';
+      const defaultPassword = this.tryGetBootstrapPassword();
+      if (defaultPassword === null) {
+        return false;
+      }
       return this.verifyPassword(defaultPassword, adminUser.password);
     } catch (error) {
       logger.error('Error checking admin default password:', error);
@@ -397,14 +444,20 @@ class UserManager extends BaseManager {
   }
 
   /**
-   * Create default admin user
+   * Create the bootstrap admin account.
+   *
+   * Called only when the user store is empty. Throws when no bootstrap
+   * password is configured — refusing to start is the point: ngdpbase used to
+   * ship `admin123`, which meant any install left unattended was reachable
+   * with a credential published in this repository, and the login page
+   * advertised it (#1033).
    */
   async createDefaultAdmin(): Promise<void> {
     if (!this.provider) {
       throw new Error('Provider not initialized');
     }
 
-    const defaultPassword = this.defaultPassword || 'admin123';
+    const defaultPassword = this.getBootstrapPassword();
 
     const adminUser: User = {
       username: 'admin',
@@ -425,7 +478,12 @@ class UserManager extends BaseManager {
     await this.syncPersonOnCreate(adminUser);
     await this.applyRoleDiff(adminUser.username, [], ['admin']);
 
-    logger.info(`👤 Created default admin user (username: admin, password: ${defaultPassword})`);
+    // Never log the value. `2b48d838` removed the equivalent echo from the
+    // startup banner but left this one, which writes the live credential into
+    // the structured log — and /admin/logs is readable by anyone holding
+    // `admin-read`, which is exactly what the read-only demo role grants
+    // (#1029). The operator already knows the password: they set it.
+    logger.info('👤 Created bootstrap admin user (username: admin)');
   }
 
   /**

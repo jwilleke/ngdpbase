@@ -63,25 +63,56 @@ describe('demo addon register() (#1029)', () => {
 });
 
 describe('demo addon shared admin account (#1029)', () => {
+  /** The operator-supplied password, as it arrives from NGDPBASE_DEMO_ADMIN_PASSWORD. */
+  const SUPPLIED = { 'admin-account': { password: CONFIGURED.password } };
+
   test('seeds admindemo with demo-admin and a locked profile', async () => {
     const { engine, userManager } = makeEngine();
-    await demoAddon.register(engine, {});
+    await demoAddon.register(engine, SUPPLIED);
 
     expect(userManager.createUser).toHaveBeenCalledTimes(1);
     const created = userManager.createUser.mock.calls[0][0];
     expect(created.username).toBe(ADMIN_DEFAULTS.username);
-    expect(created.password).toBe(ADMIN_DEFAULTS.password);
+    expect(created.password).toBe(CONFIGURED.password);
     expect(created.roles).toEqual(['demo-admin']);
     // Without this the published password is a takeover: a visitor repoints
     // the email at their own inbox and magic-links back in forever.
     expect(created.profileLocked).toBe(true);
   });
 
+  test('seeds nothing when no password is configured', async () => {
+    // No fallback by design. An account with a guessable password is worse
+    // than no account — that is the whole reason 'admin123' stopped shipping.
+    const { engine, userManager } = makeEngine();
+    await demoAddon.register(engine, {});
+
+    expect(userManager.createUser).not.toHaveBeenCalled();
+  });
+
+  test('treats an unresolved ${VAR} placeholder as no password', async () => {
+    // The key ships in the brace form, which is SILENT on a missing variable
+    // and leaves the placeholder intact — so "unset" arrives as the literal
+    // "${NGDPBASE_DEMO_ADMIN_PASSWORD}". Seeding that as a password would be
+    // the worst outcome of all: a real account with a credential anyone can
+    // read out of the shipped config.
+    const { engine, userManager } = makeEngine();
+    await demoAddon.register(engine, {
+      'admin-account': { password: '${NGDPBASE_DEMO_ADMIN_PASSWORD}' }
+    });
+
+    expect(userManager.createUser).not.toHaveBeenCalled();
+  });
+
+  test('a missing password does not stop the addon loading — pages still ship', async () => {
+    const { engine } = makeEngine();
+    await expect(demoAddon.register(engine, {})).resolves.toBeUndefined();
+  });
+
   test('leaves an existing account alone, so a rotated password survives restart', async () => {
     const { engine, userManager } = makeEngine({
       existingUser: { username: 'admindemo' }
     });
-    await demoAddon.register(engine, {});
+    await demoAddon.register(engine, SUPPLIED);
 
     expect(userManager.createUser).not.toHaveBeenCalled();
   });
@@ -111,7 +142,10 @@ describe('demo addon shared admin account (#1029)', () => {
     const { engine, userManager } = makeEngine();
     userManager.createUser.mockRejectedValue(new Error('user store unreachable'));
 
-    await expect(demoAddon.register(engine, {})).resolves.toBeUndefined();
+    // Must supply a password, or seeding short-circuits before createUser and
+    // the rejection never fires — the test would pass without proving anything.
+    await expect(demoAddon.register(engine, SUPPLIED)).resolves.toBeUndefined();
+    expect(userManager.createUser).toHaveBeenCalled();
   });
 
   test('reports healthy, and says who the addon is for', async () => {
