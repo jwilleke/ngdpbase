@@ -78,6 +78,8 @@ interface UserCreateInput {
   isExternal?: boolean;
   isActive?: boolean;
   acceptLanguage?: string;
+  /** Freeze password/email/displayName against self-service change (#1029). */
+  profileLocked?: boolean;
 }
 
 /**
@@ -807,7 +809,7 @@ class UserManager extends BaseManager {
       throw new Error('Provider not initialized');
     }
 
-    const { username, email, displayName, password, roles = ['reader'], isExternal = false, isActive = true, acceptLanguage } = userData;
+    const { username, email, displayName, password, roles = ['reader'], isExternal = false, isActive = true, acceptLanguage, profileLocked = false } = userData;
 
     if (await this.provider.userExists(username)) {
       const existingUsers = await this.provider.getAllUsernames();
@@ -838,6 +840,7 @@ class UserManager extends BaseManager {
       isActive: isActive,
       isSystem: false,
       isExternal: isExternal,
+      profileLocked: profileLocked || undefined,
       createdAt: new Date().toISOString(),
       lastLogin: undefined,
       loginCount: 0,

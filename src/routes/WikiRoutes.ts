@@ -6883,6 +6883,37 @@ ${panes}
       } = req.body;
       const updates: { displayName?: string; email?: string; password?: string; profilePage?: string } = {};
 
+      // #1029: a shared account whose credentials are published must not let
+      // its holder edit its identity — doing so hands the account away.
+      // Changing the password locks out every other visitor and makes the
+      // published credential wrong; changing the *email* is worse, because
+      // magic-link login resolves an account by email address, so repointing
+      // it at a private inbox grants permanent exclusive access. Everything
+      // else (preferences, avatar, pinned links) stays editable. An admin can
+      // still change all of it via /admin/users/<name>/edit (`user-edit`).
+      //
+      // Compared against the stored values rather than merely "was submitted":
+      // the profile form posts displayName and email prefilled on every save,
+      // so presence alone would block unrelated edits.
+      const account = await userManager.getUser(currentUser.username ?? '');
+      if (account?.profileLocked) {
+        const attempted: string[] = [];
+        if (newPassword) attempted.push('password');
+        if (email && email !== account.email) attempted.push('email address');
+        if (displayName && displayName !== account.displayName) attempted.push('display name');
+
+        if (attempted.length > 0) {
+          logger.warn(
+            `[profile] Refused a change to ${attempted.join(', ')} on locked shared account "${account.username}"`
+          );
+          return res.redirect(
+            '/profile?error=' + encodeURIComponent(
+              `This is a shared account — its ${attempted.join(', ')} can only be changed by an administrator`
+            )
+          );
+        }
+      }
+
       if (displayName) updates.displayName = displayName;
       if (email) updates.email = email;
       updates.profilePage = (profilePage as string || '').trim() || undefined;

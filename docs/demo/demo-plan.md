@@ -31,8 +31,8 @@ Showing the software to someone who has not installed it. That means:
 | `demo-admin` role registered by the addon | done |
 | Red warning on the Welcome page about visibility | done |
 | Demo `app-custom-config.json` moved onto the volume, editable | done |
-| Enable the addon — **after** the release, see ordering below | **not started** |
-| `admindemo` account created on the demo instance | **not started** — operator |
+| Enable the addon — **after** the release, see ordering below | done |
+| `admindemo` seeded by the addon, profile locked, credentials on the Welcome page | done |
 
 ### Ordering — the addon flag cannot be set early
 
@@ -48,7 +48,9 @@ The guard is correct — a key naming a non-existent addon is far more often a t
 1. Release ngdpbase (minor — new permission surface)
 2. Flux bumps the demo to that image
 3. Set `ngdpbase.addons.demo.enabled: true` in `app-custom-config.json` **on the volume** — one line, over SSH or through `/admin/configuration`, no manifest edit and no PR
-4. Create the `admindemo` account and publish its credentials
+4. Nothing — the addon seeds `admindemo` itself on the next boot
+
+Step 4 used to be "create the `admindemo` account and publish its credentials", by hand, on each instance. The addon now does it in `register()`, which is what makes enabling the addon the *whole* setup: the account cannot drift from the credentials printed on the Welcome page, and anyone running their own demo gets a working dashboard login with no manual step. Seeding is idempotent — an account that already exists is left exactly as it is, so an operator who rotates the password keeps that across restarts.
 
 Step 3 is a config edit rather than a deployment change because the demo's `app-custom-config.json` now lives on the persistent volume, matching geohazardwatch (`840b87c`). A `subPath` ConfigMap mount is read-only, so app settings supplied that way cannot be changed without a redeploy — which is the wrong home for anything an operator edits.
 
@@ -96,7 +98,11 @@ Deliberately absent:
 
 ## Open questions
 
-- **Should the Welcome page publish the `admindemo` credentials, or should they be handed out on request?** Publishing is a better demo; it also means anyone can read `/admin/logs`, which carries visitor email addresses until the next pod restart. Leaning publish, with the warning.
+- ~~**Should the Welcome page publish the `admindemo` credentials, or should they be handed out on request?**~~ **Resolved: publish.** `admindemo` / `admin123`, printed on the Welcome page. Handing them out on request is not a demo. The `/admin/logs` exposure stands — anyone signed in can read visitor email addresses until the next pod restart — and the red warning on the Welcome page covers it.
+
+  Publishing a shared password only works if the holder cannot take the account over, so it is seeded with `profileLocked`: password, email and display name are refused on `/profile`. **Email is the reason the lock covers more than the password.** Magic-link login resolves an account by address, so a visitor who repointed `admindemo`'s email at their own inbox would have permanent exclusive access and the published password would stop working for everyone else. A password-only lock looks right and leaves that open. An administrator can still change all three through `/admin/users/admindemo/edit`, which needs `user-edit`.
+
+  `profileLocked` is deliberately not `isSystem`. `isSystem` means "cannot be deleted" and is set on `admin` — an account that must keep self-service password change.
 - **Does the demo still need its mounted anchor Organization** now that #1027 seeds one? It is redundant but harmless, and the mount survives a volume reset. Left as-is deliberately.
 
 ## Verification

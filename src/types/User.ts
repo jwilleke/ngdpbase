@@ -108,6 +108,33 @@ export interface User {
   /** Whether user is external (LDAP, OAuth) */
   isExternal: boolean;
 
+  /**
+   * Freeze this account's identity against self-service change (#1029).
+   *
+   * For a shared account whose credentials are published — a demo login, say —
+   * letting the holder edit their own identity hands the account away:
+   *
+   * - **password** — the first visitor to change it locks out every other
+   *   visitor and makes the published credential wrong.
+   * - **email** — worse, and the reason this covers more than the password.
+   *   Magic-link login resolves an account by email address
+   *   (`MagicLinkAuthProvider.getUserByEmail`), so a visitor who repoints the
+   *   address at their own inbox can magic-link back in indefinitely. The
+   *   password lock alone would not have stopped them.
+   * - **displayName** — defacement on a public instance.
+   *
+   * Preferences, avatar and pinned links stay editable: the point is to let a
+   * visitor drive the account, not to freeze it.
+   *
+   * Blocks the `/profile` path only. An administrator can still change any of
+   * it through `/admin/users/<name>/edit`, which requires `user-edit`, so the
+   * account is never unrecoverable.
+   *
+   * Distinct from `isSystem`, which means "cannot be deleted" and is set on
+   * `admin` — an account that must keep self-service password change.
+   */
+  profileLocked?: boolean;
+
   /** Account creation timestamp (ISO 8601) */
   createdAt: string;
 

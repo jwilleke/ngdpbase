@@ -14,15 +14,21 @@
 
 import demoAddon from '../index';
 
-function makeEngine() {
+function makeEngine(overrides: { existingUser?: unknown } = {}) {
   const configManager = {
     getProperty: vi.fn((_k: string, d: unknown) => d),
     setRuntimeProperty: vi.fn()
   };
-  return {
-    engine: { getManager: vi.fn(() => configManager) },
-    configManager
+  const userManager = {
+    getUser: vi.fn(() => Promise.resolve(overrides.existingUser)),
+    createUser: vi.fn(() => Promise.resolve({}))
   };
+  const engine = {
+    getManager: vi.fn((name: string) =>
+      name === 'UserManager' ? userManager : configManager
+    )
+  };
+  return { engine, configManager, userManager };
 }
 
 beforeEach(() => vi.clearAllMocks());
@@ -40,6 +46,65 @@ describe('demo addon register() (#1029)', () => {
   test('resolves without an engine of any kind', async () => {
     const engine = { getManager: vi.fn(() => null) };
     await expect(demoAddon.register(engine as never, {})).resolves.toBeUndefined();
+  });
+});
+
+describe('demo addon shared admin account (#1029)', () => {
+  test('seeds admindemo with demo-admin and a locked profile', async () => {
+    const { engine, userManager } = makeEngine();
+    await demoAddon.register(engine, {});
+
+    expect(userManager.createUser).toHaveBeenCalledTimes(1);
+    const created = userManager.createUser.mock.calls[0][0];
+    expect(created.username).toBe('admindemo');
+    expect(created.password).toBe('admin123');
+    expect(created.roles).toEqual(['demo-admin']);
+    // Without this the published password is a takeover: a visitor repoints
+    // the email at their own inbox and magic-links back in forever.
+    expect(created.profileLocked).toBe(true);
+  });
+
+  test('leaves an existing account alone, so a rotated password survives restart', async () => {
+    const { engine, userManager } = makeEngine({
+      existingUser: { username: 'admindemo' }
+    });
+    await demoAddon.register(engine, {});
+
+    expect(userManager.createUser).not.toHaveBeenCalled();
+  });
+
+  test('honours configured username, password and email', async () => {
+    const { engine, userManager } = makeEngine();
+    await demoAddon.register(engine, {
+      'admin-account': {
+        username: 'lookaround',
+        password: 'seekrit',
+        email: 'look@example.org',
+        'display-name': 'Look Around'
+      }
+    });
+
+    const created = userManager.createUser.mock.calls[0][0];
+    expect(created).toMatchObject({
+      username: 'lookaround',
+      password: 'seekrit',
+      email: 'look@example.org',
+      displayName: 'Look Around'
+    });
+  });
+
+  test('skips seeding when admin-account.enabled is false', async () => {
+    const { engine, userManager } = makeEngine();
+    await demoAddon.register(engine, { 'admin-account': { enabled: false } });
+
+    expect(userManager.createUser).not.toHaveBeenCalled();
+  });
+
+  test('a failed seed does not fail registration — the pages still ship', async () => {
+    const { engine, userManager } = makeEngine();
+    userManager.createUser.mockRejectedValue(new Error('user store unreachable'));
+
+    await expect(demoAddon.register(engine, {})).resolves.toBeUndefined();
   });
 
   test('reports healthy, and says who the addon is for', async () => {
