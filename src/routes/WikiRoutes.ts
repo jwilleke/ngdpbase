@@ -806,6 +806,15 @@ class WikiRoutes {
     // access" and the seeded page tells the visitor registration is closed —
     // exactly wrong on an instance where anyone can sign up with an email.
     const magicLinkSignup = this.isMagicLinkSignupEnabled();
+
+    // #1029: whether to offer the admin dashboard in the user dropdown. The
+    // header used to test `roles.includes('admin')` — a hardcoded role name —
+    // so a role holding `admin-read` could open /admin by typing the URL but
+    // was never shown the link. Ask the same question the route asks.
+    const canViewAdmin = userContext?.isAuthenticated
+      ? (await userManager.hasPermission(userContext.username, 'admin-read'))
+        || (await userManager.hasPermission(userContext.username, 'admin-system'))
+      : false;
     const registrationRedirectPage = (configManager?.getProperty(
       'ngdpbase.application.registration.redirect-page',
       'request-access'
@@ -862,6 +871,7 @@ class WikiRoutes {
       capabilities: Record<string, boolean>;
       allowRegistration: boolean;
       magicLinkSignup: boolean;
+      canViewAdmin: boolean;
       registrationRedirectPage: string;
       contactAvailable: boolean;
       contactFooterEnabled: boolean;
@@ -906,6 +916,7 @@ class WikiRoutes {
       capabilities: this.engine.getCapabilities?.() ?? {},
       allowRegistration,
       magicLinkSignup,
+      canViewAdmin,
       registrationRedirectPage,
       contactAvailable,
       contactFooterEnabled
