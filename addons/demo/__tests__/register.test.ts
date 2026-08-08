@@ -36,12 +36,17 @@ function makeEngine(overrides: { existingUser?: unknown } = {}) {
     getUser: vi.fn(() => Promise.resolve(overrides.existingUser)),
     createUser: vi.fn(() => Promise.resolve({}))
   };
-  const engine = {
-    getManager: vi.fn((name: string) =>
-      name === 'UserManager' ? userManager : configManager
-    )
+  const pluginManager = {
+    registerPlugin: vi.fn(() => Promise.resolve())
   };
-  return { engine, configManager, userManager };
+  const engine = {
+    getManager: vi.fn((name: string) => {
+      if (name === 'UserManager') return userManager;
+      if (name === 'PluginManager') return pluginManager;
+      return configManager;
+    })
+  };
+  return { engine, configManager, userManager, pluginManager };
 }
 
 beforeEach(() => vi.clearAllMocks());
@@ -59,6 +64,13 @@ describe('demo addon register() (#1029)', () => {
   test('resolves without an engine of any kind', async () => {
     const engine = { getManager: vi.fn(() => null) };
     await expect(demoAddon.register(engine as never, {})).resolves.toBeUndefined();
+  });
+
+  test('registers [{DemoLogin}] so the Welcome page can show live credentials', async () => {
+    const { engine, pluginManager } = makeEngine();
+    await demoAddon.register(engine, {});
+
+    expect(pluginManager.registerPlugin).toHaveBeenCalledWith('DemoLogin', expect.anything());
   });
 });
 

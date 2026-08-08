@@ -19,9 +19,22 @@
  *   ngdpbase.addons.demo.admin-account.email
  *   ngdpbase.addons.demo.admin-account.display-name
  *
- * No password ships. Set NGDPBASE_DEMO_ADMIN_PASSWORD in the instance `.env`;
- * the config key already points at it. This password is meant to be PUBLISHED
- * on the Welcome page, so pick it accordingly and never reuse a real one.
+ * No password ships. This password is meant to be PUBLISHED on the Welcome
+ * page — pick it accordingly and never reuse a real one. Two ways to supply
+ * it, and which one applies depends on how the instance starts:
+ *
+ *   1. `NGDPBASE_DEMO_ADMIN_PASSWORD` in `.env` — repo root or
+ *      `$FAST_STORAGE/.env`. Works ONLY when launched through `./server.sh`,
+ *      which sources both with `set -a`. The container image runs
+ *      `node dist/src/app.js` directly and there is no dotenv dependency, so
+ *      a `.env` file inside a container is never read.
+ *   2. A literal value for the config key in `app-custom-config.json`. This
+ *      is the one to use on Kubernetes: the file lives on the PVC and is
+ *      editable through /admin/configuration or over SSH, so it needs no
+ *      Secret, no manifest change and no GitOps PR.
+ *
+ * The Welcome page renders whichever is in force via [{DemoLogin}], so the
+ * published credentials cannot drift from the account that exists.
  *
  * With the variable unset the addon seeds no account and logs why — it does
  * not stop the boot, because a demo missing its dashboard login is still a
@@ -38,7 +51,9 @@
 import type { WikiEngine } from '../../dist/src/types/WikiEngine.js';
 import type { AddonStatusDetails } from '../../dist/src/managers/AddonsManager.js';
 import type UserManager from '../../dist/src/managers/UserManager.js';
+import type PluginManager from '../../dist/src/managers/PluginManager.js';
 import logger from '../../dist/src/utils/logger.js';
+import DemoLoginPlugin from './plugins/DemoLoginPlugin.js';
 
 /**
  * Defaults for the shared account.
@@ -159,6 +174,17 @@ const demoAddon = {
     //
     // Page seeding is handled by AddonsManager from `pages/`.
     logger.info('[demo addon] Enabled — demo pages seeded from addons/demo/pages');
+
+    // [{DemoLogin}] renders the shared account's credentials on the Welcome
+    // page. A plugin rather than literal text in the markdown, so the page
+    // reads the same config key the account is seeded from and the two cannot
+    // drift when the operator changes the password.
+    const pluginManager = engine.getManager<PluginManager>('PluginManager');
+    if (pluginManager) {
+      await pluginManager.registerPlugin('DemoLogin', DemoLoginPlugin);
+    } else {
+      logger.warn('[demo addon] PluginManager unavailable — [{DemoLogin}] will not render');
+    }
 
     // A failure here must not take the instance down: an unreachable user
     // store would otherwise turn "the demo login is missing" into "nothing
