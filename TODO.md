@@ -45,7 +45,8 @@ Scanner state: 1 open Dependabot alert (#96) + 2 open code-scanning alerts (#33,
 - [#1021](https://github.com/jwilleke/ngdpbase/issues/1021) — [FEATURE] Magic link: close the non-atomic verify→consume window (one token can mint two sessions) — *reachable now that magic link is the only door on a public instance*
 - [#1022](https://github.com/jwilleke/ngdpbase/issues/1022) — [FEATURE] Magic link: optional device/state binding + record IP and User-Agent at redemption
 - [#1028](https://github.com/jwilleke/ngdpbase/issues/1028) — [FEATURE] Config cleanup — remove dead keys and stop documenting them as live — *112 of 463 keys have no reader; `log4j.*` confirmed dead, the rest need triage against dynamic key construction*
-- [#1029](https://github.com/jwilleke/ngdpbase/issues/1029) — [FEATURE] Demo addon — scope demo content to the demo, and a read-only admin dashboard — *core work done (`c81cc0b5`, `d3670508`, `51058e9d`); needs a release, then enable on the demo and create the `admindemo` account*
+- [#1029](https://github.com/jwilleke/ngdpbase/issues/1029) — [FEATURE] Demo addon — scope demo content to the demo, and a read-only admin dashboard — *shipped in v4.6.0/v4.6.1 and enabled on the demo; awaiting the `admindemo` account to prove the dashboard end-to-end*
+- [#1030](https://github.com/jwilleke/ngdpbase/issues/1030) — [FEATURE] Redact configured secrets from log output — *generalises the leak fixed in `2b48d838`; prerequisite for #843*
 
 ## 🔵 In review
 
