@@ -12,7 +12,20 @@
  * An earlier revision did inject it, and that is exactly what happened.
  */
 
-import demoAddon from '../index';
+import demoAddon, { ADMIN_DEFAULTS } from '../index';
+
+/**
+ * Stand-ins for operator-supplied config. Deliberately not credential-shaped:
+ * a plausible-looking password literal here is a secret-scanner false positive
+ * on every scan, forever, and these assertions only care that the value is
+ * carried through unchanged.
+ */
+const CONFIGURED = {
+  username: 'lookaround',
+  password: 'configured-password-value',
+  email: 'look@example.org',
+  displayName: 'Look Around'
+};
 
 function makeEngine(overrides: { existingUser?: unknown } = {}) {
   const configManager = {
@@ -56,8 +69,8 @@ describe('demo addon shared admin account (#1029)', () => {
 
     expect(userManager.createUser).toHaveBeenCalledTimes(1);
     const created = userManager.createUser.mock.calls[0][0];
-    expect(created.username).toBe('admindemo');
-    expect(created.password).toBe('admin123');
+    expect(created.username).toBe(ADMIN_DEFAULTS.username);
+    expect(created.password).toBe(ADMIN_DEFAULTS.password);
     expect(created.roles).toEqual(['demo-admin']);
     // Without this the published password is a takeover: a visitor repoints
     // the email at their own inbox and magic-links back in forever.
@@ -77,20 +90,14 @@ describe('demo addon shared admin account (#1029)', () => {
     const { engine, userManager } = makeEngine();
     await demoAddon.register(engine, {
       'admin-account': {
-        username: 'lookaround',
-        password: 'seekrit',
-        email: 'look@example.org',
-        'display-name': 'Look Around'
+        username: CONFIGURED.username,
+        password: CONFIGURED.password,
+        email: CONFIGURED.email,
+        'display-name': CONFIGURED.displayName
       }
     });
 
-    const created = userManager.createUser.mock.calls[0][0];
-    expect(created).toMatchObject({
-      username: 'lookaround',
-      password: 'seekrit',
-      email: 'look@example.org',
-      displayName: 'Look Around'
-    });
+    expect(userManager.createUser.mock.calls[0][0]).toMatchObject(CONFIGURED);
   });
 
   test('skips seeding when admin-account.enabled is false', async () => {

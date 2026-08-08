@@ -648,9 +648,18 @@ class AddonsManager extends BaseManager {
       cursor[segments[segments.length - 1]] = value;
     };
 
-    for (const [key, value] of Object.entries(allProps)) {
+    for (const key of Object.keys(allProps)) {
       if (key.startsWith(prefix)) {
-        setDeep(config, key.slice(prefix.length), value);
+        // Read back through getProperty rather than using the raw merged value,
+        // so `$VAR` / `${VAR}` env-refs (#775) resolve for addon config the same
+        // way they do everywhere else. getAllProperties() returns mergedConfig
+        // verbatim, so taking the value from there handed addons the literal
+        // placeholder: the shipped `ngdpbase.addons.forms.dataPath` of
+        // "${FAST_STORAGE}/forms" reached the forms addon unexpanded and it
+        // created a directory named `${FAST_STORAGE}` on disk. Without this,
+        // an operator putting an addon secret in .env gets the literal string
+        // "$MY_VAR" as the value — silently, which is worse than unsupported.
+        setDeep(config, key.slice(prefix.length), configManager.getProperty(key));
       }
     }
 

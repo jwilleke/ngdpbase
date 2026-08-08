@@ -28,6 +28,7 @@
     "ngdpbase.session.secret",
     "ngdpbase.user.security.passwordsalt",
     "ngdpbase.user.security.defaultpassword",
+    "ngdpbase.addons.demo.admin-account.password",
     "ngdpbase.mail.provider.smtp.pass",
     "ngdpbase.auth.google-oidc.client-secret",
     "ngdpbase.dawarichCompat.apiKey"
@@ -601,6 +602,7 @@
   "_comment_demo_admin_account": "Shared read-only admin account seeded by the demo addon when it is enabled, so that enabling the addon is the whole setup and the credentials published on the Welcome page cannot drift from reality. Seeded once and never overwritten — rotate the password through /admin/users/admindemo/edit and the change survives restarts. The account holds only demo-admin (read-only dashboard) and is created with passwordLocked, so a visitor who logs in with the published password cannot change it and lock everyone else out; an administrator still can. Inert unless ngdpbase.addons.demo.enabled is true.",
   "ngdpbase.addons.demo.admin-account.enabled": true,
   "ngdpbase.addons.demo.admin-account.username": "admindemo",
+  "_comment_demo_admin_password": "Shipped as the well-known default because the demo publishes it on the Welcome page — a deliberately public credential, not a leaked one, and secret scanners will flag it as a matter of course. To use a value you do NOT publish, override this key in app-custom-config.json with a bare env-ref — \"$NGDPBASE_DEMO_ADMIN_PASSWORD\" — and set that variable in .env alongside FAST_STORAGE / SLOW_STORAGE / PORT (#775). Bare $VAR is strict: an unset variable throws at startup naming this key, so a typo fails loudly rather than seeding an account with the literal string. Deliberately NOT the shipped default — that would make every install enabling the demo addon crash until an env var is set, and defeats the point of the addon being self-contained. Listed in ngdpbase.config.secret-keys so the admin Configuration screen masks whatever value is in force, same as ngdpbase.user.security.defaultpassword.",
   "ngdpbase.addons.demo.admin-account.password": "admin123",
   "ngdpbase.addons.demo.admin-account.email": "admindemo@example.com",
   "ngdpbase.addons.demo.admin-account.display-name": "Demo Administrator",

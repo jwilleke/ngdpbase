@@ -9,6 +9,16 @@ describe('AddonsManager', () => {
 
   const makeConfigManager = (overrides: Record<string, unknown> = {}) => ({
     getProperty: vi.fn((key, defaultValue) => {
+      // Real getProperty reads mergedConfig, which is exactly what
+      // getAllProperties() returns — so anything a test puts in
+      // `allProperties` must be readable here too. Without this the mock
+      // diverges from production: getAddonConfig reads back through
+      // getProperty (so env-refs resolve) and would see nothing.
+      const all = overrides.allProperties as Record<string, unknown> | undefined;
+      if (all && key in all) {
+        return all[key];
+      }
+
       if (key === 'ngdpbase.managers.addons-manager.enabled') {
         return overrides.enabled ?? true;
       }
@@ -1426,6 +1436,47 @@ describe('AddonsManager', () => {
       const cfg = manager.getAddonConfig('calendar');
       expect(cfg.dataPath).toBe('./data/calendar');
       expect(Object.keys(cfg)).toEqual(['dataPath']);
+    });
+  });
+
+  // getAddonConfig used to read values straight out of getAllProperties(),
+  // which returns mergedConfig verbatim — no env-ref resolution. Addons
+  // therefore received the literal placeholder. This was not theoretical:
+  // the shipped `ngdpbase.addons.forms.dataPath` of "${FAST_STORAGE}/forms"
+  // reached the forms addon unexpanded and it created a directory literally
+  // named `${FAST_STORAGE}` in the repo root.
+  describe('getAddonConfig — env-ref resolution (#775)', () => {
+    test('resolves a ${VAR} path template rather than passing the placeholder through', () => {
+      const configManager = makeConfigManager({
+        allProperties: { 'ngdpbase.addons.forms.dataPath': '${TEST_FAST_STORAGE}/forms' }
+      });
+      // Faithful to production: getProperty is what performs the resolution.
+      configManager.getProperty.mockImplementation((key: string) =>
+        key === 'ngdpbase.addons.forms.dataPath' ? '/fast/forms' : undefined
+      );
+
+      const cfg = new AddonsManager(makeEngine(configManager)).getAddonConfig('forms');
+
+      expect(cfg.dataPath).toBe('/fast/forms');
+      expect(cfg.dataPath).not.toContain('${');
+    });
+
+    test('reads every addon key back through getProperty, not the raw merged map', () => {
+      // The contract that makes resolution possible at all. If a future change
+      // reverts to using the raw value, this fails even though the shape is
+      // identical — which is the point, because the shape WAS identical while
+      // the values were wrong.
+      const configManager = makeConfigManager({
+        allProperties: {
+          'ngdpbase.addons.demo.admin-account.password': '$DEMO_PW',
+          'ngdpbase.addons.demo.enabled': true
+        }
+      });
+
+      new AddonsManager(makeEngine(configManager)).getAddonConfig('demo');
+
+      const keysRead = configManager.getProperty.mock.calls.map((c: unknown[]) => c[0]);
+      expect(keysRead).toContain('ngdpbase.addons.demo.admin-account.password');
     });
   });
 

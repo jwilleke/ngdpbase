@@ -19,6 +19,15 @@
  *   ngdpbase.addons.demo.admin-account.email
  *   ngdpbase.addons.demo.admin-account.display-name
  *
+ * The default password is public by design — it is printed on the Welcome
+ * page. For a demo whose password you do NOT publish, override the key in
+ * app-custom-config.json with a bare env-ref and put the value in `.env`:
+ *
+ *   "ngdpbase.addons.demo.admin-account.password": "$NGDPBASE_DEMO_ADMIN_PASSWORD"
+ *
+ * Bare `$VAR` is strict (#775) — an unset variable throws at startup naming
+ * the key, so a typo cannot quietly seed the account with the literal string.
+ *
  * Pages in `pages/` are seeded by AddonsManager on startup and listed in
  * /admin/required-pages for on-demand sync. `Demo Sandbox` is deliberately
  * left editable; the rest carry `author-lock: true` so visitors can create and
@@ -30,8 +39,14 @@ import type { AddonStatusDetails } from '../../dist/src/managers/AddonsManager.j
 import type UserManager from '../../dist/src/managers/UserManager.js';
 import logger from '../../dist/src/utils/logger.js';
 
-/** Defaults for the shared account, published on the demo's Welcome page. */
-const ADMIN_DEFAULTS = {
+/**
+ * Defaults for the shared account, published on the demo's Welcome page.
+ *
+ * Exported so the tests assert against these rather than restating the values
+ * as literals — a duplicated credential string is both a drift risk and a
+ * recurring secret-scanner false positive.
+ */
+export const ADMIN_DEFAULTS = {
   username: 'admindemo',
   password: 'admin123',
   email: 'admindemo@example.com',
