@@ -1277,6 +1277,11 @@
       "icon": "user-minus",
       "color": "#dc3545"
     },
+    "admin-read": {
+      "description": "View administration screens (read-only, no changes)",
+      "icon": "eye",
+      "color": "#6c757d"
+    },
     "admin-system": {
       "description": "System administration",
       "icon": "cog",
@@ -1314,6 +1319,7 @@
         "user-edit",
         "user-create",
         "user-delete",
+        "admin-read",
         "admin-system",
         "admin-roles"
       ]
@@ -1450,6 +1456,7 @@
         "user-create",
         "user-delete",
         "admin-roles",
+        "admin-read",
         "admin-system"
       ]
     },

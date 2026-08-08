@@ -25,8 +25,26 @@
  */
 
 import type { WikiEngine } from '../../dist/src/types/WikiEngine.js';
+import type ConfigurationManager from '../../dist/src/managers/ConfigurationManager.js';
 import type { AddonStatusDetails } from '../../dist/src/managers/AddonsManager.js';
 import logger from '../../dist/src/utils/logger.js';
+
+/**
+ * Permissions granted to a demo visitor who is shown the dashboard.
+ *
+ * Deliberately absent:
+ *   admin-system — every admin mutation refused. The read-only guarantee.
+ *   user-read    — /admin/users stays hidden; it lists every visitor's email.
+ *   admin-roles  — the roles screen is viewable, but creating/editing/deleting
+ *                  roles still requires this, so it cannot self-escalate.
+ *   page-delete  — author-lock covers `edit` only, so delete would let a demo
+ *                  account remove a locked documentation page.
+ */
+const DEMO_ADMIN_PERMISSIONS = [
+  'page-read', 'page-edit', 'page-create', 'page-export',
+  'asset-read', 'asset-upload', 'search-page',
+  'admin-read'
+];
 
 const demoAddon = {
   name: 'demo',
@@ -35,11 +53,61 @@ const demoAddon = {
   author: 'Jim Willeke',
   dependencies: [] as string[],
 
-  register(_engine: WikiEngine, _config: Record<string, unknown>): Promise<void> {
-    // Nothing to wire yet. Page seeding is handled by AddonsManager from
-    // `pages/`, and the demo-admin role arrives via domainDefaults once
-    // core ships the `admin-read` permission (#1029).
-    logger.info('[demo addon] Enabled — demo pages seeded from addons/demo/pages');
+  register(engine: WikiEngine, _config: Record<string, unknown>): Promise<void> {
+    // The role is merged in here rather than declared in `domainDefaults`,
+    // because domainDefaults applies whole-key replacement
+    // (AddonsManager.applyDomainDefaults → setRuntimeProperty). Declaring
+    // `ngdpbase.access.policies` that way would REPLACE all eight shipped
+    // policies — including admin-full-access — and lock the operator out.
+    //
+    // Both halves are required and must stay in step: the role's inline
+    // `permissions[]` is what ConfigAccessorPlugin renders on the
+    // Roles/Permissions pages, while PolicyEvaluator decides actual access
+    // from `ngdpbase.access.policies`. Writing one without the other gives
+    // display-vs-enforcement drift, which the core config warns about.
+    const configManager = engine.getManager<ConfigurationManager>('ConfigurationManager');
+    if (!configManager) {
+      logger.warn('[demo addon] ConfigurationManager unavailable — demo-admin role not registered');
+      return Promise.resolve();
+    }
+
+    const roles = {
+      ...(configManager.getProperty('ngdpbase.roles.definitions', {}) as Record<string, unknown>)
+    };
+    if (!roles['demo-admin']) {
+      roles['demo-admin'] = {
+        name: 'demo-admin',
+        displayname: 'Demo Administrator',
+        description: 'Read-only access to the admin dashboard for demo visitors',
+        issystem: false,
+        icon: 'eye',
+        color: '#6c757d',
+        permissions: DEMO_ADMIN_PERMISSIONS
+      };
+      configManager.setRuntimeProperty('ngdpbase.roles.definitions', roles);
+    }
+
+    const policies = [
+      ...(configManager.getProperty('ngdpbase.access.policies', []) as Record<string, unknown>[])
+    ];
+    if (!policies.some((p) => p.id === 'demo-admin-access')) {
+      policies.push({
+        id: 'demo-admin-access',
+        name: 'Demo Administrator (read-only)',
+        description: 'Demo visitors may view admin screens and edit pages, but change nothing administrative',
+        // Below admin-full-access (100) — this never widens what an admin has.
+        priority: 90,
+        effect: 'allow',
+        subjects: [{ type: 'role', value: 'demo-admin' }],
+        resources: [{ type: 'page', pattern: '*' }],
+        actions: DEMO_ADMIN_PERMISSIONS
+      });
+      configManager.setRuntimeProperty('ngdpbase.access.policies', policies);
+    }
+
+    logger.info(
+      '[demo addon] Enabled — demo pages seeded from addons/demo/pages, demo-admin role registered'
+    );
     return Promise.resolve();
   },
 

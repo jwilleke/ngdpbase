@@ -6286,6 +6286,32 @@ ${panes}
     ) as boolean | undefined) ?? false;
   }
 
+  /**
+   * May this caller VIEW an administration screen? (#1029)
+   *
+   * `admin-system` grants viewing and mutating together, so before this there
+   * was no way to offer a read-only dashboard — which is what a public demo
+   * needs, and what #969's trash view could not otherwise be shown on.
+   *
+   * The read/write split falls almost exactly on HTTP method: 36 GET-only
+   * admin handlers against 50 mutating ones, with no handler serving both.
+   * Only the GET handlers call this. Every mutating route still requires
+   * `admin-system` and is untouched, so the read-only guarantee is the absence
+   * of a permission rather than a new check anyone has to remember.
+   *
+   * Two GET handlers deliberately do NOT use this:
+   *   - `adminRevealSecret` — unmasking a secret is privileged regardless of
+   *     which verb carries it; it keeps requiring `admin-system`.
+   *   - `adminUsers` — gated on `user-read`, so a role can be given the
+   *     dashboard without the list of every visitor's email address.
+   */
+  private async hasAdminViewAccess(wikiContext: {
+    hasPermission: (permission: string) => Promise<boolean>;
+  }): Promise<boolean> {
+    return (await wikiContext.hasPermission('admin-read'))
+      || (await wikiContext.hasPermission('admin-system'));
+  }
+
   private isPasswordRegistrationEnabled(): boolean {
     const configManager = this.engine.getManager('ConfigurationManager');
     const allowReg = (configManager?.getProperty(
@@ -8585,9 +8611,14 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
 
+      // #1029: viewing the role catalogue is separated from editing it.
+      // adminCreateRole / adminUpdateRole / adminDeleteRole all still require
+      // `admin-roles`, so a read-only admin can see how permissions are
+      // composed — which is the most interesting screen to demonstrate — with
+      // no path to granting itself anything.
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-roles'))
+        !(await this.hasAdminViewAccess(wikiContext) || await wikiContext.hasPermission('admin-roles'))
       ) {
         return await this.renderError(
           req,
@@ -8773,7 +8804,7 @@ ${panes}
     try {
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
-      if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
+      if (!currentUser || !(await this.hasAdminViewAccess(wikiContext))) {
         return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to manage backups');
       }
       const backupManager = this.engine.getManager('BackupManager');
@@ -8902,7 +8933,7 @@ ${panes}
 
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await this.hasAdminViewAccess(wikiContext))
       ) {
         return await this.renderError(
           req,
@@ -8958,6 +8989,10 @@ ${panes}
         mergedProperties,
         secretKeys: Array.from(secretKeys),
         secretIsSet,
+        // NOT hasAdminViewAccess: revealing a secret is a privileged action,
+        // not part of viewing the screen. A read-only admin (#1029) sees every
+        // value masked with no reveal control, and adminRevealSecret refuses
+        // them server-side even if they forge the request.
         canRevealSecrets: await wikiContext.hasPermission('admin-system'),
         csrfToken: req.session.csrfToken
       };
@@ -9133,7 +9168,7 @@ ${panes}
 
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await this.hasAdminViewAccess(wikiContext))
       ) {
         return await this.renderError(
           req,
@@ -9302,7 +9337,7 @@ ${panes}
 
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await this.hasAdminViewAccess(wikiContext))
       ) {
         return await this.renderError(
           req,
@@ -9416,7 +9451,7 @@ ${panes}
 
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await this.hasAdminViewAccess(wikiContext))
       ) {
         return await this.renderError(
           req,
@@ -9645,7 +9680,7 @@ ${panes}
 
     // Auth check — must be a logged-in admin. Fire-and-forget async check then stream.
     void (async () => {
-      if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
+      if (!currentUser || !(await this.hasAdminViewAccess(wikiContext))) {
         res.status(403).end();
         return;
       }
@@ -9682,7 +9717,7 @@ ${panes}
 
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await this.hasAdminViewAccess(wikiContext))
       ) {
         return res.status(403).send('Access denied');
       }
@@ -10356,7 +10391,7 @@ ${panes}
 
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await this.hasAdminViewAccess(wikiContext))
       ) {
         return res.status(403).send('Access denied');
       }
@@ -10404,7 +10439,7 @@ ${panes}
 
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await this.hasAdminViewAccess(wikiContext))
       ) {
         return res.status(403).json({ error: 'Access denied' });
       }
@@ -10447,7 +10482,7 @@ ${panes}
 
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await this.hasAdminViewAccess(wikiContext))
       ) {
         return await this.renderError(
           req,
@@ -11555,7 +11590,7 @@ ${panes}
   async adminConvert(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
-      if (!wikiContext.userContext || !(await wikiContext.hasPermission('admin-system'))) {
+      if (!wikiContext.userContext || !(await this.hasAdminViewAccess(wikiContext))) {
         return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to convert pages');
       }
       const commonData = await this.getCommonTemplateData(req);
@@ -11661,7 +11696,7 @@ ${panes}
 
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await this.hasAdminViewAccess(wikiContext))
       ) {
         return await this.renderError(
           req,
@@ -11740,7 +11775,7 @@ ${panes}
       const currentUser = wikiContext.userContext;
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await this.hasAdminViewAccess(wikiContext))
       ) {
         return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to manage add-ons');
       }
@@ -11867,7 +11902,7 @@ ${panes}
 
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await this.hasAdminViewAccess(wikiContext))
       ) {
         return await this.renderError(
           req,
@@ -12190,7 +12225,7 @@ ${panes}
       const currentUser = wikiContext.userContext;
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await this.hasAdminViewAccess(wikiContext))
       ) {
         return res.status(403).json({ error: 'Admin access required' });
       }
@@ -12812,7 +12847,7 @@ ${panes}
 
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await this.hasAdminViewAccess(wikiContext))
       ) {
         return await this.renderError(
           req,
@@ -12876,7 +12911,7 @@ ${panes}
 
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await this.hasAdminViewAccess(wikiContext))
       ) {
         return res.status(403).json({ error: 'Access denied' });
       }
@@ -12943,7 +12978,7 @@ ${panes}
 
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await this.hasAdminViewAccess(wikiContext))
       ) {
         return res.status(403).json({ error: 'Access denied' });
       }
@@ -13871,7 +13906,7 @@ ${panes}
       if (!currentUser?.isAuthenticated) {
         return res.redirect('/login?redirect=' + encodeURIComponent('/admin/trash'));
       }
-      if (!(await wikiContext.hasPermission('admin-system'))) {
+      if (!(await this.hasAdminViewAccess(wikiContext))) {
         return res.status(403).send('Access denied');
       }
 
@@ -14488,7 +14523,7 @@ ${description}
 
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await this.hasAdminViewAccess(wikiContext))
       ) {
         res.status(403).send('Access denied');
         return;
@@ -14715,7 +14750,7 @@ ${description}
 
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await this.hasAdminViewAccess(wikiContext))
       ) {
         res.status(403).json({ error: 'Access denied' });
         return;
@@ -15905,7 +15940,7 @@ ${description}
     try {
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
-      if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
+      if (!currentUser || !(await this.hasAdminViewAccess(wikiContext))) {
         return res.status(403).send('Access denied');
       }
       const mediaManager = this.engine.getManager('MediaManager');
@@ -16082,7 +16117,7 @@ ${description}
     try {
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
-      if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
+      if (!currentUser || !(await this.hasAdminViewAccess(wikiContext))) {
         return res.status(403).json({ error: 'Access denied' });
       }
       const { runId } = req.params;
@@ -16104,7 +16139,7 @@ ${description}
     try {
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
-      if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
+      if (!currentUser || !(await this.hasAdminViewAccess(wikiContext))) {
         return res.status(403).json({ error: 'Access denied' });
       }
       const jobManager = this.engine.getManager('BackgroundJobManager');
