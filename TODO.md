@@ -44,6 +44,7 @@ Scanner state: 1 open Dependabot alert (#96) + 2 open code-scanning alerts (#33,
 - [#1006](https://github.com/jwilleke/ngdpbase/issues/1006) — [FEATURE] BaseManager.getStats() — one uniform 'what do you hold' contract across managers
 - [#1021](https://github.com/jwilleke/ngdpbase/issues/1021) — [FEATURE] Magic link: close the non-atomic verify→consume window (one token can mint two sessions) — *reachable now that magic link is the only door on a public instance*
 - [#1022](https://github.com/jwilleke/ngdpbase/issues/1022) — [FEATURE] Magic link: optional device/state binding + record IP and User-Agent at redemption
+- [#1028](https://github.com/jwilleke/ngdpbase/issues/1028) — [FEATURE] Config cleanup — remove dead keys and stop documenting them as live — *112 of 463 keys have no reader; `log4j.*` confirmed dead, the rest need triage against dynamic key construction*
 
 ## 🔵 In review
 
