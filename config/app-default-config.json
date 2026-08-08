@@ -1376,6 +1376,24 @@
         "search-page"
       ]
     },
+    "demo-admin": {
+      "name": "demo-admin",
+      "displayname": "Demo Administrator",
+      "description": "Read-only access to the admin dashboard. For public demo instances: can view every admin screen but change nothing, and cannot see the user list.",
+      "issystem": false,
+      "icon": "eye",
+      "color": "#6c757d",
+      "permissions": [
+        "page-read",
+        "page-edit",
+        "page-create",
+        "page-export",
+        "asset-read",
+        "asset-upload",
+        "search-page",
+        "admin-read"
+      ]
+    },
     "reader": {
       "name": "reader",
       "displayname": "Reader",
@@ -1458,6 +1476,35 @@
         "admin-roles",
         "admin-read",
         "admin-system"
+      ]
+    },
+    {
+      "id": "demo-admin-access",
+      "name": "Demo Administrator (read-only)",
+      "description": "Demo visitors may view admin screens and edit pages, but change nothing administrative",
+      "priority": 90,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "demo-admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "page",
+          "pattern": "*"
+        }
+      ],
+      "actions": [
+        "page-read",
+        "page-edit",
+        "page-create",
+        "page-export",
+        "asset-read",
+        "asset-upload",
+        "search-page",
+        "admin-read"
       ]
     },
     {
