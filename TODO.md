@@ -18,9 +18,9 @@ Generated priority mirror of open GitHub issues and pull requests — the `P0` /
 
 ## 🔴 P0 — Security & Critical
 
-- *(none)*
+- [#1032](https://github.com/jwilleke/ngdpbase/issues/1032) — [SECURITY] Four untracked Dependabot alerts — 2 high js-yaml (fix available) and 2 new showdown XSS, with HTML sanitization off by default
 
-Scanner state: 1 open Dependabot alert (#96) + 2 open code-scanning alerts (#33, #34), all three the same accepted `showdown` ReDoS CVE-2024-1899. Tracked and accepted in closed [#1000](https://github.com/jwilleke/ngdpbase/issues/1000) — no upstream patch exists, mitigated in-app. Unchanged since 2026-08-04.
+Scanner state (corrected 2026-08-08, at v4.7.0): **5 open Dependabot alerts, not 1.** The previous line here recorded only the accepted `showdown` ReDoS (#96 / CVE-2024-1899, closed [#1000](https://github.com/jwilleke/ngdpbase/issues/1000)) and missed four others, because the `/pstatus` query was unpaginated. Now open: 2 × **high** js-yaml (CVE-2026-59870, fixes exist at 4.3.1 / 3.15.1) and 2 × medium **showdown XSS** (CVE-2026-59710, CVE-2026-59711) which #1000's ReDoS reasoning does not cover. All tracked in #1032. Re-query with `?state=open&per_page=100` and cross-check the git-push banner.
 
 ## 🟠 P1
 
@@ -45,7 +45,7 @@ Scanner state: 1 open Dependabot alert (#96) + 2 open code-scanning alerts (#33,
 - [#1021](https://github.com/jwilleke/ngdpbase/issues/1021) — [FEATURE] Magic link: close the non-atomic verify→consume window (one token can mint two sessions) — *reachable now that magic link is the only door on a public instance*
 - [#1022](https://github.com/jwilleke/ngdpbase/issues/1022) — [FEATURE] Magic link: optional device/state binding + record IP and User-Agent at redemption
 - [#1028](https://github.com/jwilleke/ngdpbase/issues/1028) — [FEATURE] Config cleanup — remove dead keys and stop documenting them as live — *112 of 463 keys have no reader; `log4j.*` confirmed dead, the rest need triage against dynamic key construction*
-- [#1029](https://github.com/jwilleke/ngdpbase/issues/1029) — [FEATURE] Demo addon — scope demo content to the demo, and a read-only admin dashboard — *shipped in v4.6.0/v4.6.1 and enabled on the demo; awaiting the `admindemo` account to prove the dashboard end-to-end*
+- [#1029](https://github.com/jwilleke/ngdpbase/issues/1029) — [FEATURE] Demo addon — scope demo content to the demo, and a read-only admin dashboard — *shipped through v4.7.0 — the addon now seeds `admindemo` itself and locks its identity; awaiting the demo image bump, then #1031*
 - [#1030](https://github.com/jwilleke/ngdpbase/issues/1030) — [FEATURE] Redact configured secrets from log output — *generalises the leak fixed in `2b48d838`; prerequisite for #843*
 
 ## 🔵 In review
