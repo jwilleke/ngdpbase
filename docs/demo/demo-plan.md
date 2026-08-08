@@ -30,8 +30,27 @@ Showing the software to someone who has not installed it. That means:
 | 25 admin read paths accept it; 50 mutating routes untouched | done |
 | `demo-admin` role registered by the addon | done |
 | Red warning on the Welcome page about visibility | done |
+| Demo `app-custom-config.json` moved onto the volume, editable | done |
+| Enable the addon — **after** the release, see ordering below | **not started** |
 | `admindemo` account created on the demo instance | **not started** — operator |
-| Enable the addon on the demo instance (mj-infra-flux) | **not started** |
+
+### Ordering — the addon flag cannot be set early
+
+`ngdpbase.addons.<id>.enabled = true` naming an addon that is not in the image is a **hard startup refusal** (#672), not a no-op. Setting it before the release put the demo into CrashLoopBackOff:
+
+```text
+[ConfigurationManager] Refusing to start: 'ngdpbase.addons.<id>.enabled = true'
+references unknown addon(s): "demo".
+```
+
+The guard is correct — a key naming a non-existent addon is far more often a typo than intent. So the order is strict:
+
+1. Release ngdpbase (minor — new permission surface)
+2. Flux bumps the demo to that image
+3. Set `ngdpbase.addons.demo.enabled: true` in `app-custom-config.json` **on the volume** — one line, over SSH or through `/admin/configuration`, no manifest edit and no PR
+4. Create the `admindemo` account and publish its credentials
+
+Step 3 is a config edit rather than a deployment change because the demo's `app-custom-config.json` now lives on the persistent volume, matching geohazardwatch (`840b87c`). A `subPath` ConfigMap mount is read-only, so app settings supplied that way cannot be changed without a redeploy — which is the wrong home for anything an operator edits.
 
 ## The read-only dashboard
 
