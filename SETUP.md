@@ -98,7 +98,7 @@ When `HEADLESS_INSTALL=true`:
 
 ### Security Note
 
-Set `NGDPBASE_ADMIN_PASSWORD` in `.env` before the first start. ngdpbase ships no default admin password — a headless install with the variable unset refuses to start and names the key. Change the password after first login; the startup banner warns until you do.
+The `admin` account is created on first start with the default password `admin123`. **Change it immediately after first login** — the startup banner warns until you do. To avoid the default entirely, point `ngdpbase.user.security.defaultpassword` at `"$NGDPBASE_ADMIN_PASSWORD"` in `app-custom-config.json` and set that variable in `.env`; a bare `$VAR` reference is strict, so an unset variable stops the boot rather than silently using the default.
 
 ### Pre-configuring via Environment Variables
 

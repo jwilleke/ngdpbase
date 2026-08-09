@@ -50,7 +50,7 @@ The guard is correct — a key naming a non-existent addon is far more often a t
 3. Set `ngdpbase.addons.demo.enabled: true` in `app-custom-config.json` **on the volume** — one line, over SSH or through `/admin/configuration`, no manifest edit and no PR
 4. Nothing — the addon seeds `admindemo` / `admin123` itself on the next boot
 
-No password to choose and no file to write: the demo login is printed on the Welcome page, so its value is not a secret and the addon ships it. Safety comes from the account holding only `admin-read` and being created `profileLocked`, not from secrecy. This is the opposite call to the core admin bootstrap password, which ships no default at all because it *is* a secret and guards `admin-system`.
+No password to choose and no file to write: the demo login is printed on the Welcome page, so its value is not a secret and the addon ships it. Safety comes from the account holding only `admin-read` and being created `profileLocked`, not from secrecy. The core `admin` account also ships `admin123`, but for a different reason — convenience of first boot, not publication — and it is the operator's job to change it. `admindemo` is meant to stay as published.
 
 An `admindemo` created before `profileLocked` existed is repaired in place on the next boot — the flag is added, and nothing else about the account is touched. Deployments that predate the feature therefore need no manual step either.
 

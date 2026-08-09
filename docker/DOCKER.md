@@ -218,7 +218,7 @@ When `HEADLESS_INSTALL=true` is set:
 
 ### Security Note
 
-Pass `NGDPBASE_ADMIN_PASSWORD` into the container before the first start — ngdpbase ships no default admin password, and a headless install with it unset refuses to start rather than creating a guessable account. Change the password after first login; the console warns until you do.
+The `admin` account is created on first start with the default password `admin123`. **Change it immediately after first login** — the console warns until you do. The examples above pass `NGDPBASE_ADMIN_PASSWORD` so the account never holds the published default; that is optional, and works because `ngdpbase.user.security.defaultpassword` can be pointed at `"$NGDPBASE_ADMIN_PASSWORD"` in `app-custom-config.json`.
 
 ### Pre-configuring Settings (Optional)
 

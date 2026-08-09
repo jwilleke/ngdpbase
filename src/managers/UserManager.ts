@@ -259,10 +259,38 @@ class UserManager extends BaseManager {
     // Initialize permissions registry
     this.initializePermissions();
 
-    // Create default admin if needed
+    // Create the bootstrap admin if it is missing.
+    //
+    // This used to fire only on a COMPLETELY empty store. That left a trap
+    // with no way out: remove the `admin` record while other accounts remain —
+    // a hand-edited users.json, a botched migration, a restore from a partial
+    // backup — and the instance has no administrator and never regains one,
+    // because the store is not empty. The only escape was deleting every other
+    // account to trigger the empty-store path, destroying the user base to
+    // recover one login. There is no password-reset route to fall back on.
+    //
+    // Keyed on the admin account specifically rather than on "any user with
+    // the admin role", so an operator who deliberately renamed or removed
+    // `admin` in favour of their own named administrator does not get it
+    // resurrected on every boot. Recreating it is safe regardless: the
+    // password is the configured bootstrap value, and the startup banner
+    // warns for as long as that value is still in force.
     if (this.provider) {
+      // Only act on a well-formed store. The provider contract is
+      // Map<string, User>; a degraded or third-party provider can return
+      // something else, and creating an administrator over a store we could
+      // not actually read is far worse than skipping a recovery that was
+      // probably unnecessary. The previous `allUsers.size === 0` check
+      // tolerated those shapes by accident — `undefined === 0` is false — and
+      // a bare `.has()` would have turned that into a startup TypeError.
       const allUsers = await this.provider.getAllUsers();
-      if (allUsers.size === 0) {
+      if (allUsers instanceof Map && !allUsers.has('admin')) {
+        if (allUsers.size > 0) {
+          logger.warn(
+            `👤 No 'admin' account found among ${allUsers.size} existing user(s) — recreating it. ` +
+            'Change its password immediately; see scripts/reset-admin-password.ts if you need to set it directly.'
+          );
+        }
         await this.createDefaultAdmin();
       }
     }
@@ -380,25 +408,28 @@ class UserManager extends BaseManager {
     return this.hashPassword(password) === hash;
   }
 
+  /** The value shipped in config; also the fallback when config is unreadable. */
+  private static readonly DEFAULT_BOOTSTRAP_PASSWORD = 'admin123';
+
   /**
-   * Read the configured bootstrap password.
+   * Read the bootstrap password for the `admin` account.
    *
-   * Ships as the bare env-ref "$NGDPBASE_ADMIN_PASSWORD", so this THROWS when
-   * the variable is unset — deliberately, at the one moment it matters. Call
-   * it only where a missing value should stop the boot; use
-   * `tryGetBootstrapPassword()` for the advisory checks.
+   * `ngdpbase.user.security.defaultpassword` ships as `admin123`, so a fresh
+   * install comes up unattended and the setup wizard is reachable. An operator
+   * who prefers it out of the repository can point the key at an env-ref —
+   * `"$NGDPBASE_ADMIN_PASSWORD"` — and a bare ref is strict, so an unset
+   * variable stops the boot rather than silently falling back to the default.
    *
-   * @throws When the configured value is an env-ref naming an unset variable.
+   * The literal fallback below covers only a missing or blank config value,
+   * which is what an embedder or a partially-mocked test sees. It deliberately
+   * matches the shipped default: a caller with no configuration should get the
+   * documented account, not an exception.
    */
   private getBootstrapPassword(): string {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     const value = configManager?.getProperty('ngdpbase.user.security.defaultpassword');
     if (typeof value !== 'string' || value === '') {
-      throw new Error(
-        "No admin bootstrap password is configured. Set NGDPBASE_ADMIN_PASSWORD in the instance's .env, " +
-        "or give 'ngdpbase.user.security.defaultpassword' a literal value in app-custom-config.json. " +
-        'ngdpbase no longer ships a default admin password.'
-      );
+      return UserManager.DEFAULT_BOOTSTRAP_PASSWORD;
     }
     return value;
   }

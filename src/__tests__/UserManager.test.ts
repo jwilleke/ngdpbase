@@ -158,10 +158,11 @@ describe('UserManager', () => {
       await expect(userManager.isAdminUsingDefaultPassword()).resolves.toBe(false);
     });
 
-    test('refuses to bootstrap an admin when no password is configured', async () => {
-      // The whole point of dropping the shipped 'admin123': an unattended
-      // install must fail loudly rather than quietly create an account whose
-      // credentials are published in this repository (#1033).
+    test('falls back to the documented default when config yields nothing', async () => {
+      // ngdpbase ships `admin123` for the bootstrap account so a fresh install
+      // comes up unattended and the setup wizard is reachable. A caller with
+      // no configuration — an embedder, a partially-mocked test — should get
+      // that documented account rather than an exception.
       mockConfigManager.getProperty.mockImplementation((key, defaultValue) => {
         if (key === 'ngdpbase.user.provider') return 'fileuserprovider';
         if (key === 'ngdpbase.user.provider.default') return 'fileuserprovider';
@@ -169,7 +170,7 @@ describe('UserManager', () => {
         return defaultValue;
       });
 
-      await expect(userManager.initialize()).rejects.toThrow(/NGDPBASE_ADMIN_PASSWORD/);
+      await expect(userManager.initialize()).resolves.toBeUndefined();
     });
   });
 
