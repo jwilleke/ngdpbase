@@ -1,5 +1,6 @@
 import BaseFilter from './BaseFilter.js';
 import logger from '../../utils/logger.js';
+import type { FilterValidationError } from './FilterChain.js';
 
 /**
  * Security configuration interface
@@ -270,6 +271,89 @@ class SecurityFilter extends BaseFilter {
    * @param context - Parse context
    * @returns Securely filtered content
    */
+
+  /**
+   * Constructs that must never reach a stored page (#1037).
+   *
+   * Scanned against the page SOURCE at save time, which is a different input
+   * from what `process()` sees. `process()` is `phase: 'html'` and operates on
+   * Showdown's rendered output; this runs before any rendering, on exactly the
+   * markdown the author typed. Reusing the render-time logic here is the
+   * mistake that made `preventXSS()` entity-encode whole documents.
+   *
+   * Scanning source is also what makes line numbers meaningful — the author
+   * can be pointed at the line they need to change.
+   *
+   * Deliberately narrow. Everything here executes script or frames third-party
+   * content; none of it has a legitimate use in a wiki page, so a false
+   * positive is unlikely and the message can be specific. Ordinary raw HTML —
+   * `<div>`, `<span>`, tables — is untouched: on a trusted-author wiki that is
+   * a feature, and the render-time allow-list is where that judgement belongs.
+   */
+  private static readonly BLOCKED_PATTERNS: Array<{
+    rule: string;
+    pattern: RegExp;
+    message: string;
+  }> = [
+      {
+        rule: 'no-script-tag',
+        pattern: /<script\b/i,
+        message: 'A <script> tag is not allowed in page content'
+      },
+      {
+        rule: 'no-event-handler',
+        pattern: /<[^>]*\son[a-z]+\s*=/i,
+        message: 'Inline event handlers (onclick, onload, onerror, …) are not allowed'
+      },
+      {
+        rule: 'no-javascript-url',
+        pattern: /(?:href|src|action)\s*=\s*["']?\s*javascript:/i,
+        message: 'javascript: URLs are not allowed'
+      },
+      {
+        rule: 'no-embedded-frame',
+        pattern: /<(?:iframe|object|embed|applet)\b/i,
+        message: 'Embedding external content (<iframe>, <object>, <embed>) is not allowed'
+      },
+      {
+        rule: 'no-inline-svg',
+        pattern: /<svg\b/i,
+        message: 'Inline <svg> is not allowed — it can carry scripted content'
+      }
+    ];
+
+  /**
+   * Blocking violations for the save path. See BaseFilter.collectErrors.
+   *
+   * Reports every offending line rather than stopping at the first, so an
+   * author fixing a page is not sent round the loop once per problem.
+   */
+  async collectErrors(
+    content: string,
+    _context: ParseContext = {}
+  ): Promise<FilterValidationError[]> {
+    if (!content) return [];
+
+    const errors: FilterValidationError[] = [];
+    const lines = content.split('\n');
+
+    for (const { rule, pattern, message } of SecurityFilter.BLOCKED_PATTERNS) {
+      lines.forEach((text, index) => {
+        if (pattern.test(text)) {
+          errors.push({
+            filterId: this.filterId,
+            rule,
+            severity: 'error',
+            message,
+            line: index + 1
+          });
+        }
+      });
+    }
+
+    return Promise.resolve(errors);
+  }
+
   async process(content: string, context: ParseContext): Promise<string> {
     if (!content) {
       return content;

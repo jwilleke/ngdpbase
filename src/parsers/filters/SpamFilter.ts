@@ -1,5 +1,6 @@
 import BaseFilter from './BaseFilter.js';
 import logger from '../../utils/logger.js';
+import type { FilterValidationError } from './FilterChain.js';
 
 /**
  * Spam configuration interface
@@ -216,6 +217,36 @@ class SpamFilter extends BaseFilter {
    * @param context - Parse context
    * @returns Content (unchanged if not spam, or flagged if spam)
    */
+
+  /**
+   * Deliberately blocks nothing. See BaseFilter.collectErrors (#1037).
+   *
+   * SpamFilter is heuristic — link counts, image counts, a word list. Those
+   * are the right basis for flagging a page and the wrong basis for refusing
+   * to save one: a legitimate reference page can exceed the link threshold,
+   * and an author hitting that has no way to tell a rule from a bug. A false
+   * positive here costs someone their work.
+   *
+   * That is a different proposition from SecurityFilter, where every blocked
+   * construct executes script and has no legitimate use in a page, so the
+   * message can be specific and the author knows exactly what to remove.
+   *
+   * Spam detection therefore stays at render time, where it annotates rather
+   * than destroys. Turning it into a save-time block is an operator decision
+   * about a public instance, not a default — and it would want thresholds
+   * separate from the render-time ones before it could be recommended.
+   *
+   * This returns [] explicitly rather than omitting the method: the method
+   * being absent is exactly how SecurityFilter silently opted out of save-time
+   * enforcement, and how a page containing <script> saved cleanly for so long.
+   */
+  collectErrors(
+    _content: string,
+    _context: ParseContext = {}
+  ): Promise<FilterValidationError[]> {
+    return Promise.resolve([]);
+  }
+
   async process(content: string, context: ParseContext): Promise<string> {
     if (!content) {
       return content;

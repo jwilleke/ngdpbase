@@ -1,5 +1,6 @@
 import logger from '../../utils/logger.js';
 import type ParseContext from '../context/ParseContext.js';
+import type { FilterValidationError } from './FilterChain.js';
 
 /**
  * BaseFilter - Abstract base class for all content filters with modular configuration
@@ -305,6 +306,38 @@ abstract class BaseFilter {
    * @returns Filtered content
    */
   abstract process(content: string, context: ParseContext): Promise<string>;
+
+  /**
+   * Rule violations that must BLOCK a page save — MUST be implemented by
+   * subclasses (#1037).
+   *
+   * Abstract on purpose. `FilterChain.collectErrors()` calls this on every
+   * enabled filter, but skipped any filter that did not define it, so a filter
+   * could opt out of save-time enforcement by simply not having the method —
+   * invisibly, with nothing to grep for. SecurityFilter and SpamFilter both
+   * did exactly that, which is why a page containing `<script>` saved cleanly
+   * while a filter that would have caught it was enabled and running.
+   *
+   * Declaring it here turns that silence into a compile error. A filter that
+   * genuinely blocks nothing returns `[]` — one explicit line stating a
+   * position, rather than an absence nobody notices.
+   *
+   * Note the input: at save time this receives the page SOURCE, not rendered
+   * HTML, regardless of the filter's `phase`. A filter whose `process()` works
+   * on rendered output must not reuse that logic here — assuming otherwise is
+   * what made SecurityFilter's `preventXSS()` entity-encode whole documents.
+   *
+   * Only `severity: 'error'` belongs here. Warnings are surfaced at render
+   * time and must never stop a save.
+   *
+   * @param content - The page source about to be written
+   * @param context - Parse context (pageName, userName, engine)
+   * @returns Blocking violations; empty when the content is acceptable
+   */
+  abstract collectErrors(
+    content: string,
+    context: ParseContext
+  ): Promise<FilterValidationError[]>;
 
   /**
    * Execute filter with performance tracking and error handling
