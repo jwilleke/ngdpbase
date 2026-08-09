@@ -4,7 +4,7 @@ Cut a new semver release: bump `package.json` (and `config/app-default-config.js
 
 ## Relationship to /session-commit
 
-`/semver` is **release mechanics only** (Steps 1–9: gate → bump → baseline → tag → push → GitHub release → jimstest-first re-validate → `/othersites`). It does **NOT** update `docs/project_log.md`, comment on / close GitHub issues, or run `/check-todos` — that bookkeeping lives in `/session-commit` Steps 6–9.
+`/semver` is **release mechanics only** (Steps 1–9: gate → container smoke test → bump → baseline → tag → push → GitHub release → watch the image build → jimstest-first re-validate → `/othersites`). It does **NOT** update `docs/project_log.md`, comment on / close GitHub issues, or run `/check-todos` — that bookkeeping lives in `/session-commit` Steps 6–9.
 
 - **"I did work, ship it"** → run **`/session-commit`**, not `/semver`. `/session-commit` commits the work, pre-flights jimstest, makes the semver decision and **invokes `/semver` internally** (Step 4), propagates, then logs + comments issues + freshens TODO. Running `/semver` yourself in this case skips the log/issue/TODO updates.
 - **"Work is already committed & logged, just cut/consolidate a release"** → standalone `/semver` is correct. But it leaves a bookkeeping gap: after it finishes you must still add a project_log entry for the *release event itself* (version, baseline drift, `/othersites` results, any flakes) and comment/close any issues the release ships. `/semver` will not do this for you.
@@ -53,6 +53,43 @@ Run sequentially:
 - `npm run test:e2e` — must pass (Playwright). The dev server must be up; if it isn't, run `./server.sh restart` and wait for `http://localhost:3000` before invoking E2E.
 
 If anything fails, **stop**. Fix the failures and start again from Step 1. The working tree is still clean at this point — nothing to roll back.
+
+### Step 4a: Build the container image and smoke-test it (#1035)
+
+`npm test` and E2E run against the dev server, so they say nothing about whether the **image** works. Both v4.8.0 and v4.8.1 passed this gate and produced a broken image: a change to core startup behaviour made a fresh container refuse to boot, which only the container smoke test exercises. Because the image workflow triggers *on the tag*, the failure arrived after the release was already public — and because the plain tag is pushed before the smoke test while `-devtools` is built after it, the damage was invisible until a downstream repo needed `-devtools`, two releases later.
+
+This step reproduces CI's smoke test locally, **before** anything is tagged, so that failure means no tag is ever created.
+
+```bash
+docker build -f docker/Dockerfile --target runtime --build-arg NODE_VERSION=24 -t ngdpbase-release-smoke:local .
+
+docker rm -f ngdpbase-release-smoke 2>/dev/null
+docker run -d --name ngdpbase-release-smoke -p 3099:3000 \
+  -e HEADLESS_INSTALL=true -e NODE_ENV=production \
+  ngdpbase-release-smoke:local
+
+# Poll for healthy, exactly as .github/workflows/docker-build.yml does
+for i in $(seq 1 18); do
+  S=$(docker inspect --format='{{.State.Health.Status}}' ngdpbase-release-smoke 2>/dev/null || echo starting)
+  [ "$S" = "healthy" ] && break
+  [ "$S" = "unhealthy" ] && { docker logs ngdpbase-release-smoke; break; }
+  sleep 5
+done
+```
+
+Then always clean up, whatever the outcome:
+
+```bash
+docker rm -f ngdpbase-release-smoke; docker rmi -f ngdpbase-release-smoke:local
+```
+
+- **Reaches `healthy`** → continue to Step 5.
+- **Exits or goes `unhealthy`** → **stop**. Read `docker logs` — a container that will not boot is a broken release, and nothing is tagged yet. This is the whole point of the step.
+- **Deliberately passes no `NGDPBASE_ADMIN_PASSWORD`.** A fresh container with an empty volume must come up unattended on the shipped defaults; if it cannot, that is the regression this step exists to catch.
+
+**If Docker is not running**, do not block the release: say so plainly, note it in the Step 9 report, and rely on Step 7a. A skipped check that is announced is fine; a skipped check that is silent is how #1035 happened.
+
+This does not replace Step 7a. It cannot cover registry pushes, multi-arch, Trivy, or the `devtools` stage.
 
 ### Step 5: Bump the version with `version.ts`
 
@@ -123,6 +160,37 @@ When skipping (patch with no explicit request):
 
 - Push the tag (Step 6 already did this) and report in Step 9 that the release entry was deferred. Mention that `/release` can publish it later if needed.
 
+### Step 7a: Watch the image build to completion (#1035)
+
+Pushing the tag triggers `docker-build.yml`. Nothing used to check the result, so a red release build was invisible: `/semver` finished minutes before the workflow did. Two consecutive releases shipped with a failed image build and it surfaced only when a downstream repo could not resolve a `-devtools` tag.
+
+Start the watch, then **run Step 8 while it builds** — propagation takes longer than the image (v4.8.2: 5m42s), so this costs no wall-clock. Collect the result before reporting.
+
+```bash
+# The run for this tag — the newest, since the tag push just triggered it
+gh run list --workflow=docker-build.yml --limit 1 \
+  --json databaseId,displayTitle,status,conclusion
+
+# Then poll until it completes
+gh run view <id> --json status,conclusion --jq '"\(.status)/\(.conclusion // "-")"'
+```
+
+On **success**, verify the tags actually exist rather than trusting a green run — the plain image is pushed by an earlier step than `-devtools`, so a partial publish looks green in isolation:
+
+```bash
+for t in <version> <version>-devtools latest-devtools; do
+  docker manifest inspect ghcr.io/jwilleke/ngdpbase:$t >/dev/null 2>&1 \
+    && echo "  EXISTS  $t" || echo "  MISSING $t"
+done
+```
+
+On **failure**:
+
+1. **Stop before the satellites** if they have not already been done. They pull from git rather than GHCR so they are not directly broken, but a release whose image fails is a release with something wrong in it, and propagating further is the wrong reflex.
+2. Get the failing step — `gh run view <id> --log-failed` — and report it.
+3. Say plainly in Step 9 that **the tag and GitHub release are already published**. This step is detection, not prevention; the tag cannot be unshipped. Prevention lives in Step 4a.
+4. Fix forward with a patch release. Re-running the old workflow re-runs the old code and will fail identically.
+
 ### Step 8: Update sister installs
 
 **Step 8a — Re-validate jimstest on the release commit FIRST (mandatory, before any satellite).**
@@ -158,6 +226,7 @@ Output to the user:
 - Tag URL (from `gh release view v<next> --json url --jq .url`)
 - Number of commits in this release (from Step 3)
 - **Perf diff table** from Step 5b (re-included here for easy reference; if any regression candidate was flagged, repeat the warning)
+- **Container image**: the Step 4a local smoke-test result (or that it was skipped because Docker was unavailable), and the Step 7a workflow conclusion with the tag-existence check. State both — a green workflow with a missing `-devtools` tag is the exact shape of #1035.
 - Whether `/othersites` propagation succeeded.
 
 **Bookkeeping reminder (standalone `/semver` only):** `/semver` does not touch `docs/project_log.md`, GitHub issues, or `/check-todos`. If this was a standalone invocation (not driven by `/session-commit`), add a project_log entry for the release event (version, baseline drift, `/othersites` results + any flakes) and comment/close any issues the release ships — see [Relationship to /session-commit](#relationship-to-session-commit). When `/semver` was invoked from `/session-commit`, its Steps 6–9 cover this; do not duplicate.

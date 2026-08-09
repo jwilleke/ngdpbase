@@ -111,25 +111,21 @@ jobs:
 
       - name: Smoke test — start container
         run: |
-          # NGDPBASE_ADMIN_PASSWORD is REQUIRED for a headless first boot as of
-          # v4.8.0 (#1033): ngdpbase no longer ships a default admin password,
-          # and an install that finds an empty user store now refuses to start
-          # rather than creating a well-known account. This smoke test is
-          # exactly that case — a fresh container with an empty volume.
+          # Deliberately NO NGDPBASE_ADMIN_PASSWORD. A fresh container with an
+          # empty volume must come up unattended on the shipped defaults, and
+          # this is the only check that proves it.
           #
-          # Omitting it broke every release build from v4.8.0 on. The plain
-          # image had already been pushed by the preceding step, so the tags
-          # looked fine; the failure aborted the job before the devtools step,
-          # which is why -devtools stopped at 4.7.0 and downstream builds
-          # pinned to 4.8.x could not resolve it (#1035).
-          #
-          # Throwaway value — this container is inspected and deleted.
+          # v4.8.0 briefly removed the default admin password, which made
+          # exactly this case refuse to boot and failed every release build
+          # from then on. Supplying the variable here would have made CI green
+          # while real first-run installs stayed broken — so it is left out on
+          # purpose. If this step starts failing, a change has broken
+          # first-boot, which is the signal wanted (#1033, #1035).
           docker run -d \
             --name ngdpbase-smoke \
             -p 3000:3000 \
             -e HEADLESS_INSTALL=true \
             -e NODE_ENV=production \
-            -e NGDPBASE_ADMIN_PASSWORD=smoke-test-not-a-real-credential \
             ${{ steps.img.outputs.ref }}
 
       - name: Smoke test — wait for healthy
