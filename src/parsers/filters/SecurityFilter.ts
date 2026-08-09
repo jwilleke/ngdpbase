@@ -131,6 +131,16 @@ class SecurityFilter extends BaseFilter {
   loadModularSecurityConfiguration(context: InitContext): void {
     const configManager = context.engine?.getManager('ConfigurationManager') as ConfigManager | undefined;
 
+    // Always establish the allow-list baseline; configuration ADDS to it.
+    // These used to load only when there was no ConfigurationManager or when
+    // reading configuration threw — i.e. on the failure paths only. On the
+    // normal path the allow-list came solely from `allowed-tags`, so an
+    // instance that never set that key ran with an EMPTY list, and
+    // sanitizeHTML's empty-list branch strips every tag in the document.
+    // "Secure defaults" that apply only when something has already gone wrong
+    // are not defaults. #1032.
+    this.loadSecureDefaults();
+
     // Default security configuration (secure by default)
     this.securityConfig = {
       preventXSS: true,
@@ -180,10 +190,7 @@ class SecurityFilter extends BaseFilter {
       } catch (error) {
         const err = error as Error;
         logger.warn('⚠️  Failed to load SecurityFilter configuration, using secure defaults:', err.message);
-        this.loadSecureDefaults();
       }
-    } else {
-      this.loadSecureDefaults();
     }
 
     // Initialize dangerous patterns based on configuration
@@ -194,12 +201,34 @@ class SecurityFilter extends BaseFilter {
    * Load secure default configuration when configuration files unavailable
    */
   loadSecureDefaults(): void {
-    // Secure defaults for allowed HTML tags
-    const defaultTags = ['p', 'div', 'span', 'strong', 'em', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'img', 'br'];
+    // Everything ngdpbase's own markup renders. The previous list omitted
+    // tables, code blocks, blockquotes and horizontal rules, so enabling this
+    // filter silently deleted them from every page — a quieter version of the
+    // same "turning it on breaks the site" problem as the encoding bug (#1032).
+    //
+    // Safety here comes from the list being closed, not short: `script`,
+    // `iframe`, `object`, `embed`, `form`, `svg` and friends are absent, and
+    // the attribute allow-list below excludes every `on*` handler.
+    const defaultTags = [
+      'p', 'div', 'span', 'br', 'hr',
+      'strong', 'em', 'b', 'i', 'u', 's', 'del', 'ins', 'mark', 'small', 'sub', 'sup',
+      'ul', 'ol', 'li', 'dl', 'dt', 'dd',
+      'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+      'a', 'img', 'figure', 'figcaption',
+      'blockquote', 'q', 'cite',
+      'code', 'pre', 'kbd', 'samp', 'var',
+      'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
+      'abbr', 'time', 'details', 'summary'
+    ];
     defaultTags.forEach(tag => this.allowedTags.add(tag));
 
-    // Secure defaults for allowed attributes
-    const defaultAttrs = ['class', 'id', 'href', 'src', 'alt', 'title'];
+    // No `on*` handlers, no `style` (CSS is an injection surface of its own).
+    // `colspan`/`rowspan` and `datetime` are needed by the tags above.
+    const defaultAttrs = [
+      'class', 'id', 'href', 'src', 'alt', 'title',
+      'colspan', 'rowspan', 'scope', 'datetime', 'cite', 'lang', 'dir',
+      'width', 'height', 'loading', 'open'
+    ];
     defaultAttrs.forEach(attr => this.allowedAttributes.add(attr));
   }
 
@@ -264,11 +293,20 @@ class SecurityFilter extends BaseFilter {
       secureContent = this.stripDangerousContent(secureContent);
     }
 
-    if (this.securityConfig?.preventXSS) {
-      secureContent = this.preventXSS(secureContent);
-    }
-
-    if (this.securityConfig?.sanitizeHTML) {
+    // NOT preventXSS() here. This filter declares `phase: 'html'`, so `content`
+    // is Showdown's rendered output — real markup, not untrusted text. Blanket
+    // entity-encoding every < > " ' turned the whole page into visible HTML
+    // source (`&lt;p&gt;Some &lt;strong&gt;bold&lt;/strong&gt;`), which is why
+    // enabling this filter broke rendering outright and why it has shipped
+    // disabled since #596. It also ran BEFORE sanitizeHTML, leaving no tags for
+    // the allow-list to match — so the actual sanitiser was dead code.
+    //
+    // At this stage Showdown has already entity-encoded `<` appearing in text,
+    // so anything still shaped like a tag IS a tag. The allow-list is therefore
+    // the right tool, and `prevent-xss` is honoured through it: enabling that
+    // option activates the dangerous-pattern set (see initializeDangerousPatterns)
+    // which stripDangerousContent applies above. #1032.
+    if (this.securityConfig?.sanitizeHTML || this.securityConfig?.preventXSS) {
       secureContent = this.sanitizeHTML(secureContent);
     }
 
@@ -304,6 +342,14 @@ class SecurityFilter extends BaseFilter {
    * Prevent XSS attacks (modular XSS prevention)
    * @param content - Content to protect
    * @returns XSS-safe content
+   */
+  /**
+   * Entity-encode every `<` `>` `"` `'`.
+   *
+   * NOT used by `process()`, and must not be: this filter runs at the `html`
+   * phase, where the input is rendered markup and encoding it wholesale turns
+   * the page into visible source (#1032). Retained for callers that genuinely
+   * hold untrusted *text* and want it inert.
    */
   preventXSS(content: string): string {
     // Encode potentially dangerous characters

@@ -470,7 +470,7 @@
   "ngdpbase.markup.filters.pipeline.timeout": 10000,
   "ngdpbase.markup.filters.pipeline.enable-profiling": true,
   "ngdpbase.markup.filters.pipeline.fail-on-error": false,
-  "_comment_security_filters": "Security filter configuration",
+  "_comment_security_filters": "Security filter configuration. Strips dangerous markup from RENDERED page HTML (phase: html). Ships DISABLED: on a wiki whose authors are trusted, raw HTML in a page is a feature, and enabling this removes it. Enable it on any instance whose authors are strangers — a public demo, an open-registration site — because markdown permits raw HTML by design and nothing else stops a page author injecting script. It was unusable before #1032: prevent-xss entity-encoded the whole rendered document, so every page displayed as visible HTML source, and the tag allow-list omitted tables, code blocks and blockquotes. Both fixed; allowed-tags/allowed-attributes below now ADD to a built-in baseline covering everything ngdpbase renders, rather than replacing it.",
   "ngdpbase.markup.filters.spam.enabled": false,
   "ngdpbase.markup.filters.spam.priority": 100,
   "ngdpbase.markup.filters.spam.max-links": 10,

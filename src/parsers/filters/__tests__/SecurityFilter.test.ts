@@ -53,18 +53,42 @@ describe('SecurityFilter', () => {
   });
 
   describe('process() — XSS prevention', () => {
-    test('encodes < > characters', async () => {
+    // This filter declares phase: 'html', so process() receives Showdown's
+    // rendered output. It used to entity-encode every < > " ' — which turned
+    // the whole page into visible HTML source and is why enabling the filter
+    // broke rendering. The previous version of this test asserted that
+    // encoding, pinning the bug rather than the intent (#1032).
+    test('removes unknown tags without encoding the document', async () => {
       const f = makeFilter();
       const result = await f.process('Hello <world>', ctx);
-      expect(result).toContain('&lt;');
-      expect(result).toContain('&gt;');
+
       expect(result).not.toContain('<world>');
+      expect(result).not.toContain('&lt;');
+      expect(result).toContain('Hello');
+    });
+
+    test('preserves legitimate rendered markup', async () => {
+      // The regression that matters. If this ever escapes again, every page on
+      // an instance with the filter enabled renders as source.
+      const f = makeFilter();
+      const result = await f.process('<p>Some <strong>bold</strong> text.</p>', ctx);
+
+      expect(result).toContain('<strong>bold</strong>');
+      expect(result).toContain('<p>');
     });
 
     test('strips dangerous script tags', async () => {
       const f = makeFilter();
       const result = await f.process('<script>alert("xss")</script>Hello', ctx);
       expect(result).not.toContain('<script>');
+    });
+
+    test('drops event-handler attributes from allowed tags', async () => {
+      const f = makeFilter();
+      const result = await f.process('<a href="/x" onclick="evil()">link</a>', ctx);
+
+      expect(result).not.toMatch(/onclick/i);
+      expect(result).toContain('href');
     });
   });
 
