@@ -44,6 +44,7 @@ docker pull ghcr.io/jwilleke/ngdpbase:latest
 docker run -d \
   --name ngdpbase \
   -p 3000:3000 \
+  -e NGDPBASE_ADMIN_PASSWORD=choose-a-password \
   -v $(pwd)/data:/app/data \
   ghcr.io/jwilleke/ngdpbase:latest
 
@@ -93,6 +94,7 @@ docker stop ngdpbase && docker rm ngdpbase
 docker run -d \
   --name ngdpbase \
   -p 3000:3000 \
+  -e NGDPBASE_ADMIN_PASSWORD=choose-a-password \
   -v $(pwd)/data:/app/data \
   ghcr.io/jwilleke/ngdpbase:latest
 
@@ -170,6 +172,7 @@ docker build -t ngdpbase .
 docker run -d \
   --name ngdpbase \
   -p 3000:3000 \
+  -e NGDPBASE_ADMIN_PASSWORD=choose-a-password \
   -v $(pwd)/data:/app/data \
   ngdpbase
 
@@ -198,6 +201,7 @@ docker run -d \
   --name ngdpbase \
   -p 3000:3000 \
   -e HEADLESS_INSTALL=true \
+  -e NGDPBASE_ADMIN_PASSWORD=choose-a-password \
   -v $(pwd)/data:/app/data \
   ngdpbase
 ```
