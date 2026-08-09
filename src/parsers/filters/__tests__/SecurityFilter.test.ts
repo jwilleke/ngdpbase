@@ -22,9 +22,22 @@ import SecurityFilter from '../SecurityFilter';
 
 const ctx = { pageName: 'TestPage', engine: { getManager: vi.fn(() => null) } };
 
+/**
+ * A filter with RENDER filtering on. That is not the shipped default (#1037):
+ * `security.enabled` is false, and the filter is registered only so
+ * FilterChain.collectErrors() can reach it for save-time blocking. These tests
+ * exercise process(), so they must opt in explicitly.
+ */
 function makeFilter(): SecurityFilter {
   const f = new SecurityFilter();
-  f.loadModularSecurityConfiguration({ engine: { getManager: vi.fn(() => null) } });
+  f.loadModularSecurityConfiguration({
+    engine: {
+      getManager: vi.fn(() => ({
+        getProperty: (key: string, dflt: unknown) =>
+          key === 'ngdpbase.markup.filters.security.enabled' ? true : dflt
+      }))
+    }
+  });
   return f;
 }
 
@@ -100,10 +113,30 @@ describe('SecurityFilter', () => {
       expect(result).toContain('Safe content');
     });
 
-    test('removes event handler attributes', () => {
+    test('leaves attributes alone — that is the allow-list\'s job (#1037)', () => {
+      // stripDangerousContent removes whole TAGS. Attribute filtering belongs
+      // to sanitizeHTML, which drops `onclick` while KEEPING the tag and its
+      // href — strictly better than deleting the element. Having both try was
+      // how preventXSS and sanitizeHTML ended up fighting (#1032).
       const f = makeFilter();
-      const result = f.stripDangerousContent('<a onclick="evil()">link</a>');
-      expect(result).not.toContain('onclick');
+
+      const result = f.stripDangerousContent('<a href="/x" onclick="evil()">link</a>');
+
+      expect(result).toContain('onclick');
+    });
+
+    test('the two together remove the handler and keep the link', () => {
+      // The outcome that actually matters, asserted end to end rather than
+      // per-method.
+      const f = makeFilter();
+
+      const result = f.sanitizeHTML(
+        f.stripDangerousContent('<a href="/x" onclick="evil()">link</a>')
+      );
+
+      expect(result).not.toMatch(/onclick/i);
+      expect(result).toContain('href="/x"');
+      expect(result).toContain('link');
     });
   });
 
@@ -265,8 +298,21 @@ describe('SecurityFilter', () => {
       const f = makeFilter();
       f.allowedAttributes.clear();
       f.allowedAttributes.add('class');
-      const result = f.sanitizeAttributes('id="bar" data-x="y"');
+      const result = f.sanitizeAttributes('id="bar" title="t"');
       expect(result).toBe('');
+    });
+
+    test('keeps data-* attributes without allow-listing each one (#1037)', () => {
+      // Our own output carries 71 distinct data-* attributes, Bootstrap's
+      // data-bs-* included. They are inert — a script may read them, but they
+      // cannot execute anything — so enumerating them would be a permanent
+      // maintenance tax for no security gain.
+      // Not clearing allowedAttributes: an empty set short-circuits to "no
+      // attributes at all" before data-* is considered.
+      const f = makeFilter();
+
+      expect(f.sanitizeAttributes('data-lat="37.77" data-bs-toggle="tab"'))
+        .toBe(' data-lat="37.77" data-bs-toggle="tab"');
     });
   });
 

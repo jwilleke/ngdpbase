@@ -16,6 +16,8 @@ interface SecurityConfig {
   allowDataURIs: boolean;
   maxContentLength: number;
   logSecurityViolations: boolean;
+  /** Filter RENDERED output. Separate from save-time blocking (#1037). */
+  renderFiltering: boolean;
 }
 
 /**
@@ -153,13 +155,15 @@ class SecurityFilter extends BaseFilter {
       allowExternalLinks: true,
       allowDataURIs: false,
       maxContentLength: 1048576, // 1MB default
-      logSecurityViolations: true
+      logSecurityViolations: true,
+      renderFiltering: false
     };
 
     // Load from app-default-config.json and allow app-custom-config.json overrides
     if (configManager) {
       try {
         // Security feature configuration (modular)
+        this.securityConfig.renderFiltering = configManager.getProperty('ngdpbase.markup.filters.security.enabled', false) as boolean;
         this.securityConfig.preventXSS = configManager.getProperty('ngdpbase.markup.filters.security.prevent-xss', this.securityConfig.preventXSS) as boolean;
         this.securityConfig.preventCSRF = configManager.getProperty('ngdpbase.markup.filters.security.prevent-csrf', this.securityConfig.preventCSRF) as boolean;
         this.securityConfig.sanitizeHTML = configManager.getProperty('ngdpbase.markup.filters.security.sanitize-html', this.securityConfig.sanitizeHTML) as boolean;
@@ -216,6 +220,11 @@ class SecurityFilter extends BaseFilter {
       'ul', 'ol', 'li', 'dl', 'dt', 'dd',
       'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
       'a', 'img', 'figure', 'figcaption',
+      // Plugin output only in practice: an author-written <iframe> is refused
+      // at save (collectErrors), so the ones reaching render come from our own
+      // plugins — LocationPlugin's embedded maps. See the note in
+      // initializeDangerousPatterns (#1037).
+      'iframe',
       'blockquote', 'q', 'cite',
       'code', 'pre', 'kbd', 'samp', 'var',
       'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
@@ -239,28 +248,59 @@ class SecurityFilter extends BaseFilter {
   initializeDangerousPatterns(): void {
     this.dangerousPatterns = [];
 
+    // Every pattern here is anchored to a TAG, and stripDangerousContent only
+    // ever applies them inside `<...>` (#1037).
+    //
+    // They used to be bare substring patterns run over the whole document, and
+    // every one of them fired on ordinary prose:
+    //
+    //   /on\w+\s*=/       matched `validati·onManager =`   — 23 hits on one page
+    //   /data:/           matched `meta·data:`             — 10 hits on one page
+    //   /expression\s*\(/ matched "gene expression ("      — 5 pages
+    //   /javascript:/     matched prose discussing the URL scheme
+    //
+    // Those were three separate symptoms of one mistake: scanning text for
+    // things that can only mean something inside a tag. You cannot write HTML
+    // without angle brackets, so scoping to tags removes the entire class
+    // rather than patching each instance — including the ones not yet hit.
+    //
+    // It also makes fenced code safe for free: by this phase Showdown has
+    // escaped text `<` to `&lt;`, so anything still bracketed IS a tag.
+
     if (this.securityConfig?.preventXSS) {
       this.dangerousPatterns.push(
-        /<script[\s\S]*?<\/script>/gi,                    // Script tags
-        /javascript:/gi,                                   // JavaScript URLs
-        /on\w+\s*=/gi,                                    // Event handlers
-        /expression\s*\(/gi,                              // CSS expressions
-        /<iframe[\s\S]*?<\/iframe>/gi,                    // Iframe tags
-        /<object[\s\S]*?<\/object>/gi,                    // Object tags
-        /<embed[\s\S]*?>/gi                               // Embed tags
+        /^<\s*script\b/i,                               // <script>
+        // NOT framing tags. Enforced at SAVE instead (see collectErrors), for
+        // a reason specific to where each check sits in the pipeline:
+        //
+        // Save-time sees what the AUTHOR wrote, and refuses a raw <iframe>
+        // outright. Render-time sees plugin output as well — LocationPlugin
+        // emits an <iframe> for embedded maps — and cannot tell the two apart,
+        // because by then both are just tags. Blocking here removed every
+        // embedded map on the wiki; the e2e suite caught it (#1037).
+        //
+        // So the guarantee is "an author cannot introduce a frame", enforced
+        // where that distinction still exists. Content predating the save rule
+        // is the residual gap — one page at the time of writing. A src
+        // host allow-list would close it and let authors embed maps
+        // deliberately; not built, and it needs a config key.
+        // NOT an event-handler pattern. sanitizeHTML's attribute allow-list
+        // already drops `onclick` while KEEPING the tag and its href — a
+        // strictly better outcome than deleting the whole element, which is
+        // what a pattern here would do. Two mechanisms for one job is how
+        // preventXSS and sanitizeHTML ended up fighting (#1032).
+        /(?:href|src|action|formaction)\s*=\s*["']?\s*javascript:/i,
+        /style\s*=\s*["'][^"']*expression\s*\(/i       // legacy IE CSS
       );
     }
 
     if (!this.securityConfig?.allowDataURIs) {
-      this.dangerousPatterns.push(/data:/gi);             // Data URIs
+      this.dangerousPatterns.push(/(?:href|src|action)\s*=\s*["']?\s*data:/i);
     }
 
     if (this.securityConfig?.stripDangerousContent) {
       this.dangerousPatterns.push(
-        /<meta[\s\S]*?>/gi,                               // Meta tags
-        /<link[\s\S]*?>/gi,                               // Link tags
-        /<style[\s\S]*?<\/style>/gi,                      // Style tags
-        /<form[\s\S]*?<\/form>/gi                         // Form tags (if not using WikiForms)
+        /^<\s*(?:meta|link|style|form)\b/i               // not allow-listed anyway
       );
     }
   }
@@ -319,8 +359,36 @@ class SecurityFilter extends BaseFilter {
         rule: 'no-inline-svg',
         pattern: /<svg\b/i,
         message: 'Inline <svg> is not allowed — it can carry scripted content'
+      },
+      {
+        // Not a security rule — a markup one. <br> is embedded HTML and NCM
+        // has its own line break, so this keeps page source in one language.
+        //
+        // Enforced ONLY at save. It cannot be done at render: `\\` is turned
+        // into a <br> during the markup phase (MarkupParser), so by the time
+        // the html-phase allow-list runs an author's <br> and one NCM
+        // generated are byte-identical. Dropping `br` from the allow-list
+        // would therefore break `\\`, `\\\` and table-cell breaks too.
+        rule: 'no-raw-br',
+        pattern: /<br\s*\/?>/i,
+        message: 'Use \\\\ for a line break instead of <br> — see the Markdown Cheat Sheet'
       }
     ];
+
+
+  /**
+   * Replace code spans and fenced blocks with blank lines of the same count,
+   * so scanning sees no code but reported line numbers still match the source.
+   */
+  private static blankOutCode(content: string): string {
+    return content
+      // Fenced blocks: keep one newline per line consumed.
+      .replace(/^```[\s\S]*?^```/gm, (block) => '\n'.repeat(block.split('\n').length - 1))
+      // Indented code blocks (four spaces or a tab).
+      .replace(/^(?: {4}|\t).*$/gm, '')
+      // Inline code spans.
+      .replace(/`[^`\n]*`/g, '');
+  }
 
   /**
    * Blocking violations for the save path. See BaseFilter.collectErrors.
@@ -335,7 +403,14 @@ class SecurityFilter extends BaseFilter {
     if (!content) return [];
 
     const errors: FilterValidationError[] = [];
-    const lines = content.split('\n');
+    // Blank out code, keeping line numbering intact, so a page that DOCUMENTS
+    // HTML is not refused (#1037). Content in a fence or in backticks renders
+    // as escaped text and cannot execute — that is precisely the convention
+    // "HTML in docs belongs in backticks" already relies on.
+    //
+    // Without this, editing WikiFormsPlugin or any page explaining <script>
+    // fails to save, which on a wiki that documents HTML is not an edge case.
+    const lines = SecurityFilter.blankOutCode(content).split('\n');
 
     for (const { rule, pattern, message } of SecurityFilter.BLOCKED_PATTERNS) {
       lines.forEach((text, index) => {
@@ -356,6 +431,16 @@ class SecurityFilter extends BaseFilter {
 
   async process(content: string, context: ParseContext): Promise<string> {
     if (!content) {
+      return content;
+    }
+
+    // Save-time blocking and render filtering are separate switches (#1037).
+    // When only the former is on, this filter is registered purely so
+    // FilterChain.collectErrors() can reach it — it must not touch rendered
+    // output, which is largely our own HTML: plugins emit inline onclick,
+    // style, and an <iframe> for embedded maps, none of which can be told
+    // apart from author content once rendered.
+    if (this.securityConfig && !this.securityConfig.renderFiltering) {
       return content;
     }
 
@@ -413,13 +498,29 @@ class SecurityFilter extends BaseFilter {
    * @returns Cleaned content
    */
   stripDangerousContent(content: string): string {
-    let cleanedContent = content;
-
-    for (const pattern of this.dangerousPatterns) {
-      cleanedContent = cleanedContent.replace(pattern, '<!-- Dangerous content removed by SecurityFilter -->');
-    }
-
-    return cleanedContent;
+    // Inspect TAGS ONLY. Text is never examined, because text cannot execute:
+    // script needs a tag, and everything else needs an attribute inside one.
+    //
+    // Applying these patterns to the whole document is what mangled ordinary
+    // prose and code samples — `metadata:`, `validationManager =`, "gene
+    // expression (" — replacing fragments of words mid-sentence with an HTML
+    // comment. Scoping to `<...>` makes that impossible by construction rather
+    // than by anchoring each pattern and hoping the next one is careful.
+    //
+    // A tag is dropped whole when it matches, and its inner text is left
+    // behind: `<iframe>caption</iframe>` loses the framing but keeps the words.
+    // Removing the run between open and close tags would delete legitimate
+    // content along with the wrapper.
+    return content.replace(/<[^>]*>/g, (tag) => {
+      for (const pattern of this.dangerousPatterns) {
+        // Patterns are single-match (no /g), so lastIndex cannot carry between
+        // tags — a stateful regex here would skip every other match.
+        if (pattern.test(tag)) {
+          return '<!-- Dangerous content removed by SecurityFilter -->';
+        }
+      }
+      return tag;
+    });
   }
 
   /**
@@ -491,14 +592,24 @@ class SecurityFilter extends BaseFilter {
     }
 
     const sanitizedAttrs: string[] = [];
-    const attrRegex = /(\w+)=["']([^"']*)["']/g;
+    // `[\w-]`, not `\w`: hyphens are legal in attribute names and our own
+    // output is full of them — 71 distinct data-* attributes, Bootstrap's
+    // data-bs-* among them. With `\w+` the regex matched the fragment after
+    // the hyphen (`lat="…"` out of `data-lat="…"`), so the attribute was
+    // neither recognised nor preserved.
+    const attrRegex = /([\w-]+)=["']([^"']*)["']/g;
     let match: RegExpExecArray | null;
 
     while ((match = attrRegex.exec(attributeString)) !== null) {
       const attrName = (match[1] ?? '').toLowerCase();
       const attrValue = match[2] ?? '';
 
-      if (this.allowedAttributes.has(attrName)) {
+      // data-* is inert: it carries values for scripts to read but cannot
+      // execute anything itself, and enumerating 71 of them (plus whatever a
+      // plugin adds next) would be a permanent maintenance tax.
+      const isDataAttribute = attrName.startsWith('data-');
+
+      if (isDataAttribute || this.allowedAttributes.has(attrName)) {
         // Additional validation for specific attributes
         if (attrName === 'href' && !this.isValidURL(attrValue)) {
           continue; // Skip invalid URLs
@@ -530,7 +641,11 @@ class SecurityFilter extends BaseFilter {
       const urlObj = new URL(url);
 
       // Allow only safe protocols
-      const safeProtocols = ['http:', 'https:', 'mailto:'];
+      // geo:/tel:/sms: hand off to a device app and cannot execute script.
+      // LocationPlugin emits geo: URIs, and stripping them silently removed
+      // every map link on the page — caught by the e2e suite when this filter
+      // was first enabled by default (#1037).
+      const safeProtocols = ['http:', 'https:', 'mailto:', 'geo:', 'tel:', 'sms:'];
       if (!safeProtocols.includes(urlObj.protocol)) {
         return false;
       }

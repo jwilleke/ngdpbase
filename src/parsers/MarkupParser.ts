@@ -519,8 +519,12 @@ class MarkupParser extends BaseManager {
       return;
     }
 
-    // Register SecurityFilter if enabled
-    if (this.config.filters.security.enabled) {
+    // Register when EITHER render filtering or save-time blocking is on.
+    // FilterChain.collectErrors() only iterates registered, enabled filters,
+    // so a filter that is not registered contributes no save-time rules —
+    // which is why blocking used to require render filtering as well (#1037).
+    const securityConfig = this.config.filters.security as { enabled: boolean; blockOnSave?: boolean };
+    if (securityConfig.enabled || securityConfig.blockOnSave !== false) {
       const securityFilter = new SecurityFilter();
 
       try {
@@ -765,6 +769,7 @@ class MarkupParser extends BaseManager {
         this.config.filters.enabled = configManager.getProperty('ngdpbase.markup.filters.enabled', this.config.filters.enabled);
         this.config.filters.spam.enabled = configManager.getProperty('ngdpbase.markup.filters.spam.enabled', this.config.filters.spam.enabled);
         this.config.filters.security.enabled = configManager.getProperty('ngdpbase.markup.filters.security.enabled', this.config.filters.security.enabled);
+        (this.config.filters.security as { blockOnSave?: boolean }).blockOnSave = configManager.getProperty('ngdpbase.markup.filters.security.block-on-save', true);
         this.config.filters.validation.enabled = configManager.getProperty('ngdpbase.markup.filters.validation.enabled', this.config.filters.validation.enabled);
         
         // Advanced cache configuration

@@ -135,9 +135,13 @@ describe('SecurityFilter closes it when enabled (#1032)', () => {
     );
 
     expect(html).not.toContain('<script');
-    expect(html).not.toContain('<iframe');
     expect(html).not.toMatch(/onclick/i);
     expect(html).toContain('<strong>text</strong>');
     expect(html).toContain('href');
+    // <iframe> is NOT stripped at render any more (#1037). It is refused at
+    // SAVE, where an author's frame can still be told apart from one our own
+    // LocationPlugin emits for embedded maps. Blocking it here removed every
+    // map on the wiki.
+    expect(html).toContain('<iframe');
   });
 });

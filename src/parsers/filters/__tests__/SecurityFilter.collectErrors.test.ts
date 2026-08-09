@@ -88,3 +88,51 @@ describe('it reads SOURCE, not rendered HTML (#1037)', () => {
     expect(errors).toHaveLength(1);
   });
 });
+
+describe('code is inert, so it is not scanned (#1037)', () => {
+  test('a page documenting HTML in a fence still saves', async () => {
+    // The wiki documents HTML — WikiFormsPlugin, the NCM pages. Refusing those
+    // edits would make the rule unusable on exactly the content that needs it
+    // most. Fenced text renders escaped and cannot execute.
+    const doc = '# Docs\n\n```html\n<script src="/p.js"></script>\n```\n';
+
+    expect(await filter().collectErrors(doc, {})).toEqual([]);
+  });
+
+  test('inline code spans are ignored too', async () => {
+    const doc = 'Write `<iframe>` to embed a frame.';
+
+    expect(await filter().collectErrors(doc, {})).toEqual([]);
+  });
+
+  test('but a real tag outside code is still caught, with the right line', async () => {
+    // Blanking code must preserve line numbering, or the reported line points
+    // an author at the wrong place.
+    const doc = '```html\n<script>a</script>\n```\n\n<script>real</script>\n';
+    const errors = await filter().collectErrors(doc, {});
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].line).toBe(5);
+  });
+});
+
+describe('raw <br> is a markup rule, not a security one (#1037)', () => {
+  test('refuses a hand-written <br>', async () => {
+    const errors = await filter().collectErrors('line one<br>line two', {});
+
+    expect(errors.map(e => e.rule)).toEqual(['no-raw-br']);
+    expect(errors[0].message).toContain('\\\\');
+  });
+
+  test("does NOT touch NCM's own line break", async () => {
+    // The whole reason this is enforced at save and not at render: `\\`
+    // becomes a <br> in the markup phase, so by render time an author's <br>
+    // and one NCM generated are identical. Dropping `br` from the render
+    // allow-list would break `\\`, `\\\` and table-cell breaks.
+    expect(await filter().collectErrors('line one\\\\\nline two', {})).toEqual([]);
+  });
+
+  test('<br> inside a code fence is fine', async () => {
+    expect(await filter().collectErrors('```html\n<br>\n```', {})).toEqual([]);
+  });
+});
