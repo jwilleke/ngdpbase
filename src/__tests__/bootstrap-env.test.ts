@@ -17,7 +17,6 @@ import os from 'os';
 const KEY = 'NGDPBASE_BOOTSTRAP_ENV_SPEC';
 
 let tmpRoot: string;
-let originalCwd: string;
 
 /** Re-import the module fresh; it applies its effects at import time. */
 async function loadBootstrap(): Promise<void> {
@@ -26,17 +25,23 @@ async function loadBootstrap(): Promise<void> {
 }
 
 beforeEach(() => {
-  originalCwd = process.cwd();
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ngdp-env-'));
   fs.mkdirSync(path.join(tmpRoot, 'data'));
-  process.chdir(tmpRoot);
+
+  // Stub process.cwd() rather than calling process.chdir(). chdir mutates the
+  // working directory of the whole worker process, so any test sharing that
+  // worker resolves relative paths somewhere else for as long as this file
+  // runs — an intermittent, full-suite-only failure with no obvious cause.
+  // Stubbing only affects code that calls process.cwd(), which is what
+  // bootstrap-env does; fs still resolves relative paths normally.
+  vi.spyOn(process, 'cwd').mockReturnValue(tmpRoot);
 
   delete process.env[KEY];
   delete process.env.FAST_STORAGE;
 });
 
 afterEach(() => {
-  process.chdir(originalCwd);
+  vi.restoreAllMocks();
   // Only ever the temp dir this test made — never a data directory.
   fs.rmSync(tmpRoot, { recursive: true, force: true });
   delete process.env[KEY];
