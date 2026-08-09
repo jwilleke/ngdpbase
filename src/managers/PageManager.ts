@@ -791,10 +791,51 @@ class PageManager extends BaseManager implements CatalogSource {
       return;
     }
 
-    if (errors.length > 0) {
-      logger.info(`🛑 save(${pageName}) blocked: ${errors.length} validation error(s)`);
-      throw new PageContentValidationError(pageName, errors);
+    if (errors.length === 0) return;
+
+    // Name the rules and the author. A count alone cannot distinguish
+    // `no-raw-br` — routine, and expected on ~205 existing pages — from
+    // `no-script-tag`, which is someone trying to inject a script. The noisy
+    // rule will vastly outnumber the interesting one, so the interesting one
+    // has to be greppable.
+    const rules = [...new Set(errors.map((e) => e.rule))].join(', ');
+    const who = options.userName ?? 'unknown';
+    logger.info(
+      `🛑 save("${pageName}") blocked for ${who}: ${errors.length} error(s) — ${rules}`
+    );
+
+    // Security rules also go to the audit trail. `no-raw-br` is a markup
+    // convention and does not belong there; a script tag does. Without this a
+    // genuine injection attempt produced one info line and nothing durable —
+    // the least visible thing the app does, despite being the reason the gate
+    // exists (#1037).
+    const securityRules = errors.filter((e) => e.rule !== 'no-raw-br');
+    if (securityRules.length > 0) {
+      try {
+        const auditManager = this.engine.getManager<{
+          logSecurityEvent?: (
+            ctx: Record<string, unknown>,
+            eventType: string,
+            severity: 'low' | 'medium' | 'high' | 'critical',
+            description: string
+          ) => Promise<string>;
+            }>('AuditManager');
+        await auditManager?.logSecurityEvent?.(
+          { user: { username: who } },
+          'content_blocked_on_save',
+          'high',
+          `Refused save of "${pageName}": ${securityRules.map((e) => `${e.rule} (line ${e.line ?? '?'})`).join(', ')}`
+        );
+      } catch (err) {
+        // Never let an audit failure block, or turn into, a save failure.
+        logger.warn(
+          '⚠️  Could not audit a blocked save: ' +
+          (err instanceof Error ? err.message : String(err))
+        );
+      }
     }
+
+    throw new PageContentValidationError(pageName, errors);
   }
 
   async savePageWithContext(

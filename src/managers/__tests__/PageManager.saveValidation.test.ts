@@ -27,12 +27,24 @@ function makeManager(errors: unknown[] = []) {
     collectContentErrors: vi.fn().mockResolvedValue(errors),
     checkConflicts: vi.fn().mockResolvedValue({ hasConflict: false })
   };
+  const auditManager = { logSecurityEvent: vi.fn().mockResolvedValue('evt-1') };
   const manager = new PageManager({
-    getManager: (n: string) => (n === 'ValidationManager' ? validationManager : null)
+    getManager: (n: string) =>
+      n === 'ValidationManager' ? validationManager
+        : n === 'AuditManager' ? auditManager
+          : null
   });
   (manager as unknown as { provider: unknown }).provider = provider;
-  return { manager, provider, validationManager };
+  return { manager, provider, validationManager, auditManager };
 }
+
+const BR_ERROR = {
+  filterId: 'security',
+  rule: 'no-raw-br',
+  severity: 'error' as const,
+  message: 'Use \\\\ for a line break instead of <br>',
+  line: 2
+};
 
 describe('PageManager.savePage — the chokepoint (#1037)', () => {
   test('refuses content that breaks a rule, and writes nothing', async () => {
@@ -118,3 +130,54 @@ describe('validation failures never become save failures (#1037)', () => {
     expect(provider.savePage).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('a blocked save is visible afterwards (#1037)', () => {
+  test('a script attempt reaches the audit trail', async () => {
+    // The reason the gate exists. Before this it produced one info line with a
+    // count and nothing durable — the least visible thing the app did.
+    const { manager, auditManager } = makeManager([ERROR]);
+
+    await manager
+      .savePage('Bad', '<script>x</script>', {}, { userName: 'mallory' })
+      .catch(() => undefined);
+
+    expect(auditManager.logSecurityEvent).toHaveBeenCalledTimes(1);
+    const [ctx, eventType, severity, description] =
+      auditManager.logSecurityEvent.mock.calls[0];
+    expect(ctx).toMatchObject({ user: { username: 'mallory' } });
+    expect(eventType).toBe('content_blocked_on_save');
+    expect(severity).toBe('high');
+    expect(description).toContain('no-script-tags');
+  });
+
+  test('a raw <br> does NOT — it is a markup convention, not an attack', async () => {
+    // ~205 existing pages trip this rule. Auditing them would bury the one
+    // event that matters under hundreds that do not.
+    const { manager, auditManager } = makeManager([BR_ERROR]);
+
+    await manager.savePage('Old', 'a<br>b').catch(() => undefined);
+
+    expect(auditManager.logSecurityEvent).not.toHaveBeenCalled();
+  });
+
+  test('mixed errors audit only the security ones', async () => {
+    const { manager, auditManager } = makeManager([BR_ERROR, ERROR]);
+
+    await manager.savePage('Mixed', 'x').catch(() => undefined);
+
+    const description = auditManager.logSecurityEvent.mock.calls[0][3];
+    expect(description).toContain('no-script-tags');
+    expect(description).not.toContain('no-raw-br');
+  });
+
+  test('an audit failure does not change the outcome of the save', async () => {
+    // The save is still refused, and the refusal is still the reported error —
+    // an audit fault must not mask or replace it.
+    const { manager, auditManager, provider } = makeManager([ERROR]);
+    auditManager.logSecurityEvent.mockRejectedValue(new Error('audit down'));
+
+    await expect(manager.savePage('Bad', 'x')).rejects.toThrow(PageContentValidationError);
+    expect(provider.savePage).not.toHaveBeenCalled();
+  });
+});
+
