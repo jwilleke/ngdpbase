@@ -20,7 +20,7 @@ Generated priority mirror of open GitHub issues and pull requests — the `P0` /
 
 - *(none)*
 
-Scanner state (corrected 2026-08-08, at v4.7.0): **5 open Dependabot alerts, not 1.** The previous line here recorded only the accepted `showdown` ReDoS (#96 / CVE-2024-1899, closed [#1000](https://github.com/jwilleke/ngdpbase/issues/1000)) and missed four others, because the `/pstatus` query was unpaginated. Now open: 2 × **high** js-yaml (CVE-2026-59870, fixes exist at 4.3.1 / 3.15.1) and 2 × medium **showdown XSS** (CVE-2026-59710, CVE-2026-59711) which #1000's ReDoS reasoning does not cover. All tracked in #1032. Re-query with `?state=open&per_page=100` and cross-check the git-push banner.
+Scanner state (2026-08-09, at v4.8.3): **ZERO open alerts, both kinds.** The three Dependabot showdown alerts and six code-scanning alerts (the same CVEs, doubled across two showdown copies) were dismissed with per-CVE reasoning under [#1036](https://github.com/jwilleke/ngdpbase/issues/1036): #96 as mitigated by `showdownGuard.ts`, #208/#209 as not reachable (they need `tablesHeaderId` / `completeHTMLDocument`, neither enabled). The two high js-yaml alerts were fixed outright in v4.8.2. Re-query with `?state=open&per_page=100` **and** the code-scanning endpoint — counting only Dependabot missed six.
 
 ## 🟠 P1
 
