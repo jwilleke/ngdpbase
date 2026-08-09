@@ -2212,21 +2212,36 @@ class MarkupParser extends BaseManager {
     // For cells with no wiki syntax and possible <br> content, uses a fast path.
     // Otherwise delegates to appendWikiNodes for the combined scanner.
     const populateCell = async (el: ReturnType<typeof wikiDocument.createElement>, cell: string): Promise<void> => {
-      const hasWiki = /`[^`\n]+`|\[\[\{|\[\{\$|\[\{[A-Za-z]|\[|data-jspwiki-placeholder/.test(cell);
-      if (!hasWiki) {
-        // No wiki syntax — fast path with <br> support
-        if (/<br\s*\/?>/.test(cell)) {
-          const safe = cell
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-            .replace(/&lt;br\s*\/?&gt;/g, '<br>');
-          el.innerHTML = safe;
-        } else {
-          el.textContent = cell;
+      // Line breaks are resolved FIRST, before the wiki/plain decision (#1038).
+      //
+      // Cells used to support no line break at all when they contained wiki
+      // syntax: appendWikiNodes emits leftover content as text nodes, which
+      // escape by definition, so a break rendered as a literal `&lt;br&gt;`.
+      // And `\\` never worked in a %%style table at all, because style-block
+      // content is extracted at Step 0.5, before the markup phase rewrites
+      // `\\` into a <br> (MarkupParser:1778).
+      //
+      // Splitting here handles both syntaxes on both paths. It also makes
+      // #1037's `no-raw-br` message honest inside a cell: without it those
+      // pages render correctly but can never be saved, because the suggested
+      // alternative does not work there.
+      const segments = cell.split(/<br\s*\/?>|\\{2,3}/i);
+
+      for (let i = 0; i < segments.length; i++) {
+        if (i > 0) el.appendChild(wikiDocument.createElement('br', {}));
+        const segment = segments[i];
+        if (segment === '') continue;
+
+        const hasWiki = /`[^`\n]+`|\[\[\{|\[\{\$|\[\{[A-Za-z]|\[|data-jspwiki-placeholder/.test(segment);
+        if (!hasWiki) {
+          // Plain text: a text node escapes it, which is what a cell wants.
+          el.appendChild(wikiDocument.createTextNode(segment));
+          continue;
         }
-        return;
+
+        await this.appendWikiNodes(segment, el, context, wikiDocument, linkIdCounter);
+        linkIdCounter += 100; // advance past any IDs appendWikiNodes may have used
       }
-      await this.appendWikiNodes(cell, el, context, wikiDocument, linkIdCounter);
-      linkIdCounter += 100; // advance counter past any IDs appendWikiNodes may have used
     };
 
     // Create thead if there are header rows

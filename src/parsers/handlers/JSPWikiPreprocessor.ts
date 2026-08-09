@@ -435,8 +435,28 @@ class JSPWikiPreprocessor extends BaseSyntaxHandler {
     };
     const escaped = protected_.replace(/[&<>"']/g, m => map[m] ?? m);
 
+    // Put line breaks back (#1038).
+    //
+    // Escaping cells wholesale is right — a cell is not a place for arbitrary
+    // HTML — but it also meant NO line break was possible in one, in any
+    // syntax. NCM's `\\` is rewritten to a <br> during the markup phase
+    // (MarkupParser:1778), so by the time it arrives here it looks exactly
+    // like a hand-written tag and was escaped with everything else. Authors
+    // saw a literal `&lt;br&gt;` in the cell.
+    //
+    // That turned blocking under #1037, which refuses a save containing a raw
+    // <br>: the message told authors to use `\\`, which did not work here
+    // either, so four pages could not be saved at all.
+    //
+    // Only breaks come back, and only the forms this codebase generates.
+    // Everything else stays escaped, so a cell is no more permissive than
+    // before — `<script>` in a cell is still inert text.
+    const withBreaks = escaped
+      .replace(/&lt;br\s*\/?&gt;/gi, '<br>')
+      .replace(/&lt;br class=&quot;wiki-clearfix&quot;&gt;/gi, '<br class="wiki-clearfix">');
+
     // Restore placeholder spans
-    return escaped.replace(/%%JSPWIKI_PH_(\d+)%%/g, (_match, idx: string) => placeholders[parseInt(idx, 10)]);
+    return withBreaks.replace(/%%JSPWIKI_PH_(\d+)%%/g, (_match, idx: string) => placeholders[parseInt(idx, 10)]);
   }
 
   /**
