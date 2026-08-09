@@ -126,7 +126,10 @@ describe('UserManager.createUserPage()', () => {
     expect(pageManager.savePage).toHaveBeenCalledWith(
       'Profile: Jane Smith',
       expect.any(String),
-      expect.any(Object)
+      expect.any(Object),
+      // #1037: the profile page is generated from a template by the system,
+      // not typed by a user, so it bypasses save-time content validation.
+      { skipValidation: true }
     );
   });
 

@@ -17,6 +17,38 @@ import type {
 import { pageToArticle } from '../utils/pageToArticle.js';
 import { dedupeKeywords, normalizeKeywordValue } from '../utils/keywordNormalizer.js';
 import type ConfigurationManager from './ConfigurationManager.js';
+import type { FilterValidationError } from '../parsers/filters/FilterChain.js';
+
+/**
+ * A save refused because the content broke a filter rule (#1037).
+ *
+ * Carries the structured violations so a route can answer with the same
+ * `400 { validationErrors }` shape the editor already understands, rather
+ * than degrading to a generic 500.
+ */
+/**
+ * Options for the page write methods (#1037).
+ */
+export interface PageSaveOptions {
+  /**
+   * Skip content validation. For content the instance ships ITSELF — addon
+   * page seeding, required-pages sync, generated profile pages. Never for
+   * anything a user supplied.
+   */
+  skipValidation?: boolean;
+  /** Attributed to the validation log line; purely diagnostic. */
+  userName?: string;
+}
+
+export class PageContentValidationError extends Error {
+  readonly validationErrors: FilterValidationError[];
+
+  constructor(pageName: string, validationErrors: FilterValidationError[]) {
+    super(`Content validation failed for "${pageName}": ${validationErrors.map(e => e.message).join('; ')}`);
+    this.name = 'PageContentValidationError';
+    this.validationErrors = validationErrors;
+  }
+}
 import type CatalogManager from './CatalogManager.js';
 import type ValidationManager from './ValidationManager.js';
 import type NotificationManager from './NotificationManager.js';
@@ -705,7 +737,71 @@ class PageManager extends BaseManager implements CatalogSource {
    *   tags: ['tutorial']
    * });
    */
-  async savePageWithContext(wikiContext: WikiContext, metadata: Partial<PageFrontmatter> = {}): Promise<void> {
+
+  /**
+   * Refuse a save whose content breaks a filter rule (#1037).
+   *
+   * Lives here, not in the route handlers, because that is where it kept
+   * getting forgotten: `/save/:page` had the check, `POST /create` — the
+   * "Create New Page" item in the header — did not, and neither did
+   * `/api/page/ingest`. Every write path reaches PageManager, so putting the
+   * gate here means a new caller inherits it instead of having to remember.
+   *
+   * `skipValidation` is for TRUSTED content the instance ships itself —
+   * addon page seeding, required-pages sync, generated profile pages. Those
+   * run at startup, and a rule aimed at user input must never be able to stop
+   * the instance booting. It is an explicit opt-out precisely so that reading
+   * a call site tells you which kind of content it writes.
+   *
+   * A failure inside ValidationManager is NOT a failure to save: it already
+   * degrades to "no errors" internally, and this method must not turn an
+   * infrastructure problem into a refused edit.
+   *
+   * @throws PageContentValidationError when a filter reports severity 'error'
+   */
+  private async assertContentPasses(
+    pageName: string,
+    content: string | undefined,
+    options: PageSaveOptions
+  ): Promise<void> {
+    if (options.skipValidation || !content) return;
+
+    const validationManager = this.engine.getManager<ValidationManager & {
+      collectContentErrors?: (
+        c: string,
+        ctx: Record<string, unknown>
+      ) => Promise<FilterValidationError[]>;
+        }>('ValidationManager');
+    if (!validationManager?.collectContentErrors) return;
+
+    let errors: FilterValidationError[];
+    try {
+      errors = await validationManager.collectContentErrors(content, {
+        pageName,
+        userName: options.userName
+      });
+    } catch (err) {
+      // Infrastructure fault, not a content fault. Refusing the edit would be
+      // worse than the rule going unenforced for this one save — and the
+      // author has no way to act on it either way.
+      logger.warn(
+        `⚠️  Content validation errored for "${pageName}"; saving unvalidated: ` +
+        (err instanceof Error ? err.message : String(err))
+      );
+      return;
+    }
+
+    if (errors.length > 0) {
+      logger.info(`🛑 save(${pageName}) blocked: ${errors.length} validation error(s)`);
+      throw new PageContentValidationError(pageName, errors);
+    }
+  }
+
+  async savePageWithContext(
+    wikiContext: WikiContext,
+    metadata: Partial<PageFrontmatter> = {},
+    options: PageSaveOptions = {}
+  ): Promise<void> {
     if (!wikiContext) {
       throw new Error('PageManager.savePageWithContext requires a WikiContext');
     }
@@ -716,6 +812,11 @@ class PageManager extends BaseManager implements CatalogSource {
 
     const pageName = wikiContext.pageName;
     const content = wikiContext.content;
+
+    await this.assertContentPasses(pageName, content, {
+      userName: (wikiContext as unknown as { userContext?: { username?: string } }).userContext?.username,
+      ...options
+    });
 
     // Reject deprecated inline ACL markup — authors must use the audience front matter field instead
     if (content && /\[\{\s*(ALLOW|DENY)\b[^}]*\}\]/i.test(content)) {
@@ -932,10 +1033,16 @@ class PageManager extends BaseManager implements CatalogSource {
    *   tags: ['tutorial']
    * });
    */
-  async savePage(pageName: string, content: string, metadata: Partial<PageFrontmatter> = {}): Promise<void> {
+  async savePage(
+    pageName: string,
+    content: string,
+    metadata: Partial<PageFrontmatter> = {},
+    options: PageSaveOptions = {}
+  ): Promise<void> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
+    await this.assertContentPasses(pageName, content, options);
     const validationManager = this.engine.getManager<ValidationManager>('ValidationManager');
     if (validationManager) {
       const uuid = (metadata as Record<string, unknown>).uuid as string ?? '';

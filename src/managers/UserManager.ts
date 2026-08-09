@@ -879,7 +879,7 @@ class UserManager extends BaseManager {
       });
 
       // Save the user page
-      await pageManager.savePage(profileTitle, populatedContent, metadata);
+      await pageManager.savePage(profileTitle, populatedContent, metadata, { skipValidation: true });
       logger.info(`✅ Created user page for ${user.displayName}`);
       return true;
     } catch (error) {

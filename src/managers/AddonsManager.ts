@@ -1003,7 +1003,7 @@ class AddonsManager extends BaseManager {
             const reconciled: Record<string, unknown> = { ...existingMeta, ...metaPatch };
             if (clearAccess) delete reconciled.access;
 
-            await pageManager.savePage(existingSlug, existing.content, reconciled);
+            await pageManager.savePage(existingSlug, existing.content, reconciled, { skipValidation: true });
             // Keep the in-memory copy consistent — the reseed branch below reads
             // existingMeta again, and would otherwise re-apply a stale category
             // or resurrect the access we just cleared.
@@ -1058,7 +1058,7 @@ class AddonsManager extends BaseManager {
               ...(reseedAccess ? { access: reseedAccess } : {}),
               'addon-source-hash': srcHash
             };
-            await pageManager.savePage(existingSlug, parsed.content, reseedMetadata);
+            await pageManager.savePage(existingSlug, parsed.content, reseedMetadata, { skipValidation: true });
             reseeded++;
             logger.info(legacy
               ? `[AddonsManager] Reseeded legacy '${existingSlug}' from ${addonName} (no prior source-hash; previous content kept in version history)`
@@ -1107,7 +1107,10 @@ class AddonsManager extends BaseManager {
           'addon-source-hash': pageSourceHash(parsed.content)
         };
 
-        await pageManager.savePage(slug, parsed.content, metadata);
+        // skipValidation: this is content the addon SHIPS, not user input.
+        // Seeding runs during startup, so a content rule aimed at page authors
+        // must never be able to stop the instance booting (#1037).
+        await pageManager.savePage(slug, parsed.content, metadata, { skipValidation: true });
 
         // Update search index so the page is discoverable via category search
         const searchManager = this.engine.getManager<SearchManager>('SearchManager');

@@ -46,6 +46,7 @@ import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
 import { renderCommentListHtml } from '../plugins/CommentsPlugin.js';
 import WikiContext from '../context/WikiContext.js';
+import { PageContentValidationError } from '../managers/PageManager.js';
 import { ThemeManager, getThemeManager } from '../managers/ThemeManager.js';
 import { registerDawarichCompatRoutes } from './DawarichCompatRoutes.js';
 import type { ReportProgress } from '../managers/BackgroundJobManager.js';
@@ -3081,6 +3082,19 @@ ${panes}
       // Redirect to edit the new page
       res.redirect(`/edit/${pageName}`);
     } catch (err: unknown) {
+      // #1037: content validation now happens in PageManager, so it reaches
+      // this path too — POST /create is the header's "Create New Page" and
+      // previously saved without any check. A rule violation is the author's
+      // problem to fix, not a server fault, so answer 400 with the specific
+      // violations rather than a blank 500.
+      if (err instanceof PageContentValidationError) {
+        logger.info(`🛑 createPageFromTemplate blocked: ${err.validationErrors.length} error(s)`);
+        return res.status(400).json({
+          ok: false,
+          error: 'Validation failed',
+          validationErrors: err.validationErrors
+        });
+      }
       logger.error('Error creating page from template:', err);
       res.status(500).send('Error creating page');
     }
