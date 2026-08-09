@@ -57,7 +57,11 @@ function makeEngine(pageManager: Record<string, unknown>) {
       'system-category': options['system-category'] || 'general',
       'user-keywords': options['user-keywords'] || [],
       ...options
-    }))
+    })),
+    // The real ValidationManager exposes this; the stub omitted it, so the
+    // guard in ingestPageMarkdown short-circuited and save-time validation
+    // was never exercised here.
+    collectContentErrors: vi.fn().mockResolvedValue([])
   };
   const renderingManager = {
     addPageToCache: vi.fn(),
@@ -201,5 +205,80 @@ describe('WikiRoutes.ingestPageMarkdown() — POST /api/page/ingest (#819)', () 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, action: 'updated' }));
     expect(pm.savePageWithContext).toHaveBeenCalledTimes(1);
+  });
+
+  // #596 save-time validation reaches this endpoint too. It did not before:
+  // the only gate was `isAuthenticated`, so any account — including a
+  // magic-link visitor on a public demo — could POST content the editor
+  // would have refused.
+  describe('save-time validation', () => {
+    const freshPm = () => ({
+      getPage: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(makeSavedPage()),
+      savePageWithContext: vi.fn().mockResolvedValue(undefined),
+      getPageUUID: vi.fn().mockReturnValue('uuid-doc-1')
+    });
+
+    test('blocks the save with 400 and the structured errors', async () => {
+      const pm = freshPm();
+      const engine = makeEngine(pm);
+      const routes = new WikiRoutes(engine);
+      installContextSpy(routes, true);
+      engine._validationManager.collectContentErrors.mockResolvedValue([
+        { rule: 'no-script-tags', message: 'Inline <script> is not allowed', line: 3 }
+      ]);
+      const res = createRes();
+
+      await routes.ingestPageMarkdown(
+        createReq(AUTHED, { pageName: 'Bad Doc', markdown: '# Bad\n\n<script>alert(1)</script>' }),
+        res
+      );
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        success: false,
+        error: 'Validation failed',
+        validationErrors: [expect.objectContaining({ rule: 'no-script-tags' })]
+      }));
+      // The point of blocking: nothing reaches disk.
+      expect(pm.savePageWithContext).not.toHaveBeenCalled();
+    });
+
+    test('validates the NORMALISED content, not the raw input', async () => {
+      // normalizeExistingPageToNcm rewrites links and up-converts tables, so
+      // checking the POST body would approve something other than what is
+      // written.
+      const pm = freshPm();
+      const engine = makeEngine(pm);
+      const routes = new WikiRoutes(engine);
+      installContextSpy(routes, true);
+      const res = createRes();
+
+      await routes.ingestPageMarkdown(
+        createReq(AUTHED, { pageName: 'My Doc', markdown: '# My Doc\n\nBody.' }),
+        res
+      );
+
+      const [checked] = engine._validationManager.collectContentErrors.mock.calls[0];
+      expect(typeof checked).toBe('string');
+      expect(checked).toContain('Body.');
+      // ncmDoc.content is the body only — frontmatter has been parsed off.
+      expect(checked).not.toContain('uuid:');
+    });
+
+    test('a clean page still saves', async () => {
+      const pm = freshPm();
+      const engine = makeEngine(pm);
+      const routes = new WikiRoutes(engine);
+      installContextSpy(routes, true);
+      const res = createRes();
+
+      await routes.ingestPageMarkdown(
+        createReq(AUTHED, { pageName: 'My Doc', markdown: '# My Doc\n\nBody.' }),
+        res
+      );
+
+      expect(engine._validationManager.collectContentErrors).toHaveBeenCalled();
+      expect(pm.savePageWithContext).toHaveBeenCalledTimes(1);
+    });
   });
 });

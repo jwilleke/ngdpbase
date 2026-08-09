@@ -7677,6 +7677,35 @@ ${panes}
       const ncmDoc = matter(ncm.content);
       const ncmWarnings = ncm.warnings.map(w => `${w.kind}: ${w.detail}`);
 
+      // Save-time validation (#596), the same gate the editor's savePage
+      // applies. This endpoint had none: its only check was `isAuthenticated`,
+      // so any account — including a magic-link visitor on a public demo —
+      // could POST page content the editor would have refused.
+      //
+      // Validates ncmDoc.content, the POST-normalisation text that actually
+      // gets written. The `markdown` as received is the wrong thing to check:
+      // normalizeExistingPageToNcm rewrites links and up-converts tables, so
+      // validating the input would approve something other than what lands on
+      // disk.
+      const validationManager = this.engine.getManager('ValidationManager');
+      if (validationManager?.collectContentErrors) {
+        const validationErrors = await validationManager.collectContentErrors(ncmDoc.content, {
+          pageName,
+          userName: currentUser.username
+        });
+        if (validationErrors.length > 0) {
+          logger.info(
+            `🛑 ingest(${pageName}) blocked: ${validationErrors.length} validation error(s)`
+          );
+          return res.status(400).json({
+            success: false,
+            error: 'Validation failed',
+            validationErrors,
+            ncmWarnings
+          });
+        }
+      }
+
       const wikiContext = this.createWikiContext(req, {
         context: WikiContext.CONTEXT.EDIT,
         pageName,
