@@ -48,17 +48,19 @@ The guard is correct — a key naming a non-existent addon is far more often a t
 1. Release ngdpbase (minor — new permission surface)
 2. Flux bumps the demo to that image
 3. Set `ngdpbase.addons.demo.enabled: true` in `app-custom-config.json` **on the volume** — one line, over SSH or through `/admin/configuration`, no manifest edit and no PR
-4. Put the demo password in `<FAST_STORAGE>/.env` on the volume, then restart — the addon seeds `admindemo` and the Welcome page publishes it automatically
+4. Nothing — the addon seeds `admindemo` / `admin123` itself on the next boot
 
-```bash
-NGDPBASE_DEMO_ADMIN_PASSWORD=whatever-you-publish
-```
+No password to choose and no file to write: the demo login is printed on the Welcome page, so its value is not a secret and the addon ships it. Safety comes from the account holding only `admin-read` and being created `profileLocked`, not from secrecy. This is the opposite call to the core admin bootstrap password, which ships no default at all because it *is* a secret and guards `admin-system`.
 
-`.env` works here because the app loads it itself at startup (`src/bootstrap-env.ts`), not only through `./server.sh`. That was not true before: the image runs `node dist/src/app.js` directly and `server.sh` is not even in it, so a `.env` on the volume used to be silently inert and the value could only come from a Secret plus an `env:` block in the deployment — a manifest edit and a mj-infra-flux PR, for something that is plainly application configuration. Now it sits on the volume next to `app-custom-config.json`, needing neither.
+An `admindemo` created before `profileLocked` existed is repaired in place on the next boot — the flag is added, and nothing else about the account is touched. Deployments that predate the feature therefore need no manual step either.
+
+Set `NGDPBASE_DEMO_ADMIN_PASSWORD` (or a literal for the key) only if you run a demo whose login you do not publish.
 
 The Welcome page carries `[{DemoLogin}]`, which reads the same key the account is seeded from. Rotate the password and the page follows; there is no copy to keep in step.
 
-Step 4 used to be "create the `admindemo` account and publish its credentials", by hand, on each instance. The addon now does it in `register()`, which is what makes enabling the addon the *whole* setup: the account cannot drift from the credentials printed on the Welcome page, and anyone running their own demo gets a working dashboard login with no manual step. Seeding is idempotent — an account that already exists is left exactly as it is, so an operator who rotates the password keeps that across restarts.
+Step 4 used to be "create the `admindemo` account and publish its credentials", by hand, on each instance. The addon now does it in `register()`, which is what makes enabling the addon the *whole* setup.
+
+Seeding is idempotent: an existing account keeps its password, email and roles, so an operator's rotation survives restarts. The single exception is `profileLocked`, which is added if missing — see above. That is a safety property rather than an operator preference, and without the exception any demo whose account predates the flag would stay takeover-able forever.
 
 Step 3 is a config edit rather than a deployment change because the demo's `app-custom-config.json` now lives on the persistent volume, matching geohazardwatch (`840b87c`). A `subPath` ConfigMap mount is read-only, so app settings supplied that way cannot be changed without a redeploy — which is the wrong home for anything an operator edits.
 

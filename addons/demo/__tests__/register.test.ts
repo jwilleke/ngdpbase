@@ -34,7 +34,8 @@ function makeEngine(overrides: { existingUser?: unknown } = {}) {
   };
   const userManager = {
     getUser: vi.fn(() => Promise.resolve(overrides.existingUser)),
-    createUser: vi.fn(() => Promise.resolve({}))
+    createUser: vi.fn(() => Promise.resolve({})),
+    updateUser: vi.fn(() => Promise.resolve({}))
   };
   const pluginManager = {
     registerPlugin: vi.fn(() => Promise.resolve())
@@ -92,13 +93,21 @@ describe('demo addon shared admin account (#1029)', () => {
     expect(created.profileLocked).toBe(true);
   });
 
-  test('seeds nothing when no password is configured', async () => {
-    // No fallback by design. An account with a guessable password is worse
-    // than no account — that is the whole reason 'admin123' stopped shipping.
+  test('seeds with the shipped admin123 when nothing is configured', async () => {
+    // Deliberate, and the opposite call to the core admin bootstrap password.
+    // This one is PRINTED on the Welcome page, so its value is not a secret;
+    // safety comes from admin-read (it can change nothing) plus profileLocked
+    // (nobody can take it over). Shipping a value is what keeps enabling the
+    // addon the whole setup, with no per-deployment manual step.
     const { engine, userManager } = makeEngine();
     await demoAddon.register(engine, {});
 
-    expect(userManager.createUser).not.toHaveBeenCalled();
+    expect(userManager.createUser).toHaveBeenCalledTimes(1);
+    expect(userManager.createUser.mock.calls[0][0]).toMatchObject({
+      username: 'admindemo',
+      password: ADMIN_DEFAULTS.password,
+      profileLocked: true
+    });
   });
 
   test('treats an unresolved ${VAR} placeholder as no password', async () => {
@@ -122,11 +131,41 @@ describe('demo addon shared admin account (#1029)', () => {
 
   test('leaves an existing account alone, so a rotated password survives restart', async () => {
     const { engine, userManager } = makeEngine({
-      existingUser: { username: 'admindemo' }
+      existingUser: { username: 'admindemo', profileLocked: true }
     });
     await demoAddon.register(engine, SUPPLIED);
 
     expect(userManager.createUser).not.toHaveBeenCalled();
+    expect(userManager.updateUser).not.toHaveBeenCalled();
+  });
+
+  test('locks an existing account that predates profileLocked', async () => {
+    // The live demo's admindemo was created by hand before the flag existed.
+    // "Leave existing accounts alone" would have left every such demo
+    // permanently takeover-able — a visitor signs in with the published
+    // password, repoints the email at their own inbox, and owns the account
+    // for good via magic link. The lock is a safety property, not an operator
+    // preference, so it is repaired in place rather than by hand on every
+    // deployment.
+    const { engine, userManager } = makeEngine({
+      existingUser: { username: 'admindemo' }
+    });
+    await demoAddon.register(engine, SUPPLIED);
+
+    expect(userManager.updateUser).toHaveBeenCalledWith('admindemo', { profileLocked: true });
+    expect(userManager.createUser).not.toHaveBeenCalled();
+  });
+
+  test('the repair touches ONLY the flag — no password or role reset', async () => {
+    // An operator who rotated the password or adjusted the roles must keep
+    // both. Repairing the lock must not become a full reseed by the back door.
+    const { engine, userManager } = makeEngine({
+      existingUser: { username: 'admindemo', password: 'operator-rotated' }
+    });
+    await demoAddon.register(engine, SUPPLIED);
+
+    const updates = userManager.updateUser.mock.calls[0][1];
+    expect(Object.keys(updates)).toEqual(['profileLocked']);
   });
 
   test('honours configured username, password and email', async () => {

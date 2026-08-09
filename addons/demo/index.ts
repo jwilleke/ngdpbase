@@ -19,16 +19,21 @@
  *   ngdpbase.addons.demo.admin-account.email
  *   ngdpbase.addons.demo.admin-account.display-name
  *
- * No password ships. Set `NGDPBASE_DEMO_ADMIN_PASSWORD` in the instance
- * `.env` — repo root or `$FAST_STORAGE/.env`, whichever suits. Both are read
- * on every launch path: `./server.sh` sources them, and the app loads them
- * itself at startup (`src/bootstrap-env.ts`), so containers work too. On
- * Kubernetes that means a file on the persistent volume — no Secret, no
- * manifest change, no GitOps PR.
+ * The password ships as the well-known `admin123`, deliberately. It is
+ * PRINTED ON THE WELCOME PAGE, so its value is not a secret and shipping it
+ * gives away nothing the page does not already say. Safety comes from
+ * elsewhere: the account holds only `admin-read`, so it cannot change
+ * anything, and it is created `profileLocked`, so no visitor can take it over
+ * by changing its password or email.
  *
- * This password is meant to be PUBLISHED on the Welcome page. Pick it
- * accordingly and never reuse a real one. The page renders whatever is in
- * force via [{DemoLogin}], so it cannot drift from the account that exists.
+ * This is the opposite call to `ngdpbase.user.security.defaultpassword`, which
+ * ships no default at all — that one is a real secret guarding `admin-system`.
+ * Shipping a value here is what keeps enabling the addon the WHOLE setup, with
+ * no per-deployment manual step.
+ *
+ * Override the key with a literal, or with the `NGDPBASE_DEMO_ADMIN_PASSWORD`
+ * env-ref, if you run a demo whose login you do not publish. The page renders
+ * whatever is in force via [{DemoLogin}], so it cannot drift either way.
  *
  * With the variable unset the addon seeds no account and logs why — it does
  * not stop the boot, because a demo missing its dashboard login is still a
@@ -61,6 +66,7 @@ import DemoLoginPlugin from './plugins/DemoLoginPlugin.js';
  */
 export const ADMIN_DEFAULTS = {
   username: 'admindemo',
+  password: 'admin123',
   email: 'admindemo@example.com',
   displayName: 'Demo Administrator'
 };
@@ -110,21 +116,36 @@ async function seedAdminAccount(
 
   const existing = await userManager.getUser(username);
   if (existing) {
+    // Existing accounts are otherwise left alone, so a rotated password or an
+    // adjusted role survives restarts. The one exception is the lock itself.
+    //
+    // Accounts created before profileLocked existed do not carry it, and
+    // "leave it alone" would mean those demos stay permanently takeover-able:
+    // a visitor signs in with the published password, repoints the email at
+    // their own inbox, and owns the account for good via magic link. That is
+    // a safety property, not an operator preference, so repair it in place
+    // rather than making every existing deployment do it by hand.
+    //
+    // Only the flag is touched. Password, email, display name and roles are
+    // whatever the operator last set them to.
+    if (!existing.profileLocked) {
+      await userManager.updateUser(username, { profileLocked: true });
+      logger.warn(
+        `[demo addon] Shared admin account "${username}" predated profileLocked and was ` +
+        'unprotected — a visitor could have taken it over by changing its email. Locked it now.'
+      );
+      return;
+    }
     logger.info(`[demo addon] Shared admin account "${username}" already exists — left untouched`);
     return;
   }
 
-  // No fallback. An unset NGDPBASE_DEMO_ADMIN_PASSWORD means no account rather
-  // than an account with a guessable password — but it is NOT fatal: a demo
-  // missing its dashboard login is still a working wiki, so say so clearly and
-  // let the rest of the addon load.
-  //
-  // The key ships as the ${VAR} brace form, which is silent on a missing
-  // variable and leaves the placeholder intact — so "unset" arrives here as
-  // the literal "${NGDPBASE_DEMO_ADMIN_PASSWORD}", not as an empty string.
-  // Seeding an account with that as its password would be worse than seeding
-  // none, since it is a perfectly guessable credential.
-  const configured = readString(account, 'password', '');
+  // Falls back to the shipped 'admin123' — published on the Welcome page, so
+  // not a secret. An operator who overrode the key with an env-ref and left
+  // the variable unset gets the literal "${...}" back (brace form is silent on
+  // a missing variable); seed no account rather than one whose password is a
+  // placeholder anybody can read out of the config.
+  const configured = readString(account, 'password', ADMIN_DEFAULTS.password);
   const password = configured.startsWith('${') ? '' : configured;
   if (!password) {
     logger.warn(
