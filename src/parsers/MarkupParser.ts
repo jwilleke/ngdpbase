@@ -2169,6 +2169,60 @@ class MarkupParser extends BaseManager {
     }
   }
 
+  /**
+   * Split a table cell on its line breaks — `<br>` or NCM's `\\` / `\\\` —
+   * leaving inline code spans intact (#1038).
+   *
+   * A plain `cell.split(/<br\s*\/?>|\\{2,3}/i)` was the first cut, and it broke
+   * the pages that DOCUMENT these sequences. `Using Current Time Plugin` has a
+   * SimpleDateFormat reference table whose "escape for text" row carries `\\`
+   * as its example value; splitting emptied that cell and put a line break in
+   * it, so the page stopped showing the thing it was explaining.
+   *
+   * Backticking the value does not rescue it on its own. Splitting first cuts
+   * `` `\\` `` into two lone backticks, which are no longer a code span by the
+   * time the wiki/plain decision runs — the cell then renders literal
+   * backticks AROUND a break, which is worse than where it started. Keeping
+   * the span whole is what lets appendWikiNodes see it and emit `<code>`.
+   *
+   * Only %%style tables need this. A plain markdown table reaches
+   * JSPWikiPreprocessor, where inline code is placeholder-extracted upstream
+   * and never arrives here as backticks at all — which is precisely why a
+   * plain-table probe reported this method as redundant. It is not.
+   *
+   * Code is inert elsewhere in this pipeline for the same reason —
+   * SecurityFilter.collectErrors blanks it before scanning, and
+   * migrate-br-to-ncm skips it — so a style-block cell should not be the one
+   * place a backtick fails to mean "this is a literal".
+   *
+   * A break outside the span still splits: `` `\\` is an escape\\next `` gives
+   * two segments, not three.
+   */
+  private splitCellOnBreaks(cell: string): string[] {
+    // One alternation, code FIRST so a break inside a span is consumed as part
+    // of the span rather than matched on its own.
+    const token = /`[^`\n]*`|<br\s*\/?>|\\{2,3}/gi;
+
+    const segments: string[] = [];
+    let current = '';
+    let lastIndex = 0;
+
+    for (const match of cell.matchAll(token)) {
+      current += cell.slice(lastIndex, match.index);
+      lastIndex = match.index + match[0].length;
+
+      if (match[0].startsWith('`')) {
+        current += match[0]; // a code span is content, not a break
+      } else {
+        segments.push(current);
+        current = '';
+      }
+    }
+
+    segments.push(current + cell.slice(lastIndex));
+    return segments;
+  }
+
   private async createTableNode(content: string, className: string, elementId: number, wikiDocument: WikiDocument, context?: ParseContext): Promise<unknown> {
     const lines = content.split('\n').filter(line => /^\s*\|/.test(line));
 
@@ -2225,7 +2279,7 @@ class MarkupParser extends BaseManager {
       // #1037's `no-raw-br` message honest inside a cell: without it those
       // pages render correctly but can never be saved, because the suggested
       // alternative does not work there.
-      const segments = cell.split(/<br\s*\/?>|\\{2,3}/i);
+      const segments = this.splitCellOnBreaks(cell);
 
       for (let i = 0; i < segments.length; i++) {
         if (i > 0) el.appendChild(wikiDocument.createElement('br', {}));
