@@ -45,7 +45,7 @@
                             <div class="form-text">Override the page title extracted from the HTML</div>
                         </div>
                         <div class="d-flex gap-2">
-                            <button type="submit" class="btn btn-primary" id="url-preview-btn">
+                            <button type="submit" class="btn btn-primary" id="url-preview-btn"<%- lockedUnless('admin-system') %>>
                                 <i class="fas fa-search"></i> Preview
                             </button>
                             <button type="button" class="btn btn-success" id="url-execute-btn" disabled>
@@ -147,7 +147,7 @@
                         </div>
 
                         <div class="d-flex gap-2">
-                            <button type="submit" class="btn btn-primary" id="preview-btn">
+                            <button type="submit" class="btn btn-primary" id="preview-btn"<%- lockedUnless('admin-system') %>>
                                 <i class="fas fa-search"></i> Preview Import
                             </button>
                             <button type="button" class="btn btn-success" id="execute-btn" disabled>

@@ -9230,7 +9230,10 @@ ${panes}
         !currentUser ||
         !(await wikiContext.hasPermission('admin-system'))
       ) {
-        return res.status(403).json({ error: 'Admin access required' });
+        return res.status(403).json({
+          error: 'This account cannot make that change',
+          reason: "Read-only access — requires the 'admin-system' permission"
+        });
       }
 
       const configManager = this.engine.getManager('ConfigurationManager');
@@ -9285,7 +9288,10 @@ ${panes}
         !currentUser ||
         !(await wikiContext.hasPermission('admin-system'))
       ) {
-        return res.status(403).json({ error: 'Admin access required' });
+        return res.status(403).json({
+          error: 'This account cannot make that change',
+          reason: "Read-only access — requires the 'admin-system' permission"
+        });
       }
 
       const configManager = this.engine.getManager('ConfigurationManager');
@@ -9540,7 +9546,10 @@ ${panes}
         !currentUser ||
         !(await wikiContext.hasPermission('admin-system'))
       ) {
-        return res.status(403).json({ error: 'Admin access required' });
+        return res.status(403).json({
+          error: 'This account cannot make that change',
+          reason: "Read-only access — requires the 'admin-system' permission"
+        });
       }
 
       const variableManager = this.engine.getManager('VariableManager');
@@ -12099,7 +12108,10 @@ ${panes}
         !userContext?.isAuthenticated ||
         !(await wikiContext.hasPermission('admin-system'))
       ) {
-        return res.status(403).json({ error: 'Admin access required' });
+        return res.status(403).json({
+          error: 'This account cannot make that change',
+          reason: "Read-only access — requires the 'admin-system' permission"
+        });
       }
 
       const organizationManager = this.engine.getManager('OrganizationManager');
@@ -12152,7 +12164,10 @@ ${panes}
         !userContext?.isAuthenticated ||
         !(await userManager.hasPermission(userContext.username, 'admin-system'))
       ) {
-        return res.status(403).json({ error: 'Admin access required' });
+        return res.status(403).json({
+          error: 'This account cannot make that change',
+          reason: "Read-only access — requires the 'admin-system' permission"
+        });
       }
 
       const organizationManager = this.engine.getManager('OrganizationManager');
@@ -12203,7 +12218,10 @@ ${panes}
         !userContext?.isAuthenticated ||
         !(await userManager.hasPermission(userContext.username, 'admin-system'))
       ) {
-        return res.status(403).json({ error: 'Admin access required' });
+        return res.status(403).json({
+          error: 'This account cannot make that change',
+          reason: "Read-only access — requires the 'admin-system' permission"
+        });
       }
 
       const organizationManager = this.engine.getManager('OrganizationManager');
@@ -12249,7 +12267,10 @@ ${panes}
         !userContext?.isAuthenticated ||
         !(await userManager.hasPermission(userContext.username, 'admin-system'))
       ) {
-        return res.status(403).json({ error: 'Admin access required' });
+        return res.status(403).json({
+          error: 'This account cannot make that change',
+          reason: "Read-only access — requires the 'admin-system' permission"
+        });
       }
 
       const organizationManager = this.engine.getManager('OrganizationManager');
@@ -12333,7 +12354,10 @@ ${panes}
         !userContext?.isAuthenticated ||
         !(await userManager.hasPermission(userContext.username, 'admin-system'))
       ) {
-        return res.status(403).json({ error: 'Admin access required' });
+        return res.status(403).json({
+          error: 'This account cannot make that change',
+          reason: "Read-only access — requires the 'admin-system' permission"
+        });
       }
 
       const pageManager = this.engine.getManager('PageManager');
@@ -12368,7 +12392,10 @@ ${panes}
         !currentUser ||
         !(await this.hasAdminViewAccess(wikiContext))
       ) {
-        return res.status(403).json({ error: 'Admin access required' });
+        return res.status(403).json({
+          error: 'This account cannot view the organization schema',
+          reason: "Requires the 'admin-read' or 'admin-system' permission"
+        });
       }
 
       const organizationManager = this.engine.getManager('OrganizationManager');
@@ -12402,7 +12429,10 @@ ${panes}
         !currentUser ||
         !(await wikiContext.hasPermission('admin-system'))
       ) {
-        return res.status(403).json({ error: 'Admin access required' });
+        return res.status(403).json({
+          error: 'This account cannot make that change',
+          reason: "Read-only access — requires the 'admin-system' permission"
+        });
       }
 
       const schemaManager = this.engine.getManager('SchemaManager');

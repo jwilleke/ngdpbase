@@ -24,8 +24,6 @@ Scanner state (corrected 2026-08-08, at v4.7.0): **5 open Dependabot alerts, not
 
 ## 🟠 P1
 
-- [#1034](https://github.com/jwilleke/ngdpbase/issues/1034) — [BUG] Read-only admin dashboard shows controls it cannot use — *shipped in v4.8.2; awaiting an eye-check on the demo*
-
 - [#1031](https://github.com/jwilleke/ngdpbase/issues/1031) — [SECURITY] Demo instance: rotate the exposed admin password and drop admindemo's redundant reader role
 - [#898](https://github.com/jwilleke/ngdpbase/issues/898) — [BUG] Storybook route-map generation orphans a route.png attachment on every regeneration — *blocked: the generator is not in this repo; first task is locating the producer (operator-side / cross-repo)*
 
@@ -48,12 +46,12 @@ Scanner state (corrected 2026-08-08, at v4.7.0): **5 open Dependabot alerts, not
 - [#1021](https://github.com/jwilleke/ngdpbase/issues/1021) — [FEATURE] Magic link: close the non-atomic verify→consume window (one token can mint two sessions) — *reachable now that magic link is the only door on a public instance*
 - [#1022](https://github.com/jwilleke/ngdpbase/issues/1022) — [FEATURE] Magic link: optional device/state binding + record IP and User-Agent at redemption
 - [#1028](https://github.com/jwilleke/ngdpbase/issues/1028) — [FEATURE] Config cleanup — remove dead keys and stop documenting them as live — *112 of 463 keys have no reader; `log4j.*` confirmed dead, the rest need triage against dynamic key construction*
-- [#1029](https://github.com/jwilleke/ngdpbase/issues/1029) — [FEATURE] Demo addon — scope demo content to the demo, and a read-only admin dashboard — *shipped through v4.8.0 — addon seeds `admindemo`, `[{DemoLogin}]` publishes the credentials, chain verified end-to-end on the sandbox; awaiting the demo image bump, then #1031*
 - [#1030](https://github.com/jwilleke/ngdpbase/issues/1030) — [FEATURE] Redact configured secrets from log output — *generalises the leak fixed in `2b48d838`; prerequisite for #843*
 
 ## 🔵 In review
 
-- *(none)*
+- [#1034](https://github.com/jwilleke/ngdpbase/issues/1034) — [BUG] Read-only admin dashboard shows controls it cannot use, and refuses them three different ways — *shipped in v4.8.2; needs an eye-check as `admindemo` once the demo takes the image*
+- [#1029](https://github.com/jwilleke/ngdpbase/issues/1029) — [FEATURE] Demo addon — scope demo content to the demo, and a read-only admin dashboard — *shipped through v4.8.2; self-heals on the demo's next image bump, then confirm*
 
 ## ⏸ Deferred
 
