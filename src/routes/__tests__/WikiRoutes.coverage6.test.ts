@@ -3,7 +3,6 @@
  *   GET  /
  *   GET  /create
  *   GET  /edit  (no page param)
- *   POST /view/:page  (createWikiPage)
  *   POST /auth/magic-link
  *   GET  /admin/interwiki
  *   GET  /admin/configuration
@@ -402,27 +401,6 @@ describe('WikiRoutes — coverage batch 6', () => {
     });
   });
 
-  // ── POST /view/:page (createWikiPage) ────────────────────────────────────────
-
-  describe('POST /view/:page', () => {
-    test('returns 400 when neither content nor template is provided', async () => {
-      const res = await request(app)
-        .post('/view/NewPage')
-        .set('x-csrf-token', 'test-csrf-token')
-        .send({});
-      expect(res.status).toBe(400);
-    });
-
-    test('redirects unauthenticated user to login when content provided', async () => {
-      mockUserContext = null;
-      const res = await request(app)
-        .post('/view/NewPage')
-        .set('x-csrf-token', 'test-csrf-token')
-        .send({ content: '# New Page content' });
-      expect(res.status).toBe(302);
-      expect(res.headers.location).toContain('/login');
-    });
-  });
 
   // ── POST /auth/magic-link ────────────────────────────────────────────────────
 

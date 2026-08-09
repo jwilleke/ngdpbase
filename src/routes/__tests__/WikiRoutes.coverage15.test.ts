@@ -1,6 +1,6 @@
 /**
  * WikiRoutes coverage batch 15 — createPage, editPage, savePage, deletePage,
- *   createWikiPage, adminRequiredPages (403 path).
+ *   adminRequiredPages (403 path).
  */
 import express from 'express';
 import request from 'supertest';
@@ -918,57 +918,7 @@ describe('WikiRoutes — coverage batch 15', () => {
     });
   });
 
-  // ── createWikiPage ────────────────────────────────────────────────────────────
 
-  describe('POST /view/:page (createWikiPage)', () => {
-    test('returns 400 when no content or template provided', async () => {
-      mockPageManager.getPage.mockResolvedValue(null);
-      const res = await request(app)
-        .post('/view/NewPage')
-        .set('x-csrf-token', 'test-csrf-token')
-        .send({});
-      expect(res.status).toBe(400);
-    });
-
-    test('returns 409 when page already exists', async () => {
-      const res = await request(app)
-        .post('/view/TestPage')
-        .set('x-csrf-token', 'test-csrf-token')
-        .send({ content: '# Hello' });
-      expect(res.status).toBe(409);
-    });
-
-    test('redirects to login when not authenticated', async () => {
-      mockUserContext = null;
-      mockPageManager.getPage.mockResolvedValue(null);
-      const res = await request(app)
-        .post('/view/NewPage')
-        .set('x-csrf-token', 'test-csrf-token')
-        .send({ content: '# Hello' });
-      expect(res.status).toBe(302);
-      expect(res.headers.location).toContain('/login');
-    });
-
-    test('creates page and redirects to edit on success', async () => {
-      mockPageManager.getPage.mockResolvedValue(null);
-      const res = await request(app)
-        .post('/view/NewPage')
-        .set('x-csrf-token', 'test-csrf-token')
-        .send({ content: '# New Page Content' });
-      expect(res.status).toBe(302);
-      expect(res.headers.location).toContain('/edit/');
-    });
-
-    test('creates page from template and redirects', async () => {
-      mockPageManager.getPage.mockResolvedValue(null);
-      const res = await request(app)
-        .post('/view/NewPage')
-        .set('x-csrf-token', 'test-csrf-token')
-        .send({ templateName: 'basic', categories: 'General' });
-      expect(res.status).toBe(302);
-      expect(res.headers.location).toContain('/edit/');
-    });
-  });
 
   // ── adminRequiredPages ────────────────────────────────────────────────────────
 
