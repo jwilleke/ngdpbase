@@ -105,7 +105,7 @@
                                         </label>
                                     </div>
                                 </div>
-                                <button type="submit" class="btn btn-primary btn-sm">
+                                <button type="submit" class="btn btn-primary btn-sm"<%- lockedUnless('admin-system') %>>
                                     <i class="fas fa-save"></i> Save Settings
                                 </button>
                                 <small class="text-muted d-block mt-2">
@@ -125,7 +125,7 @@
                                         <option value="<%= t %>" <%= t === settings.activeTheme ? 'selected' : '' %>><%= t %></option>
                                         <% }); %>
                                     </select>
-                                    <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+                                    <button type="submit" class="btn btn-primary btn-sm"<%- lockedUnless('admin-system') %>>Apply</button>
                                 </form>
                                 <small class="text-muted d-block mt-1">
                                     <i class="fas fa-check-circle text-success"></i>

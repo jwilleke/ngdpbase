@@ -815,6 +815,42 @@ class WikiRoutes {
       ? (await userManager.hasPermission(userContext.username, 'admin-read'))
         || (await userManager.hasPermission(userContext.username, 'admin-system'))
       : false;
+
+    // #1034: admin templates need to know what the caller may actually DO, not
+    // just whether they may look. Without it every admin view rendered all 23
+    // of its POST forms unconditionally, so a read-only account was offered
+    // every destructive control on the site and found out one at a time — in
+    // three different visual styles — that none of them worked.
+    //
+    // Resolved once per render rather than per control; the set is small and
+    // hasPermission() is a policy evaluation, not a field read.
+    const adminPermissions = ['admin-system', 'admin-roles', 'user-read', 'user-edit', 'user-create'] as const;
+    const grantedPermissions: Record<string, boolean> = {};
+    if (userContext?.isAuthenticated) {
+      for (const permission of adminPermissions) {
+        grantedPermissions[permission] = await userManager.hasPermission(
+          userContext.username,
+          permission
+        );
+      }
+    }
+    grantedPermissions['admin-read'] = canViewAdmin;
+
+    /** Does the caller hold `permission`? */
+    const can = (permission: string): boolean => grantedPermissions[permission] === true;
+
+    /**
+     * Attributes that disable a control the caller may not use, naming the
+     * permission it needs. Interpolate UNESCAPED into a tag: `<%- ... %>`.
+     *
+     * Presentation only — the server still refuses the request. A disabled
+     * button is a courtesy, never a control.
+     */
+    const lockedUnless = (permission: string): string =>
+      can(permission)
+        ? ''
+        : ` disabled aria-disabled="true" title="Requires the '${permission}' permission —`
+          + ' this account has read-only access"';
     const registrationRedirectPage = (configManager?.getProperty(
       'ngdpbase.application.registration.redirect-page',
       'request-access'
@@ -872,6 +908,8 @@ class WikiRoutes {
       allowRegistration: boolean;
       magicLinkSignup: boolean;
       canViewAdmin: boolean;
+      can: (permission: string) => boolean;
+      lockedUnless: (permission: string) => string;
       registrationRedirectPage: string;
       contactAvailable: boolean;
       contactFooterEnabled: boolean;
@@ -917,6 +955,8 @@ class WikiRoutes {
       allowRegistration,
       magicLinkSignup,
       canViewAdmin,
+      can,
+      lockedUnless,
       registrationRedirectPage,
       contactAvailable,
       contactFooterEnabled
@@ -1139,8 +1179,23 @@ class WikiRoutes {
   async getActiveSessionDetails(req: Request, res: Response): Promise<void> {
     try {
       const wikiContext = this.createWikiContext(req);
-      if (!wikiContext.userContext?.isAuthenticated || !wikiContext.hasRole('admin')) {
-        res.status(403).json({ error: 'Admin role required' });
+      // #1034: was hasRole('admin') — a role NAME check, invisible to the
+      // permission model. It refused admin-read holders with a raw JSON error
+      // printed into the dashboard card, and would equally refuse a custom
+      // role granted every admin permission.
+      //
+      // `user-read` rather than `admin-read`, deliberately: this lists
+      // usernames, IP addresses and last-access times for everyone signed in,
+      // the same privacy reason /admin/users is withheld from the read-only
+      // demo role (#1029). Same permission, same answer, no drift.
+      if (
+        !wikiContext.userContext?.isAuthenticated ||
+        !(await wikiContext.hasPermission('user-read'))
+      ) {
+        res.status(403).json({
+          error: 'This account cannot view active sessions',
+          reason: "Read-only access — requires the 'user-read' permission, because session records include usernames and IP addresses"
+        });
         return;
       }
       const store = req.sessionStore as unknown as {
@@ -1207,8 +1262,18 @@ class WikiRoutes {
   async clearAnonymousSessions(req: Request, res: Response): Promise<void> {
     try {
       const wikiContext = this.createWikiContext(req);
-      if (!wikiContext.userContext?.isAuthenticated || !wikiContext.hasRole('admin')) {
-        res.status(403).json({ error: 'Admin role required' });
+      // #1034: was hasRole('admin'). For a MUTATION that is worse than a UX
+      // bug — the read-only guarantee rested on role naming rather than on
+      // permissions, so a custom role called 'admin' could destroy sessions
+      // while one holding admin-system could not.
+      if (
+        !wikiContext.userContext?.isAuthenticated ||
+        !(await wikiContext.hasPermission('admin-system'))
+      ) {
+        res.status(403).json({
+          error: 'This account cannot modify sessions',
+          reason: "Read-only access — requires the 'admin-system' permission"
+        });
         return;
       }
       const configManager = this.engine.getManager('ConfigurationManager');
@@ -1258,8 +1323,18 @@ class WikiRoutes {
   async clearOneSession(req: Request, res: Response): Promise<void> {
     try {
       const wikiContext = this.createWikiContext(req);
-      if (!wikiContext.userContext?.isAuthenticated || !wikiContext.hasRole('admin')) {
-        res.status(403).json({ error: 'Admin role required' });
+      // #1034: was hasRole('admin'). For a MUTATION that is worse than a UX
+      // bug — the read-only guarantee rested on role naming rather than on
+      // permissions, so a custom role called 'admin' could destroy sessions
+      // while one holding admin-system could not.
+      if (
+        !wikiContext.userContext?.isAuthenticated ||
+        !(await wikiContext.hasPermission('admin-system'))
+      ) {
+        res.status(403).json({
+          error: 'This account cannot modify sessions',
+          reason: "Read-only access — requires the 'admin-system' permission"
+        });
         return;
       }
       const targetId = decodeURIComponent(req.params.id ?? '');
@@ -3877,8 +3952,20 @@ ${panes}
   async adminEditRaw(req: Request, res: Response): Promise<void> {
     try {
       const wikiContext = this.createWikiContext(req);
-      if (!wikiContext.userContext?.isAuthenticated || !wikiContext.hasRole('admin')) {
-        await this.renderError(req, res, 403, 'Forbidden', 'Admin role required to edit raw page content.');
+      // #1034: was hasRole('admin') — a role NAME check. Messages name the
+      // PERMISSION that was actually tested; roles are bundles and the same
+      // permission can arrive through any number of them.
+      if (
+        !wikiContext.userContext?.isAuthenticated ||
+        !(await wikiContext.hasPermission('admin-system'))
+      ) {
+        await this.renderError(
+          req,
+          res,
+          403,
+          'Access Denied',
+          "Read-only access — editing raw page content requires the 'admin-system' permission"
+        );
         return;
       }
       const pageName = decodeURIComponent(req.params.page);
@@ -3918,8 +4005,20 @@ ${panes}
     const pageName = decodeURIComponent(req.params.page);
     const rawContent = typeof req.body?.rawContent === 'string' ? req.body.rawContent : '';
     try {
-      if (!wikiContext.userContext?.isAuthenticated || !wikiContext.hasRole('admin')) {
-        await this.renderError(req, res, 403, 'Forbidden', 'Admin role required to edit raw page content.');
+      // #1034: was hasRole('admin') — a role NAME check. Messages name the
+      // PERMISSION that was actually tested; roles are bundles and the same
+      // permission can arrive through any number of them.
+      if (
+        !wikiContext.userContext?.isAuthenticated ||
+        !(await wikiContext.hasPermission('admin-system'))
+      ) {
+        await this.renderError(
+          req,
+          res,
+          403,
+          'Access Denied',
+          "Read-only access — editing raw page content requires the 'admin-system' permission"
+        );
         return;
       }
       const pageManager = this.engine.getManager('PageManager') as {
@@ -12862,7 +12961,16 @@ ${panes}
         !currentUser ||
         !(await wikiContext.hasPermission('admin-system'))
       ) {
-        return res.status(403).send('Access denied');
+        // #1034: was a bare res.send('Access denied') — unstyled text on a
+        // blank page, and one of three different ways this account was
+        // refused. Names the permission, never a role.
+        return await this.renderError(
+          req,
+          res,
+          403,
+          'Access Denied',
+          "Read-only access — clearing notifications requires the 'admin-system' permission"
+        );
       }
 
       const notificationManager = this.engine.getManager('NotificationManager');

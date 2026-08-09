@@ -122,11 +122,11 @@
                             <form method="POST" action="/admin/maintenance/toggle" class="d-inline">
                                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                                 <% if (maintenanceMode) { %>
-                                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Disable maintenance mode? Users will be able to access the system again.')">
+                                    <button type="submit" class="btn btn-danger btn-sm"<%- lockedUnless('admin-system') %> onclick="return confirm('Disable maintenance mode? Users will be able to access the system again.')">
                                         <i class="fas fa-play"></i> Disable Maintenance
                                     </button>
                                 <% } else { %>
-                                    <button type="submit" class="btn btn-warning btn-sm" onclick="return confirm('Enable maintenance mode? This will restrict access for regular users.')">
+                                    <button type="submit" class="btn btn-warning btn-sm"<%- lockedUnless('admin-system') %> onclick="return confirm('Enable maintenance mode? This will restrict access for regular users.')">
                                         <i class="fas fa-pause"></i> Enable Maintenance
                                     </button>
                                 <% } %>
@@ -552,6 +552,8 @@
         </div>
     </div>
 
+    <%# #1034: withheld from read-only accounts. Session records carry usernames, IP addresses and last-access times — the same privacy reason /admin/users is withheld from the demo role (#1029). The API behind it enforces the same `user-read` permission, so this is presentation, not the control. %>
+    <% if (can('user-read')) { %>
     <!-- Row 4b: Session Manager (#776) — collapsible per-session list -->
     <div class="row">
         <div class="col-12">
@@ -600,6 +602,7 @@
             </div>
         </div>
     </div>
+    <% } %>
 
     <script>
     (function() {
@@ -869,7 +872,7 @@
                                             <div class="ms-3">
                                                 <form method="POST" action="/admin/notifications/<%= notification.id %>/dismiss" class="d-inline">
                                                     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                                                    <button type="submit" class="btn btn-sm btn-outline-secondary" title="Dismiss notification">
+                                                    <button type="submit" class="btn btn-sm btn-outline-secondary"<%- lockedUnless('admin-system') %> title="Dismiss notification">
                                                         <i class="fas fa-times"></i>
                                                     </button>
                                                 </form>
@@ -895,7 +898,7 @@
                             <div class="border-top pt-3 mt-3 d-flex justify-content-between">
                                 <form method="POST" action="/admin/notifications/clear-all" class="d-inline">
                                     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                                    <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Clear all notifications? This action cannot be undone.')">
+                                    <button type="submit" class="btn btn-outline-danger btn-sm"<%- lockedUnless('admin-system') %> onclick="return confirm('Clear all notifications? This action cannot be undone.')">
                                         <i class="fas fa-trash"></i> Clear All
                                     </button>
                                 </form>

@@ -37,7 +37,7 @@
                               required><%= rawContent %></textarea>
                 </div>
                 <div class="d-flex gap-2">
-                    <button type="submit" class="btn btn-warning">
+                    <button type="submit" class="btn btn-warning"<%- lockedUnless('admin-system') %>>
                         <i class="fas fa-save"></i> Save (admin override)
                     </button>
                     <a href="/view/<%= encodeURIComponent(pageName) %>" class="btn btn-outline-secondary">

@@ -106,7 +106,7 @@
                                             <div class="ms-3">
                                                 <form method="POST" action="/admin/notifications/<%= notification.id %>/dismiss" class="d-inline">
                                                     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                                                    <button type="submit" class="btn btn-sm btn-outline-secondary" title="Dismiss notification">
+                                                    <button type="submit" class="btn btn-sm btn-outline-secondary" title="Dismiss notification"<%- lockedUnless('admin-system') %>>
                                                         <i class="fas fa-times"></i> Dismiss
                                                     </button>
                                                 </form>
@@ -149,7 +149,7 @@
                                                 <% if (!notification.expiresAt || notification.expiresAt >= new Date()) { %>
                                                     <form method="POST" action="/admin/notifications/<%= notification.id %>/dismiss" class="d-inline">
                                                         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                                                        <button type="submit" class="btn btn-sm btn-outline-secondary" title="Dismiss notification">
+                                                        <button type="submit" class="btn btn-sm btn-outline-secondary" title="Dismiss notification"<%- lockedUnless('admin-system') %>>
                                                             <i class="fas fa-times"></i> Dismiss
                                                         </button>
                                                     </form>
@@ -205,7 +205,7 @@
                         <div class="col-md-6">
                             <form method="POST" action="/admin/notifications/clear-all" class="d-inline">
                                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                                <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Clear all active notifications? This action cannot be undone.')">
+                                <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Clear all active notifications? This action cannot be undone.')"<%- lockedUnless('admin-system') %>>
                                     <i class="fas fa-trash"></i> Clear All Active
                                 </button>
                             </form>

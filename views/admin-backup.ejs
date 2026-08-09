@@ -56,7 +56,7 @@
 
             <form method="POST" action="/admin/backup/create">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                <button type="submit" class="btn btn-primary">
+                <button type="submit" class="btn btn-primary"<%- lockedUnless('admin-system') %>>
                     <i class="fas fa-database"></i> Create &amp; Download Backup
                 </button>
             </form>
@@ -184,7 +184,7 @@
                             <div class="form-text">Absolute path. Leave unchanged to keep current location.</div>
                         </div>
 
-                        <button type="submit" class="btn btn-primary">
+                        <button type="submit" class="btn btn-primary"<%- lockedUnless('admin-system') %>>
                             <i class="fas fa-save"></i> Save Configuration
                         </button>
                     </form>

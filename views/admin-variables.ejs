@@ -182,7 +182,7 @@ Generated at [{$timestamp}]</textarea>
                                     <input type="text" class="form-control" id="testPageName" name="pageName" value="Test Page" placeholder="Page name for testing">
                                 </div>
 
-                                <button type="submit" class="btn btn-primary">
+                                <button type="submit" class="btn btn-primary"<%- lockedUnless('admin-system') %>>
                                     <i class="fas fa-play"></i> Test Variable Expansion
                                 </button>
                             </form>

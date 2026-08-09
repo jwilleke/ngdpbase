@@ -759,15 +759,23 @@ describe('WikiRoutes — coverage batch 12', () => {
   // ── Session Manager admin endpoint (#776) ────────────────────────────────────
 
   describe('GET /api/sessions/list (getActiveSessionDetails)', () => {
-    test('returns 403 when caller lacks admin role', async () => {
+    test('returns 403 when caller lacks the required permission', async () => {
       mockUserContext = {
         username: 'bob',
         isAuthenticated: true,
         roles: ['reader']
       };
+      // #1034: the gate is a permission check now, not a role-name check, so
+      // denial has to be expressed as the permission being absent. Under the
+      // old hasRole('admin') test, roles: ['reader'] was enough on its own.
+      mockUserManager.hasPermission.mockResolvedValue(false);
       const res = await request(app).get('/api/sessions/list');
       expect(res.status).toBe(403);
-      expect(res.body).toEqual({ error: 'Admin role required' });
+      // #1034: gates check a PERMISSION, not a role name. The message names
+      // the permission that was tested, because roles are bundles and the
+      // same permission can arrive through any number of them.
+      expect(res.body.error).toMatch(/cannot view active sessions/i);
+      expect(res.body.reason).toContain('user-read');
     });
 
     test('returns 403 when caller is anonymous', async () => {
@@ -899,7 +907,7 @@ describe('WikiRoutes — coverage batch 12', () => {
   // ── Clear anonymous sessions (#777) ──────────────────────────────────────────
 
   describe('POST /api/sessions/clear-anonymous (clearAnonymousSessions)', () => {
-    test('returns 403 when caller lacks admin role', async () => {
+    test('returns 403 when caller lacks the required permission', async () => {
       mockUserContext = {
         username: 'bob',
         isAuthenticated: true,
@@ -929,7 +937,7 @@ describe('WikiRoutes — coverage batch 12', () => {
   // ── Revoke a single session (#787) ───────────────────────────────────────────
 
   describe('DELETE /api/sessions/:id (clearOneSession)', () => {
-    test('returns 403 when caller lacks admin role', async () => {
+    test('returns 403 when caller lacks the required permission', async () => {
       mockUserContext = {
         username: 'bob',
         isAuthenticated: true,
