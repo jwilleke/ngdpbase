@@ -21,7 +21,7 @@ import AttachmentHandler from './handlers/AttachmentHandler.js';
 import LinkParserHandler from './handlers/LinkParserHandler.js';
 import ParseContext from './context/ParseContext.js';
 import WikiDocument from './dom/WikiDocument.js';
-import type { LinkedomElement } from './dom/WikiDocument.js';
+import type { LinkedomElement, LinkedomNode } from './dom/WikiDocument.js';
 import { convertEmojiShortcodes } from './data/emoji-map.js';
 import type RegionCache from '../cache/RegionCache.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -2000,8 +2000,25 @@ class MarkupParser extends BaseManager {
 
     // Use innerHTML for content with placeholders (nested style block nodes — resolved by mergeDOMNodes)
     // For all other content, scan for all wiki syntax and resolve directly to DOM nodes.
-    if (hasPlaceholder) {
-      node.innerHTML = content;
+    if (MarkupParser.isRawCodeBlock(classes, content)) {
+      // Raw code/CSS dump — no markdown pass. Keeps its existing path exactly.
+      if (hasPlaceholder) node.innerHTML = content;
+      else await this.appendWikiNodes(content, node, context, wikiDocument, element.id * 1000);
+    } else if (hasPlaceholder) {
+      // Nested blocks. This path has always written content through innerHTML,
+      // so raw HTML passes through — 10 pages depend on it, almost all for
+      // <sup>/<sub> in chemistry and units notation. Markdown runs WITHOUT
+      // escaping here so that stays true: the trust level is unchanged, markdown
+      // is simply added. (Escaping here instead would have rendered `m<sup>2</sup>`
+      // as visible tags on those pages.)
+      await this.appendMarkdownBlockNodes(content, node, context, wikiDocument, element.id * 1000, false);
+    } else if (isBlockContent) {
+      // #1039: block content also gets the markdown pass. Style-block content is
+      // lifted out at Step 0.5, before Showdown runs on the document, so a
+      // heading, list or **bold** inside `%%information … /%` reached the reader
+      // as literal source. Only inline (`span`) content skips this — Showdown
+      // wraps output in <p>, which has no business inside a span.
+      await this.appendMarkdownBlockNodes(content, node, context, wikiDocument, element.id * 1000);
     } else {
       await this.appendWikiNodes(content, node, context, wikiDocument, element.id * 1000);
     }
@@ -2102,64 +2119,9 @@ class MarkupParser extends BaseManager {
         node.appendChild(wikiDocument.createTextNode(this.decodeTextEntities(content.substring(lastIndex, match.index))));
       }
 
-      const elemId = idCounter++;
-
-      if (match[6] !== undefined) {
-        // #907: preserve an already-extracted placeholder span (inline style,
-        // etc.) so the final mergeDOMNodes pass can resolve it.
-        node.appendChild(wikiDocument.createElement('span', { 'data-jspwiki-placeholder': match[6] }));
-
-      } else if (match[1] !== undefined) {
-        // Inline code: `content` → <code>content</code>
-        const code = wikiDocument.createElement('code', {});
-        code.textContent = match[1];
-        node.appendChild(code);
-
-      } else if (match[2] !== undefined) {
-        // Escaped plugin literal: [[{inner}] → literal [{inner}]
-        node.appendChild(wikiDocument.createTextNode(`[{${match[2]}}]`));
-
-      } else if (match[3] !== undefined) {
-        // Variable: [{$varname}]
-        const varElement = { type: 'variable' as const, syntax: match[0], varName: `$${match[3]}`, id: elemId, position: match.index };
-        try {
-          node.appendChild(await this.domVariableHandler.createNodeFromExtract(
-            varElement,
-            handlerContext,
-            wikiDocument
-          ));
-        } catch { node.appendChild(wikiDocument.createTextNode(match[0])); }
-
-      } else if (match[4] !== undefined) {
-        // Plugin: [{PluginName...}]
-        const pluginElement = { type: 'plugin' as const, syntax: match[0], inner: match[4].trim(), id: elemId, position: match.index };
-        try {
-          node.appendChild(await this.domPluginHandler.createNodeFromExtract(
-            pluginElement,
-            handlerContext as Parameters<typeof this.domPluginHandler.createNodeFromExtract>[1],
-            wikiDocument
-          ));
-        } catch { node.appendChild(wikiDocument.createTextNode(match[0])); }
-
-      } else if (match[5] !== undefined) {
-        // Bracket: [inner] — classify same as Step 4
-        const inner = match[5];
-        if (inner.trim() === '' || inner.startsWith('{')) {
-          node.appendChild(wikiDocument.createTextNode(match[0]));
-        } else if (inner.startsWith('[')) {
-          // Escaped: [[PageName] → literal [PageName]
-          node.appendChild(wikiDocument.createTextNode(inner + ']'));
-        } else {
-          const linkElement = { type: 'link' as const, syntax: match[0], target: inner.trim(), id: elemId, position: match.index };
-          try {
-            node.appendChild(await this.domLinkHandler.createNodeFromExtract(
-              linkElement,
-              {},
-              wikiDocument
-            ));
-          } catch { node.appendChild(wikiDocument.createTextNode(match[0])); }
-        }
-      }
+      node.appendChild(
+        await this.createWikiNodeFromMatch(match, idCounter++, handlerContext, wikiDocument)
+      );
 
       lastIndex = match.index + match[0].length;
     }
@@ -2167,6 +2129,191 @@ class MarkupParser extends BaseManager {
     if (lastIndex < content.length) {
       node.appendChild(wikiDocument.createTextNode(this.decodeTextEntities(content.substring(lastIndex))));
     }
+  }
+
+  /**
+   * Build the DOM node for one wikiPattern match — the shared body of
+   * appendWikiNodes and appendMarkdownBlockNodes, so both resolve wiki syntax
+   * identically. Always returns a node; the literal cases return a text node.
+   */
+  private async createWikiNodeFromMatch(
+    match: RegExpExecArray,
+    elemId: number,
+    handlerContext: Record<string, unknown>,
+    wikiDocument: WikiDocument
+  ): Promise<LinkedomNode> {
+    const text = (s: string): LinkedomNode => wikiDocument.createTextNode(s);
+
+    if (match[6] !== undefined) {
+      // #907: preserve an already-extracted placeholder span (inline style,
+      // etc.) so the final mergeDOMNodes pass can resolve it.
+      return wikiDocument.createElement('span', { 'data-jspwiki-placeholder': match[6] });
+    }
+
+    if (match[1] !== undefined) {
+      // Inline code: `content` → <code>content</code>
+      const code = wikiDocument.createElement('code', {});
+      code.textContent = match[1];
+      return code;
+    }
+
+    if (match[2] !== undefined) {
+      // Escaped plugin literal: [[{inner}] → literal [{inner}]
+      return text(`[{${match[2]}}]`);
+    }
+
+    if (match[3] !== undefined) {
+      // Variable: [{$varname}]
+      const varElement = { type: 'variable' as const, syntax: match[0], varName: `$${match[3]}`, id: elemId, position: match.index };
+      try {
+        return await this.domVariableHandler.createNodeFromExtract(varElement, handlerContext, wikiDocument);
+      } catch { return text(match[0]); }
+    }
+
+    if (match[4] !== undefined) {
+      // Plugin: [{PluginName...}]
+      const pluginElement = { type: 'plugin' as const, syntax: match[0], inner: match[4].trim(), id: elemId, position: match.index };
+      try {
+        return await this.domPluginHandler.createNodeFromExtract(
+          pluginElement,
+          handlerContext as Parameters<typeof this.domPluginHandler.createNodeFromExtract>[1],
+          wikiDocument
+        );
+      } catch { return text(match[0]); }
+    }
+
+    if (match[5] !== undefined) {
+      // Bracket: [inner] — classify same as Step 4
+      const inner = match[5];
+      if (inner.trim() === '' || inner.startsWith('{')) return text(match[0]);
+      // Escaped: [[PageName] → literal [PageName]
+      if (inner.startsWith('[')) return text(inner + ']');
+
+      const linkElement = { type: 'link' as const, syntax: match[0], target: inner.trim(), id: elemId, position: match.index };
+      try {
+        return await this.domLinkHandler.createNodeFromExtract(linkElement, {}, wikiDocument);
+      } catch { return text(match[0]); }
+    }
+
+    return text(match[0]);
+  }
+
+  /**
+   * Is this style block a raw code/CSS dump rather than prose? (#1039)
+   *
+   * These must NOT go through the markdown pass. `%%add-css` is JSPWiki's
+   * convention for a stylesheet, and running Showdown over CSS corrupts it:
+   * a CSS comment's asterisks read as emphasis markers, so a comment around the
+   * word `pagination.less` rendered as `/<em>pagination.less</em>/` on nine CSS
+   * documentation pages. Those pages exist to show the CSS accurately, so that
+   * is a real defect rather than a cosmetic one.
+   *
+   * Two signals, both cheap: the class name, and a CSS comment anywhere in the
+   * content (which catches a stylesheet pasted into a differently-named block).
+   * Checked against the full corpus — every mangled block matched, and no block
+   * containing real markdown did.
+   */
+  private static isRawCodeBlock(classes: string[], content: string): boolean {
+    if (classes.some((c) => c === 'add-css' || c === 'prettify')) return true;
+    return /\/\*/.test(content) && /\*\//.test(content);
+  }
+
+  /** `&`, `<`, `>` only — enough to keep source text inert through Showdown. */
+  private escapeForMarkdown(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  /**
+   * Resolve a style block's BLOCK content with both the wiki pass and the
+   * markdown pass (#1039).
+   *
+   * Style-block content is lifted out at Step 0.5, before Showdown runs on the
+   * document, and was then handed to appendWikiNodes — which resolves wiki
+   * syntax and emits everything else as text nodes. So markdown inside a block
+   * reached the reader as literal source: `## Introduction` displayed its own
+   * hashes, and `**bold**` its own asterisks, while the identical markup one
+   * line outside the block rendered normally. 12 pages were affected.
+   *
+   * Raw HTML worked in there by accident, which is why it went unnoticed — an
+   * author who reached for `<br>` got a line break and had no reason to suspect
+   * the block was inert. That is also how the one raw `<br>` that #1038's
+   * migration could not convert came to exist.
+   *
+   * ## Why slots rather than converting each text run
+   *
+   * Wiki syntax must still resolve to the same nodes it does today, so the two
+   * passes have to interleave. Converting each text run between wiki matches
+   * separately would cut block constructs in half — a list item containing a
+   * link would become a one-item list, a stray fragment, and another list.
+   *
+   * Instead every wiki match is replaced by an empty slot span, Showdown runs
+   * over the whole scaffold, and the resolved nodes are swapped back in
+   * afterwards. Block structure survives because Showdown sees the block whole.
+   *
+   * ## Why the text is escaped first
+   *
+   * Text between matches is escaped before Showdown sees it, which keeps the
+   * exact inertness the text-node path had: `<script>` in a block stays visible
+   * text, as it does today. Markdown syntax is untouched by that escaping, so
+   * this is strictly additive — it grants markdown without granting raw HTML.
+   */
+  private async appendMarkdownBlockNodes(
+    content: string,
+    node: ReturnType<typeof WikiDocument.prototype.createElement>,
+    context: ParseContext | undefined,
+    wikiDocument: WikiDocument,
+    idStart: number,
+    escapeText = true
+  ): Promise<void> {
+    const renderingManager = this.engine.getManager<RenderingManagerInterface>('RenderingManager');
+    const converter = renderingManager?.converter;
+    if (!converter) {
+      // No converter (degraded engine, some unit harnesses) — the wiki pass on
+      // its own is still better than nothing, and is what shipped before.
+      await this.appendWikiNodes(content, node, context, wikiDocument, idStart);
+      return;
+    }
+
+    const wikiPattern = /`([^`\n]+)`|\[\[\{([^}]*)\}\]|\[\{\$(\w+)\}\]|\[\{([A-Za-z]\w*[^}]*)\}\]|\[([^\]]*)\](?!\()|<span data-jspwiki-placeholder="([^"]*)"><\/span>/g;
+    const handlerContext = (context ?? {}) as unknown as Record<string, unknown>;
+    const slots: LinkedomNode[] = [];
+
+    let scaffold = '';
+    let lastIndex = 0;
+    let idCounter = idStart;
+    let match: RegExpExecArray | null;
+
+    const asText = (raw: string): string => {
+      const decoded = this.decodeTextEntities(raw);
+      return escapeText ? this.escapeForMarkdown(decoded) : decoded;
+    };
+
+    while ((match = wikiPattern.exec(content)) !== null) {
+      if (match.index > lastIndex) scaffold += asText(content.substring(lastIndex, match.index));
+      scaffold += `<span data-md-slot="${slots.length}"></span>`;
+      slots.push(await this.createWikiNodeFromMatch(match, idCounter++, handlerContext, wikiDocument));
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < content.length) scaffold += asText(content.substring(lastIndex));
+
+    // NCM line breaks, after escaping so these are the only tags we introduce.
+    // Mirrors the document-level rewrite the markup phase performs (see the
+    // `\\` / `\\\` handling around MarkupParser:1777).
+    scaffold = scaffold
+      .replace(/\\{3}/g, '<br class="wiki-clearfix">')
+      .replace(/\\{2}/g, '<br>');
+
+    const html = converter.makeHtml(guardShowdownInput(scaffold));
+
+    const holder = wikiDocument.createElement('div', {});
+    holder.innerHTML = html;
+
+    for (const slot of holder.querySelectorAll('[data-md-slot]')) {
+      const replacement = slots[Number(slot.getAttribute('data-md-slot'))];
+      if (replacement) slot.replaceWith(replacement);
+    }
+
+    while (holder.firstChild) node.appendChild(holder.firstChild);
   }
 
   /**
