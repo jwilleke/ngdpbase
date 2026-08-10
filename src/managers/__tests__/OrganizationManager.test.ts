@@ -15,7 +15,11 @@ describe('OrganizationManager (#617)', () => {
     getResolvedDataPath: vi.fn((_key: string, _defaultValue: string) =>
       (overrides['ngdpbase.application.organization.storagedir'] as string)
         ?? path.join(tmpDir, 'organizations')
-    )
+    ),
+    // seedAnchorOrganization reads the base URL through getBaseURL(), NOT through
+    // getProperty('ngdpbase.application.base-url'). A mock carrying only the
+    // property made tier 3 look broken when it was the harness that was wrong.
+    getBaseURL: vi.fn(() => (overrides['ngdpbase.application.base-url'] as string) ?? '')
   });
 
   const makeEngine = (configManager: ReturnType<typeof makeConfigManager>) => ({
@@ -248,6 +252,120 @@ describe('OrganizationManager (#617)', () => {
     });
 
     expect((second)['@id']).toBe(first!['@id']);
+  });
+
+  // ── three-tier anchor resolution (#1027) ──────────────────────────────────
+  //
+  // An instance could boot healthy and be structurally incapable of assigning
+  // ANY role — including `admin` to the default admin — because `getInstallOrg`
+  // returned null and cached it. UserManager.syncRoleAdd then abandoned every
+  // assignment. Nothing logged. That was the default for containerised installs,
+  // since headless deployments do not pre-supply the JSON-LD file.
+
+  test('tier 2 — no config key and exactly ONE record: adopt it', async () => {
+    // Requiring a config key to state the obvious is what left headless
+    // deployments unable to assign roles.
+    const orgsDir = path.join(tmpDir, 'organizations');
+    const configManager = makeConfigManager({
+      'ngdpbase.application.organization.storagedir': orgsDir
+      // no .file key at all
+    });
+    const manager = new OrganizationManager(makeEngine(configManager));
+    await manager.initialize();
+    await manager.seedFromConfig({ orgName: 'Solo', orgUrl: 'https://solo.test/', filename: 'solo.json' });
+
+    const anchor = await manager.getInstallOrg();
+
+    expect(anchor).not.toBeNull();
+    expect(anchor!.name).toBe('Solo');
+  });
+
+  test('tier 2 does NOT rewrite the adopted record @id', async () => {
+    // Role records reference the organization by @id. Normalising even a
+    // trailing slash would orphan every role on the instance.
+    const orgsDir = path.join(tmpDir, 'organizations');
+    const configManager = makeConfigManager({
+      'ngdpbase.application.organization.storagedir': orgsDir
+    });
+    const manager = new OrganizationManager(makeEngine(configManager));
+    await manager.initialize();
+    await manager.seedFromConfig({ orgName: 'Solo', orgUrl: 'https://solo.test', filename: 'solo.json' });
+
+    const before = (await manager.list())[0]['@id'];
+    const anchor = await manager.getInstallOrg();
+
+    expect(anchor!['@id']).toBe(before);
+    expect((await manager.list())[0]['@id']).toBe(before);
+  });
+
+  test('tier 3 — nothing at all: seed one from the base URL', async () => {
+    const orgsDir = path.join(tmpDir, 'organizations');
+    const configManager = makeConfigManager({
+      'ngdpbase.application.organization.storagedir': orgsDir,
+      'ngdpbase.application.base-url': 'https://fresh.test/',
+      'ngdpbase.application-name': 'Fresh Instance'
+    });
+    const manager = new OrganizationManager(makeEngine(configManager));
+    await manager.initialize();
+
+    const anchor = await manager.getInstallOrg();
+
+    expect(anchor).not.toBeNull();
+    expect(anchor!.name).toBe('Fresh Instance');
+    expect(await manager.list()).toHaveLength(1);
+  });
+
+  test('tier 3 seeds ONCE — a second call does not add another record', async () => {
+    const orgsDir = path.join(tmpDir, 'organizations');
+    const configManager = makeConfigManager({
+      'ngdpbase.application.organization.storagedir': orgsDir,
+      'ngdpbase.application.base-url': 'https://fresh.test/'
+    });
+    const manager = new OrganizationManager(makeEngine(configManager));
+    await manager.initialize();
+
+    await manager.getInstallOrg();
+    manager.invalidateInstallOrgCache?.();
+    await manager.getInstallOrg();
+
+    expect(await manager.list()).toHaveLength(1);
+  });
+
+  test('several records and no key resolves to null — and seeds nothing', async () => {
+    // Deliberate. Picking one arbitrarily could bind every role to the wrong
+    // organization, and seeding an additional record would add to the very
+    // ambiguity being reported. An earlier draft let tier 3 fire here.
+    const orgsDir = path.join(tmpDir, 'organizations');
+    const configManager = makeConfigManager({
+      'ngdpbase.application.organization.storagedir': orgsDir,
+      'ngdpbase.application.base-url': 'https://fresh.test/'
+    });
+    const manager = new OrganizationManager(makeEngine(configManager));
+    await manager.initialize();
+    await manager.seedFromConfig({ orgName: 'One', orgUrl: 'https://one.test/', filename: 'one.json' });
+    await manager.seedFromConfig({ orgName: 'Two', orgUrl: 'https://two.test/', filename: 'two.json' });
+
+    const anchor = await manager.getInstallOrg();
+
+    expect(anchor).toBeNull();
+    expect(await manager.list()).toHaveLength(2);
+  });
+
+  test('the config key still wins over both fallbacks', async () => {
+    const orgsDir = path.join(tmpDir, 'organizations');
+    const configManager = makeConfigManager({
+      'ngdpbase.application.organization.storagedir': orgsDir,
+      'ngdpbase.application.organization.file': 'two.json',
+      'ngdpbase.application.base-url': 'https://fresh.test/'
+    });
+    const manager = new OrganizationManager(makeEngine(configManager));
+    await manager.initialize();
+    await manager.seedFromConfig({ orgName: 'One', orgUrl: 'https://one.test/', filename: 'one.json' });
+    await manager.seedFromConfig({ orgName: 'Two', orgUrl: 'https://two.test/', filename: 'two.json' });
+
+    const anchor = await manager.getInstallOrg();
+
+    expect(anchor!.name).toBe('Two');
   });
 
   test('startup invariant — install-complete + missing anchor file → throws', async () => {

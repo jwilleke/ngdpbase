@@ -128,11 +128,11 @@ class OrganizationManager extends BaseManager {
       // and turning a silent misconfiguration into a boot failure would take
       // them down rather than tell them what is wrong.
       logger.warn(
-        '🏢 No anchor Organization configured on a completed install ' +
-        '(ngdpbase.application.organization.file is empty). Role assignment is INOPERATIVE: ' +
-        'no user can be granted any role, including admin. Headless installs must pre-supply ' +
-        'the Organization JSON-LD file in the organizations storage directory and name it in ' +
-        'that config key. (#1027)'
+        '🏢 No anchor Organization named on a completed install ' +
+        '(ngdpbase.application.organization.file is empty). One will be resolved on first use — ' +
+        'the sole existing record is adopted, or a minimal one is seeded from the base URL. ' +
+        'Role assignment only stays inoperative if SEVERAL records exist, since then nothing ' +
+        'can say which one anchors the install; set that config key to resolve it. (#1027)'
       );
     }
 
@@ -261,14 +261,23 @@ class OrganizationManager extends BaseManager {
     // null is cached as valid, so this resolves once and stays null for the
     // process lifetime with nothing logged. Warn here, where the cause is
     // known; the caller only sees an absent role.
-    if (!value) {
+    if (!value && filename) {
       logger.warn(
-        filename
-          ? `🏢 Anchor Organization file "${filename}" did not resolve — role assignment is inoperative. ` +
-            'Check the file exists in the organizations storage directory. (#1027)'
-          : '🏢 No anchor Organization configured (ngdpbase.application.organization.file is empty) — ' +
-            'role assignment is inoperative: no user can be granted any role, including admin. ' +
-            'Headless installs must pre-supply the Organization JSON-LD file. (#1027)'
+        `🏢 Anchor Organization file "${filename}" did not resolve — role assignment is inoperative. ` +
+        'Check the file exists in the organizations storage directory. (#1027)'
+      );
+    } else if (!value) {
+      // Reaching here with no key means tier 2 found several records (already
+      // warned, with the count) or tier 3's seed failed (already warned, with
+      // the reason). A second generic warning would only repeat the first in
+      // vaguer terms — and the one that used to print here still told operators
+      // that "headless installs must pre-supply the Organization JSON-LD file",
+      // which stopped being true when seeding landed. It contradicted the
+      // ambiguity warning printed immediately above it.
+      logger.warn(
+        '🏢 Could not resolve an anchor Organization — role assignment is inoperative: ' +
+        'no user can be granted any role, including admin. See the warning above for which ' +
+        'case applies. (#1027)'
       );
     }
 
