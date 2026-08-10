@@ -198,6 +198,12 @@ interface IPageManager {
   /** Direct provider reference — prefer getCurrentPageProvider() for new code */
   provider?: IVersioningProvider | null;
   refreshPageList(): Promise<void>;
+  /**
+   * Evict one page from the provider content cache, the rendered-pages region
+   * and the rendering handler cache. Needed by any path that writes page files
+   * without going through savePage (#1040).
+   */
+  invalidatePageCache(identifier: string): void;
   validateAndFixAllFiles(options?: unknown): Promise<IValidationReport>;
 }
 
@@ -10275,6 +10281,36 @@ ${panes}
 
       const pageManager = this.engine.getManager('PageManager');
       await pageManager.refreshPageList();
+
+      // #1040: evict every page this sync touched.
+      //
+      // The writes above go straight to disk through fse.writeFile rather than
+      // PageManager.savePage. That bypass is deliberate — seeding must not run
+      // the save-time content gate (see PageManager.ts:35, kept that way by
+      // #1037) — but savePage is also what invalidates the caches, so nothing
+      // did. The endpoint returned "N pages synced" while every reader kept
+      // getting the pre-sync render until the next restart, with nothing in the
+      // UI to suggest one was needed. Worst on exactly the page an operator is
+      // trying to correct.
+      //
+      // refreshPageList() above rebuilds the page LIST; it does not touch the
+      // per-page content cache or the rendered-pages region. invalidatePageCache
+      // covers both, plus the rendering handler cache.
+      //
+      // Old UUIDs from reconcile/adopt are included: their files were removed,
+      // so a cached render of the old identity would outlive the file.
+      const touched = new Set<string>([...synced, ...removedOrphans]);
+      for (const { liveUuid } of adoptedUuids) touched.add(liveUuid);
+      for (const { liveUuid } of reconcileItems) touched.add(liveUuid);
+      for (const identifier of touched) {
+        try {
+          pageManager.invalidatePageCache(identifier);
+        } catch (err: unknown) {
+          // Best-effort: a page that cannot be evicted must not fail the sync
+          // that already wrote it to disk.
+          logger.warn(`[adminSyncRequiredPages] cache eviction failed for ${identifier}:`, err);
+        }
+      }
 
       // Update page-index.json for each adopted UUID so next restart uses fast init.
       // Access VersioningFileProvider directly via the provider property.
