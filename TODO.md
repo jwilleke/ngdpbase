@@ -24,9 +24,7 @@ Scanner state (2026-08-10, at v4.8.4): **ZERO open alerts, both kinds** — re-q
 
 ## 🟠 P1
 
-- [#1041](https://github.com/jwilleke/ngdpbase/issues/1041) — [BUG] Login is an open redirect — `POST /login` sends the browser to any URL the request names — *confirmed live on jimstest: `redirect=//example.com/` returns `Location: //example.com/`. Worst-placed instance of this bug — victim authenticates for real, then lands on an attacker page*
 - [#1042](https://github.com/jwilleke/ngdpbase/issues/1042) — [BUG] Passwords stored as single-round SHA-256 with one global salt — *no work factor, shared salt, `===` compare. Needs versioned hashes + rehash-on-login; also makes the parked `amdwiki-salt` rename free*
-- [#1043](https://github.com/jwilleke/ngdpbase/issues/1043) — [BUG] Session cookie never gets `Secure`, its config key is dead code, and login does not regenerate the session — *`app.ts:291` hardcodes `secure: false`; `getSessionSecure()` is never called AND compares a boolean to `'true'`*
 - [#1044](https://github.com/jwilleke/ngdpbase/issues/1044) — [BUG] Password login has no rate limit, lockout or backoff — *magic-link and the contact form both throttle; the credential path does not*
 - [#898](https://github.com/jwilleke/ngdpbase/issues/898) — [BUG] Storybook route-map generation orphans a route.png attachment on every regeneration — *blocked: the generator is not in this repo; first task is locating the producer (operator-side / cross-repo)*
 
@@ -55,6 +53,8 @@ Scanner state (2026-08-10, at v4.8.4): **ZERO open alerts, both kinds** — re-q
 
 ## 🔵 In review
 
+- [#1041](https://github.com/jwilleke/ngdpbase/issues/1041) — [BUG] Login open redirect — *fixed in `c3ba907f`; verified live, `Location: /` on the request that returned `//example.com/`*
+- [#1043](https://github.com/jwilleke/ngdpbase/issues/1043) — [BUG] Session cookie `Secure` + fixation — *fixed in `c3ba907f`; session ID now changes across login, `secure` defaults on in production*
 - [#1039](https://github.com/jwilleke/ngdpbase/issues/1039) — [BUG] Markdown inside `%%style` blocks is not processed — *fixed in `4d234921`; scope was ALL style blocks, not just tabbedSection. Verified across all 294 style-block pages, no page lost markup*
 - [#1040](https://github.com/jwilleke/ngdpbase/issues/1040) — [BUG] Required Pages Sync writes the file but never invalidates the cache — *fixed in `f245a436`, verified live through the real endpoint; not on the demo until the next release*
 - [#1034](https://github.com/jwilleke/ngdpbase/issues/1034) — [BUG] Read-only admin dashboard shows controls it cannot use, and refuses them three different ways — *shipped in v4.8.2 + v4.8.3; needs an eye-check as `admindemo` once the demo takes the image*
