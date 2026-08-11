@@ -6,13 +6,13 @@
  * route, no reset email, no script. The only options were another admin
  * resetting it (which needs a second admin to exist — usually there isn't
  * one), magic link (needs mail configured AND a real address on the account;
- * `admin` defaults to admin@localhost), or hand-computing a SHA-256 and
- * pasting it into users.json.
+ * `admin` defaults to admin@localhost), or hand-computing a hash and pasting
+ * it into users.json.
  *
- * That last one is what this automates, correctly: it reads the SAME
- * configured salt the running app uses, so the hash it writes is the hash the
- * app will verify. Getting the salt wrong by hand produces an account that
- * silently refuses every password.
+ * That last one is what this automates, correctly: it hashes through the very
+ * module the running app verifies with (#1042), so the value it writes is a
+ * value the app accepts. Hand-computing is no longer even feasible — hashes
+ * are salted per user and carry their own scrypt parameters.
  *
  * Usage:
  *   node dist/scripts/reset-admin-password.js <username> <new-password>
@@ -26,8 +26,8 @@
 
 import '../src/bootstrap-env.js';
 
-import crypto from 'crypto';
 import path from 'path';
+import { hashPassword } from '../src/utils/passwordHash.js';
 import { promises as fs } from 'fs';
 
 import ConfigurationManager from '../src/managers/ConfigurationManager.js';
@@ -69,15 +69,6 @@ async function main(): Promise<void> {
   ) as string;
   const usersPath = path.join(usersDirectory, usersFileName);
 
-  // The salt the RUNNING app uses. Reading it from config rather than assuming
-  // the shipped default is the entire reason this script is safer than doing
-  // it by hand — an instance that overrode it would otherwise get a hash that
-  // never verifies.
-  const salt = configManager.getProperty(
-    'ngdpbase.user.security.passwordsalt',
-    'amdwiki-salt'
-  ) as string;
-
   let raw: string;
   try {
     raw = await fs.readFile(usersPath, 'utf8');
@@ -106,10 +97,12 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  users[target].password = crypto
-    .createHash('sha256')
-    .update(newPassword + salt)
-    .digest('hex');
+  // #1042: hash through the same module the running app uses, rather than
+  // reimplementing the scheme here. This script used to inline
+  // `sha256(password + configuredSalt)` — a duplicate that would have silently
+  // written unverifiable hashes the moment the scheme changed, which is exactly
+  // what #1042 did. One implementation, no drift.
+  users[target].password = hashPassword(newPassword);
 
   // Write via a temp file so an interrupted run cannot leave users.json
   // truncated — losing every account is a far worse outcome than a failed

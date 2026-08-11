@@ -179,14 +179,23 @@ describe('UserManager', () => {
       await userManager.initialize();
     });
 
-    test('should hash passwords consistently', () => {
+    test('hashing the same password twice gives DIFFERENT values (#1042)', () => {
+      // This test used to assert the opposite — that two hashes of one password
+      // were identical. That was true only because every account shared one
+      // instance-wide salt, which is the defect #1042 fixed: the store
+      // advertised which accounts used the same password. Each hash now carries
+      // its own random salt, so equality is exactly what must NOT hold.
       const password = 'testpassword123';
       const hash1 = userManager.hashPassword(password);
       const hash2 = userManager.hashPassword(password);
 
-      expect(hash1).toBe(hash2);
+      expect(hash1).not.toBe(hash2);
       expect(hash1).not.toBe(password);
       expect(hash1.length).toBeGreaterThan(0);
+
+      // Both still verify — different bytes, same password.
+      expect(userManager.verifyPassword(password, hash1)).toBe(true);
+      expect(userManager.verifyPassword(password, hash2)).toBe(true);
     });
 
     test('should verify correct passwords', () => {

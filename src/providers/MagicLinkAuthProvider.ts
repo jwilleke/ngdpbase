@@ -199,10 +199,9 @@ export class MagicLinkAuthProvider implements AuthProvider {
    * the same reason it cannot consume the token (#1019).
    *
    * The account is created with `isExternal: true`, which stores an empty
-   * password hash. `UserManager.verifyPassword` compares `sha256(pw + salt)`
-   * against that hash and a digest is never the empty string, so these accounts
-   * cannot be logged into with a password by any input — magic link is
-   * structurally their only way in.
+   * password hash. `UserManager.verifyPassword` refuses an empty stored hash
+   * outright (#1042), so these accounts cannot be logged into with a password
+   * by any input — magic link is structurally their only way in.
    *
    * Idempotent: a token whose account already exists is a no-op, so a double
    * submit cannot fail the second time.

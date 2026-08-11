@@ -99,7 +99,9 @@ describe('bootstrap admin recreation', () => {
     await runBootstrapCheck(manager, provider);
 
     const admin = store.get('admin') as { password: string; isSystem: boolean };
-    expect(admin.password).toBe(manager.hashPassword('admin123'));
+    // Compared by VERIFICATION, not by equality: hashes are salted per user
+    // (#1042), so re-hashing the same password never reproduces the same bytes.
+    expect(manager.verifyPassword('admin123', admin.password)).toBe(true);
     expect(admin.isSystem).toBe(true);
   });
 });

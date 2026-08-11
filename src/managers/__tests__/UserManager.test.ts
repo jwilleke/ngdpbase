@@ -420,11 +420,17 @@ describe('UserManager', () => {
       expect(hashed.length).toBeGreaterThan(0);
     });
 
-    test('hashPassword() should produce consistent hashes', () => {
+    test('hashPassword() produces a DIFFERENT hash each time (#1042)', () => {
+      // Asserted equality before #1042, when one instance-wide salt meant two
+      // accounts with the same password stored identical bytes. Per-user salts
+      // make that impossible, which is the point — the verify test below is now
+      // what proves the hash is usable.
       const hash1 = userManager.hashPassword('password123');
       const hash2 = userManager.hashPassword('password123');
 
-      expect(hash1).toBe(hash2);
+      expect(hash1).not.toBe(hash2);
+      expect(userManager.verifyPassword('password123', hash1)).toBe(true);
+      expect(userManager.verifyPassword('password123', hash2)).toBe(true);
     });
 
     test('verifyPassword() should validate correct password', () => {

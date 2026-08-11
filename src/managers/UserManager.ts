@@ -2,6 +2,7 @@ import BaseManager, { BackupData } from './BaseManager.js';
 
 import crypto from 'crypto';
 import logger from '../utils/logger.js';
+import { hashPassword, verifyPassword, needsRehash, isLegacyHash } from '../utils/passwordHash.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import { UserProvider, ProviderInfo } from '../types/Provider.js';
@@ -386,26 +387,38 @@ class UserManager extends BaseManager {
   }
 
   /**
-   * Simple password hashing using crypto
+   * Hash a password for storage (#1042).
+   *
+   * scrypt with a per-user random salt. Was one round of SHA-256 with a single
+   * instance-wide salt, which is fast to crack offline and made two users with
+   * the same password produce identical hashes.
+   *
    * @param {string} password - Plain text password
-   * @returns {string} Hashed password
+   * @returns {string} Self-describing hash: `scrypt$N$r$p$salt$hash`
    */
   hashPassword(password: string): string {
-    const salt = this.passwordSalt || 'amdwiki-salt';
-    return crypto
-      .createHash('sha256')
-      .update(password + salt)
-      .digest('hex');
+    return hashPassword(password);
   }
 
   /**
-   * Verify password against hash
+   * Verify a password against a stored hash, in either scheme (#1042).
+   *
+   * Pre-#1042 hashes keep verifying against the instance-wide salt — the
+   * plaintext is not recoverable, so they cannot be converted in bulk. They are
+   * upgraded individually by `authenticateUser` on the next successful login.
+   *
    * @param {string} password - Plain text password
-   * @param {string} hash - Stored hash
+   * @param {string} hash - Stored hash, either scheme
    * @returns {boolean} True if password matches
    */
   verifyPassword(password: string, hash: string): boolean {
-    return this.hashPassword(password) === hash;
+    // The legacy salt keeps its historic value on purpose. Renaming it to
+    // `ngdp-salt` was floated as free once hashing moved to scrypt — it is not,
+    // and cannot be while ANY legacy hash remains: those digests were computed
+    // with this exact string, so changing it locks those accounts out with no
+    // way back. It becomes safe to delete, not rename, once a store holds no
+    // legacy hashes (#1042).
+    return verifyPassword(password, hash, this.passwordSalt || 'amdwiki-salt');
   }
 
   /** The value shipped in config; also the fallback when config is unreadable. */
@@ -597,6 +610,19 @@ class UserManager extends BaseManager {
     const isValid = this.verifyPassword(password, user.password);
     if (!isValid) {
       return null;
+    }
+
+    // #1042: upgrade the stored hash in place, now that we hold the plaintext
+    // and know it is correct — the only moment a rehash is possible, since the
+    // old digest cannot be converted. The store ages over as people sign in;
+    // nobody is locked out and no reset mail is needed.
+    if (needsRehash(user.password)) {
+      const wasLegacy = isLegacyHash(user.password);
+      user.password = hashPassword(password);
+      logger.info(
+        `🔐 Upgraded stored password hash for "${username}" ` +
+        `(${wasLegacy ? 'legacy SHA-256 → scrypt' : 'scrypt parameters raised'}) (#1042)`
+      );
     }
 
     // Update login stats
