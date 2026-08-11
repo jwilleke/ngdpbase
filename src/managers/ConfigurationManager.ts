@@ -964,19 +964,29 @@ class ConfigurationManager extends BaseManager {
   }
 
   /**
-   * Get session secure flag
+   * Get session secure flag.
+   *
+   * #1043: these two compared against the STRING `'true'` while the config
+   * values are real booleans, so `getSessionSecure()` returned false even when
+   * the key was set to `true`. Nothing called either one — the session cookie
+   * is configured in `app.ts`, which reads the keys directly — so the bug was
+   * invisible until someone tried to use the accessor the config key advertises.
+   *
+   * Kept (public API, an embedder may call them) and made boolean-aware, so the
+   * next caller gets the answer the config actually holds.
+   *
    * @returns {boolean} Session secure flag
    */
   getSessionSecure(): boolean {
-    return this.getProperty('ngdpbase.session.secure', 'false') === 'true';
+    return this.getProperty('ngdpbase.session.secure', false) === true;
   }
 
   /**
-   * Get session httpOnly flag
+   * Get session httpOnly flag. Defaults to true — the safe direction.
    * @returns {boolean} Session httpOnly flag
    */
   getSessionHttpOnly(): boolean {
-    return this.getProperty('ngdpbase.session.http-only', 'true') === 'true';
+    return this.getProperty('ngdpbase.session.http-only', true) !== false;
   }
 
   /**

@@ -277,6 +277,17 @@ void (async (): Promise<void> => {
 
   const FileStore = sessionFileStore(session);
 
+  // #1043: `secure` was hardcoded false, so the session cookie shipped without
+  // the flag on every HTTPS deployment, and the documented
+  // `ngdpbase.session.secure` key did nothing at all. Production defaults to on
+  // so the containers are correct unattended; http://localhost development is
+  // unaffected. An explicit config value wins in both directions.
+  const sessionSecure = Boolean(
+    configManager.getProperty('ngdpbase.session.secure', process.env.NODE_ENV === 'production')
+  );
+  const sessionHttpOnly = Boolean(configManager.getProperty('ngdpbase.session.http-only', true));
+  logger.info(`🔐 Session cookie: secure=${sessionSecure} httpOnly=${sessionHttpOnly} sameSite=lax`);
+
   app.use(session({
     store: new FileStore({
       path: sessionPath,
@@ -288,8 +299,20 @@ void (async (): Promise<void> => {
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: false,
-      httpOnly: true,
+      // #1043: `secure` used to be hardcoded false, so the session cookie went
+      // out without the flag on every HTTPS deployment — and the documented
+      // `ngdpbase.session.secure` key did nothing at all, which is worse than
+      // not offering it.
+      //
+      // Defaults to on in production and off otherwise, so the containers are
+      // correct out of the box while http://localhost development still works.
+      // An explicit config value wins either way.
+      secure: sessionSecure,
+      httpOnly: sessionHttpOnly,
+      // Was unset, leaving it to browser defaults. 'lax' keeps ordinary
+      // top-level navigation working while refusing the cookie on cross-site
+      // POSTs — defence in depth behind the CSRF middleware, not a replacement.
+      sameSite: 'lax',
       maxAge: configManager.getProperty('ngdpbase.session.max-age', 24 * 60 * 60 * 1000)
     }
   }));

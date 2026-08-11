@@ -73,6 +73,8 @@ import type TemplateManager from '../managers/TemplateManager.js';
 import type ValidationManager from '../managers/ValidationManager.js';
 import type VariableManager from '../managers/VariableManager.js';
 import { ApiContext, ApiError } from '../context/ApiContext.js';
+import { safeRedirect } from '../utils/safeRedirect.js';
+import { generateCsrfToken } from '../middleware/csrf.js';
 
 /** Helper to extract error message from unknown error */
 function getErrorMessage(error: unknown): string {
@@ -5411,8 +5413,7 @@ ${panes}
 
       // Redirect if already logged in
       if (currentUser && currentUser.isAuthenticated) {
-        const redirect = (req.query.redirect as string) || '/';
-        return res.redirect(redirect);
+        return res.redirect(safeRedirect(req.query.redirect)); // #1041
       }
 
       const commonData = await this.getCommonTemplateData(req);
@@ -5469,9 +5470,46 @@ ${panes}
   /**
    * Process login
    */
+  /**
+   * Give the caller a brand-new session ID before marking it authenticated (#1043).
+   *
+   * Without this, whatever session ID the browser arrived with stays valid once
+   * the user signs in — so anyone who could plant a session cookie beforehand
+   * (shared machine, sibling subdomain, an XSS anywhere on the origin) ends up
+   * holding an authenticated session. Classic fixation.
+   *
+   * `regenerate()` destroys the old session object, which takes the CSRF token
+   * with it. The token is re-minted here rather than left to the middleware:
+   * the middleware only fills a missing token on the NEXT request, which would
+   * leave a window where a form rendered against the old token fails to submit.
+   *
+   * Resolves either way — a store that cannot regenerate is logged and the login
+   * continues, because failing the sign-in outright would turn a hardening
+   * measure into an outage.
+   */
+  private regenerateSession(req: Request): Promise<void> {
+    return new Promise((resolve) => {
+      if (typeof req.session?.regenerate !== 'function') {
+        resolve();
+        return;
+      }
+      req.session.regenerate((err) => {
+        if (err) {
+          logger.error('Error regenerating session on login (#1043):', err);
+        } else {
+          req.session.csrfToken = generateCsrfToken();
+        }
+        resolve();
+      });
+    });
+  }
+
   async processLogin(req: Request, res: Response) {
     try {
-      const { username, password, redirect = '/' } = req.body;
+      const { username, password } = req.body;
+      // #1041: constrain once, here — both the failure redirect below and the
+      // success redirect at the end embed this value.
+      const redirect = safeRedirect((req.body as Record<string, unknown>).redirect);
       const userManager = this.engine.getManager('UserManager');
       const configManager = this.engine.getManager('ConfigurationManager');
       const debugLogin = configManager.getProperty(
@@ -5496,6 +5534,9 @@ ${panes}
             encodeURIComponent(redirect)
         );
       }
+
+      // #1043: new session ID before the identity lands on it.
+      await this.regenerateSession(req);
 
       // Store username in express-session
       req.session.username = result.username || username;
@@ -5637,6 +5678,8 @@ ${panes}
       // Consume token — single-use
       authManager.consumeToken('magic-link', token);
 
+      await this.regenerateSession(req); // #1043
+
       req.session.username = result.username;
       req.session.isAuthenticated = true;
 
@@ -5647,7 +5690,7 @@ ${panes}
           logger.error('Error saving session after magic link login:', err);
           return res.redirect('/login?error=Session+save+failed');
         }
-        res.redirect(redirect || '/');
+        res.redirect(safeRedirect(redirect)); // #1041
       });
     } catch (err: unknown) {
       logger.error('Error completing magic link login:', err);
@@ -5708,6 +5751,8 @@ ${panes}
       // Consume state — single-use
       authManager.consumeToken('google-oidc', state);
 
+      await this.regenerateSession(req); // #1043
+
       req.session.username = result.username;
       req.session.isAuthenticated = true;
 
@@ -5718,7 +5763,7 @@ ${panes}
           logger.error('Error saving session after Google login:', err);
           return res.redirect('/login?error=Session+save+failed');
         }
-        res.redirect(redirect || '/');
+        res.redirect(safeRedirect(redirect)); // #1041
       });
     } catch (err: unknown) {
       logger.error('Error in Google OIDC callback:', err);
