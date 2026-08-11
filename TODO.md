@@ -41,7 +41,6 @@ Scanner state (2026-08-10, at v4.8.4): **ZERO open alerts, both kinds** — re-q
 ## 🟠 P1
 
 - [#1042](https://github.com/jwilleke/ngdpbase/issues/1042) — [BUG] Passwords stored as single-round SHA-256 with one global salt — *no work factor, shared salt, `===` compare. Needs versioned hashes + rehash-on-login; also makes the parked `amdwiki-salt` rename free*
-- [#1044](https://github.com/jwilleke/ngdpbase/issues/1044) — [BUG] Password login has no rate limit, lockout or backoff — *magic-link and the contact form both throttle; the credential path does not*
 - [#898](https://github.com/jwilleke/ngdpbase/issues/898) — [BUG] Storybook route-map generation orphans a route.png attachment on every regeneration — *blocked: the generator is not in this repo; first task is locating the producer (operator-side / cross-repo)*
 
 ## 🟡 P2
@@ -69,6 +68,7 @@ Scanner state (2026-08-10, at v4.8.4): **ZERO open alerts, both kinds** — re-q
 
 ## 🔵 In review
 
+- [#1044](https://github.com/jwilleke/ngdpbase/issues/1044) — [BUG] No login throttle — *fixed in `fe9ec985`; per-username backoff with expiring locks, IP key skipped behind an unconfigured proxy so one attacker cannot lock out an entire instance*
 - [#1041](https://github.com/jwilleke/ngdpbase/issues/1041) — [BUG] Login open redirect — *fixed in `c3ba907f`; verified live, `Location: /` on the request that returned `//example.com/`*
 - [#1043](https://github.com/jwilleke/ngdpbase/issues/1043) — [BUG] Session cookie `Secure` + fixation — *fixed in `c3ba907f`; session ID now changes across login, `secure` defaults on in production*
 - [#1039](https://github.com/jwilleke/ngdpbase/issues/1039) — [BUG] Markdown inside `%%style` blocks is not processed — *fixed in `4d234921`; scope was ALL style blocks, not just tabbedSection. Verified across all 294 style-block pages, no page lost markup*
