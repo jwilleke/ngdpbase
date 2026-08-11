@@ -206,6 +206,12 @@
   "ngdpbase.auth.required-factors": [
     "password"
   ],
+  "_comment_auth_throttle": "Login throttling (#1044) — failed password attempts are counted per username AND per client IP; a success clears the count. Locks always EXPIRE: a permanent lock on a known username like admin would be a denial-of-service vector against the operator. Consecutive lockouts double the wait, capped by max-lock-minutes.",
+  "ngdpbase.auth.throttle.enabled": true,
+  "ngdpbase.auth.throttle.max-attempts": 10,
+  "ngdpbase.auth.throttle.window-minutes": 15,
+  "ngdpbase.auth.throttle.lock-minutes": 1,
+  "ngdpbase.auth.throttle.max-lock-minutes": 15,
   "_comment_mail": "Email transport — used by magic-link auth, notifications, and server alerts. See docs/admin/email-setup.md",
   "ngdpbase.mail.enabled": false,
   "ngdpbase.mail.provider": "console",

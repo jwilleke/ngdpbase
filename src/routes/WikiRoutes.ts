@@ -75,6 +75,7 @@ import type VariableManager from '../managers/VariableManager.js';
 import { ApiContext, ApiError } from '../context/ApiContext.js';
 import { safeRedirect } from '../utils/safeRedirect.js';
 import { generateCsrfToken } from '../middleware/csrf.js';
+import { LoginThrottle } from '../utils/LoginThrottle.js';
 
 /** Helper to extract error message from unknown error */
 function getErrorMessage(error: unknown): string {
@@ -5487,6 +5488,114 @@ ${panes}
    * continues, because failing the sign-in outright would turn a hardening
    * measure into an outage.
    */
+  /**
+   * Shared login throttle (#1044). One instance per process, reconfigured from
+   * config on each use so an operator's change takes effect without a restart.
+   */
+  private static loginThrottle: LoginThrottle | null = null;
+
+  /**
+   * Current throttle options, or null when the operator has disabled it.
+   */
+  private throttleOptions(): { maxAttempts: number; windowMs: number; baseLockMs: number; maxLockMs: number } | null {
+    const cfg = this.engine.getManager('ConfigurationManager');
+    if (!cfg || cfg.getProperty('ngdpbase.auth.throttle.enabled', true) === false) return null;
+    const minutes = (key: string, fallback: number): number =>
+      Number(cfg.getProperty(key, fallback)) * 60_000;
+    return {
+      maxAttempts: Number(cfg.getProperty('ngdpbase.auth.throttle.max-attempts', 10)),
+      windowMs: minutes('ngdpbase.auth.throttle.window-minutes', 15),
+      baseLockMs: minutes('ngdpbase.auth.throttle.lock-minutes', 1),
+      maxLockMs: minutes('ngdpbase.auth.throttle.max-lock-minutes', 15)
+    };
+  }
+
+  /** The throttle, configured, or null when disabled. */
+  private getLoginThrottle(): LoginThrottle | null {
+    const opts = this.throttleOptions();
+    if (!opts) return null;
+    if (!WikiRoutes.loginThrottle) {
+      WikiRoutes.loginThrottle = new LoginThrottle(opts);
+    } else {
+      WikiRoutes.loginThrottle.configure(opts);
+    }
+    return WikiRoutes.loginThrottle;
+  }
+
+  /**
+   * Keys a login attempt is counted under (#1044).
+   *
+   * BOTH, deliberately. Username-only lets a botnet spread guesses across
+   * addresses; IP-only lets one client work through a user list from a single
+   * address. Either key locking is enough to refuse the attempt.
+   *
+   * The username is lower-cased so `Admin` and `admin` share a bucket.
+   */
+  private throttleKeys(req: Request, username: unknown): string[] {
+    const keys: string[] = [];
+    if (typeof username === 'string' && username.trim() !== '') {
+      keys.push(`user:${username.trim().toLowerCase()}`);
+    }
+
+    // The IP key is SKIPPED when the request looks proxied but `trust proxy`
+    // is off. In that state every client shares one req.ip — the ingress or
+    // tunnel — so an IP bucket does not identify an attacker, it identifies
+    // the whole instance. Ten failures from anyone would then lock out every
+    // user at once, turning this control into the denial-of-service it exists
+    // to avoid. `ngdpbase.server.trust-proxy` defaults to false and the demo
+    // and geohazardwatch both sit behind ingress, so this is the shipped
+    // configuration, not a corner case.
+    //
+    // With trust proxy configured, req.ip is the real client and the key is
+    // both meaningful and wanted. The username key applies either way.
+    const forwarded = req.get?.('x-forwarded-for');
+    const trustsProxy = req.app?.get?.('trust proxy');
+    const ipIsShared = Boolean(forwarded) && !trustsProxy;
+
+    if (!ipIsShared) {
+      const ip = req.ip ?? (req.socket as { remoteAddress?: string } | undefined)?.remoteAddress;
+      if (ip) keys.push(`ip:${ip}`);
+    }
+    return keys;
+  }
+
+  /**
+   * Record a lockout to the audit trail (#1044).
+   *
+   * Slowing an attacker is only half the value — a distributed attempt should
+   * be VISIBLE, not merely delayed. Best-effort: an audit failure must never
+   * stop a login response going out.
+   */
+  private async auditLoginLockout(
+    req: Request,
+    username: unknown,
+    detail: string,
+    minutes: number
+  ): Promise<void> {
+    try {
+      const audit = this.engine.getManager('AuditManager') as {
+        logSecurityEvent?: (
+          ctx: Record<string, unknown>,
+          type: string,
+          severity: 'low' | 'medium' | 'high' | 'critical',
+          description: string
+        ) => Promise<string>;
+      } | null;
+      await audit?.logSecurityEvent?.(
+        {
+          ipAddress: req.ip,
+          userAgent: req.get?.('user-agent'),
+          attemptedUsername: typeof username === 'string' ? username : undefined
+        },
+        'login_throttled',
+        'medium',
+        `Login throttled (${detail}) — ${minutes} minute(s) remaining`
+      );
+    } catch (err: unknown) {
+      logger.warn('[login-throttle] audit write failed (#1044):', err);
+    }
+  }
+
   private regenerateSession(req: Request): Promise<void> {
     return new Promise((resolve) => {
       if (typeof req.session?.regenerate !== 'function') {
@@ -5521,6 +5630,25 @@ ${panes}
 
       if (debugLogin) logger.debug('DEBUG: Login attempt for:', username);
 
+      // #1044: refuse before the password is ever checked, so a locked key
+      // costs an attacker a redirect rather than a hash comparison.
+      const throttle = this.getLoginThrottle();
+      const keys = this.throttleKeys(req, username);
+      if (throttle) {
+        const blocked = keys
+          .map((k) => throttle.check(k))
+          .find((state) => state.blocked);
+        if (blocked) {
+          const minutes = Math.max(1, Math.ceil(blocked.retryAfterMs / 60_000));
+          logger.warn(`🔒 Login refused for "${username}" from ${req.ip ?? 'unknown'} — throttled, ${minutes}m remaining (#1044)`);
+          await this.auditLoginLockout(req, username, 'attempt while locked out', minutes);
+          return res.redirect(
+            `/login?error=${encodeURIComponent(`Too many failed attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`)}&redirect=` +
+              encodeURIComponent(redirect)
+          );
+        }
+      }
+
       const authManager = this.engine.getManager('AuthManager');
       const result = authManager
         ? await authManager.authenticate('password', { username, password })
@@ -5529,11 +5657,30 @@ ${panes}
       if (!result.success) {
         if (debugLogin)
           logger.debug('DEBUG: Authentication failed for:', username);
+
+        // #1044: count the failure against every key, and audit only the
+        // attempt that actually caused a lock — an ordinary wrong password is
+        // noise, a lockout is a signal.
+        if (throttle) {
+          for (const key of keys) {
+            const state = throttle.recordFailure(key);
+            if (state.justLocked) {
+              const minutes = Math.max(1, Math.ceil(state.retryAfterMs / 60_000));
+              logger.warn(`🔒 Login locked out ${key} for ${minutes}m after repeated failures (#1044)`);
+              await this.auditLoginLockout(req, username, `locked ${key}`, minutes);
+            }
+          }
+        }
+
         return res.redirect(
           '/login?error=Invalid username or password&redirect=' +
             encodeURIComponent(redirect)
         );
       }
+
+      // #1044: a success clears the record, so a fat-fingered password costs
+      // a legitimate user nothing.
+      if (throttle) keys.forEach((k) => throttle.recordSuccess(k));
 
       // #1043: new session ID before the identity lands on it.
       await this.regenerateSession(req);

@@ -110,6 +110,33 @@ export interface WikiConfig {
    * (#670 Phase E). When false, no submissions are 429'd; the rate-limiter
    * counter is not consumed. Default: true.
    */
+  /**
+   * Login throttling (#1044): count failed password attempts per username AND
+   * per client IP, and lock the key out temporarily once the limit is reached.
+   * When false, nothing is counted and no attempt is ever refused.
+   * Default: true.
+   */
+  'ngdpbase.auth.throttle.enabled': boolean;
+
+  /** Failures allowed within the window before a lockout. Default: 10. */
+  'ngdpbase.auth.throttle.max-attempts': number;
+
+  /** How long failures are remembered, in minutes. Default: 15. */
+  'ngdpbase.auth.throttle.window-minutes': number;
+
+  /**
+   * Lock duration for a first lockout, in minutes. Consecutive lockouts double
+   * it. Default: 1.
+   */
+  'ngdpbase.auth.throttle.lock-minutes': number;
+
+  /**
+   * Ceiling for the doubling, in minutes. Locks always expire — a permanent
+   * lock on a known username would be a DoS vector against the operator.
+   * Default: 15.
+   */
+  'ngdpbase.auth.throttle.max-lock-minutes': number;
+
   'ngdpbase.mail.rate-limit.enabled': boolean;
 
   /**
