@@ -236,6 +236,9 @@ void (async (): Promise<void> => {
   const configManager = engine.getManager('ConfigurationManager') as {
     getProperty<T>(key: string, defaultValue: T): T;
     getResolvedDataPath(key: string, fallback: string): string;
+    // #1043: needed to tell an operator's explicit choice apart from the
+    // shipped default, which pins session.secure to false.
+    getCustomProperties(): Record<string, unknown>;
   };
 
   // #861: behind a reverse proxy / Cloudflare Tunnel every request reaches Express
@@ -279,12 +282,22 @@ void (async (): Promise<void> => {
 
   // #1043: `secure` was hardcoded false, so the session cookie shipped without
   // the flag on every HTTPS deployment, and the documented
-  // `ngdpbase.session.secure` key did nothing at all. Production defaults to on
-  // so the containers are correct unattended; http://localhost development is
-  // unaffected. An explicit config value wins in both directions.
-  const sessionSecure = Boolean(
-    configManager.getProperty('ngdpbase.session.secure', process.env.NODE_ENV === 'production')
-  );
+  // `ngdpbase.session.secure` key did nothing at all.
+  //
+  // The key cannot simply be read with a NODE_ENV default: the shipped
+  // app-default-config.json pins it to `false`, so getProperty() always returns
+  // that and the default never applies. A first cut did exactly this and the
+  // container smoke test came up `secure=false` under NODE_ENV=production —
+  // the fix would have shipped doing nothing.
+  //
+  // So the OPERATOR's explicit choice (custom config) wins, and in its absence
+  // production turns it on. Behind a TLS-terminating proxy the app sees plain
+  // http while the browser is on https, which is exactly the case where the
+  // flag must still be set — inferring it from the request would get that wrong.
+  const customSessionSecure = configManager.getCustomProperties()['ngdpbase.session.secure'];
+  const sessionSecure = typeof customSessionSecure === 'boolean'
+    ? customSessionSecure
+    : process.env.NODE_ENV === 'production';
   const sessionHttpOnly = Boolean(configManager.getProperty('ngdpbase.session.http-only', true));
   logger.info(`🔐 Session cookie: secure=${sessionSecure} httpOnly=${sessionHttpOnly} sameSite=lax`);
 
