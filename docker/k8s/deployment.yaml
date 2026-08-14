@@ -12,7 +12,8 @@
 #                             Mounted via `envFrom: secretRef:`.
 #
 #   3. configmap.yaml       → structured ngdpbase.* dotted-key config as
-#                             app-custom-config.json. Mounted as a file via subPath.
+#                             app-custom-config.json. SEEDED onto the data volume
+#                             by an init container — NOT mounted into the app.
 #                             Holds keys that don't fit flat env vars (arrays,
 #                             nested objects).
 #
@@ -34,9 +35,26 @@
 #   kubectl apply -f configmap.yaml       # ngdpbase.* dotted-key JSON config
 #   kubectl apply -f service.yaml
 #   kubectl apply -f deployment.yaml
-#   - JSON ConfigMap mounted read-only — installation wizard cannot write to it
+#   - An init container SEEDS app-custom-config.json onto the data volume on
+#     first boot only. The file is then writable, so /admin/configuration keeps
+#     working — it is not a read-only mount.
 #   - You must pre-create admin user and .install-complete marker
 #   - See configmap.yaml and HEADLESS-DEPLOYMENT-NOTES.md §1-§2 for details
+#
+# WHY SEED RATHER THAN MOUNT:
+#   A subPath ConfigMap mount is read-only for the life of the deployment, so
+#   every save from /admin/configuration failed with EROFS and changing any
+#   setting meant editing a manifest and redeploying. Both production instances
+#   hit that and moved config onto the volume (geohazardwatch 840b87c; the demo
+#   after it). Application configuration must not require editing a deployment
+#   manifest; manifests are for infrastructure.
+#
+#   The trade: seeding is FIRST BOOT ONLY. Once the file exists on the volume it
+#   is never overwritten, so later edits to configmap.yaml do NOT reach a running
+#   instance — change it through /admin/configuration instead, or delete the file
+#   from the volume and restart to re-seed. That is deliberate: overwriting on
+#   every start would silently discard operator edits, which is worse than the
+#   honest EROFS it replaces.
 #
 apiVersion: apps/v1
 kind: Deployment
@@ -62,6 +80,41 @@ spec:
         app: ngdpbase
         app.kubernetes.io/name: ngdpbase
     spec:
+      # Seed app-custom-config.json onto the data volume, first boot only.
+      # Skipped entirely when the ConfigMap is absent (Strategy 1 / interactive
+      # install) because the volume is marked `optional: true`, in which case
+      # /seed is empty and the copy is a no-op.
+      initContainers:
+        - name: seed-config
+          image: ngdpbase:latest
+          imagePullPolicy: IfNotPresent
+          # `-e` so a real copy failure fails the pod instead of starting an
+          # instance with configuration the operator believes was applied.
+          command: ['/bin/sh', '-e', '-c']
+          args:
+            - |
+              mkdir -p /app/data/config
+              if [ ! -f /seed/app-custom-config.json ]; then
+                echo "seed-config: no ConfigMap present, nothing to seed"
+              elif [ -f /app/data/config/app-custom-config.json ]; then
+                echo "seed-config: app-custom-config.json already on the volume, leaving it alone"
+              else
+                cp /seed/app-custom-config.json /app/data/config/app-custom-config.json
+                echo "seed-config: seeded app-custom-config.json onto the data volume"
+              fi
+          volumeMounts:
+            - name: ngdpbase-data
+              mountPath: /app/data
+            - name: ngdpbase-config
+              mountPath: /seed
+              readOnly: true
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "10m"
+            limits:
+              memory: "64Mi"
+              cpu: "100m"
       containers:
         - name: ngdpbase
           image: ngdpbase:latest
@@ -82,18 +135,13 @@ spec:
                 optional: true
           # Mount persistent volume for wiki data
           # All instance data stored here: pages, users, config, logs, etc.
+          # Only the data volume. app-custom-config.json lives ON it, put there
+          # by the seed-config init container above — deliberately NOT mounted
+          # from the ConfigMap, which would make it read-only and break every
+          # save from /admin/configuration.
           volumeMounts:
             - name: ngdpbase-data
               mountPath: /app/data
-            # Mount ConfigMap for custom configuration (optional)
-            # WARNING: This mount is read-only. If ConfigMap exists:
-            #   - Installation wizard CANNOT write to this file
-            #   - You must pre-create admin user and .install-complete marker
-            # For interactive installation, do NOT apply the ConfigMap
-            - name: ngdpbase-config
-              mountPath: /app/data/config/app-custom-config.json
-              subPath: app-custom-config.json
-              readOnly: true
           # Resource limits
           resources:
             requests:
