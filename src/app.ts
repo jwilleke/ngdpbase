@@ -28,6 +28,7 @@ import WikiContext from './context/WikiContext.js';
 import InstallRoutes from './routes/InstallRoutes.js';
 import InstallService from './services/InstallService.js';
 import { ThemeManager } from './managers/ThemeManager.js';
+import { resolveSessionSecurity } from './utils/sessionSecurity.js';
 import type PageManager from './managers/PageManager.js';
 
 // Project root — reliable because PM2/server.sh always run from the project directory.
@@ -245,12 +246,28 @@ void (async (): Promise<void> => {
   // from localhost, so req.ip is 127.0.0.1 — collapsing the share rate limiter's
   // `token:ip` buckets and recording the tunnel's IP in audit rows. When enabled,
   // Express derives req.ip from X-Forwarded-For. Accepts Express's native values:
-  // 'loopback', a hop count, or a subnet list. Default off — on a directly
-  // reachable instance X-Forwarded-For is client-spoofable.
-  const trustProxy = configManager.getProperty<boolean | number | string>('ngdpbase.server.trust-proxy', false);
-  if (trustProxy !== false) {
-    app.set('trust proxy', trustProxy);
-    console.log(`🔒 trust proxy enabled: ${JSON.stringify(trustProxy)}`);
+  // 'loopback', a hop count, or a subnet list. Off unless configured — or unless
+  // the session cookie is `secure`, in which case #1046 derives it, because
+  // `secure` without `trust proxy` cannot issue a cookie behind terminated TLS.
+  //
+  // Resolved with the cookie flag, before the session middleware is built.
+  const sessionSecurity = resolveSessionSecurity(
+    configManager.getCustomProperties(),
+    process.env.NODE_ENV
+  );
+  if (sessionSecurity.trustProxy !== false) {
+    app.set('trust proxy', sessionSecurity.trustProxy);
+    const origin = sessionSecurity.trustProxyDerived ? ' (derived from session.secure)' : '';
+    console.log(`🔒 trust proxy enabled: ${JSON.stringify(sessionSecurity.trustProxy)}${origin}`);
+  }
+  if (sessionSecurity.misconfigured) {
+    logger.warn(
+      '⚠️  ngdpbase.session.secure is on while ngdpbase.server.trust-proxy is explicitly false. ' +
+      'Behind TLS terminated upstream, Express sees plain http and express-session will NOT send ' +
+      'the session cookie — every state-changing POST then fails as "Forbidden — invalid CSRF token" ' +
+      'and login is impossible (#1046). Remove the trust-proxy override, or set it to a hop count ' +
+      'or subnet list matching your proxy.'
+    );
   }
 
   const activeThemeName = configManager.getProperty('ngdpbase.theme.active', 'default');
@@ -294,12 +311,15 @@ void (async (): Promise<void> => {
   // production turns it on. Behind a TLS-terminating proxy the app sees plain
   // http while the browser is on https, which is exactly the case where the
   // flag must still be set — inferring it from the request would get that wrong.
-  const customSessionSecure = configManager.getCustomProperties()['ngdpbase.session.secure'];
-  const sessionSecure = typeof customSessionSecure === 'boolean'
-    ? customSessionSecure
-    : process.env.NODE_ENV === 'production';
+  //
+  // #1046: resolved above alongside `trust proxy`, which has to be set for this
+  // flag to be survivable behind terminated TLS. See resolveSessionSecurity().
+  const sessionSecure = sessionSecurity.secure;
   const sessionHttpOnly = Boolean(configManager.getProperty('ngdpbase.session.http-only', true));
-  logger.info(`🔐 Session cookie: secure=${sessionSecure} httpOnly=${sessionHttpOnly} sameSite=lax`);
+  logger.info(
+    `🔐 Session cookie: secure=${sessionSecure} httpOnly=${sessionHttpOnly} sameSite=lax ` +
+    `trustProxy=${JSON.stringify(sessionSecurity.trustProxy)}`
+  );
 
   app.use(session({
     store: new FileStore({

@@ -99,6 +99,10 @@ After wiring the proxy, update `app-custom-config.json`:
 
 `session.secure: true` requires HTTPS — set it only after the proxy is verified working.
 
+Turning `session.secure` on also turns `ngdpbase.server.trust-proxy` on automatically (#1046). The proxy terminates TLS, so ngdpbase itself sees plain HTTP; without trusting the proxy it would refuse to send the `Secure` session cookie at all, and every login would fail with `Forbidden — invalid CSRF token`. Trusting the proxy is what lets it read `X-Forwarded-Proto` and `X-Forwarded-For`, so `req.ip` also becomes the real visitor rather than the proxy.
+
+Override `ngdpbase.server.trust-proxy` explicitly if your instance is *also* reachable directly, bypassing the proxy — on that path `X-Forwarded-For` is client-spoofable. A hop count or a subnet list (`"loopback, 10.0.0.0/8"`) is safer there than `true`.
+
 ### 7. (Optional) Persist across reboots with pm2
 
 If pm2 is installed and you used `./server.sh start`, pm2 holds the process. To make it survive a reboot:
