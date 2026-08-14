@@ -1,5 +1,6 @@
 import Engine from './core/Engine.js';
 import logger, { reconfigureLogger, setLoggingProvider, resolveLoggingProvider } from './utils/logger.js';
+import { refreshRedactedSecrets } from './utils/redactSecrets.js';
 import type { WikiConfig } from './types/Config.js';
 import type WikiContext from './context/WikiContext.js';
 
@@ -174,6 +175,22 @@ class WikiEngine extends Engine {
       maxFiles: configManager.getProperty('ngdpbase.logging.max-files', 5) as number
     });
     logger.info('Logger reconfigured from ConfigurationManager');
+
+    // #1030: fill the log-redaction table now that config is resolved. The
+    // logger bootstraps before ConfigurationManager exists, so it cannot read
+    // `ngdpbase.config.secret-keys` itself — the values are pushed in here
+    // instead. Until this line runs nothing is redacted, which is safe because
+    // nothing has read a config secret yet.
+    //
+    // Skipped keys are reported rather than swallowed: a secret silently not
+    // being redacted is exactly the state this feature exists to prevent, and
+    // `too-short` in particular is really a warning about a weak value.
+    const redaction = refreshRedactedSecrets(configManager);
+    logger.info(`🔐 Log redaction active for ${redaction.active} configured secret(s)`);
+    for (const { key, reason } of redaction.skipped) {
+      if (reason === 'unset' || reason === 'env-ref') continue; // ordinary, not worth a line
+      logger.warn(`[redact] ${key} will NOT be redacted from logs (${reason})`);
+    }
 
     // 1b. Initialize CatalogManager right after ConfigurationManager so all later
     //     managers (including addons) can call getManager('CatalogManager')

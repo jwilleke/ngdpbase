@@ -18,6 +18,7 @@ import BaseLoggingProvider, {
   LoggingProviderConfig,
   LoggingProviderInfo
 } from './BaseLoggingProvider.js';
+import { redactSecretsFormat } from '../utils/redactSecrets.js';
 
 /** Fallback when maxSize is unset or unparseable (1MB) */
 const DEFAULT_MAX_SIZE = 1048576;
@@ -47,6 +48,12 @@ class FileLoggingProvider extends BaseLoggingProvider {
   createFormat(): Logform.Format {
     return format.combine(
       format.timestamp(),
+      // #1030: strike configured secrets before anything renders them. Placed
+      // here rather than inside printf so it covers every transport at once,
+      // and before printf because printf is what produces the final line.
+      // The table is empty until WikiEngine fills it — see redactSecrets.ts for
+      // why it cannot be read from config at this point.
+      redactSecretsFormat(),
       format.printf((info) => {
         const ts = typeof info.timestamp === 'string' ? info.timestamp : JSON.stringify(info.timestamp);
         const msg = typeof info.message === 'string' ? info.message : JSON.stringify(info.message);
