@@ -223,6 +223,83 @@ describe('SecurityFilter', () => {
       expect(f.allowedAttributes.has('href')).toBe(true);
       expect(f.allowedAttributes.has('class')).toBe(true);
     });
+
+    // The tags above (`p`, `div`, `href`, `class`) were in the list BEFORE
+    // #1032 too, so they cannot detect the regression that made turning this
+    // filter on unshippable: tables, code blocks, blockquotes and rules were
+    // absent, so enabling render filtering silently deleted them from every
+    // page. Pin the tags whose absence caused that, or the next person to trim
+    // the list gets a green suite and a wrecked site.
+    test.each([
+      'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption',
+      'code', 'pre', 'blockquote', 'hr', 'br', 'dl', 'dt', 'dd', 'sup', 'sub'
+    ])('allows %s — its absence is what broke pages before #1032', (tag) => {
+      const f = new SecurityFilter();
+      f.loadSecureDefaults();
+      expect(f.allowedTags.has(tag)).toBe(true);
+    });
+
+    test('still refuses the tags that make this filter worth running', () => {
+      // The list is safe because it is CLOSED, not because it is short.
+      const f = new SecurityFilter();
+      f.loadSecureDefaults();
+      for (const tag of ['script', 'object', 'embed', 'form', 'svg', 'style']) {
+        expect(f.allowedTags.has(tag)).toBe(false);
+      }
+    });
+  });
+
+  // Enabling `markup.filters.security.enabled` on a live instance is a config
+  // change with no code review attached, so the render path itself is pinned
+  // here — not just the tag list. A real page's table and code block must
+  // survive process() with render filtering ON.
+  describe('render filtering preserves ordinary page markup', () => {
+    test('a table survives intact', async () => {
+      const f = makeFilter();
+      const html = '<table><thead><tr><th>Key</th></tr></thead>'
+        + '<tbody><tr><td>Value</td></tr></tbody></table>';
+
+      const out = await f.process(html, ctx);
+
+      expect(out).toContain('<table>');
+      expect(out).toContain('<th>');
+      expect(out).toContain('<td>');
+      expect(out).toContain('Value');
+    });
+
+    test('a code block survives intact', async () => {
+      const f = makeFilter();
+      const out = await f.process('<pre><code>const x = 1;</code></pre>', ctx);
+
+      expect(out).toContain('<pre>');
+      expect(out).toContain('<code>');
+      expect(out).toContain('const x = 1;');
+    });
+
+    test('a blockquote and a rule survive intact', async () => {
+      const f = makeFilter();
+      const out = await f.process('<blockquote><p>Quoted</p></blockquote><hr>', ctx);
+
+      expect(out).toContain('<blockquote>');
+      expect(out).toContain('Quoted');
+      expect(out).toContain('<hr');
+    });
+
+    test('and a script tag still does not', async () => {
+      const f = makeFilter();
+      const out = await f.process('<p>ok</p><script>alert(1)</script>', ctx);
+
+      expect(out).toContain('<p>');
+      expect(out).not.toContain('<script>');
+      expect(out).not.toContain('</script>');
+      // The script BODY survives as inert text — the output is
+      // `<!-- Dangerous content removed by SecurityFilter -->alert(1)`. With
+      // both tags gone the browser renders it as characters and never executes
+      // it, so this is cosmetic residue rather than a hole. Asserted rather
+      // than ignored so the distinction stays deliberate: a future change that
+      // brings the tags back must fail here.
+      expect(out).toContain('Dangerous content removed');
+    });
   });
 
   describe('getSecurityConfiguration()', () => {
