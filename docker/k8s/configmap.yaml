@@ -17,6 +17,19 @@
 #     b) Create /app/data/.install-complete marker file
 #   - Installation wizard will be skipped
 #
+#   - KNOW WHAT YOU ARE ACCEPTING: a subPath ConfigMap mount is read-only for
+#     the life of the deployment, not just during install. /admin/configuration
+#     fails with EROFS on EVERY save, permanently. Changing any setting then
+#     means editing this file and redeploying.
+#
+#     Both production instances started this way and moved off it for exactly
+#     that reason (geohazardwatch in 840b87c; the demo after it). They keep
+#     app-custom-config.json on the persistent volume and use manifests for
+#     infrastructure only — replicas, image, PVC, ingress, secrets.
+#
+#     Prefer Strategy 1, or seed the file onto the volume with an init
+#     container, unless you genuinely want configuration frozen in git.
+#
 # For complete list of properties, see:
 # https://github.com/jwilleke/ngdpbase/blob/master/config/app-default-config.json
 apiVersion: v1
@@ -30,9 +43,11 @@ data:
   # Custom configuration file
   # Modify these values for your deployment
   #
-  # WARNING: If this ConfigMap is mounted, the installation wizard cannot
-  # write to this file (read-only mount). You must pre-create the admin user
-  # and .install-complete marker file for the wizard to be skipped.
+  # WARNING: If this ConfigMap is mounted, NOTHING can write to this file — the
+  # mount is read-only permanently, not only during install. The installation
+  # wizard cannot write it (so pre-create the admin user and .install-complete
+  # marker to skip the wizard), AND /admin/configuration fails with EROFS on
+  # every save afterwards. See the strategy notes at the top of this file.
   app-custom-config.json: |
     {
       "ngdpbase.server.host": "0.0.0.0",

@@ -73,6 +73,10 @@ Edit each for:
 Pre-supply one only when you want to control the `@id` exactly, or ship a richer record (address, contact points) from first boot. The pattern below still works and takes precedence over seeding.
 
 > **Trade-off worth knowing.** A ConfigMap key mounted via `subPath` is **read-only**, so `/admin/organizations` cannot save edits to it — correcting the org then needs a redeploy. If you want the org editable in the UI, let the instance seed it instead, or write the file onto the data volume rather than mounting it. Deployment manifests are the wrong home for something an operator edits.
+>
+> **Do not mount `app-custom-config.json` from a ConfigMap.** The same `subPath` read-only rule applies, and it bites much harder here: **every save from `/admin/configuration` fails with `EROFS`**, so the entire admin configuration screen becomes unusable and changing any setting means editing a manifest and redeploying. Both production instances hit this and moved application config onto the persistent volume at `/app/data/config/app-custom-config.json` — geohazardwatch in `840b87c`, the demo after it.
+>
+> Put application configuration on the data volume and edit it through `/admin/configuration`, over SSH, or on the host. Keep manifests for infrastructure: replicas, image, PVC, ingress, secrets. The example below mounts only the organization file, which is a seed-once record where read-only is a defensible trade.
 
 ```yaml
 apiVersion: v1
@@ -80,13 +84,8 @@ kind: ConfigMap
 metadata:
   name: ngdpbase-config
 data:
-  app-custom-config.json: |
-    {
-      "ngdpbase.application.organization.file": "myorg.json",
-      "ngdpbase.theme.active": "default",
-      "ngdpbase.front-page": "Welcome",
-      "ngdpbase.page.provider": "versioningfileprovider"
-    }
+  # Only the seed-once organization record. Application settings belong on the
+  # data volume — see the warning above.
   myorg.json: |
     {
       "@context": "https://schema.org",
@@ -97,13 +96,10 @@ data:
     }
 ```
 
-Mount both with `subPath` in the Deployment:
+Mount it with `subPath` in the Deployment:
 
 ```yaml
 volumeMounts:
-  - name: config
-    mountPath: /app/data/config/app-custom-config.json
-    subPath: app-custom-config.json
   - name: config
     mountPath: /app/data/organizations/myorg.json
     subPath: myorg.json
@@ -112,6 +108,8 @@ volumes:
     configMap:
       name: ngdpbase-config
 ```
+
+Then point the instance at it by setting `ngdpbase.application.organization.file` to `myorg.json` in `/admin/configuration` — that key is application config, so it lives on the data volume with the rest, not in the ConfigMap above.
 
 ### 4. Override `ndots` (critical on most clusters)
 
