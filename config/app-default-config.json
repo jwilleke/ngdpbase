@@ -1005,10 +1005,6 @@
   "ngdpbase.storageLocation.categoryBasedStorage.Security": "required",
   "ngdpbase.storageLocation.categoryBasedStorage.General": "regular",
   "ngdpbase.storageLocation.categoryBasedStorage.Documentation": "regular",
-  "log4j.appender.console": "org.apache.log4j.ConsoleAppender",
-  "log4j.appender.console.layout": "org.apache.log4j.PatternLayout",
-  "log4j.appender.console.layout.ConversionPattern": "%d [%t] %p %c %x - %m%n",
-  "log4j.rootCategory": "INFO,console",
   "_comment_holidays": "Holiday access restrictions and messages",
   "ngdpbase.holidays.enabled": true,
   "ngdpbase.holidays.dates": {
