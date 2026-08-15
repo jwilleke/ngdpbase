@@ -66,7 +66,7 @@ Scanner state (2026-08-14, at v4.8.9): **ZERO open alerts, both kinds** — re-q
 
 ## 🔵 In review
 
-- [#1030](https://github.com/jwilleke/ngdpbase/issues/1030) — [FEATURE] Redact configured secrets from log output — *shipped in v4.8.9 (`5d859fb7`). Verified in a production-mode container: `Log redaction active for 3 configured secret(s)`, with empty keys reported rather than silently unprotected. Awaiting a look at a real deployment with populated secrets, where the active count should be higher*
+- *(none — #1030 closed 2026-08-15)*
 
 ## ⏸ Deferred
 
