@@ -131,6 +131,69 @@ describe('AuthManager', () => {
       expect(result).toEqual({ success: false });
     });
 
+    // #1048 — `viaToken` moved from a cast in AuthManager into `AuthResult`.
+    // The compiler is the real guard for that (test files are excluded from
+    // tsconfig, so a type assertion here would check nothing), but the
+    // pass-through itself is runtime behaviour worth pinning: the scope ceiling
+    // and page provenance both depend on this field surviving authenticate().
+    // These pass before the change too — they exist so a later refactor cannot
+    // quietly drop the field now that no cast marks the spot.
+    describe('viaToken pass-through (#1048)', () => {
+      const VIA_TOKEN = { id: 'tok_1', name: 'CI runner', scopes: ['page:write'] };
+
+      const withStubProvider = async (verifyResult) => {
+        const mockUserManager = { getUser: vi.fn().mockResolvedValue({ username: 'alice' }) };
+        const cm = makeConfigManager();
+        const manager = new AuthManager(makeEngine(cm, { UserManager: mockUserManager }));
+        await manager.initialize();
+        // Registered directly because there is no public registration API yet
+        // — that is #1050.
+        manager.providers.set('stub-token', {
+          id: 'stub-token',
+          displayName: 'Stub Token',
+          verify: vi.fn().mockResolvedValue(verifyResult)
+        });
+        return manager;
+      };
+
+      test('carries viaToken through to the caller intact', async () => {
+        const manager = await withStubProvider({ username: 'alice', viaToken: VIA_TOKEN });
+
+        const result = await manager.authenticate('stub-token', { token: 'anything' });
+
+        expect(result).toEqual({ success: true, username: 'alice', viaToken: VIA_TOKEN });
+      });
+
+      test('omits the key entirely when the provider returns none', async () => {
+        // Absent, not `viaToken: undefined` — UserManager's scope check treats
+        // any present token as a ceiling to enforce.
+        const manager = await withStubProvider({ username: 'alice' });
+
+        const result = await manager.authenticate('stub-token', { token: 'anything' });
+
+        expect(result).toEqual({ success: true, username: 'alice' });
+        expect('viaToken' in result).toBe(false);
+      });
+
+      test('drops viaToken when the user is barred from that provider', async () => {
+        const mockUserManager = {
+          getUser: vi.fn().mockResolvedValue({ username: 'alice', allowedAuthMethods: ['password'] })
+        };
+        const cm = makeConfigManager();
+        const manager = new AuthManager(makeEngine(cm, { UserManager: mockUserManager }));
+        await manager.initialize();
+        manager.providers.set('stub-token', {
+          id: 'stub-token',
+          displayName: 'Stub Token',
+          verify: vi.fn().mockResolvedValue({ username: 'alice', viaToken: VIA_TOKEN })
+        });
+
+        const result = await manager.authenticate('stub-token', { token: 'anything' });
+
+        expect(result).toEqual({ success: false });
+      });
+    });
+
     test('delegates magic-link verify to MagicLinkAuthProvider', async () => {
       const mockUserManager = {
         getUserByEmail: vi.fn().mockResolvedValue({ username: 'alice', email: 'a@b.com' })

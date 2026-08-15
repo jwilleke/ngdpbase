@@ -28,7 +28,8 @@ import type UserManager from './UserManager.js';
 import type {
   AuthProvider,
   AuthInitiateContext,
-  AuthVerifyCredentials
+  AuthVerifyCredentials,
+  ViaToken
 } from '../providers/BaseAuthProvider.js';
 import { PasswordAuthProvider } from '../providers/PasswordAuthProvider.js';
 import { MagicLinkAuthProvider } from '../providers/MagicLinkAuthProvider.js';
@@ -45,14 +46,14 @@ export interface AuthenticateResult {
   /**
    * #946 — set by token-based providers. Carries the delegating token's
    * identity and scopes so the caller can enforce the scope ceiling and stamp
-   * page provenance. Roles are deliberately NOT included: they are resolved
-   * live from the user record, so a token never holds a snapshot of authority.
+   * page provenance.
+   *
+   * #1048: references the same `ViaToken` the provider contract declares,
+   * rather than repeating the shape. The two ends of one value used to be
+   * written out twice, which is how they drifted far enough apart to need a
+   * cast between them.
    */
-  viaToken?: {
-    id: string;
-    name: string;
-    scopes: string[];
-  };
+  viaToken?: ViaToken;
 }
 
 class AuthManager extends BaseManager {
@@ -212,9 +213,10 @@ class AuthManager extends BaseManager {
       }
 
       // #946: pass through a token provider's viaToken detail, if any.
-      const viaToken = (result as { viaToken?: { id: string; name: string; scopes: string[] } }).viaToken;
-      return viaToken
-        ? { success: true, username: result.username, viaToken }
+      // #1048: read directly — `AuthResult` now declares the field, so the
+      // compiler checks both ends instead of a cast asserting one of them.
+      return result.viaToken
+        ? { success: true, username: result.username, viaToken: result.viaToken }
         : { success: true, username: result.username };
     } catch (err) {
       logger.error(`[AuthManager] Error authenticating via ${providerId}:`, err);

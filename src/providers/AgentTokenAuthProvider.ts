@@ -22,16 +22,20 @@ import type AgentTokenManager from '../managers/AgentTokenManager.js';
 import type {
   AuthProvider,
   AuthVerifyCredentials,
-  AuthResult
+  AuthResult,
+  ViaToken
 } from './BaseAuthProvider.js';
 
-/** Extra detail this provider returns alongside the username. */
+/**
+ * Extra detail this provider returns alongside the username.
+ *
+ * `viaToken` is optional on `AuthResult` (#1048) because most providers have
+ * none; here it is REQUIRED. A successful agent-token verify without token
+ * detail would be a credential with no scope ceiling attached, so narrowing it
+ * is the point of this type rather than a formality.
+ */
 export interface AgentTokenAuthResult extends AuthResult {
-  viaToken: {
-    id: string;
-    name: string;
-    scopes: string[];
-  };
+  viaToken: ViaToken;
 }
 
 export class AgentTokenAuthProvider implements AuthProvider {

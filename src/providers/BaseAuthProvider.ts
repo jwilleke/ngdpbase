@@ -39,11 +39,38 @@ export interface AuthVerifyCredentials {
 }
 
 /**
+ * Identity and authority of a delegated agent token (#946).
+ *
+ * Roles are deliberately absent: they are resolved live from the user record,
+ * so a token never carries a snapshot of authority that could outlive a change
+ * to the account.
+ */
+export interface ViaToken {
+  /** Token record id */
+  id: string;
+  /** Human-readable token name, used in logs and page provenance */
+  name: string;
+  /** Scope ceiling this token may act within */
+  scopes: string[];
+}
+
+/**
  * Returned by verify() on success.
  */
 export interface AuthResult {
   /** Username of the authenticated user */
   username: string;
+
+  /**
+   * Set by token-based providers (#946, #1048). Lets the caller enforce the
+   * token's scope ceiling and stamp page provenance.
+   *
+   * Declared here rather than read through a cast in AuthManager: the manager
+   * always passed this field along, but `AuthResult` did not admit it existed,
+   * so a provider that misspelled it or typed `scopes` wrongly still compiled
+   * and silently delivered nothing.
+   */
+  viaToken?: ViaToken;
 }
 
 /**
