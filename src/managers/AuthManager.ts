@@ -9,13 +9,21 @@
  * must be satisfied (in order) for a full login. Currently single-factor
  * only; multi-factor state management is deferred to a future issue.
  *
- * Built-in providers:
- *   - PasswordAuthProvider  (always registered)
- *   - MagicLinkAuthProvider (registered when ngdpbase.auth.magic-link.enabled)
+ * Built-in providers, each gated on its own config key and all registered
+ * through the public {@link AuthManager.registerProvider} (#1050):
+ *   - PasswordAuthProvider          (unless ngdpbase.auth.password.enabled is false)
+ *   - MagicLinkAuthProvider         (ngdpbase.auth.magic-link.enabled)
+ *   - GoogleOIDCProvider            (ngdpbase.auth.google-oidc.enabled)
+ *   - CloudflareAccessAuthProvider  (ngdpbase.auth.cloudflare-access.enabled)
+ *   - AuthentikBearerAuthProvider   (ngdpbase.auth.authentik-bearer.enabled)
+ *   - AgentTokenAuthProvider        (ngdpbase.auth.agent-token.enabled)
  *
- * Future providers (see #421, #422):
+ * Addons register through the same method, so the contributed path is the one
+ * exercised on every boot rather than a second, less-travelled one.
+ *
+ * Future providers (see #421, #448):
  *   - TotpAuthProvider
- *   - OAuthAuthProvider
+ *   - Passkey / WebAuthn
  *
  * @see {@link https://github.com/jwilleke/ngdpbase/issues/396}
  */
@@ -73,8 +81,7 @@ class AuthManager extends BaseManager {
 
     // Register password provider if enabled (default: true)
     if (configManager?.getProperty('ngdpbase.auth.password.enabled', true) !== false) {
-      this.providers.set('password', new PasswordAuthProvider(this.engine));
-      logger.debug('[AuthManager] Registered provider: password');
+      this.registerProvider(new PasswordAuthProvider(this.engine));
     }
 
     // Register magic-link provider if enabled
@@ -97,11 +104,11 @@ class AuthManager extends BaseManager {
           'ngdpbase.auth.magic-link.ttl-minutes', 15
         ) as number;
 
-        this.providers.set('magic-link', new MagicLinkAuthProvider(this.engine, {
+        this.registerProvider(new MagicLinkAuthProvider(this.engine, {
           ttlMs: ttlMinutes * 60_000,
           mailProvider: emailManager
         }));
-        logger.info(`[AuthManager] Registered provider: magic-link (transport=${emailManager.getProviderName()}, ttl=${ttlMinutes}min)`);
+        logger.info(`[AuthManager] magic-link transport=${emailManager.getProviderName()} ttl=${ttlMinutes}min`);
       }
     }
 
@@ -115,8 +122,7 @@ class AuthManager extends BaseManager {
         defaultRoles:  configManager.getProperty('ngdpbase.auth.google-oidc.default-roles', ['occupant']) as string[],
         hostedDomain:  configManager.getProperty('ngdpbase.auth.google-oidc.hd', '') as string || undefined
       };
-      this.providers.set('google-oidc', new GoogleOIDCProvider(this.engine, googleConfig));
-      logger.info('[AuthManager] Registered provider: google-oidc');
+      this.registerProvider(new GoogleOIDCProvider(this.engine, googleConfig));
     }
 
     // Register Cloudflare Access provider if enabled (#649)
@@ -135,8 +141,8 @@ class AuthManager extends BaseManager {
           defaultRole: configManager.getProperty('ngdpbase.auth.cloudflare-access.default-role', 'occupant') as string,
           groupMap: configManager.getProperty('ngdpbase.auth.cloudflare-access.group-map', {}) as Record<string, string>
         };
-        this.providers.set('cloudflare-access', new CloudflareAccessAuthProvider(this.engine, cfConfig));
-        logger.info(`[AuthManager] Registered provider: cloudflare-access (team=${teamDomain})`);
+        this.registerProvider(new CloudflareAccessAuthProvider(this.engine, cfConfig));
+        logger.info(`[AuthManager] cloudflare-access team=${teamDomain}`);
       }
     }
 
@@ -161,8 +167,8 @@ class AuthManager extends BaseManager {
           defaultRole: configManager.getProperty('ngdpbase.auth.authentik-bearer.default-role', 'occupant') as string,
           groupMap: configManager.getProperty('ngdpbase.auth.authentik-bearer.group-map', {}) as Record<string, string>
         };
-        this.providers.set('authentik-bearer', new AuthentikBearerAuthProvider(this.engine, authentikConfig));
-        logger.info(`[AuthManager] Registered provider: authentik-bearer (issuer=${issuer})`);
+        this.registerProvider(new AuthentikBearerAuthProvider(this.engine, authentikConfig));
+        logger.info(`[AuthManager] authentik-bearer issuer=${issuer}`);
       }
     }
 
@@ -171,8 +177,7 @@ class AuthManager extends BaseManager {
     // so it registers whenever enabled, with no further required config. Both
     // bearer providers may be active at once; the middleware tries each.
     if (configManager?.getProperty('ngdpbase.auth.agent-token.enabled', false)) {
-      this.providers.set('agent-token', new AgentTokenAuthProvider(this.engine));
-      logger.info('[AuthManager] Registered provider: agent-token');
+      this.registerProvider(new AgentTokenAuthProvider(this.engine));
     }
 
     // Load required-factors chain
@@ -242,6 +247,72 @@ class AuthManager extends BaseManager {
   consumeToken(providerId: string, token: string): void {
     const provider = this.providers.get(providerId);
     provider?.consumeToken?.(token);
+  }
+
+  /**
+   * Register an authentication provider (#1050).
+   *
+   * The built-ins call this during `initialize()`, so the path an addon uses is
+   * the path exercised on every boot rather than a second, less-travelled one.
+   * Config gating stays with the caller: this method decides nothing about
+   * whether a provider *should* be active, only that it is.
+   *
+   * ## Duplicate ids: first registration wins
+   *
+   * Deliberate, and the reason is security rather than tidiness. Last-wins
+   * would let an addon replace the built-in `password` provider with its own
+   * `verify()` — an auth bypass contributed by a config change. Throwing would
+   * be safe but lets one bad addon take the whole instance down at boot, and a
+   * refused provider is a smaller failure than a site that will not start. So:
+   * keep the incumbent, warn loudly, carry on.
+   *
+   * ## Late registration is allowed
+   *
+   * AuthManager initializes before AddonsManager (WikiEngine), so an addon
+   * registering during its own startup is registering late by definition. Such
+   * a provider is absent from `getRequiredFactors()` and cannot serve a request
+   * that arrives first. Both are acceptable; neither is silent.
+   *
+   * ## There is no unregisterProvider()
+   *
+   * Not an oversight. Withdrawing a provider would not invalidate the sessions
+   * already established through it, so "disabled" would mean "no new logins"
+   * while existing ones continued — which reads as revocation without being it.
+   * Honest session revocation is a larger feature than this seam, and pretending
+   * otherwise here would be worse than the gap.
+   *
+   * @param provider the provider to register
+   * @param source   attribution for logs — an addon name, or 'built-in'
+   * @returns true if registered; false if rejected as malformed or duplicate
+   */
+  registerProvider(provider: AuthProvider, source = 'built-in'): boolean {
+    // An addon can pass anything. A provider with no id would be unreachable;
+    // one with no verify() would throw inside authenticate() on a live request,
+    // which is a worse place to find out than boot.
+    if (!provider || typeof provider.id !== 'string' || provider.id.trim() === '') {
+      logger.error(`[AuthManager] Rejected provider from ${source}: missing id`);
+      return false;
+    }
+    if (typeof provider.verify !== 'function') {
+      logger.error(`[AuthManager] Rejected provider '${provider.id}' from ${source}: no verify()`);
+      return false;
+    }
+
+    if (this.providers.has(provider.id)) {
+      logger.warn(
+        `[AuthManager] Provider '${provider.id}' is already registered — ` +
+        `keeping the existing one, ignoring the registration from ${source}`
+      );
+      return false;
+    }
+
+    this.providers.set(provider.id, provider);
+    // info, not debug: which auth providers are live is a security-relevant
+    // fact about a running instance, and the boot log is where an operator
+    // checks it. Callers add a second line only when they carry config detail
+    // worth seeing (transport, issuer, team) — never a bare repeat of the id.
+    logger.info(`[AuthManager] Registered provider: ${provider.id} (${source})`);
+    return true;
   }
 
   /**

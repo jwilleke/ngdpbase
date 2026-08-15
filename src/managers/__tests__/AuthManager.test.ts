@@ -367,6 +367,98 @@ describe('AuthManager', () => {
     });
   });
 
+  // #1050 — the built-ins now register through this same method, so these
+  // cases guard the path every boot takes, not just the addon path.
+  describe('registerProvider()', () => {
+    const stub = (id: string, extra = {}) => ({
+      id, displayName: `Stub ${id}`, verify: vi.fn().mockResolvedValue(null), ...extra
+    });
+
+    const bareManager = async () => {
+      const manager = new AuthManager(makeEngine(makeConfigManager()));
+      await manager.initialize();
+      return manager;
+    };
+
+    test('registers a provider and makes it visible to the rest of the API', async () => {
+      const manager = await bareManager();
+
+      expect(manager.registerProvider(stub('addon-sso'), 'my-addon')).toBe(true);
+      expect(manager.isEnabled('addon-sso')).toBe(true);
+      expect(manager.getProviders().map((p) => p.id)).toContain('addon-sso');
+    });
+
+    test('the built-ins arrive through it — password is registered on a bare boot', async () => {
+      const manager = await bareManager();
+      expect(manager.isEnabled('password')).toBe(true);
+    });
+
+    describe('duplicate ids — first registration wins', () => {
+      test('an addon cannot replace a built-in provider', async () => {
+        // The security case for first-wins: last-wins would let a config change
+        // swap out password verification for an addon's own verify().
+        const manager = await bareManager();
+        const incumbent = manager.getProviders().find((p) => p.id === 'password');
+        const impostor = stub('password');
+
+        expect(manager.registerProvider(impostor, 'evil-addon')).toBe(false);
+        expect(manager.getProviders().find((p) => p.id === 'password')).toBe(incumbent);
+      });
+
+      test('rejects rather than throws, so one bad addon cannot fail the boot', async () => {
+        const manager = await bareManager();
+        manager.registerProvider(stub('addon-sso'), 'addon-a');
+        expect(() => manager.registerProvider(stub('addon-sso'), 'addon-b')).not.toThrow();
+      });
+    });
+
+    describe('malformed providers are refused at registration', () => {
+      test('rejects a provider with no id', async () => {
+        const manager = await bareManager();
+        expect(manager.registerProvider({ displayName: 'x', verify: vi.fn() }, 'bad')).toBe(false);
+        expect(manager.registerProvider(stub('   '), 'bad')).toBe(false);
+      });
+
+      test('rejects a provider with no verify()', async () => {
+        // Registering it would move the failure from boot to a live sign-in,
+        // which is a far worse place to discover it.
+        const manager = await bareManager();
+        expect(manager.registerProvider({ id: 'broken', displayName: 'x' }, 'bad')).toBe(false);
+        expect(manager.isEnabled('broken')).toBe(false);
+      });
+
+      test('rejects a null provider without throwing', async () => {
+        const manager = await bareManager();
+        expect(manager.registerProvider(null, 'bad')).toBe(false);
+      });
+    });
+
+    test('a late registration can authenticate like any other provider', async () => {
+      // AddonsManager initializes after AuthManager, so every addon-contributed
+      // provider is late by definition.
+      const mockUserManager = { getUser: vi.fn().mockResolvedValue({ username: 'alice' }) };
+      const manager = new AuthManager(makeEngine(makeConfigManager(), { UserManager: mockUserManager }));
+      await manager.initialize();
+
+      manager.registerProvider(
+        stub('addon-sso', { verify: vi.fn().mockResolvedValue({ username: 'alice' }) }),
+        'my-addon'
+      );
+
+      expect(await manager.authenticate('addon-sso', { token: 't' }))
+        .toEqual({ success: true, username: 'alice' });
+    });
+
+    test('backup() reports a contributed provider alongside the built-ins', async () => {
+      const manager = await bareManager();
+      manager.registerProvider(stub('addon-sso'), 'my-addon');
+
+      const backup = await manager.backup();
+      expect(backup.data.providers).toContain('addon-sso');
+      expect(backup.data.providers).toContain('password');
+    });
+  });
+
   describe('isEnabled()', () => {
     test('returns true for registered provider', async () => {
       const cm = makeConfigManager();
