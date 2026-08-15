@@ -69,7 +69,7 @@ Scanner state (2026-08-14, at v4.8.9): **ZERO open alerts, both kinds** — re-q
 - [#707](https://github.com/jwilleke/ngdpbase/issues/707) — [FEATURE] Typed footnote syntax + knowledge-graph reference index
 - [#737](https://github.com/jwilleke/ngdpbase/issues/737) — [FEATURE] NCM Phase-2: transcode/re-encode fetched embedded images (security + size hardening)
 - [#868](https://github.com/jwilleke/ngdpbase/issues/868) — [FEATURE] embeddings MIRROR index: push-on-edit vs periodic re-sync for metadata edits
-- [#898](https://github.com/jwilleke/ngdpbase/issues/898) — [BUG] Storybook route-map generation orphans a route.png attachment on every regeneration — *deferred 2026-08-15 as not mission-critical: the orphans cost disk, not correctness, since day pages render the current map. The only open `bug` in the deferred band — a conscious postponement, not a low grade. #865 Slice 3 still drains the existing pile; #872 must still bake replace-on-regen in from day one*
+- [#898](https://github.com/jwilleke/ngdpbase/issues/898) — [BUG] Storybook route-map generation orphans a route.png attachment on every regeneration — *deferred 2026-08-15 as not mission-critical: orphans cost disk, not correctness, since day pages render the current map. The only open `bug` in the deferred band — a conscious postponement, not a low grade. Measured 2026-08-15: **0 orphans repo-wide, `route.png` at 24 records all referenced** — the premise "grows with every regen" is not currently observable, 3.5 weeks after #865's quarantine (which already ran on 2026-07-21; nothing pending there). #872 must still bake replace-on-regen in from day one*
 
 ## ❓ Needs triage
 
