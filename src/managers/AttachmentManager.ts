@@ -799,10 +799,47 @@ class AttachmentManager extends BaseManager implements CatalogSource {
 
     if (!this.attachmentProvider) return null;
 
-    // Step 3: current page attachments by exact filename
+    // Steps 3 & 4: page-scoped, then global, by exact name.
+    const exact = await this.lookupAttachmentByName(src, pageName);
+    if (exact) return exact;
+
+    // Step 5 (#1051): retry with the basename when the src carries a path.
+    //
+    // Records are named by bare filename, so `Some Page/photo.jpg` matched
+    // nothing here and — worse — nothing in syncPageMentions either, which
+    // DROPS a mention it cannot resolve. A referenced attachment could lose
+    // its last mention on an unrelated save and become a #865 quarantine
+    // candidate while the page still pointed at it.
+    //
+    // Last resort, deliberately: a record genuinely named `Odd/name.jpg` is
+    // found by the exact pass above and is never shadowed by a `name.jpg`.
+    // The fallback is global for the same reason step 4 is — a bare filename
+    // already resolves across pages, so scoping the stripped form more
+    // tightly than the unstripped one would be the odd choice.
+    const basename = AttachmentManager.basenameOf(src);
+    if (basename && basename !== src) {
+      const byBasename = await this.lookupAttachmentByName(basename, pageName);
+      if (byBasename) return byBasename;
+    }
+
+    // Future steps (e.g. private folders #122) go here
+
+    return null;
+  }
+
+  /**
+   * Page-scoped then global lookup for one exact name (#1051 extraction).
+   * Both call sites need the same two steps; nothing else changed.
+   */
+  private async lookupAttachmentByName(
+    name: string,
+    pageName: string
+  ): Promise<{ url: string; mimeType: string } | null> {
+    if (!this.attachmentProvider) return null;
+
     try {
       const pageAttachments = await this.attachmentProvider.getAttachmentsForPage(pageName);
-      const match = pageAttachments.find(a => a.name === src);
+      const match = pageAttachments.find(a => a.name === name);
       if (match) {
         return {
           url: match.url || `/attachments/${match.identifier}`,
@@ -813,9 +850,8 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       // continue
     }
 
-    // Step 4: global filename search
     try {
-      const globalMatch = await this.attachmentProvider.getAttachmentByFilename(src);
+      const globalMatch = await this.attachmentProvider.getAttachmentByFilename(name);
       if (globalMatch) {
         return {
           url: globalMatch.url || `/attachments/${globalMatch.identifier}`,
@@ -826,9 +862,19 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       // continue
     }
 
-    // Future steps (e.g. private folders #122) go here
-
     return null;
+  }
+
+  /**
+   * Final path segment of a reference, or '' when there is none (#1051).
+   *
+   * Returns '' for a trailing slash so callers can skip rather than searching
+   * for an empty filename, which `getAttachmentByFilename` would answer
+   * unpredictably.
+   */
+  static basenameOf(src: string): string {
+    if (typeof src !== 'string' || !src.includes('/')) return src ?? '';
+    return src.slice(src.lastIndexOf('/') + 1);
   }
 
   /**
@@ -906,7 +952,23 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     const currentIds = new Set<string>();
     for (const filename of referencedFilenames) {
       try {
-        const attachment = await this.attachmentProvider.getAttachmentByFilename(filename);
+        let attachment = await this.attachmentProvider.getAttachmentByFilename(filename);
+
+        // #1051: a ref carrying a path (`Some Page/photo.jpg`) matches no
+        // record, since records are named by bare filename. Falling through to
+        // "unresolvable" here is not neutral — the ref is then absent from
+        // currentIds, so the detach loop below REMOVES an existing mention,
+        // orphaning an attachment the page still references and handing it to
+        // #865's cleanup as a quarantine candidate.
+        //
+        // Exact match first, so a record genuinely named `Odd/photo.jpg` wins.
+        if (!attachment) {
+          const basename = AttachmentManager.basenameOf(filename);
+          if (basename && basename !== filename) {
+            attachment = await this.attachmentProvider.getAttachmentByFilename(basename);
+          }
+        }
+
         if (attachment) currentIds.add(attachment.identifier);
       } catch {
         // unresolvable filename — skip
@@ -1009,6 +1071,10 @@ class AttachmentManager extends BaseManager implements CatalogSource {
         const refs = AttachmentManager.extractLocalAttachmentRefs(content);
         for (const ref of refs) {
           if (byFilename.has(ref)) continue;
+          // #1051: a path-prefixed ref resolves via its basename at render and
+          // sync time, so reporting it as broken here would contradict both —
+          // and send someone hunting a reference that actually works.
+          if (byFilename.has(AttachmentManager.basenameOf(ref))) continue;
           if (!brokenMap.has(ref)) brokenMap.set(ref, new Set());
           brokenMap.get(ref)!.add(pageName);
         }

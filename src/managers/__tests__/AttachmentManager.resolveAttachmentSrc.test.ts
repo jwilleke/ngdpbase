@@ -255,4 +255,87 @@ describe('AttachmentManager.resolveAttachmentSrc', () => {
       expect(result).toBeNull();
     });
   });
+
+  // #1051 — a src carrying a path component ("Some Page/photo.jpg") matched
+  // nothing, because records are named by bare filename and every lookup was
+  // exact. The same gap in syncPageMentions is the one with teeth: an
+  // unresolved ref makes it DROP the mention, orphaning a referenced
+  // attachment into a #865 quarantine candidate.
+  describe('step 5: basename fallback for a path-prefixed src', () => {
+    it('resolves via the basename when the full path matches nothing', async () => {
+      const manager = makeManager({
+        getAttachmentByFilename: vi.fn(async (name: string) =>
+          name === 'photo.jpg'
+            ? { identifier: 'id-1', name: 'photo.jpg', encodingFormat: 'image/jpeg' }
+            : null
+        )
+      });
+
+      const result = await manager.resolveAttachmentSrc('Some Page/photo.jpg', 'MyPage');
+
+      expect(result).toEqual({ url: '/attachments/id-1', mimeType: 'image/jpeg' });
+    });
+
+    it('resolves a page-scoped path against the current page first', async () => {
+      const manager = makeManager({
+        getAttachmentsForPage: vi.fn().mockResolvedValue([
+          { identifier: 'id-page', name: 'photo.jpg', encodingFormat: 'image/png' }
+        ])
+      });
+
+      const result = await manager.resolveAttachmentSrc('MyPage/photo.jpg', 'MyPage');
+
+      expect(result).toEqual({ url: '/attachments/id-page', mimeType: 'image/png' });
+    });
+
+    it('handles a multi-segment path', async () => {
+      const manager = makeManager({
+        getAttachmentByFilename: vi.fn(async (name: string) =>
+          name === 'photo.jpg' ? { identifier: 'id-1', name: 'photo.jpg' } : null
+        )
+      });
+
+      expect(await manager.resolveAttachmentSrc('a/b/c/photo.jpg', 'MyPage'))
+        .toEqual({ url: '/attachments/id-1', mimeType: '' });
+    });
+
+    it('an exact match still wins over the basename fallback', async () => {
+      // A record genuinely named "Odd/name.jpg" must not be shadowed by one
+      // named "name.jpg" — the fallback is a last resort, not a rewrite.
+      const manager = makeManager({
+        getAttachmentByFilename: vi.fn(async (name: string) => {
+          if (name === 'Odd/name.jpg') return { identifier: 'id-exact', name: 'Odd/name.jpg' };
+          if (name === 'name.jpg') return { identifier: 'id-base', name: 'name.jpg' };
+          return null;
+        })
+      });
+
+      expect(await manager.resolveAttachmentSrc('Odd/name.jpg', 'MyPage'))
+        .toEqual({ url: '/attachments/id-exact', mimeType: '' });
+    });
+
+    it('still returns null when the basename matches nothing either', async () => {
+      // The one live occurrence on jimstest is exactly this shape, so it must
+      // not start resolving to something arbitrary.
+      const manager = makeManager();
+
+      expect(await manager.resolveAttachmentSrc('Mongol Empire (1206-1368)/missing.jpg', 'MyPage'))
+        .toBeNull();
+    });
+
+    it('leaves a src with no path component on the existing path', async () => {
+      const getAttachmentByFilename = vi.fn().mockResolvedValue(null);
+      const manager = makeManager({ getAttachmentByFilename });
+
+      expect(await manager.resolveAttachmentSrc('photo.jpg', 'MyPage')).toBeNull();
+      // Exactly one lookup — no speculative second call for a src that has
+      // no path to strip.
+      expect(getAttachmentByFilename).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not treat a trailing slash as a filename', async () => {
+      const manager = makeManager();
+      expect(await manager.resolveAttachmentSrc('Some Page/', 'MyPage')).toBeNull();
+    });
+  });
 });
