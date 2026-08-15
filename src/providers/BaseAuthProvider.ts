@@ -102,4 +102,39 @@ export interface AuthProvider {
    * Only needed for token-based providers (magic link, OAuth).
    */
   consumeToken?(token: string): void;
+
+  /**
+   * Begin a redirect-based flow; returns the URL to send the browser to (#1049).
+   *
+   * Distinct from `initiate()`, which performs a side effect and returns
+   * nothing (magic-link sends an email). Here the URL *is* the result.
+   *
+   * Throws rather than returning a fallback when the flow cannot be started:
+   * there is no sensible substitute for "where should the browser go", and an
+   * empty string would send it nowhere with no error to explain why.
+   */
+  startFlow?(context: AuthInitiateContext): string;
+
+  /**
+   * Where the user was headed before this flow began, keyed by the flow's own
+   * handle — a magic-link token, an OAuth state nonce (#1049).
+   *
+   * Must be read BEFORE `consumeToken()`, which deletes the entry.
+   *
+   * Returns `'/'` rather than throwing when the handle is unknown: losing the
+   * destination degrades the landing page, it does not invalidate the sign-in,
+   * and failing the login over it would be a worse outcome than the front page.
+   */
+  getFlowRedirect?(handle: string): string;
+
+  /**
+   * Create the account behind a first-time credential (#1049).
+   *
+   * Called before `verify()` on flows that provision on first sign-in, because
+   * the account must exist before a session can name it.
+   *
+   * @returns true if an account was created or already existed; false if the
+   *   handle is unusable — which the caller should treat as a failed sign-in.
+   */
+  provisionIfNew?(handle: string): Promise<boolean>;
 }

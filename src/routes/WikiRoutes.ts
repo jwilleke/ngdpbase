@@ -5803,16 +5803,17 @@ ${panes}
       }
 
       // Read the redirect before consuming — consumeToken() deletes the entry.
-      const redirect = authManager.getMagicLinkRedirect(token);
+      const redirect = authManager.getFlowRedirect('magic-link', token);
 
       // #1026: for a link issued to an address with no account, create it now.
       // Deliberately on the POST, not the GET above — a mail scanner following
       // the link must not be able to bring an account into existence, for the
       // same reason it must not consume the token (#1019).
-      // Optional call: an AuthManager without the capability has nothing to
-      // provision, which is not a sign-in failure. Only an explicit false —
-      // the provider tried to create the account and could not — is fatal.
-      const provisioned = await authManager.provisionMagicLinkUser?.(token);
+      // #1049: undefined means the provider has nothing to provision, which is
+      // not a sign-in failure. Only an explicit false — the provider tried to
+      // create the account and could not — is fatal. That distinction used to
+      // rest on the method being absent; it is now a documented return value.
+      const provisioned = await authManager.provisionIfNew('magic-link', token);
       if (provisioned === false) {
         return res.redirect('/login?error=Link+expired+or+already+used');
       }
@@ -5855,7 +5856,7 @@ ${panes}
         return res.redirect('/login?error=Google+sign-in+not+enabled');
       }
       const redirect = (req.body.redirect as string) || '/';
-      const authUrl = authManager.initiateGoogleOIDC(redirect);
+      const authUrl = authManager.startFlow('google-oidc', { redirect });
       res.redirect(authUrl);
     } catch (err: unknown) {
       logger.error('Error initiating Google OIDC:', err);
@@ -5880,7 +5881,7 @@ ${panes}
       }
 
       // Get redirect URL before consuming state (state deleted in consumeToken)
-      const redirect = authManager.getGoogleOIDCRedirect(state);
+      const redirect = authManager.getFlowRedirect('google-oidc', state);
 
       const result = await authManager.authenticate('google-oidc', {
         token: code,

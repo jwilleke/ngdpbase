@@ -4,7 +4,7 @@
  * Registered by AuthManager when `ngdpbase.auth.google-oidc.enabled` is true.
  *
  * Flow:
- *   1. generateAuthUrl() — build Google authorization URL, store state nonce
+ *   1. startFlow() — build Google authorization URL, store state nonce
  *   2. verify()          — exchange code for ID token, validate JWT, resolve user
  *   3. consumeToken()    — delete state entry after session is created
  *
@@ -64,10 +64,15 @@ export class GoogleOIDCProvider implements AuthProvider {
   }
 
   /**
-   * Generate the Google authorization URL and store a state nonce.
-   * Returns the URL the route handler should redirect the browser to.
+   * Begin the Google sign-in flow: store a state nonce and return the
+   * authorization URL the route should redirect the browser to (#1049).
+   *
+   * Named `startFlow` for the interface capability rather than for Google.
+   * Note the call on the last line is the google-auth-library client's own
+   * `generateAuthUrl` — this method used to share that name, which read as if
+   * it were a thin passthrough when it also mints and stores the nonce.
    */
-  generateAuthUrl(redirect: string = '/'): string {
+  startFlow({ redirect = '/' }: { redirect?: string } = {}): string {
     const nonce = crypto.randomBytes(16).toString('hex');
     this.states.set(nonce, {
       nonce,
@@ -89,10 +94,12 @@ export class GoogleOIDCProvider implements AuthProvider {
   }
 
   /**
-   * Returns the redirect URL stored for a given state nonce.
-   * Used by the callback route handler.
+   * Where the user was headed before sign-in began, keyed by state nonce (#1049).
+   *
+   * Same capability MagicLinkAuthProvider answers keyed by its token; shared
+   * name so AuthManager dispatches rather than carrying one method per provider.
    */
-  getStateRedirect(nonce: string): string {
+  getFlowRedirect(nonce: string): string {
     return this.states.get(nonce)?.redirect ?? '/';
   }
 

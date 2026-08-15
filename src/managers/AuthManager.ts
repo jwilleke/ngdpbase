@@ -245,46 +245,57 @@ class AuthManager extends BaseManager {
   }
 
   /**
-   * Get the redirect URL stored with a magic-link token.
-   * Returns '/' if provider or token not found.
-   */
-  getMagicLinkRedirect(token: string): string {
-    const provider = this.providers.get('magic-link') as MagicLinkAuthProvider | undefined;
-    return provider?.getTokenRedirect(token) ?? '/';
-  }
-
-  /**
-   * Create the account behind a new-user magic-link token (#1026).
+   * Begin a redirect-based flow; returns the URL to send the browser to (#1049).
    *
-   * Must be called before `authenticate('magic-link', …)` on the completing
-   * POST, because the account has to exist before a session names it. No-op
-   * for a token belonging to an existing user.
+   * Throws when the provider is absent or cannot start a flow, deliberately
+   * and unlike {@link getFlowRedirect} below. There is no sensible fallback for
+   * "where should the browser go" — returning `'/'` would bounce the user back
+   * to the page they just left with no error to explain it, which reads as the
+   * button being broken. Callers guard with `isEnabled()` first.
+   */
+  startFlow(providerId: string, context: AuthInitiateContext = {}): string {
+    const provider = this.providers.get(providerId);
+    if (!provider?.startFlow) {
+      throw new Error(`Auth provider '${providerId}' cannot start a redirect flow`);
+    }
+    return provider.startFlow(context);
+  }
+
+  /**
+   * Where the user was headed before the flow began, keyed by the flow's own
+   * handle — a magic-link token, an OAuth state nonce (#1049).
    *
-   * @returns false if the token is unusable — treat as a failed sign-in
+   * Must be called BEFORE `consumeToken()`, which deletes the entry.
+   *
+   * Falls back to `'/'` rather than throwing, deliberately and unlike
+   * {@link startFlow} above: losing the destination costs the user a redirect
+   * to the front page, while failing the sign-in over it would cost them the
+   * login itself.
    */
-  async provisionMagicLinkUser(token: string): Promise<boolean> {
-    const provider = this.providers.get('magic-link') as MagicLinkAuthProvider | undefined;
-    if (!provider) return false;
-    return provider.provisionIfNew(token);
+  getFlowRedirect(providerId: string, handle: string): string {
+    const provider = this.providers.get(providerId);
+    return provider?.getFlowRedirect?.(handle) ?? '/';
   }
 
   /**
-   * Generate Google OIDC authorization URL and store state nonce.
-   * Returns the URL to redirect the browser to.
+   * Create the account behind a first-time credential (#1026, #1049).
+   *
+   * Must be called before `authenticate(providerId, …)` on the completing
+   * request, because the account has to exist before a session names it.
+   *
+   * Three outcomes, and the caller must tell them apart:
+   *   - `true`  — account created, or already existed
+   *   - `false` — the provider tried and could not; treat as a failed sign-in
+   *   - `undefined` — nothing to provision here, which is not a failure
+   *
+   * The previous `provisionMagicLinkUser` returned `false` for a missing
+   * provider, conflating "no such capability" with "tried and failed". The end
+   * state was the same only because `authenticate()` then failed anyway.
    */
-  initiateGoogleOIDC(redirect: string = '/'): string {
-    const provider = this.providers.get('google-oidc') as GoogleOIDCProvider | undefined;
-    if (!provider) throw new Error('Google OIDC provider not registered');
-    return provider.generateAuthUrl(redirect);
-  }
-
-  /**
-   * Get the redirect URL stored with a Google OIDC state nonce.
-   * Returns '/' if provider or nonce not found.
-   */
-  getGoogleOIDCRedirect(nonce: string): string {
-    const provider = this.providers.get('google-oidc') as GoogleOIDCProvider | undefined;
-    return provider?.getStateRedirect(nonce) ?? '/';
+  async provisionIfNew(providerId: string, handle: string): Promise<boolean | undefined> {
+    const provider = this.providers.get(providerId);
+    if (!provider?.provisionIfNew) return undefined;
+    return provider.provisionIfNew(handle);
   }
 
   /** Returns the ordered list of required auth factors from config. */

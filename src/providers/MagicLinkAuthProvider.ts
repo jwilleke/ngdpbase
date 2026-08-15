@@ -185,9 +185,16 @@ export class MagicLinkAuthProvider implements AuthProvider {
   }
 
   /**
-   * Returns the redirect URL stored with the token (for use by the route handler).
+   * Where the user was headed before the link was issued (#1049).
+   *
+   * Named for the capability rather than the mechanism: GoogleOIDCProvider
+   * answers the same question keyed by a state nonce, and the two used to be
+   * `getTokenRedirect` / `getStateRedirect`, which is why AuthManager needed a
+   * method per provider to ask it.
+   *
+   * Must be read BEFORE consumeToken(), which deletes the entry.
    */
-  getTokenRedirect(token: string): string {
+  getFlowRedirect(token: string): string {
     return this.tokens.get(token)?.redirect || '/';
   }
 

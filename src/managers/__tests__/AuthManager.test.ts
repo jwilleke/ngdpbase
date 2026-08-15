@@ -257,29 +257,113 @@ describe('AuthManager', () => {
     });
   });
 
-  describe('getMagicLinkRedirect()', () => {
-    test('returns "/" when magic-link provider not registered', async () => {
+  // #1049 — one dispatcher replaces getMagicLinkRedirect + getGoogleOIDCRedirect.
+  describe('getFlowRedirect()', () => {
+    test('returns "/" when the provider is not registered', async () => {
       const cm = makeConfigManager({ magicLinkEnabled: false });
       const manager = new AuthManager(makeEngine(cm));
       await manager.initialize();
-      expect(manager.getMagicLinkRedirect('sometoken')).toBe('/');
+      expect(manager.getFlowRedirect('magic-link', 'sometoken')).toBe('/');
+      expect(manager.getFlowRedirect('google-oidc', 'nonce')).toBe('/');
     });
 
-    test('returns token redirect from registered provider', async () => {
+    test('returns "/" for an unknown handle on a registered provider', async () => {
       const cm = makeConfigManager({ magicLinkEnabled: true });
       const manager = new AuthManager(makeEngine(cm));
       await manager.initialize();
-      const redirect = manager.getMagicLinkRedirect('no-such-token');
-      expect(typeof redirect).toBe('string');
+      expect(manager.getFlowRedirect('magic-link', 'no-such-token')).toBe('/');
     });
-  });
 
-  describe('getGoogleOIDCRedirect()', () => {
-    test('returns "/" when google-oidc provider not registered', async () => {
+    test('returns "/" rather than throwing for a provider without the capability', async () => {
+      // password has no flow to redirect back into. Degrading to the front page
+      // is the deliberate choice here — see startFlow() for the opposite one.
       const cm = makeConfigManager();
       const manager = new AuthManager(makeEngine(cm));
       await manager.initialize();
-      expect(manager.getGoogleOIDCRedirect('nonce')).toBe('/');
+      expect(manager.getFlowRedirect('password', 'anything')).toBe('/');
+    });
+
+    test('dispatches to the named provider, carrying the stored destination', async () => {
+      const cm = makeConfigManager();
+      const manager = new AuthManager(makeEngine(cm));
+      await manager.initialize();
+      manager.providers.set('stub-flow', {
+        id: 'stub-flow',
+        displayName: 'Stub Flow',
+        verify: vi.fn(),
+        getFlowRedirect: vi.fn().mockReturnValue('/dashboard')
+      });
+
+      expect(manager.getFlowRedirect('stub-flow', 'handle-1')).toBe('/dashboard');
+      expect(manager.providers.get('stub-flow').getFlowRedirect).toHaveBeenCalledWith('handle-1');
+    });
+  });
+
+  // #1049 — throws where getFlowRedirect falls back, deliberately: there is no
+  // sensible substitute for "where should the browser go".
+  describe('startFlow()', () => {
+    test('throws when the provider is not registered', async () => {
+      const cm = makeConfigManager();
+      const manager = new AuthManager(makeEngine(cm));
+      await manager.initialize();
+      expect(() => manager.startFlow('google-oidc', { redirect: '/' }))
+        .toThrow(/cannot start a redirect flow/);
+    });
+
+    test('throws when a registered provider has no startFlow', async () => {
+      const cm = makeConfigManager();
+      const manager = new AuthManager(makeEngine(cm));
+      await manager.initialize();
+      expect(() => manager.startFlow('password', {})).toThrow(/cannot start a redirect flow/);
+    });
+
+    test('returns the provider URL and passes the context through', async () => {
+      const cm = makeConfigManager();
+      const manager = new AuthManager(makeEngine(cm));
+      await manager.initialize();
+      const startFlow = vi.fn().mockReturnValue('https://idp.example/authorize');
+      manager.providers.set('stub-flow', {
+        id: 'stub-flow', displayName: 'Stub Flow', verify: vi.fn(), startFlow
+      });
+
+      expect(manager.startFlow('stub-flow', { redirect: '/dashboard' }))
+        .toBe('https://idp.example/authorize');
+      expect(startFlow).toHaveBeenCalledWith({ redirect: '/dashboard' });
+    });
+  });
+
+  // #1049 — three-state on purpose. The old provisionMagicLinkUser returned
+  // false for a missing provider, conflating "no such capability" with "tried
+  // and failed"; the route treats only false as fatal.
+  describe('provisionIfNew()', () => {
+    test('returns undefined when the provider is not registered', async () => {
+      const cm = makeConfigManager({ magicLinkEnabled: false });
+      const manager = new AuthManager(makeEngine(cm));
+      await manager.initialize();
+      expect(await manager.provisionIfNew('magic-link', 'tok')).toBeUndefined();
+    });
+
+    test('returns undefined when the provider cannot provision', async () => {
+      const cm = makeConfigManager();
+      const manager = new AuthManager(makeEngine(cm));
+      await manager.initialize();
+      expect(await manager.provisionIfNew('password', 'tok')).toBeUndefined();
+    });
+
+    test('passes the provider verdict through unchanged', async () => {
+      const cm = makeConfigManager();
+      const manager = new AuthManager(makeEngine(cm));
+      await manager.initialize();
+      manager.providers.set('stub-flow', {
+        id: 'stub-flow',
+        displayName: 'Stub Flow',
+        verify: vi.fn(),
+        provisionIfNew: vi.fn().mockResolvedValue(false)
+      });
+
+      // false must survive as false — the route redirects the sign-in away on
+      // it, and coercing it to undefined would let a failed provision through.
+      expect(await manager.provisionIfNew('stub-flow', 'tok')).toBe(false);
     });
   });
 

@@ -141,14 +141,18 @@ const mockExportManager = {
   saveExport: vi.fn().mockResolvedValue('/tmp/export.html')
 };
 
+// #1049: the four provider-specific methods collapsed into three dispatchers
+// taking a providerId, so the two redirect mocks are now one — which is the
+// point of the change. Assertions that care which flow was asked must check
+// the first argument rather than relying on separate mock identities.
 const mockAuthManager = {
   isEnabled: vi.fn().mockReturnValue(false),
   authenticate: vi.fn().mockResolvedValue({ success: true, username: 'testuser' }),
   initiate: vi.fn().mockResolvedValue(undefined),
-  getMagicLinkRedirect: vi.fn().mockReturnValue('/'),
+  getFlowRedirect: vi.fn().mockReturnValue('/'),
+  provisionIfNew: vi.fn().mockResolvedValue(undefined),
   consumeToken: vi.fn(),
-  initiateGoogleOIDC: vi.fn().mockReturnValue('https://accounts.google.com/o/oauth2/auth'),
-  getGoogleOIDCRedirect: vi.fn().mockReturnValue('/')
+  startFlow: vi.fn().mockReturnValue('https://accounts.google.com/o/oauth2/auth')
 };
 
 let includeAuthManager = true;
@@ -295,7 +299,7 @@ function resetMocks() {
   mockAuthManager.isEnabled.mockReturnValue(false);
   mockAuthManager.authenticate.mockResolvedValue({ success: true, username: 'testuser' });
   mockAuthManager.initiate.mockResolvedValue(undefined);
-  mockAuthManager.getMagicLinkRedirect.mockReturnValue('/');
+  mockAuthManager.getFlowRedirect.mockReturnValue('/');
   mockAuthManager.consumeToken.mockImplementation(() => {});
 
   mockConfigManager.getProperty.mockImplementation((key: string, defaultValue: unknown) => {
@@ -518,7 +522,7 @@ describe('WikiRoutes — coverage batch 14', () => {
     test('#1019 — valid token renders the confirmation page instead of logging in', async () => {
       mockUserContext = null;
       mockAuthManager.authenticate.mockResolvedValue({ success: true, username: 'testuser' });
-      mockAuthManager.getMagicLinkRedirect.mockReturnValue('/dashboard');
+      mockAuthManager.getFlowRedirect.mockReturnValue('/dashboard');
       const res = await request(app).get('/auth/magic-link/verify?token=valid-token');
       // Used to be a 302 straight into a session — that redirect IS the bug.
       expect(res.status).toBe(200);
@@ -536,7 +540,7 @@ describe('WikiRoutes — coverage batch 14', () => {
       mockUserContext = null;
       mockAuthManager.consumeToken.mockClear();
       mockAuthManager.authenticate.mockResolvedValue({ success: true, username: 'testuser' });
-      mockAuthManager.getMagicLinkRedirect.mockReturnValue('/dashboard');
+      mockAuthManager.getFlowRedirect.mockReturnValue('/dashboard');
 
       // Scanner pre-fetches the link, twice for good measure.
       await request(app).get('/auth/magic-link/verify?token=valid-token');
@@ -593,7 +597,7 @@ describe('WikiRoutes — coverage batch 14', () => {
       mockUserContext = null;
       mockAuthManager.consumeToken.mockClear();
       mockAuthManager.authenticate.mockResolvedValue({ success: true, username: 'testuser' });
-      mockAuthManager.getMagicLinkRedirect.mockReturnValue('/dashboard');
+      mockAuthManager.getFlowRedirect.mockReturnValue('/dashboard');
       const res = await request(app)
         .post('/auth/magic-link/verify')
         .set('x-csrf-token', 'test-csrf-token')

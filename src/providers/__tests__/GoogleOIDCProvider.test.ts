@@ -62,11 +62,11 @@ describe('GoogleOIDCProvider', () => {
     provider = new GoogleOIDCProvider(makeEngine(userManager), defaultConfig);
   });
 
-  // ── generateAuthUrl ──────────────────────────────────────────────────────────
+  // ── startFlow ─────────────────────────────────────────────────────────────
 
-  describe('generateAuthUrl()', () => {
+  describe('startFlow()', () => {
     test('returns a Google authorization URL', () => {
-      const url = provider.generateAuthUrl('/dashboard');
+      const url = provider.startFlow({ redirect: '/dashboard' });
       expect(url).toBe('https://accounts.google.com/o/oauth2/auth?...');
       expect(mockGenerateAuthUrl).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -77,8 +77,8 @@ describe('GoogleOIDCProvider', () => {
     });
 
     test('stores a state nonce for each call', () => {
-      provider.generateAuthUrl('/a');
-      provider.generateAuthUrl('/b');
+      provider.startFlow({ redirect: '/a' });
+      provider.startFlow({ redirect: '/b' });
       expect(provider.getStateCount()).toBe(2);
     });
 
@@ -87,36 +87,36 @@ describe('GoogleOIDCProvider', () => {
         makeEngine(userManager),
         { ...defaultConfig, hostedDomain: 'example.com' }
       );
-      p.generateAuthUrl('/');
+      p.startFlow({ redirect: '/' });
       expect(mockGenerateAuthUrl).toHaveBeenCalledWith(
         expect.objectContaining({ hd: 'example.com' })
       );
     });
 
     test('does not include hd param when hostedDomain is unset', () => {
-      provider.generateAuthUrl('/');
+      provider.startFlow({ redirect: '/' });
       const call = mockGenerateAuthUrl.mock.calls[0][0];
       expect(call).not.toHaveProperty('hd');
     });
   });
 
-  // ── getStateRedirect ─────────────────────────────────────────────────────────
+  // ── getFlowRedirect ─────────────────────────────────────────────────────────
 
-  describe('getStateRedirect()', () => {
+  describe('getFlowRedirect()', () => {
     test('returns stored redirect for a valid nonce', () => {
-      // Capture the nonce via generateAuthUrl state side-effect
+      // Capture the nonce via startFlow state side-effect
       let capturedNonce;
       mockGenerateAuthUrl.mockImplementation((params) => {
         capturedNonce = params.state;
         return 'https://google.com/...';
       });
 
-      provider.generateAuthUrl('/target');
-      expect(provider.getStateRedirect(capturedNonce)).toBe('/target');
+      provider.startFlow({ redirect: '/target' });
+      expect(provider.getFlowRedirect(capturedNonce)).toBe('/target');
     });
 
     test('returns "/" for unknown nonce', () => {
-      expect(provider.getStateRedirect('nonexistent')).toBe('/');
+      expect(provider.getFlowRedirect('nonexistent')).toBe('/');
     });
   });
 
@@ -130,14 +130,14 @@ describe('GoogleOIDCProvider', () => {
         return 'https://google.com/...';
       });
 
-      provider.generateAuthUrl('/');
+      provider.startFlow({ redirect: '/' });
       expect(provider.getStateCount()).toBe(1);
       provider.consumeToken(capturedNonce);
       expect(provider.getStateCount()).toBe(0);
     });
 
     test('no-op for unknown nonce', () => {
-      provider.generateAuthUrl('/');
+      provider.startFlow({ redirect: '/' });
       provider.consumeToken('unknown');
       expect(provider.getStateCount()).toBe(1);
     });
@@ -169,7 +169,7 @@ describe('GoogleOIDCProvider', () => {
         return 'https://google.com/...';
       });
 
-      provider.generateAuthUrl('/');
+      provider.startFlow({ redirect: '/' });
 
       // Manually expire the state entry
       const statesMap = provider['states'];
@@ -192,7 +192,7 @@ describe('GoogleOIDCProvider', () => {
         capturedNonce = params.state;
         return 'https://google.com/...';
       });
-      provider.generateAuthUrl('/');
+      provider.startFlow({ redirect: '/' });
     });
 
     test('returns null when getToken() throws', async () => {
@@ -239,7 +239,7 @@ describe('GoogleOIDCProvider', () => {
         capturedNonce = params.state;
         return 'https://google.com/...';
       });
-      provider.generateAuthUrl('/');
+      provider.startFlow({ redirect: '/' });
       setupValidToken();
     });
 
@@ -281,7 +281,7 @@ describe('GoogleOIDCProvider', () => {
         ownNonce = params.state;
         return 'https://google.com/...';
       });
-      p.generateAuthUrl('/');
+      p.startFlow({ redirect: '/' });
 
       const result = await p.verify({ token: 'code', state: ownNonce });
       expect(result).toBeNull();
@@ -344,7 +344,7 @@ describe('GoogleOIDCProvider', () => {
         ownNonce = params.state;
         return 'https://google.com/...';
       });
-      p.generateAuthUrl('/');
+      p.startFlow({ redirect: '/' });
 
       userManager.getUserByEmail.mockResolvedValue(undefined);
       userManager.getUser.mockResolvedValue(undefined);
