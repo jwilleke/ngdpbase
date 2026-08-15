@@ -46,7 +46,10 @@ Scanner state (2026-08-14, at v4.8.9): **ZERO open alerts, both kinds** — re-q
 
 ## 🟡 P2
 
-- [#1045](https://github.com/jwilleke/ngdpbase/issues/1045) — [FEATURE] AuthManager: make the provider seam extensible — *registration API, no per-provider methods on the manager, `viaToken` in the interface. Nothing broken; the cost is per new provider*
+- [#1045](https://github.com/jwilleke/ngdpbase/issues/1045) — [FEATURE] AuthManager: make the provider seam extensible — *parent context only; decomposed into #1048, #1049, #1050. Close when they land*
+- [#1048](https://github.com/jwilleke/ngdpbase/issues/1048) — [FEATURE] AuthManager: declare `viaToken` in `AuthResult` instead of casting for it — *smallest of the three and strictly additive; `AuthenticateResult` already declares the field, only the provider-side interface is missing it*
+- [#1049](https://github.com/jwilleke/ngdpbase/issues/1049) — [FEATURE] AuthManager: name `startFlow`/`getFlowRedirect`/`provisionIfNew` in the interface so the manager dispatches instead of downcasting — *4 manager methods collapse to 2; only 4 call sites, all in WikiRoutes.ts*
+- [#1050](https://github.com/jwilleke/ngdpbase/issues/1050) — [FEATURE] AuthManager: public `registerProvider()` so addons can contribute an auth provider — *init order already permits it (AuthManager at WikiEngine.ts:245, AddonsManager at :292) and `registerStylesheet`/`registerDashboardCard` are the same shape*
 - [#1028](https://github.com/jwilleke/ngdpbase/issues/1028) — [FEATURE] Config cleanup — remove dead keys and stop documenting them as live — *`log4j.*` slice shipped in v4.8.9 (`14cc7264`). ~108 reader-less keys remain, and they need triage against dynamically-constructed key names — the part where a naive sweep deletes something live*
 - [#1021](https://github.com/jwilleke/ngdpbase/issues/1021) — [FEATURE] Magic link: close the non-atomic verify→consume window — *do NOT start in isolation: the issue's own body says the GET-consumption bug must land first or this work is wasted*
 - [#1022](https://github.com/jwilleke/ngdpbase/issues/1022) — [FEATURE] Magic link: optional device/state binding + record IP and User-Agent at redemption
