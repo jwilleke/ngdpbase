@@ -28,6 +28,7 @@ Scanner state (2026-08-14, at v4.8.9): **ZERO open alerts, both kinds** — re-q
 
 ## 🟡 P2
 
+- [#1051](https://github.com/jwilleke/ngdpbase/issues/1051) — [FEATURE] Attachment `src` with a path component resolves to nothing — add a basename fallback — *filed for latent risk, not current breakage: only 1 path-prefixed ref in 17,908 current pages and its attachment does not exist anyway. Teeth are in the interaction with #865 — an unresolved ref makes `syncPageMentions` DROP the mention, orphaning a referenced attachment into a quarantine candidate. Deliberately `enhancement` not `bug`, so P2 is honest rather than a mis-grade*
 - [#1028](https://github.com/jwilleke/ngdpbase/issues/1028) — [FEATURE] Config cleanup — remove dead keys and stop documenting them as live — *`log4j.*` slice shipped in v4.8.9 (`14cc7264`). ~108 reader-less keys remain, and they need triage against dynamically-constructed key names — the part where a naive sweep deletes something live*
 - [#1021](https://github.com/jwilleke/ngdpbase/issues/1021) — [FEATURE] Magic link: close the non-atomic verify→consume window — *do NOT start in isolation: the issue's own body says the GET-consumption bug must land first or this work is wasted*
 - [#1022](https://github.com/jwilleke/ngdpbase/issues/1022) — [FEATURE] Magic link: optional device/state binding + record IP and User-Agent at redemption
