@@ -40,6 +40,7 @@ import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../
 import { stringifyJsonLdForScript, wantsJsonLd } from '../utils/buildPageJsonLd.js';
 import { articleToPageJsonLd } from '../utils/articleToPageJsonLd.js';
 import { buildSocialMeta } from '../utils/buildSocialMeta.js';
+import { buildKeywordPool } from '../utils/buildKeywordPool.js';
 import {
   buildSitemapXml,
   buildSitemapIndexXml,
@@ -3012,6 +3013,9 @@ ${panes}
         templates: templates,
         systemCategories: systemCategories,
         userKeywords: userKeywords,
+        // #1053: the suggestion pool is built here, not in the template, so
+        // the page editors and the media editor cannot drift apart again.
+        keywordPool: buildKeywordPool(userKeywords, await this.getObservedUserKeywords()),
         userKeywordSuggestions: await this.getObservedUserKeywords(),
         // #883: recency-weighted keyword sets from this author's recent pages.
         keywordSetSuggestions: await this.getSuggestedKeywordSetsForUser(
@@ -3507,6 +3511,8 @@ ${panes}
         selectedCategories: selectedCategories,
         userKeywords: userKeywords,
         selectedUserKeywords: selectedUserKeywords,
+        // #1053: see the create-page route — one shared pool builder.
+        keywordPool: buildKeywordPool(userKeywords, await this.getObservedUserKeywords()),
         userKeywordSuggestions: await this.getObservedUserKeywords(),
         // #883: recency-weighted keyword sets from this author's recent pages,
         // excluding keywords already on this page and this page itself.
@@ -15692,9 +15698,24 @@ ${description}
 
       const commonData = await this.getCommonTemplateData(req);
       const canEdit = !!wikiContext.userContext && (await wikiContext.hasPermission('asset-edit'));
-      // Keywords-field typeahead suggests the configured user-keywords catalog
-      // (same source as the page editor's keyword dropdown).
+      // #1053: the keywords field now offers the SAME suggestions as the page
+      // editors. The comment here used to claim parity — "same source as the
+      // page editor's keyword dropdown" — but it only ever read the catalog,
+      // while the page editors merged in keywords observed on real pages
+      // (#897). On jimstest that was 110 suggestions here against 313 there.
+      // Both now go through buildKeywordPool.
       const userKeywords = canEdit ? (await this.getUserKeywordsWithDescriptions()).map(k => k.label) : [];
+      const keywordPool = canEdit
+        ? buildKeywordPool(userKeywords, await this.getObservedUserKeywords())
+        : [];
+      // #883 one-click keyword sets, previously page-only for no reason other
+      // than the widget having been copied rather than shared.
+      const keywordSetSuggestions = canEdit
+        ? await this.getSuggestedKeywordSetsForUser(
+          (commonData as { user?: { username?: string } }).user?.username,
+          Array.isArray(item?.metadata?.keywords) ? item.metadata.keywords as string[] : []
+        )
+        : [];
       return res.render('media-item', {
         ...commonData,
         wikiContext,
@@ -15706,6 +15727,8 @@ ${description}
         keywordPageExists,
         canEdit,
         userKeywords,
+        keywordPool,
+        keywordSetSuggestions,
         title: `Media — ${item.filename}`
       });
     } catch (err: unknown) {

@@ -50,17 +50,9 @@
                             // _basicEditor.ejs). No cap; bucket-reserved terms excluded
                             // from suggestions, self-correcting on save if typed.
                             const _kwSkip = ['private', 'draft', 'review', 'published', 'capture'];
-                            const _kwCatalogLabels = (Array.isArray(userKeywords) ? userKeywords : [])
-                                .map(kw => typeof kw === 'object' ? (kw.label || kw.id) : kw)
-                                .filter(l => l && !_kwSkip.includes(String(l).toLowerCase()));
-                            const _kwObserved = (typeof userKeywordSuggestions !== 'undefined' && Array.isArray(userKeywordSuggestions) ? userKeywordSuggestions : [])
-                                .filter(l => l && !_kwSkip.includes(String(l).toLowerCase()));
-                            // Case-insensitive dedupe, first-seen casing wins ('journal' from
-                            // migrated entries vs 'Journal' from seed pages must not both appear).
-                            const _kwSeen = new Set();
-                            const _kwPool = [..._kwCatalogLabels, ..._kwObserved]
-                                .filter(l => { const k = String(l).toLowerCase(); if (_kwSeen.has(k)) return false; _kwSeen.add(k); return true; })
-                                .sort((a, b) => String(a).localeCompare(String(b)));
+                            // #1053: the pool is built server-side by buildKeywordPool so this
+                            // editor and the media item editor cannot drift apart.
+                            const _kwPool = (typeof keywordPool !== 'undefined' && Array.isArray(keywordPool)) ? keywordPool : [];
                         %>
                         <label style="font-weight:bold;" for="userKeywordsInput">User Keywords (comma-separated):</label>
                         <div class="position-relative">
@@ -71,7 +63,7 @@
                         </div>
                         <script type="application/json" id="userKeywordsPool"><%- JSON.stringify(_kwPool) %></script>
                         <script src="/js/keyword-typeahead.js" defer></script>
-                        <%- include('_suggested-keywords', { keywordSetSuggestions: (typeof keywordSetSuggestions !== 'undefined' ? keywordSetSuggestions : []) }) %>
+                        <%- include('_suggested-keywords', { targetInputId: 'userKeywordsInput', keywordSetSuggestions: (typeof keywordSetSuggestions !== 'undefined' ? keywordSetSuggestions : []) }) %>
                     </div>
                 </div>
 

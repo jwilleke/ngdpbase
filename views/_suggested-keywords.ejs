@@ -1,13 +1,20 @@
 <%
   // #883: one-click keyword-set suggestions from the author's recent pages.
   // Expects `keywordSetSuggestions`: [{ keywords: string[], source, score }].
-  // Appends a clicked set's keywords into #userKeywordsInput (deduped).
+  // Appends a clicked set's keywords into the target input (deduped).
+  //
+  // #1053: the target input id is now a parameter. It was hardcoded to
+  // `userKeywordsInput`, which is why this could not be reused by the media
+  // item editor — its input is `mediaEditKeywords`. Defaults preserve every
+  // existing caller.
+  const _kwTargetId = (typeof targetInputId !== 'undefined' && targetInputId) ? targetInputId : 'userKeywordsInput';
+  const _kwSetsId = _kwTargetId + 'SuggestSets';
   const _kwSets = (typeof keywordSetSuggestions !== 'undefined' && Array.isArray(keywordSetSuggestions))
     ? keywordSetSuggestions.filter(s => s && Array.isArray(s.keywords) && s.keywords.length)
     : [];
 %>
 <% if (_kwSets.length) { %>
-<div class="mt-2" id="kwSuggestSets">
+<div class="mt-2 kw-suggest-sets" id="<%= _kwSetsId %>" data-kw-target="<%= _kwTargetId %>">
   <small class="text-muted d-block mb-1"><i class="fas fa-lightbulb"></i> Suggested from your recent pages:</small>
   <% _kwSets.forEach(function(s){ %>
     <button type="button"
@@ -20,9 +27,10 @@
 </div>
 <script>
 (function () {
-  var box = document.getElementById('userKeywordsInput');
-  var wrap = document.getElementById('kwSuggestSets');
-  if (!box || !wrap || wrap.dataset.bound) return;
+  var wrap = document.getElementById('<%= _kwSetsId %>');
+  if (!wrap || wrap.dataset.bound) return;
+  var box = document.getElementById(wrap.dataset.kwTarget);
+  if (!box) return;
   wrap.dataset.bound = '1';
   function current() {
     return box.value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);

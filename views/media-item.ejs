@@ -124,8 +124,16 @@
                                                data-kw-typeahead data-kw-menu="mediaEditKeywordsSuggest" data-kw-pool="mediaKeywordsPool"
                                                value="<%= (item.metadata && item.metadata.keywords) ? (Array.isArray(item.metadata.keywords) ? item.metadata.keywords : [item.metadata.keywords]).join(', ') : '' %>">
                                         <div class="dropdown-menu w-100" id="mediaEditKeywordsSuggest" style="max-height:12rem;overflow-y:auto;"></div>
-                                        <script type="application/json" id="mediaKeywordsPool"><%- JSON.stringify(typeof userKeywords !== 'undefined' ? userKeywords : []) %></script>
+                                        <%# #1053: was `userKeywords` — the catalog alone, which is why this
+                                            field suggested 110 terms where the page editors suggested 313 from
+                                            the same data. `keywordPool` is the shared server-built list. %>
+                                        <script type="application/json" id="mediaKeywordsPool"><%- JSON.stringify(typeof keywordPool !== 'undefined' ? keywordPool : (typeof userKeywords !== 'undefined' ? userKeywords : [])) %></script>
                                         <script src="/js/keyword-typeahead.js" defer></script>
+                                        <%# #1053: one-click keyword sets (#883), previously page-only. %>
+                                        <%- include('_suggested-keywords', {
+                                          targetInputId: 'mediaEditKeywords',
+                                          keywordSetSuggestions: (typeof keywordSetSuggestions !== 'undefined' ? keywordSetSuggestions : [])
+                                        }) %>
                                     </div>
                                     <div class="mb-2">
                                         <label class="form-label mb-0" for="mediaEditDate" style="font-size:0.85em;">Date taken</label>
