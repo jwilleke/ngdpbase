@@ -7,14 +7,19 @@
  * `private/` — so a private page resolved by UUID, slug or title for any
  * caller who could name it.
  *
- * `page-export` was declared in the registry and granted to five roles the
- * whole time. It was checked nowhere. That is the shape #1058's drift test
- * exists to catch, and this is the one orphan that was a hole rather than
- * bookkeeping.
+ * The gate is read access and ONLY read access. A `page-export` check was
+ * written first and removed: for a page the caller can already read, exporting
+ * returns words they are looking at on screen, so a second permission is
+ * friction rather than protection. The read/export split would matter against
+ * a bulk surface, but no route reaches `ExportManager`'s array-taking methods.
  *
- * These tests pin the ORDER of the two checks as well as their presence. Read
- * access is evaluated first and denies with 404, because a 403 confirms the
- * page exists — a disclosure in itself for a private page.
+ * So these tests pin two things that pull in opposite directions, and both
+ * matter: an unreadable page is never extractable, AND a readable one always
+ * is. A regression toward "deny" here is not a safe failure — it is the export
+ * feature quietly breaking for ordinary readers.
+ *
+ * A denial returns 404, not 403: a 403 confirms the page exists, which for a
+ * private page is itself the disclosure.
  */
 
 import WikiRoutes from '../WikiRoutes';
@@ -47,7 +52,10 @@ const createMockRes = () => ({
 
 const exportManager = {
   exportPageToHtml: vi.fn().mockResolvedValue('<html>SECRET</html>'),
-  exportPageToMarkdown: vi.fn().mockResolvedValue('# SECRET'),
+  // NOTE: the manager's method is `exportToMarkdown`, not
+  // `exportPageToMarkdown`. Naming it wrong here made an assertion below
+  // vacuous — it can only ever pass.
+  exportToMarkdown: vi.fn().mockResolvedValue('# SECRET'),
   saveExport: vi.fn().mockResolvedValue('/exports/SecretPlans_2026-08-16.html'),
   getExports: vi.fn().mockResolvedValue([{ filename: 'SecretPlans_2026-08-16.html' }])
 };
@@ -104,7 +112,7 @@ describe('#1060 — per-page export requires read access', () => {
 
       // The content must never be produced — not produced and then withheld.
       expect(exportManager.exportPageToHtml).not.toHaveBeenCalled();
-      expect(exportManager.exportPageToMarkdown).not.toHaveBeenCalled();
+      expect(exportManager.exportToMarkdown).not.toHaveBeenCalled();
       expect(res.download).not.toHaveBeenCalled();
       // 404, not 403: a 403 tells an anonymous caller the private page exists.
       expect(res.status).toHaveBeenCalledWith(404);
@@ -127,23 +135,11 @@ describe('#1060 — per-page export requires read access', () => {
     }
   );
 
-  test('a reader who CAN view the page still needs page-export', async () => {
+  test('read access is sufficient — no second permission is required', async () => {
+    // Holds NO permissions at all. If this ever goes red, someone has added a
+    // permission check back onto content the caller can already read.
     const res = createMockRes();
     const routes = makeRoutes(true, []) as unknown as Record<
-      string, (a: unknown, b: unknown) => Promise<void>
-    >;
-
-    await routes.exportPageHtml(createMockReq(reader), res);
-
-    expect(exportManager.exportPageToHtml).not.toHaveBeenCalled();
-    // 403 here is correct — read access is already established, so the
-    // existence of the page is not the secret being protected.
-    expect(res.status).toHaveBeenCalledWith(403);
-  });
-
-  test('a reader with both read access and page-export gets the export', async () => {
-    const res = createMockRes();
-    const routes = makeRoutes(true, ['page-export']) as unknown as Record<
       string, (a: unknown, b: unknown) => Promise<void>
     >;
 
@@ -152,10 +148,24 @@ describe('#1060 — per-page export requires read access', () => {
     expect(exportManager.exportPageToHtml).toHaveBeenCalledWith('SecretPlans');
     expect(res.download).toHaveBeenCalled();
   });
+
+  test('an anonymous caller can export a page they are allowed to read', async () => {
+    // The public-site case. Anonymous holds no permissions and never will; a
+    // public page is readable, so it is exportable.
+    const res = createMockRes();
+    const routes = makeRoutes(true, []) as unknown as Record<
+      string, (a: unknown, b: unknown) => Promise<void>
+    >;
+
+    await routes.exportPageMarkdown(createMockReq(anonymous), res);
+
+    expect(exportManager.exportToMarkdown).toHaveBeenCalledWith('SecretPlans');
+    expect(res.download).toHaveBeenCalled();
+  });
 });
 
 describe('#1060 — the export picker and the saved-export listing', () => {
-  test('the picker is closed to a caller without page-export', async () => {
+  test('the picker is open — the per-page gate is what protects content', async () => {
     const res = createMockRes();
     const routes = makeRoutes(true, []) as unknown as Record<
       string, (a: unknown, b: unknown) => Promise<void>
@@ -163,15 +173,15 @@ describe('#1060 — the export picker and the saved-export listing', () => {
 
     await routes.exportPage(createMockReq(anonymous), res);
 
-    expect(res.render).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.render).toHaveBeenCalled();
   });
 
-  test('the saved-export listing is admin-only, not merely export-only', async () => {
-    // The directory holds files saved by every user who ever exported. Holding
-    // page-export says nothing about the right to read someone else's export.
+  test('the saved-export listing is admin-only — a different question entirely', async () => {
+    // This directory holds files saved by every user who ever exported, so it
+    // is not governed by what the caller may read now. That is why it keeps a
+    // permission check when the export routes do not.
     const res = createMockRes();
-    const routes = makeRoutes(true, ['page-export']) as unknown as Record<
+    const routes = makeRoutes(true, []) as unknown as Record<
       string, (a: unknown, b: unknown) => Promise<void>
     >;
 

@@ -64,21 +64,31 @@ const ACTION_MAP_BLOCK = /const actionMap[^=]*=\s*\{([\s\S]*?)\};/;
  * cannot quietly become a place to hide new drift.
  */
 const KNOWN_UNENFORCED: Record<string, string> = {
-  // Three permissions are declared in the registry, given a description in
+  // Four permissions are declared in the registry, given a description in
   // UserManager, and reach no check anywhere in src/. An operator can grant
   // each of them, and each gates nothing.
   //
-  // `page-export` WAS in this list and was not bookkeeping: the export routes
-  // had no authorization check at all, so a private page was extractable by
-  // anyone who could name it (#1060). It is enforced now and removed from
-  // here — which is this test doing its job, since that hole is exactly what
-  // an unenforced permission looks like from the outside.
+  // `page-export` is here for a reason worth reading before "fixing" it.
+  //
+  // Chasing it as an orphan found #1060: the export routes had no
+  // authorization check at all, so a private page was extractable by anyone
+  // who could name it. That is now gated on READ access — the same gate the
+  // view route uses.
+  //
+  // `page-export` itself was deliberately NOT made the gate. For a page the
+  // caller can already read, exporting returns words they are looking at on
+  // screen, so requiring a second permission is friction rather than
+  // protection. The read/export split would earn its keep against a bulk
+  // surface — `ExportManager.exportPagesToHtml` and `exportToMarkdown` both
+  // take arrays — but no route reaches either today. Enforce it on the bulk
+  // route when one is built, on the act that is actually different.
   //
   // Attachment upload and delete are gated on `isAuthenticated` alone, because
   // AttachmentManager.checkPermission ignores its `action` argument entirely.
   //
   // Enforcing these changes what the permission catalogue means, which is an
   // operator decision rather than a test fix.
+  'page-export': 'ngdpbase#1059',
   'asset-read': 'ngdpbase#1059',
   'asset-delete': 'ngdpbase#1059',
   'search-page': 'ngdpbase#1059'

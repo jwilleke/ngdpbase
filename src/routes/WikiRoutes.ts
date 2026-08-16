@@ -5518,25 +5518,16 @@ ${panes}
 
   async exportPage(req: Request, res: Response) {
     try {
-      // #1060: the export picker was reachable by anyone. It is the entry
-      // point to the export routes, so it takes the same permission they do.
-      const wikiContext = this.createWikiContext(req);
-      if (!(await wikiContext.hasPermission('page-export'))) {
-        return await this.renderError(
-          req,
-          res,
-          403,
-          'Access Denied',
-          'You do not have permission to export pages.'
-        );
-      }
       const commonData = await this.getCommonTemplateData(req);
       const pageManager = this.engine.getManager('PageManager');
+      // The picker is open, like the pages it lists. `denyExport` is what
+      // stops an unreadable page being extracted from here (#1060).
+      //
       // NOTE: this list is not ACL-filtered, so it can name pages the caller
-      // cannot read. Selecting one now yields 404 from `denyExport`, so no
-      // content leaks — but the titles do. `getAllPages()` is unfiltered at
-      // every one of its call sites; tracked separately rather than fixed here
-      // with a per-request ACL evaluation of ~18k pages.
+      // cannot read. Selecting one yields 404, so no content leaks — but the
+      // titles do. `getAllPages()` is unfiltered at every one of its call
+      // sites; tracked separately rather than fixed here with a per-request
+      // ACL evaluation of ~18k pages.
       const pageNames = await pageManager.getAllPages();
 
       return res.render('export', {
@@ -5554,33 +5545,31 @@ ${panes}
    * Export page to HTML
    */
   /**
-   * Deny an export unless the caller may both read the page and export at all
-   * (#1060). Returns a sent response when denied, or null to proceed.
+   * Deny an export unless the caller may read the page (#1060). Returns a sent
+   * response when denied, or null to proceed.
    *
-   * Two checks, deliberately, in this order:
+   * ONE check, deliberately: `checkPageReadAccess`, the SAME gate the view
+   * route uses. Export was a second path to page content that evaluated no ACL
+   * at all, so a private page was extractable by anyone who could name it.
    *
-   *   1. `checkPageReadAccess` — the SAME gate the view route uses. Export was
-   *      a second path to page content that evaluated no ACL, so a private
-   *      page was extractable by anyone who could name it.
-   *   2. `page-export` — reading one page on screen and extracting it to a file
-   *      are different acts with different risk, which is why the permission
-   *      exists. It was declared, granted to five roles, and checked nowhere.
+   * A `page-export` check on top was written first and removed. For a page the
+   * caller can already read, exporting hands back words they are looking at on
+   * screen; requiring a second permission to receive them as a file is friction
+   * wearing a security label. The read/export split would matter against a bulk
+   * surface — `ExportManager.exportPagesToHtml` and `exportToMarkdown` both
+   * take arrays — but no route reaches either, so today every export is one
+   * page the caller has already been granted. Gate the bulk route when one is
+   * built, on the act that is actually different.
    *
-   * 404 rather than 403 on a read denial, matching how a caller who cannot see
-   * a page should experience it: a 403 confirms the page exists, which for a
-   * private page is itself a disclosure. The `page-export` denial is a plain
-   * 403 — by then the caller has already been shown the page can be read.
+   * 404 rather than 403, matching how a caller who cannot see a page should
+   * experience it: a 403 confirms the page exists, which for a private page is
+   * itself the disclosure.
    */
   private async denyExport(req: Request, res: Response, pageName: string): Promise<Response | null> {
     const { allowed } = await this.checkPageReadAccess(req, pageName);
     if (!allowed) {
       logger.warn(`[export] Denied — no read access to '${pageName}'`);
       return res.status(404).send('Page not found');
-    }
-    const wikiContext = this.createWikiContext(req, { pageName });
-    if (!(await wikiContext.hasPermission('page-export'))) {
-      logger.warn(`[export] Denied — '${pageName}' readable but caller lacks page-export`);
-      return res.status(403).send('You do not have permission to export pages');
     }
     return null;
   }
