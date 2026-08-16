@@ -40,6 +40,15 @@ import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../
 import { stringifyJsonLdForScript, wantsJsonLd } from '../utils/buildPageJsonLd.js';
 import { articleToPageJsonLd } from '../utils/articleToPageJsonLd.js';
 import { buildSocialMeta } from '../utils/buildSocialMeta.js';
+import {
+  buildSitemapXml,
+  buildSitemapIndexXml,
+  selectPublicSitemapEntries,
+  isRestrictedByMetadata,
+  paginate,
+  type SitemapIndexEntry,
+  type RestrictableMetadata
+} from '../utils/buildSitemap.js';
 import { getSuggestedKeywordSets, type RecentPageKeywords, type KeywordSetSuggestion } from '../utils/suggestedKeywords.js';
 import { normalizeKeywordValue, groupKeywordVariants, dedupeKeywords, type KeywordFormStat } from '../utils/keywordNormalizer.js';
 import type { Article } from '../types/Schema.js';
@@ -2221,6 +2230,159 @@ class WikiRoutes {
    * @returns {Promise<boolean>} True if page requires admin permission to edit
    */
   /** Returns true when the page lives in the private storage location. */
+  /**
+   * GET /sitemap.xml and /sitemap-<n>.xml (#885).
+   *
+   * 404s unless `ngdpbase.seo.enabled` — a private or intranet install must not
+   * advertise its page list, and a 404 (rather than an empty 200) says nothing
+   * about whether the feature exists.
+   *
+   * ## How "public" is decided, and what it does not cover
+   *
+   * Page selection reads the in-memory page index only — see
+   * `selectPublicSitemapEntries`, which excludes private pages and anything
+   * carrying `audienceRoles`. Running the full ACL evaluator per page is not an
+   * option at this size: jimstest indexes ~17,900 pages, and the evaluator does
+   * a manager lookup, a metadata read and an info-level log per call.
+   *
+   * That covers ACL tiers 0 and 1. Tier 2 — global policy — is settled once,
+   * below, because it is a property of the instance rather than of a page.
+   * Two guards make that sound rather than convenient:
+   *
+   *   1. Every policy resource pattern must be `*`. The schema permits a
+   *      page-scoped pattern, and one would make a single probe unrepresentative
+   *      — so an instance carrying one gets an empty sitemap and a warning,
+   *      never a guessed answer.
+   *   2. Anonymous `page-read` must actually be allowed, checked through the
+   *      real PolicyEvaluator rather than assumed from the shipped defaults.
+   *
+   * Both failures produce an empty (valid) sitemap. Under-listing costs a
+   * missed crawl; over-listing leaks the slug and existence of a page nobody
+   * was meant to find.
+   */
+  async sitemap(req: Request, res: Response): Promise<void | Response> {
+    try {
+      const configManager = this.engine.getManager('ConfigurationManager');
+      if (configManager?.getProperty?.('ngdpbase.seo.enabled', false) !== true) {
+        return res.status(404).send('Not found');
+      }
+
+      const baseUrl = configManager.getBaseURL?.() ?? '';
+      const pageManager = this.engine.getManager('PageManager');
+      const provider = pageManager?.getCurrentPageProvider?.() ?? pageManager?.provider;
+      const indexPages = (provider?.pageIndex as {
+        pages?: Record<string, SitemapIndexEntry>;
+      } | null)?.pages;
+
+      let entries: ReturnType<typeof selectPublicSitemapEntries> = [];
+      if (indexPages && this._anonymousReadIsGloballyAllowed(configManager)) {
+        const candidates = selectPublicSitemapEntries(Object.values(indexPages), baseUrl);
+
+        // Second pass against each page's REAL frontmatter. The index carries a
+        // denormalised `audienceRoles`, but it is written on save, so a page not
+        // re-saved since #754 shows nothing there while its frontmatter still
+        // restricts it. Trusting the index alone leaked 345 audience-restricted
+        // journal entries into a generated sitemap during development — the
+        // field's own docs say "the page-frontmatter is the source of truth".
+        //
+        // Affordable: reading frontmatter for every page in the corpus measures
+        // ~240ms, against ~0.5s for the whole request. Cheap enough not to trade
+        // correctness for it.
+        const verified: typeof candidates = [];
+        for (const entry of candidates) {
+          const slug = decodeURIComponent(entry.loc.slice(entry.loc.lastIndexOf('/view/') + 6));
+          let meta: RestrictableMetadata | null = null;
+          try {
+            meta = await pageManager?.getPageMetadata?.(slug) ?? null;
+          } catch {
+            meta = null;
+          }
+
+          // FAIL CLOSED. A page whose metadata cannot be read — lookup threw,
+          // or the slug did not resolve — has not been shown to be public, and
+          // "we could not tell" must never become "list it". This is not
+          // theoretical: the verification pass only protects pages whose
+          // lookup succeeds, so treating a miss as public would leave a hole
+          // exactly where the index pre-filter is already blind.
+          if (!meta || isRestrictedByMetadata(meta)) continue;
+          verified.push(entry);
+        }
+        entries = verified;
+      }
+
+      res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+
+      const pages = paginate(entries);
+      const requested = req.params.page;
+
+      // Single file: serve the urlset directly rather than an index pointing at
+      // one child, which is legal but makes crawlers fetch twice for nothing.
+      if (pages.length === 1) {
+        if (requested !== undefined) return res.status(404).send('Not found');
+        return res.send(buildSitemapXml(pages[0]));
+      }
+
+      if (requested === undefined) {
+        const base = baseUrl.replace(/\/+$/, '');
+        const locs = pages.map((_, i) => `${base}/sitemap-${i + 1}.xml`);
+        return res.send(buildSitemapIndexXml(locs, new Date().toISOString()));
+      }
+
+      const n = Number.parseInt(requested, 10);
+      if (!Number.isInteger(n) || n < 1 || n > pages.length) {
+        return res.status(404).send('Not found');
+      }
+      return res.send(buildSitemapXml(pages[n - 1]));
+    } catch (err) {
+      logger.error('[sitemap] generation failed:', err);
+      return res.status(500).send('Sitemap unavailable');
+    }
+  }
+
+  /**
+   * Whether an anonymous visitor may read pages at all, per global policy
+   * (#885). Conservative: anything unexpected answers false.
+   *
+   * Read directly from configuration rather than by probing the evaluator with
+   * a synthetic page: a probe needs a representative page, and "representative"
+   * is exactly what a page-scoped policy would break — the condition this is
+   * checking for.
+   */
+  private _anonymousReadIsGloballyAllowed(configManager: {
+    getProperty?: (key: string, def?: unknown) => unknown;
+  }): boolean {
+    const policies = configManager?.getProperty?.('ngdpbase.access.policies', []) as Array<{
+      effect?: string;
+      subjects?: Array<{ type?: string; value?: string }>;
+      resources?: Array<{ type?: string; pattern?: string }>;
+      actions?: string[];
+    }> | undefined;
+
+    if (!Array.isArray(policies) || policies.length === 0) return false;
+
+    // Guard 1 — a page-scoped pattern makes an instance-wide answer unsound.
+    const pageScoped = policies.some((p) =>
+      (p.resources ?? []).some((r) => r.type === 'page' && r.pattern !== '*')
+    );
+    if (pageScoped) {
+      logger.warn(
+        '[sitemap] a page-scoped access policy is configured, so page visibility '
+        + 'cannot be decided instance-wide from the page index. Serving an empty '
+        + 'sitemap rather than guessing. (#885)'
+      );
+      return false;
+    }
+
+    // Guard 2 — an explicit deny anywhere wins; ngdpbase policy default is deny.
+    const anonSubject = (s: { type?: string; value?: string }) =>
+      s?.type === 'role' && ['anonymous', 'all', 'asserted'].includes(String(s.value).toLowerCase());
+    const readers = policies.filter((p) =>
+      (p.actions ?? []).includes('page-read') && (p.subjects ?? []).some(anonSubject)
+    );
+    if (readers.some((p) => p.effect === 'deny')) return false;
+    return readers.some((p) => p.effect === 'allow');
+  }
+
   private async _isPagePrivate(pageName: string): Promise<boolean> {
     try {
       const pageManager = this.engine.getManager('PageManager');
@@ -12659,6 +12821,10 @@ ${panes}
     );
 
     // Public routes
+    // #885 — sitemap. Registered before /view/:page for clarity only; the
+    // paths cannot collide. Both are no-ops unless ngdpbase.seo.enabled.
+    app.get('/sitemap.xml', (req: Request, res: Response) => this.sitemap(req, res));
+    app.get('/sitemap-:page.xml', (req: Request, res: Response) => this.sitemap(req, res));
     app.get('/', (req: Request, res: Response) => this.homePage(req, res));
     app.get('/view/:page', (req: Request, res: Response) => this.viewPage(req, res));
     // Backward-compatible redirect: /wiki/:page → /view/:page
