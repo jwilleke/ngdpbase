@@ -17,6 +17,7 @@ import { WikiEngine, ProviderInfo } from './BasePageProvider.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import type MetricsManager from '../managers/MetricsManager.js';
 import type { RecentChangesOptions, RecentChangeEntry } from '../types/Provider.js';
+import { decideFrontmatterAccess } from '../utils/frontmatterAccess.js';
 
 /**
  * Page index entry structure
@@ -867,14 +868,40 @@ class VersioningFileProvider extends FileSystemProvider {
       if (!idx.lastModified) continue;
       if (since && new Date(idx.lastModified) < since) continue;
 
-      // #635: visibility filter — match search-provider semantics. The pageIndex
-      // already denormalizes isPrivate (from user-keywords) and audienceRoles
-      // (from frontmatter audience), so this is an O(1) lookup per page.
-      if (!includeAll && idx.isPrivate) {
-        const audience = idx.audienceRoles ?? [];
+      // #635 / #1054: visibility filter — must agree with ACLManager, or this
+      // lists pages the viewer gets a 403 on.
+      //
+      // It did not. The audience test was nested inside `if (idx.isPrivate)`,
+      // so a page that is not private but carries an `audience` was never
+      // tested — the common case, since 0 pages in the corpus set
+      // `private: true` while 347 set `audience`. And the `audienceRoles` it
+      // read is denormalised AT WRITE TIME, so any page not re-saved since #754
+      // shows an empty list regardless (347 with audience frontmatter, 2 in the
+      // index). Either defect alone leaked all 347.
+      //
+      // Tier 1 now reads real frontmatter through the shared evaluator.
+      // getPageMetadata resolves from the in-memory page cache — a map lookup,
+      // not a disk read (same basis as the #1004 keyword filter above) — so
+      // this stays affordable on a path that runs per page render.
+      if (!includeAll) {
         const isCreator = idx.creator !== undefined && principals.includes(idx.creator);
-        const inAudience = audience.length > 0 && principals.some(p => audience.includes(p));
-        if (!isCreator && !inAudience) continue;
+        const md = await this.getPageMetadata(idx.uuid);
+        const tier1 = decideFrontmatterAccess(md, principals, 'view');
+
+        if (tier1.decided) {
+          // Frontmatter states a rule, so it decides — including granting a
+          // private page to an audience member, and denying a non-private one
+          // to everybody else. That second half is the leak this fixes.
+          if (!tier1.allowed) continue;
+        } else if (idx.isPrivate) {
+          // No readable frontmatter rule. Private remains a hard constraint,
+          // and the index's denormalised copy is the fallback so an audience
+          // grant still works where metadata is unavailable. Only a FALLBACK:
+          // trusting it first is what made the listing disagree with the ACL.
+          const audience = idx.audienceRoles ?? [];
+          const inAudience = audience.length > 0 && principals.some(p => audience.includes(p));
+          if (!isCreator && !inAudience) continue;
+        }
       }
 
       entries.push({

@@ -251,4 +251,88 @@ describe('VersioningFileProvider.getRecentChanges', () => {
       title: 'Foo', uuid: 'u1', editor: 'alice', currentVersion: 5, hasVersions: true
     });
   });
+
+  // ---------------------------------------------------------------------
+  // #1054 — a listed page must never be one the viewer gets a 403 on.
+  //
+  // The old filter nested the audience test inside `if (idx.isPrivate)`, so a
+  // NON-private page carrying an audience was never tested. On jimstest that
+  // was all 347 audience-restricted pages — visible in Recent Changes to an
+  // anonymous viewer while /view/ correctly returned 403. Compounded by the
+  // index's `audienceRoles` being denormalised at write time (347 pages with
+  // audience frontmatter, 2 with a populated index entry), so the field the
+  // check read was empty anyway.
+  //
+  // Frontmatter is the source of truth here, matching ACLManager.
+  // ---------------------------------------------------------------------
+  describe('#1054 — audience on a NON-private page', () => {
+    const withMetadata = (meta: Record<string, unknown> | null) => {
+      const p = makeProvider();
+      (p as unknown as { getPageMetadata: (id: string) => Promise<unknown> })
+        .getPageMetadata = () => Promise.resolve(meta);
+      return p;
+    };
+
+    const indexWith = (over: Record<string, unknown>) => ({
+      version: '1', lastUpdated: 'x', pageCount: 1,
+      pages: { a: baseEntry({ uuid: 'a', title: 'Journal', ...over }) }
+    });
+
+    test('hides it from a viewer outside the audience', async () => {
+      const p = withMetadata({ audience: ['jim'] });
+      // isPrivate deliberately falsy — the exact shape that leaked.
+      p.pageIndex = indexWith({ isPrivate: undefined });
+
+      const out = await p.getRecentChanges({ principals: ['anonymous'] });
+      expect(out).toEqual([]);
+    });
+
+    test('still shows it to a viewer inside the audience', async () => {
+      const p = withMetadata({ audience: ['jim'] });
+      p.pageIndex = indexWith({ isPrivate: undefined });
+
+      const out = await p.getRecentChanges({ principals: ['reader', 'jim'] });
+      expect(out).toHaveLength(1);
+    });
+
+    test('respects access.view the same way as audience', async () => {
+      const p = withMetadata({ access: { view: ['editor'] } });
+      p.pageIndex = indexWith({ isPrivate: undefined });
+
+      expect(await p.getRecentChanges({ principals: ['anonymous'] })).toEqual([]);
+      expect(await p.getRecentChanges({ principals: ['editor'] })).toHaveLength(1);
+    });
+
+    test('an edit-only rule does not hide a publicly readable page', async () => {
+      // `access: {edit: [admin]}` restricts editing, not viewing.
+      const p = withMetadata({ access: { edit: ['admin'] } });
+      p.pageIndex = indexWith({ isPrivate: undefined });
+
+      expect(await p.getRecentChanges({ principals: ['anonymous'] })).toHaveLength(1);
+    });
+
+    test('an unrestricted page is unaffected', async () => {
+      const p = withMetadata({});
+      p.pageIndex = indexWith({ isPrivate: undefined });
+
+      expect(await p.getRecentChanges({ principals: ['anonymous'] })).toHaveLength(1);
+    });
+
+    test('stale audienceRoles in the index does not make it visible', async () => {
+      // The second defect: index says unrestricted, frontmatter says otherwise.
+      // Frontmatter must win, or 345 of 347 pages stay leaked.
+      const p = withMetadata({ audience: ['jim'] });
+      p.pageIndex = indexWith({ isPrivate: undefined, audienceRoles: [] });
+
+      expect(await p.getRecentChanges({ principals: ['anonymous'] })).toEqual([]);
+    });
+
+    test('includeAll still bypasses the filter for admin callers', async () => {
+      const p = withMetadata({ audience: ['jim'] });
+      p.pageIndex = indexWith({ isPrivate: undefined });
+
+      expect(await p.getRecentChanges({ principals: ['anonymous'], includeAll: true }))
+        .toHaveLength(1);
+    });
+  });
 });

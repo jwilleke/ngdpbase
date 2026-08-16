@@ -7,6 +7,7 @@ import type UserManager from './UserManager.js';
 import type PolicyEvaluator from './PolicyEvaluator.js';
 import type NotificationManager from './NotificationManager.js';
 import type { PageFrontmatter } from '../types/Page.js';
+import { decideFrontmatterAccess } from '../utils/frontmatterAccess.js';
 
 /**
  * Minimal WikiContext interface for type safety
@@ -648,24 +649,21 @@ class ACLManager extends BaseManager {
     userContext: UserContext | null | undefined,
     action: string
   ): { decided: boolean; allowed: boolean; reason: string } {
-    let principals: string[] | undefined;
-    if (metadata.access && typeof metadata.access === 'object') {
-      const ar = (metadata.access as Record<string, unknown>)[action];
-      if (Array.isArray(ar)) principals = ar as string[];
-    }
-    if (!principals && action === 'view' && Array.isArray(metadata.audience)) {
-      principals = metadata.audience;
-    }
-    if (!principals?.length) return { decided: false, allowed: false, reason: '' };
-
+    // #1054: the rule itself now lives in utils/frontmatterAccess so the page
+    // LISTERS decide identically to this evaluator. They previously did not —
+    // getRecentChanges only consulted `audience` on already-private pages, so a
+    // non-private page with an audience was listed to viewers this method
+    // correctly 403s. Behaviour here is unchanged; only the home of the logic
+    // moved. The `reason` strings stay, since callers branch on them.
     const userRoles = userContext?.roles ?? [];
     const username  = userContext?.username ?? '';
-    for (const p of principals) {
-      if (userRoles.includes(p) || username === p) {
-        return { decided: true, allowed: true, reason: `frontmatter_principal_${p}` };
-      }
-    }
-    return { decided: true, allowed: false, reason: 'frontmatter_deny' };
+    const viewerPrincipals = username ? [...userRoles, username] : [...userRoles];
+
+    const decision = decideFrontmatterAccess(metadata, viewerPrincipals, action);
+    if (!decision.decided) return { decided: false, allowed: false, reason: '' };
+    return decision.allowed
+      ? { decided: true, allowed: true, reason: `frontmatter_principal_${decision.matched}` }
+      : { decided: true, allowed: false, reason: 'frontmatter_deny' };
   }
 
   // #632: deprecated `checkPagePermission(pageName, action, userContext, content)`
