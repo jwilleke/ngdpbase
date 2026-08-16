@@ -220,12 +220,12 @@ Measured against this repository at v4.10.0. Included so the model above can be 
 
 ## Known gaps
 
-Stated as facts. None of these is resolved by the model above.
+Stated as facts, each re-verified against `src/` at v4.10.0 rather than inferred from a file listing. None is resolved by the model above.
 
-- **Provider resolution is a convention, not a mechanism.** Each manager repeats the same sequence: read the key, apply the default, normalise the name, dynamic-import. It is consistent because everyone remembers, not because anything enforces it. One factory mapping `(capability, config) → instance` would remove the repetition and make a fake injectable in tests.
-- **Boot ordering is an explicit hand-written list, with no validation.** A manager initialising before the configuration it reads does not crash — it silently takes defaults, which is worse.
-- **Per-manager `backup()` yields a torn snapshot across managers.** Each manager can answer for itself; quiescing and ordering is engine-level work that is not designed.
+- **Provider resolution is a convention, not a mechanism.** Ten managers each repeat the same sequence — read the key, apply the default, normalise the name, dynamic-import — and no shared factory exists. It is consistent because everyone remembers, not because anything enforces it. One factory mapping `(capability, config) → instance` would remove the repetition and make a fake injectable in tests without touching config files.
+- **Boot ordering is an explicit hand-written list, with no validation.** Thirty-eight managers are registered in source order, and nothing declares or checks a dependency. A manager initialising before the configuration it reads does not crash — it silently takes defaults, which is worse.
+- **Per-manager `backup()` yields a torn snapshot across managers.** Nine managers implement `backup()` and nothing quiesces or orders them, so the parts are captured at different instants. Each manager can answer for itself; the coordination is engine-level work that is not designed.
 - **`UserManager` is 1,682 lines** carrying password hashing, permission resolution, middleware and page creation, with three role methods left as `never` after a split to `RoleManager`. It is the example of a single path being read as a single class.
 - **Authorization fields on the context are optional.** Because `undefined` is falsy, a missing value fails closed by luck rather than by design.
-- **`required-factors` is an ordered all-of list while providers are registered as alternatives**, and multi-factor state management is not implemented. Whoever implements it must satisfy every entry in order.
-- **No restart-required marker on configuration keys.** Changing a provider binding at runtime leaves stated and actual configuration disagreeing silently.
+- **`required-factors` is declared but never enforced.** The key is read into `AuthManager` at boot and exposed by `getRequiredFactors()`, which nothing outside its own tests calls. Its documented meaning is "must be satisfied, in order" — an all-of list — while six providers are registered simultaneously as alternatives. Whoever implements multi-factor must satisfy every entry; wiring it as "try each until one succeeds" turns the same config into a bypass, because an attacker presents the single factor they hold.
+- **No restart-required marker on configuration keys.** The config carries a `secret-keys` marker but no restart marker, while the admin UI can write any key at runtime via `setProperty`. Changing a provider binding that way leaves stated and actual configuration disagreeing silently.
