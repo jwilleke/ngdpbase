@@ -1014,8 +1014,17 @@ class VersioningFileProvider extends FileSystemProvider {
   /**
    * Pages whose frontmatter audience contains any of the given principals
    * (#640 Phase 2). Excludes pages owned by any of those principals — the
-   * intent is "shared WITH me", not "mine via audience". Backed by
-   * pageIndex.audienceRoles which is denormalised at write time.
+   * intent is "shared WITH me", not "mine via audience".
+   *
+   * #1054: reads real frontmatter through the shared Tier 1 evaluator, not
+   * `pageIndex.audienceRoles`. That field is denormalised AT WRITE TIME, so any
+   * page not re-saved since #754 carries an empty list — 347 pages in the
+   * corpus have an audience, 2 have a populated index entry. Backed by the
+   * index, this method silently omitted 345 of the pages it exists to show.
+   *
+   * It failed the opposite way to getRecentChanges, which over-listed on the
+   * same stale data. Under-reporting here was harmless, but the two disagreed
+   * about what an audience means, which is the disagreement #1054 removed.
    */
   async getPagesSharedWith(
     principals: string[],
@@ -1028,13 +1037,18 @@ class VersioningFileProvider extends FileSystemProvider {
 
     const entries: RecentChangeEntry[] = [];
     for (const idx of Object.values(this.pageIndex.pages)) {
-      const audience = idx.audienceRoles ?? [];
-      if (audience.length === 0) continue;
-      const inAudience = audience.some((r) => principalSet.has(r));
-      if (!inAudience) continue;
-      // Exclude pages the user already owns (avoid duplication with /my/pages).
+      // Exclude pages the user already owns first — cheap, index-only, and it
+      // avoids a metadata read for every page the caller would discard anyway
+      // (avoids duplication with /my/pages).
       if ((idx.author && principalSet.has(idx.author))
         || (idx.creator && principalSet.has(idx.creator))) continue;
+
+      // A page is "shared with me" when frontmatter states a view rule AND the
+      // viewer matches it — `decided && allowed`. Same evaluator ACLManager and
+      // getRecentChanges use, so all three agree on what an audience means.
+      const md = await this.getPageMetadata(idx.uuid);
+      const decision = decideFrontmatterAccess(md, principals, 'view');
+      if (!decision.decided || !decision.allowed) continue;
 
       entries.push({
         title: idx.title,

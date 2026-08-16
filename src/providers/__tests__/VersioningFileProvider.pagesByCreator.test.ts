@@ -339,6 +339,24 @@ function makeProviderWith(pages: Record<string, ReturnType<typeof makePageEntry>
   return p;
 }
 
+/**
+ * #1054: getPagesSharedWith now reads real frontmatter rather than the index's
+ * `audienceRoles`, which is denormalised at write time and stale on any page
+ * not re-saved since #754 (347 pages with an audience, 2 with an index entry).
+ *
+ * These helpers stub the metadata the provider will read. `audienceRoles` is
+ * left on the index entries deliberately, so the tests below double as proof
+ * that the stale copy no longer drives the result.
+ */
+function withAudienceMetadata(
+  p: ReturnType<typeof makeProvider>,
+  byUuid: Record<string, unknown>
+) {
+  (p as unknown as { getPageMetadata: (id: string) => Promise<unknown> })
+    .getPageMetadata = (id: string) => Promise.resolve(byUuid[id] ?? null);
+  return p;
+}
+
 describe('VersioningFileProvider.getPagesByEditor (#640 Phase 2)', () => {
   test('returns [] when pageIndex is null or username empty', async () => {
     const p = makeProvider();
@@ -375,11 +393,15 @@ describe('VersioningFileProvider.getPagesSharedWith (#640 Phase 2)', () => {
     expect(await (p as unknown as { getPagesSharedWith: (ps: string[]) => Promise<unknown[]> }).getPagesSharedWith([])).toEqual([]);
   });
 
-  test('matches when any principal appears in audienceRoles', async () => {
-    const p = makeProviderWith({
+  test('matches when any principal appears in the frontmatter audience', async () => {
+    const p = withAudienceMetadata(makeProviderWith({
       u1: baseEntry({ uuid: 'u1', title: 'Shared1', author: 'alice', audienceRoles: ['bob', 'carol'] }),
       u2: baseEntry({ uuid: 'u2', title: 'NotShared', author: 'alice', audienceRoles: ['carol'] }),
       u3: baseEntry({ uuid: 'u3', title: 'SharedRole', author: 'alice', audienceRoles: ['editor'] })
+    }), {
+      u1: { audience: ['bob', 'carol'] },
+      u2: { audience: ['carol'] },
+      u3: { audience: ['editor'] }
     });
     const result = await (p as unknown as { getPagesSharedWith: (ps: string[]) => Promise<{ title: string }[]> }).getPagesSharedWith(['bob']);
     expect(result.map(e => e.title)).toEqual(['Shared1']);
@@ -389,20 +411,61 @@ describe('VersioningFileProvider.getPagesSharedWith (#640 Phase 2)', () => {
   });
 
   test('excludes pages owned by any principal (no double-count with /my/pages)', async () => {
-    const p = makeProviderWith({
+    const p = withAudienceMetadata(makeProviderWith({
       u1: baseEntry({ uuid: 'u1', title: 'BobOwns', author: 'bob', audienceRoles: ['bob'] }),
       u2: baseEntry({ uuid: 'u2', title: 'AliceOwnsSharedToBob', author: 'alice', audienceRoles: ['bob'] }),
       u3: baseEntry({ uuid: 'u3', title: 'BobIsCreator', author: 'admin', creator: 'bob', audienceRoles: ['bob'] })
+    }), {
+      u1: { audience: ['bob'] }, u2: { audience: ['bob'] }, u3: { audience: ['bob'] }
     });
     const result = await (p as unknown as { getPagesSharedWith: (ps: string[]) => Promise<{ title: string }[]> }).getPagesSharedWith(['bob']);
     // Bob owns u1 (author) and u3 (creator); only u2 is genuinely "shared with bob".
     expect(result.map(e => e.title)).toEqual(['AliceOwnsSharedToBob']);
   });
 
-  test('returns [] when audienceRoles is empty/undefined on every page', async () => {
-    const p = makeProviderWith({
-      u1: baseEntry({ uuid: 'u1', author: 'alice' }) // no audienceRoles
-    });
+  test('returns [] when no page states an audience', async () => {
+    const p = withAudienceMetadata(makeProviderWith({
+      u1: baseEntry({ uuid: 'u1', author: 'alice' })
+    }), { u1: {} });
+    expect(await (p as unknown as { getPagesSharedWith: (ps: string[]) => Promise<unknown[]> }).getPagesSharedWith(['bob'])).toEqual([]);
+  });
+
+  // ─── #1054 ──────────────────────────────────────────────────────────────
+  test('finds a page whose index audienceRoles is STALE but frontmatter shares it', async () => {
+    // The bug: 345 of 347 audience pages looked unshared because the index copy
+    // was never backfilled. This is the case that was silently missing.
+    const p = withAudienceMetadata(makeProviderWith({
+      u1: baseEntry({ uuid: 'u1', title: 'StaleIndexShared', author: 'alice', audienceRoles: [] })
+    }), { u1: { audience: ['bob'] } });
+
+    const result = await (p as unknown as { getPagesSharedWith: (ps: string[]) => Promise<{ title: string }[]> }).getPagesSharedWith(['bob']);
+    expect(result.map(e => e.title)).toEqual(['StaleIndexShared']);
+  });
+
+  test('does NOT trust a stale index that claims a share frontmatter denies', async () => {
+    // The other direction, and the one that would leak: listing a page under
+    // "shared with me" that the viewer now gets a 403 on. Frontmatter decides.
+    const p = withAudienceMetadata(makeProviderWith({
+      u1: baseEntry({ uuid: 'u1', title: 'NoLongerShared', author: 'alice', audienceRoles: ['bob'] })
+    }), { u1: { audience: ['carol'] } });
+
+    expect(await (p as unknown as { getPagesSharedWith: (ps: string[]) => Promise<unknown[]> }).getPagesSharedWith(['bob'])).toEqual([]);
+  });
+
+  test('honours access.view, not just the audience shorthand', async () => {
+    const p = withAudienceMetadata(makeProviderWith({
+      u1: baseEntry({ uuid: 'u1', title: 'SharedViaAccess', author: 'alice' })
+    }), { u1: { access: { view: ['bob'] } } });
+
+    const result = await (p as unknown as { getPagesSharedWith: (ps: string[]) => Promise<{ title: string }[]> }).getPagesSharedWith(['bob']);
+    expect(result.map(e => e.title)).toEqual(['SharedViaAccess']);
+  });
+
+  test('an edit-only access rule is not a share', async () => {
+    const p = withAudienceMetadata(makeProviderWith({
+      u1: baseEntry({ uuid: 'u1', title: 'EditOnly', author: 'alice' })
+    }), { u1: { access: { edit: ['bob'] } } });
+
     expect(await (p as unknown as { getPagesSharedWith: (ps: string[]) => Promise<unknown[]> }).getPagesSharedWith(['bob'])).toEqual([]);
   });
 });
