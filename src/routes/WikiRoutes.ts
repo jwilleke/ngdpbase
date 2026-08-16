@@ -9835,7 +9835,12 @@ ${panes}
 
       // Redirect back with the result
       const debugInfo = variableManager.getDebugInfo();
+      // #1052: same defect as /admin/keywords, on a second route. This builds
+      // its payload from scratch, so admin-variables.ejs — which calls
+      // `lockedUnless` — threw on the test-variables POST. Found by the
+      // invariant test added for #1052 rather than by another bug report.
       const templateData = {
+        ...(await this.getCommonTemplateData(req)),
         title: 'Variable Management',
         user: currentUser,
         message: 'Variable expansion test completed',
@@ -15130,7 +15135,17 @@ ${description}
       const successMessage = req.query.success as string | undefined;
       const errorMessage = req.query.error as string | undefined;
 
+      // #1052: spread the common template data FIRST, exactly as every other
+      // admin route does. Without it the payload carries no `lockedUnless`,
+      // and admin-keywords.ejs calls that helper unguarded — so the page threw
+      // `lockedUnless is not defined` and 500'd outright rather than degrading.
+      //
+      // Ordering matters: common data first, so the explicit keys below still
+      // win. `csrfToken` is in both, and the local one is the request's own.
+      const commonData = await this.getCommonTemplateData(req);
+
       res.render('admin-keywords', {
+        ...commonData,
         title: 'Keyword Management',
         currentUser,
         keywords,
