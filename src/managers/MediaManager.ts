@@ -419,6 +419,25 @@ class MediaManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * Explain why one absolute path is, or is not, in the media index (#848).
+   *
+   * Admin-only diagnostic for "why isn't my file showing?" — #814 reported
+   * media as undiscovered when in fact every missing file was correctly
+   * skipped by a rule that leaves no visible trace.
+   *
+   * Returns null when the configured provider cannot answer, rather than
+   * inventing a verdict: a different provider has different rules, and a
+   * confident wrong answer here sends the operator to fix the wrong thing.
+   */
+  async explainPath(target: string): Promise<import('../utils/explainMediaPath.js').MediaPathExplanation | null> {
+    const p = this.provider as unknown as {
+      explainPath?: (t: string) => Promise<import('../utils/explainMediaPath.js').MediaPathExplanation>;
+    } | null;
+    if (!p?.explainPath) return null;
+    return p.explainPath(target);
+  }
+
+  /**
    * List all media items for a given year, filtering out private items
    * that the current user cannot access.
    *

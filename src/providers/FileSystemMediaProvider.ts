@@ -22,6 +22,13 @@ import { extractVideoFrame } from '../utils/videoFrame.js';
 import { ExifTool } from 'exiftool-vendored';
 import { minimatch } from 'minimatch';
 import logger from '../utils/logger.js';
+import {
+  explainMediaPath,
+  scanRootFor,
+  type MediaPathExplanation,
+  type MediaPathRules,
+  type MediaPathIndexFacts
+} from '../utils/explainMediaPath.js';
 import BaseMediaProvider, { MediaItem, ScanResult } from './BaseMediaProvider.js';
 import type { AssetMetadataPatch } from '../types/Asset.js';
 import { parseDateFromFilename } from './mediaFilenameDate.js';
@@ -953,6 +960,106 @@ class FileSystemMediaProvider extends BaseMediaProvider {
     } catch (err) {
       logger.warn(`[FileSystemMediaProvider] Error processing ${filePath}: ${String(err)}`);
       counters.errors++;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  /**
+   * Explain why one absolute path is, or is not, in the media index (#848).
+   *
+   * #814 reported media "often not discovered" and triage found zero indexing
+   * bugs — every missing file was correctly skipped by a rule that leaves no
+   * visible trace. This answers the question for a single path.
+   *
+   * The rule ORDER lives in `explainMediaPath`, deliberately: the scanner
+   * decides the same things inline as `continue` statements, which is fine for
+   * scanning and useless for explaining. Keeping the classifier pure also lets
+   * a future skipped-file report (#1056) reuse it instead of adding a third
+   * copy of rules that already exist in two places.
+   *
+   * Facts are gathered in two passes so the expensive ones are not paid for a
+   * file that is already explained: index lookups are cheap, reading
+   * `.ngdpbaseignore` files and EXIF is not. Only a path that survives every
+   * cheap rule triggers the second pass.
+   */
+  async explainPath(target: string): Promise<MediaPathExplanation> {
+    const abs = path.resolve(target);
+    const rules: MediaPathRules = {
+      folders: this.config.folders,
+      ignoreDirs: this.config.ignoreDirs,
+      maxDepth: this.config.maxDepth,
+      extensions: this.config.extensions
+    };
+
+    // Pass 1 — index facts only.
+    const indexed = this.index[this.generateId(abs)];
+    const facts: MediaPathIndexFacts = {};
+    if (indexed && path.resolve(indexed.filePath) === abs) {
+      facts.indexedId = indexed.id;
+    } else {
+      for (const entry of Object.values(this.index)) {
+        if ((entry.alternates ?? []).some(p => path.resolve(p) === abs)) {
+          facts.alternateOf = { id: entry.id, filePath: entry.filePath };
+          break;
+        }
+      }
+    }
+
+    const first = explainMediaPath(abs, rules, facts);
+    if (first.verdict !== 'eligible-not-indexed') return first;
+
+    // Pass 2 — only now touch the disk.
+    facts.ignorePatternMatch = await this.findIgnorePatternMatch(abs, rules.folders);
+    if (!facts.ignorePatternMatch) {
+      facts.hasIgnoreKeyword = await this.hasIgnoreKeyword(abs);
+    }
+    return explainMediaPath(abs, rules, facts);
+  }
+
+  /**
+   * First `.ngdpbaseignore` pattern matching the file or any directory between
+   * it and its scan root, or undefined.
+   *
+   * Walks root-downward because that is the order the scanner encounters the
+   * ignore files, so the pattern reported is the one that actually stopped it.
+   */
+  private async findIgnorePatternMatch(abs: string, folders: string[]): Promise<string | undefined> {
+    const root = scanRootFor(abs, folders);
+    if (!root) return undefined;
+
+    const segments = path.relative(root, abs).split(path.sep).filter(Boolean);
+    let dir = root;
+    for (let i = 0; i < segments.length; i++) {
+      const name = segments[i];
+      const isDir = i < segments.length - 1;
+      let entries: fs.Dirent[];
+      try {
+        entries = await fs.readdir(dir, { withFileTypes: true });
+      } catch {
+        return undefined;
+      }
+      const patterns = await this.loadIgnorePatterns(dir, entries);
+      if (patterns.length) {
+        for (const pattern of patterns) {
+          if (this.matchesIgnorePattern(name, [pattern], isDir)) return pattern;
+        }
+      }
+      dir = path.join(dir, name);
+    }
+    return undefined;
+  }
+
+  /** Whether the file carries the `ngdpbaseignore` EXIF/XMP keyword. */
+  private async hasIgnoreKeyword(abs: string): Promise<boolean> {
+    try {
+      const tags = await this.exiftoolInstance.read(abs);
+      const raw = (tags as Record<string, unknown>)?.Keywords;
+      const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [];
+      return list.some(k => String(k) === 'ngdpbaseignore');
+    } catch {
+      // Unreadable metadata is not evidence of an ignore keyword; let the
+      // caller fall through to "eligible but not indexed".
+      return false;
     }
   }
 

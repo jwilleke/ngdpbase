@@ -13243,6 +13243,7 @@ ${panes}
     app.get('/admin/media', (req: Request, res: Response) => void this.adminMedia(req, res));
     app.post('/admin/media/rescan', (req: Request, res: Response) => void this.adminMediaRescan(req, res));
     app.post('/admin/media/rebuild', (req: Request, res: Response) => void this.adminMediaRebuild(req, res));
+    app.post('/api/admin/media/explain-path', (req: Request, res: Response) => void this.adminMediaExplainPath(req, res));
     // Slice 5b of #760 (#763) — attachments.rebuild trigger.
     app.post('/admin/attachments/rebuild', (req: Request, res: Response) => void this.adminAttachmentsRebuild(req, res));
 
@@ -16480,6 +16481,53 @@ ${description}
    * POST /admin/media/rescan
    * Enqueues the media.rescan background job and returns immediately.
    */
+  /**
+   * POST /api/admin/media/explain-path (#848 part 3).
+   *
+   * Answers "why isn't my file showing?" for one absolute path. #814 reported
+   * media as undiscovered when triage found zero indexing bugs — every missing
+   * file was correctly skipped by a rule that leaves no visible trace.
+   *
+   * Requires `admin-system`, not merely `admin-read`. The response reveals
+   * filesystem layout — which roots are scanned, which directories are ignored,
+   * whether a given path exists at all — so it is a probe of the host, not just
+   * of the index.
+   *
+   * POST rather than GET: a filesystem path in a query string lands in access
+   * logs and browser history, and paths are the one thing this endpoint is for.
+   */
+  async adminMediaExplainPath(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
+      if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      const target = typeof req.body?.path === 'string' ? req.body.path.trim() : '';
+      if (!target) {
+        return res.status(400).json({ error: 'A "path" is required' });
+      }
+      if (!path.isAbsolute(target)) {
+        // A relative path would be resolved against the server's cwd, which is
+        // never what the operator meant and would answer about the wrong file.
+        return res.status(400).json({ error: 'Path must be absolute' });
+      }
+
+      const mediaManager = this.engine.getManager('MediaManager');
+      if (!mediaManager) {
+        return res.status(503).json({ error: 'Media manager not enabled' });
+      }
+      const explanation = await mediaManager.explainPath(target);
+      if (!explanation) {
+        return res.status(501).json({ error: 'The configured media provider cannot explain paths' });
+      }
+      return res.json({ path: target, ...explanation });
+    } catch (err: unknown) {
+      logger.error('[media] Error explaining path:', err);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
   async adminMediaRescan(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
