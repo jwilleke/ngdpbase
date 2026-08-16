@@ -155,6 +155,55 @@ export default tseslint.config(
       "no-console": "off",
       "@typescript-eslint/no-unsafe-enum-comparison": "off"
     }
+  },
+
+  // ────────────────────────────────────────────────────────────────
+  // #1057 — the store boundary.
+  //
+  // "All code that touches a resource goes through that resource's manager.
+  // There is no second path." (docs/guiding-framework.md). Access logging,
+  // authorization, backup and encryption are each truthful ONLY because of
+  // that invariant — a path reaching around a manager does not make the audit
+  // log incomplete, it makes it wrong, and silently.
+  //
+  // The invariant held by convention until now. It erodes one convenient
+  // direct import at a time and nothing goes red, which is exactly the shape
+  // that documentation cannot catch.
+  //
+  // Applied to src/ only: scripts/ and tests legitimately reach past managers,
+  // and addons/ have their own boundaries. The exemptions below are narrow and
+  // stated, so a future reader can tell a decision from an oversight.
+  {
+    files: ["src/**/*.ts"],
+    ignores: [
+      "src/managers/**",   // managers ARE the door; this is their job
+      "src/providers/**",  // providers import each other (base classes, shared types)
+      "**/__tests__/**",   // tests construct providers directly on purpose
+      "**/*.test.ts",
+      // The logger bootstraps at module load, before WikiEngine and
+      // ConfigurationManager exist, so it cannot reach a manager to obtain its
+      // provider. Documented in the file's own header and in
+      // BaseLoggingProvider. This is a genuine bootstrap-ordering exemption,
+      // not a convenience.
+      "src/utils/logger.ts"
+    ],
+    rules: {
+      // `allowTypeImports` is the mechanism for the type-only carve-out, NOT a
+      // path negation. Every import in this ESM codebase ends in `.js`, so a
+      // pattern excluding `*.js` excludes everything and the rule silently
+      // matches nothing — which is precisely how the first version of this
+      // rule passed while enforcing nothing.
+      "@typescript-eslint/no-restricted-imports": ["error", {
+        patterns: [{
+          group: ["**/providers/*"],
+          allowTypeImports: true,
+          message:
+            "Only src/managers/ may import from src/providers/ (#1057). Go through the resource's manager. " +
+            "A type-only import is allowed — write `import type { X } from ...`, which erases at compile time " +
+            "and creates no runtime path to the data."
+        }]
+      }]
+    }
   }
 
   // ────────────────────────────────────────────────────────────────
