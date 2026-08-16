@@ -45,12 +45,7 @@ _None._
 
 ## 🔵 In review
 
-- [#1054](https://github.com/jwilleke/ngdpbase/issues/1054) — [BUG] Recent Changes lists audience-restricted pages to viewers who get 403 on them — _`security`. Fixed in `78ffb643` + `070f9406`_
-- [#1053](https://github.com/jwilleke/ngdpbase/issues/1053) — [BUG] Media keywords use a different, poorer dialog than pages — _fixed in `3931049a`. Unverified: the one-click keyword sets, absent on both media and page editors for the available account_
-- [#1052](https://github.com/jwilleke/ngdpbase/issues/1052) — [BUG] /admin/keywords 500s with `lockedUnless is not defined` — _fixed in `06af40a9`. Unverified: the read-only path, that `lockedUnless` disables for an account lacking `admin-system`_
-- [#1051](https://github.com/jwilleke/ngdpbase/issues/1051) — [FEATURE] Attachment `src` with a path component resolves to nothing — _fixed in `d281b978`_
-- [#886](https://github.com/jwilleke/ngdpbase/issues/886) — [FEATURE] OpenGraph + schema.org meta tags on page views (config-gated) — _fixed in `75001ef1`; verified off by default in the container image_
-- [#885](https://github.com/jwilleke/ngdpbase/issues/885) — [FEATURE] sitemap.xml for public instances (config-gated) — _fixed in `f2343032`; verified off by default in the container image_
+_None._
 
 ## ⏸ Deferred
 
