@@ -83,7 +83,7 @@ describe('FileSystemMediaProvider.rebuild() re-extracts Slice-3 fields (#771)', 
    */
   function stubFileList(paths: string[]) {
     (provider as unknown as { collectFilePaths: (dir: string, depth: number) => Promise<{ files: string[]; excluded: number; dirErrors: number }> }).collectFilePaths =
-      async () => ({ files: paths, excluded: 0, dirErrors: 0 });
+      async () => ({ files: paths, skipped: [], dirErrors: 0 });
   }
 
   function stubExiftoolByPath(byPath: Record<string, Record<string, unknown>>) {

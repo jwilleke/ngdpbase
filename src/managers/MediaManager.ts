@@ -438,6 +438,26 @@ class MediaManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * The skip report from the most recent scan (#1056).
+   *
+   * Answers "where did my file go?" across the whole library, where
+   * {@link explainPath} answers it for one path the operator can already name.
+   * Both exist because an operator who cannot find a file often cannot state
+   * its path either.
+   *
+   * Null when the provider keeps no report — the same reasoning as
+   * `explainPath`: a different provider skips for different reasons, and an
+   * empty report would be read as "nothing was skipped".
+   */
+  async getSkipReport(): Promise<import('../utils/explainMediaPath.js').MediaSkipReport | null> {
+    const p = this.provider as unknown as {
+      getSkipReport?: () => Promise<import('../utils/explainMediaPath.js').MediaSkipReport | null>;
+    } | null;
+    if (!p?.getSkipReport) return null;
+    return p.getSkipReport();
+  }
+
+  /**
    * List all media items for a given year, filtering out private items
    * that the current user cannot access.
    *

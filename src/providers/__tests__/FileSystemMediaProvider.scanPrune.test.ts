@@ -56,7 +56,7 @@ const minimalConfig = {
 type ProviderInternals = {
   index: Record<string, { filePath: string }>;
   generateId: (p: string) => string;
-  collectFilePaths: (dir: string, depth: number) => Promise<{ files: string[]; excluded: number; dirErrors: number }>;
+  collectFilePaths: (dir: string, depth: number) => Promise<{ files: string[]; skipped: unknown[]; dirErrors: number }>;
   exiftoolInstance: { read: (p: string) => Promise<Record<string, unknown>>; end: () => Promise<void> };
 };
 
@@ -77,7 +77,7 @@ describe('FileSystemMediaProvider.scan() prunes stale index entries (#867)', () 
 
   function stubCollect(result: { files: string[]; excluded?: number; dirErrors?: number }) {
     internals().collectFilePaths =
-      async () => ({ files: result.files, excluded: result.excluded ?? 0, dirErrors: result.dirErrors ?? 0 });
+      async () => ({ files: result.files, skipped: [], dirErrors: result.dirErrors ?? 0 });
   }
 
   beforeEach(() => {

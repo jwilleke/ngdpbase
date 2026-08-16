@@ -66,6 +66,20 @@ export interface ScanResult {
   errors: number;
   /** Number of files skipped by .ngdpbaseignore patterns or the ngdpbaseignore EXIF keyword */
   excluded?: number;
+  /**
+   * WHICH files were skipped and why (#1056).
+   *
+   * `excluded` alone cannot answer "where did my file go", and before #1056 it
+   * did not even count four of the skip reasons — an ignored directory, a
+   * .ngdpbaseignore directory match, a dotfile and an unsupported extension
+   * all passed silently, so a file could be absent while the counter read 0.
+   *
+   * Capped at SKIPPED_REPORT_CAP entries; `skippedTruncated` says when the cap
+   * was reached, because a silently shortened list reads as a complete one.
+   */
+  skipped?: import('../utils/explainMediaPath.js').SkippedEntry[];
+  /** True when `skipped` was capped and does not list every skip. */
+  skippedTruncated?: boolean;
   /** Number of indexed items with no usable capture date (EXIF/QuickTime) — they sort by file mtime (#807) */
   noCaptureDate?: number;
   /** Number of indexed items with a partial (year-only / year+month) EXIF date, defaulted to Jan 1 (#808) */

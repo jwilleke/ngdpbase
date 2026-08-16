@@ -13244,6 +13244,7 @@ ${panes}
     app.post('/admin/media/rescan', (req: Request, res: Response) => void this.adminMediaRescan(req, res));
     app.post('/admin/media/rebuild', (req: Request, res: Response) => void this.adminMediaRebuild(req, res));
     app.post('/api/admin/media/explain-path', (req: Request, res: Response) => void this.adminMediaExplainPath(req, res));
+    app.get('/api/admin/media/skipped', (req: Request, res: Response) => void this.adminMediaSkipped(req, res));
     // Slice 5b of #760 (#763) — attachments.rebuild trigger.
     app.post('/admin/attachments/rebuild', (req: Request, res: Response) => void this.adminAttachmentsRebuild(req, res));
 
@@ -16528,6 +16529,44 @@ ${description}
     }
   }
 
+  /**
+   * GET /api/admin/media/skipped (#1056).
+   *
+   * The list of files the last scan passed over, and why. `explain-path`
+   * answers for one path the operator can name; this answers when they cannot,
+   * which is the more common case behind #814's "media often not discovered".
+   *
+   * Same `admin-system` bar as `explain-path`, for the same reason: the
+   * response is a partial listing of the host filesystem, including paths that
+   * are deliberately excluded from the library.
+   *
+   * GET is safe here where `explain-path` needed POST — this takes no path as
+   * input, so nothing sensitive lands in a query string.
+   */
+  async adminMediaSkipped(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
+      if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      const mediaManager = this.engine.getManager('MediaManager');
+      if (!mediaManager) {
+        return res.status(503).json({ error: 'Media manager not enabled' });
+      }
+      const report = await mediaManager.getSkipReport();
+      if (!report) {
+        // 200 with an explicit "never scanned" rather than 404: the endpoint
+        // exists and the answer is real. A 404 would read as a broken route.
+        return res.json({ available: false, reason: 'No scan has been recorded yet — run a media rescan.' });
+      }
+      return res.json({ available: true, ...report });
+    } catch (err: unknown) {
+      logger.error('[media] Error reading skip report:', err);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
   async adminMediaRescan(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
@@ -16787,10 +16826,16 @@ ${description}
           const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
           reportProgress(`Scanning… ${processed.toLocaleString()}/${total.toLocaleString()} files (${pct}%)`);
         });
-        const r = result as { scanned?: number; added?: number; updated?: number; errors?: number };
+        const r = result as { scanned?: number; added?: number; updated?: number; errors?: number; excluded?: number };
+        // #1056: `excluded` used to omit four of the six skip reasons, so this
+        // line could read 0 while a whole ignored tree was dropped. It now
+        // counts every skip, and the paths are at /api/admin/media/skipped.
+        const skipped = r.excluded ?? 0;
         return {
           success: true,
-          summary: `Scanned ${r.scanned ?? 0}, added ${r.added ?? 0}, updated ${r.updated ?? 0}, errors ${r.errors ?? 0}`
+          summary:
+            `Scanned ${r.scanned ?? 0}, added ${r.added ?? 0}, updated ${r.updated ?? 0}, errors ${r.errors ?? 0}` +
+            (skipped > 0 ? `, skipped ${skipped}` : '')
         };
       }
     });

@@ -27,7 +27,10 @@ import {
   scanRootFor,
   type MediaPathExplanation,
   type MediaPathRules,
-  type MediaPathIndexFacts
+  type MediaPathIndexFacts,
+  type SkippedEntry,
+  type MediaSkipReason,
+  type MediaSkipReport
 } from '../utils/explainMediaPath.js';
 import BaseMediaProvider, { MediaItem, ScanResult } from './BaseMediaProvider.js';
 import type { AssetMetadataPatch } from '../types/Asset.js';
@@ -115,13 +118,33 @@ interface MediaIndexFile {
   items: Record<string, MediaIndexEntry>;
 }
 
+/**
+ * Maximum entries carried in a ScanResult's `skipped` list (#1056).
+ *
+ * The count is always exact; only the list is capped. Chosen to stay useful
+ * for diagnosis — an operator hunting one file needs to find it — without
+ * letting a scan of a large ignored tree produce a multi-megabyte result that
+ * is logged and returned over HTTP.
+ */
+const SKIPPED_REPORT_CAP = 1000;
+
+/** Exact skip tallies, computed before the report list is capped (#1056). */
+interface SkipTotals {
+  total: number;
+  byReason: Partial<Record<MediaSkipReason, number>>;
+  byMatched: Record<string, number>;
+}
+
 /** Accumulated scan counters threaded through recursive walk */
 interface ScanCounters {
   scanned: number;
   added: number;
   updated: number;
   errors: number;
+  /** Kept as a count because two log lines read it; derived from `skipped`. */
   excluded: number;
+  /** #1056 — WHICH files were skipped and why, not merely how many. */
+  skipped: SkippedEntry[];
   /** Items indexed with no usable capture date — surfaced to admins (#807) */
   noCaptureDate: number;
   /** Items with a partial (year-only / year+month) EXIF date, defaulted to Jan 1 — surfaced at WARN (#808) */
@@ -247,7 +270,7 @@ class FileSystemMediaProvider extends BaseMediaProvider {
       return { scanned: 0, added: 0, updated: 0, errors: 0 };
     }
 
-    const counters: ScanCounters = { scanned: 0, added: 0, updated: 0, errors: 0, excluded: 0, noCaptureDate: 0, partialCaptureDate: 0, removed: 0 };
+    const counters: ScanCounters = { scanned: 0, added: 0, updated: 0, errors: 0, excluded: 0, skipped: [], noCaptureDate: 0, partialCaptureDate: 0, removed: 0 };
     const missingFolders: string[] = [];
     const startMs = Date.now();
     logger.info(
@@ -269,7 +292,8 @@ class FileSystemMediaProvider extends BaseMediaProvider {
       }
       const collected = await this.collectFilePaths(folder, 0);
       allFiles.push(...collected.files);
-      counters.excluded += collected.excluded;
+      counters.skipped.push(...collected.skipped);
+      counters.excluded += collected.skipped.length;
       counters.errors += collected.dirErrors;
       if (collected.dirErrors === 0) {
         prunableFolders.push(folder);
@@ -332,7 +356,20 @@ class FileSystemMediaProvider extends BaseMediaProvider {
         `scanned=${counters.scanned} added=${counters.added} updated=${counters.updated} errors=${counters.errors} ` +
         `removed=${counters.removed} (~${msPerFile}ms/file)`
     );
-    return { ...counters, elapsedMs, missingFolders };
+    // #1056: cap the skip list. An install ignoring a large tree could
+    // otherwise carry tens of thousands of entries through a ScanResult that is
+    // logged and returned over HTTP. `skippedTruncated` is what keeps a
+    // shortened list from reading as a complete one.
+    const skippedTruncated = counters.skipped.length > SKIPPED_REPORT_CAP;
+    const result: ScanResult = {
+      ...counters,
+      skipped: skippedTruncated ? counters.skipped.slice(0, SKIPPED_REPORT_CAP) : counters.skipped,
+      skippedTruncated,
+      elapsedMs,
+      missingFolders
+    };
+    await this.saveSkipReport(result, this.tallySkips(counters.skipped));
+    return result;
   }
 
   /**
@@ -587,7 +624,7 @@ class FileSystemMediaProvider extends BaseMediaProvider {
     );
 
     const alternates = entry.alternates;
-    const counters: ScanCounters = { scanned: 0, added: 0, updated: 0, errors: 0, excluded: 0, noCaptureDate: 0, partialCaptureDate: 0, removed: 0 };
+    const counters: ScanCounters = { scanned: 0, added: 0, updated: 0, errors: 0, excluded: 0, skipped: [], noCaptureDate: 0, partialCaptureDate: 0, removed: 0 };
     await this.processFile(entry.filePath, counters, true);
     if (counters.errors > 0) {
       throw new Error(`Metadata written but re-index failed for ${entry.filename} — run a rescan`);
@@ -716,9 +753,16 @@ class FileSystemMediaProvider extends BaseMediaProvider {
   private async collectFilePaths(
     dirPath: string,
     depth: number
-  ): Promise<{ files: string[]; excluded: number; dirErrors: number }> {
+  ): Promise<{ files: string[]; skipped: SkippedEntry[]; dirErrors: number }> {
     if (this.config.maxDepth > 0 && depth > this.config.maxDepth) {
-      return { files: [], excluded: 0, dirErrors: 0 };
+      // #1056: the depth guard used to return silently, so an entire subtree
+      // vanished with nothing counted. Record the directory once rather than
+      // descending to enumerate what was never walked.
+      return {
+        files: [],
+        skipped: [{ path: dirPath, reason: 'max-depth', isDirectory: true, matched: String(depth) }],
+        dirErrors: 0
+      };
     }
 
     let entries: fs.Dirent[];
@@ -726,39 +770,62 @@ class FileSystemMediaProvider extends BaseMediaProvider {
       entries = await fs.readdir(dirPath, { withFileTypes: true });
     } catch (err) {
       logger.warn(`[FileSystemMediaProvider] Cannot read dir ${dirPath}: ${String(err)}`);
-      return { files: [], excluded: 0, dirErrors: 1 };
+      return { files: [], skipped: [], dirErrors: 1 };
     }
 
     const ignorePatterns = await this.loadIgnorePatterns(dirPath, entries);
     const files: string[] = [];
-    let excluded = 0;
+    const skipped: SkippedEntry[] = [];
     let dirErrors = 0;
 
+    // #1056: every `continue` below now records why. Four of these were
+    // previously silent — ignored directories, .ngdpbaseignore directory
+    // matches, dotfiles and unsupported extensions — so a file could be absent
+    // for six reasons while the `excluded` counter read zero, and the operator
+    // had nothing to go on.
     for (const entry of entries) {
+      const full = path.join(dirPath, entry.name);
+
       if (entry.isDirectory()) {
-        if (this.config.ignoreDirs.includes(entry.name)) continue;
-        if (ignorePatterns.length && this.matchesIgnorePattern(entry.name, ignorePatterns, true)) {
-          logger.debug(`[FileSystemMediaProvider] Skipping dir ${entry.name} — matched .ngdpbaseignore`);
+        if (this.config.ignoreDirs.includes(entry.name)) {
+          skipped.push({ path: full, reason: 'ignore-dir', isDirectory: true, matched: entry.name });
           continue;
         }
-        const sub = await this.collectFilePaths(path.join(dirPath, entry.name), depth + 1);
+        const dirPattern = ignorePatterns.find(p => this.matchesIgnorePattern(entry.name, [p], true));
+        if (dirPattern) {
+          logger.debug(`[FileSystemMediaProvider] Skipping dir ${entry.name} — matched .ngdpbaseignore`);
+          skipped.push({ path: full, reason: 'ignore-pattern', isDirectory: true, matched: dirPattern });
+          continue;
+        }
+        const sub = await this.collectFilePaths(full, depth + 1);
         files.push(...sub.files);
-        excluded += sub.excluded;
+        skipped.push(...sub.skipped);
         dirErrors += sub.dirErrors;
       } else if (entry.isFile()) {
-        if (entry.name.startsWith('.')) continue;
-        const ext = path.extname(entry.name).slice(1).toLowerCase();
-        if (!this.config.extensions.has(ext)) continue;
-        if (ignorePatterns.length && this.matchesIgnorePattern(entry.name, ignorePatterns, false)) {
-          logger.debug(`[FileSystemMediaProvider] Skipping file ${entry.name} — matched .ngdpbaseignore`);
-          excluded++;
+        if (entry.name.startsWith('.')) {
+          // `.ngdpbaseignore` itself is machinery, not a skipped media file;
+          // reporting it would be noise in every directory that has one.
+          if (entry.name !== '.ngdpbaseignore') {
+            skipped.push({ path: full, reason: 'dotfile' });
+          }
           continue;
         }
-        files.push(path.join(dirPath, entry.name));
+        const ext = path.extname(entry.name).slice(1).toLowerCase();
+        if (!this.config.extensions.has(ext)) {
+          skipped.push({ path: full, reason: 'extension', matched: ext || '(none)' });
+          continue;
+        }
+        const filePattern = ignorePatterns.find(p => this.matchesIgnorePattern(entry.name, [p], false));
+        if (filePattern) {
+          logger.debug(`[FileSystemMediaProvider] Skipping file ${entry.name} — matched .ngdpbaseignore`);
+          skipped.push({ path: full, reason: 'ignore-pattern', matched: filePattern });
+          continue;
+        }
+        files.push(full);
       }
     }
 
-    return { files, excluded, dirErrors };
+    return { files, skipped, dirErrors };
   }
 
   /**
@@ -825,6 +892,10 @@ class FileSystemMediaProvider extends BaseMediaProvider {
         logger.debug(`[FileSystemMediaProvider] Excluding ${filePath} — ngdpbaseignore keyword`);
         delete this.index[id]; // evict if previously indexed
         counters.excluded++;
+        // #1056: recorded here rather than in collectFilePaths because the
+        // keyword lives in the file's metadata, so it is only known after the
+        // file has been read.
+        counters.skipped.push({ path: filePath, reason: 'ignore-keyword' });
         return;
       }
 
@@ -1327,6 +1398,91 @@ class FileSystemMediaProvider extends BaseMediaProvider {
       logger.warn(
         `[FileSystemMediaProvider] Could not load index from ${this.config.indexFile}: ${String(err)}`
       );
+    }
+  }
+
+  /**
+   * Tally every skip before the list is capped (#1056).
+   *
+   * Runs on the full list, never the truncated one — that ordering is the
+   * whole point. On the reference library the cap drops 93% of the entries,
+   * so counts derived after capping would understate `extension` by 13,714.
+   */
+  private tallySkips(all: SkippedEntry[]): SkipTotals {
+    const byReason: Partial<Record<MediaSkipReason, number>> = {};
+    const byMatched: Record<string, number> = {};
+    for (const entry of all) {
+      byReason[entry.reason] = (byReason[entry.reason] ?? 0) + 1;
+      if (entry.matched) {
+        const key = `${entry.reason}:${entry.matched}`;
+        byMatched[key] = (byMatched[key] ?? 0) + 1;
+      }
+    }
+    return { total: all.length, byReason, byMatched };
+  }
+
+  /**
+   * Path of the skip report, beside the index file (#1056).
+   *
+   * Null when no `indexFile` is configured — an in-memory-only provider has
+   * nowhere to keep it, and the report must not silently outlive the index it
+   * describes.
+   */
+  private get skipReportFile(): string | null {
+    if (!this.config.indexFile) return null;
+    return path.join(path.dirname(this.config.indexFile), 'media-skip-report.json');
+  }
+
+  /**
+   * Persist the skip report for the scan that just finished (#1056).
+   *
+   * On disk rather than in memory because the question it answers — "where did
+   * my file go?" — is usually asked long after the scan, and often after a
+   * restart. An in-memory report reads as "no files were skipped" to anyone who
+   * did not personally trigger the last scan.
+   *
+   * Overwrites: it describes the CURRENT state of the library, so accumulating
+   * history would mean showing an operator files that a config change already
+   * un-skipped.
+   */
+  private async saveSkipReport(result: ScanResult, counts: SkipTotals): Promise<void> {
+    const target = this.skipReportFile;
+    if (!target) return;
+    try {
+      await fs.ensureDir(path.dirname(target));
+      await fs.writeJson(
+        target,
+        {
+          version: 1,
+          scannedAt: new Date().toISOString(),
+          // Counts are exact even when the list is capped; keeping both is what
+          // stops a truncated list from being read as the whole story.
+          totalSkipped: counts.total,
+          truncated: result.skippedTruncated ?? false,
+          byReason: counts.byReason,
+          byMatched: counts.byMatched,
+          skipped: result.skipped ?? []
+        },
+        { spaces: 2 }
+      );
+    } catch (err) {
+      logger.warn(`[FileSystemMediaProvider] Could not save skip report to ${target}: ${String(err)}`);
+    }
+  }
+
+  /**
+   * The skip report from the most recent scan, or null if none has been
+   * written (fresh install, or no `indexFile` configured).
+   */
+  async getSkipReport(): Promise<MediaSkipReport | null> {
+    const target = this.skipReportFile;
+    if (!target) return null;
+    try {
+      if (!(await fs.pathExists(target))) return null;
+      return (await fs.readJson(target)) as MediaSkipReport;
+    } catch (err) {
+      logger.warn(`[FileSystemMediaProvider] Could not read skip report ${target}: ${String(err)}`);
+      return null;
     }
   }
 

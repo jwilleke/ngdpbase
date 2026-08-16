@@ -47,6 +47,67 @@ export type MediaPathVerdict =
   /** Eligible, but not in the index — most likely never scanned. */
   | 'eligible-not-indexed';
 
+/**
+ * The subset of {@link MediaPathVerdict} that means "the scanner skipped this"
+ * (#1056). `indexed`, `alternate` and `eligible-not-indexed` are states rather
+ * than skips, so they are excluded.
+ *
+ * Shared with the scan-time skip report so the probe and the report cannot
+ * disagree about why a file is missing. Two vocabularies for one question is
+ * the drift this taxonomy exists to prevent.
+ */
+export type MediaSkipReason = Extract<
+  MediaPathVerdict,
+  'not-in-scanned-folder' | 'dotfile' | 'extension' | 'ignore-dir' | 'max-depth' | 'ignore-pattern' | 'ignore-keyword'
+>;
+
+/** One file or directory the scanner passed over, and why. */
+export interface SkippedEntry {
+  /** Absolute path. For a directory-level skip, the directory itself. */
+  path: string;
+  reason: MediaSkipReason;
+  /** True when `path` is a directory whose contents were never walked. */
+  isDirectory?: boolean;
+  /** The pattern or directory name that matched, when there was one. */
+  matched?: string;
+}
+
+/**
+ * The persisted skip report for the most recent scan (#1056).
+ *
+ * `totalSkipped` is always exact; `skipped` may be capped, in which case
+ * `truncated` is true. Reporting a shortened list as if it were complete is the
+ * failure this shape exists to prevent — "0 excluded" while a directory-level
+ * ignore quietly dropped a whole tree is what made the original counter
+ * useless.
+ */
+export interface MediaSkipReport {
+  version: number;
+  /** ISO timestamp of the scan that produced it. */
+  scannedAt: string;
+  totalSkipped: number;
+  truncated: boolean;
+  /**
+   * Exact count per reason, never capped.
+   *
+   * Measured on the reference library, the capped list alone would have been
+   * close to useless: 14,746 skips, 14,714 of them `extension`, against a cap
+   * of 1,000. The list gives examples; these counts give the shape, and the
+   * shape is what tells an operator whether their file is one of 14,000
+   * sidecars or the single odd case.
+   */
+  byReason: Partial<Record<MediaSkipReason, number>>;
+  /**
+   * Exact count per matched value within a reason — extensions, ignored
+   * directory names, ignore patterns. Answers "is my .orf being dropped?"
+   * without needing the file to appear in the capped list at all.
+   *
+   * Entries with no `matched` (dotfiles) are absent by construction.
+   */
+  byMatched: Record<string, number>;
+  skipped: SkippedEntry[];
+}
+
 export interface MediaPathExplanation {
   verdict: MediaPathVerdict;
   /** One sentence an operator can act on. */

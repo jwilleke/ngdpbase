@@ -85,7 +85,7 @@ describe('FileSystemMediaProvider date-range + captureDateField (#864)', () => {
 
   it('records captureDateField for the literal matching tag on scan', async () => {
     (provider as unknown as Internals).collectFilePaths =
-      async () => ({ files: ['/store/p.jpg', '/store/v.mp4'], excluded: 0, dirErrors: 0 });
+      async () => ({ files: ['/store/p.jpg', '/store/v.mp4'], skipped: [], dirErrors: 0 });
     (provider as unknown as Internals).exiftoolInstance = {
       async read(p: string) {
         if (p.endsWith('p.jpg')) return { DateTimeOriginal: { year: 2026, month: 6, day: 24, hour: 12 } };
