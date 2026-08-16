@@ -158,6 +158,27 @@
                                 <span class="text-muted">Filename</span>
                                 <span class="text-end" style="max-width:60%;overflow-wrap:break-word;"><%= item.filename %></span>
                             </li>
+                            <%# #848: alternate-format siblings folded into this entry by the
+                                #515 dedup. Placed directly under Filename because that is where
+                                someone hunting a "missing" file looks — 179 of the ~193 files
+                                reported missing in #814 were siblings exactly like these, and
+                                the fold was invisible, so correct behaviour read as data loss.
+                                Basenames only: the full path is operator-side detail and the
+                                directory is already shown above. %>
+                            <% if (Array.isArray(item.alternates) && item.alternates.length) { %>
+                            <li class="list-group-item">
+                                <div class="d-flex justify-content-between">
+                                    <span class="text-muted">Also available as</span>
+                                    <span class="text-end" style="max-width:60%;overflow-wrap:break-word;">
+                                        <% item.alternates.forEach(function (p, i) { %><%= i ? ', ' : '' %><%= String(p).split('/').pop() %><% }); %>
+                                    </span>
+                                </div>
+                                <div class="text-muted mt-1" style="font-size:0.75em;">
+                                    <i class="fas fa-info-circle"></i>
+                                    Same photo in <%= item.alternates.length === 1 ? 'another format' : 'other formats' %>, shown once here rather than as separate items.
+                                </div>
+                            </li>
+                            <% } %>
                             <% if (item.year) { %>
                             <li class="list-group-item d-flex justify-content-between">
                                 <span class="text-muted">Year</span>
