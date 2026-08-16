@@ -28,9 +28,9 @@ _None._
 
 ## 🟡 P2
 
+- [#1022](https://github.com/jwilleke/ngdpbase/issues/1022) — [FEATURE] Magic link: optional device/state binding + record IP and User-Agent at redemption — _`security`; hardening on the one instance taking anonymous magic-link authors_
 - [#1056](https://github.com/jwilleke/ngdpbase/issues/1056) — [FEATURE] Media scan: retain and expose the list of skipped files, not just a count — _the `excluded` counter is incomplete as well as unlabelled: two skip sites increment it, four skip silently, so a file can be absent for six reasons while it reads 0_
 - [#1028](https://github.com/jwilleke/ngdpbase/issues/1028) — [FEATURE] Config cleanup — remove dead keys and stop documenting them as live — _~108 reader-less keys need triage against dynamically-constructed key names, the part where a naive sweep deletes something live_
-- [#1022](https://github.com/jwilleke/ngdpbase/issues/1022) — [FEATURE] Magic link: optional device/state binding + record IP and User-Agent at redemption — _`security`; hardening on the one instance taking anonymous magic-link authors_
 - [#1021](https://github.com/jwilleke/ngdpbase/issues/1021) — [FEATURE] Magic link: close the non-atomic verify→consume window — _do NOT start in isolation: the issue's own body says the GET-consumption bug must land first or this work is wasted_
 - [#1006](https://github.com/jwilleke/ngdpbase/issues/1006) — [FEATURE] BaseManager.getStats() — one uniform 'what do you hold' contract across managers
 - [#921](https://github.com/jwilleke/ngdpbase/issues/921) — [FEATURE] Dawarich timeline as live storybook source (Tier-2) — /timeline + /tracks into the generator
