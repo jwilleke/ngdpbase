@@ -2632,22 +2632,11 @@ ${panes}
         );
       }
 
-      // Load page metadata before ACL checks so Tier 0 / Tier 1.5 have full context
-      const metadata = await pageManager.getPageMetadata(pageName);
-      // Coerce keyword fields to arrays — JSPWiki imports may store them as
-      // space-separated scalars (e.g. `user-keywords: foo bar baz`).
-      if (metadata) {
-        if (!Array.isArray(metadata['user-keywords'])) {
-          metadata['user-keywords'] = metadata['user-keywords']
-            ? String(metadata['user-keywords']).split(/[\s,]+/).filter(Boolean)
-            : [];
-        }
-        if (!Array.isArray(metadata['system-keywords'])) {
-          const sk = metadata['system-keywords'];
-          metadata['system-keywords'] = (typeof sk === 'string' && sk) ? [sk] : [];
-        }
-      }
-      (wikiContext as { pageMetadata: unknown }).pageMetadata = metadata ?? null;
+      // Load page metadata before ACL checks so Tier 0 / Tier 1.5 have full
+      // context. Shared with the export routes (#1060) so the two paths to a
+      // page's content cannot present the evaluator with different facts.
+      const metadata = await this.loadPageMetadataForAcl(pageName);
+      (wikiContext as { pageMetadata: unknown }).pageMetadata = metadata;
 
       // Update WikiContext with page content for ACL checking
       (wikiContext as { content: string | null }).content = markdown;
@@ -5473,10 +5462,81 @@ ${panes}
   /**
    * Export page selection form
    */
+  /**
+   * Load a page's metadata in the shape the ACL evaluator expects (#1060).
+   *
+   * Tier 0 (private) and Tier 1 (audience/access) read frontmatter, so the
+   * metadata must be attached to the WikiContext BEFORE any permission check —
+   * evaluating with no metadata asks the evaluator a different question than
+   * the one the caller meant.
+   *
+   * Keyword fields are coerced to arrays because JSPWiki imports may store
+   * them as space-separated scalars (`user-keywords: foo bar baz`).
+   */
+  private async loadPageMetadataForAcl(pageName: string): Promise<PageFrontmatter | null> {
+    const pageManager = this.engine.getManager('PageManager');
+    const metadata = await pageManager.getPageMetadata(pageName);
+    if (metadata) {
+      if (!Array.isArray(metadata['user-keywords'])) {
+        metadata['user-keywords'] = metadata['user-keywords']
+          ? String(metadata['user-keywords']).split(/[\s,]+/).filter(Boolean)
+          : [];
+      }
+      if (!Array.isArray(metadata['system-keywords'])) {
+        const sk = metadata['system-keywords'];
+        metadata['system-keywords'] = (typeof sk === 'string' && sk) ? [sk] : [];
+      }
+    }
+    return metadata ?? null;
+  }
+
+  /**
+   * May this caller read this page? (#1060)
+   *
+   * The single read gate, shared by the view route and the export routes.
+   * Export existed as a second path to page content that evaluated no ACL at
+   * all, so a private page was extractable by anyone who could name it. The
+   * fix is not a second check that happens to agree — it is the same check.
+   *
+   * Returns the metadata alongside the decision so callers do not re-read it.
+   */
+  private async checkPageReadAccess(
+    req: Request,
+    pageName: string
+  ): Promise<{ allowed: boolean; metadata: PageFrontmatter | null }> {
+    const wikiContext = this.createWikiContext(req, {
+      context: WikiContext.CONTEXT.VIEW,
+      pageName
+    });
+    const metadata = await this.loadPageMetadataForAcl(pageName);
+    (wikiContext as { pageMetadata: unknown }).pageMetadata = metadata;
+
+    const aclManager = this.engine.getManager('ACLManager');
+    const allowed = await aclManager.checkPagePermissionWithContext(wikiContext, 'view');
+    return { allowed, metadata };
+  }
+
   async exportPage(req: Request, res: Response) {
     try {
+      // #1060: the export picker was reachable by anyone. It is the entry
+      // point to the export routes, so it takes the same permission they do.
+      const wikiContext = this.createWikiContext(req);
+      if (!(await wikiContext.hasPermission('page-export'))) {
+        return await this.renderError(
+          req,
+          res,
+          403,
+          'Access Denied',
+          'You do not have permission to export pages.'
+        );
+      }
       const commonData = await this.getCommonTemplateData(req);
       const pageManager = this.engine.getManager('PageManager');
+      // NOTE: this list is not ACL-filtered, so it can name pages the caller
+      // cannot read. Selecting one now yields 404 from `denyExport`, so no
+      // content leaks — but the titles do. `getAllPages()` is unfiltered at
+      // every one of its call sites; tracked separately rather than fixed here
+      // with a per-request ACL evaluation of ~18k pages.
       const pageNames = await pageManager.getAllPages();
 
       return res.render('export', {
@@ -5493,9 +5553,43 @@ ${panes}
   /**
    * Export page to HTML
    */
+  /**
+   * Deny an export unless the caller may both read the page and export at all
+   * (#1060). Returns a sent response when denied, or null to proceed.
+   *
+   * Two checks, deliberately, in this order:
+   *
+   *   1. `checkPageReadAccess` — the SAME gate the view route uses. Export was
+   *      a second path to page content that evaluated no ACL, so a private
+   *      page was extractable by anyone who could name it.
+   *   2. `page-export` — reading one page on screen and extracting it to a file
+   *      are different acts with different risk, which is why the permission
+   *      exists. It was declared, granted to five roles, and checked nowhere.
+   *
+   * 404 rather than 403 on a read denial, matching how a caller who cannot see
+   * a page should experience it: a 403 confirms the page exists, which for a
+   * private page is itself a disclosure. The `page-export` denial is a plain
+   * 403 — by then the caller has already been shown the page can be read.
+   */
+  private async denyExport(req: Request, res: Response, pageName: string): Promise<Response | null> {
+    const { allowed } = await this.checkPageReadAccess(req, pageName);
+    if (!allowed) {
+      logger.warn(`[export] Denied — no read access to '${pageName}'`);
+      return res.status(404).send('Page not found');
+    }
+    const wikiContext = this.createWikiContext(req, { pageName });
+    if (!(await wikiContext.hasPermission('page-export'))) {
+      logger.warn(`[export] Denied — '${pageName}' readable but caller lacks page-export`);
+      return res.status(403).send('You do not have permission to export pages');
+    }
+    return null;
+  }
+
   async exportPageHtml(req: Request, res: Response) {
     try {
       const { page: pageName } = req.params;
+      const denied = await this.denyExport(req, res, pageName);
+      if (denied) return denied;
       const exportManager = this.engine.getManager('ExportManager');
 
       const html = await exportManager.exportPageToHtml(pageName);
@@ -5522,6 +5616,8 @@ ${panes}
   async exportPageMarkdown(req: Request, res: Response) {
     try {
       const { page: pageName } = req.params;
+      const denied = await this.denyExport(req, res, pageName);
+      if (denied) return denied;
       const exportManager = this.engine.getManager('ExportManager');
 
       const markdown = await exportManager.exportToMarkdown(pageName);
@@ -5547,6 +5643,20 @@ ${panes}
    */
   async listExports(req: Request, res: Response) {
     try {
+      // #1060: this lists the export directory, which holds files saved by
+      // every user who has ever exported anything — content the caller may
+      // have no right to read. Admin-only until exports are either per-caller
+      // or not persisted at all.
+      const wikiContext = this.createWikiContext(req);
+      if (!(await wikiContext.hasPermission('admin-system'))) {
+        return await this.renderError(
+          req,
+          res,
+          403,
+          'Access Denied',
+          'You do not have permission to view saved exports.'
+        );
+      }
       const commonData = await this.getCommonTemplateData(req);
       const exportManager = this.engine.getManager('ExportManager');
       const exports = await exportManager.getExports();
