@@ -192,8 +192,12 @@ Present in this repo:
 
 Worth adding wherever this core is used:
 
-- **A store-boundary lint rule** — only `managers/` may import the store or driver; everything else imports managers. The check earns its place the way the others do: delete the rule and prove CI goes red.
-- **A registry-drift test** — assert that every permission in config is checked somewhere in code, and that every permission checked in code exists in config. It catches drift in both directions: an orphan permission that protects nothing, and a check spelled `x-view` where the registry says `x-read`. One fails open and looks fine; the other fails closed and also looks fine.
+- **A store-boundary lint rule** — only `managers/` may import from `providers/`; everything else goes through a manager ([#1057](https://github.com/jwilleke/ngdpbase/issues/1057)). Cheapest to add while the count of exceptions is small: here it is two, both benign — the logger, which bootstraps before any manager exists, and one type-only import that erases at compile time.
+- **A registry-drift test** — assert that every permission in config is checked somewhere in code, and that every permission checked in code exists in config ([#1058](https://github.com/jwilleke/ngdpbase/issues/1058)). It catches drift in both directions: an orphan permission that protects nothing, and a check spelled `x-view` where the registry says `x-read`. One fails open and looks fine; the other fails closed and also looks fine.
+
+Both are currently clean here — zero orphan permissions, zero unregistered checks, two justified boundary exceptions. That is the argument for writing the checks now: a passing guard written today pins a property, while the same guard written after the first drift is a bug report.
+
+Whatever the check, prove it fails before trusting it. A static scan that matches nothing passes vacuously, and a guard nobody has watched go red is a guard nobody knows works.
 
 ## Extending this core
 

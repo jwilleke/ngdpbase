@@ -29,6 +29,8 @@ _None._
 ## 🟡 P2
 
 - [#1022](https://github.com/jwilleke/ngdpbase/issues/1022) — [FEATURE] Magic link: optional device/state binding + record IP and User-Agent at redemption — _`security`; hardening on the one instance taking anonymous magic-link authors_
+- [#1057](https://github.com/jwilleke/ngdpbase/issues/1057) — [FEATURE] Lint rule: only `managers/` may import `providers/` — _enforces the invariant the architecture rests on; starts green, only two exceptions and both benign (logger bootstrap, one type-only import)_
+- [#1058](https://github.com/jwilleke/ngdpbase/issues/1058) — [FEATURE] Test that the permission registry and the enforcement points agree, both directions — _both directions currently clean (0 orphans, 0 unregistered checks); a guard written now pins that, written later it is a bug report_
 - [#1056](https://github.com/jwilleke/ngdpbase/issues/1056) — [FEATURE] Media scan: retain and expose the list of skipped files, not just a count — _the `excluded` counter is incomplete as well as unlabelled: two skip sites increment it, four skip silently, so a file can be absent for six reasons while it reads 0_
 - [#1028](https://github.com/jwilleke/ngdpbase/issues/1028) — [FEATURE] Config cleanup — remove dead keys and stop documenting them as live — _~108 reader-less keys need triage against dynamically-constructed key names, the part where a naive sweep deletes something live_
 - [#1021](https://github.com/jwilleke/ngdpbase/issues/1021) — [FEATURE] Magic link: close the non-atomic verify→consume window — _do NOT start in isolation: the issue's own body says the GET-consumption bug must land first or this work is wasted_
