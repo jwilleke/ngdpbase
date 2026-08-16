@@ -28,6 +28,7 @@ _None._
 
 ## 🟡 P2
 
+- [#1056](https://github.com/jwilleke/ngdpbase/issues/1056) — [FEATURE] Media scan: retain and expose the list of skipped files, not just a count — _the `excluded` counter is incomplete as well as unlabelled: two skip sites increment it, four skip silently, so a file can be absent for six reasons while it reads 0_
 - [#1028](https://github.com/jwilleke/ngdpbase/issues/1028) — [FEATURE] Config cleanup — remove dead keys and stop documenting them as live — _~108 reader-less keys need triage against dynamically-constructed key names, the part where a naive sweep deletes something live_
 - [#1022](https://github.com/jwilleke/ngdpbase/issues/1022) — [FEATURE] Magic link: optional device/state binding + record IP and User-Agent at redemption — _`security`; hardening on the one instance taking anonymous magic-link authors_
 - [#1021](https://github.com/jwilleke/ngdpbase/issues/1021) — [FEATURE] Magic link: close the non-atomic verify→consume window — _do NOT start in isolation: the issue's own body says the GET-consumption bug must land first or this work is wasted_
@@ -36,7 +37,7 @@ _None._
 - [#873](https://github.com/jwilleke/ngdpbase/issues/873) — [FEATURE] Day-level media filtering for MediaPlugin / media API
 - [#872](https://github.com/jwilleke/ngdpbase/issues/872) — [FEATURE] Storybook generator — Timeline + TeslaMate + media + statement → NCM day pages — _must bake #898's replace-on-regen in from day one; treat that as a hard requirement_
 - [#871](https://github.com/jwilleke/ngdpbase/issues/871) — [EPIC] Trip Storybook — generated day-page travel stories from Timeline + TeslaMate + media + spend
-- [#848](https://github.com/jwilleke/ngdpbase/issues/848) — [FEATURE] Media Manager: surface alternate-format and excluded files ("why isn't my file showing?") — _the only item phrased as an actual support question; observed friction rather than speculative architecture_
+- [#848](https://github.com/jwilleke/ngdpbase/issues/848) — [FEATURE] Media Manager: surface alternate-format and excluded files ("why isn't my file showing?") — _part 1 shipped; part 2 split to #1056; only the admin path probe remains here, and it is a thin wrapper over #1056_
 - [#843](https://github.com/jwilleke/ngdpbase/issues/843) — [FEATURE] Consider Logging App — _log redaction shipped first on purpose: an aggregator would make a leaked secret durable and searchable_
 - [#786](https://github.com/jwilleke/ngdpbase/issues/786) — [FEATURE] Auto-journal — digester consuming CatalogManager records into journal entries
 - [#762](https://github.com/jwilleke/ngdpbase/issues/762) — [FEATURE] CatalogSource producer roster — full candidate set across managers, addons, and external feeds
