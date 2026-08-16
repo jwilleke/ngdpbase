@@ -37,7 +37,6 @@ _None._
 - [#873](https://github.com/jwilleke/ngdpbase/issues/873) — [FEATURE] Day-level media filtering for MediaPlugin / media API
 - [#872](https://github.com/jwilleke/ngdpbase/issues/872) — [FEATURE] Storybook generator — Timeline + TeslaMate + media + statement → NCM day pages — _must bake #898's replace-on-regen in from day one; treat that as a hard requirement_
 - [#871](https://github.com/jwilleke/ngdpbase/issues/871) — [EPIC] Trip Storybook — generated day-page travel stories from Timeline + TeslaMate + media + spend
-- [#848](https://github.com/jwilleke/ngdpbase/issues/848) — [FEATURE] Media Manager: surface alternate-format and excluded files ("why isn't my file showing?") — _part 1 shipped; part 2 split to #1056; only the admin path probe remains here, and it is a thin wrapper over #1056_
 - [#843](https://github.com/jwilleke/ngdpbase/issues/843) — [FEATURE] Consider Logging App — _log redaction shipped first on purpose: an aggregator would make a leaked secret durable and searchable_
 - [#786](https://github.com/jwilleke/ngdpbase/issues/786) — [FEATURE] Auto-journal — digester consuming CatalogManager records into journal entries
 - [#762](https://github.com/jwilleke/ngdpbase/issues/762) — [FEATURE] CatalogSource producer roster — full candidate set across managers, addons, and external feeds
