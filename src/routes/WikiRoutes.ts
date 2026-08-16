@@ -39,6 +39,7 @@ import type { ShareScope } from '../types/Share.js';
 import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../utils/ContactSubmissionLog.js';
 import { stringifyJsonLdForScript, wantsJsonLd } from '../utils/buildPageJsonLd.js';
 import { articleToPageJsonLd } from '../utils/articleToPageJsonLd.js';
+import { buildSocialMeta } from '../utils/buildSocialMeta.js';
 import { getSuggestedKeywordSets, type RecentPageKeywords, type KeywordSetSuggestion } from '../utils/suggestedKeywords.js';
 import { normalizeKeywordValue, groupKeywordVariants, dedupeKeywords, type KeywordFormStat } from '../utils/keywordNormalizer.js';
 import type { Article } from '../types/Schema.js';
@@ -2687,7 +2688,30 @@ ${panes}
         metadata
       );
 
+      // #886 — OpenGraph / Twitter tags, gated on ngdpbase.seo.enabled and
+      // OFF by default: a private or intranet install should expose nothing
+      // extra, and these tags only earn their keep where anonymous visitors
+      // are welcome.
+      //
+      // Skipped for private pages. Not a security control — an unauthenticated
+      // crawler gets a 403 from the ACL long before it reads any tag — but a
+      // private page cannot unfurl anywhere, so emitting a card for one is
+      // dead markup that invites the reader to think it can be shared.
+      const _seoEnabled = this.engine.getManager('ConfigurationManager')
+        ?.getProperty?.('ngdpbase.seo.enabled', false) === true;
+      const _pageIsPrivate = await this._isPagePrivate(pageName);
+      const socialMeta = (_seoEnabled && !_pageIsPrivate)
+        ? buildSocialMeta({
+          pageName,
+          metadata,
+          contentHtml: html,
+          baseUrl: this.engine.getManager('ConfigurationManager')?.getBaseURL?.() ?? '',
+          applicationName: templateData.applicationName ?? ''
+        })
+        : [];
+
       res.render(template, {
+        socialMeta,
         ...templateData,
         pageName,
         title: pageName, // For reader view template
@@ -2708,7 +2732,11 @@ ${panes}
         // the caller to be admin or page-creator. So the gate is implicit
         // here; show the private badge unconditionally when the page IS
         // marked private.
-        pageIsPrivate: await this._isPagePrivate(pageName),
+        //
+        // #886: resolved once above as `_pageIsPrivate` and reused — the
+        // social-meta gate needs the same answer, and calling the helper twice
+        // per render would double a page-index lookup for no benefit.
+        pageIsPrivate: _pageIsPrivate,
         versionInfo,
         lastModified: metadata?.lastModified,
         referringPages: [], // TODO: Implement backlink detection

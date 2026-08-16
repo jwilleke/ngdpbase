@@ -19,6 +19,8 @@
   "ngdpbase.application.contact.footer.enabled": true,
   "ngdpbase.application.contact.persist.enabled": true,
   "ngdpbase.application.contact.persist.path": "",
+  "_comment_seo": "#885/#886 — public-instance discoverability. OFF by default: a private or intranet install must expose nothing extra, and these features assume anonymous visitors are welcome. Turning this on enables OpenGraph/Twitter tags on page views (so shared links unfurl in chat apps) and, once #885 lands, /sitemap.xml. Both require ngdpbase.application.base-url to be set to the real public URL — og:url and sitemap entries must be absolute, and a relative or localhost value is silently ignored by every consumer. Structured data is unaffected: the JSON-LD block ships on every page view regardless (#760/#765).",
+  "ngdpbase.seo.enabled": false,
   "ngdpbase.server.port": 3000,
   "ngdpbase.server.host": "localhost",
   "_comment_trust_proxy": "Express 'trust proxy' setting (#861). Default false: req.ip is the direct socket peer. Behind a reverse proxy / Cloudflare Tunnel set to 'loopback' (or a hop count / subnet list) so req.ip reflects X-Forwarded-For and rate limiting / audit see real client IPs. Never true/enabled on directly-reachable instances — X-Forwarded-For is client-spoofable.",
