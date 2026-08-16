@@ -81,7 +81,9 @@ Config selects and parameterises. It never expresses logic. A conditional that l
 
 A capability should have a `Null` or `console` provider, and it should be the default, so the system is never broken for want of configuration — it degrades to inert. An unconfigured mail transport logs the message instead of failing, which is why a demo instance cannot email strangers by accident.
 
-This is a rule to apply, not a property already universal here: audit and cache ship `Null` providers and mail defaults to `console`, but search has no inert implementation. A capability with no inert default cannot be left unconfigured.
+The inert default need not be a `Null` provider — it needs to be an implementation that cannot fail for want of configuration. Audit and cache use `Null` providers and mail defaults to `console`, while search defaults to an in-process index requiring no external service and no settings, and falls back to it when a configured provider fails to load. A `Null` search provider would be worse than the default it replaced: silence instead of a working index.
+
+The test is therefore not "does a `Null` implementation exist" but "can this capability be left unconfigured without breaking".
 
 ### Not configured means not loaded
 
@@ -214,7 +216,7 @@ Measured against this repository at v4.10.0. Included so the model above can be 
 | Providers | 36 |
 | Permissions in the registry | 19, across 5 targets |
 | Auth providers, all registered through the public method | 6 |
-| Capabilities with an inert default | audit and cache (`Null` providers), mail (`console`) |
+| Capabilities safe to leave unconfigured | audit and cache (`Null` providers), mail (`console`), search (in-process index) |
 
 ## Known gaps
 
