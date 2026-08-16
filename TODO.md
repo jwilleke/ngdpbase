@@ -24,6 +24,7 @@ Scanner state (2026-08-16, at v4.9.1): **ZERO open alerts, both kinds** — re-q
 
 ## 🟠 P1
 
+- [#1054](https://github.com/jwilleke/ngdpbase/issues/1054) — [BUG] Recent Changes lists audience-restricted pages to viewers who get 403 on them — *`security`. All 347 audience-restricted pages on jimstest pass the visibility filter for an anonymous viewer. TWO compounding defects: `getRecentChanges` nests the audience test inside `if (idx.isPrivate)` so non-private pages are never tested (0 pages set `private:true`, 347 set `audience`), and `audienceRoles` is stale in the index (347 vs 2). Content is NOT exposed — only existence, title, slug, mtime. Found via #885*
 - [#1053](https://github.com/jwilleke/ngdpbase/issues/1053) — [BUG] Media keywords use a different, poorer dialog than pages — *`/media/item/<id>` offers a bare "Keywords (comma-separated)" box with no suggestions, where page editing has the richer picker. Same data, two affordances*
 
 ## 🟡 P2
