@@ -1,0 +1,14 @@
+// TypeDoc output. Generated from source on every `npm run docs:api`, so any fix
+// applied here is discarded by the next run — the source of a fix is the TSDoc
+// comment, not this file.
+//
+// This exemption used to live in the repo's .markdownlintignore. The agent kit
+// moved markdown linting to markdownlint-cli2, which does NOT read that file, so
+// the entry stopped being honoured and five violations surfaced in generated
+// output. A directory-level config is what cli2 does read, and install-kit.sh
+// never writes into subdirectories, so it survives every kit sync.
+{
+  "config": {
+    "default": false
+  }
+}
