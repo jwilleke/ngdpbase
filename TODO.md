@@ -34,6 +34,7 @@ _None._
 
 - [#1064](https://github.com/jwilleke/ngdpbase/issues/1064) — [FEATURE] Pin the showdown converter options that keep two stored-XSS advisories unreachable
 - [#1022](https://github.com/jwilleke/ngdpbase/issues/1022) — [FEATURE] Magic link: optional device/state binding + record IP and User-Agent at redemption
+- [#1066](https://github.com/jwilleke/ngdpbase/issues/1066) — [kit] behind v1.2.1-6-gaa88625 (repo at v1.1.0-2-gf82f1c9)
 - [#1028](https://github.com/jwilleke/ngdpbase/issues/1028) — [FEATURE] Config cleanup — remove dead keys and stop documenting them as live
 - [#1021](https://github.com/jwilleke/ngdpbase/issues/1021) — [FEATURE] Magic link: close the non-atomic verify→consume window (one token can mint two sessions)
 - [#1006](https://github.com/jwilleke/ngdpbase/issues/1006) — [FEATURE] BaseManager.getStats() — one uniform 'what do you hold' contract across managers
