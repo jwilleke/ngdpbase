@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,6 +14,6 @@ User preferences interface (for locale support)
 
 ### locale?
 
-> `optional` **locale**: `string`
+> `optional` __locale__: `string`
 
 Defined in: [src/managers/ExportManager.ts:32](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ExportManager.ts#L32)

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Filter configuration (from config files)
 
 ### cacheResults
 
-> **cacheResults**: `boolean`
+> __cacheResults__: `boolean`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:51](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L51)
 
@@ -22,7 +22,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:51](https://github.com/jwilleke/n
 
 ### cacheTTL
 
-> **cacheTTL**: `number`
+> __cacheTTL__: `number`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:52](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L52)
 
@@ -30,7 +30,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:52](https://github.com/jwilleke/n
 
 ### enabled
 
-> **enabled**: `boolean`
+> __enabled__: `boolean`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:48](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L48)
 
@@ -38,7 +38,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:48](https://github.com/jwilleke/n
 
 ### logLevel
 
-> **logLevel**: `string`
+> __logLevel__: `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L54)
 
@@ -46,7 +46,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:54](https://github.com/jwilleke/n
 
 ### priority
 
-> **priority**: `number`
+> __priority__: `number`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:49](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L49)
 
@@ -54,7 +54,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:49](https://github.com/jwilleke/n
 
 ### reportErrors
 
-> **reportErrors**: `boolean`
+> __reportErrors__: `boolean`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:53](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L53)
 
@@ -62,6 +62,6 @@ Defined in: [src/parsers/filters/BaseFilter.ts:53](https://github.com/jwilleke/n
 
 ### timeout
 
-> **timeout**: `number`
+> __timeout__: `number`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:50](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L50)

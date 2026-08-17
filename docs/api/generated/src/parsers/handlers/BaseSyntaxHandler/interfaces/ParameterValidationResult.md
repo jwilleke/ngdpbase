@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Single parameter validation result
 
 ### error?
 
-> `optional` **error**: `string`
+> `optional` __error__: `string`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:86](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L86)
 
@@ -22,6 +22,6 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:86](https://github.com/jw
 
 ### value?
 
-> `optional` **value**: `unknown`
+> `optional` __value__: `unknown`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:87](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L87)

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -16,7 +16,7 @@ Information about version storage and disk usage.
 
 ### avgVersionSize
 
-> **avgVersionSize**: `number`
+> __avgVersionSize__: `number`
 
 Defined in: [src/types/Version.ts:182](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L182)
 
@@ -26,7 +26,7 @@ Average version size
 
 ### compressedVersions
 
-> **compressedVersions**: `number`
+> __compressedVersions__: `number`
 
 Defined in: [src/types/Version.ts:185](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L185)
 
@@ -36,7 +36,7 @@ Number of compressed versions
 
 ### deltaVersions
 
-> **deltaVersions**: `number`
+> __deltaVersions__: `number`
 
 Defined in: [src/types/Version.ts:188](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L188)
 
@@ -46,7 +46,7 @@ Number of delta versions
 
 ### newestVersion
 
-> **newestVersion**: `string`
+> __newestVersion__: `string`
 
 Defined in: [src/types/Version.ts:194](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L194)
 
@@ -56,7 +56,7 @@ Newest version timestamp
 
 ### oldestVersion
 
-> **oldestVersion**: `string`
+> __oldestVersion__: `string`
 
 Defined in: [src/types/Version.ts:191](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L191)
 
@@ -66,7 +66,7 @@ Oldest version timestamp
 
 ### pageUuid
 
-> **pageUuid**: `string`
+> __pageUuid__: `string`
 
 Defined in: [src/types/Version.ts:167](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L167)
 
@@ -76,7 +76,7 @@ Page UUID
 
 ### spaceSavings
 
-> **spaceSavings**: `number`
+> __spaceSavings__: `number`
 
 Defined in: [src/types/Version.ts:179](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L179)
 
@@ -86,7 +86,7 @@ Space saved (0-100)
 
 ### storageSize
 
-> **storageSize**: `number`
+> __storageSize__: `number`
 
 Defined in: [src/types/Version.ts:176](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L176)
 
@@ -96,7 +96,7 @@ Storage size with compression/deltas in bytes
 
 ### totalSize
 
-> **totalSize**: `number`
+> __totalSize__: `number`
 
 Defined in: [src/types/Version.ts:173](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L173)
 
@@ -106,7 +106,7 @@ Total storage size in bytes (all versions)
 
 ### totalVersions
 
-> **totalVersions**: `number`
+> __totalVersions__: `number`
 
 Defined in: [src/types/Version.ts:170](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L170)
 

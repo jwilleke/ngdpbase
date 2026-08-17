@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Parse time entry
 
 ### cacheHit
 
-> **cacheHit**: `boolean`
+> __cacheHit__: `boolean`
 
 Defined in: [src/parsers/MarkupParser.ts:284](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L284)
 
@@ -24,7 +24,7 @@ Whether this was a cache hit
 
 ### time
 
-> **time**: `number`
+> __time__: `number`
 
 Defined in: [src/parsers/MarkupParser.ts:282](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L282)
 
@@ -34,7 +34,7 @@ Parse time in milliseconds
 
 ### timestamp
 
-> **timestamp**: `number`
+> __timestamp__: `number`
 
 Defined in: [src/parsers/MarkupParser.ts:286](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L286)
 

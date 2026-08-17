@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Notification object structure
 
 ### createdAt
 
-> **createdAt**: `Date`
+> __createdAt__: `Date`
 
 Defined in: [src/managers/NotificationManager.ts:18](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L18)
 
@@ -22,7 +22,7 @@ Defined in: [src/managers/NotificationManager.ts:18](https://github.com/jwilleke
 
 ### dismissedBy
 
-> **dismissedBy**: `string`[]
+> __dismissedBy__: `string`[]
 
 Defined in: [src/managers/NotificationManager.ts:20](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L20)
 
@@ -30,7 +30,7 @@ Defined in: [src/managers/NotificationManager.ts:20](https://github.com/jwilleke
 
 ### expiresAt
 
-> **expiresAt**: `Date` \| `null`
+> __expiresAt__: `Date` \| `null`
 
 Defined in: [src/managers/NotificationManager.ts:19](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L19)
 
@@ -38,7 +38,7 @@ Defined in: [src/managers/NotificationManager.ts:19](https://github.com/jwilleke
 
 ### id
 
-> **id**: `string`
+> __id__: `string`
 
 Defined in: [src/managers/NotificationManager.ts:12](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L12)
 
@@ -46,7 +46,7 @@ Defined in: [src/managers/NotificationManager.ts:12](https://github.com/jwilleke
 
 ### level
 
-> **level**: `"info"` \| `"error"` \| `"success"` \| `"warning"`
+> __level__: `"info"` \| `"error"` \| `"success"` \| `"warning"`
 
 Defined in: [src/managers/NotificationManager.ts:16](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L16)
 
@@ -54,7 +54,7 @@ Defined in: [src/managers/NotificationManager.ts:16](https://github.com/jwilleke
 
 ### message
 
-> **message**: `string`
+> __message__: `string`
 
 Defined in: [src/managers/NotificationManager.ts:15](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L15)
 
@@ -62,7 +62,7 @@ Defined in: [src/managers/NotificationManager.ts:15](https://github.com/jwilleke
 
 ### targetUsers
 
-> **targetUsers**: `string`[]
+> __targetUsers__: `string`[]
 
 Defined in: [src/managers/NotificationManager.ts:17](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L17)
 
@@ -70,7 +70,7 @@ Defined in: [src/managers/NotificationManager.ts:17](https://github.com/jwilleke
 
 ### title
 
-> **title**: `string`
+> __title__: `string`
 
 Defined in: [src/managers/NotificationManager.ts:14](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L14)
 
@@ -78,6 +78,6 @@ Defined in: [src/managers/NotificationManager.ts:14](https://github.com/jwilleke
 
 ### type
 
-> **type**: `"maintenance"` \| `"system"` \| `"user"`
+> __type__: `"maintenance"` \| `"system"` \| `"user"`
 
 Defined in: [src/managers/NotificationManager.ts:13](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L13)

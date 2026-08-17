@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Token types enum
 
 ### BOLD
 
-> **BOLD**: `"BOLD"`
+> __BOLD__: `"BOLD"`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:90](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L90)
 
@@ -22,7 +22,7 @@ Defined in: [src/parsers/dom/Tokenizer.ts:90](https://github.com/jwilleke/ngdpba
 
 ### CODE\_BLOCK
 
-> **CODE\_BLOCK**: `"CODE_BLOCK"`
+> __CODE\_BLOCK__: `"CODE_BLOCK"`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:93](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L93)
 
@@ -30,7 +30,7 @@ Defined in: [src/parsers/dom/Tokenizer.ts:93](https://github.com/jwilleke/ngdpba
 
 ### CODE\_INLINE
 
-> **CODE\_INLINE**: `"CODE_INLINE"`
+> __CODE\_INLINE__: `"CODE_INLINE"`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:92](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L92)
 
@@ -38,7 +38,7 @@ Defined in: [src/parsers/dom/Tokenizer.ts:92](https://github.com/jwilleke/ngdpba
 
 ### COMMENT
 
-> **COMMENT**: `"COMMENT"`
+> __COMMENT__: `"COMMENT"`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:94](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L94)
 
@@ -46,7 +46,7 @@ Defined in: [src/parsers/dom/Tokenizer.ts:94](https://github.com/jwilleke/ngdpba
 
 ### EOF
 
-> **EOF**: `"EOF"`
+> __EOF__: `"EOF"`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:96](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L96)
 
@@ -54,7 +54,7 @@ Defined in: [src/parsers/dom/Tokenizer.ts:96](https://github.com/jwilleke/ngdpba
 
 ### ESCAPED
 
-> **ESCAPED**: `"ESCAPED"`
+> __ESCAPED__: `"ESCAPED"`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:80](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L80)
 
@@ -62,7 +62,7 @@ Defined in: [src/parsers/dom/Tokenizer.ts:80](https://github.com/jwilleke/ngdpba
 
 ### HEADING
 
-> **HEADING**: `"HEADING"`
+> __HEADING__: `"HEADING"`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:87](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L87)
 
@@ -70,7 +70,7 @@ Defined in: [src/parsers/dom/Tokenizer.ts:87](https://github.com/jwilleke/ngdpba
 
 ### INTERWIKI
 
-> **INTERWIKI**: `"INTERWIKI"`
+> __INTERWIKI__: `"INTERWIKI"`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:86](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L86)
 
@@ -78,7 +78,7 @@ Defined in: [src/parsers/dom/Tokenizer.ts:86](https://github.com/jwilleke/ngdpba
 
 ### ITALIC
 
-> **ITALIC**: `"ITALIC"`
+> __ITALIC__: `"ITALIC"`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:91](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L91)
 
@@ -86,7 +86,7 @@ Defined in: [src/parsers/dom/Tokenizer.ts:91](https://github.com/jwilleke/ngdpba
 
 ### LINK
 
-> **LINK**: `"LINK"`
+> __LINK__: `"LINK"`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:85](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L85)
 
@@ -94,7 +94,7 @@ Defined in: [src/parsers/dom/Tokenizer.ts:85](https://github.com/jwilleke/ngdpba
 
 ### LIST\_ITEM
 
-> **LIST\_ITEM**: `"LIST_ITEM"`
+> __LIST\_ITEM__: `"LIST_ITEM"`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:88](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L88)
 
@@ -102,7 +102,7 @@ Defined in: [src/parsers/dom/Tokenizer.ts:88](https://github.com/jwilleke/ngdpba
 
 ### METADATA
 
-> **METADATA**: `"METADATA"`
+> __METADATA__: `"METADATA"`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:83](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L83)
 
@@ -110,7 +110,7 @@ Defined in: [src/parsers/dom/Tokenizer.ts:83](https://github.com/jwilleke/ngdpba
 
 ### NEWLINE
 
-> **NEWLINE**: `"NEWLINE"`
+> __NEWLINE__: `"NEWLINE"`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:95](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L95)
 
@@ -118,7 +118,7 @@ Defined in: [src/parsers/dom/Tokenizer.ts:95](https://github.com/jwilleke/ngdpba
 
 ### PLUGIN
 
-> **PLUGIN**: `"PLUGIN"`
+> __PLUGIN__: `"PLUGIN"`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:82](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L82)
 
@@ -126,7 +126,7 @@ Defined in: [src/parsers/dom/Tokenizer.ts:82](https://github.com/jwilleke/ngdpba
 
 ### TABLE\_CELL
 
-> **TABLE\_CELL**: `"TABLE_CELL"`
+> __TABLE\_CELL__: `"TABLE_CELL"`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:89](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L89)
 
@@ -134,7 +134,7 @@ Defined in: [src/parsers/dom/Tokenizer.ts:89](https://github.com/jwilleke/ngdpba
 
 ### TEXT
 
-> **TEXT**: `"TEXT"`
+> __TEXT__: `"TEXT"`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:79](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L79)
 
@@ -142,7 +142,7 @@ Defined in: [src/parsers/dom/Tokenizer.ts:79](https://github.com/jwilleke/ngdpba
 
 ### VARIABLE
 
-> **VARIABLE**: `"VARIABLE"`
+> __VARIABLE__: `"VARIABLE"`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:81](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L81)
 
@@ -150,6 +150,6 @@ Defined in: [src/parsers/dom/Tokenizer.ts:81](https://github.com/jwilleke/ngdpba
 
 ### WIKI\_TAG
 
-> **WIKI\_TAG**: `"WIKI_TAG"`
+> __WIKI\_TAG__: `"WIKI_TAG"`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:84](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L84)

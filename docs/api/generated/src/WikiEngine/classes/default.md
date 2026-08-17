@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../README.md)
+[__ngdpbase API v1.5.0__](../../../README.md)
 
 ***
 
@@ -23,8 +23,8 @@ IWikiEngine
 
 ## See
 
- - [Engine](../../core/Engine/classes/default.md) for base functionality
- - [WikiContext](../../context/WikiContext/classes/default.md) for request-scoped context
+- [Engine](../../core/Engine/classes/default.md) for base functionality
+- [WikiContext](../../context/WikiContext/classes/default.md) for request-scoped context
 
 ## Extends
 
@@ -34,7 +34,7 @@ IWikiEngine
 
 ### Constructor
 
-> **new default**(`config?`, `context?`): `WikiEngine`
+> __new default__(`config?`, `context?`): `WikiEngine`
 
 Defined in: [src/WikiEngine.ts:64](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/WikiEngine.ts#L64)
 
@@ -66,7 +66,7 @@ Initial WikiContext (optional)
 
 ### config?
 
-> `optional` **config**: [`WikiConfig`](../../types/Config/interfaces/WikiConfig.md)
+> `optional` __config__: [`WikiConfig`](../../types/Config/interfaces/WikiConfig.md)
 
 Defined in: [src/core/Engine.ts:29](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/core/Engine.ts#L29)
 
@@ -80,7 +80,7 @@ Configuration object (inherited from Engine)
 
 ### context
 
-> **context**: [`default`](../../context/WikiContext/classes/default.md) \| `null`
+> __context__: [`default`](../../context/WikiContext/classes/default.md) \| `null`
 
 Defined in: [src/WikiEngine.ts:52](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/WikiEngine.ts#L52)
 
@@ -90,7 +90,7 @@ Currently active WikiContext for request scope
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/core/Engine.ts:26](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/core/Engine.ts#L26)
 
@@ -104,7 +104,7 @@ Flag indicating if engine has been initialized
 
 ### managers
 
-> `protected` **managers**: `Map`\<`string`, [`default`](../../managers/BaseManager/classes/default.md)\>
+> `protected` __managers__: `Map`\<`string`, [`default`](../../managers/BaseManager/classes/default.md)\>
 
 Defined in: [src/core/Engine.ts:20](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/core/Engine.ts#L20)
 
@@ -118,7 +118,7 @@ Map of registered manager instances
 
 ### properties
 
-> `protected` **properties**: `Map`\<`string`, `unknown`\>
+> `protected` __properties__: `Map`\<`string`, `unknown`\>
 
 Defined in: [src/core/Engine.ts:23](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/core/Engine.ts#L23)
 
@@ -132,7 +132,7 @@ Map of configuration properties
 
 ### startTime
 
-> `readonly` **startTime**: `number`
+> `readonly` __startTime__: `number`
 
 Defined in: [src/WikiEngine.ts:55](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/WikiEngine.ts#L55)
 
@@ -142,7 +142,7 @@ Timestamp when the engine was started
 
 ### createDefault()
 
-> `static` **createDefault**(`overrides?`): `Promise`\<`WikiEngine`\>
+> `static` __createDefault__(`overrides?`): `Promise`\<`WikiEngine`\>
 
 Defined in: [src/WikiEngine.ts:260](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/WikiEngine.ts#L260)
 
@@ -181,7 +181,7 @@ const engine = await WikiEngine.createDefault({
 
 ### getApplicationName()
 
-> **getApplicationName**(): `string`
+> __getApplicationName__(): `string`
 
 Defined in: [src/WikiEngine.ts:276](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/WikiEngine.ts#L276)
 
@@ -209,7 +209,7 @@ const name = engine.getApplicationName(); // 'ngdpbase'
 
 ### ~~getConfig()~~
 
-> **getConfig**(): `never`
+> __getConfig__(): `never`
 
 Defined in: [src/WikiEngine.ts:305](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/WikiEngine.ts#L305)
 
@@ -247,7 +247,7 @@ const value = configManager.getProperty('ngdpbase.key', 'default');
 
 ### getContext()
 
-> **getContext**(): [`default`](../../context/WikiContext/classes/default.md) \| `null`
+> __getContext__(): [`default`](../../context/WikiContext/classes/default.md) \| `null`
 
 Defined in: [src/WikiEngine.ts:100](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/WikiEngine.ts#L100)
 
@@ -272,7 +272,7 @@ if (context) {
 
 ### getManager()
 
-> **getManager**\<`T`\>(`managerName`): `T` \| `undefined`
+> __getManager__\<`T`\>(`managerName`): `T` \| `undefined`
 
 Defined in: [src/core/Engine.ts:93](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/core/Engine.ts#L93)
 
@@ -314,7 +314,7 @@ const configManager = engine.getManager<ConfigurationManager>('ConfigurationMana
 
 ### getPageManager()
 
-> **getPageManager**(): [`export=`](../../managers/PageManager/classes/export=.md) \| `undefined`
+> __getPageManager__(): [`export=`](../../managers/PageManager/classes/export=.md) \| `undefined`
 
 Defined in: [src/WikiEngine.ts:320](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/WikiEngine.ts#L320)
 
@@ -336,7 +336,7 @@ const page = await engine.getPageManager()?.getPage('Main');
 
 ### getPluginManager()
 
-> **getPluginManager**(): [`default`](../../managers/PluginManager/classes/default.md) \| `undefined`
+> __getPluginManager__(): [`default`](../../managers/PluginManager/classes/default.md) \| `undefined`
 
 Defined in: [src/WikiEngine.ts:332](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/WikiEngine.ts#L332)
 
@@ -358,7 +358,7 @@ const plugins = engine.getPluginManager()?.getAllPlugins();
 
 ### getProperties()
 
-> **getProperties**(): `Map`\<`string`, `unknown`\>
+> __getProperties__(): `Map`\<`string`, `unknown`\>
 
 Defined in: [src/core/Engine.ts:144](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/core/Engine.ts#L144)
 
@@ -378,7 +378,7 @@ Map of all configuration properties
 
 ### getProperty()
 
-> **getProperty**\<`T`\>(`key`, `defaultValue?`): `T` \| `null`
+> __getProperty__\<`T`\>(`key`, `defaultValue?`): `T` \| `null`
 
 Defined in: [src/core/Engine.ts:134](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/core/Engine.ts#L134)
 
@@ -424,7 +424,7 @@ const appName = engine.getProperty('applicationName', 'MyWiki');
 
 ### getRegisteredManagers()
 
-> **getRegisteredManagers**(): `string`[]
+> __getRegisteredManagers__(): `string`[]
 
 Defined in: [src/core/Engine.ts:120](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/core/Engine.ts#L120)
 
@@ -451,7 +451,7 @@ const managers = engine.getRegisteredManagers();
 
 ### getWorkDir()
 
-> **getWorkDir**(): `string`
+> __getWorkDir__(): `string`
 
 Defined in: [src/core/Engine.ts:171](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/core/Engine.ts#L171)
 
@@ -471,13 +471,14 @@ Working directory path (defaults to './')
 
 ### initialize()
 
-> **initialize**(`config?`): `Promise`\<`void`\>
+> __initialize__(`config?`): `Promise`\<`void`\>
 
 Defined in: [src/WikiEngine.ts:138](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/WikiEngine.ts#L138)
 
 Initialize the wiki engine with configuration
 
 This method initializes all 24+ managers in the correct dependency order:
+
 1. ConfigurationManager - Core configuration (no dependencies)
 2. CacheManager - Caching support (used by many managers)
 3. UserManager - User authentication/authorization (critical for security)
@@ -534,7 +535,7 @@ console.log('Engine ready with', engine.getRegisteredManagers().length, 'manager
 
 ### initializeManagers()
 
-> `protected` **initializeManagers**(): `Promise`\<`void`\>
+> `protected` __initializeManagers__(): `Promise`\<`void`\>
 
 Defined in: [src/core/Engine.ts:76](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/core/Engine.ts#L76)
 
@@ -555,7 +556,7 @@ Subclasses can make this async if needed.
 
 ### isConfigured()
 
-> **isConfigured**(): `boolean`
+> __isConfigured__(): `boolean`
 
 Defined in: [src/core/Engine.ts:153](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/core/Engine.ts#L153)
 
@@ -575,7 +576,7 @@ True if engine is initialized and configured
 
 ### registerManager()
 
-> **registerManager**(`name`, `manager`): `void`
+> __registerManager__(`name`, `manager`): `void`
 
 Defined in: [src/core/Engine.ts:107](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/core/Engine.ts#L107)
 
@@ -613,7 +614,7 @@ engine.registerManager('PageManager', new PageManager(engine));
 
 ### setContext()
 
-> **setContext**(`context`): `WikiEngine`
+> __setContext__(`context`): `WikiEngine`
 
 Defined in: [src/WikiEngine.ts:84](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/WikiEngine.ts#L84)
 
@@ -647,7 +648,7 @@ engine.setContext(context).getPageManager().getPage('Main');
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/core/Engine.ts:190](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/core/Engine.ts#L190)
 

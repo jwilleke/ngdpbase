@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Exported chain state
 
 ### config
 
-> **config**: [`FilterChainConfig`](FilterChainConfig.md)
+> __config__: [`FilterChainConfig`](FilterChainConfig.md)
 
 Defined in: [src/parsers/filters/FilterChain.ts:161](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L161)
 
@@ -22,7 +22,7 @@ Defined in: [src/parsers/filters/FilterChain.ts:161](https://github.com/jwilleke
 
 ### filters
 
-> **filters**: [`ExportedFilterInfo`](ExportedFilterInfo.md)[]
+> __filters__: [`ExportedFilterInfo`](ExportedFilterInfo.md)[]
 
 Defined in: [src/parsers/filters/FilterChain.ts:165](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L165)
 
@@ -30,7 +30,7 @@ Defined in: [src/parsers/filters/FilterChain.ts:165](https://github.com/jwilleke
 
 ### stats
 
-> **stats**: `Omit`\<[`FilterChainStats`](FilterChainStats.md), `"filterExecutions"`\> & `object`
+> __stats__: `Omit`\<[`FilterChainStats`](FilterChainStats.md), `"filterExecutions"`\> & `object`
 
 Defined in: [src/parsers/filters/FilterChain.ts:162](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L162)
 
@@ -38,4 +38,4 @@ Defined in: [src/parsers/filters/FilterChain.ts:162](https://github.com/jwilleke
 
 ##### filterExecutions
 
-> **filterExecutions**: `Record`\<`string`, [`FilterExecutionStats`](FilterExecutionStats.md)\>
+> __filterExecutions__: `Record`\<`string`, [`FilterExecutionStats`](FilterExecutionStats.md)\>

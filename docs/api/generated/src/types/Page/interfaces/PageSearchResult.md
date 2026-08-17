@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -20,7 +20,7 @@ Extended page info with search relevance scoring and highlighting.
 
 ### author?
 
-> `optional` **author**: `string`
+> `optional` __author__: `string`
 
 Defined in: [src/types/Page.ts:111](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Page.ts#L111)
 
@@ -34,7 +34,7 @@ Page author (from metadata)
 
 ### category?
 
-> `optional` **category**: `string`
+> `optional` __category__: `string`
 
 Defined in: [src/types/Page.ts:117](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Page.ts#L117)
 
@@ -48,7 +48,7 @@ Category (from metadata)
 
 ### editor?
 
-> `optional` **editor**: `string`
+> `optional` __editor__: `string`
 
 Defined in: [src/types/Page.ts:114](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Page.ts#L114)
 
@@ -62,7 +62,7 @@ Last editor (from metadata)
 
 ### filePath
 
-> **filePath**: `string`
+> __filePath__: `string`
 
 Defined in: [src/types/Page.ts:99](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Page.ts#L99)
 
@@ -76,7 +76,7 @@ Absolute file path to the page file
 
 ### highlights?
 
-> `optional` **highlights**: `string`[]
+> `optional` __highlights__: `string`[]
 
 Defined in: [src/types/Page.ts:156](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Page.ts#L156)
 
@@ -86,7 +86,7 @@ Highlighted snippets from content
 
 ### lastModified?
 
-> `optional` **lastModified**: `string`
+> `optional` __lastModified__: `string`
 
 Defined in: [src/types/Page.ts:108](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Page.ts#L108)
 
@@ -100,7 +100,7 @@ Last modification timestamp (from metadata)
 
 ### location?
 
-> `optional` **location**: `"pages"` \| `"required-pages"`
+> `optional` __location__: `"pages"` \| `"required-pages"`
 
 Defined in: [src/types/Page.ts:105](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Page.ts#L105)
 
@@ -114,7 +114,7 @@ Location type
 
 ### matchedKeywords?
 
-> `optional` **matchedKeywords**: `string`[]
+> `optional` __matchedKeywords__: `string`[]
 
 Defined in: [src/types/Page.ts:159](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Page.ts#L159)
 
@@ -124,7 +124,7 @@ Matched keywords
 
 ### metadata
 
-> **metadata**: [`PageFrontmatter`](PageFrontmatter.md)
+> __metadata__: [`PageFrontmatter`](PageFrontmatter.md)
 
 Defined in: [src/types/Page.ts:102](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Page.ts#L102)
 
@@ -138,7 +138,7 @@ Frontmatter metadata
 
 ### score
 
-> **score**: `number`
+> __score__: `number`
 
 Defined in: [src/types/Page.ts:153](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Page.ts#L153)
 
@@ -148,7 +148,7 @@ Search relevance score (0-1)
 
 ### slug?
 
-> `optional` **slug**: `string`
+> `optional` __slug__: `string`
 
 Defined in: [src/types/Page.ts:120](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Page.ts#L120)
 
@@ -162,7 +162,7 @@ URL slug (from metadata)
 
 ### title
 
-> **title**: `string`
+> __title__: `string`
 
 Defined in: [src/types/Page.ts:93](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Page.ts#L93)
 
@@ -176,7 +176,7 @@ Page title
 
 ### uuid
 
-> **uuid**: `string`
+> __uuid__: `string`
 
 Defined in: [src/types/Page.ts:96](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Page.ts#L96)
 

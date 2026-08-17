@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -18,7 +18,7 @@ File compression options
 
 ### keepOriginal?
 
-> `optional` **keepOriginal**: `boolean`
+> `optional` __keepOriginal__: `boolean`
 
 Defined in: [src/utils/VersionCompression.ts:17](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersionCompression.ts#L17)
 
@@ -28,7 +28,7 @@ Keep original file after compression (default false)
 
 ### level?
 
-> `optional` **level**: `number`
+> `optional` __level__: `number`
 
 Defined in: [src/utils/VersionCompression.ts:9](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersionCompression.ts#L9)
 

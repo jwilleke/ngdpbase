@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Parameter validation result
 
 ### errors
 
-> **errors**: `string`[]
+> __errors__: `string`[]
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:78](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L78)
 
@@ -22,7 +22,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:78](https://github.com/jw
 
 ### isValid
 
-> **isValid**: `boolean`
+> __isValid__: `boolean`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:77](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L77)
 
@@ -30,6 +30,6 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:77](https://github.com/jw
 
 ### params
 
-> **params**: `Record`\<`string`, `unknown`\>
+> __params__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:79](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L79)

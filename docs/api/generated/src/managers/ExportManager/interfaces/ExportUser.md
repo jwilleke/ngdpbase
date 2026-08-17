@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,6 +14,6 @@ User object interface (for locale-aware formatting)
 
 ### preferences?
 
-> `optional` **preferences**: [`UserPreferences`](UserPreferences.md)
+> `optional` __preferences__: [`UserPreferences`](UserPreferences.md)
 
 Defined in: [src/managers/ExportManager.ts:39](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ExportManager.ts#L39)

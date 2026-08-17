@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Statistics about variable processing
 
 ### totalVariables
 
-> **totalVariables**: `number`
+> __totalVariables__: `number`
 
 Defined in: [src/parsers/dom/handlers/DOMVariableHandler.ts:109](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMVariableHandler.ts#L109)
 
@@ -24,7 +24,7 @@ Total number of variables in document
 
 ### uniqueCount
 
-> **uniqueCount**: `number`
+> __uniqueCount__: `number`
 
 Defined in: [src/parsers/dom/handlers/DOMVariableHandler.ts:111](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMVariableHandler.ts#L111)
 
@@ -34,7 +34,7 @@ Number of unique variables
 
 ### uniqueVariables
 
-> **uniqueVariables**: `string`[]
+> __uniqueVariables__: `string`[]
 
 Defined in: [src/parsers/dom/handlers/DOMVariableHandler.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMVariableHandler.ts#L113)
 
@@ -44,7 +44,7 @@ Array of unique variable names
 
 ### variables
 
-> **variables**: [`VariableInfo`](VariableInfo.md)[]
+> __variables__: [`VariableInfo`](VariableInfo.md)[]
 
 Defined in: [src/parsers/dom/handlers/DOMVariableHandler.ts:115](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMVariableHandler.ts#L115)
 

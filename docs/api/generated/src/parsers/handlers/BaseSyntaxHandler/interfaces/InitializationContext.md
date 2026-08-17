@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,13 +14,13 @@ Initialization context (minimal interface for unconverted dependencies)
 
 ### engine?
 
-> `optional` **engine**: `object`
+> `optional` __engine__: `object`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:144](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L144)
 
 #### getManager()
 
-> **getManager**(`name`): `unknown`
+> __getManager__(`name`): `unknown`
 
 ##### Parameters
 
@@ -36,13 +36,13 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:144](https://github.com/j
 
 ### handlerRegistry?
 
-> `optional` **handlerRegistry**: `object`
+> `optional` __handlerRegistry__: `object`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:147](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L147)
 
 #### getHandler()
 
-> **getHandler**(`name`): `unknown`
+> __getHandler__(`name`): `unknown`
 
 ##### Parameters
 

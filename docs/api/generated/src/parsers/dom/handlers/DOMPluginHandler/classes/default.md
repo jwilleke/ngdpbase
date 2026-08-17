@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ DOMPluginHandler class
 
 ### Constructor
 
-> **new default**(`engine`): `DOMPluginHandler`
+> __new default__(`engine`): `DOMPluginHandler`
 
 Defined in: [src/parsers/dom/handlers/DOMPluginHandler.ts:167](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMPluginHandler.ts#L167)
 
@@ -36,7 +36,7 @@ WikiEngine instance
 
 ### createNodeFromExtract()
 
-> **createNodeFromExtract**(`element`, `context`, `wikiDocument`): `Promise`\<[`LinkedomElement`](../../../WikiDocument/interfaces/LinkedomElement.md)\>
+> __createNodeFromExtract__(`element`, `context`, `wikiDocument`): `Promise`\<[`LinkedomElement`](../../../WikiDocument/interfaces/LinkedomElement.md)\>
 
 Defined in: [src/parsers/dom/handlers/DOMPluginHandler.ts:434](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMPluginHandler.ts#L434)
 
@@ -83,7 +83,7 @@ const node = await handler.createNodeFromExtract(element, context, wikiDoc);
 
 ### executePlugin()
 
-> **executePlugin**(`pluginName`, `parameters`, `context`, `pluginElement`): `Promise`\<`string` \| `null`\>
+> __executePlugin__(`pluginName`, `parameters`, `context`, `pluginElement`): `Promise`\<`string` \| `null`\>
 
 Defined in: [src/parsers/dom/handlers/DOMPluginHandler.ts:369](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMPluginHandler.ts#L369)
 
@@ -125,7 +125,7 @@ Plugin output HTML or null
 
 ### getStatistics()
 
-> **getStatistics**(`wikiDocument`): [`PluginStatistics`](../interfaces/PluginStatistics.md)
+> __getStatistics__(`wikiDocument`): [`PluginStatistics`](../interfaces/PluginStatistics.md)
 
 Defined in: [src/parsers/dom/handlers/DOMPluginHandler.ts:537](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMPluginHandler.ts#L537)
 
@@ -149,7 +149,7 @@ Statistics
 
 ### initialize()
 
-> **initialize**(): `Promise`\<`void`\>
+> __initialize__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/dom/handlers/DOMPluginHandler.ts:176](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMPluginHandler.ts#L176)
 
@@ -163,7 +163,7 @@ Initializes the handler
 
 ### parseParameters()
 
-> **parseParameters**(`paramString`): `Record`\<`string`, `string`\>
+> __parseParameters__(`paramString`): `Record`\<`string`, `string`\>
 
 Defined in: [src/parsers/dom/handlers/DOMPluginHandler.ts:329](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMPluginHandler.ts#L329)
 
@@ -187,7 +187,7 @@ Parsed parameters
 
 ### parsePluginContent()
 
-> **parsePluginContent**(`pluginContent`): [`PluginInfo`](../interfaces/PluginInfo.md) \| `null`
+> __parsePluginContent__(`pluginContent`): [`PluginInfo`](../interfaces/PluginInfo.md) \| `null`
 
 Defined in: [src/parsers/dom/handlers/DOMPluginHandler.ts:299](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMPluginHandler.ts#L299)
 
@@ -211,7 +211,7 @@ Plugin content (e.g., "TableOfContents max=3")
 
 ### processPlugins()
 
-> **processPlugins**(`wikiDocument`, `context`): `Promise`\<[`default`](../../../WikiDocument/classes/default.md)\>
+> __processPlugins__(`wikiDocument`, `context`): `Promise`\<[`default`](../../../WikiDocument/classes/default.md)\>
 
 Defined in: [src/parsers/dom/handlers/DOMPluginHandler.ts:191](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMPluginHandler.ts#L191)
 

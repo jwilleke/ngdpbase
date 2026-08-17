@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -18,8 +18,8 @@ whether from filesystem (JSON), database, LDAP, or other backends.
 
 ## See
 
- - FileUserProvider for filesystem implementation
- - UserManager for usage
+- FileUserProvider for filesystem implementation
+- UserManager for usage
 
 ## Extended by
 
@@ -29,7 +29,7 @@ whether from filesystem (JSON), database, LDAP, or other backends.
 
 ### Constructor
 
-> **new default**(`engine`): `BaseUserProvider`
+> __new default__(`engine`): `BaseUserProvider`
 
 Defined in: [src/providers/BaseUserProvider.ts:55](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L55)
 
@@ -55,7 +55,7 @@ If engine is not provided
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/providers/BaseUserProvider.ts:43](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L43)
 
@@ -65,7 +65,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> **initialized**: `boolean`
+> __initialized__: `boolean`
 
 Defined in: [src/providers/BaseUserProvider.ts:46](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L46)
 
@@ -75,7 +75,7 @@ Whether provider has been initialized
 
 ### backup()
 
-> `abstract` **backup**(): `Promise`\<[`BackupData`](../interfaces/BackupData.md)\>
+> `abstract` __backup__(): `Promise`\<[`BackupData`](../interfaces/BackupData.md)\>
 
 Defined in: [src/providers/BaseUserProvider.ts:218](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L218)
 
@@ -97,7 +97,7 @@ Always throws - must be implemented by subclass
 
 ### cleanExpiredSessions()
 
-> `abstract` **cleanExpiredSessions**(): `Promise`\<`number`\>
+> `abstract` __cleanExpiredSessions__(): `Promise`\<`number`\>
 
 Defined in: [src/providers/BaseUserProvider.ts:208](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L208)
 
@@ -119,7 +119,7 @@ Always throws - must be implemented by subclass
 
 ### createSession()
 
-> `abstract` **createSession**(`sessionId`, `sessionData`): `Promise`\<`void`\>
+> `abstract` __createSession__(`sessionId`, `sessionData`): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseUserProvider.ts:166](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L166)
 
@@ -153,7 +153,7 @@ Always throws - must be implemented by subclass
 
 ### createUser()
 
-> `abstract` **createUser**(`username`, `userData`): `Promise`\<`void`\>
+> `abstract` __createUser__(`username`, `userData`): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseUserProvider.ts:120](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L120)
 
@@ -187,7 +187,7 @@ Always throws - must be implemented by subclass
 
 ### deleteSession()
 
-> `abstract` **deleteSession**(`sessionId`): `Promise`\<`boolean`\>
+> `abstract` __deleteSession__(`sessionId`): `Promise`\<`boolean`\>
 
 Defined in: [src/providers/BaseUserProvider.ts:198](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L198)
 
@@ -217,7 +217,7 @@ Always throws - must be implemented by subclass
 
 ### deleteUser()
 
-> `abstract` **deleteUser**(`username`): `Promise`\<`boolean`\>
+> `abstract` __deleteUser__(`username`): `Promise`\<`boolean`\>
 
 Defined in: [src/providers/BaseUserProvider.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L143)
 
@@ -247,7 +247,7 @@ Always throws - must be implemented by subclass
 
 ### getAllSessions()
 
-> `abstract` **getAllSessions**(): `Promise`\<`Map`\<`string`, [`UserSession`](../../../types/User/interfaces/UserSession.md)\>\>
+> `abstract` __getAllSessions__(): `Promise`\<`Map`\<`string`, [`UserSession`](../../../types/User/interfaces/UserSession.md)\>\>
 
 Defined in: [src/providers/BaseUserProvider.ts:187](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L187)
 
@@ -269,7 +269,7 @@ Always throws - must be implemented by subclass
 
 ### getAllUsernames()
 
-> `abstract` **getAllUsernames**(): `Promise`\<`string`[]\>
+> `abstract` __getAllUsernames__(): `Promise`\<`string`[]\>
 
 Defined in: [src/providers/BaseUserProvider.ts:98](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L98)
 
@@ -291,7 +291,7 @@ Always throws - must be implemented by subclass
 
 ### getAllUsers()
 
-> `abstract` **getAllUsers**(): `Promise`\<`Map`\<`string`, [`User`](../../../types/User/interfaces/User.md)\>\>
+> `abstract` __getAllUsers__(): `Promise`\<`Map`\<`string`, [`User`](../../../types/User/interfaces/User.md)\>\>
 
 Defined in: [src/providers/BaseUserProvider.ts:108](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L108)
 
@@ -313,7 +313,7 @@ Always throws - must be implemented by subclass
 
 ### getProviderInfo()
 
-> **getProviderInfo**(): [`ProviderInfo`](../interfaces/ProviderInfo.md)
+> __getProviderInfo__(): [`ProviderInfo`](../interfaces/ProviderInfo.md)
 
 Defined in: [src/providers/BaseUserProvider.ts:236](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L236)
 
@@ -329,7 +329,7 @@ Provider metadata
 
 ### getSession()
 
-> `abstract` **getSession**(`sessionId`): `Promise`\<[`UserSession`](../../../types/User/interfaces/UserSession.md) \| `null`\>
+> `abstract` __getSession__(`sessionId`): `Promise`\<[`UserSession`](../../../types/User/interfaces/UserSession.md) \| `null`\>
 
 Defined in: [src/providers/BaseUserProvider.ts:177](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L177)
 
@@ -359,7 +359,7 @@ Always throws - must be implemented by subclass
 
 ### getUser()
 
-> `abstract` **getUser**(`username`): `Promise`\<[`User`](../../../types/User/interfaces/User.md) \| `null`\>
+> `abstract` __getUser__(`username`): `Promise`\<[`User`](../../../types/User/interfaces/User.md) \| `null`\>
 
 Defined in: [src/providers/BaseUserProvider.ts:88](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L88)
 
@@ -389,7 +389,7 @@ Always throws - must be implemented by subclass
 
 ### initialize()
 
-> `abstract` **initialize**(): `Promise`\<`void`\>
+> `abstract` __initialize__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseUserProvider.ts:77](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L77)
 
@@ -415,7 +415,7 @@ Always throws - must be implemented by subclass
 
 ### restore()
 
-> `abstract` **restore**(`backupData`): `Promise`\<`void`\>
+> `abstract` __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseUserProvider.ts:229](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L229)
 
@@ -443,7 +443,7 @@ Always throws - must be implemented by subclass
 
 ### shutdown()
 
-> **shutdown**(): `void`
+> __shutdown__(): `void`
 
 Defined in: [src/providers/BaseUserProvider.ts:251](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L251)
 
@@ -459,7 +459,7 @@ Shutdown the provider (cleanup resources)
 
 ### updateUser()
 
-> `abstract` **updateUser**(`username`, `userData`): `Promise`\<`void`\>
+> `abstract` __updateUser__(`username`, `userData`): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseUserProvider.ts:132](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L132)
 
@@ -493,7 +493,7 @@ Always throws - must be implemented by subclass
 
 ### userExists()
 
-> `abstract` **userExists**(`username`): `Promise`\<`boolean`\>
+> `abstract` __userExists__(`username`): `Promise`\<`boolean`\>
 
 Defined in: [src/providers/BaseUserProvider.ts:154](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L154)
 

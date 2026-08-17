@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -11,6 +11,7 @@ Defined in: [src/managers/CacheManager.ts:84](https://github.com/jwilleke/ngdpba
 CacheManager - Centralized cache management for ngdpbase
 
 Provides a unified interface for caching across all managers with support for:
+
 - Multiple cache backends via provider pattern (NodeCache, Redis, Null)
 - Cache regions (namespaces) for different managers
 - Configurable TTL and cache policies
@@ -18,6 +19,7 @@ Provides a unified interface for caching across all managers with support for:
 - Provider fallback pattern following #102, #104, #105, #106
 
 Configuration (all lowercase):
+
 - ngdpbase.cache.enabled - Enable/disable caching
 - ngdpbase.cache.provider.default - Default provider name
 - ngdpbase.cache.provider - Active provider name
@@ -46,7 +48,7 @@ region.set('Main', pageData, 3600);
 
 ### Constructor
 
-> **new default**(`engine`): `CacheManager`
+> __new default__(`engine`): `CacheManager`
 
 Defined in: [src/managers/CacheManager.ts:99](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L99)
 
@@ -72,7 +74,7 @@ The wiki engine instance
 
 ### config?
 
-> `protected` `optional` **config**: `Record`\<`string`, `unknown`\>
+> `protected` `optional` __config__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/managers/BaseManager.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L61)
 
@@ -86,7 +88,7 @@ Configuration passed during initialization
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L54)
 
@@ -100,7 +102,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/managers/BaseManager.ts:57](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L57)
 
@@ -114,7 +116,7 @@ Initialization status flag
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
 
 Defined in: [src/managers/BaseManager.ts:169](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L169)
 
@@ -156,7 +158,7 @@ async backup(): Promise<BackupData> {
 
 ### clear()
 
-> **clear**(`region?`, `pattern?`): `Promise`\<`void`\>
+> __clear__(`region?`, `pattern?`): `Promise`\<`void`\>
 
 Defined in: [src/managers/CacheManager.ts:285](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L285)
 
@@ -184,7 +186,7 @@ Optional pattern to match keys
 
 ### del()
 
-> **del**(`keys`): `Promise`\<`void`\>
+> __del__(`keys`): `Promise`\<`void`\>
 
 Defined in: [src/managers/CacheManager.ts:272](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L272)
 
@@ -206,7 +208,7 @@ Single key or array of keys to delete
 
 ### flushAll()
 
-> **flushAll**(): `Promise`\<`void`\>
+> __flushAll__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/CacheManager.ts:375](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L375)
 
@@ -220,7 +222,7 @@ Flush all caches (dangerous operation)
 
 ### get()
 
-> **get**(`key`): `Promise`\<`unknown`\>
+> __get__(`key`): `Promise`\<`unknown`\>
 
 Defined in: [src/managers/CacheManager.ts:244](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L244)
 
@@ -244,7 +246,7 @@ The cached value or undefined if not found
 
 ### getCacheForManager()
 
-> `static` **getCacheForManager**(`engine`, `region?`): [`default`](../../../cache/RegionCache/classes/default.md)
+> `static` __getCacheForManager__(`engine`, `region?`): [`default`](../../../cache/RegionCache/classes/default.md)
 
 Defined in: [src/managers/CacheManager.ts:407](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L407)
 
@@ -275,7 +277,7 @@ Cache instance scoped to the region
 
 ### getConfig()
 
-> **getConfig**(): [`CacheConfig`](../interfaces/CacheConfig.md)
+> __getConfig__(): [`CacheConfig`](../interfaces/CacheConfig.md)
 
 Defined in: [src/managers/CacheManager.ts:354](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L354)
 
@@ -291,7 +293,7 @@ Cache configuration
 
 ### getEngine()
 
-> **getEngine**(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> __getEngine__(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:125](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L125)
 
@@ -317,7 +319,7 @@ const config = this.getEngine().getConfig();
 
 ### getRegions()
 
-> **getRegions**(): `string`[]
+> __getRegions__(): `string`[]
 
 Defined in: [src/managers/CacheManager.ts:367](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L367)
 
@@ -333,7 +335,7 @@ Array of region names
 
 ### initialize()
 
-> **initialize**(`config?`): `Promise`\<`void`\>
+> __initialize__(`config?`): `Promise`\<`void`\>
 
 Defined in: [src/managers/CacheManager.ts:114](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L114)
 
@@ -365,7 +367,7 @@ If ConfigurationManager is not available
 
 ### isHealthy()
 
-> **isHealthy**(): `Promise`\<`boolean`\>
+> __isHealthy__(): `Promise`\<`boolean`\>
 
 Defined in: [src/managers/CacheManager.ts:343](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L343)
 
@@ -381,7 +383,7 @@ True if cache is healthy
 
 ### isInitialized()
 
-> **isInitialized**(): `boolean`
+> __isInitialized__(): `boolean`
 
 Defined in: [src/managers/BaseManager.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L113)
 
@@ -409,7 +411,7 @@ if (manager.isInitialized()) {
 
 ### keys()
 
-> **keys**(`pattern?`): `Promise`\<`string`[]\>
+> __keys__(`pattern?`): `Promise`\<`string`[]\>
 
 Defined in: [src/managers/CacheManager.ts:302](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L302)
 
@@ -433,7 +435,7 @@ Array of matching keys
 
 ### region()
 
-> **region**(`region`): [`default`](../../../cache/RegionCache/classes/default.md)
+> __region__(`region`): [`default`](../../../cache/RegionCache/classes/default.md)
 
 Defined in: [src/managers/CacheManager.ts:232](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L232)
 
@@ -457,7 +459,7 @@ Cache instance scoped to the region
 
 ### restore()
 
-> **restore**(`backupData`): `Promise`\<`void`\>
+> __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:198](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L198)
 
@@ -502,7 +504,7 @@ async restore(backupData: BackupData): Promise<void> {
 
 ### set()
 
-> **set**(`key`, `value`, `options?`): `Promise`\<`void`\>
+> __set__(`key`, `value`, `options?`): `Promise`\<`void`\>
 
 Defined in: [src/managers/CacheManager.ts:259](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L259)
 
@@ -536,7 +538,7 @@ Cache options
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/CacheManager.ts:387](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L387)
 
@@ -554,7 +556,7 @@ Close and cleanup cache resources
 
 ### stats()
 
-> **stats**(`region?`): `Promise`\<[`CacheStats`](../interfaces/CacheStats.md)\>
+> __stats__(`region?`): `Promise`\<[`CacheStats`](../interfaces/CacheStats.md)\>
 
 Defined in: [src/managers/CacheManager.ts:314](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L314)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Attachment retrieval result
 
 ### buffer
 
-> **buffer**: `Buffer`
+> __buffer__: `Buffer`
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:36](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L36)
 
@@ -24,7 +24,7 @@ File buffer
 
 ### metadata
 
-> **metadata**: [`AttachmentMetadata`](../../../types/Provider/interfaces/AttachmentMetadata.md)
+> __metadata__: [`AttachmentMetadata`](../../../types/Provider/interfaces/AttachmentMetadata.md)
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:38](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L38)
 

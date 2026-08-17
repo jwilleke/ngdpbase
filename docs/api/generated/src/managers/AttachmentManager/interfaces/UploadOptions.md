@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Upload options interface
 
 ### context?
 
-> `optional` **context**: [`UserContext`](UserContext.md)
+> `optional` __context__: [`UserContext`](UserContext.md)
 
 Defined in: [src/managers/AttachmentManager.ts:41](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L41)
 
@@ -22,7 +22,7 @@ Defined in: [src/managers/AttachmentManager.ts:41](https://github.com/jwilleke/n
 
 ### description?
 
-> `optional` **description**: `string`
+> `optional` __description__: `string`
 
 Defined in: [src/managers/AttachmentManager.ts:40](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L40)
 
@@ -30,6 +30,6 @@ Defined in: [src/managers/AttachmentManager.ts:40](https://github.com/jwilleke/n
 
 ### pageName?
 
-> `optional` **pageName**: `string`
+> `optional` __pageName__: `string`
 
 Defined in: [src/managers/AttachmentManager.ts:39](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L39)

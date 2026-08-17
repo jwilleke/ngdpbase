@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -16,7 +16,7 @@ Metadata about a configuration property (for validation and UI).
 
 ### category?
 
-> `optional` **category**: `string`
+> `optional` __category__: `string`
 
 Defined in: [src/types/Config.ts:303](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Config.ts#L303)
 
@@ -26,7 +26,7 @@ Property category for grouping
 
 ### defaultValue
 
-> **defaultValue**: `unknown`
+> __defaultValue__: `unknown`
 
 Defined in: [src/types/Config.ts:273](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Config.ts#L273)
 
@@ -36,7 +36,7 @@ Default value
 
 ### description
 
-> **description**: `string`
+> __description__: `string`
 
 Defined in: [src/types/Config.ts:279](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Config.ts#L279)
 
@@ -46,7 +46,7 @@ Human-readable description
 
 ### key
 
-> **key**: `string`
+> __key__: `string`
 
 Defined in: [src/types/Config.ts:270](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Config.ts#L270)
 
@@ -56,7 +56,7 @@ Property key
 
 ### required
 
-> **required**: `boolean`
+> __required__: `boolean`
 
 Defined in: [src/types/Config.ts:282](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Config.ts#L282)
 
@@ -66,7 +66,7 @@ Whether this is a required property
 
 ### requiresRestart?
 
-> `optional` **requiresRestart**: `boolean`
+> `optional` __requiresRestart__: `boolean`
 
 Defined in: [src/types/Config.ts:306](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Config.ts#L306)
 
@@ -76,7 +76,7 @@ Whether property requires restart to take effect
 
 ### system
 
-> **system**: `boolean`
+> __system__: `boolean`
 
 Defined in: [src/types/Config.ts:285](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Config.ts#L285)
 
@@ -86,7 +86,7 @@ Whether this is a system property (not user-editable)
 
 ### type
 
-> **type**: `"string"` \| `"number"` \| `"boolean"` \| `"object"` \| `"array"`
+> __type__: `"string"` \| `"number"` \| `"boolean"` \| `"object"` \| `"array"`
 
 Defined in: [src/types/Config.ts:276](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Config.ts#L276)
 
@@ -96,7 +96,7 @@ Value type
 
 ### validation?
 
-> `optional` **validation**: `object`
+> `optional` __validation__: `object`
 
 Defined in: [src/types/Config.ts:288](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Config.ts#L288)
 
@@ -104,24 +104,24 @@ Validation rules
 
 #### enum?
 
-> `optional` **enum**: `unknown`[]
+> `optional` __enum__: `unknown`[]
 
 Allowed values (enum)
 
 #### max?
 
-> `optional` **max**: `number`
+> `optional` __max__: `number`
 
 Maximum value (for numbers)
 
 #### min?
 
-> `optional` **min**: `number`
+> `optional` __min__: `number`
 
 Minimum value (for numbers)
 
 #### pattern?
 
-> `optional` **pattern**: `string`
+> `optional` __pattern__: `string`
 
 Regex pattern (for strings)

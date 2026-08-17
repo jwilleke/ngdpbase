@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Provider information
 
 ### description
 
-> **description**: `string`
+> __description__: `string`
 
 Defined in: [src/providers/BaseUserProvider.ts:11](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L11)
 
@@ -22,7 +22,7 @@ Defined in: [src/providers/BaseUserProvider.ts:11](https://github.com/jwilleke/n
 
 ### features
 
-> **features**: `string`[]
+> __features__: `string`[]
 
 Defined in: [src/providers/BaseUserProvider.ts:12](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L12)
 
@@ -30,7 +30,7 @@ Defined in: [src/providers/BaseUserProvider.ts:12](https://github.com/jwilleke/n
 
 ### name
 
-> **name**: `string`
+> __name__: `string`
 
 Defined in: [src/providers/BaseUserProvider.ts:9](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L9)
 
@@ -38,6 +38,6 @@ Defined in: [src/providers/BaseUserProvider.ts:9](https://github.com/jwilleke/ng
 
 ### version
 
-> **version**: `string`
+> __version__: `string`
 
 Defined in: [src/providers/BaseUserProvider.ts:10](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L10)

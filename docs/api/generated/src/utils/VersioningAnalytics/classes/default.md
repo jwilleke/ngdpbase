@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -11,6 +11,7 @@ Defined in: [src/utils/VersioningAnalytics.ts:182](https://github.com/jwilleke/n
 VersioningAnalytics - Storage analytics and reporting for VersioningFileProvider
 
 Provides detailed insights into:
+
 - Storage usage (total, per-page, by location)
 - Version distribution (counts, ages)
 - Compression effectiveness
@@ -32,7 +33,7 @@ console.log(`Total storage: ${report.totalStorageMB} MB`);
 
 ### Constructor
 
-> **new default**(`options`): `VersioningAnalytics`
+> __new default__(`options`): `VersioningAnalytics`
 
 Defined in: [src/utils/VersioningAnalytics.ts:189](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersioningAnalytics.ts#L189)
 
@@ -54,7 +55,7 @@ Analytics options
 
 ### generateStorageReport()
 
-> **generateStorageReport**(): `Promise`\<`StorageReport`\>
+> __generateStorageReport__(): `Promise`\<`StorageReport`\>
 
 Defined in: [src/utils/VersioningAnalytics.ts:205](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersioningAnalytics.ts#L205)
 
@@ -72,7 +73,7 @@ Storage report
 
 ### getPageStorageDetails()
 
-> **getPageStorageDetails**(`identifier`): `Promise`\<`PageStorageDetails`\>
+> __getPageStorageDetails__(`identifier`): `Promise`\<`PageStorageDetails`\>
 
 Defined in: [src/utils/VersioningAnalytics.ts:482](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersioningAnalytics.ts#L482)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -24,7 +24,7 @@ Defines the contract for page storage backends (filesystem, database, etc.).
 
 ### engine
 
-> **engine**: [`WikiEngine`](../../WikiEngine/interfaces/WikiEngine.md)
+> __engine__: [`WikiEngine`](../../WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/types/Provider.ts:37](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L37)
 
@@ -38,7 +38,7 @@ Reference to WikiEngine
 
 ### initialized
 
-> **initialized**: `boolean`
+> __initialized__: `boolean`
 
 Defined in: [src/types/Provider.ts:40](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L40)
 
@@ -52,7 +52,7 @@ Whether provider has been initialized
 
 ### backup()?
 
-> `optional` **backup**(): `Promise`\<`Record`\<`string`, `unknown`\>\>
+> `optional` __backup__(): `Promise`\<`Record`\<`string`, `unknown`\>\>
 
 Defined in: [src/types/Provider.ts:64](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L64)
 
@@ -72,7 +72,7 @@ Promise resolving to backup data
 
 ### deletePage()
 
-> **deletePage**(`identifier`): `Promise`\<`boolean`\>
+> __deletePage__(`identifier`): `Promise`\<`boolean`\>
 
 Defined in: [src/types/Provider.ts:116](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L116)
 
@@ -96,7 +96,7 @@ True if deleted, false if not found
 
 ### findPage()
 
-> **findPage**(`identifier`): `string` \| `null`
+> __findPage__(`identifier`): `string` \| `null`
 
 Defined in: [src/types/Provider.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L143)
 
@@ -120,7 +120,7 @@ Canonical page title or null
 
 ### getAllPageInfo()
 
-> **getAllPageInfo**(`options?`): `Promise`\<[`PageInfo`](../../Page/interfaces/PageInfo.md)[]\>
+> __getAllPageInfo__(`options?`): `Promise`\<[`PageInfo`](../../Page/interfaces/PageInfo.md)[]\>
 
 Defined in: [src/types/Provider.ts:136](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L136)
 
@@ -144,7 +144,7 @@ Array of page info objects
 
 ### getAllPages()
 
-> **getAllPages**(): `Promise`\<`string`[]\>
+> __getAllPages__(): `Promise`\<`string`[]\>
 
 Defined in: [src/types/Provider.ts:129](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L129)
 
@@ -160,7 +160,7 @@ Sorted array of page titles
 
 ### getPage()
 
-> **getPage**(`identifier`): `Promise`\<[`WikiPage`](../../Page/interfaces/WikiPage.md) \| `null`\>
+> __getPage__(`identifier`): `Promise`\<[`WikiPage`](../../Page/interfaces/WikiPage.md) \| `null`\>
 
 Defined in: [src/types/Provider.ts:85](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L85)
 
@@ -184,7 +184,7 @@ Page object or null if not found
 
 ### getPageContent()
 
-> **getPageContent**(`identifier`): `Promise`\<`string`\>
+> __getPageContent__(`identifier`): `Promise`\<`string`\>
 
 Defined in: [src/types/Provider.ts:92](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L92)
 
@@ -208,7 +208,7 @@ Markdown content
 
 ### getPageMetadata()
 
-> **getPageMetadata**(`identifier`): `Promise`\<[`PageFrontmatter`](../../Page/interfaces/PageFrontmatter.md) \| `null`\>
+> __getPageMetadata__(`identifier`): `Promise`\<[`PageFrontmatter`](../../Page/interfaces/PageFrontmatter.md) \| `null`\>
 
 Defined in: [src/types/Provider.ts:99](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L99)
 
@@ -232,7 +232,7 @@ Metadata object or null if not found
 
 ### getProviderInfo()?
 
-> `optional` **getProviderInfo**(): [`ProviderInfo`](ProviderInfo.md)
+> `optional` __getProviderInfo__(): [`ProviderInfo`](ProviderInfo.md)
 
 Defined in: [src/types/Provider.ts:58](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L58)
 
@@ -252,7 +252,7 @@ Provider metadata
 
 ### initialize()
 
-> **initialize**(): `Promise`\<`void`\>
+> __initialize__(): `Promise`\<`void`\>
 
 Defined in: [src/types/Provider.ts:46](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L46)
 
@@ -272,7 +272,7 @@ Promise that resolves when initialization is complete
 
 ### pageExists()
 
-> **pageExists**(`identifier`): `boolean`
+> __pageExists__(`identifier`): `boolean`
 
 Defined in: [src/types/Provider.ts:123](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L123)
 
@@ -296,7 +296,7 @@ True if page exists
 
 ### refreshPageList()
 
-> **refreshPageList**(): `Promise`\<`void`\>
+> __refreshPageList__(): `Promise`\<`void`\>
 
 Defined in: [src/types/Provider.ts:149](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L149)
 
@@ -312,7 +312,7 @@ Promise that resolves when refresh is complete
 
 ### restore()?
 
-> `optional` **restore**(`backupData`): `Promise`\<`void`\>
+> `optional` __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/types/Provider.ts:71](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L71)
 
@@ -340,7 +340,7 @@ Promise that resolves when restore is complete
 
 ### savePage()
 
-> **savePage**(`pageName`, `content`, `metadata?`, `options?`): `Promise`\<`void`\>
+> __savePage__(`pageName`, `content`, `metadata?`, `options?`): `Promise`\<`void`\>
 
 Defined in: [src/types/Provider.ts:109](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L109)
 
@@ -382,7 +382,7 @@ Promise that resolves when save is complete
 
 ### shutdown()?
 
-> `optional` **shutdown**(): `Promise`\<`void`\>
+> `optional` __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/types/Provider.ts:52](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L52)
 

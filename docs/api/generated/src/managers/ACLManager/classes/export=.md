@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -15,6 +15,7 @@ permissions (time-based, location-based, etc.). Supports both page-level
 ACLs embedded in page content and global policy-based access control.
 
 Key features:
+
 - JSPWiki-style ACL markup parsing ([{ALLOW view Admin}])
 - Context-aware permission evaluation
 - Global policy-based access control
@@ -26,9 +27,9 @@ Key features:
 
 ## See
 
- - [BaseManager](../../BaseManager/classes/default.md) for base functionality
- - [PolicyEvaluator](../../PolicyEvaluator/classes/export=.md) for policy evaluation
- - AuditManager for audit logging
+- [BaseManager](../../BaseManager/classes/default.md) for base functionality
+- [PolicyEvaluator](../../PolicyEvaluator/classes/export=.md) for policy evaluation
+- AuditManager for audit logging
 
 ## Example
 
@@ -46,7 +47,7 @@ if (canView) console.log('User can view page');
 
 ### Constructor
 
-> **new export=**(`engine`): `ACLManager`
+> __new export=__(`engine`): `ACLManager`
 
 Defined in: [src/managers/ACLManager.ts:155](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ACLManager.ts#L155)
 
@@ -72,7 +73,7 @@ The wiki engine instance
 
 ### config?
 
-> `protected` `optional` **config**: `Record`\<`string`, `unknown`\>
+> `protected` `optional` __config__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/managers/BaseManager.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L61)
 
@@ -86,7 +87,7 @@ Configuration passed during initialization
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L54)
 
@@ -100,7 +101,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/managers/BaseManager.ts:57](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L57)
 
@@ -114,7 +115,7 @@ Initialization status flag
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
 
 Defined in: [src/managers/BaseManager.ts:169](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L169)
 
@@ -156,7 +157,7 @@ async backup(): Promise<BackupData> {
 
 ### checkBusinessHours()
 
-> **checkBusinessHours**(`businessHoursConfig`, `timeZone`): `PermissionResult`
+> __checkBusinessHours__(`businessHoursConfig`, `timeZone`): `PermissionResult`
 
 Defined in: [src/managers/ACLManager.ts:670](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ACLManager.ts#L670)
 
@@ -186,7 +187,7 @@ Permission result
 
 ### checkContextRestrictions()
 
-> **checkContextRestrictions**(`user`, `context`): `Promise`\<`PermissionResult`\>
+> __checkContextRestrictions__(`user`, `context`): `Promise`\<`PermissionResult`\>
 
 Defined in: [src/managers/ACLManager.ts:594](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ACLManager.ts#L594)
 
@@ -216,7 +217,7 @@ Permission result with reason
 
 ### checkDefaultPermission()
 
-> **checkDefaultPermission**(`action`, `user`): `Promise`\<`boolean`\>
+> __checkDefaultPermission__(`action`, `user`): `Promise`\<`boolean`\>
 
 Defined in: [src/managers/ACLManager.ts:565](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ACLManager.ts#L565)
 
@@ -246,7 +247,7 @@ True if user has permission, false otherwise
 
 ### checkEnhancedTimeRestrictions()
 
-> **checkEnhancedTimeRestrictions**(`user`, `context`): `Promise`\<`PermissionResult`\>
+> __checkEnhancedTimeRestrictions__(`user`, `context`): `Promise`\<`PermissionResult`\>
 
 Defined in: [src/managers/ACLManager.ts:726](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ACLManager.ts#L726)
 
@@ -276,7 +277,7 @@ Permission result
 
 ### checkHolidayRestrictions()
 
-> **checkHolidayRestrictions**(`currentDate`, `_holidaysConfig`): `Promise`\<`PermissionResult`\>
+> __checkHolidayRestrictions__(`currentDate`, `_holidaysConfig`): `Promise`\<`PermissionResult`\>
 
 Defined in: [src/managers/ACLManager.ts:800](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ACLManager.ts#L800)
 
@@ -304,7 +305,7 @@ Permission result
 
 ### checkMaintenanceMode()
 
-> **checkMaintenanceMode**(`user`, `maintenanceConfig`): `PermissionResult`
+> __checkMaintenanceMode__(`user`, `maintenanceConfig`): `PermissionResult`
 
 Defined in: [src/managers/ACLManager.ts:642](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ACLManager.ts#L642)
 
@@ -334,7 +335,7 @@ Permission result
 
 ### ~~checkPagePermission()~~
 
-> **checkPagePermission**(`pageName`, `action`, `userContext`, `pageContent`): `Promise`\<`boolean`\>
+> __checkPagePermission__(`pageName`, `action`, `userContext`, `pageContent`): `Promise`\<`boolean`\>
 
 Defined in: [src/managers/ACLManager.ts:409](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ACLManager.ts#L409)
 
@@ -381,7 +382,7 @@ Use checkPagePermissionWithContext() with WikiContext instead
 
 ### checkPagePermissionWithContext()
 
-> **checkPagePermissionWithContext**(`wikiContext`, `action`): `Promise`\<`boolean`\>
+> __checkPagePermissionWithContext__(`wikiContext`, `action`): `Promise`\<`boolean`\>
 
 Defined in: [src/managers/ACLManager.ts:288](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ACLManager.ts#L288)
 
@@ -424,7 +425,7 @@ if (canEdit) console.log('User can edit page');
 
 ### getEngine()
 
-> **getEngine**(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> __getEngine__(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:125](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L125)
 
@@ -450,7 +451,7 @@ const config = this.getEngine().getConfig();
 
 ### initialize()
 
-> **initialize**(): `Promise`\<`void`\>
+> __initialize__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/ACLManager.ts:173](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ACLManager.ts#L173)
 
@@ -480,7 +481,7 @@ console.log('ACL system ready');
 
 ### initializeAuditLogging()
 
-> **initializeAuditLogging**(): `Promise`\<`void`\>
+> __initializeAuditLogging__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/ACLManager.ts:193](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ACLManager.ts#L193)
 
@@ -494,7 +495,7 @@ Initialize audit logging system based on configuration.
 
 ### isInitialized()
 
-> **isInitialized**(): `boolean`
+> __isInitialized__(): `boolean`
 
 Defined in: [src/managers/BaseManager.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L113)
 
@@ -522,7 +523,7 @@ if (manager.isInitialized()) {
 
 ### loadAccessPolicies()
 
-> **loadAccessPolicies**(): `Promise`\<`void`\>
+> __loadAccessPolicies__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/ACLManager.ts:216](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ACLManager.ts#L216)
 
@@ -536,7 +537,7 @@ Load access policies from ConfigurationManager.
 
 ### logAccessDecision()
 
-> **logAccessDecision**(`userOrObj`, `pageName?`, `action?`, `allowed?`, `reason?`, `_context?`): `void`
+> __logAccessDecision__(`userOrObj`, `pageName?`, `action?`, `allowed?`, `reason?`, `_context?`): `void`
 
 Defined in: [src/managers/ACLManager.ts:879](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ACLManager.ts#L879)
 
@@ -577,7 +578,7 @@ Accepts either a single object or positional args for backward compatibility.
 
 ### parsePageACL()
 
-> **parsePageACL**(`content`): `Map`\<`string`, `Set`\<`string`\>\>
+> __parsePageACL__(`content`): `Map`\<`string`, `Set`\<`string`\>\>
 
 Defined in: [src/managers/ACLManager.ts:247](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ACLManager.ts#L247)
 
@@ -612,7 +613,7 @@ const acl = aclManager.parsePageACL('[{ALLOW view All}] [{ALLOW edit Admin}]');
 
 ### performStandardACLCheck()
 
-> **performStandardACLCheck**(`pageName`, `action`, `user`, `pageContent`): `Promise`\<`boolean`\>
+> __performStandardACLCheck__(`pageName`, `action`, `user`, `pageContent`): `Promise`\<`boolean`\>
 
 Defined in: [src/managers/ACLManager.ts:471](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ACLManager.ts#L471)
 
@@ -654,7 +655,7 @@ True if permission granted
 
 ### removeACLMarkup()
 
-> **removeACLMarkup**(`content`): `string`
+> __removeACLMarkup__(`content`): `string`
 
 Defined in: [src/managers/ACLManager.ts:915](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ACLManager.ts#L915)
 
@@ -675,7 +676,7 @@ Supports common patterns: [{ALLOW ...}], [{DENY ...}], %%acl ... %%, (:acl ... :
 
 ### restore()
 
-> **restore**(`backupData`): `Promise`\<`void`\>
+> __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:198](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L198)
 
@@ -720,7 +721,7 @@ async restore(backupData: BackupData): Promise<void> {
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L143)
 
@@ -751,7 +752,7 @@ async shutdown(): Promise<void> {
 
 ### stripACLMarkup()
 
-> **stripACLMarkup**(`content`): `string`
+> __stripACLMarkup__(`content`): `string`
 
 Defined in: [src/managers/ACLManager.ts:924](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ACLManager.ts#L924)
 

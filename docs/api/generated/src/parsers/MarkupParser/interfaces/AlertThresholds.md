@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Performance alert thresholds
 
 ### cacheHitRatio
 
-> **cacheHitRatio**: `number`
+> __cacheHitRatio__: `number`
 
 Defined in: [src/parsers/MarkupParser.ts:139](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L139)
 
@@ -24,7 +24,7 @@ Cache hit ratio threshold (0-1)
 
 ### errorRate
 
-> **errorRate**: `number`
+> __errorRate__: `number`
 
 Defined in: [src/parsers/MarkupParser.ts:141](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L141)
 
@@ -34,7 +34,7 @@ Error rate threshold (0-1)
 
 ### minCacheSamples
 
-> **minCacheSamples**: `number`
+> __minCacheSamples__: `number`
 
 Defined in: [src/parsers/MarkupParser.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L143)
 
@@ -44,7 +44,7 @@ Minimum cache samples for metrics
 
 ### parseTime
 
-> **parseTime**: `number`
+> __parseTime__: `number`
 
 Defined in: [src/parsers/MarkupParser.ts:137](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L137)
 

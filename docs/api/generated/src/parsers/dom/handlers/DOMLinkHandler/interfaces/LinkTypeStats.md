@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Link statistics by type
 
 ### anchor
 
-> **anchor**: `number`
+> __anchor__: `number`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:142](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L142)
 
@@ -24,7 +24,7 @@ Number of anchor links
 
 ### email
 
-> **email**: `number`
+> __email__: `number`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:140](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L140)
 
@@ -34,7 +34,7 @@ Number of email links
 
 ### error
 
-> **error**: `number`
+> __error__: `number`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:144](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L144)
 
@@ -44,7 +44,7 @@ Number of error links
 
 ### external
 
-> **external**: `number`
+> __external__: `number`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:136](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L136)
 
@@ -54,7 +54,7 @@ Number of external links
 
 ### internal
 
-> **internal**: `number`
+> __internal__: `number`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:134](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L134)
 
@@ -64,7 +64,7 @@ Number of internal links
 
 ### interwiki
 
-> **interwiki**: `number`
+> __interwiki__: `number`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:138](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L138)
 

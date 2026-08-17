@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,23 +14,23 @@ Restore results
 
 ### failed
 
-> **failed**: `object`[]
+> __failed__: `object`[]
 
 Defined in: [src/managers/BackupManager.ts:44](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L44)
 
 #### error
 
-> **error**: `string`
+> __error__: `string`
 
 #### manager
 
-> **manager**: `string`
+> __manager__: `string`
 
 ***
 
 ### skipped
 
-> **skipped**: `string`[]
+> __skipped__: `string`[]
 
 Defined in: [src/managers/BackupManager.ts:45](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L45)
 
@@ -38,6 +38,6 @@ Defined in: [src/managers/BackupManager.ts:45](https://github.com/jwilleke/ngdpb
 
 ### success
 
-> **success**: `string`[]
+> __success__: `string`[]
 
 Defined in: [src/managers/BackupManager.ts:43](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L43)

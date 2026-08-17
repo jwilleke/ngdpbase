@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Handler performance statistics
 
 ### averageTime
 
-> **averageTime**: `number`
+> __averageTime__: `number`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:47](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L47)
 
@@ -22,7 +22,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:47](https://github.com/jw
 
 ### errorCount
 
-> **errorCount**: `number`
+> __errorCount__: `number`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:45](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L45)
 
@@ -30,7 +30,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:45](https://github.com/jw
 
 ### executionCount
 
-> **executionCount**: `number`
+> __executionCount__: `number`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:43](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L43)
 
@@ -38,7 +38,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:43](https://github.com/jw
 
 ### lastExecuted
 
-> **lastExecuted**: `Date` \| `null`
+> __lastExecuted__: `Date` \| `null`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:46](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L46)
 
@@ -46,6 +46,6 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:46](https://github.com/jw
 
 ### totalTime
 
-> **totalTime**: `number`
+> __totalTime__: `number`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:44](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L44)

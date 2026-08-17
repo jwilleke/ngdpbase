@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -18,7 +18,7 @@ Filter chain configuration
 
 ### cacheResults
 
-> **cacheResults**: `boolean`
+> __cacheResults__: `boolean`
 
 Defined in: [src/parsers/filters/FilterChain.ts:30](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L30)
 
@@ -26,7 +26,7 @@ Defined in: [src/parsers/filters/FilterChain.ts:30](https://github.com/jwilleke/
 
 ### cacheTTL
 
-> **cacheTTL**: `number`
+> __cacheTTL__: `number`
 
 Defined in: [src/parsers/filters/FilterChain.ts:31](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L31)
 
@@ -34,7 +34,7 @@ Defined in: [src/parsers/filters/FilterChain.ts:31](https://github.com/jwilleke/
 
 ### enabled
 
-> **enabled**: `boolean`
+> __enabled__: `boolean`
 
 Defined in: [src/parsers/filters/FilterChain.ts:25](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L25)
 
@@ -42,7 +42,7 @@ Defined in: [src/parsers/filters/FilterChain.ts:25](https://github.com/jwilleke/
 
 ### enableParallelExecution
 
-> **enableParallelExecution**: `boolean`
+> __enableParallelExecution__: `boolean`
 
 Defined in: [src/parsers/filters/FilterChain.ts:35](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L35)
 
@@ -50,7 +50,7 @@ Defined in: [src/parsers/filters/FilterChain.ts:35](https://github.com/jwilleke/
 
 ### enableProfiling
 
-> **enableProfiling**: `boolean`
+> __enableProfiling__: `boolean`
 
 Defined in: [src/parsers/filters/FilterChain.ts:28](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L28)
 
@@ -58,7 +58,7 @@ Defined in: [src/parsers/filters/FilterChain.ts:28](https://github.com/jwilleke/
 
 ### failOnError
 
-> **failOnError**: `boolean`
+> __failOnError__: `boolean`
 
 Defined in: [src/parsers/filters/FilterChain.ts:29](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L29)
 
@@ -66,7 +66,7 @@ Defined in: [src/parsers/filters/FilterChain.ts:29](https://github.com/jwilleke/
 
 ### maxConcurrentFilters
 
-> **maxConcurrentFilters**: `number`
+> __maxConcurrentFilters__: `number`
 
 Defined in: [src/parsers/filters/FilterChain.ts:36](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L36)
 
@@ -74,7 +74,7 @@ Defined in: [src/parsers/filters/FilterChain.ts:36](https://github.com/jwilleke/
 
 ### maxFilters
 
-> **maxFilters**: `number`
+> __maxFilters__: `number`
 
 Defined in: [src/parsers/filters/FilterChain.ts:26](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L26)
 
@@ -82,7 +82,7 @@ Defined in: [src/parsers/filters/FilterChain.ts:26](https://github.com/jwilleke/
 
 ### preventXSS
 
-> **preventXSS**: `boolean`
+> __preventXSS__: `boolean`
 
 Defined in: [src/parsers/filters/FilterChain.ts:32](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L32)
 
@@ -90,7 +90,7 @@ Defined in: [src/parsers/filters/FilterChain.ts:32](https://github.com/jwilleke/
 
 ### sanitizeHTML
 
-> **sanitizeHTML**: `boolean`
+> __sanitizeHTML__: `boolean`
 
 Defined in: [src/parsers/filters/FilterChain.ts:33](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L33)
 
@@ -98,7 +98,7 @@ Defined in: [src/parsers/filters/FilterChain.ts:33](https://github.com/jwilleke/
 
 ### stripDangerousContent
 
-> **stripDangerousContent**: `boolean`
+> __stripDangerousContent__: `boolean`
 
 Defined in: [src/parsers/filters/FilterChain.ts:34](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L34)
 
@@ -106,6 +106,6 @@ Defined in: [src/parsers/filters/FilterChain.ts:34](https://github.com/jwilleke/
 
 ### timeout
 
-> **timeout**: `number`
+> __timeout__: `number`
 
 Defined in: [src/parsers/filters/FilterChain.ts:27](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L27)

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -15,6 +15,7 @@ link checking, image validation, and content quality analysis through complete
 modularity via app-default-config.json and app-custom-config.json.
 
 Design Principles:
+
 - Configurable validation rules and thresholds
 - Zero hardcoded validation logic
 - Deployment-specific validation policies
@@ -31,7 +32,7 @@ Epic: #41 - Implement JSPWikiMarkupParser for Complete Enhancement Support
 
 ### Constructor
 
-> **new default**(): `ValidationFilter`
+> __new default__(): `ValidationFilter`
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L113)
 
@@ -47,7 +48,7 @@ Defined in: [src/parsers/filters/ValidationFilter.ts:113](https://github.com/jwi
 
 ### category
 
-> `readonly` **category**: `string`
+> `readonly` __category__: `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:140](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L140)
 
@@ -59,7 +60,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:140](https://github.com/jwilleke/
 
 ### config
 
-> `protected` **config**: [`FilterConfig`](../../BaseFilter/interfaces/FilterConfig.md) \| `null`
+> `protected` __config__: [`FilterConfig`](../../BaseFilter/interfaces/FilterConfig.md) \| `null`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:146](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L146)
 
@@ -71,7 +72,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:146](https://github.com/jwilleke/
 
 ### description
 
-> `readonly` **description**: `string`
+> `readonly` __description__: `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:139](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L139)
 
@@ -83,7 +84,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:139](https://github.com/jwilleke/
 
 ### enabled
 
-> `protected` **enabled**: `boolean`
+> `protected` __enabled__: `boolean`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:144](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L144)
 
@@ -95,7 +96,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:144](https://github.com/jwilleke/
 
 ### errorReports
 
-> **errorReports**: `ValidationReport`[]
+> __errorReports__: `ValidationReport`[]
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:111](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L111)
 
@@ -103,7 +104,7 @@ Defined in: [src/parsers/filters/ValidationFilter.ts:111](https://github.com/jwi
 
 ### filterId
 
-> **filterId**: `string`
+> __filterId__: `string`
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:108](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L108)
 
@@ -115,7 +116,7 @@ Defined in: [src/parsers/filters/ValidationFilter.ts:108](https://github.com/jwi
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:145](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L145)
 
@@ -127,7 +128,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:145](https://github.com/jwilleke/
 
 ### options
 
-> `protected` **options**: `Required`\<[`FilterOptions`](../../BaseFilter/interfaces/FilterOptions.md)\>
+> `protected` __options__: `Required`\<[`FilterOptions`](../../BaseFilter/interfaces/FilterOptions.md)\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:142](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L142)
 
@@ -139,7 +140,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:142](https://github.com/jwilleke/
 
 ### priority
 
-> **priority**: `number`
+> __priority__: `number`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:136](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L136)
 
@@ -151,7 +152,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:136](https://github.com/jwilleke/
 
 ### stats
 
-> `protected` **stats**: [`FilterStats`](../../BaseFilter/interfaces/FilterStats.md)
+> `protected` __stats__: [`FilterStats`](../../BaseFilter/interfaces/FilterStats.md)
 
 Defined in: [src/parsers/filters/BaseFilter.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L143)
 
@@ -163,7 +164,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:143](https://github.com/jwilleke/
 
 ### validationConfig
 
-> **validationConfig**: `ValidationConfig` \| `null`
+> __validationConfig__: `ValidationConfig` \| `null`
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:109](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L109)
 
@@ -171,7 +172,7 @@ Defined in: [src/parsers/filters/ValidationFilter.ts:109](https://github.com/jwi
 
 ### validationRules
 
-> **validationRules**: `Map`\<`string`, `ValidationRule`\>
+> __validationRules__: `Map`\<`string`, `ValidationRule`\>
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:110](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L110)
 
@@ -179,7 +180,7 @@ Defined in: [src/parsers/filters/ValidationFilter.ts:110](https://github.com/jwi
 
 ### version
 
-> `readonly` **version**: `string`
+> `readonly` __version__: `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:138](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L138)
 
@@ -191,7 +192,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:138](https://github.com/jwilleke/
 
 ### addValidationComments()
 
-> **addValidationComments**(`content`, `errors`, `warnings`): `string`
+> __addValidationComments__(`content`, `errors`, `warnings`): `string`
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:532](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L532)
 
@@ -227,7 +228,7 @@ Content with validation comments
 
 ### addValidationRule()
 
-> **addValidationRule**(`ruleName`, `validator`, `errorMessage`, `severity`): `boolean`
+> __addValidationRule__(`ruleName`, `validator`, `errorMessage`, `severity`): `boolean`
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:578](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L578)
 
@@ -269,7 +270,7 @@ True if rule added
 
 ### clearValidationReports()
 
-> **clearValidationReports**(): `void`
+> __clearValidationReports__(): `void`
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:566](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L566)
 
@@ -283,7 +284,7 @@ Clear validation error reports
 
 ### createErrorContext()
 
-> `protected` **createErrorContext**(`error`, `content`, `context`): [`FilterErrorContext`](../../BaseFilter/interfaces/FilterErrorContext.md)
+> `protected` __createErrorContext__(`error`, `content`, `context`): [`FilterErrorContext`](../../BaseFilter/interfaces/FilterErrorContext.md)
 
 Defined in: [src/parsers/filters/BaseFilter.ts:340](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L340)
 
@@ -323,7 +324,7 @@ Error context
 
 ### disable()
 
-> **disable**(): `void`
+> __disable__(): `void`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:366](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L366)
 
@@ -341,7 +342,7 @@ Disable the filter
 
 ### enable()
 
-> **enable**(): `void`
+> __enable__(): `void`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:359](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L359)
 
@@ -359,7 +360,7 @@ Enable the filter
 
 ### execute()
 
-> **execute**(`content`, `context`): `Promise`\<`string`\>
+> __execute__(`content`, `context`): `Promise`\<`string`\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:300](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L300)
 
@@ -393,7 +394,7 @@ Processed content
 
 ### getConfigurationSummary()
 
-> **getConfigurationSummary**(): [`ConfigurationSummary`](../../BaseFilter/interfaces/ConfigurationSummary.md)
+> __getConfigurationSummary__(): [`ConfigurationSummary`](../../BaseFilter/interfaces/ConfigurationSummary.md)
 
 Defined in: [src/parsers/filters/BaseFilter.ts:434](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L434)
 
@@ -413,7 +414,7 @@ Configuration summary
 
 ### getFilterType()
 
-> `protected` **getFilterType**(): `string` \| `null`
+> `protected` __getFilterType__(): `string` \| `null`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:265](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L265)
 
@@ -433,7 +434,7 @@ Filter type for configuration
 
 ### getInfo()
 
-> **getInfo**(): `Record`\<`string`, `unknown`\>
+> __getInfo__(): `Record`\<`string`, `unknown`\>
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:640](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L640)
 
@@ -449,7 +450,7 @@ Filter information
 
 ### getMetadata()
 
-> **getMetadata**(): [`FilterMetadata`](../../BaseFilter/interfaces/FilterMetadata.md)
+> __getMetadata__(): [`FilterMetadata`](../../BaseFilter/interfaces/FilterMetadata.md)
 
 Defined in: [src/parsers/filters/BaseFilter.ts:416](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L416)
 
@@ -469,7 +470,7 @@ Filter metadata
 
 ### getStats()
 
-> **getStats**(): [`FilterStats`](../../BaseFilter/interfaces/FilterStats.md) & `object`
+> __getStats__(): [`FilterStats`](../../BaseFilter/interfaces/FilterStats.md) & `object`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:382](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L382)
 
@@ -489,7 +490,7 @@ Filter statistics
 
 ### getValidationConfiguration()
 
-> **getValidationConfiguration**(): `Record`\<`string`, `unknown`\>
+> __getValidationConfiguration__(): `Record`\<`string`, `unknown`\>
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:611](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L611)
 
@@ -505,7 +506,7 @@ Validation configuration summary
 
 ### getValidationReports()
 
-> **getValidationReports**(`limit`): `ValidationReport`[]
+> __getValidationReports__(`limit`): `ValidationReport`[]
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:559](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L559)
 
@@ -529,7 +530,7 @@ Recent validation error reports
 
 ### handleValidationResults()
 
-> **handleValidationResults**(`_content`, `errors`, `warnings`, `context`): `Promise`\<`void`\>
+> __handleValidationResults__(`_content`, `errors`, `warnings`, `context`): `Promise`\<`void`\>
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:480](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L480)
 
@@ -569,7 +570,7 @@ Parse context
 
 ### initialize()
 
-> **initialize**(`context`): `Promise`\<`void`\>
+> __initialize__(`context`): `Promise`\<`void`\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:201](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L201)
 
@@ -595,7 +596,7 @@ Initialization context
 
 ### initializeValidationRules()
 
-> **initializeValidationRules**(): `void`
+> __initializeValidationRules__(): `void`
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:201](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L201)
 
@@ -609,7 +610,7 @@ Initialize validation rules based on configuration (modular rule system)
 
 ### isEnabled()
 
-> **isEnabled**(): `boolean`
+> __isEnabled__(): `boolean`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:374](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L374)
 
@@ -629,7 +630,7 @@ True if enabled
 
 ### isTrustedImageDomain()
 
-> **isTrustedImageDomain**(`url`): `boolean`
+> __isTrustedImageDomain__(`url`): `boolean`
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:455](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L455)
 
@@ -653,7 +654,7 @@ True if from trusted domain
 
 ### isValidImageURL()
 
-> **isValidImageURL**(`url`): `boolean`
+> __isValidImageURL__(`url`): `boolean`
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:435](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L435)
 
@@ -677,7 +678,7 @@ True if valid image
 
 ### isValidURL()
 
-> **isValidURL**(`url`): `boolean`
+> __isValidURL__(`url`): `boolean`
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:408](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L408)
 
@@ -701,7 +702,7 @@ True if valid
 
 ### loadModularConfiguration()
 
-> `protected` **loadModularConfiguration**(`context`): `void`
+> `protected` __loadModularConfiguration__(`context`): `void`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:219](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L219)
 
@@ -727,7 +728,7 @@ Initialization context
 
 ### loadModularValidationConfiguration()
 
-> **loadModularValidationConfiguration**(`context`): `void`
+> __loadModularValidationConfiguration__(`context`): `void`
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:154](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L154)
 
@@ -749,7 +750,7 @@ Initialization context
 
 ### onInitialize()
 
-> **onInitialize**(`context`): `Promise`\<`void`\>
+> __onInitialize__(`context`): `Promise`\<`void`\>
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:135](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L135)
 
@@ -775,7 +776,7 @@ Initialization context
 
 ### onShutdown()
 
-> `protected` **onShutdown**(): `Promise`\<`void`\>
+> `protected` __onShutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:456](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L456)
 
@@ -793,7 +794,7 @@ Custom shutdown logic (override in subclasses)
 
 ### process()
 
-> **process**(`content`, `context`): `Promise`\<`string`\>
+> __process__(`content`, `context`): `Promise`\<`string`\>
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:271](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L271)
 
@@ -827,7 +828,7 @@ Validated content (with error comments if configured)
 
 ### removeValidationRule()
 
-> **removeValidationRule**(`ruleName`): `boolean`
+> __removeValidationRule__(`ruleName`): `boolean`
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:598](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L598)
 
@@ -851,7 +852,7 @@ True if rule removed
 
 ### resetStats()
 
-> **resetStats**(): `void`
+> __resetStats__(): `void`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:402](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L402)
 
@@ -869,7 +870,7 @@ Reset filter statistics
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:448](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L448)
 
@@ -887,7 +888,7 @@ Clean up filter resources (optional override)
 
 ### toString()
 
-> **toString**(): `string`
+> __toString__(): `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:464](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L464)
 
@@ -907,7 +908,7 @@ String representation
 
 ### validateImages()
 
-> **validateImages**(`content`): `boolean`
+> __validateImages__(`content`): `boolean`
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:373](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L373)
 
@@ -931,7 +932,7 @@ True if all images are valid
 
 ### validateLinks()
 
-> **validateLinks**(`content`): `boolean`
+> __validateLinks__(`content`): `boolean`
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:338](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L338)
 
@@ -955,7 +956,7 @@ True if all links are valid
 
 ### validateMarkupSyntax()
 
-> **validateMarkupSyntax**(`content`): `boolean`
+> __validateMarkupSyntax__(`content`): `boolean`
 
 Defined in: [src/parsers/filters/ValidationFilter.ts:321](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/ValidationFilter.ts#L321)
 

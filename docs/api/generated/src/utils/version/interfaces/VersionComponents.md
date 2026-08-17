@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Parsed version components
 
 ### major
 
-> **major**: `number`
+> __major__: `number`
 
 Defined in: [src/utils/version.ts:39](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/version.ts#L39)
 
@@ -22,7 +22,7 @@ Defined in: [src/utils/version.ts:39](https://github.com/jwilleke/ngdpbase/blob/
 
 ### minor
 
-> **minor**: `number`
+> __minor__: `number`
 
 Defined in: [src/utils/version.ts:40](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/version.ts#L40)
 
@@ -30,6 +30,6 @@ Defined in: [src/utils/version.ts:40](https://github.com/jwilleke/ngdpbase/blob/
 
 ### patch
 
-> **patch**: `number`
+> __patch__: `number`
 
 Defined in: [src/utils/version.ts:41](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/version.ts#L41)

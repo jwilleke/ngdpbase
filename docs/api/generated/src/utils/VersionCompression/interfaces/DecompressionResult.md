@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Decompression result
 
 ### decompressedPath
 
-> **decompressedPath**: `string`
+> __decompressedPath__: `string`
 
 Defined in: [src/utils/VersionCompression.ts:43](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersionCompression.ts#L43)
 
@@ -22,6 +22,6 @@ Defined in: [src/utils/VersionCompression.ts:43](https://github.com/jwilleke/ngd
 
 ### decompressedSize
 
-> **decompressedSize**: `number`
+> __decompressedSize__: `number`
 
 Defined in: [src/utils/VersionCompression.ts:42](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersionCompression.ts#L42)

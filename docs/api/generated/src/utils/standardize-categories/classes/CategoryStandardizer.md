@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Standardize categories across all pages
 
 ### Constructor
 
-> **new CategoryStandardizer**(): `CategoryStandardizer`
+> __new CategoryStandardizer__(): `CategoryStandardizer`
 
 Defined in: [src/utils/standardize-categories.ts:121](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/standardize-categories.ts#L121)
 
@@ -26,7 +26,7 @@ Defined in: [src/utils/standardize-categories.ts:121](https://github.com/jwillek
 
 ### getErrors()
 
-> **getErrors**(): `ErrorRecord`[]
+> __getErrors__(): `ErrorRecord`[]
 
 Defined in: [src/utils/standardize-categories.ts:131](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/standardize-categories.ts#L131)
 
@@ -40,7 +40,7 @@ Get the list of errors encountered during processing
 
 ### standardizeCategories()
 
-> **standardizeCategories**(`dryRun`): `Promise`\<`void`\>
+> __standardizeCategories__(`dryRun`): `Promise`\<`void`\>
 
 Defined in: [src/utils/standardize-categories.ts:138](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/standardize-categories.ts#L138)
 

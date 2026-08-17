@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -21,7 +21,7 @@ This is the default provider for UserManager.
 
 ### Constructor
 
-> **new default**(`engine`): `FileUserProvider`
+> __new default__(`engine`): `FileUserProvider`
 
 Defined in: [src/providers/FileUserProvider.ts:49](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileUserProvider.ts#L49)
 
@@ -43,7 +43,7 @@ Defined in: [src/providers/FileUserProvider.ts:49](https://github.com/jwilleke/n
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/providers/BaseUserProvider.ts:43](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L43)
 
@@ -57,7 +57,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> **initialized**: `boolean`
+> __initialized__: `boolean`
 
 Defined in: [src/providers/BaseUserProvider.ts:46](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseUserProvider.ts#L46)
 
@@ -71,7 +71,7 @@ Whether provider has been initialized
 
 ### backup()
 
-> **backup**(): `Promise`\<`FileUserProviderBackupData`\>
+> __backup__(): `Promise`\<`FileUserProviderBackupData`\>
 
 Defined in: [src/providers/FileUserProvider.ts:329](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileUserProvider.ts#L329)
 
@@ -89,7 +89,7 @@ Backup all user and session data
 
 ### cleanExpiredSessions()
 
-> **cleanExpiredSessions**(): `Promise`\<`number`\>
+> __cleanExpiredSessions__(): `Promise`\<`number`\>
 
 Defined in: [src/providers/FileUserProvider.ts:307](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileUserProvider.ts#L307)
 
@@ -107,7 +107,7 @@ Clean up expired sessions
 
 ### createSession()
 
-> **createSession**(`sessionId`, `sessionData`): `Promise`\<`void`\>
+> __createSession__(`sessionId`, `sessionData`): `Promise`\<`void`\>
 
 Defined in: [src/providers/FileUserProvider.ts:270](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileUserProvider.ts#L270)
 
@@ -135,7 +135,7 @@ Create a new session
 
 ### createUser()
 
-> **createUser**(`username`, `userData`): `Promise`\<`void`\>
+> __createUser__(`username`, `userData`): `Promise`\<`void`\>
 
 Defined in: [src/providers/FileUserProvider.ts:223](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileUserProvider.ts#L223)
 
@@ -163,7 +163,7 @@ Create a new user
 
 ### deleteSession()
 
-> **deleteSession**(`sessionId`): `Promise`\<`boolean`\>
+> __deleteSession__(`sessionId`): `Promise`\<`boolean`\>
 
 Defined in: [src/providers/FileUserProvider.ts:293](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileUserProvider.ts#L293)
 
@@ -187,7 +187,7 @@ Delete a session
 
 ### deleteUser()
 
-> **deleteUser**(`username`): `Promise`\<`boolean`\>
+> __deleteUser__(`username`): `Promise`\<`boolean`\>
 
 Defined in: [src/providers/FileUserProvider.ts:249](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileUserProvider.ts#L249)
 
@@ -211,7 +211,7 @@ Delete a user
 
 ### getAllSessions()
 
-> **getAllSessions**(): `Promise`\<`Map`\<`string`, [`UserSession`](../../../types/User/interfaces/UserSession.md)\>\>
+> __getAllSessions__(): `Promise`\<`Map`\<`string`, [`UserSession`](../../../types/User/interfaces/UserSession.md)\>\>
 
 Defined in: [src/providers/FileUserProvider.ts:286](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileUserProvider.ts#L286)
 
@@ -229,7 +229,7 @@ Get all sessions
 
 ### getAllUsernames()
 
-> **getAllUsernames**(): `Promise`\<`string`[]\>
+> __getAllUsernames__(): `Promise`\<`string`[]\>
 
 Defined in: [src/providers/FileUserProvider.ts:209](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileUserProvider.ts#L209)
 
@@ -247,7 +247,7 @@ Get all usernames
 
 ### getAllUsers()
 
-> **getAllUsers**(): `Promise`\<`Map`\<`string`, [`User`](../../../types/User/interfaces/User.md)\>\>
+> __getAllUsers__(): `Promise`\<`Map`\<`string`, [`User`](../../../types/User/interfaces/User.md)\>\>
 
 Defined in: [src/providers/FileUserProvider.ts:216](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileUserProvider.ts#L216)
 
@@ -265,7 +265,7 @@ Get all users
 
 ### getProviderInfo()
 
-> **getProviderInfo**(): `object`
+> __getProviderInfo__(): `object`
 
 Defined in: [src/providers/FileUserProvider.ts:398](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileUserProvider.ts#L398)
 
@@ -277,19 +277,19 @@ Get provider information
 
 ##### description
 
-> **description**: `string`
+> __description__: `string`
 
 ##### features
 
-> **features**: `string`[]
+> __features__: `string`[]
 
 ##### name
 
-> **name**: `string`
+> __name__: `string`
 
 ##### version
 
-> **version**: `string`
+> __version__: `string`
 
 #### Overrides
 
@@ -299,7 +299,7 @@ Get provider information
 
 ### getSession()
 
-> **getSession**(`sessionId`): `Promise`\<[`UserSession`](../../../types/User/interfaces/UserSession.md) \| `null`\>
+> __getSession__(`sessionId`): `Promise`\<[`UserSession`](../../../types/User/interfaces/UserSession.md) \| `null`\>
 
 Defined in: [src/providers/FileUserProvider.ts:279](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileUserProvider.ts#L279)
 
@@ -323,7 +323,7 @@ Get a session by ID
 
 ### getUser()
 
-> **getUser**(`username`): `Promise`\<[`User`](../../../types/User/interfaces/User.md) \| `null`\>
+> __getUser__(`username`): `Promise`\<[`User`](../../../types/User/interfaces/User.md) \| `null`\>
 
 Defined in: [src/providers/FileUserProvider.ts:202](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileUserProvider.ts#L202)
 
@@ -347,7 +347,7 @@ Get a user by username
 
 ### initialize()
 
-> **initialize**(): `Promise`\<`void`\>
+> __initialize__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/FileUserProvider.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileUserProvider.ts#L61)
 
@@ -365,7 +365,7 @@ Initialize the provider
 
 ### restore()
 
-> **restore**(`backupData`): `Promise`\<`void`\>
+> __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/providers/FileUserProvider.ts:358](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileUserProvider.ts#L358)
 
@@ -389,7 +389,7 @@ Restore user and session data from backup
 
 ### shutdown()
 
-> **shutdown**(): `void`
+> __shutdown__(): `void`
 
 Defined in: [src/providers/FileUserProvider.ts:410](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileUserProvider.ts#L410)
 
@@ -407,7 +407,7 @@ Shutdown the provider - clean up expired sessions then call parent
 
 ### updateUser()
 
-> **updateUser**(`username`, `userData`): `Promise`\<`void`\>
+> __updateUser__(`username`, `userData`): `Promise`\<`void`\>
 
 Defined in: [src/providers/FileUserProvider.ts:236](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileUserProvider.ts#L236)
 
@@ -435,7 +435,7 @@ Update an existing user
 
 ### userExists()
 
-> **userExists**(`username`): `Promise`\<`boolean`\>
+> __userExists__(`username`): `Promise`\<`boolean`\>
 
 Defined in: [src/providers/FileUserProvider.ts:263](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileUserProvider.ts#L263)
 

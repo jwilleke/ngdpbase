@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -16,7 +16,7 @@ Active session information stored by session manager.
 
 ### createdAt
 
-> **createdAt**: `string`
+> __createdAt__: `string`
 
 Defined in: [src/types/User.ts:172](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L172)
 
@@ -26,7 +26,7 @@ Session creation timestamp (ISO 8601)
 
 ### data?
 
-> `optional` **data**: `Record`\<`string`, `unknown`\>
+> `optional` __data__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/types/User.ts:187](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L187)
 
@@ -36,7 +36,7 @@ Additional session data
 
 ### expiresAt
 
-> **expiresAt**: `string`
+> __expiresAt__: `string`
 
 Defined in: [src/types/User.ts:175](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L175)
 
@@ -46,7 +46,7 @@ Session expiration timestamp (ISO 8601)
 
 ### ipAddress?
 
-> `optional` **ipAddress**: `string`
+> `optional` __ipAddress__: `string`
 
 Defined in: [src/types/User.ts:181](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L181)
 
@@ -56,7 +56,7 @@ Client IP address
 
 ### lastActivity
 
-> **lastActivity**: `string`
+> __lastActivity__: `string`
 
 Defined in: [src/types/User.ts:178](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L178)
 
@@ -66,7 +66,7 @@ Last activity timestamp (ISO 8601)
 
 ### sessionId
 
-> **sessionId**: `string`
+> __sessionId__: `string`
 
 Defined in: [src/types/User.ts:163](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L163)
 
@@ -76,7 +76,7 @@ Session ID (unique)
 
 ### userAgent?
 
-> `optional` **userAgent**: `string`
+> `optional` __userAgent__: `string`
 
 Defined in: [src/types/User.ts:184](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L184)
 
@@ -86,7 +86,7 @@ User agent string
 
 ### userId
 
-> **userId**: `string`
+> __userId__: `string`
 
 Defined in: [src/types/User.ts:169](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L169)
 
@@ -96,7 +96,7 @@ User ID (username or external ID)
 
 ### username
 
-> **username**: `string`
+> __username__: `string`
 
 Defined in: [src/types/User.ts:166](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L166)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Search options structure
 
 ### categories?
 
-> `optional` **categories**: `string`[]
+> `optional` __categories__: `string`[]
 
 Defined in: [src/providers/BaseSearchProvider.ts:64](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L64)
 
@@ -24,7 +24,7 @@ Filter by categories
 
 ### maxResults?
 
-> `optional` **maxResults**: `number`
+> `optional` __maxResults__: `number`
 
 Defined in: [src/providers/BaseSearchProvider.ts:58](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L58)
 
@@ -34,7 +34,7 @@ Maximum number of results to return
 
 ### searchIn?
 
-> `optional` **searchIn**: `string`[]
+> `optional` __searchIn__: `string`[]
 
 Defined in: [src/providers/BaseSearchProvider.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L61)
 
@@ -44,7 +44,7 @@ Fields to search in
 
 ### userKeywords?
 
-> `optional` **userKeywords**: `string`[]
+> `optional` __userKeywords__: `string`[]
 
 Defined in: [src/providers/BaseSearchProvider.ts:67](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L67)
 

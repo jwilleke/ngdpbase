@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Provider information returned by getProviderInfo()
 
 ### description?
 
-> `optional` **description**: `string`
+> `optional` __description__: `string`
 
 Defined in: [src/types/Provider.ts:24](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L24)
 
@@ -24,7 +24,7 @@ Provider description
 
 ### features?
 
-> `optional` **features**: `string`[]
+> `optional` __features__: `string`[]
 
 Defined in: [src/types/Provider.ts:27](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L27)
 
@@ -34,7 +34,7 @@ Provider features
 
 ### name
 
-> **name**: `string`
+> __name__: `string`
 
 Defined in: [src/types/Provider.ts:18](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L18)
 
@@ -44,7 +44,7 @@ Provider name
 
 ### version
 
-> **version**: `string`
+> __version__: `string`
 
 Defined in: [src/types/Provider.ts:21](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L21)
 

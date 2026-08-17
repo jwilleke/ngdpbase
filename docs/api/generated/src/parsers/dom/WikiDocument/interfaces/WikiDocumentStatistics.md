@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Document statistics
 
 ### hasContext
 
-> **hasContext**: `boolean`
+> __hasContext__: `boolean`
 
 Defined in: [src/parsers/dom/WikiDocument.ts:110](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/WikiDocument.ts#L110)
 
@@ -22,7 +22,7 @@ Defined in: [src/parsers/dom/WikiDocument.ts:110](https://github.com/jwilleke/ng
 
 ### htmlLength
 
-> **htmlLength**: `number`
+> __htmlLength__: `number`
 
 Defined in: [src/parsers/dom/WikiDocument.ts:109](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/WikiDocument.ts#L109)
 
@@ -30,7 +30,7 @@ Defined in: [src/parsers/dom/WikiDocument.ts:109](https://github.com/jwilleke/ng
 
 ### metadata
 
-> **metadata**: `number`
+> __metadata__: `number`
 
 Defined in: [src/parsers/dom/WikiDocument.ts:111](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/WikiDocument.ts#L111)
 
@@ -38,7 +38,7 @@ Defined in: [src/parsers/dom/WikiDocument.ts:111](https://github.com/jwilleke/ng
 
 ### nodeCount
 
-> **nodeCount**: `number`
+> __nodeCount__: `number`
 
 Defined in: [src/parsers/dom/WikiDocument.ts:107](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/WikiDocument.ts#L107)
 
@@ -46,6 +46,6 @@ Defined in: [src/parsers/dom/WikiDocument.ts:107](https://github.com/jwilleke/ng
 
 ### pageDataLength
 
-> **pageDataLength**: `number`
+> __pageDataLength__: `number`
 
 Defined in: [src/parsers/dom/WikiDocument.ts:108](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/WikiDocument.ts#L108)

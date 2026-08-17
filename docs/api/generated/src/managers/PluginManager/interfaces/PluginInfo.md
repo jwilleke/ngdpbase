@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Plugin information returned by getPluginInfo
 
 ### author
 
-> **author**: `string`
+> __author__: `string`
 
 Defined in: [src/managers/PluginManager.ts:78](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PluginManager.ts#L78)
 
@@ -22,7 +22,7 @@ Defined in: [src/managers/PluginManager.ts:78](https://github.com/jwilleke/ngdpb
 
 ### description
 
-> **description**: `string`
+> __description__: `string`
 
 Defined in: [src/managers/PluginManager.ts:77](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PluginManager.ts#L77)
 
@@ -30,7 +30,7 @@ Defined in: [src/managers/PluginManager.ts:77](https://github.com/jwilleke/ngdpb
 
 ### name
 
-> **name**: `string`
+> __name__: `string`
 
 Defined in: [src/managers/PluginManager.ts:76](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PluginManager.ts#L76)
 
@@ -38,6 +38,6 @@ Defined in: [src/managers/PluginManager.ts:76](https://github.com/jwilleke/ngdpb
 
 ### version
 
-> **version**: `string`
+> __version__: `string`
 
 Defined in: [src/managers/PluginManager.ts:79](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PluginManager.ts#L79)

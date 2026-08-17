@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -15,6 +15,7 @@ for extending wiki functionality. Plugins are discovered from configured
 search paths and executed during markup parsing.
 
 Key features:
+
 - Dynamic plugin discovery from search paths
 - Plugin registration and metadata management
 - Secure plugin execution with sandboxing
@@ -41,7 +42,7 @@ const result = await pluginManager.execute('CurrentTimePlugin', params);
 
 ### Constructor
 
-> **new default**(`engine`): `PluginManager`
+> __new default__(`engine`): `PluginManager`
 
 Defined in: [src/managers/PluginManager.ts:119](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PluginManager.ts#L119)
 
@@ -67,7 +68,7 @@ The wiki engine instance
 
 ### config?
 
-> `protected` `optional` **config**: `Record`\<`string`, `unknown`\>
+> `protected` `optional` __config__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/managers/BaseManager.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L61)
 
@@ -81,7 +82,7 @@ Configuration passed during initialization
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L54)
 
@@ -95,7 +96,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/managers/BaseManager.ts:57](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L57)
 
@@ -109,7 +110,7 @@ Initialization status flag
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
 
 Defined in: [src/managers/BaseManager.ts:169](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L169)
 
@@ -151,7 +152,7 @@ async backup(): Promise<BackupData> {
 
 ### execute()
 
-> **execute**(`pluginName`, `pageName`, `params`, `context`): `Promise`\<`string`\>
+> __execute__(`pluginName`, `pageName`, `params`, `context`): `Promise`\<`string`\>
 
 Defined in: [src/managers/PluginManager.ts:328](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PluginManager.ts#L328)
 
@@ -193,12 +194,13 @@ Plugin output
 
 ### findPlugin()
 
-> **findPlugin**(`pluginName`): [`Plugin`](../type-aliases/Plugin.md) \| `null`
+> __findPlugin__(`pluginName`): [`Plugin`](../type-aliases/Plugin.md) \| `null`
 
 Defined in: [src/managers/PluginManager.ts:271](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PluginManager.ts#L271)
 
 Find plugin by name (case-insensitive)
 Supports JSPWiki-style plugin naming where you can use either:
+
 - "Search" or "SearchPlugin"
 - "Index" or "IndexPlugin"
 
@@ -220,7 +222,7 @@ Plugin object or null if not found
 
 ### getEngine()
 
-> **getEngine**(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> __getEngine__(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:125](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L125)
 
@@ -246,7 +248,7 @@ const config = this.getEngine().getConfig();
 
 ### getPluginInfo()
 
-> **getPluginInfo**(`pluginName`): [`PluginInfo`](../interfaces/PluginInfo.md) \| `null`
+> __getPluginInfo__(`pluginName`): [`PluginInfo`](../interfaces/PluginInfo.md) \| `null`
 
 Defined in: [src/managers/PluginManager.ts:377](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PluginManager.ts#L377)
 
@@ -270,7 +272,7 @@ Plugin information
 
 ### getPluginNames()
 
-> **getPluginNames**(): `string`[]
+> __getPluginNames__(): `string`[]
 
 Defined in: [src/managers/PluginManager.ts:368](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PluginManager.ts#L368)
 
@@ -286,7 +288,7 @@ Array of plugin names
 
 ### hasPlugin()
 
-> **hasPlugin**(`pluginName`): `boolean`
+> __hasPlugin__(`pluginName`): `boolean`
 
 Defined in: [src/managers/PluginManager.ts:407](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PluginManager.ts#L407)
 
@@ -310,7 +312,7 @@ True if plugin exists
 
 ### initialize()
 
-> **initialize**(`config?`): `Promise`\<`void`\>
+> __initialize__(`config?`): `Promise`\<`void`\>
 
 Defined in: [src/managers/PluginManager.ts:132](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PluginManager.ts#L132)
 
@@ -338,7 +340,7 @@ Configuration object (unused, reads from ConfigurationManager)
 
 ### isInitialized()
 
-> **isInitialized**(): `boolean`
+> __isInitialized__(): `boolean`
 
 Defined in: [src/managers/BaseManager.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L113)
 
@@ -366,7 +368,7 @@ if (manager.isInitialized()) {
 
 ### loadPlugin()
 
-> **loadPlugin**(`pluginPath`): `Promise`\<`void`\>
+> __loadPlugin__(`pluginPath`): `Promise`\<`void`\>
 
 Defined in: [src/managers/PluginManager.ts:221](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PluginManager.ts#L221)
 
@@ -388,7 +390,7 @@ Path to the plugin file
 
 ### registerPlugins()
 
-> **registerPlugins**(): `Promise`\<`void`\>
+> __registerPlugins__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/PluginManager.ts:144](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PluginManager.ts#L144)
 
@@ -403,7 +405,7 @@ ConfigurationManager at key: ngdpbase.managers.plugin-manager.search-paths
 
 ### restore()
 
-> **restore**(`backupData`): `Promise`\<`void`\>
+> __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:198](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L198)
 
@@ -448,7 +450,7 @@ async restore(backupData: BackupData): Promise<void> {
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L143)
 

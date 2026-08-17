@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Validation result for a single page
 
 ### error?
 
-> `optional` **error**: `string`
+> `optional` __error__: `string`
 
 Defined in: [src/utils/final-validation.ts:23](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/final-validation.ts#L23)
 
@@ -22,7 +22,7 @@ Defined in: [src/utils/final-validation.ts:23](https://github.com/jwilleke/ngdpb
 
 ### metadata?
 
-> `optional` **metadata**: [`PageMetadata`](PageMetadata.md)
+> `optional` __metadata__: [`PageMetadata`](PageMetadata.md)
 
 Defined in: [src/utils/final-validation.ts:24](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/final-validation.ts#L24)
 
@@ -30,6 +30,6 @@ Defined in: [src/utils/final-validation.ts:24](https://github.com/jwilleke/ngdpb
 
 ### valid
 
-> **valid**: `boolean`
+> __valid__: `boolean`
 
 Defined in: [src/utils/final-validation.ts:22](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/final-validation.ts#L22)

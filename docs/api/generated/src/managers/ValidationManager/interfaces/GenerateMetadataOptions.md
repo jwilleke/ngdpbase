@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -18,7 +18,7 @@ Options for generating metadata
 
 ### slug?
 
-> `optional` **slug**: `string`
+> `optional` __slug__: `string`
 
 Defined in: [src/managers/ValidationManager.ts:69](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L69)
 
@@ -26,7 +26,7 @@ Defined in: [src/managers/ValidationManager.ts:69](https://github.com/jwilleke/n
 
 ### system-category?
 
-> `optional` **system-category**: `string`
+> `optional` __system-category__: `string`
 
 Defined in: [src/managers/ValidationManager.ts:70](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L70)
 
@@ -34,7 +34,7 @@ Defined in: [src/managers/ValidationManager.ts:70](https://github.com/jwilleke/n
 
 ### user-keywords?
 
-> `optional` **user-keywords**: `string`[]
+> `optional` __user-keywords__: `string`[]
 
 Defined in: [src/managers/ValidationManager.ts:72](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L72)
 
@@ -42,7 +42,7 @@ Defined in: [src/managers/ValidationManager.ts:72](https://github.com/jwilleke/n
 
 ### userKeywords?
 
-> `optional` **userKeywords**: `string`[]
+> `optional` __userKeywords__: `string`[]
 
 Defined in: [src/managers/ValidationManager.ts:71](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L71)
 
@@ -50,6 +50,6 @@ Defined in: [src/managers/ValidationManager.ts:71](https://github.com/jwilleke/n
 
 ### uuid?
 
-> `optional` **uuid**: `string`
+> `optional` __uuid__: `string`
 
 Defined in: [src/managers/ValidationManager.ts:68](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L68)

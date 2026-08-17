@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -11,6 +11,7 @@ Defined in: [src/services/InstallService.ts:121](https://github.com/jwilleke/ngd
 InstallService - Handles first-run installation and configuration
 
 Manages the initial setup process including:
+
 - Writing app-custom-config.json with user-provided settings
 - Creating users/organizations.json with Schema.org organization data
 - Copying startup pages from required-pages/ to pages/
@@ -22,7 +23,7 @@ Manages the initial setup process including:
 
 ### Constructor
 
-> **new default**(`engine`): `InstallService`
+> __new default__(`engine`): `InstallService`
 
 Defined in: [src/services/InstallService.ts:131](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/services/InstallService.ts#L131)
 
@@ -44,7 +45,7 @@ The wiki engine instance
 
 ### createPagesFolder()
 
-> **createPagesFolder**(): `Promise`\<`PagesFolderResult`\>
+> __createPagesFolder__(): `Promise`\<`PagesFolderResult`\>
 
 Defined in: [src/services/InstallService.ts:238](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/services/InstallService.ts#L238)
 
@@ -64,7 +65,7 @@ Result with success status and number of pages copied
 
 ### detectMissingPagesOnly()
 
-> **detectMissingPagesOnly**(): `Promise`\<`MissingPagesResult`\>
+> __detectMissingPagesOnly__(): `Promise`\<`MissingPagesResult`\>
 
 Defined in: [src/services/InstallService.ts:203](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/services/InstallService.ts#L203)
 
@@ -82,7 +83,7 @@ Result with missingPagesOnly flag and details
 
 ### detectPartialInstallation()
 
-> **detectPartialInstallation**(): `Promise`\<`PartialInstallationState`\>
+> __detectPartialInstallation__(): `Promise`\<`PartialInstallationState`\>
 
 Defined in: [src/services/InstallService.ts:164](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/services/InstallService.ts#L164)
 
@@ -98,7 +99,7 @@ Partial installation status
 
 ### generateSessionSecret()
 
-> **generateSessionSecret**(): `string`
+> __generateSessionSecret__(): `string`
 
 Defined in: [src/services/InstallService.ts:766](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/services/InstallService.ts#L766)
 
@@ -114,7 +115,7 @@ Random hex string
 
 ### isInstallRequired()
 
-> **isInstallRequired**(): `Promise`\<`boolean`\>
+> __isInstallRequired__(): `Promise`\<`boolean`\>
 
 Defined in: [src/services/InstallService.ts:141](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/services/InstallService.ts#L141)
 
@@ -130,7 +131,7 @@ True if install is needed
 
 ### processInstallation()
 
-> **processInstallation**(`installData`): `Promise`\<`InstallationResult`\>
+> __processInstallation__(`installData`): `Promise`\<`InstallationResult`\>
 
 Defined in: [src/services/InstallService.ts:323](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/services/InstallService.ts#L323)
 
@@ -160,7 +161,7 @@ Result with success status, completed steps, and any errors
 
 ### resetInstallation()
 
-> **resetInstallation**(): `Promise`\<`ResetResult`\>
+> __resetInstallation__(): `Promise`\<`ResetResult`\>
 
 Defined in: [src/services/InstallService.ts:409](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/services/InstallService.ts#L409)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -16,7 +16,7 @@ Full content for a specific version, reconstructed from deltas if necessary.
 
 ### content
 
-> **content**: `string`
+> __content__: `string`
 
 Defined in: [src/types/Version.ts:97](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L97)
 
@@ -26,7 +26,7 @@ Full page content (markdown)
 
 ### metadata
 
-> **metadata**: [`VersionMetadata`](VersionMetadata.md)
+> __metadata__: [`VersionMetadata`](VersionMetadata.md)
 
 Defined in: [src/types/Version.ts:100](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L100)
 
@@ -36,7 +36,7 @@ Version metadata
 
 ### version
 
-> **version**: `number`
+> __version__: `number`
 
 Defined in: [src/types/Version.ts:94](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L94)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -18,7 +18,7 @@ Page context interface
 
 ### pageName?
 
-> `optional` **pageName**: `string`
+> `optional` __pageName__: `string`
 
 Defined in: [src/parsers/context/ParseContext.ts:37](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L37)
 
@@ -26,7 +26,7 @@ Defined in: [src/parsers/context/ParseContext.ts:37](https://github.com/jwilleke
 
 ### requestInfo?
 
-> `optional` **requestInfo**: [`RequestInfo`](RequestInfo.md) \| `null`
+> `optional` __requestInfo__: [`RequestInfo`](RequestInfo.md) \| `null`
 
 Defined in: [src/parsers/context/ParseContext.ts:40](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L40)
 
@@ -34,7 +34,7 @@ Defined in: [src/parsers/context/ParseContext.ts:40](https://github.com/jwilleke
 
 ### userContext?
 
-> `optional` **userContext**: [`UserContext`](UserContext.md) \| `null`
+> `optional` __userContext__: [`UserContext`](UserContext.md) \| `null`
 
 Defined in: [src/parsers/context/ParseContext.ts:39](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L39)
 
@@ -42,6 +42,6 @@ Defined in: [src/parsers/context/ParseContext.ts:39](https://github.com/jwilleke
 
 ### userName?
 
-> `optional` **userName**: `string`
+> `optional` __userName__: `string`
 
 Defined in: [src/parsers/context/ParseContext.ts:38](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L38)

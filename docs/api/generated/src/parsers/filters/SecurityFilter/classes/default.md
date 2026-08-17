@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -15,6 +15,7 @@ detection with complete configurability through app-default-config.json and
 app-custom-config.json override system.
 
 Design Principles:
+
 - Security-by-default with configurable relaxation
 - Complete modularity through JSON configuration
 - Zero hardcoded security rules - everything configurable
@@ -31,7 +32,7 @@ Epic: #41 - Implement JSPWikiMarkupParser for Complete Enhancement Support
 
 ### Constructor
 
-> **new default**(): `SecurityFilter`
+> __new default__(): `SecurityFilter`
 
 Defined in: [src/parsers/filters/SecurityFilter.ts:90](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SecurityFilter.ts#L90)
 
@@ -47,7 +48,7 @@ Defined in: [src/parsers/filters/SecurityFilter.ts:90](https://github.com/jwille
 
 ### allowedAttributes
 
-> **allowedAttributes**: `Set`\<`string`\>
+> __allowedAttributes__: `Set`\<`string`\>
 
 Defined in: [src/parsers/filters/SecurityFilter.ts:87](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SecurityFilter.ts#L87)
 
@@ -55,7 +56,7 @@ Defined in: [src/parsers/filters/SecurityFilter.ts:87](https://github.com/jwille
 
 ### allowedTags
 
-> **allowedTags**: `Set`\<`string`\>
+> __allowedTags__: `Set`\<`string`\>
 
 Defined in: [src/parsers/filters/SecurityFilter.ts:86](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SecurityFilter.ts#L86)
 
@@ -63,7 +64,7 @@ Defined in: [src/parsers/filters/SecurityFilter.ts:86](https://github.com/jwille
 
 ### category
 
-> `readonly` **category**: `string`
+> `readonly` __category__: `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:140](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L140)
 
@@ -75,7 +76,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:140](https://github.com/jwilleke/
 
 ### config
 
-> `protected` **config**: [`FilterConfig`](../../BaseFilter/interfaces/FilterConfig.md) \| `null`
+> `protected` __config__: [`FilterConfig`](../../BaseFilter/interfaces/FilterConfig.md) \| `null`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:146](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L146)
 
@@ -87,7 +88,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:146](https://github.com/jwilleke/
 
 ### dangerousPatterns
 
-> **dangerousPatterns**: `RegExp`[]
+> __dangerousPatterns__: `RegExp`[]
 
 Defined in: [src/parsers/filters/SecurityFilter.ts:88](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SecurityFilter.ts#L88)
 
@@ -95,7 +96,7 @@ Defined in: [src/parsers/filters/SecurityFilter.ts:88](https://github.com/jwille
 
 ### description
 
-> `readonly` **description**: `string`
+> `readonly` __description__: `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:139](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L139)
 
@@ -107,7 +108,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:139](https://github.com/jwilleke/
 
 ### enabled
 
-> `protected` **enabled**: `boolean`
+> `protected` __enabled__: `boolean`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:144](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L144)
 
@@ -119,7 +120,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:144](https://github.com/jwilleke/
 
 ### filterId
 
-> **filterId**: `string`
+> __filterId__: `string`
 
 Defined in: [src/parsers/filters/SecurityFilter.ts:84](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SecurityFilter.ts#L84)
 
@@ -131,7 +132,7 @@ Defined in: [src/parsers/filters/SecurityFilter.ts:84](https://github.com/jwille
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:145](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L145)
 
@@ -143,7 +144,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:145](https://github.com/jwilleke/
 
 ### options
 
-> `protected` **options**: `Required`\<[`FilterOptions`](../../BaseFilter/interfaces/FilterOptions.md)\>
+> `protected` __options__: `Required`\<[`FilterOptions`](../../BaseFilter/interfaces/FilterOptions.md)\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:142](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L142)
 
@@ -155,7 +156,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:142](https://github.com/jwilleke/
 
 ### priority
 
-> **priority**: `number`
+> __priority__: `number`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:136](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L136)
 
@@ -167,7 +168,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:136](https://github.com/jwilleke/
 
 ### securityConfig
 
-> **securityConfig**: `SecurityConfig` \| `null`
+> __securityConfig__: `SecurityConfig` \| `null`
 
 Defined in: [src/parsers/filters/SecurityFilter.ts:85](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SecurityFilter.ts#L85)
 
@@ -175,7 +176,7 @@ Defined in: [src/parsers/filters/SecurityFilter.ts:85](https://github.com/jwille
 
 ### stats
 
-> `protected` **stats**: [`FilterStats`](../../BaseFilter/interfaces/FilterStats.md)
+> `protected` __stats__: [`FilterStats`](../../BaseFilter/interfaces/FilterStats.md)
 
 Defined in: [src/parsers/filters/BaseFilter.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L143)
 
@@ -187,7 +188,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:143](https://github.com/jwilleke/
 
 ### version
 
-> `readonly` **version**: `string`
+> `readonly` __version__: `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:138](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L138)
 
@@ -199,7 +200,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:138](https://github.com/jwilleke/
 
 ### createErrorContext()
 
-> `protected` **createErrorContext**(`error`, `content`, `context`): [`FilterErrorContext`](../../BaseFilter/interfaces/FilterErrorContext.md)
+> `protected` __createErrorContext__(`error`, `content`, `context`): [`FilterErrorContext`](../../BaseFilter/interfaces/FilterErrorContext.md)
 
 Defined in: [src/parsers/filters/BaseFilter.ts:340](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L340)
 
@@ -239,7 +240,7 @@ Error context
 
 ### disable()
 
-> **disable**(): `void`
+> __disable__(): `void`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:366](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L366)
 
@@ -257,7 +258,7 @@ Disable the filter
 
 ### enable()
 
-> **enable**(): `void`
+> __enable__(): `void`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:359](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L359)
 
@@ -275,7 +276,7 @@ Enable the filter
 
 ### escapeAttributeValue()
 
-> **escapeAttributeValue**(`value`): `string`
+> __escapeAttributeValue__(`value`): `string`
 
 Defined in: [src/parsers/filters/SecurityFilter.ts:424](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SecurityFilter.ts#L424)
 
@@ -299,7 +300,7 @@ Escaped value
 
 ### execute()
 
-> **execute**(`content`, `context`): `Promise`\<`string`\>
+> __execute__(`content`, `context`): `Promise`\<`string`\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:300](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L300)
 
@@ -333,7 +334,7 @@ Processed content
 
 ### getConfigurationSummary()
 
-> **getConfigurationSummary**(): [`ConfigurationSummary`](../../BaseFilter/interfaces/ConfigurationSummary.md)
+> __getConfigurationSummary__(): [`ConfigurationSummary`](../../BaseFilter/interfaces/ConfigurationSummary.md)
 
 Defined in: [src/parsers/filters/BaseFilter.ts:434](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L434)
 
@@ -353,7 +354,7 @@ Configuration summary
 
 ### getFilterType()
 
-> `protected` **getFilterType**(): `string` \| `null`
+> `protected` __getFilterType__(): `string` \| `null`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:265](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L265)
 
@@ -373,7 +374,7 @@ Filter type for configuration
 
 ### getInfo()
 
-> **getInfo**(): `Record`\<`string`, `unknown`\>
+> __getInfo__(): `Record`\<`string`, `unknown`\>
 
 Defined in: [src/parsers/filters/SecurityFilter.ts:492](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SecurityFilter.ts#L492)
 
@@ -389,7 +390,7 @@ Filter information
 
 ### getMetadata()
 
-> **getMetadata**(): [`FilterMetadata`](../../BaseFilter/interfaces/FilterMetadata.md)
+> __getMetadata__(): [`FilterMetadata`](../../BaseFilter/interfaces/FilterMetadata.md)
 
 Defined in: [src/parsers/filters/BaseFilter.ts:416](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L416)
 
@@ -409,7 +410,7 @@ Filter metadata
 
 ### getSecurityConfiguration()
 
-> **getSecurityConfiguration**(): `Record`\<`string`, `unknown`\>
+> __getSecurityConfiguration__(): `Record`\<`string`, `unknown`\>
 
 Defined in: [src/parsers/filters/SecurityFilter.ts:463](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SecurityFilter.ts#L463)
 
@@ -425,7 +426,7 @@ Security configuration summary
 
 ### getStats()
 
-> **getStats**(): [`FilterStats`](../../BaseFilter/interfaces/FilterStats.md) & `object`
+> __getStats__(): [`FilterStats`](../../BaseFilter/interfaces/FilterStats.md) & `object`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:382](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L382)
 
@@ -445,7 +446,7 @@ Filter statistics
 
 ### initialize()
 
-> **initialize**(`context`): `Promise`\<`void`\>
+> __initialize__(`context`): `Promise`\<`void`\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:201](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L201)
 
@@ -471,7 +472,7 @@ Initialization context
 
 ### initializeDangerousPatterns()
 
-> **initializeDangerousPatterns**(): `void`
+> __initializeDangerousPatterns__(): `void`
 
 Defined in: [src/parsers/filters/SecurityFilter.ts:207](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SecurityFilter.ts#L207)
 
@@ -485,7 +486,7 @@ Initialize dangerous patterns based on configuration (modular security patterns)
 
 ### isEnabled()
 
-> **isEnabled**(): `boolean`
+> __isEnabled__(): `boolean`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:374](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L374)
 
@@ -505,7 +506,7 @@ True if enabled
 
 ### isValidURL()
 
-> **isValidURL**(`url`): `boolean`
+> __isValidURL__(`url`): `boolean`
 
 Defined in: [src/parsers/filters/SecurityFilter.ts:391](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SecurityFilter.ts#L391)
 
@@ -529,7 +530,7 @@ True if valid and safe
 
 ### loadModularConfiguration()
 
-> `protected` **loadModularConfiguration**(`context`): `void`
+> `protected` __loadModularConfiguration__(`context`): `void`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:219](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L219)
 
@@ -555,7 +556,7 @@ Initialization context
 
 ### loadModularSecurityConfiguration()
 
-> **loadModularSecurityConfiguration**(`context`): `void`
+> __loadModularSecurityConfiguration__(`context`): `void`
 
 Defined in: [src/parsers/filters/SecurityFilter.ts:129](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SecurityFilter.ts#L129)
 
@@ -577,7 +578,7 @@ Initialization context
 
 ### loadSecureDefaults()
 
-> **loadSecureDefaults**(): `void`
+> __loadSecureDefaults__(): `void`
 
 Defined in: [src/parsers/filters/SecurityFilter.ts:194](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SecurityFilter.ts#L194)
 
@@ -591,7 +592,7 @@ Load secure default configuration when configuration files unavailable
 
 ### logSecurityViolation()
 
-> **logSecurityViolation**(`originalContent`, `filteredContent`, `context`): `void`
+> __logSecurityViolation__(`originalContent`, `filteredContent`, `context`): `void`
 
 Defined in: [src/parsers/filters/SecurityFilter.ts:439](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SecurityFilter.ts#L439)
 
@@ -625,7 +626,7 @@ Parse context
 
 ### onInitialize()
 
-> **onInitialize**(`context`): `Promise`\<`void`\>
+> __onInitialize__(`context`): `Promise`\<`void`\>
 
 Defined in: [src/parsers/filters/SecurityFilter.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SecurityFilter.ts#L113)
 
@@ -651,7 +652,7 @@ Initialization context
 
 ### onShutdown()
 
-> `protected` **onShutdown**(): `Promise`\<`void`\>
+> `protected` __onShutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:456](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L456)
 
@@ -669,7 +670,7 @@ Custom shutdown logic (override in subclasses)
 
 ### preventXSS()
 
-> **preventXSS**(`content`): `string`
+> __preventXSS__(`content`): `string`
 
 Defined in: [src/parsers/filters/SecurityFilter.ts:307](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SecurityFilter.ts#L307)
 
@@ -693,7 +694,7 @@ XSS-safe content
 
 ### process()
 
-> **process**(`content`, `context`): `Promise`\<`string`\>
+> __process__(`content`, `context`): `Promise`\<`string`\>
 
 Defined in: [src/parsers/filters/SecurityFilter.ts:243](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SecurityFilter.ts#L243)
 
@@ -727,7 +728,7 @@ Securely filtered content
 
 ### resetStats()
 
-> **resetStats**(): `void`
+> __resetStats__(): `void`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:402](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L402)
 
@@ -745,7 +746,7 @@ Reset filter statistics
 
 ### sanitizeAttributes()
 
-> **sanitizeAttributes**(`attributeString`): `string`
+> __sanitizeAttributes__(`attributeString`): `string`
 
 Defined in: [src/parsers/filters/SecurityFilter.ts:357](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SecurityFilter.ts#L357)
 
@@ -769,7 +770,7 @@ Sanitized attributes
 
 ### sanitizeHTML()
 
-> **sanitizeHTML**(`content`): `string`
+> __sanitizeHTML__(`content`): `string`
 
 Defined in: [src/parsers/filters/SecurityFilter.ts:322](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SecurityFilter.ts#L322)
 
@@ -793,7 +794,7 @@ Sanitized content
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:448](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L448)
 
@@ -811,7 +812,7 @@ Clean up filter resources (optional override)
 
 ### stripDangerousContent()
 
-> **stripDangerousContent**(`content`): `string`
+> __stripDangerousContent__(`content`): `string`
 
 Defined in: [src/parsers/filters/SecurityFilter.ts:292](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SecurityFilter.ts#L292)
 
@@ -835,7 +836,7 @@ Cleaned content
 
 ### toString()
 
-> **toString**(): `string`
+> __toString__(): `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:464](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L464)
 

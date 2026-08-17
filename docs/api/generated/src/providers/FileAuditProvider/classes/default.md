@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,6 +14,7 @@ Stores audit logs in local filesystem files with JSON line format.
 Suitable for single-instance deployments and development.
 
 Configuration keys (all lowercase):
+
 - ngdpbase.audit.provider.file.logdirectory - Directory for audit log files
 - ngdpbase.audit.provider.file.auditfilename - Main audit log filename
 - ngdpbase.audit.provider.file.archivefilename - Archive log filename
@@ -28,7 +29,7 @@ Configuration keys (all lowercase):
 
 ### Constructor
 
-> **new default**(`engine`): `FileAuditProvider`
+> __new default__(`engine`): `FileAuditProvider`
 
 Defined in: [src/providers/FileAuditProvider.ts:73](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileAuditProvider.ts#L73)
 
@@ -50,7 +51,7 @@ Defined in: [src/providers/FileAuditProvider.ts:73](https://github.com/jwilleke/
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/providers/BaseAuditProvider.ts:156](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L156)
 
@@ -64,7 +65,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> **initialized**: `boolean`
+> __initialized__: `boolean`
 
 Defined in: [src/providers/BaseAuditProvider.ts:159](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L159)
 
@@ -78,7 +79,7 @@ Whether provider has been initialized
 
 ### backup()
 
-> **backup**(): `Promise`\<[`AuditBackupData`](../../BaseAuditProvider/interfaces/AuditBackupData.md)\>
+> __backup__(): `Promise`\<[`AuditBackupData`](../../BaseAuditProvider/interfaces/AuditBackupData.md)\>
 
 Defined in: [src/providers/FileAuditProvider.ts:536](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileAuditProvider.ts#L536)
 
@@ -98,7 +99,7 @@ Backup data
 
 ### cleanup()
 
-> **cleanup**(): `Promise`\<`void`\>
+> __cleanup__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/FileAuditProvider.ts:472](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileAuditProvider.ts#L472)
 
@@ -116,7 +117,7 @@ Clean up old audit logs based on retention policy
 
 ### close()
 
-> **close**(): `Promise`\<`void`\>
+> __close__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/FileAuditProvider.ts:518](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileAuditProvider.ts#L518)
 
@@ -134,7 +135,7 @@ Close/cleanup the audit provider
 
 ### exportAuditLogs()
 
-> **exportAuditLogs**(`filters`, `format`): `Promise`\<`string`\>
+> __exportAuditLogs__(`filters`, `format`): `Promise`\<`string`\>
 
 Defined in: [src/providers/FileAuditProvider.ts:369](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileAuditProvider.ts#L369)
 
@@ -168,7 +169,7 @@ Exported data
 
 ### flush()
 
-> **flush**(): `Promise`\<`void`\>
+> __flush__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/FileAuditProvider.ts:397](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileAuditProvider.ts#L397)
 
@@ -186,7 +187,7 @@ Flush pending audit events to storage
 
 ### getAuditStats()
 
-> **getAuditStats**(`filters`): `Promise`\<[`AuditStats`](../../BaseAuditProvider/interfaces/AuditStats.md)\>
+> __getAuditStats__(`filters`): `Promise`\<[`AuditStats`](../../BaseAuditProvider/interfaces/AuditStats.md)\>
 
 Defined in: [src/providers/FileAuditProvider.ts:310](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileAuditProvider.ts#L310)
 
@@ -214,7 +215,7 @@ Audit statistics
 
 ### getProviderInfo()
 
-> **getProviderInfo**(): `object`
+> __getProviderInfo__(): `object`
 
 Defined in: [src/providers/FileAuditProvider.ts:159](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileAuditProvider.ts#L159)
 
@@ -228,19 +229,19 @@ Provider metadata
 
 ##### description
 
-> **description**: `string`
+> __description__: `string`
 
 ##### features
 
-> **features**: `string`[]
+> __features__: `string`[]
 
 ##### name
 
-> **name**: `string`
+> __name__: `string`
 
 ##### version
 
-> **version**: `string`
+> __version__: `string`
 
 #### Overrides
 
@@ -250,7 +251,7 @@ Provider metadata
 
 ### initialize()
 
-> **initialize**(): `Promise`\<`void`\>
+> __initialize__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/FileAuditProvider.ts:86](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileAuditProvider.ts#L86)
 
@@ -268,7 +269,7 @@ Initialize the file audit provider
 
 ### isHealthy()
 
-> **isHealthy**(): `Promise`\<`boolean`\>
+> __isHealthy__(): `Promise`\<`boolean`\>
 
 Defined in: [src/providers/FileAuditProvider.ts:499](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileAuditProvider.ts#L499)
 
@@ -288,7 +289,7 @@ True if healthy
 
 ### logAuditEvent()
 
-> **logAuditEvent**(`auditEvent`): `Promise`\<`string`\>
+> __logAuditEvent__(`auditEvent`): `Promise`\<`string`\>
 
 Defined in: [src/providers/FileAuditProvider.ts:173](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileAuditProvider.ts#L173)
 
@@ -316,7 +317,7 @@ Event ID
 
 ### restore()
 
-> **restore**(`_backupData`): `Promise`\<`void`\>
+> __restore__(`_backupData`): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseAuditProvider.ts:325](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L325)
 
@@ -347,7 +348,7 @@ Backup data
 
 ### searchAuditLogs()
 
-> **searchAuditLogs**(`filters`, `options`): `Promise`\<[`AuditSearchResults`](../../BaseAuditProvider/interfaces/AuditSearchResults.md)\>
+> __searchAuditLogs__(`filters`, `options`): `Promise`\<[`AuditSearchResults`](../../BaseAuditProvider/interfaces/AuditSearchResults.md)\>
 
 Defined in: [src/providers/FileAuditProvider.ts:228](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileAuditProvider.ts#L228)
 

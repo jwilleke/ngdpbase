@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -20,7 +20,7 @@ Defines the contract for search backends (Lunr, Elasticsearch, etc.).
 
 ### engine
 
-> **engine**: [`WikiEngine`](../../WikiEngine/interfaces/WikiEngine.md)
+> __engine__: [`WikiEngine`](../../WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/types/Provider.ts:37](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L37)
 
@@ -34,7 +34,7 @@ Reference to WikiEngine
 
 ### initialized
 
-> **initialized**: `boolean`
+> __initialized__: `boolean`
 
 Defined in: [src/types/Provider.ts:40](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L40)
 
@@ -48,7 +48,7 @@ Whether provider has been initialized
 
 ### backup()?
 
-> `optional` **backup**(): `Promise`\<`Record`\<`string`, `unknown`\>\>
+> `optional` __backup__(): `Promise`\<`Record`\<`string`, `unknown`\>\>
 
 Defined in: [src/types/Provider.ts:64](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L64)
 
@@ -68,7 +68,7 @@ Promise resolving to backup data
 
 ### getProviderInfo()?
 
-> `optional` **getProviderInfo**(): [`ProviderInfo`](ProviderInfo.md)
+> `optional` __getProviderInfo__(): [`ProviderInfo`](ProviderInfo.md)
 
 Defined in: [src/types/Provider.ts:58](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L58)
 
@@ -88,7 +88,7 @@ Provider metadata
 
 ### getSuggestions()
 
-> **getSuggestions**(`query`, `limit?`): `Promise`\<`string`[]\>
+> __getSuggestions__(`query`, `limit?`): `Promise`\<`string`[]\>
 
 Defined in: [src/types/Provider.ts:431](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L431)
 
@@ -118,7 +118,7 @@ Array of suggestions
 
 ### indexPage()
 
-> **indexPage**(`page`): `Promise`\<`void`\>
+> __indexPage__(`page`): `Promise`\<`void`\>
 
 Defined in: [src/types/Provider.ts:408](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L408)
 
@@ -142,7 +142,7 @@ Promise that resolves when indexing is complete
 
 ### initialize()
 
-> **initialize**(): `Promise`\<`void`\>
+> __initialize__(): `Promise`\<`void`\>
 
 Defined in: [src/types/Provider.ts:46](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L46)
 
@@ -162,7 +162,7 @@ Promise that resolves when initialization is complete
 
 ### rebuildIndex()
 
-> **rebuildIndex**(): `Promise`\<`void`\>
+> __rebuildIndex__(): `Promise`\<`void`\>
 
 Defined in: [src/types/Provider.ts:437](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L437)
 
@@ -178,7 +178,7 @@ Promise that resolves when rebuild is complete
 
 ### removePage()
 
-> **removePage**(`identifier`): `Promise`\<`void`\>
+> __removePage__(`identifier`): `Promise`\<`void`\>
 
 Defined in: [src/types/Provider.ts:415](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L415)
 
@@ -202,7 +202,7 @@ Promise that resolves when removal is complete
 
 ### restore()?
 
-> `optional` **restore**(`backupData`): `Promise`\<`void`\>
+> `optional` __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/types/Provider.ts:71](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L71)
 
@@ -230,7 +230,7 @@ Promise that resolves when restore is complete
 
 ### search()
 
-> **search**(`query`, `options?`): `Promise`\<[`PageSearchResult`](../../Page/interfaces/PageSearchResult.md)[]\>
+> __search__(`query`, `options?`): `Promise`\<[`PageSearchResult`](../../Page/interfaces/PageSearchResult.md)[]\>
 
 Defined in: [src/types/Provider.ts:423](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L423)
 
@@ -266,7 +266,7 @@ Array of search results
 
 ### shutdown()?
 
-> `optional` **shutdown**(): `Promise`\<`void`\>
+> `optional` __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/types/Provider.ts:52](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L52)
 

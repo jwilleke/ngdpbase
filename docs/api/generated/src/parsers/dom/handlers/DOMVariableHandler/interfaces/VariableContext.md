@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../../README.md)
 
 ***
 
@@ -20,7 +20,7 @@ Additional context properties
 
 ### engine?
 
-> `optional` **engine**: `unknown`
+> `optional` __engine__: `unknown`
 
 Defined in: [src/parsers/dom/handlers/DOMVariableHandler.ts:44](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMVariableHandler.ts#L44)
 
@@ -30,7 +30,7 @@ WikiEngine reference
 
 ### pageContext?
 
-> `optional` **pageContext**: `VariableContext`
+> `optional` __pageContext__: `VariableContext`
 
 Defined in: [src/parsers/dom/handlers/DOMVariableHandler.ts:42](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMVariableHandler.ts#L42)
 
@@ -40,7 +40,7 @@ Page context (nested structure from WikiContext)
 
 ### pageName?
 
-> `optional` **pageName**: `string`
+> `optional` __pageName__: `string`
 
 Defined in: [src/parsers/dom/handlers/DOMVariableHandler.ts:25](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMVariableHandler.ts#L25)
 
@@ -50,7 +50,7 @@ Page name
 
 ### requestInfo?
 
-> `optional` **requestInfo**: `object`
+> `optional` __requestInfo__: `object`
 
 Defined in: [src/parsers/dom/handlers/DOMVariableHandler.ts:35](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMVariableHandler.ts#L35)
 
@@ -62,21 +62,21 @@ Request information
 
 #### headers?
 
-> `optional` **headers**: `Record`\<`string`, `string`\>
+> `optional` __headers__: `Record`\<`string`, `string`\>
 
 #### method?
 
-> `optional` **method**: `string`
+> `optional` __method__: `string`
 
 #### path?
 
-> `optional` **path**: `string`
+> `optional` __path__: `string`
 
 ***
 
 ### userContext?
 
-> `optional` **userContext**: `object`
+> `optional` __userContext__: `object`
 
 Defined in: [src/parsers/dom/handlers/DOMVariableHandler.ts:27](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMVariableHandler.ts#L27)
 
@@ -88,16 +88,16 @@ User context information
 
 #### email?
 
-> `optional` **email**: `string`
+> `optional` __email__: `string`
 
 #### fullName?
 
-> `optional` **fullName**: `string`
+> `optional` __fullName__: `string`
 
 #### roles?
 
-> `optional` **roles**: `string`[]
+> `optional` __roles__: `string`[]
 
 #### username?
 
-> `optional` **username**: `string`
+> `optional` __username__: `string`

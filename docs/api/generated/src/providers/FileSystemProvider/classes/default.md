@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -15,6 +15,7 @@ Pages are stored as .md files in configurable directories with UUID-based
 filenames for reliable identification.
 
 Key features:
+
 - UUID-based file naming for reliable page identity
 - Title-based lookup with case-insensitive matching
 - Plural name matching support (e.g., "Page" matches "Pages")
@@ -24,6 +25,7 @@ Key features:
 - Configurable encoding support
 
 Configuration keys (all lowercase):
+
 - ngdpbase.page.provider.filesystem.storagedir - Main pages directory
 - ngdpbase.page.provider.filesystem.requiredpagesdir - Required pages directory
 - ngdpbase.page.provider.filesystem.encoding - File encoding (default: utf-8)
@@ -33,8 +35,8 @@ Configuration keys (all lowercase):
 
 ## See
 
- - [BasePageProvider](../../BasePageProvider/classes/default.md) for base interface
- - PageManager for usage
+- [BasePageProvider](../../BasePageProvider/classes/default.md) for base interface
+- PageManager for usage
 
 ## Extends
 
@@ -48,7 +50,7 @@ Configuration keys (all lowercase):
 
 ### Constructor
 
-> **new default**(`engine`): `FileSystemProvider`
+> __new default__(`engine`): `FileSystemProvider`
 
 Defined in: [src/providers/FileSystemProvider.ts:107](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L107)
 
@@ -74,7 +76,7 @@ The wiki engine instance
 
 ### encoding
 
-> `protected` **encoding**: `BufferEncoding`
+> `protected` __encoding__: `BufferEncoding`
 
 Defined in: [src/providers/FileSystemProvider.ts:81](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L81)
 
@@ -84,7 +86,7 @@ File encoding
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../BasePageProvider/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../BasePageProvider/interfaces/WikiEngine.md)
 
 Defined in: [src/providers/BasePageProvider.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L54)
 
@@ -98,7 +100,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> **initialized**: `boolean`
+> __initialized__: `boolean`
 
 Defined in: [src/providers/BasePageProvider.ts:57](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L57)
 
@@ -112,7 +114,7 @@ Whether provider has been initialized
 
 ### installationComplete
 
-> **installationComplete**: `boolean`
+> __installationComplete__: `boolean`
 
 Defined in: [src/providers/FileSystemProvider.ts:99](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L99)
 
@@ -122,7 +124,7 @@ Whether installation is complete (required-pages should not be used after instal
 
 ### pageCache
 
-> `protected` **pageCache**: `Map`\<`string`, `PageCacheInfo`\>
+> `protected` __pageCache__: `Map`\<`string`, `PageCacheInfo`\>
 
 Defined in: [src/providers/FileSystemProvider.ts:84](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L84)
 
@@ -132,7 +134,7 @@ Main page cache (keyed by title)
 
 ### pageNameMatcher
 
-> `protected` **pageNameMatcher**: [`default`](../../../utils/PageNameMatcher/classes/default.md) \| `null`
+> `protected` __pageNameMatcher__: [`default`](../../../utils/PageNameMatcher/classes/default.md) \| `null`
 
 Defined in: [src/providers/FileSystemProvider.ts:96](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L96)
 
@@ -142,7 +144,7 @@ Page name matcher for fuzzy/plural matching
 
 ### pagesDirectory
 
-> `protected` **pagesDirectory**: `string` \| `null`
+> `protected` __pagesDirectory__: `string` \| `null`
 
 Defined in: [src/providers/FileSystemProvider.ts:75](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L75)
 
@@ -152,7 +154,7 @@ Path to regular pages directory
 
 ### requiredPagesDirectory
 
-> `protected` **requiredPagesDirectory**: `string` \| `null`
+> `protected` __requiredPagesDirectory__: `string` \| `null`
 
 Defined in: [src/providers/FileSystemProvider.ts:78](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L78)
 
@@ -162,7 +164,7 @@ Path to required pages directory
 
 ### slugIndex
 
-> `protected` **slugIndex**: `Map`\<`string`, `string`\>
+> `protected` __slugIndex__: `Map`\<`string`, `string`\>
 
 Defined in: [src/providers/FileSystemProvider.ts:93](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L93)
 
@@ -172,7 +174,7 @@ Slug index (slug -> canonical title)
 
 ### titleIndex
 
-> `protected` **titleIndex**: `Map`\<`string`, `string`\>
+> `protected` __titleIndex__: `Map`\<`string`, `string`\>
 
 Defined in: [src/providers/FileSystemProvider.ts:87](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L87)
 
@@ -182,7 +184,7 @@ Title index (lowercase title -> canonical title)
 
 ### uuidIndex
 
-> `protected` **uuidIndex**: `Map`\<`string`, `string`\>
+> `protected` __uuidIndex__: `Map`\<`string`, `string`\>
 
 Defined in: [src/providers/FileSystemProvider.ts:90](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L90)
 
@@ -192,7 +194,7 @@ UUID index (UUID -> canonical title)
 
 ### backup()
 
-> **backup**(): `Promise`\<`BackupData`\>
+> __backup__(): `Promise`\<`BackupData`\>
 
 Defined in: [src/providers/FileSystemProvider.ts:577](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L577)
 
@@ -211,7 +213,7 @@ Backup data containing all pages
 
 ### compareVersions()
 
-> **compareVersions**(`_identifier`, `_v1`, `_v2`): `Promise`\<[`VersionDiff`](../../../types/Version/interfaces/VersionDiff.md)\>
+> __compareVersions__(`_identifier`, `_v1`, `_v2`): `Promise`\<[`VersionDiff`](../../../types/Version/interfaces/VersionDiff.md)\>
 
 Defined in: [src/providers/BasePageProvider.ts:264](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L264)
 
@@ -248,7 +250,7 @@ Diff data structure
 
 ### deletePage()
 
-> **deletePage**(`identifier`): `Promise`\<`boolean`\>
+> __deletePage__(`identifier`): `Promise`\<`boolean`\>
 
 Defined in: [src/providers/FileSystemProvider.ts:479](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L479)
 
@@ -276,7 +278,7 @@ True if deleted, false if not found
 
 ### findPage()
 
-> **findPage**(`identifier`): `string` \| `null`
+> __findPage__(`identifier`): `string` \| `null`
 
 Defined in: [src/providers/FileSystemProvider.ts:545](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L545)
 
@@ -304,7 +306,7 @@ Canonical page title or null
 
 ### getAllPageInfo()
 
-> **getAllPageInfo**(`_options?`): `Promise`\<[`PageInfo`](../../../types/Page/interfaces/PageInfo.md)[]\>
+> __getAllPageInfo__(`_options?`): `Promise`\<[`PageInfo`](../../../types/Page/interfaces/PageInfo.md)[]\>
 
 Defined in: [src/providers/FileSystemProvider.ts:528](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L528)
 
@@ -332,7 +334,7 @@ Array of page info objects
 
 ### getAllPages()
 
-> **getAllPages**(): `Promise`\<`string`[]\>
+> __getAllPages__(): `Promise`\<`string`[]\>
 
 Defined in: [src/providers/FileSystemProvider.ts:519](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L519)
 
@@ -352,7 +354,7 @@ An array of page titles
 
 ### getPage()
 
-> **getPage**(`identifier`): `Promise`\<[`WikiPage`](../../../types/Page/interfaces/WikiPage.md) \| `null`\>
+> __getPage__(`identifier`): `Promise`\<[`WikiPage`](../../../types/Page/interfaces/WikiPage.md) \| `null`\>
 
 Defined in: [src/providers/FileSystemProvider.ts:333](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L333)
 
@@ -378,7 +380,7 @@ Page UUID or title
 
 ### getPageContent()
 
-> **getPageContent**(`identifier`): `Promise`\<`string`\>
+> __getPageContent__(`identifier`): `Promise`\<`string`\>
 
 Defined in: [src/providers/FileSystemProvider.ts:362](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L362)
 
@@ -406,7 +408,7 @@ The raw markdown content without frontmatter
 
 ### getPageMetadata()
 
-> **getPageMetadata**(`identifier`): `Promise`\<[`PageFrontmatter`](../../../types/Page/interfaces/PageFrontmatter.md) \| `null`\>
+> __getPageMetadata__(`identifier`): `Promise`\<[`PageFrontmatter`](../../../types/Page/interfaces/PageFrontmatter.md) \| `null`\>
 
 Defined in: [src/providers/FileSystemProvider.ts:379](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L379)
 
@@ -434,7 +436,7 @@ The page metadata, or null if not found
 
 ### getPageVersion()
 
-> **getPageVersion**(`_identifier`, `_version`): `Promise`\<[`VersionContent`](../../../types/Version/interfaces/VersionContent.md)\>
+> __getPageVersion__(`_identifier`, `_version`): `Promise`\<[`VersionContent`](../../../types/Version/interfaces/VersionContent.md)\>
 
 Defined in: [src/providers/BasePageProvider.ts:234](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L234)
 
@@ -471,7 +473,7 @@ If version does not exist
 
 ### getProviderInfo()
 
-> **getProviderInfo**(): [`ProviderInfo`](../../BasePageProvider/interfaces/ProviderInfo.md)
+> __getProviderInfo__(): [`ProviderInfo`](../../BasePageProvider/interfaces/ProviderInfo.md)
 
 Defined in: [src/providers/FileSystemProvider.ts:554](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L554)
 
@@ -489,7 +491,7 @@ Get provider information
 
 ### getVersionHistory()
 
-> **getVersionHistory**(`_identifier`, `_limit?`): `Promise`\<[`VersionHistoryEntry`](../../../types/Version/interfaces/VersionHistoryEntry.md)[]\>
+> __getVersionHistory__(`_identifier`, `_limit?`): `Promise`\<[`VersionHistoryEntry`](../../../types/Version/interfaces/VersionHistoryEntry.md)[]\>
 
 Defined in: [src/providers/BasePageProvider.ts:219](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L219)
 
@@ -548,7 +550,7 @@ Array of version history entries
 
 ### initialize()
 
-> **initialize**(): `Promise`\<`void`\>
+> __initialize__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/FileSystemProvider.ts:130](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L130)
 
@@ -575,7 +577,7 @@ If ConfigurationManager is not available
 
 ### pageExists()
 
-> **pageExists**(`identifier`): `boolean`
+> __pageExists__(`identifier`): `boolean`
 
 Defined in: [src/providers/FileSystemProvider.ts:511](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L511)
 
@@ -601,7 +603,7 @@ Page UUID or title
 
 ### purgeOldVersions()
 
-> **purgeOldVersions**(`_identifier`, `_keepLatest`): `Promise`\<`number`\>
+> __purgeOldVersions__(`_identifier`, `_keepLatest`): `Promise`\<`number`\>
 
 Defined in: [src/providers/BasePageProvider.ts:278](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L278)
 
@@ -634,7 +636,7 @@ Number of versions purged
 
 ### refreshPageList()
 
-> **refreshPageList**(): `Promise`\<`void`\>
+> __refreshPageList__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/FileSystemProvider.ts:188](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L188)
 
@@ -656,7 +658,7 @@ The required-pages directory is only used during installation to seed the wiki.
 
 ### restore()
 
-> **restore**(`backupData`): `Promise`\<`void`\>
+> __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/providers/FileSystemProvider.ts:660](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L660)
 
@@ -681,7 +683,7 @@ Backup data from backup() method
 
 ### restoreVersion()
 
-> **restoreVersion**(`_identifier`, `_version`): `Promise`\<`void`\>
+> __restoreVersion__(`_identifier`, `_version`): `Promise`\<`void`\>
 
 Defined in: [src/providers/BasePageProvider.ts:249](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L249)
 
@@ -716,7 +718,7 @@ If version does not exist or restoration fails
 
 ### savePage()
 
-> **savePage**(`pageName`, `content`, `metadata`, `_options?`): `Promise`\<`void`\>
+> __savePage__(`pageName`, `content`, `metadata`, `_options?`): `Promise`\<`void`\>
 
 Defined in: [src/providers/FileSystemProvider.ts:394](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/FileSystemProvider.ts#L394)
 
@@ -759,7 +761,7 @@ The metadata to save in the frontmatter
 
 ### shutdown()
 
-> **shutdown**(): `void`
+> __shutdown__(): `void`
 
 Defined in: [src/providers/BasePageProvider.ts:299](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L299)
 

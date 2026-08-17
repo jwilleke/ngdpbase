@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -18,7 +18,7 @@ User context interface
 
 ### isAuthenticated?
 
-> `optional` **isAuthenticated**: `boolean`
+> `optional` __isAuthenticated__: `boolean`
 
 Defined in: [src/parsers/context/ParseContext.ts:16](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L16)
 
@@ -26,7 +26,7 @@ Defined in: [src/parsers/context/ParseContext.ts:16](https://github.com/jwilleke
 
 ### permissions?
 
-> `optional` **permissions**: `string`[]
+> `optional` __permissions__: `string`[]
 
 Defined in: [src/parsers/context/ParseContext.ts:18](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L18)
 
@@ -34,7 +34,7 @@ Defined in: [src/parsers/context/ParseContext.ts:18](https://github.com/jwilleke
 
 ### roles?
 
-> `optional` **roles**: `string`[]
+> `optional` __roles__: `string`[]
 
 Defined in: [src/parsers/context/ParseContext.ts:17](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L17)
 
@@ -42,7 +42,7 @@ Defined in: [src/parsers/context/ParseContext.ts:17](https://github.com/jwilleke
 
 ### username?
 
-> `optional` **username**: `string`
+> `optional` __username__: `string`
 
 Defined in: [src/parsers/context/ParseContext.ts:14](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L14)
 
@@ -50,6 +50,6 @@ Defined in: [src/parsers/context/ParseContext.ts:14](https://github.com/jwilleke
 
 ### userName?
 
-> `optional` **userName**: `string`
+> `optional` __userName__: `string`
 
 Defined in: [src/parsers/context/ParseContext.ts:15](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L15)

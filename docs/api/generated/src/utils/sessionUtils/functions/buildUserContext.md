@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -6,7 +6,7 @@
 
 # Function: buildUserContext()
 
-> **buildUserContext**(`req`): `Promise`\<[`UserContext`](../interfaces/UserContext.md)\>
+> __buildUserContext__(`req`): `Promise`\<[`UserContext`](../interfaces/UserContext.md)\>
 
 Defined in: [src/utils/sessionUtils.ts:51](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/sessionUtils.ts#L51)
 

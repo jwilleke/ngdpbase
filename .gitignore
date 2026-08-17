@@ -271,3 +271,5 @@ test-results/
 .tsbuildtest/
 private/
 .claude/worktrees/
+.kit-sync/
+.kit-check/

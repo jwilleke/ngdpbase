@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Compressed file stats
 
 ### compressedSize
 
-> **compressedSize**: `number`
+> __compressedSize__: `number`
 
 Defined in: [src/utils/VersionCompression.ts:51](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersionCompression.ts#L51)
 
@@ -22,7 +22,7 @@ Defined in: [src/utils/VersionCompression.ts:51](https://github.com/jwilleke/ngd
 
 ### modified
 
-> **modified**: `Date`
+> __modified__: `Date`
 
 Defined in: [src/utils/VersionCompression.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersionCompression.ts#L54)
 
@@ -30,7 +30,7 @@ Defined in: [src/utils/VersionCompression.ts:54](https://github.com/jwilleke/ngd
 
 ### originalSize
 
-> **originalSize**: `number` \| `null`
+> __originalSize__: `number` \| `null`
 
 Defined in: [src/utils/VersionCompression.ts:52](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersionCompression.ts#L52)
 
@@ -38,7 +38,7 @@ Defined in: [src/utils/VersionCompression.ts:52](https://github.com/jwilleke/ngd
 
 ### path
 
-> **path**: `string`
+> __path__: `string`
 
 Defined in: [src/utils/VersionCompression.ts:50](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersionCompression.ts#L50)
 
@@ -46,6 +46,6 @@ Defined in: [src/utils/VersionCompression.ts:50](https://github.com/jwilleke/ngd
 
 ### ratio
 
-> **ratio**: `number` \| `null`
+> __ratio__: `number` \| `null`
 
 Defined in: [src/utils/VersionCompression.ts:53](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersionCompression.ts#L53)

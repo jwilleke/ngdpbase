@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../README.md)
+[__ngdpbase API v1.5.0__](../../../README.md)
 
 ***
 
@@ -15,7 +15,7 @@ Simple plugin interface for plugins that use the execute method pattern
 
 ### author?
 
-> `optional` **author**: `string`
+> `optional` __author__: `string`
 
 Defined in: [plugins/types.ts:44](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L44)
 
@@ -23,7 +23,7 @@ Defined in: [plugins/types.ts:44](https://github.com/jwilleke/ngdpbase/blob/b6a8
 
 ### description?
 
-> `optional` **description**: `string`
+> `optional` __description__: `string`
 
 Defined in: [plugins/types.ts:43](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L43)
 
@@ -31,7 +31,7 @@ Defined in: [plugins/types.ts:43](https://github.com/jwilleke/ngdpbase/blob/b6a8
 
 ### execute()?
 
-> `optional` **execute**: (`context`, `params`) => `string` \| `Promise`\<`string`\>
+> `optional` __execute__: (`context`, `params`) => `string` \| `Promise`\<`string`\>
 
 Defined in: [plugins/types.ts:47](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L47)
 
@@ -53,7 +53,7 @@ Defined in: [plugins/types.ts:47](https://github.com/jwilleke/ngdpbase/blob/b6a8
 
 ### initialize()?
 
-> `optional` **initialize**: (`engine`) => `void` \| `Promise`\<`void`\>
+> `optional` __initialize__: (`engine`) => `void` \| `Promise`\<`void`\>
 
 Defined in: [plugins/types.ts:46](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L46)
 
@@ -71,7 +71,7 @@ Defined in: [plugins/types.ts:46](https://github.com/jwilleke/ngdpbase/blob/b6a8
 
 ### name?
 
-> `optional` **name**: `string`
+> `optional` __name__: `string`
 
 Defined in: [plugins/types.ts:42](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L42)
 
@@ -79,6 +79,6 @@ Defined in: [plugins/types.ts:42](https://github.com/jwilleke/ngdpbase/blob/b6a8
 
 ### version?
 
-> `optional` **version**: `string`
+> `optional` __version__: `string`
 
 Defined in: [plugins/types.ts:45](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L45)

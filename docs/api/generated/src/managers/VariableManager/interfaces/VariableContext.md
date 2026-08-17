@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -18,7 +18,7 @@ Variable context interface - contains contextual information for variable expans
 
 ### pageName?
 
-> `optional` **pageName**: `string`
+> `optional` __pageName__: `string`
 
 Defined in: [src/managers/VariableManager.ts:16](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/VariableManager.ts#L16)
 
@@ -26,58 +26,58 @@ Defined in: [src/managers/VariableManager.ts:16](https://github.com/jwilleke/ngd
 
 ### requestInfo?
 
-> `optional` **requestInfo**: `object`
+> `optional` __requestInfo__: `object`
 
 Defined in: [src/managers/VariableManager.ts:24](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/VariableManager.ts#L24)
 
 #### acceptLanguage?
 
-> `optional` **acceptLanguage**: `string`
+> `optional` __acceptLanguage__: `string`
 
 #### clientIp?
 
-> `optional` **clientIp**: `string`
+> `optional` __clientIp__: `string`
 
 #### referer?
 
-> `optional` **referer**: `string`
+> `optional` __referer__: `string`
 
 #### sessionId?
 
-> `optional` **sessionId**: `string`
+> `optional` __sessionId__: `string`
 
 #### userAgent?
 
-> `optional` **userAgent**: `string`
+> `optional` __userAgent__: `string`
 
 ***
 
 ### userContext?
 
-> `optional` **userContext**: `object`
+> `optional` __userContext__: `object`
 
 Defined in: [src/managers/VariableManager.ts:18](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/VariableManager.ts#L18)
 
 #### displayName?
 
-> `optional` **displayName**: `string`
+> `optional` __displayName__: `string`
 
 #### isAuthenticated?
 
-> `optional` **isAuthenticated**: `boolean`
+> `optional` __isAuthenticated__: `boolean`
 
 #### roles?
 
-> `optional` **roles**: `string`[]
+> `optional` __roles__: `string`[]
 
 #### username?
 
-> `optional` **username**: `string`
+> `optional` __username__: `string`
 
 ***
 
 ### userName?
 
-> `optional` **userName**: `string`
+> `optional` __userName__: `string`
 
 Defined in: [src/managers/VariableManager.ts:17](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/VariableManager.ts#L17)

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Input for creating a notification
 
 ### expiresAt?
 
-> `optional` **expiresAt**: `Date` \| `null`
+> `optional` __expiresAt__: `Date` \| `null`
 
 Defined in: [src/managers/NotificationManager.ts:32](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L32)
 
@@ -22,7 +22,7 @@ Defined in: [src/managers/NotificationManager.ts:32](https://github.com/jwilleke
 
 ### level?
 
-> `optional` **level**: `"info"` \| `"error"` \| `"success"` \| `"warning"`
+> `optional` __level__: `"info"` \| `"error"` \| `"success"` \| `"warning"`
 
 Defined in: [src/managers/NotificationManager.ts:30](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L30)
 
@@ -30,7 +30,7 @@ Defined in: [src/managers/NotificationManager.ts:30](https://github.com/jwilleke
 
 ### message?
 
-> `optional` **message**: `string`
+> `optional` __message__: `string`
 
 Defined in: [src/managers/NotificationManager.ts:29](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L29)
 
@@ -38,7 +38,7 @@ Defined in: [src/managers/NotificationManager.ts:29](https://github.com/jwilleke
 
 ### targetUsers?
 
-> `optional` **targetUsers**: `string`[]
+> `optional` __targetUsers__: `string`[]
 
 Defined in: [src/managers/NotificationManager.ts:31](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L31)
 
@@ -46,7 +46,7 @@ Defined in: [src/managers/NotificationManager.ts:31](https://github.com/jwilleke
 
 ### title?
 
-> `optional` **title**: `string`
+> `optional` __title__: `string`
 
 Defined in: [src/managers/NotificationManager.ts:28](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L28)
 
@@ -54,6 +54,6 @@ Defined in: [src/managers/NotificationManager.ts:28](https://github.com/jwilleke
 
 ### type?
 
-> `optional` **type**: `"maintenance"` \| `"system"` \| `"user"`
+> `optional` __type__: `"maintenance"` \| `"system"` \| `"user"`
 
 Defined in: [src/managers/NotificationManager.ts:27](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L27)

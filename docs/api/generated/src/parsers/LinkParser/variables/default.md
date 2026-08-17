@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -6,7 +6,7 @@
 
 # Variable: default
 
-> **default**: `object`
+> __default__: `object`
 
 Defined in: [src/parsers/LinkParser.ts:816](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L816)
 
@@ -14,8 +14,8 @@ Defined in: [src/parsers/LinkParser.ts:816](https://github.com/jwilleke/ngdpbase
 
 ### Link
 
-> **Link**: *typeof* [`Link`](../classes/Link.md)
+> __Link__: *typeof* [`Link`](../classes/Link.md)
 
 ### LinkParser
 
-> **LinkParser**: *typeof* [`LinkParser`](../classes/LinkParser.md)
+> __LinkParser__: *typeof* [`LinkParser`](../classes/LinkParser.md)

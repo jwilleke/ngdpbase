@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -15,7 +15,7 @@ TODO: Replace with proper ParseContext import once converted
 
 ### pageName?
 
-> `optional` **pageName**: `string`
+> `optional` __pageName__: `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:121](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L121)
 
@@ -23,6 +23,6 @@ Defined in: [src/parsers/filters/BaseFilter.ts:121](https://github.com/jwilleke/
 
 ### userName?
 
-> `optional` **userName**: `string`
+> `optional` __userName__: `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:122](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L122)

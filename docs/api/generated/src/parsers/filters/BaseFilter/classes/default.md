@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -20,7 +20,7 @@ BaseFilter - Abstract base class for all content filters
 
 ### Constructor
 
-> **new default**(`priority`, `options`): `BaseFilter`
+> __new default__(`priority`, `options`): `BaseFilter`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:153](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L153)
 
@@ -48,7 +48,7 @@ Filter configuration options
 
 ### category
 
-> `readonly` **category**: `string`
+> `readonly` __category__: `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:140](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L140)
 
@@ -56,7 +56,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:140](https://github.com/jwilleke/
 
 ### config
 
-> `protected` **config**: [`FilterConfig`](../interfaces/FilterConfig.md) \| `null`
+> `protected` __config__: [`FilterConfig`](../interfaces/FilterConfig.md) \| `null`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:146](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L146)
 
@@ -64,7 +64,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:146](https://github.com/jwilleke/
 
 ### description
 
-> `readonly` **description**: `string`
+> `readonly` __description__: `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:139](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L139)
 
@@ -72,7 +72,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:139](https://github.com/jwilleke/
 
 ### enabled
 
-> `protected` **enabled**: `boolean`
+> `protected` __enabled__: `boolean`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:144](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L144)
 
@@ -80,7 +80,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:144](https://github.com/jwilleke/
 
 ### filterId
 
-> `readonly` **filterId**: `string`
+> `readonly` __filterId__: `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:137](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L137)
 
@@ -88,7 +88,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:137](https://github.com/jwilleke/
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:145](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L145)
 
@@ -96,7 +96,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:145](https://github.com/jwilleke/
 
 ### options
 
-> `protected` **options**: `Required`\<[`FilterOptions`](../interfaces/FilterOptions.md)\>
+> `protected` __options__: `Required`\<[`FilterOptions`](../interfaces/FilterOptions.md)\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:142](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L142)
 
@@ -104,7 +104,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:142](https://github.com/jwilleke/
 
 ### priority
 
-> **priority**: `number`
+> __priority__: `number`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:136](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L136)
 
@@ -112,7 +112,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:136](https://github.com/jwilleke/
 
 ### stats
 
-> `protected` **stats**: [`FilterStats`](../interfaces/FilterStats.md)
+> `protected` __stats__: [`FilterStats`](../interfaces/FilterStats.md)
 
 Defined in: [src/parsers/filters/BaseFilter.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L143)
 
@@ -120,7 +120,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:143](https://github.com/jwilleke/
 
 ### version
 
-> `readonly` **version**: `string`
+> `readonly` __version__: `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:138](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L138)
 
@@ -128,7 +128,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:138](https://github.com/jwilleke/
 
 ### createErrorContext()
 
-> `protected` **createErrorContext**(`error`, `content`, `context`): [`FilterErrorContext`](../interfaces/FilterErrorContext.md)
+> `protected` __createErrorContext__(`error`, `content`, `context`): [`FilterErrorContext`](../interfaces/FilterErrorContext.md)
 
 Defined in: [src/parsers/filters/BaseFilter.ts:340](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L340)
 
@@ -164,7 +164,7 @@ Error context
 
 ### disable()
 
-> **disable**(): `void`
+> __disable__(): `void`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:366](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L366)
 
@@ -178,7 +178,7 @@ Disable the filter
 
 ### enable()
 
-> **enable**(): `void`
+> __enable__(): `void`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:359](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L359)
 
@@ -192,7 +192,7 @@ Enable the filter
 
 ### execute()
 
-> **execute**(`content`, `context`): `Promise`\<`string`\>
+> __execute__(`content`, `context`): `Promise`\<`string`\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:300](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L300)
 
@@ -222,7 +222,7 @@ Processed content
 
 ### getConfigurationSummary()
 
-> **getConfigurationSummary**(): [`ConfigurationSummary`](../interfaces/ConfigurationSummary.md)
+> __getConfigurationSummary__(): [`ConfigurationSummary`](../interfaces/ConfigurationSummary.md)
 
 Defined in: [src/parsers/filters/BaseFilter.ts:434](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L434)
 
@@ -238,7 +238,7 @@ Configuration summary
 
 ### getFilterType()
 
-> `protected` **getFilterType**(): `string` \| `null`
+> `protected` __getFilterType__(): `string` \| `null`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:265](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L265)
 
@@ -254,7 +254,7 @@ Filter type for configuration
 
 ### getMetadata()
 
-> **getMetadata**(): [`FilterMetadata`](../interfaces/FilterMetadata.md)
+> __getMetadata__(): [`FilterMetadata`](../interfaces/FilterMetadata.md)
 
 Defined in: [src/parsers/filters/BaseFilter.ts:416](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L416)
 
@@ -270,7 +270,7 @@ Filter metadata
 
 ### getStats()
 
-> **getStats**(): [`FilterStats`](../interfaces/FilterStats.md) & `object`
+> __getStats__(): [`FilterStats`](../interfaces/FilterStats.md) & `object`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:382](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L382)
 
@@ -286,7 +286,7 @@ Filter statistics
 
 ### initialize()
 
-> **initialize**(`context`): `Promise`\<`void`\>
+> __initialize__(`context`): `Promise`\<`void`\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:201](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L201)
 
@@ -308,7 +308,7 @@ Initialization context
 
 ### isEnabled()
 
-> **isEnabled**(): `boolean`
+> __isEnabled__(): `boolean`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:374](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L374)
 
@@ -324,7 +324,7 @@ True if enabled
 
 ### loadModularConfiguration()
 
-> `protected` **loadModularConfiguration**(`context`): `void`
+> `protected` __loadModularConfiguration__(`context`): `void`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:219](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L219)
 
@@ -346,7 +346,7 @@ Initialization context
 
 ### onInitialize()
 
-> `protected` **onInitialize**(`_context`): `Promise`\<`void`\>
+> `protected` __onInitialize__(`_context`): `Promise`\<`void`\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:282](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L282)
 
@@ -368,7 +368,7 @@ Initialization context
 
 ### onShutdown()
 
-> `protected` **onShutdown**(): `Promise`\<`void`\>
+> `protected` __onShutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:456](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L456)
 
@@ -382,7 +382,7 @@ Custom shutdown logic (override in subclasses)
 
 ### process()
 
-> `abstract` **process**(`content`, `context`): `Promise`\<`string`\>
+> `abstract` __process__(`content`, `context`): `Promise`\<`string`\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:292](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L292)
 
@@ -412,7 +412,7 @@ Filtered content
 
 ### resetStats()
 
-> **resetStats**(): `void`
+> __resetStats__(): `void`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:402](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L402)
 
@@ -426,7 +426,7 @@ Reset filter statistics
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:448](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L448)
 
@@ -440,7 +440,7 @@ Clean up filter resources (optional override)
 
 ### toString()
 
-> **toString**(): `string`
+> __toString__(): `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:464](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L464)
 

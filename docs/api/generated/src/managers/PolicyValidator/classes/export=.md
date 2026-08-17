@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -19,7 +19,7 @@ Ensures policy integrity and prevents conflicting rules
 
 ### Constructor
 
-> **new export=**(`engine`): `PolicyValidator`
+> __new export=__(`engine`): `PolicyValidator`
 
 Defined in: [src/managers/PolicyValidator.ts:186](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyValidator.ts#L186)
 
@@ -41,7 +41,7 @@ Defined in: [src/managers/PolicyValidator.ts:186](https://github.com/jwilleke/ng
 
 ### config?
 
-> `protected` `optional` **config**: `Record`\<`string`, `unknown`\>
+> `protected` `optional` __config__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/managers/BaseManager.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L61)
 
@@ -55,7 +55,7 @@ Configuration passed during initialization
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L54)
 
@@ -69,7 +69,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/managers/BaseManager.ts:57](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L57)
 
@@ -83,7 +83,7 @@ Initialization status flag
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
 
 Defined in: [src/managers/BaseManager.ts:169](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L169)
 
@@ -125,7 +125,7 @@ async backup(): Promise<BackupData> {
 
 ### clearCache()
 
-> **clearCache**(): `void`
+> __clearCache__(): `void`
 
 Defined in: [src/managers/PolicyValidator.ts:874](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyValidator.ts#L874)
 
@@ -139,7 +139,7 @@ Clear validation cache
 
 ### detectPolicyConflicts()
 
-> **detectPolicyConflicts**(`policies`): `ConflictResult`
+> __detectPolicyConflicts__(`policies`): `ConflictResult`
 
 Defined in: [src/managers/PolicyValidator.ts:619](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyValidator.ts#L619)
 
@@ -163,7 +163,7 @@ Conflict detection result
 
 ### formatSchemaErrors()
 
-> **formatSchemaErrors**(`schemaErrors`): `ValidationError`[]
+> __formatSchemaErrors__(`schemaErrors`): `ValidationError`[]
 
 Defined in: [src/managers/PolicyValidator.ts:406](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyValidator.ts#L406)
 
@@ -187,7 +187,7 @@ Formatted errors
 
 ### generateWarnings()
 
-> **generateWarnings**(`policy`): `ValidationWarning`[]
+> __generateWarnings__(`policy`): `ValidationWarning`[]
 
 Defined in: [src/managers/PolicyValidator.ts:529](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyValidator.ts#L529)
 
@@ -211,7 +211,7 @@ Generated warnings
 
 ### getEngine()
 
-> **getEngine**(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> __getEngine__(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:125](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L125)
 
@@ -237,7 +237,7 @@ const config = this.getEngine().getConfig();
 
 ### getStatistics()
 
-> **getStatistics**(): `ValidationStatistics`
+> __getStatistics__(): `ValidationStatistics`
 
 Defined in: [src/managers/PolicyValidator.ts:883](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyValidator.ts#L883)
 
@@ -253,7 +253,7 @@ Current statistics
 
 ### groupPoliciesByOverlap()
 
-> **groupPoliciesByOverlap**(`policies`): `Policy`[][]
+> __groupPoliciesByOverlap__(`policies`): `Policy`[][]
 
 Defined in: [src/managers/PolicyValidator.ts:674](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyValidator.ts#L674)
 
@@ -277,7 +277,7 @@ Grouped policies
 
 ### hasActionOverlap()
 
-> **hasActionOverlap**(`actions1`, `actions2`): `boolean`
+> __hasActionOverlap__(`actions1`, `actions2`): `boolean`
 
 Defined in: [src/managers/PolicyValidator.ts:762](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyValidator.ts#L762)
 
@@ -307,7 +307,7 @@ True if actions overlap
 
 ### hasResourceOverlap()
 
-> **hasResourceOverlap**(`resources1`, `resources2`): `boolean`
+> __hasResourceOverlap__(`resources1`, `resources2`): `boolean`
 
 Defined in: [src/managers/PolicyValidator.ts:744](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyValidator.ts#L744)
 
@@ -337,7 +337,7 @@ True if resources overlap
 
 ### hasSubjectOverlap()
 
-> **hasSubjectOverlap**(`subjects1`, `subjects2`): `boolean`
+> __hasSubjectOverlap__(`subjects1`, `subjects2`): `boolean`
 
 Defined in: [src/managers/PolicyValidator.ts:726](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyValidator.ts#L726)
 
@@ -367,7 +367,7 @@ True if subjects overlap
 
 ### initialize()
 
-> **initialize**(`config`): `Promise`\<`void`\>
+> __initialize__(`config`): `Promise`\<`void`\>
 
 Defined in: [src/managers/PolicyValidator.ts:195](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyValidator.ts#L195)
 
@@ -406,7 +406,7 @@ async initialize(config: Record<string, any> = {}): Promise<void> {
 
 ### isInitialized()
 
-> **isInitialized**(): `boolean`
+> __isInitialized__(): `boolean`
 
 Defined in: [src/managers/BaseManager.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L113)
 
@@ -434,7 +434,7 @@ if (manager.isInitialized()) {
 
 ### loadPolicySchema()
 
-> **loadPolicySchema**(): `void`
+> __loadPolicySchema__(): `void`
 
 Defined in: [src/managers/PolicyValidator.ts:223](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyValidator.ts#L223)
 
@@ -448,7 +448,7 @@ Load JSON schema for policy validation
 
 ### patternsOverlap()
 
-> **patternsOverlap**(`pattern1`, `pattern2`): `boolean`
+> __patternsOverlap__(`pattern1`, `pattern2`): `boolean`
 
 Defined in: [src/managers/PolicyValidator.ts:823](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyValidator.ts#L823)
 
@@ -478,7 +478,7 @@ True if patterns overlap
 
 ### policiesOverlap()
 
-> **policiesOverlap**(`policy1`, `policy2`): `boolean`
+> __policiesOverlap__(`policy1`, `policy2`): `boolean`
 
 Defined in: [src/managers/PolicyValidator.ts:703](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyValidator.ts#L703)
 
@@ -508,7 +508,7 @@ True if policies overlap
 
 ### resourcesMatch()
 
-> **resourcesMatch**(`r1`, `r2`): `boolean`
+> __resourcesMatch__(`r1`, `r2`): `boolean`
 
 Defined in: [src/managers/PolicyValidator.ts:799](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyValidator.ts#L799)
 
@@ -538,7 +538,7 @@ True if resources match
 
 ### restore()
 
-> **restore**(`backupData`): `Promise`\<`void`\>
+> __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:198](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L198)
 
@@ -583,7 +583,7 @@ async restore(backupData: BackupData): Promise<void> {
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L143)
 
@@ -614,7 +614,7 @@ async shutdown(): Promise<void> {
 
 ### subjectsMatch()
 
-> **subjectsMatch**(`s1`, `s2`): `boolean`
+> __subjectsMatch__(`s1`, `s2`): `boolean`
 
 Defined in: [src/managers/PolicyValidator.ts:773](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyValidator.ts#L773)
 
@@ -644,7 +644,7 @@ True if subjects match
 
 ### validateAllPolicies()
 
-> **validateAllPolicies**(`policies`): `AllPoliciesValidationResult`
+> __validateAllPolicies__(`policies`): `AllPoliciesValidationResult`
 
 Defined in: [src/managers/PolicyValidator.ts:575](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyValidator.ts#L575)
 
@@ -668,7 +668,7 @@ Validation result
 
 ### validateAndSavePolicy()
 
-> **validateAndSavePolicy**(`policy`): `Promise`\<`PolicySaveResult`\>
+> __validateAndSavePolicy__(`policy`): `Promise`\<`PolicySaveResult`\>
 
 Defined in: [src/managers/PolicyValidator.ts:838](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyValidator.ts#L838)
 
@@ -696,7 +696,7 @@ If validation or conflict check fails
 
 ### validateBusinessLogic()
 
-> **validateBusinessLogic**(`policy`): `ValidationError`[]
+> __validateBusinessLogic__(`policy`): `ValidationError`[]
 
 Defined in: [src/managers/PolicyValidator.ts:422](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyValidator.ts#L422)
 
@@ -720,7 +720,7 @@ Business logic errors
 
 ### validatePolicy()
 
-> **validatePolicy**(`policy`): `ValidationResult`
+> __validatePolicy__(`policy`): `ValidationResult`
 
 Defined in: [src/managers/PolicyValidator.ts:368](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyValidator.ts#L368)
 
@@ -744,7 +744,7 @@ Validation result
 
 ### validateSemantics()
 
-> **validateSemantics**(`policy`): `ValidationError`[]
+> __validateSemantics__(`policy`): `ValidationError`[]
 
 Defined in: [src/managers/PolicyValidator.ts:481](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyValidator.ts#L481)
 

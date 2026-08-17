@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -15,7 +15,7 @@ TODO: Create full WikiEngine type definition in Phase 4
 
 ### getManager()
 
-> **getManager**\<`T`\>(`name`): `T` \| `undefined`
+> __getManager__\<`T`\>(`name`): `T` \| `undefined`
 
 Defined in: [src/providers/BasePageProvider.ts:10](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L10)
 

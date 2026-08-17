@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -18,7 +18,7 @@ Position information
 
 ### column
 
-> **column**: `number`
+> __column__: `number`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:132](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L132)
 
@@ -28,7 +28,7 @@ Column number
 
 ### line
 
-> **line**: `number`
+> __line__: `number`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:130](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L130)
 
@@ -38,7 +38,7 @@ Line number
 
 ### position
 
-> **position**: `number`
+> __position__: `number`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:128](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L128)
 

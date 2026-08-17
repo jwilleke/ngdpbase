@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -17,7 +17,7 @@ in the page's version directory.
 
 ### config?
 
-> `optional` **config**: `object`
+> `optional` __config__: `object`
 
 Defined in: [src/types/Version.ts:80](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L80)
 
@@ -25,21 +25,21 @@ Versioning configuration at time of creation
 
 #### checkpointInterval
 
-> **checkpointInterval**: `number`
+> __checkpointInterval__: `number`
 
 #### compressionEnabled
 
-> **compressionEnabled**: `boolean`
+> __compressionEnabled__: `boolean`
 
 #### deltaStorageEnabled
 
-> **deltaStorageEnabled**: `boolean`
+> __deltaStorageEnabled__: `boolean`
 
 ***
 
 ### createdAt
 
-> **createdAt**: `string`
+> __createdAt__: `string`
 
 Defined in: [src/types/Version.ts:74](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L74)
 
@@ -49,7 +49,7 @@ Manifest creation timestamp
 
 ### currentVersion
 
-> **currentVersion**: `number`
+> __currentVersion__: `number`
 
 Defined in: [src/types/Version.ts:68](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L68)
 
@@ -59,7 +59,7 @@ Current version number
 
 ### pageTitle
 
-> **pageTitle**: `string`
+> __pageTitle__: `string`
 
 Defined in: [src/types/Version.ts:62](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L62)
 
@@ -69,7 +69,7 @@ Page title (for reference)
 
 ### pageUuid
 
-> **pageUuid**: `string`
+> __pageUuid__: `string`
 
 Defined in: [src/types/Version.ts:59](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L59)
 
@@ -79,7 +79,7 @@ Page UUID
 
 ### totalVersions
 
-> **totalVersions**: `number`
+> __totalVersions__: `number`
 
 Defined in: [src/types/Version.ts:65](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L65)
 
@@ -89,7 +89,7 @@ Total number of versions
 
 ### updatedAt
 
-> **updatedAt**: `string`
+> __updatedAt__: `string`
 
 Defined in: [src/types/Version.ts:77](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L77)
 
@@ -99,7 +99,7 @@ Last manifest update timestamp
 
 ### versions
 
-> **versions**: [`VersionMetadata`](VersionMetadata.md)[]
+> __versions__: [`VersionMetadata`](VersionMetadata.md)[]
 
 Defined in: [src/types/Version.ts:71](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L71)
 

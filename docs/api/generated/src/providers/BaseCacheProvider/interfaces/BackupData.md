@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -18,7 +18,7 @@ Backup data structure
 
 ### initialized
 
-> **initialized**: `boolean`
+> __initialized__: `boolean`
 
 Defined in: [src/providers/BaseCacheProvider.ts:40](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L40)
 
@@ -26,7 +26,7 @@ Defined in: [src/providers/BaseCacheProvider.ts:40](https://github.com/jwilleke/
 
 ### provider
 
-> **provider**: `string`
+> __provider__: `string`
 
 Defined in: [src/providers/BaseCacheProvider.ts:39](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L39)
 
@@ -34,6 +34,6 @@ Defined in: [src/providers/BaseCacheProvider.ts:39](https://github.com/jwilleke/
 
 ### timestamp
 
-> **timestamp**: `string`
+> __timestamp__: `string`
 
 Defined in: [src/providers/BaseCacheProvider.ts:41](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L41)

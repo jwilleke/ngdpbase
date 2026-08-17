@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -15,6 +15,7 @@ capabilities through a pluggable provider system. Supports different search
 backends (Lunr.js, Elasticsearch, etc.) via provider abstraction.
 
 Key features:
+
 - Pluggable search provider system
 - Full-text indexing of page content and metadata
 - Configurable search ranking and filtering
@@ -25,6 +26,7 @@ Follows the provider pattern established in AttachmentManager, PageManager,
 CacheManager, and AuditManager for pluggable search backends.
 
 Configuration (all lowercase):
+
 - ngdpbase.search.enabled - Enable/disable search
 - ngdpbase.search.provider.default - Default provider name
 - ngdpbase.search.provider - Active provider name
@@ -34,8 +36,8 @@ Configuration (all lowercase):
 
 ## See
 
- - [BaseManager](../../BaseManager/classes/default.md) for base functionality
- - LunrSearchProvider for default provider implementation
+- [BaseManager](../../BaseManager/classes/default.md) for base functionality
+- LunrSearchProvider for default provider implementation
 
 ## Example
 
@@ -55,7 +57,7 @@ Related: GitHub Issue #102 - Configuration reorganization
 
 ### Constructor
 
-> **new export=**(`engine`): `SearchManager`
+> __new export=__(`engine`): `SearchManager`
 
 Defined in: [src/managers/SearchManager.ts:165](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L165)
 
@@ -81,7 +83,7 @@ The wiki engine instance
 
 ### config?
 
-> `protected` `optional` **config**: `Record`\<`string`, `unknown`\>
+> `protected` `optional` __config__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/managers/BaseManager.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L61)
 
@@ -95,7 +97,7 @@ Configuration passed during initialization
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L54)
 
@@ -109,7 +111,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/managers/BaseManager.ts:57](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L57)
 
@@ -123,7 +125,7 @@ Initialization status flag
 
 ### addToIndex()
 
-> **addToIndex**(`page`): `Promise`\<`void`\>
+> __addToIndex__(`page`): `Promise`\<`void`\>
 
 Defined in: [src/managers/SearchManager.ts:760](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L760)
 
@@ -145,7 +147,7 @@ Page object to add
 
 ### ~~advancedSearch()~~
 
-> **advancedSearch**(`options`): `Promise`\<`SearchResult`[]\>
+> __advancedSearch__(`options`): `Promise`\<`SearchResult`[]\>
 
 Defined in: [src/managers/SearchManager.ts:468](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L468)
 
@@ -173,7 +175,7 @@ Use advancedSearchWithContext() with WikiContext instead
 
 ### advancedSearchWithContext()
 
-> **advancedSearchWithContext**(`wikiContext`, `options?`): `Promise`\<`SearchResult`[]\>
+> __advancedSearchWithContext__(`wikiContext`, `options?`): `Promise`\<`SearchResult`[]\>
 
 Defined in: [src/managers/SearchManager.ts:409](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L409)
 
@@ -222,7 +224,7 @@ const results = await searchManager.advancedSearchWithContext(wikiContext, {
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
 
 Defined in: [src/managers/SearchManager.ts:808](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L808)
 
@@ -242,7 +244,7 @@ Backup data
 
 ### buildSearchIndex()
 
-> **buildSearchIndex**(): `Promise`\<`void`\>
+> __buildSearchIndex__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/SearchManager.ts:333](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L333)
 
@@ -260,7 +262,7 @@ If index building fails
 
 ### getAllCategories()
 
-> **getAllCategories**(): `Promise`\<`string`[]\>
+> __getAllCategories__(): `Promise`\<`string`[]\>
 
 Defined in: [src/managers/SearchManager.ts:624](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L624)
 
@@ -276,7 +278,7 @@ List of categories
 
 ### getAllUserKeywords()
 
-> **getAllUserKeywords**(): `Promise`\<`string`[]\>
+> __getAllUserKeywords__(): `Promise`\<`string`[]\>
 
 Defined in: [src/managers/SearchManager.ts:642](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L642)
 
@@ -292,7 +294,7 @@ List of user keywords
 
 ### getDocumentCount()
 
-> **getDocumentCount**(): `Promise`\<`number`\>
+> __getDocumentCount__(): `Promise`\<`number`\>
 
 Defined in: [src/managers/SearchManager.ts:728](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L728)
 
@@ -308,7 +310,7 @@ Number of documents
 
 ### getEngine()
 
-> **getEngine**(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> __getEngine__(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:125](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L125)
 
@@ -334,7 +336,7 @@ const config = this.getEngine().getConfig();
 
 ### getStatistics()
 
-> **getStatistics**(): `Promise`\<`SearchStatistics`\>
+> __getStatistics__(): `Promise`\<`SearchStatistics`\>
 
 Defined in: [src/managers/SearchManager.ts:698](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L698)
 
@@ -350,7 +352,7 @@ Search statistics
 
 ### getSuggestions()
 
-> **getSuggestions**(`partial`): `Promise`\<`string`[]\>
+> __getSuggestions__(`partial`): `Promise`\<`string`[]\>
 
 Defined in: [src/managers/SearchManager.ts:508](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L508)
 
@@ -374,7 +376,7 @@ Suggested completions
 
 ### initialize()
 
-> **initialize**(`config?`): `Promise`\<`void`\>
+> __initialize__(`config?`): `Promise`\<`void`\>
 
 Defined in: [src/managers/SearchManager.ts:186](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L186)
 
@@ -416,7 +418,7 @@ console.log('Search system ready');
 
 ### isInitialized()
 
-> **isInitialized**(): `boolean`
+> __isInitialized__(): `boolean`
 
 Defined in: [src/managers/BaseManager.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L113)
 
@@ -444,7 +446,7 @@ if (manager.isInitialized()) {
 
 ### multiSearch()
 
-> **multiSearch**(`criteria`): `Promise`\<`SearchResult`[]\>
+> __multiSearch__(`criteria`): `Promise`\<`SearchResult`[]\>
 
 Defined in: [src/managers/SearchManager.ts:792](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L792)
 
@@ -468,7 +470,7 @@ Search results
 
 ### rebuildIndex()
 
-> **rebuildIndex**(): `Promise`\<`void`\>
+> __rebuildIndex__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/SearchManager.ts:526](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L526)
 
@@ -482,7 +484,7 @@ Rebuild search index (called after page changes)
 
 ### removeFromIndex()
 
-> **removeFromIndex**(`pageName`): `Promise`\<`void`\>
+> __removeFromIndex__(`pageName`): `Promise`\<`void`\>
 
 Defined in: [src/managers/SearchManager.ts:776](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L776)
 
@@ -504,7 +506,7 @@ Name of page to remove
 
 ### removePageFromIndex()
 
-> **removePageFromIndex**(`pageName`): `Promise`\<`void`\>
+> __removePageFromIndex__(`pageName`): `Promise`\<`void`\>
 
 Defined in: [src/managers/SearchManager.ts:555](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L555)
 
@@ -526,7 +528,7 @@ Page name to remove
 
 ### restore()
 
-> **restore**(`backupData`): `Promise`\<`void`\>
+> __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/managers/SearchManager.ts:842](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L842)
 
@@ -552,7 +554,7 @@ Backup data
 
 ### ~~search()~~
 
-> **search**(`query`, `options`): `Promise`\<`SearchResult`[]\>
+> __search__(`query`, `options`): `Promise`\<`SearchResult`[]\>
 
 Defined in: [src/managers/SearchManager.ts:447](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L447)
 
@@ -586,7 +588,7 @@ Use searchWithContext() with WikiContext instead
 
 ### searchByCategories()
 
-> **searchByCategories**(`categories`): `Promise`\<`SearchResult`[]\>
+> __searchByCategories__(`categories`): `Promise`\<`SearchResult`[]\>
 
 Defined in: [src/managers/SearchManager.ts:573](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L573)
 
@@ -610,7 +612,7 @@ Search results
 
 ### searchByCategory()
 
-> **searchByCategory**(`category`): `Promise`\<`SearchResult`[]\>
+> __searchByCategory__(`category`): `Promise`\<`SearchResult`[]\>
 
 Defined in: [src/managers/SearchManager.ts:661](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L661)
 
@@ -634,7 +636,7 @@ Pages in category
 
 ### searchByKeywords()
 
-> **searchByKeywords**(`keywords`): `Promise`\<`SearchResult`[]\>
+> __searchByKeywords__(`keywords`): `Promise`\<`SearchResult`[]\>
 
 Defined in: [src/managers/SearchManager.ts:747](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L747)
 
@@ -658,7 +660,7 @@ Search results
 
 ### searchByUserKeywords()
 
-> **searchByUserKeywords**(`keyword`): `Promise`\<`SearchResult`[]\>
+> __searchByUserKeywords__(`keyword`): `Promise`\<`SearchResult`[]\>
 
 Defined in: [src/managers/SearchManager.ts:680](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L680)
 
@@ -682,7 +684,7 @@ Pages with keyword
 
 ### searchByUserKeywordsList()
 
-> **searchByUserKeywordsList**(`keywords`): `Promise`\<`SearchResult`[]\>
+> __searchByUserKeywordsList__(`keywords`): `Promise`\<`SearchResult`[]\>
 
 Defined in: [src/managers/SearchManager.ts:599](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L599)
 
@@ -706,7 +708,7 @@ Search results
 
 ### searchWithContext()
 
-> **searchWithContext**(`wikiContext`, `query`, `options?`): `Promise`\<`SearchResult`[]\>
+> __searchWithContext__(`wikiContext`, `query`, `options?`): `Promise`\<`SearchResult`[]\>
 
 Defined in: [src/managers/SearchManager.ts:366](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L366)
 
@@ -758,7 +760,7 @@ console.log(`Found ${results.length} pages`);
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/SearchManager.ts:861](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L861)
 
@@ -776,7 +778,7 @@ Shutdown search manager and close provider
 
 ### suggestSimilarPages()
 
-> **suggestSimilarPages**(`pageName`, `limit`): `Promise`\<`SearchResult`[]\>
+> __suggestSimilarPages__(`pageName`, `limit`): `Promise`\<`SearchResult`[]\>
 
 Defined in: [src/managers/SearchManager.ts:489](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L489)
 
@@ -806,7 +808,7 @@ Suggested pages
 
 ### updatePageInIndex()
 
-> **updatePageInIndex**(`pageName`, `pageData`): `Promise`\<`void`\>
+> __updatePageInIndex__(`pageName`, `pageData`): `Promise`\<`void`\>
 
 Defined in: [src/managers/SearchManager.ts:537](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/SearchManager.ts#L537)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Main LinkParser class
 
 ### Constructor
 
-> **new LinkParser**(`options?`): `LinkParser`
+> __new LinkParser__(`options?`): `LinkParser`
 
 Defined in: [src/parsers/LinkParser.ts:211](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L211)
 
@@ -36,7 +36,7 @@ Configuration options
 
 ### interWikiSites
 
-> **interWikiSites**: `Map`\<`string`, [`InterWikiSiteConfig`](../interfaces/InterWikiSiteConfig.md)\>
+> __interWikiSites__: `Map`\<`string`, [`InterWikiSiteConfig`](../interfaces/InterWikiSiteConfig.md)\>
 
 Defined in: [src/parsers/LinkParser.ts:200](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L200)
 
@@ -46,7 +46,7 @@ InterWiki sites configuration
 
 ### linkPattern
 
-> **linkPattern**: `RegExp`
+> __linkPattern__: `RegExp`
 
 Defined in: [src/parsers/LinkParser.ts:203](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L203)
 
@@ -56,7 +56,7 @@ Link pattern regex
 
 ### options
 
-> **options**: [`LinkParserOptions`](../interfaces/LinkParserOptions.md)
+> __options__: [`LinkParserOptions`](../interfaces/LinkParserOptions.md)
 
 Defined in: [src/parsers/LinkParser.ts:191](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L191)
 
@@ -66,7 +66,7 @@ Parser configuration options
 
 ### pageNameMatcher
 
-> **pageNameMatcher**: [`default`](../../../utils/PageNameMatcher/classes/default.md) \| `null`
+> __pageNameMatcher__: [`default`](../../../utils/PageNameMatcher/classes/default.md) \| `null`
 
 Defined in: [src/parsers/LinkParser.ts:197](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L197)
 
@@ -76,7 +76,7 @@ Page name matcher for fuzzy matching
 
 ### pageNames
 
-> **pageNames**: `Set`\<`string`\>
+> __pageNames__: `Set`\<`string`\>
 
 Defined in: [src/parsers/LinkParser.ts:194](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L194)
 
@@ -86,7 +86,7 @@ Cache of available page names
 
 ### addPageName()
 
-> **addPageName**(`pageName`): `void`
+> __addPageName__(`pageName`): `void`
 
 Defined in: [src/parsers/LinkParser.ts:277](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L277)
 
@@ -108,7 +108,7 @@ Page name to add
 
 ### buildAttributeString()
 
-> **buildAttributeString**(`customAttributes`, `defaultAttributes`): `string`
+> __buildAttributeString__(`customAttributes`, `defaultAttributes`): `string`
 
 Defined in: [src/parsers/LinkParser.ts:619](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L619)
 
@@ -138,7 +138,7 @@ HTML attribute string
 
 ### determineLinkType()
 
-> **determineLinkType**(`link`): [`LinkType`](../type-aliases/LinkType.md)
+> __determineLinkType__(`link`): [`LinkType`](../type-aliases/LinkType.md)
 
 Defined in: [src/parsers/LinkParser.ts:445](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L445)
 
@@ -162,7 +162,7 @@ Link type
 
 ### escapeHtml()
 
-> **escapeHtml**(`text`): `string`
+> __escapeHtml__(`text`): `string`
 
 Defined in: [src/parsers/LinkParser.ts:690](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L690)
 
@@ -186,7 +186,7 @@ Escaped text
 
 ### findLinks()
 
-> **findLinks**(`content`): [`Link`](Link.md)[]
+> __findLinks__(`content`): [`Link`](Link.md)[]
 
 Defined in: [src/parsers/LinkParser.ts:337](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L337)
 
@@ -210,7 +210,7 @@ Array of Link objects
 
 ### generateAnchorLink()
 
-> **generateAnchorLink**(`link`, `_context`): `string`
+> __generateAnchorLink__(`link`, `_context`): `string`
 
 Defined in: [src/parsers/LinkParser.ts:602](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L602)
 
@@ -240,7 +240,7 @@ HTML link
 
 ### generateEmailLink()
 
-> **generateEmailLink**(`link`, `_context`): `string`
+> __generateEmailLink__(`link`, `_context`): `string`
 
 Defined in: [src/parsers/LinkParser.ts:585](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L585)
 
@@ -270,7 +270,7 @@ HTML link
 
 ### generateExternalLink()
 
-> **generateExternalLink**(`link`, `_context`): `string`
+> __generateExternalLink__(`link`, `_context`): `string`
 
 Defined in: [src/parsers/LinkParser.ts:526](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L526)
 
@@ -300,7 +300,7 @@ HTML link
 
 ### generateInternalLink()
 
-> **generateInternalLink**(`link`, `_context`): `string`
+> __generateInternalLink__(`link`, `_context`): `string`
 
 Defined in: [src/parsers/LinkParser.ts:487](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L487)
 
@@ -330,7 +330,7 @@ HTML link
 
 ### generateInterWikiLink()
 
-> **generateInterWikiLink**(`link`, `_context`): `string`
+> __generateInterWikiLink__(`link`, `_context`): `string`
 
 Defined in: [src/parsers/LinkParser.ts:550](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L550)
 
@@ -360,7 +360,7 @@ HTML link
 
 ### generateLinkHtml()
 
-> **generateLinkHtml**(`link`, `context`): `string`
+> __generateLinkHtml__(`link`, `context`): `string`
 
 Defined in: [src/parsers/LinkParser.ts:420](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L420)
 
@@ -390,7 +390,7 @@ HTML link
 
 ### getStats()
 
-> **getStats**(): [`ParserStats`](../interfaces/ParserStats.md)
+> __getStats__(): [`ParserStats`](../interfaces/ParserStats.md)
 
 Defined in: [src/parsers/LinkParser.ts:707](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L707)
 
@@ -406,7 +406,7 @@ Parser statistics
 
 ### isUrlSafe()
 
-> **isUrlSafe**(`url`): `boolean`
+> __isUrlSafe__(`url`): `boolean`
 
 Defined in: [src/parsers/LinkParser.ts:641](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L641)
 
@@ -430,7 +430,7 @@ True if URL is safe
 
 ### parseAttributes()
 
-> **parseAttributes**(`attributeString`): [`LinkAttributes`](../interfaces/LinkAttributes.md)
+> __parseAttributes__(`attributeString`): [`LinkAttributes`](../interfaces/LinkAttributes.md)
 
 Defined in: [src/parsers/LinkParser.ts:370](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L370)
 
@@ -454,7 +454,7 @@ Parsed attributes object
 
 ### parseLinks()
 
-> **parseLinks**(`content`, `context`): `string`
+> __parseLinks__(`content`, `context`): `string`
 
 Defined in: [src/parsers/LinkParser.ts:301](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L301)
 
@@ -484,7 +484,7 @@ Content with links converted to HTML
 
 ### sanitizeAttributeValue()
 
-> **sanitizeAttributeValue**(`value`): `string`
+> __sanitizeAttributeValue__(`value`): `string`
 
 Defined in: [src/parsers/LinkParser.ts:679](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L679)
 
@@ -508,7 +508,7 @@ Sanitized value
 
 ### sanitizeStyleAttribute()
 
-> **sanitizeStyleAttribute**(`style`): `string`
+> __sanitizeStyleAttribute__(`style`): `string`
 
 Defined in: [src/parsers/LinkParser.ts:666](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L666)
 
@@ -532,7 +532,7 @@ Sanitized style
 
 ### setInterWikiSites()
 
-> **setInterWikiSites**(`sites`): `void`
+> __setInterWikiSites__(`sites`): `void`
 
 Defined in: [src/parsers/LinkParser.ts:287](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L287)
 
@@ -554,7 +554,7 @@ InterWiki sites configuration
 
 ### setPageNames()
 
-> **setPageNames**(`pageNames`, `matchEnglishPlurals`): `void`
+> __setPageNames__(`pageNames`, `matchEnglishPlurals`): `void`
 
 Defined in: [src/parsers/LinkParser.ts:268](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L268)
 

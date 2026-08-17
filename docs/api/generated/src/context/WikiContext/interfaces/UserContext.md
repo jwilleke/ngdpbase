@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -20,7 +20,7 @@ Additional user context data
 
 ### authenticated?
 
-> `optional` **authenticated**: `boolean`
+> `optional` __authenticated__: `boolean`
 
 Defined in: [src/context/WikiContext.ts:48](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L48)
 
@@ -30,7 +30,7 @@ Whether user is authenticated
 
 ### displayName?
 
-> `optional` **displayName**: `string`
+> `optional` __displayName__: `string`
 
 Defined in: [src/context/WikiContext.ts:44](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L44)
 
@@ -40,7 +40,7 @@ User display name
 
 ### roles?
 
-> `optional` **roles**: `string`[]
+> `optional` __roles__: `string`[]
 
 Defined in: [src/context/WikiContext.ts:46](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L46)
 
@@ -50,7 +50,7 @@ User roles
 
 ### username?
 
-> `optional` **username**: `string`
+> `optional` __username__: `string`
 
 Defined in: [src/context/WikiContext.ts:42](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L42)
 

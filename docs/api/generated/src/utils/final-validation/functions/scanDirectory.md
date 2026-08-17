@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -6,7 +6,7 @@
 
 # Function: scanDirectory()
 
-> **scanDirectory**(`dir`): [`ScanResults`](../interfaces/ScanResults.md)
+> __scanDirectory__(`dir`): [`ScanResults`](../interfaces/ScanResults.md)
 
 Defined in: [src/utils/final-validation.ts:93](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/final-validation.ts#L93)
 
