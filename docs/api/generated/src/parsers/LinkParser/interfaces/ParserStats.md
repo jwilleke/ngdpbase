@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Parser statistics
 
 ### allowedAttributes
 
-> **allowedAttributes**: `number`
+> __allowedAttributes__: `number`
 
 Defined in: [src/parsers/LinkParser.ts:138](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L138)
 
@@ -24,7 +24,7 @@ Number of allowed attributes
 
 ### interWikiSitesCount
 
-> **interWikiSitesCount**: `number`
+> __interWikiSitesCount__: `number`
 
 Defined in: [src/parsers/LinkParser.ts:136](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L136)
 
@@ -34,7 +34,7 @@ Number of InterWiki sites configured
 
 ### pageNamesCount
 
-> **pageNamesCount**: `number`
+> __pageNamesCount__: `number`
 
 Defined in: [src/parsers/LinkParser.ts:134](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L134)
 
@@ -44,7 +44,7 @@ Number of page names in cache
 
 ### securityEnabled
 
-> **securityEnabled**: `boolean`
+> __securityEnabled__: `boolean`
 
 Defined in: [src/parsers/LinkParser.ts:140](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L140)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -20,7 +20,7 @@ Additional backup data
 
 ### initialized
 
-> **initialized**: `boolean`
+> __initialized__: `boolean`
 
 Defined in: [src/providers/BaseAuditProvider.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L113)
 
@@ -30,7 +30,7 @@ Initialization state
 
 ### provider
 
-> **provider**: `string`
+> __provider__: `string`
 
 Defined in: [src/providers/BaseAuditProvider.ts:110](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L110)
 
@@ -40,7 +40,7 @@ Provider name
 
 ### timestamp
 
-> **timestamp**: `string`
+> __timestamp__: `string`
 
 Defined in: [src/providers/BaseAuditProvider.ts:116](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L116)
 

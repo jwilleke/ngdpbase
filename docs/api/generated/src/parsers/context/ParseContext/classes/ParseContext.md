@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ ParseContext - Context object for markup parsing operations
 
 ### Constructor
 
-> **new ParseContext**(`content`, `context`, `engine`): `ParseContext`
+> __new ParseContext__(`content`, `context`, `engine`): `ParseContext`
 
 Defined in: [src/parsers/context/ParseContext.ts:149](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L149)
 
@@ -40,7 +40,7 @@ Defined in: [src/parsers/context/ParseContext.ts:149](https://github.com/jwillek
 
 ### engine
 
-> `readonly` **engine**: [`WikiEngine`](../interfaces/WikiEngine.md)
+> `readonly` __engine__: [`WikiEngine`](../interfaces/WikiEngine.md)
 
 Defined in: [src/parsers/context/ParseContext.ts:132](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L132)
 
@@ -48,7 +48,7 @@ Defined in: [src/parsers/context/ParseContext.ts:132](https://github.com/jwillek
 
 ### handlerResults
 
-> **handlerResults**: `Map`\<`string`, `unknown`\>
+> __handlerResults__: `Map`\<`string`, `unknown`\>
 
 Defined in: [src/parsers/context/ParseContext.ts:142](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L142)
 
@@ -56,7 +56,7 @@ Defined in: [src/parsers/context/ParseContext.ts:142](https://github.com/jwillek
 
 ### metadata
 
-> **metadata**: `Record`\<`string`, `unknown`\>
+> __metadata__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/parsers/context/ParseContext.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L143)
 
@@ -64,7 +64,7 @@ Defined in: [src/parsers/context/ParseContext.ts:143](https://github.com/jwillek
 
 ### originalContent
 
-> `readonly` **originalContent**: `string`
+> `readonly` __originalContent__: `string`
 
 Defined in: [src/parsers/context/ParseContext.ts:130](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L130)
 
@@ -72,7 +72,7 @@ Defined in: [src/parsers/context/ParseContext.ts:130](https://github.com/jwillek
 
 ### pageContext
 
-> `readonly` **pageContext**: [`PageContext`](../interfaces/PageContext.md)
+> `readonly` __pageContext__: [`PageContext`](../interfaces/PageContext.md)
 
 Defined in: [src/parsers/context/ParseContext.ts:131](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L131)
 
@@ -80,7 +80,7 @@ Defined in: [src/parsers/context/ParseContext.ts:131](https://github.com/jwillek
 
 ### pageName
 
-> `readonly` **pageName**: `string`
+> `readonly` __pageName__: `string`
 
 Defined in: [src/parsers/context/ParseContext.ts:133](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L133)
 
@@ -88,7 +88,7 @@ Defined in: [src/parsers/context/ParseContext.ts:133](https://github.com/jwillek
 
 ### protectedBlocks
 
-> **protectedBlocks**: `unknown`[]
+> __protectedBlocks__: `unknown`[]
 
 Defined in: [src/parsers/context/ParseContext.ts:139](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L139)
 
@@ -96,7 +96,7 @@ Defined in: [src/parsers/context/ParseContext.ts:139](https://github.com/jwillek
 
 ### requestInfo
 
-> `readonly` **requestInfo**: [`RequestInfo`](../interfaces/RequestInfo.md) \| `null`
+> `readonly` __requestInfo__: [`RequestInfo`](../interfaces/RequestInfo.md) \| `null`
 
 Defined in: [src/parsers/context/ParseContext.ts:136](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L136)
 
@@ -104,7 +104,7 @@ Defined in: [src/parsers/context/ParseContext.ts:136](https://github.com/jwillek
 
 ### syntaxTokens
 
-> **syntaxTokens**: `unknown`[]
+> __syntaxTokens__: `unknown`[]
 
 Defined in: [src/parsers/context/ParseContext.ts:140](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L140)
 
@@ -112,7 +112,7 @@ Defined in: [src/parsers/context/ParseContext.ts:140](https://github.com/jwillek
 
 ### userContext
 
-> `readonly` **userContext**: [`UserContext`](../interfaces/UserContext.md) \| `null`
+> `readonly` __userContext__: [`UserContext`](../interfaces/UserContext.md) \| `null`
 
 Defined in: [src/parsers/context/ParseContext.ts:135](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L135)
 
@@ -120,7 +120,7 @@ Defined in: [src/parsers/context/ParseContext.ts:135](https://github.com/jwillek
 
 ### userName
 
-> `readonly` **userName**: `string`
+> `readonly` __userName__: `string`
 
 Defined in: [src/parsers/context/ParseContext.ts:134](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L134)
 
@@ -128,7 +128,7 @@ Defined in: [src/parsers/context/ParseContext.ts:134](https://github.com/jwillek
 
 ### variables
 
-> **variables**: `Map`\<`string`, `unknown`\>
+> __variables__: `Map`\<`string`, `unknown`\>
 
 Defined in: [src/parsers/context/ParseContext.ts:141](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L141)
 
@@ -136,7 +136,7 @@ Defined in: [src/parsers/context/ParseContext.ts:141](https://github.com/jwillek
 
 ### clone()
 
-> **clone**(`overrides`): `ParseContext`
+> __clone__(`overrides`): `ParseContext`
 
 Defined in: [src/parsers/context/ParseContext.ts:352](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L352)
 
@@ -160,7 +160,7 @@ New context instance
 
 ### createErrorContext()
 
-> **createErrorContext**(`error`, `phase`): [`ParseErrorContext`](../interfaces/ParseErrorContext.md)
+> __createErrorContext__(`error`, `phase`): [`ParseErrorContext`](../interfaces/ParseErrorContext.md)
 
 Defined in: [src/parsers/context/ParseContext.ts:374](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L374)
 
@@ -190,7 +190,7 @@ Error context
 
 ### exportForCache()
 
-> **exportForCache**(): [`CachedContextData`](../interfaces/CachedContextData.md)
+> __exportForCache__(): [`CachedContextData`](../interfaces/CachedContextData.md)
 
 Defined in: [src/parsers/context/ParseContext.ts:408](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L408)
 
@@ -206,7 +206,7 @@ Serializable context data
 
 ### getHandlerResult()
 
-> **getHandlerResult**(`handlerId`): `unknown`
+> __getHandlerResult__(`handlerId`): `unknown`
 
 Defined in: [src/parsers/context/ParseContext.ts:293](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L293)
 
@@ -230,7 +230,7 @@ Handler result or null
 
 ### getManager()
 
-> **getManager**(`managerName`): `unknown`
+> __getManager__(`managerName`): `unknown`
 
 Defined in: [src/parsers/context/ParseContext.ts:205](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L205)
 
@@ -254,7 +254,7 @@ Manager instance or null
 
 ### getMetadata()
 
-> **getMetadata**(`key`, `defaultValue`): `unknown`
+> __getMetadata__(`key`, `defaultValue`): `unknown`
 
 Defined in: [src/parsers/context/ParseContext.ts:315](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L315)
 
@@ -284,7 +284,7 @@ Metadata value
 
 ### getPhaseTiming()
 
-> **getPhaseTiming**(`phaseName`): `number`
+> __getPhaseTiming__(`phaseName`): `number`
 
 Defined in: [src/parsers/context/ParseContext.ts:335](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L335)
 
@@ -308,7 +308,7 @@ Duration in milliseconds or 0
 
 ### getSummary()
 
-> **getSummary**(): [`ContextSummary`](../interfaces/ContextSummary.md)
+> __getSummary__(): [`ContextSummary`](../interfaces/ContextSummary.md)
 
 Defined in: [src/parsers/context/ParseContext.ts:390](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L390)
 
@@ -324,7 +324,7 @@ Context summary
 
 ### getTotalTime()
 
-> **getTotalTime**(): `number`
+> __getTotalTime__(): `number`
 
 Defined in: [src/parsers/context/ParseContext.ts:343](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L343)
 
@@ -340,7 +340,7 @@ Total time in milliseconds
 
 ### getUserRoles()
 
-> **getUserRoles**(): `string`[]
+> __getUserRoles__(): `string`[]
 
 Defined in: [src/parsers/context/ParseContext.ts:242](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L242)
 
@@ -356,7 +356,7 @@ Array of user roles
 
 ### getVariable()
 
-> **getVariable**(`name`, `defaultValue`): `unknown`
+> __getVariable__(`name`, `defaultValue`): `unknown`
 
 Defined in: [src/parsers/context/ParseContext.ts:273](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L273)
 
@@ -386,7 +386,7 @@ Variable value
 
 ### hasPermission()
 
-> **hasPermission**(`permission`, `resource`): `boolean`
+> __hasPermission__(`permission`, `resource`): `boolean`
 
 Defined in: [src/parsers/context/ParseContext.ts:223](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L223)
 
@@ -416,7 +416,7 @@ True if user has permission
 
 ### hasRole()
 
-> **hasRole**(`role`): `boolean`
+> __hasRole__(`role`): `boolean`
 
 Defined in: [src/parsers/context/ParseContext.ts:254](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L254)
 
@@ -440,7 +440,7 @@ True if user has role
 
 ### importFromCache()
 
-> **importFromCache**(`data`): `void`
+> __importFromCache__(`data`): `void`
 
 Defined in: [src/parsers/context/ParseContext.ts:427](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L427)
 
@@ -462,7 +462,7 @@ Cached context data
 
 ### isAuthenticated()
 
-> **isAuthenticated**(): `boolean`
+> __isAuthenticated__(): `boolean`
 
 Defined in: [src/parsers/context/ParseContext.ts:213](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L213)
 
@@ -478,7 +478,7 @@ True if user is authenticated
 
 ### recordPhaseTiming()
 
-> **recordPhaseTiming**(`phaseName`, `duration`): `void`
+> __recordPhaseTiming__(`phaseName`, `duration`): `void`
 
 Defined in: [src/parsers/context/ParseContext.ts:326](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L326)
 
@@ -506,7 +506,7 @@ Duration in milliseconds
 
 ### setHandlerResult()
 
-> **setHandlerResult**(`handlerId`, `result`): `void`
+> __setHandlerResult__(`handlerId`, `result`): `void`
 
 Defined in: [src/parsers/context/ParseContext.ts:284](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L284)
 
@@ -534,7 +534,7 @@ Handler result
 
 ### setMetadata()
 
-> **setMetadata**(`key`, `value`): `void`
+> __setMetadata__(`key`, `value`): `void`
 
 Defined in: [src/parsers/context/ParseContext.ts:304](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L304)
 
@@ -562,7 +562,7 @@ Metadata value
 
 ### setVariable()
 
-> **setVariable**(`name`, `value`): `void`
+> __setVariable__(`name`, `value`): `void`
 
 Defined in: [src/parsers/context/ParseContext.ts:263](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L263)
 

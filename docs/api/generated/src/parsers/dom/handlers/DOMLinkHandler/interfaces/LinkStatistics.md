@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Link processing statistics
 
 ### linkTypes
 
-> **linkTypes**: [`LinkTypeStats`](LinkTypeStats.md)
+> __linkTypes__: [`LinkTypeStats`](LinkTypeStats.md)
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:154](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L154)
 
@@ -24,7 +24,7 @@ Link counts by type
 
 ### redLinks
 
-> **redLinks**: `number`
+> __redLinks__: `number`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:156](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L156)
 
@@ -34,7 +34,7 @@ Number of red links (non-existent pages)
 
 ### totalLinks
 
-> **totalLinks**: `number`
+> __totalLinks__: `number`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:152](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L152)
 

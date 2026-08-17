@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -18,7 +18,7 @@ LunrSearchProvider - Full-text search using Lunr.js
 
 ### Constructor
 
-> **new default**(`engine`): `LunrSearchProvider`
+> __new default__(`engine`): `LunrSearchProvider`
 
 Defined in: [src/providers/LunrSearchProvider.ts:96](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/LunrSearchProvider.ts#L96)
 
@@ -40,7 +40,7 @@ Defined in: [src/providers/LunrSearchProvider.ts:96](https://github.com/jwilleke
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/providers/BaseSearchProvider.ts:140](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L140)
 
@@ -54,7 +54,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/providers/BaseSearchProvider.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L143)
 
@@ -68,7 +68,7 @@ Whether provider has been initialized
 
 ### advancedSearch()
 
-> **advancedSearch**(`options`): `Promise`\<[`SearchResult`](../../BaseSearchProvider/interfaces/SearchResult.md)[]\>
+> __advancedSearch__(`options`): `Promise`\<[`SearchResult`](../../BaseSearchProvider/interfaces/SearchResult.md)[]\>
 
 Defined in: [src/providers/LunrSearchProvider.ts:303](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/LunrSearchProvider.ts#L303)
 
@@ -96,7 +96,7 @@ Search results
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../../BaseSearchProvider/interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../../BaseSearchProvider/interfaces/BackupData.md)\>
 
 Defined in: [src/providers/LunrSearchProvider.ts:677](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/LunrSearchProvider.ts#L677)
 
@@ -116,7 +116,7 @@ Backup data
 
 ### buildIndex()
 
-> **buildIndex**(): `Promise`\<`void`\>
+> __buildIndex__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/LunrSearchProvider.ts:181](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/LunrSearchProvider.ts#L181)
 
@@ -134,7 +134,7 @@ Build search index from all pages
 
 ### close()
 
-> **close**(): `Promise`\<`void`\>
+> __close__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/LunrSearchProvider.ts:660](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/LunrSearchProvider.ts#L660)
 
@@ -152,7 +152,7 @@ Close/cleanup the search provider
 
 ### getAllCategories()
 
-> **getAllCategories**(): `Promise`\<`string`[]\>
+> __getAllCategories__(): `Promise`\<`string`[]\>
 
 Defined in: [src/providers/LunrSearchProvider.ts:530](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/LunrSearchProvider.ts#L530)
 
@@ -172,7 +172,7 @@ List of categories
 
 ### getAllUserKeywords()
 
-> **getAllUserKeywords**(): `Promise`\<`string`[]\>
+> __getAllUserKeywords__(): `Promise`\<`string`[]\>
 
 Defined in: [src/providers/LunrSearchProvider.ts:544](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/LunrSearchProvider.ts#L544)
 
@@ -192,7 +192,7 @@ List of user keywords
 
 ### getDocumentCount()
 
-> **getDocumentCount**(): `Promise`\<`number`\>
+> __getDocumentCount__(): `Promise`\<`number`\>
 
 Defined in: [src/providers/LunrSearchProvider.ts:636](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/LunrSearchProvider.ts#L636)
 
@@ -212,7 +212,7 @@ Number of documents
 
 ### getProviderInfo()
 
-> **getProviderInfo**(): `object`
+> __getProviderInfo__(): `object`
 
 Defined in: [src/providers/LunrSearchProvider.ts:168](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/LunrSearchProvider.ts#L168)
 
@@ -226,19 +226,19 @@ Provider metadata
 
 ##### description
 
-> **description**: `string`
+> __description__: `string`
 
 ##### features
 
-> **features**: `string`[]
+> __features__: `string`[]
 
 ##### name
 
-> **name**: `string`
+> __name__: `string`
 
 ##### version
 
-> **version**: `string`
+> __version__: `string`
 
 #### Overrides
 
@@ -248,7 +248,7 @@ Provider metadata
 
 ### getStatistics()
 
-> **getStatistics**(): `Promise`\<[`SearchStatistics`](../../BaseSearchProvider/interfaces/SearchStatistics.md)\>
+> __getStatistics__(): `Promise`\<[`SearchStatistics`](../../BaseSearchProvider/interfaces/SearchStatistics.md)\>
 
 Defined in: [src/providers/LunrSearchProvider.ts:616](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/LunrSearchProvider.ts#L616)
 
@@ -268,7 +268,7 @@ Search statistics
 
 ### getSuggestions()
 
-> **getSuggestions**(`partial`): `Promise`\<`string`[]\>
+> __getSuggestions__(`partial`): `Promise`\<`string`[]\>
 
 Defined in: [src/providers/LunrSearchProvider.ts:427](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/LunrSearchProvider.ts#L427)
 
@@ -296,7 +296,7 @@ Suggested completions
 
 ### initialize()
 
-> **initialize**(): `Promise`\<`void`\>
+> __initialize__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/LunrSearchProvider.ts:108](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/LunrSearchProvider.ts#L108)
 
@@ -315,7 +315,7 @@ Loads configuration from ConfigurationManager
 
 ### isHealthy()
 
-> **isHealthy**(): `Promise`\<`boolean`\>
+> __isHealthy__(): `Promise`\<`boolean`\>
 
 Defined in: [src/providers/LunrSearchProvider.ts:644](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/LunrSearchProvider.ts#L644)
 
@@ -335,7 +335,7 @@ True if healthy
 
 ### removePageFromIndex()
 
-> **removePageFromIndex**(`pageName`): `Promise`\<`void`\>
+> __removePageFromIndex__(`pageName`): `Promise`\<`void`\>
 
 Defined in: [src/providers/LunrSearchProvider.ts:515](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/LunrSearchProvider.ts#L515)
 
@@ -361,7 +361,7 @@ Page name to remove
 
 ### restore()
 
-> **restore**(`backupData`): `Promise`\<`void`\>
+> __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/providers/LunrSearchProvider.ts:693](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/LunrSearchProvider.ts#L693)
 
@@ -387,7 +387,7 @@ Backup data
 
 ### search()
 
-> **search**(`query`, `options`): `Promise`\<[`SearchResult`](../../BaseSearchProvider/interfaces/SearchResult.md)[]\>
+> __search__(`query`, `options`): `Promise`\<[`SearchResult`](../../BaseSearchProvider/interfaces/SearchResult.md)[]\>
 
 Defined in: [src/providers/LunrSearchProvider.ts:262](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/LunrSearchProvider.ts#L262)
 
@@ -421,7 +421,7 @@ Search results
 
 ### searchByCategory()
 
-> **searchByCategory**(`category`): `Promise`\<[`SearchResult`](../../BaseSearchProvider/interfaces/SearchResult.md)[]\>
+> __searchByCategory__(`category`): `Promise`\<[`SearchResult`](../../BaseSearchProvider/interfaces/SearchResult.md)[]\>
 
 Defined in: [src/providers/LunrSearchProvider.ts:564](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/LunrSearchProvider.ts#L564)
 
@@ -449,7 +449,7 @@ Pages in category
 
 ### searchByUserKeywords()
 
-> **searchByUserKeywords**(`keyword`): `Promise`\<[`SearchResult`](../../BaseSearchProvider/interfaces/SearchResult.md)[]\>
+> __searchByUserKeywords__(`keyword`): `Promise`\<[`SearchResult`](../../BaseSearchProvider/interfaces/SearchResult.md)[]\>
 
 Defined in: [src/providers/LunrSearchProvider.ts:591](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/LunrSearchProvider.ts#L591)
 
@@ -477,7 +477,7 @@ Pages with keyword
 
 ### suggestSimilarPages()
 
-> **suggestSimilarPages**(`pageName`, `limit`): `Promise`\<[`SearchResult`](../../BaseSearchProvider/interfaces/SearchResult.md)[]\>
+> __suggestSimilarPages__(`pageName`, `limit`): `Promise`\<[`SearchResult`](../../BaseSearchProvider/interfaces/SearchResult.md)[]\>
 
 Defined in: [src/providers/LunrSearchProvider.ts:461](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/LunrSearchProvider.ts#L461)
 
@@ -511,7 +511,7 @@ Suggested pages
 
 ### updatePageInIndex()
 
-> **updatePageInIndex**(`_pageName`, `_pageData`): `Promise`\<`void`\>
+> __updatePageInIndex__(`_pageName`, `_pageData`): `Promise`\<`void`\>
 
 Defined in: [src/providers/LunrSearchProvider.ts:504](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/LunrSearchProvider.ts#L504)
 

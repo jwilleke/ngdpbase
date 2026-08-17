@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Performance alert
 
 ### message
 
-> **message**: `string`
+> __message__: `string`
 
 Defined in: [src/parsers/MarkupParser.ts:272](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L272)
 
@@ -24,7 +24,7 @@ Alert message
 
 ### metrics
 
-> **metrics**: `unknown`
+> __metrics__: `unknown`
 
 Defined in: [src/parsers/MarkupParser.ts:276](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L276)
 
@@ -34,7 +34,7 @@ Related metrics
 
 ### timestamp
 
-> **timestamp**: `string`
+> __timestamp__: `string`
 
 Defined in: [src/parsers/MarkupParser.ts:274](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L274)
 
@@ -44,7 +44,7 @@ Timestamp
 
 ### type
 
-> **type**: `string`
+> __type__: `string`
 
 Defined in: [src/parsers/MarkupParser.ts:270](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L270)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Request information extracted from Express request
 
 ### acceptLanguage?
 
-> `optional` **acceptLanguage**: `string`
+> `optional` __acceptLanguage__: `string`
 
 Defined in: [src/context/WikiContext.ts:26](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L26)
 
@@ -24,7 +24,7 @@ Accept-Language header
 
 ### clientIp?
 
-> `optional` **clientIp**: `string`
+> `optional` __clientIp__: `string`
 
 Defined in: [src/context/WikiContext.ts:30](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L30)
 
@@ -34,7 +34,7 @@ Client IP address
 
 ### referer?
 
-> `optional` **referer**: `string`
+> `optional` __referer__: `string`
 
 Defined in: [src/context/WikiContext.ts:32](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L32)
 
@@ -44,7 +44,7 @@ Referer header
 
 ### sessionId?
 
-> `optional` **sessionId**: `string`
+> `optional` __sessionId__: `string`
 
 Defined in: [src/context/WikiContext.ts:34](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L34)
 
@@ -54,7 +54,7 @@ Session ID
 
 ### userAgent?
 
-> `optional` **userAgent**: `string`
+> `optional` __userAgent__: `string`
 
 Defined in: [src/context/WikiContext.ts:28](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L28)
 

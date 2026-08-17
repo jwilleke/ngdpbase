@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -15,7 +15,7 @@ Provides SEO and semantic web benefits for ngdpbase platform
 
 ### Constructor
 
-> **new default**(): `SchemaGenerator`
+> __new default__(): `SchemaGenerator`
 
 #### Returns
 
@@ -25,7 +25,7 @@ Provides SEO and semantic web benefits for ngdpbase platform
 
 ### determineSchemaType()
 
-> `static` **determineSchemaType**(`pageData`): `string`
+> `static` __determineSchemaType__(`pageData`): `string`
 
 Defined in: [src/utils/SchemaGenerator.ts:212](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/SchemaGenerator.ts#L212)
 
@@ -49,7 +49,7 @@ Schema.org type
 
 ### enhanceCreativeWork()
 
-> `static` **enhanceCreativeWork**(`schema`, `pageData`, `_options`): `BaseSchema`
+> `static` __enhanceCreativeWork__(`schema`, `pageData`, `_options`): `BaseSchema`
 
 Defined in: [src/utils/SchemaGenerator.ts:286](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/SchemaGenerator.ts#L286)
 
@@ -77,7 +77,7 @@ Enhance CreativeWork schema for project pages
 
 ### enhanceSchemaByType()
 
-> `static` **enhanceSchemaByType**(`baseSchema`, `pageData`, `options`): `BaseSchema`
+> `static` __enhanceSchemaByType__(`baseSchema`, `pageData`, `options`): `BaseSchema`
 
 Defined in: [src/utils/SchemaGenerator.ts:251](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/SchemaGenerator.ts#L251)
 
@@ -113,7 +113,7 @@ Enhanced schema object
 
 ### enhanceTechArticle()
 
-> `static` **enhanceTechArticle**(`schema`, `pageData`, `_options`): `BaseSchema`
+> `static` __enhanceTechArticle__(`schema`, `pageData`, `_options`): `BaseSchema`
 
 Defined in: [src/utils/SchemaGenerator.ts:270](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/SchemaGenerator.ts#L270)
 
@@ -141,7 +141,7 @@ Enhance TechArticle schema for documentation
 
 ### enhanceWebPage()
 
-> `static` **enhanceWebPage**(`schema`, `pageData`, `options`): `BaseSchema`
+> `static` __enhanceWebPage__(`schema`, `pageData`, `options`): `BaseSchema`
 
 Defined in: [src/utils/SchemaGenerator.ts:302](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/SchemaGenerator.ts#L302)
 
@@ -169,7 +169,7 @@ Enhance WebPage schema for wiki pages
 
 ### generateACLBasedPermissions()
 
-> `static` **generateACLBasedPermissions**(`pageACL`, `userManager`, `_options`): `unknown`[]
+> `static` __generateACLBasedPermissions__(`pageACL`, `userManager`, `_options`): `unknown`[]
 
 Defined in: [src/utils/SchemaGenerator.ts:708](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/SchemaGenerator.ts#L708)
 
@@ -203,7 +203,7 @@ Array of DigitalDocumentPermission objects
 
 ### generateComprehensiveSchema()
 
-> `static` **generateComprehensiveSchema**(`siteData`, `options`): (`Record`\<`string`, `unknown`\> \| `BaseSchema`)[]
+> `static` __generateComprehensiveSchema__(`siteData`, `options`): (`Record`\<`string`, `unknown`\> \| `BaseSchema`)[]
 
 Defined in: [src/utils/SchemaGenerator.ts:785](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/SchemaGenerator.ts#L785)
 
@@ -233,7 +233,7 @@ Array of schema objects
 
 ### generateDeveloperPermissions()
 
-> `static` **generateDeveloperPermissions**(`_pageData`, `_userManager`, `_options`): `unknown`[]
+> `static` __generateDeveloperPermissions__(`_pageData`, `_userManager`, `_options`): `unknown`[]
 
 Defined in: [src/utils/SchemaGenerator.ts:668](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/SchemaGenerator.ts#L668)
 
@@ -263,7 +263,7 @@ Array of DigitalDocumentPermission objects
 
 ### generateDigitalDocumentPermissions()
 
-> `static` **generateDigitalDocumentPermissions**(`pageData`, `_user`, `options`): `unknown`[]
+> `static` __generateDigitalDocumentPermissions__(`pageData`, `_user`, `options`): `unknown`[]
 
 Defined in: [src/utils/SchemaGenerator.ts:468](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/SchemaGenerator.ts#L468)
 
@@ -297,7 +297,7 @@ Array of DigitalDocumentPermission objects
 
 ### generateDocumentationPermissions()
 
-> `static` **generateDocumentationPermissions**(`_pageData`, `_userManager`, `_options`): `unknown`[]
+> `static` __generateDocumentationPermissions__(`_pageData`, `_userManager`, `_options`): `unknown`[]
 
 Defined in: [src/utils/SchemaGenerator.ts:628](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/SchemaGenerator.ts#L628)
 
@@ -327,7 +327,7 @@ Array of DigitalDocumentPermission objects
 
 ### generateGeneralPagePermissions()
 
-> `static` **generateGeneralPagePermissions**(`_pageData`, `_userManager`, `_options`): `unknown`[]
+> `static` __generateGeneralPagePermissions__(`_pageData`, `_userManager`, `_options`): `unknown`[]
 
 Defined in: [src/utils/SchemaGenerator.ts:528](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/SchemaGenerator.ts#L528)
 
@@ -357,7 +357,7 @@ Array of DigitalDocumentPermission objects
 
 ### generateOrganizationSchema()
 
-> `static` **generateOrganizationSchema**(`organizationData`, `options`): `Record`\<`string`, `unknown`\>
+> `static` __generateOrganizationSchema__(`organizationData`, `options`): `Record`\<`string`, `unknown`\>
 
 Defined in: [src/utils/SchemaGenerator.ts:395](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/SchemaGenerator.ts#L395)
 
@@ -387,7 +387,7 @@ Organization schema object
 
 ### generatePageSchema()
 
-> `static` **generatePageSchema**(`pageData`, `options`): `BaseSchema`
+> `static` __generatePageSchema__(`pageData`, `options`): `BaseSchema`
 
 Defined in: [src/utils/SchemaGenerator.ts:137](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/SchemaGenerator.ts#L137)
 
@@ -417,7 +417,7 @@ JSON-LD schema object
 
 ### generatePermissionsByContext()
 
-> `static` **generatePermissionsByContext**(`pageData`, `pageACL`, `userManager`, `_aclManager`, `options`): `unknown`[]
+> `static` __generatePermissionsByContext__(`pageData`, `pageACL`, `userManager`, `_aclManager`, `options`): `unknown`[]
 
 Defined in: [src/utils/SchemaGenerator.ts:501](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/SchemaGenerator.ts#L501)
 
@@ -463,7 +463,7 @@ Array of DigitalDocumentPermission objects
 
 ### generatePersonSchema()
 
-> `static` **generatePersonSchema**(`personData`, `options`): `Record`\<`string`, `unknown`\>
+> `static` __generatePersonSchema__(`personData`, `options`): `Record`\<`string`, `unknown`\>
 
 Defined in: [src/utils/SchemaGenerator.ts:377](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/SchemaGenerator.ts#L377)
 
@@ -493,7 +493,7 @@ Person schema object
 
 ### generateScriptTag()
 
-> `static` **generateScriptTag**(`schema`): `string`
+> `static` __generateScriptTag__(`schema`): `string`
 
 Defined in: [src/utils/SchemaGenerator.ts:357](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/SchemaGenerator.ts#L357)
 
@@ -517,7 +517,7 @@ HTML script tag
 
 ### generateSiteSchema()
 
-> `static` **generateSiteSchema**(`pages`, `options`): `BaseSchema`[]
+> `static` __generateSiteSchema__(`pages`, `options`): `BaseSchema`[]
 
 Defined in: [src/utils/SchemaGenerator.ts:367](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/SchemaGenerator.ts#L367)
 
@@ -547,7 +547,7 @@ Array of schema objects
 
 ### generateSoftwareSchema()
 
-> `static` **generateSoftwareSchema**(`configData`, `options`): `BaseSchema`
+> `static` __generateSoftwareSchema__(`configData`, `options`): `BaseSchema`
 
 Defined in: [src/utils/SchemaGenerator.ts:413](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/SchemaGenerator.ts#L413)
 
@@ -577,7 +577,7 @@ SoftwareApplication schema object
 
 ### generateSystemPagePermissions()
 
-> `static` **generateSystemPagePermissions**(`_pageData`, `_userManager`, `_options`): `unknown`[]
+> `static` __generateSystemPagePermissions__(`_pageData`, `_userManager`, `_options`): `unknown`[]
 
 Defined in: [src/utils/SchemaGenerator.ts:596](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/SchemaGenerator.ts#L596)
 
@@ -607,7 +607,7 @@ Array of DigitalDocumentPermission objects
 
 ### mapPrincipalToGrantee()
 
-> `static` **mapPrincipalToGrantee**(`principal`, `userManager`): \{ `@type`: `string`; `audienceType?`: `string`; `name?`: `string`; \} \| `null`
+> `static` __mapPrincipalToGrantee__(`principal`, `userManager`): \{ `@type`: `string`; `audienceType?`: `string`; `name?`: `string`; \} \| `null`
 
 Defined in: [src/utils/SchemaGenerator.ts:748](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/SchemaGenerator.ts#L748)
 

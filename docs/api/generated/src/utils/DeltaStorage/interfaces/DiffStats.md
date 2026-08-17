@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Diff statistics
 
 ### additions
 
-> **additions**: `number`
+> __additions__: `number`
 
 Defined in: [src/utils/DeltaStorage.ts:14](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/DeltaStorage.ts#L14)
 
@@ -22,7 +22,7 @@ Defined in: [src/utils/DeltaStorage.ts:14](https://github.com/jwilleke/ngdpbase/
 
 ### deletions
 
-> **deletions**: `number`
+> __deletions__: `number`
 
 Defined in: [src/utils/DeltaStorage.ts:15](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/DeltaStorage.ts#L15)
 
@@ -30,6 +30,6 @@ Defined in: [src/utils/DeltaStorage.ts:15](https://github.com/jwilleke/ngdpbase/
 
 ### unchanged
 
-> **unchanged**: `number`
+> __unchanged__: `number`
 
 Defined in: [src/utils/DeltaStorage.ts:16](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/DeltaStorage.ts#L16)

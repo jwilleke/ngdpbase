@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Exported user context for caching
 
 ### isAuthenticated
 
-> **isAuthenticated**: `boolean`
+> __isAuthenticated__: `boolean`
 
 Defined in: [src/parsers/context/ParseContext.ts:109](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L109)
 
@@ -22,7 +22,7 @@ Defined in: [src/parsers/context/ParseContext.ts:109](https://github.com/jwillek
 
 ### permissions
 
-> **permissions**: `string`[]
+> __permissions__: `string`[]
 
 Defined in: [src/parsers/context/ParseContext.ts:111](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L111)
 
@@ -30,6 +30,6 @@ Defined in: [src/parsers/context/ParseContext.ts:111](https://github.com/jwillek
 
 ### roles
 
-> **roles**: `string`[]
+> __roles__: `string`[]
 
 Defined in: [src/parsers/context/ParseContext.ts:110](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L110)

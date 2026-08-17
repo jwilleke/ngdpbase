@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Audit search filters
 
 ### action?
 
-> `optional` **action**: `string`
+> `optional` __action__: `string`
 
 Defined in: [src/providers/BaseAuditProvider.ts:40](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L40)
 
@@ -24,7 +24,7 @@ Filter by action
 
 ### endDate?
 
-> `optional` **endDate**: `Date`
+> `optional` __endDate__: `Date`
 
 Defined in: [src/providers/BaseAuditProvider.ts:34](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L34)
 
@@ -34,7 +34,7 @@ End date filter
 
 ### eventType?
 
-> `optional` **eventType**: `string`
+> `optional` __eventType__: `string`
 
 Defined in: [src/providers/BaseAuditProvider.ts:22](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L22)
 
@@ -44,7 +44,7 @@ Filter by event type
 
 ### limit?
 
-> `optional` **limit**: `number`
+> `optional` __limit__: `number`
 
 Defined in: [src/providers/BaseAuditProvider.ts:43](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L43)
 
@@ -54,7 +54,7 @@ Maximum results to return
 
 ### offset?
 
-> `optional` **offset**: `number`
+> `optional` __offset__: `number`
 
 Defined in: [src/providers/BaseAuditProvider.ts:46](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L46)
 
@@ -64,7 +64,7 @@ Results offset for pagination
 
 ### resource?
 
-> `optional` **resource**: `string`
+> `optional` __resource__: `string`
 
 Defined in: [src/providers/BaseAuditProvider.ts:37](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L37)
 
@@ -74,7 +74,7 @@ Filter by resource
 
 ### result?
 
-> `optional` **result**: `string`
+> `optional` __result__: `string`
 
 Defined in: [src/providers/BaseAuditProvider.ts:25](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L25)
 
@@ -84,7 +84,7 @@ Filter by result (allow, deny, error)
 
 ### severity?
 
-> `optional` **severity**: `string`
+> `optional` __severity__: `string`
 
 Defined in: [src/providers/BaseAuditProvider.ts:28](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L28)
 
@@ -94,7 +94,7 @@ Filter by severity level
 
 ### sortBy?
 
-> `optional` **sortBy**: `string`
+> `optional` __sortBy__: `string`
 
 Defined in: [src/providers/BaseAuditProvider.ts:49](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L49)
 
@@ -104,7 +104,7 @@ Sort field
 
 ### sortOrder?
 
-> `optional` **sortOrder**: `"asc"` \| `"desc"`
+> `optional` __sortOrder__: `"asc"` \| `"desc"`
 
 Defined in: [src/providers/BaseAuditProvider.ts:52](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L52)
 
@@ -114,7 +114,7 @@ Sort order (asc/desc)
 
 ### startDate?
 
-> `optional` **startDate**: `Date`
+> `optional` __startDate__: `Date`
 
 Defined in: [src/providers/BaseAuditProvider.ts:31](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L31)
 
@@ -124,7 +124,7 @@ Start date filter
 
 ### user?
 
-> `optional` **user**: `string`
+> `optional` __user__: `string`
 
 Defined in: [src/providers/BaseAuditProvider.ts:19](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L19)
 

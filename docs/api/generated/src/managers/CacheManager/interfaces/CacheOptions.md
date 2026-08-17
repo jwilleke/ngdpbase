@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,6 +14,6 @@ Cache options for set operations
 
 ### ttl?
 
-> `optional` **ttl**: `number`
+> `optional` __ttl__: `number`
 
 Defined in: [src/managers/CacheManager.ts:13](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L13)

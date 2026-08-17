@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -6,7 +6,7 @@
 
 # Function: isUserSession()
 
-> **isUserSession**(`value`): `value is UserSession`
+> __isUserSession__(`value`): `value is UserSession`
 
 Defined in: [src/types/guards.ts:268](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/guards.ts#L268)
 

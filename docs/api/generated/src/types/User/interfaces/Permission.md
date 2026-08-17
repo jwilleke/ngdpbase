@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -16,7 +16,7 @@ Defines a specific permission.
 
 ### action
 
-> **action**: `string`
+> __action__: `string`
 
 Defined in: [src/types/User.ts:256](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L256)
 
@@ -26,7 +26,7 @@ Action allowed (view, edit, delete, etc.)
 
 ### description?
 
-> `optional` **description**: `string`
+> `optional` __description__: `string`
 
 Defined in: [src/types/User.ts:250](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L250)
 
@@ -36,7 +36,7 @@ Permission description
 
 ### displayName
 
-> **displayName**: `string`
+> __displayName__: `string`
 
 Defined in: [src/types/User.ts:247](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L247)
 
@@ -46,7 +46,7 @@ Display name
 
 ### isSystem
 
-> **isSystem**: `boolean`
+> __isSystem__: `boolean`
 
 Defined in: [src/types/User.ts:259](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L259)
 
@@ -56,7 +56,7 @@ Whether this is a system permission
 
 ### name
 
-> **name**: `string`
+> __name__: `string`
 
 Defined in: [src/types/User.ts:244](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L244)
 
@@ -66,7 +66,7 @@ Permission name (unique identifier)
 
 ### resource
 
-> **resource**: `string`
+> __resource__: `string`
 
 Defined in: [src/types/User.ts:253](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L253)
 

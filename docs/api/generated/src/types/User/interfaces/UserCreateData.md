@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -16,7 +16,7 @@ Data required to create a new user (no password hash yet).
 
 ### displayName
 
-> **displayName**: `string`
+> __displayName__: `string`
 
 Defined in: [src/types/User.ts:110](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L110)
 
@@ -26,7 +26,7 @@ Display name
 
 ### email
 
-> **email**: `string`
+> __email__: `string`
 
 Defined in: [src/types/User.ts:107](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L107)
 
@@ -36,7 +36,7 @@ Email address
 
 ### isActive?
 
-> `optional` **isActive**: `boolean`
+> `optional` __isActive__: `boolean`
 
 Defined in: [src/types/User.ts:119](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L119)
 
@@ -46,7 +46,7 @@ Whether account starts active
 
 ### password
 
-> **password**: `string`
+> __password__: `string`
 
 Defined in: [src/types/User.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L113)
 
@@ -56,7 +56,7 @@ Plain text password (will be hashed)
 
 ### preferences?
 
-> `optional` **preferences**: `Partial`\<[`UserPreferences`](UserPreferences.md)\>
+> `optional` __preferences__: `Partial`\<[`UserPreferences`](UserPreferences.md)\>
 
 Defined in: [src/types/User.ts:122](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L122)
 
@@ -66,7 +66,7 @@ User preferences
 
 ### roles?
 
-> `optional` **roles**: `string`[]
+> `optional` __roles__: `string`[]
 
 Defined in: [src/types/User.ts:116](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L116)
 
@@ -76,7 +76,7 @@ Initial roles
 
 ### username
 
-> **username**: `string`
+> __username__: `string`
 
 Defined in: [src/types/User.ts:104](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L104)
 

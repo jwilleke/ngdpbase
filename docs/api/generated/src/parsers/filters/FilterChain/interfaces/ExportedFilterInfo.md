@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Exported filter info
 
 ### description
 
-> **description**: `string`
+> __description__: `string`
 
 Defined in: [src/parsers/filters/FilterChain.ts:154](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L154)
 
@@ -22,7 +22,7 @@ Defined in: [src/parsers/filters/FilterChain.ts:154](https://github.com/jwilleke
 
 ### enabled
 
-> **enabled**: `boolean`
+> __enabled__: `boolean`
 
 Defined in: [src/parsers/filters/FilterChain.ts:153](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L153)
 
@@ -30,7 +30,7 @@ Defined in: [src/parsers/filters/FilterChain.ts:153](https://github.com/jwilleke
 
 ### filterId
 
-> **filterId**: `string`
+> __filterId__: `string`
 
 Defined in: [src/parsers/filters/FilterChain.ts:151](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L151)
 
@@ -38,6 +38,6 @@ Defined in: [src/parsers/filters/FilterChain.ts:151](https://github.com/jwilleke
 
 ### priority
 
-> **priority**: `number`
+> __priority__: `number`
 
 Defined in: [src/parsers/filters/FilterChain.ts:152](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L152)

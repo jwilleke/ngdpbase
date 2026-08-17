@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -22,7 +22,7 @@ Metadata validation result interface
 
 ### error
 
-> **error**: `string` \| `null`
+> __error__: `string` \| `null`
 
 Defined in: [src/managers/ValidationManager.ts:21](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L21)
 
@@ -34,7 +34,7 @@ Defined in: [src/managers/ValidationManager.ts:21](https://github.com/jwilleke/n
 
 ### success
 
-> **success**: `boolean`
+> __success__: `boolean`
 
 Defined in: [src/managers/ValidationManager.ts:20](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L20)
 
@@ -46,6 +46,6 @@ Defined in: [src/managers/ValidationManager.ts:20](https://github.com/jwilleke/n
 
 ### warnings?
 
-> `optional` **warnings**: `string`[]
+> `optional` __warnings__: `string`[]
 
 Defined in: [src/managers/ValidationManager.ts:28](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L28)

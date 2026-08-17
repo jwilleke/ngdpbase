@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -18,7 +18,7 @@ Custom error class for parse errors
 
 ### Constructor
 
-> **new ParseError**(`type`, `position`, `line`, `column`, `message`, `cause?`): `ParseError`
+> __new ParseError__(`type`, `position`, `line`, `column`, `message`, `cause?`): `ParseError`
 
 Defined in: [src/parsers/dom/DOMParser.ts:496](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMParser.ts#L496)
 
@@ -74,7 +74,7 @@ Underlying error
 
 ### cause?
 
-> `optional` **cause**: `Error`
+> `optional` __cause__: `Error`
 
 Defined in: [src/parsers/dom/DOMParser.ts:484](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMParser.ts#L484)
 
@@ -88,7 +88,7 @@ Underlying error
 
 ### column
 
-> **column**: `number`
+> __column__: `number`
 
 Defined in: [src/parsers/dom/DOMParser.ts:482](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMParser.ts#L482)
 
@@ -98,7 +98,7 @@ Column number
 
 ### line
 
-> **line**: `number`
+> __line__: `number`
 
 Defined in: [src/parsers/dom/DOMParser.ts:480](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMParser.ts#L480)
 
@@ -108,7 +108,7 @@ Line number
 
 ### position
 
-> **position**: `number`
+> __position__: `number`
 
 Defined in: [src/parsers/dom/DOMParser.ts:478](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMParser.ts#L478)
 
@@ -118,7 +118,7 @@ Character position
 
 ### type
 
-> **type**: `string`
+> __type__: `string`
 
 Defined in: [src/parsers/dom/DOMParser.ts:476](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMParser.ts#L476)
 

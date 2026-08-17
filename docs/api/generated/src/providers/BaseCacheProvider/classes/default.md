@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -19,9 +19,9 @@ Cache providers implement different storage backends (node-cache, Redis, etc.)
 
 ## See
 
- - NodeCacheProvider for in-memory implementation
- - RedisCacheProvider for Redis implementation
- - CacheManager for usage
+- NodeCacheProvider for in-memory implementation
+- RedisCacheProvider for Redis implementation
+- CacheManager for usage
 
 ## Extended by
 
@@ -33,7 +33,7 @@ Cache providers implement different storage backends (node-cache, Redis, etc.)
 
 ### Constructor
 
-> **new default**(`engine`): `BaseCacheProvider`
+> __new default__(`engine`): `BaseCacheProvider`
 
 Defined in: [src/providers/BaseCacheProvider.ts:80](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L80)
 
@@ -55,7 +55,7 @@ The wiki engine instance
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/providers/BaseCacheProvider.ts:67](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L67)
 
@@ -65,7 +65,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/providers/BaseCacheProvider.ts:72](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L72)
 
@@ -75,7 +75,7 @@ Whether provider has been initialized
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../interfaces/BackupData.md)\>
 
 Defined in: [src/providers/BaseCacheProvider.ts:166](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L166)
 
@@ -91,7 +91,7 @@ Backup data
 
 ### clear()
 
-> `abstract` **clear**(`pattern?`): `Promise`\<`void`\>
+> `abstract` __clear__(`pattern?`): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseCacheProvider.ts:135](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L135)
 
@@ -113,7 +113,7 @@ Optional pattern to match keys (e.g., 'user:*')
 
 ### close()
 
-> `abstract` **close**(): `Promise`\<`void`\>
+> `abstract` __close__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseCacheProvider.ts:160](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L160)
 
@@ -127,7 +127,7 @@ Close/cleanup the cache provider
 
 ### del()
 
-> `abstract` **del**(`keys`): `Promise`\<`void`\>
+> `abstract` __del__(`keys`): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseCacheProvider.ts:128](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L128)
 
@@ -149,7 +149,7 @@ Single key or array of keys to delete
 
 ### get()
 
-> `abstract` **get**\<`T`\>(`key`): `Promise`\<`T` \| `undefined`\>
+> `abstract` __get__\<`T`\>(`key`): `Promise`\<`T` \| `undefined`\>
 
 Defined in: [src/providers/BaseCacheProvider.ts:111](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L111)
 
@@ -179,7 +179,7 @@ The cached value or undefined if not found
 
 ### getProviderInfo()
 
-> **getProviderInfo**(): [`ProviderInfo`](../interfaces/ProviderInfo.md)
+> __getProviderInfo__(): [`ProviderInfo`](../interfaces/ProviderInfo.md)
 
 Defined in: [src/providers/BaseCacheProvider.ts:96](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L96)
 
@@ -195,7 +195,7 @@ Provider metadata
 
 ### initialize()
 
-> `abstract` **initialize**(): `Promise`\<`void`\>
+> `abstract` __initialize__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseCacheProvider.ts:90](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L90)
 
@@ -210,7 +210,7 @@ Implementations should load configuration from ConfigurationManager
 
 ### isHealthy()
 
-> `abstract` **isHealthy**(): `Promise`\<`boolean`\>
+> `abstract` __isHealthy__(): `Promise`\<`boolean`\>
 
 Defined in: [src/providers/BaseCacheProvider.ts:154](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L154)
 
@@ -226,7 +226,7 @@ True if healthy
 
 ### keys()
 
-> `abstract` **keys**(`pattern?`): `Promise`\<`string`[]\>
+> `abstract` __keys__(`pattern?`): `Promise`\<`string`[]\>
 
 Defined in: [src/providers/BaseCacheProvider.ts:142](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L142)
 
@@ -250,7 +250,7 @@ Array of matching keys
 
 ### restore()
 
-> **restore**(`_backupData`): `Promise`\<`void`\>
+> __restore__(`_backupData`): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseCacheProvider.ts:179](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L179)
 
@@ -272,7 +272,7 @@ Backup data
 
 ### set()
 
-> `abstract` **set**\<`T`\>(`key`, `value`, `ttlSec?`): `Promise`\<`void`\>
+> `abstract` __set__\<`T`\>(`key`, `value`, `ttlSec?`): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseCacheProvider.ts:121](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L121)
 
@@ -312,7 +312,7 @@ Time to live in seconds
 
 ### stats()
 
-> `abstract` **stats**(): `Promise`\<[`CacheStats`](../interfaces/CacheStats.md)\>
+> `abstract` __stats__(): `Promise`\<[`CacheStats`](../interfaces/CacheStats.md)\>
 
 Defined in: [src/providers/BaseCacheProvider.ts:148](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L148)
 

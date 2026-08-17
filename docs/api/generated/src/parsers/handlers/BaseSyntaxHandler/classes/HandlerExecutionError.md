@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -18,7 +18,7 @@ Custom error class for handler execution errors
 
 ### Constructor
 
-> **new HandlerExecutionError**(`message`, `handlerId`, `context`): `HandlerExecutionError`
+> __new HandlerExecutionError__(`message`, `handlerId`, `context`): `HandlerExecutionError`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:742](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L742)
 
@@ -48,7 +48,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:742](https://github.com/j
 
 ### context
 
-> `readonly` **context**: [`ErrorContext`](../interfaces/ErrorContext.md)
+> `readonly` __context__: [`ErrorContext`](../interfaces/ErrorContext.md)
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:740](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L740)
 
@@ -56,6 +56,6 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:740](https://github.com/j
 
 ### handlerId
 
-> `readonly` **handlerId**: `string`
+> `readonly` __handlerId__: `string`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:739](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L739)

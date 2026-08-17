@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -11,6 +11,7 @@ Defined in: [src/managers/AttachmentManager.ts:131](https://github.com/jwilleke/
 AttachmentManager - Manages file attachments for wiki pages
 
 Following JSPWiki's AttachmentManager pattern, this manager:
+
 - Delegates storage to pluggable attachment providers
 - Enforces permissions via PolicyManager
 - Tracks attachment-page relationships
@@ -20,8 +21,8 @@ Following JSPWiki's AttachmentManager pattern, this manager:
 
 ## See
 
- - [BaseManager](../../BaseManager/classes/default.md) for base functionality
- - BasicAttachmentProvider for default provider implementation
+- [BaseManager](../../BaseManager/classes/default.md) for base functionality
+- BasicAttachmentProvider for default provider implementation
 
 ## Example
 
@@ -41,7 +42,7 @@ https://github.com/apache/jspwiki/blob/master/jspwiki-main/src/main/java/org/apa
 
 ### Constructor
 
-> **new default**(`engine`): `AttachmentManager`
+> __new default__(`engine`): `AttachmentManager`
 
 Defined in: [src/managers/AttachmentManager.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L143)
 
@@ -67,7 +68,7 @@ The wiki engine instance
 
 ### config?
 
-> `protected` `optional` **config**: `Record`\<`string`, `unknown`\>
+> `protected` `optional` __config__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/managers/BaseManager.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L61)
 
@@ -81,7 +82,7 @@ Configuration passed during initialization
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L54)
 
@@ -95,7 +96,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/managers/BaseManager.ts:57](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L57)
 
@@ -109,7 +110,7 @@ Initialization status flag
 
 ### attachmentExists()
 
-> **attachmentExists**(`attachmentId`): `Promise`\<`boolean`\>
+> __attachmentExists__(`attachmentId`): `Promise`\<`boolean`\>
 
 Defined in: [src/managers/AttachmentManager.ts:459](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L459)
 
@@ -131,7 +132,7 @@ Attachment identifier
 
 ### attachToPage()
 
-> **attachToPage**(`attachmentId`, `pageName`): `Promise`\<`boolean`\>
+> __attachToPage__(`attachmentId`, `pageName`): `Promise`\<`boolean`\>
 
 Defined in: [src/managers/AttachmentManager.ts:290](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L290)
 
@@ -161,7 +162,7 @@ Success status
 
 ### backup()
 
-> **backup**(): `Promise`\<[`AttachmentBackupData`](../interfaces/AttachmentBackupData.md)\>
+> __backup__(): `Promise`\<[`AttachmentBackupData`](../interfaces/AttachmentBackupData.md)\>
 
 Defined in: [src/managers/AttachmentManager.ts:497](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L497)
 
@@ -180,7 +181,7 @@ Delegates to provider's backup method
 
 ### deleteAttachment()
 
-> **deleteAttachment**(`attachmentId`, `context?`): `Promise`\<`boolean`\>
+> __deleteAttachment__(`attachmentId`, `context?`): `Promise`\<`boolean`\>
 
 Defined in: [src/managers/AttachmentManager.ts:408](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L408)
 
@@ -210,7 +211,7 @@ Success status
 
 ### detachFromPage()
 
-> **detachFromPage**(`attachmentId`, `pageName`): `Promise`\<`boolean`\>
+> __detachFromPage__(`attachmentId`, `pageName`): `Promise`\<`boolean`\>
 
 Defined in: [src/managers/AttachmentManager.ts:328](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L328)
 
@@ -240,7 +241,7 @@ Success status
 
 ### getAllAttachments()
 
-> **getAllAttachments**(): `Promise`\<[`AttachmentMetadata`](../interfaces/AttachmentMetadata.md)[]\>
+> __getAllAttachments__(): `Promise`\<[`AttachmentMetadata`](../interfaces/AttachmentMetadata.md)[]\>
 
 Defined in: [src/managers/AttachmentManager.ts:393](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L393)
 
@@ -254,7 +255,7 @@ Get all attachments
 
 ### getAttachment()
 
-> **getAttachment**(`attachmentId`): `Promise`\<\{ `buffer`: `Buffer`; `metadata`: [`AttachmentMetadata`](../interfaces/AttachmentMetadata.md); \} \| `null`\>
+> __getAttachment__(`attachmentId`): `Promise`\<\{ `buffer`: `Buffer`; `metadata`: [`AttachmentMetadata`](../interfaces/AttachmentMetadata.md); \} \| `null`\>
 
 Defined in: [src/managers/AttachmentManager.ts:352](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L352)
 
@@ -276,7 +277,7 @@ Attachment identifier
 
 ### getAttachmentMetadata()
 
-> **getAttachmentMetadata**(`attachmentId`): `Promise`\<[`AttachmentMetadata`](../interfaces/AttachmentMetadata.md) \| `null`\>
+> __getAttachmentMetadata__(`attachmentId`): `Promise`\<[`AttachmentMetadata`](../interfaces/AttachmentMetadata.md) \| `null`\>
 
 Defined in: [src/managers/AttachmentManager.ts:366](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L366)
 
@@ -298,7 +299,7 @@ Attachment identifier
 
 ### getAttachmentsForPage()
 
-> **getAttachmentsForPage**(`pageName`): `Promise`\<[`AttachmentMetadata`](../interfaces/AttachmentMetadata.md)[]\>
+> __getAttachmentsForPage__(`pageName`): `Promise`\<[`AttachmentMetadata`](../interfaces/AttachmentMetadata.md)[]\>
 
 Defined in: [src/managers/AttachmentManager.ts:380](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L380)
 
@@ -320,7 +321,7 @@ Page name
 
 ### getAttachmentUrl()
 
-> **getAttachmentUrl**(`attachmentId`): `string`
+> __getAttachmentUrl__(`attachmentId`): `string`
 
 Defined in: [src/managers/AttachmentManager.ts:473](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L473)
 
@@ -344,7 +345,7 @@ URL path
 
 ### getCurrentAttachmentProvider()
 
-> **getCurrentAttachmentProvider**(): `BaseAttachmentProvider` \| `null`
+> __getCurrentAttachmentProvider__(): `BaseAttachmentProvider` \| `null`
 
 Defined in: [src/managers/AttachmentManager.ts:210](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L210)
 
@@ -360,7 +361,7 @@ Current provider instance
 
 ### getEngine()
 
-> **getEngine**(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> __getEngine__(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:125](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L125)
 
@@ -386,7 +387,7 @@ const config = this.getEngine().getConfig();
 
 ### initialize()
 
-> **initialize**(`config?`): `Promise`\<`void`\>
+> __initialize__(`config?`): `Promise`\<`void`\>
 
 Defined in: [src/managers/AttachmentManager.ts:157](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L157)
 
@@ -418,7 +419,7 @@ If ConfigurationManager is not available or provider fails to load
 
 ### isInitialized()
 
-> **isInitialized**(): `boolean`
+> __isInitialized__(): `boolean`
 
 Defined in: [src/managers/BaseManager.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L113)
 
@@ -446,7 +447,7 @@ if (manager.isInitialized()) {
 
 ### refreshAttachmentList()
 
-> **refreshAttachmentList**(): `Promise`\<`void`\>
+> __refreshAttachmentList__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/AttachmentManager.ts:482](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L482)
 
@@ -460,7 +461,7 @@ Refresh attachment list (rescan storage)
 
 ### restore()
 
-> **restore**(`backupData`): `Promise`\<`void`\>
+> __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/managers/AttachmentManager.ts:525](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L525)
 
@@ -487,7 +488,7 @@ Backup data from backup() method
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/AttachmentManager.ts:548](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L548)
 
@@ -505,7 +506,7 @@ Shutdown the manager
 
 ### updateAttachmentMetadata()
 
-> **updateAttachmentMetadata**(`attachmentId`, `updates`, `context?`): `Promise`\<`boolean`\>
+> __updateAttachmentMetadata__(`attachmentId`, `updates`, `context?`): `Promise`\<`boolean`\>
 
 Defined in: [src/managers/AttachmentManager.ts:430](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L430)
 
@@ -541,7 +542,7 @@ Success status
 
 ### uploadAttachment()
 
-> **uploadAttachment**(`fileBuffer`, `fileInfo`, `options`): `Promise`\<[`AttachmentMetadata`](../interfaces/AttachmentMetadata.md)\>
+> __uploadAttachment__(`fileBuffer`, `fileInfo`, `options`): `Promise`\<[`AttachmentMetadata`](../interfaces/AttachmentMetadata.md)\>
 
 Defined in: [src/managers/AttachmentManager.ts:246](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L246)
 

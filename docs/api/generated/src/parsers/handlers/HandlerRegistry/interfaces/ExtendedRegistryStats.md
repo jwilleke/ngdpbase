@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Extended registry statistics with handler details
 
 ### config
 
-> **config**: [`RegistryConfig`](RegistryConfig.md)
+> __config__: [`RegistryConfig`](RegistryConfig.md)
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:105](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L105)
 
@@ -22,7 +22,7 @@ Defined in: [src/parsers/handlers/HandlerRegistry.ts:105](https://github.com/jwi
 
 ### handlers
 
-> **handlers**: `Record`\<`string`, `unknown`\>
+> __handlers__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:104](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L104)
 
@@ -30,7 +30,7 @@ Defined in: [src/parsers/handlers/HandlerRegistry.ts:104](https://github.com/jwi
 
 ### registry
 
-> **registry**: [`RegistryStats`](RegistryStats.md) & `object`
+> __registry__: [`RegistryStats`](RegistryStats.md) & `object`
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:99](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L99)
 
@@ -38,12 +38,12 @@ Defined in: [src/parsers/handlers/HandlerRegistry.ts:99](https://github.com/jwil
 
 ##### disabledHandlers
 
-> **disabledHandlers**: `number`
+> __disabledHandlers__: `number`
 
 ##### enabledHandlers
 
-> **enabledHandlers**: `number`
+> __enabledHandlers__: `number`
 
 ##### totalHandlers
 
-> **totalHandlers**: `number`
+> __totalHandlers__: `number`

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -15,6 +15,7 @@ orchestrates user operations through a pluggable provider system, allowing
 different storage backends (file, database, LDAP, etc.) to be used.
 
 Key responsibilities:
+
 - User authentication (login/logout)
 - Password management with hashing
 - Role and permission management
@@ -30,8 +31,8 @@ backends (file, database, LDAP, etc.) to be swapped via configuration.
 
 ## See
 
- - [BaseManager](../../BaseManager/classes/default.md) for base functionality
- - FileUserProvider for default provider implementation
+- [BaseManager](../../BaseManager/classes/default.md) for base functionality
+- FileUserProvider for default provider implementation
 
 ## Example
 
@@ -49,7 +50,7 @@ if (user) logger.info('Logged in:', user.username);
 
 ### Constructor
 
-> **new export=**(`engine`): `UserManager`
+> __new export=__(`engine`): `UserManager`
 
 Defined in: [src/managers/UserManager.ts:171](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L171)
 
@@ -75,7 +76,7 @@ The wiki engine instance
 
 ### config?
 
-> `protected` `optional` **config**: `Record`\<`string`, `unknown`\>
+> `protected` `optional` __config__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/managers/BaseManager.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L61)
 
@@ -89,7 +90,7 @@ Configuration passed during initialization
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L54)
 
@@ -103,7 +104,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/managers/BaseManager.ts:57](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L57)
 
@@ -117,7 +118,7 @@ Initialization status flag
 
 ### assignRole()
 
-> **assignRole**(`username`, `roleName`): `Promise`\<`boolean`\>
+> __assignRole__(`username`, `roleName`): `Promise`\<`boolean`\>
 
 Defined in: [src/managers/UserManager.ts:1099](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L1099)
 
@@ -139,7 +140,7 @@ Defined in: [src/managers/UserManager.ts:1099](https://github.com/jwilleke/ngdpb
 
 ### authenticateUser()
 
-> **authenticateUser**(`username`, `password`): `Promise`\<`Omit`\<[`User`](../../../types/User/interfaces/User.md), `"password"`\> & `object` \| `null`\>
+> __authenticateUser__(`username`, `password`): `Promise`\<`Omit`\<[`User`](../../../types/User/interfaces/User.md), `"password"`\> & `object` \| `null`\>
 
 Defined in: [src/managers/UserManager.ts:519](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L519)
 
@@ -169,7 +170,7 @@ User object if authenticated
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
 
 Defined in: [src/managers/UserManager.ts:1199](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L1199)
 
@@ -211,7 +212,7 @@ async backup(): Promise<BackupData> {
 
 ### checkDisplayNamePageConflict()
 
-> **checkDisplayNamePageConflict**(`displayName`, `excludeUsername`): `Promise`\<`boolean`\>
+> __checkDisplayNamePageConflict__(`displayName`, `excludeUsername`): `Promise`\<`boolean`\>
 
 Defined in: [src/managers/UserManager.ts:681](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L681)
 
@@ -241,7 +242,7 @@ True if conflict exists
 
 ### createDefaultAdmin()
 
-> **createDefaultAdmin**(): `Promise`\<`void`\>
+> __createDefaultAdmin__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/UserManager.ts:380](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L380)
 
@@ -255,7 +256,7 @@ Create default admin user
 
 ### createOrUpdateExternalUser()
 
-> **createOrUpdateExternalUser**(`externalUserData`): `Promise`\<`Omit`\<[`User`](../../../types/User/interfaces/User.md), `"password"`\>\>
+> __createOrUpdateExternalUser__(`externalUserData`): `Promise`\<`Omit`\<[`User`](../../../types/User/interfaces/User.md), `"password"`\>\>
 
 Defined in: [src/managers/UserManager.ts:468](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L468)
 
@@ -279,7 +280,7 @@ User object
 
 ### createRole()
 
-> **createRole**(`roleData`): `never`
+> __createRole__(`roleData`): `never`
 
 Defined in: [src/managers/UserManager.ts:995](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L995)
 
@@ -297,7 +298,7 @@ Defined in: [src/managers/UserManager.ts:995](https://github.com/jwilleke/ngdpba
 
 ### createSession()
 
-> **createSession**(`username`, `additionalData`): `Promise`\<`string`\>
+> __createSession__(`username`, `additionalData`): `Promise`\<`string`\>
 
 Defined in: [src/managers/UserManager.ts:1151](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L1151)
 
@@ -319,7 +320,7 @@ Defined in: [src/managers/UserManager.ts:1151](https://github.com/jwilleke/ngdpb
 
 ### createUser()
 
-> **createUser**(`userData`): `Promise`\<`Omit`\<[`User`](../../../types/User/interfaces/User.md), `"password"`\>\>
+> __createUser__(`userData`): `Promise`\<`Omit`\<[`User`](../../../types/User/interfaces/User.md), `"password"`\>\>
 
 Defined in: [src/managers/UserManager.ts:773](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L773)
 
@@ -343,7 +344,7 @@ Created user (without password)
 
 ### createUserPage()
 
-> **createUserPage**(`user`): `Promise`\<`boolean`\>
+> __createUserPage__(`user`): `Promise`\<`boolean`\>
 
 Defined in: [src/managers/UserManager.ts:714](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L714)
 
@@ -367,7 +368,7 @@ True if user page was created successfully
 
 ### deleteRole()
 
-> **deleteRole**(`roleName`): `never`
+> __deleteRole__(`roleName`): `never`
 
 Defined in: [src/managers/UserManager.ts:1001](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L1001)
 
@@ -385,7 +386,7 @@ Defined in: [src/managers/UserManager.ts:1001](https://github.com/jwilleke/ngdpb
 
 ### deleteSession()
 
-> **deleteSession**(`sessionId`): `Promise`\<`void`\>
+> __deleteSession__(`sessionId`): `Promise`\<`void`\>
 
 Defined in: [src/managers/UserManager.ts:1178](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L1178)
 
@@ -403,7 +404,7 @@ Defined in: [src/managers/UserManager.ts:1178](https://github.com/jwilleke/ngdpb
 
 ### deleteUser()
 
-> **deleteUser**(`username`): `Promise`\<`boolean`\>
+> __deleteUser__(`username`): `Promise`\<`boolean`\>
 
 Defined in: [src/managers/UserManager.ts:931](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L931)
 
@@ -423,7 +424,7 @@ Delete user
 
 ### deleteUserSessions()
 
-> **deleteUserSessions**(`username`): `Promise`\<`void`\>
+> __deleteUserSessions__(`username`): `Promise`\<`void`\>
 
 Defined in: [src/managers/UserManager.ts:1185](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L1185)
 
@@ -441,7 +442,7 @@ Defined in: [src/managers/UserManager.ts:1185](https://github.com/jwilleke/ngdpb
 
 ### ensureAuthenticated()
 
-> **ensureAuthenticated**(`req`, `res`, `next`): `void`
+> __ensureAuthenticated__(`req`, `res`, `next`): `void`
 
 Defined in: [src/managers/UserManager.ts:1040](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L1040)
 
@@ -467,7 +468,7 @@ Defined in: [src/managers/UserManager.ts:1040](https://github.com/jwilleke/ngdpb
 
 ### getAnonymousUser()
 
-> **getAnonymousUser**(): `UserContext`
+> __getAnonymousUser__(): `UserContext`
 
 Defined in: [src/managers/UserManager.ts:1069](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L1069)
 
@@ -479,7 +480,7 @@ Defined in: [src/managers/UserManager.ts:1069](https://github.com/jwilleke/ngdpb
 
 ### getAssertedUser()
 
-> **getAssertedUser**(): `UserContext`
+> __getAssertedUser__(): `UserContext`
 
 Defined in: [src/managers/UserManager.ts:1078](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L1078)
 
@@ -491,7 +492,7 @@ Defined in: [src/managers/UserManager.ts:1078](https://github.com/jwilleke/ngdpb
 
 ### getCurrentUser()
 
-> **getCurrentUser**(`req`): `Promise`\<`UserContext`\>
+> __getCurrentUser__(`req`): `Promise`\<`UserContext`\>
 
 Defined in: [src/managers/UserManager.ts:1011](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L1011)
 
@@ -509,7 +510,7 @@ Defined in: [src/managers/UserManager.ts:1011](https://github.com/jwilleke/ngdpb
 
 ### getCurrentUserProvider()
 
-> **getCurrentUserProvider**(): [`UserProvider`](../../../types/Provider/interfaces/UserProvider.md) \| `null`
+> __getCurrentUserProvider__(): [`UserProvider`](../../../types/Provider/interfaces/UserProvider.md) \| `null`
 
 Defined in: [src/managers/UserManager.ts:312](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L312)
 
@@ -525,7 +526,7 @@ The active provider
 
 ### getEngine()
 
-> **getEngine**(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> __getEngine__(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:125](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L125)
 
@@ -551,7 +552,7 @@ const config = this.getEngine().getConfig();
 
 ### getJobTitleFromRoles()
 
-> **getJobTitleFromRoles**(`roles`): `string`
+> __getJobTitleFromRoles__(`roles`): `string`
 
 Defined in: [src/managers/UserManager.ts:1144](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L1144)
 
@@ -569,7 +570,7 @@ Defined in: [src/managers/UserManager.ts:1144](https://github.com/jwilleke/ngdpb
 
 ### getPermissions()
 
-> **getPermissions**(): `Map`\<`string`, `string`\>
+> __getPermissions__(): `Map`\<`string`, `string`\>
 
 Defined in: [src/managers/UserManager.ts:987](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L987)
 
@@ -581,7 +582,7 @@ Defined in: [src/managers/UserManager.ts:987](https://github.com/jwilleke/ngdpba
 
 ### getRole()
 
-> **getRole**(`roleName`): [`Role`](../../../types/User/interfaces/Role.md) \| `null`
+> __getRole__(`roleName`): [`Role`](../../../types/User/interfaces/Role.md) \| `null`
 
 Defined in: [src/managers/UserManager.ts:991](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L991)
 
@@ -599,7 +600,7 @@ Defined in: [src/managers/UserManager.ts:991](https://github.com/jwilleke/ngdpba
 
 ### getRoleCompetencies()
 
-> **getRoleCompetencies**(`role`): `string`[]
+> __getRoleCompetencies__(`role`): `string`[]
 
 Defined in: [src/managers/UserManager.ts:1135](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L1135)
 
@@ -617,7 +618,7 @@ Defined in: [src/managers/UserManager.ts:1135](https://github.com/jwilleke/ngdpb
 
 ### getRoles()
 
-> **getRoles**(): [`Role`](../../../types/User/interfaces/Role.md)[]
+> __getRoles__(): [`Role`](../../../types/User/interfaces/Role.md)[]
 
 Defined in: [src/managers/UserManager.ts:983](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L983)
 
@@ -629,7 +630,7 @@ Defined in: [src/managers/UserManager.ts:983](https://github.com/jwilleke/ngdpba
 
 ### getSession()
 
-> **getSession**(`sessionId`): `Promise`\<[`UserSession`](../../../types/User/interfaces/UserSession.md) \| `null`\>
+> __getSession__(`sessionId`): `Promise`\<[`UserSession`](../../../types/User/interfaces/UserSession.md) \| `null`\>
 
 Defined in: [src/managers/UserManager.ts:1171](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L1171)
 
@@ -647,7 +648,7 @@ Defined in: [src/managers/UserManager.ts:1171](https://github.com/jwilleke/ngdpb
 
 ### getUser()
 
-> **getUser**(`username`): `Promise`\<`Omit`\<[`User`](../../../types/User/interfaces/User.md), `"password"`\> \| `undefined`\>
+> __getUser__(`username`): `Promise`\<`Omit`\<[`User`](../../../types/User/interfaces/User.md), `"password"`\> \| `undefined`\>
 
 Defined in: [src/managers/UserManager.ts:971](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L971)
 
@@ -665,7 +666,7 @@ Defined in: [src/managers/UserManager.ts:971](https://github.com/jwilleke/ngdpba
 
 ### getUserPermissions()
 
-> **getUserPermissions**(`username`): `Promise`\<`string`[]\>
+> __getUserPermissions__(`username`): `Promise`\<`string`[]\>
 
 Defined in: [src/managers/UserManager.ts:606](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L606)
 
@@ -689,7 +690,7 @@ Array of permission strings
 
 ### getUsers()
 
-> **getUsers**(): `Promise`\<`Omit`\<[`User`](../../../types/User/interfaces/User.md), `"password"`\>[]\>
+> __getUsers__(): `Promise`\<`Omit`\<[`User`](../../../types/User/interfaces/User.md), `"password"`\>[]\>
 
 Defined in: [src/managers/UserManager.ts:960](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L960)
 
@@ -701,7 +702,7 @@ Defined in: [src/managers/UserManager.ts:960](https://github.com/jwilleke/ngdpba
 
 ### hashPassword()
 
-> **hashPassword**(`password`): `string`
+> __hashPassword__(`password`): `string`
 
 Defined in: [src/managers/UserManager.ts:338](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L338)
 
@@ -725,7 +726,7 @@ Hashed password
 
 ### hasPermission()
 
-> **hasPermission**(`username`, `action`): `Promise`\<`boolean`\>
+> __hasPermission__(`username`, `action`): `Promise`\<`boolean`\>
 
 Defined in: [src/managers/UserManager.ts:554](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L554)
 
@@ -755,7 +756,7 @@ True if user has permission via policies
 
 ### hasRole()
 
-> **hasRole**(`username`, `roleName`): `Promise`\<`boolean`\>
+> __hasRole__(`username`, `roleName`): `Promise`\<`boolean`\>
 
 Defined in: [src/managers/UserManager.ts:1088](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L1088)
 
@@ -777,7 +778,7 @@ Defined in: [src/managers/UserManager.ts:1088](https://github.com/jwilleke/ngdpb
 
 ### initialize()
 
-> **initialize**(`config?`): `Promise`\<`void`\>
+> __initialize__(`config?`): `Promise`\<`void`\>
 
 Defined in: [src/managers/UserManager.ts:190](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L190)
 
@@ -819,7 +820,7 @@ await userManager.initialize();
 
 ### isAdminUsingDefaultPassword()
 
-> **isAdminUsingDefaultPassword**(): `Promise`\<`boolean`\>
+> __isAdminUsingDefaultPassword__(): `Promise`\<`boolean`\>
 
 Defined in: [src/managers/UserManager.ts:360](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L360)
 
@@ -835,7 +836,7 @@ True if admin has default password
 
 ### isInitialized()
 
-> **isInitialized**(): `boolean`
+> __isInitialized__(): `boolean`
 
 Defined in: [src/managers/BaseManager.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L113)
 
@@ -863,7 +864,7 @@ if (manager.isInitialized()) {
 
 ### removeRole()
 
-> **removeRole**(`username`, `roleName`): `Promise`\<`boolean`\>
+> __removeRole__(`username`, `roleName`): `Promise`\<`boolean`\>
 
 Defined in: [src/managers/UserManager.ts:1118](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L1118)
 
@@ -885,7 +886,7 @@ Defined in: [src/managers/UserManager.ts:1118](https://github.com/jwilleke/ngdpb
 
 ### requirePermissions()
 
-> **requirePermissions**(`requiredPermissions`): (`req`, `res`, `next`) => `void`
+> __requirePermissions__(`requiredPermissions`): (`req`, `res`, `next`) => `void`
 
 Defined in: [src/managers/UserManager.ts:1051](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L1051)
 
@@ -921,7 +922,7 @@ Defined in: [src/managers/UserManager.ts:1051](https://github.com/jwilleke/ngdpb
 
 ### restore()
 
-> **restore**(`backupData`): `Promise`\<`void`\>
+> __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/managers/UserManager.ts:1229](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L1229)
 
@@ -966,7 +967,7 @@ async restore(backupData: BackupData): Promise<void> {
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L143)
 
@@ -997,7 +998,7 @@ async shutdown(): Promise<void> {
 
 ### updateRolePermissions()
 
-> **updateRolePermissions**(`_roleName`, `_updates`): `never`
+> __updateRolePermissions__(`_roleName`, `_updates`): `never`
 
 Defined in: [src/managers/UserManager.ts:1006](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L1006)
 
@@ -1019,7 +1020,7 @@ Defined in: [src/managers/UserManager.ts:1006](https://github.com/jwilleke/ngdpb
 
 ### updateUser()
 
-> **updateUser**(`username`, `updates`): `Promise`\<[`User`](../../../types/User/interfaces/User.md)\>
+> __updateUser__(`username`, `updates`): `Promise`\<[`User`](../../../types/User/interfaces/User.md)\>
 
 Defined in: [src/managers/UserManager.ts:872](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L872)
 
@@ -1043,7 +1044,7 @@ Update user
 
 ### verifyPassword()
 
-> **verifyPassword**(`password`, `hash`): `boolean`
+> __verifyPassword__(`password`, `hash`): `boolean`
 
 Defined in: [src/managers/UserManager.ts:352](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L352)
 

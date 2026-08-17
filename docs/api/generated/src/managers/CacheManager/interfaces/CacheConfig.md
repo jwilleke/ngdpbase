@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Cache configuration
 
 ### checkPeriod
 
-> **checkPeriod**: `number`
+> __checkPeriod__: `number`
 
 Defined in: [src/managers/CacheManager.ts:23](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L23)
 
@@ -22,7 +22,7 @@ Defined in: [src/managers/CacheManager.ts:23](https://github.com/jwilleke/ngdpba
 
 ### defaultTTL
 
-> **defaultTTL**: `number`
+> __defaultTTL__: `number`
 
 Defined in: [src/managers/CacheManager.ts:21](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L21)
 
@@ -30,7 +30,7 @@ Defined in: [src/managers/CacheManager.ts:21](https://github.com/jwilleke/ngdpba
 
 ### maxKeys
 
-> **maxKeys**: `number`
+> __maxKeys__: `number`
 
 Defined in: [src/managers/CacheManager.ts:22](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L22)
 
@@ -38,6 +38,6 @@ Defined in: [src/managers/CacheManager.ts:22](https://github.com/jwilleke/ngdpba
 
 ### provider
 
-> **provider**: `string` \| `null`
+> __provider__: `string` \| `null`
 
 Defined in: [src/managers/CacheManager.ts:20](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L20)

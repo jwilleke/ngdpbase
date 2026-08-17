@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Backup options
 
 ### compress?
 
-> `optional` **compress**: `boolean`
+> `optional` __compress__: `boolean`
 
 Defined in: [src/managers/BackupManager.ts:18](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L18)
 
@@ -22,6 +22,6 @@ Defined in: [src/managers/BackupManager.ts:18](https://github.com/jwilleke/ngdpb
 
 ### filename?
 
-> `optional` **filename**: `string`
+> `optional` __filename__: `string`
 
 Defined in: [src/managers/BackupManager.ts:17](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L17)

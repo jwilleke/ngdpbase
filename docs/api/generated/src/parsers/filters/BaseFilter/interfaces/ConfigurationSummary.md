@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Configuration summary
 
 ### configuration
 
-> **configuration**: [`FilterConfig`](FilterConfig.md) \| `null`
+> __configuration__: [`FilterConfig`](FilterConfig.md) \| `null`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:102](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L102)
 
@@ -22,7 +22,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:102](https://github.com/jwilleke/
 
 ### configurationSource
 
-> **configurationSource**: `"loaded"` \| `"defaults"`
+> __configurationSource__: `"loaded"` \| `"defaults"`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:103](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L103)
 
@@ -30,7 +30,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:103](https://github.com/jwilleke/
 
 ### enabled
 
-> **enabled**: `boolean`
+> __enabled__: `boolean`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:100](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L100)
 
@@ -38,7 +38,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:100](https://github.com/jwilleke/
 
 ### filterId
 
-> **filterId**: `string`
+> __filterId__: `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:99](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L99)
 
@@ -46,7 +46,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:99](https://github.com/jwilleke/n
 
 ### options
 
-> **options**: `Required`\<[`FilterOptions`](FilterOptions.md)\>
+> __options__: `Required`\<[`FilterOptions`](FilterOptions.md)\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:104](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L104)
 
@@ -54,6 +54,6 @@ Defined in: [src/parsers/filters/BaseFilter.ts:104](https://github.com/jwilleke/
 
 ### priority
 
-> **priority**: `number`
+> __priority__: `number`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:101](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L101)

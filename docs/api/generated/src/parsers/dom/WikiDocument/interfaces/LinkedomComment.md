@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -12,7 +12,7 @@ Defined in: [src/parsers/dom/WikiDocument.ts:64](https://github.com/jwilleke/ngd
 
 ### nodeType
 
-> **nodeType**: `number`
+> __nodeType__: `number`
 
 Defined in: [src/parsers/dom/WikiDocument.ts:66](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/WikiDocument.ts#L66)
 
@@ -20,6 +20,6 @@ Defined in: [src/parsers/dom/WikiDocument.ts:66](https://github.com/jwilleke/ngd
 
 ### textContent
 
-> **textContent**: `string`
+> __textContent__: `string`
 
 Defined in: [src/parsers/dom/WikiDocument.ts:65](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/WikiDocument.ts#L65)

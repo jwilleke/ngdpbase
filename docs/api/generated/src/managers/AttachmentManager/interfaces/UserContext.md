@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ User context for permission checks
 
 ### email?
 
-> `optional` **email**: `string`
+> `optional` __email__: `string`
 
 Defined in: [src/managers/AttachmentManager.ts:50](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L50)
 
@@ -22,7 +22,7 @@ Defined in: [src/managers/AttachmentManager.ts:50](https://github.com/jwilleke/n
 
 ### isAuthenticated?
 
-> `optional` **isAuthenticated**: `boolean`
+> `optional` __isAuthenticated__: `boolean`
 
 Defined in: [src/managers/AttachmentManager.ts:51](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L51)
 
@@ -30,7 +30,7 @@ Defined in: [src/managers/AttachmentManager.ts:51](https://github.com/jwilleke/n
 
 ### name?
 
-> `optional` **name**: `string`
+> `optional` __name__: `string`
 
 Defined in: [src/managers/AttachmentManager.ts:49](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L49)
 
@@ -38,7 +38,7 @@ Defined in: [src/managers/AttachmentManager.ts:49](https://github.com/jwilleke/n
 
 ### roles?
 
-> `optional` **roles**: `string`[]
+> `optional` __roles__: `string`[]
 
 Defined in: [src/managers/AttachmentManager.ts:52](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L52)
 
@@ -46,7 +46,7 @@ Defined in: [src/managers/AttachmentManager.ts:52](https://github.com/jwilleke/n
 
 ### user?
 
-> `optional` **user**: [`User`](User.md)
+> `optional` __user__: [`User`](User.md)
 
 Defined in: [src/managers/AttachmentManager.ts:53](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L53)
 
@@ -54,6 +54,6 @@ Defined in: [src/managers/AttachmentManager.ts:53](https://github.com/jwilleke/n
 
 ### username?
 
-> `optional` **username**: `string`
+> `optional` __username__: `string`
 
 Defined in: [src/managers/AttachmentManager.ts:48](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L48)

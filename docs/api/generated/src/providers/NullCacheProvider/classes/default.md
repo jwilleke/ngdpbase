@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -21,7 +21,7 @@ All cache operations are no-ops that return immediately.
 
 ### Constructor
 
-> **new default**(`engine`): `NullCacheProvider`
+> __new default__(`engine`): `NullCacheProvider`
 
 Defined in: [src/providers/NullCacheProvider.ts:11](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullCacheProvider.ts#L11)
 
@@ -43,7 +43,7 @@ Defined in: [src/providers/NullCacheProvider.ts:11](https://github.com/jwilleke/
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/providers/BaseCacheProvider.ts:67](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L67)
 
@@ -57,7 +57,7 @@ Reference to the wiki engine instance
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/providers/BaseCacheProvider.ts:72](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L72)
 
@@ -71,7 +71,7 @@ Whether the provider has been initialized
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../../BaseCacheProvider/interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../../BaseCacheProvider/interfaces/BackupData.md)\>
 
 Defined in: [src/providers/BaseCacheProvider.ts:166](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L166)
 
@@ -91,7 +91,7 @@ Backup data
 
 ### clear()
 
-> **clear**(`_pattern?`): `Promise`\<`void`\>
+> __clear__(`_pattern?`): `Promise`\<`void`\>
 
 Defined in: [src/providers/NullCacheProvider.ts:75](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullCacheProvider.ts#L75)
 
@@ -117,7 +117,7 @@ Optional pattern to match keys
 
 ### close()
 
-> **close**(): `Promise`\<`void`\>
+> __close__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/NullCacheProvider.ts:118](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullCacheProvider.ts#L118)
 
@@ -135,7 +135,7 @@ Close/cleanup the cache provider (no-op)
 
 ### del()
 
-> **del**(`_keys`): `Promise`\<`void`\>
+> __del__(`_keys`): `Promise`\<`void`\>
 
 Defined in: [src/providers/NullCacheProvider.ts:65](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullCacheProvider.ts#L65)
 
@@ -161,7 +161,7 @@ Single key or array of keys to delete
 
 ### get()
 
-> **get**\<`T`\>(`_key`): `Promise`\<`T` \| `undefined`\>
+> __get__\<`T`\>(`_key`): `Promise`\<`T` \| `undefined`\>
 
 Defined in: [src/providers/NullCacheProvider.ts:43](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullCacheProvider.ts#L43)
 
@@ -195,7 +195,7 @@ Always undefined
 
 ### getProviderInfo()
 
-> **getProviderInfo**(): [`ProviderInfo`](../../BaseCacheProvider/interfaces/ProviderInfo.md)
+> __getProviderInfo__(): [`ProviderInfo`](../../BaseCacheProvider/interfaces/ProviderInfo.md)
 
 Defined in: [src/providers/NullCacheProvider.ts:28](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullCacheProvider.ts#L28)
 
@@ -215,7 +215,7 @@ Provider metadata
 
 ### initialize()
 
-> **initialize**(): `Promise`\<`void`\>
+> __initialize__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/NullCacheProvider.ts:19](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullCacheProvider.ts#L19)
 
@@ -233,7 +233,7 @@ Initialize the null cache provider (no-op)
 
 ### isHealthy()
 
-> **isHealthy**(): `Promise`\<`boolean`\>
+> __isHealthy__(): `Promise`\<`boolean`\>
 
 Defined in: [src/providers/NullCacheProvider.ts:110](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullCacheProvider.ts#L110)
 
@@ -253,7 +253,7 @@ Always true
 
 ### keys()
 
-> **keys**(`_pattern?`): `Promise`\<`string`[]\>
+> __keys__(`_pattern?`): `Promise`\<`string`[]\>
 
 Defined in: [src/providers/NullCacheProvider.ts:85](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullCacheProvider.ts#L85)
 
@@ -281,7 +281,7 @@ Empty array
 
 ### restore()
 
-> **restore**(`_backupData`): `Promise`\<`void`\>
+> __restore__(`_backupData`): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseCacheProvider.ts:179](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L179)
 
@@ -307,7 +307,7 @@ Backup data
 
 ### set()
 
-> **set**\<`T`\>(`_key`, `_value`, `_ttlSec?`): `Promise`\<`void`\>
+> __set__\<`T`\>(`_key`, `_value`, `_ttlSec?`): `Promise`\<`void`\>
 
 Defined in: [src/providers/NullCacheProvider.ts:55](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullCacheProvider.ts#L55)
 
@@ -351,7 +351,7 @@ Time to live in seconds
 
 ### stats()
 
-> **stats**(): `Promise`\<[`CacheStats`](../../BaseCacheProvider/interfaces/CacheStats.md)\>
+> __stats__(): `Promise`\<[`CacheStats`](../../BaseCacheProvider/interfaces/CacheStats.md)\>
 
 Defined in: [src/providers/NullCacheProvider.ts:93](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullCacheProvider.ts#L93)
 

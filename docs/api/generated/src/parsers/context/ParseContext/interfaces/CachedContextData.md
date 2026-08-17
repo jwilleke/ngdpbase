@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Cached context data
 
 ### metadata
 
-> **metadata**: `Record`\<`string`, `unknown`\>
+> __metadata__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/parsers/context/ParseContext.ts:122](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L122)
 
@@ -22,7 +22,7 @@ Defined in: [src/parsers/context/ParseContext.ts:122](https://github.com/jwillek
 
 ### pageName
 
-> **pageName**: `string`
+> __pageName__: `string`
 
 Defined in: [src/parsers/context/ParseContext.ts:118](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L118)
 
@@ -30,7 +30,7 @@ Defined in: [src/parsers/context/ParseContext.ts:118](https://github.com/jwillek
 
 ### timestamp
 
-> **timestamp**: `number`
+> __timestamp__: `number`
 
 Defined in: [src/parsers/context/ParseContext.ts:123](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L123)
 
@@ -38,7 +38,7 @@ Defined in: [src/parsers/context/ParseContext.ts:123](https://github.com/jwillek
 
 ### userContext
 
-> **userContext**: [`ExportedUserContext`](ExportedUserContext.md) \| `null`
+> __userContext__: [`ExportedUserContext`](ExportedUserContext.md) \| `null`
 
 Defined in: [src/parsers/context/ParseContext.ts:120](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L120)
 
@@ -46,7 +46,7 @@ Defined in: [src/parsers/context/ParseContext.ts:120](https://github.com/jwillek
 
 ### userName
 
-> **userName**: `string`
+> __userName__: `string`
 
 Defined in: [src/parsers/context/ParseContext.ts:119](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L119)
 
@@ -54,6 +54,6 @@ Defined in: [src/parsers/context/ParseContext.ts:119](https://github.com/jwillek
 
 ### variables
 
-> **variables**: `Record`\<`string`, `unknown`\>
+> __variables__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/parsers/context/ParseContext.ts:121](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L121)

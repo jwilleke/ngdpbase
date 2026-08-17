@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Handler metadata
 
 ### dependencies
 
-> **dependencies**: (`string` \| [`DependencySpec`](DependencySpec.md))[]
+> __dependencies__: (`string` \| [`DependencySpec`](DependencySpec.md))[]
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:117](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L117)
 
@@ -22,7 +22,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:117](https://github.com/j
 
 ### description
 
-> **description**: `string`
+> __description__: `string`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:114](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L114)
 
@@ -30,7 +30,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:114](https://github.com/j
 
 ### id
 
-> **id**: `string`
+> __id__: `string`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:112](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L112)
 
@@ -38,7 +38,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:112](https://github.com/j
 
 ### options
 
-> **options**: `Required`\<[`HandlerOptions`](HandlerOptions.md)\>
+> __options__: `Required`\<[`HandlerOptions`](HandlerOptions.md)\>
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:118](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L118)
 
@@ -46,7 +46,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:118](https://github.com/j
 
 ### pattern
 
-> **pattern**: `string`
+> __pattern__: `string`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:116](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L116)
 
@@ -54,7 +54,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:116](https://github.com/j
 
 ### priority
 
-> **priority**: `number`
+> __priority__: `number`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:115](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L115)
 
@@ -62,7 +62,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:115](https://github.com/j
 
 ### stats
 
-> **stats**: [`HandlerStats`](HandlerStats.md) & `object`
+> __stats__: [`HandlerStats`](HandlerStats.md) & `object`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:119](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L119)
 
@@ -70,24 +70,24 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:119](https://github.com/j
 
 ##### enabled
 
-> **enabled**: `boolean`
+> __enabled__: `boolean`
 
 ##### handlerId
 
-> **handlerId**: `string`
+> __handlerId__: `string`
 
 ##### initialized
 
-> **initialized**: `boolean`
+> __initialized__: `boolean`
 
 ##### priority
 
-> **priority**: `number`
+> __priority__: `number`
 
 ***
 
 ### version
 
-> **version**: `string`
+> __version__: `string`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L113)

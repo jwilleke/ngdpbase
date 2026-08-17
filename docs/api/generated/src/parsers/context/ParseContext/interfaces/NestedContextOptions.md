@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Nested context structure (from WikiContext.toParseOptions())
 
 ### engine?
 
-> `optional` **engine**: [`WikiEngine`](WikiEngine.md)
+> `optional` __engine__: [`WikiEngine`](WikiEngine.md)
 
 Defined in: [src/parsers/context/ParseContext.ts:64](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L64)
 
@@ -22,6 +22,6 @@ Defined in: [src/parsers/context/ParseContext.ts:64](https://github.com/jwilleke
 
 ### pageContext
 
-> **pageContext**: [`PageContext`](PageContext.md)
+> __pageContext__: [`PageContext`](PageContext.md)
 
 Defined in: [src/parsers/context/ParseContext.ts:63](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L63)

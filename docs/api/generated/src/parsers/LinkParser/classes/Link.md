@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Link class representing a parsed link
 
 ### Constructor
 
-> **new Link**(`data`): `Link`
+> __new Link__(`data`): `Link`
 
 Defined in: [src/parsers/LinkParser.ts:746](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L746)
 
@@ -36,7 +36,7 @@ Link data
 
 ### attributes
 
-> **attributes**: [`LinkAttributes`](../interfaces/LinkAttributes.md)
+> __attributes__: [`LinkAttributes`](../interfaces/LinkAttributes.md)
 
 Defined in: [src/parsers/LinkParser.ts:734](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L734)
 
@@ -46,7 +46,7 @@ Parsed attributes object
 
 ### attributesString
 
-> **attributesString**: `string` \| `null`
+> __attributesString__: `string` \| `null`
 
 Defined in: [src/parsers/LinkParser.ts:731](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L731)
 
@@ -56,7 +56,7 @@ Raw attributes string
 
 ### endIndex
 
-> **endIndex**: `number`
+> __endIndex__: `number`
 
 Defined in: [src/parsers/LinkParser.ts:740](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L740)
 
@@ -66,7 +66,7 @@ End index in content
 
 ### originalText
 
-> **originalText**: `string`
+> __originalText__: `string`
 
 Defined in: [src/parsers/LinkParser.ts:722](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L722)
 
@@ -76,7 +76,7 @@ Original text from content
 
 ### startIndex
 
-> **startIndex**: `number`
+> __startIndex__: `number`
 
 Defined in: [src/parsers/LinkParser.ts:737](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L737)
 
@@ -86,7 +86,7 @@ Start index in content
 
 ### target
 
-> **target**: `string` \| `null`
+> __target__: `string` \| `null`
 
 Defined in: [src/parsers/LinkParser.ts:728](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L728)
 
@@ -96,7 +96,7 @@ Target page or URL
 
 ### text
 
-> **text**: `string`
+> __text__: `string`
 
 Defined in: [src/parsers/LinkParser.ts:725](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L725)
 
@@ -106,7 +106,7 @@ Display text for the link
 
 ### getAttribute()
 
-> **getAttribute**(`name`): `string` \| `undefined`
+> __getAttribute__(`name`): `string` \| `undefined`
 
 Defined in: [src/parsers/LinkParser.ts:785](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L785)
 
@@ -130,7 +130,7 @@ Attribute value
 
 ### getEffectiveTarget()
 
-> **getEffectiveTarget**(): `string`
+> __getEffectiveTarget__(): `string`
 
 Defined in: [src/parsers/LinkParser.ts:768](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L768)
 
@@ -146,7 +146,7 @@ Effective target
 
 ### hasAttributes()
 
-> **hasAttributes**(): `boolean`
+> __hasAttributes__(): `boolean`
 
 Defined in: [src/parsers/LinkParser.ts:776](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L776)
 
@@ -162,7 +162,7 @@ True if has attributes
 
 ### isSimple()
 
-> **isSimple**(): `boolean`
+> __isSimple__(): `boolean`
 
 Defined in: [src/parsers/LinkParser.ts:760](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L760)
 
@@ -178,7 +178,7 @@ True if simple link
 
 ### setAttribute()
 
-> **setAttribute**(`name`, `value`): `void`
+> __setAttribute__(`name`, `value`): `void`
 
 Defined in: [src/parsers/LinkParser.ts:794](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L794)
 
@@ -206,7 +206,7 @@ Attribute value
 
 ### toObject()
 
-> **toObject**(): [`LinkInfo`](../interfaces/LinkInfo.md)
+> __toObject__(): [`LinkInfo`](../interfaces/LinkInfo.md)
 
 Defined in: [src/parsers/LinkParser.ts:804](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L804)
 

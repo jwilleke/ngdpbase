@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Debug information about registered variables
 
 ### allVariables
 
-> **allVariables**: `string`[]
+> __allVariables__: `string`[]
 
 Defined in: [src/managers/VariableManager.ts:41](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/VariableManager.ts#L41)
 
@@ -22,7 +22,7 @@ Defined in: [src/managers/VariableManager.ts:41](https://github.com/jwilleke/ngd
 
 ### contextualVariables
 
-> **contextualVariables**: `string`[]
+> __contextualVariables__: `string`[]
 
 Defined in: [src/managers/VariableManager.ts:40](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/VariableManager.ts#L40)
 
@@ -30,7 +30,7 @@ Defined in: [src/managers/VariableManager.ts:40](https://github.com/jwilleke/ngd
 
 ### systemVariables
 
-> **systemVariables**: `string`[]
+> __systemVariables__: `string`[]
 
 Defined in: [src/managers/VariableManager.ts:39](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/VariableManager.ts#L39)
 
@@ -38,6 +38,6 @@ Defined in: [src/managers/VariableManager.ts:39](https://github.com/jwilleke/ngd
 
 ### totalVariables
 
-> **totalVariables**: `number`
+> __totalVariables__: `number`
 
 Defined in: [src/managers/VariableManager.ts:38](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/VariableManager.ts#L38)

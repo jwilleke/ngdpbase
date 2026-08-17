@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Locale utilities for handling browser locale and internationalization
 
 ### Constructor
 
-> **new default**(): `LocaleUtils`
+> __new default__(): `LocaleUtils`
 
 #### Returns
 
@@ -24,7 +24,7 @@ Locale utilities for handling browser locale and internationalization
 
 ### formatDate()
 
-> `static` **formatDate**(`date`, `locale`): `string`
+> `static` __formatDate__(`date`, `locale`): `string`
 
 Defined in: [src/utils/LocaleUtils.ts:162](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/LocaleUtils.ts#L162)
 
@@ -54,7 +54,7 @@ Formatted date string
 
 ### formatTime()
 
-> `static` **formatTime**(`date`, `locale`): `string`
+> `static` __formatTime__(`date`, `locale`): `string`
 
 Defined in: [src/utils/LocaleUtils.ts:183](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/LocaleUtils.ts#L183)
 
@@ -84,7 +84,7 @@ Formatted time string
 
 ### getDateFormatFromLocale()
 
-> `static` **getDateFormatFromLocale**(`locale`): `string`
+> `static` __getDateFormatFromLocale__(`locale`): `string`
 
 Defined in: [src/utils/LocaleUtils.ts:112](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/LocaleUtils.ts#L112)
 
@@ -108,7 +108,7 @@ Date format pattern for user preferences
 
 ### getDateFormatOptions()
 
-> `static` **getDateFormatOptions**(): `DateFormatOption`[]
+> `static` __getDateFormatOptions__(): `DateFormatOption`[]
 
 Defined in: [src/utils/LocaleUtils.ts:202](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/LocaleUtils.ts#L202)
 
@@ -124,7 +124,7 @@ Array of date format options
 
 ### getSupportedLocales()
 
-> `static` **getSupportedLocales**(): `SupportedLocale`[]
+> `static` __getSupportedLocales__(): `SupportedLocale`[]
 
 Defined in: [src/utils/LocaleUtils.ts:218](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/LocaleUtils.ts#L218)
 
@@ -140,7 +140,7 @@ Array of supported locale objects
 
 ### getTimeFormatFromLocale()
 
-> `static` **getTimeFormatFromLocale**(`locale`): `"12h"` \| `"24h"`
+> `static` __getTimeFormatFromLocale__(`locale`): `"12h"` \| `"24h"`
 
 Defined in: [src/utils/LocaleUtils.ts:141](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/LocaleUtils.ts#L141)
 
@@ -164,7 +164,7 @@ Time format preference ('12h' or '24h')
 
 ### getTimezoneDisplayName()
 
-> `static` **getTimezoneDisplayName**(`timezone`, `locale`): `string`
+> `static` __getTimezoneDisplayName__(`timezone`, `locale`): `string`
 
 Defined in: [src/utils/LocaleUtils.ts:257](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/LocaleUtils.ts#L257)
 
@@ -194,7 +194,7 @@ Human-readable timezone name
 
 ### isValidTimezone()
 
-> `static` **isValidTimezone**(`timezone`): `boolean`
+> `static` __isValidTimezone__(`timezone`): `boolean`
 
 Defined in: [src/utils/LocaleUtils.ts:241](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/LocaleUtils.ts#L241)
 
@@ -218,7 +218,7 @@ True if timezone is valid
 
 ### normalizeLocale()
 
-> `static` **normalizeLocale**(`locale`): `string`
+> `static` __normalizeLocale__(`locale`): `string`
 
 Defined in: [src/utils/LocaleUtils.ts:71](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/LocaleUtils.ts#L71)
 
@@ -242,7 +242,7 @@ Normalized locale (e.g., 'en-US', 'fr-FR')
 
 ### parseAcceptLanguage()
 
-> `static` **parseAcceptLanguage**(`acceptLanguage`): `string`
+> `static` __parseAcceptLanguage__(`acceptLanguage`): `string`
 
 Defined in: [src/utils/LocaleUtils.ts:43](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/LocaleUtils.ts#L43)
 

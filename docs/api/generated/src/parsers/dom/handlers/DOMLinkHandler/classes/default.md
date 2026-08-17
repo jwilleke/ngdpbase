@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ DOMLinkHandler class
 
 ### Constructor
 
-> **new default**(`engine`): `DOMLinkHandler`
+> __new default__(`engine`): `DOMLinkHandler`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:183](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L183)
 
@@ -36,7 +36,7 @@ WikiEngine instance
 
 ### createNodeFromExtract()
 
-> **createNodeFromExtract**(`element`, `_context`, `wikiDocument`): `Promise`\<[`LinkedomElement`](../../../WikiDocument/interfaces/LinkedomElement.md)\>
+> __createNodeFromExtract__(`element`, `_context`, `wikiDocument`): `Promise`\<[`LinkedomElement`](../../../WikiDocument/interfaces/LinkedomElement.md)\>
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:595](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L595)
 
@@ -89,7 +89,7 @@ const node = await handler.createNodeFromExtract(element, context, wikiDoc);
 
 ### getStatistics()
 
-> **getStatistics**(`wikiDocument`): [`LinkStatistics`](../interfaces/LinkStatistics.md)
+> __getStatistics__(`wikiDocument`): [`LinkStatistics`](../interfaces/LinkStatistics.md)
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:755](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L755)
 
@@ -113,7 +113,7 @@ Statistics
 
 ### initialize()
 
-> **initialize**(): `Promise`\<`void`\>
+> __initialize__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:194](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L194)
 
@@ -127,7 +127,7 @@ Initializes the handler
 
 ### loadInterWikiConfiguration()
 
-> **loadInterWikiConfiguration**(): `void`
+> __loadInterWikiConfiguration__(): `void`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:247](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L247)
 
@@ -141,7 +141,7 @@ Load InterWiki site configuration
 
 ### loadPageNames()
 
-> **loadPageNames**(): `Promise`\<`void`\>
+> __loadPageNames__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:217](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L217)
 
@@ -155,7 +155,7 @@ Load page names from PageManager
 
 ### processAnchorLink()
 
-> **processAnchorLink**(`linkElement`, `linkInfo`, `_context`): `void`
+> __processAnchorLink__(`linkElement`, `linkInfo`, `_context`): `void`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:561](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L561)
 
@@ -189,7 +189,7 @@ Rendering context (unused)
 
 ### processEmailLink()
 
-> **processEmailLink**(`linkElement`, `linkInfo`, `_context`): `void`
+> __processEmailLink__(`linkElement`, `linkInfo`, `_context`): `void`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:542](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L542)
 
@@ -223,7 +223,7 @@ Rendering context (unused)
 
 ### processExternalLink()
 
-> **processExternalLink**(`linkElement`, `linkInfo`, `_context`): `void`
+> __processExternalLink__(`linkElement`, `linkInfo`, `_context`): `void`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:461](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L461)
 
@@ -257,7 +257,7 @@ Rendering context (unused)
 
 ### processInternalLink()
 
-> **processInternalLink**(`linkElement`, `linkInfo`, `_context`): `void`
+> __processInternalLink__(`linkElement`, `linkInfo`, `_context`): `void`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:417](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L417)
 
@@ -291,7 +291,7 @@ Rendering context (unused)
 
 ### processInterWikiLink()
 
-> **processInterWikiLink**(`linkElement`, `linkInfo`, `_context`): `void`
+> __processInterWikiLink__(`linkElement`, `linkInfo`, `_context`): `void`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:486](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L486)
 
@@ -325,7 +325,7 @@ Rendering context (unused)
 
 ### processLinkByType()
 
-> **processLinkByType**(`linkElement`, `linkInfo`, `linkType`, `context`): `Promise`\<`void`\>
+> __processLinkByType__(`linkElement`, `linkInfo`, `linkType`, `context`): `Promise`\<`void`\>
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:388](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L388)
 
@@ -365,7 +365,7 @@ Rendering context
 
 ### processLinks()
 
-> **processLinks**(`wikiDocument`, `context`): `Promise`\<[`default`](../../../WikiDocument/classes/default.md)\>
+> __processLinks__(`wikiDocument`, `context`): `Promise`\<[`default`](../../../WikiDocument/classes/default.md)\>
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:309](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L309)
 
@@ -398,7 +398,7 @@ Updated WikiDocument
 
 ### refreshPageNames()
 
-> **refreshPageNames**(): `Promise`\<`void`\>
+> __refreshPageNames__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:801](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L801)
 

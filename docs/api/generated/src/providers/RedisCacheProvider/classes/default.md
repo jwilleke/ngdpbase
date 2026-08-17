@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,6 +14,7 @@ Provides distributed caching using Redis.
 Suitable for multi-instance deployments and production environments.
 
 Configuration keys (all lowercase):
+
 - ngdpbase.cache.provider.redis.url - Redis connection URL
 - ngdpbase.cache.provider.redis.keyprefix - Key prefix for all cache keys
 - ngdpbase.cache.provider.redis.enablecluster - Enable Redis Cluster support
@@ -32,7 +33,7 @@ TODO: Add pub/sub for cache invalidation across instances
 
 ### Constructor
 
-> **new default**(`engine`): `RedisCacheProvider`
+> __new default__(`engine`): `RedisCacheProvider`
 
 Defined in: [src/providers/RedisCacheProvider.ts:38](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/RedisCacheProvider.ts#L38)
 
@@ -54,7 +55,7 @@ Defined in: [src/providers/RedisCacheProvider.ts:38](https://github.com/jwilleke
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/providers/BaseCacheProvider.ts:67](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L67)
 
@@ -68,7 +69,7 @@ Reference to the wiki engine instance
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/providers/BaseCacheProvider.ts:72](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L72)
 
@@ -82,7 +83,7 @@ Whether the provider has been initialized
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../../BaseCacheProvider/interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../../BaseCacheProvider/interfaces/BackupData.md)\>
 
 Defined in: [src/providers/BaseCacheProvider.ts:166](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L166)
 
@@ -102,7 +103,7 @@ Backup data
 
 ### clear()
 
-> **clear**(`_pattern?`): `Promise`\<`void`\>
+> __clear__(`_pattern?`): `Promise`\<`void`\>
 
 Defined in: [src/providers/RedisCacheProvider.ts:156](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/RedisCacheProvider.ts#L156)
 
@@ -128,7 +129,7 @@ Optional pattern to match keys
 
 ### close()
 
-> **close**(): `Promise`\<`void`\>
+> __close__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/RedisCacheProvider.ts:194](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/RedisCacheProvider.ts#L194)
 
@@ -146,7 +147,7 @@ Close/cleanup the cache provider
 
 ### del()
 
-> **del**(`_keys`): `Promise`\<`void`\>
+> __del__(`_keys`): `Promise`\<`void`\>
 
 Defined in: [src/providers/RedisCacheProvider.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/RedisCacheProvider.ts#L143)
 
@@ -172,7 +173,7 @@ Single key or array of keys to delete
 
 ### get()
 
-> **get**\<`T`\>(`_key`): `Promise`\<`T` \| `undefined`\>
+> __get__\<`T`\>(`_key`): `Promise`\<`T` \| `undefined`\>
 
 Defined in: [src/providers/RedisCacheProvider.ts:107](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/RedisCacheProvider.ts#L107)
 
@@ -206,7 +207,7 @@ The cached value or undefined if not found
 
 ### getProviderInfo()
 
-> **getProviderInfo**(): [`ProviderInfo`](../../BaseCacheProvider/interfaces/ProviderInfo.md)
+> __getProviderInfo__(): [`ProviderInfo`](../../BaseCacheProvider/interfaces/ProviderInfo.md)
 
 Defined in: [src/providers/RedisCacheProvider.ts:91](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/RedisCacheProvider.ts#L91)
 
@@ -226,7 +227,7 @@ Provider metadata
 
 ### initialize()
 
-> **initialize**(): `Promise`\<`void`\>
+> __initialize__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/RedisCacheProvider.ts:48](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/RedisCacheProvider.ts#L48)
 
@@ -244,7 +245,7 @@ Initialize the Redis provider
 
 ### isHealthy()
 
-> **isHealthy**(): `Promise`\<`boolean`\>
+> __isHealthy__(): `Promise`\<`boolean`\>
 
 Defined in: [src/providers/RedisCacheProvider.ts:184](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/RedisCacheProvider.ts#L184)
 
@@ -264,7 +265,7 @@ True if healthy
 
 ### keys()
 
-> **keys**(`_pattern?`): `Promise`\<`string`[]\>
+> __keys__(`_pattern?`): `Promise`\<`string`[]\>
 
 Defined in: [src/providers/RedisCacheProvider.ts:166](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/RedisCacheProvider.ts#L166)
 
@@ -292,7 +293,7 @@ Array of matching keys
 
 ### restore()
 
-> **restore**(`_backupData`): `Promise`\<`void`\>
+> __restore__(`_backupData`): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseCacheProvider.ts:179](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseCacheProvider.ts#L179)
 
@@ -318,7 +319,7 @@ Backup data
 
 ### set()
 
-> **set**\<`T`\>(`_key`, `_value`, `_ttlSec?`): `Promise`\<`void`\>
+> __set__\<`T`\>(`_key`, `_value`, `_ttlSec?`): `Promise`\<`void`\>
 
 Defined in: [src/providers/RedisCacheProvider.ts:126](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/RedisCacheProvider.ts#L126)
 
@@ -362,7 +363,7 @@ Time to live in seconds
 
 ### stats()
 
-> **stats**(): `Promise`\<[`CacheStats`](../../BaseCacheProvider/interfaces/CacheStats.md)\>
+> __stats__(): `Promise`\<[`CacheStats`](../../BaseCacheProvider/interfaces/CacheStats.md)\>
 
 Defined in: [src/providers/RedisCacheProvider.ts:175](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/RedisCacheProvider.ts#L175)
 

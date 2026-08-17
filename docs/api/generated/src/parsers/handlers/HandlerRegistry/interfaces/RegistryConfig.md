@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Handler registry configuration
 
 ### allowDuplicatePriorities
 
-> **allowDuplicatePriorities**: `boolean`
+> __allowDuplicatePriorities__: `boolean`
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:23](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L23)
 
@@ -22,7 +22,7 @@ Defined in: [src/parsers/handlers/HandlerRegistry.ts:23](https://github.com/jwil
 
 ### defaultTimeout
 
-> **defaultTimeout**: `number`
+> __defaultTimeout__: `number`
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:26](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L26)
 
@@ -30,7 +30,7 @@ Defined in: [src/parsers/handlers/HandlerRegistry.ts:26](https://github.com/jwil
 
 ### enableConflictDetection
 
-> **enableConflictDetection**: `boolean`
+> __enableConflictDetection__: `boolean`
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:25](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L25)
 
@@ -38,7 +38,7 @@ Defined in: [src/parsers/handlers/HandlerRegistry.ts:25](https://github.com/jwil
 
 ### enableDependencyResolution
 
-> **enableDependencyResolution**: `boolean`
+> __enableDependencyResolution__: `boolean`
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:24](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L24)
 
@@ -46,6 +46,6 @@ Defined in: [src/parsers/handlers/HandlerRegistry.ts:24](https://github.com/jwil
 
 ### maxHandlers
 
-> **maxHandlers**: `number`
+> __maxHandlers__: `number`
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:22](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L22)

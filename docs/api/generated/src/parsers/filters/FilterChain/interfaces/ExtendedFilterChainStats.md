@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Extended filter chain statistics
 
 ### chain
 
-> **chain**: [`ChainStatsSummary`](ChainStatsSummary.md)
+> __chain__: [`ChainStatsSummary`](ChainStatsSummary.md)
 
 Defined in: [src/parsers/filters/FilterChain.ts:132](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L132)
 
@@ -22,35 +22,35 @@ Defined in: [src/parsers/filters/FilterChain.ts:132](https://github.com/jwilleke
 
 ### configuration
 
-> **configuration**: `object`
+> __configuration__: `object`
 
 Defined in: [src/parsers/filters/FilterChain.ts:134](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L134)
 
 #### enabled
 
-> **enabled**: `boolean`
+> __enabled__: `boolean`
 
 #### enableProfiling
 
-> **enableProfiling**: `boolean`
+> __enableProfiling__: `boolean`
 
 #### failOnError
 
-> **failOnError**: `boolean`
+> __failOnError__: `boolean`
 
 #### maxFilters
 
-> **maxFilters**: `number`
+> __maxFilters__: `number`
 
 #### timeout
 
-> **timeout**: `number`
+> __timeout__: `number`
 
 ***
 
 ### filters
 
-> **filters**: `Record`\<`string`, [`FilterExecutionStats`](FilterExecutionStats.md) & `object`\>
+> __filters__: `Record`\<`string`, [`FilterExecutionStats`](FilterExecutionStats.md) & `object`\>
 
 Defined in: [src/parsers/filters/FilterChain.ts:133](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L133)
 
@@ -58,6 +58,6 @@ Defined in: [src/parsers/filters/FilterChain.ts:133](https://github.com/jwilleke
 
 ### performance
 
-> **performance**: \{ `alertThresholds`: [`AlertThresholds`](AlertThresholds.md); `recentExecutionCount`: `number`; \} \| `null`
+> __performance__: \{ `alertThresholds`: [`AlertThresholds`](AlertThresholds.md); `recentExecutionCount`: `number`; \} \| `null`
 
 Defined in: [src/parsers/filters/FilterChain.ts:141](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L141)

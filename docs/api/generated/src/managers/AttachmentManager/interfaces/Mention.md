@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Mention object (WebPage reference)
 
 ### @type
 
-> **@type**: `string`
+> __@type__: `string`
 
 Defined in: [src/managers/AttachmentManager.ts:68](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L68)
 
@@ -22,7 +22,7 @@ Defined in: [src/managers/AttachmentManager.ts:68](https://github.com/jwilleke/n
 
 ### name
 
-> **name**: `string`
+> __name__: `string`
 
 Defined in: [src/managers/AttachmentManager.ts:69](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L69)
 
@@ -30,6 +30,6 @@ Defined in: [src/managers/AttachmentManager.ts:69](https://github.com/jwilleke/n
 
 ### url
 
-> **url**: `string`
+> __url__: `string`
 
 Defined in: [src/managers/AttachmentManager.ts:70](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L70)

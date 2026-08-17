@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -34,7 +34,7 @@ notificationManager.addNotification({ title: 'Welcome!', level: 'info' });
 
 ### Constructor
 
-> **new default**(`engine`): `NotificationManager`
+> __new default__(`engine`): `NotificationManager`
 
 Defined in: [src/managers/NotificationManager.ts:94](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L94)
 
@@ -60,7 +60,7 @@ The wiki engine instance
 
 ### config?
 
-> `protected` `optional` **config**: `Record`\<`string`, `unknown`\>
+> `protected` `optional` __config__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/managers/BaseManager.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L61)
 
@@ -74,7 +74,7 @@ Configuration passed during initialization
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L54)
 
@@ -88,7 +88,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/managers/BaseManager.ts:57](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L57)
 
@@ -102,7 +102,7 @@ Initialization status flag
 
 ### addNotification()
 
-> **addNotification**(`notification`): `Promise`\<`string`\>
+> __addNotification__(`notification`): `Promise`\<`string`\>
 
 Defined in: [src/managers/NotificationManager.ts:253](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L253)
 
@@ -126,7 +126,7 @@ Notification ID
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
 
 Defined in: [src/managers/BaseManager.ts:169](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L169)
 
@@ -168,7 +168,7 @@ async backup(): Promise<BackupData> {
 
 ### cleanupExpiredNotifications()
 
-> **cleanupExpiredNotifications**(): `Promise`\<`void`\>
+> __cleanupExpiredNotifications__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/NotificationManager.ts:356](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L356)
 
@@ -182,7 +182,7 @@ Clean up expired notifications
 
 ### clearAllActive()
 
-> **clearAllActive**(): `Promise`\<`number`\>
+> __clearAllActive__(): `Promise`\<`number`\>
 
 Defined in: [src/managers/NotificationManager.ts:379](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L379)
 
@@ -198,7 +198,7 @@ Number of cleared notifications
 
 ### createMaintenanceNotification()
 
-> **createMaintenanceNotification**(`enabled`, `adminUsername`, `_config`): `Promise`\<`string`\>
+> __createMaintenanceNotification__(`enabled`, `adminUsername`, `_config`): `Promise`\<`string`\>
 
 Defined in: [src/managers/NotificationManager.ts:315](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L315)
 
@@ -232,7 +232,7 @@ Notification ID
 
 ### createNotification()
 
-> **createNotification**(`notification`): `Promise`\<`string`\>
+> __createNotification__(`notification`): `Promise`\<`string`\>
 
 Defined in: [src/managers/NotificationManager.ts:220](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L220)
 
@@ -256,7 +256,7 @@ Notification ID
 
 ### dismissNotification()
 
-> **dismissNotification**(`notificationId`, `username`): `Promise`\<`boolean`\>
+> __dismissNotification__(`notificationId`, `username`): `Promise`\<`boolean`\>
 
 Defined in: [src/managers/NotificationManager.ts:291](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L291)
 
@@ -286,7 +286,7 @@ Success status
 
 ### getAllNotifications()
 
-> **getAllNotifications**(`includeExpired`): [`Notification`](../interfaces/Notification.md)[]
+> __getAllNotifications__(`includeExpired`): [`Notification`](../interfaces/Notification.md)[]
 
 Defined in: [src/managers/NotificationManager.ts:339](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L339)
 
@@ -310,7 +310,7 @@ Array of all notifications
 
 ### getEngine()
 
-> **getEngine**(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> __getEngine__(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:125](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L125)
 
@@ -336,7 +336,7 @@ const config = this.getEngine().getConfig();
 
 ### getStats()
 
-> **getStats**(): [`NotificationStats`](../interfaces/NotificationStats.md)
+> __getStats__(): [`NotificationStats`](../interfaces/NotificationStats.md)
 
 Defined in: [src/managers/NotificationManager.ts:405](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L405)
 
@@ -352,7 +352,7 @@ Statistics object
 
 ### getUserNotifications()
 
-> **getUserNotifications**(`username`, `includeExpired`): [`Notification`](../interfaces/Notification.md)[]
+> __getUserNotifications__(`username`, `includeExpired`): [`Notification`](../interfaces/Notification.md)[]
 
 Defined in: [src/managers/NotificationManager.ts:263](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L263)
 
@@ -382,7 +382,7 @@ Array of notifications
 
 ### initialize()
 
-> **initialize**(`config?`): `Promise`\<`void`\>
+> __initialize__(`config?`): `Promise`\<`void`\>
 
 Defined in: [src/managers/NotificationManager.ts:110](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L110)
 
@@ -410,7 +410,7 @@ Configuration object
 
 ### isInitialized()
 
-> **isInitialized**(): `boolean`
+> __isInitialized__(): `boolean`
 
 Defined in: [src/managers/BaseManager.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L113)
 
@@ -438,7 +438,7 @@ if (manager.isInitialized()) {
 
 ### restore()
 
-> **restore**(`backupData`): `Promise`\<`void`\>
+> __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:198](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L198)
 
@@ -483,7 +483,7 @@ async restore(backupData: BackupData): Promise<void> {
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/NotificationManager.ts:435](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L435)
 

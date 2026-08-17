@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -21,7 +21,7 @@ Provides a consistent interface for different search backend implementations.
 
 ### Constructor
 
-> **new default**(`engine`): `BaseSearchProvider`
+> __new default__(`engine`): `BaseSearchProvider`
 
 Defined in: [src/providers/BaseSearchProvider.ts:150](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L150)
 
@@ -43,7 +43,7 @@ Reference to the WikiEngine instance
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/providers/BaseSearchProvider.ts:140](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L140)
 
@@ -53,7 +53,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/providers/BaseSearchProvider.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L143)
 
@@ -63,7 +63,7 @@ Whether provider has been initialized
 
 ### advancedSearch()
 
-> `abstract` **advancedSearch**(`criteria?`): `Promise`\<[`SearchResult`](../interfaces/SearchResult.md)[]\>
+> `abstract` __advancedSearch__(`criteria?`): `Promise`\<[`SearchResult`](../interfaces/SearchResult.md)[]\>
 
 Defined in: [src/providers/BaseSearchProvider.ts:217](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L217)
 
@@ -90,7 +90,7 @@ Promise resolving to array of search results
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../interfaces/BackupData.md)\>
 
 Defined in: [src/providers/BaseSearchProvider.ts:364](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L364)
 
@@ -110,7 +110,7 @@ Promise resolving to backup data object
 
 ### buildIndex()
 
-> `abstract` **buildIndex**(): `Promise`\<`void`\>
+> `abstract` __buildIndex__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseSearchProvider.ts:192](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L192)
 
@@ -129,7 +129,7 @@ Promise that resolves when index building is complete
 
 ### close()
 
-> `abstract` **close**(): `Promise`\<`void`\>
+> `abstract` __close__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseSearchProvider.ts:353](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L353)
 
@@ -148,7 +148,7 @@ Promise that resolves when cleanup is complete
 
 ### getAllCategories()
 
-> `abstract` **getAllCategories**(): `Promise`\<`string`[]\>
+> `abstract` __getAllCategories__(): `Promise`\<`string`[]\>
 
 Defined in: [src/providers/BaseSearchProvider.ts:277](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L277)
 
@@ -167,7 +167,7 @@ Promise resolving to array of unique category names
 
 ### getAllUserKeywords()
 
-> `abstract` **getAllUserKeywords**(): `Promise`\<`string`[]\>
+> `abstract` __getAllUserKeywords__(): `Promise`\<`string`[]\>
 
 Defined in: [src/providers/BaseSearchProvider.ts:288](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L288)
 
@@ -186,7 +186,7 @@ Promise resolving to array of unique keywords
 
 ### getDocumentCount()
 
-> `abstract` **getDocumentCount**(): `Promise`\<`number`\>
+> `abstract` __getDocumentCount__(): `Promise`\<`number`\>
 
 Defined in: [src/providers/BaseSearchProvider.ts:331](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L331)
 
@@ -204,7 +204,7 @@ Promise resolving to document count
 
 ### getProviderInfo()
 
-> **getProviderInfo**(): [`ProviderInfo`](../interfaces/ProviderInfo.md)
+> __getProviderInfo__(): [`ProviderInfo`](../interfaces/ProviderInfo.md)
 
 Defined in: [src/providers/BaseSearchProvider.ts:174](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L174)
 
@@ -223,7 +223,7 @@ Provider metadata
 
 ### getStatistics()
 
-> `abstract` **getStatistics**(): `Promise`\<[`SearchStatistics`](../interfaces/SearchStatistics.md)\>
+> `abstract` __getStatistics__(): `Promise`\<[`SearchStatistics`](../interfaces/SearchStatistics.md)\>
 
 Defined in: [src/providers/BaseSearchProvider.ts:321](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L321)
 
@@ -242,7 +242,7 @@ Promise resolving to search statistics object
 
 ### getSuggestions()
 
-> `abstract` **getSuggestions**(`partial`): `Promise`\<`string`[]\>
+> `abstract` __getSuggestions__(`partial`): `Promise`\<`string`[]\>
 
 Defined in: [src/providers/BaseSearchProvider.ts:229](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L229)
 
@@ -269,7 +269,7 @@ Promise resolving to array of suggested completions
 
 ### initialize()
 
-> `abstract` **initialize**(): `Promise`\<`void`\>
+> `abstract` __initialize__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseSearchProvider.ts:164](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L164)
 
@@ -288,7 +288,7 @@ Promise that resolves when initialization is complete
 
 ### isHealthy()
 
-> `abstract` **isHealthy**(): `Promise`\<`boolean`\>
+> `abstract` __isHealthy__(): `Promise`\<`boolean`\>
 
 Defined in: [src/providers/BaseSearchProvider.ts:342](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L342)
 
@@ -307,7 +307,7 @@ Promise resolving to true if healthy, false otherwise
 
 ### removePageFromIndex()
 
-> `abstract` **removePageFromIndex**(`pageName`): `Promise`\<`void`\>
+> `abstract` __removePageFromIndex__(`pageName`): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseSearchProvider.ts:266](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L266)
 
@@ -333,7 +333,7 @@ Promise that resolves when removal is complete
 
 ### restore()
 
-> **restore**(`_backupData`): `Promise`\<`void`\>
+> __restore__(`_backupData`): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseSearchProvider.ts:382](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L382)
 
@@ -361,7 +361,7 @@ Promise that resolves when restore is complete
 
 ### search()
 
-> `abstract` **search**(`query`, `options?`): `Promise`\<[`SearchResult`](../interfaces/SearchResult.md)[]\>
+> `abstract` __search__(`query`, `options?`): `Promise`\<[`SearchResult`](../interfaces/SearchResult.md)[]\>
 
 Defined in: [src/providers/BaseSearchProvider.ts:205](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L205)
 
@@ -394,7 +394,7 @@ Promise resolving to array of search results
 
 ### searchByCategory()
 
-> `abstract` **searchByCategory**(`category`): `Promise`\<[`SearchResult`](../interfaces/SearchResult.md)[]\>
+> `abstract` __searchByCategory__(`category`): `Promise`\<[`SearchResult`](../interfaces/SearchResult.md)[]\>
 
 Defined in: [src/providers/BaseSearchProvider.ts:299](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L299)
 
@@ -420,7 +420,7 @@ Promise resolving to array of pages in the category
 
 ### searchByUserKeywords()
 
-> `abstract` **searchByUserKeywords**(`keyword`): `Promise`\<[`SearchResult`](../interfaces/SearchResult.md)[]\>
+> `abstract` __searchByUserKeywords__(`keyword`): `Promise`\<[`SearchResult`](../interfaces/SearchResult.md)[]\>
 
 Defined in: [src/providers/BaseSearchProvider.ts:310](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L310)
 
@@ -446,7 +446,7 @@ Promise resolving to array of pages with the keyword
 
 ### suggestSimilarPages()
 
-> `abstract` **suggestSimilarPages**(`pageName`, `limit?`): `Promise`\<[`SearchResult`](../interfaces/SearchResult.md)[]\>
+> `abstract` __suggestSimilarPages__(`pageName`, `limit?`): `Promise`\<[`SearchResult`](../interfaces/SearchResult.md)[]\>
 
 Defined in: [src/providers/BaseSearchProvider.ts:242](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L242)
 
@@ -479,7 +479,7 @@ Promise resolving to array of suggested similar pages
 
 ### updatePageInIndex()
 
-> `abstract` **updatePageInIndex**(`pageName`, `pageData`): `Promise`\<`void`\>
+> `abstract` __updatePageInIndex__(`pageName`, `pageData`): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseSearchProvider.ts:255](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L255)
 

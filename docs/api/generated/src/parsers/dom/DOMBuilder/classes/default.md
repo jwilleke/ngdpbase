@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ DOMBuilder class
 
 ### Constructor
 
-> **new default**(`wikiDocument`): `DOMBuilder`
+> __new default__(`wikiDocument`): `DOMBuilder`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:142](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L142)
 
@@ -36,7 +36,7 @@ Target WikiDocument
 
 ### adjustListStack()
 
-> **adjustListStack**(`targetLevel`, `isOrdered`): `void`
+> __adjustListStack__(`targetLevel`, `isOrdered`): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:522](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L522)
 
@@ -60,7 +60,7 @@ Adjusts the list stack to match the desired level
 
 ### buildFromTokens()
 
-> **buildFromTokens**(`tokens`): [`default`](../../WikiDocument/classes/default.md)
+> __buildFromTokens__(`tokens`): [`default`](../../WikiDocument/classes/default.md)
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:156](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L156)
 
@@ -84,7 +84,7 @@ The WikiDocument with built DOM
 
 ### closeAllLists()
 
-> **closeAllLists**(): `void`
+> __closeAllLists__(): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:582](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L582)
 
@@ -98,7 +98,7 @@ Closes all open lists
 
 ### closeCurrentParagraph()
 
-> **closeCurrentParagraph**(): `void`
+> __closeCurrentParagraph__(): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:515](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L515)
 
@@ -112,7 +112,7 @@ Closes the current paragraph context
 
 ### closeCurrentTable()
 
-> **closeCurrentTable**(): `void`
+> __closeCurrentTable__(): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:589](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L589)
 
@@ -126,7 +126,7 @@ Closes the current table context
 
 ### ensureParagraph()
 
-> **ensureParagraph**(): `void`
+> __ensureParagraph__(): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:498](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L498)
 
@@ -140,7 +140,7 @@ Ensures a paragraph context exists for inline content
 
 ### handleBold()
 
-> **handleBold**(`token`): `void`
+> __handleBold__(`token`): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:423](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L423)
 
@@ -160,7 +160,7 @@ Handles bold text __text__
 
 ### handleCodeBlock()
 
-> **handleCodeBlock**(`token`): `void`
+> __handleCodeBlock__(`token`): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:453](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L453)
 
@@ -180,7 +180,7 @@ Handles code blocks {{{code}}}
 
 ### handleCodeInline()
 
-> **handleCodeInline**(`token`): `void`
+> __handleCodeInline__(`token`): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:443](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L443)
 
@@ -200,7 +200,7 @@ Handles inline code {{text}}
 
 ### handleComment()
 
-> **handleComment**(`token`): `void`
+> __handleComment__(`token`): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:467](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L467)
 
@@ -220,7 +220,7 @@ Handles HTML comments <!-- comment -->
 
 ### handleEscaped()
 
-> **handleEscaped**(`token`): `void`
+> __handleEscaped__(`token`): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:260](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L260)
 
@@ -241,7 +241,7 @@ This is literal text that should not be parsed
 
 ### handleHeading()
 
-> **handleHeading**(`token`): `void`
+> __handleHeading__(`token`): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:346](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L346)
 
@@ -261,7 +261,7 @@ Handles headings !, !!, !!!
 
 ### handleInterWiki()
 
-> **handleInterWiki**(`token`): `void`
+> __handleInterWiki__(`token`): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:332](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L332)
 
@@ -281,7 +281,7 @@ Handles interwiki links [Wiki:Page]
 
 ### handleItalic()
 
-> **handleItalic**(`token`): `void`
+> __handleItalic__(`token`): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:433](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L433)
 
@@ -301,7 +301,7 @@ Handles italic text ''text''
 
 ### handleLink()
 
-> **handleLink**(`token`): `void`
+> __handleLink__(`token`): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:318](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L318)
 
@@ -321,7 +321,7 @@ Handles links [link|text]
 
 ### handleListItem()
 
-> **handleListItem**(`token`): `void`
+> __handleListItem__(`token`): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:369](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L369)
 
@@ -341,7 +341,7 @@ Handles list items *, #
 
 ### handleNewline()
 
-> **handleNewline**(`_token`): `void`
+> __handleNewline__(`_token`): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:480](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L480)
 
@@ -361,7 +361,7 @@ Handles newlines
 
 ### handlePlugin()
 
-> **handlePlugin**(`token`): `void`
+> __handlePlugin__(`token`): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:283](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L283)
 
@@ -382,7 +382,7 @@ Creates inline span element to allow plugins within paragraphs
 
 ### handleTableCell()
 
-> **handleTableCell**(`token`): `void`
+> __handleTableCell__(`token`): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:393](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L393)
 
@@ -402,7 +402,7 @@ Handles table cells | cell |
 
 ### handleText()
 
-> **handleText**(`token`): `void`
+> __handleText__(`token`): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:250](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L250)
 
@@ -422,7 +422,7 @@ Handles plain text tokens
 
 ### handleVariable()
 
-> **handleVariable**(`token`): `void`
+> __handleVariable__(`token`): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:269](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L269)
 
@@ -442,7 +442,7 @@ Handles variables {$varname}
 
 ### handleWikiTag()
 
-> **handleWikiTag**(`token`): `void`
+> __handleWikiTag__(`token`): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:303](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L303)
 
@@ -462,7 +462,7 @@ Handles wiki tags [tag]
 
 ### processToken()
 
-> **processToken**(`token`): `void`
+> __processToken__(`token`): `void`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:185](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L185)
 

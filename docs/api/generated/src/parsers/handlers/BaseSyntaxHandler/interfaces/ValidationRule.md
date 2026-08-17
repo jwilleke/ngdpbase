@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Parameter validation rule
 
 ### default?
 
-> `optional` **default**: `unknown`
+> `optional` __default__: `unknown`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:67](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L67)
 
@@ -22,7 +22,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:67](https://github.com/jw
 
 ### max?
 
-> `optional` **max**: `number`
+> `optional` __max__: `number`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:69](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L69)
 
@@ -30,7 +30,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:69](https://github.com/jw
 
 ### min?
 
-> `optional` **min**: `number`
+> `optional` __min__: `number`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:68](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L68)
 
@@ -38,7 +38,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:68](https://github.com/jw
 
 ### pattern?
 
-> `optional` **pattern**: `string`
+> `optional` __pattern__: `string`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:70](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L70)
 
@@ -46,7 +46,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:70](https://github.com/jw
 
 ### required?
 
-> `optional` **required**: `boolean`
+> `optional` __required__: `boolean`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:66](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L66)
 
@@ -54,6 +54,6 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:66](https://github.com/jw
 
 ### type?
 
-> `optional` **type**: `"string"` \| `"number"` \| `"boolean"` \| `"object"`
+> `optional` __type__: `"string"` \| `"number"` \| `"boolean"` \| `"object"`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:65](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L65)

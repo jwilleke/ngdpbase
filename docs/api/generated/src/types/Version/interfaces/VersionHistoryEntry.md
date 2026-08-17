@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -16,7 +16,7 @@ Simplified version info for history listings.
 
 ### author
 
-> **author**: `string`
+> __author__: `string`
 
 Defined in: [src/types/Version.ts:142](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L142)
 
@@ -26,7 +26,7 @@ Author user ID or 'system'
 
 ### changeType
 
-> **changeType**: `"create"` \| `"update"` \| `"minor"` \| `"major"`
+> __changeType__: `"create"` \| `"update"` \| `"minor"` \| `"major"`
 
 Defined in: [src/types/Version.ts:148](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L148)
 
@@ -36,7 +36,7 @@ Change type
 
 ### compressed
 
-> **compressed**: `boolean`
+> __compressed__: `boolean`
 
 Defined in: [src/types/Version.ts:157](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L157)
 
@@ -46,7 +46,7 @@ Whether compressed
 
 ### contentSize
 
-> **contentSize**: `number`
+> __contentSize__: `number`
 
 Defined in: [src/types/Version.ts:154](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L154)
 
@@ -56,7 +56,7 @@ Content size in bytes
 
 ### message?
 
-> `optional` **message**: `string`
+> `optional` __message__: `string`
 
 Defined in: [src/types/Version.ts:151](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L151)
 
@@ -66,7 +66,7 @@ Change description
 
 ### timestamp
 
-> **timestamp**: `string`
+> __timestamp__: `string`
 
 Defined in: [src/types/Version.ts:145](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L145)
 
@@ -76,7 +76,7 @@ Timestamp (ISO 8601 format)
 
 ### version
 
-> **version**: `number`
+> __version__: `number`
 
 Defined in: [src/types/Version.ts:139](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L139)
 

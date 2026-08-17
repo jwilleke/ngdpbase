@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -19,7 +19,7 @@ Used when caching is disabled or for testing
 
 ### Constructor
 
-> **new default**(): `NullCacheAdapter`
+> __new default__(): `NullCacheAdapter`
 
 Defined in: [src/cache/NullCacheAdapter.ts:8](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/NullCacheAdapter.ts#L8)
 
@@ -35,7 +35,7 @@ Defined in: [src/cache/NullCacheAdapter.ts:8](https://github.com/jwilleke/ngdpba
 
 ### clear()
 
-> **clear**(): `Promise`\<`void`\>
+> __clear__(): `Promise`\<`void`\>
 
 Defined in: [src/cache/NullCacheAdapter.ts:24](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/NullCacheAdapter.ts#L24)
 
@@ -53,7 +53,7 @@ Clear cache entries
 
 ### close()
 
-> **close**(): `Promise`\<`void`\>
+> __close__(): `Promise`\<`void`\>
 
 Defined in: [src/cache/NullCacheAdapter.ts:47](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/NullCacheAdapter.ts#L47)
 
@@ -71,7 +71,7 @@ Close/cleanup the cache adapter
 
 ### del()
 
-> **del**(): `Promise`\<`void`\>
+> __del__(): `Promise`\<`void`\>
 
 Defined in: [src/cache/NullCacheAdapter.ts:20](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/NullCacheAdapter.ts#L20)
 
@@ -89,7 +89,7 @@ Delete one or more keys from the cache
 
 ### get()
 
-> **get**\<`T`\>(): `Promise`\<`T` \| `undefined`\>
+> __get__\<`T`\>(): `Promise`\<`T` \| `undefined`\>
 
 Defined in: [src/cache/NullCacheAdapter.ts:12](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/NullCacheAdapter.ts#L12)
 
@@ -115,7 +115,7 @@ The cached value or undefined if not found
 
 ### isHealthy()
 
-> **isHealthy**(): `Promise`\<`boolean`\>
+> __isHealthy__(): `Promise`\<`boolean`\>
 
 Defined in: [src/cache/NullCacheAdapter.ts:43](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/NullCacheAdapter.ts#L43)
 
@@ -135,7 +135,7 @@ True if healthy
 
 ### keys()
 
-> **keys**(): `Promise`\<`string`[]\>
+> __keys__(): `Promise`\<`string`[]\>
 
 Defined in: [src/cache/NullCacheAdapter.ts:28](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/NullCacheAdapter.ts#L28)
 
@@ -155,7 +155,7 @@ Array of matching keys
 
 ### set()
 
-> **set**(): `Promise`\<`void`\>
+> __set__(): `Promise`\<`void`\>
 
 Defined in: [src/cache/NullCacheAdapter.ts:16](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/NullCacheAdapter.ts#L16)
 
@@ -173,7 +173,7 @@ Set a value in the cache
 
 ### stats()
 
-> **stats**(): `Promise`\<[`CacheStats`](../../ICacheAdapter/interfaces/CacheStats.md)\>
+> __stats__(): `Promise`\<[`CacheStats`](../../ICacheAdapter/interfaces/CacheStats.md)\>
 
 Defined in: [src/cache/NullCacheAdapter.ts:33](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/NullCacheAdapter.ts#L33)
 

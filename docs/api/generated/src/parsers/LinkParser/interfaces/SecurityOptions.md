@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Security configuration options
 
 ### preventXSS
 
-> **preventXSS**: `boolean`
+> __preventXSS__: `boolean`
 
 Defined in: [src/parsers/LinkParser.ts:81](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L81)
 
@@ -24,7 +24,7 @@ Prevent XSS attacks
 
 ### sanitizeAttributes
 
-> **sanitizeAttributes**: `boolean`
+> __sanitizeAttributes__: `boolean`
 
 Defined in: [src/parsers/LinkParser.ts:79](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L79)
 
@@ -34,7 +34,7 @@ Sanitize HTML attributes
 
 ### validateUrls
 
-> **validateUrls**: `boolean`
+> __validateUrls__: `boolean`
 
 Defined in: [src/parsers/LinkParser.ts:77](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L77)
 

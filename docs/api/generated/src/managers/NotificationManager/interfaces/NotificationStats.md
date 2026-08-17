@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Notification statistics
 
 ### active
 
-> **active**: `number`
+> __active__: `number`
 
 Defined in: [src/managers/NotificationManager.ts:40](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L40)
 
@@ -22,7 +22,7 @@ Defined in: [src/managers/NotificationManager.ts:40](https://github.com/jwilleke
 
 ### byLevel
 
-> **byLevel**: `Record`\<`string`, `number`\>
+> __byLevel__: `Record`\<`string`, `number`\>
 
 Defined in: [src/managers/NotificationManager.ts:43](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L43)
 
@@ -30,7 +30,7 @@ Defined in: [src/managers/NotificationManager.ts:43](https://github.com/jwilleke
 
 ### byType
 
-> **byType**: `Record`\<`string`, `number`\>
+> __byType__: `Record`\<`string`, `number`\>
 
 Defined in: [src/managers/NotificationManager.ts:42](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L42)
 
@@ -38,7 +38,7 @@ Defined in: [src/managers/NotificationManager.ts:42](https://github.com/jwilleke
 
 ### expired
 
-> **expired**: `number`
+> __expired__: `number`
 
 Defined in: [src/managers/NotificationManager.ts:41](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L41)
 
@@ -46,6 +46,6 @@ Defined in: [src/managers/NotificationManager.ts:41](https://github.com/jwilleke
 
 ### total
 
-> **total**: `number`
+> __total__: `number`
 
 Defined in: [src/managers/NotificationManager.ts:39](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/NotificationManager.ts#L39)

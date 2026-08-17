@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -22,7 +22,7 @@ Additional custom preferences
 
 ### display.dateformat?
 
-> `optional` **display.dateformat**: `string`
+> `optional` __display.dateformat__: `string`
 
 Defined in: [src/types/User.ts:36](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L36)
 
@@ -32,7 +32,7 @@ Date format (iso, us, eu, etc.)
 
 ### display.pagesize?
 
-> `optional` **display.pagesize**: `string`
+> `optional` __display.pagesize__: `string`
 
 Defined in: [src/types/User.ts:27](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L27)
 
@@ -42,7 +42,7 @@ Display page size for lists
 
 ### display.readermode?
 
-> `optional` **display.readermode**: `boolean`
+> `optional` __display.readermode__: `boolean`
 
 Defined in: [src/types/User.ts:33](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L33)
 
@@ -52,7 +52,7 @@ Reader mode enabled
 
 ### display.tooltips?
 
-> `optional` **display.tooltips**: `boolean`
+> `optional` __display.tooltips__: `boolean`
 
 Defined in: [src/types/User.ts:30](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L30)
 
@@ -62,7 +62,7 @@ Show tooltips
 
 ### editor.autoindent?
 
-> `optional` **editor.autoindent**: `boolean`
+> `optional` __editor.autoindent__: `boolean`
 
 Defined in: [src/types/User.ts:18](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L18)
 
@@ -72,7 +72,7 @@ Editor auto-indent
 
 ### editor.linenumbers?
 
-> `optional` **editor.linenumbers**: `boolean`
+> `optional` __editor.linenumbers__: `boolean`
 
 Defined in: [src/types/User.ts:21](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L21)
 
@@ -82,7 +82,7 @@ Show line numbers in editor
 
 ### editor.plain.smartpairs?
 
-> `optional` **editor.plain.smartpairs**: `boolean`
+> `optional` __editor.plain.smartpairs__: `boolean`
 
 Defined in: [src/types/User.ts:15](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L15)
 
@@ -92,7 +92,7 @@ Editor smart pairs (auto-close brackets, quotes)
 
 ### editor.theme?
 
-> `optional` **editor.theme**: `string`
+> `optional` __editor.theme__: `string`
 
 Defined in: [src/types/User.ts:24](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L24)
 
@@ -102,7 +102,7 @@ Editor theme (light, dark, etc.)
 
 ### locale?
 
-> `optional` **locale**: `string`
+> `optional` __locale__: `string`
 
 Defined in: [src/types/User.ts:42](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L42)
 
@@ -112,7 +112,7 @@ Language/locale
 
 ### timezone?
 
-> `optional` **timezone**: `string`
+> `optional` __timezone__: `string`
 
 Defined in: [src/types/User.ts:39](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/User.ts#L39)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../README.md)
+[__ngdpbase API v1.5.0__](../../README.md)
 
 ***
 
@@ -6,7 +6,7 @@
 
 # Function: reconfigureLogger()
 
-> **reconfigureLogger**(`config`): `Logger`
+> __reconfigureLogger__(`config`): `Logger`
 
 Defined in: [src/utils/logger.ts:93](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/logger.ts#L93)
 

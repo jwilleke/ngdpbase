@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -21,7 +21,7 @@ All audit operations are no-ops that return immediately.
 
 ### Constructor
 
-> **new default**(`engine`): `NullAuditProvider`
+> __new default__(`engine`): `NullAuditProvider`
 
 Defined in: [src/providers/NullAuditProvider.ts:11](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullAuditProvider.ts#L11)
 
@@ -43,7 +43,7 @@ Defined in: [src/providers/NullAuditProvider.ts:11](https://github.com/jwilleke/
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/providers/BaseAuditProvider.ts:156](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L156)
 
@@ -57,7 +57,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> **initialized**: `boolean`
+> __initialized__: `boolean`
 
 Defined in: [src/providers/BaseAuditProvider.ts:159](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L159)
 
@@ -71,7 +71,7 @@ Whether provider has been initialized
 
 ### backup()
 
-> **backup**(): `Promise`\<[`AuditBackupData`](../../BaseAuditProvider/interfaces/AuditBackupData.md)\>
+> __backup__(): `Promise`\<[`AuditBackupData`](../../BaseAuditProvider/interfaces/AuditBackupData.md)\>
 
 Defined in: [src/providers/BaseAuditProvider.ts:307](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L307)
 
@@ -96,7 +96,7 @@ Backup data
 
 ### cleanup()
 
-> **cleanup**(): `Promise`\<`void`\>
+> __cleanup__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/NullAuditProvider.ts:107](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullAuditProvider.ts#L107)
 
@@ -114,7 +114,7 @@ Clean up old audit logs (no-op)
 
 ### close()
 
-> **close**(): `Promise`\<`void`\>
+> __close__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/NullAuditProvider.ts:124](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullAuditProvider.ts#L124)
 
@@ -132,7 +132,7 @@ Close/cleanup the audit provider (no-op)
 
 ### exportAuditLogs()
 
-> **exportAuditLogs**(`_filters`, `format`): `Promise`\<`string`\>
+> __exportAuditLogs__(`_filters`, `format`): `Promise`\<`string`\>
 
 Defined in: [src/providers/NullAuditProvider.ts:87](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullAuditProvider.ts#L87)
 
@@ -166,7 +166,7 @@ Empty export data
 
 ### flush()
 
-> **flush**(): `Promise`\<`void`\>
+> __flush__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/NullAuditProvider.ts:98](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullAuditProvider.ts#L98)
 
@@ -184,7 +184,7 @@ Flush pending audit events (no-op)
 
 ### getAuditStats()
 
-> **getAuditStats**(`_filters`): `Promise`\<[`AuditStats`](../../BaseAuditProvider/interfaces/AuditStats.md)\>
+> __getAuditStats__(`_filters`): `Promise`\<[`AuditStats`](../../BaseAuditProvider/interfaces/AuditStats.md)\>
 
 Defined in: [src/providers/NullAuditProvider.ts:69](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullAuditProvider.ts#L69)
 
@@ -212,7 +212,7 @@ Empty statistics
 
 ### getProviderInfo()
 
-> **getProviderInfo**(): `object`
+> __getProviderInfo__(): `object`
 
 Defined in: [src/providers/NullAuditProvider.ts:28](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullAuditProvider.ts#L28)
 
@@ -226,19 +226,19 @@ Provider metadata
 
 ##### description
 
-> **description**: `string`
+> __description__: `string`
 
 ##### features
 
-> **features**: `string`[]
+> __features__: `string`[]
 
 ##### name
 
-> **name**: `string`
+> __name__: `string`
 
 ##### version
 
-> **version**: `string`
+> __version__: `string`
 
 #### Overrides
 
@@ -248,7 +248,7 @@ Provider metadata
 
 ### initialize()
 
-> **initialize**(): `Promise`\<`void`\>
+> __initialize__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/NullAuditProvider.ts:19](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullAuditProvider.ts#L19)
 
@@ -266,7 +266,7 @@ Initialize the null audit provider (no-op)
 
 ### isHealthy()
 
-> **isHealthy**(): `Promise`\<`boolean`\>
+> __isHealthy__(): `Promise`\<`boolean`\>
 
 Defined in: [src/providers/NullAuditProvider.ts:116](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullAuditProvider.ts#L116)
 
@@ -286,7 +286,7 @@ Always true
 
 ### logAuditEvent()
 
-> **logAuditEvent**(`_auditEvent`): `Promise`\<`string`\>
+> __logAuditEvent__(`_auditEvent`): `Promise`\<`string`\>
 
 Defined in: [src/providers/NullAuditProvider.ts:42](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullAuditProvider.ts#L42)
 
@@ -314,7 +314,7 @@ Dummy event ID
 
 ### restore()
 
-> **restore**(`_backupData`): `Promise`\<`void`\>
+> __restore__(`_backupData`): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseAuditProvider.ts:325](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L325)
 
@@ -345,7 +345,7 @@ Backup data
 
 ### searchAuditLogs()
 
-> **searchAuditLogs**(`_filters`, `options`): `Promise`\<[`AuditSearchResults`](../../BaseAuditProvider/interfaces/AuditSearchResults.md)\>
+> __searchAuditLogs__(`_filters`, `options`): `Promise`\<[`AuditSearchResults`](../../BaseAuditProvider/interfaces/AuditSearchResults.md)\>
 
 Defined in: [src/providers/NullAuditProvider.ts:52](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/NullAuditProvider.ts#L52)
 

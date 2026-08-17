@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ InterWiki site configuration
 
 ### description?
 
-> `optional` **description**: `string`
+> `optional` __description__: `string`
 
 Defined in: [src/parsers/LinkParser.ts:107](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L107)
 
@@ -24,7 +24,7 @@ Description of the InterWiki site
 
 ### openInNewWindow?
 
-> `optional` **openInNewWindow**: `boolean`
+> `optional` __openInNewWindow__: `boolean`
 
 Defined in: [src/parsers/LinkParser.ts:109](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L109)
 
@@ -34,7 +34,7 @@ Whether to open links in new window
 
 ### url
 
-> **url**: `string`
+> __url__: `string`
 
 Defined in: [src/parsers/LinkParser.ts:105](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/LinkParser.ts#L105)
 

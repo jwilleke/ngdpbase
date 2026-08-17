@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -11,6 +11,7 @@ Defined in: [src/utils/VersioningMaintenance.ts:220](https://github.com/jwilleke
 VersioningMaintenance - Automated maintenance utilities for VersioningFileProvider
 
 Provides batch operations for:
+
 - Version cleanup (purging old versions)
 - Version compression (gzip old versions)
 - Storage analytics (usage statistics)
@@ -34,7 +35,7 @@ const report = await maintenance.cleanupAllPages({
 
 ### Constructor
 
-> **new default**(`options`): `VersioningMaintenance`
+> __new default__(`options`): `VersioningMaintenance`
 
 Defined in: [src/utils/VersioningMaintenance.ts:231](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersioningMaintenance.ts#L231)
 
@@ -56,7 +57,7 @@ Maintenance options
 
 ### cleanupAllPages()
 
-> **cleanupAllPages**(`options`): `Promise`\<`CleanupReport`\>
+> __cleanupAllPages__(`options`): `Promise`\<`CleanupReport`\>
 
 Defined in: [src/utils/VersioningMaintenance.ts:260](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersioningMaintenance.ts#L260)
 
@@ -82,7 +83,7 @@ Cleanup report
 
 ### compressAllVersions()
 
-> **compressAllVersions**(`options`): `Promise`\<`CompressionReport`\>
+> __compressAllVersions__(`options`): `Promise`\<`CompressionReport`\>
 
 Defined in: [src/utils/VersioningMaintenance.ts:332](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersioningMaintenance.ts#L332)
 
@@ -109,7 +110,7 @@ Compression report
 
 ### runFullMaintenance()
 
-> **runFullMaintenance**(`options`): `Promise`\<`FullMaintenanceReport`\>
+> __runFullMaintenance__(`options`): `Promise`\<`FullMaintenanceReport`\>
 
 Defined in: [src/utils/VersioningMaintenance.ts:504](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersioningMaintenance.ts#L504)
 

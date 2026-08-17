@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Restore options
 
 ### managerFilter?
 
-> `optional` **managerFilter**: `string`[]
+> `optional` __managerFilter__: `string`[]
 
 Defined in: [src/managers/BackupManager.ts:26](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L26)
 
@@ -22,6 +22,6 @@ Defined in: [src/managers/BackupManager.ts:26](https://github.com/jwilleke/ngdpb
 
 ### skipValidation?
 
-> `optional` **skipValidation**: `boolean`
+> `optional` __skipValidation__: `boolean`
 
 Defined in: [src/managers/BackupManager.ts:25](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L25)

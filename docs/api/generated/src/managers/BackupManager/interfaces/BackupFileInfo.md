@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Backup file information
 
 ### created
 
-> **created**: `Date`
+> __created__: `Date`
 
 Defined in: [src/managers/BackupManager.ts:55](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L55)
 
@@ -22,7 +22,7 @@ Defined in: [src/managers/BackupManager.ts:55](https://github.com/jwilleke/ngdpb
 
 ### filename
 
-> **filename**: `string`
+> __filename__: `string`
 
 Defined in: [src/managers/BackupManager.ts:52](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L52)
 
@@ -30,7 +30,7 @@ Defined in: [src/managers/BackupManager.ts:52](https://github.com/jwilleke/ngdpb
 
 ### modified
 
-> **modified**: `Date`
+> __modified__: `Date`
 
 Defined in: [src/managers/BackupManager.ts:56](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L56)
 
@@ -38,7 +38,7 @@ Defined in: [src/managers/BackupManager.ts:56](https://github.com/jwilleke/ngdpb
 
 ### path
 
-> **path**: `string`
+> __path__: `string`
 
 Defined in: [src/managers/BackupManager.ts:53](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L53)
 
@@ -46,6 +46,6 @@ Defined in: [src/managers/BackupManager.ts:53](https://github.com/jwilleke/ngdpb
 
 ### size
 
-> **size**: `number`
+> __size__: `number`
 
 Defined in: [src/managers/BackupManager.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L54)

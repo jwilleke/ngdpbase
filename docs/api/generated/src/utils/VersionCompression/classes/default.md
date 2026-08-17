@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,6 +14,7 @@ Uses pako (pure JavaScript gzip implementation) to compress old version files.
 This significantly reduces disk space usage for version history.
 
 Compression is particularly effective for:
+
 - Text content (60-80% size reduction typical)
 - Diff files (often compress very well)
 - Large content files
@@ -30,7 +31,7 @@ const decompressed = VersionCompression.decompress(compressed);
 
 ### Constructor
 
-> **new default**(): `VersionCompression`
+> __new default__(): `VersionCompression`
 
 #### Returns
 
@@ -40,7 +41,7 @@ const decompressed = VersionCompression.decompress(compressed);
 
 ### calculateRatio()
 
-> `static` **calculateRatio**(`originalSize`, `compressedSize`): `number`
+> `static` __calculateRatio__(`originalSize`, `compressedSize`): `number`
 
 Defined in: [src/utils/VersionCompression.ts:295](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersionCompression.ts#L295)
 
@@ -72,7 +73,7 @@ Compression ratio as percentage (e.g., 65.5 means 65.5% smaller)
 
 ### compress()
 
-> `static` **compress**(`content`, `options`): `Buffer`
+> `static` __compress__(`content`, `options`): `Buffer`
 
 Defined in: [src/utils/VersionCompression.ts:88](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersionCompression.ts#L88)
 
@@ -116,7 +117,7 @@ console.log('Compression ratio:', compressed.length / original.length);
 
 ### compressFile()
 
-> `static` **compressFile**(`filePath`, `options`): `Promise`\<[`CompressionResult`](../interfaces/CompressionResult.md)\>
+> `static` __compressFile__(`filePath`, `options`): `Promise`\<[`CompressionResult`](../interfaces/CompressionResult.md)\>
 
 Defined in: [src/utils/VersionCompression.ts:160](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersionCompression.ts#L160)
 
@@ -162,7 +163,7 @@ console.log(`Saved ${result.ratio}% space`);
 
 ### decompress()
 
-> `static` **decompress**(`compressed`): `string`
+> `static` __decompress__(`compressed`): `string`
 
 Defined in: [src/utils/VersionCompression.ts:127](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersionCompression.ts#L127)
 
@@ -204,7 +205,7 @@ const original = VersionCompression.decompress(compressed);
 
 ### decompressFile()
 
-> `static` **decompressFile**(`filePath`, `options`): `Promise`\<[`DecompressionResult`](../interfaces/DecompressionResult.md)\>
+> `static` __decompressFile__(`filePath`, `options`): `Promise`\<[`DecompressionResult`](../interfaces/DecompressionResult.md)\>
 
 Defined in: [src/utils/VersionCompression.ts:214](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersionCompression.ts#L214)
 
@@ -248,7 +249,7 @@ await VersionCompression.decompressFile('./v1/content.md.gz');
 
 ### getCompressedStats()
 
-> `static` **getCompressedStats**(`filePath`): `Promise`\<[`CompressedStats`](../interfaces/CompressedStats.md)\>
+> `static` __getCompressedStats__(`filePath`): `Promise`\<[`CompressedStats`](../interfaces/CompressedStats.md)\>
 
 Defined in: [src/utils/VersionCompression.ts:315](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersionCompression.ts#L315)
 
@@ -274,7 +275,7 @@ File stats
 
 ### isCompressed()
 
-> `static` **isCompressed**(`filePath`): `Promise`\<`boolean`\>
+> `static` __isCompressed__(`filePath`): `Promise`\<`boolean`\>
 
 Defined in: [src/utils/VersionCompression.ts:263](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersionCompression.ts#L263)
 

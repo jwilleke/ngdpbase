@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -20,7 +20,7 @@ Additional context properties
 
 ### codeBlocks?
 
-> `optional` **codeBlocks**: `string`[]
+> `optional` __codeBlocks__: `string`[]
 
 Defined in: [src/parsers/MarkupParser.ts:157](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L157)
 
@@ -30,7 +30,7 @@ Code blocks extracted during parsing
 
 ### pageName?
 
-> `optional` **pageName**: `string`
+> `optional` __pageName__: `string`
 
 Defined in: [src/parsers/MarkupParser.ts:149](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L149)
 
@@ -40,7 +40,7 @@ Page name
 
 ### protectedBlocks?
 
-> `optional` **protectedBlocks**: `string`[]
+> `optional` __protectedBlocks__: `string`[]
 
 Defined in: [src/parsers/MarkupParser.ts:159](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L159)
 
@@ -50,7 +50,7 @@ Protected HTML blocks
 
 ### requestInfo?
 
-> `optional` **requestInfo**: `unknown`
+> `optional` __requestInfo__: `unknown`
 
 Defined in: [src/parsers/MarkupParser.ts:155](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L155)
 
@@ -60,7 +60,7 @@ Request information
 
 ### syntaxTokens?
 
-> `optional` **syntaxTokens**: `unknown`[]
+> `optional` __syntaxTokens__: `unknown`[]
 
 Defined in: [src/parsers/MarkupParser.ts:161](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L161)
 
@@ -70,7 +70,7 @@ Syntax tokens
 
 ### userContext?
 
-> `optional` **userContext**: `unknown`
+> `optional` __userContext__: `unknown`
 
 Defined in: [src/parsers/MarkupParser.ts:153](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L153)
 
@@ -80,7 +80,7 @@ User context object
 
 ### userName?
 
-> `optional` **userName**: `string`
+> `optional` __userName__: `string`
 
 Defined in: [src/parsers/MarkupParser.ts:151](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L151)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -20,8 +20,8 @@ This follows JSPWiki's provider pattern for pluggable storage backends.
 
 ## See
 
- - FileSystemProvider for filesystem implementation
- - PageManager for usage
+- FileSystemProvider for filesystem implementation
+- PageManager for usage
 
 ## Example
 
@@ -45,7 +45,7 @@ class MyProvider extends BasePageProvider {
 
 ### Constructor
 
-> **new default**(`engine`): `BasePageProvider`
+> __new default__(`engine`): `BasePageProvider`
 
 Defined in: [src/providers/BasePageProvider.ts:66](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L66)
 
@@ -71,7 +71,7 @@ If engine is not provided
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../interfaces/WikiEngine.md)
 
 Defined in: [src/providers/BasePageProvider.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L54)
 
@@ -81,7 +81,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> **initialized**: `boolean`
+> __initialized__: `boolean`
 
 Defined in: [src/providers/BasePageProvider.ts:57](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L57)
 
@@ -91,7 +91,7 @@ Whether provider has been initialized
 
 ### compareVersions()
 
-> **compareVersions**(`_identifier`, `_v1`, `_v2`): `Promise`\<[`VersionDiff`](../../../types/Version/interfaces/VersionDiff.md)\>
+> __compareVersions__(`_identifier`, `_v1`, `_v2`): `Promise`\<[`VersionDiff`](../../../types/Version/interfaces/VersionDiff.md)\>
 
 Defined in: [src/providers/BasePageProvider.ts:264](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L264)
 
@@ -124,7 +124,7 @@ Diff data structure
 
 ### deletePage()
 
-> `abstract` **deletePage**(`identifier`): `Promise`\<`boolean`\>
+> `abstract` __deletePage__(`identifier`): `Promise`\<`boolean`\>
 
 Defined in: [src/providers/BasePageProvider.ts:147](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L147)
 
@@ -148,7 +148,7 @@ True if deleted, false if not found
 
 ### findPage()
 
-> `abstract` **findPage**(`identifier`): `string` \| `null`
+> `abstract` __findPage__(`identifier`): `string` \| `null`
 
 Defined in: [src/providers/BasePageProvider.ts:174](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L174)
 
@@ -172,7 +172,7 @@ Canonical page title or null
 
 ### getAllPageInfo()
 
-> `abstract` **getAllPageInfo**(`options?`): `Promise`\<[`PageInfo`](../../../types/Page/interfaces/PageInfo.md)[]\>
+> `abstract` __getAllPageInfo__(`options?`): `Promise`\<[`PageInfo`](../../../types/Page/interfaces/PageInfo.md)[]\>
 
 Defined in: [src/providers/BasePageProvider.ts:167](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L167)
 
@@ -196,7 +196,7 @@ Array of page info objects
 
 ### getAllPages()
 
-> `abstract` **getAllPages**(): `Promise`\<`string`[]\>
+> `abstract` __getAllPages__(): `Promise`\<`string`[]\>
 
 Defined in: [src/providers/BasePageProvider.ts:160](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L160)
 
@@ -212,7 +212,7 @@ Sorted array of page titles
 
 ### getPage()
 
-> `abstract` **getPage**(`identifier`): `Promise`\<[`WikiPage`](../../../types/Page/interfaces/WikiPage.md) \| `null`\>
+> `abstract` __getPage__(`identifier`): `Promise`\<[`WikiPage`](../../../types/Page/interfaces/WikiPage.md) \| `null`\>
 
 Defined in: [src/providers/BasePageProvider.ts:99](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L99)
 
@@ -242,7 +242,7 @@ Always throws - must be implemented by subclass
 
 ### getPageContent()
 
-> `abstract` **getPageContent**(`identifier`): `Promise`\<`string`\>
+> `abstract` __getPageContent__(`identifier`): `Promise`\<`string`\>
 
 Defined in: [src/providers/BasePageProvider.ts:110](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L110)
 
@@ -272,7 +272,7 @@ Always throws - must be implemented by subclass
 
 ### getPageMetadata()
 
-> `abstract` **getPageMetadata**(`identifier`): `Promise`\<[`PageFrontmatter`](../../../types/Page/interfaces/PageFrontmatter.md) \| `null`\>
+> `abstract` __getPageMetadata__(`identifier`): `Promise`\<[`PageFrontmatter`](../../../types/Page/interfaces/PageFrontmatter.md) \| `null`\>
 
 Defined in: [src/providers/BasePageProvider.ts:121](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L121)
 
@@ -302,7 +302,7 @@ Always throws - must be implemented by subclass
 
 ### getPageVersion()
 
-> **getPageVersion**(`_identifier`, `_version`): `Promise`\<[`VersionContent`](../../../types/Version/interfaces/VersionContent.md)\>
+> __getPageVersion__(`_identifier`, `_version`): `Promise`\<[`VersionContent`](../../../types/Version/interfaces/VersionContent.md)\>
 
 Defined in: [src/providers/BasePageProvider.ts:234](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L234)
 
@@ -335,7 +335,7 @@ If version does not exist
 
 ### getProviderInfo()
 
-> **getProviderInfo**(): [`ProviderInfo`](../interfaces/ProviderInfo.md)
+> __getProviderInfo__(): [`ProviderInfo`](../interfaces/ProviderInfo.md)
 
 Defined in: [src/providers/BasePageProvider.ts:286](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L286)
 
@@ -351,7 +351,7 @@ Provider metadata
 
 ### getVersionHistory()
 
-> **getVersionHistory**(`_identifier`, `_limit?`): `Promise`\<[`VersionHistoryEntry`](../../../types/Version/interfaces/VersionHistoryEntry.md)[]\>
+> __getVersionHistory__(`_identifier`, `_limit?`): `Promise`\<[`VersionHistoryEntry`](../../../types/Version/interfaces/VersionHistoryEntry.md)[]\>
 
 Defined in: [src/providers/BasePageProvider.ts:219](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L219)
 
@@ -406,7 +406,7 @@ Array of version history entries
 
 ### initialize()
 
-> `abstract` **initialize**(): `Promise`\<`void`\>
+> `abstract` __initialize__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/BasePageProvider.ts:88](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L88)
 
@@ -432,7 +432,7 @@ Always throws - must be implemented by subclass
 
 ### pageExists()
 
-> `abstract` **pageExists**(`identifier`): `boolean`
+> `abstract` __pageExists__(`identifier`): `boolean`
 
 Defined in: [src/providers/BasePageProvider.ts:154](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L154)
 
@@ -454,7 +454,7 @@ Page UUID or title
 
 ### purgeOldVersions()
 
-> **purgeOldVersions**(`_identifier`, `_keepLatest`): `Promise`\<`number`\>
+> __purgeOldVersions__(`_identifier`, `_keepLatest`): `Promise`\<`number`\>
 
 Defined in: [src/providers/BasePageProvider.ts:278](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L278)
 
@@ -483,7 +483,7 @@ Number of versions purged
 
 ### refreshPageList()
 
-> `abstract` **refreshPageList**(): `Promise`\<`void`\>
+> `abstract` __refreshPageList__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/BasePageProvider.ts:181](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L181)
 
@@ -498,7 +498,7 @@ Re-scans storage and rebuilds indexes
 
 ### restoreVersion()
 
-> **restoreVersion**(`_identifier`, `_version`): `Promise`\<`void`\>
+> __restoreVersion__(`_identifier`, `_version`): `Promise`\<`void`\>
 
 Defined in: [src/providers/BasePageProvider.ts:249](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L249)
 
@@ -529,7 +529,7 @@ If version does not exist or restoration fails
 
 ### savePage()
 
-> `abstract` **savePage**(`pageName`, `content`, `metadata?`, `options?`): `Promise`\<`void`\>
+> `abstract` __savePage__(`pageName`, `content`, `metadata?`, `options?`): `Promise`\<`void`\>
 
 Defined in: [src/providers/BasePageProvider.ts:135](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L135)
 
@@ -575,7 +575,7 @@ Always throws - must be implemented by subclass
 
 ### shutdown()
 
-> **shutdown**(): `void`
+> __shutdown__(): `void`
 
 Defined in: [src/providers/BasePageProvider.ts:299](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L299)
 

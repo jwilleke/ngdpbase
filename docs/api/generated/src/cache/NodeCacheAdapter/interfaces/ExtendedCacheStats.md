@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -18,7 +18,7 @@ Extended cache statistics with additional metrics
 
 ### deletes
 
-> **deletes**: `number`
+> __deletes__: `number`
 
 Defined in: [src/cache/NodeCacheAdapter.ts:40](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/NodeCacheAdapter.ts#L40)
 
@@ -28,7 +28,7 @@ Number of delete operations
 
 ### hitRate
 
-> **hitRate**: `number`
+> __hitRate__: `number`
 
 Defined in: [src/cache/NodeCacheAdapter.ts:42](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/NodeCacheAdapter.ts#L42)
 
@@ -38,7 +38,7 @@ Hit rate percentage
 
 ### hits
 
-> **hits**: `number`
+> __hits__: `number`
 
 Defined in: [src/cache/ICacheAdapter.ts:14](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/ICacheAdapter.ts#L14)
 
@@ -52,7 +52,7 @@ Number of cache hits
 
 ### keys
 
-> **keys**: `number`
+> __keys__: `number`
 
 Defined in: [src/cache/ICacheAdapter.ts:18](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/ICacheAdapter.ts#L18)
 
@@ -66,7 +66,7 @@ Number of keys in cache
 
 ### ksize
 
-> **ksize**: `number`
+> __ksize__: `number`
 
 Defined in: [src/cache/ICacheAdapter.ts:20](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/ICacheAdapter.ts#L20)
 
@@ -80,7 +80,7 @@ Approximate memory usage of keys in bytes
 
 ### maxKeys
 
-> **maxKeys**: `number`
+> __maxKeys__: `number`
 
 Defined in: [src/cache/NodeCacheAdapter.ts:44](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/NodeCacheAdapter.ts#L44)
 
@@ -90,7 +90,7 @@ Maximum number of keys allowed
 
 ### misses
 
-> **misses**: `number`
+> __misses__: `number`
 
 Defined in: [src/cache/ICacheAdapter.ts:16](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/ICacheAdapter.ts#L16)
 
@@ -104,7 +104,7 @@ Number of cache misses
 
 ### sets
 
-> **sets**: `number`
+> __sets__: `number`
 
 Defined in: [src/cache/NodeCacheAdapter.ts:38](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/NodeCacheAdapter.ts#L38)
 
@@ -114,7 +114,7 @@ Number of set operations
 
 ### stdTTL
 
-> **stdTTL**: `number`
+> __stdTTL__: `number`
 
 Defined in: [src/cache/NodeCacheAdapter.ts:46](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/NodeCacheAdapter.ts#L46)
 
@@ -124,7 +124,7 @@ Standard TTL in seconds
 
 ### vsize
 
-> **vsize**: `number`
+> __vsize__: `number`
 
 Defined in: [src/cache/ICacheAdapter.ts:22](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/ICacheAdapter.ts#L22)
 

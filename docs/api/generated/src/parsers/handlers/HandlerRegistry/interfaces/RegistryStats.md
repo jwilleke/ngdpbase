@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Handler registry statistics
 
 ### activeHandlers
 
-> **activeHandlers**: `number`
+> __activeHandlers__: `number`
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:34](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L34)
 
@@ -22,7 +22,7 @@ Defined in: [src/parsers/handlers/HandlerRegistry.ts:34](https://github.com/jwil
 
 ### lastRegistration
 
-> **lastRegistration**: `Date` \| `null`
+> __lastRegistration__: `Date` \| `null`
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:37](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L37)
 
@@ -30,7 +30,7 @@ Defined in: [src/parsers/handlers/HandlerRegistry.ts:37](https://github.com/jwil
 
 ### lastUnregistration
 
-> **lastUnregistration**: `Date` \| `null`
+> __lastUnregistration__: `Date` \| `null`
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:38](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L38)
 
@@ -38,7 +38,7 @@ Defined in: [src/parsers/handlers/HandlerRegistry.ts:38](https://github.com/jwil
 
 ### registeredHandlers
 
-> **registeredHandlers**: `number`
+> __registeredHandlers__: `number`
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:33](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L33)
 
@@ -46,7 +46,7 @@ Defined in: [src/parsers/handlers/HandlerRegistry.ts:33](https://github.com/jwil
 
 ### totalErrors
 
-> **totalErrors**: `number`
+> __totalErrors__: `number`
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:36](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L36)
 
@@ -54,6 +54,6 @@ Defined in: [src/parsers/handlers/HandlerRegistry.ts:36](https://github.com/jwil
 
 ### totalExecutions
 
-> **totalExecutions**: `number`
+> __totalExecutions__: `number`
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:35](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L35)

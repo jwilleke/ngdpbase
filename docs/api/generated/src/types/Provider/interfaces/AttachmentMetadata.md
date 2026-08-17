@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -20,7 +20,7 @@ Additional metadata
 
 ### description?
 
-> `optional` **description**: `string`
+> `optional` __description__: `string`
 
 Defined in: [src/types/Provider.ts:339](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L339)
 
@@ -30,7 +30,7 @@ Description
 
 ### filename
 
-> **filename**: `string`
+> __filename__: `string`
 
 Defined in: [src/types/Provider.ts:318](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L318)
 
@@ -40,7 +40,7 @@ Filename
 
 ### filePath
 
-> **filePath**: `string`
+> __filePath__: `string`
 
 Defined in: [src/types/Provider.ts:336](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L336)
 
@@ -50,7 +50,7 @@ File path
 
 ### id
 
-> **id**: `string`
+> __id__: `string`
 
 Defined in: [src/types/Provider.ts:315](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L315)
 
@@ -60,7 +60,7 @@ Attachment ID (UUID)
 
 ### mimeType
 
-> **mimeType**: `string`
+> __mimeType__: `string`
 
 Defined in: [src/types/Provider.ts:324](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L324)
 
@@ -70,7 +70,7 @@ MIME type
 
 ### pageUuid
 
-> **pageUuid**: `string`
+> __pageUuid__: `string`
 
 Defined in: [src/types/Provider.ts:321](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L321)
 
@@ -80,7 +80,7 @@ Page UUID this attachment belongs to
 
 ### size
 
-> **size**: `number`
+> __size__: `number`
 
 Defined in: [src/types/Provider.ts:327](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L327)
 
@@ -90,7 +90,7 @@ File size in bytes
 
 ### uploadedAt
 
-> **uploadedAt**: `string`
+> __uploadedAt__: `string`
 
 Defined in: [src/types/Provider.ts:330](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L330)
 
@@ -100,7 +100,7 @@ Upload timestamp (ISO 8601)
 
 ### uploadedBy
 
-> **uploadedBy**: `string`
+> __uploadedBy__: `string`
 
 Defined in: [src/types/Provider.ts:333](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Provider.ts#L333)
 

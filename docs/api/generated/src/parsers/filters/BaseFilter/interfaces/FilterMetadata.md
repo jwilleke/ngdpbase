@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Filter metadata
 
 ### category
 
-> **category**: `string`
+> __category__: `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:64](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L64)
 
@@ -22,7 +22,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:64](https://github.com/jwilleke/n
 
 ### configuration
 
-> **configuration**: [`FilterConfig`](FilterConfig.md) \| `null`
+> __configuration__: [`FilterConfig`](FilterConfig.md) \| `null`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:75](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L75)
 
@@ -30,7 +30,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:75](https://github.com/jwilleke/n
 
 ### description
 
-> **description**: `string`
+> __description__: `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:63](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L63)
 
@@ -38,7 +38,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:63](https://github.com/jwilleke/n
 
 ### enabled
 
-> **enabled**: `boolean`
+> __enabled__: `boolean`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:66](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L66)
 
@@ -46,7 +46,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:66](https://github.com/jwilleke/n
 
 ### id
 
-> **id**: `string`
+> __id__: `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L61)
 
@@ -54,7 +54,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:61](https://github.com/jwilleke/n
 
 ### options
 
-> **options**: `Required`\<[`FilterOptions`](FilterOptions.md)\>
+> __options__: `Required`\<[`FilterOptions`](FilterOptions.md)\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:67](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L67)
 
@@ -62,7 +62,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:67](https://github.com/jwilleke/n
 
 ### priority
 
-> **priority**: `number`
+> __priority__: `number`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:65](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L65)
 
@@ -70,7 +70,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:65](https://github.com/jwilleke/n
 
 ### stats
 
-> **stats**: [`FilterStats`](FilterStats.md) & `object`
+> __stats__: [`FilterStats`](FilterStats.md) & `object`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:68](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L68)
 
@@ -78,28 +78,28 @@ Defined in: [src/parsers/filters/BaseFilter.ts:68](https://github.com/jwilleke/n
 
 ##### category
 
-> **category**: `string`
+> __category__: `string`
 
 ##### enabled
 
-> **enabled**: `boolean`
+> __enabled__: `boolean`
 
 ##### filterId
 
-> **filterId**: `string`
+> __filterId__: `string`
 
 ##### initialized
 
-> **initialized**: `boolean`
+> __initialized__: `boolean`
 
 ##### priority
 
-> **priority**: `number`
+> __priority__: `number`
 
 ***
 
 ### version
 
-> **version**: `string`
+> __version__: `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:62](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L62)

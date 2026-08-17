@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Extracted JSPWiki element
 
 ### id
 
-> **id**: `number`
+> __id__: `number`
 
 Defined in: [src/parsers/MarkupParser.ts:173](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L173)
 
@@ -24,7 +24,7 @@ Unique ID
 
 ### inner?
 
-> `optional` **inner**: `string`
+> `optional` __inner__: `string`
 
 Defined in: [src/parsers/MarkupParser.ts:179](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L179)
 
@@ -34,7 +34,7 @@ Plugin/tag inner content (for plugins)
 
 ### literal?
 
-> `optional` **literal**: `string`
+> `optional` __literal__: `string`
 
 Defined in: [src/parsers/MarkupParser.ts:183](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L183)
 
@@ -44,7 +44,7 @@ Escaped literal content (for escaped)
 
 ### position?
 
-> `optional` **position**: `number`
+> `optional` __position__: `number`
 
 Defined in: [src/parsers/MarkupParser.ts:175](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L175)
 
@@ -54,7 +54,7 @@ Position in content
 
 ### syntax
 
-> **syntax**: `string`
+> __syntax__: `string`
 
 Defined in: [src/parsers/MarkupParser.ts:171](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L171)
 
@@ -64,7 +64,7 @@ Original syntax
 
 ### target?
 
-> `optional` **target**: `string`
+> `optional` __target__: `string`
 
 Defined in: [src/parsers/MarkupParser.ts:181](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L181)
 
@@ -74,7 +74,7 @@ Link target (for links)
 
 ### type
 
-> **type**: `"link"` \| `"plugin"` \| `"variable"` \| `"escaped"`
+> __type__: `"link"` \| `"plugin"` \| `"variable"` \| `"escaped"`
 
 Defined in: [src/parsers/MarkupParser.ts:169](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L169)
 
@@ -84,7 +84,7 @@ Element type
 
 ### varName?
 
-> `optional` **varName**: `string`
+> `optional` __varName__: `string`
 
 Defined in: [src/parsers/MarkupParser.ts:177](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L177)
 

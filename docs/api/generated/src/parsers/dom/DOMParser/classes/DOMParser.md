@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ DOMParser class
 
 ### Constructor
 
-> **new DOMParser**(`options`): `DOMParser`
+> __new DOMParser__(`options`): `DOMParser`
 
 Defined in: [src/parsers/dom/DOMParser.ts:182](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMParser.ts#L182)
 
@@ -36,7 +36,7 @@ Parser options
 
 ### checkForWarnings()
 
-> **checkForWarnings**(`tokens`, `result`): `void`
+> __checkForWarnings__(`tokens`, `result`): `void`
 
 Defined in: [src/parsers/dom/DOMParser.ts:408](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMParser.ts#L408)
 
@@ -64,7 +64,7 @@ Result object to add warnings to
 
 ### createErrorDocument()
 
-> **createErrorDocument**(`content`, `context`, `error`): [`default`](../../WikiDocument/classes/default.md)
+> __createErrorDocument__(`content`, `context`, `error`): [`default`](../../WikiDocument/classes/default.md)
 
 Defined in: [src/parsers/dom/DOMParser.ts:317](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMParser.ts#L317)
 
@@ -103,7 +103,7 @@ Error document
 
 ### getStatistics()
 
-> **getStatistics**(): [`ExtendedStatistics`](../interfaces/ExtendedStatistics.md)
+> __getStatistics__(): [`ExtendedStatistics`](../interfaces/ExtendedStatistics.md)
 
 Defined in: [src/parsers/dom/DOMParser.ts:434](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMParser.ts#L434)
 
@@ -119,7 +119,7 @@ Parser statistics
 
 ### log()
 
-> **log**(`message`): `void`
+> __log__(`message`): `void`
 
 Defined in: [src/parsers/dom/DOMParser.ts:464](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMParser.ts#L464)
 
@@ -141,7 +141,7 @@ Message to log
 
 ### parse()
 
-> **parse**(`content`, `context`): [`default`](../../WikiDocument/classes/default.md)
+> __parse__(`content`, `context`): [`default`](../../WikiDocument/classes/default.md)
 
 Defined in: [src/parsers/dom/DOMParser.ts:210](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMParser.ts#L210)
 
@@ -178,7 +178,7 @@ ParseError if throwOnError is true and parsing fails
 
 ### resetStatistics()
 
-> **resetStatistics**(): `void`
+> __resetStatistics__(): `void`
 
 Defined in: [src/parsers/dom/DOMParser.ts:449](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMParser.ts#L449)
 
@@ -192,7 +192,7 @@ Resets parser statistics
 
 ### validate()
 
-> **validate**(`content`): [`ValidationResult`](../interfaces/ValidationResult.md)
+> __validate__(`content`): [`ValidationResult`](../interfaces/ValidationResult.md)
 
 Defined in: [src/parsers/dom/DOMParser.ts:372](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMParser.ts#L372)
 

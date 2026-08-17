@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -18,7 +18,7 @@ Cache statistics
 
 ### config?
 
-> `optional` **config**: [`CacheConfig`](CacheConfig.md)
+> `optional` __config__: [`CacheConfig`](CacheConfig.md)
 
 Defined in: [src/managers/CacheManager.ts:33](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L33)
 
@@ -26,7 +26,7 @@ Defined in: [src/managers/CacheManager.ts:33](https://github.com/jwilleke/ngdpba
 
 ### global?
 
-> `optional` **global**: `unknown`
+> `optional` __global__: `unknown`
 
 Defined in: [src/managers/CacheManager.ts:30](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L30)
 
@@ -34,7 +34,7 @@ Defined in: [src/managers/CacheManager.ts:30](https://github.com/jwilleke/ngdpba
 
 ### provider?
 
-> `optional` **provider**: `string` \| `null`
+> `optional` __provider__: `string` \| `null`
 
 Defined in: [src/managers/CacheManager.ts:32](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L32)
 
@@ -42,6 +42,6 @@ Defined in: [src/managers/CacheManager.ts:32](https://github.com/jwilleke/ngdpba
 
 ### regions?
 
-> `optional` **regions**: `string`[]
+> `optional` __regions__: `string`[]
 
 Defined in: [src/managers/CacheManager.ts:31](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/CacheManager.ts#L31)

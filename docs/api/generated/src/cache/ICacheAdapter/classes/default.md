@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -20,7 +20,7 @@ All cache adapters must implement these methods
 
 ### Constructor
 
-> **new default**(): `ICacheAdapter`
+> __new default__(): `ICacheAdapter`
 
 #### Returns
 
@@ -30,7 +30,7 @@ All cache adapters must implement these methods
 
 ### clear()
 
-> `abstract` **clear**(`pattern?`): `Promise`\<`void`\>
+> `abstract` __clear__(`pattern?`): `Promise`\<`void`\>
 
 Defined in: [src/cache/ICacheAdapter.ts:64](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/ICacheAdapter.ts#L64)
 
@@ -52,7 +52,7 @@ Optional pattern to match keys (e.g., 'user:*')
 
 ### close()
 
-> `abstract` **close**(): `Promise`\<`void`\>
+> `abstract` __close__(): `Promise`\<`void`\>
 
 Defined in: [src/cache/ICacheAdapter.ts:93](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/ICacheAdapter.ts#L93)
 
@@ -66,7 +66,7 @@ Close/cleanup the cache adapter
 
 ### del()
 
-> `abstract` **del**(`keys`): `Promise`\<`void`\>
+> `abstract` __del__(`keys`): `Promise`\<`void`\>
 
 Defined in: [src/cache/ICacheAdapter.ts:56](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/ICacheAdapter.ts#L56)
 
@@ -88,7 +88,7 @@ Single key or array of keys to delete
 
 ### get()
 
-> `abstract` **get**\<`T`\>(`key`): `Promise`\<`T` \| `undefined`\>
+> `abstract` __get__\<`T`\>(`key`): `Promise`\<`T` \| `undefined`\>
 
 Defined in: [src/cache/ICacheAdapter.ts:38](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/ICacheAdapter.ts#L38)
 
@@ -118,7 +118,7 @@ The cached value or undefined if not found
 
 ### isHealthy()
 
-> `abstract` **isHealthy**(): `Promise`\<`boolean`\>
+> `abstract` __isHealthy__(): `Promise`\<`boolean`\>
 
 Defined in: [src/cache/ICacheAdapter.ts:86](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/ICacheAdapter.ts#L86)
 
@@ -134,7 +134,7 @@ True if healthy
 
 ### keys()
 
-> `abstract` **keys**(`pattern?`): `Promise`\<`string`[]\>
+> `abstract` __keys__(`pattern?`): `Promise`\<`string`[]\>
 
 Defined in: [src/cache/ICacheAdapter.ts:72](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/ICacheAdapter.ts#L72)
 
@@ -158,7 +158,7 @@ Array of matching keys
 
 ### set()
 
-> `abstract` **set**(`key`, `value`, `ttlSec?`): `Promise`\<`void`\>
+> `abstract` __set__(`key`, `value`, `ttlSec?`): `Promise`\<`void`\>
 
 Defined in: [src/cache/ICacheAdapter.ts:48](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/ICacheAdapter.ts#L48)
 
@@ -192,7 +192,7 @@ Time to live in seconds
 
 ### stats()
 
-> `abstract` **stats**(): `Promise`\<[`CacheStats`](../interfaces/CacheStats.md)\>
+> `abstract` __stats__(): `Promise`\<[`CacheStats`](../interfaces/CacheStats.md)\>
 
 Defined in: [src/cache/ICacheAdapter.ts:79](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/ICacheAdapter.ts#L79)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Tokenizer class
 
 ### Constructor
 
-> **new Tokenizer**(`input`): `Tokenizer`
+> __new Tokenizer__(`input`): `Tokenizer`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:189](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L189)
 
@@ -36,7 +36,7 @@ The wiki markup to tokenize
 
 ### column
 
-> **column**: `number`
+> __column__: `number`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:180](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L180)
 
@@ -46,7 +46,7 @@ Current column number
 
 ### line
 
-> **line**: `number`
+> __line__: `number`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:177](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L177)
 
@@ -56,7 +56,7 @@ Current line number
 
 ### position
 
-> **position**: `number`
+> __position__: `number`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:174](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L174)
 
@@ -66,7 +66,7 @@ Current position in input
 
 ### createToken()
 
-> **createToken**(`type`, `value`, `metadata`): [`Token`](../interfaces/Token.md)
+> __createToken__(`type`, `value`, `metadata`): [`Token`](../interfaces/Token.md)
 
 Defined in: [src/parsers/dom/Tokenizer.ts:386](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L386)
 
@@ -102,7 +102,7 @@ The created token
 
 ### expect()
 
-> **expect**(`str`): `void`
+> __expect__(`str`): `void`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:459](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L459)
 
@@ -128,7 +128,7 @@ Error if string not found
 
 ### getPosition()
 
-> **getPosition**(): [`PositionInfo`](../interfaces/PositionInfo.md)
+> __getPosition__(): [`PositionInfo`](../interfaces/PositionInfo.md)
 
 Defined in: [src/parsers/dom/Tokenizer.ts:371](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L371)
 
@@ -144,7 +144,7 @@ Position information
 
 ### isEOF()
 
-> **isEOF**(): `boolean`
+> __isEOF__(): `boolean`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:355](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L355)
 
@@ -160,7 +160,7 @@ True if at EOF
 
 ### isLineStart()
 
-> **isLineStart**(): `boolean`
+> __isLineStart__(): `boolean`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:363](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L363)
 
@@ -176,7 +176,7 @@ True if at line start
 
 ### match()
 
-> **match**(`str`, `consume`): `boolean`
+> __match__(`str`, `consume`): `boolean`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:442](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L442)
 
@@ -206,7 +206,7 @@ True if matched
 
 ### nextChar()
 
-> **nextChar**(): `string` \| `null`
+> __nextChar__(): `string` \| `null`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:218](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L218)
 
@@ -222,7 +222,7 @@ Next character or null if at EOF
 
 ### nextToken()
 
-> **nextToken**(): [`Token`](../interfaces/Token.md) \| `null`
+> __nextToken__(): [`Token`](../interfaces/Token.md) \| `null`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:516](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L516)
 
@@ -238,7 +238,7 @@ Next token or null if EOF
 
 ### parseBoldToken()
 
-> **parseBoldToken**(): [`Token`](../interfaces/Token.md)
+> __parseBoldToken__(): [`Token`](../interfaces/Token.md)
 
 Defined in: [src/parsers/dom/Tokenizer.ts:855](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L855)
 
@@ -254,12 +254,13 @@ Bold token
 
 ### parseBracketDirective()
 
-> **parseBracketDirective**(): [`Token`](../interfaces/Token.md)
+> __parseBracketDirective__(): [`Token`](../interfaces/Token.md)
 
 Defined in: [src/parsers/dom/Tokenizer.ts:666](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L666)
 
 Parse bracket directive [{...}]
 Determines type based on content:
+
 - [{$...}] → Variable
 - [{SET ...}] → Metadata
 - [{...}] → Plugin
@@ -274,7 +275,7 @@ Directive token
 
 ### parseCodeBlockToken()
 
-> **parseCodeBlockToken**(): [`Token`](../interfaces/Token.md)
+> __parseCodeBlockToken__(): [`Token`](../interfaces/Token.md)
 
 Defined in: [src/parsers/dom/Tokenizer.ts:909](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L909)
 
@@ -290,7 +291,7 @@ Code block token
 
 ### parseCodeInlineToken()
 
-> **parseCodeInlineToken**(): [`Token`](../interfaces/Token.md)
+> __parseCodeInlineToken__(): [`Token`](../interfaces/Token.md)
 
 Defined in: [src/parsers/dom/Tokenizer.ts:891](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L891)
 
@@ -306,7 +307,7 @@ Code inline token
 
 ### parseCommentToken()
 
-> **parseCommentToken**(): [`Token`](../interfaces/Token.md)
+> __parseCommentToken__(): [`Token`](../interfaces/Token.md)
 
 Defined in: [src/parsers/dom/Tokenizer.ts:927](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L927)
 
@@ -322,7 +323,7 @@ Comment token
 
 ### parseEscapedToken()
 
-> **parseEscapedToken**(): [`Token`](../interfaces/Token.md)
+> __parseEscapedToken__(): [`Token`](../interfaces/Token.md)
 
 Defined in: [src/parsers/dom/Tokenizer.ts:615](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L615)
 
@@ -341,7 +342,7 @@ Escaped token
 
 ### parseHeadingToken()
 
-> **parseHeadingToken**(): [`Token`](../interfaces/Token.md)
+> __parseHeadingToken__(): [`Token`](../interfaces/Token.md)
 
 Defined in: [src/parsers/dom/Tokenizer.ts:781](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L781)
 
@@ -357,7 +358,7 @@ Heading token
 
 ### parseItalicToken()
 
-> **parseItalicToken**(): [`Token`](../interfaces/Token.md)
+> __parseItalicToken__(): [`Token`](../interfaces/Token.md)
 
 Defined in: [src/parsers/dom/Tokenizer.ts:873](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L873)
 
@@ -373,7 +374,7 @@ Italic token
 
 ### parseListItemToken()
 
-> **parseListItemToken**(): [`Token`](../interfaces/Token.md)
+> __parseListItemToken__(): [`Token`](../interfaces/Token.md)
 
 Defined in: [src/parsers/dom/Tokenizer.ts:807](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L807)
 
@@ -389,7 +390,7 @@ List item token
 
 ### parseMetadataToken()
 
-> **parseMetadataToken**(`pos`): [`Token`](../interfaces/Token.md)
+> __parseMetadataToken__(`pos`): [`Token`](../interfaces/Token.md)
 
 Defined in: [src/parsers/dom/Tokenizer.ts:712](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L712)
 
@@ -414,7 +415,7 @@ Metadata token
 
 ### parseNewlineToken()
 
-> **parseNewlineToken**(): [`Token`](../interfaces/Token.md)
+> __parseNewlineToken__(): [`Token`](../interfaces/Token.md)
 
 Defined in: [src/parsers/dom/Tokenizer.ts:598](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L598)
 
@@ -430,7 +431,7 @@ Newline token
 
 ### parsePluginToken()
 
-> **parsePluginToken**(`pos`): [`Token`](../interfaces/Token.md)
+> __parsePluginToken__(`pos`): [`Token`](../interfaces/Token.md)
 
 Defined in: [src/parsers/dom/Tokenizer.ts:733](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L733)
 
@@ -455,7 +456,7 @@ Plugin token
 
 ### parseTableCellToken()
 
-> **parseTableCellToken**(): [`Token`](../interfaces/Token.md)
+> __parseTableCellToken__(): [`Token`](../interfaces/Token.md)
 
 Defined in: [src/parsers/dom/Tokenizer.ts:837](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L837)
 
@@ -471,7 +472,7 @@ Table cell token
 
 ### parseTextToken()
 
-> **parseTextToken**(): [`Token`](../interfaces/Token.md)
+> __parseTextToken__(): [`Token`](../interfaces/Token.md)
 
 Defined in: [src/parsers/dom/Tokenizer.ts:945](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L945)
 
@@ -487,7 +488,7 @@ Text token
 
 ### parseVariableToken()
 
-> **parseVariableToken**(`pos`): [`Token`](../interfaces/Token.md)
+> __parseVariableToken__(`pos`): [`Token`](../interfaces/Token.md)
 
 Defined in: [src/parsers/dom/Tokenizer.ts:691](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L691)
 
@@ -512,7 +513,7 @@ Variable token
 
 ### parseWikiTagToken()
 
-> **parseWikiTagToken**(): [`Token`](../interfaces/Token.md)
+> __parseWikiTagToken__(): [`Token`](../interfaces/Token.md)
 
 Defined in: [src/parsers/dom/Tokenizer.ts:749](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L749)
 
@@ -528,7 +529,7 @@ Wiki tag or link token
 
 ### peekAhead()
 
-> **peekAhead**(`count`): `string`
+> __peekAhead__(`count`): `string`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:293](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L293)
 
@@ -552,7 +553,7 @@ String of next N characters
 
 ### peekChar()
 
-> **peekChar**(): `string` \| `null`
+> __peekChar__(): `string` \| `null`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:202](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L202)
 
@@ -568,7 +569,7 @@ Current character or null if at EOF
 
 ### pushBack()
 
-> **pushBack**(`char`): `void`
+> __pushBack__(`char`): `void`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:254](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L254)
 
@@ -591,7 +592,7 @@ Character to push back
 
 ### readUntil()
 
-> **readUntil**(`delimiters`, `consume`): `string`
+> __readUntil__(`delimiters`, `consume`): `string`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:403](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L403)
 
@@ -621,7 +622,7 @@ Text read until delimiter
 
 ### reset()
 
-> **reset**(): `void`
+> __reset__(): `void`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:481](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L481)
 
@@ -635,7 +636,7 @@ Reset tokenizer to beginning
 
 ### skipAllWhitespace()
 
-> **skipAllWhitespace**(): `number`
+> __skipAllWhitespace__(): `number`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:337](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L337)
 
@@ -651,7 +652,7 @@ Number of whitespace characters skipped
 
 ### skipWhitespace()
 
-> **skipWhitespace**(): `number`
+> __skipWhitespace__(): `number`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:319](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L319)
 
@@ -668,7 +669,7 @@ Number of whitespace characters skipped
 
 ### substring()
 
-> **substring**(`start`, `end`): `string`
+> __substring__(`start`, `end`): `string`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:474](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L474)
 
@@ -698,7 +699,7 @@ Substring
 
 ### tokenize()
 
-> **tokenize**(): [`Token`](../interfaces/Token.md)[]
+> __tokenize__(): [`Token`](../interfaces/Token.md)[]
 
 Defined in: [src/parsers/dom/Tokenizer.ts:496](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L496)
 

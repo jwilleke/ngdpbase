@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -18,7 +18,7 @@ Request information
 
 ### ip?
 
-> `optional` **ip**: `string`
+> `optional` __ip__: `string`
 
 Defined in: [src/parsers/context/ParseContext.ts:28](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L28)
 
@@ -26,7 +26,7 @@ Defined in: [src/parsers/context/ParseContext.ts:28](https://github.com/jwilleke
 
 ### method?
 
-> `optional` **method**: `string`
+> `optional` __method__: `string`
 
 Defined in: [src/parsers/context/ParseContext.ts:26](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L26)
 
@@ -34,7 +34,7 @@ Defined in: [src/parsers/context/ParseContext.ts:26](https://github.com/jwilleke
 
 ### path?
 
-> `optional` **path**: `string`
+> `optional` __path__: `string`
 
 Defined in: [src/parsers/context/ParseContext.ts:27](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L27)
 
@@ -42,6 +42,6 @@ Defined in: [src/parsers/context/ParseContext.ts:27](https://github.com/jwilleke
 
 ### userAgent?
 
-> `optional` **userAgent**: `string`
+> `optional` __userAgent__: `string`
 
 Defined in: [src/parsers/context/ParseContext.ts:29](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L29)

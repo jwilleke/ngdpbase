@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Page object interface (minimal fields needed for export)
 
 ### content
 
-> **content**: `string`
+> __content__: `string`
 
 Defined in: [src/managers/ExportManager.ts:46](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ExportManager.ts#L46)
 
@@ -22,7 +22,7 @@ Defined in: [src/managers/ExportManager.ts:46](https://github.com/jwilleke/ngdpb
 
 ### lastModified?
 
-> `optional` **lastModified**: `string`
+> `optional` __lastModified__: `string`
 
 Defined in: [src/managers/ExportManager.ts:47](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ExportManager.ts#L47)
 
@@ -30,7 +30,7 @@ Defined in: [src/managers/ExportManager.ts:47](https://github.com/jwilleke/ngdpb
 
 ### name?
 
-> `optional` **name**: `string`
+> `optional` __name__: `string`
 
 Defined in: [src/managers/ExportManager.ts:50](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ExportManager.ts#L50)
 
@@ -38,7 +38,7 @@ Defined in: [src/managers/ExportManager.ts:50](https://github.com/jwilleke/ngdpb
 
 ### system-category?
 
-> `optional` **system-category**: `string`
+> `optional` __system-category__: `string`
 
 Defined in: [src/managers/ExportManager.ts:48](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ExportManager.ts#L48)
 
@@ -46,6 +46,6 @@ Defined in: [src/managers/ExportManager.ts:48](https://github.com/jwilleke/ngdpb
 
 ### user-keywords?
 
-> `optional` **user-keywords**: `string`[]
+> `optional` __user-keywords__: `string`[]
 
 Defined in: [src/managers/ExportManager.ts:49](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ExportManager.ts#L49)

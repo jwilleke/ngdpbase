@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Cache set options
 
 ### ttl?
 
-> `optional` **ttl**: `number`
+> `optional` __ttl__: `number`
 
 Defined in: [src/cache/RegionCache.ts:9](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/RegionCache.ts#L9)
 

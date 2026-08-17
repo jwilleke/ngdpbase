@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Performance monitor
 
 ### alertThresholds
 
-> **alertThresholds**: [`AlertThresholds`](AlertThresholds.md)
+> __alertThresholds__: [`AlertThresholds`](AlertThresholds.md)
 
 Defined in: [src/parsers/filters/FilterChain.ts:84](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L84)
 
@@ -22,7 +22,7 @@ Defined in: [src/parsers/filters/FilterChain.ts:84](https://github.com/jwilleke/
 
 ### enabled
 
-> **enabled**: `boolean`
+> __enabled__: `boolean`
 
 Defined in: [src/parsers/filters/FilterChain.ts:81](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L81)
 
@@ -30,7 +30,7 @@ Defined in: [src/parsers/filters/FilterChain.ts:81](https://github.com/jwilleke/
 
 ### maxRecentEntries
 
-> **maxRecentEntries**: `number`
+> __maxRecentEntries__: `number`
 
 Defined in: [src/parsers/filters/FilterChain.ts:83](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L83)
 
@@ -38,6 +38,6 @@ Defined in: [src/parsers/filters/FilterChain.ts:83](https://github.com/jwilleke/
 
 ### recentExecutions
 
-> **recentExecutions**: [`PerformanceExecution`](PerformanceExecution.md)[]
+> __recentExecutions__: [`PerformanceExecution`](PerformanceExecution.md)[]
 
 Defined in: [src/parsers/filters/FilterChain.ts:82](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L82)

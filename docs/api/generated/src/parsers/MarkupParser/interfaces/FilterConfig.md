@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Filter configuration
 
 ### enabled
 
-> **enabled**: `boolean`
+> __enabled__: `boolean`
 
 Defined in: [src/parsers/MarkupParser.ts:89](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L89)
 
@@ -24,7 +24,7 @@ Whether filters are enabled
 
 ### mode?
 
-> `optional` **mode**: `"sequential"` \| `"parallel"`
+> `optional` __mode__: `"sequential"` \| `"parallel"`
 
 Defined in: [src/parsers/MarkupParser.ts:91](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L91)
 
@@ -34,7 +34,7 @@ Filter mode (sequential or parallel)
 
 ### security
 
-> **security**: [`FilterTypeConfig`](FilterTypeConfig.md)
+> __security__: [`FilterTypeConfig`](FilterTypeConfig.md)
 
 Defined in: [src/parsers/MarkupParser.ts:93](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L93)
 
@@ -44,7 +44,7 @@ Security filter configuration
 
 ### spam
 
-> **spam**: [`FilterTypeConfig`](FilterTypeConfig.md)
+> __spam__: [`FilterTypeConfig`](FilterTypeConfig.md)
 
 Defined in: [src/parsers/MarkupParser.ts:95](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L95)
 
@@ -54,7 +54,7 @@ Spam filter configuration
 
 ### validation
 
-> **validation**: [`FilterTypeConfig`](FilterTypeConfig.md)
+> __validation__: [`FilterTypeConfig`](FilterTypeConfig.md)
 
 Defined in: [src/parsers/MarkupParser.ts:97](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L97)
 
