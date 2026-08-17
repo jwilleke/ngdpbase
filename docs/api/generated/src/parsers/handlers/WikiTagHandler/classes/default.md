@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -11,6 +11,7 @@ Defined in: [src/parsers/handlers/WikiTagHandler.ts:103](https://github.com/jwil
 WikiTagHandler - JSP-like tag processing for conditional content and page inclusion
 
 Supports JSPWiki WikiTags:
+
 - <wiki:If test="condition">content</wiki:If> - Conditional display
 - <wiki:Include page="PageName" /> - Page inclusion
 - <wiki:UserCheck status="authenticated">content</wiki:UserCheck> - User validation
@@ -26,7 +27,7 @@ Epic: #41 - Implement JSPWikiMarkupParser for Complete Enhancement Support
 
 ### Constructor
 
-> **new default**(`engine`): `WikiTagHandler`
+> __new default__(`engine`): `WikiTagHandler`
 
 Defined in: [src/parsers/handlers/WikiTagHandler.ts:109](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/WikiTagHandler.ts#L109)
 
@@ -48,7 +49,7 @@ Defined in: [src/parsers/handlers/WikiTagHandler.ts:109](https://github.com/jwil
 
 ### dependencies
 
-> `readonly` **dependencies**: (`string` \| [`DependencySpec`](../../BaseSyntaxHandler/interfaces/DependencySpec.md))[]
+> `readonly` __dependencies__: (`string` \| [`DependencySpec`](../../BaseSyntaxHandler/interfaces/DependencySpec.md))[]
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:171](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L171)
 
@@ -60,7 +61,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:171](https://github.com/j
 
 ### dependencyErrors?
 
-> `protected` `optional` **dependencyErrors**: [`DependencyError`](../../BaseSyntaxHandler/interfaces/DependencyError.md)[]
+> `protected` `optional` __dependencyErrors__: [`DependencyError`](../../BaseSyntaxHandler/interfaces/DependencyError.md)[]
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:178](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L178)
 
@@ -72,7 +73,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:178](https://github.com/j
 
 ### description
 
-> `readonly` **description**: `string`
+> `readonly` __description__: `string`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:170](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L170)
 
@@ -84,7 +85,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:170](https://github.com/j
 
 ### enabled
 
-> `protected` **enabled**: `boolean`
+> `protected` __enabled__: `boolean`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:176](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L176)
 
@@ -96,7 +97,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:176](https://github.com/j
 
 ### handlerId
 
-> **handlerId**: `string`
+> __handlerId__: `string`
 
 Defined in: [src/parsers/handlers/WikiTagHandler.ts:104](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/WikiTagHandler.ts#L104)
 
@@ -108,7 +109,7 @@ Defined in: [src/parsers/handlers/WikiTagHandler.ts:104](https://github.com/jwil
 
 ### initContext?
 
-> `protected` `optional` **initContext**: [`InitializationContext`](../../BaseSyntaxHandler/interfaces/InitializationContext.md)
+> `protected` `optional` __initContext__: [`InitializationContext`](../../BaseSyntaxHandler/interfaces/InitializationContext.md)
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:177](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L177)
 
@@ -120,7 +121,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:177](https://github.com/j
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:175](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L175)
 
@@ -132,7 +133,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:175](https://github.com/j
 
 ### options
 
-> `protected` **options**: `Required`\<[`HandlerOptions`](../../BaseSyntaxHandler/interfaces/HandlerOptions.md)\>
+> `protected` __options__: `Required`\<[`HandlerOptions`](../../BaseSyntaxHandler/interfaces/HandlerOptions.md)\>
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:173](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L173)
 
@@ -144,7 +145,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:173](https://github.com/j
 
 ### pattern
 
-> `readonly` **pattern**: `RegExp`
+> `readonly` __pattern__: `RegExp`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:167](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L167)
 
@@ -156,7 +157,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:167](https://github.com/j
 
 ### priority
 
-> `readonly` **priority**: `number`
+> `readonly` __priority__: `number`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:166](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L166)
 
@@ -168,7 +169,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:166](https://github.com/j
 
 ### stats
 
-> `protected` **stats**: [`HandlerStats`](../../BaseSyntaxHandler/interfaces/HandlerStats.md)
+> `protected` __stats__: [`HandlerStats`](../../BaseSyntaxHandler/interfaces/HandlerStats.md)
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:174](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L174)
 
@@ -180,7 +181,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:174](https://github.com/j
 
 ### version
 
-> `readonly` **version**: `string`
+> `readonly` __version__: `string`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:169](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L169)
 
@@ -192,7 +193,7 @@ Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:169](https://github.com/j
 
 ### buildRegexFlags()
 
-> `protected` **buildRegexFlags**(): `string`
+> `protected` __buildRegexFlags__(): `string`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:261](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L261)
 
@@ -212,7 +213,7 @@ Regex flags string
 
 ### clone()
 
-> **clone**(`overrides`): [`HandlerCloneConfig`](../../BaseSyntaxHandler/interfaces/HandlerCloneConfig.md)
+> __clone__(`overrides`): [`HandlerCloneConfig`](../../BaseSyntaxHandler/interfaces/HandlerCloneConfig.md)
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:712](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L712)
 
@@ -240,7 +241,7 @@ Handler configuration for creating new instance
 
 ### compilePattern()
 
-> `protected` **compilePattern**(`pattern`): `RegExp`
+> `protected` __compilePattern__(`pattern`): `RegExp`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:242](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L242)
 
@@ -268,7 +269,7 @@ Compiled regular expression
 
 ### createErrorContext()
 
-> `protected` **createErrorContext**(`error`, `content`, `context`): [`ErrorContext`](../../BaseSyntaxHandler/interfaces/ErrorContext.md)
+> `protected` __createErrorContext__(`error`, `content`, `context`): [`ErrorContext`](../../BaseSyntaxHandler/interfaces/ErrorContext.md)
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:480](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L480)
 
@@ -308,7 +309,7 @@ Error context
 
 ### createTimeoutPromise()
 
-> `protected` **createTimeoutPromise**(): `Promise`\<`string`\>
+> `protected` __createTimeoutPromise__(): `Promise`\<`string`\>
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:461](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L461)
 
@@ -328,7 +329,7 @@ Promise that rejects after timeout
 
 ### disable()
 
-> **disable**(): `void`
+> __disable__(): `void`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:630](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L630)
 
@@ -346,7 +347,7 @@ Disable the handler
 
 ### enable()
 
-> **enable**(): `void`
+> __enable__(): `void`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:623](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L623)
 
@@ -364,7 +365,7 @@ Enable the handler
 
 ### execute()
 
-> **execute**(`content`, `context`): `Promise`\<`string`\>
+> __execute__(`content`, `context`): `Promise`\<`string`\>
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:414](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L414)
 
@@ -398,7 +399,7 @@ Processed content
 
 ### getDependencyErrors()
 
-> **getDependencyErrors**(): [`DependencyError`](../../BaseSyntaxHandler/interfaces/DependencyError.md)[]
+> __getDependencyErrors__(): [`DependencyError`](../../BaseSyntaxHandler/interfaces/DependencyError.md)[]
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:378](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L378)
 
@@ -418,7 +419,7 @@ Array of dependency errors
 
 ### getInfo()
 
-> **getInfo**(): `Record`\<`string`, `unknown`\>
+> __getInfo__(): `Record`\<`string`, `unknown`\>
 
 Defined in: [src/parsers/handlers/WikiTagHandler.ts:724](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/WikiTagHandler.ts#L724)
 
@@ -434,7 +435,7 @@ Handler information
 
 ### getMetadata()
 
-> **getMetadata**(): [`HandlerMetadata`](../../BaseSyntaxHandler/interfaces/HandlerMetadata.md)
+> __getMetadata__(): [`HandlerMetadata`](../../BaseSyntaxHandler/interfaces/HandlerMetadata.md)
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:678](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L678)
 
@@ -454,7 +455,7 @@ Handler metadata
 
 ### getStats()
 
-> **getStats**(): [`HandlerStats`](../../BaseSyntaxHandler/interfaces/HandlerStats.md) & `object`
+> __getStats__(): [`HandlerStats`](../../BaseSyntaxHandler/interfaces/HandlerStats.md) & `object`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:646](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L646)
 
@@ -474,7 +475,7 @@ Handler statistics
 
 ### getSupportedConditions()
 
-> **getSupportedConditions**(): `string`[]
+> __getSupportedConditions__(): `string`[]
 
 Defined in: [src/parsers/handlers/WikiTagHandler.ts:706](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/WikiTagHandler.ts#L706)
 
@@ -490,7 +491,7 @@ Array of supported conditions
 
 ### getSupportedPatterns()
 
-> **getSupportedPatterns**(): `string`[]
+> __getSupportedPatterns__(): `string`[]
 
 Defined in: [src/parsers/handlers/WikiTagHandler.ts:690](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/WikiTagHandler.ts#L690)
 
@@ -506,7 +507,7 @@ Array of supported patterns
 
 ### handle()
 
-> **handle**(`_match`, `_context`): `Promise`\<`string`\>
+> __handle__(`_match`, `_context`): `Promise`\<`string`\>
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:404](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L404)
 
@@ -536,7 +537,7 @@ Replacement content
 
 ### hasDependencyErrors()
 
-> **hasDependencyErrors**(): `boolean`
+> __hasDependencyErrors__(): `boolean`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:386](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L386)
 
@@ -556,7 +557,7 @@ True if there are dependency errors
 
 ### initialize()
 
-> **initialize**(`context`): `Promise`\<`void`\>
+> __initialize__(`context`): `Promise`\<`void`\>
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:274](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L274)
 
@@ -583,7 +584,7 @@ Initialization context
 
 ### isEnabled()
 
-> **isEnabled**(): `boolean`
+> __isEnabled__(): `boolean`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:638](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L638)
 
@@ -603,7 +604,7 @@ True if enabled
 
 ### onInitialize()
 
-> `protected` **onInitialize**(`context`): `Promise`\<`void`\>
+> `protected` __onInitialize__(`context`): `Promise`\<`void`\>
 
 Defined in: [src/parsers/handlers/WikiTagHandler.ts:133](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/WikiTagHandler.ts#L133)
 
@@ -629,7 +630,7 @@ Initialization context
 
 ### onShutdown()
 
-> `protected` **onShutdown**(): `Promise`\<`void`\>
+> `protected` __onShutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:703](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L703)
 
@@ -647,7 +648,7 @@ Custom shutdown logic (override in subclasses)
 
 ### parseParameters()
 
-> **parseParameters**(`paramString`): `Record`\<`string`, `unknown`\>
+> __parseParameters__(`paramString`): `Record`\<`string`, `unknown`\>
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:503](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L503)
 
@@ -676,7 +677,7 @@ Parsed parameters
 
 ### process()
 
-> **process**(`content`, `context`): `Promise`\<`string`\>
+> __process__(`content`, `context`): `Promise`\<`string`\>
 
 Defined in: [src/parsers/handlers/WikiTagHandler.ts:153](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/WikiTagHandler.ts#L153)
 
@@ -710,7 +711,7 @@ Content with WikiTags processed
 
 ### resetStats()
 
-> **resetStats**(): `void`
+> __resetStats__(): `void`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:664](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L664)
 
@@ -728,7 +729,7 @@ Reset handler statistics
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:695](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L695)
 
@@ -747,7 +748,7 @@ Called when handler is unregistered
 
 ### toString()
 
-> **toString**(): `string`
+> __toString__(): `string`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:730](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L730)
 
@@ -767,7 +768,7 @@ String representation
 
 ### validateDependencies()
 
-> `protected` **validateDependencies**(`context`): `void`
+> `protected` __validateDependencies__(`context`): `void`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:303](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L303)
 
@@ -793,7 +794,7 @@ Initialization context
 
 ### validateParameter()
 
-> `protected` **validateParameter**(`key`, `value`, `rule`): [`ParameterValidationResult`](../../BaseSyntaxHandler/interfaces/ParameterValidationResult.md)
+> `protected` __validateParameter__(`key`, `value`, `rule`): [`ParameterValidationResult`](../../BaseSyntaxHandler/interfaces/ParameterValidationResult.md)
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:575](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L575)
 
@@ -833,7 +834,7 @@ Validation result
 
 ### validateParameters()
 
-> **validateParameters**(`params`, `schema`): [`ValidationResult`](../../BaseSyntaxHandler/interfaces/ValidationResult.md)
+> __validateParameters__(`params`, `schema`): [`ValidationResult`](../../BaseSyntaxHandler/interfaces/ValidationResult.md)
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:536](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L536)
 
@@ -867,7 +868,7 @@ Validation result
 
 ### validateSpecificDependency()
 
-> `protected` **validateSpecificDependency**(`dependency`, `context`): `void`
+> `protected` __validateSpecificDependency__(`dependency`, `context`): `void`
 
 Defined in: [src/parsers/handlers/BaseSyntaxHandler.ts:340](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/BaseSyntaxHandler.ts#L340)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Validation result
 
 ### errors
 
-> **errors**: [`ErrorInfo`](ErrorInfo.md)[]
+> __errors__: [`ErrorInfo`](ErrorInfo.md)[]
 
 Defined in: [src/parsers/dom/DOMParser.ts:112](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMParser.ts#L112)
 
@@ -24,7 +24,7 @@ Parse errors
 
 ### valid
 
-> **valid**: `boolean`
+> __valid__: `boolean`
 
 Defined in: [src/parsers/dom/DOMParser.ts:110](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMParser.ts#L110)
 
@@ -34,7 +34,7 @@ Whether the content is valid
 
 ### warnings
 
-> **warnings**: [`WarningInfo`](WarningInfo.md)[]
+> __warnings__: [`WarningInfo`](WarningInfo.md)[]
 
 Defined in: [src/parsers/dom/DOMParser.ts:114](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMParser.ts#L114)
 

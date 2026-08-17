@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Audit search results
 
 ### hasMore
 
-> **hasMore**: `boolean`
+> __hasMore__: `boolean`
 
 Defined in: [src/providers/BaseAuditProvider.ts:72](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L72)
 
@@ -24,7 +24,7 @@ Whether more results are available
 
 ### limit
 
-> **limit**: `number`
+> __limit__: `number`
 
 Defined in: [src/providers/BaseAuditProvider.ts:66](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L66)
 
@@ -34,7 +34,7 @@ Result limit
 
 ### offset
 
-> **offset**: `number`
+> __offset__: `number`
 
 Defined in: [src/providers/BaseAuditProvider.ts:69](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L69)
 
@@ -44,7 +44,7 @@ Result offset
 
 ### results
 
-> **results**: [`AuditEvent`](../../../types/Provider/interfaces/AuditEvent.md)[]
+> __results__: [`AuditEvent`](../../../types/Provider/interfaces/AuditEvent.md)[]
 
 Defined in: [src/providers/BaseAuditProvider.ts:60](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L60)
 
@@ -54,7 +54,7 @@ Array of audit events
 
 ### total
 
-> **total**: `number`
+> __total__: `number`
 
 Defined in: [src/providers/BaseAuditProvider.ts:63](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L63)
 

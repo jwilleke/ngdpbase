@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -11,6 +11,7 @@ Defined in: [src/utils/VersioningMigration.ts:112](https://github.com/jwilleke/n
 VersioningMigration - Utility for migrating FileSystemProvider to VersioningFileProvider
 
 Provides safe migration of existing ngdpbase pages to versioned format with:
+
 - Full data preservation and validation
 - Rollback capability
 - Progress tracking
@@ -34,7 +35,7 @@ console.log(`Migrated ${report.pagesProcessed} pages`);
 
 ### Constructor
 
-> **new default**(`options`): `VersioningMigration`
+> __new default__(`options`): `VersioningMigration`
 
 Defined in: [src/utils/VersioningMigration.ts:133](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersioningMigration.ts#L133)
 
@@ -56,13 +57,14 @@ Migration options
 
 ### migrateFromFileSystemProvider()
 
-> **migrateFromFileSystemProvider**(): `Promise`\<`MigrationReport`\>
+> __migrateFromFileSystemProvider__(): `Promise`\<`MigrationReport`\>
 
 Defined in: [src/utils/VersioningMigration.ts:164](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersioningMigration.ts#L164)
 
 Migrate existing pages from FileSystemProvider to VersioningFileProvider
 
 Algorithm:
+
 1. Scan all existing .md files in pages/ and required-pages/
 2. For each page:
    a. Read and parse content + frontmatter
@@ -87,7 +89,7 @@ If migration fails critically
 
 ### rollbackMigration()
 
-> **rollbackMigration**(): `Promise`\<`RollbackResult`\>
+> __rollbackMigration__(): `Promise`\<`RollbackResult`\>
 
 Defined in: [src/utils/VersioningMigration.ts:582](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersioningMigration.ts#L582)
 
@@ -106,13 +108,14 @@ Rollback result
 
 ### validateMigration()
 
-> **validateMigration**(): `Promise`\<`ValidationResult`\>
+> __validateMigration__(): `Promise`\<`ValidationResult`\>
 
 Defined in: [src/utils/VersioningMigration.ts:478](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersioningMigration.ts#L478)
 
 Validate migration integrity
 
 Checks:
+
 - All pages have version directories
 - manifest.json files are valid
 - Content hashes match

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,12 +14,14 @@ Orchestrates system-wide backup and restore by calling backup()/restore()
 on all registered managers and aggregating their data into compressed archives.
 
 Responsibilities:
+
 - Call backup() on all registered managers
 - Aggregate backup data into a single .gz file
 - Restore from .gz backup file
 - Call restore() on all registered managers
 
 Architecture:
+
 - Each manager implements backup() to return its state
 - BackupManager collects all states into one object
 - Serializes to JSON and compresses with gzip
@@ -47,7 +49,7 @@ console.log('Backup created:', backupPath);
 
 ### Constructor
 
-> **new default**(`engine`): `BackupManager`
+> __new default__(`engine`): `BackupManager`
 
 Defined in: [src/managers/BackupManager.ts:101](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L101)
 
@@ -73,7 +75,7 @@ The wiki engine instance
 
 ### config?
 
-> `protected` `optional` **config**: `Record`\<`string`, `unknown`\>
+> `protected` `optional` __config__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/managers/BaseManager.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L61)
 
@@ -87,7 +89,7 @@ Configuration passed during initialization
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L54)
 
@@ -101,7 +103,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/managers/BaseManager.ts:57](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L57)
 
@@ -115,7 +117,7 @@ Initialization status flag
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
 
 Defined in: [src/managers/BackupManager.ts:144](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L144)
 
@@ -135,13 +137,14 @@ Backup data for this manager
 
 ### createBackup()
 
-> **createBackup**(`options`): `Promise`\<`string`\>
+> __createBackup__(`options`): `Promise`\<`string`\>
 
 Defined in: [src/managers/BackupManager.ts:185](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L185)
 
 Perform a complete backup of all managers to a file
 
 Process:
+
 1. Get all registered managers from engine
 2. Call backup() on each manager
 3. Aggregate all backup data
@@ -167,7 +170,7 @@ Path to created backup file
 
 ### getEngine()
 
-> **getEngine**(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> __getEngine__(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:125](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L125)
 
@@ -193,7 +196,7 @@ const config = this.getEngine().getConfig();
 
 ### getLatestBackup()
 
-> **getLatestBackup**(): `Promise`\<`string` \| `null`\>
+> __getLatestBackup__(): `Promise`\<`string` \| `null`\>
 
 Defined in: [src/managers/BackupManager.ts:474](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L474)
 
@@ -209,7 +212,7 @@ Path to most recent backup, or null if none exist
 
 ### initialize()
 
-> **initialize**(`config?`): `Promise`\<`void`\>
+> __initialize__(`config?`): `Promise`\<`void`\>
 
 Defined in: [src/managers/BackupManager.ts:115](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L115)
 
@@ -241,7 +244,7 @@ If ConfigurationManager is not available
 
 ### isInitialized()
 
-> **isInitialized**(): `boolean`
+> __isInitialized__(): `boolean`
 
 Defined in: [src/managers/BaseManager.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L113)
 
@@ -269,7 +272,7 @@ if (manager.isInitialized()) {
 
 ### listBackups()
 
-> **listBackups**(): `Promise`\<[`BackupFileInfo`](../interfaces/BackupFileInfo.md)[]\>
+> __listBackups__(): `Promise`\<[`BackupFileInfo`](../interfaces/BackupFileInfo.md)[]\>
 
 Defined in: [src/managers/BackupManager.ts:405](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L405)
 
@@ -285,7 +288,7 @@ List of backup files with metadata
 
 ### restore()
 
-> **restore**(`backupData`): `Promise`\<`void`\>
+> __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:198](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L198)
 
@@ -330,13 +333,14 @@ async restore(backupData: BackupData): Promise<void> {
 
 ### restoreFromFile()
 
-> **restoreFromFile**(`backupPath`, `options`): `Promise`\<[`RestoreResults`](../interfaces/RestoreResults.md)\>
+> __restoreFromFile__(`backupPath`, `options`): `Promise`\<[`RestoreResults`](../interfaces/RestoreResults.md)\>
 
 Defined in: [src/managers/BackupManager.ts:286](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L286)
 
 Restore all managers from a backup file
 
 Process:
+
 1. Read and decompress backup file
 2. Parse JSON data
 3. Validate backup structure
@@ -366,7 +370,7 @@ Restore results
 
 ### restoreState()
 
-> **restoreState**(`backupData`): `Promise`\<`void`\>
+> __restoreState__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/managers/BackupManager.ts:162](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L162)
 
@@ -388,7 +392,7 @@ Backup data from backup()
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L143)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Context summary for logging
 
 ### authenticated
 
-> **authenticated**: `boolean`
+> __authenticated__: `boolean`
 
 Defined in: [src/parsers/context/ParseContext.ts:83](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L83)
 
@@ -22,7 +22,7 @@ Defined in: [src/parsers/context/ParseContext.ts:83](https://github.com/jwilleke
 
 ### contentLength
 
-> **contentLength**: `number`
+> __contentLength__: `number`
 
 Defined in: [src/parsers/context/ParseContext.ts:85](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L85)
 
@@ -30,7 +30,7 @@ Defined in: [src/parsers/context/ParseContext.ts:85](https://github.com/jwilleke
 
 ### handlerResultCount
 
-> **handlerResultCount**: `number`
+> __handlerResultCount__: `number`
 
 Defined in: [src/parsers/context/ParseContext.ts:87](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L87)
 
@@ -38,7 +38,7 @@ Defined in: [src/parsers/context/ParseContext.ts:87](https://github.com/jwilleke
 
 ### pageName
 
-> **pageName**: `string`
+> __pageName__: `string`
 
 Defined in: [src/parsers/context/ParseContext.ts:81](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L81)
 
@@ -46,7 +46,7 @@ Defined in: [src/parsers/context/ParseContext.ts:81](https://github.com/jwilleke
 
 ### phaseCount
 
-> **phaseCount**: `number`
+> __phaseCount__: `number`
 
 Defined in: [src/parsers/context/ParseContext.ts:89](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L89)
 
@@ -54,7 +54,7 @@ Defined in: [src/parsers/context/ParseContext.ts:89](https://github.com/jwilleke
 
 ### processingTime
 
-> **processingTime**: `number`
+> __processingTime__: `number`
 
 Defined in: [src/parsers/context/ParseContext.ts:88](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L88)
 
@@ -62,7 +62,7 @@ Defined in: [src/parsers/context/ParseContext.ts:88](https://github.com/jwilleke
 
 ### roles
 
-> **roles**: `string`[]
+> __roles__: `string`[]
 
 Defined in: [src/parsers/context/ParseContext.ts:84](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L84)
 
@@ -70,7 +70,7 @@ Defined in: [src/parsers/context/ParseContext.ts:84](https://github.com/jwilleke
 
 ### userName
 
-> **userName**: `string`
+> __userName__: `string`
 
 Defined in: [src/parsers/context/ParseContext.ts:82](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L82)
 
@@ -78,6 +78,6 @@ Defined in: [src/parsers/context/ParseContext.ts:82](https://github.com/jwilleke
 
 ### variableCount
 
-> **variableCount**: `number`
+> __variableCount__: `number`
 
 Defined in: [src/parsers/context/ParseContext.ts:86](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/context/ParseContext.ts#L86)

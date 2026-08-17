@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../../README.md)
 
 ***
 
@@ -20,7 +20,7 @@ Additional properties
 
 ### endIndex?
 
-> `optional` **endIndex**: `number`
+> `optional` __endIndex__: `number`
 
 Defined in: [src/parsers/dom/handlers/DOMVariableHandler.ts:89](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMVariableHandler.ts#L89)
 
@@ -30,7 +30,7 @@ End index in content
 
 ### id
 
-> **id**: `number`
+> __id__: `number`
 
 Defined in: [src/parsers/dom/handlers/DOMVariableHandler.ts:83](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMVariableHandler.ts#L83)
 
@@ -40,7 +40,7 @@ Unique ID for tracking
 
 ### originalText?
 
-> `optional` **originalText**: `string`
+> `optional` __originalText__: `string`
 
 Defined in: [src/parsers/dom/handlers/DOMVariableHandler.ts:85](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMVariableHandler.ts#L85)
 
@@ -50,7 +50,7 @@ Original text
 
 ### startIndex?
 
-> `optional` **startIndex**: `number`
+> `optional` __startIndex__: `number`
 
 Defined in: [src/parsers/dom/handlers/DOMVariableHandler.ts:87](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMVariableHandler.ts#L87)
 
@@ -60,7 +60,7 @@ Start index in content
 
 ### type
 
-> **type**: `string`
+> __type__: `string`
 
 Defined in: [src/parsers/dom/handlers/DOMVariableHandler.ts:79](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMVariableHandler.ts#L79)
 
@@ -70,7 +70,7 @@ Element type
 
 ### varName
 
-> **varName**: `string`
+> __varName__: `string`
 
 Defined in: [src/parsers/dom/handlers/DOMVariableHandler.ts:81](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMVariableHandler.ts#L81)
 

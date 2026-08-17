@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -25,7 +25,7 @@ matcher.findMatch('Categories', ['Category']); // Returns 'Category'
 
 ### Constructor
 
-> **new default**(`matchEnglishPlurals`): `PageNameMatcher`
+> __new default__(`matchEnglishPlurals`): `PageNameMatcher`
 
 Defined in: [src/utils/PageNameMatcher.ts:20](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/PageNameMatcher.ts#L20)
 
@@ -47,7 +47,7 @@ Enable plural matching (default: true)
 
 ### findConflict()
 
-> **findConflict**(`newPageName`, `existingNames`): `string` \| `null`
+> __findConflict__(`newPageName`, `existingNames`): `string` \| `null`
 
 Defined in: [src/utils/PageNameMatcher.ts:159](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/PageNameMatcher.ts#L159)
 
@@ -78,7 +78,7 @@ The conflicting page name, or null if no conflict
 
 ### findMatch()
 
-> **findMatch**(`searchName`, `existingNames`): `string` \| `null`
+> __findMatch__(`searchName`, `existingNames`): `string` \| `null`
 
 Defined in: [src/utils/PageNameMatcher.ts:116](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/PageNameMatcher.ts#L116)
 
@@ -108,7 +108,7 @@ The matching page name, or null if not found
 
 ### getVariations()
 
-> **getVariations**(`pageName`): `string`[]
+> __getVariations__(`pageName`): `string`[]
 
 Defined in: [src/utils/PageNameMatcher.ts:41](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/PageNameMatcher.ts#L41)
 
@@ -132,7 +132,7 @@ Array of possible variations (all lowercase)
 
 ### matches()
 
-> **matches**(`name1`, `name2`): `boolean`
+> __matches__(`name1`, `name2`): `boolean`
 
 Defined in: [src/utils/PageNameMatcher.ts:99](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/PageNameMatcher.ts#L99)
 
@@ -162,7 +162,7 @@ True if the names match
 
 ### normalize()
 
-> **normalize**(`pageName`): `string`
+> __normalize__(`pageName`): `string`
 
 Defined in: [src/utils/PageNameMatcher.ts:30](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/PageNameMatcher.ts#L30)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Information about a single plugin
 
 ### name
 
-> **name**: `string`
+> __name__: `string`
 
 Defined in: [src/parsers/dom/handlers/DOMPluginHandler.ts:133](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMPluginHandler.ts#L133)
 
@@ -24,7 +24,7 @@ Plugin name
 
 ### parameters
 
-> **parameters**: `Record`\<`string`, `string`\>
+> __parameters__: `Record`\<`string`, `string`\>
 
 Defined in: [src/parsers/dom/handlers/DOMPluginHandler.ts:135](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMPluginHandler.ts#L135)
 

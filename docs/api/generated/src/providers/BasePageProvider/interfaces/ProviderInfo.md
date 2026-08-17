@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Provider information
 
 ### description
 
-> **description**: `string`
+> __description__: `string`
 
 Defined in: [src/providers/BasePageProvider.ts:19](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L19)
 
@@ -22,7 +22,7 @@ Defined in: [src/providers/BasePageProvider.ts:19](https://github.com/jwilleke/n
 
 ### features
 
-> **features**: `string`[]
+> __features__: `string`[]
 
 Defined in: [src/providers/BasePageProvider.ts:20](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L20)
 
@@ -30,7 +30,7 @@ Defined in: [src/providers/BasePageProvider.ts:20](https://github.com/jwilleke/n
 
 ### name
 
-> **name**: `string`
+> __name__: `string`
 
 Defined in: [src/providers/BasePageProvider.ts:17](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L17)
 
@@ -38,6 +38,6 @@ Defined in: [src/providers/BasePageProvider.ts:17](https://github.com/jwilleke/n
 
 ### version
 
-> **version**: `string`
+> __version__: `string`
 
 Defined in: [src/providers/BasePageProvider.ts:18](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BasePageProvider.ts#L18)

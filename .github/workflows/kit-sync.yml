@@ -16,7 +16,22 @@
 # opened, so the sync validates itself in-job and reports the result in the PR
 # body rather than waiting for checks that will not come.
 #
-# Green means checked. Red means the check could not run.
+# PREREQUISITE, and no `permissions:` block can grant it:
+#
+#   Settings > Actions > General > Workflow permissions
+#   [x] Allow GitHub Actions to create and approve pull requests
+#
+# That setting is OFF by default in many repos and organisations. Without it
+# `gh pr create` fails with "GitHub Actions is not permitted to create or approve
+# pull requests". This job does not treat that as a failure: the branch is already
+# pushed by then, so it files an issue carrying the compare link and exits 0.
+#
+# One thing this job structurally cannot deliver: changes to files under
+# .github/workflows/, including this one. GITHUB_TOKEN may not push them, so they
+# are excluded from the commit and a local `install-kit.sh --pr` — run by a human,
+# whose push may touch workflows — is what updates them.
+#
+# Green means checked. Red means the sync could not be produced or did not lint.
 
 name: Kit Sync
 
@@ -101,7 +116,28 @@ jobs:
           fi
 
           git checkout -b "$branch"
-          git add -A
+
+          # Two exclusions, for different reasons.
+          #
+          # .kit-sync — the kit checkout lives inside this work tree, and a blank
+          # `git add -A` stages it as an embedded git repository, putting a gitlink
+          # to the kit in every sync commit.
+          #
+          # .github/workflows — GITHUB_TOKEN may not push changes to a workflow
+          # file. The push is rejected outright ("refusing to allow a GitHub App to
+          # create or update workflow ... without `workflows` permission"), which
+          # would fail the whole sync over a file the job cannot deliver anyway.
+          # The kit owns this workflow, so a local `install-kit.sh --pr` run by a
+          # human updates it; the self-sync delivers everything else.
+          git add -A -- ':!.kit-sync' ':!.github/workflows'
+
+          if git diff --cached --quiet; then
+            echo "::notice::The only pending kit change is under .github/workflows/, which"
+            echo "::notice::GITHUB_TOKEN may not push. Run install-kit.sh --pr locally to deliver it."
+            git checkout -q "${GITHUB_REF_NAME}"
+            exit 0
+          fi
+
           git commit -q -m "chore(kit): sync to $version"
           git push -q -f -u origin "$branch"
 
@@ -110,13 +146,7 @@ jobs:
             exit 0
           fi
 
-          # P2 on creation: /pstatus places a PR by its own label first, and an
-          # unlabelled one lands in Needs triage in every repo on every release.
-          gh pr create \
-            --base "${GITHUB_REF_NAME}" --head "$branch" \
-            --label P2 \
-            --title "chore(kit): sync to $version" \
-            --body "Automated kit sync applied by \`install-kit.sh\` from
+          body="Automated kit sync applied by \`install-kit.sh\` from
           [mjs-project-template](https://github.com/jwilleke/mjs-project-template).
 
           Kit version: \`$version\`
@@ -127,9 +157,61 @@ jobs:
 
           Canonical kit files are overwritten wholesale; your own content is untouched, and
           \`AGENTS.md\` changes stay between the \`KIT:START\` / \`KIT:END\` markers. If something here
-          is wrong, fix it upstream in the template — the next sync would overwrite a local fix." \
-            || gh pr create --base "${GITHUB_REF_NAME}" --head "$branch" \
-                 --title "chore(kit): sync to $version" --body "Automated kit sync to \`$version\`."
+          is wrong, fix it upstream in the template — the next sync would overwrite a local fix."
+
+          # P2 on creation: /pstatus places a PR by its own label first, and an
+          # unlabelled one lands in Needs triage in every repo on every release.
+          if gh pr create --base "${GITHUB_REF_NAME}" --head "$branch" \
+               --label P2 --title "chore(kit): sync to $version" --body "$body" 2>pr-error.txt; then
+            exit 0
+          fi
+
+          cat pr-error.txt
+
+          # The repo has not ticked "Allow GitHub Actions to create and approve
+          # pull requests", which no `permissions:` block can grant. The branch is
+          # already pushed, so nothing is lost and there is nothing to retry — a
+          # red X here would recur on every push forever and mean neither "checked"
+          # nor "could not run".
+          if ! grep -q 'not permitted to create or approve pull requests' pr-error.txt; then
+            echo "::error::gh pr create failed for a reason other than the Actions PR setting"
+            exit 1
+          fi
+
+          compare="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${GITHUB_REF_NAME}...${branch}?expand=1"
+          echo "::notice::Sync branch pushed, but this repo does not allow Actions to open PRs. Open it here: $compare"
+
+          # One issue, reused, on the same marker principle as the drift issue —
+          # this repeats on every push until the setting is changed.
+          marker="kit-sync:cannot-open-pr"
+          if gh issue list --state open --search "$marker in:body" --json number \
+               --jq 'length' | grep -qv '^0$'; then
+            echo "Tracking issue already open."
+            exit 0
+          fi
+
+          gh issue create --label P2 \
+            --title "[kit] Kit Sync cannot open its pull request" \
+            --body "The kit sync ran and passed its own lint, but could not open the pull request:
+
+          \`\`\`text
+          $(cat pr-error.txt)
+          \`\`\`
+
+          **Nothing is lost** — the branch \`$branch\` is pushed. Open the PR here:
+
+          $compare
+
+          ## Fix it once
+
+          Settings > Actions > General > Workflow permissions, and tick
+          **Allow GitHub Actions to create and approve pull requests**.
+
+          That setting is off by default in many repos and organisations, and a workflow's
+          \`permissions:\` block cannot grant it. Until it is on, every sync will push its branch and
+          reopen this issue rather than failing the job.
+
+          <!-- $marker -->"
 
       # Only when the sync itself failed. A repo that is merely behind gets a PR,
       # not an issue — the issue existed because nothing could act.

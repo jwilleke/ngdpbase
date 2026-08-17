@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ FilterChain - Modular content filtering pipeline
 
 ### Constructor
 
-> **new default**(`engine`): `FilterChain`
+> __new default__(`engine`): `FilterChain`
 
 Defined in: [src/parsers/filters/FilterChain.ts:189](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L189)
 
@@ -32,7 +32,7 @@ Defined in: [src/parsers/filters/FilterChain.ts:189](https://github.com/jwilleke
 
 ### addFilter()
 
-> **addFilter**(`filter`, `_options`): `boolean`
+> __addFilter__(`filter`, `_options`): `boolean`
 
 Defined in: [src/parsers/filters/FilterChain.ts:304](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L304)
 
@@ -62,7 +62,7 @@ True if added successfully
 
 ### clearAll()
 
-> **clearAll**(): `Promise`\<`void`\>
+> __clearAll__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/filters/FilterChain.ts:784](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L784)
 
@@ -76,7 +76,7 @@ Clear all filters and reset state
 
 ### disableFilter()
 
-> **disableFilter**(`filterId`): `boolean`
+> __disableFilter__(`filterId`): `boolean`
 
 Defined in: [src/parsers/filters/FilterChain.ts:669](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L669)
 
@@ -100,7 +100,7 @@ True if successful
 
 ### enableFilter()
 
-> **enableFilter**(`filterId`): `boolean`
+> __enableFilter__(`filterId`): `boolean`
 
 Defined in: [src/parsers/filters/FilterChain.ts:653](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L653)
 
@@ -124,7 +124,7 @@ True if successful
 
 ### exportState()
 
-> **exportState**(): [`ExportedChainState`](../interfaces/ExportedChainState.md)
+> __exportState__(): [`ExportedChainState`](../interfaces/ExportedChainState.md)
 
 Defined in: [src/parsers/filters/FilterChain.ts:762](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L762)
 
@@ -140,7 +140,7 @@ Serializable state
 
 ### getConfiguration()
 
-> **getConfiguration**(): [`ConfigurationSummary`](../interfaces/ConfigurationSummary.md)
+> __getConfiguration__(): [`ConfigurationSummary`](../interfaces/ConfigurationSummary.md)
 
 Defined in: [src/parsers/filters/FilterChain.ts:749](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L749)
 
@@ -156,7 +156,7 @@ Configuration summary
 
 ### getFilter()
 
-> **getFilter**(`filterId`): [`default`](../../BaseFilter/classes/default.md) \| `null`
+> __getFilter__(`filterId`): [`default`](../../BaseFilter/classes/default.md) \| `null`
 
 Defined in: [src/parsers/filters/FilterChain.ts:632](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L632)
 
@@ -180,7 +180,7 @@ Filter or null if not found
 
 ### getFilters()
 
-> **getFilters**(`enabledOnly`): [`default`](../../BaseFilter/classes/default.md)[]
+> __getFilters__(`enabledOnly`): [`default`](../../BaseFilter/classes/default.md)[]
 
 Defined in: [src/parsers/filters/FilterChain.ts:641](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L641)
 
@@ -204,7 +204,7 @@ Filters sorted by priority
 
 ### getStats()
 
-> **getStats**(): [`ExtendedFilterChainStats`](../interfaces/ExtendedFilterChainStats.md)
+> __getStats__(): [`ExtendedFilterChainStats`](../interfaces/ExtendedFilterChainStats.md)
 
 Defined in: [src/parsers/filters/FilterChain.ts:684](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L684)
 
@@ -220,7 +220,7 @@ Filter chain statistics
 
 ### initialize()
 
-> **initialize**(`context`): `Promise`\<`void`\>
+> __initialize__(`context`): `Promise`\<`void`\>
 
 Defined in: [src/parsers/filters/FilterChain.ts:211](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L211)
 
@@ -242,7 +242,7 @@ Initialization context
 
 ### loadModularConfiguration()
 
-> **loadModularConfiguration**(): `void`
+> __loadModularConfiguration__(): `void`
 
 Defined in: [src/parsers/filters/FilterChain.ts:231](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L231)
 
@@ -257,7 +257,7 @@ Demonstrates complete configuration modularity and reusability
 
 ### process()
 
-> **process**(`content`, `context`): `Promise`\<`string`\>
+> __process__(`content`, `context`): `Promise`\<`string`\>
 
 Defined in: [src/parsers/filters/FilterChain.ts:383](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L383)
 
@@ -287,7 +287,7 @@ Filtered content
 
 ### removeFilter()
 
-> **removeFilter**(`filterId`): `boolean`
+> __removeFilter__(`filterId`): `boolean`
 
 Defined in: [src/parsers/filters/FilterChain.ts:344](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L344)
 
@@ -311,7 +311,7 @@ True if removed successfully
 
 ### resetStats()
 
-> **resetStats**(): `void`
+> __resetStats__(): `void`
 
 Defined in: [src/parsers/filters/FilterChain.ts:721](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L721)
 
@@ -325,7 +325,7 @@ Reset all filter statistics
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/filters/FilterChain.ts:804](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L804)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -19,9 +19,9 @@ Audit providers implement different storage backends (file, database, cloud logg
 
 ## See
 
- - FileAuditProvider for file-based implementation
- - DatabaseAuditProvider for database implementation
- - AuditManager for usage
+- FileAuditProvider for file-based implementation
+- DatabaseAuditProvider for database implementation
+- AuditManager for usage
 
 ## Example
 
@@ -51,7 +51,7 @@ class MyAuditProvider extends BaseAuditProvider {
 
 ### Constructor
 
-> **new default**(`engine`): `BaseAuditProvider`
+> __new default__(`engine`): `BaseAuditProvider`
 
 Defined in: [src/providers/BaseAuditProvider.ts:168](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L168)
 
@@ -77,7 +77,7 @@ If engine is not provided
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/providers/BaseAuditProvider.ts:156](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L156)
 
@@ -87,7 +87,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> **initialized**: `boolean`
+> __initialized__: `boolean`
 
 Defined in: [src/providers/BaseAuditProvider.ts:159](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L159)
 
@@ -97,7 +97,7 @@ Whether provider has been initialized
 
 ### backup()
 
-> **backup**(): `Promise`\<[`AuditBackupData`](../interfaces/AuditBackupData.md)\>
+> __backup__(): `Promise`\<[`AuditBackupData`](../interfaces/AuditBackupData.md)\>
 
 Defined in: [src/providers/BaseAuditProvider.ts:307](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L307)
 
@@ -118,7 +118,7 @@ Backup data
 
 ### cleanup()
 
-> `abstract` **cleanup**(): `Promise`\<`void`\>
+> `abstract` __cleanup__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseAuditProvider.ts:276](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L276)
 
@@ -138,7 +138,7 @@ Always throws - must be implemented by subclass
 
 ### close()
 
-> `abstract` **close**(): `Promise`\<`void`\>
+> `abstract` __close__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseAuditProvider.ts:296](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L296)
 
@@ -158,7 +158,7 @@ Always throws - must be implemented by subclass
 
 ### exportAuditLogs()
 
-> `abstract` **exportAuditLogs**(`filters?`, `format?`): `Promise`\<`string`\>
+> `abstract` __exportAuditLogs__(`filters?`, `format?`): `Promise`\<`string`\>
 
 Defined in: [src/providers/BaseAuditProvider.ts:253](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L253)
 
@@ -194,7 +194,7 @@ Always throws - must be implemented by subclass
 
 ### flush()
 
-> `abstract` **flush**(): `Promise`\<`void`\>
+> `abstract` __flush__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseAuditProvider.ts:266](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L266)
 
@@ -214,7 +214,7 @@ Always throws - must be implemented by subclass
 
 ### getAuditStats()
 
-> `abstract` **getAuditStats**(`filters?`): `Promise`\<[`AuditStats`](../interfaces/AuditStats.md)\>
+> `abstract` __getAuditStats__(`filters?`): `Promise`\<[`AuditStats`](../interfaces/AuditStats.md)\>
 
 Defined in: [src/providers/BaseAuditProvider.ts:241](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L241)
 
@@ -244,7 +244,7 @@ Always throws - must be implemented by subclass
 
 ### getProviderInfo()
 
-> **getProviderInfo**(): [`ProviderInfo`](../interfaces/ProviderInfo.md)
+> __getProviderInfo__(): [`ProviderInfo`](../interfaces/ProviderInfo.md)
 
 Defined in: [src/providers/BaseAuditProvider.ts:197](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L197)
 
@@ -260,7 +260,7 @@ Provider metadata
 
 ### initialize()
 
-> `abstract` **initialize**(): `Promise`\<`void`\>
+> `abstract` __initialize__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseAuditProvider.ts:190](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L190)
 
@@ -286,7 +286,7 @@ Always throws - must be implemented by subclass
 
 ### isHealthy()
 
-> `abstract` **isHealthy**(): `Promise`\<`boolean`\>
+> `abstract` __isHealthy__(): `Promise`\<`boolean`\>
 
 Defined in: [src/providers/BaseAuditProvider.ts:286](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L286)
 
@@ -308,7 +308,7 @@ Always throws - must be implemented by subclass
 
 ### logAuditEvent()
 
-> `abstract` **logAuditEvent**(`auditEvent`): `Promise`\<`string`\>
+> `abstract` __logAuditEvent__(`auditEvent`): `Promise`\<`string`\>
 
 Defined in: [src/providers/BaseAuditProvider.ts:215](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L215)
 
@@ -338,7 +338,7 @@ Always throws - must be implemented by subclass
 
 ### restore()
 
-> **restore**(`_backupData`): `Promise`\<`void`\>
+> __restore__(`_backupData`): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseAuditProvider.ts:325](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L325)
 
@@ -365,7 +365,7 @@ Backup data
 
 ### searchAuditLogs()
 
-> `abstract` **searchAuditLogs**(`filters?`, `options?`): `Promise`\<[`AuditSearchResults`](../interfaces/AuditSearchResults.md)\>
+> `abstract` __searchAuditLogs__(`filters?`, `options?`): `Promise`\<[`AuditSearchResults`](../interfaces/AuditSearchResults.md)\>
 
 Defined in: [src/providers/BaseAuditProvider.ts:227](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L227)
 

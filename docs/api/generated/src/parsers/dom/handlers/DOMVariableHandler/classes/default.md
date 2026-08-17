@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ DOMVariableHandler class
 
 ### Constructor
 
-> **new default**(`engine`): `DOMVariableHandler`
+> __new default__(`engine`): `DOMVariableHandler`
 
 Defined in: [src/parsers/dom/handlers/DOMVariableHandler.ts:133](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMVariableHandler.ts#L133)
 
@@ -36,7 +36,7 @@ WikiEngine instance
 
 ### createNodeFromExtract()
 
-> **createNodeFromExtract**(`element`, `context`, `wikiDocument`): `Promise`\<[`LinkedomElement`](../../../WikiDocument/interfaces/LinkedomElement.md)\>
+> __createNodeFromExtract__(`element`, `context`, `wikiDocument`): `Promise`\<[`LinkedomElement`](../../../WikiDocument/interfaces/LinkedomElement.md)\>
 
 Defined in: [src/parsers/dom/handlers/DOMVariableHandler.ts:287](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMVariableHandler.ts#L287)
 
@@ -84,7 +84,7 @@ const node = await handler.createNodeFromExtract(element, context, wikiDoc);
 
 ### getStatistics()
 
-> **getStatistics**(`wikiDocument`): [`VariableStatistics`](../interfaces/VariableStatistics.md)
+> __getStatistics__(`wikiDocument`): [`VariableStatistics`](../interfaces/VariableStatistics.md)
 
 Defined in: [src/parsers/dom/handlers/DOMVariableHandler.ts:333](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMVariableHandler.ts#L333)
 
@@ -108,7 +108,7 @@ Statistics
 
 ### initialize()
 
-> **initialize**(): `Promise`\<`void`\>
+> __initialize__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/dom/handlers/DOMVariableHandler.ts:142](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMVariableHandler.ts#L142)
 
@@ -122,7 +122,7 @@ Initializes the handler
 
 ### processVariables()
 
-> **processVariables**(`wikiDocument`, `context`): `Promise`\<[`default`](../../../WikiDocument/classes/default.md)\>
+> __processVariables__(`wikiDocument`, `context`): `Promise`\<[`default`](../../../WikiDocument/classes/default.md)\>
 
 Defined in: [src/parsers/dom/handlers/DOMVariableHandler.ts:158](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMVariableHandler.ts#L158)
 
@@ -155,7 +155,7 @@ Updated WikiDocument
 
 ### resolveVariable()
 
-> **resolveVariable**(`varName`, `context`): `string` \| `number` \| `null`
+> __resolveVariable__(`varName`, `context`): `string` \| `number` \| `null`
 
 Defined in: [src/parsers/dom/handlers/DOMVariableHandler.ts:234](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMVariableHandler.ts#L234)
 

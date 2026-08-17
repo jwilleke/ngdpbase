@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Filter performance statistics
 
 ### averageTime
 
-> **averageTime**: `number`
+> __averageTime__: `number`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:41](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L41)
 
@@ -22,7 +22,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:41](https://github.com/jwilleke/n
 
 ### errorCount
 
-> **errorCount**: `number`
+> __errorCount__: `number`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:39](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L39)
 
@@ -30,7 +30,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:39](https://github.com/jwilleke/n
 
 ### executionCount
 
-> **executionCount**: `number`
+> __executionCount__: `number`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:37](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L37)
 
@@ -38,7 +38,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:37](https://github.com/jwilleke/n
 
 ### lastExecuted
 
-> **lastExecuted**: `Date` \| `null`
+> __lastExecuted__: `Date` \| `null`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:40](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L40)
 
@@ -46,6 +46,6 @@ Defined in: [src/parsers/filters/BaseFilter.ts:40](https://github.com/jwilleke/n
 
 ### totalTime
 
-> **totalTime**: `number`
+> __totalTime__: `number`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:38](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L38)

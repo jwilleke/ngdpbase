@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ WikiEngine minimal interface (until fully typed)
 
 ### getManager()
 
-> **getManager**(`name`): `unknown`
+> __getManager__(`name`): `unknown`
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:62](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L62)
 

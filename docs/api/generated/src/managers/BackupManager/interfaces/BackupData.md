@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Backup data structure
 
 ### application
 
-> **application**: `string`
+> __application__: `string`
 
 Defined in: [src/managers/BackupManager.ts:35](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L35)
 
@@ -22,7 +22,7 @@ Defined in: [src/managers/BackupManager.ts:35](https://github.com/jwilleke/ngdpb
 
 ### managers
 
-> **managers**: `Record`\<`string`, `unknown`\>
+> __managers__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/managers/BackupManager.ts:36](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L36)
 
@@ -30,7 +30,7 @@ Defined in: [src/managers/BackupManager.ts:36](https://github.com/jwilleke/ngdpb
 
 ### timestamp
 
-> **timestamp**: `string`
+> __timestamp__: `string`
 
 Defined in: [src/managers/BackupManager.ts:34](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L34)
 
@@ -38,6 +38,6 @@ Defined in: [src/managers/BackupManager.ts:34](https://github.com/jwilleke/ngdpb
 
 ### version
 
-> **version**: `string`
+> __version__: `string`
 
 Defined in: [src/managers/BackupManager.ts:33](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BackupManager.ts#L33)

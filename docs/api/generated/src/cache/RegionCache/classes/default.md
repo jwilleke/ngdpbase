@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -17,7 +17,7 @@ providing isolation between different cache users (managers, components, etc.)
 
 ### Constructor
 
-> **new default**(`adapter`, `region`): `RegionCache`
+> __new default__(`adapter`, `region`): `RegionCache`
 
 Defined in: [src/cache/RegionCache.ts:40](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/RegionCache.ts#L40)
 
@@ -39,7 +39,7 @@ Defined in: [src/cache/RegionCache.ts:40](https://github.com/jwilleke/ngdpbase/b
 
 ### clear()
 
-> **clear**(`pattern?`): `Promise`\<`void`\>
+> __clear__(`pattern?`): `Promise`\<`void`\>
 
 Defined in: [src/cache/RegionCache.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/RegionCache.ts#L113)
 
@@ -61,7 +61,7 @@ Optional pattern to match keys within the region
 
 ### del()
 
-> **del**(`keys`): `Promise`\<`void`\>
+> __del__(`keys`): `Promise`\<`void`\>
 
 Defined in: [src/cache/RegionCache.ts:98](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/RegionCache.ts#L98)
 
@@ -83,7 +83,7 @@ Single key or array of keys to delete
 
 ### get()
 
-> **get**\<`T`\>(`key`): `Promise`\<`T` \| `undefined`\>
+> __get__\<`T`\>(`key`): `Promise`\<`T` \| `undefined`\>
 
 Defined in: [src/cache/RegionCache.ts:75](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/RegionCache.ts#L75)
 
@@ -113,7 +113,7 @@ The cached value or undefined if not found
 
 ### getAdapter()
 
-> **getAdapter**(): [`default`](../../ICacheAdapter/classes/default.md)
+> __getAdapter__(): [`default`](../../ICacheAdapter/classes/default.md)
 
 Defined in: [src/cache/RegionCache.ts:229](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/RegionCache.ts#L229)
 
@@ -129,7 +129,7 @@ The cache adapter
 
 ### getOrSet()
 
-> **getOrSet**\<`T`\>(`key`, `factory`, `options?`): `Promise`\<`T`\>
+> __getOrSet__\<`T`\>(`key`, `factory`, `options?`): `Promise`\<`T`\>
 
 Defined in: [src/cache/RegionCache.ts:173](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/RegionCache.ts#L173)
 
@@ -171,7 +171,7 @@ The cached or generated value
 
 ### getRegion()
 
-> **getRegion**(): `string`
+> __getRegion__(): `string`
 
 Defined in: [src/cache/RegionCache.ts:220](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/RegionCache.ts#L220)
 
@@ -187,7 +187,7 @@ The region name
 
 ### has()
 
-> **has**(`key`): `Promise`\<`boolean`\>
+> __has__(`key`): `Promise`\<`boolean`\>
 
 Defined in: [src/cache/RegionCache.ts:160](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/RegionCache.ts#L160)
 
@@ -211,7 +211,7 @@ True if key exists
 
 ### keys()
 
-> **keys**(`pattern?`): `Promise`\<`string`[]\>
+> __keys__(`pattern?`): `Promise`\<`string`[]\>
 
 Defined in: [src/cache/RegionCache.ts:131](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/RegionCache.ts#L131)
 
@@ -235,7 +235,7 @@ Array of matching keys (without region prefix)
 
 ### mget()
 
-> **mget**\<`T`\>(`keys`): `Promise`\<`Record`\<`string`, `T` \| `undefined`\>\>
+> __mget__\<`T`\>(`keys`): `Promise`\<`Record`\<`string`, `T` \| `undefined`\>\>
 
 Defined in: [src/cache/RegionCache.ts:192](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/RegionCache.ts#L192)
 
@@ -265,7 +265,7 @@ Object with keys as properties and cached values
 
 ### mset()
 
-> **mset**(`keyValuePairs`, `options?`): `Promise`\<`void`\>
+> __mset__(`keyValuePairs`, `options?`): `Promise`\<`void`\>
 
 Defined in: [src/cache/RegionCache.ts:209](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/RegionCache.ts#L209)
 
@@ -293,7 +293,7 @@ Cache options
 
 ### set()
 
-> **set**(`key`, `value`, `options?`): `Promise`\<`void`\>
+> __set__(`key`, `value`, `options?`): `Promise`\<`void`\>
 
 Defined in: [src/cache/RegionCache.ts:87](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/RegionCache.ts#L87)
 
@@ -327,7 +327,7 @@ Cache options
 
 ### stats()
 
-> **stats**(): `Promise`\<[`RegionStats`](../interfaces/RegionStats.md)\>
+> __stats__(): `Promise`\<[`RegionStats`](../interfaces/RegionStats.md)\>
 
 Defined in: [src/cache/RegionCache.ts:142](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/cache/RegionCache.ts#L142)
 

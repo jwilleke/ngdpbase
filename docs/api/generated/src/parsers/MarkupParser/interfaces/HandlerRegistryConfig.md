@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Handler registry configuration
 
 ### allowDuplicatePriorities?
 
-> `optional` **allowDuplicatePriorities**: `boolean`
+> `optional` __allowDuplicatePriorities__: `boolean`
 
 Defined in: [src/parsers/MarkupParser.ts:59](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L59)
 
@@ -24,7 +24,7 @@ Whether to allow duplicate priorities
 
 ### defaultTimeout?
 
-> `optional` **defaultTimeout**: `number`
+> `optional` __defaultTimeout__: `number`
 
 Defined in: [src/parsers/MarkupParser.ts:63](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L63)
 
@@ -34,7 +34,7 @@ Default handler timeout in ms
 
 ### enableConflictDetection?
 
-> `optional` **enableConflictDetection**: `boolean`
+> `optional` __enableConflictDetection__: `boolean`
 
 Defined in: [src/parsers/MarkupParser.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L61)
 
@@ -44,7 +44,7 @@ Whether to enable conflict detection
 
 ### enableDependencyResolution?
 
-> `optional` **enableDependencyResolution**: `boolean`
+> `optional` __enableDependencyResolution__: `boolean`
 
 Defined in: [src/parsers/MarkupParser.ts:53](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L53)
 
@@ -54,7 +54,7 @@ Whether to enable dependency resolution
 
 ### maxHandlers?
 
-> `optional` **maxHandlers**: `number`
+> `optional` __maxHandlers__: `number`
 
 Defined in: [src/parsers/MarkupParser.ts:57](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L57)
 
@@ -64,7 +64,7 @@ Maximum number of handlers
 
 ### maxPriority?
 
-> `optional` **maxPriority**: `number`
+> `optional` __maxPriority__: `number`
 
 Defined in: [src/parsers/MarkupParser.ts:55](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L55)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -18,7 +18,7 @@ Attachment metadata interface
 
 ### description?
 
-> `optional` **description**: `string`
+> `optional` __description__: `string`
 
 Defined in: [src/managers/AttachmentManager.ts:78](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L78)
 
@@ -26,27 +26,27 @@ Defined in: [src/managers/AttachmentManager.ts:78](https://github.com/jwilleke/n
 
 ### editor?
 
-> `optional` **editor**: `object`
+> `optional` __editor__: `object`
 
 Defined in: [src/managers/AttachmentManager.ts:81](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L81)
 
 #### @type
 
-> **@type**: `string`
+> __@type__: `string`
 
 #### email?
 
-> `optional` **email**: `string`
+> `optional` __email__: `string`
 
 #### name
 
-> **name**: `string`
+> __name__: `string`
 
 ***
 
 ### identifier
 
-> **identifier**: `string`
+> __identifier__: `string`
 
 Defined in: [src/managers/AttachmentManager.ts:77](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L77)
 
@@ -54,7 +54,7 @@ Defined in: [src/managers/AttachmentManager.ts:77](https://github.com/jwilleke/n
 
 ### isFamilyFriendly?
 
-> `optional` **isFamilyFriendly**: `boolean`
+> `optional` __isFamilyFriendly__: `boolean`
 
 Defined in: [src/managers/AttachmentManager.ts:79](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L79)
 
@@ -62,6 +62,6 @@ Defined in: [src/managers/AttachmentManager.ts:79](https://github.com/jwilleke/n
 
 ### mentions?
 
-> `optional` **mentions**: [`Mention`](Mention.md)[]
+> `optional` __mentions__: [`Mention`](Mention.md)[]
 
 Defined in: [src/managers/AttachmentManager.ts:80](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L80)

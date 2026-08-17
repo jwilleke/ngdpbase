@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -35,7 +35,7 @@ if (!result.valid) console.error(result.errors);
 
 ### Constructor
 
-> **new default**(`engine`): `ValidationManager`
+> __new default__(`engine`): `ValidationManager`
 
 Defined in: [src/managers/ValidationManager.ts:139](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L139)
 
@@ -61,7 +61,7 @@ The wiki engine instance
 
 ### config?
 
-> `protected` `optional` **config**: `Record`\<`string`, `unknown`\>
+> `protected` `optional` __config__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/managers/BaseManager.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L61)
 
@@ -75,7 +75,7 @@ Configuration passed during initialization
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L54)
 
@@ -89,7 +89,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/managers/BaseManager.ts:57](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L57)
 
@@ -103,7 +103,7 @@ Initialization status flag
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
 
 Defined in: [src/managers/BaseManager.ts:169](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L169)
 
@@ -145,7 +145,7 @@ async backup(): Promise<BackupData> {
 
 ### generateFilename()
 
-> **generateFilename**(`metadata`): `string`
+> __generateFilename__(`metadata`): `string`
 
 Defined in: [src/managers/ValidationManager.ts:538](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L538)
 
@@ -169,7 +169,7 @@ Filename in UUID.md format
 
 ### generateFixSuggestions()
 
-> **generateFixSuggestions**(`filename`, `metadata`): [`FixSuggestions`](../interfaces/FixSuggestions.md)
+> __generateFixSuggestions__(`filename`, `metadata`): [`FixSuggestions`](../interfaces/FixSuggestions.md)
 
 Defined in: [src/managers/ValidationManager.ts:569](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L569)
 
@@ -199,7 +199,7 @@ Fix suggestions
 
 ### generateSlug()
 
-> **generateSlug**(`title`): `string`
+> __generateSlug__(`title`): `string`
 
 Defined in: [src/managers/ValidationManager.ts:525](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L525)
 
@@ -223,7 +223,7 @@ URL-safe slug
 
 ### generateValidMetadata()
 
-> **generateValidMetadata**(`title`, `options`): [`PageMetadata`](../interfaces/PageMetadata.md)
+> __generateValidMetadata__(`title`, `options`): [`PageMetadata`](../interfaces/PageMetadata.md)
 
 Defined in: [src/managers/ValidationManager.ts:499](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L499)
 
@@ -253,7 +253,7 @@ Complete metadata object with all required fields
 
 ### getAllSystemCategories()
 
-> **getAllSystemCategories**(): [`CategoryConfig`](../interfaces/CategoryConfig.md)[]
+> __getAllSystemCategories__(): [`CategoryConfig`](../interfaces/CategoryConfig.md)[]
 
 Defined in: [src/managers/ValidationManager.ts:246](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L246)
 
@@ -269,7 +269,7 @@ Array of category configurations
 
 ### getCategoryConfig()
 
-> **getCategoryConfig**(`label`): [`CategoryConfig`](../interfaces/CategoryConfig.md) \| `null`
+> __getCategoryConfig__(`label`): [`CategoryConfig`](../interfaces/CategoryConfig.md) \| `null`
 
 Defined in: [src/managers/ValidationManager.ts:217](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L217)
 
@@ -293,7 +293,7 @@ Category configuration or null if not found
 
 ### getCategoryStorageLocation()
 
-> **getCategoryStorageLocation**(`category`): `string`
+> __getCategoryStorageLocation__(`category`): `string`
 
 Defined in: [src/managers/ValidationManager.ts:237](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L237)
 
@@ -317,7 +317,7 @@ Storage location ('regular' or 'required')
 
 ### getDefaultSystemCategory()
 
-> **getDefaultSystemCategory**(): `string`
+> __getDefaultSystemCategory__(): `string`
 
 Defined in: [src/managers/ValidationManager.ts:267](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L267)
 
@@ -333,7 +333,7 @@ Default category label
 
 ### getEngine()
 
-> **getEngine**(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> __getEngine__(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:125](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L125)
 
@@ -359,7 +359,7 @@ const config = this.getEngine().getConfig();
 
 ### initialize()
 
-> **initialize**(`config?`): `Promise`\<`void`\>
+> __initialize__(`config?`): `Promise`\<`void`\>
 
 Defined in: [src/managers/ValidationManager.ts:154](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L154)
 
@@ -387,7 +387,7 @@ Configuration object
 
 ### isInitialized()
 
-> **isInitialized**(): `boolean`
+> __isInitialized__(): `boolean`
 
 Defined in: [src/managers/BaseManager.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L113)
 
@@ -415,7 +415,7 @@ if (manager.isInitialized()) {
 
 ### isValidSlug()
 
-> **isValidSlug**(`slug`): `boolean`
+> __isValidSlug__(`slug`): `boolean`
 
 Defined in: [src/managers/ValidationManager.ts:406](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L406)
 
@@ -439,7 +439,7 @@ True if valid
 
 ### loadSystemCategories()
 
-> **loadSystemCategories**(`configManager`): `void`
+> __loadSystemCategories__(`configManager`): `void`
 
 Defined in: [src/managers/ValidationManager.ts:175](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L175)
 
@@ -461,7 +461,7 @@ Configuration manager instance
 
 ### restore()
 
-> **restore**(`backupData`): `Promise`\<`void`\>
+> __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:198](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L198)
 
@@ -506,7 +506,7 @@ async restore(backupData: BackupData): Promise<void> {
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L143)
 
@@ -537,7 +537,7 @@ async shutdown(): Promise<void> {
 
 ### validateContent()
 
-> **validateContent**(`content`): [`ContentValidationResult`](../interfaces/ContentValidationResult.md)
+> __validateContent__(`content`): [`ContentValidationResult`](../interfaces/ContentValidationResult.md)
 
 Defined in: [src/managers/ValidationManager.ts:472](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L472)
 
@@ -561,7 +561,7 @@ Content validation result
 
 ### validateExistingFile()
 
-> **validateExistingFile**(`filePath`, `fileData`): [`PageValidationResult`](../interfaces/PageValidationResult.md)
+> __validateExistingFile__(`filePath`, `fileData`): [`PageValidationResult`](../interfaces/PageValidationResult.md)
 
 Defined in: [src/managers/ValidationManager.ts:551](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L551)
 
@@ -591,7 +591,7 @@ Validation result with fix suggestions
 
 ### validateFilename()
 
-> **validateFilename**(`filename`): [`ValidationResult`](../interfaces/ValidationResult.md)
+> __validateFilename__(`filename`): [`ValidationResult`](../interfaces/ValidationResult.md)
 
 Defined in: [src/managers/ValidationManager.ts:293](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L293)
 
@@ -615,7 +615,7 @@ Validation result with success and error properties
 
 ### validateMetadata()
 
-> **validateMetadata**(`metadata`): [`MetadataValidationResult`](../interfaces/MetadataValidationResult.md)
+> __validateMetadata__(`metadata`): [`MetadataValidationResult`](../interfaces/MetadataValidationResult.md)
 
 Defined in: [src/managers/ValidationManager.ts:321](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L321)
 
@@ -639,7 +639,7 @@ Validation result with success, error, and warnings properties
 
 ### validatePage()
 
-> **validatePage**(`filename`, `metadata`, `content`): [`PageValidationResult`](../interfaces/PageValidationResult.md)
+> __validatePage__(`filename`, `metadata`, `content`): [`PageValidationResult`](../interfaces/PageValidationResult.md)
 
 Defined in: [src/managers/ValidationManager.ts:418](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ValidationManager.ts#L418)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -15,6 +15,7 @@ sources in priority order. This allows for flexible deployment configurations wh
 maintaining sensible defaults.
 
 Configuration merge order (later overrides earlier):
+
 1. app-default-config.json (base defaults - required)
 2. app-{environment}-config.json (environment-specific - optional)
 3. app-custom-config.json (local overrides - optional)
@@ -43,7 +44,7 @@ const port = configManager.getServerPort();
 
 ### Constructor
 
-> **new default**(`engine`): `ConfigurationManager`
+> __new default__(`engine`): `ConfigurationManager`
 
 Defined in: [src/managers/ConfigurationManager.ts:58](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L58)
 
@@ -69,7 +70,7 @@ The wiki engine instance
 
 ### config?
 
-> `protected` `optional` **config**: `Record`\<`string`, `unknown`\>
+> `protected` `optional` __config__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/managers/BaseManager.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L61)
 
@@ -83,7 +84,7 @@ Configuration passed during initialization
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L54)
 
@@ -97,7 +98,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/managers/BaseManager.ts:57](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L57)
 
@@ -111,7 +112,7 @@ Initialization status flag
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
 
 Defined in: [src/managers/ConfigurationManager.ts:592](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L592)
 
@@ -135,7 +136,7 @@ Backup data containing custom configuration
 
 ### getAccessControlConfig()
 
-> **getAccessControlConfig**(): `object`
+> __getAccessControlConfig__(): `object`
 
 Defined in: [src/managers/ConfigurationManager.ts:450](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L450)
 
@@ -149,41 +150,41 @@ Access control configuration
 
 ##### businessHours
 
-> **businessHours**: `object`
+> __businessHours__: `object`
 
 ###### businessHours.days
 
-> **days**: `unknown`
+> __days__: `unknown`
 
 ###### businessHours.enabled
 
-> **enabled**: `boolean`
+> __enabled__: `boolean`
 
 ###### businessHours.end
 
-> **end**: `unknown`
+> __end__: `unknown`
 
 ###### businessHours.start
 
-> **start**: `unknown`
+> __start__: `unknown`
 
 ##### contextAware
 
-> **contextAware**: `object`
+> __contextAware__: `object`
 
 ###### contextAware.enabled
 
-> **enabled**: `boolean`
+> __enabled__: `boolean`
 
 ###### contextAware.timeZone
 
-> **timeZone**: `unknown`
+> __timeZone__: `unknown`
 
 ***
 
 ### getAllProperties()
 
-> **getAllProperties**(): [`WikiConfig`](../../../types/Config/interfaces/WikiConfig.md)
+> __getAllProperties__(): [`WikiConfig`](../../../types/Config/interfaces/WikiConfig.md)
 
 Defined in: [src/managers/ConfigurationManager.ts:251](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L251)
 
@@ -208,7 +209,7 @@ console.log(JSON.stringify(allConfig, null, 2));
 
 ### getApplicationName()
 
-> **getApplicationName**(): `string`
+> __getApplicationName__(): `string`
 
 Defined in: [src/managers/ConfigurationManager.ts:263](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L263)
 
@@ -230,7 +231,7 @@ const name = configManager.getApplicationName(); // 'ngdpbase'
 
 ### getAuditConfig()
 
-> **getAuditConfig**(): `object`
+> __getAuditConfig__(): `object`
 
 Defined in: [src/managers/ConfigurationManager.ts:481](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L481)
 
@@ -244,57 +245,57 @@ Audit configuration
 
 ##### enabled
 
-> **enabled**: `boolean`
+> __enabled__: `boolean`
 
 ##### includeContext
 
-> **includeContext**: `object`
+> __includeContext__: `object`
 
 ###### includeContext.decision
 
-> **decision**: `boolean`
+> __decision__: `boolean`
 
 ###### includeContext.ip
 
-> **ip**: `boolean`
+> __ip__: `boolean`
 
 ###### includeContext.reason
 
-> **reason**: `boolean`
+> __reason__: `boolean`
 
 ###### includeContext.timestamp
 
-> **timestamp**: `boolean`
+> __timestamp__: `boolean`
 
 ###### includeContext.userAgent
 
-> **userAgent**: `boolean`
+> __userAgent__: `boolean`
 
 ##### logDirectory
 
-> **logDirectory**: `unknown`
+> __logDirectory__: `unknown`
 
 ##### logFile
 
-> **logFile**: `unknown`
+> __logFile__: `unknown`
 
 ##### retention
 
-> **retention**: `object`
+> __retention__: `object`
 
 ###### retention.maxAge
 
-> **maxAge**: `unknown`
+> __maxAge__: `unknown`
 
 ###### retention.maxFiles
 
-> **maxFiles**: `number`
+> __maxFiles__: `number`
 
 ***
 
 ### getBaseURL()
 
-> **getBaseURL**(): `string`
+> __getBaseURL__(): `string`
 
 Defined in: [src/managers/ConfigurationManager.ts:272](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L272)
 
@@ -304,13 +305,13 @@ Get base URL for the wiki
 
 `string`
 
-Base URL (defaults to 'http://localhost:3000')
+Base URL (defaults to '<http://localhost:3000>')
 
 ***
 
 ### getCustomProperties()
 
-> **getCustomProperties**(): `Partial`\<[`WikiConfig`](../../../types/Config/interfaces/WikiConfig.md)\>
+> __getCustomProperties__(): `Partial`\<[`WikiConfig`](../../../types/Config/interfaces/WikiConfig.md)\>
 
 Defined in: [src/managers/ConfigurationManager.ts:566](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L566)
 
@@ -336,7 +337,7 @@ console.log('Customized settings:', Object.keys(customSettings));
 
 ### getDefaultProperties()
 
-> **getDefaultProperties**(): [`WikiConfig`](../../../types/Config/interfaces/WikiConfig.md)
+> __getDefaultProperties__(): [`WikiConfig`](../../../types/Config/interfaces/WikiConfig.md)
 
 Defined in: [src/managers/ConfigurationManager.ts:578](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L578)
 
@@ -355,7 +356,7 @@ Default configuration properties
 
 ### getDirectories()
 
-> **getDirectories**(): `object`
+> __getDirectories__(): `object`
 
 Defined in: [src/managers/ConfigurationManager.ts:345](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L345)
 
@@ -369,29 +370,29 @@ Directory configuration
 
 ##### data
 
-> **data**: `unknown`
+> __data__: `unknown`
 
 ##### pages
 
-> **pages**: `unknown`
+> __pages__: `unknown`
 
 ##### resources
 
-> **resources**: `unknown`
+> __resources__: `unknown`
 
 ##### templates
 
-> **templates**: `unknown`
+> __templates__: `unknown`
 
 ##### work
 
-> **work**: `unknown`
+> __work__: `unknown`
 
 ***
 
 ### getEncoding()
 
-> **getEncoding**(): `string`
+> __getEncoding__(): `string`
 
 Defined in: [src/managers/ConfigurationManager.ts:289](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L289)
 
@@ -407,7 +408,7 @@ Encoding
 
 ### getEngine()
 
-> **getEngine**(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> __getEngine__(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:125](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L125)
 
@@ -433,7 +434,7 @@ const config = this.getEngine().getConfig();
 
 ### getFeatureConfig()
 
-> **getFeatureConfig**(`featureName`): `object`
+> __getFeatureConfig__(`featureName`): `object`
 
 Defined in: [src/managers/ConfigurationManager.ts:398](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L398)
 
@@ -455,13 +456,13 @@ Feature configuration
 
 ##### enabled
 
-> **enabled**: `boolean`
+> __enabled__: `boolean`
 
 ***
 
 ### getFrontPage()
 
-> **getFrontPage**(): `string`
+> __getFrontPage__(): `string`
 
 Defined in: [src/managers/ConfigurationManager.ts:281](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L281)
 
@@ -477,7 +478,7 @@ Front page name (defaults to 'Welcome')
 
 ### getLoggingConfig()
 
-> **getLoggingConfig**(): `object`
+> __getLoggingConfig__(): `object`
 
 Defined in: [src/managers/ConfigurationManager.ts:418](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L418)
 
@@ -491,25 +492,25 @@ Logging configuration
 
 ##### dir
 
-> **dir**: `unknown`
+> __dir__: `unknown`
 
 ##### level
 
-> **level**: `unknown`
+> __level__: `unknown`
 
 ##### maxFiles
 
-> **maxFiles**: `number`
+> __maxFiles__: `number`
 
 ##### maxSize
 
-> **maxSize**: `unknown`
+> __maxSize__: `unknown`
 
 ***
 
 ### getManagerConfig()
 
-> **getManagerConfig**(`managerName`): `object`
+> __getManagerConfig__(`managerName`): `object`
 
 Defined in: [src/managers/ConfigurationManager.ts:377](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L377)
 
@@ -534,7 +535,7 @@ Manager configuration object with enabled flag and settings
 
 ##### enabled
 
-> **enabled**: `boolean`
+> __enabled__: `boolean`
 
 #### Example
 
@@ -549,7 +550,7 @@ if (searchConfig.enabled) {
 
 ### getProperty()
 
-> **getProperty**(`key`, `defaultValue?`): `unknown`
+> __getProperty__(`key`, `defaultValue?`): `unknown`
 
 Defined in: [src/managers/ConfigurationManager.ts:177](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L177)
 
@@ -559,6 +560,7 @@ Retrieves a property from the merged configuration with optional default value.
 Checks environment variables first for specific keys (Docker/Traefik support).
 
 Priority order:
+
 1. Environment variables (for Docker/Traefik deployments)
 2. Merged configuration (from config files)
 3. Default value parameter
@@ -593,7 +595,7 @@ const appName = configManager.getProperty('ngdpbase.application-name', 'MyWiki')
 
 ### getRSSConfig()
 
-> **getRSSConfig**(): `object`
+> __getRSSConfig__(): `object`
 
 Defined in: [src/managers/ConfigurationManager.ts:519](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L519)
 
@@ -607,29 +609,29 @@ RSS configuration
 
 ##### channelDescription
 
-> **channelDescription**: `unknown`
+> __channelDescription__: `unknown`
 
 ##### channelTitle
 
-> **channelTitle**: `unknown`
+> __channelTitle__: `unknown`
 
 ##### fileName
 
-> **fileName**: `unknown`
+> __fileName__: `unknown`
 
 ##### generate
 
-> **generate**: `unknown`
+> __generate__: `unknown`
 
 ##### interval
 
-> **interval**: `unknown`
+> __interval__: `unknown`
 
 ***
 
 ### getSearchConfig()
 
-> **getSearchConfig**(): `object`
+> __getSearchConfig__(): `object`
 
 Defined in: [src/managers/ConfigurationManager.ts:436](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L436)
 
@@ -643,17 +645,17 @@ Search configuration
 
 ##### enabled
 
-> **enabled**: `boolean`
+> __enabled__: `boolean`
 
 ##### indexDir
 
-> **indexDir**: `unknown`
+> __indexDir__: `unknown`
 
 ***
 
 ### getServerHost()
 
-> **getServerHost**(): `string`
+> __getServerHost__(): `string`
 
 Defined in: [src/managers/ConfigurationManager.ts:305](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L305)
 
@@ -669,7 +671,7 @@ Server host
 
 ### getServerPort()
 
-> **getServerPort**(): `number`
+> __getServerPort__(): `number`
 
 Defined in: [src/managers/ConfigurationManager.ts:297](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L297)
 
@@ -685,7 +687,7 @@ Server port
 
 ### getSessionHttpOnly()
 
-> **getSessionHttpOnly**(): `boolean`
+> __getSessionHttpOnly__(): `boolean`
 
 Defined in: [src/managers/ConfigurationManager.ts:337](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L337)
 
@@ -701,7 +703,7 @@ Session httpOnly flag
 
 ### getSessionMaxAge()
 
-> **getSessionMaxAge**(): `number`
+> __getSessionMaxAge__(): `number`
 
 Defined in: [src/managers/ConfigurationManager.ts:321](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L321)
 
@@ -717,7 +719,7 @@ Session max age
 
 ### getSessionSecret()
 
-> **getSessionSecret**(): `string`
+> __getSessionSecret__(): `string`
 
 Defined in: [src/managers/ConfigurationManager.ts:313](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L313)
 
@@ -733,7 +735,7 @@ Session secret
 
 ### getSessionSecure()
 
-> **getSessionSecure**(): `boolean`
+> __getSessionSecure__(): `boolean`
 
 Defined in: [src/managers/ConfigurationManager.ts:329](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L329)
 
@@ -749,7 +751,7 @@ Session secure flag
 
 ### initialize()
 
-> **initialize**(`config`): `Promise`\<`void`\>
+> __initialize__(`config`): `Promise`\<`void`\>
 
 Defined in: [src/managers/ConfigurationManager.ts:81](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L81)
 
@@ -781,7 +783,7 @@ If default configuration file is not found
 
 ### isInitialized()
 
-> **isInitialized**(): `boolean`
+> __isInitialized__(): `boolean`
 
 Defined in: [src/managers/BaseManager.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L113)
 
@@ -809,7 +811,7 @@ if (manager.isInitialized()) {
 
 ### reload()
 
-> **reload**(): `Promise`\<`void`\>
+> __reload__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/ConfigurationManager.ts:98](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L98)
 
@@ -823,7 +825,7 @@ Reload configuration from disk
 
 ### resetToDefaults()
 
-> **resetToDefaults**(): `Promise`\<`void`\>
+> __resetToDefaults__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/ConfigurationManager.ts:548](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L548)
 
@@ -849,7 +851,7 @@ console.log('Configuration reset to defaults');
 
 ### restore()
 
-> **restore**(`backupData`): `Promise`\<`void`\>
+> __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/managers/ConfigurationManager.ts:649](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L649)
 
@@ -879,7 +881,7 @@ Backup data from backup() method
 
 ### setProperty()
 
-> **setProperty**(`key`, `value`): `Promise`\<`void`\>
+> __setProperty__(`key`, `value`): `Promise`\<`void`\>
 
 Defined in: [src/managers/ConfigurationManager.ts:208](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ConfigurationManager.ts#L208)
 
@@ -918,7 +920,7 @@ await configManager.setProperty('ngdpbase.application-name', 'My Custom Wiki');
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L143)
 

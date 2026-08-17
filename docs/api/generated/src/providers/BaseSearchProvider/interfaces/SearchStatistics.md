@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -20,7 +20,7 @@ Additional statistics
 
 ### documentCount
 
-> **documentCount**: `number`
+> __documentCount__: `number`
 
 Defined in: [src/providers/BaseSearchProvider.ts:101](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L101)
 
@@ -30,7 +30,7 @@ Total number of indexed documents
 
 ### indexSize?
 
-> `optional` **indexSize**: `number`
+> `optional` __indexSize__: `number`
 
 Defined in: [src/providers/BaseSearchProvider.ts:104](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L104)
 
@@ -40,7 +40,7 @@ Index size in bytes
 
 ### lastIndexUpdate?
 
-> `optional` **lastIndexUpdate**: `string`
+> `optional` __lastIndexUpdate__: `string`
 
 Defined in: [src/providers/BaseSearchProvider.ts:107](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L107)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Compression result
 
 ### compressedPath
 
-> **compressedPath**: `string`
+> __compressedPath__: `string`
 
 Defined in: [src/utils/VersionCompression.ts:35](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersionCompression.ts#L35)
 
@@ -22,7 +22,7 @@ Defined in: [src/utils/VersionCompression.ts:35](https://github.com/jwilleke/ngd
 
 ### compressedSize
 
-> **compressedSize**: `number`
+> __compressedSize__: `number`
 
 Defined in: [src/utils/VersionCompression.ts:33](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersionCompression.ts#L33)
 
@@ -30,7 +30,7 @@ Defined in: [src/utils/VersionCompression.ts:33](https://github.com/jwilleke/ngd
 
 ### originalSize
 
-> **originalSize**: `number`
+> __originalSize__: `number`
 
 Defined in: [src/utils/VersionCompression.ts:32](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersionCompression.ts#L32)
 
@@ -38,6 +38,6 @@ Defined in: [src/utils/VersionCompression.ts:32](https://github.com/jwilleke/ngd
 
 ### ratio
 
-> **ratio**: `number`
+> __ratio__: `number`
 
 Defined in: [src/utils/VersionCompression.ts:34](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/VersionCompression.ts#L34)

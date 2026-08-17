@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -21,7 +21,7 @@ and backup/restore operations.
 
 ### Constructor
 
-> **new default**(`engine`): `MarkupParser`
+> __new default__(`engine`): `MarkupParser`
 
 Defined in: [src/parsers/MarkupParser.ts:388](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L388)
 
@@ -45,7 +45,7 @@ Creates a new MarkupParser instance
 
 ### cache
 
-> **cache**: [`default`](../../../cache/RegionCache/classes/default.md) \| `null`
+> __cache__: [`default`](../../../cache/RegionCache/classes/default.md) \| `null`
 
 Defined in: [src/parsers/MarkupParser.ts:359](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L359)
 
@@ -55,7 +55,7 @@ Parse result cache
 
 ### cacheStrategies
 
-> **cacheStrategies**: `Record`\<`string`, [`default`](../../../cache/RegionCache/classes/default.md)\>
+> __cacheStrategies__: `Record`\<`string`, [`default`](../../../cache/RegionCache/classes/default.md)\>
 
 Defined in: [src/parsers/MarkupParser.ts:362](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L362)
 
@@ -65,7 +65,7 @@ Caching strategies by content type
 
 ### config
 
-> `protected` **config**: [`MarkupParserConfig`](../interfaces/MarkupParserConfig.md)
+> `protected` __config__: [`MarkupParserConfig`](../interfaces/MarkupParserConfig.md)
 
 Defined in: [src/parsers/MarkupParser.ts:383](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L383)
 
@@ -79,7 +79,7 @@ Parser configuration - overrides BaseManager's generic config
 
 ### domLinkHandler
 
-> **domLinkHandler**: [`default`](../../dom/handlers/DOMLinkHandler/classes/default.md)
+> __domLinkHandler__: [`default`](../../dom/handlers/DOMLinkHandler/classes/default.md)
 
 Defined in: [src/parsers/MarkupParser.ts:380](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L380)
 
@@ -89,7 +89,7 @@ Link resolution handler
 
 ### domParser
 
-> **domParser**: [`DOMParser`](../../dom/DOMParser/classes/DOMParser.md)
+> __domParser__: [`DOMParser`](../../dom/DOMParser/classes/DOMParser.md)
 
 Defined in: [src/parsers/MarkupParser.ts:371](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L371)
 
@@ -99,7 +99,7 @@ DOM-based parser for JSPWiki syntax
 
 ### domPluginHandler
 
-> **domPluginHandler**: [`default`](../../dom/handlers/DOMPluginHandler/classes/default.md)
+> __domPluginHandler__: [`default`](../../dom/handlers/DOMPluginHandler/classes/default.md)
 
 Defined in: [src/parsers/MarkupParser.ts:377](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L377)
 
@@ -109,7 +109,7 @@ Plugin execution handler
 
 ### domVariableHandler
 
-> **domVariableHandler**: [`default`](../../dom/handlers/DOMVariableHandler/classes/default.md)
+> __domVariableHandler__: [`default`](../../dom/handlers/DOMVariableHandler/classes/default.md)
 
 Defined in: [src/parsers/MarkupParser.ts:374](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L374)
 
@@ -119,7 +119,7 @@ Variable expansion handler
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L54)
 
@@ -133,7 +133,7 @@ Reference to the wiki engine
 
 ### filterChain
 
-> **filterChain**: [`default`](../../filters/FilterChain/classes/default.md) \| `null`
+> __filterChain__: [`default`](../../filters/FilterChain/classes/default.md) \| `null`
 
 Defined in: [src/parsers/MarkupParser.ts:356](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L356)
 
@@ -143,7 +143,7 @@ Content filter chain
 
 ### handlerRegistry
 
-> **handlerRegistry**: [`HandlerRegistry`](../../handlers/HandlerRegistry/classes/HandlerRegistry.md)
+> __handlerRegistry__: [`HandlerRegistry`](../../handlers/HandlerRegistry/classes/HandlerRegistry.md)
 
 Defined in: [src/parsers/MarkupParser.ts:353](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L353)
 
@@ -153,7 +153,7 @@ Handler registry for syntax handlers
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/managers/BaseManager.ts:57](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L57)
 
@@ -167,7 +167,7 @@ Initialization status flag
 
 ### metrics
 
-> **metrics**: [`ParserMetrics`](../interfaces/ParserMetrics.md)
+> __metrics__: [`ParserMetrics`](../interfaces/ParserMetrics.md)
 
 Defined in: [src/parsers/MarkupParser.ts:368](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L368)
 
@@ -177,7 +177,7 @@ Parser performance metrics
 
 ### performanceMonitor
 
-> **performanceMonitor**: [`PerformanceMonitor`](../interfaces/PerformanceMonitor.md) \| `null`
+> __performanceMonitor__: [`PerformanceMonitor`](../interfaces/PerformanceMonitor.md) \| `null`
 
 Defined in: [src/parsers/MarkupParser.ts:365](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L365)
 
@@ -187,7 +187,7 @@ Performance monitoring state
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../../../managers/BaseManager/interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../../../managers/BaseManager/interfaces/BackupData.md)\>
 
 Defined in: [src/managers/BaseManager.ts:169](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L169)
 
@@ -229,7 +229,7 @@ async backup(): Promise<BackupData> {
 
 ### cacheHandlerResult()
 
-> **cacheHandlerResult**(`handlerId`, `contentHash`, `contextHash`, `result`): `Promise`\<`void`\>
+> __cacheHandlerResult__(`handlerId`, `contentHash`, `contextHash`, `result`): `Promise`\<`void`\>
 
 Defined in: [src/parsers/MarkupParser.ts:1613](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1613)
 
@@ -269,7 +269,7 @@ Result to cache
 
 ### cacheParseResult()
 
-> **cacheParseResult**(`cacheKey`, `content`): `Promise`\<`void`\>
+> __cacheParseResult__(`cacheKey`, `content`): `Promise`\<`void`\>
 
 Defined in: [src/parsers/MarkupParser.ts:1562](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1562)
 
@@ -297,7 +297,7 @@ Content to cache
 
 ### checkPerformanceThresholds()
 
-> **checkPerformanceThresholds**(): `void`
+> __checkPerformanceThresholds__(): `void`
 
 Defined in: [src/parsers/MarkupParser.ts:1674](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1674)
 
@@ -311,7 +311,7 @@ Check performance thresholds and generate alerts
 
 ### clearPerformanceAlerts()
 
-> **clearPerformanceAlerts**(): `void`
+> __clearPerformanceAlerts__(): `void`
 
 Defined in: [src/parsers/MarkupParser.ts:1773](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1773)
 
@@ -325,7 +325,7 @@ Clear performance alerts
 
 ### createDOMNode()
 
-> **createDOMNode**(`element`, `context`, `wikiDocument`): `Promise`\<`unknown`\>
+> __createDOMNode__(`element`, `context`, `wikiDocument`): `Promise`\<`unknown`\>
 
 Defined in: [src/parsers/MarkupParser.ts:1280](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1280)
 
@@ -372,7 +372,7 @@ const node = await createDOMNode(element, context, wikiDoc);
 
 ### createTextNodeForEscaped()
 
-> **createTextNodeForEscaped**(`element`, `wikiDocument`): `unknown`
+> __createTextNodeForEscaped__(`element`, `wikiDocument`): `unknown`
 
 Defined in: [src/parsers/MarkupParser.ts:1250](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1250)
 
@@ -413,7 +413,7 @@ const node = createTextNodeForEscaped(element, wikiDoc);
 
 ### disableHandler()
 
-> **disableHandler**(`handlerId`): `boolean`
+> __disableHandler__(`handlerId`): `boolean`
 
 Defined in: [src/parsers/MarkupParser.ts:1084](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1084)
 
@@ -437,7 +437,7 @@ True if successful
 
 ### enableHandler()
 
-> **enableHandler**(`handlerId`): `boolean`
+> __enableHandler__(`handlerId`): `boolean`
 
 Defined in: [src/parsers/MarkupParser.ts:1075](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1075)
 
@@ -461,7 +461,7 @@ True if successful
 
 ### extractJSPWikiSyntax()
 
-> **extractJSPWikiSyntax**(`content`, `_context`): `object`
+> __extractJSPWikiSyntax__(`content`, `_context`): `object`
 
 Defined in: [src/parsers/MarkupParser.ts:1136](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1136)
 
@@ -472,6 +472,7 @@ Instead of tokenizing both markdown and JSPWiki syntax (which causes conflicts),
 we extract ONLY JSPWiki syntax and let Showdown handle all markdown.
 
 Extraction order:
+
 1. Variables: [{$username}] → __JSPWIKI_uuid_0__
 2. Plugins: [{TableOfContents}] → __JSPWIKI_uuid_1__
 3. Escaped: [[{$var}] → __JSPWIKI_uuid_2__ (stores literal [{$var}])
@@ -502,15 +503,15 @@ Related: #114 (WikiDocument DOM Solution), #115 (Phase 1 Implementation)
 
 ##### jspwikiElements
 
-> **jspwikiElements**: [`ExtractedElement`](../interfaces/ExtractedElement.md)[]
+> __jspwikiElements__: [`ExtractedElement`](../interfaces/ExtractedElement.md)[]
 
 ##### sanitized
 
-> **sanitized**: `string`
+> __sanitized__: `string`
 
 ##### uuid
 
-> **uuid**: `string`
+> __uuid__: `string`
 
 #### Example
 
@@ -526,7 +527,7 @@ const { sanitized, jspwikiElements, uuid } = parser.extractJSPWikiSyntax(input);
 
 ### generateCacheKey()
 
-> **generateCacheKey**(`content`, `context`): `string`
+> __generateCacheKey__(`content`, `context`): `string`
 
 Defined in: [src/parsers/MarkupParser.ts:1094](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1094)
 
@@ -556,7 +557,7 @@ Cache key
 
 ### generatePerformanceAlert()
 
-> **generatePerformanceAlert**(`type`, `message`): `void`
+> __generatePerformanceAlert__(`type`, `message`): `void`
 
 Defined in: [src/parsers/MarkupParser.ts:1728](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1728)
 
@@ -584,7 +585,7 @@ Alert message
 
 ### getCachedHandlerResult()
 
-> **getCachedHandlerResult**(`handlerId`, `contentHash`, `contextHash`): `Promise`\<`string` \| `null`\>
+> __getCachedHandlerResult__(`handlerId`, `contentHash`, `contextHash`): `Promise`\<`string` \| `null`\>
 
 Defined in: [src/parsers/MarkupParser.ts:1584](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1584)
 
@@ -620,7 +621,7 @@ Cached result or null
 
 ### getCachedParseResult()
 
-> **getCachedParseResult**(`cacheKey`): `Promise`\<`string` \| `null`\>
+> __getCachedParseResult__(`cacheKey`): `Promise`\<`string` \| `null`\>
 
 Defined in: [src/parsers/MarkupParser.ts:1544](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1544)
 
@@ -644,7 +645,7 @@ Cached result or null
 
 ### getEngine()
 
-> **getEngine**(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> __getEngine__(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:125](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L125)
 
@@ -670,7 +671,7 @@ const config = this.getEngine().getConfig();
 
 ### getHandler()
 
-> **getHandler**(`handlerId`): `unknown`
+> __getHandler__(`handlerId`): `unknown`
 
 Defined in: [src/parsers/MarkupParser.ts:1057](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1057)
 
@@ -694,7 +695,7 @@ Handler or null if not found
 
 ### getHandlerConfig()
 
-> **getHandlerConfig**(`handlerType`): [`HandlerConfig`](../interfaces/HandlerConfig.md)
+> __getHandlerConfig__(`handlerType`): [`HandlerConfig`](../interfaces/HandlerConfig.md)
 
 Defined in: [src/parsers/MarkupParser.ts:1039](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1039)
 
@@ -718,7 +719,7 @@ Handler configuration
 
 ### getHandlers()
 
-> **getHandlers**(`enabledOnly`): `unknown`[]
+> __getHandlers__(`enabledOnly`): `unknown`[]
 
 Defined in: [src/parsers/MarkupParser.ts:1066](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1066)
 
@@ -742,7 +743,7 @@ Handlers sorted by priority
 
 ### getHandlerTypeFromId()
 
-> **getHandlerTypeFromId**(`handlerId`): `string` \| `null`
+> __getHandlerTypeFromId__(`handlerId`): `string` \| `null`
 
 Defined in: [src/parsers/MarkupParser.ts:1011](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1011)
 
@@ -766,7 +767,7 @@ Handler type or null
 
 ### getMetrics()
 
-> **getMetrics**(): [`ExtendedMetrics`](../interfaces/ExtendedMetrics.md)
+> __getMetrics__(): [`ExtendedMetrics`](../interfaces/ExtendedMetrics.md)
 
 Defined in: [src/parsers/MarkupParser.ts:1467](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1467)
 
@@ -780,7 +781,7 @@ Get performance metrics
 
 ### getPerformanceAlerts()
 
-> **getPerformanceAlerts**(): `unknown`[]
+> __getPerformanceAlerts__(): `unknown`[]
 
 Defined in: [src/parsers/MarkupParser.ts:1766](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1766)
 
@@ -796,7 +797,7 @@ Array of performance alerts
 
 ### initialize()
 
-> **initialize**(`config`): `Promise`\<`void`\>
+> __initialize__(`config`): `Promise`\<`void`\>
 
 Defined in: [src/parsers/MarkupParser.ts:426](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L426)
 
@@ -820,7 +821,7 @@ Initialize the MarkupParser
 
 ### initializeAdvancedCaching()
 
-> **initializeAdvancedCaching**(): `Promise`\<`void`\>
+> __initializeAdvancedCaching__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/MarkupParser.ts:774](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L774)
 
@@ -834,7 +835,7 @@ Initialize advanced caching integration with multiple cache strategies
 
 ### initializeFilterChain()
 
-> **initializeFilterChain**(): `Promise`\<`void`\>
+> __initializeFilterChain__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/MarkupParser.ts:468](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L468)
 
@@ -848,7 +849,7 @@ Initialize filter chain with modular configuration
 
 ### initializePerformanceMonitoring()
 
-> **initializePerformanceMonitoring**(): `void`
+> __initializePerformanceMonitoring__(): `void`
 
 Defined in: [src/parsers/MarkupParser.ts:829](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L829)
 
@@ -862,7 +863,7 @@ Initialize performance monitoring system
 
 ### isInitialized()
 
-> **isInitialized**(): `boolean`
+> __isInitialized__(): `boolean`
 
 Defined in: [src/parsers/MarkupParser.ts:461](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L461)
 
@@ -882,7 +883,7 @@ Check if MarkupParser is initialized (required for RenderingManager integration)
 
 ### loadConfiguration()
 
-> **loadConfiguration**(): `void`
+> __loadConfiguration__(): `void`
 
 Defined in: [src/parsers/MarkupParser.ts:646](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L646)
 
@@ -896,7 +897,7 @@ Load configuration from ConfigurationManager
 
 ### mergeDOMNodes()
 
-> **mergeDOMNodes**(`html`, `nodes`, `uuid`): `string`
+> __mergeDOMNodes__(`html`, `nodes`, `uuid`): `string`
 
 Defined in: [src/parsers/MarkupParser.ts:1345](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1345)
 
@@ -946,7 +947,7 @@ Final HTML with nodes merged in
 
 ### parse()
 
-> **parse**(`content`, `context`): `Promise`\<`string`\>
+> __parse__(`content`, `context`): `Promise`\<`string`\>
 
 Defined in: [src/parsers/MarkupParser.ts:922](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L922)
 
@@ -976,13 +977,14 @@ Processed HTML content
 
 ### parseWithDOMExtraction()
 
-> **parseWithDOMExtraction**(`content`, `context`): `Promise`\<`string`\>
+> __parseWithDOMExtraction__(`content`, `context`): `Promise`\<`string`\>
 
 Defined in: [src/parsers/MarkupParser.ts:1408](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1408)
 
 Parses wiki markup using DOM extraction strategy (Phase 1-3)
 
 This is the new parsing method that implements the WikiDocument DOM solution:
+
 1. Extract JSPWiki syntax (variables, plugins, links, escaped)
 2. Create DOM nodes from extracted elements
 3. Let Showdown parse the sanitized markdown
@@ -1022,7 +1024,7 @@ const html = await parser.parseWithDOMExtraction('## Hello\nUser: [{$username}]'
 
 ### performCacheWarmup()
 
-> **performCacheWarmup**(): `Promise`\<`void`\>
+> __performCacheWarmup__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/MarkupParser.ts:851](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L851)
 
@@ -1036,7 +1038,7 @@ Perform cache warmup for frequently accessed content
 
 ### registerDefaultFilters()
 
-> **registerDefaultFilters**(): `Promise`\<`void`\>
+> __registerDefaultFilters__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/MarkupParser.ts:492](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L492)
 
@@ -1050,7 +1052,7 @@ Register default filters based on modular configuration
 
 ### registerDefaultHandlers()
 
-> **registerDefaultHandlers**(): `Promise`\<`void`\>
+> __registerDefaultHandlers__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/MarkupParser.ts:540](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L540)
 
@@ -1064,7 +1066,7 @@ Register default syntax handlers based on configuration
 
 ### registerHandler()
 
-> **registerHandler**(`handler`, `options`): `Promise`\<`boolean`\>
+> __registerHandler__(`handler`, `options`): `Promise`\<`boolean`\>
 
 Defined in: [src/parsers/MarkupParser.ts:995](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L995)
 
@@ -1094,7 +1096,7 @@ True if registration successful
 
 ### resetMetrics()
 
-> **resetMetrics**(): `void`
+> __resetMetrics__(): `void`
 
 Defined in: [src/parsers/MarkupParser.ts:1528](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1528)
 
@@ -1108,7 +1110,7 @@ Reset performance metrics
 
 ### resolveSystemVariable()
 
-> **resolveSystemVariable**(`varName`, `context`): `Promise`\<`string`\>
+> __resolveSystemVariable__(`varName`, `context`): `Promise`\<`string`\>
 
 Defined in: [src/parsers/MarkupParser.ts:900](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L900)
 
@@ -1138,7 +1140,7 @@ Variable value
 
 ### restore()
 
-> **restore**(`backupData`): `Promise`\<`void`\>
+> __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:198](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L198)
 
@@ -1183,7 +1185,7 @@ async restore(backupData: BackupData): Promise<void> {
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/MarkupParser.ts:1779](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1779)
 
@@ -1214,7 +1216,7 @@ async shutdown(): Promise<void> {
 
 ### unregisterHandler()
 
-> **unregisterHandler**(`handlerId`): `Promise`\<`boolean`\>
+> __unregisterHandler__(`handlerId`): `Promise`\<`boolean`\>
 
 Defined in: [src/parsers/MarkupParser.ts:1048](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1048)
 
@@ -1238,7 +1240,7 @@ True if unregistration successful
 
 ### updateCacheMetrics()
 
-> **updateCacheMetrics**(`strategy`, `operation`): `void`
+> __updateCacheMetrics__(`strategy`, `operation`): `void`
 
 Defined in: [src/parsers/MarkupParser.ts:1634](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1634)
 
@@ -1266,7 +1268,7 @@ Operation type (hit, miss, set)
 
 ### updatePerformanceMetrics()
 
-> **updatePerformanceMetrics**(`processingTime`, `cacheHit`): `void`
+> __updatePerformanceMetrics__(`processingTime`, `cacheHit`): `void`
 
 Defined in: [src/parsers/MarkupParser.ts:1650](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L1650)
 

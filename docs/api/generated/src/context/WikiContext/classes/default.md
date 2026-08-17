@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -18,14 +18,14 @@ current page, user, request/response objects, and manager references.
 
 ## See
 
- - [WikiEngine](../../../types/WikiEngine/interfaces/WikiEngine.md) for the main engine
- - [RenderingManager](../../../managers/RenderingManager/classes/export=.md) for rendering operations
+- [WikiEngine](../../../types/WikiEngine/interfaces/WikiEngine.md) for the main engine
+- [RenderingManager](../../../managers/RenderingManager/classes/export=.md) for rendering operations
 
 ## Constructors
 
 ### Constructor
 
-> **new default**(`engine`, `options?`): `WikiContext`
+> __new default__(`engine`, `options?`): `WikiContext`
 
 Defined in: [src/context/WikiContext.ts:215](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L215)
 
@@ -69,7 +69,7 @@ const context = new WikiContext(engine, {
 
 ### aclManager
 
-> `readonly` **aclManager**: [`export=`](../../../managers/ACLManager/classes/export=.md)
+> `readonly` __aclManager__: [`export=`](../../../managers/ACLManager/classes/export=.md)
 
 Defined in: [src/context/WikiContext.ts:193](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L193)
 
@@ -79,7 +79,7 @@ Reference to ACLManager
 
 ### content
 
-> `readonly` **content**: `string` \| `null`
+> `readonly` __content__: `string` \| `null`
 
 Defined in: [src/context/WikiContext.ts:169](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L169)
 
@@ -89,7 +89,7 @@ Page content (markdown)
 
 ### context
 
-> `readonly` **context**: `string`
+> `readonly` __context__: `string`
 
 Defined in: [src/context/WikiContext.ts:163](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L163)
 
@@ -99,7 +99,7 @@ The rendering context (VIEW, EDIT, PREVIEW, etc.)
 
 ### CONTEXT
 
-> `readonly` `static` **CONTEXT**: [`ContextTypes`](../interfaces/ContextTypes.md)
+> `readonly` `static` __CONTEXT__: [`ContextTypes`](../interfaces/ContextTypes.md)
 
 Defined in: [src/context/WikiContext.ts:144](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L144)
 
@@ -111,7 +111,7 @@ Context type constants for different rendering modes
 
 ### engine
 
-> `readonly` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `readonly` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/context/WikiContext.ts:160](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L160)
 
@@ -121,7 +121,7 @@ The wiki engine instance
 
 ### pageManager
 
-> `readonly` **pageManager**: [`export=`](../../../managers/PageManager/classes/export=.md)
+> `readonly` __pageManager__: [`export=`](../../../managers/PageManager/classes/export=.md)
 
 Defined in: [src/context/WikiContext.ts:181](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L181)
 
@@ -131,7 +131,7 @@ Reference to PageManager
 
 ### pageName
 
-> `readonly` **pageName**: `string` \| `null`
+> `readonly` __pageName__: `string` \| `null`
 
 Defined in: [src/context/WikiContext.ts:166](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L166)
 
@@ -141,7 +141,7 @@ Name of the current page
 
 ### pluginManager
 
-> `readonly` **pluginManager**: [`default`](../../../managers/PluginManager/classes/default.md)
+> `readonly` __pluginManager__: [`default`](../../../managers/PluginManager/classes/default.md)
 
 Defined in: [src/context/WikiContext.ts:187](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L187)
 
@@ -151,7 +151,7 @@ Reference to PluginManager
 
 ### renderingManager
 
-> `readonly` **renderingManager**: [`export=`](../../../managers/RenderingManager/classes/export=.md)
+> `readonly` __renderingManager__: [`export=`](../../../managers/RenderingManager/classes/export=.md)
 
 Defined in: [src/context/WikiContext.ts:184](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L184)
 
@@ -161,7 +161,7 @@ Reference to RenderingManager
 
 ### request
 
-> `readonly` **request**: `Request`\<`ParamsDictionary`, `any`, `any`, `ParsedQs`, `Record`\<`string`, `any`\>\> \| `null`
+> `readonly` __request__: `Request`\<`ParamsDictionary`, `any`, `any`, `ParsedQs`, `Record`\<`string`, `any`\>\> \| `null`
 
 Defined in: [src/context/WikiContext.ts:175](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L175)
 
@@ -171,7 +171,7 @@ Express request object
 
 ### response
 
-> `readonly` **response**: `Response`\<`any`, `Record`\<`string`, `any`\>\> \| `null`
+> `readonly` __response__: `Response`\<`any`, `Record`\<`string`, `any`\>\> \| `null`
 
 Defined in: [src/context/WikiContext.ts:178](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L178)
 
@@ -181,7 +181,7 @@ Express response object
 
 ### userContext
 
-> `readonly` **userContext**: [`UserContext`](../interfaces/UserContext.md) \| `null`
+> `readonly` __userContext__: [`UserContext`](../interfaces/UserContext.md) \| `null`
 
 Defined in: [src/context/WikiContext.ts:172](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L172)
 
@@ -191,7 +191,7 @@ Current user context/session
 
 ### variableManager
 
-> `readonly` **variableManager**: [`default`](../../../managers/VariableManager/classes/default.md)
+> `readonly` __variableManager__: [`default`](../../../managers/VariableManager/classes/default.md)
 
 Defined in: [src/context/WikiContext.ts:190](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L190)
 
@@ -201,7 +201,7 @@ Reference to VariableManager
 
 ### getContext()
 
-> **getContext**(): `string`
+> __getContext__(): `string`
 
 Defined in: [src/context/WikiContext.ts:248](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L248)
 
@@ -225,7 +225,7 @@ if (context.getContext() === WikiContext.CONTEXT.EDIT) {
 
 ### renderMarkdown()
 
-> **renderMarkdown**(`content?`): `Promise`\<`string`\>
+> __renderMarkdown__(`content?`): `Promise`\<`string`\>
 
 Defined in: [src/context/WikiContext.ts:272](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L272)
 
@@ -268,7 +268,7 @@ const html = await context.renderMarkdown('[{CurrentTimePlugin}]');
 
 ### toParseOptions()
 
-> **toParseOptions**(): [`ParseOptions`](../interfaces/ParseOptions.md)
+> __toParseOptions__(): [`ParseOptions`](../interfaces/ParseOptions.md)
 
 Defined in: [src/context/WikiContext.ts:315](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/context/WikiContext.ts#L315)
 

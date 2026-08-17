@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../../README.md)
 
 ***
 
@@ -20,7 +20,7 @@ Additional properties
 
 ### endIndex?
 
-> `optional` **endIndex**: `number`
+> `optional` __endIndex__: `number`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:114](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L114)
 
@@ -30,7 +30,7 @@ End index in content
 
 ### id
 
-> **id**: `number`
+> __id__: `number`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:106](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L106)
 
@@ -40,7 +40,7 @@ Unique ID for tracking
 
 ### originalText?
 
-> `optional` **originalText**: `string`
+> `optional` __originalText__: `string`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:110](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L110)
 
@@ -50,7 +50,7 @@ Original text
 
 ### startIndex?
 
-> `optional` **startIndex**: `number`
+> `optional` __startIndex__: `number`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:112](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L112)
 
@@ -60,7 +60,7 @@ Start index in content
 
 ### syntax?
 
-> `optional` **syntax**: `string`
+> `optional` __syntax__: `string`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:108](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L108)
 
@@ -70,7 +70,7 @@ Original syntax
 
 ### target
 
-> **target**: `string`
+> __target__: `string`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:104](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L104)
 
@@ -80,7 +80,7 @@ Link target (may include pipe syntax: "Display|Target")
 
 ### type
 
-> **type**: `string`
+> __type__: `string`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:102](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L102)
 

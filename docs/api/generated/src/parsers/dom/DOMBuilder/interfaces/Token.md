@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -20,7 +20,7 @@ Additional properties
 
 ### column?
 
-> `optional` **column**: `number`
+> `optional` __column__: `number`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:91](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L91)
 
@@ -30,7 +30,7 @@ Column number
 
 ### line?
 
-> `optional` **line**: `number`
+> `optional` __line__: `number`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:89](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L89)
 
@@ -40,7 +40,7 @@ Line number
 
 ### metadata?
 
-> `optional` **metadata**: [`TokenMetadata`](TokenMetadata.md)
+> `optional` __metadata__: [`TokenMetadata`](TokenMetadata.md)
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:87](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L87)
 
@@ -50,7 +50,7 @@ Token metadata
 
 ### type
 
-> **type**: `string`
+> __type__: `string`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:83](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L83)
 
@@ -60,7 +60,7 @@ Token type - can be TokenType enum or string for extensibility
 
 ### value
 
-> **value**: `string`
+> __value__: `string`
 
 Defined in: [src/parsers/dom/DOMBuilder.ts:85](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMBuilder.ts#L85)
 

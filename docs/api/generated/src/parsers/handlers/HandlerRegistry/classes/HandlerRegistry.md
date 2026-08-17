@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ HandlerRegistry - Advanced handler registration and management system
 
 ### Constructor
 
-> **new HandlerRegistry**(`engine`): `HandlerRegistry`
+> __new HandlerRegistry__(`engine`): `HandlerRegistry`
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:120](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L120)
 
@@ -32,7 +32,7 @@ Defined in: [src/parsers/handlers/HandlerRegistry.ts:120](https://github.com/jwi
 
 ### clearAll()
 
-> **clearAll**(): `Promise`\<`void`\>
+> __clearAll__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:623](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L623)
 
@@ -46,7 +46,7 @@ Clear all handlers
 
 ### disableHandler()
 
-> **disableHandler**(`handlerId`): `boolean`
+> __disableHandler__(`handlerId`): `boolean`
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:484](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L484)
 
@@ -70,7 +70,7 @@ True if successful
 
 ### enableHandler()
 
-> **enableHandler**(`handlerId`): `boolean`
+> __enableHandler__(`handlerId`): `boolean`
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:469](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L469)
 
@@ -94,7 +94,7 @@ True if successful
 
 ### exportState()
 
-> **exportState**(): [`ExportedRegistryState`](../interfaces/ExportedRegistryState.md)
+> __exportState__(): [`ExportedRegistryState`](../interfaces/ExportedRegistryState.md)
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:647](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L647)
 
@@ -110,7 +110,7 @@ Serializable registry state
 
 ### getHandler()
 
-> **getHandler**(`handlerId`): [`default`](../../BaseSyntaxHandler/classes/default.md) \| `null`
+> __getHandler__(`handlerId`): [`default`](../../BaseSyntaxHandler/classes/default.md) \| `null`
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:428](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L428)
 
@@ -134,7 +134,7 @@ Handler or null if not found
 
 ### getHandlersByPattern()
 
-> **getHandlersByPattern**(`pattern`): [`default`](../../BaseSyntaxHandler/classes/default.md)[]
+> __getHandlersByPattern__(`pattern`): [`default`](../../BaseSyntaxHandler/classes/default.md)[]
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:451](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L451)
 
@@ -158,7 +158,7 @@ Matching handlers
 
 ### getHandlersByPriority()
 
-> **getHandlersByPriority**(`enabledOnly`): [`default`](../../BaseSyntaxHandler/classes/default.md)[]
+> __getHandlersByPriority__(`enabledOnly`): [`default`](../../BaseSyntaxHandler/classes/default.md)[]
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:437](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L437)
 
@@ -182,7 +182,7 @@ Handlers sorted by priority
 
 ### getInfo()
 
-> **getInfo**(): [`RegistryInfo`](../interfaces/RegistryInfo.md)
+> __getInfo__(): [`RegistryInfo`](../interfaces/RegistryInfo.md)
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:660](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L660)
 
@@ -198,7 +198,7 @@ Registry information
 
 ### getStats()
 
-> **getStats**(): [`ExtendedRegistryStats`](../interfaces/ExtendedRegistryStats.md)
+> __getStats__(): [`ExtendedRegistryStats`](../interfaces/ExtendedRegistryStats.md)
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:498](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L498)
 
@@ -214,7 +214,7 @@ Registry statistics
 
 ### registerHandler()
 
-> **registerHandler**(`handler`, `options`): `Promise`\<`boolean`\>
+> __registerHandler__(`handler`, `options`): `Promise`\<`boolean`\>
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:153](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L153)
 
@@ -244,7 +244,7 @@ True if registration successful
 
 ### resetStats()
 
-> **resetStats**(): `void`
+> __resetStats__(): `void`
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:522](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L522)
 
@@ -258,7 +258,7 @@ Reset all handler statistics
 
 ### resolveExecutionOrder()
 
-> **resolveExecutionOrder**(): [`default`](../../BaseSyntaxHandler/classes/default.md)[]
+> __resolveExecutionOrder__(): [`default`](../../BaseSyntaxHandler/classes/default.md)[]
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:542](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L542)
 
@@ -274,7 +274,7 @@ Handlers in dependency-resolved order
 
 ### unregisterHandler()
 
-> **unregisterHandler**(`handlerId`): `Promise`\<`boolean`\>
+> __unregisterHandler__(`handlerId`): `Promise`\<`boolean`\>
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:225](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L225)
 
@@ -298,7 +298,7 @@ True if unregistration successful
 
 ### validateDependencies()
 
-> **validateDependencies**(): [`DependencyValidationError`](../interfaces/DependencyValidationError.md)[]
+> __validateDependencies__(): [`DependencyValidationError`](../interfaces/DependencyValidationError.md)[]
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:597](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L597)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -15,6 +15,7 @@ of markdown/wiki markup to HTML. It supports both legacy Showdown-based renderin
 and the advanced MarkupParser with multi-phase processing.
 
 Key features:
+
 - Pluggable parser system (Showdown vs MarkupParser)
 - Wiki link parsing and resolution
 - Link graph building for backlinks/orphaned pages
@@ -25,8 +26,8 @@ Key features:
 
 ## See
 
- - [BaseManager](../../BaseManager/classes/default.md) for base functionality
- - [MarkupParser](../../../parsers/MarkupParser/classes/default.md) for advanced parsing
+- [BaseManager](../../BaseManager/classes/default.md) for base functionality
+- [MarkupParser](../../../parsers/MarkupParser/classes/default.md) for advanced parsing
 
 ## Example
 
@@ -43,7 +44,7 @@ const html = await renderingManager.renderPage('# Hello World', { pageName: 'Mai
 
 ### Constructor
 
-> **new export=**(`engine`): `RenderingManager`
+> __new export=__(`engine`): `RenderingManager`
 
 Defined in: [src/managers/RenderingManager.ts:121](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L121)
 
@@ -69,7 +70,7 @@ The wiki engine instance
 
 ### config?
 
-> `protected` `optional` **config**: `Record`\<`string`, `unknown`\>
+> `protected` `optional` __config__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/managers/BaseManager.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L61)
 
@@ -83,7 +84,7 @@ Configuration passed during initialization
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L54)
 
@@ -97,7 +98,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/managers/BaseManager.ts:57](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L57)
 
@@ -111,7 +112,7 @@ Initialization status flag
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
 
 Defined in: [src/managers/BaseManager.ts:169](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L169)
 
@@ -153,7 +154,7 @@ async backup(): Promise<BackupData> {
 
 ### buildLinkGraph()
 
-> **buildLinkGraph**(): `Promise`\<`void`\>
+> __buildLinkGraph__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/RenderingManager.ts:1063](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L1063)
 
@@ -167,7 +168,7 @@ Build link graph for referring pages
 
 ### convertJSPWikiTableToMarkdown()
 
-> **convertJSPWikiTableToMarkdown**(`tableContent`, `params`): `string`
+> __convertJSPWikiTableToMarkdown__(`tableContent`, `params`): `string`
 
 Defined in: [src/managers/RenderingManager.ts:517](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L517)
 
@@ -197,7 +198,7 @@ Markdown table
 
 ### expandMacros()
 
-> **expandMacros**(`content`, `pageName`, `userContext`, `_requestInfo`): `Promise`\<`string`\>
+> __expandMacros__(`content`, `pageName`, `userContext`, `_requestInfo`): `Promise`\<`string`\>
 
 Defined in: [src/managers/RenderingManager.ts:646](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L646)
 
@@ -237,7 +238,7 @@ Content with expanded macros
 
 ### expandSystemVariable()
 
-> **expandSystemVariable**(`variable`, `pageName`, `userContext`): `string`
+> __expandSystemVariable__(`variable`, `pageName`, `userContext`): `string`
 
 Defined in: [src/managers/RenderingManager.ts:807](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L807)
 
@@ -273,7 +274,7 @@ Expanded value
 
 ### expandSystemVariables()
 
-> **expandSystemVariables**(`content`): `string`
+> __expandSystemVariables__(`content`): `string`
 
 Defined in: [src/managers/RenderingManager.ts:893](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L893)
 
@@ -297,7 +298,7 @@ Content with expanded system variables
 
 ### formatUptime()
 
-> **formatUptime**(`seconds`): `string`
+> __formatUptime__(`seconds`): `string`
 
 Defined in: [src/managers/RenderingManager.ts:938](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L938)
 
@@ -321,7 +322,7 @@ Formatted uptime
 
 ### generateStyledTable()
 
-> **generateStyledTable**(`metadata`): `string`
+> __generateStyledTable__(`metadata`): `string`
 
 Defined in: [src/managers/RenderingManager.ts:591](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L591)
 
@@ -345,7 +346,7 @@ Styled table opening tag with CSS
 
 ### getApplicationVersion()
 
-> **getApplicationVersion**(): `string`
+> __getApplicationVersion__(): `string`
 
 Defined in: [src/managers/RenderingManager.ts:871](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L871)
 
@@ -361,7 +362,7 @@ Application version
 
 ### getBaseUrl()
 
-> **getBaseUrl**(): `string`
+> __getBaseUrl__(): `string`
 
 Defined in: [src/managers/RenderingManager.ts:956](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L956)
 
@@ -377,7 +378,7 @@ Base URL
 
 ### getEngine()
 
-> **getEngine**(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> __getEngine__(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:125](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L125)
 
@@ -403,7 +404,7 @@ const config = this.getEngine().getConfig();
 
 ### getLinkGraph()
 
-> **getLinkGraph**(): `LinkGraph`
+> __getLinkGraph__(): `LinkGraph`
 
 Defined in: [src/managers/RenderingManager.ts:1190](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L1190)
 
@@ -419,7 +420,7 @@ Link graph object
 
 ### getLoginStatus()
 
-> **getLoginStatus**(`userContext`): `string`
+> __getLoginStatus__(`userContext`): `string`
 
 Defined in: [src/managers/RenderingManager.ts:1250](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L1250)
 
@@ -443,7 +444,7 @@ Login status description
 
 ### getParser()
 
-> **getParser**(): [`default`](../../../parsers/MarkupParser/classes/default.md) \| `null`
+> __getParser__(): [`default`](../../../parsers/MarkupParser/classes/default.md) \| `null`
 
 Defined in: [src/managers/RenderingManager.ts:200](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L200)
 
@@ -471,7 +472,7 @@ if (parser) {
 
 ### getReferringPages()
 
-> **getReferringPages**(`pageName`): `string`[]
+> __getReferringPages__(`pageName`): `string`[]
 
 Defined in: [src/managers/RenderingManager.ts:1209](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L1209)
 
@@ -499,7 +500,7 @@ SHOULD BE using plugins/referringPagesPlugin.js
 
 ### getTotalPagesCount()
 
-> **getTotalPagesCount**(): `number`
+> __getTotalPagesCount__(): `number`
 
 Defined in: [src/managers/RenderingManager.ts:850](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L850)
 
@@ -517,7 +518,7 @@ Number of pages
 
 ### getUptime()
 
-> **getUptime**(): `number`
+> __getUptime__(): `number`
 
 Defined in: [src/managers/RenderingManager.ts:862](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L862)
 
@@ -533,7 +534,7 @@ Uptime in seconds
 
 ### getUserName()
 
-> **getUserName**(`userContext`): `string`
+> __getUserName__(`userContext`): `string`
 
 Defined in: [src/managers/RenderingManager.ts:1229](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L1229)
 
@@ -557,7 +558,7 @@ Username or "Anonymous"
 
 ### initialize()
 
-> **initialize**(`config?`): `Promise`\<`void`\>
+> __initialize__(`config?`): `Promise`\<`void`\>
 
 Defined in: [src/managers/RenderingManager.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L143)
 
@@ -595,7 +596,7 @@ console.log('RenderingManager ready');
 
 ### initializeLinkParser()
 
-> **initializeLinkParser**(): `void`
+> __initializeLinkParser__(): `void`
 
 Defined in: [src/managers/RenderingManager.ts:1157](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L1157)
 
@@ -609,7 +610,7 @@ Initialize LinkParser with page names and configuration
 
 ### isInitialized()
 
-> **isInitialized**(): `boolean`
+> __isInitialized__(): `boolean`
 
 Defined in: [src/managers/BaseManager.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L113)
 
@@ -637,7 +638,7 @@ if (manager.isInitialized()) {
 
 ### parseTableParameters()
 
-> **parseTableParameters**(`paramString`): `TableParams`
+> __parseTableParameters__(`paramString`): `TableParams`
 
 Defined in: [src/managers/RenderingManager.ts:485](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L485)
 
@@ -661,7 +662,7 @@ Parsed parameters
 
 ### performPerformanceComparison()
 
-> **performPerformanceComparison**(`content`, `pageName`, `userContext`, `requestInfo`, `advancedTime`): `Promise`\<`void`\>
+> __performPerformanceComparison__(`content`, `pageName`, `userContext`, `requestInfo`, `advancedTime`): `Promise`\<`void`\>
 
 Defined in: [src/managers/RenderingManager.ts:387](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L387)
 
@@ -707,7 +708,7 @@ Time taken by advanced parser
 
 ### postProcessTables()
 
-> **postProcessTables**(`html`): `string`
+> __postProcessTables__(`html`): `string`
 
 Defined in: [src/managers/RenderingManager.ts:571](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L571)
 
@@ -731,7 +732,7 @@ HTML with styled tables
 
 ### processJSPWikiTables()
 
-> **processJSPWikiTables**(`content`): `string`
+> __processJSPWikiTables__(`content`): `string`
 
 Defined in: [src/managers/RenderingManager.ts:421](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L421)
 
@@ -755,7 +756,7 @@ Content with processed tables
 
 ### processTableStripedSyntax()
 
-> **processTableStripedSyntax**(`content`): `string`
+> __processTableStripedSyntax__(`content`): `string`
 
 Defined in: [src/managers/RenderingManager.ts:450](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L450)
 
@@ -779,7 +780,7 @@ Content with processed tables
 
 ### processWikiLinks()
 
-> **processWikiLinks**(`content`): `Promise`\<`string`\>
+> __processWikiLinks__(`content`): `Promise`\<`string`\>
 
 Defined in: [src/managers/RenderingManager.ts:969](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L969)
 
@@ -803,7 +804,7 @@ Content with processed links
 
 ### rebuildLinkGraph()
 
-> **rebuildLinkGraph**(): `Promise`\<`void`\>
+> __rebuildLinkGraph__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/RenderingManager.ts:1197](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L1197)
 
@@ -817,7 +818,7 @@ Rebuild link graph (called after page changes)
 
 ### renderMarkdown()
 
-> **renderMarkdown**(`content`, `pageName`, `userContext`, `requestInfo`): `Promise`\<`string`\>
+> __renderMarkdown__(`content`, `pageName`, `userContext`, `requestInfo`): `Promise`\<`string`\>
 
 Defined in: [src/managers/RenderingManager.ts:261](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L261)
 
@@ -859,7 +860,7 @@ Rendered HTML
 
 ### renderPlugins()
 
-> **renderPlugins**(`content`, `pageName`): `Promise`\<`string`\>
+> __renderPlugins__(`content`, `pageName`): `Promise`\<`string`\>
 
 Defined in: [src/managers/RenderingManager.ts:1292](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L1292)
 
@@ -889,7 +890,7 @@ Content with rendered plugins
 
 ### renderPreview()
 
-> **renderPreview**(`content`, `pageName`, `userContext`): `Promise`\<`string`\>
+> __renderPreview__(`content`, `pageName`, `userContext`): `Promise`\<`string`\>
 
 Defined in: [src/managers/RenderingManager.ts:1220](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L1220)
 
@@ -925,7 +926,7 @@ Rendered HTML preview
 
 ### renderWikiLinks()
 
-> **renderWikiLinks**(`content`): `string`
+> __renderWikiLinks__(`content`): `string`
 
 Defined in: [src/managers/RenderingManager.ts:1271](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L1271)
 
@@ -949,7 +950,7 @@ Content with rendered links
 
 ### renderWithAdvancedParser()
 
-> **renderWithAdvancedParser**(`content`, `pageName`, `userContext`, `requestInfo`): `Promise`\<`string`\>
+> __renderWithAdvancedParser__(`content`, `pageName`, `userContext`, `requestInfo`): `Promise`\<`string`\>
 
 Defined in: [src/managers/RenderingManager.ts:299](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L299)
 
@@ -991,7 +992,7 @@ Rendered HTML
 
 ### renderWithLegacyParser()
 
-> **renderWithLegacyParser**(`content`, `pageName`, `userContext`, `requestInfo`): `Promise`\<`string`\>
+> __renderWithLegacyParser__(`content`, `pageName`, `userContext`, `requestInfo`): `Promise`\<`string`\>
 
 Defined in: [src/managers/RenderingManager.ts:351](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L351)
 
@@ -1033,7 +1034,7 @@ Rendered HTML
 
 ### restore()
 
-> **restore**(`backupData`): `Promise`\<`void`\>
+> __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:198](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L198)
 
@@ -1078,7 +1079,7 @@ async restore(backupData: BackupData): Promise<void> {
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L143)
 
@@ -1109,7 +1110,7 @@ async shutdown(): Promise<void> {
 
 ### textToHTML()
 
-> **textToHTML**(`context`, `content`): `Promise`\<`string`\>
+> __textToHTML__(`context`, `content`): `Promise`\<`string`\>
 
 Defined in: [src/managers/RenderingManager.ts:1353](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/RenderingManager.ts#L1353)
 

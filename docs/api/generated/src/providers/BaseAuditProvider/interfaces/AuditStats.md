@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -20,7 +20,7 @@ Additional statistics
 
 ### eventsByResult?
 
-> `optional` **eventsByResult**: `Record`\<`string`, `number`\>
+> `optional` __eventsByResult__: `Record`\<`string`, `number`\>
 
 Defined in: [src/providers/BaseAuditProvider.ts:86](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L86)
 
@@ -30,7 +30,7 @@ Events by result
 
 ### eventsBySeverity?
 
-> `optional` **eventsBySeverity**: `Record`\<`string`, `number`\>
+> `optional` __eventsBySeverity__: `Record`\<`string`, `number`\>
 
 Defined in: [src/providers/BaseAuditProvider.ts:89](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L89)
 
@@ -40,7 +40,7 @@ Events by severity
 
 ### eventsByType?
 
-> `optional` **eventsByType**: `Record`\<`string`, `number`\>
+> `optional` __eventsByType__: `Record`\<`string`, `number`\>
 
 Defined in: [src/providers/BaseAuditProvider.ts:83](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L83)
 
@@ -50,7 +50,7 @@ Events by type
 
 ### eventsByUser?
 
-> `optional` **eventsByUser**: `Record`\<`string`, `number`\>
+> `optional` __eventsByUser__: `Record`\<`string`, `number`\>
 
 Defined in: [src/providers/BaseAuditProvider.ts:92](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L92)
 
@@ -60,7 +60,7 @@ Events by user
 
 ### recentActivity?
 
-> `optional` **recentActivity**: `any`[]
+> `optional` __recentActivity__: `any`[]
 
 Defined in: [src/providers/BaseAuditProvider.ts:96](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L96)
 
@@ -70,7 +70,7 @@ Recent activity entries
 
 ### securityIncidents?
 
-> `optional` **securityIncidents**: `number`
+> `optional` __securityIncidents__: `number`
 
 Defined in: [src/providers/BaseAuditProvider.ts:99](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L99)
 
@@ -80,7 +80,7 @@ Number of security incidents (high/critical severity)
 
 ### totalEvents
 
-> **totalEvents**: `number`
+> __totalEvents__: `number`
 
 Defined in: [src/providers/BaseAuditProvider.ts:80](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L80)
 

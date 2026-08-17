@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -18,6 +18,6 @@ Handler registration options
 
 ### forceRegister?
 
-> `optional` **forceRegister**: `boolean`
+> `optional` __forceRegister__: `boolean`
 
 Defined in: [src/parsers/handlers/HandlerRegistry.ts:45](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/handlers/HandlerRegistry.ts#L45)

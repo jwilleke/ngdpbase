@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -15,6 +15,7 @@ domain whitelisting, and content quality analysis through complete modularity
 via app-default-config.json and app-custom-config.json.
 
 Design Principles:
+
 - Configurable spam detection rules
 - Whitelist/blacklist modularity
 - Zero hardcoded detection rules
@@ -31,7 +32,7 @@ Epic: #41 - Implement JSPWikiMarkupParser for Complete Enhancement Support
 
 ### Constructor
 
-> **new default**(): `SpamFilter`
+> __new default__(): `SpamFilter`
 
 Defined in: [src/parsers/filters/SpamFilter.ts:106](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L106)
 
@@ -47,7 +48,7 @@ Defined in: [src/parsers/filters/SpamFilter.ts:106](https://github.com/jwilleke/
 
 ### blacklistedWords
 
-> **blacklistedWords**: `Set`\<`string`\>
+> __blacklistedWords__: `Set`\<`string`\>
 
 Defined in: [src/parsers/filters/SpamFilter.ts:102](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L102)
 
@@ -55,7 +56,7 @@ Defined in: [src/parsers/filters/SpamFilter.ts:102](https://github.com/jwilleke/
 
 ### category
 
-> `readonly` **category**: `string`
+> `readonly` __category__: `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:140](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L140)
 
@@ -67,7 +68,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:140](https://github.com/jwilleke/
 
 ### config
 
-> `protected` **config**: [`FilterConfig`](../../BaseFilter/interfaces/FilterConfig.md) \| `null`
+> `protected` __config__: [`FilterConfig`](../../BaseFilter/interfaces/FilterConfig.md) \| `null`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:146](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L146)
 
@@ -79,7 +80,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:146](https://github.com/jwilleke/
 
 ### description
 
-> `readonly` **description**: `string`
+> `readonly` __description__: `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:139](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L139)
 
@@ -91,7 +92,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:139](https://github.com/jwilleke/
 
 ### enabled
 
-> `protected` **enabled**: `boolean`
+> `protected` __enabled__: `boolean`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:144](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L144)
 
@@ -103,7 +104,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:144](https://github.com/jwilleke/
 
 ### filterId
 
-> **filterId**: `string`
+> __filterId__: `string`
 
 Defined in: [src/parsers/filters/SpamFilter.ts:100](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L100)
 
@@ -115,7 +116,7 @@ Defined in: [src/parsers/filters/SpamFilter.ts:100](https://github.com/jwilleke/
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:145](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L145)
 
@@ -127,7 +128,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:145](https://github.com/jwilleke/
 
 ### options
 
-> `protected` **options**: `Required`\<[`FilterOptions`](../../BaseFilter/interfaces/FilterOptions.md)\>
+> `protected` __options__: `Required`\<[`FilterOptions`](../../BaseFilter/interfaces/FilterOptions.md)\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:142](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L142)
 
@@ -139,7 +140,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:142](https://github.com/jwilleke/
 
 ### priority
 
-> **priority**: `number`
+> __priority__: `number`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:136](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L136)
 
@@ -151,7 +152,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:136](https://github.com/jwilleke/
 
 ### spamConfig
 
-> **spamConfig**: `SpamConfig` \| `null`
+> __spamConfig__: `SpamConfig` \| `null`
 
 Defined in: [src/parsers/filters/SpamFilter.ts:101](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L101)
 
@@ -159,7 +160,7 @@ Defined in: [src/parsers/filters/SpamFilter.ts:101](https://github.com/jwilleke/
 
 ### spamPatterns
 
-> **spamPatterns**: `RegExp`[]
+> __spamPatterns__: `RegExp`[]
 
 Defined in: [src/parsers/filters/SpamFilter.ts:104](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L104)
 
@@ -167,7 +168,7 @@ Defined in: [src/parsers/filters/SpamFilter.ts:104](https://github.com/jwilleke/
 
 ### stats
 
-> `protected` **stats**: [`FilterStats`](../../BaseFilter/interfaces/FilterStats.md)
+> `protected` __stats__: [`FilterStats`](../../BaseFilter/interfaces/FilterStats.md)
 
 Defined in: [src/parsers/filters/BaseFilter.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L143)
 
@@ -179,7 +180,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:143](https://github.com/jwilleke/
 
 ### version
 
-> `readonly` **version**: `string`
+> `readonly` __version__: `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:138](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L138)
 
@@ -191,7 +192,7 @@ Defined in: [src/parsers/filters/BaseFilter.ts:138](https://github.com/jwilleke/
 
 ### whitelistedDomains
 
-> **whitelistedDomains**: `Set`\<`string`\>
+> __whitelistedDomains__: `Set`\<`string`\>
 
 Defined in: [src/parsers/filters/SpamFilter.ts:103](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L103)
 
@@ -199,7 +200,7 @@ Defined in: [src/parsers/filters/SpamFilter.ts:103](https://github.com/jwilleke/
 
 ### addBlacklistedWord()
 
-> **addBlacklistedWord**(`word`): `boolean`
+> __addBlacklistedWord__(`word`): `boolean`
 
 Defined in: [src/parsers/filters/SpamFilter.ts:428](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L428)
 
@@ -223,7 +224,7 @@ True if added
 
 ### addWhitelistedDomain()
 
-> **addWhitelistedDomain**(`domain`): `boolean`
+> __addWhitelistedDomain__(`domain`): `boolean`
 
 Defined in: [src/parsers/filters/SpamFilter.ts:458](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L458)
 
@@ -247,7 +248,7 @@ True if added
 
 ### analyzeSpam()
 
-> **analyzeSpam**(`content`, `_context`): `Promise`\<`SpamAnalysis`\>
+> __analyzeSpam__(`content`, `_context`): `Promise`\<`SpamAnalysis`\>
 
 Defined in: [src/parsers/filters/SpamFilter.ts:253](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L253)
 
@@ -277,7 +278,7 @@ Spam analysis result
 
 ### countImages()
 
-> **countImages**(`content`): `number`
+> __countImages__(`content`): `number`
 
 Defined in: [src/parsers/filters/SpamFilter.ts:337](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L337)
 
@@ -301,7 +302,7 @@ Number of images found
 
 ### countLinks()
 
-> **countLinks**(`content`): `number`
+> __countLinks__(`content`): `number`
 
 Defined in: [src/parsers/filters/SpamFilter.ts:315](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L315)
 
@@ -325,7 +326,7 @@ Number of links found
 
 ### createErrorContext()
 
-> `protected` **createErrorContext**(`error`, `content`, `context`): [`FilterErrorContext`](../../BaseFilter/interfaces/FilterErrorContext.md)
+> `protected` __createErrorContext__(`error`, `content`, `context`): [`FilterErrorContext`](../../BaseFilter/interfaces/FilterErrorContext.md)
 
 Defined in: [src/parsers/filters/BaseFilter.ts:340](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L340)
 
@@ -365,7 +366,7 @@ Error context
 
 ### disable()
 
-> **disable**(): `void`
+> __disable__(): `void`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:366](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L366)
 
@@ -383,7 +384,7 @@ Disable the filter
 
 ### enable()
 
-> **enable**(): `void`
+> __enable__(): `void`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:359](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L359)
 
@@ -401,7 +402,7 @@ Enable the filter
 
 ### execute()
 
-> **execute**(`content`, `context`): `Promise`\<`string`\>
+> __execute__(`content`, `context`): `Promise`\<`string`\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:300](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L300)
 
@@ -435,7 +436,7 @@ Processed content
 
 ### findBlacklistedWords()
 
-> **findBlacklistedWords**(`content`): `string`[]
+> __findBlacklistedWords__(`content`): `string`[]
 
 Defined in: [src/parsers/filters/SpamFilter.ts:358](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L358)
 
@@ -459,7 +460,7 @@ Found blacklisted words
 
 ### findSuspiciousDomains()
 
-> **findSuspiciousDomains**(`content`): `Promise`\<`string`[]\>
+> __findSuspiciousDomains__(`content`): `Promise`\<`string`[]\>
 
 Defined in: [src/parsers/filters/SpamFilter.ts:377](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L377)
 
@@ -483,7 +484,7 @@ Suspicious domains found
 
 ### getConfigurationSummary()
 
-> **getConfigurationSummary**(): [`ConfigurationSummary`](../../BaseFilter/interfaces/ConfigurationSummary.md)
+> __getConfigurationSummary__(): [`ConfigurationSummary`](../../BaseFilter/interfaces/ConfigurationSummary.md)
 
 Defined in: [src/parsers/filters/BaseFilter.ts:434](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L434)
 
@@ -503,7 +504,7 @@ Configuration summary
 
 ### getFilterType()
 
-> `protected` **getFilterType**(): `string` \| `null`
+> `protected` __getFilterType__(): `string` \| `null`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:265](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L265)
 
@@ -523,7 +524,7 @@ Filter type for configuration
 
 ### getInfo()
 
-> **getInfo**(): `Record`\<`string`, `unknown`\>
+> __getInfo__(): `Record`\<`string`, `unknown`\>
 
 Defined in: [src/parsers/filters/SpamFilter.ts:509](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L509)
 
@@ -539,7 +540,7 @@ Filter information
 
 ### getMetadata()
 
-> **getMetadata**(): [`FilterMetadata`](../../BaseFilter/interfaces/FilterMetadata.md)
+> __getMetadata__(): [`FilterMetadata`](../../BaseFilter/interfaces/FilterMetadata.md)
 
 Defined in: [src/parsers/filters/BaseFilter.ts:416](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L416)
 
@@ -559,7 +560,7 @@ Filter metadata
 
 ### getSpamConfiguration()
 
-> **getSpamConfiguration**(): `Record`\<`string`, `unknown`\>
+> __getSpamConfiguration__(): `Record`\<`string`, `unknown`\>
 
 Defined in: [src/parsers/filters/SpamFilter.ts:487](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L487)
 
@@ -575,7 +576,7 @@ Spam configuration summary
 
 ### getStats()
 
-> **getStats**(): [`FilterStats`](../../BaseFilter/interfaces/FilterStats.md) & `object`
+> __getStats__(): [`FilterStats`](../../BaseFilter/interfaces/FilterStats.md) & `object`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:382](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L382)
 
@@ -595,7 +596,7 @@ Filter statistics
 
 ### initialize()
 
-> **initialize**(`context`): `Promise`\<`void`\>
+> __initialize__(`context`): `Promise`\<`void`\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:201](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L201)
 
@@ -621,7 +622,7 @@ Initialization context
 
 ### isEnabled()
 
-> **isEnabled**(): `boolean`
+> __isEnabled__(): `boolean`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:374](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L374)
 
@@ -641,7 +642,7 @@ True if enabled
 
 ### loadDefaultSpamConfiguration()
 
-> **loadDefaultSpamConfiguration**(): `void`
+> __loadDefaultSpamConfiguration__(): `void`
 
 Defined in: [src/parsers/filters/SpamFilter.ts:204](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L204)
 
@@ -655,7 +656,7 @@ Load default spam configuration when configuration unavailable
 
 ### loadModularConfiguration()
 
-> `protected` **loadModularConfiguration**(`context`): `void`
+> `protected` __loadModularConfiguration__(`context`): `void`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:219](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L219)
 
@@ -681,7 +682,7 @@ Initialization context
 
 ### loadModularSpamConfiguration()
 
-> **loadModularSpamConfiguration**(`context`): `void`
+> __loadModularSpamConfiguration__(`context`): `void`
 
 Defined in: [src/parsers/filters/SpamFilter.ts:145](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L145)
 
@@ -703,7 +704,7 @@ Initialization context
 
 ### logSpamAttempt()
 
-> **logSpamAttempt**(`_content`, `analysis`, `context`): `void`
+> __logSpamAttempt__(`_content`, `analysis`, `context`): `void`
 
 Defined in: [src/parsers/filters/SpamFilter.ts:402](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L402)
 
@@ -737,7 +738,7 @@ Parse context
 
 ### onInitialize()
 
-> **onInitialize**(`context`): `Promise`\<`void`\>
+> __onInitialize__(`context`): `Promise`\<`void`\>
 
 Defined in: [src/parsers/filters/SpamFilter.ts:129](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L129)
 
@@ -763,7 +764,7 @@ Initialization context
 
 ### onShutdown()
 
-> `protected` **onShutdown**(): `Promise`\<`void`\>
+> `protected` __onShutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:456](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L456)
 
@@ -781,7 +782,7 @@ Custom shutdown logic (override in subclasses)
 
 ### process()
 
-> **process**(`content`, `context`): `Promise`\<`string`\>
+> __process__(`content`, `context`): `Promise`\<`string`\>
 
 Defined in: [src/parsers/filters/SpamFilter.ts:220](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L220)
 
@@ -815,7 +816,7 @@ Content (unchanged if not spam, or flagged if spam)
 
 ### removeBlacklistedWord()
 
-> **removeBlacklistedWord**(`word`): `boolean`
+> __removeBlacklistedWord__(`word`): `boolean`
 
 Defined in: [src/parsers/filters/SpamFilter.ts:443](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L443)
 
@@ -839,7 +840,7 @@ True if removed
 
 ### removeWhitelistedDomain()
 
-> **removeWhitelistedDomain**(`domain`): `boolean`
+> __removeWhitelistedDomain__(`domain`): `boolean`
 
 Defined in: [src/parsers/filters/SpamFilter.ts:473](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/SpamFilter.ts#L473)
 
@@ -863,7 +864,7 @@ True if removed
 
 ### resetStats()
 
-> **resetStats**(): `void`
+> __resetStats__(): `void`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:402](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L402)
 
@@ -881,7 +882,7 @@ Reset filter statistics
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/parsers/filters/BaseFilter.ts:448](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L448)
 
@@ -899,7 +900,7 @@ Clean up filter resources (optional override)
 
 ### toString()
 
-> **toString**(): `string`
+> __toString__(): `string`
 
 Defined in: [src/parsers/filters/BaseFilter.ts:464](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/BaseFilter.ts#L464)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -19,9 +19,9 @@ decision.
 
 ## See
 
- - [BaseManager](../../BaseManager/classes/default.md) for base functionality
- - [PolicyManager](../../PolicyManager/classes/export=.md) for policy storage
- - ACLManager for access control integration
+- [BaseManager](../../BaseManager/classes/default.md) for base functionality
+- [PolicyManager](../../PolicyManager/classes/export=.md) for policy storage
+- ACLManager for access control integration
 
 ## Example
 
@@ -43,7 +43,7 @@ if (result.allowed) console.log('Access granted');
 
 ### Constructor
 
-> **new export=**(`engine`): `PolicyEvaluator`
+> __new export=__(`engine`): `PolicyEvaluator`
 
 Defined in: [src/managers/PolicyEvaluator.ts:98](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyEvaluator.ts#L98)
 
@@ -69,7 +69,7 @@ The wiki engine instance
 
 ### config?
 
-> `protected` `optional` **config**: `Record`\<`string`, `unknown`\>
+> `protected` `optional` __config__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/managers/BaseManager.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L61)
 
@@ -83,7 +83,7 @@ Configuration passed during initialization
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L54)
 
@@ -97,7 +97,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/managers/BaseManager.ts:57](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L57)
 
@@ -111,7 +111,7 @@ Initialization status flag
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
 
 Defined in: [src/managers/BaseManager.ts:169](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L169)
 
@@ -153,7 +153,7 @@ async backup(): Promise<BackupData> {
 
 ### evaluateAccess()
 
-> **evaluateAccess**(`context`): `Promise`\<`EvaluationResult`\>
+> __evaluateAccess__(`context`): `Promise`\<`EvaluationResult`\>
 
 Defined in: [src/managers/PolicyEvaluator.ts:141](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyEvaluator.ts#L141)
 
@@ -193,7 +193,7 @@ console.log('Allowed:', result.allowed, 'Reason:', result.reason);
 
 ### getEngine()
 
-> **getEngine**(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> __getEngine__(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:125](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L125)
 
@@ -219,7 +219,7 @@ const config = this.getEngine().getConfig();
 
 ### initialize()
 
-> **initialize**(): `Promise`\<`void`\>
+> __initialize__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/PolicyEvaluator.ts:114](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyEvaluator.ts#L114)
 
@@ -250,7 +250,7 @@ console.log('Policy evaluator ready');
 
 ### isInitialized()
 
-> **isInitialized**(): `boolean`
+> __isInitialized__(): `boolean`
 
 Defined in: [src/managers/BaseManager.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L113)
 
@@ -278,13 +278,14 @@ if (manager.isInitialized()) {
 
 ### matches()
 
-> **matches**(`policy`, `context`): `boolean`
+> __matches__(`policy`, `context`): `boolean`
 
 Defined in: [src/managers/PolicyEvaluator.ts:179](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyEvaluator.ts#L179)
 
 Checks if a single policy matches the given context.
 
 A policy matches if ALL of the following conditions are true:
+
 - Subject matches (user has required role)
 - Resource matches (page name matches pattern)
 - Action matches (action is in policy's action list)
@@ -320,13 +321,14 @@ if (matches) console.log('Policy applies to this request');
 
 ### matchesAction()
 
-> **matchesAction**(`actions`, `action`): `boolean`
+> __matchesAction__(`actions`, `action`): `boolean`
 
 Defined in: [src/managers/PolicyEvaluator.ts:283](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyEvaluator.ts#L283)
 
 Checks if the action matches the policy's actions.
 
 An action matches if:
+
 - No actions specified (applies to all actions), OR
 - Action is in the policy's action list, OR
 - Policy includes wildcard '*' (matches all actions)
@@ -365,7 +367,7 @@ const matches = evaluator.matchesAction(
 
 ### matchesResource()
 
-> **matchesResource**(`resources`, `pageName`): `boolean`
+> __matchesResource__(`resources`, `pageName`): `boolean`
 
 Defined in: [src/managers/PolicyEvaluator.ts:252](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyEvaluator.ts#L252)
 
@@ -408,13 +410,14 @@ const matches = evaluator.matchesResource(
 
 ### matchesSubject()
 
-> **matchesSubject**(`policySubjects`, `userContext`): `boolean`
+> __matchesSubject__(`policySubjects`, `userContext`): `boolean`
 
 Defined in: [src/managers/PolicyEvaluator.ts:206](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PolicyEvaluator.ts#L206)
 
 Check if the user context's roles match the policy's subject requirements.
 
 A user matches if:
+
 - No subjects specified (applies to everyone), OR
 - Policy includes "All" role (applies to everyone), OR
 - User has at least one role matching a policy subject
@@ -453,7 +456,7 @@ const matches = evaluator.matchesSubject(
 
 ### restore()
 
-> **restore**(`backupData`): `Promise`\<`void`\>
+> __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:198](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L198)
 
@@ -498,7 +501,7 @@ async restore(backupData: BackupData): Promise<void> {
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L143)
 

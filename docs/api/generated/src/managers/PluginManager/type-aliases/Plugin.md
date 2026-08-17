@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -6,7 +6,7 @@
 
 # Type Alias: Plugin
 
-> **Plugin** = [`PluginFunction`](PluginFunction.md) \| [`PluginObject`](../interfaces/PluginObject.md)
+> __Plugin__ = [`PluginFunction`](PluginFunction.md) \| [`PluginObject`](../interfaces/PluginObject.md)
 
 Defined in: [src/managers/PluginManager.ts:32](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PluginManager.ts#L32)
 

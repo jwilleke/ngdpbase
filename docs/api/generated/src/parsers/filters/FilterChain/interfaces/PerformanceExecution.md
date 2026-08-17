@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Performance execution record
 
 ### executionTime
 
-> **executionTime**: `number`
+> __executionTime__: `number`
 
 Defined in: [src/parsers/filters/FilterChain.ts:64](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L64)
 
@@ -22,7 +22,7 @@ Defined in: [src/parsers/filters/FilterChain.ts:64](https://github.com/jwilleke/
 
 ### success
 
-> **success**: `boolean`
+> __success__: `boolean`
 
 Defined in: [src/parsers/filters/FilterChain.ts:65](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L65)
 
@@ -30,6 +30,6 @@ Defined in: [src/parsers/filters/FilterChain.ts:65](https://github.com/jwilleke/
 
 ### timestamp
 
-> **timestamp**: `number`
+> __timestamp__: `number`
 
 Defined in: [src/parsers/filters/FilterChain.ts:66](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/filters/FilterChain.ts#L66)

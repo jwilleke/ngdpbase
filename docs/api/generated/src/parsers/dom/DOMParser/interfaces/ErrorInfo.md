@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Error information
 
 ### column?
 
-> `optional` **column**: `number`
+> `optional` __column__: `number`
 
 Defined in: [src/parsers/dom/DOMParser.ts:128](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMParser.ts#L128)
 
@@ -24,7 +24,7 @@ Column number
 
 ### line?
 
-> `optional` **line**: `number`
+> `optional` __line__: `number`
 
 Defined in: [src/parsers/dom/DOMParser.ts:126](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMParser.ts#L126)
 
@@ -34,7 +34,7 @@ Line number
 
 ### message
 
-> **message**: `string`
+> __message__: `string`
 
 Defined in: [src/parsers/dom/DOMParser.ts:122](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMParser.ts#L122)
 
@@ -44,7 +44,7 @@ Error message
 
 ### position?
 
-> `optional` **position**: `number`
+> `optional` __position__: `number`
 
 Defined in: [src/parsers/dom/DOMParser.ts:124](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/DOMParser.ts#L124)
 

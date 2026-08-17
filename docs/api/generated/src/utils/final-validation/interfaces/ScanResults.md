@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Scan results for a directory
 
 ### categories
 
-> **categories**: `Record`\<`string`, `number`\>
+> __categories__: `Record`\<`string`, `number`\>
 
 Defined in: [src/utils/final-validation.ts:42](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/final-validation.ts#L42)
 
@@ -22,7 +22,7 @@ Defined in: [src/utils/final-validation.ts:42](https://github.com/jwilleke/ngdpb
 
 ### errors
 
-> **errors**: `ErrorInfo`[]
+> __errors__: `ErrorInfo`[]
 
 Defined in: [src/utils/final-validation.ts:41](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/final-validation.ts#L41)
 
@@ -30,7 +30,7 @@ Defined in: [src/utils/final-validation.ts:41](https://github.com/jwilleke/ngdpb
 
 ### invalid
 
-> **invalid**: `number`
+> __invalid__: `number`
 
 Defined in: [src/utils/final-validation.ts:40](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/final-validation.ts#L40)
 
@@ -38,6 +38,6 @@ Defined in: [src/utils/final-validation.ts:40](https://github.com/jwilleke/ngdpb
 
 ### valid
 
-> **valid**: `number`
+> __valid__: `number`
 
 Defined in: [src/utils/final-validation.ts:39](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/final-validation.ts#L39)

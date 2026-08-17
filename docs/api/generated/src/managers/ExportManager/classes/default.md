@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -34,7 +34,7 @@ const html = await exportManager.exportPageToHtml('Main');
 
 ### Constructor
 
-> **new default**(`engine`): `ExportManager`
+> __new default__(`engine`): `ExportManager`
 
 Defined in: [src/managers/ExportManager.ts:80](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ExportManager.ts#L80)
 
@@ -60,7 +60,7 @@ The wiki engine instance
 
 ### config?
 
-> `protected` `optional` **config**: `Record`\<`string`, `unknown`\>
+> `protected` `optional` __config__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/managers/BaseManager.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L61)
 
@@ -74,7 +74,7 @@ Configuration passed during initialization
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L54)
 
@@ -88,7 +88,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/managers/BaseManager.ts:57](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L57)
 
@@ -102,7 +102,7 @@ Initialization status flag
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
 
 Defined in: [src/managers/BaseManager.ts:169](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L169)
 
@@ -144,7 +144,7 @@ async backup(): Promise<BackupData> {
 
 ### deleteExport()
 
-> **deleteExport**(`filename`): `Promise`\<`void`\>
+> __deleteExport__(`filename`): `Promise`\<`void`\>
 
 Defined in: [src/managers/ExportManager.ts:435](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ExportManager.ts#L435)
 
@@ -166,7 +166,7 @@ Export filename
 
 ### exportPagesToHtml()
 
-> **exportPagesToHtml**(`pageNames`, `user`): `Promise`\<`string`\>
+> __exportPagesToHtml__(`pageNames`, `user`): `Promise`\<`string`\>
 
 Defined in: [src/managers/ExportManager.ts:209](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ExportManager.ts#L209)
 
@@ -196,7 +196,7 @@ Combined HTML content
 
 ### exportPageToHtml()
 
-> **exportPageToHtml**(`pageName`, `user`): `Promise`\<`string`\>
+> __exportPageToHtml__(`pageName`, `user`): `Promise`\<`string`\>
 
 Defined in: [src/managers/ExportManager.ts:110](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ExportManager.ts#L110)
 
@@ -226,7 +226,7 @@ HTML content
 
 ### exportToMarkdown()
 
-> **exportToMarkdown**(`pageNames`, `user`): `Promise`\<`string`\>
+> __exportToMarkdown__(`pageNames`, `user`): `Promise`\<`string`\>
 
 Defined in: [src/managers/ExportManager.ts:346](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ExportManager.ts#L346)
 
@@ -256,7 +256,7 @@ Markdown content
 
 ### getEngine()
 
-> **getEngine**(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> __getEngine__(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:125](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L125)
 
@@ -282,7 +282,7 @@ const config = this.getEngine().getConfig();
 
 ### getExports()
 
-> **getExports**(): `Promise`\<[`ExportFileInfo`](../interfaces/ExportFileInfo.md)[]\>
+> __getExports__(): `Promise`\<[`ExportFileInfo`](../interfaces/ExportFileInfo.md)[]\>
 
 Defined in: [src/managers/ExportManager.ts:405](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ExportManager.ts#L405)
 
@@ -298,7 +298,7 @@ List of export files
 
 ### getFormattedTimestamp()
 
-> **getFormattedTimestamp**(`user`): `string`
+> __getFormattedTimestamp__(`user`): `string`
 
 Defined in: [src/managers/ExportManager.ts:446](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ExportManager.ts#L446)
 
@@ -322,7 +322,7 @@ Formatted timestamp
 
 ### initialize()
 
-> **initialize**(`config?`): `Promise`\<`void`\>
+> __initialize__(`config?`): `Promise`\<`void`\>
 
 Defined in: [src/managers/ExportManager.ts:93](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ExportManager.ts#L93)
 
@@ -350,7 +350,7 @@ Configuration object
 
 ### isInitialized()
 
-> **isInitialized**(): `boolean`
+> __isInitialized__(): `boolean`
 
 Defined in: [src/managers/BaseManager.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L113)
 
@@ -378,7 +378,7 @@ if (manager.isInitialized()) {
 
 ### restore()
 
-> **restore**(`backupData`): `Promise`\<`void`\>
+> __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:198](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L198)
 
@@ -423,7 +423,7 @@ async restore(backupData: BackupData): Promise<void> {
 
 ### saveExport()
 
-> **saveExport**(`content`, `filename`, `format`): `Promise`\<`string`\>
+> __saveExport__(`content`, `filename`, `format`): `Promise`\<`string`\>
 
 Defined in: [src/managers/ExportManager.ts:389](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/ExportManager.ts#L389)
 
@@ -459,7 +459,7 @@ File path
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L143)
 

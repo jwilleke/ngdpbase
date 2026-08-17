@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../README.md)
+[__ngdpbase API v1.5.0__](../../../README.md)
 
 ***
 
@@ -6,7 +6,7 @@
 
 # Type Alias: CallablePlugin
 
-> **CallablePlugin** = (`pageName`, `params`, `linkGraph`) => `string` \| `Promise`\<`string`\> & `object`
+> __CallablePlugin__ = (`pageName`, `params`, `linkGraph`) => `string` \| `Promise`\<`string`\> & `object`
 
 Defined in: [plugins/types.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/plugins/types.ts#L54)
 
@@ -17,15 +17,15 @@ Callable plugin type for plugins that can be called directly
 
 ### author
 
-> **author**: `string`
+> __author__: `string`
 
 ### description
 
-> **description**: `string`
+> __description__: `string`
 
 ### initialize()?
 
-> `optional` **initialize**: (`engine`) => `void`
+> `optional` __initialize__: (`engine`) => `void`
 
 #### Parameters
 
@@ -39,8 +39,8 @@ Callable plugin type for plugins that can be called directly
 
 ### name
 
-> **name**: `string`
+> __name__: `string`
 
 ### version
 
-> **version**: `string`
+> __version__: `string`

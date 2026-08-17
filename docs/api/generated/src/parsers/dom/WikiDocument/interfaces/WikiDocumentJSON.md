@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ JSON serialization format
 
 ### html
 
-> **html**: `string`
+> __html__: `string`
 
 Defined in: [src/parsers/dom/WikiDocument.ts:97](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/WikiDocument.ts#L97)
 
@@ -22,7 +22,7 @@ Defined in: [src/parsers/dom/WikiDocument.ts:97](https://github.com/jwilleke/ngd
 
 ### metadata
 
-> **metadata**: [`WikiDocumentMetadata`](WikiDocumentMetadata.md)
+> __metadata__: [`WikiDocumentMetadata`](WikiDocumentMetadata.md)
 
 Defined in: [src/parsers/dom/WikiDocument.ts:98](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/WikiDocument.ts#L98)
 
@@ -30,7 +30,7 @@ Defined in: [src/parsers/dom/WikiDocument.ts:98](https://github.com/jwilleke/ngd
 
 ### pageData
 
-> **pageData**: `string`
+> __pageData__: `string`
 
 Defined in: [src/parsers/dom/WikiDocument.ts:96](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/WikiDocument.ts#L96)
 
@@ -38,7 +38,7 @@ Defined in: [src/parsers/dom/WikiDocument.ts:96](https://github.com/jwilleke/ngd
 
 ### timestamp
 
-> **timestamp**: `string`
+> __timestamp__: `string`
 
 Defined in: [src/parsers/dom/WikiDocument.ts:100](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/WikiDocument.ts#L100)
 
@@ -46,6 +46,6 @@ Defined in: [src/parsers/dom/WikiDocument.ts:100](https://github.com/jwilleke/ng
 
 ### version
 
-> **version**: `string`
+> __version__: `string`
 
 Defined in: [src/parsers/dom/WikiDocument.ts:99](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/WikiDocument.ts#L99)

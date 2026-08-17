@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,6 +14,7 @@ Stores audit logs in cloud logging services for enterprise cloud deployments.
 Suitable for AWS CloudWatch, Azure Monitor, Google Cloud Logging.
 
 Configuration keys (all lowercase):
+
 - ngdpbase.audit.provider.cloud.service - Cloud service (cloudwatch, azuremonitor, stackdriver)
 - ngdpbase.audit.provider.cloud.region - Cloud region
 - ngdpbase.audit.provider.cloud.loggroup - Log group/namespace
@@ -34,7 +35,7 @@ TODO: Add retry logic with exponential backoff
 
 ### Constructor
 
-> **new default**(`engine`): `CloudAuditProvider`
+> __new default__(`engine`): `CloudAuditProvider`
 
 Defined in: [src/providers/CloudAuditProvider.ts:41](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/CloudAuditProvider.ts#L41)
 
@@ -56,7 +57,7 @@ Defined in: [src/providers/CloudAuditProvider.ts:41](https://github.com/jwilleke
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/providers/BaseAuditProvider.ts:156](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L156)
 
@@ -70,7 +71,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> **initialized**: `boolean`
+> __initialized__: `boolean`
 
 Defined in: [src/providers/BaseAuditProvider.ts:159](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L159)
 
@@ -84,7 +85,7 @@ Whether provider has been initialized
 
 ### backup()
 
-> **backup**(): `Promise`\<[`AuditBackupData`](../../BaseAuditProvider/interfaces/AuditBackupData.md)\>
+> __backup__(): `Promise`\<[`AuditBackupData`](../../BaseAuditProvider/interfaces/AuditBackupData.md)\>
 
 Defined in: [src/providers/BaseAuditProvider.ts:307](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L307)
 
@@ -109,7 +110,7 @@ Backup data
 
 ### cleanup()
 
-> **cleanup**(): `Promise`\<`void`\>
+> __cleanup__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/CloudAuditProvider.ts:177](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/CloudAuditProvider.ts#L177)
 
@@ -127,7 +128,7 @@ Clean up old audit logs (cloud services often handle retention automatically)
 
 ### close()
 
-> **close**(): `Promise`\<`void`\>
+> __close__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/CloudAuditProvider.ts:197](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/CloudAuditProvider.ts#L197)
 
@@ -145,7 +146,7 @@ Close/cleanup the audit provider
 
 ### exportAuditLogs()
 
-> **exportAuditLogs**(`_filters`, `_format`): `Promise`\<`string`\>
+> __exportAuditLogs__(`_filters`, `_format`): `Promise`\<`string`\>
 
 Defined in: [src/providers/CloudAuditProvider.ts:157](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/CloudAuditProvider.ts#L157)
 
@@ -179,7 +180,7 @@ Exported data
 
 ### flush()
 
-> **flush**(): `Promise`\<`void`\>
+> __flush__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/CloudAuditProvider.ts:167](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/CloudAuditProvider.ts#L167)
 
@@ -197,7 +198,7 @@ Flush pending audit events
 
 ### getAuditStats()
 
-> **getAuditStats**(`_filters`): `Promise`\<[`AuditStats`](../../BaseAuditProvider/interfaces/AuditStats.md)\>
+> __getAuditStats__(`_filters`): `Promise`\<[`AuditStats`](../../BaseAuditProvider/interfaces/AuditStats.md)\>
 
 Defined in: [src/providers/CloudAuditProvider.ts:146](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/CloudAuditProvider.ts#L146)
 
@@ -225,7 +226,7 @@ Audit statistics
 
 ### getProviderInfo()
 
-> **getProviderInfo**(): `object`
+> __getProviderInfo__(): `object`
 
 Defined in: [src/providers/CloudAuditProvider.ts:94](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/CloudAuditProvider.ts#L94)
 
@@ -239,19 +240,19 @@ Provider metadata
 
 ##### description
 
-> **description**: `string`
+> __description__: `string`
 
 ##### features
 
-> **features**: `string`[]
+> __features__: `string`[]
 
 ##### name
 
-> **name**: `string`
+> __name__: `string`
 
 ##### version
 
-> **version**: `string`
+> __version__: `string`
 
 #### Overrides
 
@@ -261,7 +262,7 @@ Provider metadata
 
 ### initialize()
 
-> **initialize**(): `Promise`\<`void`\>
+> __initialize__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/CloudAuditProvider.ts:51](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/CloudAuditProvider.ts#L51)
 
@@ -279,7 +280,7 @@ Initialize the cloud audit provider
 
 ### isHealthy()
 
-> **isHealthy**(): `Promise`\<`boolean`\>
+> __isHealthy__(): `Promise`\<`boolean`\>
 
 Defined in: [src/providers/CloudAuditProvider.ts:187](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/CloudAuditProvider.ts#L187)
 
@@ -299,7 +300,7 @@ True if healthy
 
 ### logAuditEvent()
 
-> **logAuditEvent**(`_auditEvent`): `Promise`\<`string`\>
+> __logAuditEvent__(`_auditEvent`): `Promise`\<`string`\>
 
 Defined in: [src/providers/CloudAuditProvider.ts:108](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/CloudAuditProvider.ts#L108)
 
@@ -327,7 +328,7 @@ Event ID
 
 ### restore()
 
-> **restore**(`_backupData`): `Promise`\<`void`\>
+> __restore__(`_backupData`): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseAuditProvider.ts:325](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAuditProvider.ts#L325)
 
@@ -358,7 +359,7 @@ Backup data
 
 ### searchAuditLogs()
 
-> **searchAuditLogs**(`_filters`, `_options`): `Promise`\<[`AuditSearchResults`](../../BaseAuditProvider/interfaces/AuditSearchResults.md)\>
+> __searchAuditLogs__(`_filters`, `_options`): `Promise`\<[`AuditSearchResults`](../../BaseAuditProvider/interfaces/AuditSearchResults.md)\>
 
 Defined in: [src/providers/CloudAuditProvider.ts:128](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/CloudAuditProvider.ts#L128)
 

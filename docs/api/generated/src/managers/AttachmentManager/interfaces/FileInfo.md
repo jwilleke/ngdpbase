@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ File information interface
 
 ### mimeType
 
-> **mimeType**: `string`
+> __mimeType__: `string`
 
 Defined in: [src/managers/AttachmentManager.ts:31](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L31)
 
@@ -22,7 +22,7 @@ Defined in: [src/managers/AttachmentManager.ts:31](https://github.com/jwilleke/n
 
 ### originalName
 
-> **originalName**: `string`
+> __originalName__: `string`
 
 Defined in: [src/managers/AttachmentManager.ts:30](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L30)
 
@@ -30,6 +30,6 @@ Defined in: [src/managers/AttachmentManager.ts:30](https://github.com/jwilleke/n
 
 ### size
 
-> **size**: `number`
+> __size__: `number`
 
 Defined in: [src/managers/AttachmentManager.ts:32](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AttachmentManager.ts#L32)

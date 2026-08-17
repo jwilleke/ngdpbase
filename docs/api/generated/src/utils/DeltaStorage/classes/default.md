@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -15,6 +15,7 @@ page versions as deltas. Version 1 stores full content, subsequent versions
 store only the differences from the previous version.
 
 fast-diff returns an array of tuples: [operation, text]
+
 - operation: -1 (delete), 0 (equal), 1 (insert)
 - text: the text content
 
@@ -32,7 +33,7 @@ const reconstructed = DeltaStorage.applyDiff("Hello world", diff);
 
 ### Constructor
 
-> **new default**(): `DeltaStorage`
+> __new default__(): `DeltaStorage`
 
 #### Returns
 
@@ -42,7 +43,7 @@ const reconstructed = DeltaStorage.applyDiff("Hello world", diff);
 
 ### applyDiff()
 
-> `static` **applyDiff**(`baseContent`, `diff`): `string`
+> `static` __applyDiff__(`baseContent`, `diff`): `string`
 
 Defined in: [src/utils/DeltaStorage.ts:75](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/DeltaStorage.ts#L75)
 
@@ -88,7 +89,7 @@ const result = DeltaStorage.applyDiff(base, diff);
 
 ### applyDiffChain()
 
-> `static` **applyDiffChain**(`v1Content`, `diffArray`): `string`
+> `static` __applyDiffChain__(`v1Content`, `diffArray`): `string`
 
 Defined in: [src/utils/DeltaStorage.ts:147](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/DeltaStorage.ts#L147)
 
@@ -137,7 +138,7 @@ const v3 = DeltaStorage.applyDiffChain(v1, diffs);
 
 ### calculateHash()
 
-> `static` **calculateHash**(`content`): `string`
+> `static` __calculateHash__(`content`): `string`
 
 Defined in: [src/utils/DeltaStorage.ts:181](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/DeltaStorage.ts#L181)
 
@@ -164,7 +165,7 @@ SHA-256 hash in hexadecimal format
 
 ### createDiff()
 
-> `static` **createDiff**(`oldContent`, `newContent`): [`DiffTuple`](../type-aliases/DiffTuple.md)[]
+> `static` __createDiff__(`oldContent`, `newContent`): [`DiffTuple`](../type-aliases/DiffTuple.md)[]
 
 Defined in: [src/utils/DeltaStorage.ts:51](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/DeltaStorage.ts#L51)
 
@@ -204,7 +205,7 @@ const diff = DeltaStorage.createDiff("foo", "bar");
 
 ### getDiffStats()
 
-> `static` **getDiffStats**(`diff`): [`DiffStats`](../interfaces/DiffStats.md)
+> `static` __getDiffStats__(`diff`): [`DiffStats`](../interfaces/DiffStats.md)
 
 Defined in: [src/utils/DeltaStorage.ts:220](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/DeltaStorage.ts#L220)
 
@@ -238,7 +239,7 @@ const stats = DeltaStorage.getDiffStats(diff);
 
 ### verifyHash()
 
-> `static` **verifyHash**(`content`, `expectedHash`): `boolean`
+> `static` __verifyHash__(`content`, `expectedHash`): `boolean`
 
 Defined in: [src/utils/DeltaStorage.ts:199](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/DeltaStorage.ts#L199)
 

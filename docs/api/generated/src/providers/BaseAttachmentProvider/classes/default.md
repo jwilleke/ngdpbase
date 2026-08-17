@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -20,8 +20,8 @@ Following JSPWiki's attachment provider pattern.
 
 ## See
 
- - BasicAttachmentProvider for filesystem implementation
- - AttachmentManager for usage
+- BasicAttachmentProvider for filesystem implementation
+- AttachmentManager for usage
 
 ## Extended by
 
@@ -35,7 +35,7 @@ Following JSPWiki's attachment provider pattern.
 
 ### Constructor
 
-> **new default**(`engine`): `BaseAttachmentProvider`
+> __new default__(`engine`): `BaseAttachmentProvider`
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:73](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L73)
 
@@ -61,7 +61,7 @@ If engine is not provided
 
 ### engine
 
-> **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L61)
 
@@ -75,7 +75,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> **initialized**: `boolean`
+> __initialized__: `boolean`
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:64](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L64)
 
@@ -89,7 +89,7 @@ Whether provider has been initialized
 
 ### attachmentExists()
 
-> `abstract` **attachmentExists**(`attachmentId`): `Promise`\<`boolean`\>
+> `abstract` __attachmentExists__(`attachmentId`): `Promise`\<`boolean`\>
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:163](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L163)
 
@@ -111,7 +111,7 @@ Attachment identifier
 
 ### backup()
 
-> `abstract` **backup**(): `Promise`\<`Record`\<`string`, `unknown`\>\>
+> `abstract` __backup__(): `Promise`\<`Record`\<`string`, `unknown`\>\>
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:217](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L217)
 
@@ -132,7 +132,7 @@ Backup data
 
 ### deleteAttachment()
 
-> `abstract` **deleteAttachment**(`attachmentId`): `Promise`\<`boolean`\>
+> `abstract` __deleteAttachment__(`attachmentId`): `Promise`\<`boolean`\>
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:156](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L156)
 
@@ -160,7 +160,7 @@ True if deleted, false if not found
 
 ### deletePageAttachments()
 
-> `abstract` **deletePageAttachments**(`pageUuid`): `Promise`\<`number`\>
+> `abstract` __deletePageAttachments__(`pageUuid`): `Promise`\<`number`\>
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:190](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L190)
 
@@ -188,7 +188,7 @@ Number of attachments deleted
 
 ### getAllAttachments()
 
-> `abstract` **getAllAttachments**(): `Promise`\<[`AttachmentMetadata`](../../../types/Provider/interfaces/AttachmentMetadata.md)[]\>
+> `abstract` __getAllAttachments__(): `Promise`\<[`AttachmentMetadata`](../../../types/Provider/interfaces/AttachmentMetadata.md)[]\>
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:169](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L169)
 
@@ -204,7 +204,7 @@ Array of attachment metadata
 
 ### getAttachment()
 
-> `abstract` **getAttachment**(`attachmentId`): `Promise`\<[`AttachmentResult`](../interfaces/AttachmentResult.md) \| `null`\>
+> `abstract` __getAttachment__(`attachmentId`): `Promise`\<[`AttachmentResult`](../interfaces/AttachmentResult.md) \| `null`\>
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:131](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L131)
 
@@ -232,7 +232,7 @@ File buffer and metadata
 
 ### getAttachmentMetadata()
 
-> `abstract` **getAttachmentMetadata**(`attachmentId`): `Promise`\<[`AttachmentMetadata`](../../../types/Provider/interfaces/AttachmentMetadata.md) \| `null`\>
+> `abstract` __getAttachmentMetadata__(`attachmentId`): `Promise`\<[`AttachmentMetadata`](../../../types/Provider/interfaces/AttachmentMetadata.md) \| `null`\>
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:138](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L138)
 
@@ -260,7 +260,7 @@ Attachment metadata
 
 ### getAttachmentsForPage()
 
-> `abstract` **getAttachmentsForPage**(`pageName`): `Promise`\<[`AttachmentMetadata`](../../../types/Provider/interfaces/AttachmentMetadata.md)[]\>
+> `abstract` __getAttachmentsForPage__(`pageName`): `Promise`\<[`AttachmentMetadata`](../../../types/Provider/interfaces/AttachmentMetadata.md)[]\>
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:176](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L176)
 
@@ -284,7 +284,7 @@ Array of attachment metadata
 
 ### getProviderInfo()
 
-> **getProviderInfo**(): [`ProviderInfo`](../../BasePageProvider/interfaces/ProviderInfo.md)
+> __getProviderInfo__(): [`ProviderInfo`](../../BasePageProvider/interfaces/ProviderInfo.md)
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:203](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L203)
 
@@ -304,7 +304,7 @@ Provider metadata
 
 ### initialize()
 
-> `abstract` **initialize**(): `Promise`\<`void`\>
+> `abstract` __initialize__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:92](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L92)
 
@@ -328,7 +328,7 @@ Do NOT read configuration files directly.
 
 ### listAttachments()
 
-> `abstract` **listAttachments**(`pageUuid`): `Promise`\<[`AttachmentMetadata`](../../../types/Provider/interfaces/AttachmentMetadata.md)[]\>
+> `abstract` __listAttachments__(`pageUuid`): `Promise`\<[`AttachmentMetadata`](../../../types/Provider/interfaces/AttachmentMetadata.md)[]\>
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:183](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L183)
 
@@ -356,7 +356,7 @@ Array of attachment metadata
 
 ### refreshAttachmentList()
 
-> `abstract` **refreshAttachmentList**(): `Promise`\<`void`\>
+> `abstract` __refreshAttachmentList__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:197](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L197)
 
@@ -371,7 +371,7 @@ Re-scans storage and rebuilds indexes
 
 ### restore()
 
-> `abstract` **restore**(`backupData`): `Promise`\<`void`\>
+> `abstract` __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:224](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L224)
 
@@ -397,7 +397,7 @@ Backup data from backup()
 
 ### saveAttachment()
 
-> `abstract` **saveAttachment**(`pageUuid`, `filename`, `buffer`, `metadata?`): `Promise`\<[`AttachmentMetadata`](../../../types/Provider/interfaces/AttachmentMetadata.md)\>
+> `abstract` __saveAttachment__(`pageUuid`, `filename`, `buffer`, `metadata?`): `Promise`\<[`AttachmentMetadata`](../../../types/Provider/interfaces/AttachmentMetadata.md)\>
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:102](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L102)
 
@@ -443,7 +443,7 @@ Attachment metadata
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:231](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L231)
 
@@ -461,7 +461,7 @@ Shutdown the provider (cleanup resources)
 
 ### storeAttachment()
 
-> **storeAttachment**(`_fileBuffer`, `_fileInfo`, `_metadata`, `_user`): `Promise`\<[`AttachmentMetadata`](../../../types/Provider/interfaces/AttachmentMetadata.md)\>
+> __storeAttachment__(`_fileBuffer`, `_fileInfo`, `_metadata`, `_user`): `Promise`\<[`AttachmentMetadata`](../../../types/Provider/interfaces/AttachmentMetadata.md)\>
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:117](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L117)
 
@@ -499,7 +499,7 @@ Attachment metadata with ID
 
 ### updateAttachmentMetadata()
 
-> `abstract` **updateAttachmentMetadata**(`attachmentId`, `metadata`): `Promise`\<`boolean`\>
+> `abstract` __updateAttachmentMetadata__(`attachmentId`, `metadata`): `Promise`\<`boolean`\>
 
 Defined in: [src/providers/BaseAttachmentProvider.ts:146](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseAttachmentProvider.ts#L146)
 

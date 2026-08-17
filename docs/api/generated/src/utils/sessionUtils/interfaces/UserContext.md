@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ User context returned by buildUserContext
 
 ### displayName
 
-> **displayName**: `string`
+> __displayName__: `string`
 
 Defined in: [src/utils/sessionUtils.ts:31](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/sessionUtils.ts#L31)
 
@@ -22,7 +22,7 @@ Defined in: [src/utils/sessionUtils.ts:31](https://github.com/jwilleke/ngdpbase/
 
 ### isAuthenticated
 
-> **isAuthenticated**: `boolean`
+> __isAuthenticated__: `boolean`
 
 Defined in: [src/utils/sessionUtils.ts:27](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/sessionUtils.ts#L27)
 
@@ -30,7 +30,7 @@ Defined in: [src/utils/sessionUtils.ts:27](https://github.com/jwilleke/ngdpbase/
 
 ### roles
 
-> **roles**: `string`[]
+> __roles__: `string`[]
 
 Defined in: [src/utils/sessionUtils.ts:28](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/sessionUtils.ts#L28)
 
@@ -38,7 +38,7 @@ Defined in: [src/utils/sessionUtils.ts:28](https://github.com/jwilleke/ngdpbase/
 
 ### userId
 
-> **userId**: `string` \| `null`
+> __userId__: `string` \| `null`
 
 Defined in: [src/utils/sessionUtils.ts:29](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/sessionUtils.ts#L29)
 
@@ -46,6 +46,6 @@ Defined in: [src/utils/sessionUtils.ts:29](https://github.com/jwilleke/ngdpbase/
 
 ### username
 
-> **username**: `string`
+> __username__: `string`
 
 Defined in: [src/utils/sessionUtils.ts:30](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/utils/sessionUtils.ts#L30)

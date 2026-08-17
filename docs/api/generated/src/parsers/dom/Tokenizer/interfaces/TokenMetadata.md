@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../README.md)
 
 ***
 
@@ -20,7 +20,7 @@ Additional metadata properties
 
 ### level?
 
-> `optional` **level**: `number`
+> `optional` __level__: `number`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:114](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L114)
 
@@ -30,7 +30,7 @@ Heading level (for HEADING tokens)
 
 ### link?
 
-> `optional` **link**: `string`
+> `optional` __link__: `string`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:110](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L110)
 
@@ -40,7 +40,7 @@ Link target (for LINK tokens)
 
 ### marker?
 
-> `optional` **marker**: `string`
+> `optional` __marker__: `string`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:116](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L116)
 
@@ -50,7 +50,7 @@ List marker (* or #) (for LIST_ITEM tokens)
 
 ### metadataContent?
 
-> `optional` **metadataContent**: `string`
+> `optional` __metadataContent__: `string`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:108](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L108)
 
@@ -60,7 +60,7 @@ Metadata content (for METADATA tokens)
 
 ### ordered?
 
-> `optional` **ordered**: `boolean`
+> `optional` __ordered__: `boolean`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:118](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L118)
 
@@ -70,7 +70,7 @@ Whether list is ordered (for LIST_ITEM tokens)
 
 ### pluginContent?
 
-> `optional` **pluginContent**: `string`
+> `optional` __pluginContent__: `string`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:106](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L106)
 
@@ -80,7 +80,7 @@ Plugin content (for PLUGIN tokens)
 
 ### text?
 
-> `optional` **text**: `string`
+> `optional` __text__: `string`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:112](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L112)
 
@@ -90,7 +90,7 @@ Link text (for LINK tokens)
 
 ### varName?
 
-> `optional` **varName**: `string`
+> `optional` __varName__: `string`
 
 Defined in: [src/parsers/dom/Tokenizer.ts:104](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/Tokenizer.ts#L104)
 

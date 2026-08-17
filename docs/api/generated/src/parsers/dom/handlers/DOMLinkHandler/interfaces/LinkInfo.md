@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Link information object
 
 ### attributes
 
-> **attributes**: `Record`\<`string`, `string`\>
+> __attributes__: `Record`\<`string`, `string`\>
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:46](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L46)
 
@@ -24,7 +24,7 @@ Link attributes
 
 ### originalText
 
-> **originalText**: `string`
+> __originalText__: `string`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:48](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L48)
 
@@ -34,7 +34,7 @@ Original wiki syntax
 
 ### target
 
-> **target**: `string`
+> __target__: `string`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:44](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L44)
 
@@ -44,7 +44,7 @@ Link target
 
 ### text
 
-> **text**: `string`
+> __text__: `string`
 
 Defined in: [src/parsers/dom/handlers/DOMLinkHandler.ts:42](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/dom/handlers/DOMLinkHandler.ts#L42)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -21,7 +21,7 @@ and backup/restore operations.
 
 ### Constructor
 
-> **new export=**(`engine`): `AuditManager`
+> __new export=__(`engine`): `AuditManager`
 
 Defined in: [src/managers/AuditManager.ts:195](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AuditManager.ts#L195)
 
@@ -47,7 +47,7 @@ The wiki engine instance
 
 ### config?
 
-> `protected` `optional` **config**: `Record`\<`string`, `unknown`\>
+> `protected` `optional` __config__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/managers/BaseManager.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L61)
 
@@ -61,7 +61,7 @@ Configuration passed during initialization
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L54)
 
@@ -75,7 +75,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/managers/BaseManager.ts:57](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L57)
 
@@ -89,7 +89,7 @@ Initialization status flag
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
 
 Defined in: [src/managers/BaseManager.ts:169](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L169)
 
@@ -131,7 +131,7 @@ async backup(): Promise<BackupData> {
 
 ### cleanupOldLogs()
 
-> **cleanupOldLogs**(): `Promise`\<`void`\>
+> __cleanupOldLogs__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/AuditManager.ts:526](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AuditManager.ts#L526)
 
@@ -145,7 +145,7 @@ Clean up old audit logs based on retention policy
 
 ### exportAuditLogs()
 
-> **exportAuditLogs**(`filters`, `format`): `Promise`\<`string`\>
+> __exportAuditLogs__(`filters`, `format`): `Promise`\<`string`\>
 
 Defined in: [src/managers/AuditManager.ts:502](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AuditManager.ts#L502)
 
@@ -175,7 +175,7 @@ Exported data
 
 ### flushAuditQueue()
 
-> **flushAuditQueue**(): `Promise`\<`void`\>
+> __flushAuditQueue__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/AuditManager.ts:514](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AuditManager.ts#L514)
 
@@ -189,7 +189,7 @@ Flush audit queue to disk
 
 ### getAuditStats()
 
-> **getAuditStats**(`filters`): `Promise`\<`AuditStats`\>
+> __getAuditStats__(`filters`): `Promise`\<`AuditStats`\>
 
 Defined in: [src/managers/AuditManager.ts:488](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AuditManager.ts#L488)
 
@@ -213,7 +213,7 @@ Audit statistics
 
 ### getEngine()
 
-> **getEngine**(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> __getEngine__(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:125](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L125)
 
@@ -239,7 +239,7 @@ const config = this.getEngine().getConfig();
 
 ### initialize()
 
-> **initialize**(`config?`): `Promise`\<`void`\>
+> __initialize__(`config?`): `Promise`\<`void`\>
 
 Defined in: [src/managers/AuditManager.ts:209](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AuditManager.ts#L209)
 
@@ -271,7 +271,7 @@ If ConfigurationManager is not available or provider fails to load
 
 ### isInitialized()
 
-> **isInitialized**(): `boolean`
+> __isInitialized__(): `boolean`
 
 Defined in: [src/managers/BaseManager.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L113)
 
@@ -299,7 +299,7 @@ if (manager.isInitialized()) {
 
 ### logAccessDecision()
 
-> **logAccessDecision**(`context`, `result`, `reason`, `policy`): `Promise`\<`string`\>
+> __logAccessDecision__(`context`, `result`, `reason`, `policy`): `Promise`\<`string`\>
 
 Defined in: [src/managers/AuditManager.ts:358](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AuditManager.ts#L358)
 
@@ -341,7 +341,7 @@ Event ID
 
 ### logAuditEvent()
 
-> **logAuditEvent**(`auditEvent`): `Promise`\<`string`\>
+> __logAuditEvent__(`auditEvent`): `Promise`\<`string`\>
 
 Defined in: [src/managers/AuditManager.ts:342](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AuditManager.ts#L342)
 
@@ -365,7 +365,7 @@ Event ID
 
 ### logAuthentication()
 
-> **logAuthentication**(`context`, `result`, `reason`): `Promise`\<`string`\>
+> __logAuthentication__(`context`, `result`, `reason`): `Promise`\<`string`\>
 
 Defined in: [src/managers/AuditManager.ts:423](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AuditManager.ts#L423)
 
@@ -401,7 +401,7 @@ Event ID
 
 ### logPolicyEvaluation()
 
-> **logPolicyEvaluation**(`context`, `policies`, `finalResult`, `duration`): `Promise`\<`string`\>
+> __logPolicyEvaluation__(`context`, `policies`, `finalResult`, `duration`): `Promise`\<`string`\>
 
 Defined in: [src/managers/AuditManager.ts:395](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AuditManager.ts#L395)
 
@@ -443,7 +443,7 @@ Event ID
 
 ### logSecurityEvent()
 
-> **logSecurityEvent**(`context`, `eventType`, `severity`, `description`): `Promise`\<`string`\>
+> __logSecurityEvent__(`context`, `eventType`, `severity`, `description`): `Promise`\<`string`\>
 
 Defined in: [src/managers/AuditManager.ts:450](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AuditManager.ts#L450)
 
@@ -485,7 +485,7 @@ Event ID
 
 ### restore()
 
-> **restore**(`backupData`): `Promise`\<`void`\>
+> __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:198](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L198)
 
@@ -530,7 +530,7 @@ async restore(backupData: BackupData): Promise<void> {
 
 ### searchAuditLogs()
 
-> **searchAuditLogs**(`filters`, `options`): `Promise`\<`AuditSearchResults`\>
+> __searchAuditLogs__(`filters`, `options`): `Promise`\<`AuditSearchResults`\>
 
 Defined in: [src/managers/AuditManager.ts:475](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AuditManager.ts#L475)
 
@@ -560,7 +560,7 @@ Search results
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/AuditManager.ts:538](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/AuditManager.ts#L538)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -18,7 +18,7 @@ Extended metrics returned by getMetrics()
 
 ### averageParseTime
 
-> **averageParseTime**: `number`
+> __averageParseTime__: `number`
 
 Defined in: [src/parsers/MarkupParser.ts:292](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L292)
 
@@ -28,7 +28,7 @@ Average parse time
 
 ### cacheHitRatio
 
-> **cacheHitRatio**: `number`
+> __cacheHitRatio__: `number`
 
 Defined in: [src/parsers/MarkupParser.ts:294](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L294)
 
@@ -38,7 +38,7 @@ Cache hit ratio
 
 ### cacheHits
 
-> **cacheHits**: `number`
+> __cacheHits__: `number`
 
 Defined in: [src/parsers/MarkupParser.ts:234](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L234)
 
@@ -52,7 +52,7 @@ Number of cache hits
 
 ### cacheMetrics
 
-> **cacheMetrics**: `Map`\<`string`, [`CacheMetrics`](CacheMetrics.md)\>
+> __cacheMetrics__: `Map`\<`string`, [`CacheMetrics`](CacheMetrics.md)\>
 
 Defined in: [src/parsers/MarkupParser.ts:238](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L238)
 
@@ -66,7 +66,7 @@ Cache metrics by strategy
 
 ### cacheMisses
 
-> **cacheMisses**: `number`
+> __cacheMisses__: `number`
 
 Defined in: [src/parsers/MarkupParser.ts:236](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L236)
 
@@ -80,7 +80,7 @@ Number of cache misses
 
 ### cacheStrategies?
 
-> `optional` **cacheStrategies**: `Record`\<`string`, `unknown`\>
+> `optional` __cacheStrategies__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/parsers/MarkupParser.ts:300](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L300)
 
@@ -90,7 +90,7 @@ Cache strategies stats
 
 ### errorCount
 
-> **errorCount**: `number`
+> __errorCount__: `number`
 
 Defined in: [src/parsers/MarkupParser.ts:232](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L232)
 
@@ -104,7 +104,7 @@ Number of errors
 
 ### filterChain?
 
-> `optional` **filterChain**: `unknown`
+> `optional` __filterChain__: `unknown`
 
 Defined in: [src/parsers/MarkupParser.ts:298](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L298)
 
@@ -114,7 +114,7 @@ Filter chain stats
 
 ### handlerRegistry?
 
-> `optional` **handlerRegistry**: `unknown`
+> `optional` __handlerRegistry__: `unknown`
 
 Defined in: [src/parsers/MarkupParser.ts:296](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L296)
 
@@ -124,7 +124,7 @@ Handler registry stats
 
 ### parseCount
 
-> **parseCount**: `number`
+> __parseCount__: `number`
 
 Defined in: [src/parsers/MarkupParser.ts:228](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L228)
 
@@ -138,7 +138,7 @@ Number of parses performed
 
 ### performance?
 
-> `optional` **performance**: `unknown`
+> `optional` __performance__: `unknown`
 
 Defined in: [src/parsers/MarkupParser.ts:302](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L302)
 
@@ -148,7 +148,7 @@ Performance monitoring stats
 
 ### totalParseTime
 
-> **totalParseTime**: `number`
+> __totalParseTime__: `number`
 
 Defined in: [src/parsers/MarkupParser.ts:230](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L230)
 

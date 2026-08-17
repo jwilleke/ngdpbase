@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Cache metrics for a strategy
 
 ### hits
 
-> **hits**: `number`
+> __hits__: `number`
 
 Defined in: [src/parsers/MarkupParser.ts:244](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L244)
 
@@ -24,7 +24,7 @@ Number of cache hits
 
 ### misses
 
-> **misses**: `number`
+> __misses__: `number`
 
 Defined in: [src/parsers/MarkupParser.ts:246](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L246)
 
@@ -34,7 +34,7 @@ Number of cache misses
 
 ### sets
 
-> **sets**: `number`
+> __sets__: `number`
 
 Defined in: [src/parsers/MarkupParser.ts:248](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/parsers/MarkupParser.ts#L248)
 

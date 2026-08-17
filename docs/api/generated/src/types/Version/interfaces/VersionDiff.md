@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -16,7 +16,7 @@ Result of comparing two versions.
 
 ### diff
 
-> **diff**: [`DiffTuple`](../../../utils/DeltaStorage/type-aliases/DiffTuple.md)[]
+> __diff__: [`DiffTuple`](../../../utils/DeltaStorage/type-aliases/DiffTuple.md)[]
 
 Defined in: [src/types/Version.ts:116](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L116)
 
@@ -26,7 +26,7 @@ Diff operations (from fast-diff)
 
 ### fromMetadata
 
-> **fromMetadata**: [`VersionMetadata`](VersionMetadata.md)
+> __fromMetadata__: [`VersionMetadata`](VersionMetadata.md)
 
 Defined in: [src/types/Version.ts:126](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L126)
 
@@ -36,7 +36,7 @@ Old version metadata
 
 ### fromVersion
 
-> **fromVersion**: `number`
+> __fromVersion__: `number`
 
 Defined in: [src/types/Version.ts:110](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L110)
 
@@ -46,7 +46,7 @@ Old version number
 
 ### stats
 
-> **stats**: `object`
+> __stats__: `object`
 
 Defined in: [src/types/Version.ts:119](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L119)
 
@@ -54,21 +54,21 @@ Diff statistics
 
 #### additions
 
-> **additions**: `number`
+> __additions__: `number`
 
 #### deletions
 
-> **deletions**: `number`
+> __deletions__: `number`
 
 #### unchanged
 
-> **unchanged**: `number`
+> __unchanged__: `number`
 
 ***
 
 ### toMetadata
 
-> **toMetadata**: [`VersionMetadata`](VersionMetadata.md)
+> __toMetadata__: [`VersionMetadata`](VersionMetadata.md)
 
 Defined in: [src/types/Version.ts:129](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L129)
 
@@ -78,7 +78,7 @@ New version metadata
 
 ### toVersion
 
-> **toVersion**: `number`
+> __toVersion__: `number`
 
 Defined in: [src/types/Version.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/Version.ts#L113)
 

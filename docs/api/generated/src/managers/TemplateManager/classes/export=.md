@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -15,6 +15,7 @@ management for creating new pages from predefined templates and managing
 wiki themes for UI customization.
 
 Key features:
+
 - Page template management
 - Theme loading and switching
 - Default template creation
@@ -41,7 +42,7 @@ const template = templateManager.getTemplate('Meeting Notes');
 
 ### Constructor
 
-> **new export=**(`engine`): `TemplateManager`
+> __new export=__(`engine`): `TemplateManager`
 
 Defined in: [src/managers/TemplateManager.ts:112](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/TemplateManager.ts#L112)
 
@@ -67,7 +68,7 @@ The wiki engine instance
 
 ### config?
 
-> `protected` `optional` **config**: `Record`\<`string`, `unknown`\>
+> `protected` `optional` __config__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/managers/BaseManager.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L61)
 
@@ -81,7 +82,7 @@ Configuration passed during initialization
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L54)
 
@@ -95,7 +96,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/managers/BaseManager.ts:57](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L57)
 
@@ -109,7 +110,7 @@ Initialization status flag
 
 ### applyTemplate()
 
-> **applyTemplate**(`templateName`, `variables`): `string`
+> __applyTemplate__(`templateName`, `variables`): `string`
 
 Defined in: [src/managers/TemplateManager.ts:380](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/TemplateManager.ts#L380)
 
@@ -143,7 +144,7 @@ If template is not found
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
 
 Defined in: [src/managers/BaseManager.ts:169](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L169)
 
@@ -185,7 +186,7 @@ async backup(): Promise<BackupData> {
 
 ### createDefaultTemplates()
 
-> **createDefaultTemplates**(): `Promise`\<`void`\>
+> __createDefaultTemplates__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/TemplateManager.ts:216](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/TemplateManager.ts#L216)
 
@@ -199,7 +200,7 @@ Create default page templates
 
 ### createDefaultTheme()
 
-> **createDefaultTheme**(): `Promise`\<`void`\>
+> __createDefaultTheme__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/TemplateManager.ts:243](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/TemplateManager.ts#L243)
 
@@ -213,7 +214,7 @@ Create default theme
 
 ### createTemplate()
 
-> **createTemplate**(`templateName`, `content`): `Promise`\<`void`\>
+> __createTemplate__(`templateName`, `content`): `Promise`\<`void`\>
 
 Defined in: [src/managers/TemplateManager.ts:449](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/TemplateManager.ts#L449)
 
@@ -241,7 +242,7 @@ Template content
 
 ### createTheme()
 
-> **createTheme**(`themeName`, `content`): `Promise`\<`void`\>
+> __createTheme__(`themeName`, `content`): `Promise`\<`void`\>
 
 Defined in: [src/managers/TemplateManager.ts:469](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/TemplateManager.ts#L469)
 
@@ -269,7 +270,7 @@ CSS content
 
 ### generateUUID()
 
-> **generateUUID**(): `string`
+> __generateUUID__(): `string`
 
 Defined in: [src/managers/TemplateManager.ts:415](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/TemplateManager.ts#L415)
 
@@ -285,7 +286,7 @@ UUID
 
 ### getEngine()
 
-> **getEngine**(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> __getEngine__(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:125](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L125)
 
@@ -311,7 +312,7 @@ const config = this.getEngine().getConfig();
 
 ### getTemplate()
 
-> **getTemplate**(`templateName`): `Template` \| `null`
+> __getTemplate__(`templateName`): `Template` \| `null`
 
 Defined in: [src/managers/TemplateManager.ts:368](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/TemplateManager.ts#L368)
 
@@ -335,7 +336,7 @@ Template object or null
 
 ### getTemplates()
 
-> **getTemplates**(): `Template`[]
+> __getTemplates__(): `Template`[]
 
 Defined in: [src/managers/TemplateManager.ts:358](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/TemplateManager.ts#L358)
 
@@ -351,7 +352,7 @@ Available templates
 
 ### getTheme()
 
-> **getTheme**(`themeName`): `Theme` \| `null`
+> __getTheme__(`themeName`): `Theme` \| `null`
 
 Defined in: [src/managers/TemplateManager.ts:438](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/TemplateManager.ts#L438)
 
@@ -375,7 +376,7 @@ Theme object or null
 
 ### getThemes()
 
-> **getThemes**(): `Theme`[]
+> __getThemes__(): `Theme`[]
 
 Defined in: [src/managers/TemplateManager.ts:428](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/TemplateManager.ts#L428)
 
@@ -391,7 +392,7 @@ Available themes
 
 ### initialize()
 
-> **initialize**(`config?`): `Promise`\<`void`\>
+> __initialize__(`config?`): `Promise`\<`void`\>
 
 Defined in: [src/managers/TemplateManager.ts:127](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/TemplateManager.ts#L127)
 
@@ -419,7 +420,7 @@ Configuration object
 
 ### isInitialized()
 
-> **isInitialized**(): `boolean`
+> __isInitialized__(): `boolean`
 
 Defined in: [src/managers/BaseManager.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L113)
 
@@ -447,7 +448,7 @@ if (manager.isInitialized()) {
 
 ### loadTemplates()
 
-> **loadTemplates**(): `Promise`\<`void`\>
+> __loadTemplates__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/TemplateManager.ts:146](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/TemplateManager.ts#L146)
 
@@ -461,7 +462,7 @@ Load all page templates
 
 ### loadThemes()
 
-> **loadThemes**(): `Promise`\<`void`\>
+> __loadThemes__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/TemplateManager.ts:181](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/TemplateManager.ts#L181)
 
@@ -475,7 +476,7 @@ Load all themes
 
 ### restore()
 
-> **restore**(`backupData`): `Promise`\<`void`\>
+> __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:198](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L198)
 
@@ -520,7 +521,7 @@ async restore(backupData: BackupData): Promise<void> {
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/BaseManager.ts:143](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L143)
 
@@ -551,7 +552,7 @@ async shutdown(): Promise<void> {
 
 ### suggestTemplates()
 
-> **suggestTemplates**(`pageName`, `category`): `string`[]
+> __suggestTemplates__(`pageName`, `category`): `string`[]
 
 Defined in: [src/managers/TemplateManager.ts:489](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/TemplateManager.ts#L489)
 

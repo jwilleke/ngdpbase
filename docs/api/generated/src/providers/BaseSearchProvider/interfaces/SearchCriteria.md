@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -20,7 +20,7 @@ Additional criteria
 
 ### author?
 
-> `optional` **author**: `string`
+> `optional` __author__: `string`
 
 Defined in: [src/providers/BaseSearchProvider.ts:84](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L84)
 
@@ -30,7 +30,7 @@ Author to filter by
 
 ### categories?
 
-> `optional` **categories**: `string`[]
+> `optional` __categories__: `string`[]
 
 Defined in: [src/providers/BaseSearchProvider.ts:78](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L78)
 
@@ -40,7 +40,7 @@ Categories to filter by
 
 ### dateRange?
 
-> `optional` **dateRange**: `object`
+> `optional` __dateRange__: `object`
 
 Defined in: [src/providers/BaseSearchProvider.ts:87](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L87)
 
@@ -48,17 +48,17 @@ Date range
 
 #### from?
 
-> `optional` **from**: `string`
+> `optional` __from__: `string`
 
 #### to?
 
-> `optional` **to**: `string`
+> `optional` __to__: `string`
 
 ***
 
 ### query?
 
-> `optional` **query**: `string`
+> `optional` __query__: `string`
 
 Defined in: [src/providers/BaseSearchProvider.ts:75](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L75)
 
@@ -68,7 +68,7 @@ Search query
 
 ### userKeywords?
 
-> `optional` **userKeywords**: `string`[]
+> `optional` __userKeywords__: `string`[]
 
 Defined in: [src/providers/BaseSearchProvider.ts:81](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L81)
 

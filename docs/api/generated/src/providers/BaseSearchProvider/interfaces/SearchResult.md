@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -14,7 +14,7 @@ Search result structure
 
 ### metadata
 
-> **metadata**: `Record`\<`string`, `unknown`\>
+> __metadata__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/providers/BaseSearchProvider.ts:50](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L50)
 
@@ -24,7 +24,7 @@ Additional metadata
 
 ### name
 
-> **name**: `string`
+> __name__: `string`
 
 Defined in: [src/providers/BaseSearchProvider.ts:38](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L38)
 
@@ -34,7 +34,7 @@ Page name/identifier
 
 ### score
 
-> **score**: `number`
+> __score__: `number`
 
 Defined in: [src/providers/BaseSearchProvider.ts:44](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L44)
 
@@ -44,7 +44,7 @@ Relevance score
 
 ### snippet
 
-> **snippet**: `string`
+> __snippet__: `string`
 
 Defined in: [src/providers/BaseSearchProvider.ts:47](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L47)
 
@@ -54,7 +54,7 @@ Content snippet with highlights
 
 ### title
 
-> **title**: `string`
+> __title__: `string`
 
 Defined in: [src/providers/BaseSearchProvider.ts:41](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/providers/BaseSearchProvider.ts#L41)
 

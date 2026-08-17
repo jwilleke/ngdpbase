@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -15,6 +15,7 @@ is abstracted behind a provider interface. This allows for different storage
 backends (filesystem, database, cloud, etc.) to be swapped via configuration.
 
 The PageManager acts as a thin coordinator that:
+
 - Loads the configured provider (via "ngdpbase.page.provider")
 - Proxies all page operations to the provider
 - Maintains the public API for backward compatibility
@@ -23,8 +24,8 @@ The PageManager acts as a thin coordinator that:
 
 ## See
 
- - [BaseManager](../../BaseManager/classes/default.md) for base functionality
- - FileSystemProvider for default provider implementation
+- [BaseManager](../../BaseManager/classes/default.md) for base functionality
+- FileSystemProvider for default provider implementation
 
 ## Example
 
@@ -42,7 +43,7 @@ console.log(page.content);
 
 ### Constructor
 
-> **new export=**(`engine`): `PageManager`
+> __new export=__(`engine`): `PageManager`
 
 Defined in: [src/managers/PageManager.ts:63](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PageManager.ts#L63)
 
@@ -68,7 +69,7 @@ The wiki engine instance
 
 ### config?
 
-> `protected` `optional` **config**: `Record`\<`string`, `unknown`\>
+> `protected` `optional` __config__: `Record`\<`string`, `unknown`\>
 
 Defined in: [src/managers/BaseManager.ts:61](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L61)
 
@@ -82,7 +83,7 @@ Configuration passed during initialization
 
 ### engine
 
-> `protected` **engine**: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> `protected` __engine__: [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L54)
 
@@ -96,7 +97,7 @@ Reference to the wiki engine
 
 ### initialized
 
-> `protected` **initialized**: `boolean`
+> `protected` __initialized__: `boolean`
 
 Defined in: [src/managers/BaseManager.ts:57](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L57)
 
@@ -110,7 +111,7 @@ Initialization status flag
 
 ### backup()
 
-> **backup**(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
+> __backup__(): `Promise`\<[`BackupData`](../../BaseManager/interfaces/BackupData.md)\>
 
 Defined in: [src/managers/PageManager.ts:455](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PageManager.ts#L455)
 
@@ -133,7 +134,7 @@ Backup data from provider
 
 ### ~~deletePage()~~
 
-> **deletePage**(`identifier`): `Promise`\<`boolean`\>
+> __deletePage__(`identifier`): `Promise`\<`boolean`\>
 
 Defined in: [src/managers/PageManager.ts:366](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PageManager.ts#L366)
 
@@ -172,7 +173,7 @@ if (deleted) console.log('Page removed');
 
 ### deletePageWithContext()
 
-> **deletePageWithContext**(`wikiContext`): `Promise`\<`boolean`\>
+> __deletePageWithContext__(`wikiContext`): `Promise`\<`boolean`\>
 
 Defined in: [src/managers/PageManager.ts:335](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PageManager.ts#L335)
 
@@ -208,7 +209,7 @@ if (deleted) console.log('Page removed');
 
 ### getAllPages()
 
-> **getAllPages**(): `Promise`\<`string`[]\>
+> __getAllPages__(): `Promise`\<`string`[]\>
 
 Defined in: [src/managers/PageManager.ts:405](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PageManager.ts#L405)
 
@@ -235,7 +236,7 @@ console.log('Total pages:', pages.length);
 
 ### getCurrentPageProvider()
 
-> **getCurrentPageProvider**(): [`PageProvider`](../../../types/Provider/interfaces/PageProvider.md) \| `null`
+> __getCurrentPageProvider__(): [`PageProvider`](../../../types/Provider/interfaces/PageProvider.md) \| `null`
 
 Defined in: [src/managers/PageManager.ts:189](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PageManager.ts#L189)
 
@@ -259,7 +260,7 @@ console.log('Using:', info.name);
 
 ### getEngine()
 
-> **getEngine**(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
+> __getEngine__(): [`WikiEngine`](../../../types/WikiEngine/interfaces/WikiEngine.md)
 
 Defined in: [src/managers/BaseManager.ts:125](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L125)
 
@@ -285,7 +286,7 @@ const config = this.getEngine().getConfig();
 
 ### getPage()
 
-> **getPage**(`identifier`): `Promise`\<[`WikiPage`](../../../types/Page/interfaces/WikiPage.md) \| `null`\>
+> __getPage__(`identifier`): `Promise`\<[`WikiPage`](../../../types/Page/interfaces/WikiPage.md) \| `null`\>
 
 Defined in: [src/managers/PageManager.ts:211](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PageManager.ts#L211)
 
@@ -321,7 +322,7 @@ console.log(page.title, page.metadata.author);
 
 ### getPageContent()
 
-> **getPageContent**(`identifier`): `Promise`\<`string`\>
+> __getPageContent__(`identifier`): `Promise`\<`string`\>
 
 Defined in: [src/managers/PageManager.ts:231](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PageManager.ts#L231)
 
@@ -356,7 +357,7 @@ console.log(content);
 
 ### getPageMetadata()
 
-> **getPageMetadata**(`identifier`): `Promise`\<[`PageFrontmatter`](../../../types/Page/interfaces/PageFrontmatter.md) \| `null`\>
+> __getPageMetadata__(`identifier`): `Promise`\<[`PageFrontmatter`](../../../types/Page/interfaces/PageFrontmatter.md) \| `null`\>
 
 Defined in: [src/managers/PageManager.ts:251](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PageManager.ts#L251)
 
@@ -391,7 +392,7 @@ console.log('Author:', meta.author);
 
 ### initialize()
 
-> **initialize**(`config?`): `Promise`\<`void`\>
+> __initialize__(`config?`): `Promise`\<`void`\>
 
 Defined in: [src/managers/PageManager.ts:82](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PageManager.ts#L82)
 
@@ -433,7 +434,7 @@ await pageManager.initialize();
 
 ### isInitialized()
 
-> **isInitialized**(): `boolean`
+> __isInitialized__(): `boolean`
 
 Defined in: [src/managers/BaseManager.ts:113](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/BaseManager.ts#L113)
 
@@ -461,7 +462,7 @@ if (manager.isInitialized()) {
 
 ### pageExists()
 
-> **pageExists**(`identifier`): `boolean`
+> __pageExists__(`identifier`): `boolean`
 
 Defined in: [src/managers/PageManager.ts:386](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PageManager.ts#L386)
 
@@ -495,7 +496,7 @@ if (pageManager.pageExists('Main')) {
 
 ### refreshPageList()
 
-> **refreshPageList**(): `Promise`\<`void`\>
+> __refreshPageList__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/PageManager.ts:425](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PageManager.ts#L425)
 
@@ -521,7 +522,7 @@ console.log('Page list refreshed');
 
 ### restore()
 
-> **restore**(`backupData`): `Promise`\<`void`\>
+> __restore__(`backupData`): `Promise`\<`void`\>
 
 Defined in: [src/managers/PageManager.ts:496](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PageManager.ts#L496)
 
@@ -550,7 +551,7 @@ Backup data from backup() method
 
 ### ~~savePage()~~
 
-> **savePage**(`pageName`, `content`, `metadata?`): `Promise`\<`void`\>
+> __savePage__(`pageName`, `content`, `metadata?`): `Promise`\<`void`\>
 
 Defined in: [src/managers/PageManager.ts:314](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PageManager.ts#L314)
 
@@ -602,7 +603,7 @@ await pageManager.savePage('New Page', '# Hello World', {
 
 ### savePageWithContext()
 
-> **savePageWithContext**(`wikiContext`, `metadata?`): `Promise`\<`void`\>
+> __savePageWithContext__(`wikiContext`, `metadata?`): `Promise`\<`void`\>
 
 Defined in: [src/managers/PageManager.ts:274](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PageManager.ts#L274)
 
@@ -643,7 +644,7 @@ await pageManager.savePageWithContext(wikiContext, {
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/managers/PageManager.ts:440](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/PageManager.ts#L440)
 

@@ -1,4 +1,4 @@
-[**ngdpbase API v1.5.0**](../../../../README.md)
+[__ngdpbase API v1.5.0__](../../../../README.md)
 
 ***
 
@@ -23,7 +23,7 @@ Allow additional properties for extensibility
 
 ### config?
 
-> `optional` **config**: [`WikiConfig`](../../Config/interfaces/WikiConfig.md)
+> `optional` __config__: [`WikiConfig`](../../Config/interfaces/WikiConfig.md)
 
 Defined in: [src/types/WikiEngine.ts:54](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/WikiEngine.ts#L54)
 
@@ -33,7 +33,7 @@ Wiki configuration
 
 ### context?
 
-> `optional` **context**: `any`
+> `optional` __context__: `any`
 
 Defined in: [src/types/WikiEngine.ts:67](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/WikiEngine.ts#L67)
 
@@ -43,7 +43,7 @@ Current context (request-scoped)
 
 ### logger?
 
-> `optional` **logger**: `Logger`
+> `optional` __logger__: `Logger`
 
 Defined in: [src/types/WikiEngine.ts:60](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/WikiEngine.ts#L60)
 
@@ -53,7 +53,7 @@ Logger instance (winston Logger)
 
 ### startTime?
 
-> `optional` **startTime**: `number`
+> `optional` __startTime__: `number`
 
 Defined in: [src/types/WikiEngine.ts:63](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/WikiEngine.ts#L63)
 
@@ -63,7 +63,7 @@ Engine start time
 
 ### getConfig()
 
-> **getConfig**(): [`WikiConfig`](../../Config/interfaces/WikiConfig.md)
+> __getConfig__(): [`WikiConfig`](../../Config/interfaces/WikiConfig.md)
 
 Defined in: [src/types/WikiEngine.ts:101](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/WikiEngine.ts#L101)
 
@@ -79,7 +79,7 @@ Wiki configuration object
 
 ### getManager()
 
-> **getManager**\<`T`\>(`managerName`): `T` \| `undefined`
+> __getManager__\<`T`\>(`managerName`): `T` \| `undefined`
 
 Defined in: [src/types/WikiEngine.ts:87](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/WikiEngine.ts#L87)
 
@@ -116,7 +116,7 @@ const pageManager = engine.getManager<PageManager>('PageManager');
 
 ### getRegisteredManagers()
 
-> **getRegisteredManagers**(): `string`[]
+> __getRegisteredManagers__(): `string`[]
 
 Defined in: [src/types/WikiEngine.ts:112](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/WikiEngine.ts#L112)
 
@@ -132,7 +132,7 @@ Array of manager names
 
 ### initialize()
 
-> **initialize**(`config?`): `Promise`\<`any`\>
+> __initialize__(`config?`): `Promise`\<`any`\>
 
 Defined in: [src/types/WikiEngine.ts:75](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/WikiEngine.ts#L75)
 
@@ -156,7 +156,7 @@ The initialized engine or void
 
 ### registerManager()
 
-> **registerManager**(`managerName`, `manager`): `void`
+> __registerManager__(`managerName`, `manager`): `void`
 
 Defined in: [src/types/WikiEngine.ts:95](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/WikiEngine.ts#L95)
 
@@ -184,7 +184,7 @@ Manager instance
 
 ### shutdown()
 
-> **shutdown**(): `Promise`\<`void`\>
+> __shutdown__(): `Promise`\<`void`\>
 
 Defined in: [src/types/WikiEngine.ts:106](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/types/WikiEngine.ts#L106)
 
