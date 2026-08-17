@@ -24,6 +24,12 @@
 
             <form id="editForm" action="/save/<%= pageName %>" method="POST">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <%# #1061: the version this edit is based on. The server compares it
+                    against the page as it stands at save time and refuses a save built
+                    on content someone else has since replaced. Absent for a new page. %>
+                <% if (typeof metadata !== 'undefined' && metadata && metadata.lastModified) { %>
+                <input type="hidden" name="baseLastModified" value="<%= metadata.lastModified %>">
+                <% } %>
                 <% if (typeof sectionIndex !== 'undefined' && sectionIndex !== null) { %>
                 <input type="hidden" name="section" value="<%= sectionIndex %>">
                 <div class="alert alert-info d-flex align-items-center mb-3" role="alert">

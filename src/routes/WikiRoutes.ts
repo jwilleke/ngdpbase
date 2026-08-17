@@ -40,6 +40,7 @@ import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../
 import { stringifyJsonLdForScript, wantsJsonLd } from '../utils/buildPageJsonLd.js';
 import { articleToPageJsonLd } from '../utils/articleToPageJsonLd.js';
 import { buildSocialMeta } from '../utils/buildSocialMeta.js';
+import { versionTokenOf, isStaleSave } from '../utils/pageVersionToken.js';
 import { buildKeywordPool } from '../utils/buildKeywordPool.js';
 import {
   buildSitemapXml,
@@ -3528,6 +3529,44 @@ ${panes}
 
 
   /**
+   * Fields to re-post from a save that hit an edit conflict (#1061).
+   *
+   * Everything the user submitted travels to the conflict page and back, so a
+   * resubmit carries the same title, categories, keywords and frontmatter it
+   * had the first time. Preserving only the content would silently strip a
+   * metadata change the user made in the same edit.
+   *
+   * Two fields are dropped because the conflict page reissues them from current
+   * state: `_csrf` (the session's token) and `baseLastModified` (the whole
+   * point — resubmitting the stale one would conflict again forever). `content`
+   * is dropped because it is rendered as the editable textarea instead.
+   */
+  static buildConflictResubmitFields(
+    body: Record<string, unknown> | undefined
+  ): Array<{ name: string; value: string | string[] }> {
+    const skip = new Set(['_csrf', 'baseLastModified', 'content']);
+    // Only these render as a hidden input. Anything else — an object, a
+    // function, a nested body — would stringify to '[object Object]' and post
+    // that garbage back, so it is dropped instead.
+    const renderable = (v: unknown): v is string | number | boolean =>
+      typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
+
+    const out: Array<{ name: string; value: string | string[] }> = [];
+    for (const [name, value] of Object.entries(body ?? {})) {
+      if (skip.has(name)) continue;
+      if (Array.isArray(value)) {
+        // Repeated field (checkbox groups, multi-selects). Keep every value —
+        // collapsing to the first would drop all but one selected keyword.
+        const values = (value as unknown[]).filter(renderable).map((v) => String(v));
+        if (values.length > 0) out.push({ name, value: values });
+      } else if (renderable(value)) {
+        out.push({ name, value: String(value) });
+      }
+    }
+    return out;
+  }
+
+  /**
    * Save a page
    */
   async savePage(req: Request, res: Response) {
@@ -3859,6 +3898,38 @@ ${panes}
             validationErrors
           });
         }
+      }
+
+      // #1061: refuse a save built on a version someone else has already
+      // replaced. Deliberately the LAST check before the write — the page can
+      // move while the earlier validation runs, and a stale-check that ran
+      // before validation would be answering about a version that has since
+      // changed again.
+      //
+      // The editor's work is not discarded. `edit-conflict` re-posts every
+      // field of this submission with the content editable, so the user can
+      // merge and save again. Blocking their save to protect someone else's,
+      // while dropping theirs, would only move the data loss to a different
+      // person.
+      const submittedBase = typeof req.body?.baseLastModified === 'string'
+        ? req.body.baseLastModified
+        : null;
+      if (existingPage && isStaleSave(submittedBase, versionTokenOf(existingPage.metadata))) {
+        logger.warn(
+          `⚠️  savePage(${pageName}) blocked: stale base version ` +
+          `(submitted ${submittedBase}, current ${versionTokenOf(existingPage.metadata)})`
+        );
+        return res.status(409).render('edit-conflict', {
+          ...(await this.getCommonTemplateData(req)),
+          title: `Edit conflict — ${pageName}`,
+          pageName,
+          submittedContent: content ?? '',
+          currentBaseToken: versionTokenOf(existingPage.metadata) ?? '',
+          conflictAuthor: existingPage.metadata?.author ?? null,
+          conflictLastModified: versionTokenOf(existingPage.metadata),
+          resubmitFields: WikiRoutes.buildConflictResubmitFields(req.body),
+          csrfToken: req.session.csrfToken
+        });
       }
 
       // Save the page using WikiContext (author is automatically extracted from context)

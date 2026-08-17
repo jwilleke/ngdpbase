@@ -1,0 +1,103 @@
+<%- include('header', { title: title }) %>
+
+<%#
+  Edit conflict (#1061).
+
+  Shown when a save was built on a version of the page that has since moved.
+  The save is NOT applied.
+
+  The whole point of this page is that the user's work is still here. Blocking
+  the save to protect the other person's edit, while discarding this person's,
+  would just move the data loss to a different user — so every field of the
+  submitted body is re-posted below, with the content editable.
+
+  `resubmitFields` carries the original body minus `_csrf` and minus the base
+  token; both are reissued fresh so a resubmit is a valid, current save.
+
+  NOTE: do not write an EJS closing delimiter inside an EJS comment — it ends
+  the comment early and breaks the template.
+%>
+
+<div class="container mt-4">
+  <div class="row justify-content-center">
+    <div class="col-lg-10">
+
+      <div class="alert alert-warning" role="alert">
+        <h4 class="alert-heading">
+          <i class="fas fa-code-branch"></i> This page changed while you were editing
+        </h4>
+        <p class="mb-2">
+          Someone else saved <strong><%= pageName %></strong> after you opened it, so your
+          save was <strong>not</strong> applied — applying it would have silently replaced
+          their work.
+        </p>
+        <p class="mb-0">
+          <strong>Nothing you wrote has been lost.</strong> Your version is in the box below.
+        </p>
+      </div>
+
+      <div class="card mb-3">
+        <div class="card-body">
+          <h6 class="card-title">What changed</h6>
+          <dl class="row mb-0 small">
+            <dt class="col-sm-3">Last saved by</dt>
+            <dd class="col-sm-9"><%= conflictAuthor || 'unknown' %></dd>
+            <dt class="col-sm-3">Last saved at</dt>
+            <dd class="col-sm-9"><%= conflictLastModified || 'unknown' %></dd>
+            <dt class="col-sm-3">Their version</dt>
+            <dd class="col-sm-9">
+              <a href="/view/<%= encodeURIComponent(pageName) %>" target="_blank" rel="noopener">
+                Open the current page in a new tab
+              </a>
+              &middot;
+              <a href="/history/<%= encodeURIComponent(pageName) %>" target="_blank" rel="noopener">
+                Page history
+              </a>
+            </dd>
+          </dl>
+        </div>
+      </div>
+
+      <p class="text-muted">
+        Compare the two, merge anything of theirs you want to keep into your text, then save
+        again. Saving now applies your version on top of theirs — their edit stays in the page
+        history either way.
+      </p>
+
+      <form id="conflictForm" action="/save/<%= encodeURIComponent(pageName) %>" method="POST">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <%# Reissued from the page as it stands NOW, so this save is not stale in turn. %>
+        <input type="hidden" name="baseLastModified" value="<%= currentBaseToken %>">
+
+        <%# Everything else the user submitted, preserved verbatim. %>
+        <% resubmitFields.forEach(function (field) { %>
+          <% if (Array.isArray(field.value)) { %>
+            <% field.value.forEach(function (v) { %>
+        <input type="hidden" name="<%= field.name %>" value="<%= v %>">
+            <% }); %>
+          <% } else { %>
+        <input type="hidden" name="<%= field.name %>" value="<%= field.value %>">
+          <% } %>
+        <% }); %>
+
+        <div class="mb-3">
+          <label for="conflictContent" class="form-label"><strong>Your version</strong></label>
+          <textarea class="form-control font-monospace" id="conflictContent" name="content"
+                    rows="24"><%= submittedContent %></textarea>
+        </div>
+
+        <div class="d-flex gap-2">
+          <button type="submit" class="btn btn-primary">
+            <i class="fas fa-save"></i> Save my version
+          </button>
+          <a href="/view/<%= encodeURIComponent(pageName) %>" class="btn btn-outline-secondary">
+            Discard mine and keep theirs
+          </a>
+        </div>
+      </form>
+
+    </div>
+  </div>
+</div>
+
+<%- include('footer') %>
