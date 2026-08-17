@@ -10,7 +10,6 @@ _None._
 
 - [#1065](https://github.com/jwilleke/ngdpbase/issues/1065) — [BUG] showdownGuardCoverage test fails intermittently in the full suite, always passes in isolation
 - [#1062](https://github.com/jwilleke/ngdpbase/issues/1062) — [BUG] Page content is not written atomically — a kill mid-write can truncate the file
-- [#1061](https://github.com/jwilleke/ngdpbase/issues/1061) — [BUG] Concurrent edits silently clobber each other — no conditional write on save
 - [#1059](https://github.com/jwilleke/ngdpbase/issues/1059) — [BUG] Four declared permissions gate nothing, and attachment checks ignore their action argument
 
 ## 🟡 P2
@@ -33,6 +32,7 @@ _None._
 
 ## 🔵 In review
 
+- [#1061](https://github.com/jwilleke/ngdpbase/issues/1061) — [BUG] Concurrent edits silently clobber each other — no conditional write on save
 - [#1058](https://github.com/jwilleke/ngdpbase/issues/1058) — [FEATURE] Test that the permission registry and the enforcement points agree, both directions
 - [#1057](https://github.com/jwilleke/ngdpbase/issues/1057) — [FEATURE] Lint rule: only managers/ may import providers/ — enforce the store boundary
 
