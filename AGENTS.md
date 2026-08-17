@@ -5,13 +5,18 @@ agent_priority_level: "medium"
 blockers: []
 requires_human_review: ["major architectural changes", "security policy modifications", "deployment to production"]
 agent_autonomy_level: "high"
-kit_version: "v1.1.0-2-gf82f1c9"
+kit_version: "v1.2.1-6-gaa88625"
 ---
 
-<!-- KIT:START v1.1.0-2-gf82f1c9 — managed by mjs-project-template; edit below the KIT:END marker -->
-## Agent Context & Protocols
+<!-- KIT:START v1.2.1-6-gaa88625 — managed by mjs-project-template; edit below the KIT:END marker -->
+## Agent Kit Protocols
 
 This section is **managed by the kit** (`install-kit.sh`) — it is identical across repos. Put repo-specific context **below the `KIT:END` marker**; do not edit here.
+
+The heading above names the kit on purpose. It used to read `Agent Context & Protocols`, which is the
+same wording a repo naturally picks for its own agent section below `KIT:END` — two identical `##`
+headings in one file, and `markdownlint` MD024 fails on it. The kit owns one heading string in every
+repo that installs it, so that string says whose it is.
 
 ### Session continuity
 
