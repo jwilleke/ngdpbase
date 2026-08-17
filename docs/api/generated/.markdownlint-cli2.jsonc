@@ -4,11 +4,20 @@
 //
 // This exemption used to live in the repo's .markdownlintignore. The agent kit
 // moved markdown linting to markdownlint-cli2, which does NOT read that file, so
-// the entry stopped being honoured and five violations surfaced in generated
-// output. A directory-level config is what cli2 does read, and install-kit.sh
-// never writes into subdirectories, so it survives every kit sync.
+// the entry stopped being honoured. A directory-level config is what cli2 does
+// read, and install-kit.sh never writes into subdirectories, so it survives every
+// kit sync.
+//
+// Rules are turned off INDIVIDUALLY and not via `"default": false`. markdownlint
+// only lets `default` govern rules that are not explicitly configured, and the
+// kit's root config sets MD024, MD033 and MD036 by name — so they survive
+// `default: false` and keep failing. Verified: `default: false` left 2 of 2
+// violations; naming the rules left 0.
 {
   "config": {
-    "default": false
+    "MD024": false, // TypeDoc repeats "Throws" across overloads
+    "MD033": false, // it emits inline HTML such as <void>
+    "MD036": false, // the index page titles itself with emphasis
+    "MD059": false  // generated link text is "Link", not prose
   }
 }
