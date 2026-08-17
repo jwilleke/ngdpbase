@@ -17,6 +17,21 @@ recommends what to do next. It does not start work.
   - `gh api "/repos/{owner}/{repo}/dependabot/alerts?state=open"`
   - `gh api "/repos/{owner}/{repo}/code-scanning/alerts?state=open"` (ignore a 404 — feature off)
   - any other scanner signal available (e.g. GitGuardian)
+  - **the ecosystem's own audit against the lockfile — not optional, and not covered by the
+    above.** `npm audit` / `yarn audit` / `pnpm audit`, `pip-audit`, `bundle audit`,
+    `govulncheck`, `cargo audit`, whatever the repo's package manager provides. Advisory
+    scanners match by registry coordinates, so a dependency resolved from a **git URL**, a
+    fork, or vendored into the tree has nothing to match and can never raise an alert. A clean
+    alerts page is not evidence that the tree is clean — a critical advisory has sat in a
+    shipped bundle for months while the page read `0 open`.
+    - **Read the exit code with the tool's own documentation open.** They disagree: `npm audit`
+      exits 0 or 1, Yarn Classic exits a bitmask of the severities it found (1 info, 2 low, 4
+      moderate, 8 high, 16 critical), so a single low finding exits `2`. Treating any non-zero
+      as failure makes the check permanently red, and a permanently red check gets ignored.
+    - Severity filters are not uniform either — Yarn Classic's `--level` does not filter, it
+      still reports and still counts. Verify the flag does what you think before relying on it.
+    - Findings here are scanner signals like any other: bridge them into issues in Step 2 using
+      the advisory ID as the marker.
 - `gh issue list --state open --limit 100 --json number,title,labels`
 - `gh pr list --state open --limit 50 --json number,title,isDraft,mergeStateStatus,createdAt,labels,body,closingIssuesReferences`
   — `gh issue list` does **not** return PRs, so without this they are invisible to every band
@@ -95,6 +110,11 @@ Use **underscore** emphasis, not asterisks. The kit's own `.markdownlint.jsonc` 
 `underscore`, so an asterisk-wrapped state marker makes the generated `TODO.md` fail
 `npm run lint:md` in the very repo that produced it.
 
+**Wrap any bare URL that appears in a title.** Issue and PR titles regularly contain a raw
+`https://…`, which lands in `TODO.md` as a bare URL and fails MD034 — a red lint run on a file
+nobody hand-edited. Put angle brackets around it: `<https://…>`. This applies to URLs in the
+**title text** only; never touch the link target of the `[#N](…)` reference itself.
+
 #### PR priority (same bands as issues)
 
 Resolve related issues first (next subsection), then place the PR:
@@ -172,3 +192,16 @@ actionable; "merge #24" alone makes the operator go look up why it matters.
 - For each repo, gather open Dependabot alerts + open issues labeled `P0` + open PRs.
 - Print a cross-repo table: `repo | open P0 | open security alerts | open PRs | top item`.
 - Recommend which repo needs attention first. Create no issues in sweep mode.
+
+## Repo-specific additions
+
+This file is **kit-managed and overwritten wholesale** on every `install-kit.sh` run — anything
+you add here is lost at the next sync, silently until the installer started warning about it.
+
+If this repo needs something extra from `/pstatus` — a package manager the kit does not name, a
+scanner only this repo has, a path only this repo uses — put it in
+`.claude/commands/pstatus.local.md`. The kit never writes, reads, or deletes that file.
+
+**Read it, if it exists, and treat its contents as part of this command.** A rule that is generic
+does not belong there: raise it upstream in
+[mjs-project-template](https://github.com/jwilleke/mjs-project-template) so every repo gets it.
