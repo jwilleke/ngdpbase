@@ -25,10 +25,14 @@ _None._
 
 ## 🟠 P1
 
+- [#1065](https://github.com/jwilleke/ngdpbase/issues/1065) — [BUG] showdownGuardCoverage test fails intermittently in the full suite, always passes in isolation
+- [#1062](https://github.com/jwilleke/ngdpbase/issues/1062) — [BUG] Page content is not written atomically — a kill mid-write can truncate the file
+- [#1061](https://github.com/jwilleke/ngdpbase/issues/1061) — [BUG] Concurrent edits silently clobber each other — no conditional write on save
 - [#1059](https://github.com/jwilleke/ngdpbase/issues/1059) — [BUG] Four declared permissions gate nothing, and attachment checks ignore their action argument
 
 ## 🟡 P2
 
+- [#1064](https://github.com/jwilleke/ngdpbase/issues/1064) — [FEATURE] Pin the showdown converter options that keep two stored-XSS advisories unreachable
 - [#1022](https://github.com/jwilleke/ngdpbase/issues/1022) — [FEATURE] Magic link: optional device/state binding + record IP and User-Agent at redemption
 - [#1028](https://github.com/jwilleke/ngdpbase/issues/1028) — [FEATURE] Config cleanup — remove dead keys and stop documenting them as live
 - [#1021](https://github.com/jwilleke/ngdpbase/issues/1021) — [FEATURE] Magic link: close the non-atomic verify→consume window (one token can mint two sessions)
