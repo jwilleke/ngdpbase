@@ -4,6 +4,7 @@ import path from 'path';
 import matter from 'gray-matter';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger.js';
+import { writeFileAtomic } from '../utils/atomicWrite.js';
 import DeltaStorage, { DiffTuple } from '../utils/DeltaStorage.js';
 import PageNameMatcher from '../utils/PageNameMatcher.js';
 import {
@@ -1088,16 +1089,14 @@ class VersioningFileProvider extends FileSystemProvider {
     const _metricsStart = Date.now();
 
     this.pageIndexWriteQueue = this.pageIndexWriteQueue.then(async () => {
-      // Use unique temp file to prevent collisions
-      const tempPath = `${indexPath}.tmp.${process.pid}.${Date.now()}`;
+      // #1062: was a hand-rolled temp-then-rename here. Same rule, one
+      // implementation — and it now fsyncs, which this copy never did, so the
+      // index survives a power loss rather than only a process kill.
       try {
-        await fs.writeFile(tempPath, data, 'utf8');
-        await fs.rename(tempPath, indexPath);
+        await writeFileAtomic(indexPath, data, 'utf8');
         this.engine.getManager<MetricsManager>('MetricsManager')?.recordPageIndexSave?.(Date.now() - _metricsStart);
       } catch (err) {
         this.engine.getManager<MetricsManager>('MetricsManager')?.recordPageIndexSave?.(Date.now() - _metricsStart);
-        // Clean up temp file on error
-        try { await fs.unlink(tempPath); } catch { /* ignore */ }
         throw err;
       }
     });
@@ -1575,11 +1574,12 @@ class VersioningFileProvider extends FileSystemProvider {
     const versionDir = this.getVersionDirectory(uuid, location);
     const manifestPath = path.join(versionDir, 'manifest.json');
 
-    // Atomic write
-    const tempPath = `${manifestPath}.tmp`;
+    // #1062: was a hand-rolled temp-then-rename with a FIXED temp name, so two
+    // concurrent manifest writes for the same page could stage into the same
+    // file and publish a mixture. `writeFileAtomic` makes the temp name unique
+    // per writer.
     return fs.ensureDir(versionDir)
-      .then(() => fs.writeFile(tempPath, JSON.stringify(manifest, null, 2), 'utf8'))
-      .then(() => fs.rename(tempPath, manifestPath));
+      .then(() => writeFileAtomic(manifestPath, JSON.stringify(manifest, null, 2), 'utf8'));
   }
 
   /**
@@ -2139,7 +2139,10 @@ class VersioningFileProvider extends FileSystemProvider {
     await fs.ensureDir(v1Dir);
 
     // Write full content for v1
-    await fs.writeFile(path.join(v1Dir, 'content.md'), content, 'utf8');
+    // #1062: version snapshots are the recovery path the rest of the
+    // durability story leans on — a truncated snapshot corrupts the history
+    // that #1061 points people at.
+    await writeFileAtomic(path.join(v1Dir, 'content.md'), content, 'utf8');
 
     // Create version metadata (stored in manifest.json only - single source of truth)
     const versionMetadata: InternalVersionMetadata = {
@@ -2217,7 +2220,7 @@ class VersioningFileProvider extends FileSystemProvider {
     if (this.deltaStorageEnabled && nextVersion > 1 && !isCheckpoint) {
       // Create and save diff (unless this is a checkpoint)
       const diff = DeltaStorage.createDiff(currentContent, newContent);
-      await fs.writeFile(
+      await writeFileAtomic(
         path.join(vNextDir, 'content.diff'),
         JSON.stringify(diff),
         'utf8'
@@ -2236,7 +2239,7 @@ class VersioningFileProvider extends FileSystemProvider {
       };
     } else {
       // Store full content (v1, delta storage disabled, or checkpoint)
-      await fs.writeFile(path.join(vNextDir, 'content.md'), newContent, 'utf8');
+      await writeFileAtomic(path.join(vNextDir, 'content.md'), newContent, 'utf8');
 
       const comment = isCheckpoint
         ? `Checkpoint at version ${nextVersion}`

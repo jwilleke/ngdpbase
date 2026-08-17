@@ -4,6 +4,7 @@ import path from 'path';
 import matter from 'gray-matter';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger.js';
+import { writeFileAtomic } from '../utils/atomicWrite.js';
 import PageNameMatcher from '../utils/PageNameMatcher.js';
 import { WikiPage, PageFrontmatter, PageInfo, PageSaveOptions, PageListOptions } from '../types/index.js';
 import type { RecentChangesOptions, RecentChangeEntry } from '../types/Provider.js';
@@ -632,7 +633,10 @@ class FileSystemProvider extends BasePageProvider {
     };
 
     const fileContent = matter.stringify(content, updatedMetadata);
-    await fs.writeFile(filePath, fileContent, this.encoding);
+    // #1062: temp-then-rename. Writing over the live path truncates it first,
+    // so a kill mid-write left the page neither old nor new. Containers are
+    // killed on deploy, OOM and eviction, so this is routine rather than rare.
+    await writeFileAtomic(filePath, fileContent, this.encoding);
 
     // Handle title change: remove old cache entries
     const titleChanged = oldPageInfo && oldPageInfo.title !== finalTitle;
@@ -1208,7 +1212,7 @@ class FileSystemProvider extends BasePageProvider {
             await fs.ensureDir(targetDir);
 
             // Write page file
-            await fs.writeFile(targetPath, page.content, this.encoding);
+            await writeFileAtomic(targetPath, page.content, this.encoding);
             restoredCount++;
           } catch (error) {
             logger.error(`[FileSystemProvider] Failed to restore page: ${page.relativePath}`, error);
@@ -1227,7 +1231,7 @@ class FileSystemProvider extends BasePageProvider {
             await fs.ensureDir(targetDir);
 
             // Write page file
-            await fs.writeFile(targetPath, page.content, this.encoding);
+            await writeFileAtomic(targetPath, page.content, this.encoding);
             restoredCount++;
           } catch (error) {
             logger.error(`[FileSystemProvider] Failed to restore required page: ${page.relativePath}`, error);
