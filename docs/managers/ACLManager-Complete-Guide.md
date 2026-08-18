@@ -1,8 +1,8 @@
 # ACLManager Complete Guide
 
-**Module:** `src/managers/ACLManager.js`
-**Quick Reference:** [ACLManager.md](ACLManager.md)
-**Generated API:** [API Docs](../api/generated/src/managers/ACLManager/README.md)
+__Module:__ `src/managers/ACLManager.js`
+__Quick Reference:__ [ACLManager.md](ACLManager.md)
+__Generated API:__ [API Docs](../api/generated/src/managers/ACLManager/README.md)
 
 ---
 
@@ -24,7 +24,7 @@
 ## Permission Evaluation Order
 
 Every page access call goes through `checkPagePermissionWithContext(wikiContext, action)`.
-The method evaluates tiers in order and **returns on the first decision**. Later tiers are
+The method evaluates tiers in order and __returns on the first decision__. Later tiers are
 only reached if earlier ones did not decide.
 
 ```text
@@ -50,8 +50,8 @@ By the time `checkPagePermissionWithContext` is called the WikiContext already h
 ### Tier 1 — frontmatter `audience` (page-level override)
 
 If the page frontmatter contains an `audience` array, only users whose role appears
-in that list (or whose username matches) can view the page — **regardless of what
-global policies say**.
+in that list (or whose username matches) can view the page — __regardless of what
+global policies say__.
 
 ```yaml
 ---
@@ -65,7 +65,7 @@ audience:
 A page with no `audience` field skips Tier 1 entirely and falls through to the
 global policies in Tier 2.
 
-> **Key rule:** page-level `audience` always wins over site-wide policies.
+> __Key rule:__ page-level `audience` always wins over site-wide policies.
 > This is why restricted pages (Members Only, admin pages) use `audience`
 > rather than relying solely on global policies.
 
@@ -86,7 +86,7 @@ Default policy evaluation order (by priority, highest first):
 | `anonymous-read-only` | 50 | anonymous | allow | `page:read` |
 | `default-view-for-all` | 1 | All | allow | `page:read` |
 
-> **Removed 2026-07-25:** `deny-anonymous-system-pages` (priority 90, deny, `*` on `system`/`admin`
+> __Removed 2026-07-25:__ `deny-anonymous-system-pages` (priority 90, deny, `*` on `system`/`admin`
 > categories). It had never functioned — `PolicyEvaluator.matchesResource` matches only
 > `type: 'page'` resources, and anonymous users carry the role `Anonymous` while the policy named
 > `anonymous` (subject matching is case-sensitive). Rather than make it work, it was deleted: the
@@ -94,7 +94,7 @@ Default policy evaluation order (by priority, highest first):
 > request-access), not restricted content, so enforcing the rule would have blanked the sidebar and
 > footer for every anonymous visitor. See #945 (closed as `wontfix`).
 >
-> Consequence: **there are no `deny` policies in the default catalog.** Access restriction is carried
+> Consequence: __there are no `deny` policies in the default catalog.__ Access restriction is carried
 > by page `private` (tier 0), author-lock (tier 0.5), and frontmatter `audience`/`access` (tier 1) —
 > not by global policy.
 
@@ -154,8 +154,8 @@ async initialize() {
 
 ACLManager requires:
 
-- **ConfigurationManager** - For loading policies and settings
-- **PolicyEvaluator** - For global policy evaluation (optional but recommended)
+- __ConfigurationManager__ - For loading policies and settings
+- __PolicyEvaluator__ - For global policy evaluation (optional but recommended)
 
 ---
 
@@ -219,7 +219,7 @@ parsePageACL(content) {
 }
 ```
 
-**Returns:** `Map<string, Set<string>>` where:
+__Returns:__ `Map<string, Set<string>>` where:
 
 - Key = action (lowercase)
 - Value = Set of allowed principals
@@ -240,14 +240,14 @@ Uses WikiContext as the single source of truth:
 const canEdit = await aclManager.checkPagePermissionWithContext(wikiContext, 'edit');
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `wikiContext` - WikiContext with pageName, userContext, content
 - `action` - Action to check: view, edit, delete, create, rename, upload
 
-**Returns:** `Promise<boolean>`
+__Returns:__ `Promise<boolean>`
 
-**Evaluation Flow:**
+__Evaluation Flow:__
 
 1. Map action to policy action (e.g., `view` → `page:read`)
 2. Call PolicyEvaluator.evaluateAccess() if available
@@ -435,9 +435,9 @@ async isAdmin(user) {
 
 ## Notes
 
-- **No backup/restore needed**: Policies come from ConfigurationManager, page ACLs from page content
-- **Private method**: `#notify()` sends alerts to NotificationManager
-- **Action mapping**: Legacy actions (view, edit) map to policy actions (page:read, page:edit)
+- __No backup/restore needed__: Policies come from ConfigurationManager, page ACLs from page content
+- __Private method__: `#notify()` sends alerts to NotificationManager
+- __Action mapping__: Legacy actions (view, edit) map to policy actions (page:read, page:edit)
 
 ---
 

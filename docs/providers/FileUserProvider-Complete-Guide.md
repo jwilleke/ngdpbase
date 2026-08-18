@@ -1,13 +1,13 @@
 # FileUserProvider Complete Guide
 
-[Quick Reference](FileUserProvider.md) | **Complete Guide**
+[Quick Reference](FileUserProvider.md) | __Complete Guide__
 
-**Module:** `src/providers/FileUserProvider.js`
-**Type:** User Storage Provider
-**Extends:** BaseUserProvider
-**Status:** Production Ready
-**Version:** 1.0.0
-**Last Updated:** 2025-12-22
+__Module:__ `src/providers/FileUserProvider.js`
+__Type:__ User Storage Provider
+__Extends:__ BaseUserProvider
+__Status:__ Production Ready
+__Version:__ 1.0.0
+__Last Updated:__ 2025-12-22
 
 ---
 
@@ -35,29 +35,29 @@ FileUserProvider is the default user storage provider for ngdpbase, implementing
 
 ### Design Philosophy
 
-- **Simplicity**: Plain JSON files, no database server required
-- **Portability**: Files can be version-controlled, backed up easily
-- **Performance**: In-memory caching via Map structures
-- **Reliability**: Atomic file writes, automatic session cleanup
-- **Transparency**: Human-readable JSON format
+- __Simplicity__: Plain JSON files, no database server required
+- __Portability__: Files can be version-controlled, backed up easily
+- __Performance__: In-memory caching via Map structures
+- __Reliability__: Atomic file writes, automatic session cleanup
+- __Transparency__: Human-readable JSON format
 
 ### Key Features
 
-**User Storage:**
+__User Storage:__
 
 - JSON file-based persistence (`users.json`)
 - In-memory caching (Map structure for O(1) lookups)
 - Username as primary key
 - Password hashing handled by UserManager (not provider)
 
-**Session Storage:**
+__Session Storage:__
 
 - Separate JSON file (`sessions.json`)
 - Automatic expiration cleanup on load
 - Session ID as primary key
 - Timestamp-based expiration
 
-**Operational:**
+__Operational:__
 
 - Backup/restore support
 - Graceful shutdown with cleanup
@@ -88,7 +88,7 @@ WikiEngine
 
 ### Data Flow
 
-**User Authentication:**
+__User Authentication:__
 
 ```
 User logs in
@@ -103,7 +103,7 @@ User logs in
                   → Save to sessions.json
 ```
 
-**Session Validation:**
+__Session Validation:__
 
 ```
 Request arrives with sessionId
@@ -179,30 +179,30 @@ All configuration via ConfigurationManager (lowercase keys):
 
 ### Initialization Sequence
 
-1. **Validate ConfigurationManager**
+1. __Validate ConfigurationManager__
    - Ensures ConfigurationManager available
    - Throws error if missing
 
-2. **Load Configuration**
+2. __Load Configuration__
    - Read storage directory path
    - Read users file name
    - Read sessions file name
 
-3. **Create Directory**
+3. __Create Directory__
    - Ensures storage directory exists
    - Uses `fs.mkdir(recursive: true)`
 
-4. **Load Users**
+4. __Load Users__
    - Read users.json if exists
    - Parse JSON into Map
    - Handle missing file (empty Map)
 
-5. **Load Sessions**
+5. __Load Sessions__
    - Read sessions.json if exists
    - Filter expired sessions
    - Save cleaned sessions back to disk
 
-6. **Mark Initialized**
+6. __Mark Initialized__
    - Set `initialized = true`
    - Log user count
 
@@ -299,7 +299,7 @@ async createUser(username, userData) {
 }
 ```
 
-**Usage:**
+__Usage:__
 
 ```javascript
 await provider.createUser('bob', {
@@ -321,7 +321,7 @@ async getUser(username) {
 }
 ```
 
-**Usage:**
+__Usage:__
 
 ```javascript
 const user = await provider.getUser('admin');
@@ -350,7 +350,7 @@ async updateUser(username, userData) {
 }
 ```
 
-**Usage:**
+__Usage:__
 
 ```javascript
 const user = await provider.getUser('admin');
@@ -375,7 +375,7 @@ async deleteUser(username) {
 }
 ```
 
-**Usage:**
+__Usage:__
 
 ```javascript
 const deleted = await provider.deleteUser('olduser');
@@ -446,7 +446,7 @@ async createSession(sessionId, sessionData) {
 }
 ```
 
-**Usage:**
+__Usage:__
 
 ```javascript
 const sessionId = uuidv4();
@@ -469,7 +469,7 @@ async getSession(sessionId) {
 }
 ```
 
-**Usage:**
+__Usage:__
 
 ```javascript
 const session = await provider.getSession(sessionId);
@@ -657,7 +657,7 @@ async backup() {
 }
 ```
 
-**Usage:**
+__Usage:__
 
 ```javascript
 const backup = await provider.backup();
@@ -700,7 +700,7 @@ async restore(backupData) {
 }
 ```
 
-**Usage:**
+__Usage:__
 
 ```javascript
 const backupData = JSON.parse(await fs.readFile('user-backup-2025-01-22.json', 'utf8'));
@@ -717,43 +717,43 @@ await provider.restore(backupData);
 
 Get user by username.
 
-**Returns:** `Promise<Object|null>`
+__Returns:__ `Promise<Object|null>`
 
 #### `async getAllUsers()`
 
 Get all users (Map copy).
 
-**Returns:** `Promise<Map<string, Object>>`
+__Returns:__ `Promise<Map<string, Object>>`
 
 #### `async getAllUsernames()`
 
 Get array of usernames.
 
-**Returns:** `Promise<Array<string>>`
+__Returns:__ `Promise<Array<string>>`
 
 #### `async createUser(username, userData)`
 
 Create new user.
 
-**Throws:** Error if user exists
+__Throws:__ Error if user exists
 
 #### `async updateUser(username, userData)`
 
 Update existing user.
 
-**Throws:** Error if user not found
+__Throws:__ Error if user not found
 
 #### `async deleteUser(username)`
 
 Delete user.
 
-**Returns:** `Promise<Boolean>` - true if deleted
+__Returns:__ `Promise<Boolean>` - true if deleted
 
 #### `async userExists(username)`
 
 Check if user exists.
 
-**Returns:** `Promise<Boolean>`
+__Returns:__ `Promise<Boolean>`
 
 ### Session Methods
 
@@ -761,31 +761,31 @@ Check if user exists.
 
 Create new session.
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
 #### `async getSession(sessionId)`
 
 Get session by ID.
 
-**Returns:** `Promise<Object|null>`
+__Returns:__ `Promise<Object|null>`
 
 #### `async getAllSessions()`
 
 Get all sessions (Map copy).
 
-**Returns:** `Promise<Map<string, Object>>`
+__Returns:__ `Promise<Map<string, Object>>`
 
 #### `async deleteSession(sessionId)`
 
 Delete session.
 
-**Returns:** `Promise<Boolean>` - true if deleted
+__Returns:__ `Promise<Boolean>` - true if deleted
 
 #### `async cleanExpiredSessions()`
 
 Remove expired sessions.
 
-**Returns:** `Promise<number>` - Count removed
+__Returns:__ `Promise<number>` - Count removed
 
 ### File Methods
 
@@ -793,25 +793,25 @@ Remove expired sessions.
 
 Load users from users.json.
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
 #### `async saveUsers()`
 
 Save users to users.json.
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
 #### `async loadSessions()`
 
 Load sessions from sessions.json (with expiration cleanup).
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
 #### `async saveSessions()`
 
 Save sessions to sessions.json.
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
 ### Backup Methods
 
@@ -819,13 +819,13 @@ Save sessions to sessions.json.
 
 Create backup of all data.
 
-**Returns:** `Promise<Object>` - Backup data
+__Returns:__ `Promise<Object>` - Backup data
 
 #### `async restore(backupData)`
 
 Restore from backup.
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
 ### Lifecycle Methods
 
@@ -833,19 +833,19 @@ Restore from backup.
 
 Initialize provider.
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
 #### `async shutdown()`
 
 Shutdown provider (cleans expired sessions).
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
 #### `getProviderInfo()`
 
 Get provider metadata.
 
-**Returns:** `Object` - Provider info
+__Returns:__ `Object` - Provider info
 
 ---
 
@@ -853,25 +853,25 @@ Get provider metadata.
 
 ### Common Errors
 
-**Missing ConfigurationManager:**
+__Missing ConfigurationManager:__
 
 ```javascript
 Error: FileUserProvider requires ConfigurationManager
 ```
 
-**Duplicate User:**
+__Duplicate User:__
 
 ```javascript
 Error: User already exists: bob
 ```
 
-**User Not Found:**
+__User Not Found:__
 
 ```javascript
 Error: User not found: nonexistent
 ```
 
-**File Write Error:**
+__File Write Error:__
 
 ```javascript
 Error saving users: EACCES: permission denied
@@ -901,7 +901,7 @@ try {
 
 ### Performance Characteristics
 
-**User Operations:**
+__User Operations:__
 
 - getUser: O(1) - Map lookup
 - getAllUsers: O(n) - Map copy
@@ -909,20 +909,20 @@ try {
 - updateUser: O(1) + file write (~10ms)
 - deleteUser: O(1) + file write (~10ms)
 
-**Session Operations:**
+__Session Operations:__
 
 - getSession: O(1) - Map lookup
 - createSession: O(1) + file write (~10ms)
 - cleanExpiredSessions: O(n) - iterate all sessions
 
-**File Operations:**
+__File Operations:__
 
 - loadUsers: O(n) - parse JSON
 - saveUsers: O(n) - stringify JSON + write
 
 ### Optimization Tips
 
-1. **Batch user updates**
+1. __Batch user updates__
 
    ```javascript
    // Update Map for all users
@@ -933,7 +933,7 @@ try {
    await this.saveUsers();
    ```
 
-2. **Periodic session cleanup**
+2. __Periodic session cleanup__
 
    ```javascript
    // Run cleanup every hour
@@ -942,7 +942,7 @@ try {
    }, 3600000);
    ```
 
-3. **Avoid redundant saves**
+3. __Avoid redundant saves__
 
    ```javascript
    // Bad: Save after each user
@@ -963,13 +963,13 @@ try {
 
 ### Password Storage
 
-**Provider does NOT hash passwords:**
+__Provider does NOT hash passwords:__
 
 - UserManager handles hashing (bcrypt)
 - Provider stores pre-hashed passwords
 - Never store plaintext passwords
 
-**Correct flow:**
+__Correct flow:__
 
 ```javascript
 // UserManager hashes password
@@ -1011,9 +1011,9 @@ chmod 700 data/users/
 
 ### Users Not Loading
 
-**Symptom:** `users.size` is 0 after initialization
+__Symptom:__ `users.size` is 0 after initialization
 
-**Checks:**
+__Checks:__
 
 1. Verify users.json exists
 2. Check file permissions
@@ -1022,9 +1022,9 @@ chmod 700 data/users/
 
 ### Session Expiration Issues
 
-**Symptom:** Sessions expire too quickly
+__Symptom:__ Sessions expire too quickly
 
-**Solution:**
+__Solution:__
 
 - Check `expiresAt` timestamps
 - Verify system clock is correct
@@ -1032,9 +1032,9 @@ chmod 700 data/users/
 
 ### File Write Failures
 
-**Symptom:** Changes not persisting to disk
+__Symptom:__ Changes not persisting to disk
 
-**Checks:**
+__Checks:__
 
 1. Verify directory exists
 2. Check write permissions
@@ -1043,9 +1043,9 @@ chmod 700 data/users/
 
 ### Backup/Restore Failures
 
-**Symptom:** Restore doesn't work
+__Symptom:__ Restore doesn't work
 
-**Checks:**
+__Checks:__
 
 1. Verify backup data structure
 2. Check backup version compatibility
@@ -1056,12 +1056,12 @@ chmod 700 data/users/
 
 ## Related Documentation
 
-- **Quick Reference:** [FileUserProvider.md](FileUserProvider.md)
-- **Base Class:** [BaseUserProvider.md](BaseUserProvider.md)
-- **Manager:** [UserManager.md](../managers/UserManager.md)
-- **Security:** [Policies-Roles-Permissions.md](../architecture/Policies-Roles-Permissions.md)
+- __Quick Reference:__ [FileUserProvider.md](FileUserProvider.md)
+- __Base Class:__ [BaseUserProvider.md](BaseUserProvider.md)
+- __Manager:__ [UserManager.md](../managers/UserManager.md)
+- __Security:__ [Policies-Roles-Permissions.md](../architecture/Policies-Roles-Permissions.md)
 
 ---
 
-**Last Updated:** 2025-12-22
-**Version:** 1.0.0
+__Last Updated:__ 2025-12-22
+__Version:__ 1.0.0

@@ -1,8 +1,8 @@
 # Issue #622 — vitest pool tuning investigation
 
-**Date:** 2026-05-02
-**Issue:** [#622 — `WikiRoutes.coverage3.test.ts > "returns 401 when user is not authenticated"` times out intermittently in full vitest run](https://github.com/jwilleke/ngdpbase/issues/622)
-**Outcome:** Two changes landed in `vitest.config.ts`:
+__Date:__ 2026-05-02
+__Issue:__ [#622 — `WikiRoutes.coverage3.test.ts > "returns 401 when user is not authenticated"` times out intermittently in full vitest run](https://github.com/jwilleke/ngdpbase/issues/622)
+__Outcome:__ Two changes landed in `vitest.config.ts`:
 
 1. `testTimeout: 30000` (was 20000) — defensively absorbs cold-start variance
 2. `pool: 'forks'` + `maxWorkers: 4` (was: default ~7 on a 14-core machine) — reduces per-component overhead by ~3x
@@ -26,8 +26,8 @@ test runs). Compare per-component timings reported by vitest:
 Duration  7.60s (transform 6.28s, setup 1.80s, import 13.70s, tests 22.75s, environment 1.06s)
 ```
 
-- **Total wallclock** = `Duration`. Time from start to finish.
-- **transform / import / setup / environment / tests** = sum of per-worker
+- __Total wallclock__ = `Duration`. Time from start to finish.
+- __transform / import / setup / environment / tests__ = sum of per-worker
   time spent in that phase, across all parallel workers. So `tests: 22.75s`
   on a 7-worker pool means each worker did roughly 3.2s of test work in
   parallel.
@@ -67,7 +67,7 @@ start hit the 20s flake; could not reliably reproduce on demand.)
 | 4   | 8.65s    | 1.87s     | 6.51s  | 0.95s | 15.03s| 0.78s       | ok      |
 | 5   | 8.74s    | 1.95s     | 6.60s  | 0.96s | 15.18s| 0.78s       | ok      |
 
-5/5 pass at 8.6-8.8s. **Per-component times ~3x lower than default.**
+5/5 pass at 8.6-8.8s. __Per-component times ~3x lower than default.__
 Total wallclock slightly higher because less parallelism = more wallclock
 to do same total work, but each worker is *much* more efficient.
 
@@ -75,13 +75,13 @@ to do same total work, but each worker is *much* more efficient.
 
 | Run | Duration | transform | import | setup | tests | environment | Outcome    |
 |----:|---------:|----------:|-------:|------:|------:|------------:|------------|
-| 1   | 36.53s   | 1.63s     | 5.95s  | 0.86s | 44.44s| 0.74s       | **flake**  |
+| 1   | 36.53s   | 1.63s     | 5.95s  | 0.86s | 44.44s| 0.74s       | __flake__  |
 | 2   | 16.72s   | 1.71s     | 6.24s  | 0.88s | 14.60s| 0.75s       | ok         |
 | 3   | 16.57s   | 1.68s     | 6.14s  | 0.86s | 14.50s| 0.75s       | ok         |
 
 Run 1 hit the flake (`tests: 44.44s` = 30s timeout fired + ~14s normal).
 Even after warm-up, total wallclock is 16-17s — too few workers, suite
-becomes too sequential. **Worst configuration tested.**
+becomes too sequential. __Worst configuration tested.__
 
 ### pool: forks, maxWorkers=6
 
@@ -91,7 +91,7 @@ becomes too sequential. **Worst configuration tested.**
 | 2   | 6.26s    | 2.38s     | 7.16s  | 1.00s | 15.78s| 0.80s       | ok      |
 | 3   | 6.25s    | 2.45s     | 7.16s  | 1.03s | 15.93s| 0.80s       | ok      |
 
-3/3 pass at 6.25-6.32s. **Fastest configuration tested.** But sample size
+3/3 pass at 6.25-6.32s. __Fastest configuration tested.__ But sample size
 small.
 
 ### pool: threads (default workers)
@@ -109,35 +109,35 @@ Comparable to forks default. Pool type alone doesn't change much.
 | Run | Duration | transform | import | setup | tests | environment | Outcome   |
 |----:|---------:|----------:|-------:|------:|------:|------------:|-----------|
 | 1   | 7.96s    | 1.76s     | 6.31s  | 0.90s | 14.56s| 0.75s       | ok        |
-| 2   | 33.06s   | 1.56s     | 5.89s  | 0.86s | 44.51s| 0.76s       | **flake** |
+| 2   | 33.06s   | 1.56s     | 5.89s  | 0.86s | 44.51s| 0.76s       | __flake__ |
 | 3   | 7.94s    | 1.62s     | 6.17s  | 0.89s | 14.54s| 0.77s       | ok        |
 
-Run 2 hit the flake (`tests: 44.51s`). **Pool type does not eliminate the
-flake.** Threads vs forks is largely irrelevant for this issue.
+Run 2 hit the flake (`tests: 44.51s`). __Pool type does not eliminate the
+flake.__ Threads vs forks is largely irrelevant for this issue.
 
 ## Findings
 
-1. **The flake is a real cold-start race**, not a configuration mistake.
+1. __The flake is a real cold-start race__, not a configuration mistake.
    It reproduced under multiple pool/worker combinations (forks default,
    threads maxWorkers=4, forks maxWorkers=2). The race is something in
    vitest's worker bootstrap interacting with supertest's HTTP server
    setup; reducing parallelism alone doesn't deterministically prevent
    it.
 
-2. **`testTimeout: 30000` is a real fix for the symptom.** The flake
+2. __`testTimeout: 30000` is a real fix for the symptom.__ The flake
    manifests as a single test exhausting the 20s timeout. Bumping the
    ceiling to 30s absorbs the cold-start variance without disabling or
    weakening any test. Each affected test still has a real upper bound;
    the bound just absorbs the worst observed cold-start delay.
 
-3. **`maxWorkers: 4` is a real perf win.** Per-component overhead drops
+3. __`maxWorkers: 4` is a real perf win.__ Per-component overhead drops
    ~3x (transform 6.5s → 2s; import 14s → 6.5s). Total wallclock is
    slightly higher (8.7s vs 7.6s) when the suite is fully warm — but the
    per-test efficiency improvement means individual cold tests are
    less likely to hit timeouts, and the suite is more predictable across
    runs.
 
-4. **Defense in depth.** Both changes ship together because:
+4. __Defense in depth.__ Both changes ship together because:
    - `maxWorkers: 4` reduces the *probability* of the cold-start race
      (lower per-worker load → faster worker bootstrap → smaller window
      for the race to fire).
@@ -146,7 +146,7 @@ flake.** Threads vs forks is largely irrelevant for this issue.
      eliminate the flake in experiments, and timeout alone doesn't address
      the underlying inefficiency.
 
-5. **Sweet spot is around 4-6 workers** for this 193-file suite on a
+5. __Sweet spot is around 4-6 workers__ for this 193-file suite on a
    14-core machine. `maxWorkers: 2` is too few (suite becomes sequential,
    own flake from per-test load). `maxWorkers: 6` is fastest in our
    sample but with smaller sample size — staying with 4 for headroom and
@@ -169,19 +169,19 @@ flake.** Threads vs forks is largely irrelevant for this issue.
 
 In rough cost-of-investigation order:
 
-1. **Add per-test timing instrumentation** to `WikiRoutes.coverage3.test.ts`
+1. __Add per-test timing instrumentation__ to `WikiRoutes.coverage3.test.ts`
    on the failing test path. Log timestamps at: test entry, supertest
    invocation, middleware enter, route handler enter, route handler
    return, supertest response received. Identifies which segment is
    actually consuming the seconds when the flake fires.
 
-2. **Try `isolate: false`** in vitest config. Each test file gets a
+2. __Try `isolate: false`__ in vitest config. Each test file gets a
    fresh VM by default; sharing VMs across files in the same worker
    would skip per-file module initialization and may eliminate the
    cold-start window. Risk: shared module state leaks between files;
    may break tests that mutate globals.
 
-3. **Investigate WikiRoutes module-load side effects.** The route file
+3. __Investigate WikiRoutes module-load side effects.__ The route file
    is large (~8000 lines, many imports). On a cold worker, the import
    chain may be doing async work at module-eval time that doesn't
    settle before the first test runs. Suspect candidates: top-level
@@ -189,13 +189,13 @@ In rough cost-of-investigation order:
    `WikiEngine` construction triggering manager initialization that
    cascades through providers.
 
-4. **Replace `supertest` with direct handler calls** for the affected
+4. __Replace `supertest` with direct handler calls__ for the affected
    test. `supertest` spins up an HTTP server per request via
    `app.listen(0)`; on a cold worker, ephemeral port allocation may
    serialize behind worker spawning. A direct handler call (`await
    handler(req, res)`) skips the HTTP layer entirely.
 
-5. **Switch to `vmThreads` or `vmForks` pool.** These provide stricter
+5. __Switch to `vmThreads` or `vmForks` pool.__ These provide stricter
    isolation but heavier setup — could move the cold-start cost
    somewhere it's expected, or eliminate the race by serializing more
    strictly.

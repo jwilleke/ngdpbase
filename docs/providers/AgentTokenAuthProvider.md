@@ -8,9 +8,9 @@ code: src/providers/AgentTokenAuthProvider.ts
 
 # AgentTokenAuthProvider
 
-Authenticates non-browser/API requests by verifying a **user-delegated agent token** presented on the `Authorization: Bearer <token>` header (#946). Counterpart to [AuthentikBearerAuthProvider](AuthentikBearerAuthProvider.md), but with **no external identity provider**: the credential is minted in-app by the user it belongs to.
+Authenticates non-browser/API requests by verifying a __user-delegated agent token__ presented on the `Authorization: Bearer <token>` header (#946). Counterpart to [AuthentikBearerAuthProvider](AuthentikBearerAuthProvider.md), but with __no external identity provider__: the credential is minted in-app by the user it belongs to.
 
-A token is a delegation of its owner's own authority — **it can never do anything its owner could not already do.**
+A token is a delegation of its owner's own authority — __it can never do anything its owner could not already do.__
 
 ## Configuration
 
@@ -26,13 +26,13 @@ No further configuration is required — unlike `authentik-bearer`, there is no 
 ## Behaviour
 
 - Hashes the presented token (SHA-256) and looks it up in [AgentTokenManager](../managers/AgentTokenManager.md)'s store. Rejects unknown, expired, and revoked tokens.
-- Returns the token's **owner** and its **scopes**. It deliberately returns no roles: permissions are resolved live from the owner's user record by the middleware, so a token never carries a snapshot of authority. Demoting or disabling the owner immediately weakens or kills every token they hold, with no revocation step.
+- Returns the token's __owner__ and its __scopes__. It deliberately returns no roles: permissions are resolved live from the owner's user record by the middleware, so a token never carries a snapshot of authority. Demoting or disabling the owner immediately weakens or kills every token they hold, with no revocation step.
 - Wired by the stateless bearer middleware in `src/app.ts`: a valid token sets `req.userContext` (no session is created) and flags the request so CSRF is skipped — bearer auth is not cookie-based.
 - Scopes ride on `req.userContext.viaToken`, which flows into every `WikiContext` the route handler builds, reaching both the ACL scope ceiling and the save path.
 
 ## Scope enforcement
 
-`ACLManager.checkPagePermissionWithContext` applies the token's scopes as a **hard ceiling before every tier**:
+`ACLManager.checkPagePermissionWithContext` applies the token's scopes as a __hard ceiling before every tier__:
 
 ```text
 scope gate  → deny if action ∉ token scopes   ← this provider's contribution
@@ -48,7 +48,7 @@ The ordering is load-bearing. Tier 1 overrides global policies and returns direc
 
 ## Coexistence with Authentik
 
-The bearer middleware tries **each registered bearer-capable provider in turn** and takes the first success. `agent-token` and `authentik-bearer` may both be enabled, either alone, or neither. Before #946 the middleware hardcoded `authentik-bearer` and would never have consulted a second provider.
+The bearer middleware tries __each registered bearer-capable provider in turn__ and takes the first success. `agent-token` and `authentik-bearer` may both be enabled, either alone, or neither. Before #946 the middleware hardcoded `authentik-bearer` and would never have consulted a second provider.
 
 ## See also
 

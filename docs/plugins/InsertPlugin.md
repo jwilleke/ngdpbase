@@ -10,12 +10,12 @@ code: src/plugins/InsertPlugin.ts
 
 Embed another page's content (or one section of it) into the current page at render time.
 
-**Version:** 1.0.0
-**Issue:** #665 (origin); #741 (`caption=`); #743 (source-page render identity + whole-page heading)
+__Version:__ 1.0.0
+__Issue:__ #665 (origin); #741 (`caption=`); #743 (source-page render identity + whole-page heading)
 
 ## Overview
 
-`InsertPlugin` is a render-time transclusion plugin. When a page is rendered, every `[{Insert ...}]` invocation loads the referenced page, optionally slices a section out of it, and inlines its markdown into the host page at that position. The inserted content runs through `RenderingManager.renderMarkdown` so other plugins (Image, MediaPlugin, etc.) inside it still evaluate — but it is rendered under the **source** page's name (not the host's), so identity variables like `[{$pagename}]` / `[{$title}]` resolve to the page the content came from (see [Render Path](#render-path); #743).
+`InsertPlugin` is a render-time transclusion plugin. When a page is rendered, every `[{Insert ...}]` invocation loads the referenced page, optionally slices a section out of it, and inlines its markdown into the host page at that position. The inserted content runs through `RenderingManager.renderMarkdown` so other plugins (Image, MediaPlugin, etc.) inside it still evaluate — but it is rendered under the __source__ page's name (not the host's), so identity variables like `[{$pagename}]` / `[{$title}]` resolve to the page the content came from (see [Render Path](#render-path); #743).
 
 The supported forms:
 
@@ -33,9 +33,9 @@ The `?section=N` index form mirrors the editor's section-edit URL (`/edit/Pagena
 
 Both section locators resolve through the same model:
 
-- A **section** is an ATX heading (`#`–`######`) plus everything down to — but not including — the next heading of the **same or higher level** (fewer/equal `#`s). Deeper subsections are therefore included in their parent's slice.
-- Section **indexing** (`?section=N`, 0-based) counts every heading of any level in document order. It matches the editor's `?section=N` URL: YAML frontmatter is excluded from numbering, and headings inside fenced code blocks (```` ``` ````/`~~~`) are not counted (`SectionUtils.extractSection` / `findHeadings`).
-- The heading-text locator (`#Heading`) is the first heading whose text matches case-insensitively after trimming. **Caveat:** the heading-name scan (`findSectionIndexByHeading`) does *not* skip code-fence or frontmatter headings, so on a page that has `#`-lines inside a code block the `#Heading` form and the `?section=N` form can resolve to different sections. Prefer `?section=N` when a page embeds fenced code containing `#` lines.
+- A __section__ is an ATX heading (`#`–`######`) plus everything down to — but not including — the next heading of the __same or higher level__ (fewer/equal `#`s). Deeper subsections are therefore included in their parent's slice.
+- Section __indexing__ (`?section=N`, 0-based) counts every heading of any level in document order. It matches the editor's `?section=N` URL: YAML frontmatter is excluded from numbering, and headings inside fenced code blocks (```` ``` ````/`~~~`) are not counted (`SectionUtils.extractSection` / `findHeadings`).
+- The heading-text locator (`#Heading`) is the first heading whose text matches case-insensitively after trimming. __Caveat:__ the heading-name scan (`findSectionIndexByHeading`) does *not* skip code-fence or frontmatter headings, so on a page that has `#`-lines inside a code block the `#Heading` form and the `?section=N` form can resolve to different sections. Prefer `?section=N` when a page embeds fenced code containing `#` lines.
 
 ## Parameters
 
@@ -43,7 +43,7 @@ Both section locators resolve through the same model:
 | --- | --- | --- | --- |
 | `page` | string | *(none)* | Page name for full-page insert |
 | `pagesection` | string | *(none)* | `Pagename#Heading` or `Pagename?section=N` for sectional insert; takes precedence over `page` |
-| `caption` | string | *(none)* | #741: override the imported leading heading's text (keeps its level). A suppression token — `none`, `off`, `false`, `no`, or empty — drops the imported heading entirely so only the body transcludes. Omit the param: a **section** insert keeps the section's own heading; a **whole-page** insert is prefixed with an `## <source page title>` heading (#743). |
+| `caption` | string | *(none)* | #741: override the imported leading heading's text (keeps its level). A suppression token — `none`, `off`, `false`, `no`, or empty — drops the imported heading entirely so only the body transcludes. Omit the param: a __section__ insert keeps the section's own heading; a __whole-page__ insert is prefixed with an `## <source page title>` heading (#743). |
 
 At least one of `page` or `pagesection` must be provided. An empty target renders nothing.
 
@@ -55,7 +55,7 @@ The current implementation is intentionally simplified:
 
 - Only the `private: true` frontmatter flag is honoured.
 - A page with `private: true` is readable by its `author` / `creator` username and any user with the `admin` role. Everyone else gets a placeholder.
-- Frontmatter `audience` rules and global policy evaluation are **NOT** consulted by Insert. Full ACL parity is a deliberate follow-up.
+- Frontmatter `audience` rules and global policy evaluation are __NOT__ consulted by Insert. Full ACL parity is a deliberate follow-up.
 
 When the viewer cannot read the target page, the plugin renders:
 
@@ -75,14 +75,14 @@ Other plugin syntax inside the inserted page passes through unchanged and evalua
 
 ## Render Path
 
-The inserted content is rendered with `renderingManager.renderMarkdown(content, sourcePageName, userContext)`. The **source page's** name is used for the rendering context so identity variables and pagename-relative context resolve against the page the content actually came from:
+The inserted content is rendered with `renderingManager.renderMarkdown(content, sourcePageName, userContext)`. The __source page's__ name is used for the rendering context so identity variables and pagename-relative context resolve against the page the content actually came from:
 
-- `[{$pagename}]` / `[{$title}]` in the inserted content resolve to the **source** page, so a transcluded heading reads exactly as it does on its own page (not the host's identity).
+- `[{$pagename}]` / `[{$title}]` in the inserted content resolve to the __source__ page, so a transcluded heading reads exactly as it does on its own page (not the host's identity).
 - Pagename-relative plugin context sees the source page.
 
 This was a fix (#743, follow-up to #741): rendering under the host page name made a transcluded `# [{$title}]` heading display the host page's title.
 
-For a **whole-page** insert (`[{Insert page='X'}]`) with no `caption=`, an `## <source page title>` heading (falling back to the page name) is prepended so the inserted block is identifiably the source page. Section inserts keep their own heading; `caption=` still overrides or suppresses it (see Parameters).
+For a __whole-page__ insert (`[{Insert page='X'}]`) with no `caption=`, an `## <source page title>` heading (falling back to the page name) is prepended so the inserted block is identifiably the source page. Section inserts keep their own heading; `caption=` still overrides or suppresses it (see Parameters).
 
 If `RenderingManager` is unavailable (degraded deployment), the plugin falls back to an escaped `<pre>` block of the raw markdown so the host page still renders cleanly with no HTML injection risk.
 

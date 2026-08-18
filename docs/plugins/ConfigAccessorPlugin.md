@@ -10,7 +10,7 @@ code: src/plugins/ConfigAccessorPlugin.ts
 
 The ConfigAccessorPlugin provides access to system configuration values including roles, features, manager settings, and any configuration property. This plugin is useful for displaying configuration information on wiki pages or embedding config values inline in text.
 
-**Version:** 2.2.0
+__Version:__ 2.2.0
 
 ## Usage
 
@@ -111,14 +111,14 @@ Shows all configuration properties for a specific feature.
 | `manager` | Manager name | *(none)* | Yes (if `type='manager'`) | Manager name |
 | `feature` | Feature name | *(none)* | Yes (if `type='feature'`) | Feature name |
 
-**Important:** You must specify either `key` or `type` parameter. The plugin will return an error if neither is provided.
+__Important:__ You must specify either `key` or `type` parameter. The plugin will return an error if neither is provided.
 
-**Note:** The `before` and `after` parameters only work when `valueonly='true'`. They are ignored in formatted display mode.
+__Note:__ The `before` and `after` parameters only work when `valueonly='true'`. They are ignored in formatted display mode.
 
-**Smart Default for `after`:**
+__Smart Default for `after`:__
 
-- **Single value** (no wildcard): `''` (empty string) - Perfect for inline use
-- **Multiple values** (wildcard): `'\n'` (newline) - One value per line by default
+- __Single value__ (no wildcard): `''` (empty string) - Perfect for inline use
+- __Multiple values__ (wildcard): `'\n'` (newline) - One value per line by default
 
 ## Examples
 
@@ -128,9 +128,9 @@ Shows all configuration properties for a specific feature.
 The server is running on port [{ConfigAccessor key='ngdpbase.server.port' valueonly='true'}].
 ```
 
-**Output:** The server is running on port 3000.
+__Output:__ The server is running on port 3000.
 
-**Note:** Single values have no trailing newline by default (smart default), perfect for inline use. No need to specify `after=''`!
+__Note:__ Single values have no trailing newline by default (smart default), perfect for inline use. No need to specify `after=''`!
 
 ### Example 2: Display Single Config Value (Formatted)
 
@@ -138,10 +138,10 @@ The server is running on port [{ConfigAccessor key='ngdpbase.server.port' valueo
 [{ConfigAccessor key='ngdpbase.server.port'}]
 ```
 
-**Output:** Formatted card showing:
+__Output:__ Formatted card showing:
 
-- **Key:** `ngdpbase.server.port`
-- **Value:** `3000`
+- __Key:__ `ngdpbase.server.port`
+- __Value:__ `3000`
 
 ### Example 3: Get All Server Config (Inline, Default Newlines)
 
@@ -149,14 +149,14 @@ The server is running on port [{ConfigAccessor key='ngdpbase.server.port' valueo
 [{ConfigAccessor key='ngdpbase.server.*' valueonly='true'}]
 ```
 
-**Output:** Plain text, one value per line:
+__Output:__ Plain text, one value per line:
 
 ``` text
 3000
 localhost
 ```
 
-**Note:** By default, each value ends with `\n` (newline).
+__Note:__ By default, each value ends with `\n` (newline).
 
 ### Example 4: Display All Server Config (Formatted)
 
@@ -164,7 +164,7 @@ localhost
 [{ConfigAccessor key='ngdpbase.server.*'}]
 ```
 
-**Output:** Formatted table showing all keys matching `ngdpbase.server.*`:
+__Output:__ Formatted table showing all keys matching `ngdpbase.server.*`:
 
 - `ngdpbase.server.port` → `3000`
 - `ngdpbase.server.host` → `localhost`
@@ -175,7 +175,7 @@ localhost
 Welcome to [{ConfigAccessor key='ngdpbase.application-name' valueonly='true'}]!
 ```
 
-**Output:** Welcome to ngdpbase!
+__Output:__ Welcome to ngdpbase!
 
 ### Example 6: Display All Roles
 
@@ -183,7 +183,7 @@ Welcome to [{ConfigAccessor key='ngdpbase.application-name' valueonly='true'}]!
 [{ConfigAccessor type='roles'}]
 ```
 
-**Output:** Formatted table with all available roles:
+__Output:__ Formatted table with all available roles:
 
 - Role name (code format)
 - Display name (colored)
@@ -199,7 +199,7 @@ Includes roles like Admin, Editor, Contributor, Reader, and Anonymous.
 [{ConfigAccessor type='permissions'}]
 ```
 
-**Output:** Formatted permissions matrix table showing:
+__Output:__ Formatted permissions matrix table showing:
 
 - Permission list (e.g., `page:read`, `admin:system`)
 - Permission descriptions
@@ -215,7 +215,7 @@ This creates the same Security Policy Summary table as seen on the `/admin/roles
 [{ConfigAccessor type='user-summary'}]
 ```
 
-**Output:** Formatted card showing:
+__Output:__ Formatted card showing:
 
 - User information (username, display name, email)
 - All roles assigned to the current user with descriptions and icons
@@ -225,7 +225,7 @@ This creates the same Security Policy Summary table as seen on the `/admin/roles
   - Which role(s) grant that permission
 - Footer with totals (roles and permissions)
 
-**Note:** If the user is not logged in, displays a friendly message: "Not logged in. Please login to see your user summary."
+__Note:__ If the user is not logged in, displays a friendly message: "Not logged in. Please login to see your user summary."
 
 ### Example 7: Display Manager Configuration
 
@@ -233,7 +233,7 @@ This creates the same Security Policy Summary table as seen on the `/admin/roles
 [{ConfigAccessor type='manager' manager='UserManager'}]
 ```
 
-**Output:** Formatted table with all UserManager configuration properties such as:
+__Output:__ Formatted table with all UserManager configuration properties such as:
 
 - Session timeout
 - Password policies
@@ -246,7 +246,7 @@ This creates the same Security Policy Summary table as seen on the `/admin/roles
 [{ConfigAccessor type='feature' feature='search'}]
 ```
 
-**Output:** Formatted table with search feature configuration:
+__Output:__ Formatted table with search feature configuration:
 
 - Search index location
 - Indexing options
@@ -259,7 +259,7 @@ This creates the same Security Policy Summary table as seen on the `/admin/roles
 [{ConfigAccessor key='ngdpbase.roles.definitions.*.name' valueonly='true'}]
 ```
 
-**Output:** Plain text, one role name per line:
+__Output:__ Plain text, one role name per line:
 
 ``` text
 admin
@@ -277,7 +277,7 @@ anonymous
 [{ConfigAccessor key='ngdpbase.server.*' valueonly='true' before='* ' after='\n'}]
 ```
 
-**Output:**
+__Output:__
 
 ```text
 ## Server Configuration
@@ -292,9 +292,9 @@ anonymous
 Available roles: [{ConfigAccessor key='ngdpbase.roles.definitions.*.name' valueonly='true' before='' after=', '}]
 ```
 
-**Output:** Available roles: admin, editor, contributor, reader, anonymous,
+__Output:__ Available roles: admin, editor, contributor, reader, anonymous,
 
-**Note:** You may want to trim the trailing comma manually or use other formatting.
+__Note:__ You may want to trim the trailing comma manually or use other formatting.
 
 ### Example 12: Custom Formatting with HTML
 
@@ -304,7 +304,7 @@ Available roles: [{ConfigAccessor key='ngdpbase.roles.definitions.*.name' valueo
 </ul>
 ```
 
-**Output:**
+__Output:__
 
 ```html
 <ul>
@@ -355,20 +355,20 @@ When `valueonly='true'` is specified:
 
 ### Behavior
 
-- Returns **plain text only** (no HTML formatting)
+- Returns __plain text only__ (no HTML formatting)
 - Single value: returns the value with optional `before` and `after` strings
 - Multiple values (wildcard): returns each value with `before` and `after` strings
 - Objects: returns JSON string representation
 - Empty/not found: returns empty string
 - Default `before`: `''` (empty string)
-- Default `after`: **Smart default** - `''` (empty) for single values, `'\n'` (newline) for multiple values
+- Default `after`: __Smart default__ - `''` (empty) for single values, `'\n'` (newline) for multiple values
 
 ### Smart Defaults
 
 The `after` parameter has intelligent defaults based on usage:
 
-- **Single value** (e.g., `key='ngdpbase.server.port'`): Default `after=''` - No trailing newline, perfect for inline use
-- **Multiple values** (e.g., `key='ngdpbase.server.*'`): Default `after='\n'` - One value per line, perfect for lists
+- __Single value__ (e.g., `key='ngdpbase.server.port'`): Default `after=''` - No trailing newline, perfect for inline use
+- __Multiple values__ (e.g., `key='ngdpbase.server.*'`): Default `after='\n'` - One value per line, perfect for lists
 
 This means you don't need to specify `after=''` for inline single values - it just works!
 
@@ -490,11 +490,11 @@ When displaying roles (`type='roles'`), each role includes:
 
 Built-in roles defined in configuration:
 
-1. **admin** - Full system access to all features
-2. **editor** - Can edit and manage content
-3. **contributor** - Can create and edit own content
-4. **reader** - Read-only access to content
-5. **anonymous** - Unauthenticated user access
+1. __admin__ - Full system access to all features
+2. __editor__ - Can edit and manage content
+3. __contributor__ - Can create and edit own content
+4. __reader__ - Read-only access to content
+5. __anonymous__ - Unauthenticated user access
 
 ## Output Format
 
@@ -677,7 +677,7 @@ This page shows your current roles and permissions in the system.
 If you believe you need additional permissions, please contact your system administrator.
 ```
 
-**Great for:**
+__Great for:__
 
 - User profile pages
 - Personal dashboard
@@ -742,8 +742,8 @@ All database settings:
 
 ## Version History
 
-- **2.7.0** (2025-10-20) - User Summary release
-  - **NEW:** Added `type='user-summary'` to display current user's information
+- __2.7.0__ (2025-10-20) - User Summary release
+  - __NEW:__ Added `type='user-summary'` to display current user's information
   - Shows user's username, display name, and email
   - Displays all roles assigned to the user with descriptions
   - Shows all permissions granted by those roles
@@ -751,37 +751,37 @@ All database settings:
   - Friendly message for anonymous/not logged in users
   - Perfect for user profile pages and access transparency
 
-- **2.6.0** (2025-10-20) - Security Policy Summary release
-  - **NEW:** Added `type='permissions'` to display Security Policy Summary
-  - **NEW:** Added `type='policy-summary'` as alias for permissions
+- __2.6.0__ (2025-10-20) - Security Policy Summary release
+  - __NEW:__ Added `type='permissions'` to display Security Policy Summary
+  - __NEW:__ Added `type='policy-summary'` as alias for permissions
   - Displays permissions matrix showing which roles have which permissions
   - Shows checkmarks (✓) for granted permissions, X marks (✗) for denied
   - Includes permission descriptions and statistics
   - Perfect for documentation and transparency of security policies
 
-- **2.2.0** (2025-10-17) - Smart defaults release
-  - **IMPROVED:** Smart default for `after` parameter based on usage
+- __2.2.0__ (2025-10-17) - Smart defaults release
+  - __IMPROVED:__ Smart default for `after` parameter based on usage
     - Single values: default `after=''` (no trailing newline) for perfect inline use
     - Multiple values (wildcard): default `after='\n'` (newline) for list formatting
   - No longer need to specify `after=''` for inline single values!
   - Better user experience with intelligent defaults
 
-- **2.1.0** (2025-10-17) - Formatting enhancement release
+- __2.1.0__ (2025-10-17) - Formatting enhancement release
   - Added `before` and `after` parameters for flexible output formatting
   - Fixed manager/feature config error handling (better null checking)
   - Default `after` value is now `'\n'` (previously joined without control)
   - Enhanced valueonly mode with customizable delimiters
   - Support for bulleted lists, HTML lists, and custom formatting
 
-- **2.0.0** (2025-10-17) - Major enhancement release
-  - **BREAKING:** Now requires either `key` or `type` parameter (no default behavior)
+- __2.0.0__ (2025-10-17) - Major enhancement release
+  - __BREAKING:__ Now requires either `key` or `type` parameter (no default behavior)
   - Added `valueonly` parameter for inline value embedding
   - Added wildcard support for `key` parameter (e.g., `ngdpbase.server.*`)
   - Multiple value display when wildcards match multiple keys
   - Plain text output mode for easy inline usage
   - Enhanced error handling for edge cases
 
-- **1.0.0** (2025-10-17) - Initial release
+- __1.0.0__ (2025-10-17) - Initial release
   - Roles display
   - Configuration property access
   - Manager configuration display

@@ -12,7 +12,7 @@ Related documents:
 
 ## High-Level Overview
 
-ngdpbase uses a **central WikiEngine** that orchestrates 30 specialized managers, each responsible for specific domains.
+ngdpbase uses a __central WikiEngine__ that orchestrates 30 specialized managers, each responsible for specific domains.
 
 ### Key Componets
 
@@ -74,30 +74,30 @@ Three-phase extraction for parsing JSPWiki syntax:
 
 ### Storage
 
-- **File-based** (Markdown files with YAML frontmatter)
-- **Delta storage** for versions (fast-diff + pako compression)
-- **No database required** - fully file-based architecture
+- __File-based__ (Markdown files with YAML frontmatter)
+- __Delta storage__ for versions (fast-diff + pako compression)
+- __No database required__ - fully file-based architecture
 - Supports local-first deployment with cloud-deployment option
 
 ### Content Processing
 
-- **Showdown** for Markdown parsing
-- **Custom JSPWiki handlers** for compatibility
-- **WikiDocument DOM** (linkedom-based) for content manipulation
-- **Delta-based versioning** (80-95% space savings)
+- __Showdown__ for Markdown parsing
+- __Custom JSPWiki handlers__ for compatibility
+- __WikiDocument DOM__ (linkedom-based) for content manipulation
+- __Delta-based versioning__ (80-95% space savings)
 
 ### Testing & Quality
 
-- **Vitest** (4260+ tests across 162 files, >80% coverage target)
-- **Co-located** `__tests__/` pattern
-- **Mocked file operations** (no real I/O in tests)
-- **JSDoc** (95% coverage requirement)
+- __Vitest__ (4260+ tests across 162 files, >80% coverage target)
+- __Co-located__ `__tests__/` pattern
+- __Mocked file operations__ (no real I/O in tests)
+- __JSDoc__ (95% coverage requirement)
 
 ### Development Standards
 
-- **TypeScript** (strict mode, native ESM)
-- **Semantic Versioning** for releases
-- **markdownlint, .editorconfig, Prettier** for code formatting
+- __TypeScript__ (strict mode, native ESM)
+- __Semantic Versioning__ for releases
+- __markdownlint, .editorconfig, Prettier__ for code formatting
 
 ## Project Structure
 

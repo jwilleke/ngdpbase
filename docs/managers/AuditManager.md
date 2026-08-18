@@ -10,17 +10,17 @@ code: src/managers/AuditManager.ts
 
 ## Overview
 
-The `AuditManager` is responsible for audit trail logging and compliance monitoring in ngdpbase. It provides a centralized system for tracking security events, access decisions, policy evaluations, and user actions. The AuditManager uses a **provider pattern** to support multiple audit storage backends, making it flexible for different deployment scenarios from single-instance development to enterprise cloud deployments.
+The `AuditManager` is responsible for audit trail logging and compliance monitoring in ngdpbase. It provides a centralized system for tracking security events, access decisions, policy evaluations, and user actions. The AuditManager uses a __provider pattern__ to support multiple audit storage backends, making it flexible for different deployment scenarios from single-instance development to enterprise cloud deployments.
 
-**Key Features:**
+__Key Features:__
 
-- **Pluggable Storage Backends:** File-based, database, cloud logging services
-- **Comprehensive Event Tracking:** Security events, access decisions, policy evaluations
-- **Search and Export:** Query audit logs with filters, export to JSON/CSV
-- **Retention Management:** Automatic cleanup based on retention policies
-- **Health Monitoring:** Provider health checks with automatic failover
-- **Severity Levels:** Low, medium, high, critical event classification
-- **Compliance Ready:** Structured logging suitable for SOC2, GDPR, HIPAA
+- __Pluggable Storage Backends:__ File-based, database, cloud logging services
+- __Comprehensive Event Tracking:__ Security events, access decisions, policy evaluations
+- __Search and Export:__ Query audit logs with filters, export to JSON/CSV
+- __Retention Management:__ Automatic cleanup based on retention policies
+- __Health Monitoring:__ Provider health checks with automatic failover
+- __Severity Levels:__ Low, medium, high, critical event classification
+- __Compliance Ready:__ Structured logging suitable for SOC2, GDPR, HIPAA
 
 ## Architecture
 
@@ -64,17 +64,17 @@ The `AuditManager` is responsible for audit trail logging and compliance monitor
 
 The AuditManager implements a provider pattern that separates the audit management logic from the storage implementation:
 
-1. **BaseAuditProvider:** Abstract interface defining the contract for all audit providers
-2. **Concrete Providers:** Implementations for specific storage backends
-3. **Provider Discovery:** Dynamic loading based on configuration
-4. **Health Monitoring:** Automatic failover to NullAuditProvider if primary provider fails
-5. **Consistent API:** All providers implement the same interface
+1. __BaseAuditProvider:__ Abstract interface defining the contract for all audit providers
+2. __Concrete Providers:__ Implementations for specific storage backends
+3. __Provider Discovery:__ Dynamic loading based on configuration
+4. __Health Monitoring:__ Automatic failover to NullAuditProvider if primary provider fails
+5. __Consistent API:__ All providers implement the same interface
 
 ## Configuration
 
 ### Core Audit Settings
 
-All configuration keys use **lowercase** format per Issue #102 refactoring.
+All configuration keys use __lowercase__ format per Issue #102 refactoring.
 
 ```json
 {
@@ -151,10 +151,10 @@ All configuration keys use **lowercase** format per Issue #102 refactoring.
 
 | Provider | Status | Use Case | Features |
 | ----- | ----- | ----- | ----- |
-| **FileAuditProvider** | ✅ Production | Single-instance, development | Local files, rotation, search |
-| **NullAuditProvider** | ✅ Production | Disabled auditing, testing | No-op operations |
-| **DatabaseAuditProvider** | 🚧 Planned | Enterprise, high-volume | SQL/NoSQL, scalable, queryable |
-| **CloudAuditProvider** | 🚧 Planned | Cloud deployments | CloudWatch, Azure, GCP |
+| __FileAuditProvider__ | ✅ Production | Single-instance, development | Local files, rotation, search |
+| __NullAuditProvider__ | ✅ Production | Disabled auditing, testing | No-op operations |
+| __DatabaseAuditProvider__ | 🚧 Planned | Enterprise, high-volume | SQL/NoSQL, scalable, queryable |
+| __CloudAuditProvider__ | 🚧 Planned | Cloud deployments | CloudWatch, Azure, GCP |
 
 ### Provider Selection Logic
 
@@ -189,7 +189,7 @@ if (!await provider.isHealthy()) {
 
 To create a custom audit provider:
 
-1. **Extend BaseAuditProvider:**
+1. __Extend BaseAuditProvider:__
 
 ```javascript
 const BaseAuditProvider = require('./BaseAuditProvider');
@@ -550,11 +550,11 @@ Initialize the AuditManager with provider configuration.
 await auditManager.initialize(config);
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `config` (Object): Configuration object (optional, uses ConfigurationManager if not provided)
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
 #### logAuditEvent(auditEvent)
 
@@ -571,11 +571,11 @@ const eventId = await auditManager.logAuditEvent({
 });
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `auditEvent` (Object): Audit event data (see Event Structure)
 
-**Returns:** `Promise<string>` - Event ID
+__Returns:__ `Promise<string>` - Event ID
 
 #### searchAuditLogs(filters, options)
 
@@ -588,7 +588,7 @@ const results = await auditManager.searchAuditLogs(
 );
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `filters` (Object): Search filters
   - `user` (string): Filter by username
@@ -605,7 +605,7 @@ const results = await auditManager.searchAuditLogs(
   - `sortBy` (string): Sort field (default: 'timestamp')
   - `sortOrder` (string): Sort order 'asc' or 'desc' (default: 'desc')
 
-**Returns:** `Promise<Object>`
+__Returns:__ `Promise<Object>`
 
 ```javascript
 {
@@ -625,11 +625,11 @@ Get aggregated statistics for audit logs.
 const stats = await auditManager.getAuditStats({ severity: 'high' });
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `filters` (Object): Optional filters (same as searchAuditLogs)
 
-**Returns:** `Promise<Object>`
+__Returns:__ `Promise<Object>`
 
 ```javascript
 {
@@ -654,12 +654,12 @@ const csvData = await auditManager.exportAuditLogs(
 );
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `filters` (Object): Export filters (same as searchAuditLogs)
 - `format` (string): Export format ('json' or 'csv', default: 'json')
 
-**Returns:** `Promise<string>` - Exported data as string
+__Returns:__ `Promise<string>` - Exported data as string
 
 #### flush()
 
@@ -669,7 +669,7 @@ Flush pending audit events to storage immediately.
 await auditManager.flush();
 ```
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
 #### isHealthy()
 
@@ -679,7 +679,7 @@ Check if the audit provider is healthy and operational.
 const healthy = await auditManager.isHealthy();
 ```
 
-**Returns:** `Promise<boolean>`
+__Returns:__ `Promise<boolean>`
 
 #### getProviderInfo()
 
@@ -689,7 +689,7 @@ Get information about the current audit provider.
 const info = auditManager.getProviderInfo();
 ```
 
-**Returns:** `Object`
+__Returns:__ `Object`
 
 ```javascript
 {
@@ -708,7 +708,7 @@ Close the audit manager and cleanup resources.
 await auditManager.close();
 ```
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
 ## Integration with Other Managers
 
@@ -830,13 +830,13 @@ class AttachmentManager {
 
 ### 1. Event Granularity
 
-**✅ Do:**
+__✅ Do:__
 
 - Log security-relevant events (authentication, authorization, access)
 - Log administrative actions (user creation, config changes)
 - Log data modifications (create, update, delete)
 
-**❌ Don't:**
+__❌ Don't:__
 
 - Log every single page view in production (can overwhelm storage)
 - Log sensitive data (passwords, tokens, personal info)
@@ -860,7 +860,7 @@ severity: 'low'       // Page views, successful authentication
 
 ### 3. Context and Metadata
 
-**Good Event:**
+__Good Event:__
 
 ```javascript
 {
@@ -885,7 +885,7 @@ severity: 'low'       // Page views, successful authentication
 }
 ```
 
-**Poor Event:**
+__Poor Event:__
 
 ```javascript
 {
@@ -965,12 +965,12 @@ if (!await auditManager.isHealthy()) {
 
 #### 1. Audit Events Not Being Logged
 
-**Symptoms:**
+__Symptoms:__
 
 - No entries in audit log file
 - Search returns empty results
 
-**Diagnosis:**
+__Diagnosis:__
 
 ```javascript
 // Check if auditing is enabled
@@ -988,7 +988,7 @@ const info = auditManager.getProviderInfo();
 console.log('Provider:', info.name);
 ```
 
-**Solutions:**
+__Solutions:__
 
 - Ensure `ngdpbase.audit.enabled` is `true`
 - Check log directory permissions for FileAuditProvider
@@ -997,15 +997,15 @@ console.log('Provider:', info.name);
 
 #### 2. FileAuditProvider Health Check Failures
 
-**Symptoms:**
+__Symptoms:__
 
 ```text
 [FileAuditProvider] Health check failed: ENOENT: no such file or directory
 ```
 
-**Cause:** Health check tries to delete test file before verifying it exists
+__Cause:__ Health check tries to delete test file before verifying it exists
 
-**Solution:** This is a minor issue that doesn't affect functionality. The provider falls back gracefully. Can be fixed by updating [isHealthy()](../src/providers/FileAuditProvider.js:408):
+__Solution:__ This is a minor issue that doesn't affect functionality. The provider falls back gracefully. Can be fixed by updating [isHealthy()](../src/providers/FileAuditProvider.js:408):
 
 ```javascript
 async isHealthy() {
@@ -1025,14 +1025,14 @@ async isHealthy() {
 
 #### 3. High Memory Usage
 
-**Symptoms:**
+__Symptoms:__
 
 - Node process memory grows continuously
 - System becomes slow over time
 
-**Cause:** Large audit queue or too many events in memory
+__Cause:__ Large audit queue or too many events in memory
 
-**Solutions:**
+__Solutions:__
 
 ```json
 {
@@ -1044,14 +1044,14 @@ async isHealthy() {
 
 #### 4. Search Performance Issues
 
-**Symptoms:**
+__Symptoms:__
 
 - Slow search queries
 - High CPU during search
 
-**Cause:** FileAuditProvider loads recent events into memory for search
+__Cause:__ FileAuditProvider loads recent events into memory for search
 
-**Solutions:**
+__Solutions:__
 
 - Reduce in-memory log count (FileAuditProvider keeps last 1000 events)
 - Use DatabaseAuditProvider for high-volume scenarios (when available)
@@ -1067,12 +1067,12 @@ const results = await auditManager.searchAuditLogs(
 
 #### 5. Disk Space Issues (FileAuditProvider)
 
-**Symptoms:**
+__Symptoms:__
 
 - Disk full errors
 - Application stops logging
 
-**Solutions:**
+__Solutions:__
 
 ```json
 {
@@ -1126,7 +1126,7 @@ This will output detailed information about audit operations:
 
 ### Migration Steps
 
-1. **Update Configuration Keys:**
+1. __Update Configuration Keys:__
 
    Old format:
 
@@ -1150,7 +1150,7 @@ This will output detailed information about audit operations:
    }
    ```
 
-2. **Update Code References:**
+2. __Update Code References:__
 
    Old code:
 
@@ -1164,7 +1164,7 @@ This will output detailed information about audit operations:
    const enabled = config.get('ngdpbase.audit.enabled');
    ```
 
-3. **Test Migration:**
+3. __Test Migration:__
 
    ```bash
    # Backup old logs
@@ -1181,44 +1181,44 @@ This will output detailed information about audit operations:
 
 ### Planned Features
 
-1. **DatabaseAuditProvider Implementation**
+1. __DatabaseAuditProvider Implementation__
    - PostgreSQL, MySQL, MongoDB support
    - Efficient indexing for fast queries
    - Connection pooling
    - Automatic schema migrations
 
-2. **CloudAuditProvider Implementation**
+2. __CloudAuditProvider Implementation__
    - AWS CloudWatch Logs integration
    - Azure Monitor Logs integration
    - Google Cloud Logging integration
    - Automatic credential detection (IAM roles, service principals)
    - Batch uploads for cost optimization
 
-3. **Advanced Search Capabilities**
+3. __Advanced Search Capabilities__
    - Full-text search across all event fields
    - Complex query language (AND, OR, NOT operators)
    - Saved search queries
    - Search result highlighting
 
-4. **Alerting and Notifications**
+4. __Alerting and Notifications__
    - Real-time alerts for critical events
    - Email/Slack/webhook notifications
    - Configurable alert rules
    - Alert aggregation and throttling
 
-5. **Audit Dashboard**
+5. __Audit Dashboard__
    - Web-based audit log viewer
    - Real-time event streaming
    - Visual analytics and charts
    - Export and reporting tools
 
-6. **Compliance Reports**
+6. __Compliance Reports__
    - Pre-built compliance reports (SOC2, GDPR, HIPAA)
    - Automated report generation
    - PDF/HTML export formats
    - Scheduled report delivery
 
-7. **Event Correlation**
+7. __Event Correlation__
    - Link related events (session tracking)
    - User behavior analytics
    - Anomaly detection
@@ -1235,7 +1235,7 @@ This will output detailed information about audit operations:
 | exportAuditLogs | 100 | 500ms | 150MB | Limited to 10,000 events |
 | getAuditStats | 500 | 10ms | 120MB | Aggregation on 10,000 events |
 
-**Recommendations:**
+__Recommendations:__
 
 - Single instance: up to 100,000 events/day
 - Multi-instance: Use DatabaseAuditProvider instead
@@ -1248,7 +1248,7 @@ This will output detailed information about audit operations:
 | searchAuditLogs | 5,000 | 20ms | Indexed queries |
 | exportAuditLogs | 1,000 | 200ms | Streaming export |
 
-**Recommendations:**
+__Recommendations:__
 
 - Enterprise: millions of events/day
 - Requires proper database tuning and indexing
@@ -1257,33 +1257,33 @@ This will output detailed information about audit operations:
 
 ### Data Protection
 
-1. **Encryption at Rest:**
+1. __Encryption at Rest:__
    - FileAuditProvider: Use OS-level encryption (FileVault, BitLocker, LUKS)
    - DatabaseAuditProvider: Use database encryption (TDE, encrypted columns)
    - CloudAuditProvider: Enable cloud service encryption
 
-2. **Encryption in Transit:**
+2. __Encryption in Transit:__
    - DatabaseAuditProvider: Use SSL/TLS connections
    - CloudAuditProvider: HTTPS APIs only
 
-3. **Access Control:**
+3. __Access Control:__
    - Restrict log file permissions (0600 or 0640)
    - Use database user with minimal privileges
    - Use IAM roles for cloud services
 
 ### Audit Log Integrity
 
-1. **Tamper Detection:**
+1. __Tamper Detection:__
    - Consider implementing log signing (HMAC)
    - Use write-once storage for compliance
    - Regular integrity checks
 
-2. **Separation of Duties:**
+2. __Separation of Duties:__
    - Audit logs should be inaccessible to audited users
    - Separate audit admin role from system admin
    - Forward logs to external system (SIEM)
 
-3. **Retention and Deletion:**
+3. __Retention and Deletion:__
    - Follow legal/compliance requirements
    - Implement secure deletion (overwrite, not just delete)
    - Document retention policies

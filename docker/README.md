@@ -30,19 +30,19 @@ open http://localhost:3000
 
 ## Files in This Directory
 
-- **`Dockerfile`** - Container image definition
-- **`docker-compose.yml`** - Container orchestration configuration
-- **`.dockerignore`** - Files to exclude from Docker build
-- **`.env.example`** - Example environment variables configuration
-- **`docker-setup.sh`** - Automated setup script
-- **`deploy-remote.sh`** - Remote deployment script
-- **`DOCKER.md`** - Comprehensive Docker documentation
-- **`DEPLOYMENT.md`** - Production deployment guide
+- __`Dockerfile`__ - Container image definition
+- __`docker-compose.yml`__ - Container orchestration configuration
+- __`.dockerignore`__ - Files to exclude from Docker build
+- __`.env.example`__ - Example environment variables configuration
+- __`docker-setup.sh`__ - Automated setup script
+- __`deploy-remote.sh`__ - Remote deployment script
+- __`DOCKER.md`__ - Comprehensive Docker documentation
+- __`DEPLOYMENT.md`__ - Production deployment guide
 
 ## Documentation
 
-- [**DOCKER.md**](DOCKER.md) - Complete Docker usage guide
-- [**DEPLOYMENT.md**](DEPLOYMENT.md) - Production deployment instructions
+- [__DOCKER.md__](DOCKER.md) - Complete Docker usage guide
+- [__DEPLOYMENT.md__](DEPLOYMENT.md) - Production deployment instructions
 
 ## Common Commands
 
@@ -133,7 +133,7 @@ GID=1000                 # Group ID for container
 
 ## Volumes
 
-All instance data is consolidated under a **single volume mount** (`../data:/app/data`):
+All instance data is consolidated under a __single volume mount__ (`../data:/app/data`):
 
 | Host Path | Container Path | Purpose |
 | ----------- | --------------- | --------- |
@@ -156,11 +156,11 @@ The `data/` directory contains:
 
 The Docker setup is fully integrated with ngdpbase's ConfigurationManager:
 
-- **Configuration loading** (two-tier merge):
+- __Configuration loading__ (two-tier merge):
   1. `config/app-default-config.json` - Base defaults (read-only, in image)
   2. `data/config/app-custom-config.json` - Instance overrides (or INSTANCE_CONFIG_FILE)
 
-- **Directory paths** in ConfigurationManager (all under `./data/`):
+- __Directory paths__ in ConfigurationManager (all under `./data/`):
   - `ngdpbase.page.provider.filesystem.storagedir` → `./data/pages`
   - `ngdpbase.user.provider.storagedir` → `./data/users`
   - `ngdpbase.attachment.provider.basic.storagedir` → `./data/attachments`
@@ -168,7 +168,7 @@ The Docker setup is fully integrated with ngdpbase's ConfigurationManager:
   - `ngdpbase.search.provider.lunr.indexdir` → `./data/search-index`
   - `ngdpbase.backup.directory` → `./data/backups`
 
-- **Server configuration**:
+- __Server configuration__:
   - `ngdpbase.server.host` → `0.0.0.0` (for Docker)
   - `ngdpbase.server.port` → `3000` (internal)
 

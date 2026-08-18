@@ -22,8 +22,8 @@ has been linked to but has never been created. Results are rendered as create li
 (`/edit/PageName`) styled like inline red links, so clicking one takes you directly to
 the page creation editor.
 
-**Source:** `plugins/UndefinedPagesPlugin.ts`
-**Shared utilities:** `src/utils/pluginFormatters.ts` (see [#238 Code Consolidation](https://github.com/jwilleke/ngdpbase/issues/238))
+__Source:__ `plugins/UndefinedPagesPlugin.ts`
+__Shared utilities:__ `src/utils/pluginFormatters.ts` (see [#238 Code Consolidation](https://github.com/jwilleke/ngdpbase/issues/238))
 
 ## Plugin Metadata
 
@@ -137,7 +137,7 @@ The count always reflects the full set — `max`, `pageSize`, and `showReferring
 [{UndefinedPagesPlugin format='table'}]
 ```
 
-Output columns: **Undefined Page** (red-link create link) | **Referenced By** (integer count).
+Output columns: __Undefined Page__ (red-link create link) | __Referenced By__ (integer count).
 
 ```html
 <table class="plugin-table sortable" data-sort-column="0" data-sort-direction="asc">
@@ -253,7 +253,7 @@ Each `<li>` contains the red create-link followed by a nested `<ul class="referr
 [{UndefinedPagesPlugin format='table' showReferring='true'}]
 ```
 
-The **Referenced By** column shows comma-separated `<a class="wikipage">` links instead of an integer count. Pages with no referrers still show `0`.
+The __Referenced By__ column shows comma-separated `<a class="wikipage">` links instead of an integer count. Pages with no referrers still show `0`.
 
 ```html
 <table class="plugin-table sortable" data-sort-column="0" data-sort-direction="asc">
@@ -281,7 +281,7 @@ The **Referenced By** column shows comma-separated `<a class="wikipage">` links 
 </table>
 ```
 
-Note: the `data-sort` attribute on each **Referenced By** cell holds the raw referrer count so that `tableSort.js` sorts numerically, not lexicographically.
+Note: the `data-sort` attribute on each __Referenced By__ cell holds the raw referrer count so that `tableSort.js` sorts numerically, not lexicographically.
 
 ---
 
@@ -381,7 +381,7 @@ Same as Example 1 but items appear in Z → A order:
 [{UndefinedPagesPlugin pageSize='20'}]
 ```
 
-Displays the first 20 results with **Prev / Next** navigation links. When a user clicks **Next**, the browser requests the same wiki page with `?page=2`, and the plugin renders the next 20 items automatically.
+Displays the first 20 results with __Prev / Next__ navigation links. When a user clicks __Next__, the browser requests the same wiki page with `?page=2`, and the plugin renders the next 20 items automatically.
 
 Assuming 42 total undefined pages, the footer for page 1 renders as:
 
@@ -430,7 +430,7 @@ Static page 2 of the count-sorted paginated results (useful for embedding in tra
 
 The plugin reads `context.linkGraph` (provided by `RenderingManager`) — a
 `Record<string, string[]>` map of `targetPage → [referringPages]`. Every key
-in this map that is **not** present in `PageManager.getAllPages()` is an
+in this map that is __not__ present in `PageManager.getAllPages()` is an
 undefined page.
 
 ```typescript

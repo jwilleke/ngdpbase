@@ -15,10 +15,10 @@ Embeds a fully interactive event calendar into any wiki page.  Powered by
 [FullCalendar v6](https://fullcalendar.io/) (MIT licence) loaded from CDN — no
 build step or extra dependencies required on the wiki side.
 
-> **Requires the `calendar` add-on to be enabled.**  
+> __Requires the `calendar` add-on to be enabled.__  
 > See the [calendar add-on README](../../addons/calendar/README.md) for installation.
 
-**Source:** `addons/calendar/plugins/CalendarPlugin.js`
+__Source:__ `addons/calendar/plugins/CalendarPlugin.js`
 
 ## Plugin Metadata
 

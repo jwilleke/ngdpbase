@@ -14,8 +14,8 @@ The RecentChangesPlugin displays recent page changes in chronological order. It 
 
 This plugin is based on JSPWiki's RecentChangesPlugin and provides similar functionality with two display formats:
 
-- **Compact format**: Simple list with page titles and relative timestamps
-- **Full format**: Detailed table with page titles, modification dates, authors, and versions
+- __Compact format__: Simple list with page titles and relative timestamps
+- __Full format__: Detailed table with page titles, modification dates, authors, and versions
 
 ## Usage
 
@@ -73,8 +73,8 @@ Shows recent changes in compact format (same as default).
 #### `format` Parameter
 
 - Accepts two values: `compact` or `full`
-- **`compact`**: Minimalist list format with relative timestamps (e.g., "2 hours ago")
-- **`full`**: Table format with complete details including modification date/time, author, and version
+- __`compact`__: Minimalist list format with relative timestamps (e.g., "2 hours ago")
+- __`full`__: Table format with complete details including modification date/time, author, and version
 - Default is `compact` for quick scanning
 
 ## Display Formats
@@ -87,7 +87,7 @@ The compact format displays:
 - Relative timestamp (e.g., "just now", "2 hours ago", "3 days ago")
 - Total change count at the bottom
 
-**Example output:**
+__Example output:__
 
 ```text
 Recent Changes (Last 7 days)
@@ -109,7 +109,7 @@ The full format displays a table with:
 - Version number (badge)
 - Total page count at the bottom
 
-**Example output:**
+__Example output:__
 
 ```text
 Recent Changes (Last 7 days)
@@ -172,11 +172,11 @@ Shows recent changes from the last 3 days in compact format for quick scanning.
 
 ### How It Works
 
-1. **Page Discovery**: Queries the PageManager for all wiki pages
-2. **File Statistics**: Retrieves file modification timestamps using filesystem metadata
-3. **Date Filtering**: Filters pages modified within the specified `since` days
-4. **Sorting**: Sorts pages by modification time (newest first)
-5. **Formatting**: Renders output based on the selected format
+1. __Page Discovery__: Queries the PageManager for all wiki pages
+2. __File Statistics__: Retrieves file modification timestamps using filesystem metadata
+3. __Date Filtering__: Filters pages modified within the specified `since` days
+4. __Sorting__: Sorts pages by modification time (newest first)
+5. __Formatting__: Renders output based on the selected format
 
 ### Modification Time Detection
 
@@ -186,7 +186,7 @@ Shows recent changes from the last 3 days in compact format for quick scanning.
 
 ### Time Formatting
 
-**Compact Format** (relative times):
+__Compact Format__ (relative times):
 
 - "just now" - Less than 1 minute ago
 - "N minutes ago" - Less than 1 hour ago
@@ -194,7 +194,7 @@ Shows recent changes from the last 3 days in compact format for quick scanning.
 - "N days ago" - Less than 1 week ago
 - "MMM DD, YYYY" - For older dates
 
-**Full Format** (absolute times):
+__Full Format__ (absolute times):
 
 - "MMM DD, YYYY H:MM AM/PM" - Standard format with 12-hour time
 
@@ -207,10 +207,10 @@ If no pages have been modified within the specified time period:
 
 ## Performance Considerations
 
-- **File I/O**: Reads file statistics for all pages in the wiki
-- **Filtering**: Only pages within the time window are fully processed
-- **Memory**: Stores page information in memory during processing
-- **Scalability**: Performance depends on total number of pages
+- __File I/O__: Reads file statistics for all pages in the wiki
+- __Filtering__: Only pages within the time window are fully processed
+- __Memory__: Stores page information in memory during processing
+- __Scalability__: Performance depends on total number of pages
   - Small wikis (<100 pages): Instant
   - Medium wikis (100-1000 pages): Very fast (<1s)
   - Large wikis (>1000 pages): May take a few seconds
@@ -237,9 +237,9 @@ This plugin provides similar functionality to JSPWiki's RecentChangesPlugin:
 
 ### Differences from JSPWiki
 
-- **Time formatting**: ngdpbase uses relative time in compact format (e.g., "2 hours ago") for better UX
-- **Styling**: Uses Bootstrap classes for consistent appearance with ngdpbase's design
-- **Metadata**: Extracts author and version from page frontmatter metadata
+- __Time formatting__: ngdpbase uses relative time in compact format (e.g., "2 hours ago") for better UX
+- __Styling__: Uses Bootstrap classes for consistent appearance with ngdpbase's design
+- __Metadata__: Extracts author and version from page frontmatter metadata
 
 ## Use Cases
 
@@ -322,17 +322,17 @@ Displays: "Invalid 'format' parameter: must be 'full' or 'compact'"
 
 ### System Errors
 
-- **PageManager unavailable**: "PageManager not available"
-- **File read errors**: Pages that can't be read are skipped silently (logged to console)
-- **General errors**: "Error displaying recent changes: [error message]"
+- __PageManager unavailable__: "PageManager not available"
+- __File read errors__: Pages that can't be read are skipped silently (logged to console)
+- __General errors__: "Error displaying recent changes: [error message]"
 
 ## Troubleshooting
 
 ### No Pages Showing
 
-**Problem**: Plugin displays "No changes in the last N days"
+__Problem__: Plugin displays "No changes in the last N days"
 
-**Solutions**:
+__Solutions__:
 
 1. Increase the `since` parameter to look further back
 2. Verify pages exist in the wiki
@@ -341,9 +341,9 @@ Displays: "Invalid 'format' parameter: must be 'full' or 'compact'"
 
 ### Missing Metadata
 
-**Problem**: Author or version shows as "Unknown" or "1"
+__Problem__: Author or version shows as "Unknown" or "1"
 
-**Solutions**:
+__Solutions__:
 
 1. Ensure pages have proper frontmatter metadata
 2. Add `author` field to page frontmatter
@@ -351,9 +351,9 @@ Displays: "Invalid 'format' parameter: must be 'full' or 'compact'"
 
 ### Performance Issues
 
-**Problem**: Plugin takes too long to load
+__Problem__: Plugin takes too long to load
 
-**Solutions**:
+__Solutions__:
 
 1. Reduce the `since` parameter value
 2. Use compact format instead of full format
@@ -368,7 +368,7 @@ Displays: "Invalid 'format' parameter: must be 'full' or 'compact'"
 
 ## Version History
 
-- **1.0.0** (2025-01-20) - Initial release
+- __1.0.0__ (2025-01-20) - Initial release
   - Basic functionality with date filtering
   - Compact and full display formats
   - Relative time formatting for compact format

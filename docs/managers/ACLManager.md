@@ -8,22 +8,22 @@ code: src/managers/ACLManager.ts
 
 # ACLManager
 
-**Module:** `src/managers/ACLManager.ts`
-**Extends:** [BaseManager](BaseManager.md)
-**Complete Guide:** [ACLManager-Complete-Guide.md](ACLManager-Complete-Guide.md)
+__Module:__ `src/managers/ACLManager.ts`
+__Extends:__ [BaseManager](BaseManager.md)
+__Complete Guide:__ [ACLManager-Complete-Guide.md](ACLManager-Complete-Guide.md)
 
 ---
 
 ## Overview
 
-ACLManager runs the per-page access-control evaluator. Every page action (`view` / `edit` / `delete` / `rename` / `upload`) flows through one of three public entry points and is decided by a six-step tier ladder. The evaluator is the **single source of truth** for ACL decisions (the EPIC #714 unification, complete v3.37.0); route handlers and other managers consume it via the public methods below, not by re-implementing private-page or author-lock checks of their own.
+ACLManager runs the per-page access-control evaluator. Every page action (`view` / `edit` / `delete` / `rename` / `upload`) flows through one of three public entry points and is decided by a six-step tier ladder. The evaluator is the __single source of truth__ for ACL decisions (the EPIC #714 unification, complete v3.37.0); route handlers and other managers consume it via the public methods below, not by re-implementing private-page or author-lock checks of their own.
 
 ## Key Features
 
-- **Six-tier evaluator** — Tier 0 private → Tier 0.5 author-lock → Tier 1 frontmatter → Tier 2 global policies → Tier 3 ACL markup → default deny
-- **Rich-return form** (`evaluatePagePermission`) returns `{ allowed, reason }` so callers can specialise 403 messages on the reason
-- **Cross-page check** (`canUserAccessPage`) for "can user X view page Y" lookups (linked-page filters, attachment owning-page resolution)
-- **JSPWiki-style ACL markup**: `[{ALLOW view Admin}]` (**deprecated; Tier 3 scheduled for removal per [#778](https://github.com/jwilleke/ngdpbase/issues/778)**). Blocked on new saves; remaining ~13 jimstest pages will be migrated to the modern frontmatter `audience` / `access` pattern (see [`docs/proper-documentation-pages.md` § Page Access Control](../proper-documentation-pages.md#page-access-control))
+- __Six-tier evaluator__ — Tier 0 private → Tier 0.5 author-lock → Tier 1 frontmatter → Tier 2 global policies → Tier 3 ACL markup → default deny
+- __Rich-return form__ (`evaluatePagePermission`) returns `{ allowed, reason }` so callers can specialise 403 messages on the reason
+- __Cross-page check__ (`canUserAccessPage`) for "can user X view page Y" lookups (linked-page filters, attachment owning-page resolution)
+- __JSPWiki-style ACL markup__: `[{ALLOW view Admin}]` (__deprecated; Tier 3 scheduled for removal per [#778](https://github.com/jwilleke/ngdpbase/issues/778)__). Blocked on new saves; remaining ~13 jimstest pages will be migrated to the modern frontmatter `audience` / `access` pattern (see [`docs/proper-documentation-pages.md` § Page Access Control](../proper-documentation-pages.md#page-access-control))
 - Integration with [PolicyEvaluator](PolicyEvaluator.md) for global policies at Tier 2
 - Audit logging of every decision (allow + deny) via `logAccessDecision`
 
@@ -45,7 +45,7 @@ async evaluatePagePermission(wikiContext: WikiContext, action: string): Promise<
 async canUserAccessPage(userContext: UserContext | null, pageName: string, action: string): Promise<boolean>;
 ```
 
-Most callers should reach the evaluator through the canonical facade **`WikiContext.canAccess(action, pageNameOverride?)`** (`src/context/WikiContext.ts`) instead of importing `ACLManager` directly — it handles the same-page-vs-cross-page routing and per-context memoization for free.
+Most callers should reach the evaluator through the canonical facade __`WikiContext.canAccess(action, pageNameOverride?)`__ (`src/context/WikiContext.ts`) instead of importing `ACLManager` directly — it handles the same-page-vs-cross-page routing and per-context memoization for free.
 
 ## Quick Example
 
@@ -88,34 +88,34 @@ const acl = aclManager.parsePageACL('[{ALLOW view All}] [{ALLOW edit Admin}]');
 
 ## Permission Evaluation Order
 
-**First decision wins.** The evaluator walks tiers in order; the first tier that returns a decision short-circuits the rest. Tier-by-tier reasons (surfaced as `reason` strings in `evaluatePagePermission`'s return):
+__First decision wins.__ The evaluator walks tiers in order; the first tier that returns a decision short-circuits the rest. Tier-by-tier reasons (surfaced as `reason` strings in `evaluatePagePermission`'s return):
 
 | Tier | Rule | Allow reasons | Deny reasons |
 |---|---|---|---|
-| **0** | Private | `private_match` (admin OR page creator) | `private_deny` (anyone else on a `private: true` page) |
-| **0.5** | Author-lock — write-only gate ([#714 Slice A](https://github.com/jwilleke/ngdpbase/issues/714)) | _(never allows; only denies)_ | `author_lock_deny` when `action === 'edit'` AND `metadata['author-lock'] === true` AND user is neither admin nor `metadata.author` |
-| **1** | Frontmatter `audience` / `access[action]` | `frontmatter_principal_<p>` | `frontmatter_deny` (map exists; user not in it) |
-| **2** | Global policies via [PolicyEvaluator](PolicyEvaluator.md) | `<policyName>` / `global_policy` | `<policyName>` |
-| **3** ⚠ deprecated | Legacy `[{ALLOW <action> …}]` page markup — **scheduled for removal per [#778](https://github.com/jwilleke/ngdpbase/issues/778)** | `page_acl_all` / `page_acl_role_<r>` / `page_acl_user` | _(never denies; falls through if no match)_ |
-| — | Default | _(never)_ | `default_deny` |
+| __0__ | Private | `private_match` (admin OR page creator) | `private_deny` (anyone else on a `private: true` page) |
+| __0.5__ | Author-lock — write-only gate ([#714 Slice A](https://github.com/jwilleke/ngdpbase/issues/714)) | *(never allows; only denies)* | `author_lock_deny` when `action === 'edit'` AND `metadata['author-lock'] === true` AND user is neither admin nor `metadata.author` |
+| __1__ | Frontmatter `audience` / `access[action]` | `frontmatter_principal_<p>` | `frontmatter_deny` (map exists; user not in it) |
+| __2__ | Global policies via [PolicyEvaluator](PolicyEvaluator.md) | `<policyName>` / `global_policy` | `<policyName>` |
+| __3__ ⚠ deprecated | Legacy `[{ALLOW <action> …}]` page markup — __scheduled for removal per [#778](https://github.com/jwilleke/ngdpbase/issues/778)__ | `page_acl_all` / `page_acl_role_<r>` / `page_acl_user` | *(never denies; falls through if no match)* |
+| — | Default | *(never)* | `default_deny` |
 
 ### Tier-ordering invariants
 
-- **First decision wins** — Tier 0 outranks Tier 0.5 outranks Tier 1, etc.
-- **Tier 0.5 only denies** — it never returns true; the author/admin "win" case is just _fall through_ so Tier 1+ decides whether the actual author is permitted.
-- **Tier 3 only allows** — legacy ALLOW markup is opt-in; it never denies. Missing-or-non-matching markup just falls through to default-deny.
-- **`true` requires an affirmative grant** somewhere in 0 / 1 / 2 / 3. The default is **always deny**.
+- __First decision wins__ — Tier 0 outranks Tier 0.5 outranks Tier 1, etc.
+- __Tier 0.5 only denies__ — it never returns true; the author/admin "win" case is just *fall through* so Tier 1+ decides whether the actual author is permitted.
+- __Tier 3 only allows__ — legacy ALLOW markup is opt-in; it never denies. Missing-or-non-matching markup just falls through to default-deny.
+- __`true` requires an affirmative grant__ somewhere in 0 / 1 / 2 / 3. The default is __always deny__.
 
 ## Tier-0.5 author-lock semantics (the [#714 Slice A](https://github.com/jwilleke/ngdpbase/issues/714) addition)
 
-Author-lock is a **write-time constraint**, not a read-time constraint:
+Author-lock is a __write-time constraint__, not a read-time constraint:
 
 - Only fires for `action === 'edit'`.
 - Only DENIES non-author non-admin attempts on pages with `author-lock: true`.
 - Pages also marked `private: true` are decided by Tier 0 first (`private` is the higher-priority rule); Tier 0.5 is never consulted for private pages.
-- The actual author and any admin **fall through** to Tier 1+ — Tier 0.5 does NOT grant edit, it only constrains it.
+- The actual author and any admin __fall through__ to Tier 1+ — Tier 0.5 does NOT grant edit, it only constrains it.
 
-The route handler at `WikiRoutes.editPage` consumes `evaluatePagePermission`'s `reason` to render the specific _"This page is author-locked. Only the page author and administrators can edit it."_ 403 message when Tier 0.5 fires; everything else gets the generic _"You do not have permission to edit this page"_.
+The route handler at `WikiRoutes.editPage` consumes `evaluatePagePermission`'s `reason` to render the specific *"This page is author-locked. Only the page author and administrators can edit it."* 403 message when Tier 0.5 fires; everything else gets the generic *"You do not have permission to edit this page"*.
 
 ## EPIC #714 — unification history
 
@@ -123,11 +123,11 @@ Through v3.36.0 the per-page access-control rules were scattered: private-page c
 
 | Slice | Release | What |
 |---|---|---|
-| **A** | v3.36.1 | Tier 0.5 author-lock added to ACLManager (alongside the route-layer branch; no-removal yet) |
-| **B** | v3.37.0 | `WikiContext.canAccess(action, pageNameOverride?)` cross-page form + `ACLManager.canUserAccessPage` + cache-key fix |
-| **C** | v3.37.0 | Migrated 5 route handlers off `WikiRoutes.checkPrivatePageAccess`; deleted that helper |
-| **D** | v3.37.0 | Migrated MediaManager off its own `checkPrivatePageAccess`; deleted it |
-| **E + F** | v3.37.0 | Rich-return `evaluatePagePermission`; deleted route-layer author-lock branch; restored its specific 403 message via `reason` |
+| __A__ | v3.36.1 | Tier 0.5 author-lock added to ACLManager (alongside the route-layer branch; no-removal yet) |
+| __B__ | v3.37.0 | `WikiContext.canAccess(action, pageNameOverride?)` cross-page form + `ACLManager.canUserAccessPage` + cache-key fix |
+| __C__ | v3.37.0 | Migrated 5 route handlers off `WikiRoutes.checkPrivatePageAccess`; deleted that helper |
+| __D__ | v3.37.0 | Migrated MediaManager off its own `checkPrivatePageAccess`; deleted it |
+| __E + F__ | v3.37.0 | Rich-return `evaluatePagePermission`; deleted route-layer author-lock branch; restored its specific 403 message via `reason` |
 
 ## Related Managers
 

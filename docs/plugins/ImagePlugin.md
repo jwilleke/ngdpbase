@@ -18,7 +18,7 @@ Displays inline images with customizable alignment, display modes, captions, and
 
 The ImagePlugin implements JSPWiki-style inline image functionality. It supports various display modes (float, block, inline, full-width), alignment options, captions, and can wrap images in links.
 
-**Source:** `plugins/ImagePlugin.js`
+__Source:__ `plugins/ImagePlugin.js`
 
 ## Plugin Metadata
 
@@ -97,7 +97,7 @@ The ImagePlugin implements JSPWiki-style inline image functionality. It supports
 [{Image src='photo.jpg' caption='Team Photo 2025'}]
 ```
 
-**Output:**
+__Output:__
 
 ```html
 <div class="image-plugin-container">

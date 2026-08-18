@@ -2,9 +2,9 @@
 
 Working brainstorm — *not yet a build commitment.* The platform already has most of the substrate; this captures the proposed conventions and small composition layer that would tie the existing managers into a coherent knowledge-graph pattern. Useful for users who want LLM-maintained knowledge bases on top of ngdpbase, but the structural pieces improve the platform for everyone.
 
-**Status:** ideas / planning. No tracked issues yet. Specific build slices can be lifted out into `[FEATURE]` / `[EPIC]` issues once a decision is made.
+__Status:__ ideas / planning. No tracked issues yet. Specific build slices can be lifted out into `[FEATURE]` / `[EPIC]` issues once a decision is made.
 
-**Origin:** Andrej Karpathy's [LLM Wiki gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) plus a brainstorm session 2026-05-12 mapping the pattern onto ngdpbase's existing managers and plugins.
+__Origin:__ Andrej Karpathy's [LLM Wiki gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) plus a brainstorm session 2026-05-12 mapping the pattern onto ngdpbase's existing managers and plugins.
 
 ---
 
@@ -12,7 +12,7 @@ Working brainstorm — *not yet a build commitment.* The platform already has mo
 
 ngdpbase has 36 managers and dozens of plugins. The platform's pitch has been "self-hostable wiki engine with extensible addons" — a feature list rather than a story. The long-standing operator goal has been to *tie the parts together* so users can navigate "how does this data relate to that data" at scale.
 
-Karpathy's LLM-wiki pattern gives the platform an organizing concept that ties existing parts together without inventing new ones. More importantly, the **structural pieces underneath the pattern are good wiki engineering regardless of whether an LLM is ever in the loop** — cleaner classification, typed references between pages, lint surfaces over the existing data. Those structural pieces would compound for users who never touch an LLM.
+Karpathy's LLM-wiki pattern gives the platform an organizing concept that ties existing parts together without inventing new ones. More importantly, the __structural pieces underneath the pattern are good wiki engineering regardless of whether an LLM is ever in the loop__ — cleaner classification, typed references between pages, lint surfaces over the existing data. Those structural pieces would compound for users who never touch an LLM.
 
 The LLM-driven workflow on top (ingest, lint with contradiction detection, automated cross-reference maintenance) is more speculative. It's a bet on a use case where validation is thin — Karpathy uses it personally; it isn't proven for teams or institutions. The plan below stages the foundational structural work first and leaves the LLM-specific composition for "build when a real user asks."
 
@@ -22,17 +22,17 @@ The LLM-driven workflow on top (ingest, lint with contradiction detection, autom
 
 Karpathy describes three layers of content and three operations on them.
 
-**Three content layers:**
+__Three content layers:__
 
-- **Sources** — immutable raw material (papers, articles, transcripts, screenshots). Never edited.
-- **Citations** — interpretive claims about source material. Each cites one or more sources.
-- **Concepts** — synthesized knowledge that draws on multiple citations.
+- __Sources__ — immutable raw material (papers, articles, transcripts, screenshots). Never edited.
+- __Citations__ — interpretive claims about source material. Each cites one or more sources.
+- __Concepts__ — synthesized knowledge that draws on multiple citations.
 
-**Three operations:**
+__Three operations:__
 
-- **Ingest** — a new source is added; the system fans content out into 10-15 affected pages (the source page itself, related citations, concept pages that need updating, the index, the activity log).
-- **Query** — the user asks a question against the compiled wiki; the system synthesizes an answer with citations and can file the answer back as a new page so the wiki compounds.
-- **Lint** — periodic audits flag orphan pages, missing entity pages, contradictions, stale claims.
+- __Ingest__ — a new source is added; the system fans content out into 10-15 affected pages (the source page itself, related citations, concept pages that need updating, the index, the activity log).
+- __Query__ — the user asks a question against the compiled wiki; the system synthesizes an answer with citations and can file the answer back as a new page so the wiki compounds.
+- __Lint__ — periodic audits flag orphan pages, missing entity pages, contradictions, stale claims.
 
 The human curates sources and asks questions. The LLM (or, less efficiently, a disciplined human) handles the bookkeeping — cross-references, multi-page updates, audits.
 
@@ -79,13 +79,13 @@ The substrate exists, but the composition on top is missing.
 
 These pieces aren't anywhere in the platform yet:
 
-- **Source / citation / concept** as a first-class role axis on pages
-- **Discipline prerequisite graph** in `CatalogManager`
-- **Deterministic lint surfaces** — orphan pages, stale claims, missing entity pages — all are pure graph or text operations over data the platform already has, but no plugin or admin view renders them
-- **Contradiction-detection lint** — LLM-required; no admin surface or API hook exists
-- **Curated topic index page format** — the convention for hand-curated topic indexes
-- **LLM-friendly ingest contract** — the structured plan an LLM hands to `ImportManager`
-- **Source ↔ citation hard-links** — footnotes today are free text; nothing enforces a link to a real source page
+- __Source / citation / concept__ as a first-class role axis on pages
+- __Discipline prerequisite graph__ in `CatalogManager`
+- __Deterministic lint surfaces__ — orphan pages, stale claims, missing entity pages — all are pure graph or text operations over data the platform already has, but no plugin or admin view renders them
+- __Contradiction-detection lint__ — LLM-required; no admin surface or API hook exists
+- __Curated topic index page format__ — the convention for hand-curated topic indexes
+- __LLM-friendly ingest contract__ — the structured plan an LLM hands to `ImportManager`
+- __Source ↔ citation hard-links__ — footnotes today are free text; nothing enforces a link to a real source page
 
 ---
 
@@ -95,36 +95,36 @@ The platform already has canonical terms for most of what Karpathy describes. Us
 
 | Karpathy term | ngdpbase canonical term | Implementation |
 |---|---|---|
-| `raw/` immutable sources | **sources** *(new page role)* | New `knowledge-role` frontmatter value |
-| `wiki/` derived content | **pages** | `PageManager` + `VersioningFileProvider` |
-| `[[wiki-link]]` | **page link** `[Page Name]` | Existing renderer syntax |
+| `raw/` immutable sources | __sources__ *(new page role)* | New `knowledge-role` frontmatter value |
+| `wiki/` derived content | __pages__ | `PageManager` + `VersioningFileProvider` |
+| `[[wiki-link]]` | __page link__ `[Page Name]` | Existing renderer syntax |
 | backlinks | (same) | `[{ReferringPagesPlugin}]` |
-| `index.md` curated TOC | **curated index page** | New page-format convention (distinct from `[{IndexPlugin}]` which is alphabetical) |
-| `log.md` append-only audit | **audit log** | `AuditManager` (system-wide; topic-scoped view is the gap) |
-| schema (CLAUDE.md) | **`CatalogManager` rules + page Schema** | `CatalogManager` + `SchemaManager` |
-| ingest | **import** | `ImportManager` extensible converter registry |
-| query | **search** | `SearchManager` |
-| lint | **wiki health audit** | Plugin / admin surface (not yet built) |
-| citation (factual claim → source) | **footnote** | `FootnoteManager` + `[{FootnotesPlugin}]` |
-| concept | **concept** *(new page role)* | New `knowledge-role` frontmatter value |
-| topic | **user-keyword** | Existing multi-valued frontmatter |
-| discipline | **system-keyword** | Existing flat list; structured taxonomy with prerequisites is the proposed upgrade |
-| role | **knowledge-role** *(new optional frontmatter field)* | Distinct from `system-category` (page-type); opt-in for pages participating in the knowledge graph |
+| `index.md` curated TOC | __curated index page__ | New page-format convention (distinct from `[{IndexPlugin}]` which is alphabetical) |
+| `log.md` append-only audit | __audit log__ | `AuditManager` (system-wide; topic-scoped view is the gap) |
+| schema (CLAUDE.md) | __`CatalogManager` rules + page Schema__ | `CatalogManager` + `SchemaManager` |
+| ingest | __import__ | `ImportManager` extensible converter registry |
+| query | __search__ | `SearchManager` |
+| lint | __wiki health audit__ | Plugin / admin surface (not yet built) |
+| citation (factual claim → source) | __footnote__ | `FootnoteManager` + `[{FootnotesPlugin}]` |
+| concept | __concept__ *(new page role)* | New `knowledge-role` frontmatter value |
+| topic | __user-keyword__ | Existing multi-valued frontmatter |
+| discipline | __system-keyword__ | Existing flat list; structured taxonomy with prerequisites is the proposed upgrade |
+| role | __knowledge-role__ *(new optional frontmatter field)* | Distinct from `system-category` (page-type); opt-in for pages participating in the knowledge graph |
 
 ---
 
 ## Classification model — four axes
 
-Pages on ngdpbase are classified along **four** independent axes. This is a refinement of earlier brainstorm versions — the page-type and knowledge-graph-role aren't the same thing and shouldn't share a field.
+Pages on ngdpbase are classified along __four__ independent axes. This is a refinement of earlier brainstorm versions — the page-type and knowledge-graph-role aren't the same thing and shouldn't share a field.
 
 | Axis | Field | Cardinality | Meaning | Who curates |
 |---|---|---|---|---|
-| **Page-type** | `system-category` *(existing)* | exactly one | What KIND of platform page — system / documentation / addon / user-profile / general / developer | Operator |
-| **Knowledge-role** | `knowledge-role` *(new, optional)* | zero-or-one | Position in the knowledge graph — source / citation / concept | LLM enforces; user opts in |
-| **Topic** | `user-keywords` *(existing)* | zero-or-more | What the page is ABOUT — free-form tags | Human (page author) |
-| **Discipline** | `system-keywords` *(existing)* | one-or-more | What FIELD the page lives in — operator-curated taxonomy | Operator |
+| __Page-type__ | `system-category` *(existing)* | exactly one | What KIND of platform page — system / documentation / addon / user-profile / general / developer | Operator |
+| __Knowledge-role__ | `knowledge-role` *(new, optional)* | zero-or-one | Position in the knowledge graph — source / citation / concept | LLM enforces; user opts in |
+| __Topic__ | `user-keywords` *(existing)* | zero-or-more | What the page is ABOUT — free-form tags | Human (page author) |
+| __Discipline__ | `system-keywords` *(existing)* | one-or-more | What FIELD the page lives in — operator-curated taxonomy | Operator |
 
-**Knowledge-role is opt-in.** Most pages will have no role and stay outside the knowledge graph. That keeps the platform useful for the casual use cases — recipes, team SOPs, profile pages — that don't belong to any structured knowledge body. Only pages that opt into the source/citation/concept model carry a role.
+__Knowledge-role is opt-in.__ Most pages will have no role and stay outside the knowledge graph. That keeps the platform useful for the casual use cases — recipes, team SOPs, profile pages — that don't belong to any structured knowledge body. Only pages that opt into the source/citation/concept model carry a role.
 
 The actor-mapping in the rightmost column matters. It tells you which fields stay editable in the UI, which are config-only, and which an LLM is allowed to rewrite without human review.
 
@@ -144,10 +144,10 @@ The field only comes into play when a user — or an external agent acting on th
 
 Setting `knowledge-role` to one of the three values changes platform behavior in four places. Each is documented under the build plan above; collected here for one-screen visibility:
 
-- **At save time** (`ValidationManager`) — citation and concept pages must satisfy reference constraints (at least one source-ref for citations, at least one citation-ref for concepts). Violations are warnings, not hard rejections.
-- **At render time** (`header.ejs` badge system shipped in v3.14.0) — a "Source" / "Citation" / "Concept" badge appears in the page-title area, driven by the same config-driven mechanism that renders the `(System)` / `(Documentation)` badges.
-- **In the editor** — for source pages, the body editor opens read-only with a banner explaining the source-role immutability contract. Metadata still editable.
-- **In the reference index** — the `knowledge-graph-index.json` records the page's edges by role, so the lint and any external agent can ask "what are the sources for this citation" or "what citations are orphaned" in one lookup.
+- __At save time__ (`ValidationManager`) — citation and concept pages must satisfy reference constraints (at least one source-ref for citations, at least one citation-ref for concepts). Violations are warnings, not hard rejections.
+- __At render time__ (`header.ejs` badge system shipped in v3.14.0) — a "Source" / "Citation" / "Concept" badge appears in the page-title area, driven by the same config-driven mechanism that renders the `(System)` / `(Documentation)` badges.
+- __In the editor__ — for source pages, the body editor opens read-only with a banner explaining the source-role immutability contract. Metadata still editable.
+- __In the reference index__ — the `knowledge-graph-index.json` records the page's edges by role, so the lint and any external agent can ask "what are the sources for this citation" or "what citations are orphaned" in one lookup.
 
 ### Setting and changing the role
 
@@ -212,7 +212,7 @@ The last row is the most interesting one. It shows the axes really are orthogona
 
 ## Relationships — references across pages
 
-The role axis describes what a page **is**, not what it **has**. Pages also point at each other through reference links — that's a separate, many-to-many relationship, not a classification.
+The role axis describes what a page __is__, not what it __has__. Pages also point at each other through reference links — that's a separate, many-to-many relationship, not a classification.
 
 ```
 sources       (immutable raw material — these ARE the originals)
@@ -224,12 +224,12 @@ concepts      (synthesized knowledge that draws on citations)
 
 A few clarifications that follow:
 
-- A `source` page **is** the source. It does not have a source — that would be redundant.
+- A `source` page __is__ the source. It does not have a source — that would be redundant.
 - A `citation` page has zero-or-more sources it cites. Most have at least one; a citation with none is a free-floating opinion, and the lint should flag it.
 - A `concept` page draws on zero-or-more citations. Most have several; a concept with no citations is a thought, not a synthesis.
 - The role is exactly one. The references are many-to-many. A concept page is *only* a concept — but it can draw on dozens of citations, each of which in turn cites dozens of sources.
 
-The reference graph between pages is the **data** the lint and the future LLM ingest both consume. Building it as a first-class index — separate from the existing `page-index.json` and `page-assets-index.json` — is the only new infrastructure the build plan needs.
+The reference graph between pages is the __data__ the lint and the future LLM ingest both consume. Building it as a first-class index — separate from the existing `page-index.json` and `page-assets-index.json` — is the only new infrastructure the build plan needs.
 
 ---
 
@@ -237,17 +237,17 @@ The reference graph between pages is the **data** the lint and the future LLM in
 
 Karpathy's pattern assumes a single filesystem split: `raw/` immutable, `wiki/` LLM-maintained. ngdpbase doesn't have that filesystem layout, and the operator's actual setup is more layered anyway. Sources don't live in one place — they live across five tiers of control, and the platform needs to be able to cite all of them with appropriate fidelity per tier.
 
-The unifying abstraction is the **AssetManager / AssetProvider registry**, which already runs the fan-out across attachments and the media library. Adding new tiers means adding new providers; the citation contract doesn't change.
+The unifying abstraction is the __AssetManager / AssetProvider registry__, which already runs the fan-out across attachments and the media library. Adding new tiers means adding new providers; the citation contract doesn't change.
 
 ### The five source tiers
 
 | Tier | Storage | Control | Immutability | Citation mechanism |
 |---|---|---|---|---|
-| **Source pages** | ngdpbase page store | Full | Platform-enforced via `knowledge-role: source` contract | Page UUID |
-| **Attachments** | ngdpbase attachment store (`BasicAttachmentProvider`) | Full | Operator can enforce write-once policy | Attachment UUID via `AssetManager` |
-| **Media library** | External directory, indexed by `FileSystemMediaProvider` | Read-only index — files owned by the OS | Filesystem-level (operator's discipline) | Asset ID resolved through `MediaManager` |
-| **External-indexed (sist2 / NAS)** | External NAS, indexed by [sist2](https://github.com/simon987/sist2) or similar | Read-only index | Filesystem-level | NEW: a `Sist2AssetProvider` plugged into `AssetManager` |
-| **Internet URLs** | Outside everything | None | Not immutable — pages change, vanish, redirect | URL string; weakest tier — see "URL handling" below |
+| __Source pages__ | ngdpbase page store | Full | Platform-enforced via `knowledge-role: source` contract | Page UUID |
+| __Attachments__ | ngdpbase attachment store (`BasicAttachmentProvider`) | Full | Operator can enforce write-once policy | Attachment UUID via `AssetManager` |
+| __Media library__ | External directory, indexed by `FileSystemMediaProvider` | Read-only index — files owned by the OS | Filesystem-level (operator's discipline) | Asset ID resolved through `MediaManager` |
+| __External-indexed (sist2 / NAS)__ | External NAS, indexed by [sist2](https://github.com/simon987/sist2) or similar | Read-only index | Filesystem-level | NEW: a `Sist2AssetProvider` plugged into `AssetManager` |
+| __Internet URLs__ | Outside everything | None | Not immutable — pages change, vanish, redirect | URL string; weakest tier — see "URL handling" below |
 
 The first four tiers all return AssetRecord-shaped data through `AssetManager`. The reference index — `knowledge-graph-index.json` from step 3 of the build plan — records citation → asset edges, not citation → page edges. An asset can be a source page, an attachment, a media-library file, or a sist2-indexed file. Citations don't care which tier; the platform resolves the address through the existing `AssetManager.getById(providerId, id)` path.
 
@@ -269,9 +269,9 @@ URLs violate the immutability contract. The page at `https://example.com/article
 
 Three plausible policies for citations pointing at URLs:
 
-- **A. Weaker-tier source-ref.** Citation has both `source: <asset-id>` and an optional `url: <fallback>` field. Lint flags citations with only a URL as "unstable provenance."
-- **B. Force capture.** When a user wants to cite a URL, the platform fetches it once and stores the snapshot as an attachment. The citation points at the snapshot (which IS immutable); the URL is metadata on the snapshot for click-through. This mirrors how the Internet Archive's "save page now" model works.
-- **C. Refuse URLs as primary source-refs.** Karpathy-pure. The user must capture, transcribe, or screenshot before citing.
+- __A. Weaker-tier source-ref.__ Citation has both `source: <asset-id>` and an optional `url: <fallback>` field. Lint flags citations with only a URL as "unstable provenance."
+- __B. Force capture.__ When a user wants to cite a URL, the platform fetches it once and stores the snapshot as an attachment. The citation points at the snapshot (which IS immutable); the URL is metadata on the snapshot for click-through. This mirrors how the Internet Archive's "save page now" model works.
+- __C. Refuse URLs as primary source-refs.__ Karpathy-pure. The user must capture, transcribe, or screenshot before citing.
 
 Option B is the natural fit for the operator's "Owned digital Data" framing — you want a snapshot you control, not a live URL. ngdpbase already has the attachment storage; the missing piece is a small "capture this URL" admin action that fetches + uploads + creates a source-roled page wrapping the attachment.
 
@@ -281,8 +281,8 @@ This is an open design question — picked before step 3 (typed footnotes) ships
 
 Two adjustments to the seven-step build plan above:
 
-- **Step 3 (typed footnote + reference index)** — the index is keyed on AssetManager `(providerId, id)` pairs, not page UUIDs. The typed footnote syntax accepts any asset address: `[^source:asset/UUID]`, `[^source:media/UUID]`, `[^source:sist2/DocID]`. Plus URL handling per the chosen policy.
-- **New step 6.5 — `Sist2AssetProvider`.** Sits between "discipline prerequisites" and the deferred LLM extension points. Independent — could ship sooner if the operator wants their NAS content citable before the lint surface is built.
+- __Step 3 (typed footnote + reference index)__ — the index is keyed on AssetManager `(providerId, id)` pairs, not page UUIDs. The typed footnote syntax accepts any asset address: `[^source:asset/UUID]`, `[^source:media/UUID]`, `[^source:sist2/DocID]`. Plus URL handling per the chosen policy.
+- __New step 6.5 — `Sist2AssetProvider`.__ Sits between "discipline prerequisites" and the deferred LLM extension points. Independent — could ship sooner if the operator wants their NAS content citable before the lint surface is built.
 
 The rest of the build plan stands.
 
@@ -296,7 +296,7 @@ Total effort estimate for steps 1-5: about 2-3 days of focused work.
 
 Add an optional frontmatter field `knowledge-role: source | citation | concept`. `ValidationManager` enforces the enum when present; absence means the page is outside the knowledge graph. The badge mechanism shipped in v3.14.0 renders an optional "Source" / "Citation" / "Concept" badge for graph-participating pages with no new infrastructure.
 
-About a dozen lines plus tests. **Foundational — unblocks everything else.**
+About a dozen lines plus tests. __Foundational — unblocks everything else.__
 
 ### 2. Source-role immutability
 
@@ -312,7 +312,7 @@ Citations need a hard-link to their sources, distinct from free-text footnotes. 
 
 Alongside the typed-footnote addition, build a `knowledge-graph-index.json` that records source→citation→concept edges as they're written. Rebuilds at startup from a frontmatter scan; cached during normal operation. The lint and the future LLM ingest both consume this index.
 
-4-6 hours. **The largest single piece in the foundation layer.**
+4-6 hours. __The largest single piece in the foundation layer.__
 
 ### 4. Citation- and concept-role validation
 
@@ -327,13 +327,13 @@ Violations are warnings, not hard rejections — users can override with a `--fo
 
 ### 5. Deterministic lint surface
 
-> **Lifted out — filed as #730 (2026-05-16), shipped as `[{AppHealthPlugin}]`.** Per the 2026-05-16 brainstorm this is the value-certain piece of this doc and helps every user with no LLM involved, so it is tracked independently of the knowledge-graph work (#706/#707) and is **not** gated on them. The rest of this section is the original design context.
+> __Lifted out — filed as #730 (2026-05-16), shipped as `[{AppHealthPlugin}]`.__ Per the 2026-05-16 brainstorm this is the value-certain piece of this doc and helps every user with no LLM involved, so it is tracked independently of the knowledge-graph work (#706/#707) and is __not__ gated on them. The rest of this section is the original design context.
 
 A `[{WikiLint}]` plugin or `/admin/wiki-health` page that runs the three pure-graph audits:
 
-- **Orphan pages** — no inbound links from any other page
-- **Missing entity pages** — concepts mentioned in page bodies that have no page of their own
-- **Stale claims** — citation's `lastModified` is older than its source's `lastModified`
+- __Orphan pages__ — no inbound links from any other page
+- __Missing entity pages__ — concepts mentioned in page bodies that have no page of their own
+- __Stale claims__ — citation's `lastModified` is older than its source's `lastModified`
 
 None of these need an LLM. All three are operations over data the platform already has. Reports render as a list with one-click "open the offending page" links.
 
@@ -361,9 +361,9 @@ Extend `ngdpbase.system-keywords` config schema with an optional `prerequisites:
 
 These are LLM-required and stay deferred until there's a concrete user asking for them:
 
-- **LLM-driven `ImportManager` converter** — takes a raw source, emits a structured plan of N pages to create/update. Hooks into the existing converter registry rather than being new machinery.
-- **Contradiction-detection lint** — flags pairs of pages whose claims contradict. Exposed as an API hook the operator can wire to an external LLM (Claude Code, an MCP server, etc.).
-- **Citation suggestion** — given a draft citation page, suggest source pages it should link to.
+- __LLM-driven `ImportManager` converter__ — takes a raw source, emits a structured plan of N pages to create/update. Hooks into the existing converter registry rather than being new machinery.
+- __Contradiction-detection lint__ — flags pairs of pages whose claims contradict. Exposed as an API hook the operator can wire to an external LLM (Claude Code, an MCP server, etc.).
+- __Citation suggestion__ — given a draft citation page, suggest source pages it should link to.
 
 Don't build these speculatively. The substrate (steps 1-6) makes them straightforward to add when needed; building them before user demand risks shipping the wrong shape.
 
@@ -373,10 +373,10 @@ Don't build these speculatively. The substrate (steps 1-6) makes them straightfo
 
 Explicit non-goals to keep the scope honest:
 
-- **In-app LLM chat panel.** No chatbox in the admin UI that runs the workflow. External agents (Claude Code, MCP servers) work against the platform's existing APIs. Self-hostable, vendor-neutral.
-- **Mandatory citations for all content.** Free-form pages (recipes, profile pages, SOPs) stay first-class. The knowledge-role axis is opt-in.
-- **Vendor lock-in to a specific LLM.** Nothing in the platform should require Claude or OpenAI or any particular model. The platform exposes data and contracts; LLMs are clients.
-- **Replacing existing managers.** The Catalog, Import, Audit, Footnote, BackgroundJob, and Schema managers stay as they are. The build plan adds a thin composition layer on top.
+- __In-app LLM chat panel.__ No chatbox in the admin UI that runs the workflow. External agents (Claude Code, MCP servers) work against the platform's existing APIs. Self-hostable, vendor-neutral.
+- __Mandatory citations for all content.__ Free-form pages (recipes, profile pages, SOPs) stay first-class. The knowledge-role axis is opt-in.
+- __Vendor lock-in to a specific LLM.__ Nothing in the platform should require Claude or OpenAI or any particular model. The platform exposes data and contracts; LLMs are clients.
+- __Replacing existing managers.__ The Catalog, Import, Audit, Footnote, BackgroundJob, and Schema managers stay as they are. The build plan adds a thin composition layer on top.
 
 ---
 
@@ -384,11 +384,11 @@ Explicit non-goals to keep the scope honest:
 
 These need decisions before the corresponding step ships:
 
-- **Typed-footnote syntax.** `[^source:UUID]` extends existing footnote markdown; `[{Cite source='UUID'}]` is a new plugin. Different ergonomics, different parser cost. Decide before step 3.
-- **`knowledge-role` storage.** Top-level frontmatter field, or nested under a `knowledge` object? Affects how `ValidationManager` enforces it and how the editor renders the field.
-- **Per-topic vs. per-instance index/log.** Karpathy uses per-instance. ngdpbase could support per-topic-keyword scoping so multiple unrelated topical wikis can coexist in one install. Affects step 5's lint scoping.
-- **`source` page immutability — hard or soft?** Hard = save handler rejects. Soft = warning only, allow override. Hard is more trustworthy; soft is more forgiving.
-- **`CatalogManager` prerequisite scope.** Is `prerequisites: ["chemistry"]` a hint (lint flags missing coverage) or a hard rule (validator rejects pages with `discipline: biology` that lack any Chemistry-tagged citations)? Probably hint for v1.
+- __Typed-footnote syntax.__ `[^source:UUID]` extends existing footnote markdown; `[{Cite source='UUID'}]` is a new plugin. Different ergonomics, different parser cost. Decide before step 3.
+- __`knowledge-role` storage.__ Top-level frontmatter field, or nested under a `knowledge` object? Affects how `ValidationManager` enforces it and how the editor renders the field.
+- __Per-topic vs. per-instance index/log.__ Karpathy uses per-instance. ngdpbase could support per-topic-keyword scoping so multiple unrelated topical wikis can coexist in one install. Affects step 5's lint scoping.
+- __`source` page immutability — hard or soft?__ Hard = save handler rejects. Soft = warning only, allow override. Hard is more trustworthy; soft is more forgiving.
+- __`CatalogManager` prerequisite scope.__ Is `prerequisites: ["chemistry"]` a hint (lint flags missing coverage) or a hard rule (validator rejects pages with `discipline: biology` that lack any Chemistry-tagged citations)? Probably hint for v1.
 
 ---
 
@@ -396,7 +396,7 @@ These need decisions before the corresponding step ships:
 
 ngdpbase's existing positioning is "a self-hostable wiki engine you can extend with addons." This pattern would extend that to "a self-hostable wiki engine where the data graph is first-class and an LLM can maintain it for you" — a meaningfully different product story without changing the core engine, because the substrate is already there.
 
-The risk: every wiki platform is racing to add AI features. ngdpbase's differentiation is **self-hostable, no vendor lock-in, your data stays yours**. Layering an LLM-maintenance pattern on top — where the LLM is bring-your-own (Claude Code, GPT, local Ollama) and the wiki content stays in your filesystem — leans into that differentiation rather than fighting it.
+The risk: every wiki platform is racing to add AI features. ngdpbase's differentiation is __self-hostable, no vendor lock-in, your data stays yours__. Layering an LLM-maintenance pattern on top — where the LLM is bring-your-own (Claude Code, GPT, local Ollama) and the wiki content stays in your filesystem — leans into that differentiation rather than fighting it.
 
 The biggest concrete win from this whole brainstorm is probably the most boring one: cleaning up `system-keywords` to be a structured taxonomy and adding a proper knowledge-role axis. That's a real platform improvement independent of whether the LLM-wiki workflow is ever fully built.
 

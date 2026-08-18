@@ -8,7 +8,7 @@ author: system
 ---
 # Page Information
 
-**Page Information** is available from the **Info** dropdown in the toolbar. It opens a modal showing the current page's metadata.
+__Page Information__ is available from the __Info__ dropdown in the toolbar. It opens a modal showing the current page's metadata.
 
 ## What It Shows
 

@@ -8,9 +8,9 @@ code: src/managers/UserManager.ts
 
 # UserManager
 
-**Module:** `src/managers/UserManager.ts`
-**Extends:** [BaseManager](BaseManager.md)
-**Complete Guide:** [UserManager-Complete-Guide.md](UserManager-Complete-Guide.md)
+__Module:__ `src/managers/UserManager.ts`
+__Extends:__ [BaseManager](BaseManager.md)
+__Complete Guide:__ [UserManager-Complete-Guide.md](UserManager-Complete-Guide.md)
 
 ---
 
@@ -20,12 +20,12 @@ UserManager handles user authentication, authorization, role management, and ses
 
 ## Key Features
 
-- **Policy-Based Permissions** - Permissions via PolicyManager, not hardcoded
-- **Role-Based Access Control** - Roles defined in configuration
-- **Session Management** - File-based sessions with expiration
-- **External Authentication** - OAuth/JWT support for external users
-- **Schema.org Integration** - Auto-syncs users to Person data
-- **User Pages** - Automatic user page creation
+- __Policy-Based Permissions__ - Permissions via PolicyManager, not hardcoded
+- __Role-Based Access Control__ - Roles defined in configuration
+- __Session Management__ - File-based sessions with expiration
+- __External Authentication__ - OAuth/JWT support for external users
+- __Schema.org Integration__ - Auto-syncs users to Person data
+- __User Pages__ - Automatic user page creation
 
 ## Quick Example
 
@@ -136,7 +136,7 @@ Defined by the `User` interface in `src/types/User.ts`, which is the authoritati
 }
 ```
 
-**Roles are not on the record.** `User.roles[]` is deprecated as of #617 iteration 3b — membership is owned by `RoleManager` as `OrganizationRole` records. Read a user's roles with `resolveUserRoles(username)`; never from this object.
+__Roles are not on the record.__ `User.roles[]` is deprecated as of #617 iteration 3b — membership is owned by `RoleManager` as `OrganizationRole` records. Read a user's roles with `resolveUserRoles(username)`; never from this object.
 
 ### Account flags
 
@@ -151,8 +151,8 @@ The four booleans each answer a different question, and they are deliberately in
 
 Two pairings are worth stating explicitly, because both look interchangeable and are not:
 
-- **`isSystem` is not "protected".** It means one thing: `deleteUser` refuses. It is set on `admin`, an account that must keep self-service password change — so it can never grow to imply immutability.
-- **`profileLocked` is not `isExternal`.** An external account has no password to change; a locked account has one, published deliberately, that must not change. `profileLocked` also covers email, which is the field that matters most: magic-link login resolves an account by address, so an unlocked shared account can be taken over by repointing its email regardless of the password.
+- __`isSystem` is not "protected".__ It means one thing: `deleteUser` refuses. It is set on `admin`, an account that must keep self-service password change — so it can never grow to imply immutability.
+- __`profileLocked` is not `isExternal`.__ An external account has no password to change; a locked account has one, published deliberately, that must not change. `profileLocked` also covers email, which is the field that matters most: magic-link login resolves an account by address, so an unlocked shared account can be taken over by repointing its email regardless of the password.
 
 Neither flag restricts administrators. `/admin/users/<name>/edit` requires `user-edit` and consults neither, so a locked or system account is always recoverable.
 

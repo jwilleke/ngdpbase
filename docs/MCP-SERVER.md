@@ -7,7 +7,7 @@ The ngdpbase MCP (Model Context Protocol) Server provides AI assistants like Cla
 The MCP server exposes 17 specialized tools that allow AI assistants to:
 
 - Query and search wiki pages
-- **Create, update, and delete wiki pages**
+- __Create, update, and delete wiki pages__
 - Access metadata and categories
 - Validate and generate page metadata
 - Find similar pages and attachments
@@ -72,16 +72,16 @@ Add to `~/.claude/mcp.json` (or project-level `.claude/mcp.json`):
 
 ### Integration with Other AI Agents
 
-The MCP server uses the **Model Context Protocol** — an open standard for AI-tool integration. Any AI agent that implements an MCP client can connect.
+The MCP server uses the __Model Context Protocol__ — an open standard for AI-tool integration. Any AI agent that implements an MCP client can connect.
 
-**How it works:**
+__How it works:__
 
-- The server communicates via **stdio transport** (JSON-RPC 2.0 over stdin/stdout)
+- The server communicates via __stdio transport__ (JSON-RPC 2.0 over stdin/stdout)
 - Agents discover available tools by sending a `tools/list` request
 - Agents invoke tools by sending `tools/call` requests with tool name and arguments
 - All responses are JSON-formatted
 
-**Compatible platforms:**
+__Compatible platforms:__
 
 | Platform | Configuration Location |
 | --- | --- |
@@ -91,7 +91,7 @@ The MCP server uses the **Model Context Protocol** — an open standard for AI-t
 | Windsurf | MCP configuration in settings |
 | Custom agents | Implement MCP client SDK |
 
-**For custom AI agents**, use the official MCP SDK:
+__For custom AI agents__, use the official MCP SDK:
 
 ```bash
 npm install @modelcontextprotocol/sdk
@@ -126,25 +126,25 @@ const result = await client.callTool('ngdpbase_search', {
 
 Once the MCP server is configured in Claude Desktop or Claude Code, the AI assistant automatically gains access to all ngdpbase tools. You can interact naturally:
 
-**Ask questions about wiki content:**
+__Ask questions about wiki content:__
 
 - "What pages exist about validation?"
 - "Show me the content of the Main page"
 - "Find documentation related to metadata"
 
-**Manage metadata:**
+__Manage metadata:__
 
 - "Generate metadata for a new page called 'Installation Guide'"
 - "Validate this metadata structure"
 - "What categories are available?"
 
-**Upload attachments:**
+__Upload attachments:__
 
 - "Upload `/path/to/image.png` to the wiki"
 - "Bulk upload all images from `/path/to/screenshots/`"
 - "Upload `diagram.pdf` and attach it to the Architecture page"
 
-**Explore wiki structure:**
+__Explore wiki structure:__
 
 - "List all pages in the documentation category"
 - "What keywords are used across the wiki?"
@@ -158,12 +158,12 @@ The AI assistant will select the appropriate tool(s) based on your request and r
 
 Get complete page content and metadata by identifier.
 
-**Parameters:**
+__Parameters:__
 
 - `identifier` (string, required): Page title, UUID, or slug
 - `include_content` (boolean, optional): Include full content (default: true)
 
-**Example:**
+__Example:__
 
 ```json
 {
@@ -172,7 +172,7 @@ Get complete page content and metadata by identifier.
 }
 ```
 
-**Returns:**
+__Returns:__
 
 ```json
 {
@@ -191,13 +191,13 @@ Get complete page content and metadata by identifier.
 
 List all pages with optional filtering.
 
-**Parameters:**
+__Parameters:__
 
 - `category` (string, optional): Filter by system category
 - `keywords` (array, optional): Filter by user keywords
 - `limit` (number, optional): Max results (default: 50)
 
-**Example:**
+__Example:__
 
 ```json
 {
@@ -211,7 +211,7 @@ List all pages with optional filtering.
 
 Full-text search with advanced filtering.
 
-**Parameters:**
+__Parameters:__
 
 - `query` (string, required): Search text
 - `categories` (array, optional): Filter by categories
@@ -219,7 +219,7 @@ Full-text search with advanced filtering.
 - `search_in` (array, optional): Fields to search (default: ["title", "content", "metadata"])
 - `max_results` (number, optional): Max results (default: 20)
 
-**Example:**
+__Example:__
 
 ```json
 {
@@ -229,7 +229,7 @@ Full-text search with advanced filtering.
 }
 ```
 
-**Returns:**
+__Returns:__
 
 ```json
 {
@@ -251,11 +251,11 @@ Full-text search with advanced filtering.
 
 Get page metadata only (fast, no content).
 
-**Parameters:**
+__Parameters:__
 
 - `identifier` (string, required): Page identifier
 
-**Example:**
+__Example:__
 
 ```json
 {
@@ -267,9 +267,9 @@ Get page metadata only (fast, no content).
 
 Get all system categories with configurations.
 
-**Parameters:** None
+__Parameters:__ None
 
-**Returns:**
+__Returns:__
 
 ```json
 {
@@ -295,9 +295,9 @@ Get all system categories with configurations.
 
 Get all user keywords in use across pages.
 
-**Parameters:** None
+__Parameters:__ None
 
-**Returns:**
+__Returns:__
 
 ```json
 {
@@ -309,11 +309,11 @@ Get all user keywords in use across pages.
 
 Validate page metadata structure.
 
-**Parameters:**
+__Parameters:__
 
 - `metadata` (object, required): Metadata to validate
 
-**Example:**
+__Example:__
 
 ```json
 {
@@ -327,7 +327,7 @@ Validate page metadata structure.
 }
 ```
 
-**Returns:**
+__Returns:__
 
 ```json
 {
@@ -340,13 +340,13 @@ Validate page metadata structure.
 
 Generate valid metadata template for a new page.
 
-**Parameters:**
+__Parameters:__
 
 - `title` (string, required): Page title
 - `category` (string, optional): System category (default: "general")
 - `keywords` (array, optional): User keywords (max 5)
 
-**Example:**
+__Example:__
 
 ```json
 {
@@ -356,17 +356,17 @@ Generate valid metadata template for a new page.
 }
 ```
 
-**Returns:** Complete valid metadata object ready for use.
+__Returns:__ Complete valid metadata object ready for use.
 
 ### 9. ngdpbase_get_attachments
 
 List attachments for a page.
 
-**Parameters:**
+__Parameters:__
 
 - `page_name` (string, required): Page identifier
 
-**Example:**
+__Example:__
 
 ```json
 {
@@ -374,7 +374,7 @@ List attachments for a page.
 }
 ```
 
-**Returns:**
+__Returns:__
 
 ```json
 {
@@ -395,12 +395,12 @@ List attachments for a page.
 
 Find pages similar to a given page.
 
-**Parameters:**
+__Parameters:__
 
 - `page_name` (string, required): Reference page
 - `limit` (number, optional): Max results (default: 10)
 
-**Example:**
+__Example:__
 
 ```json
 {
@@ -413,11 +413,11 @@ Find pages similar to a given page.
 
 Get wiki configuration value(s).
 
-**Parameters:**
+__Parameters:__
 
 - `key` (string, optional): Specific config key
 
-**Example:**
+__Example:__
 
 ```json
 {
@@ -431,9 +431,9 @@ If no key provided, returns all configuration (large response).
 
 Get search index statistics.
 
-**Parameters:** None
+__Parameters:__ None
 
-**Returns:**
+__Returns:__
 
 ```json
 {
@@ -447,13 +447,13 @@ Get search index statistics.
 
 Upload a single file as an attachment, optionally linking it to a page.
 
-**Parameters:**
+__Parameters:__
 
 - `file_path` (string, required): Absolute path to the file to upload
 - `page_name` (string, optional): Page name to attach the file to
 - `description` (string, optional): Description for the attachment
 
-**Example:**
+__Example:__
 
 ```json
 {
@@ -463,7 +463,7 @@ Upload a single file as an attachment, optionally linking it to a page.
 }
 ```
 
-**Returns:**
+__Returns:__
 
 ```json
 {
@@ -481,16 +481,16 @@ Upload a single file as an attachment, optionally linking it to a page.
 
 Create a new wiki page. Fails if a page with that title already exists.
 
-> For a **running** instance or a remote/automated agent, prefer the HTTP endpoint `POST /api/page/ingest` ([Agent Ingest API](Agent-Ingest-API.md)) — it goes through the live server (in-band index update, immediately viewable + searchable) and authors the page as the authenticated user. This stdio tool writes the data dir directly and is best for local/offline authoring.
+> For a __running__ instance or a remote/automated agent, prefer the HTTP endpoint `POST /api/page/ingest` ([Agent Ingest API](Agent-Ingest-API.md)) — it goes through the live server (in-band index update, immediately viewable + searchable) and authors the page as the authenticated user. This stdio tool writes the data dir directly and is best for local/offline authoring.
 
-**Parameters:**
+__Parameters:__
 
 - `title` (string, required): Page title (must be unique)
 - `content` (string, required): Page content in wiki markup / Markdown
 - `category` (string, optional): System category (default: `"general"`)
 - `keywords` (array, optional): User keywords (max 5)
 
-**Example:**
+__Example:__
 
 ```json
 {
@@ -501,7 +501,7 @@ Create a new wiki page. Fails if a page with that title already exists.
 }
 ```
 
-**Returns:**
+__Returns:__
 
 ```json
 {
@@ -519,7 +519,7 @@ Create a new wiki page. Fails if a page with that title already exists.
 
 Update an existing wiki page. Supply any combination of `content`, `category`, or `keywords` — only provided fields are changed; the rest are preserved.
 
-**Parameters:**
+__Parameters:__
 
 - `identifier` (string, required): Page identifier: title, UUID, or slug
 - `content` (string, optional): New content (replaces existing content)
@@ -528,7 +528,7 @@ Update an existing wiki page. Supply any combination of `content`, `category`, o
 
 At least one of `content`, `category`, or `keywords` must be provided.
 
-**Example:**
+__Example:__
 
 ```json
 {
@@ -538,7 +538,7 @@ At least one of `content`, `category`, or `keywords` must be provided.
 }
 ```
 
-**Returns:**
+__Returns:__
 
 ```json
 {
@@ -557,12 +557,12 @@ At least one of `content`, `category`, or `keywords` must be provided.
 
 Permanently delete a wiki page. Requires `confirm: true` to prevent accidental deletion.
 
-**Parameters:**
+__Parameters:__
 
 - `identifier` (string, required): Page identifier: title, UUID, or slug
 - `confirm` (boolean, required): Must be `true` to confirm deletion
 
-**Example:**
+__Example:__
 
 ```json
 {
@@ -571,7 +571,7 @@ Permanently delete a wiki page. Requires `confirm: true` to prevent accidental d
 }
 ```
 
-**Returns:**
+__Returns:__
 
 ```json
 {
@@ -586,14 +586,14 @@ Permanently delete a wiki page. Requires `confirm: true` to prevent accidental d
 
 Upload multiple files from a directory as attachments. Supports glob patterns and recursive directory scanning.
 
-**Parameters:**
+__Parameters:__
 
 - `directory` (string, required): Absolute path to the directory containing files
 - `pattern` (string, optional): Glob pattern to filter files (e.g., `*.png`, `*.pdf`, `image-*`)
 - `page_name` (string, optional): Page name to link all uploaded attachments to
 - `recursive` (boolean, optional): Include files from subdirectories (default: false)
 
-**Example:**
+__Example:__
 
 ```json
 {
@@ -604,7 +604,7 @@ Upload multiple files from a directory as attachments. Supports glob patterns an
 }
 ```
 
-**Returns:**
+__Returns:__
 
 ```json
 {
@@ -686,15 +686,15 @@ dist/mcp-server.js      # Compiled JavaScript
 
 The MCP server initializes WikiEngine on first tool call and maintains a single instance for all subsequent requests. This provides access to:
 
-- **PageManager**: Page CRUD operations
-- **SearchManager**: Full-text search with Lunr
-- **ValidationManager**: Metadata validation and category management
-- **AttachmentManager**: File attachment operations
-- **ConfigurationManager**: System configuration access
+- __PageManager__: Page CRUD operations
+- __SearchManager__: Full-text search with Lunr
+- __ValidationManager__: Metadata validation and category management
+- __AttachmentManager__: File attachment operations
+- __ConfigurationManager__: System configuration access
 
 ### Communication Protocol
 
-The server uses **stdio transport** per MCP specification:
+The server uses __stdio transport__ per MCP specification:
 
 - Receives JSON-RPC requests via stdin
 - Sends JSON-RPC responses via stdout
@@ -816,9 +816,9 @@ All debug output goes to stderr (not stdout, which is reserved for MCP protocol)
 
 ### Server Won't Start
 
-**Issue**: `Cannot find module '@modelcontextprotocol/sdk'`
+__Issue__: `Cannot find module '@modelcontextprotocol/sdk'`
 
-**Solution**:
+__Solution__:
 
 ```bash
 npm install
@@ -827,9 +827,9 @@ npm run build
 
 ### WikiEngine Initialization Fails
 
-**Issue**: `Manager not initialized`
+__Issue__: `Manager not initialized`
 
-**Solution**: Check that:
+__Solution__: Check that:
 
 - `config/` directory exists
 - `pages/` and `required-pages/` directories exist
@@ -837,9 +837,9 @@ npm run build
 
 ### Tool Returns Empty Results
 
-**Issue**: Search/list operations return no results
+__Issue__: Search/list operations return no results
 
-**Solution**:
+__Solution__:
 
 - Verify pages exist: `ls pages/`
 - Rebuild search index: Restart MCP server
@@ -847,9 +847,9 @@ npm run build
 
 ### Performance Issues
 
-**Issue**: Slow tool responses
+__Issue__: Slow tool responses
 
-**Solution**:
+__Solution__:
 
 - Use `include_content: false` when content not needed
 - Reduce `max_results` and `limit` parameters

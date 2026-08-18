@@ -35,19 +35,19 @@ Creates a clean first-run environment by:
 
 ### Required Fields
 
-**Basic Configuration:**
+__Basic Configuration:__
 
 - Application Name (e.g., "Test Wiki")
 - Base URL (e.g., "<http://localhost:3000>")
 
-**Administrator Account:**
+__Administrator Account:__
 
 - Username (e.g., "testadmin")
 - Email (e.g., "<admin@test.com>")
 - Password (minimum 8 characters)
 - Confirm Password (must match)
 
-**Organization Information:**
+__Organization Information:__
 
 - Organization Name (e.g., "Test Organization")
 - Description (e.g., "Testing the install system")
@@ -81,14 +81,14 @@ When accessing any URL with install required, should redirect to `/install`
 
 ### 3. Form Validation
 
-**Client-side:**
+__Client-side:__
 
 - Required fields highlighted if empty
 - Password length checked (min 8 chars)
 - Passwords compared for match
 - Alert shown for validation errors
 
-**Server-side:**
+__Server-side:__
 
 - All required fields validated
 - Email format validated
@@ -99,7 +99,7 @@ When accessing any URL with install required, should redirect to `/install`
 
 After form submission, the following should be created:
 
-**data/config/app-custom-config.json:**
+__data/config/app-custom-config.json:__
 
 ```json
 {
@@ -113,7 +113,7 @@ After form submission, the following should be created:
 }
 ```
 
-**users/organizations.json:**
+__users/organizations.json:__
 
 ```json
 [
@@ -136,14 +136,14 @@ After form submission, the following should be created:
 ]
 ```
 
-**users/users.json:**
+__users/users.json:__
 
 - Admin user created with provided username
 - Password hashed securely
 - Roles: ["admin", "Authenticated", "All"]
 - Email from form
 
-**pages/ directory:**
+__pages/ directory:__
 
 - All .md files copied from required-pages/
 - System pages (system-category: system)
@@ -225,13 +225,13 @@ After form submission, the following should be created:
 
 ### Issue: Install Loop (keeps redirecting to /install)
 
-**Possible causes:**
+__Possible causes:__
 
 1. `.install-complete` marker file missing from INSTANCE_DATA_FOLDER
 2. Admin user not created properly
 3. pages/ directory empty
 
-**Solutions:**
+__Solutions:__
 
 ```bash
 # Check for install marker file
@@ -246,9 +246,9 @@ ls pages/*.md | wc -l  # Should show number of pages from required-pages/
 
 ### Issue: Form Validation Errors
 
-**Cause:** Client-side JavaScript validation failing
+__Cause:__ Client-side JavaScript validation failing
 
-**Solution:**
+__Solution:__
 
 - Check browser console for errors
 - Ensure Bootstrap JS loaded
@@ -256,13 +256,13 @@ ls pages/*.md | wc -l  # Should show number of pages from required-pages/
 
 ### Issue: 500 Error on Form Submit
 
-**Possible causes:**
+__Possible causes:__
 
 1. Missing required fields
 2. Write permissions on config/ or users/ directories
 3. InstallService error
 
-**Solutions:**
+__Solutions:__
 
 ```bash
 # Check permissions
@@ -278,9 +278,9 @@ cat ~/.pm2/logs/ngdpbase-error.log
 
 ### Issue: Pages Not Copied
 
-**Cause:** Startup pages checkbox unchecked or copy failed
+__Cause:__ Startup pages checkbox unchecked or copy failed
 
-**Solution:**
+__Solution:__
 
 ```bash
 # Manual copy if needed
@@ -292,13 +292,13 @@ ls required-pages/*.md | wc -l  # Should show files
 
 ### Issue: Can't Login After Install
 
-**Possible causes:**
+__Possible causes:__
 
 1. Admin user not created
 2. Wrong credentials
 3. User not active
 
-**Solutions:**
+__Solutions:__
 
 ```bash
 # Check if admin created

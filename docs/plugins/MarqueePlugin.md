@@ -17,7 +17,7 @@ deprecated `<marquee>` HTML element).  Pauses on mouse hover.  Multiple
 banners on the same page each get an isolated `@keyframes` name so they
 never interfere with each other.
 
-**Source:** `plugins/MarqueePlugin.ts`
+__Source:__ `plugins/MarqueePlugin.ts`
 
 ## Plugin Metadata
 

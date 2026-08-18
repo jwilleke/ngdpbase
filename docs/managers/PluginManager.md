@@ -8,9 +8,9 @@ code: src/managers/PluginManager.ts
 
 # PluginManager
 
-**Module:** `src/managers/PluginManager.ts`
-**Extends:** [BaseManager](BaseManager.md)
-**Complete Guide:** [PluginManager-Complete-Guide.md](PluginManager-Complete-Guide.md)
+__Module:__ `src/managers/PluginManager.ts`
+__Extends:__ [BaseManager](BaseManager.md)
+__Complete Guide:__ [PluginManager-Complete-Guide.md](PluginManager-Complete-Guide.md)
 
 ---
 
@@ -75,9 +75,9 @@ Examples:
 
 Each plugin invocation follows this sequence:
 
-1. `initialize(engine)` — called **once at startup** if present
-2. `fetch(engine)` — called **before each `execute()`** if present; use to pre-load data from managers
-3. `execute(context, params)` — called **each render**; returns HTML string
+1. `initialize(engine)` — called __once at startup__ if present
+2. `fetch(engine)` — called __before each `execute()`__ if present; use to pre-load data from managers
+3. `execute(context, params)` — called __each render__; returns HTML string
 
 ```ts
 // Example plugin using fetch() to pre-load data

@@ -1,10 +1,10 @@
 # BackupManager Complete Guide
 
-**Module:** `src/managers/BackupManager.js`
-**Quick Reference:** [BackupManager.md](BackupManager.md)
-**Version:** 1.0.0
-**Last Updated:** 2025-12-20
-**Status:** Production Ready
+__Module:__ `src/managers/BackupManager.js`
+__Quick Reference:__ [BackupManager.md](BackupManager.md)
+__Version:__ 1.0.0
+__Last Updated:__ 2025-12-20
+__Status:__ Production Ready
 
 ---
 
@@ -27,15 +27,15 @@
 
 ## Overview
 
-The **BackupManager** is responsible for coordinating backup and restore operations across all managers in ngdpbase. It provides a centralized system for creating full-system backups and restoring data, ensuring data safety and disaster recovery capabilities.
+The __BackupManager__ is responsible for coordinating backup and restore operations across all managers in ngdpbase. It provides a centralized system for creating full-system backups and restoring data, ensuring data safety and disaster recovery capabilities.
 
 ### Key Responsibilities
 
-- **Backup Coordination**: Orchestrate backup operations across all registered managers
-- **Compression**: Compress backup data using gzip for efficient storage
-- **Lifecycle Management**: Automatically clean up old backups based on retention policy
-- **Restore Coordination**: Restore data from backups across all managers
-- **Statistics**: Track backup sizes, compression ratios, and operation timing
+- __Backup Coordination__: Orchestrate backup operations across all registered managers
+- __Compression__: Compress backup data using gzip for efficient storage
+- __Lifecycle Management__: Automatically clean up old backups based on retention policy
+- __Restore Coordination__: Restore data from backups across all managers
+- __Statistics__: Track backup sizes, compression ratios, and operation timing
 
 ### How It Works
 
@@ -54,7 +54,7 @@ The **BackupManager** is responsible for coordinating backup and restore operati
 
 ### Design Philosophy
 
-The BackupManager follows the **Coordinator Pattern**:
+The BackupManager follows the __Coordinator Pattern__:
 
 - BackupManager: Orchestrates backup/restore across all managers
 - Managers: Implement backup() and restore() methods
@@ -62,10 +62,10 @@ The BackupManager follows the **Coordinator Pattern**:
 
 This architecture enables:
 
-- **Centralized Control**: Single point for all backup operations
-- **Manager Autonomy**: Each manager controls what data to backup
-- **Provider Delegation**: Managers delegate to providers for storage-specific backups
-- **Consistency**: Atomic full-system backups
+- __Centralized Control__: Single point for all backup operations
+- __Manager Autonomy__: Each manager controls what data to backup
+- __Provider Delegation__: Managers delegate to providers for storage-specific backups
+- __Consistency__: Atomic full-system backups
 
 ---
 
@@ -198,11 +198,11 @@ By default, BackupManager is controled by values wihtin config/app-default-confi
 
 | Manager | Provider | Data Backed Up | Status |
 | --------- | ---------- | ---------------- | -------- |
-| **PageManager** | FileSystemProvider | All pages (regular + required), metadata, indices | ✅ Complete |
-| **UserManager** | FileUserProvider | Users, sessions, preferences | ✅ Complete |
-| **ConfigurationManager** | Direct | All config layers (default, environment, custom) | ✅ Complete |
-| **AttachmentManager** | AttachmentProvider | Attachments and metadata | ✅ Complete |
-| **SearchManager** | SearchProvider | Search index | ✅ Complete |
+| __PageManager__ | FileSystemProvider | All pages (regular + required), metadata, indices | ✅ Complete |
+| __UserManager__ | FileUserProvider | Users, sessions, preferences | ✅ Complete |
+| __ConfigurationManager__ | Direct | All config layers (default, environment, custom) | ✅ Complete |
+| __AttachmentManager__ | AttachmentProvider | Attachments and metadata | ✅ Complete |
+| __SearchManager__ | SearchProvider | Search index | ✅ Complete |
 
 ### Manager Backup Statistics (Typical System)
 
@@ -217,7 +217,7 @@ Full system backup: 1,190.76 KB → 235.17 KB compressed (19.7%)
 
 ### ACLManager Note
 
-ACLManager does **not** implement backup/restore because:
+ACLManager does __not__ implement backup/restore because:
 
 - All policies are loaded from ConfigurationManager (already backed up)
 - Per-page ACLs are embedded in page content (backed up by PageManager)
@@ -262,13 +262,13 @@ ACLManager does **not** implement backup/restore because:
 
 Initialize the BackupManager and create backup directory.
 
-**Parameters:**
+__Parameters:__
 
 - `config` (object, optional): Additional configuration options
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 await backupManager.initialize();
@@ -280,11 +280,11 @@ await backupManager.initialize();
 
 Create a full system backup of all registered managers.
 
-**Returns:** `Promise<string>` - Path to the created backup file
+__Returns:__ `Promise<string>` - Path to the created backup file
 
-**Throws:** Error if backup fails
+__Throws:__ Error if backup fails
 
-**Example:**
+__Example:__
 
 ```javascript
 const backupPath = await backupManager.backup();
@@ -292,7 +292,7 @@ console.log(`Backup saved to: ${backupPath}`);
 // Output: backups/ngdpbase-backup-2025-10-14T11-28-54-626Z.json.gz
 ```
 
-**Process:**
+__Process:__
 
 1. Gets all registered managers from engine
 2. Calls `backup()` method on each manager
@@ -307,22 +307,22 @@ console.log(`Backup saved to: ${backupPath}`);
 
 Restore system state from a backup file.
 
-**Parameters:**
+__Parameters:__
 
 - `backupPath` (string): Path to backup file (relative or absolute)
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Throws:** Error if restore fails or backup file not found
+__Throws:__ Error if restore fails or backup file not found
 
-**Example:**
+__Example:__
 
 ```javascript
 await backupManager.restore('backups/ngdpbase-backup-2025-10-14T11-28-54-626Z.json.gz');
 console.log('System restored successfully');
 ```
 
-**Process:**
+__Process:__
 
 1. Reads and decompresses backup file
 2. Parses JSON data
@@ -336,9 +336,9 @@ console.log('System restored successfully');
 
 List all available backups in the backup directory.
 
-**Returns:** `Promise<Array>` - Array of backup file information
+__Returns:__ `Promise<Array>` - Array of backup file information
 
-**Backup Info Structure:**
+__Backup Info Structure:__
 
 ```javascript
 {
@@ -350,7 +350,7 @@ List all available backups in the backup directory.
 }
 ```
 
-**Example:**
+__Example:__
 
 ```javascript
 const backups = await backupManager.listBackups();
@@ -366,15 +366,15 @@ backups.forEach(backup => {
 
 Delete a specific backup file.
 
-**Parameters:**
+__Parameters:__
 
 - `backupPath` (string): Path to backup file to delete
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Throws:** Error if file doesn't exist or deletion fails
+__Throws:__ Error if file doesn't exist or deletion fails
 
-**Example:**
+__Example:__
 
 ```javascript
 await backupManager.deleteBackup('backups/old-backup-2025-09-01.json.gz');
@@ -387,16 +387,16 @@ console.log('Backup deleted');
 
 Remove old backups beyond the retention limit.
 
-**Returns:** `Promise<number>` - Number of backups deleted
+__Returns:__ `Promise<number>` - Number of backups deleted
 
-**Example:**
+__Example:__
 
 ```javascript
 const deleted = await backupManager.cleanupOldBackups();
 console.log(`Deleted ${deleted} old backups`);
 ```
 
-**Logic:**
+__Logic:__
 
 - Lists all backup files sorted by timestamp (newest first)
 - Keeps `maxBackups` most recent backups
@@ -408,13 +408,13 @@ console.log(`Deleted ${deleted} old backups`);
 
 Get information about a backup file without loading full contents.
 
-**Parameters:**
+__Parameters:__
 
 - `backupPath` (string): Path to backup file
 
-**Returns:** `Promise<Object>` - Backup metadata
+__Returns:__ `Promise<Object>` - Backup metadata
 
-**Example:**
+__Example:__
 
 ```javascript
 const info = await backupManager.getBackupInfo('backups/backup.json.gz');
@@ -965,9 +965,9 @@ async function checkBackupHealth() {
 
 ### Issue: Backup Fails with "Manager.backup is not a function"
 
-**Cause**: Manager doesn't implement backup() method
+__Cause__: Manager doesn't implement backup() method
 
-**Solution**: Add backup/restore methods to manager or register a BaseManager stub:
+__Solution__: Add backup/restore methods to manager or register a BaseManager stub:
 
 ```javascript
 async backup() {
@@ -979,17 +979,17 @@ async backup() {
 
 ### Issue: Restore Fails with Provider Mismatch
 
-**Cause**: Backup created with different provider than currently configured
+__Cause__: Backup created with different provider than currently configured
 
-**Solution**: Update configuration to match backup provider or implement cross-provider restore
+__Solution__: Update configuration to match backup provider or implement cross-provider restore
 
 ---
 
 ### Issue: Backup Directory Permission Denied
 
-**Cause**: No write permissions to backup directory
+__Cause__: No write permissions to backup directory
 
-**Solution**: Check directory permissions:
+__Solution__: Check directory permissions:
 
 ```bash
 chmod 755 backups/
@@ -999,9 +999,9 @@ chmod 755 backups/
 
 ### Issue: Large Backup Files
 
-**Cause**: Many pages or large attachments
+__Cause__: Many pages or large attachments
 
-**Solution**:
+__Solution__:
 
 - Implement incremental backups
 - Exclude large binary files
@@ -1013,7 +1013,7 @@ chmod 755 backups/
 
 ### Adding Backup Support to a New Manager
 
-#### 1. **Implement backup() method**
+#### 1. __Implement backup() method__
 
 ```javascript
 async backup() {
@@ -1026,7 +1026,7 @@ async backup() {
 }
 ```
 
-#### 2. **Implement restore() method**
+#### 2. __Implement restore() method__
 
 ```javascript
 async restore(backupData) {
@@ -1039,9 +1039,9 @@ async restore(backupData) {
 }
 ```
 
-#### 3. **Register manager in WikiEngine** (automatic if using registerManager())
+#### 3. __Register manager in WikiEngine__ (automatic if using registerManager())
 
-#### 4. **Test backup/restore**
+#### 4. __Test backup/restore__
 
 ```javascript
 const backup = await manager.backup();
@@ -1052,14 +1052,14 @@ await manager.restore(backup);
 
 ## Summary
 
-The **BackupManager** provides comprehensive backup and restore capabilities for ngdpbase:
+The __BackupManager__ provides comprehensive backup and restore capabilities for ngdpbase:
 
-- ✅ **Full System Backups**: All managers backed up in single operation
-- ✅ **Provider Pattern Support**: Managers delegate to providers when appropriate
-- ✅ **Compression**: Gzip compression for efficient storage
-- ✅ **Retention Policy**: Automatic cleanup of old backups
-- ✅ **Restore Safety**: Provider mismatch detection and error handling
-- ✅ **Production Ready**: Successfully backs up 1.2 MB → 235 KB (19.7% compression)
+- ✅ __Full System Backups__: All managers backed up in single operation
+- ✅ __Provider Pattern Support__: Managers delegate to providers when appropriate
+- ✅ __Compression__: Gzip compression for efficient storage
+- ✅ __Retention Policy__: Automatic cleanup of old backups
+- ✅ __Restore Safety__: Provider mismatch detection and error handling
+- ✅ __Production Ready__: Successfully backs up 1.2 MB → 235 KB (19.7% compression)
 
 ### Current Coverage
 
@@ -1074,6 +1074,6 @@ The **BackupManager** provides comprehensive backup and restore capabilities for
 
 ---
 
-**Document Version**: 1.0.0
-**ngdpbase Version**: 1.3.2
-**Last Updated**: 2025-10-14
+__Document Version__: 1.0.0
+__ngdpbase Version__: 1.3.2
+__Last Updated__: 2025-10-14

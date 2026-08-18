@@ -34,23 +34,23 @@ git fetch template
 
 Present these options:
 
-- **Cherry-pick** — pick specific commits from the template (show the commit list and ask which ones)
-- **Merge** — merge all template changes into a new branch (`chore/template-sync`)
-- **File copy** — copy specific files from the template branch without merge history (using `git checkout template/master -- <file>`)
-- **Cancel** — do nothing
+- __Cherry-pick__ — pick specific commits from the template (show the commit list and ask which ones)
+- __Merge__ — merge all template changes into a new branch (`chore/template-sync`)
+- __File copy__ — copy specific files from the template branch without merge history (using `git checkout template/master -- <file>`)
+- __Cancel__ — do nothing
 
 ### Step 5: Apply changes
 
 Based on the user's choice:
 
-**Cherry-pick:**
+__Cherry-pick:__
 
 - Create branch: `git checkout -b chore/template-sync`
 - Cherry-pick the selected commits: `git cherry-pick <hash> --no-commit`
 - Show the result with `git status` and `git diff --stat`
 - Let the user review before committing
 
-**Merge:**
+__Merge:__
 
 - Create branch: `git checkout -b chore/template-sync`
 - Run: `git merge template/master --allow-unrelated-histories --no-commit`
@@ -58,7 +58,7 @@ Based on the user's choice:
 - Show the result with `git status` and `git diff --stat`
 - Let the user review before committing
 
-**File copy:**
+__File copy:__
 
 - Create branch: `git checkout -b chore/template-sync`
 - For each requested file: `git checkout template/master -- <file>`

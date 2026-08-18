@@ -1,7 +1,7 @@
 # Emoji Shortcodes
 
-**Issue:** #512  
-**Commit:** 50768cf8
+__Issue:__ #512  
+__Commit:__ 50768cf8
 
 ## Overview
 
@@ -11,7 +11,7 @@ Emoji shortcodes let users type `:shortcode:` syntax in wiki content and have it
 
 ### Server-side conversion (MarkupParser step 0.7)
 
-`src/parsers/MarkupParser.ts` runs shortcode conversion as **step 0.7**, after code-block extraction (step 0.5) and before all other markup processing. This ordering ensures that content inside backtick spans and fenced code blocks is never touched.
+`src/parsers/MarkupParser.ts` runs shortcode conversion as __step 0.7__, after code-block extraction (step 0.5) and before all other markup processing. This ordering ensures that content inside backtick spans and fenced code blocks is never touched.
 
 ```
 step 0.5 — extract code blocks / backtick spans (protected from all further processing)
@@ -59,7 +59,7 @@ When disabled, `MarkupParser` skips step 0.7 entirely.
 3. Renders a positioned dropdown at the cursor using the same DOM pattern as `PageAutocomplete`
 4. On selection, replaces the `:fragment` with the full `:shortcode:` text (the server then converts it on save/preview)
 
-`EMOJI_CLIENT_DATA` is a parallel array to `EMOJI_MAP` — each entry is `[shortcode, char, category]`. **Both must be kept in sync.** When you add a shortcode to `EMOJI_MAP`, add the matching entry to `EMOJI_CLIENT_DATA`.
+`EMOJI_CLIENT_DATA` is a parallel array to `EMOJI_MAP` — each entry is `[shortcode, char, category]`. __Both must be kept in sync.__ When you add a shortcode to `EMOJI_MAP`, add the matching entry to `EMOJI_CLIENT_DATA`.
 
 ### Picker modal
 
@@ -106,4 +106,4 @@ No build step is needed for the client-side data — `emoji-autocomplete.js` is 
 
 - [Page Link Autocomplete](./PageLinkAutocomplete.md) — same dropdown pattern used for page-link and emoji autocomplete
 - [MarkupParser](../parsers/MarkupParser.md) — full parser step reference
-- End-user documentation: **Using Emoji** (required page `7720bf08-0b25-4119-a7ba-3713045558f4`)
+- End-user documentation: __Using Emoji__ (required page `7720bf08-0b25-4119-a7ba-3713045558f4`)

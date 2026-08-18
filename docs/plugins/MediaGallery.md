@@ -8,7 +8,7 @@ code: src/plugins/MediaGallery.ts
 
 # MediaGallery
 
-**Stub plugin.** Renders a placeholder; full implementation deferred to MediaManager Phase 4.
+__Stub plugin.__ Renders a placeholder; full implementation deferred to MediaManager Phase 4.
 
 ## Intended Syntax (Phase 4)
 

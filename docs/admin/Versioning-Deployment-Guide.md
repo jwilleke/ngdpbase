@@ -14,9 +14,9 @@ This guide covers:
 - Troubleshooting
 - Maintenance procedures
 
-**Target Audience**: Wiki administrators and DevOps engineers
+__Target Audience__: Wiki administrators and DevOps engineers
 
-**Estimated Time**: 30-60 minutes for initial deployment
+__Estimated Time__: 30-60 minutes for initial deployment
 
 ---
 
@@ -39,14 +39,14 @@ This guide covers:
 
 ### System Requirements
 
-**Minimum**:
+__Minimum__:
 
 - Node.js 14.x or higher
 - 1GB free disk space (for version storage)
 - 512MB available RAM
 - Read/write permissions on data directories
 
-**Recommended**:
+__Recommended__:
 
 - Node.js 18.x or higher
 - 5GB+ free disk space
@@ -85,7 +85,7 @@ npm list fast-diff pako fs-extra uuid
 
 ### Step 1: Backup Current Data
 
-**CRITICAL**: Always backup before enabling versioning.
+__CRITICAL__: Always backup before enabling versioning.
 
 ```bash
 # Stop the wiki
@@ -131,7 +131,7 @@ Start the wiki - it will automatically initialize versioning:
 ./server.sh start
 ```
 
-**What Happens**:
+__What Happens__:
 
 1. Creates `./pages/versions/` directory
 2. Creates `./required-pages/versions/` directory
@@ -139,7 +139,7 @@ Start the wiki - it will automatically initialize versioning:
 4. Scans existing pages and creates v1 for each
 5. Builds initial page index
 
-**Monitor the logs**:
+__Monitor the logs__:
 
 ```bash
 # Application logs (recommended - detailed Winston logs)
@@ -175,12 +175,12 @@ Look for:
 }
 ```
 
-**Options**:
+__Options__:
 
 - `"filesystemprovider"` - Basic file storage (no versioning)
 - `"versioningfileprovider"` - File storage with version history
 
-**Note**: Switching providers requires restart.
+__Note__: Switching providers requires restart.
 
 #### Storage Locations
 
@@ -192,7 +192,7 @@ Look for:
 }
 ```
 
-**Important**:
+__Important__:
 
 - Use existing page directories
 - Paths can be absolute or relative to project root
@@ -207,7 +207,7 @@ Look for:
 }
 ```
 
-**Guidelines**:
+__Guidelines__:
 
 | Wiki Size | Max Versions | Retention Days | Rationale |
 | ----------- | -------------- | ---------------- | ----------- |
@@ -226,17 +226,17 @@ Look for:
 }
 ```
 
-**Compression**:
+__Compression__:
 
 - `"gzip"` - Enable compression (recommended)
 - `"none"` - Disable compression
 
-**Delta Storage**:
+__Delta Storage__:
 
 - `true` - Store diffs (saves 80-90% space)
 - `false` - Store full content each version
 
-**Checkpoint Interval**:
+__Checkpoint Interval__:
 
 - Store full content every N versions
 - Lower = faster retrieval, more storage
@@ -251,13 +251,13 @@ Look for:
 }
 ```
 
-**Cache Size**:
+__Cache Size__:
 
 - Number of versions to keep in memory
 - Higher = more RAM, faster access
 - Lower = less RAM, more disk I/O
 
-**Recommendations**:
+__Recommendations__:
 
 - Small wiki: 20-30
 - Medium wiki: 50-100
@@ -273,10 +273,10 @@ VersioningFileProvider automatically migrates existing pages on first startup.
 
 #### Migration Process
 
-1. **Scan**: Finds all existing `.md` files
-2. **Create v1**: Creates initial version for each page
-3. **Index**: Builds page-index.json
-4. **Verify**: Checks all pages migrated successfully
+1. __Scan__: Finds all existing `.md` files
+2. __Create v1__: Creates initial version for each page
+3. __Index__: Builds page-index.json
+4. __Verify__: Checks all pages migrated successfully
 
 #### Monitor Migration
 
@@ -453,7 +453,7 @@ Balance speed vs storage:
 }
 ```
 
-**Trade-offs**:
+__Trade-offs__:
 
 - Lower (5): 20% more storage, 2x faster retrieval
 - Default (10): Balanced
@@ -480,7 +480,7 @@ Reduce storage by lowering retention:
 }
 ```
 
-**Memory Usage**:
+__Memory Usage__:
 
 - Small pages (5KB): ~10KB per entry
 - Large pages (100KB): ~110KB per entry
@@ -600,18 +600,18 @@ find pages/versions -type d -empty
 
 #### What to Backup
 
-1. **Pages directories**:
+1. __Pages directories__:
    - `./pages/`
    - `./required-pages/`
 
-2. **Version storage**:
+2. __Version storage__:
    - `./pages/versions/`
    - `./required-pages/versions/`
 
-3. **Index files**:
+3. __Index files__:
    - `./data/page-index.json`
 
-4. **Configuration**:
+4. __Configuration__:
    - `./data/config/app-custom-config.json`
 
 #### Backup Script
@@ -689,15 +689,15 @@ cp -r PAGE-UUID/ /path/to/ngdpbase/pages/versions/
 
 #### Issue: "Versioning not initialized"
 
-**Symptoms**: API returns 501 errors
+__Symptoms__: API returns 501 errors
 
-**Causes**:
+__Causes__:
 
 - Provider not set to `versioningfileprovider`
 - Directories not created
 - Permission issues
 
-**Solutions**:
+__Solutions__:
 
 ```bash
 # Check configuration
@@ -716,9 +716,9 @@ npm restart
 
 #### Issue: "Page index not found"
 
-**Symptoms**: Errors mentioning page-index.json
+__Symptoms__: Errors mentioning page-index.json
 
-**Solutions**:
+__Solutions__:
 
 ```bash
 # Check if file exists
@@ -734,15 +734,15 @@ echo '{"version":"1.0.0","lastUpdated":"'$(date -Iseconds)'","pageCount":0,"page
 
 #### Issue: "Version reconstruction failed"
 
-**Symptoms**: Errors retrieving specific versions
+__Symptoms__: Errors retrieving specific versions
 
-**Causes**:
+__Causes__:
 
 - Corrupted diff files
 - Missing checkpoint
 - Disk errors
 
-**Solutions**:
+__Solutions__:
 
 ```bash
 # Verify version files
@@ -756,9 +756,9 @@ npm run maintain:verify
 
 #### Issue: High disk usage
 
-**Symptoms**: Disk space filling rapidly
+__Symptoms__: Disk space filling rapidly
 
-**Solutions**:
+__Solutions__:
 
 ```bash
 # Check storage usage
@@ -776,15 +776,15 @@ npm run maintain:cleanup -- --keep-latest 20 --retention 90
 
 #### Issue: Slow version retrieval
 
-**Symptoms**: API calls taking >1 second
+__Symptoms__: API calls taking >1 second
 
-**Causes**:
+__Causes__:
 
 - High checkpoint interval
 - Many versions to reconstruct
 - Small cache size
 
-**Solutions**:
+__Solutions__:
 
 ```json
 {
@@ -863,31 +863,31 @@ To re-enable versioning:
 
 ### Configuration
 
-1. **Start Conservative**: Begin with default settings
-2. **Monitor First Month**: Track storage and performance
-3. **Adjust Gradually**: Make small configuration changes
-4. **Document Changes**: Keep notes on why settings changed
+1. __Start Conservative__: Begin with default settings
+2. __Monitor First Month__: Track storage and performance
+3. __Adjust Gradually__: Make small configuration changes
+4. __Document Changes__: Keep notes on why settings changed
 
 ### Maintenance
 
-1. **Weekly**: Check disk usage
-2. **Monthly**: Run analytics report
-3. **Quarterly**: Run cleanup with dry-run first
-4. **Annually**: Review retention policies
+1. __Weekly__: Check disk usage
+2. __Monthly__: Run analytics report
+3. __Quarterly__: Run cleanup with dry-run first
+4. __Annually__: Review retention policies
 
 ### Security
 
-1. **Restrict Access**: Limit who can restore versions
-2. **Audit Logs**: Monitor version operations
-3. **Backup Regularly**: Automate daily backups
-4. **Test Restores**: Verify backups work
+1. __Restrict Access__: Limit who can restore versions
+2. __Audit Logs__: Monitor version operations
+3. __Backup Regularly__: Automate daily backups
+4. __Test Restores__: Verify backups work
 
 ### Performance
 
-1. **Enable Compression**: Always (unless disk I/O is bottleneck)
-2. **Use Delta Storage**: Always (huge savings)
-3. **Tune Cache Size**: Based on available RAM
-4. **Monitor Metrics**: Track retrieval times
+1. __Enable Compression__: Always (unless disk I/O is bottleneck)
+2. __Use Delta Storage__: Always (huge savings)
+3. __Tune Cache Size__: Based on available RAM
+4. __Monitor Metrics__: Track retrieval times
 
 ---
 
@@ -966,6 +966,6 @@ ngdpbase/
 
 ---
 
-**Last Updated**: 2026-02-06
-**Version**: 1.0
-**Applies to**: ngdpbase 1.3.2+
+__Last Updated__: 2026-02-06
+__Version__: 1.0
+__Applies to__: ngdpbase 1.3.2+

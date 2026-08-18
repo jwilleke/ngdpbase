@@ -17,7 +17,7 @@ Displays the current date and time with customizable formatting, respecting user
 
 The CurrentTimePlugin provides JSPWiki-compatible date/time display functionality. It automatically uses user preferences for locale, timezone, and time format (12h/24h), or can be customized with explicit format patterns.
 
-**Source:** `plugins/CurrentTimePlugin.js`
+__Source:__ `plugins/CurrentTimePlugin.js`
 
 ## Plugin Metadata
 
@@ -82,7 +82,7 @@ The plugin supports Java SimpleDateFormat-style patterns:
 [{CurrentTimePlugin}]
 ```
 
-**Output:** `12/18/2025, 02:30:45 PM` (varies by user locale)
+__Output:__ `12/18/2025, 02:30:45 PM` (varies by user locale)
 
 ### Example 2: ISO Date Format
 
@@ -90,7 +90,7 @@ The plugin supports Java SimpleDateFormat-style patterns:
 [{CurrentTimePlugin format='yyyy-MM-dd'}]
 ```
 
-**Output:** `2025-12-18`
+__Output:__ `2025-12-18`
 
 ### Example 3: Full Date with Time
 
@@ -98,7 +98,7 @@ The plugin supports Java SimpleDateFormat-style patterns:
 [{CurrentTimePlugin format='EEEE, MMMM d, yyyy HH:mm:ss'}]
 ```
 
-**Output:** `Wednesday, December 18, 2025 14:30:45`
+__Output:__ `Wednesday, December 18, 2025 14:30:45`
 
 ### Example 4: Time Only (12-hour)
 
@@ -106,7 +106,7 @@ The plugin supports Java SimpleDateFormat-style patterns:
 [{CurrentTimePlugin format='hh:mm a'}]
 ```
 
-**Output:** `02:30 PM`
+__Output:__ `02:30 PM`
 
 ### Example 5: Literal Text in Format
 
@@ -114,7 +114,7 @@ The plugin supports Java SimpleDateFormat-style patterns:
 [{CurrentTimePlugin format="'Today is' EEEE"}]
 ```
 
-**Output:** `Today is Wednesday`
+__Output:__ `Today is Wednesday`
 
 ## User Preferences
 

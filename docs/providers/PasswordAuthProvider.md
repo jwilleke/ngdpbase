@@ -17,7 +17,7 @@ Classic username + password authentication. Passwords are stored as bcrypt hashe
 
 ## Flow
 
-1. **Initiate** — caller passes `{username, password}`. Provider:
+1. __Initiate__ — caller passes `{username, password}`. Provider:
    - Loads the user record
    - Verifies the candidate password against the stored bcrypt hash
    - Returns success → AuthManager creates the session, or failure with a generic "invalid credentials" message

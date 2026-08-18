@@ -6,17 +6,17 @@ Index and current-status overview for performance measurement, telemetry, and tu
 
 ## Current status (as of v3.9.0 — 2026-05-04)
 
-**Latest baseline:** [`baseline-v3.9.0-2026-05-04.md`](./baseline-v3.9.0-2026-05-04.md) — 2098.8 MB resident (telemetry-sourced), `/` 26 ms, `/view/Welcome` 18 ms, `/search?q=test` 129 ms, `/login` 17 ms.
+__Latest baseline:__ [`baseline-v3.9.0-2026-05-04.md`](./baseline-v3.9.0-2026-05-04.md) — 2098.8 MB resident (telemetry-sourced), `/` 26 ms, `/view/Welcome` 18 ms, `/search?q=test` 129 ms, `/login` 17 ms.
 
-**Drift since v3.8.0:** memory dropped −1.5 GB / −42.7 % — partially real, partially a measurement-source change (v3.8.0 was pm2-RSS, v3.9.0 is `process.memoryUsage().rss` via `/metrics` since telemetry is now on by default on jimstest). v3.10.0+ will be telemetry-vs-telemetry, removing the confound. Routes within noise.
+__Drift since v3.8.0:__ memory dropped −1.5 GB / −42.7 % — partially real, partially a measurement-source change (v3.8.0 was pm2-RSS, v3.9.0 is `process.memoryUsage().rss` via `/metrics` since telemetry is now on by default on jimstest). v3.10.0+ will be telemetry-vs-telemetry, removing the confound. Routes within noise.
 
-**What works today:**
+__What works today:__
 
 - Per-release baselines (`scripts/baseline-profile.sh`): memory + 4 route timings, optionally cold-start, optionally authenticated routes, drift-vs-previous via `--compare`, per-addon overhead via `--addon-diff`.
 - Live telemetry (`MetricsManager`): 7 counters + 7 histograms + 5 process-memory gauges. Pull via `:9464/metrics` (Prometheus) or push via OTLP.
 - Release flow integration: `/semver` runs `npm run test:baseline:compare`, prints the drift table, halts on threshold trips for human review.
 
-**What's in flight (`in review`, OPEN):**
+__What's in flight (`in review`, OPEN):__
 
 | # | Title | Status |
 |---|---|---|
@@ -24,7 +24,7 @@ Index and current-status overview for performance measurement, telemetry, and tu
 | [#612](https://github.com/jwilleke/ngdpbase/issues/612) | baseline-profile.sh: per-addon overhead diff | Implemented + first live capture; data noise larger than predicted (see `issue-612-addon-diff-mode.md` § known limitations) |
 | [#613](https://github.com/jwilleke/ngdpbase/issues/613) | baseline-profile.sh: authenticated route timings | Implemented; valid-cred login path not yet exercised end-to-end |
 
-**Open performance work without an `in review` label:**
+__Open performance work without an `in review` label:__
 
 - [#259](https://github.com/jwilleke/ngdpbase/issues/259) Storage migration tool for attachment + data path changes — original umbrella issue, predates the baseline-profile work
 - [#642](https://github.com/jwilleke/ngdpbase/issues/642) Two divergent base-url config keys (`ngdpbase.base-url` vs `ngdpbase.baseURL`) — not strictly a performance bug but surfaces noise in the telemetry-aware path
@@ -54,7 +54,7 @@ Read `${FAST_STORAGE}` / `${SLOW_STORAGE}` from `.env` automatically — no need
 |---|---|
 | `npm run test:baseline` | Casual capture, no diff, no restarts |
 | `npm run test:baseline:cold` | Want cold-start timing (stops + starts the server first; slower) |
-| `npm run test:baseline:compare` | **Used by `/semver`.** Captures + auto-diffs against the most recent prior baseline + halts on regression thresholds |
+| `npm run test:baseline:compare` | __Used by `/semver`.__ Captures + auto-diffs against the most recent prior baseline + halts on regression thresholds |
 | `npm run test:baseline:addondiff` | Per-addon overhead measurement (#612). Disables each enabled addon one at a time, restarts, re-measures. ~35 s per addon + 1 — see [`issue-612-addon-diff-mode.md`](./issue-612-addon-diff-mode.md) |
 
 ### Authenticated route timings (#613)
@@ -83,13 +83,13 @@ Separate concern from runtime baselines. The vitest cold-start race (#622) is do
 
 ## Telemetry stack
 
-ngdpbase ships an OpenTelemetry SDK with Prometheus pull export and optional OTLP push export. **Disabled by default**: when telemetry is off, `MetricsManager` is a no-op with zero overhead.
+ngdpbase ships an OpenTelemetry SDK with Prometheus pull export and optional OTLP push export. __Disabled by default__: when telemetry is off, `MetricsManager` is a no-op with zero overhead.
 
 For configuration, scrape endpoints, security model, and the full metric reference, see:
 
-- [**`docs/admin/Telemetry.md`**](../admin/Telemetry.md) — operator-facing setup guide
-- [**`docs/managers/MetricsManager.md`**](../managers/MetricsManager.md) — manager API summary
-- [**`docs/managers/MetricsManager-Complete-Guide.md`**](../managers/MetricsManager-Complete-Guide.md) — full guide with OTLP setup, Grafana dashboards, alerting rules
+- [__`docs/admin/Telemetry.md`__](../admin/Telemetry.md) — operator-facing setup guide
+- [__`docs/managers/MetricsManager.md`__](../managers/MetricsManager.md) — manager API summary
+- [__`docs/managers/MetricsManager-Complete-Guide.md`__](../managers/MetricsManager-Complete-Guide.md) — full guide with OTLP setup, Grafana dashboards, alerting rules
 
 ### Metrics relevant to performance baselines
 
@@ -106,7 +106,7 @@ For configuration, scrape endpoints, security model, and the full metric referen
 | `{app}_search_rebuild_duration_ms` | Histogram | live monitoring |
 | `{app}_http_request_duration_ms` | Histogram | live monitoring (per-route) |
 
-The five `process_*` gauges share a single `BatchObservableCallback` so `process.memoryUsage()` is called **once per scrape interval** regardless of gauge count.
+The five `process_*` gauges share a single `BatchObservableCallback` so `process.memoryUsage()` is called __once per scrape interval__ regardless of gauge count.
 
 ---
 
@@ -149,7 +149,7 @@ Files matching `baseline-v*-addondiff*.md` are excluded from `--compare` auto-de
 
 ## Adding to this index
 
-- **New release baseline** — appears automatically when `/semver` runs `--compare`. The "Current status" block at the top should be updated by hand, ideally as part of the release commit
-- **New deep-dive** — file as `issue-<NNN>-<slug>.md` in this directory and link from the "Methodology deep-dives" section
-- **Closed perf issue** — add a one-line entry to "Recently closed performance work"
-- **Existing perf doc found elsewhere in `docs/`** — link from the appropriate section here rather than duplicating
+- __New release baseline__ — appears automatically when `/semver` runs `--compare`. The "Current status" block at the top should be updated by hand, ideally as part of the release commit
+- __New deep-dive__ — file as `issue-<NNN>-<slug>.md` in this directory and link from the "Methodology deep-dives" section
+- __Closed perf issue__ — add a one-line entry to "Recently closed performance work"
+- __Existing perf doc found elsewhere in `docs/`__ — link from the appropriate section here rather than duplicating

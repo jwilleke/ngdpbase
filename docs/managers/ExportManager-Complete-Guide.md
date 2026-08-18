@@ -1,8 +1,8 @@
 # ExportManager Complete Guide
 
-**Module:** `src/managers/ExportManager.js`
-**Quick Reference:** [ExportManager.md](ExportManager.md)
-**Generated API:** [API Docs](../api/generated/src/managers/ExportManager/README.md)
+__Module:__ `src/managers/ExportManager.js`
+__Quick Reference:__ [ExportManager.md](ExportManager.md)
+__Generated API:__ [API Docs](../api/generated/src/managers/ExportManager/README.md)
 
 ---
 
@@ -73,23 +73,23 @@ Export a single page to a complete HTML document.
 async exportPageToHtml(pageName, user = null)
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `pageName` - Name of the page to export
 - `user` - User object for locale-aware timestamps (optional)
 
-**Returns:** `string` - Complete HTML document
+__Returns:__ `string` - Complete HTML document
 
-**Throws:** `Error` if page not found
+__Throws:__ `Error` if page not found
 
-**Features:**
+__Features:__
 
 - Full HTML5 document with `<head>` and `<body>`
 - Responsive CSS styling included
 - Page metadata (modified date, categories, keywords)
 - Print-friendly styles
 
-**Example:**
+__Example:__
 
 ```javascript
 const exportManager = engine.getManager('ExportManager');
@@ -111,14 +111,14 @@ Export multiple pages to a single HTML document with table of contents.
 async exportPagesToHtml(pageNames, user = null)
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `pageNames` - Array of page names to export
 - `user` - User object for locale-aware timestamps (optional)
 
-**Returns:** `string` - Combined HTML document with TOC
+__Returns:__ `string` - Combined HTML document with TOC
 
-**Features:**
+__Features:__
 
 - Auto-generated table of contents
 - Two-column TOC layout
@@ -126,7 +126,7 @@ async exportPagesToHtml(pageNames, user = null)
 - Anchor links for navigation
 - Print page-break hints
 
-**Example:**
+__Example:__
 
 ```javascript
 const pages = ['Introduction', 'Getting Started', 'Configuration', 'FAQ'];
@@ -143,20 +143,20 @@ Export pages to raw Markdown format.
 async exportToMarkdown(pageNames, user = null)
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `pageNames` - Single page name or array of page names
 - `user` - User object for timestamps (optional)
 
-**Returns:** `string` - Markdown content
+__Returns:__ `string` - Markdown content
 
-**Features:**
+__Features:__
 
 - Raw page content (no rendering)
 - Multi-page exports include TOC
 - Page separators between pages
 
-**Example:**
+__Example:__
 
 ```javascript
 // Single page
@@ -178,17 +178,17 @@ Save export content to a file.
 async saveExport(content, filename, format)
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `content` - Content to save
 - `filename` - Base filename (sanitized automatically)
 - `format` - File extension (html, md, etc.)
 
-**Returns:** `string` - Full path to saved file
+__Returns:__ `string` - Full path to saved file
 
-**Filename format:** `{sanitized-name}_{YYYY-MM-DD}.{format}`
+__Filename format:__ `{sanitized-name}_{YYYY-MM-DD}.{format}`
 
-**Example:**
+__Example:__
 
 ```javascript
 const html = await exportManager.exportPageToHtml('Main');
@@ -206,7 +206,7 @@ List all export files in the export directory.
 async getExports()
 ```
 
-**Returns:** `Array<Object>` sorted by creation date (newest first)
+__Returns:__ `Array<Object>` sorted by creation date (newest first)
 
 Each object contains:
 
@@ -226,7 +226,7 @@ Delete an export file.
 async deleteExport(filename)
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `filename` - Name of file to delete
 
@@ -242,11 +242,11 @@ Get locale-aware formatted timestamp.
 getFormattedTimestamp(user = null)
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `user` - User object with locale preferences (optional)
 
-**Returns:** `string` - Formatted date/time string
+__Returns:__ `string` - Formatted date/time string
 
 If user has `preferences.locale` set, uses LocaleUtils for formatting. Otherwise falls back to system default.
 
@@ -344,10 +344,10 @@ app.delete('/admin/exports/:filename', async (req, res) => {
 
 ## Notes
 
-- **HTML styling:** Exports include embedded CSS for consistent rendering
-- **Print support:** HTML exports have print-friendly styles
-- **File sanitization:** Filenames are sanitized to remove special characters
-- **No PDF yet:** PDF export listed in supportedFormats but not implemented
+- __HTML styling:__ Exports include embedded CSS for consistent rendering
+- __Print support:__ HTML exports have print-friendly styles
+- __File sanitization:__ Filenames are sanitized to remove special characters
+- __No PDF yet:__ PDF export listed in supportedFormats but not implemented
 
 ---
 

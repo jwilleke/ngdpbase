@@ -1,7 +1,7 @@
 # Testing Summary
 
-**Last Updated:** 2026-01-11
-**Current Version:** 1.5.0
+__Last Updated:__ 2026-01-11
+__Current Version:__ 1.5.0
 
 ## Current Test Status
 
@@ -11,7 +11,7 @@
 | --- | --- |
 | Test Suites | 58 passed, 9 skipped (67 total) |
 | Tests | 1380 passed, 308 skipped (1688 total) |
-| **Pass Rate** | **100%** (of executed tests) |
+| __Pass Rate__ | __100%__ (of executed tests) |
 
 ### End-to-End Tests (Playwright) - 2026-01-11
 
@@ -20,7 +20,7 @@
 | Tests Passed | 18 |
 | Tests Failed | 8 |
 | Tests Skipped | 2 |
-| **Pass Rate** | **64%** (18/28) |
+| __Pass Rate__ | __64%__ (18/28) |
 
 #### E2E Test Results by File
 
@@ -45,7 +45,7 @@
 | Basic search | Search input not found |
 | Special chars search | Search input not found |
 
-> **Note:** E2E failures are related to UI selectors not matching the actual page structure. The tests need to be updated to match the current UI implementation. These are not related to the TypeScript migration work.
+> __Note:__ E2E failures are related to UI selectors not matching the actual page structure. The tests need to be updated to match the current UI implementation. These are not related to the TypeScript migration work.
 
 ### End-to-End Tests (Playwright)
 
@@ -78,45 +78,45 @@ npm run test:e2e:headed     # Run in headed browser mode
 
 All core functionality is tested and passing:
 
-- **WikiEngine** - Core engine lifecycle
-- **UserManager** - Authentication, sessions, permissions
-- **PageManager** - Page CRUD operations (includes Storage integration tests)
-- **FileSystemProvider** - File-based page storage
-- **ACLManager** - Access control lists
-- **SearchManager** - Full-text search
-- **PolicyManager** - Policy-based access control
-- **WikiContext** - Request context management
-- **FilterChain** - Content filtering
-- **SchemaManager** - Schema validation
-- **ExportManager** - Page export
-- **NotificationManager** - Notification system
-- **MarkupParser** - Core parsing (26 tests)
-- **WikiDocument** - DOM operations
-- **All route handlers** - HTTP endpoints
-- **All plugins** - Plugin tests
+- __WikiEngine__ - Core engine lifecycle
+- __UserManager__ - Authentication, sessions, permissions
+- __PageManager__ - Page CRUD operations (includes Storage integration tests)
+- __FileSystemProvider__ - File-based page storage
+- __ACLManager__ - Access control lists
+- __SearchManager__ - Full-text search
+- __PolicyManager__ - Policy-based access control
+- __WikiContext__ - Request context management
+- __FilterChain__ - Content filtering
+- __SchemaManager__ - Schema validation
+- __ExportManager__ - Page export
+- __NotificationManager__ - Notification system
+- __MarkupParser__ - Core parsing (26 tests)
+- __WikiDocument__ - DOM operations
+- __All route handlers__ - HTTP endpoints
+- __All plugins__ - Plugin tests
 
 ### Skipped Test Suites (9)
 
 These suites are temporarily skipped pending API updates:
 
-1. **VersioningFileProvider** - API mismatches (54 tests)
-2. **VersioningFileProvider-Maintenance** - Depends on above
-3. **VersioningMigration** - API mismatches (30 tests)
-4. **MarkupParser-Comprehensive** - Output format differences
-5. **MarkupParser-DOMNodeCreation** - Output format differences
-6. **MarkupParser-Extraction** - Output format differences
-7. **MarkupParser-MergePipeline** - Output format differences
-8. **MarkupParser-ModularConfig** - Output format differences
-9. **MarkupParser-EndToEnd** - Output format differences
+1. __VersioningFileProvider__ - API mismatches (54 tests)
+2. __VersioningFileProvider-Maintenance__ - Depends on above
+3. __VersioningMigration__ - API mismatches (30 tests)
+4. __MarkupParser-Comprehensive__ - Output format differences
+5. __MarkupParser-DOMNodeCreation__ - Output format differences
+6. __MarkupParser-Extraction__ - Output format differences
+7. __MarkupParser-MergePipeline__ - Output format differences
+8. __MarkupParser-ModularConfig__ - Output format differences
+9. __MarkupParser-EndToEnd__ - Output format differences
 
 ## Test Infrastructure
 
 ### Configuration
 
-- **Framework:** Jest with Node.js environment
-- **Setup file:** `jest.setup.js` (global mocks)
-- **Timeout:** 120000ms for long-running tests
-- **Coverage:** Available via `npm run test:coverage`
+- __Framework:__ Jest with Node.js environment
+- __Setup file:__ `jest.setup.js` (global mocks)
+- __Timeout:__ 120000ms for long-running tests
+- __Coverage:__ Available via `npm run test:coverage`
 
 ### Global Mocks
 
@@ -128,7 +128,7 @@ The following are mocked globally in `jest.setup.js`:
 
 ## Fix Strategy
 
-We use **Option C: Fix-As-Needed** approach:
+We use __Option C: Fix-As-Needed__ approach:
 
 1. Fix tests when working on related code
 2. Prioritize by impact (security > core > features)
@@ -136,10 +136,10 @@ We use **Option C: Fix-As-Needed** approach:
 
 ### Priority Order
 
-1. **CRITICAL** - Security tests (ACLManager, UserManager, PolicyManager) - ✅ Done
-2. **HIGH** - Core functionality (WikiEngine, PageManager, SearchManager) - ✅ Done
-3. **MEDIUM** - Features (Rendering, Plugins, Routes) - Partial
-4. **LOW** - Utilities and edge cases - Deferred
+1. __CRITICAL__ - Security tests (ACLManager, UserManager, PolicyManager) - ✅ Done
+2. __HIGH__ - Core functionality (WikiEngine, PageManager, SearchManager) - ✅ Done
+3. __MEDIUM__ - Features (Rendering, Plugins, Routes) - Partial
+4. __LOW__ - Utilities and edge cases - Deferred
 
 ## Recent Progress
 
@@ -158,9 +158,9 @@ We use **Option C: Fix-As-Needed** approach:
 
 ### New Tests for Issue #172 and #174 (2025-12-12)
 
-- **WikiRoutes-isRequiredPage.test.js** - 14 tests for system-category protection
-- **RenderingManager.test.js** - Added plural link resolution test for Issue #172
-- **FileSystemProvider.test.js** - 12 tests for installation-aware loading ✅ Fixed 2025-12-14
+- __WikiRoutes-isRequiredPage.test.js__ - 14 tests for system-category protection
+- __RenderingManager.test.js__ - Added plural link resolution test for Issue #172
+- __FileSystemProvider.test.js__ - 12 tests for installation-aware loading ✅ Fixed 2025-12-14
 
 ## Known Issues
 
@@ -168,11 +168,11 @@ We use **Option C: Fix-As-Needed** approach:
 
 Several test suites are skipped because they test APIs that have changed:
 
-1. **Versioning Tests** - The VersioningFileProvider API has significant changes. Tests check for properties and methods that no longer exist or have different signatures.
+1. __Versioning Tests__ - The VersioningFileProvider API has significant changes. Tests check for properties and methods that no longer exist or have different signatures.
 
-2. **MarkupParser Output Format Tests** - The WikiDocument DOM implementation produces different HTML output (with data attributes) than what the tests expect. The functionality works, but the expected HTML format differs.
+2. __MarkupParser Output Format Tests__ - The WikiDocument DOM implementation produces different HTML output (with data attributes) than what the tests expect. The functionality works, but the expected HTML format differs.
 
-**Status:** These tests need comprehensive rewrites to match current implementation. Core functionality is tested by other passing tests.
+__Status:__ These tests need comprehensive rewrites to match current implementation. Core functionality is tested by other passing tests.
 
 ## E2E Test Infrastructure
 
@@ -180,10 +180,10 @@ Several test suites are skipped because they test APIs that have changed:
 
 E2E tests use Playwright with the following configuration:
 
-- **Test Directory:** `tests/e2e/`
-- **Config:** `playwright.config.js`
-- **Browser:** Chromium (default)
-- **Port:** 3099 (test server)
+- __Test Directory:__ `tests/e2e/`
+- __Config:__ `playwright.config.js`
+- __Browser:__ Chromium (default)
+- __Port:__ 3099 (test server)
 
 ### Test Files
 

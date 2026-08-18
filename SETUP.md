@@ -4,10 +4,10 @@ Quick setup instructions for getting ngdpbase running locally or in production.
 
 ## Prerequisites
 
-- **Node.js v24+** - [Download](https://nodejs.org/) (Node 18 EOL April 2025; Node 20 EOL April 2026)
-- **npm** - Included with Node.js
-- **PM2** (for production) - `npm install -g pm2`
-- **Git** - For version control
+- __Node.js v24+__ - [Download](https://nodejs.org/) (Node 18 EOL April 2025; Node 20 EOL April 2026)
+- __npm__ - Included with Node.js
+- __PM2__ (for production) - `npm install -g pm2`
+- __Git__ - For version control
 
 ## Quick Start
 
@@ -44,20 +44,20 @@ The installation wizard will guide you through first-time setup.
 
 On first visit, the Installation Wizard will:
 
-1. **Configure Application**
+1. __Configure Application__
    - Set application name
    - Set base URL
 
-2. **Create Admin Account**
+2. __Create Admin Account__
    - Set admin password (username and email are fixed)
    - Ensure password is 8+ characters
 
-3. **Organization Information**
+3. __Organization Information__
    - Organization name and description
    - Contact email
    - Optional: Legal name, founding date, address
 
-4. **Startup Pages** (optional)
+4. __Startup Pages__ (optional)
    - Copy 42 default wiki pages
    - Provides starter content
 
@@ -98,7 +98,7 @@ When `HEADLESS_INSTALL=true`:
 
 ### Security Note
 
-The `admin` account is created on first start with the default password `admin123`. **Change it immediately after first login** — the startup banner warns until you do. To avoid the default entirely, point `ngdpbase.user.security.defaultpassword` at `"$NGDPBASE_ADMIN_PASSWORD"` in `app-custom-config.json` and set that variable in `.env`; a bare `$VAR` reference is strict, so an unset variable stops the boot rather than silently using the default.
+The `admin` account is created on first start with the default password `admin123`. __Change it immediately after first login__ — the startup banner warns until you do. To avoid the default entirely, point `ngdpbase.user.security.defaultpassword` at `"$NGDPBASE_ADMIN_PASSWORD"` in `app-custom-config.json` and set that variable in `.env`; a bare `$VAR` reference is strict, so an unset variable stops the boot rather than silently using the default.
 
 ### Pre-configuring via Environment Variables
 
@@ -237,10 +237,10 @@ npm run lint              # Run linter
 
 ngdpbase uses file-based storage:
 
-- **Pages**: `pages/` directory (UUID-named .md files)
-- **Users**: `users/` directory (users.json, organizations.json)
-- **Config**: `config/` directory (.json files)
-- **Versions**: Delta-based storage (80-95% space savings)
+- __Pages__: `pages/` directory (UUID-named .md files)
+- __Users__: `users/` directory (users.json, organizations.json)
+- __Config__: `config/` directory (.json files)
+- __Versions__: Delta-based storage (80-95% space savings)
 
 No database required - fully local-first capable.
 
@@ -331,17 +331,17 @@ curl http://localhost:3000/
 
 ## Next Steps
 
-1. **Read CONTRIBUTING.md** for development guidelines
-2. **Review ARCHITECTURE.md** for system design
-3. **Check docs/planning/TODO.md** for current tasks
-4. **See DOCUMENTATION.md** for all available guides
+1. __Read CONTRIBUTING.md__ for development guidelines
+2. __Review ARCHITECTURE.md__ for system design
+3. __Check docs/planning/TODO.md__ for current tasks
+4. __See DOCUMENTATION.md__ for all available guides
 
 ## Getting Help
 
-- **Installation issues**: See [docs/INSTALLATION/INSTALLATION-SYSTEM.md](./docs/INSTALLATION/INSTALLATION-SYSTEM.md)
-- **Server problems**: See [docs/SERVER.md](./docs/SERVER.md)
-- **Development help**: See [CONTRIBUTING.md](./CONTRIBUTING.md)
-- **Security concerns**: See [SECURITY.md](./SECURITY.md)
+- __Installation issues__: See [docs/INSTALLATION/INSTALLATION-SYSTEM.md](./docs/INSTALLATION/INSTALLATION-SYSTEM.md)
+- __Server problems__: See [docs/SERVER.md](./docs/SERVER.md)
+- __Development help__: See [CONTRIBUTING.md](./CONTRIBUTING.md)
+- __Security concerns__: See [SECURITY.md](./SECURITY.md)
 
 ## Related Documentation
 

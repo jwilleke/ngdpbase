@@ -9,7 +9,7 @@ assignees: ''
 
 # 🎯 Epic Overview
 
-**Goal**: [High-level objective]
+__Goal__: [High-level objective]
 
 ## 📋 Scope
 

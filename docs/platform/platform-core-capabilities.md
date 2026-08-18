@@ -1,9 +1,9 @@
 # ngdpbase Core Platform Capabilities
 
-This document describes what ngdpbase provides **out of the box** to anyone who clones and extends it.
-These are things you do **not** need to build — they are fully implemented, tested, and production-ready.
+This document describes what ngdpbase provides __out of the box__ to anyone who clones and extends it.
+These are things you do __not__ need to build — they are fully implemented, tested, and production-ready.
 
-> **Optional features** are marked *(disabled by default)* or *(enabled by default)* where they are
+> __Optional features__ are marked *(disabled by default)* or *(enabled by default)* where they are
 > config-gated. Everything else is always-on.
 
 ---
@@ -90,7 +90,7 @@ These are things you do **not** need to build — they are fully implemented, te
 
 Server-side `[{PluginName param='value'}]` directives execute during page render and return HTML fragments. Plugins have full access to the engine and all managers.
 
-**Built-in plugins:**
+__Built-in plugins:__
 
 | Plugin | Directive | What it does |
 |--------|-----------|--------------|
@@ -115,7 +115,7 @@ Server-side `[{PluginName param='value'}]` directives execute during page render
 | `UptimePlugin` | `[{Uptime}]` | Server uptime display |
 | `VariablesPlugin` | `[{Variables}]` | Renders page variable substitutions |
 
-**Adding plugins:**
+__Adding plugins:__
 
 - Drop a `.ts` file in `plugins/` — auto-discovered at startup
 - Or register programmatically from an add-on: `engine.getManager('PluginManager').registerPlugin(...)`
@@ -269,10 +269,10 @@ These are the four ways to extend ngdpbase without modifying core:
 
 | Extension Point | Where | What it enables |
 |----------------|-------|-----------------|
-| **Plugins** | `plugins/` or registered from add-on | Custom markup directives — `[{MyPlugin}]` renders HTML during page display |
-| **Add-ons** | external repo, wired via `addonsPath` config | Full application modules: custom managers, Express routes, background jobs, lifecycle hooks |
-| **Themes** | `themes/<name>/` | Visual customization — CSS variables, logo, favicon |
-| **Providers** | Implement interface, swap in config | Replace storage or search backend (`PageProvider`, `SearchProvider`, `UserProvider`, `AuditProvider`) |
+| __Plugins__ | `plugins/` or registered from add-on | Custom markup directives — `[{MyPlugin}]` renders HTML during page display |
+| __Add-ons__ | external repo, wired via `addonsPath` config | Full application modules: custom managers, Express routes, background jobs, lifecycle hooks |
+| __Themes__ | `themes/<name>/` | Visual customization — CSS variables, logo, favicon |
+| __Providers__ | Implement interface, swap in config | Replace storage or search backend (`PageProvider`, `SearchProvider`, `UserProvider`, `AuditProvider`) |
 
 See [`docs/platform/ngdp-as-platform.md`](./ngdp-as-platform.md) for the addon development model, use-case analysis, and how to wire an external addon repo.
 
@@ -280,7 +280,7 @@ See [`docs/platform/ngdp-as-platform.md`](./ngdp-as-platform.md) for the addon d
 
 ## What You Do NOT Get Out of the Box
 
-These are explicitly **not** in core — they are what add-on developers build:
+These are explicitly __not__ in core — they are what add-on developers build:
 
 - Domain-specific data models (volcano records, unit contacts, product catalog, etc.)
 - Domain-specific plugins (infoboxes, maps, faceted search widgets for your data)

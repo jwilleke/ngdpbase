@@ -108,16 +108,16 @@ archive/                   # Legacy files and deprecated content
 
 The `src/` directory contains all application source code, organized by functional responsibility:
 
-- **`core/`**: Core engine components and base classes
-- **`managers/`**: Business logic managers (PageManager, UserManager, etc.)
-- **`routes/`**: HTTP route handlers and API endpoints
-- **`utils/`**: Utility functions and helpers
+- __`core/`__: Core engine components and base classes
+- __`managers/`__: Business logic managers (PageManager, UserManager, etc.)
+- __`routes/`__: HTTP route handlers and API endpoints
+- __`utils/`__: Utility functions and helpers
 
 ### Configuration (`config/`)
 
 Contains application configuration files:
 
-- **`Config.js`**: Main application configuration with validation
+- __`Config.js`__: Main application configuration with validation
 - Environment-specific overrides
 - Manager-specific settings
 
@@ -125,68 +125,68 @@ Contains application configuration files:
 
 Web-accessible static files:
 
-- **`css/`**: Stylesheets
-- **`js/`**: Client-side JavaScript
-- **`images/`**: Static images and assets
+- __`css/`__: Stylesheets
+- __`js/`__: Client-side JavaScript
+- __`images/`__: Static images and assets
 
 ### Templates (`views/`)
 
 Server-side templates using EJS:
 
-- **`*.ejs`**: Page templates
-- **`admin-*.ejs`**: Admin interface templates
-- **`edit.ejs`**: Page editing interface
+- __`*.ejs`__: Page templates
+- __`admin-*.ejs`__: Admin interface templates
+- __`edit.ejs`__: Page editing interface
 
 ### Documentation (`docs/`)
 
 Comprehensive documentation organized by purpose:
 
-- **`architecture/`**: System design and technical architecture
-- **`development/`**: Development processes and coding standards
-- **`planning/`**: Project planning and feature roadmaps
-- **`api/`**: API documentation and specifications
-- **`issues/`**: Known issues and troubleshooting guides
+- __`architecture/`__: System design and technical architecture
+- __`development/`__: Development processes and coding standards
+- __`planning/`__: Project planning and feature roadmaps
+- __`api/`__: API documentation and specifications
+- __`issues/`__: Known issues and troubleshooting guides
 
 ### Runtime Data (Gitignored)
 
 These directories contain runtime-generated data that should not be version controlled:
 
-- **`data/`**: Application state data (notifications, cache, etc.)
-- **`logs/`**: Application logs and debugging information
-- **`pages/`**: User-generated wiki content
-- **`users/`**: User account and session data
-- **`attachments/`**: User-uploaded files
-- **`exports/`**: Generated export files
-- **`reports/`**: Test coverage and analysis reports
+- __`data/`__: Application state data (notifications, cache, etc.)
+- __`logs/`__: Application logs and debugging information
+- __`pages/`__: User-generated wiki content
+- __`users/`__: User account and session data
+- __`attachments/`__: User-uploaded files
+- __`exports/`__: Generated export files
+- __`reports/`__: Test coverage and analysis reports
 
 ## File Naming Conventions
 
 ### Source Files
 
-- **PascalCase** for classes: `WikiEngine.js`, `PageManager.js`
-- **camelCase** for utilities: `logger.js`, `scripts/version.js`
-- **kebab-case** for config: `Config.js`
+- __PascalCase__ for classes: `WikiEngine.js`, `PageManager.js`
+- __camelCase__ for utilities: `logger.js`, `scripts/version.js`
+- __kebab-case__ for config: `Config.js`
 
 ### Documentation Files
 
-- **SCREAMING_SNAKE_CASE** for major docs: `README.md`, `CHANGELOG.md`
-- **Title Case** for feature docs: `Notification Enhancement.md`
-- **Descriptive names** with clear purpose
+- __SCREAMING_SNAKE_CASE__ for major docs: `README.md`, `CHANGELOG.md`
+- __Title Case__ for feature docs: `Notification Enhancement.md`
+- __Descriptive names__ with clear purpose
 
 ### Directory Names
 
-- **lowercase** for technical directories: `src/`, `config/`, `public/`
-- **hyphen-separated** for complex names: `test-coverage/`
-- **Purpose-driven** naming: `user-management/`, `content-validation/`
+- __lowercase__ for technical directories: `src/`, `config/`, `public/`
+- __hyphen-separated__ for complex names: `test-coverage/`
+- __Purpose-driven__ naming: `user-management/`, `content-validation/`
 
 ## Gitignore Strategy
 
 The `.gitignore` file is strategically organized to exclude:
 
-1. **Runtime Data**: Files generated during application execution
-2. **User Content**: User-generated wiki pages and uploads
-3. **Development Artifacts**: Coverage reports, logs, temporary files
-4. **Environment-Specific**: Files that differ between environments
+1. __Runtime Data__: Files generated during application execution
+2. __User Content__: User-generated wiki pages and uploads
+3. __Development Artifacts__: Coverage reports, logs, temporary files
+4. __Environment-Specific__: Files that differ between environments
 
 ### Key Ignore Patterns
 
@@ -214,34 +214,34 @@ node_modules/
 
 ### Adding New Features
 
-1. **Source Code**: Add to appropriate `src/` subdirectory
-2. **Configuration**: Update `config/Config.js` if needed
-3. **Documentation**: Add to relevant `docs/` subdirectory
-4. **Tests**: Add to `tests/` directory
-5. **Scripts**: Add utilities to `scripts/` directory
+1. __Source Code__: Add to appropriate `src/` subdirectory
+2. __Configuration__: Update `config/Config.js` if needed
+3. __Documentation__: Add to relevant `docs/` subdirectory
+4. __Tests__: Add to `tests/` directory
+5. __Scripts__: Add utilities to `scripts/` directory
 
 ### File Organization Guidelines
 
-1. **Keep related files together**: Group by feature or responsibility
-2. **Use consistent naming**: Follow established conventions
-3. **Document new directories**: Update this document when adding new directories
-4. **Maintain separation**: Keep runtime data separate from source code
+1. __Keep related files together__: Group by feature or responsibility
+2. __Use consistent naming__: Follow established conventions
+3. __Document new directories__: Update this document when adding new directories
+4. __Maintain separation__: Keep runtime data separate from source code
 
 ## Maintenance
 
 ### Regular Cleanup Tasks
 
-1. **Archive old files**: Move deprecated files to `archive/`
-2. **Review gitignore**: Ensure new file types are properly ignored
-3. **Update documentation**: Keep this document current with structure changes
-4. **Consolidate similar directories**: Merge related directories when appropriate
+1. __Archive old files__: Move deprecated files to `archive/`
+2. __Review gitignore__: Ensure new file types are properly ignored
+3. __Update documentation__: Keep this document current with structure changes
+4. __Consolidate similar directories__: Merge related directories when appropriate
 
 ### Directory Size Monitoring
 
-- **`logs/`**: Monitor log file sizes, implement rotation
-- **`data/`**: Monitor application data growth
-- **`attachments/`**: Monitor upload storage usage
-- **`reports/`**: Clean up old coverage reports
+- __`logs/`__: Monitor log file sizes, implement rotation
+- __`data/`__: Monitor application data growth
+- __`attachments/`__: Monitor upload storage usage
+- __`reports/`__: Clean up old coverage reports
 
 ## Related Documentation
 

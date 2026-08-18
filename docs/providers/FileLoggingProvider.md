@@ -8,11 +8,11 @@ code: src/providers/FileLoggingProvider.ts
 
 # FileLoggingProvider
 
-**Quick Reference** | [BaseLoggingProvider](BaseLoggingProvider.md)
+__Quick Reference__ | [BaseLoggingProvider](BaseLoggingProvider.md)
 
-**Module:** `src/providers/FileLoggingProvider.ts`
-**Type:** Logging Provider (default)
-**Status:** Production
+__Module:__ `src/providers/FileLoggingProvider.ts`
+__Type:__ Logging Provider (default)
+__Status:__ Production
 
 ---
 
@@ -27,14 +27,14 @@ no call sites changed.
 
 ## Behaviour
 
-- **Console transport:** always added.
-- **File transport:** added only when `config.dir` is set. This preserves the
+- __Console transport:__ always added.
+- __File transport:__ added only when `config.dir` is set. This preserves the
   pre-#169 guard that avoids creating `./data/logs` before
   `ConfigurationManager` resolves paths (the logger runs with console-only
   defaults until `WikiEngine.initialize()` calls `reconfigureLogger`).
-- **`maxSize`:** accepts a number (bytes) or a `'<n>[MB|KB|B]'` string;
+- __`maxSize`:__ accepts a number (bytes) or a `'<n>[MB|KB|B]'` string;
   unparseable values fall back to 1 MB.
-- **Format:** `format.combine(timestamp(), printf(...))` →
+- __Format:__ `format.combine(timestamp(), printf(...))` →
   `"<ts> [<level>]: <msg>"`.
 
 ## Selection

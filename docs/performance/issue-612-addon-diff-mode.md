@@ -1,9 +1,9 @@
 # Issue #612 — `baseline-profile.sh --addon-diff` mode
 
-**Date:** 2026-05-04
-**Issue:** [#612 — `[FEATURE] baseline-profile.sh: per-addon overhead diff`](https://github.com/jwilleke/ngdpbase/issues/612)
-**Commit:** b569b3dd
-**Outcome:** New `--addon-diff` mode in `scripts/baseline-profile.sh` (and `npm run test:baseline:addondiff`). For each addon listed under `ngdpbase.addons.*.enabled` in the running install's custom config: disable, restart, re-measure, restore. Emits a per-addon memory + route-time delta table.
+__Date:__ 2026-05-04
+__Issue:__ [#612 — `[FEATURE] baseline-profile.sh: per-addon overhead diff`](https://github.com/jwilleke/ngdpbase/issues/612)
+__Commit:__ b569b3dd
+__Outcome:__ New `--addon-diff` mode in `scripts/baseline-profile.sh` (and `npm run test:baseline:addondiff`). For each addon listed under `ngdpbase.addons.*.enabled` in the running install's custom config: disable, restart, re-measure, restore. Emits a per-addon memory + route-time delta table.
 
 ## Why
 
@@ -47,25 +47,25 @@ Negative deltas can be real (the addon makes a route faster — e.g. elasticsear
 
 ## Cost
 
-- **One restart per enabled addon, plus one final restart for cleanup.** For jimstest's 5 addons that's ~6 restarts.
-- **~30s per restart** is realistic on this dev machine; large installs with many pages can run longer.
-- Total for jimstest: **~3–5 minutes** wall-clock.
+- __One restart per enabled addon, plus one final restart for cleanup.__ For jimstest's 5 addons that's ~6 restarts.
+- __~30s per restart__ is realistic on this dev machine; large installs with many pages can run longer.
+- Total for jimstest: __~3–5 minutes__ wall-clock.
 - During the run jimstest is unavailable in short bursts as it cycles. Don't run during a session you care about.
 
 The script prints a runtime estimate up front so a long run isn't mistaken for a hang. It also prints `[i/N]` progress markers per iteration.
 
 ## Safety
 
-- **Original config is backed up** to a `mktemp` file before any modification.
-- **EXIT trap** restores the backup and runs a final `./server.sh restart` regardless of how the script exits — clean exit, error, or **Ctrl-C**.
-- **Do not `kill -9`** the script. SIGKILL bypasses the trap; the config will be left in a modified state. Recovery in that case: copy any sibling `baseline-v*-addondiff*.md` (which contains the original addon settings in the "all enabled" baseline) or restore the custom config from git history.
+- __Original config is backed up__ to a `mktemp` file before any modification.
+- __EXIT trap__ restores the backup and runs a final `./server.sh restart` regardless of how the script exits — clean exit, error, or __Ctrl-C__.
+- __Do not `kill -9`__ the script. SIGKILL bypasses the trap; the config will be left in a modified state. Recovery in that case: copy any sibling `baseline-v*-addondiff*.md` (which contains the original addon settings in the "all enabled" baseline) or restore the custom config from git history.
 
 ## How to interpret the numbers
 
-- **Memory deltas** are reasonably stable run-to-run on a warm install (~5 MB noise floor). Anything above ~10 MB is signal.
-- **Route deltas** are noisier — single-digit ms swings are within measurement noise on already-fast routes (`/`, `/login`, `/view/Welcome` are all ~15–20 ms warm). Treat <5 ms as noise, 50ms+ as a real signal. The same threshold convention as `--compare`.
-- **Negative memory delta** is suspicious — usually means the disabled addon's startup work was deferred, not actually freed; or that GC happened during the iteration. Re-run if it matters.
-- **Sums should approximate** the all-enabled-vs-none-enabled delta (within noise). If they don't, something is interacting between addons (e.g. shared cache that was warm in run 1, cold in run 2).
+- __Memory deltas__ are reasonably stable run-to-run on a warm install (~5 MB noise floor). Anything above ~10 MB is signal.
+- __Route deltas__ are noisier — single-digit ms swings are within measurement noise on already-fast routes (`/`, `/login`, `/view/Welcome` are all ~15–20 ms warm). Treat <5 ms as noise, 50ms+ as a real signal. The same threshold convention as `--compare`.
+- __Negative memory delta__ is suspicious — usually means the disabled addon's startup work was deferred, not actually freed; or that GC happened during the iteration. Re-run if it matters.
+- __Sums should approximate__ the all-enabled-vs-none-enabled delta (within noise). If they don't, something is interacting between addons (e.g. shared cache that was warm in run 1, cold in run 2).
 
 ## Known limitations (future work)
 
@@ -76,7 +76,7 @@ Today the enumeration step `jq`s only the custom config. If a sister install ena
 - `app-default-config.json` has only `"ngdpbase.addons.forms.enabled": false` — the other addons aren't there at all
 - jimstest's custom config has all 5 addons set explicitly, so the script works correctly for jimstest
 
-**Proper fix** (small): merge default + custom in jq, enumerate from the effective merged state, still write toggles to the custom config only (defaults stay clean). Tracked separately when needed.
+__Proper fix__ (small): merge default + custom in jq, enumerate from the effective merged state, still write toggles to the custom config only (defaults stay clean). Tracked separately when needed.
 
 ### 2. Restart-only — no in-process toggle
 

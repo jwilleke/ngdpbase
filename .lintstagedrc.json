@@ -3,6 +3,6 @@
     "eslint --fix"
   ],
   "*.md": [
-    "markdownlint --fix"
+    "markdownlint-cli2 --fix --no-globs"
   ]
 }

@@ -1,10 +1,10 @@
 # RenderingManager Complete Guide
 
-**Module:** `src/managers/RenderingManager.js`
-**Quick Reference:** [RenderingManager.md](RenderingManager.md)
-**Version:** 1.3.2
-**Last Updated:** 2025-12-20
-**Status:** Production Ready
+__Module:__ `src/managers/RenderingManager.js`
+__Quick Reference:__ [RenderingManager.md](RenderingManager.md)
+__Version:__ 1.3.2
+__Last Updated:__ 2025-12-20
+__Status:__ Production Ready
 
 ---
 
@@ -26,31 +26,31 @@
 
 ## Overview
 
-The **RenderingManager** is the central coordinator for markdown rendering and wiki markup processing in ngdpbase. It orchestrates the conversion of markdown/wiki markup to HTML, supporting both a modern MarkupParser system and a legacy Showdown-based renderer.
+The __RenderingManager__ is the central coordinator for markdown rendering and wiki markup processing in ngdpbase. It orchestrates the conversion of markdown/wiki markup to HTML, supporting both a modern MarkupParser system and a legacy Showdown-based renderer.
 
 ### Key Responsibilities
 
-- **Markdown Rendering**: Convert markdown content to HTML using Showdown with GFM extensions
-- **Parser Coordination**: Manage the advanced MarkupParser system and legacy fallback
-- **Wiki Link Processing**: Parse and render wiki-style links `[PageName]` and `[Text|Target]`
-- **Plugin Expansion**: Integrate with PluginManager for `[{Plugin}]` syntax
-- **Variable Expansion**: Process `[{$variable}]` syntax with VariableManager
-- **Link Graph Management**: Build and maintain page link relationships for backlinks
-- **JSPWiki Table Processing**: Convert JSPWiki-style tables to HTML with styling
+- __Markdown Rendering__: Convert markdown content to HTML using Showdown with GFM extensions
+- __Parser Coordination__: Manage the advanced MarkupParser system and legacy fallback
+- __Wiki Link Processing__: Parse and render wiki-style links `[PageName]` and `[Text|Target]`
+- __Plugin Expansion__: Integrate with PluginManager for `[{Plugin}]` syntax
+- __Variable Expansion__: Process `[{$variable}]` syntax with VariableManager
+- __Link Graph Management__: Build and maintain page link relationships for backlinks
+- __JSPWiki Table Processing__: Convert JSPWiki-style tables to HTML with styling
 
 ### Design Philosophy
 
-The RenderingManager implements a **dual-parser architecture**:
+The RenderingManager implements a __dual-parser architecture__:
 
-1. **Advanced Parser (Primary)**: Uses MarkupParser with WikiDocument DOM extraction pipeline
-2. **Legacy Parser (Fallback)**: Direct Showdown conversion with basic JSPWiki syntax support
+1. __Advanced Parser (Primary)__: Uses MarkupParser with WikiDocument DOM extraction pipeline
+2. __Legacy Parser (Fallback)__: Direct Showdown conversion with basic JSPWiki syntax support
 
 This approach provides:
 
-- **Backward Compatibility**: Existing pages render correctly
-- **Progressive Enhancement**: New features via MarkupParser
-- **Reliability**: Automatic fallback on parser errors
-- **Performance Monitoring**: Optional benchmarking between parsers
+- __Backward Compatibility__: Existing pages render correctly
+- __Progressive Enhancement__: New features via MarkupParser
+- __Reliability__: Automatic fallback on parser errors
+- __Performance Monitoring__: Optional benchmarking between parsers
 
 ---
 
@@ -174,21 +174,21 @@ Post-processing → HTML Output
 
 ## Markdown Features
 
-The RenderingManager uses **Showdown 2.1.0** with the following GitHub Flavored Markdown (GFM) features:
+The RenderingManager uses __Showdown 2.1.0__ with the following GitHub Flavored Markdown (GFM) features:
 
 ### Core Features
 
 | Feature | Syntax | Configuration | Status |
 | --------- | -------- | --------------- | -------- |
-| **Tables** | `\| Header \| Header \|` | `tables: true` | ✅ Enabled |
-| **Strikethrough** | `~~text~~` | `strikethrough: true` | ✅ Enabled |
-| **Task Lists** | `- [x] Task` | `tasklists: true` | ✅ Enabled |
-| **Fenced Code** | ` ``` code ``` ` | `ghCodeBlocks: true` | ✅ Enabled |
-| **Footnotes** | `[^1]` reference | `extensions: [showdownFootnotes]` | ✅ Enabled |
-| **Line Breaks** | Double space or `\n` | `simpleLineBreaks: true` | ✅ Enabled |
-| **Underscore** | `literal_underscore_handling` | `literalMidWordUnderscores: true` | ✅ Enabled |
-| **HTML Escaping** | `\<tag\>` | `backslashEscapesHTMLTags: true` | ✅ Enabled |
-| **Sublists** | 2-space indentation | `disableForced4SpacesIndentedSublists: true` | ✅ Enabled |
+| __Tables__ | `\| Header \| Header \|` | `tables: true` | ✅ Enabled |
+| __Strikethrough__ | `~~text~~` | `strikethrough: true` | ✅ Enabled |
+| __Task Lists__ | `- [x] Task` | `tasklists: true` | ✅ Enabled |
+| __Fenced Code__ | ` ``` code ``` ` | `ghCodeBlocks: true` | ✅ Enabled |
+| __Footnotes__ | `[^1]` reference | `extensions: [showdownFootnotes]` | ✅ Enabled |
+| __Line Breaks__ | Double space or `\n` | `simpleLineBreaks: true` | ✅ Enabled |
+| __Underscore__ | `literal_underscore_handling` | `literalMidWordUnderscores: true` | ✅ Enabled |
+| __HTML Escaping__ | `\<tag\>` | `backslashEscapesHTMLTags: true` | ✅ Enabled |
+| __Sublists__ | 2-space indentation | `disableForced4SpacesIndentedSublists: true` | ✅ Enabled |
 
 ### Showdown Configuration
 
@@ -215,29 +215,29 @@ this.converter = new showdown.Converter({
 
 ### Overview
 
-Footnotes allow you to add notes and references at the bottom of your page without cluttering the main text. ngdpbase implements **GitHub Flavored Markdown (GFM) compatible footnote syntax** using the `showdown-footnotes` extension.
+Footnotes allow you to add notes and references at the bottom of your page without cluttering the main text. ngdpbase implements __GitHub Flavored Markdown (GFM) compatible footnote syntax__ using the `showdown-footnotes` extension.
 
-**Added:** Version 1.3.2 (2025-10-16)
-**Implementation:** `src/managers/RenderingManager.js:5, 92`
-**Extension:** `src/extensions/showdown-footnotes-fixed.js` (patched version with bug fixes)
+__Added:__ Version 1.3.2 (2025-10-16)
+__Implementation:__ `src/managers/RenderingManager.js:5, 92`
+__Extension:__ `src/extensions/showdown-footnotes-fixed.js` (patched version with bug fixes)
 
 ### Syntax
 
 #### Basic Footnote
 
-**Reference in text:**
+__Reference in text:__
 
 ```markdown
 This is a sentence with a footnote[^1].
 ```
 
-**Definition at bottom:**
+__Definition at bottom:__
 
 ```markdown
 [^1]: This is the footnote text.
 ```
 
-**Rendered output:**
+__Rendered output:__
 
 - In text: `This is a sentence with a footnote<sup><a href="#footnote-1">[1]</a></sup>.`
 - At bottom: `<small class="footnote" id="footnote-1"><a href="#footnote-1"><sup>[1]</sup></a>: This is the footnote text.</small>`
@@ -266,7 +266,7 @@ This uses a descriptive identifier[^my-note].
 
 #### Multi-Paragraph Footnotes
 
-Indent continuation lines with **4 spaces** or **1 tab**:
+Indent continuation lines with __4 spaces__ or __1 tab__:
 
 ```markdown
 This has a longer footnote[^long].
@@ -289,13 +289,13 @@ This has a longer footnote[^long].
 
 Footnotes generate clean, semantic HTML:
 
-**Footnote Reference:**
+__Footnote Reference:__
 
 ```html
 <a href="#footnote-1"><sup>[1]</sup></a>
 ```
 
-**Footnote Definition:**
+__Footnote Definition:__
 
 ```html
 <small class="footnote" id="footnote-1">
@@ -306,38 +306,38 @@ Footnotes generate clean, semantic HTML:
 
 ### Features
 
-✅ **Automatic Numbering** - Sequential numbering regardless of identifier
-✅ **Bidirectional Links** - Click to jump to footnote, click to return
-✅ **Multi-Paragraph Support** - Rich formatting within footnotes
-✅ **Code Block Support** - Syntax highlighting in footnotes
-✅ **List Support** - Bullet and numbered lists in footnotes
-✅ **GFM Compatible** - Standard GitHub Flavored Markdown syntax
+✅ __Automatic Numbering__ - Sequential numbering regardless of identifier
+✅ __Bidirectional Links__ - Click to jump to footnote, click to return
+✅ __Multi-Paragraph Support__ - Rich formatting within footnotes
+✅ __Code Block Support__ - Syntax highlighting in footnotes
+✅ __List Support__ - Bullet and numbered lists in footnotes
+✅ __GFM Compatible__ - Standard GitHub Flavored Markdown syntax
 
 ### Implementation Details
 
 #### Custom Extension Patch
 
-ngdpbase uses a **patched version** of `showdown-footnotes` located at `src/extensions/showdown-footnotes-fixed.js` to fix two critical bugs in the original extension:
+ngdpbase uses a __patched version__ of `showdown-footnotes` located at `src/extensions/showdown-footnotes-fixed.js` to fix two critical bugs in the original extension:
 
 Bug #1: Missing Global Flag
 
-- **Original:** `/\[\^([\d\w]+)\]/m` - only matches first occurrence
-- **Fixed:** `/\[\^([\d\w-]+)\]/mg` - matches all occurrences
-- **Impact:** Without this fix, only the first footnote reference on the page would be converted
+- __Original:__ `/\[\^([\d\w]+)\]/m` - only matches first occurrence
+- __Fixed:__ `/\[\^([\d\w-]+)\]/mg` - matches all occurrences
+- __Impact:__ Without this fix, only the first footnote reference on the page would be converted
 
 Bug #2: Missing Hyphen Support
 
-- **Original:** `[\d\w]+` - only matches digits and word characters
-- **Fixed:** `[\d\w-]+` - also matches hyphens
-- **Impact:** Without this fix, identifiers like `[^my-note]` and `[^long-note]` wouldn't work
+- __Original:__ `[\d\w]+` - only matches digits and word characters
+- __Fixed:__ `[\d\w-]+` - also matches hyphens
+- __Impact:__ Without this fix, identifiers like `[^my-note]` and `[^long-note]` wouldn't work
 
 These fixes are applied to all three filter functions in the extension (multi-paragraph definitions, single-line definitions, and references).
 
 #### Integration with MarkupParser
 
-Footnote syntax `[^id]` must be **excluded from wiki link processing** to prevent interference:
+Footnote syntax `[^id]` must be __excluded from wiki link processing__ to prevent interference:
 
-**MarkupParser.js:1512** - Wiki link extraction excludes footnotes:
+__MarkupParser.js:1512__ - Wiki link extraction excludes footnotes:
 
 ```javascript
 // Does NOT match: [^id] - markdown footnote references
@@ -346,7 +346,7 @@ sanitized = sanitized.replace(/\[([^\]\[\{\^][^\]]*)\](?!\()/g, (match, target) 
 });
 ```
 
-**LinkParserHandler.js:27** - Link handler pattern excludes footnotes:
+__LinkParserHandler.js:27__ - Link handler pattern excludes footnotes:
 
 ```javascript
 // Excludes markdown footnote syntax [^id] by using negative lookahead (?!\^)
@@ -355,17 +355,17 @@ sanitized = sanitized.replace(/\[([^\]\[\{\^][^\]]*)\](?!\()/g, (match, target) 
 
 #### Processing Pipeline
 
-1. **Extraction Phase** (MarkupParser)
+1. __Extraction Phase__ (MarkupParser)
    - Code blocks protected
    - Wiki syntax extracted: `[{$var}]`, `[{Plugin}]`, `[PageLink]`
    - Footnotes preserved: `[^1]`, `[^my-note]` passed through
 
-2. **Markdown Conversion** (Showdown + showdown-footnotes)
+2. __Markdown Conversion__ (Showdown + showdown-footnotes)
    - Footnote references converted to superscript links
    - Footnote definitions collected and processed
    - Footnotes section generated at end
 
-3. **DOM Merge Phase**
+3. __DOM Merge Phase__
    - Wiki syntax placeholders replaced with HTML
    - Footnote HTML preserved and integrated
 
@@ -404,7 +404,7 @@ small.footnote a[href^="#footnote-"] {
 
 ### Examples
 
-See the comprehensive examples page: **[FootnoteExample](/wiki/FootnoteExample)**
+See the comprehensive examples page: __[FootnoteExample](/wiki/FootnoteExample)__
 
 #### Academic Citation
 
@@ -436,11 +436,11 @@ Both sources agree[^1][^2] on this point.
 
 ### Best Practices
 
-1. **Place definitions at end** - Keep all `[^id]:` definitions together at the bottom
-2. **Use descriptive IDs** - `[^smith2024]` is clearer than `[^1]` in source
-3. **Consistent formatting** - Indent continuation lines with exactly 4 spaces
-4. **Avoid overuse** - Too many footnotes can be distracting
-5. **Test rendering** - Preview to ensure proper formatting
+1. __Place definitions at end__ - Keep all `[^id]:` definitions together at the bottom
+2. __Use descriptive IDs__ - `[^smith2024]` is clearer than `[^1]` in source
+3. __Consistent formatting__ - Indent continuation lines with exactly 4 spaces
+4. __Avoid overuse__ - Too many footnotes can be distracting
+5. __Test rendering__ - Preview to ensure proper formatting
 
 ### Troubleshooting
 
@@ -517,11 +517,11 @@ async renderMarkdown(content, pageName, userContext, requestInfo) {
 
 The legacy parser provides backward compatibility:
 
-1. **Macro Expansion** - Process `[{$variables}]` via VariableManager
-2. **Table Processing** - Convert JSPWiki table syntax
-3. **Link Processing** - Parse wiki links via LinkParser
-4. **Showdown Conversion** - Apply markdown-to-HTML conversion
-5. **Post-Processing** - Add table styling and cleanup
+1. __Macro Expansion__ - Process `[{$variables}]` via VariableManager
+2. __Table Processing__ - Convert JSPWiki table syntax
+3. __Link Processing__ - Parse wiki links via LinkParser
+4. __Showdown Conversion__ - Apply markdown-to-HTML conversion
+5. __Post-Processing__ - Add table styling and cleanup
 
 ---
 
@@ -537,7 +537,7 @@ constructor(engine)
 
 Creates a new RenderingManager instance.
 
-**Parameters:**
+__Parameters:__
 
 - `engine` (WikiEngine): The wiki engine instance
 
@@ -547,13 +547,13 @@ Creates a new RenderingManager instance.
 
 Initializes the RenderingManager, loads configuration, and sets up Showdown converter.
 
-**Parameters:**
+__Parameters:__
 
 - `config` (Object): Optional configuration object
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 await renderingManager.initialize();
@@ -563,16 +563,16 @@ await renderingManager.initialize();
 
 Renders markdown content to HTML using the configured parser.
 
-**Parameters:**
+__Parameters:__
 
 - `content` (string): Markdown content to render
 - `pageName` (string): Name of the current page
 - `userContext` (Object): User context for variable expansion
 - `requestInfo` (Object): Request information for context
 
-**Returns:** `Promise<string>` - Rendered HTML
+__Returns:__ `Promise<string>` - Rendered HTML
 
-**Example:**
+__Example:__
 
 ```javascript
 const html = await renderingManager.renderMarkdown(
@@ -587,9 +587,9 @@ const html = await renderingManager.renderMarkdown(
 
 Gets the MarkupParser instance if available and enabled.
 
-**Returns:** `MarkupParser|null`
+__Returns:__ `MarkupParser|null`
 
-**Example:**
+__Example:__
 
 ```javascript
 const parser = renderingManager.getParser();
@@ -604,34 +604,34 @@ if (parser) {
 
 Expands wiki macros and variables (legacy pipeline only).
 
-**Parameters:**
+__Parameters:__
 
 - `content` (string): Content with macros
 - `pageName` (string): Page name
 - `userContext` (Object): User context
 - `requestInfo` (Object): Request info
 
-**Returns:** `Promise<string>` - Content with expanded macros
+__Returns:__ `Promise<string>` - Content with expanded macros
 
 ##### `processJSPWikiTables(content)`
 
 Converts JSPWiki table syntax to HTML (legacy pipeline only).
 
-**Parameters:**
+__Parameters:__
 
 - `content` (string): Content with JSPWiki tables
 
-**Returns:** `string` - Content with HTML tables
+__Returns:__ `string` - Content with HTML tables
 
 ##### `processWikiLinks(content)`
 
 Processes wiki-style links `[PageName]` (legacy pipeline only).
 
-**Parameters:**
+__Parameters:__
 
 - `content` (string): Content with wiki links
 
-**Returns:** `Promise<string>` - Content with processed links
+__Returns:__ `Promise<string>` - Content with processed links
 
 #### Link Graph Methods
 
@@ -639,34 +639,34 @@ Processes wiki-style links `[PageName]` (legacy pipeline only).
 
 Builds a graph of page links for backlink support.
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
 ##### `updateLinkGraph(pageName, links)`
 
 Updates the link graph when a page is saved.
 
-**Parameters:**
+__Parameters:__
 
 - `pageName` (string): Name of the page
 - `links` (`Array<string>`): Array of linked page names
 
-**Returns:** `void`
+__Returns:__ `void`
 
 ##### `getBacklinks(pageName)`
 
 Gets all pages that link to the specified page.
 
-**Parameters:**
+__Parameters:__
 
 - `pageName` (string): Target page name
 
-**Returns:** `Array<string>` - Array of page names linking to target
+__Returns:__ `Array<string>` - Array of page names linking to target
 
 ##### `getOrphanedPages()`
 
 Finds pages with no incoming links.
 
-**Returns:** `Array<string>` - Array of orphaned page names
+__Returns:__ `Array<string>` - Array of orphaned page names
 
 ---
 
@@ -909,12 +909,12 @@ try {
 
 ### Footnotes Not Rendering
 
-**Symptoms:**
+__Symptoms:__
 
 - `[^1]` appears as red wiki link
 - Footnote definitions show as literal text
 
-**Diagnosis:**
+__Diagnosis:__
 
 ```bash
 # Check if showdown-footnotes is installed
@@ -925,7 +925,7 @@ grep "\\[\\^" src/parsers/MarkupParser.js
 grep "\\[\\^" src/parsers/handlers/LinkParserHandler.js
 ```
 
-**Solution:**
+__Solution:__
 
 1. Ensure `showdown-footnotes` is installed:
 
@@ -953,12 +953,12 @@ grep "\\[\\^" src/parsers/handlers/LinkParserHandler.js
 
 ### Parser Not Selected
 
-**Symptoms:**
+__Symptoms:__
 
 - Always using legacy parser
 - MarkupParser features not working
 
-**Diagnosis:**
+__Diagnosis:__
 
 ```javascript
 const parser = renderingManager.getParser();
@@ -969,7 +969,7 @@ console.log('MarkupParser available:', !!markupParser);
 console.log('MarkupParser initialized:', markupParser?.isInitialized());
 ```
 
-**Solution:**
+__Solution:__
 
 1. Enable in configuration:
 
@@ -985,12 +985,12 @@ console.log('MarkupParser initialized:', markupParser?.isInitialized());
 
 ### Link Graph Stale
 
-**Symptoms:**
+__Symptoms:__
 
 - Backlinks not updating
 - Orphaned pages incorrect
 
-**Solution:**
+__Solution:__
 
 ```javascript
 // Rebuild link graph
@@ -1003,12 +1003,12 @@ console.log('Backlinks:', backlinks);
 
 ### Performance Issues
 
-**Symptoms:**
+__Symptoms:__
 
 - Slow page rendering
 - High CPU usage
 
-**Diagnosis:**
+__Diagnosis:__
 
 ```javascript
 // Enable performance logging
@@ -1018,7 +1018,7 @@ console.log('Backlinks:', backlinks);
 }
 ```
 
-**Solution:**
+__Solution:__
 
 1. Check cache hit ratio:
 
@@ -1068,6 +1068,6 @@ console.log('Backlinks:', backlinks);
 
 ---
 
-**Last Updated:** 2025-10-16
-**Maintained By:** ngdpbase Development Team
-**Status:** Production Ready ✅
+__Last Updated:__ 2025-10-16
+__Maintained By:__ ngdpbase Development Team
+__Status:__ Production Ready ✅

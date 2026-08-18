@@ -18,7 +18,7 @@ Displays the wiki server uptime in a human-readable format.
 
 The UptimePlugin shows how long the wiki server has been running since its last start. The output is formatted in days, hours, and minutes for easy reading.
 
-**Source:** `plugins/UptimePlugin.js`
+__Source:__ `plugins/UptimePlugin.js`
 
 ## Plugin Metadata
 
@@ -51,7 +51,7 @@ This plugin has no parameters.
 Server uptime: [{UptimePlugin}]
 ```
 
-**Output Examples:**
+__Output Examples:__
 
 - `Server uptime: 3d 12h 45m` (days, hours, minutes)
 - `Server uptime: 5h 30m` (hours and minutes only)

@@ -2,7 +2,7 @@
 
 Internal reference for the ngdpbase addon subsystem. Covers load order, manager contracts, config resolution, type setup, and integration points. For build-your-own-addon instructions, see [`addon-development-guide.md`](./addon-development-guide.md). For the slug-naming rules every addon must follow (and what breaks if you rename one), see [`addon-identity-contract.md`](./addon-identity-contract.md).
 
-**Three distribution models, one slug + module + load contract:** addons reach a running ngdpbase instance as **`bundled`** (in this repo's `addons/<slug>/`), **`drop-in`** (any directory listed in the `addons-path` config), or **`packaged`** (`npm install`, discovered from `node_modules` via a `node_modules:<glob>` `addons-path` entry — #673). Names locked in by #668. Pick by how the addon is owned and shipped — see the [Distribution Models](#distribution-models) table immediately below.
+__Three distribution models, one slug + module + load contract:__ addons reach a running ngdpbase instance as __`bundled`__ (in this repo's `addons/<slug>/`), __`drop-in`__ (any directory listed in the `addons-path` config), or __`packaged`__ (`npm install`, discovered from `node_modules` via a `node_modules:<glob>` `addons-path` entry — #673). Names locked in by #668. Pick by how the addon is owned and shipped — see the [Distribution Models](#distribution-models) table immediately below.
 
 ---
 
@@ -12,15 +12,15 @@ ngdpbase recognises three ways an addon can reach a running instance. The slug, 
 
 | Model | Lives at | Cadence | Status |
 |---|---|---|---|
-| **bundled** | `addons/<slug>/` inside the ngdpbase repo | Ships with each ngdpbase release | Implemented |
-| **drop-in** | Any directory listed in the `ngdpbase.managers.addons-manager.addons-path` config (e.g. `/opt/external-addons/addons/<slug>/`) | Independent repo, deployed at install/restart time | Implemented |
-| **packaged** | `node_modules/<scope>/<slug>-addon/` via `npm install` | Independent repo, npm-versioned and lockfile-pinned | **Implemented (#673).** Add a `node_modules:<glob>` entry to `addons-path` — e.g. `"node_modules:@jwilleke/*-addon"`. `AddonsManager` expands the glob against `node_modules` and loads each matching package through the same slug/module/`register()` contract; discovery runs after the directory scans, so a bundled/drop-in addon of the same name wins a collision. |
+| __bundled__ | `addons/<slug>/` inside the ngdpbase repo | Ships with each ngdpbase release | Implemented |
+| __drop-in__ | Any directory listed in the `ngdpbase.managers.addons-manager.addons-path` config (e.g. `/opt/external-addons/addons/<slug>/`) | Independent repo, deployed at install/restart time | Implemented |
+| __packaged__ | `node_modules/<scope>/<slug>-addon/` via `npm install` | Independent repo, npm-versioned and lockfile-pinned | __Implemented (#673).__ Add a `node_modules:<glob>` entry to `addons-path` — e.g. `"node_modules:@jwilleke/*-addon"`. `AddonsManager` expands the glob against `node_modules` and loads each matching package through the same slug/module/`register()` contract; discovery runs after the directory scans, so a bundled/drop-in addon of the same name wins a collision. |
 
 Pick a model by how the addon is owned and shipped:
 
-- **bundled** — the addon is part of the platform's release surface (e.g. `forms`, `calendar`, `elasticsearch`, `journal`). Versioned with ngdpbase. Always available.
-- **drop-in** — the addon has its own repo and release cadence, and the operator drops it onto the filesystem at deployment time. The current model for `geohazardwatch`-style domain addons. No build-system coupling to ngdpbase.
-- **packaged** — same independent ownership as drop-in, but distributed as an npm package and pinned via the consumer's `package.json`. The right model for container deployments where reproducibility matters: one `npm install <pkg>@<version>` line in the generated Dockerfile, no cross-repo build context. **Recommended for production distribution of independent addons** — full guide: [`addon-packaged.md`](./deployment/addon-packaged.md).
+- __bundled__ — the addon is part of the platform's release surface (e.g. `forms`, `calendar`, `elasticsearch`, `journal`). Versioned with ngdpbase. Always available.
+- __drop-in__ — the addon has its own repo and release cadence, and the operator drops it onto the filesystem at deployment time. The current model for `geohazardwatch`-style domain addons. No build-system coupling to ngdpbase.
+- __packaged__ — same independent ownership as drop-in, but distributed as an npm package and pinned via the consumer's `package.json`. The right model for container deployments where reproducibility matters: one `npm install <pkg>@<version>` line in the generated Dockerfile, no cross-repo build context. __Recommended for production distribution of independent addons__ — full guide: [`addon-packaged.md`](./deployment/addon-packaged.md).
 
 The platform makes no trust distinction between models. A `type: 'domain'` addon (see §3) can be bundled, drop-in, or packaged.
 
@@ -28,7 +28,7 @@ The platform makes no trust distinction between models. A `type: 'domain'` addon
 
 ## 1. Initialization Order
 
-Addons load **after** Express session and user-context middleware, so `req.session` and `req.userContext` are available in all addon route handlers.
+Addons load __after__ Express session and user-context middleware, so `req.session` and `req.userContext` are available in all addon route handlers.
 
 ```
 src/app.ts
@@ -44,7 +44,7 @@ src/app.ts
 
 ## 2. AddonsManager Load Sequence
 
-**File:** `src/managers/AddonsManager.ts`
+__File:__ `src/managers/AddonsManager.ts`
 
 ### 2a. Discovery (`scanAddonsDirectory`)
 
@@ -70,13 +70,13 @@ Only enabled addons enter the sort. Result is an ordered string array like `['a'
 
 For each addon in resolved order:
 
-1. **Domain guard** — if addon `type === 'domain'` and a domain addon is already loaded, downgrade to `additive` with a warning. Only one domain addon is permitted per instance.
-2. **domainDefaults** — for each key in `manifest.domainDefaults`, call `ConfigurationManager.setRuntimeProperty(key, value)` if the operator hasn't explicitly set that key. Changes are ephemeral (this boot only, not written to disk).
-3. **Config resolution** — call `getAddonConfig(addonName)` which collects all config entries matching the prefix `ngdpbase.addons.{addonName}.`, strips the prefix, and returns a plain `Record<string, unknown>`.
-4. **register(engine, config)** — the addon's main initialization hook.
-5. **Page seeding** — after `register()` returns, scan `addons/{name}/pages/*.md`, parse frontmatter, and call `PageManager.savePage()` for any page whose slug doesn't already exist in the instance.
-6. **Theme deploy** (since v3.17.0, #443) — immediately after page seeding, if `addons/{name}/theme/theme.json` exists and `themes/{name}/` does not, copy the `theme/` tree to the instance themes dir (`ngdpbase.theme.directory`, default `themes`). Skip-if-exists — never overwrites operator customisations. See [§ 8b Theme Deployment](#8b-theme-deployment).
-7. **status()** — if present, called immediately to populate the admin/addons panel.
+1. __Domain guard__ — if addon `type === 'domain'` and a domain addon is already loaded, downgrade to `additive` with a warning. Only one domain addon is permitted per instance.
+2. __domainDefaults__ — for each key in `manifest.domainDefaults`, call `ConfigurationManager.setRuntimeProperty(key, value)` if the operator hasn't explicitly set that key. Changes are ephemeral (this boot only, not written to disk).
+3. __Config resolution__ — call `getAddonConfig(addonName)` which collects all config entries matching the prefix `ngdpbase.addons.{addonName}.`, strips the prefix, and returns a plain `Record<string, unknown>`.
+4. __register(engine, config)__ — the addon's main initialization hook.
+5. __Page seeding__ — after `register()` returns, scan `addons/{name}/pages/*.md`, parse frontmatter, and call `PageManager.savePage()` for any page whose slug doesn't already exist in the instance.
+6. __Theme deploy__ (since v3.17.0, #443) — immediately after page seeding, if `addons/{name}/theme/theme.json` exists and `themes/{name}/` does not, copy the `theme/` tree to the instance themes dir (`ngdpbase.theme.directory`, default `themes`). Skip-if-exists — never overwrites operator customisations. See [§ 8b Theme Deployment](#8b-theme-deployment).
+7. __status()__ — if present, called immediately to populate the admin/addons panel.
 
 ---
 
@@ -210,7 +210,7 @@ if (pm) await pm.registerPlugin('MyPlugin', MyPlugin);
 
 Invoked in wiki markup as `[{MyPlugin param='value'}]`.
 
-**Note on userContext:** `PluginSyntaxHandler` spreads the page's `WikiContext` into the plugin context object, so `context['userContext']` carries the current user's session data. Access it as:
+__Note on userContext:__ `PluginSyntaxHandler` spreads the page's `WikiContext` into the plugin context object, so `context['userContext']` carries the current user's session data. Access it as:
 
 ```typescript
 const user = context['userContext'] as { username?: string } | undefined;
@@ -275,7 +275,7 @@ author: system
 ---
 ```
 
-Seeding is **idempotent**: if a page with that slug already exists, it is skipped. User edits survive restarts. AddonsManager automatically sets `addon` and `system-category: addon` if omitted.
+Seeding is __idempotent__: if a page with that slug already exists, it is skipped. User edits survive restarts. AddonsManager automatically sets `addon` and `system-category: addon` if omitted.
 
 ---
 
@@ -285,24 +285,24 @@ Since v3.17.0 (issue #443), an add-on may ship a `theme/` subdirectory; it
 deploys to the instance themes directory the same way pages seed, and is the
 mechanism by which a domain add-on carries its site identity.
 
-- **Sentinel:** `addons/{name}/theme/theme.json` must exist (mirrors `pages/`
+- __Sentinel:__ `addons/{name}/theme/theme.json` must exist (mirrors `pages/`
   needing at least one `.md`). No `theme.json` → nothing deploys.
-- **First-boot copy:** runs immediately after page seeding (step 6 in § 2c).
+- __First-boot copy:__ runs immediately after page seeding (step 6 in § 2c).
   Copies `addons/{name}/theme/` → `{themesDir}/{name}/` only if the
   destination does not already exist.
-- **Idempotent / non-destructive:** an existing `{themesDir}/{name}/` is never
+- __Idempotent / non-destructive:__ an existing `{themesDir}/{name}/` is never
   overwritten on boot — operator theme edits survive. The copy is a snapshot;
   the add-on source is not auto-re-synced.
-- **Themes dir:** `ngdpbase.theme.directory` (default `themes`).
+- __Themes dir:__ `ngdpbase.theme.directory` (default `themes`).
   `ThemeManager` is unchanged — it still reads `themes/<name>/`.
-- **Manual re-deploy:** `POST /admin/addons/:name/deploy-theme`
+- __Manual re-deploy:__ `POST /admin/addons/:name/deploy-theme`
   (`AddonsManager.deployAddonTheme()`) force-overwrites — surfaced as the
-  **Deploy / Redeploy Theme** button on `/admin/addons` for any add-on whose
+  __Deploy / Redeploy Theme__ button on `/admin/addons` for any add-on whose
   `getStatus()` reports `hasTheme`. No restart required (theme CSS is static).
 
 Implementation: `AddonsManager.seedAddonTheme()` / `deployAddonTheme()` /
 `addonShipsTheme()`. Type-aware direct-load (no-copy) resolution for domain
-add-ons is a separate, **unimplemented** design discussion — see #444.
+add-ons is a separate, __unimplemented__ design discussion — see #444.
 
 ---
 
@@ -437,9 +437,9 @@ interface AddonManifest {
 }
 ```
 
-**`type: 'domain'`** — the addon IS the primary site identity (e.g. a specialized single-purpose tool). Only one domain addon is permitted; a second one is downgraded to `additive` with a warning.
+__`type: 'domain'`__ — the addon IS the primary site identity (e.g. a specialized single-purpose tool). Only one domain addon is permitted; a second one is downgraded to `additive` with a warning.
 
-**`domainDefaults`** — config keys applied at boot if not already set by the operator. Ephemeral; not persisted. Useful for domain addons that need specific default behavior without requiring operators to manually set every key.
+__`domainDefaults`__ — config keys applied at boot if not already set by the operator. Ephemeral; not persisted. Useful for domain addons that need specific default behavior without requiring operators to manually set every key.
 
 ---
 
@@ -456,7 +456,7 @@ interface AddonManifest {
 
 ## 14. Shutdown
 
-On SIGINT/SIGTERM, `engine.shutdown()` calls `AddonsManager.shutdown()`, which calls each addon's `shutdown()` in **reverse** load order. Use this to clear intervals, flush caches, or close open handles:
+On SIGINT/SIGTERM, `engine.shutdown()` calls `AddonsManager.shutdown()`, which calls each addon's `shutdown()` in __reverse__ load order. Use this to clear intervals, flush caches, or close open handles:
 
 ```typescript
 async shutdown(): Promise<void> {

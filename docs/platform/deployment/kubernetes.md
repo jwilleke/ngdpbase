@@ -2,7 +2,7 @@
 
 For ops teams already running a Kubernetes cluster. Appropriate when your organization already has the K8s tooling, monitoring, and habits to support another workload there.
 
-**Most small organizations do not need this.** If you're reading this page and the requirements feel like a stretch, [Direct install](./direct-install.md) or [Docker Compose](./docker-compose.md) are almost always simpler and cheaper. You can always move to Kubernetes later once the rest of your stack lives there.
+__Most small organizations do not need this.__ If you're reading this page and the requirements feel like a stretch, [Direct install](./direct-install.md) or [Docker Compose](./docker-compose.md) are almost always simpler and cheaper. You can always move to Kubernetes later once the rest of your stack lives there.
 
 See [../Deployment.md](../Deployment.md) for project-scope context and how this mode compares to the other two.
 
@@ -13,7 +13,7 @@ See [../Deployment.md](../Deployment.md) for project-scope context and how this 
 - A container registry the cluster can pull from. The upstream `ghcr.io/jwilleke/ngdpbase` is public; if you build a wrapper image with your own addons, you'll need somewhere to push it.
 - A persistent-volume storage class for the data directory. ngdpbase keeps pages, users, sessions, and addon data on disk — a stateless deployment will lose everything on a pod restart.
 - An ingress controller (Traefik, nginx-ingress, the cloud provider's load balancer) and a way to provision TLS — cert-manager + Let's Encrypt, a Cloudflare Tunnel, or terminating TLS at an upstream proxy.
-- (Optional) GitOps tooling like **Flux** or **ArgoCD** if you want pull-based deploys instead of `kubectl apply`-from-laptop.
+- (Optional) GitOps tooling like __Flux__ or __ArgoCD__ if you want pull-based deploys instead of `kubectl apply`-from-laptop.
 - (Optional) Image-update automation if you want satellite-image bumps to roll automatically when a new tag lands in your registry.
 
 If any line above is a question rather than a yes, look at the easier modes first.
@@ -23,9 +23,9 @@ If any line above is a question rather than a yes, look at the easier modes firs
 ngdpbase ships:
 
 - The container image and the configuration contract.
-- **Plain starter manifests** under [`docker/k8s/`](../../../docker/k8s/) — `configmap.yaml`, `deployment.yaml`, `ingress.yaml`, `pvc.yaml`, `service.yaml`, and `secrets.yaml.example`. They're `kubectl apply`-able as-is for a minimal install, but they're starters — expect to edit them for your namespace, storage class, ingress class, and TLS source.
+- __Plain starter manifests__ under [`docker/k8s/`](../../../docker/k8s/) — `configmap.yaml`, `deployment.yaml`, `ingress.yaml`, `pvc.yaml`, `service.yaml`, and `secrets.yaml.example`. They're `kubectl apply`-able as-is for a minimal install, but they're starters — expect to edit them for your namespace, storage class, ingress class, and TLS source.
 
-ngdpbase does **not** ship:
+ngdpbase does __not__ ship:
 
 - A Helm chart.
 - Kustomize bases or overlays.
@@ -37,12 +37,12 @@ The deployment is yours to author on top of those starters. The project's own re
 
 ## Steps
 
-> **Strongly recommended first read:** [`docker/HEADLESS-DEPLOYMENT-NOTES.md`](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md). It captures nine production-gotcha entries from a real k3s rollout — anchor Organization, theme/front-page/page-provider config, `ndots:5` DNS, husky `prepare` script, addon UUID validation, session secret, contact-form recipient. The Steps below are the short version; the gotchas doc has the *why*.
+> __Strongly recommended first read:__ [`docker/HEADLESS-DEPLOYMENT-NOTES.md`](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md). It captures nine production-gotcha entries from a real k3s rollout — anchor Organization, theme/front-page/page-provider config, `ndots:5` DNS, husky `prepare` script, addon UUID validation, session secret, contact-form recipient. The Steps below are the short version; the gotchas doc has the *why*.
 
 ### 1. Pick an image
 
-- **Direct upstream**: `ghcr.io/jwilleke/ngdpbase:X.Y.Z` (pin a version; avoid `:latest` in production manifests). See [available tags](https://github.com/jwilleke/ngdpbase/pkgs/container/ngdpbase).
-- **Wrapper image**: build your own `FROM ghcr.io/jwilleke/ngdpbase:X.Y.Z` with addons baked in. Push to whatever registry the cluster can pull from. [GeoHazardWatch](https://github.com/jwilleke/geohazardwatch) is the reference example.
+- __Direct upstream__: `ghcr.io/jwilleke/ngdpbase:X.Y.Z` (pin a version; avoid `:latest` in production manifests). See [available tags](https://github.com/jwilleke/ngdpbase/pkgs/container/ngdpbase).
+- __Wrapper image__: build your own `FROM ghcr.io/jwilleke/ngdpbase:X.Y.Z` with addons baked in. Push to whatever registry the cluster can pull from. [GeoHazardWatch](https://github.com/jwilleke/geohazardwatch) is the reference example.
 
 If your wrapper Dockerfile uses `npm ci --omit=dev`, also add `--ignore-scripts` to bypass the husky `prepare` lifecycle. See [Headless §6](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#6-npm-ci---omitdev-fails-on-prepare--husky).
 
@@ -60,21 +60,21 @@ curl -fsSL https://raw.githubusercontent.com/jwilleke/ngdpbase/master/docker/k8s
 
 Edit each for:
 
-- **Namespace** — the starters assume `ngdpbase`; change it.
-- **`storageClassName`** in `pvc.yaml` — match your cluster's available storage classes (`kubectl get sc`).
-- **`ingressClassName`** + host + TLS in `ingress.yaml` — match your ingress controller and TLS source (cert-manager Issuer, manual Secret, upstream-proxy passthrough).
-- **`image:`** in `deployment.yaml` — point at your chosen tag from step 1.
-- **`resources:`** — the starters set conservative requests/limits; tune for your cluster.
+- __Namespace__ — the starters assume `ngdpbase`; change it.
+- __`storageClassName`__ in `pvc.yaml` — match your cluster's available storage classes (`kubectl get sc`).
+- __`ingressClassName`__ + host + TLS in `ingress.yaml` — match your ingress controller and TLS source (cert-manager Issuer, manual Secret, upstream-proxy passthrough).
+- __`image:`__ in `deployment.yaml` — point at your chosen tag from step 1.
+- __`resources:`__ — the starters set conservative requests/limits; tune for your cluster.
 
 ### 3. Anchor Organization — optional (#1027)
 
-**You can skip this.** The instance seeds its own anchor Organization from `ngdpbase.application.base-url` and `ngdpbase.application-name` when none exists, and adopts an existing record when there is exactly one. This used to be the single most common failure mode; it is now handled in-app. See [Headless §1](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#1-anchor-organization--seeded-automatically-since-1027).
+__You can skip this.__ The instance seeds its own anchor Organization from `ngdpbase.application.base-url` and `ngdpbase.application-name` when none exists, and adopts an existing record when there is exactly one. This used to be the single most common failure mode; it is now handled in-app. See [Headless §1](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#1-anchor-organization--seeded-automatically-since-1027).
 
 Pre-supply one only when you want to control the `@id` exactly, or ship a richer record (address, contact points) from first boot. The pattern below still works and takes precedence over seeding.
 
-> **Trade-off worth knowing.** A ConfigMap key mounted via `subPath` is **read-only**, so `/admin/organizations` cannot save edits to it — correcting the org then needs a redeploy. If you want the org editable in the UI, let the instance seed it instead, or write the file onto the data volume rather than mounting it. Deployment manifests are the wrong home for something an operator edits.
+> __Trade-off worth knowing.__ A ConfigMap key mounted via `subPath` is __read-only__, so `/admin/organizations` cannot save edits to it — correcting the org then needs a redeploy. If you want the org editable in the UI, let the instance seed it instead, or write the file onto the data volume rather than mounting it. Deployment manifests are the wrong home for something an operator edits.
 >
-> **Do not mount `app-custom-config.json` from a ConfigMap.** The same `subPath` read-only rule applies, and it bites much harder here: **every save from `/admin/configuration` fails with `EROFS`**, so the entire admin configuration screen becomes unusable and changing any setting means editing a manifest and redeploying. Both production instances hit this and moved application config onto the persistent volume at `/app/data/config/app-custom-config.json` — geohazardwatch in `840b87c`, the demo after it.
+> __Do not mount `app-custom-config.json` from a ConfigMap.__ The same `subPath` read-only rule applies, and it bites much harder here: __every save from `/admin/configuration` fails with `EROFS`__, so the entire admin configuration screen becomes unusable and changing any setting means editing a manifest and redeploying. Both production instances hit this and moved application config onto the persistent volume at `/app/data/config/app-custom-config.json` — geohazardwatch in `840b87c`, the demo after it.
 >
 > Put application configuration on the data volume and edit it through `/admin/configuration`, over SSH, or on the host. Keep manifests for infrastructure: replicas, image, PVC, ingress, secrets. The example below mounts only the organization file, which is a seed-once record where read-only is a defensible trade.
 
@@ -127,7 +127,7 @@ spec:
             value: "1"
 ```
 
-Apply this to **every** workload that makes external HTTPS calls (the main Deployment, plus any CronJobs running addons that call external APIs). See [§5](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#5-alpine-musl--k8s-ndots5-breaks-external-dns) for the full diagnosis. A trailing-dot FQDN bypass test confirms the issue if you want to verify before applying the fix.
+Apply this to __every__ workload that makes external HTTPS calls (the main Deployment, plus any CronJobs running addons that call external APIs). See [§5](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#5-alpine-musl--k8s-ndots5-breaks-external-dns) for the full diagnosis. A trailing-dot FQDN bypass test confirms the issue if you want to verify before applying the fix.
 
 ### 5. Set `SESSION_SECRET` from a Secret
 
@@ -202,9 +202,9 @@ ngdpbase doesn't ship GitOps manifests, but the project's own reference cluster 
 
 ### Flux pattern (used by the reference cluster)
 
-- **`ImageRepository`** scans the registry for new tags.
-- **`ImagePolicy`** picks the highest matching semver (e.g. `>=3.13.0 <4.0.0`).
-- **`ImageUpdateAutomation`** commits the new tag to the GitOps repo, which Flux then reconciles into the cluster.
+- __`ImageRepository`__ scans the registry for new tags.
+- __`ImagePolicy`__ picks the highest matching semver (e.g. `>=3.13.0 <4.0.0`).
+- __`ImageUpdateAutomation`__ commits the new tag to the GitOps repo, which Flux then reconciles into the cluster.
 
 [mj-infra-flux](https://github.com/jwilleke/mj-infra-flux) is the working example. Read it as one operator's solution, not a template.
 
@@ -304,10 +304,10 @@ kubectl describe pod -n <your-namespace> -l app=ngdpbase      # for events
 
 Most often one of:
 
-- **§1 missing anchor Organization** — boot log will mention `applyRoleDiff` skipping silently, or admin login resolves as Anonymous.
-- **§3 page provider misconfigured** — `filesystemprovider` works but lacks editing UI affordances; switch to `versioningfileprovider`.
-- **§6 husky `prepare` script** if you're building a wrapper image without `--ignore-scripts`.
-- **`/app/data` permission errors** — the image runs as a non-root user; the PVC's `fsGroup` / `runAsUser` must let it write.
+- __§1 missing anchor Organization__ — boot log will mention `applyRoleDiff` skipping silently, or admin login resolves as Anonymous.
+- __§3 page provider misconfigured__ — `filesystemprovider` works but lacks editing UI affordances; switch to `versioningfileprovider`.
+- __§6 husky `prepare` script__ if you're building a wrapper image without `--ignore-scripts`.
+- __`/app/data` permission errors__ — the image runs as a non-root user; the PVC's `fsGroup` / `runAsUser` must let it write.
 
 The cleanup recipe in [§2](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#2-createdefaultadmin-only-runs-when-userssize--0) re-triggers `createDefaultAdmin` cleanly without destroying pages.
 
@@ -348,8 +348,8 @@ You haven't applied the `ndots: 1` fix from step 4. See [§5](../../../docker/HE
 
 The deployment defaults to one replica. Scaling beyond one requires:
 
-- **RWX storage** (e.g. NFS, EFS, Azure Files) so multiple pods share the data directory. Pages and attachments tolerate this; sessions and search index may not, depending on provider.
-- **Awareness of per-pod state**: the `/contact` route's rate limit is per-pod (module-scope counter), so a 3-replica deployment gives 3× the per-IP budget. For stronger protection across replicas, terminate at an upstream rate limiter (Cloudflare, nginx, dedicated WAF).
-- **A shared session store** if you want sessions to survive being routed to a different pod. The default file-backed session store doesn't work across replicas — even with RWX you'll see intermittent logouts as the file-store cache lags behind. Switching to a Redis-backed store is out of scope here; single replica is the simpler answer for most operators.
+- __RWX storage__ (e.g. NFS, EFS, Azure Files) so multiple pods share the data directory. Pages and attachments tolerate this; sessions and search index may not, depending on provider.
+- __Awareness of per-pod state__: the `/contact` route's rate limit is per-pod (module-scope counter), so a 3-replica deployment gives 3× the per-IP budget. For stronger protection across replicas, terminate at an upstream rate limiter (Cloudflare, nginx, dedicated WAF).
+- __A shared session store__ if you want sessions to survive being routed to a different pod. The default file-backed session store doesn't work across replicas — even with RWX you'll see intermittent logouts as the file-store cache lags behind. Switching to a Redis-backed store is out of scope here; single replica is the simpler answer for most operators.
 
 Single replica is the recommended starting point. Scale up only after auditing the points above for your specific workload.

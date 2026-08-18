@@ -8,35 +8,35 @@ code: src/managers/PolicyEvaluator.ts
 
 # PolicyEvaluator Documentation
 
-**Version:** 1.3.2
-**Last Updated:** 2025-10-11
-**Manager Path:** [src/managers/PolicyEvaluator.ts](../../src/managers/PolicyEvaluator.ts)
+__Version:__ 1.3.2
+__Last Updated:__ 2025-10-11
+__Manager Path:__ [src/managers/PolicyEvaluator.ts](../../src/managers/PolicyEvaluator.ts)
 
 ---
 
 ## Overview
 
-The **PolicyEvaluator** evaluates access control policies against a given context to make access decisions. It mimics how JSPWiki uses Java's built-in security framework (`java.security`) to load and evaluate security policies.
+The __PolicyEvaluator__ evaluates access control policies against a given context to make access decisions. It mimics how JSPWiki uses Java's built-in security framework (`java.security`) to load and evaluate security policies.
 
 ### Key Features
 
-- ✅ **Context-Based Evaluation:** Makes decisions based on user, resource, and action
-- ✅ **Priority-Ordered:** Evaluates policies in priority order (first match wins)
-- ✅ **Role Matching:** Supports role-based access control with built-in roles
-- ✅ **Pattern Matching:** Uses glob patterns for resource matching (micromatch)
-- ✅ **Detailed Logging:** Logs every evaluation for debugging
-- ✅ **Fast Performance:** Stops at first matching policy
+- ✅ __Context-Based Evaluation:__ Makes decisions based on user, resource, and action
+- ✅ __Priority-Ordered:__ Evaluates policies in priority order (first match wins)
+- ✅ __Role Matching:__ Supports role-based access control with built-in roles
+- ✅ __Pattern Matching:__ Uses glob patterns for resource matching (micromatch)
+- ✅ __Detailed Logging:__ Logs every evaluation for debugging
+- ✅ __Fast Performance:__ Stops at first matching policy
 
 ---
 
 ## Purpose
 
-PolicyEvaluator is the **decision engine** in ngdpbase's access control system. It:
+PolicyEvaluator is the __decision engine__ in ngdpbase's access control system. It:
 
-1. **Receives** access requests (who wants to do what to which resource)
-2. **Retrieves** all policies from PolicyManager
-3. **Evaluates** each policy in priority order
-4. **Returns** the first matching policy's decision (allow/deny)
+1. __Receives__ access requests (who wants to do what to which resource)
+2. __Retrieves__ all policies from PolicyManager
+3. __Evaluates__ each policy in priority order
+4. __Returns__ the first matching policy's decision (allow/deny)
 
 ---
 
@@ -124,7 +124,7 @@ PolicyEvaluator is the **decision engine** in ngdpbase's access control system. 
 
 Evaluates all relevant policies to make an access decision.
 
-**Parameters:**
+__Parameters:__
 
 - `context` (object):
   - `pageName` (string) - Name of the page/resource being accessed
@@ -134,7 +134,7 @@ Evaluates all relevant policies to make an access decision.
     - `roles` (`Array<string>`) - User's roles (including built-in roles)
     - `isAuthenticated` (boolean) - Authentication status
 
-**Returns:** `Promise<object>`
+__Returns:__ `Promise<object>`
 
 ```javascript
 {
@@ -145,7 +145,7 @@ Evaluates all relevant policies to make an access decision.
 }
 ```
 
-**Example:**
+__Example:__
 
 ```javascript
 const policyEvaluator = engine.getManager('PolicyEvaluator');
@@ -167,7 +167,7 @@ if (result.allowed) {
 }
 ```
 
-**Evaluation Process:**
+__Evaluation Process:__
 
 1. Gets all policies from PolicyManager (sorted by priority)
 2. For each policy (in order):
@@ -178,7 +178,7 @@ if (result.allowed) {
 3. If no match found:
    - Return `{ hasDecision: false, allowed: false }`
 
-**Logging:**
+__Logging:__
 
 ```
 [POLICY] Evaluate page=ProjectDocs action=page:edit user=john roles=editor|Authenticated|All
@@ -192,14 +192,14 @@ if (result.allowed) {
 
 Checks if a single policy matches the given context.
 
-**Parameters:**
+__Parameters:__
 
 - `policy` (object) - Policy to check
 - `context` (object) - Access request context
 
-**Returns:** `boolean` - True if policy matches, false otherwise
+__Returns:__ `boolean` - True if policy matches, false otherwise
 
-**Matching Logic:**
+__Matching Logic:__
 
 ```javascript
 return subjectMatch && resourceMatch && actionMatch;
@@ -207,7 +207,7 @@ return subjectMatch && resourceMatch && actionMatch;
 
 All three conditions must be true for a policy to match.
 
-**Example:**
+__Example:__
 
 ```javascript
 const policy = {
@@ -236,30 +236,30 @@ console.log(isMatch); // true
 
 Checks if the user's roles match the policy's subject requirements.
 
-**Parameters:**
+__Parameters:__
 
 - `policySubjects` (`Array<object>`) - Policy subjects
 - `userContext` (object) - User context with roles
 
-**Returns:** `boolean` - True if user matches
+__Returns:__ `boolean` - True if user matches
 
-**Matching Rules:**
+__Matching Rules:__
 
-1. **No subjects specified** → Matches everyone
+1. __No subjects specified__ → Matches everyone
 
    ```javascript
    policySubjects = []
    return true; // Applies to all users
    ```
 
-2. **"All" role** → Matches everyone (including anonymous)
+2. __"All" role__ → Matches everyone (including anonymous)
 
    ```javascript
    policySubjects = [{ type: 'role', value: 'All' }]
    return true; // Universal match
    ```
 
-3. **Specific roles** → User must have at least one matching role
+3. __Specific roles__ → User must have at least one matching role
 
    ```javascript
    policySubjects = [
@@ -270,14 +270,14 @@ Checks if the user's roles match the policy's subject requirements.
    return true; // User has 'editor' role
    ```
 
-4. **No roles** → No match for role-based policies
+4. __No roles__ → No match for role-based policies
 
    ```javascript
    userContext.roles = []
    return false; // Cannot match role-based policies
    ```
 
-**Example:**
+__Example:__
 
 ```javascript
 const policySubjects = [
@@ -300,23 +300,23 @@ console.log(matches); // true (user has 'editor' role)
 
 Checks if the resource matches the policy's resource patterns.
 
-**Parameters:**
+__Parameters:__
 
 - `resources` (`Array<object>`) - Policy resources
 - `pageName` (string) - Page name to check
 
-**Returns:** `boolean` - True if resource matches
+__Returns:__ `boolean` - True if resource matches
 
-**Matching Rules:**
+__Matching Rules:__
 
-1. **No resources specified** → Matches all resources
+1. __No resources specified__ → Matches all resources
 
    ```javascript
    resources = []
    return true; // Applies to all resources
    ```
 
-2. **Glob pattern matching** → Uses micromatch
+2. __Glob pattern matching__ → Uses micromatch
 
    ```javascript
    resources = [{ type: 'page', pattern: 'Project*' }]
@@ -324,14 +324,14 @@ Checks if the resource matches the policy's resource patterns.
    return true; // Matches pattern
    ```
 
-3. **Wildcard pattern** → Matches everything
+3. __Wildcard pattern__ → Matches everything
 
    ```javascript
    resources = [{ type: 'page', pattern: '*' }]
    return true; // Universal resource match
    ```
 
-**Pattern Examples:**
+__Pattern Examples:__
 
 | Pattern | Matches | Doesn't Match |
 | --------- | --------- | --------------- |
@@ -340,7 +340,7 @@ Checks if the resource matches the policy's resource patterns.
 | `Admin/*` | `Admin/Users`, `Admin/Config` | `Users` |
 | `*Docs` | `ProjectDocs`, `UserDocs` | `Project` |
 
-**Example:**
+__Example:__
 
 ```javascript
 const resources = [
@@ -357,23 +357,23 @@ console.log(policyEvaluator.matchesResource(resources, 'UserGuide'));   // false
 
 Checks if the action matches the policy's action list.
 
-**Parameters:**
+__Parameters:__
 
 - `actions` (`Array<string>`) - Policy actions
 - `action` (string) - Action to check
 
-**Returns:** `boolean` - True if action matches
+__Returns:__ `boolean` - True if action matches
 
-**Matching Rules:**
+__Matching Rules:__
 
-1. **No actions specified** → Matches all actions
+1. __No actions specified__ → Matches all actions
 
    ```javascript
    actions = []
    return true; // Applies to all actions
    ```
 
-2. **Exact match** → Action is in the list
+2. __Exact match__ → Action is in the list
 
    ```javascript
    actions = ['page:read', 'page:edit', 'page:create']
@@ -381,14 +381,14 @@ Checks if the action matches the policy's action list.
    return true; // Exact match
    ```
 
-3. **Wildcard action** → Matches everything
+3. __Wildcard action__ → Matches everything
 
    ```javascript
    actions = ['*']
    return true; // Universal action match
    ```
 
-**Example:**
+__Example:__
 
 ```javascript
 const actions = ['page:read', 'page:edit', 'page:create'];
@@ -410,7 +410,7 @@ PolicyEvaluator recognizes special built-in roles:
 | `Authenticated` | UserManager | Role for logged-in users | Matches all authenticated users |
 | `Anonymous` | UserManager | Role for non-logged-in users | Matches unauthenticated users |
 
-**Example Policy Using Built-in Roles:**
+__Example Policy Using Built-in Roles:__
 
 ```json
 {
@@ -421,7 +421,7 @@ PolicyEvaluator recognizes special built-in roles:
 }
 ```
 
-This policy allows **everyone** (logged-in or not) to read all pages.
+This policy allows __everyone__ (logged-in or not) to read all pages.
 
 ---
 
@@ -429,13 +429,13 @@ This policy allows **everyone** (logged-in or not) to read all pages.
 
 ### First Match Wins
 
-PolicyEvaluator uses **first match wins** logic:
+PolicyEvaluator uses __first match wins__ logic:
 
-1. Policies are evaluated in **priority order** (highest first)
-2. **First policy that matches** determines the decision
-3. Remaining policies are **not evaluated**
+1. Policies are evaluated in __priority order__ (highest first)
+2. __First policy that matches__ determines the decision
+3. Remaining policies are __not evaluated__
 
-**Example:**
+__Example:__
 
 ```javascript
 // Policy 1 (priority: 100)
@@ -459,24 +459,24 @@ PolicyEvaluator uses **first match wins** logic:
 }
 ```
 
-**Scenario:** Admin user tries to access "SensitiveDocs"
+__Scenario:__ Admin user tries to access "SensitiveDocs"
 
 1. Check Policy 1 (priority 100):
    - Subject: ✓ (user is admin)
    - Resource: ✓ (matches `*`)
    - Action: ✓ (matches `*`)
-   - **MATCH!** → Effect: "allow"
+   - __MATCH!__ → Effect: "allow"
    - Stop evaluation
 
-2. Policy 2 is **never checked** (admin already allowed by Policy 1)
+2. Policy 2 is __never checked__ (admin already allowed by Policy 1)
 
-**Result:** Admin can access "SensitiveDocs" (Policy 1 wins due to higher priority)
+__Result:__ Admin can access "SensitiveDocs" (Policy 1 wins due to higher priority)
 
 ---
 
 ### No Match = Deny
 
-If no policy matches, access is **denied by default**:
+If no policy matches, access is __denied by default__:
 
 ```javascript
 return {
@@ -619,23 +619,23 @@ PolicyEvaluator provides detailed logging for debugging:
 
 ### Optimization Strategies
 
-1. **First Match Wins** - Stops at first matching policy
-2. **Priority Sorting** - Most specific policies evaluated first
-3. **Early Exit** - Skips remaining policies after match
-4. **In-Memory Storage** - Policies cached in PolicyManager
+1. __First Match Wins__ - Stops at first matching policy
+2. __Priority Sorting__ - Most specific policies evaluated first
+3. __Early Exit__ - Skips remaining policies after match
+4. __In-Memory Storage__ - Policies cached in PolicyManager
 
 ### Time Complexity
 
-- **Best Case:** O(1) - First policy matches
-- **Worst Case:** O(n) - No policy matches, check all n policies
-- **Average Case:** O(log n) - Match found in middle of list
+- __Best Case:__ O(1) - First policy matches
+- __Worst Case:__ O(n) - No policy matches, check all n policies
+- __Average Case:__ O(log n) - Match found in middle of list
 
 ### Recommendations
 
-1. **Put most common policies first** (higher priority)
-2. **Use specific patterns** to reduce false matches
-3. **Avoid wildcard-only policies** unless intentional
-4. **Cache evaluation results** if same check repeated
+1. __Put most common policies first__ (higher priority)
+2. __Use specific patterns__ to reduce false matches
+3. __Avoid wildcard-only policies__ unless intentional
+4. __Cache evaluation results__ if same check repeated
 
 ---
 
@@ -667,7 +667,7 @@ const roles = (userContext?.roles || []).join('|');
 
 ### 1. Always Include Built-in Roles
 
-✅ **Do:**
+✅ __Do:__
 
 ```javascript
 const userContext = {
@@ -677,7 +677,7 @@ const userContext = {
 };
 ```
 
-❌ **Don't:**
+❌ __Don't:__
 
 ```javascript
 const userContext = {
@@ -689,7 +689,7 @@ const userContext = {
 
 ### 2. Use Specific Actions
 
-✅ **Do:**
+✅ __Do:__
 
 ```javascript
 await policyEvaluator.evaluateAccess({
@@ -699,7 +699,7 @@ await policyEvaluator.evaluateAccess({
 });
 ```
 
-❌ **Don't:**
+❌ __Don't:__
 
 ```javascript
 await policyEvaluator.evaluateAccess({
@@ -711,7 +711,7 @@ await policyEvaluator.evaluateAccess({
 
 ### 3. Check hasDecision Flag
 
-✅ **Do:**
+✅ __Do:__
 
 ```javascript
 const result = await policyEvaluator.evaluateAccess(context);
@@ -744,5 +744,5 @@ if (!result.hasDecision) {
 
 ---
 
-**Maintained By:** Development Team
-**Status:** Active Development
+__Maintained By:__ Development Team
+__Status:__ Active Development

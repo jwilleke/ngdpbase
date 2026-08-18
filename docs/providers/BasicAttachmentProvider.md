@@ -8,12 +8,12 @@ code: src/providers/BasicAttachmentProvider.ts
 
 # BasicAttachmentProvider
 
-**Quick Reference** | [Complete Guide](BasicAttachmentProvider-Complete-Guide.md)
+__Quick Reference__ | [Complete Guide](BasicAttachmentProvider-Complete-Guide.md)
 
-**Module:** `src/providers/BasicAttachmentProvider.ts`
-**Type:** Attachment Storage Provider
-**Extends:** BaseAttachmentProvider
-**Status:** Production Ready
+__Module:__ `src/providers/BasicAttachmentProvider.ts`
+__Type:__ Attachment Storage Provider
+__Extends:__ BaseAttachmentProvider
+__Status:__ Production Ready
 
 ## Overview
 
@@ -21,13 +21,13 @@ BasicAttachmentProvider implements filesystem-based attachment storage with SHA-
 
 ## Key Features
 
-- **Content-based deduplication** - SHA-256 hash prevents duplicate storage
-- **Schema.org metadata** - CreativeWork format with full provenance
-- **Shared storage model** - Attachments stored once, referenced by multiple pages
-- **Page mentions tracking** - Tracks which pages use each attachment
-- **MIME type filtering** - Configurable allowed file types with wildcard support
-- **Size limits** - Configurable maximum file size
-- **Backup/restore support** - Full integration with BackupManager
+- __Content-based deduplication__ - SHA-256 hash prevents duplicate storage
+- __Schema.org metadata__ - CreativeWork format with full provenance
+- __Shared storage model__ - Attachments stored once, referenced by multiple pages
+- __Page mentions tracking__ - Tracks which pages use each attachment
+- __MIME type filtering__ - Configurable allowed file types with wildcard support
+- __Size limits__ - Configurable maximum file size
+- __Backup/restore support__ - Full integration with BackupManager
 
 ## Configuration
 
@@ -199,7 +199,7 @@ if (canDelete) {
 }
 ```
 
-**Permissions:**
+__Permissions:__
 
 - `attachment:upload` - Upload new attachments
 - `attachment:delete` - Delete attachments
@@ -249,10 +249,10 @@ const attachment = await provider.uploadAttachment(
 
 ## Performance Considerations
 
-- **Hash computation** - SHA-256 on upload (~10ms for 10MB file)
-- **Deduplication** - Prevents redundant storage
-- **Metadata loading** - Entire metadata.json loaded at startup
-- **File I/O** - Direct filesystem access (no database)
+- __Hash computation__ - SHA-256 on upload (~10ms for 10MB file)
+- __Deduplication__ - Prevents redundant storage
+- __Metadata loading__ - Entire metadata.json loaded at startup
+- __File I/O__ - Direct filesystem access (no database)
 
 ## Dependencies
 
@@ -262,26 +262,26 @@ const attachment = await provider.uploadAttachment(
 
 ## Related Documentation
 
-- **Complete Guide:** [BasicAttachmentProvider-Complete-Guide.md](BasicAttachmentProvider-Complete-Guide.md)
-- **Parent Class:** [BaseAttachmentProvider.md](BaseAttachmentProvider.md)
-- **Manager:** [AttachmentManager.md](../managers/AttachmentManager.md)
-- **Image Plugin:** [ImagePlugin.md](../plugins/ImagePlugin.md)
+- __Complete Guide:__ [BasicAttachmentProvider-Complete-Guide.md](BasicAttachmentProvider-Complete-Guide.md)
+- __Parent Class:__ [BaseAttachmentProvider.md](BaseAttachmentProvider.md)
+- __Manager:__ [AttachmentManager.md](../managers/AttachmentManager.md)
+- __Image Plugin:__ [ImagePlugin.md](../plugins/ImagePlugin.md)
 
 ## Common Issues
 
-**Q: File uploaded but not showing?**
+__Q: File uploaded but not showing?__
 A: Check page mentions - file may be associated with different page
 
-**Q: Duplicate files consuming space?**
+__Q: Duplicate files consuming space?__
 A: SHA-256 deduplication should prevent this - check hash method is enabled
 
-**Q: Upload rejected?**
+__Q: Upload rejected?__
 A: Verify MIME type in allowedtypes config and file size under maxsize limit
 
-**Q: Metadata file growing large?**
+__Q: Metadata file growing large?__
 A: Consider pruning old attachments with no page mentions
 
 ---
 
-**Last Updated:** 2025-12-22
-**Version:** 1.5.0
+__Last Updated:__ 2025-12-22
+__Version:__ 1.5.0

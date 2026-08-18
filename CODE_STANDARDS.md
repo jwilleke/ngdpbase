@@ -46,7 +46,7 @@ We use strict TypeScript settings (`strict: true`) to catch potential bugs at co
 - All functions must have explicit return types (unless inferable)
 - No implicit returns
 - Underscore variable policy:
-  - If a variable is truly unused, **DELETE IT** (don't just prefix with `_`)
+  - If a variable is truly unused, __DELETE IT__ (don't just prefix with `_`)
   - For required-but-unused callback/interface params, underscore prefix is acceptable (TypeScript `noUnusedParameters` requirement)
   - Use skip pattern `[, value]` instead of `[_key, value]` in destructuring
   - Use `.values()` instead of `.entries()` when only values are needed
@@ -56,7 +56,7 @@ We use strict TypeScript settings (`strict: true`) to catch potential bugs at co
 
 See `tsconfig.json` for full configuration.
 
-For detailed TypeScript patterns, type definitions, and TSDoc conventions, see **[TypeScript Style Guide](./docs/TypeScript-Style-Guide.md)**.
+For detailed TypeScript patterns, type definitions, and TSDoc conventions, see __[TypeScript Style Guide](./docs/TypeScript-Style-Guide.md)__.
 
 ## Code Formatting
 
@@ -128,7 +128,7 @@ Key rules:
 - Line length limits (300 chars general, 80 for headings)
 - Blank lines around lists and code blocks
 - Consistent list marker style
-- **No bold text as headings (MD036)** - Use proper heading syntax (`##`, `###`, etc.) instead of `**Bold:**`
+- __No bold text as headings (MD036)__ - Use proper heading syntax (`##`, `###`, etc.) instead of `**Bold:**`
 
 Run markdown linting:
 

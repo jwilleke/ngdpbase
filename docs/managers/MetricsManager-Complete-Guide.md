@@ -1,8 +1,8 @@
 # MetricsManager Complete Guide
 
-**Module:** `src/managers/MetricsManager.ts`
-**Quick Reference:** [MetricsManager.md](MetricsManager.md)
-**Admin Setup:** [Telemetry.md](../admin/Telemetry.md)
+__Module:__ `src/managers/MetricsManager.ts`
+__Quick Reference:__ [MetricsManager.md](MetricsManager.md)
+__Admin Setup:__ [Telemetry.md](../admin/Telemetry.md)
 
 ---
 

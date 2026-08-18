@@ -20,11 +20,11 @@ Lets the platform run long-running work (page-reindex, version-history maintenan
 
 ## Lifecycle
 
-1. **Register** — call sites add `JobDefinition`s during init (e.g. `pages.reindex`).
-2. **Start** — operator/API triggers a job; manager creates a job instance with a UUID + tracks status.
-3. **Run** — the `run` callback executes; can call `reportProgress(message)` repeatedly.
-4. **Poll** — clients poll `/api/jobs/:id` for status + latest progress messages.
-5. **Complete** — manager records `JobResult` and surfaces in notifications.
+1. __Register__ — call sites add `JobDefinition`s during init (e.g. `pages.reindex`).
+2. __Start__ — operator/API triggers a job; manager creates a job instance with a UUID + tracks status.
+3. __Run__ — the `run` callback executes; can call `reportProgress(message)` repeatedly.
+4. __Poll__ — clients poll `/api/jobs/:id` for status + latest progress messages.
+5. __Complete__ — manager records `JobResult` and surfaces in notifications.
 
 ## See Also
 

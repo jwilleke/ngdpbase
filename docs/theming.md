@@ -92,7 +92,7 @@ Define your theme's CSS custom properties. The file must set values on `:root`:
 }
 ```
 
-**Bootstrap variable mapping** — set `--bs-*` vars as `var(--your-var)` references so Bootstrap's modals, tooltips, badges, and dropdowns all respect your theme automatically. See `themes/default/css/variables.css` for the complete reference mapping.
+__Bootstrap variable mapping__ — set `--bs-*` vars as `var(--your-var)` references so Bootstrap's modals, tooltips, badges, and dropdowns all respect your theme automatically. See `themes/default/css/variables.css` for the complete reference mapping.
 
 ## Activating a Theme
 
@@ -104,7 +104,7 @@ Set the active theme in your instance config (`$FAST_STORAGE/config/app-custom-c
 }
 ```
 
-Or switch it at runtime via the admin panel: **Admin → Settings → Appearance → Theme**.
+Or switch it at runtime via the admin panel: __Admin → Settings → Appearance → Theme__.
 
 Theme changes take effect immediately for all new requests — no restart required.
 
@@ -120,7 +120,7 @@ themes/my-theme/
 
 When a request comes in, EJS resolves `<%- include('header') %>` by searching `themes/<active>/partials/` first, then falling back to `views/`. Only the files you place in `partials/` are overridden — all other templates are served from `views/` unchanged.
 
-**Example use cases:**
+__Example use cases:__
 
 - Custom header with a different logo layout or navigation
 - Different footer with theme-specific links
@@ -170,7 +170,7 @@ Stylesheets are injected in this order:
 4. `themes/<active>/css/variables.css` — theme custom properties
 5. `themes/core.css` — structural layout
 6. `themes/plugins/location.css` — location plugin CSS
-7. **Add-on stylesheets** (in registration order)
+7. __Add-on stylesheets__ (in registration order)
 
 This means add-on CSS can reference any CSS variable defined by the active theme, and can override any `core.css` rule.
 
@@ -187,7 +187,7 @@ const paths = themeManager.paths;
 // paths.faviconPath, paths.locationCssPath, paths.themeInfo, paths.fontUrls
 ```
 
-**Static helpers:**
+__Static helpers:__
 
 ```typescript
 // List all themes with a valid theme.json

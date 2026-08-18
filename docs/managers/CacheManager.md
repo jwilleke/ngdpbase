@@ -8,9 +8,9 @@ code: src/managers/CacheManager.ts
 
 # CacheManager
 
-**Module:** `src/managers/CacheManager.ts`
-**Extends:** [BaseManager](BaseManager.md)
-**Complete Guide:** [CacheManager-Complete-Guide.md](CacheManager-Complete-Guide.md)
+__Module:__ `src/managers/CacheManager.ts`
+__Extends:__ [BaseManager](BaseManager.md)
+__Complete Guide:__ [CacheManager-Complete-Guide.md](CacheManager-Complete-Guide.md)
 
 ---
 
@@ -18,17 +18,17 @@ code: src/managers/CacheManager.ts
 
 CacheManager provides centralized cache management for ngdpbase with pluggable cache providers, cache regions (namespaces), configurable TTL, and comprehensive statistics tracking.
 
-> **Two cache layers in ngdpbase**: this document covers the CacheManager layer — opportunistic, TTL-based memoization through pluggable providers (NodeCache, Redis-planned, Null). It is **not** the only caching in the system. Provider-level structural caches (e.g., `FileSystemProvider.pageCache`, `LunrSearchProvider.documents`, `ThemeManager` cache) are separate in-memory data structures populated at init and write-through invalidated; they're not exposed through CacheManager. See [the full inventory in the Complete Guide](CacheManager-Complete-Guide.md#provider-level-structural-caches) and [Access-Control.md](../architecture/Access-Control.md#performance-characteristics) for the page-access performance angle.
+> __Two cache layers in ngdpbase__: this document covers the CacheManager layer — opportunistic, TTL-based memoization through pluggable providers (NodeCache, Redis-planned, Null). It is __not__ the only caching in the system. Provider-level structural caches (e.g., `FileSystemProvider.pageCache`, `LunrSearchProvider.documents`, `ThemeManager` cache) are separate in-memory data structures populated at init and write-through invalidated; they're not exposed through CacheManager. See [the full inventory in the Complete Guide](CacheManager-Complete-Guide.md#provider-level-structural-caches) and [Access-Control.md](../architecture/Access-Control.md#performance-characteristics) for the page-access performance angle.
 
 ## Key Features
 
-- **Pluggable Providers** - Support for multiple backends (NodeCache, Redis, Memcached)
-- **Cache Regions** - Namespace isolation for different managers
-- **Provider Fallback** - Automatic failover to NullCacheProvider on failure
-- **Health Monitoring** - Automatic health checks with recovery
-- **Statistics** - Hit rates, miss rates, memory usage per region
-- **Pattern Matching** - Glob-style key patterns for bulk operations
-- **TTL Support** - Per-key time-to-live configuration
+- __Pluggable Providers__ - Support for multiple backends (NodeCache, Redis, Memcached)
+- __Cache Regions__ - Namespace isolation for different managers
+- __Provider Fallback__ - Automatic failover to NullCacheProvider on failure
+- __Health Monitoring__ - Automatic health checks with recovery
+- __Statistics__ - Hit rates, miss rates, memory usage per region
+- __Pattern Matching__ - Glob-style key patterns for bulk operations
+- __TTL Support__ - Per-key time-to-live configuration
 
 ## Quick Example
 
@@ -180,11 +180,11 @@ console.log('Features:', config.features);
 
 ## Best Practices
 
-1. **Use Regions**: Isolate caches by manager/purpose
-2. **Set Appropriate TTL**: Balance freshness vs performance
-3. **Monitor Hit Rates**: Track cache effectiveness
-4. **Clear on Updates**: Invalidate cache when data changes
-5. **Test Without Cache**: Use NullCacheProvider for testing
+1. __Use Regions__: Isolate caches by manager/purpose
+2. __Set Appropriate TTL__: Balance freshness vs performance
+3. __Monitor Hit Rates__: Track cache effectiveness
+4. __Clear on Updates__: Invalidate cache when data changes
+5. __Test Without Cache__: Use NullCacheProvider for testing
 
 ## Example: PageManager Integration
 
@@ -230,7 +230,7 @@ When disabled, CacheManager automatically loads NullCacheProvider (no-op).
 
 ## Admin API
 
-CacheManager regions are exposed via REST endpoints (admin-only). Provider-level structural caches are **not** affected by these.
+CacheManager regions are exposed via REST endpoints (admin-only). Provider-level structural caches are __not__ affected by these.
 
 | Endpoint | Effect |
 | --- | --- |

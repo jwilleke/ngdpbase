@@ -10,7 +10,7 @@ code: src/managers/RoleManager.ts
 
 Canonical store for `OrganizationRole` bindings. One file per `(organization, namedPosition)` pair. Members of a role are stored within the role record, so "who holds role X at org Y" is one read.
 
-Distinct from the platform's **system roles** (`admin`, `editor`, `contributor`, `reader`, `occupant`) which are config-driven and used by the ACL evaluator. RoleManager handles **business roles** (e.g. "Board President at Acme Corp"), referenced by Person + Organization records.
+Distinct from the platform's __system roles__ (`admin`, `editor`, `contributor`, `reader`, `occupant`) which are config-driven and used by the ACL evaluator. RoleManager handles __business roles__ (e.g. "Board President at Acme Corp"), referenced by Person + Organization records.
 
 ## Why this exists
 

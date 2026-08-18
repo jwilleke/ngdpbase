@@ -1,8 +1,8 @@
 # WikiDocument Complete Guide
 
-**Version:** 2.0.0
-**Last Updated:** 2025-12-10
-**Status:** Production Ready
+__Version:__ 2.0.0
+__Last Updated:__ 2025-12-10
+__Status:__ Production Ready
 
 This comprehensive guide covers everything about WikiDocument in the ngdpbase project, including its purpose, implementation, usage, and the DOM extraction pipeline that uses it.
 
@@ -31,17 +31,17 @@ This comprehensive guide covers everything about WikiDocument in the ngdpbase pr
 
 ### Key Features
 
-- **DOM-based structure** using `linkedom` (a lightweight, W3C-compliant DOM API).
-- **Cacheable representation** via JSON serialization (`toJSON` and `fromJSON`).
-- **Metadata storage** for processing flags and custom data.
-- **WeakRef context** for memory-efficient garbage collection of the rendering context.
-- **Standard W3C DOM API** (e.g., `createElement`, `querySelector`, `appendChild`).
-- **High performance**, with sub-millisecond operations for most common tasks.
+- __DOM-based structure__ using `linkedom` (a lightweight, W3C-compliant DOM API).
+- __Cacheable representation__ via JSON serialization (`toJSON` and `fromJSON`).
+- __Metadata storage__ for processing flags and custom data.
+- __WeakRef context__ for memory-efficient garbage collection of the rendering context.
+- __Standard W3C DOM API__ (e.g., `createElement`, `querySelector`, `appendChild`).
+- __High performance__, with sub-millisecond operations for most common tasks.
 
 ### Implementation Status
 
-- **WikiDocument Class:** Fully implemented and tested, with 100% test coverage. It is considered production-ready.
-- **DOM Extraction Pipeline:** The pipeline that uses `WikiDocument` is also fully implemented and is the default rendering method in the application.
+- __WikiDocument Class:__ Fully implemented and tested, with 100% test coverage. It is considered production-ready.
+- __DOM Extraction Pipeline:__ The pipeline that uses `WikiDocument` is also fully implemented and is the default rendering method in the application.
 
 ---
 
@@ -53,10 +53,10 @@ This comprehensive guide covers everything about WikiDocument in the ngdpbase pr
 
 Instead of manipulating content as strings through multiple, sequential phases (which causes order-dependency issues), `WikiDocument` enables a more robust process:
 
-1. JSPWiki-specific syntax is **extracted** from the raw markup.
-2. These extracted elements are converted into **DOM nodes** within a `WikiDocument` instance.
+1. JSPWiki-specific syntax is __extracted__ from the raw markup.
+2. These extracted elements are converted into __DOM nodes__ within a `WikiDocument` instance.
 3. The remaining "safe" markdown is processed by a standard markdown parser (Showdown).
-4. The rendered DOM nodes are **merged** back into the final HTML.
+4. The rendered DOM nodes are __merged__ back into the final HTML.
 
 This separation of concerns ensures that the markdown parser and the JSPWiki syntax handlers do not interfere with each other.
 
@@ -64,8 +64,8 @@ This separation of concerns ensures that the markdown parser and the JSPWiki syn
 
 The design is modeled after JSPWiki's `WikiDocument`, which extends a JDOM2 `Document` in Java.
 
-- **JSPWiki:** Uses `org.jdom2.Document` and the JDOM2 API.
-- **ngdpbase:** Uses `linkedom` to provide a W3C-compliant DOM API, which is more familiar to JavaScript developers.
+- __JSPWiki:__ Uses `org.jdom2.Document` and the JDOM2 API.
+- __ngdpbase:__ Uses `linkedom` to provide a W3C-compliant DOM API, which is more familiar to JavaScript developers.
 
 ---
 
@@ -75,16 +75,16 @@ The design is modeled after JSPWiki's `WikiDocument`, which extends a JDOM2 `Doc
 
 The original ngdpbase parser processed content as strings through 7 sequential phases. This was fragile and prone to errors. For example, an "escape" syntax like `[[` to prevent a link from being rendered could be broken by a later phase that processed variables.
 
-**The core problem was order-dependency.** The output would change drastically if you re-ordered the parsing phases, and it was impossible to find an order that worked for all edge cases.
+__The core problem was order-dependency.__ The output would change drastically if you re-ordered the parsing phases, and it was impossible to find an order that worked for all edge cases.
 
 ### The Solution: A DOM-Based Pipeline
 
 The `WikiDocument` class enables a modern, robust parsing architecture that separates concerns, inspired by the discovery that JSPWiki itself doesn't parse markdown but delegates it to a specialized library (FlexMark).
 
-**ngdpbase now follows the same pattern:**
+__ngdpbase now follows the same pattern:__
 
-- **Markdown Syntax** (`##`, `*`, etc.) is handled exclusively by the **Showdown parser**.
-- **JSPWiki Syntax** (`[{$var}]`, `[{Plugin}]`, `[Link]`) is handled by the **DOM Extraction Pipeline**, which uses `WikiDocument`.
+- __Markdown Syntax__ (`##`, `*`, etc.) is handled exclusively by the __Showdown parser__.
+- __JSPWiki Syntax__ (`[{$var}]`, `[{Plugin}]`, `[Link]`) is handled by the __DOM Extraction Pipeline__, which uses `WikiDocument`.
 
 This architecture permanently fixes the escaping and order-dependency issues.
 
@@ -98,8 +98,8 @@ This architecture permanently fixes the escaping and order-dependency issues.
 
 Creates a new `WikiDocument` instance.
 
-- **`pageData`** (string): The original, raw wiki markup.
-- **`context`** (Object | null): The rendering context, stored as a `WeakRef` to prevent memory leaks.
+- __`pageData`__ (string): The original, raw wiki markup.
+- __`context`__ (Object | null): The rendering context, stored as a `WeakRef` to prevent memory leaks.
 
 ```javascript
 const WikiDocument = require('./src/parsers/dom/WikiDocument');
@@ -157,20 +157,20 @@ Creates an HTML comment node.
 
 The class proxies standard DOM manipulation methods to the root element:
 
-- **`appendChild(node)`**: Appends a child to the document's root.
-- **`insertBefore(newNode, referenceNode)`**
-- **`removeChild(node)`**
-- **`replaceChild(newNode, oldNode)`**
+- __`appendChild(node)`__: Appends a child to the document's root.
+- __`insertBefore(newNode, referenceNode)`__
+- __`removeChild(node)`__
+- __`replaceChild(newNode, oldNode)`__
 
 ### DOM Query
 
 The class proxies standard DOM query methods:
 
-- **`querySelector(selector)`**: Finds the first element matching a CSS selector.
-- **`querySelectorAll(selector)`**: Finds all elements matching a CSS selector.
-- **`getElementById(id)`**
-- **`getElementsByClassName(className)`**
-- **`getElementsByTagName(tagName)`**
+- __`querySelector(selector)`__: Finds the first element matching a CSS selector.
+- __`querySelectorAll(selector)`__: Finds all elements matching a CSS selector.
+- __`getElementById(id)`__
+- __`getElementsByClassName(className)`__
+- __`getElementsByTagName(tagName)`__
 
 ### Serialization
 
@@ -192,11 +192,11 @@ A static method that reconstructs a `WikiDocument` instance from a JSON object (
 
 ### Utility Methods
 
-- **`getRootElement()`**: Returns the root `<body>` element of the internal DOM.
-- **`clear()`**: Removes all content from the document.
-- **`getChildCount()`**: Returns the number of top-level nodes.
-- **`isEmpty()`**: Returns `true` if the document has no content.
-- **`getStatistics()`**: Returns an object with statistics like node count, content length, etc.
+- __`getRootElement()`__: Returns the root `<body>` element of the internal DOM.
+- __`clear()`__: Removes all content from the document.
+- __`getChildCount()`__: Returns the number of top-level nodes.
+- __`isEmpty()`__: Returns `true` if the document has no content.
+- __`getStatistics()`__: Returns an object with statistics like node count, content length, etc.
 
 ---
 
@@ -255,7 +255,7 @@ This architecture ensures that Showdown only ever sees "safe" markdown, and the 
 
 ### Style syntax (`%%…/%`) is DOM-native too (#907)
 
-Every `%%…/%` style construct is a first-class citizen of Phase 1 — it extracts to a typed `ExtractedElement`, resolves to a real `WikiDocument` node in Phase 2, and merges back in Phase 3. There are **no post-Showdown string passes** rewriting `%%` markup into HTML. Historically these were patched with regex string-replace steps (the removed "Step 0.55" and `convertInlineCssStyles()`); each new case meant another regex, and the passes fought each other and the markdown converter. The unified extraction replaces all of that.
+Every `%%…/%` style construct is a first-class citizen of Phase 1 — it extracts to a typed `ExtractedElement`, resolves to a real `WikiDocument` node in Phase 2, and merges back in Phase 3. There are __no post-Showdown string passes__ rewriting `%%` markup into HTML. Historically these were patched with regex string-replace steps (the removed "Step 0.55" and `convertInlineCssStyles()`); each new case meant another regex, and the passes fought each other and the markdown converter. The unified extraction replaces all of that.
 
 Two families of style markup, both handled in the extraction phase:
 
@@ -270,14 +270,14 @@ Two families of style markup, both handled in the extraction phase:
 
 Ordering and nesting rules that make this robust:
 
-- **Inline extraction runs before block extraction.** Inline swatches like `%%(background:#0FF;) Aqua /%` become inert placeholders first, so their `/%` closers can't be mis-paired with an enclosing block (`%%sortable … /%`). This was the fix for the Color page, where hundreds of swatch closers were confusing the block matcher.
-- **Innermost-first for nesting.** The inline matcher treats `/%` and a bare `%%` as closers, but a `%%` that is itself an opener (`%%(`, `%%sup`, `%%sub`, `%%strike`) is **not** a valid closer. That disambiguation means the inner run of `%%(color:red) A %%(font-weight:bold) B /% C /%` matches first, leaving the outer run to resolve around its placeholder — nesting resolves bottom-up.
-- **Both `/%` and `%%` close** an inline run (`%%sup 2 %%` and `%%sup 2 /%` are equivalent, per #592).
-- **Placeholders are opaque to every downstream stage.** Table-cell population (`populateCell`) and inline-content walking (`appendWikiNodes`) both recognise `data-jspwiki-placeholder` spans, so a styled swatch inside a `|table cell|` merges correctly.
+- __Inline extraction runs before block extraction.__ Inline swatches like `%%(background:#0FF;) Aqua /%` become inert placeholders first, so their `/%` closers can't be mis-paired with an enclosing block (`%%sortable … /%`). This was the fix for the Color page, where hundreds of swatch closers were confusing the block matcher.
+- __Innermost-first for nesting.__ The inline matcher treats `/%` and a bare `%%` as closers, but a `%%` that is itself an opener (`%%(`, `%%sup`, `%%sub`, `%%strike`) is __not__ a valid closer. That disambiguation means the inner run of `%%(color:red) A %%(font-weight:bold) B /% C /%` matches first, leaving the outer run to resolve around its placeholder — nesting resolves bottom-up.
+- __Both `/%` and `%%` close__ an inline run (`%%sup 2 %%` and `%%sup 2 /%` are equivalent, per #592).
+- __Placeholders are opaque to every downstream stage.__ Table-cell population (`populateCell`) and inline-content walking (`appendWikiNodes`) both recognise `data-jspwiki-placeholder` spans, so a styled swatch inside a `|table cell|` merges correctly.
 
-Inline CSS is security-gated. `sanitizeInlineCss()` returns an empty style unless `ngdpbase.style.security.allow-inline-css` is `true` (default **false**); when enabled, only properties in `ngdpbase.style.security.allowed-properties` survive, and values matching `javascript:`, `url(`, `expression(`, or angle brackets are dropped.
+Inline CSS is security-gated. `sanitizeInlineCss()` returns an empty style unless `ngdpbase.style.security.allow-inline-css` is `true` (default __false__); when enabled, only properties in `ngdpbase.style.security.allowed-properties` survive, and values matching `javascript:`, `url(`, `expression(`, or angle brackets are dropped.
 
-> **Deprecated:** `src/parsers/handlers/WikiStyleHandler.ts` was the pre-DOM string-based style processor. It is **unregistered** and retained only for reference/unit coverage — the live path is `MarkupParser` extraction described here. Do not add new style behaviour to `WikiStyleHandler`.
+> __Deprecated:__ `src/parsers/handlers/WikiStyleHandler.ts` was the pre-DOM string-based style processor. It is __unregistered__ and retained only for reference/unit coverage — the live path is `MarkupParser` extraction described here. Do not add new style behaviour to `WikiStyleHandler`.
 
 ---
 
@@ -302,8 +302,8 @@ src/parsers/
 
 `WikiContext` and `WikiDocument` work together but have distinct roles:
 
-- **`WikiContext` (High-Level Orchestrator):** Manages the entire request-to-render lifecycle. It *initiates* the parsing process and holds references to the managers.
-- **`WikiDocument` (Low-Level Data Structure):** Represents the content *during* the parsing process. It is created and used internally by `MarkupParser` and its handlers.
+- __`WikiContext` (High-Level Orchestrator):__ Manages the entire request-to-render lifecycle. It *initiates* the parsing process and holds references to the managers.
+- __`WikiDocument` (Low-Level Data Structure):__ Represents the content *during* the parsing process. It is created and used internally by `MarkupParser` and its handlers.
 
 ```
 Request → WikiContext created
@@ -346,8 +346,8 @@ return doc;
 
 The `WikiDocument` class and its associated pipeline are thoroughly tested.
 
-- **`src/parsers/dom/__tests__/WikiDocument.test.js`**: Contains **49 tests** covering every method of the `WikiDocument` class, achieving 100% test coverage.
-- **Extraction & Merge Tests**: Over 70 additional tests validate the extraction and merge pipeline in `MarkupParser`.
+- __`src/parsers/dom/__tests__/WikiDocument.test.js`__: Contains __49 tests__ covering every method of the `WikiDocument` class, achieving 100% test coverage.
+- __Extraction & Merge Tests__: Over 70 additional tests validate the extraction and merge pipeline in `MarkupParser`.
 
 To run the core `WikiDocument` tests:
 `npm test -- src/parsers/dom/__tests__/WikiDocument.test.js`
@@ -358,24 +358,24 @@ To run the core `WikiDocument` tests:
 
 `WikiDocument` is built on `linkedom`, a high-performance DOM library for Node.js, chosen over heavier alternatives like `jsdom`.
 
-- **Throughput**: Benchmarks show a throughput of over **2,500 pages/second**.
-- **Memory Usage**: A cached `WikiDocument` instance for a complex page is only around **21 KB**.
-- **Operation Speed**: Most individual DOM operations are sub-millisecond.
+- __Throughput__: Benchmarks show a throughput of over __2,500 pages/second__.
+- __Memory Usage__: A cached `WikiDocument` instance for a complex page is only around __21 KB__.
+- __Operation Speed__: Most individual DOM operations are sub-millisecond.
 
-The entire DOM extraction pipeline is approximately **20% faster** and uses **10% less memory** than the legacy 7-phase string-based parser it replaced.
+The entire DOM extraction pipeline is approximately __20% faster__ and uses __10% less memory__ than the legacy 7-phase string-based parser it replaced.
 
 ---
 
 ## Migration Guide for Custom Handlers
 
-If you have written custom parser handlers for the legacy 7-phase system, you will need to migrate them to the new DOM-based approach. A detailed guide with patterns and examples is available at: **[docs/migration/WikiDocument-DOM-Migration.md](./migration/WikiDocument-DOM-Migration.md)**.
+If you have written custom parser handlers for the legacy 7-phase system, you will need to migrate them to the new DOM-based approach. A detailed guide with patterns and examples is available at: __[docs/migration/WikiDocument-DOM-Migration.md](./migration/WikiDocument-DOM-Migration.md)__.
 
 ---
 
 ## Troubleshooting
 
-- **Placeholders visible in output**: This means the merge phase failed. Ensure your custom DOM nodes are being created correctly and have the `data-jspwiki-id` attribute.
-- **JSPWiki syntax not processed**: This points to a failure in the extraction phase. Check that your syntax is not inside a code block and that the extraction regex in `MarkupParser.js` is correct.
+- __Placeholders visible in output__: This means the merge phase failed. Ensure your custom DOM nodes are being created correctly and have the `data-jspwiki-id` attribute.
+- __JSPWiki syntax not processed__: This points to a failure in the extraction phase. Check that your syntax is not inside a code block and that the extraction regex in `MarkupParser.js` is correct.
 
 ---
 
@@ -383,10 +383,10 @@ If you have written custom parser handlers for the legacy 7-phase system, you wi
 
 This guide consolidates information from many original planning and architecture documents. For historical context or deeper details, see:
 
-- **Summary**: [WikiDocument.md](../../WikiDocument.md)
-- **Original Architecture Doc**: [docs/architecture/WikiDocument-DOM-Architecture.md](architecture/WikiDocument-DOM-Architecture.md)
-- **Migration Guide**: [docs/migration/WikiDocument-DOM-Migration.md](migration/WikiDocument-DOM-Migration.md)
-- **API Reference**: [docs/architecture/WikiDocument-API.md](architecture/WikiDocument-API.md)
-- **Initial Research**:
+- __Summary__: [WikiDocument.md](../../WikiDocument.md)
+- __Original Architecture Doc__: [docs/architecture/WikiDocument-DOM-Architecture.md](architecture/WikiDocument-DOM-Architecture.md)
+- __Migration Guide__: [docs/migration/WikiDocument-DOM-Migration.md](migration/WikiDocument-DOM-Migration.md)
+- __API Reference__: [docs/architecture/WikiDocument-API.md](architecture/WikiDocument-API.md)
+- __Initial Research__:
   - [docs/planning/WikiDocument-DOM-Solution.md](planning/WikiDocument-DOM-Solution.md)
   - [docs/architecture/WikiDocument-DOM-Library-Evaluation.md](architecture/WikiDocument-DOM-Library-Evaluation.md)

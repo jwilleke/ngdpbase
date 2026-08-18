@@ -1,10 +1,10 @@
-> **ARCHIVED**: This document is for historical purposes only. For the current and complete documentation, please see **[WikiDocument Complete Guide](../WikiDocument-Complete-Guide.md)**.
+> __ARCHIVED__: This document is for historical purposes only. For the current and complete documentation, please see __[WikiDocument Complete Guide](../WikiDocument-Complete-Guide.md)__.
 
 # WikiDocument DOM Library Evaluation
 
-**Date:** 2025-10-12
-**Phase:** 1.1 - Research & Setup
-**Related Issue:** [#93 - WikiDocument DOM Migration](https://github.com/jwilleke/ngdpbase/issues/93)
+__Date:__ 2025-10-12
+__Phase:__ 1.1 - Research & Setup
+__Related Issue:__ [#93 - WikiDocument DOM Migration](https://github.com/jwilleke/ngdpbase/issues/93)
 
 ## Overview
 
@@ -14,13 +14,13 @@ Evaluation of DOM libraries for the WikiDocument internal DOM implementation. We
 
 ### Functional Requirements
 
-1. **DOM Creation** - Create elements, text nodes, attributes
-2. **DOM Manipulation** - Append, insert, remove, replace nodes
-3. **DOM Query** - querySelector, querySelectorAll, getElementById
-4. **Serialization** - Convert DOM to HTML string
-5. **JSON Support** - Serialize/deserialize for caching
-6. **Lightweight** - Minimal memory footprint
-7. **Fast** - Parse and manipulate quickly
+1. __DOM Creation__ - Create elements, text nodes, attributes
+2. __DOM Manipulation__ - Append, insert, remove, replace nodes
+3. __DOM Query__ - querySelector, querySelectorAll, getElementById
+4. __Serialization__ - Convert DOM to HTML string
+5. __JSON Support__ - Serialize/deserialize for caching
+6. __Lightweight__ - Minimal memory footprint
+7. __Fast__ - Parse and manipulate quickly
 
 ### JSPWiki Compatibility
 
@@ -32,35 +32,35 @@ Evaluation of DOM libraries for the WikiDocument internal DOM implementation. We
 
 ### 1. jsdom
 
-**Repository:** <https://github.com/jsdom/jsdom>
-**npm:** `jsdom`
-**Version:** 24.x
-**Size:** ~4.7 MB (installed)
+__Repository:__ <https://github.com/jsdom/jsdom>
+__npm:__ `jsdom`
+__Version:__ 24.x
+__Size:__ ~4.7 MB (installed)
 
 #### Pros
 
-✅ **Full W3C DOM Implementation**
+✅ __Full W3C DOM Implementation__
 
 - Complete HTML5 DOM APIs
 - querySelector, querySelectorAll support
 - Full DOM manipulation methods
 - addEventListener support (not needed but nice)
 
-✅ **Mature and Well-Tested**
+✅ __Mature and Well-Tested__
 
 - Used by Jest, Enzyme, and other major tools
 - 20k+ GitHub stars
 - Active maintenance
 - Excellent documentation
 
-✅ **Full Browser API Compatibility**
+✅ __Full Browser API Compatibility__
 
 - document.createElement()
 - element.innerHTML, outerHTML
 - element.textContent
 - All standard DOM methods
 
-✅ **Good Developer Experience**
+✅ __Good Developer Experience__
 
 - Familiar browser-like API
 - Easy to debug
@@ -68,19 +68,19 @@ Evaluation of DOM libraries for the WikiDocument internal DOM implementation. We
 
 #### Cons
 
-❌ **Heavy Weight**
+❌ __Heavy Weight__
 
 - Large dependency tree
 - Includes unnecessary browser APIs (XMLHttpRequest, fetch, etc.)
 - Memory overhead for unused features
 
-❌ **Performance Overhead**
+❌ __Performance Overhead__
 
 - Slower than lighter alternatives
 - More memory usage per document
 - Full HTML parsing engine (overkill for wiki markup)
 
-❌ **Complexity**
+❌ __Complexity__
 
 - More complex than needed
 - Difficult to optimize
@@ -120,38 +120,38 @@ class WikiDocument {
 
 #### Performance Estimate
 
-- **Parse Time:** 5-10ms per document
-- **Memory:** ~2-5 MB per document
-- **Serialization:** 1-2ms per document
+- __Parse Time:__ 5-10ms per document
+- __Memory:__ ~2-5 MB per document
+- __Serialization:__ 1-2ms per document
 
 ### 2. cheerio
 
-**Repository:** <https://github.com/cheeriojs/cheerio>
-**npm:** `cheerio`
-**Version:** 1.0.0
-**Size:** ~1.2 MB (installed)
+__Repository:__ <https://github.com/cheeriojs/cheerio>
+__npm:__ `cheerio`
+__Version:__ 1.0.0
+__Size:__ ~1.2 MB (installed)
 
 #### Pros
 
-✅ **Lightweight**
+✅ __Lightweight__
 
 - Much smaller than jsdom
 - Minimal dependency tree
 - Fast load time
 
-✅ **jQuery-Like API**
+✅ __jQuery-Like API__
 
 - Familiar API for developers
 - Chaining support
 - CSS selector support
 
-✅ **Server-Side Focus**
+✅ __Server-Side Focus__
 
 - Designed for Node.js
 - No browser emulation overhead
 - Good for HTML manipulation
 
-✅ **Fast**
+✅ __Fast__
 
 - Quick parsing (htmlparser2)
 - Fast DOM manipulation
@@ -159,20 +159,20 @@ class WikiDocument {
 
 #### Cons
 
-❌ **Limited DOM API**
+❌ __Limited DOM API__
 
 - Not a full W3C DOM implementation
 - No document.createElement() (uses different API)
 - Different API than browser (learning curve)
 - No native DOM methods
 
-❌ **jQuery API Not Standard**
+❌ __jQuery API Not Standard__
 
 - $('.element') instead of querySelector()
 - Different manipulation methods
 - Not compatible with browser DOM code
 
-❌ **Serialization Differences**
+❌ __Serialization Differences__
 
 - html() method instead of innerHTML
 - May produce slightly different output
@@ -211,40 +211,40 @@ class WikiDocument {
 
 #### Performance Estimate
 
-- **Parse Time:** 1-3ms per document
-- **Memory:** ~500KB - 1 MB per document
-- **Serialization:** <1ms per document
+- __Parse Time:__ 1-3ms per document
+- __Memory:__ ~500KB - 1 MB per document
+- __Serialization:__ <1ms per document
 
 ### 3. linkedom
 
-**Repository:** <https://github.com/WebReflection/linkedom>
-**npm:** `linkedom`
-**Version:** 0.18.x
-**Size:** ~500 KB (installed)
+__Repository:__ <https://github.com/WebReflection/linkedom>
+__npm:__ `linkedom`
+__Version:__ 0.18.x
+__Size:__ ~500 KB (installed)
 
 #### Pros
 
-✅ **Lightweight jsdom Alternative**
+✅ __Lightweight jsdom Alternative__
 
 - Full DOM API compatibility
 - Much smaller than jsdom
 - Fast performance
 
-✅ **Standard DOM API**
+✅ __Standard DOM API__
 
 - document.createElement()
 - querySelector, querySelectorAll
 - Standard DOM manipulation
 - Browser-compatible code
 
-✅ **Modern Implementation**
+✅ __Modern Implementation__
 
 - ES6+ features
 - Good TypeScript support
 - Active development
 - Clean codebase
 
-✅ **Performance**
+✅ __Performance__
 
 - 10-40x faster than jsdom
 - Lower memory usage
@@ -252,14 +252,14 @@ class WikiDocument {
 
 #### Cons
 
-⚠️ **Less Mature**
+⚠️ __Less Mature__
 
 - Newer library (fewer stars)
 - Smaller community
 - Less battle-tested
 - Potential edge cases
 
-⚠️ **Documentation**
+⚠️ __Documentation__
 
 - Less comprehensive than jsdom
 - Fewer examples
@@ -299,30 +299,30 @@ class WikiDocument {
 
 #### Performance Estimate
 
-- **Parse Time:** 0.5-1ms per document
-- **Memory:** ~300-500 KB per document
-- **Serialization:** <0.5ms per document
+- __Parse Time:__ 0.5-1ms per document
+- __Memory:__ ~300-500 KB per document
+- __Serialization:__ <0.5ms per document
 
 ### 4. Custom Lightweight DOM
 
-**Implementation:** Build our own minimal DOM
-**Size:** ~50-100 KB (estimated)
+__Implementation:__ Build our own minimal DOM
+__Size:__ ~50-100 KB (estimated)
 
 #### Pros
 
-✅ **Minimal Dependencies**
+✅ __Minimal Dependencies__
 
 - Zero external dependencies
 - Full control over behavior
 - Exact features we need
 
-✅ **Optimized for Wiki**
+✅ __Optimized for Wiki__
 
 - Only wiki-specific nodes
 - Custom serialization
 - Optimized for our use case
 
-✅ **Learning Opportunity**
+✅ __Learning Opportunity__
 
 - Deep understanding of implementation
 - Custom optimizations
@@ -330,19 +330,19 @@ class WikiDocument {
 
 #### Cons
 
-❌ **Development Time**
+❌ __Development Time__
 
 - Weeks to implement properly
 - Need to write extensive tests
 - Maintenance burden
 
-❌ **Potential Bugs**
+❌ __Potential Bugs__
 
 - Edge cases to discover
 - Less battle-tested
 - More debugging
 
-❌ **Reinventing the Wheel**
+❌ __Reinventing the Wheel__
 
 - Standard libraries exist
 - Community solutions proven
@@ -405,24 +405,24 @@ class WikiDocument {
 
 #### Performance Estimate
 
-- **Parse Time:** <0.5ms per document (fastest)
-- **Memory:** ~100-200 KB per document (smallest)
-- **Serialization:** <0.5ms per document
+- __Parse Time:__ <0.5ms per document (fastest)
+- __Memory:__ ~100-200 KB per document (smallest)
+- __Serialization:__ <0.5ms per document
 
 ## Comparison Matrix
 
 | Feature | jsdom | cheerio | linkedom | Custom |
 | --------- | ------- | --------- | ---------- | -------- |
-| **Size** | 4.7 MB | 1.2 MB | 500 KB | <100 KB |
-| **Performance** | Slow | Fast | Very Fast | Fastest |
-| **Memory Usage** | High | Medium | Low | Lowest |
-| **API Compatibility** | Full DOM | jQuery | Full DOM | Custom |
-| **Learning Curve** | None | Low | None | Medium |
-| **Maintenance** | Low | Low | Low | High |
-| **Battle-Tested** | Very | Very | Moderate | No |
-| **TypeScript** | Yes | Yes | Yes | No |
-| **Documentation** | Excellent | Excellent | Good | None |
-| **Community** | Large | Large | Growing | None |
+| __Size__ | 4.7 MB | 1.2 MB | 500 KB | <100 KB |
+| __Performance__ | Slow | Fast | Very Fast | Fastest |
+| __Memory Usage__ | High | Medium | Low | Lowest |
+| __API Compatibility__ | Full DOM | jQuery | Full DOM | Custom |
+| __Learning Curve__ | None | Low | None | Medium |
+| __Maintenance__ | Low | Low | Low | High |
+| __Battle-Tested__ | Very | Very | Moderate | No |
+| __TypeScript__ | Yes | Yes | Yes | No |
+| __Documentation__ | Excellent | Excellent | Good | None |
+| __Community__ | Large | Large | Growing | None |
 
 ## Benchmarks
 
@@ -486,28 +486,28 @@ console.timeEnd('Create');
 
 ## Recommendation
 
-### Phase 1: Use **linkedom** (Best Balance)
+### Phase 1: Use __linkedom__ (Best Balance)
 
-**Rationale:**
+__Rationale:__
 
-1. ✅ **Performance** - 10-40x faster than jsdom
-2. ✅ **Standard API** - Full W3C DOM compatibility
-3. ✅ **Lightweight** - Only 500 KB vs 4.7 MB
-4. ✅ **Maintainability** - Standard DOM API, good docs
-5. ✅ **Battle-Tested** - Used in production by several projects
-6. ✅ **Future-Proof** - Can swap to jsdom if needed (same API)
+1. ✅ __Performance__ - 10-40x faster than jsdom
+2. ✅ __Standard API__ - Full W3C DOM compatibility
+3. ✅ __Lightweight__ - Only 500 KB vs 4.7 MB
+4. ✅ __Maintainability__ - Standard DOM API, good docs
+5. ✅ __Battle-Tested__ - Used in production by several projects
+6. ✅ __Future-Proof__ - Can swap to jsdom if needed (same API)
 
-**Installation:**
+__Installation:__
 
 ```bash
 npm install linkedom --save
 ```
 
-**Why Not Others:**
+__Why Not Others:__
 
-- **jsdom**: Too heavy, too slow for our needs
-- **cheerio**: Non-standard API, harder to maintain
-- **Custom**: Too much development time, not worth it
+- __jsdom__: Too heavy, too slow for our needs
+- __cheerio__: Non-standard API, harder to maintain
+- __Custom__: Too much development time, not worth it
 
 ### Phase 2: Consider Custom (Future Optimization)
 
@@ -578,9 +578,9 @@ describe('WikiDocument', () => {
 
 If linkedom has issues:
 
-1. **Try jsdom** - Slower but very reliable
-2. **Try cheerio** - Different API but well-tested
-3. **Custom implementation** - Last resort
+1. __Try jsdom__ - Slower but very reliable
+2. __Try cheerio__ - Different API but well-tested
+3. __Custom implementation__ - Last resort
 
 ## Success Metrics
 
@@ -605,9 +605,9 @@ After implementation, measure:
 
 ### APPROVED: Use linkedom for WikiDocument DOM implementation
 
-**Date:** 2025-10-12
-**Approved By:** Development Team
-**Next Steps:**
+__Date:__ 2025-10-12
+__Approved By:__ Development Team
+__Next Steps:__
 
 1. Install linkedom
 2. Create WikiDocument class
@@ -616,6 +616,6 @@ After implementation, measure:
 
 ---
 
-**Status:** ✅ **COMPLETE**
-**Phase:** 1.1 - Research & Setup
-**Related Issue:** #93
+__Status:__ ✅ __COMPLETE__
+__Phase:__ 1.1 - Research & Setup
+__Related Issue:__ #93

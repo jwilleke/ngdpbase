@@ -18,7 +18,7 @@ Displays the total number of pages in the wiki.
 
 The TotalPagesPlugin provides a simple count of all wiki pages. It's useful for dashboard displays, statistics pages, and system information.
 
-**Source:** `plugins/TotalPagesPlugin.js`
+__Source:__ `plugins/TotalPagesPlugin.js`
 
 ## Plugin Metadata
 
@@ -51,7 +51,7 @@ This plugin has no parameters.
 This wiki contains [{TotalPagesPlugin}] pages.
 ```
 
-**Output:** `This wiki contains 247 pages.`
+__Output:__ `This wiki contains 247 pages.`
 
 ### Example 2: Statistics Section
 

@@ -1,7 +1,7 @@
 # Complete Testing Guide
 
-**Last Updated:** 2025-12-27
-**Version:** 1.5.0
+__Last Updated:__ 2025-12-27
+__Version:__ 1.5.0
 
 This guide consolidates all testing documentation for ngdpbase into a single comprehensive reference.
 
@@ -52,13 +52,13 @@ npm run smoke
 
 ### Stack
 
-- **Jest** - Test runner and assertion library
-- **Supertest** - HTTP endpoint testing
-- **Mock functions** - Jest built-in mocking
+- __Jest__ - Test runner and assertion library
+- __Supertest__ - HTTP endpoint testing
+- __Mock functions__ - Jest built-in mocking
 
 ### Configuration
 
-**package.json scripts:**
+__package.json scripts:__
 
 ```json
 {
@@ -70,7 +70,7 @@ npm run smoke
 }
 ```
 
-**Jest configuration** (in package.json):
+__Jest configuration__ (in package.json):
 
 ```json
 {
@@ -420,8 +420,8 @@ test('should save and retrieve page via actual provider', async () => {
 
 This pattern is used for:
 
-- **PageManager-Storage.test.js** - Tests full save/retrieve/delete flow
-- **FileSystemProvider.test.js** - Tests installation-aware loading
+- __PageManager-Storage.test.js__ - Tests full save/retrieve/delete flow
+- __FileSystemProvider.test.js__ - Tests installation-aware loading
 
 ### Route/API Tests
 
@@ -448,8 +448,8 @@ End-to-End tests use Playwright to test the full application stack in a real bro
 
 ### Why E2E Tests?
 
-- **Unit tests (Jest)**: Test individual functions in isolation
-- **E2E tests (Playwright)**: Test the full stack as a user would
+- __Unit tests (Jest)__: Test individual functions in isolation
+- __E2E tests (Playwright)__: Test the full stack as a user would
 
 E2E tests are critical for regression prevention - they run on every code change to ensure new features don't break existing functionality.
 
@@ -475,16 +475,16 @@ tests/e2e/
 
 ### About Fixtures
 
-**Yes, fixtures are needed.** The `fixtures/` directory contains reusable test helpers:
+__Yes, fixtures are needed.__ The `fixtures/` directory contains reusable test helpers:
 
-- **`auth.js`**: Authentication helpers for login/logout
-- **`helpers.js`**: Common utilities like waiting for elements, generating test data
+- __`auth.js`__: Authentication helpers for login/logout
+- __`helpers.js`__: Common utilities like waiting for elements, generating test data
 
 Fixtures help:
 
-1. **DRY principle** - Avoid repeating login code in every test
-2. **Consistency** - Same authentication flow across all tests
-3. **Maintainability** - Update once when UI changes
+1. __DRY principle__ - Avoid repeating login code in every test
+2. __Consistency__ - Same authentication flow across all tests
+3. __Maintainability__ - Update once when UI changes
 
 ### Running E2E Tests
 
@@ -623,11 +623,11 @@ test('should protect admin routes', async ({ browser }) => {
 | pages.spec.js | 12 | Page viewing, editing, creation, categories |
 | search.spec.js | 7 | Search interface, text search, filters |
 | admin.spec.js | 8 | Dashboard, user management, configuration |
-| **Total** | **35** | Core user journeys |
+| __Total__ | __35__ | Core user journeys |
 
 ### E2E Best Practices
 
-**DO:**
+__DO:__
 
 - Use `waitForLoadState('networkidle')` after navigation
 - Use flexible selectors (`[name="field"]`, `.class`, `text=Label`)
@@ -635,7 +635,7 @@ test('should protect admin routes', async ({ browser }) => {
 - Save authentication state to avoid logging in repeatedly
 - Use `test.skip()` for features that may not exist
 
-**DON'T:**
+__DON'T:__
 
 - Hardcode test data that may change
 - Rely on specific timing (use proper waits)
@@ -786,23 +786,23 @@ npx husky add .husky/pre-commit "npm run test:changed"
 
 ### DO
 
-- **Write tests first** (TDD) for new features
-- **Use descriptive test names** that explain expected behavior
-- **Mock external dependencies** (file system, network, database)
-- **Clean up after tests** (reset state, remove temp files)
-- **Test edge cases** (null, empty, invalid input)
-- **Keep tests fast** (< 100ms per test ideally)
-- **Use `beforeEach`** for common setup
-- **Test both success and failure cases**
+- __Write tests first__ (TDD) for new features
+- __Use descriptive test names__ that explain expected behavior
+- __Mock external dependencies__ (file system, network, database)
+- __Clean up after tests__ (reset state, remove temp files)
+- __Test edge cases__ (null, empty, invalid input)
+- __Keep tests fast__ (< 100ms per test ideally)
+- __Use `beforeEach`__ for common setup
+- __Test both success and failure cases__
 
 ### DON'T
 
-- **Don't test implementation details** - test behavior
-- **Don't share state between tests** - each test should be isolated
-- **Don't use real file system** in unit tests - mock it
-- **Don't skip tests** without good reason and TODO
-- **Don't write tests that depend on order** - they should run in any order
-- **Don't hardcode paths** - use `path.join()` and `__dirname`
+- __Don't test implementation details__ - test behavior
+- __Don't share state between tests__ - each test should be isolated
+- __Don't use real file system__ in unit tests - mock it
+- __Don't skip tests__ without good reason and TODO
+- __Don't write tests that depend on order__ - they should run in any order
+- __Don't hardcode paths__ - use `path.join()` and `__dirname`
 
 ### Test Naming Convention
 

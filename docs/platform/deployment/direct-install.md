@@ -14,7 +14,7 @@ See [../Deployment.md](../Deployment.md) for project-scope context and how this 
 - (Optional) `pm2` for process supervision so the wiki restarts after a crash or reboot. Installed via `npm install -g pm2`. `./server.sh start` uses pm2 under the hood when present.
 - (Optional) A reverse proxy in front if you want HTTPS or a friendly hostname — Caddy, nginx, or Cloudflare Tunnel are all common choices.
 
-If any of these is unfamiliar or unavailable, look at **[Docker Compose](./docker-compose.md)** — it bundles Node.js and the supervisor into a single container layer, so the requirements list is shorter (just Docker).
+If any of these is unfamiliar or unavailable, look at __[Docker Compose](./docker-compose.md)__ — it bundles Node.js and the supervisor into a single container layer, so the requirements list is shorter (just Docker).
 
 ## Steps
 
@@ -84,9 +84,9 @@ Open `http://localhost:3000` — if you skipped step 4 you'll see the install wi
 
 ngdpbase listens on plain HTTP. For HTTPS use any reverse proxy in front:
 
-- **Caddy** — simplest TLS-by-default option; one-line Caddyfile.
-- **nginx** — proxy_pass example in [`docker/DOCKER.md`](../../../docker/DOCKER.md#using-with-reverse-proxy).
-- **Cloudflare Tunnel** — no public IP required; tunnel terminates TLS at the edge.
+- __Caddy__ — simplest TLS-by-default option; one-line Caddyfile.
+- __nginx__ — proxy_pass example in [`docker/DOCKER.md`](../../../docker/DOCKER.md#using-with-reverse-proxy).
+- __Cloudflare Tunnel__ — no public IP required; tunnel terminates TLS at the edge.
 
 After wiring the proxy, update `app-custom-config.json`:
 
@@ -136,7 +136,7 @@ Then in a browser:
 1. Open `http://localhost:3000` — you should see the front page (or the install wizard if you skipped step 4).
 2. Log in as `admin` (password: `NGDPBASE_ADMIN_PASSWORD` for headless, or whatever you set in the wizard).
 3. Change the admin password immediately if the bootstrap value is shared with anyone.
-4. Confirm the admin dashboard loads (`/admin`) and addons appear under **Add-ons**.
+4. Confirm the admin dashboard loads (`/admin`) and addons appear under __Add-ons__.
 
 If the front page returns 200 but the admin user resolves as `Anonymous`, you've probably hit [Headless deployment gotchas §1](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#1-anchor-organization-json-ld-must-be-pre-supplied) (missing anchor Organization). Stop the server, supply the JSON-LD, restart.
 

@@ -8,18 +8,18 @@ This document outlines the design for Issue #19: Policy-Based Access Control (JS
 
 ### ✅ Existing Infrastructure
 
-- **ACLManager**: Core access control with page-level permissions
-- **UserManager**: User and role management
-- **Config System**: JSON-based configuration management
-- **Context-Aware Permissions**: Time-based and maintenance mode support
+- __ACLManager__: Core access control with page-level permissions
+- __UserManager__: User and role management
+- __Config System__: JSON-based configuration management
+- __Context-Aware Permissions__: Time-based and maintenance mode support
 
 ### 🎯 Enhancement Goals
 
-- **Flexibility**: JSON-based policy definitions
-- **Granularity**: Fine-grained permission control
-- **Maintainability**: Easy policy management and updates
-- **Auditability**: Policy evaluation logging
-- **Scalability**: Support for complex organizational structures
+- __Flexibility__: JSON-based policy definitions
+- __Granularity__: Fine-grained permission control
+- __Maintainability__: Easy policy management and updates
+- __Auditability__: Policy evaluation logging
+- __Scalability__: Support for complex organizational structures
 
 ## Policy Schema Design
 
@@ -66,15 +66,15 @@ This document outlines the design for Issue #19: Policy-Based Access Control (JS
 
 #### 1. Policy Identification
 
-- **id**: Unique identifier (string)
-- **name**: Human-readable name
-- **description**: Policy purpose and scope
-- **priority**: Evaluation order (higher = evaluated first)
+- __id__: Unique identifier (string)
+- __name__: Human-readable name
+- __description__: Policy purpose and scope
+- __priority__: Evaluation order (higher = evaluated first)
 
 #### 2. Policy Effect
 
-- **effect**: "allow" | "deny"
-- **Determines final access decision**
+- __effect__: "allow" | "deny"
+- __Determines final access decision__
 
 #### 3. Subjects (Who)
 
@@ -178,24 +178,24 @@ This document outlines the design for Issue #19: Policy-Based Access Control (JS
 
 #### 1. PolicyManager
 
-- **Load policies** from JSON configuration
-- **Validate policy syntax** and structure
-- **Cache policies** for performance
-- **Provide policy CRUD operations**
+- __Load policies__ from JSON configuration
+- __Validate policy syntax__ and structure
+- __Cache policies__ for performance
+- __Provide policy CRUD operations__
 
 #### 2. PolicyEvaluator
 
-- **Evaluate policies** against access requests
-- **Handle policy priority** and conflict resolution
-- **Support condition evaluation**
-- **Generate audit logs** for policy decisions
+- __Evaluate policies__ against access requests
+- __Handle policy priority__ and conflict resolution
+- __Support condition evaluation__
+- __Generate audit logs__ for policy decisions
 
 #### 3. PolicyValidator
 
-- **Schema validation** for policy definitions
-- **Conflict detection** between policies
-- **Security validation** to prevent privilege escalation
-- **Performance validation** for policy complexity
+- __Schema validation__ for policy definitions
+- __Conflict detection__ between policies
+- __Security validation__ to prevent privilege escalation
+- __Performance validation__ for policy complexity
 
 ### Policy Evaluation Flow
 
@@ -277,64 +277,64 @@ config/
 
 ### Policy Management Dashboard
 
-- **Policy List**: View all policies with status and priority
-- **Policy Editor**: Create/edit policies with form validation
-- **Policy Tester**: Test policies against sample requests
-- **Conflict Detector**: Identify policy conflicts and overlaps
-- **Audit Viewer**: View policy evaluation history
+- __Policy List__: View all policies with status and priority
+- __Policy Editor__: Create/edit policies with form validation
+- __Policy Tester__: Test policies against sample requests
+- __Conflict Detector__: Identify policy conflicts and overlaps
+- __Audit Viewer__: View policy evaluation history
 
 ### Policy Editor Features
 
-- **Visual Policy Builder**: Drag-and-drop policy creation
-- **Template Library**: Pre-built policy templates
-- **Validation Feedback**: Real-time syntax and logic validation
-- **Import/Export**: JSON import/export for backup/sharing
+- __Visual Policy Builder__: Drag-and-drop policy creation
+- __Template Library__: Pre-built policy templates
+- __Validation Feedback__: Real-time syntax and logic validation
+- __Import/Export__: JSON import/export for backup/sharing
 
 ## Security Considerations
 
 ### Policy Security
 
-- **Privilege Escalation Prevention**: Validate policy effects don't grant excessive permissions
-- **Circular Reference Detection**: Prevent policies that reference themselves
-- **Resource Pattern Validation**: Ensure patterns don't expose unintended resources
+- __Privilege Escalation Prevention__: Validate policy effects don't grant excessive permissions
+- __Circular Reference Detection__: Prevent policies that reference themselves
+- __Resource Pattern Validation__: Ensure patterns don't expose unintended resources
 
 ### Runtime Security
 
-- **Input Validation**: Sanitize all policy inputs
-- **Rate Limiting**: Prevent policy evaluation abuse
-- **Audit Logging**: Log all policy changes and evaluations
-- **Access Control**: Restrict policy management to administrators
+- __Input Validation__: Sanitize all policy inputs
+- __Rate Limiting__: Prevent policy evaluation abuse
+- __Audit Logging__: Log all policy changes and evaluations
+- __Access Control__: Restrict policy management to administrators
 
 ## Performance Optimization
 
 ### Caching Strategy
 
-- **Policy Cache**: Cache compiled policies in memory
-- **Evaluation Cache**: Cache recent evaluation results
-- **Resource Pattern Cache**: Cache compiled regex patterns
+- __Policy Cache__: Cache compiled policies in memory
+- __Evaluation Cache__: Cache recent evaluation results
+- __Resource Pattern Cache__: Cache compiled regex patterns
 
 ### Optimization Techniques
 
-- **Lazy Loading**: Load policies on-demand
-- **Policy Indexing**: Index policies by subject/resource/action
-- **Batch Evaluation**: Evaluate multiple policies efficiently
-- **Async Processing**: Non-blocking policy evaluation
+- __Lazy Loading__: Load policies on-demand
+- __Policy Indexing__: Index policies by subject/resource/action
+- __Batch Evaluation__: Evaluate multiple policies efficiently
+- __Async Processing__: Non-blocking policy evaluation
 
 ## Testing Strategy
 
 ### Unit Tests
 
-- **Policy Evaluation**: Test individual policy rules
-- **Condition Evaluation**: Test complex conditions
-- **Conflict Resolution**: Test policy priority handling
-- **Performance**: Test evaluation speed and memory usage
+- __Policy Evaluation__: Test individual policy rules
+- __Condition Evaluation__: Test complex conditions
+- __Conflict Resolution__: Test policy priority handling
+- __Performance__: Test evaluation speed and memory usage
 
 ### Integration Tests
 
-- **Full Access Flow**: Test complete request-to-decision flow
-- **Policy Changes**: Test policy updates without restart
-- **Error Handling**: Test malformed policies and edge cases
-- **Load Testing**: Test performance under high load
+- __Full Access Flow__: Test complete request-to-decision flow
+- __Policy Changes__: Test policy updates without restart
+- __Error Handling__: Test malformed policies and edge cases
+- __Load Testing__: Test performance under high load
 
 ### Policy Test Scenarios
 
@@ -384,10 +384,10 @@ config/
 
 ## Success Metrics
 
-- **Functionality**: All policy types working correctly
-- **Performance**: <50ms policy evaluation time
-- **Security**: Zero privilege escalation vulnerabilities
-- **Usability**: Admin can create policies without technical issues
-- **Maintainability**: Easy policy updates and troubleshooting
+- __Functionality__: All policy types working correctly
+- __Performance__: <50ms policy evaluation time
+- __Security__: Zero privilege escalation vulnerabilities
+- __Usability__: Admin can create policies without technical issues
+- __Maintainability__: Easy policy updates and troubleshooting
 
 This design provides a solid foundation for flexible, enterprise-grade access control while maintaining ngdpbase's simplicity and performance.

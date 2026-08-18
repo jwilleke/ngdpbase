@@ -32,8 +32,8 @@ Final HTML Output
 
 ### Phase 1: Preprocessing
 
-**Component**: `MarkupParser.phasePreprocessing()`
-**Purpose**: Normalize content and prepare for processing
+__Component__: `MarkupParser.phasePreprocessing()`
+__Purpose__: Normalize content and prepare for processing
 
 - Normalizes line endings and whitespace
 - Handles character encoding
@@ -42,55 +42,55 @@ Final HTML Output
 
 ### Phase 2: Syntax Recognition
 
-**Component**: `MarkupParser.phaseSyntaxRecognition()`
-**Purpose**: Identify and categorize wiki syntax elements using registered handlers
+__Component__: `MarkupParser.phaseSyntaxRecognition()`
+__Purpose__: Identify and categorize wiki syntax elements using registered handlers
 
-**Processing**: Each handler's `process()` method is called in priority order:
+__Processing__: Each handler's `process()` method is called in priority order:
 
 - Recognizes JSPWiki plugins: `[{PluginName param=value}]`
 - Identifies system variables: `[{$variablename}]`
 - Detects escaped syntax: `[[{syntax}]`
 - Finds wiki links, attachments, and other markup
 
-**Handler Components** (priority order, highest to lowest):
+__Handler Components__ (priority order, highest to lowest):
 
-1. **EscapedSyntaxHandler** (Priority: 100) - `src/parsers/handlers/EscapedSyntaxHandler.js`
+1. __EscapedSyntaxHandler__ (Priority: 100) - `src/parsers/handlers/EscapedSyntaxHandler.js`
    - Processes `[[{syntax}]` → `[{syntax}]` literal display
-2. **WikiTagHandler** (Priority: 95) - `src/parsers/handlers/WikiTagHandler.js`
+2. __WikiTagHandler__ (Priority: 95) - `src/parsers/handlers/WikiTagHandler.js`
    - Handles JSPWiki-style tags and markup
-3. **PluginSyntaxHandler** (Priority: 90) - `src/parsers/handlers/PluginSyntaxHandler.js`
+3. __PluginSyntaxHandler__ (Priority: 90) - `src/parsers/handlers/PluginSyntaxHandler.js`
    - Executes plugins via `PluginManager.execute()`
-4. **WikiFormHandler** (Priority: 85) - `src/parsers/handlers/WikiFormHandler.js`
+4. __WikiFormHandler__ (Priority: 85) - `src/parsers/handlers/WikiFormHandler.js`
    - Processes form elements and input handling
-5. **InterWikiLinkHandler** (Priority: 80) - `src/parsers/handlers/InterWikiLinkHandler.js`
+5. __InterWikiLinkHandler__ (Priority: 80) - `src/parsers/handlers/InterWikiLinkHandler.js`
    - Resolves links to external wikis
-6. **AttachmentHandler** (Priority: 75) - `src/parsers/handlers/AttachmentHandler.js`
+6. __AttachmentHandler__ (Priority: 75) - `src/parsers/handlers/AttachmentHandler.js`
    - Processes file attachments and media
-7. **WikiStyleHandler** (Priority: 70) - `src/parsers/handlers/WikiStyleHandler.js`
-   - **DEPRECATED / unregistered (#907).** Historical string-based `%%…/%` style processor. All style markup — block classes, inline `%%(css)`, `%%sup/sub/strike` — now extracts to DOM nodes in `MarkupParser` Phase 1; see [WikiDocument guide → Style syntax is DOM-native too](WikiDocument-Complete-Guide.md#style-syntax--is-dom-native-too-907). Retained for reference only; add no new style behaviour here.
-8. **WikiLinkHandler** (Priority: 50) - `src/parsers/handlers/WikiLinkHandler.js`
+7. __WikiStyleHandler__ (Priority: 70) - `src/parsers/handlers/WikiStyleHandler.js`
+   - __DEPRECATED / unregistered (#907).__ Historical string-based `%%…/%` style processor. All style markup — block classes, inline `%%(css)`, `%%sup/sub/strike` — now extracts to DOM nodes in `MarkupParser` Phase 1; see [WikiDocument guide → Style syntax is DOM-native too](WikiDocument-Complete-Guide.md#style-syntax--is-dom-native-too-907). Retained for reference only; add no new style behaviour here.
+8. __WikiLinkHandler__ (Priority: 50) - `src/parsers/handlers/WikiLinkHandler.js`
    - Creates internal wiki page links
 
 ### Phase 3: Context Resolution
 
-**Component**: `MarkupParser.phaseContextResolution()`
-**Purpose**: Build relationships and resolve references
+__Component__: `MarkupParser.phaseContextResolution()`
+__Purpose__: Build relationships and resolve references
 
-- **RenderingManager**: Provides `getLinkGraph()` for page relationships
-- **VariableManager**: Resolves variable references and dependencies
-- **PluginManager**: Validates plugin dependencies and parameters
+- __RenderingManager__: Provides `getLinkGraph()` for page relationships
+- __VariableManager__: Resolves variable references and dependencies
+- __PluginManager__: Validates plugin dependencies and parameters
 - Builds context for cross-references and navigation
 
 ### Phase 4: Content Transformation
 
-**Component**: `MarkupParser.phaseContentTransformation()`
-**Purpose**: Execute plugins and transform content with HTML protection
+__Component__: `MarkupParser.phaseContentTransformation()`
+__Purpose__: Execute plugins and transform content with HTML protection
 
-**Sub-components**:
+__Sub-components__:
 
-- **PluginManager**: Executes JSPWiki-compatible plugins
-- **VariableManager**: Processes system variables like `[{$pagename}]`
-- **HTML Protection System**: `MarkupParser.protectGeneratedHtml()`
+- __PluginManager__: Executes JSPWiki-compatible plugins
+- __VariableManager__: Processes system variables like `[{$pagename}]`
+- __HTML Protection System__: `MarkupParser.protectGeneratedHtml()`
 
 #### HTML Protection System
 
@@ -105,7 +105,7 @@ content = 'HTMLTOKEN0HTMLTOKEN'
 context.protectedBlocks = ['<img src="test.jpg" alt="Test" />']
 ```
 
-**Protected Elements**:
+__Protected Elements__:
 
 - `<ul>` and `<ol>` lists with nested `<li>` and `<a>` elements
 - `<a>` anchor tags (standalone)
@@ -114,21 +114,21 @@ context.protectedBlocks = ['<img src="test.jpg" alt="Test" />']
 
 ### Phase 5: Filter Pipeline
 
-**Component**: `MarkupParser.phaseFilterPipeline()`
-**Purpose**: Apply security, validation, and content filters through FilterChain
+__Component__: `MarkupParser.phaseFilterPipeline()`
+__Purpose__: Apply security, validation, and content filters through FilterChain
 
-**Main Component**: `FilterChain` orchestrates all filters
+__Main Component__: `FilterChain` orchestrates all filters
 
-**Filter Components** (priority order, highest to lowest):
+__Filter Components__ (priority order, highest to lowest):
 
-1. **SecurityFilter** (Priority: 110) - `src/parsers/filters/SecurityFilter.js`
+1. __SecurityFilter__ (Priority: 110) - `src/parsers/filters/SecurityFilter.js`
    - XSS prevention and CSRF protection
    - HTML sanitization with configurable allowed tags/attributes
-   - **HTMLTOKEN preservation** for HTML Protection System integration
-2. **SpamFilter** (Priority: 100) - `src/parsers/filters/SpamFilter.js`
+   - __HTMLTOKEN preservation__ for HTML Protection System integration
+2. __SpamFilter__ (Priority: 100) - `src/parsers/filters/SpamFilter.js`
    - Link count limits and blacklisted domain detection
    - Content pattern matching for spam prevention
-3. **ValidationFilter** (Priority: 90) - `src/parsers/filters/ValidationFilter.js`
+3. __ValidationFilter__ (Priority: 90) - `src/parsers/filters/ValidationFilter.js`
    - Markup syntax validation and content length limits
    - Link and image validation
 
@@ -155,16 +155,16 @@ secureContent = secureContent.replace(/SECURITYPROTECTED(\d+)SECURITYPROTECTED/g
 
 ### Phase 6: Markdown Conversion
 
-**Component**: `MarkupParser.phaseMarkdownConversion()`
-**Purpose**: Convert remaining markdown to HTML
+__Component__: `MarkupParser.phaseMarkdownConversion()`
+__Purpose__: Convert remaining markdown to HTML
 
-**Sub-components**:
+__Sub-components__:
 
-- **Showdown.js**: Third-party markdown processor
-- **Markdown Extensions**: Custom extensions for wiki-specific syntax
-- **Configuration**: Uses `this.config.markdown` settings
+- __Showdown.js__: Third-party markdown processor
+- __Markdown Extensions__: Custom extensions for wiki-specific syntax
+- __Configuration__: Uses `this.config.markdown` settings
 
-**Processing**:
+__Processing__:
 
 - Converts standard markdown syntax (headers, lists, links, etc.)
 - Preserves HTMLTOKEN placeholders during conversion
@@ -172,21 +172,21 @@ secureContent = secureContent.replace(/SECURITYPROTECTED(\d+)SECURITYPROTECTED/g
 
 ### Phase 7: Post-processing
 
-**Component**: `MarkupParser.phasePostProcessing()`
-**Purpose**: Final HTML cleanup and token restoration
+__Component__: `MarkupParser.phasePostProcessing()`
+__Purpose__: Final HTML cleanup and token restoration
 
-**Sub-components**:
+__Sub-components__:
 
-- **HTML Token Restoration**: `MarkupParser.restoreProtectedHtml()`
-- **Link Processing**: Finalizes link attributes and CSS classes
-- **HTML Cleanup**: `MarkupParser.cleanupGeneratedHtml()`
+- __HTML Token Restoration__: `MarkupParser.restoreProtectedHtml()`
+- __Link Processing__: Finalizes link attributes and CSS classes
+- __HTML Cleanup__: `MarkupParser.cleanupGeneratedHtml()`
 
-**Processing Steps**:
+__Processing Steps__:
 
-1. **Token Restoration**: Replaces HTMLTOKEN placeholders with original HTML
-2. **Link Finalization**: Adds proper CSS classes to wiki links
-3. **HTML Normalization**: Removes processing artifacts
-4. **Final Validation**: Ensures clean, valid HTML output
+1. __Token Restoration__: Replaces HTMLTOKEN placeholders with original HTML
+2. __Link Finalization__: Adds proper CSS classes to wiki links
+3. __HTML Normalization__: Removes processing artifacts
+4. __Final Validation__: Ensures clean, valid HTML output
 
 ```javascript
 // Token Restoration Example:
@@ -199,8 +199,8 @@ processedContent = processedContent.replace(/HTMLTOKEN(\d+)HTMLTOKEN/g, (match, 
 
 ### Plugin System
 
-- **Normal Execution**: `[{Image src='test.jpg' alt='Test'}]` → `<img src="test.jpg" alt="Test" class="wiki-image" />`
-- **Escaped Syntax**: `[[{Image src='test.jpg' alt='Test'}]` → `[{Image src='test.jpg' alt='Test'}]` (literal)
+- __Normal Execution__: `[{Image src='test.jpg' alt='Test'}]` → `<img src="test.jpg" alt="Test" class="wiki-image" />`
+- __Escaped Syntax__: `[[{Image src='test.jpg' alt='Test'}]` → `[{Image src='test.jpg' alt='Test'}]` (literal)
 
 ### System Variables
 
@@ -213,11 +213,11 @@ processedContent = processedContent.replace(/HTMLTOKEN(\d+)HTMLTOKEN/g, (match, 
 
 ### Supported Plugins & Components
 
-- **Image** (`plugins/ImagePlugin.js`): Display images with customizable attributes
-- **SessionsPlugin** (`plugins/SessionsPlugin.js`): Show active session count via UserManager
-- **TotalPagesPlugin** (`plugins/TotalPagesPlugin.js`): Display total page count via PageManager
-- **UptimePlugin** (`plugins/UptimePlugin.js`): Show server uptime from process statistics
-- **ReferringPagesPlugin** (`plugins/referringPagesPlugin.js`): List pages that reference current page via RenderingManager.getLinkGraph()
+- __Image__ (`plugins/ImagePlugin.js`): Display images with customizable attributes
+- __SessionsPlugin__ (`plugins/SessionsPlugin.js`): Show active session count via UserManager
+- __TotalPagesPlugin__ (`plugins/TotalPagesPlugin.js`): Display total page count via PageManager
+- __UptimePlugin__ (`plugins/UptimePlugin.js`): Show server uptime from process statistics
+- __ReferringPagesPlugin__ (`plugins/referringPagesPlugin.js`): List pages that reference current page via RenderingManager.getLinkGraph()
 
 ## Configuration
 
@@ -255,10 +255,10 @@ The rendering pipeline is configured through `app-default-config.json` and can b
 
 The pipeline includes multi-level caching:
 
-- **Parse Results Cache**: TTL 300s
-- **Handler Results Cache**: TTL 600s
-- **Pattern Cache**: TTL 3600s
-- **Variable Cache**: TTL 300s
+- __Parse Results Cache__: TTL 300s
+- __Handler Results Cache__: TTL 600s
+- __Pattern Cache__: TTL 3600s
+- __Variable Cache__: TTL 300s
 
 ### Performance Monitoring
 

@@ -19,11 +19,11 @@ Passwordless authentication via emailed verification link. User enters email →
 
 ## Flow
 
-1. **Initiate** — user enters email. Provider:
+1. __Initiate__ — user enters email. Provider:
    - Generates a random token + stores `{username, email, redirect, expiresAt}` in memory.
    - Sends an email with a link to `<canonical-url>/auth/magic-link/verify?token=...`.
-2. **Confirm** — `GET /auth/magic-link/verify`. Validates the token for display only and renders the `magic-link-confirm` interstitial. **Consumes nothing and creates no session.**
-3. **Complete** — `POST /auth/magic-link/verify`, submitted by the button on that page. Consumes the token, creates the session, redirects to the stored target.
+2. __Confirm__ — `GET /auth/magic-link/verify`. Validates the token for display only and renders the `magic-link-confirm` interstitial. __Consumes nothing and creates no session.__
+3. __Complete__ — `POST /auth/magic-link/verify`, submitted by the button on that page. Consumes the token, creates the session, redirects to the stored target.
 
 ### Why the flow has two steps (#1019)
 
@@ -35,9 +35,9 @@ For the same reason the interstitial must never auto-submit: no meta refresh, no
 
 ## Known limitations
 
-- **Tokens are in-memory only.** They are lost on restart and are not shared between processes, so magic links break under pm2 cluster mode or any multi-instance deployment. Acceptable at the default 15-minute TTL on a single fork-mode instance.
-- **No IP-based request throttle.** A per-email limit of 1 request per 60 s exists (`isRateLimited()`); nothing caps a single client rotating through addresses. Tracked in #1020.
-- **No device binding.** Any device holding the URL can complete the sign-in, and redemption records no IP or User-Agent. Tracked in #1022.
+- __Tokens are in-memory only.__ They are lost on restart and are not shared between processes, so magic links break under pm2 cluster mode or any multi-instance deployment. Acceptable at the default 15-minute TTL on a single fork-mode instance.
+- __No IP-based request throttle.__ A per-email limit of 1 request per 60 s exists (`isRateLimited()`); nothing caps a single client rotating through addresses. Tracked in #1020.
+- __No device binding.__ Any device holding the URL can complete the sign-in, and redemption records no IP or User-Agent. Tracked in #1022.
 
 ## See Also
 

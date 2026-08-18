@@ -1,6 +1,6 @@
 # TypeScript Style Guide
 
-This guide documents TypeScript conventions and patterns used in ngdpbase. For general coding standards (formatting, linting, naming conventions, git commits), see **[CODE_STANDARDS.md](../CODE_STANDARDS.md)**.
+This guide documents TypeScript conventions and patterns used in ngdpbase. For general coding standards (formatting, linting, naming conventions, git commits), see __[CODE_STANDARDS.md](../CODE_STANDARDS.md)__.
 
 ## Overview
 
@@ -265,12 +265,12 @@ npm run docs:api
 
 When converting JavaScript to TypeScript:
 
-1. **Add file extension** - Rename `.js` to `.ts`
-2. **Add type annotations** - Start with function parameters and returns
-3. **Define interfaces** - Create types for complex objects
-4. **Fix type errors** - Address TypeScript compiler errors
-5. **Add ESLint disables** - Temporarily disable rules if needed during migration
-6. **Run tests** - Ensure all tests pass
+1. __Add file extension__ - Rename `.js` to `.ts`
+2. __Add type annotations__ - Start with function parameters and returns
+3. __Define interfaces__ - Create types for complex objects
+4. __Fix type errors__ - Address TypeScript compiler errors
+5. __Add ESLint disables__ - Temporarily disable rules if needed during migration
+6. __Run tests__ - Ensure all tests pass
 
 ## Commands
 

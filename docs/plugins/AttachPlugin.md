@@ -15,7 +15,7 @@ version: 1.0.0
 
 Displays page attachments inline in wiki content. Image attachments render as clickable thumbnails linking to the full file; all other attachments render as styled download links with a file-type icon.
 
-**Source:** `plugins/AttachPlugin.ts`
+__Source:__ `plugins/AttachPlugin.ts`
 
 ## Plugin Metadata
 

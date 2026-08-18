@@ -29,12 +29,12 @@ VersioningFileProvider stores complete version history for every page, allowing 
 
 ### Key Features
 
-- **Automatic checkpointing**: Full content snapshots every N versions for fast retrieval
-- **LRU caching**: Recently accessed versions cached in memory
-- **Intelligent cleanup**: Purge old versions while preserving important milestones
-- **Compression**: Gzip compression for older versions
-- **Storage analytics**: Detailed reports and optimization recommendations
-- **CLI tool**: Interactive maintenance operations with progress tracking
+- __Automatic checkpointing__: Full content snapshots every N versions for fast retrieval
+- __LRU caching__: Recently accessed versions cached in memory
+- __Intelligent cleanup__: Purge old versions while preserving important milestones
+- __Compression__: Gzip compression for older versions
+- __Storage analytics__: Detailed reports and optimization recommendations
+- __CLI tool__: Interactive maintenance operations with progress tracking
 
 ---
 
@@ -44,7 +44,7 @@ VersioningFileProvider stores complete version history for every page, allowing 
 
 By default, VersioningFileProvider stores full content only for v1, then uses diffs (deltas) for subsequent versions. This saves storage but makes reconstruction slower for high version numbers.
 
-**Checkpointing** stores full content snapshots at regular intervals (default: every 10 versions).
+__Checkpointing__ stores full content snapshots at regular intervals (default: every 10 versions).
 
 #### How It Works
 
@@ -72,7 +72,7 @@ When retrieving v18, the system:
 }
 ```
 
-**Recommendations:**
+__Recommendations:__
 
 - High-traffic wikis: `5` (faster retrieval, more storage)
 - Large pages: `5-10` (reduce reconstruction time)
@@ -81,7 +81,7 @@ When retrieving v18, the system:
 
 #### Benefits
 
-- **50-80% faster** version retrieval for high version numbers
+- __50-80% faster__ version retrieval for high version numbers
 - Minimal storage overhead (~10% increase)
 - Automatic creation during page saves
 
@@ -97,7 +97,7 @@ Recently accessed versions are cached in memory using an LRU (Least Recently Use
 }
 ```
 
-**Cache size recommendations:**
+__Cache size recommendations:__
 
 - Small wiki (<100 pages): `20-30`
 - Medium wiki (100-1000 pages): `50-100`
@@ -106,7 +106,7 @@ Recently accessed versions are cached in memory using an LRU (Least Recently Use
 
 #### Benefits
 
-- **95%+ faster** repeated access to same versions
+- __95%+ faster__ repeated access to same versions
 - Zero file I/O for cached versions
 - Automatic LRU eviction prevents memory bloat
 
@@ -118,7 +118,7 @@ Approximate memory per cached version:
 - Medium page (20KB): ~25KB with metadata
 - Large page (100KB): ~110KB with metadata
 
-**Example:** 50 entries × 20KB average = ~1MB memory
+__Example:__ 50 entries × 20KB average = ~1MB memory
 
 ---
 
@@ -205,7 +205,7 @@ console.log(`
 
 Minimum number of versions to keep, regardless of age.
 
-**Example:** `keepLatest: 20`
+__Example:__ `keepLatest: 20`
 
 - Page with 50 versions: Keep v31-v50 (20 versions)
 - Page with 10 versions: Keep all (below threshold)
@@ -214,7 +214,7 @@ Minimum number of versions to keep, regardless of age.
 
 Keep all versions newer than this many days.
 
-**Example:** `retentionDays: 90`
+__Example:__ `retentionDays: 90`
 
 - Versions created in last 90 days are preserved
 - Older versions may be purged (subject to `keepLatest`)
@@ -223,13 +223,13 @@ Keep all versions newer than this many days.
 
 Preserve milestone versions (v1 and every 10th version).
 
-**Example:** Page with 45 versions, `keepLatest: 20`, `keepMilestones: true`
+__Example:__ Page with 45 versions, `keepLatest: 20`, `keepMilestones: true`
 
 - Without milestones: Purge v1-v25 (25 versions)
 - With milestones: Purge v2-v9, v11-v19, v21-v25 (23 versions)
 - Preserved: v1, v10, v20, v26-v45
 
-**Why preserve milestones?**
+__Why preserve milestones?__
 
 - Historical snapshots at regular intervals
 - Fast access to older versions (checkpoints)
@@ -416,11 +416,11 @@ console.log(`
 
 ### Compression Levels
 
-- **1-3**: Fast compression, lower ratio (~40% savings)
-- **4-6**: Balanced (default 6) (~55% savings)
-- **7-9**: Best compression, slower (~60% savings)
+- __1-3__: Fast compression, lower ratio (~40% savings)
+- __4-6__: Balanced (default 6) (~55% savings)
+- __7-9__: Best compression, slower (~60% savings)
 
-**Recommendation:** Use level 6 for most cases. Use 9 for archival storage.
+__Recommendation:__ Use level 6 for most cases. Use 9 for archival storage.
 
 ---
 
@@ -521,11 +521,11 @@ Run maintenance operations on a schedule:
 
 ### Before Major Operations
 
-1. **Backup data** before first-time cleanup
-2. **Run analytics** to understand current state
-3. **Test with dry-run** to verify expected results
-4. **Start with conservative settings** (higher keepLatest, retentionDays)
-5. **Monitor disk space** after maintenance
+1. __Backup data__ before first-time cleanup
+2. __Run analytics__ to understand current state
+3. __Test with dry-run__ to verify expected results
+4. __Start with conservative settings__ (higher keepLatest, retentionDays)
+5. __Monitor disk space__ after maintenance
 
 ### Recommended Settings by Wiki Size
 
@@ -540,7 +540,7 @@ Run maintenance operations on a schedule:
 }
 ```
 
-**Maintenance:** Quarterly cleanup, semi-annual compression
+__Maintenance:__ Quarterly cleanup, semi-annual compression
 
 #### Medium Wiki (100-1000 pages, 1000-10000 versions)
 
@@ -553,7 +553,7 @@ Run maintenance operations on a schedule:
 }
 ```
 
-**Maintenance:** Monthly cleanup, quarterly compression
+__Maintenance:__ Monthly cleanup, quarterly compression
 
 #### Large Wiki (>1000 pages, >10000 versions)
 
@@ -566,33 +566,33 @@ Run maintenance operations on a schedule:
 }
 ```
 
-**Maintenance:** Weekly cleanup, monthly compression
+__Maintenance:__ Weekly cleanup, monthly compression
 
 ### Storage Optimization Strategy
 
-1. **Run analytics first**
+1. __Run analytics first__
 
    ```bash
    npm run maintain:analyze
    ```
 
-2. **Review recommendations** in the report
+2. __Review recommendations__ in the report
 
-3. **Cleanup old versions**
+3. __Cleanup old versions__
 
    ```bash
    npm run maintain:cleanup -- --keep-latest 30 --retention 90
    ```
 
-4. **Compress old versions**
+4. __Compress old versions__
 
    ```bash
    npm run maintain:compress -- --age 60
    ```
 
-5. **Monitor results** with another analytics run
+5. __Monitor results__ with another analytics run
 
-6. **Adjust settings** based on results
+6. __Adjust settings__ based on results
 
 ### High-Activity Pages
 
@@ -642,9 +642,9 @@ Consider creating page-specific retention policies in future versions.
 
 ### Issue: Versions Removed But Space Not Freed
 
-**Cause:** Operating system may not immediately reflect freed space.
+__Cause:__ Operating system may not immediately reflect freed space.
 
-**Solution:**
+__Solution:__
 
 ```bash
 # Force filesystem sync (Linux/Mac)
@@ -656,9 +656,9 @@ du -sh data/pages/versions
 
 ### Issue: High Memory Usage
 
-**Cause:** Version cache too large or cached versions are large pages.
+__Cause:__ Version cache too large or cached versions are large pages.
 
-**Solution:**
+__Solution:__
 
 1. Reduce cache size:
 
@@ -676,13 +676,13 @@ du -sh data/pages/versions
 
 ### Issue: Slow Version Retrieval
 
-**Causes:**
+__Causes:__
 
 - Checkpoint interval too high
 - Cache size too small
 - Large number of versions between checkpoints
 
-**Solutions:**
+__Solutions:__
 
 1. Reduce checkpoint interval:
 
@@ -700,9 +700,9 @@ du -sh data/pages/versions
 
 ### Issue: Cleanup Removes Fewer Versions Than Expected
 
-**Cause:** Milestone preservation or retention policy keeps more versions.
+__Cause:__ Milestone preservation or retention policy keeps more versions.
 
-**Solution:**
+__Solution:__
 
 ```javascript
 // Disable milestones for more aggressive cleanup
@@ -714,15 +714,15 @@ await provider.purgeOldVersions('PageTitle', {
 
 ### Issue: Cannot Find Version After Cleanup
 
-**Cause:** Version was purged during cleanup.
+__Cause:__ Version was purged during cleanup.
 
-**Solution:**
+__Solution:__
 
 - Check cleanup report for list of purged versions
 - Verify version existed before cleanup
 - Restore from backup if critical
 
-**Prevention:**
+__Prevention:__
 
 - Always use dry-run first
 - Review purge list before confirming
@@ -730,11 +730,11 @@ await provider.purgeOldVersions('PageTitle', {
 
 ### Issue: Manifest Corruption
 
-**Symptom:** Error: "Version X metadata not found in manifest"
+__Symptom:__ Error: "Version X metadata not found in manifest"
 
-**Cause:** Manifest file corrupted or out of sync.
+__Cause:__ Manifest file corrupted or out of sync.
 
-**Solution:**
+__Solution:__
 
 ```javascript
 // Rebuild manifest (future feature)
@@ -763,5 +763,5 @@ For issues or questions:
 
 ---
 
-**Last Updated:** 2024-10-14
-**Version:** 1.3.2
+__Last Updated:__ 2024-10-14
+__Version:__ 1.3.2

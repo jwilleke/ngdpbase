@@ -1,13 +1,13 @@
 # FileSystemProvider Complete Guide
 
-[Quick Reference](FileSystemProvider.md) | **Complete Guide**
+[Quick Reference](FileSystemProvider.md) | __Complete Guide__
 
-**Module:** `src/providers/FileSystemProvider.js`
-**Type:** Page Storage Provider
-**Extends:** BasePageProvider
-**Status:** Production Ready
-**Version:** 1.5.0
-**Last Updated:** 2025-12-22
+__Module:__ `src/providers/FileSystemProvider.js`
+__Type:__ Page Storage Provider
+__Extends:__ BasePageProvider
+__Status:__ Production Ready
+__Version:__ 1.5.0
+__Last Updated:__ 2025-12-22
 
 ---
 
@@ -38,36 +38,36 @@ FileSystemProvider is the default page storage provider for ngdpbase, implementi
 
 Based on JSPWiki's provider pattern, FileSystemProvider separates storage concerns from business logic:
 
-- **Single Responsibility**: Handles only storage/retrieval operations
-- **Provider Pattern**: Pluggable interface allows swapping storage backends
-- **Performance First**: In-memory caching with multiple indexes
-- **Reliability**: UUID-based file naming prevents conflicts
-- **Flexibility**: Title-based access with case-insensitive matching
+- __Single Responsibility__: Handles only storage/retrieval operations
+- __Provider Pattern__: Pluggable interface allows swapping storage backends
+- __Performance First__: In-memory caching with multiple indexes
+- __Reliability__: UUID-based file naming prevents conflicts
+- __Flexibility__: Title-based access with case-insensitive matching
 
 ### Key Features
 
-**Storage:**
+__Storage:__
 
 - UUID-based file naming (e.g., `550e8400-e29b-41d4-a716-446655440000.md`)
 - YAML frontmatter for metadata (gray-matter parsing)
 - Configurable encoding support (default: UTF-8)
 - Dual storage locations (pages/ and required-pages/)
 
-**Retrieval:**
+__Retrieval:__
 
 - Title-based lookup (case-insensitive)
 - UUID lookup (exact match)
 - Slug lookup (URL-friendly names)
 - Plural name matching (e.g., "Page" matches "Pages")
 
-**Performance:**
+__Performance:__
 
 - In-memory caching (all pages loaded at startup)
 - Multiple lookup indexes (UUID, title, slug)
 - O(1) page retrieval via Map structures
 - Lazy frontmatter parsing
 
-**Installation Support:**
+__Installation Support:__
 
 - Installation-aware loading (required-pages only during install)
 - System page protection (admin-only editing for system-category pages)
@@ -100,7 +100,7 @@ WikiEngine
 
 ### Data Flow
 
-**Page Retrieval:**
+__Page Retrieval:__
 
 ```
 User requests "Home"
@@ -114,7 +114,7 @@ User requests "Home"
                 → Return page object { title, uuid, content, metadata }
 ```
 
-**Page Save:**
+__Page Save:__
 
 ```
 User saves "MyPage"
@@ -222,29 +222,29 @@ required-pages are loaded (incomplete = load, complete = skip).
 
 FileSystemProvider initialization follows this sequence:
 
-1. **Validate ConfigurationManager**
+1. __Validate ConfigurationManager__
    - Ensures ConfigurationManager is available
    - Throws error if missing
 
-2. **Load Configuration**
+2. __Load Configuration__
    - Reads storage directories
    - Loads encoding setting
    - Checks installation state
 
-3. **Initialize PageNameMatcher**
+3. __Initialize PageNameMatcher__
    - Creates matcher with plural matching config
    - Enables fuzzy page name resolution
 
-4. **Create Directories**
+4. __Create Directories__
    - Ensures pagesDirectory exists
    - Creates requiredPagesDirectory (if installation incomplete)
 
-5. **Load Page Cache**
+5. __Load Page Cache__
    - Scans all .md files from directories
    - Parses frontmatter
    - Builds lookup indexes
 
-6. **Mark Initialized**
+6. __Mark Initialized__
    - Sets `initialized = true`
    - Logs page count
 
@@ -320,13 +320,13 @@ Markdown content goes here with [WikiLinks] and [{Plugins}].
 
 ### UUID File Naming
 
-**Why UUIDs?**
+__Why UUIDs?__
 
-- **Unique**: Globally unique identifiers prevent conflicts
-- **Stable**: Survives page renames (title changes don't break links)
-- **Portable**: Can merge wikis without filename conflicts
+- __Unique__: Globally unique identifiers prevent conflicts
+- __Stable__: Survives page renames (title changes don't break links)
+- __Portable__: Can merge wikis without filename conflicts
 
-**UUID Generation:**
+__UUID Generation:__
 
 ```javascript
 const { v4: uuidv4 } = require('uuid');
@@ -338,12 +338,12 @@ const filePath = path.join(pagesDirectory, `${uuid}.md`);
 
 ### Frontmatter Structure
 
-**Required Fields:**
+__Required Fields:__
 
 - `title` - Page title (used for display and lookups)
 - `uuid` - Unique identifier (auto-generated if missing)
 
-**Common Fields:**
+__Common Fields:__
 
 - `author` - Page creator
 - `created` - Creation timestamp
@@ -352,7 +352,7 @@ const filePath = path.join(pagesDirectory, `${uuid}.md`);
 - `tags` - Array of keywords
 - `slug` - URL-friendly name
 
-**Custom Fields:**
+__Custom Fields:__
 Frontmatter supports any Schema.org properties or custom metadata.
 
 ---
@@ -363,23 +363,23 @@ Frontmatter supports any Schema.org properties or custom metadata.
 
 FileSystemProvider uses a multi-step lookup strategy:
 
-1. **Try UUID Index** (if identifier looks like UUID)
+1. __Try UUID Index__ (if identifier looks like UUID)
    - O(1) lookup in `uuidIndex`
    - Exact match on UUID format
 
-2. **Try Title Index**
+2. __Try Title Index__
    - O(1) lookup in `titleIndex`
    - Case-insensitive match
 
-3. **Try Plural Matching** (if enabled)
+3. __Try Plural Matching__ (if enabled)
    - PageNameMatcher fuzzy match
    - Handles "Page" vs "Pages"
 
-4. **Try Slug Index**
+4. __Try Slug Index__
    - O(1) lookup in `slugIndex`
    - URL-friendly name match
 
-5. **Return null** (if no matches)
+5. __Return null__ (if no matches)
 
 ### getPage() Implementation
 
@@ -561,17 +561,17 @@ async refreshPageList() {
 
 ### Cache Invalidation
 
-**When to refresh cache:**
+__When to refresh cache:__
 
 - After `savePage()` - Single page update
 - After `deletePage()` - Single page removal
 - After `renamePage()` - Title change affects indexes
 - Manual refresh via `refreshPageCache()`
 
-**Refresh strategies:**
+__Refresh strategies:__
 
-- **Full refresh**: `await refreshPageList()` - Reloads all pages
-- **Incremental**: Update single entry in caches (used by savePage)
+- __Full refresh__: `await refreshPageList()` - Reloads all pages
+- __Incremental__: Update single entry in caches (used by savePage)
 
 ---
 
@@ -615,27 +615,27 @@ const match = this.pageNameMatcher.findMatch(
 
 FileSystemProvider adapts behavior based on installation state:
 
-**During Installation** (`installationComplete = false`):
+__During Installation__ (`installationComplete = false`):
 
-- Loads pages from **both** directories:
+- Loads pages from __both__ directories:
   - `pagesDirectory` (./data/pages)
   - `requiredPagesDirectory` (./required-pages)
 - Allows required pages to be accessible for copying
 
-**After Installation** (`installationComplete = true`):
+__After Installation__ (`installationComplete = true`):
 
-- Loads pages from **only** `pagesDirectory`
+- Loads pages from __only__ `pagesDirectory`
 - Skips `requiredPagesDirectory` entirely
 - Required pages already copied to pagesDirectory
 
 ### Why This Design?
 
-**Problem**: Required pages (system docs, templates) should:
+__Problem__: Required pages (system docs, templates) should:
 
 1. Be available during installation (for copying)
 2. NOT appear in production wiki (avoid duplicates)
 
-**Solution**: Installation-aware loading
+__Solution__: Installation-aware loading
 
 - Installation copies required-pages → pagesDirectory
 - After install, only pagesDirectory is scanned
@@ -669,11 +669,11 @@ async refreshPageList() {
 
 Initialize the provider with configuration.
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Throws:** Error if ConfigurationManager unavailable
+__Throws:__ Error if ConfigurationManager unavailable
 
-**Example:**
+__Example:__
 
 ```javascript
 await provider.initialize();
@@ -687,13 +687,13 @@ await provider.initialize();
 
 Get complete page by title/UUID/slug.
 
-**Parameters:**
+__Parameters:__
 
 - `identifier` (String) - Page title, UUID, or slug
 
-**Returns:** `Promise<Object|null>` - Page object or null if not found
+__Returns:__ `Promise<Object|null>` - Page object or null if not found
 
-**Page Object Structure:**
+__Page Object Structure:__
 
 ```javascript
 {
@@ -711,7 +711,7 @@ Get complete page by title/UUID/slug.
 }
 ```
 
-**Example:**
+__Example:__
 
 ```javascript
 const page = await provider.getPage('Home');
@@ -727,9 +727,9 @@ if (page) {
 
 Get all pages (titles and UUIDs only, no content).
 
-**Returns:** `Promise<Array>` - Array of page info objects
+__Returns:__ `Promise<Array>` - Array of page info objects
 
-**Example:**
+__Example:__
 
 ```javascript
 const pages = await provider.getAllPages();
@@ -745,13 +745,13 @@ const pages = await provider.getAllPages();
 
 Check if page exists.
 
-**Parameters:**
+__Parameters:__
 
 - `identifier` (String) - Page title, UUID, or slug
 
-**Returns:** `Promise<Boolean>`
+__Returns:__ `Promise<Boolean>`
 
-**Example:**
+__Example:__
 
 ```javascript
 if (await provider.pageExists('Home')) {
@@ -767,7 +767,7 @@ if (await provider.pageExists('Home')) {
 
 Create or update a page.
 
-**Parameters:**
+__Parameters:__
 
 - `identifier` (String) - Page title (for new pages) or title/UUID (for updates)
 - `pageData` (Object) - Page data:
@@ -776,9 +776,9 @@ Create or update a page.
   - `author` (String, optional) - Author name
   - `metadata` (Object, optional) - Additional frontmatter
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 await provider.savePage('NewPage', {
@@ -798,13 +798,13 @@ await provider.savePage('NewPage', {
 
 Delete a page.
 
-**Parameters:**
+__Parameters:__
 
 - `identifier` (String) - Page title or UUID
 
-**Returns:** `Promise<Boolean>` - true if deleted, false if not found
+__Returns:__ `Promise<Boolean>` - true if deleted, false if not found
 
-**Example:**
+__Example:__
 
 ```javascript
 const deleted = await provider.deletePage('OldPage');
@@ -819,14 +819,14 @@ if (deleted) {
 
 Rename a page (preserves UUID, updates title).
 
-**Parameters:**
+__Parameters:__
 
 - `oldIdentifier` (String) - Current page title or UUID
 - `newTitle` (String) - New page title
 
-**Returns:** `Promise<Boolean>` - true if renamed, false if not found
+__Returns:__ `Promise<Boolean>` - true if renamed, false if not found
 
-**Example:**
+__Example:__
 
 ```javascript
 await provider.renamePage('OldTitle', 'NewTitle');
@@ -841,9 +841,9 @@ await provider.renamePage('OldTitle', 'NewTitle');
 
 Reload all pages from disk into cache (alias for refreshPageList).
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 await provider.refreshPageCache();
@@ -858,9 +858,9 @@ console.log(`Refreshed ${provider.pageCache.size} pages`);
 
 Create backup of all pages.
 
-**Returns:** `Promise<Object>` - Backup data
+__Returns:__ `Promise<Object>` - Backup data
 
-**Backup Structure:**
+__Backup Structure:__
 
 ```javascript
 {
@@ -887,13 +887,13 @@ Create backup of all pages.
 
 Restore pages from backup.
 
-**Parameters:**
+__Parameters:__
 
 - `backupData` (Object) - Backup data from `backup()`
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 const backup = await provider.backup();
@@ -907,30 +907,30 @@ await provider.restore(backup);
 
 ### Common Errors
 
-**Missing ConfigurationManager:**
+__Missing ConfigurationManager:__
 
 ```javascript
 Error: FileSystemProvider requires ConfigurationManager
 ```
 
-**Solution:** Ensure WikiEngine initializes ConfigurationManager before FileSystemProvider
+__Solution:__ Ensure WikiEngine initializes ConfigurationManager before FileSystemProvider
 
-**File Read Errors:**
+__File Read Errors:__
 
 ```javascript
 Error reading page file: /path/to/page.md
 ENOENT: no such file or directory
 ```
 
-**Solution:** Check file exists, verify permissions, ensure UUID matches filename
+__Solution:__ Check file exists, verify permissions, ensure UUID matches filename
 
-**Invalid Frontmatter:**
+__Invalid Frontmatter:__
 
 ```javascript
 Failed to process page file: invalid YAML
 ```
 
-**Solution:** Validate YAML syntax in frontmatter, ensure `---` delimiters present
+__Solution:__ Validate YAML syntax in frontmatter, ensure `---` delimiters present
 
 ### Error Handling Patterns
 
@@ -956,32 +956,32 @@ if (await provider.pageExists('MyPage')) {
 
 ### Performance Characteristics
 
-**Initialization:**
+__Initialization:__
 
-- **Time:** O(n) where n = number of pages
-- **Typical:** 100 pages in ~200ms
-- **Large wiki:** 10,000 pages in ~3 seconds
+- __Time:__ O(n) where n = number of pages
+- __Typical:__ 100 pages in ~200ms
+- __Large wiki:__ 10,000 pages in ~3 seconds
 
-**Page Retrieval:**
+__Page Retrieval:__
 
-- **Time:** O(1) lookup + file read
-- **Cache hit:** ~1ms (Map lookup)
-- **File read:** ~5-10ms (depends on disk)
+- __Time:__ O(1) lookup + file read
+- __Cache hit:__ ~1ms (Map lookup)
+- __File read:__ ~5-10ms (depends on disk)
 
-**Page Save:**
+__Page Save:__
 
-- **Time:** File write + cache update
-- **Typical:** ~10-20ms
-- **Large page:** ~50ms
+- __Time:__ File write + cache update
+- __Typical:__ ~10-20ms
+- __Large page:__ ~50ms
 
-**Cache Refresh:**
+__Cache Refresh:__
 
-- **Full refresh:** Same as initialization
-- **Incremental:** ~1ms per page
+- __Full refresh:__ Same as initialization
+- __Incremental:__ ~1ms per page
 
 ### Optimization Tips
 
-1. **Avoid refreshPageCache() in loops**
+1. __Avoid refreshPageCache() in loops__
 
    ```javascript
    // Bad
@@ -996,7 +996,7 @@ if (await provider.pageExists('MyPage')) {
    await provider.refreshPageCache(); // Single refresh at end
    ```
 
-2. **Use getAllPages() for listings**
+2. __Use getAllPages() for listings__
 
    ```javascript
    // getAllPages() returns cached data (fast)
@@ -1008,7 +1008,7 @@ if (await provider.pageExists('MyPage')) {
    }
    ```
 
-3. **Batch operations**
+3. __Batch operations__
 
    ```javascript
    // Batch saves with single refresh
@@ -1026,9 +1026,9 @@ if (await provider.pageExists('MyPage')) {
 
 If migrating from older storage systems:
 
-1. **Convert filenames to UUID format**
-2. **Add UUID to frontmatter**
-3. **Run refreshPageCache()**
+1. __Convert filenames to UUID format__
+2. __Add UUID to frontmatter__
+3. __Run refreshPageCache()__
 
 ### To Database Storage
 
@@ -1045,9 +1045,9 @@ To migrate to database provider:
 
 ### Pages Not Found
 
-**Symptom:** `getPage('MyPage')` returns null
+__Symptom:__ `getPage('MyPage')` returns null
 
-**Checks:**
+__Checks:__
 
 1. Verify title case matches (try different cases)
 2. Check UUID exists in file
@@ -1057,32 +1057,32 @@ To migrate to database provider:
 
 ### Required Pages Showing in Production
 
-**Symptom:** System pages appear in page listings
+__Symptom:__ System pages appear in page listings
 
-**Solution:** Ensure the `.install-complete` marker file exists in `INSTANCE_DATA_FOLDER`
+__Solution:__ Ensure the `.install-complete` marker file exists in `INSTANCE_DATA_FOLDER`
 
 ### Cache Out of Sync
 
-**Symptom:** Recent changes not reflected
+__Symptom:__ Recent changes not reflected
 
-**Solution:** Call `await provider.refreshPageCache()`
+__Solution:__ Call `await provider.refreshPageCache()`
 
 ### Plural Matching Not Working
 
-**Symptom:** "Page" doesn't match "Pages"
+__Symptom:__ "Page" doesn't match "Pages"
 
-**Solution:** Verify `ngdpbase.translator-reader.match-english-plurals: true`
+__Solution:__ Verify `ngdpbase.translator-reader.match-english-plurals: true`
 
 ---
 
 ## Related Documentation
 
-- **Quick Reference:** [FileSystemProvider.md](FileSystemProvider.md)
-- **Base Class:** [BasePageProvider.md](BasePageProvider.md)
-- **Manager:** [PageManager.md](../managers/PageManager.md)
-- **Extended Version:** [VersioningFileProvider.md](VersioningFileProvider.md)
+- __Quick Reference:__ [FileSystemProvider.md](FileSystemProvider.md)
+- __Base Class:__ [BasePageProvider.md](BasePageProvider.md)
+- __Manager:__ [PageManager.md](../managers/PageManager.md)
+- __Extended Version:__ [VersioningFileProvider.md](VersioningFileProvider.md)
 
 ---
 
-**Last Updated:** 2025-12-22
-**Version:** 1.5.0
+__Last Updated:__ 2025-12-22
+__Version:__ 1.5.0

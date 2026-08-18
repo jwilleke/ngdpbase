@@ -13,7 +13,7 @@ author: system
 ---
 # Using CounterPlugin
 
-The **CounterPlugin** maintains page-level counters that increment each time they render — useful for numbering figures, sections, or any sequential items on a page.
+The __CounterPlugin__ maintains page-level counters that increment each time they render — useful for numbering figures, sections, or any sequential items on a page.
 
 ## Description
 

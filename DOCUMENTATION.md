@@ -6,14 +6,14 @@ Complete documentation for ngdpbase is organized in the `docs/` directory. This 
 
 ### Root Level Files (This Directory)
 
-- **[README.md](./README.md)** - Project overview and quick start
-- **[AGENTS.md](./AGENTS.md)** - AI agent context and project status
-- **[ARCHITECTURE.md](./ARCHITECTURE.md)** - System architecture and design patterns
-- **[CODE_STANDARDS.md](./CODE_STANDARDS.md)** - Coding standards and best practices
-- **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Development workflow and guidelines
-- **[SECURITY.md](./SECURITY.md)** - Security practices and policies
-- **[CHANGELOG.md](./CHANGELOG.md)** - Version history and release notes
-- **[CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)** - Community guidelines
+- __[README.md](./README.md)__ - Project overview and quick start
+- __[AGENTS.md](./AGENTS.md)__ - AI agent context and project status
+- __[ARCHITECTURE.md](./ARCHITECTURE.md)__ - System architecture and design patterns
+- __[CODE_STANDARDS.md](./CODE_STANDARDS.md)__ - Coding standards and best practices
+- __[CONTRIBUTING.md](./CONTRIBUTING.md)__ - Development workflow and guidelines
+- __[SECURITY.md](./SECURITY.md)__ - Security practices and policies
+- __[CHANGELOG.md](./CHANGELOG.md)__ - Version history and release notes
+- __[CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)__ - Community guidelines
 
 ## Detailed Documentation
 
@@ -21,7 +21,7 @@ See [docs/](./docs/) directory for comprehensive documentation on:
 
 ### Developer Documentation Index
 
-**[docs/Developer-Documentation.md](./docs/Developer-Documentation.md)** - Complete index of all developer documentation:
+__[docs/Developer-Documentation.md](./docs/Developer-Documentation.md)__ - Complete index of all developer documentation:
 
 - 18 Managers (quick reference + complete guides)
 - 12 Plugins (developer + user guides)
@@ -32,38 +32,38 @@ See [docs/](./docs/) directory for comprehensive documentation on:
 
 ### Documentation by Category
 
-- **[docs/managers/](./docs/managers/)** - Manager documentation (18 managers)
+- __[docs/managers/](./docs/managers/)__ - Manager documentation (18 managers)
   - Quick reference guides (~100-200 lines each)
   - Complete guides (~500-1000+ lines each)
   - PageManager, RenderingManager, UserManager, ConfigurationManager, etc.
 
-- **[docs/plugins/](./docs/plugins/)** - Plugin documentation (12 plugins)
+- __[docs/plugins/](./docs/plugins/)__ - Plugin documentation (12 plugins)
   - Developer implementation guides
   - User-facing documentation
   - CurrentTimePlugin, ImagePlugin, SearchPlugin, etc.
 
-- **[docs/architecture/](./docs/architecture/)** - Architecture patterns (15+ documents)
+- __[docs/architecture/](./docs/architecture/)__ - Architecture patterns (15+ documents)
   - Manager-based architecture overview
   - WikiDocument DOM pipeline
   - Policies, roles, and permissions
   - Storage providers
   - Rendering pipeline
 
-- **[docs/planning/](./docs/planning/)** - Project planning
+- __[docs/planning/](./docs/planning/)__ - Project planning
   - TODO.md - Current tasks and priorities
   - ROADMAP.md - Long-term vision and milestones
 
-- **[docs/testing/](./docs/testing/)** - Testing documentation
+- __[docs/testing/](./docs/testing/)__ - Testing documentation
   - Testing-Summary.md - Current test status
   - Complete-Testing-Guide.md - Comprehensive guide
   - PREVENTING-REGRESSIONS.md - Regression prevention
 
-- **[docs/migration/](./docs/migration/)** - Migration guides
+- __[docs/migration/](./docs/migration/)__ - Migration guides
   - Upgrade instructions
   - Breaking changes
   - Data migration procedures
 
-- **[docs/api/](./docs/api/)** - API documentation
+- __[docs/api/](./docs/api/)__ - API documentation
   - Auto-generated TypeDoc reference
   - REST API reference
   - Configuration API
@@ -95,11 +95,11 @@ For operations and deployment:
 
 ## Project Status & History
 
-- **Current Status**: See [AGENTS.md](./AGENTS.md) - "Current Status" section
-- **Release History**: See [CHANGELOG.md](./CHANGELOG.md)
-- **Work History**: See [docs/project_log.md](./docs/project_log.md)
-- **Tasks & Priorities**: See [docs/planning/TODO.md](./docs/planning/TODO.md)
-- **Roadmap**: See [docs/planning/ROADMAP.md](./docs/planning/ROADMAP.md)
+- __Current Status__: See [AGENTS.md](./AGENTS.md) - "Current Status" section
+- __Release History__: See [CHANGELOG.md](./CHANGELOG.md)
+- __Work History__: See [docs/project_log.md](./docs/project_log.md)
+- __Tasks & Priorities__: See [docs/planning/TODO.md](./docs/planning/TODO.md)
+- __Roadmap__: See [docs/planning/ROADMAP.md](./docs/planning/ROADMAP.md)
 
 ## Quick Links
 
@@ -111,7 +111,7 @@ For operations and deployment:
 
 ### For Developers
 
-- **[docs/Developer-Documentation.md](./docs/Developer-Documentation.md)** - Complete developer doc index
+- __[docs/Developer-Documentation.md](./docs/Developer-Documentation.md)__ - Complete developer doc index
 - [CONTRIBUTING.md](./CONTRIBUTING.md) - How to contribute
 - [ARCHITECTURE.md](./ARCHITECTURE.md) - How it's built
 - [CODE_STANDARDS.md](./CODE_STANDARDS.md) - How to code
@@ -135,37 +135,37 @@ For operations and deployment:
 
 ### Core Stack
 
-- **Node.js v18+** - JavaScript runtime
-- **Express.js 5.x** - Web framework
-- **PM2** - Process manager
-- **EJS** - Template engine
-- **Bootstrap 5** - UI framework
+- __Node.js v18+__ - JavaScript runtime
+- __Express.js 5.x__ - Web framework
+- __PM2__ - Process manager
+- __EJS__ - Template engine
+- __Bootstrap 5__ - UI framework
 
 ### Storage & Processing
 
-- **Markdown** - Content format
-- **YAML Frontmatter** - Metadata
-- **Showdown** - Markdown parser
-- **JSPWiki Syntax** - Wiki syntax compatibility
-- **linkedom** - DOM implementation
+- __Markdown__ - Content format
+- __YAML Frontmatter__ - Metadata
+- __Showdown__ - Markdown parser
+- __JSPWiki Syntax__ - Wiki syntax compatibility
+- __linkedom__ - DOM implementation
 
 ### Development Tools
 
-- **Jest** - Testing framework
-- **TypeScript** - Type system (progressive migration)
-- **Prettier** - Code formatter
-- **markdownlint** - Documentation linter
+- __Jest__ - Testing framework
+- __TypeScript__ - Type system (progressive migration)
+- __Prettier__ - Code formatter
+- __markdownlint__ - Documentation linter
 
 ## Documentation Standards
 
 All documentation in this project follows these standards:
 
-- **Markdown format** - Using CommonMark specification
-- **Clear hierarchy** - H1 title, H2 major sections
-- **Links** - Relative links between documents
-- **Code examples** - Syntax highlighted with language tags
-- **Tables** - For structured information
-- **Lists** - For sequential and grouped information
+- __Markdown format__ - Using CommonMark specification
+- __Clear hierarchy__ - H1 title, H2 major sections
+- __Links__ - Relative links between documents
+- __Code examples__ - Syntax highlighted with language tags
+- __Tables__ - For structured information
+- __Lists__ - For sequential and grouped information
 
 ## File Organization
 
@@ -200,10 +200,10 @@ ngdpbase/
 
 ## Getting Help
 
-- **Questions?** Check the relevant documentation above
-- **Found a bug?** See [CONTRIBUTING.md](./CONTRIBUTING.md) for issue reporting
-- **Want to contribute?** See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines
-- **Security concern?** See [SECURITY.md](./SECURITY.md)
+- __Questions?__ Check the relevant documentation above
+- __Found a bug?__ See [CONTRIBUTING.md](./CONTRIBUTING.md) for issue reporting
+- __Want to contribute?__ See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines
+- __Security concern?__ See [SECURITY.md](./SECURITY.md)
 
 ## Related Files
 

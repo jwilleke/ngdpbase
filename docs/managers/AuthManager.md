@@ -12,8 +12,8 @@ Registers one or more `AuthProvider` instances and delegates authenticate/initia
 
 ## Built-in Providers
 
-- **PasswordAuthProvider** — always registered.
-- **MagicLinkAuthProvider** — registered when `ngdpbase.auth.magic-link.enabled`.
+- __PasswordAuthProvider__ — always registered.
+- __MagicLinkAuthProvider__ — registered when `ngdpbase.auth.magic-link.enabled`.
 
 ## Future Providers
 

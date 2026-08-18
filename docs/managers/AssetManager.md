@@ -12,9 +12,9 @@ Holds a registry of `AssetProvider` instances (keyed by `provider.id`) and expos
 
 ## Responsibilities
 
-- **Provider registry** — `registerProvider(provider)` / `unregisterProvider(id)`.
-- **Federated query** — `search(query)` / `getById(id)` / `getThumbnail(id)` fan out and merge.
-- **Health monitoring** — last-known status per provider in `healthMap`; surfaced via `ProviderHealthReport`.
+- __Provider registry__ — `registerProvider(provider)` / `unregisterProvider(id)`.
+- __Federated query__ — `search(query)` / `getById(id)` / `getThumbnail(id)` fan out and merge.
+- __Health monitoring__ — last-known status per provider in `healthMap`; surfaced via `ProviderHealthReport`.
 
 ## See Also
 

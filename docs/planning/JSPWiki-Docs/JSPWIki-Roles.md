@@ -8,14 +8,14 @@ The Roles system works like this:
 
 | Constant Name | Value | Meaning/Role in JSPWiki |
 | ---------------------- | ------- | ------------------------------------------------------------------------------ |
-| **READ** | 0 | Normal internal page link. Points to a wiki page for viewing (`<a class="wikipage">`). |
-| **EDIT** | 1 | Link to create or edit a page if it does not exist (`<a class="createpage">`). |
-| **EMPTY** | 2 | Indicates an empty link, renders as underlined text (`<u>`), not clickable. |
-| **LOCAL** | 3 | Local anchor/footnote within the same page (`<a class="footnote">`). |
-| **LOCALREF** | 4 | Reference to a footnote or section within the same page (`<a class="footnoteref">`). |
-| **IMAGE** | 5 | Image link: an embedded image (`<img>`). |
-| **EXTERNAL** | 6 | External link (URL outside wiki); may append outlink icon (`<a class="external">`). |
-| **INTERWIKI** | 7 | Link to another wiki system (“InterWiki”) (`<a class="interwiki">`). |
-| **IMAGELINK** | 8 | Clickable image that acts as a link (`<a><img></a>`). |
-| **IMAGEWIKILINK** | 9 | Wiki page link with a thumbnail image; links image to a wiki page. |
-| **ATTACHMENT** | 10 | Link to an attachment/file uploaded to the wiki (`<a class="attachment">`). |
+| __READ__ | 0 | Normal internal page link. Points to a wiki page for viewing (`<a class="wikipage">`). |
+| __EDIT__ | 1 | Link to create or edit a page if it does not exist (`<a class="createpage">`). |
+| __EMPTY__ | 2 | Indicates an empty link, renders as underlined text (`<u>`), not clickable. |
+| __LOCAL__ | 3 | Local anchor/footnote within the same page (`<a class="footnote">`). |
+| __LOCALREF__ | 4 | Reference to a footnote or section within the same page (`<a class="footnoteref">`). |
+| __IMAGE__ | 5 | Image link: an embedded image (`<img>`). |
+| __EXTERNAL__ | 6 | External link (URL outside wiki); may append outlink icon (`<a class="external">`). |
+| __INTERWIKI__ | 7 | Link to another wiki system (“InterWiki”) (`<a class="interwiki">`). |
+| __IMAGELINK__ | 8 | Clickable image that acts as a link (`<a><img></a>`). |
+| __IMAGEWIKILINK__ | 9 | Wiki page link with a thumbnail image; links image to a wiki page. |
+| __ATTACHMENT__ | 10 | Link to an attachment/file uploaded to the wiki (`<a class="attachment">`). |

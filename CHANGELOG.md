@@ -167,24 +167,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **#999** — attachment metadata editing. `PATCH /attachments/api/:attachmentId` accepts the same `AssetMetadataPatch` body as the media route (`title` / `description` / `keywords` / `dateTimeOriginal`), under the same `asset-edit` permission, with the same contract: **a field absent means keep, an explicit `null` means clear.** Body parsing is now shared between the two routes so they cannot drift on that.
+- __#999__ — attachment metadata editing. `PATCH /attachments/api/:attachmentId` accepts the same `AssetMetadataPatch` body as the media route (`title` / `description` / `keywords` / `dateTimeOriginal`), under the same `asset-edit` permission, with the same contract: __a field absent means keep, an explicit `null` means clear.__ Body parsing is now shared between the two routes so they cannot drift on that.
 
-  **Attachment edits are stored beside the file, not written into it** — unlike media items, which write through to embedded EXIF/IPTC/XMP. Attachment IDs are content hashes (`<sha256>.<ext>` is the stored filename), so an embedded write would rewrite the bytes and the id would stop naming them, silently invalidating dedup and any integrity check. Re-keying on edit was the alternative and was rejected: the id *is* the URL, so every existing `[{ATTACH}]` reference would break.
+  __Attachment edits are stored beside the file, not written into it__ — unlike media items, which write through to embedded EXIF/IPTC/XMP. Attachment IDs are content hashes (`<sha256>.<ext>` is the stored filename), so an embedded write would rewrite the bytes and the id would stop naming them, silently invalidating dedup and any integrity check. Re-keying on edit was the alternative and was rejected: the id *is* the URL, so every existing `[{ATTACH}]` reference would break.
 
-  The practical consequence: after an edit, an attachment's ngdpbase metadata and its embedded metadata diverge, and a **download carries the file's original values**. If embedded fidelity matters for a given file, it belongs in the media library, which is not content-addressed and does write through.
+  The practical consequence: after an edit, an attachment's ngdpbase metadata and its embedded metadata diverge, and a __download carries the file's original values__. If embedded fidelity matters for a given file, it belongs in the media library, which is not content-addressed and does write through.
 
 ### Changed
 
-- `docs/platform/deployment/addon-packaged.md` now recommends the **two-stage build** for packaged addons — install the addon in a plain `node:alpine` stage, then `COPY --from=… /app/node_modules/. ./node_modules/` into the ngdpbase runtime stage. The image you deploy ends up with no npm at all, so the v3.70.3 removal holds end to end rather than only for ngdpbase's own image. The `-devtools` tag remains available as an escape hatch for builds that must run npm in the ngdpbase layer itself, but is no longer the recommendation: a derived image built from it inherits npm and ships its vendored CVEs.
+- `docs/platform/deployment/addon-packaged.md` now recommends the __two-stage build__ for packaged addons — install the addon in a plain `node:alpine` stage, then `COPY --from=… /app/node_modules/. ./node_modules/` into the ngdpbase runtime stage. The image you deploy ends up with no npm at all, so the v3.70.3 removal holds end to end rather than only for ngdpbase's own image. The `-devtools` tag remains available as an escape hatch for builds that must run npm in the ngdpbase layer itself, but is no longer the recommendation: a derived image built from it inherits npm and ships its vendored CVEs.
 
 ## [4.0.1] - 2026-07-27
 
 ### Fixed
 
-- **#1003** — `system-category` changes in an addon source now reach already-seeded pages. `evaluateSeededAddonPage` compares page *bodies*, so a category-only source edit never marked a page `outdated` and the reseed path never ran — categories set at first seed were frozen permanently. Adds a drift check independent of the body hash and of `reseed`, with a new `addon-source-category` marker (the category analogue of `addon-source-hash`) that makes the correction one-time-per-drift: once the addon's value has been applied, an operator who re-categorizes the page keeps their choice until the addon's own value changes again.
-- **#1003** — the #971 `access` backfill resolved a page's category from the stale live value before the addon source's current one, while the reseed path resolved the same field source-first. Now source-first in both.
+- __#1003__ — `system-category` changes in an addon source now reach already-seeded pages. `evaluateSeededAddonPage` compares page *bodies*, so a category-only source edit never marked a page `outdated` and the reseed path never ran — categories set at first seed were frozen permanently. Adds a drift check independent of the body hash and of `reseed`, with a new `addon-source-category` marker (the category analogue of `addon-source-hash`) that makes the correction one-time-per-drift: once the addon's value has been applied, an operator who re-categorizes the page keeps their choice until the addon's own value changes again.
+- __#1003__ — the #971 `access` backfill resolved a page's category from the stale live value before the addon source's current one, while the reseed path resolved the same field source-first. Now source-first in both.
 
-  **Operators upgrading with addon pages whose category was corrected upstream:** the two bugs compounded, so pages that should be instance-owned (`system-category: general`) may carry an `access: { edit: ['admin'] }` stamp derived from their stale category. This release clears such a stamp on next boot, but only when all of: the category actually drifted, the corrected category warrants no stamp, the addon source declares no `access` of its own, and the live value is byte-identical to what the stale category would have produced. An `access` value you set yourself is preserved — with one caveat worth knowing: a value you set that happens to equal `{ edit: ['admin'] }` exactly, on a page whose category also drifted, is indistinguishable from the machine's output and will be cleared.
+  __Operators upgrading with addon pages whose category was corrected upstream:__ the two bugs compounded, so pages that should be instance-owned (`system-category: general`) may carry an `access: { edit: ['admin'] }` stamp derived from their stale category. This release clears such a stamp on next boot, but only when all of: the category actually drifted, the corrected category warrants no stamp, the addon source declares no `access` of its own, and the live value is byte-identical to what the stale category would have produced. An `access` value you set yourself is preserved — with one caveat worth knowing: a value you set that happens to equal `{ edit: ['admin'] }` exactly, on a page whose category also drifted, is indistinguishable from the machine's output and will be cleared.
 
 ### Changed
 
@@ -194,9 +194,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ⚠️ BREAKING — the published Docker image no longer has npm
 
-`ghcr.io/jwilleke/ngdpbase:X.Y.Z` cannot be built `FROM` any more. npm was removed from the runtime image in v3.70.3 (#956) so the deployed artifact stops carrying npm's vendored CVEs, and that stands — but it also broke the **packaged-addon deployment model**, where a derived image runs `npm install <addon>` on top of the base image.
+`ghcr.io/jwilleke/ngdpbase:X.Y.Z` cannot be built `FROM` any more. npm was removed from the runtime image in v3.70.3 (#956) so the deployed artifact stops carrying npm's vendored CVEs, and that stands — but it also broke the __packaged-addon deployment model__, where a derived image runs `npm install <addon>` on top of the base image.
 
-**Migration:** derived builds change one line, to the new build-capable variant.
+__Migration:__ derived builds change one line, to the new build-capable variant.
 
 ```diff
 -FROM ghcr.io/jwilleke/ngdpbase:4.0.0
@@ -206,21 +206,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Tag | npm | Use for |
 |---|---|---|
-| `:X.Y.Z` | no | **deploying** — unchanged, still npm-free |
-| `:X.Y.Z-devtools` | yes | **building FROM** — derived images that install an addon |
+| `:X.Y.Z` | no | __deploying__ — unchanged, still npm-free |
+| `:X.Y.Z-devtools` | yes | __building FROM__ — derived images that install an addon |
 
 An image built `FROM …-devtools` inherits npm; drop it again in your final stage if that matters for your scan posture. See `docs/platform/deployment/addon-packaged.md`.
 
-**Why this is a major and v3.70.3 should have been one too.** Removing a documented capability from a published artifact is a breaking change to a public interface. Shipping it as a *patch* is what caused the outage: Renovate's auto-merge policy keys on bump type, so a patch base-image bump read as "safe, no review" and merged itself downstream, surfacing as a red release build (#1001). Deployments that only consume the runtime image are unaffected and can upgrade normally.
+__Why this is a major and v3.70.3 should have been one too.__ Removing a documented capability from a published artifact is a breaking change to a public interface. Shipping it as a *patch* is what caused the outage: Renovate's auto-merge policy keys on bump type, so a patch base-image bump read as "safe, no review" and merged itself downstream, surfacing as a red release build (#1001). Deployments that only consume the runtime image are unaffected and can upgrade normally.
 
 ### Fixed
 
-- **#1001** — `devtools` image variant restoring the derived-build path. Both build targets are now pinned explicitly; without that an untargeted build takes the Dockerfile's last stage and would have silently published the npm-carrying image as `:latest`. Adds assertions that the runtime image has *no* npm and that the devtools image can actually be built `FROM`.
-- **#1000** — showdown ReDoS guard (CVE-2024-1899) now applied at *every* `makeHtml()` call site. #599 guarded only the primary render path; the parser-disabled fallback, the no-parser fallback, and the footnote extension's own `Converter` instance still passed raw text, and `POST /api/preview` reaches them with an arbitrary request body. Adds a structural test that fails on any unguarded call site. No upstream patch exists for the CVE.
+- __#1001__ — `devtools` image variant restoring the derived-build path. Both build targets are now pinned explicitly; without that an untargeted build takes the Dockerfile's last stage and would have silently published the npm-carrying image as `:latest`. Adds assertions that the runtime image has *no* npm and that the devtools image can actually be built `FROM`.
+- __#1000__ — showdown ReDoS guard (CVE-2024-1899) now applied at *every* `makeHtml()` call site. #599 guarded only the primary render path; the parser-disabled fallback, the no-parser fallback, and the footnote extension's own `Converter` instance still passed raw text, and `POST /api/preview` reaches them with an arbitrary request body. Adds a structural test that fails on any unguarded call site. No upstream patch exists for the CVE.
 
 ### Added
 
-- **#989** — `FeedManager` per-source record shaping: `dedupeBy` (keep the newest record per group key), `maxAgeHours` (discard stale records, applied after grouping so it means "not reissued"), and `dedupeDateField`. Adapter-agnostic. Also fixes `linkPattern` / `maxItems` / `delimiter` never reaching adapters through config parsing, which made `xml-index` sources unconfigurable.
+- __#989__ — `FeedManager` per-source record shaping: `dedupeBy` (keep the newest record per group key), `maxAgeHours` (discard stale records, applied after grouping so it means "not reissued"), and `dedupeDateField`. Adapter-agnostic. Also fixes `linkPattern` / `maxItems` / `delimiter` never reaching adapters through config parsing, which made `xml-index` sources unconfigurable.
 
 ## [3.71.0] - 2026-07-27
 
@@ -917,20 +917,20 @@ An image built `FROM …-devtools` inherits npm; drop it again in your final sta
 
 ### Fixed
 
-- **Authenticated user dropdown no longer visually transparent** (#687). The `.dropdown-menu` rule in `public/css/style.css` set `background-color: var(--card-bg)`, which resolves to `var(--bs-body-bg)` — exactly the same color as the page body the dropdown sits over. With no shadow and a thin border, the dropdown looked like part of the page rather than a floating menu, creating confusion about clickable items "behind" it. Added explicit `border: 1px solid var(--border-color)` and a Bootstrap-standard `box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15)` so the dropdown is visually delineated regardless of theme. Background remains theme-driven via `var(--card-bg, #ffffff)` so light/dark themes still inherit the right base color; the shadow + border provide the contrast.
+- __Authenticated user dropdown no longer visually transparent__ (#687). The `.dropdown-menu` rule in `public/css/style.css` set `background-color: var(--card-bg)`, which resolves to `var(--bs-body-bg)` — exactly the same color as the page body the dropdown sits over. With no shadow and a thin border, the dropdown looked like part of the page rather than a floating menu, creating confusion about clickable items "behind" it. Added explicit `border: 1px solid var(--border-color)` and a Bootstrap-standard `box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15)` so the dropdown is visually delineated regardless of theme. Background remains theme-driven via `var(--card-bg, #ffffff)` so light/dark themes still inherit the right base color; the shadow + border provide the contrast.
 
-- **"Using FormPlugin" page no longer 404s — removed duplicate `required-pages/a4f9c2e1-…md` copy** (#653). The forms addon's `addons/forms/pages/af15d030-…md` is the canonical "Using FormPlugin" doc; a stale duplicate had been left in `required-pages/` with a different UUID and divergent content, both claiming `title: Using FormPlugin`.
+- __"Using FormPlugin" page no longer 404s — removed duplicate `required-pages/a4f9c2e1-…md` copy__ (#653). The forms addon's `addons/forms/pages/af15d030-…md` is the canonical "Using FormPlugin" doc; a stale duplicate had been left in `required-pages/` with a different UUID and divergent content, both claiming `title: Using FormPlugin`.
 - The title collision broke link resolution from the Form Definition Reference page (which renders `[Using FormPlugin]` markup) — visitors clicking the link got "Not Found". Removing the `required-pages/` duplicate leaves the forms addon's version as the only source of truth for new installs.
 - Migration for existing instances: the duplicate may still exist in operator data (was seeded from required-pages on first install). Delete with `rm "$SLOW_STORAGE/pages/a4f9c2e1-7b3d-4a85-9e6f-1c2d3b4a5e6f.md"` and restart.
 - Follow-up worth a separate issue: `Form Definition Reference` (`bb03859d`) is also a forms-addon doc but still lives in `required-pages/` — should migrate to `addons/forms/pages/` so the whole forms doc set lives with the addon.
 
-- **Profile pages now carry `description`, `badge`, and `author-lock` metadata on both create and rename** (#661). `UserManager.createUserPage()` now writes `description: "{displayName}'s profile page"` and `badge: "Profile {displayName}"` alongside the pre-existing `author-lock: true`. The `/profile` rename path in `WikiRoutes.updateProfile` re-applies these three fields on the renamed page, so a profile page that was originally manually created (or had its metadata stripped) gets back-filled correctly when the user changes their `profilePage` setting. Two new tests in `UserManager.createUserPage.test.ts` cover the new fields.
+- __Profile pages now carry `description`, `badge`, and `author-lock` metadata on both create and rename__ (#661). `UserManager.createUserPage()` now writes `description: "{displayName}'s profile page"` and `badge: "Profile {displayName}"` alongside the pre-existing `author-lock: true`. The `/profile` rename path in `WikiRoutes.updateProfile` re-applies these three fields on the renamed page, so a profile page that was originally manually created (or had its metadata stripped) gets back-filled correctly when the user changes their `profilePage` setting. Two new tests in `UserManager.createUserPage.test.ts` cover the new fields.
 
-- **Auto-created user profile pages now use `system-category: "general"` instead of the invalid `"User Pages"`** (#662). `UserManager.createUserPage()` was hardcoding `'User Pages'` as the category when seeding a profile page for a new user. `"User Pages"` is not in the configured set of valid categories (`general`, `system`, `documentation`, `developer`, `addon`).
-- Any subsequent save of that profile page through the `/edit` UI returned **HTTP 400** with *"Invalid system-category: 'User Pages'. Valid categories are: addon, documentation, general, system"*. New profile pages now get `general`, which matches both the config's literal description ("General User pages") and the validator's silent-fallback default.
+- __Auto-created user profile pages now use `system-category: "general"` instead of the invalid `"User Pages"`__ (#662). `UserManager.createUserPage()` was hardcoding `'User Pages'` as the category when seeding a profile page for a new user. `"User Pages"` is not in the configured set of valid categories (`general`, `system`, `documentation`, `developer`, `addon`).
+- Any subsequent save of that profile page through the `/edit` UI returned __HTTP 400__ with *"Invalid system-category: 'User Pages'. Valid categories are: addon, documentation, general, system"*. New profile pages now get `general`, which matches both the config's literal description ("General User pages") and the validator's silent-fallback default.
 - Migration for existing instances: user pages already on disk still carry the legacy `'User Pages'` value. Either change the dropdown to `general` on next save, or one-liner across the storage dir: `find "$SLOW_STORAGE/pages" -name '*.md' -exec sed -i '' "s/^system-category: 'User Pages'$/system-category: 'general'/" {} +`
 
-- **Test files no longer surface "Cannot find name 'describe'/'test'/'expect'" diagnostics in the IDE or in `tsc -b tsconfig.test.json`** (#667). `tsconfig.test.json` already had `"types": ["vitest/globals", "node"]`, but the TypeScript language server doesn't route test files there without a project-references link.
+- __Test files no longer surface "Cannot find name 'describe'/'test'/'expect'" diagnostics in the IDE or in `tsc -b tsconfig.test.json`__ (#667). `tsconfig.test.json` already had `"types": ["vitest/globals", "node"]`, but the TypeScript language server doesn't route test files there without a project-references link.
 - Fixed by adding `composite: true` to `tsconfig.test.json` and `references: [{ path: "./tsconfig.test.json" }]` to `tsconfig.json`. Composite mode requires declaration emit, sent to a new gitignored `.tsbuildtest/` directory (`emitDeclarationOnly: true` skips JS emit). Test config `include` also narrowed to test-file patterns only (was overlapping with the main project's `src/**/*.ts`).
 - No runtime change; `npm run build` and `npm run typecheck` still behave identically. Verified: `npx vitest run src/utils/__tests__/pluginFormatters.test.ts` → 79/79 pass; `tsc -b tsconfig.test.json | grep "Cannot find name '(describe|test|expect|...)'"` → 0 matches.
 
@@ -942,9 +942,9 @@ An image built `FROM …-devtools` inherits npm; drop it again in your final sta
 
 ### Fixed
 
-- **Seeded `request-access` page now categorised as `system` (was `documentation`) and links to `/contact`** for the contact path. The page is registration-closed UX scaffolding, not user-authored documentation, so `system` is the correct filter bucket for admin views (matches LeftMenu, Privacy Notice, Markdown Cheat Sheet). The body's `[Contact Us]` link previously resolved to `/view/Contact%20Us` (the seeded text page); it now uses JSPWiki's link-with-target syntax `[Contact Us|/contact]` so visitors who want access land on the form route. Updates the corresponding row in `docs/admin/Contact-Us.md` *Known limitations* — the composition gap with `ngdpbase.application.registration: false` is now closed at the seed level. New deployments inherit the fix; existing instances retain whatever copy lives on their persistent volume.
+- __Seeded `request-access` page now categorised as `system` (was `documentation`) and links to `/contact`__ for the contact path. The page is registration-closed UX scaffolding, not user-authored documentation, so `system` is the correct filter bucket for admin views (matches LeftMenu, Privacy Notice, Markdown Cheat Sheet). The body's `[Contact Us]` link previously resolved to `/view/Contact%20Us` (the seeded text page); it now uses JSPWiki's link-with-target syntax `[Contact Us|/contact]` so visitors who want access land on the form route. Updates the corresponding row in `docs/admin/Contact-Us.md` *Known limitations* — the composition gap with `ngdpbase.application.registration: false` is now closed at the seed level. New deployments inherit the fix; existing instances retain whatever copy lives on their persistent volume.
 
-- **`POST /contact` returns HTTP 200 (not 400) on `EmailManager.sendTo` failure** (#677). Mail-send failure is a server-side relay problem, not a client validation error — the response now matches the documented state matrix in `docs/admin/Contact-Us.md` and the Phase B (#670) UX-honesty intent: visitor sees the form re-rendered with "We could not send your message right now." and an HTTP 200, instead of a misleading 400 that suggested the visitor's input was at fault. `renderForm` in `src/routes/WikiRoutes.ts` `processContact` gains an optional `httpStatus` override (default still derives from `formError`); the mail-failed call site passes `200` explicitly. Two existing tests in `src/routes/__tests__/WikiRoutes.contact.test.ts` updated from `toBe(400)` → `toBe(200)` (one of them carried a comment that explicitly documented the buggy behaviour as deferred — the deferral ends with this fix).
+- __`POST /contact` returns HTTP 200 (not 400) on `EmailManager.sendTo` failure__ (#677). Mail-send failure is a server-side relay problem, not a client validation error — the response now matches the documented state matrix in `docs/admin/Contact-Us.md` and the Phase B (#670) UX-honesty intent: visitor sees the form re-rendered with "We could not send your message right now." and an HTTP 200, instead of a misleading 400 that suggested the visitor's input was at fault. `renderForm` in `src/routes/WikiRoutes.ts` `processContact` gains an optional `httpStatus` override (default still derives from `formError`); the mail-failed call site passes `200` explicitly. Two existing tests in `src/routes/__tests__/WikiRoutes.contact.test.ts` updated from `toBe(400)` → `toBe(200)` (one of them carried a comment that explicitly documented the buggy behaviour as deferred — the deferral ends with this fix).
 
 ---
 
@@ -952,8 +952,8 @@ An image built `FROM …-devtools` inherits npm; drop it again in your final sta
 
 ### Added
 
-- **`assertConfiguredAddonsExist` startup invariant** (#672, closes #672) — `ConfigurationManager.initialize()` now refuses to start if any `ngdpbase.addons.<id>.enabled = true` key references an `<id>` that has no matching addon directory in any configured `addons-path`. Mirrors `AddonsManager.scanAddonsDirectory()` discovery semantics (directory name + `index.js` or `index.ts` present), but without importing the modules — boot-time speed. Catches the silent-misconfig failure mode that caused the 2026-05-10 `geohazardwatch.com` outage (#671), where the deploy configmap had `ngdpbase.addons.ve-geology.enabled = true` but the on-disk addon was renamed to `geohazardwatch`.
-- **Did-you-mean suggestions** for typo-class misconfigs — Levenshtein-distance match (≤ 2) against discovered addon names. The error message reads:
+- __`assertConfiguredAddonsExist` startup invariant__ (#672, closes #672) — `ConfigurationManager.initialize()` now refuses to start if any `ngdpbase.addons.<id>.enabled = true` key references an `<id>` that has no matching addon directory in any configured `addons-path`. Mirrors `AddonsManager.scanAddonsDirectory()` discovery semantics (directory name + `index.js` or `index.ts` present), but without importing the modules — boot-time speed. Catches the silent-misconfig failure mode that caused the 2026-05-10 `geohazardwatch.com` outage (#671), where the deploy configmap had `ngdpbase.addons.ve-geology.enabled = true` but the on-disk addon was renamed to `geohazardwatch`.
+- __Did-you-mean suggestions__ for typo-class misconfigs — Levenshtein-distance match (≤ 2) against discovered addon names. The error message reads:
 
   ```
   [ConfigurationManager] Refusing to start: 'ngdpbase.addons.<id>.enabled = true'
@@ -977,12 +977,12 @@ An image built `FROM …-devtools` inherits npm; drop it again in your final sta
 
 ### Added
 
-- **Configurable anti-spam for `/contact`** (#670 Phase E — closes #670) — the honeypot field and per-IP rate limit are now individually toggleable and tunable via four new config keys under `ngdpbase.mail.*`. Defaults preserve pre-3.13 behaviour (both on, 5 submissions / 15-minute window). The keys live under `mail.*` rather than `application.contact.*` because they're scoped to "mail-bearing public forms" — today only `/contact`, but future forms (re-enabled `/register`, magic-link request, password-reset, subscription) will read the same flags.
-- **`ngdpbase.mail.honeypot.enabled`** (boolean, default `true`) — when `false`, the hidden `_website` field is no longer silently rejected; bots that fill it succeed normally. Useful when an upstream WAF or anti-bot layer is doing the work and you don't need a second check.
-- **`ngdpbase.mail.rate-limit.enabled`** (boolean, default `true`) — when `false`, no submissions are 429'd; the rate-limiter counter is not consumed. Useful when a WAF / proxy upstream is throttling.
-- **`ngdpbase.mail.rate-limit.max-submissions`** (number, default `5`) — max submissions per IP per `window-minutes` window before the 429 trips.
-- **`ngdpbase.mail.rate-limit.window-minutes`** (number, default `15`) — rate-limit window length in minutes.
-- **`SimpleRateLimiter.configure(opts)`** — runtime reconfiguration without resetting in-flight bucket state. Existing per-IP counters keep accruing under the new options. Shrinking `windowMs` may cause in-flight buckets to be treated as expired on the next consume — desired semantics so operators tightening the limiter don't have to wait out the old window.
+- __Configurable anti-spam for `/contact`__ (#670 Phase E — closes #670) — the honeypot field and per-IP rate limit are now individually toggleable and tunable via four new config keys under `ngdpbase.mail.*`. Defaults preserve pre-3.13 behaviour (both on, 5 submissions / 15-minute window). The keys live under `mail.*` rather than `application.contact.*` because they're scoped to "mail-bearing public forms" — today only `/contact`, but future forms (re-enabled `/register`, magic-link request, password-reset, subscription) will read the same flags.
+- __`ngdpbase.mail.honeypot.enabled`__ (boolean, default `true`) — when `false`, the hidden `_website` field is no longer silently rejected; bots that fill it succeed normally. Useful when an upstream WAF or anti-bot layer is doing the work and you don't need a second check.
+- __`ngdpbase.mail.rate-limit.enabled`__ (boolean, default `true`) — when `false`, no submissions are 429'd; the rate-limiter counter is not consumed. Useful when a WAF / proxy upstream is throttling.
+- __`ngdpbase.mail.rate-limit.max-submissions`__ (number, default `5`) — max submissions per IP per `window-minutes` window before the 429 trips.
+- __`ngdpbase.mail.rate-limit.window-minutes`__ (number, default `15`) — rate-limit window length in minutes.
+- __`SimpleRateLimiter.configure(opts)`__ — runtime reconfiguration without resetting in-flight bucket state. Existing per-IP counters keep accruing under the new options. Shrinking `windowMs` may cause in-flight buckets to be treated as expired on the next consume — desired semantics so operators tightening the limiter don't have to wait out the old window.
 - 7 new integration tests in `src/routes/__tests__/WikiRoutes.contact.test.ts` covering both toggles (default-on / explicitly-off), max-submissions tuning (`max=2` vs `max=10`), and `Retry-After` reflecting `window-minutes`. 3 new unit tests in `src/utils/__tests__/SimpleRateLimiter.test.ts` for `configure()` (max update, windowMs shrink, state preservation).
 
 ### Changed
@@ -999,8 +999,8 @@ An image built `FROM …-devtools` inherits npm; drop it again in your final sta
 
 ### Added
 
-- **Recipient list validation at startup** (#670 Phase D) — `ConfigurationManager.assertContactRecipientWellFormed` runs at boot and refuses to start if any segment of `ngdpbase.application.contact.recipient` is malformed. Splits on `,`, trims each segment, regex-checks the shape (`/^[^\s@]+@[^\s@]+\.[^\s@]+$/` — same pragmatic check the form uses), and throws a clear error identifying the malformed segment(s) and pointing operators at the inline-CSV / single-address / empty options. Empty / whitespace-only `recipient` is a no-op (resolves at request time from the admin list, as before).
-- **New *Recipient patterns* section** in `docs/admin/Contact-Us.md` documenting the three operator-facing patterns (single address / inline CSV / empty), including a decision matrix and a worked example of the startup error message. Both inline-CSV and distribution-list patterns are explicitly supported and explained.
+- __Recipient list validation at startup__ (#670 Phase D) — `ConfigurationManager.assertContactRecipientWellFormed` runs at boot and refuses to start if any segment of `ngdpbase.application.contact.recipient` is malformed. Splits on `,`, trims each segment, regex-checks the shape (`/^[^\s@]+@[^\s@]+\.[^\s@]+$/` — same pragmatic check the form uses), and throws a clear error identifying the malformed segment(s) and pointing operators at the inline-CSV / single-address / empty options. Empty / whitespace-only `recipient` is a no-op (resolves at request time from the admin list, as before).
+- __New *Recipient patterns* section__ in `docs/admin/Contact-Us.md` documenting the three operator-facing patterns (single address / inline CSV / empty), including a decision matrix and a worked example of the startup error message. Both inline-CSV and distribution-list patterns are explicitly supported and explained.
 - 10 new tests in `src/managers/__tests__/ConfigurationManager.test.ts` covering empty/whitespace recipients, single addresses, multi-address CSVs (with mixed spacing), various malformed shapes (no `@`, no TLD, garbage segment, trailing comma), and the error message's operator-facing copy.
 
 ### Changed
@@ -1015,11 +1015,11 @@ An image built `FROM …-devtools` inherits npm; drop it again in your final sta
 
 ### Added
 
-- **Submission persistence for `/contact`** (#670 Phase C) — every legitimate `POST /contact` submission is now appended to a JSONL audit log, regardless of whether mail delivery succeeds. Survives mail failure, captures attempts on misconfigured deploys, and gives operators a durable record. Honeypot- and rate-limit-rejected submissions are NOT persisted (they're already in the warn log and would inflate the audit file); validation errors are NOT persisted (visitor mistakes, not attempted communications).
-- **`ContactSubmissionLog`** (`src/utils/ContactSubmissionLog.ts`) — minimal append-only JSONL writer. Creates the parent directory if missing; failures to append are logged at error level but do NOT throw. Best-effort — persistence must not block the visitor-facing response. 6 unit tests in `src/utils/__tests__/ContactSubmissionLog.test.ts`.
-- **`ngdpbase.application.contact.persist.enabled`** (boolean, default `true`) — toggle for persistence. Set to `false` to disable the audit log entirely (e.g., privacy concerns).
-- **`ngdpbase.application.contact.persist.path`** (string, default `""`) — override the log file path. Empty defaults to `{instanceDataFolder}/contact-submissions.log` (resolves under `FAST_STORAGE` / `INSTANCE_DATA_FOLDER` / `./data`). Set to an absolute path to send the log to a mounted log volume off the data tree.
-- **Audit entry shape** — one JSON object per line:
+- __Submission persistence for `/contact`__ (#670 Phase C) — every legitimate `POST /contact` submission is now appended to a JSONL audit log, regardless of whether mail delivery succeeds. Survives mail failure, captures attempts on misconfigured deploys, and gives operators a durable record. Honeypot- and rate-limit-rejected submissions are NOT persisted (they're already in the warn log and would inflate the audit file); validation errors are NOT persisted (visitor mistakes, not attempted communications).
+- __`ContactSubmissionLog`__ (`src/utils/ContactSubmissionLog.ts`) — minimal append-only JSONL writer. Creates the parent directory if missing; failures to append are logged at error level but do NOT throw. Best-effort — persistence must not block the visitor-facing response. 6 unit tests in `src/utils/__tests__/ContactSubmissionLog.test.ts`.
+- __`ngdpbase.application.contact.persist.enabled`__ (boolean, default `true`) — toggle for persistence. Set to `false` to disable the audit log entirely (e.g., privacy concerns).
+- __`ngdpbase.application.contact.persist.path`__ (string, default `""`) — override the log file path. Empty defaults to `{instanceDataFolder}/contact-submissions.log` (resolves under `FAST_STORAGE` / `INSTANCE_DATA_FOLDER` / `./data`). Set to an absolute path to send the log to a mounted log volume off the data tree.
+- __Audit entry shape__ — one JSON object per line:
 
   ```json
   {
@@ -1036,7 +1036,7 @@ An image built `FROM …-devtools` inherits npm; drop it again in your final sta
   }
   ```
 
-- **Four `mailResult` values** — `"sent"` (sendTo succeeded), `"mail-failed"` (sendTo threw), `"mail-disabled"` (EmailManager unregistered or `mail.enabled=false`), `"no-recipient"` (resolver returned null). The recipient address is only present in the log file — never rendered to clients.
+- __Four `mailResult` values__ — `"sent"` (sendTo succeeded), `"mail-failed"` (sendTo threw), `"mail-disabled"` (EmailManager unregistered or `mail.enabled=false`), `"no-recipient"` (resolver returned null). The recipient address is only present in the log file — never rendered to clients.
 - 9 new integration tests in `src/routes/__tests__/WikiRoutes.contact.test.ts` covering each `mailResult` path, the no-persist-on-honeypot/rate-limit/validation invariants, the `persist.enabled=false` opt-out, and the recipient-in-log-but-not-in-response invariant.
 
 ### Changed
@@ -1053,11 +1053,11 @@ An image built `FROM …-devtools` inherits npm; drop it again in your final sta
 
 ### Fixed
 
-- **Mail-disabled UX honesty** (#670 Phase B) — the `/contact` form no longer renders or accepts submissions when mail is unavailable. Closes a silent-fail bug where misconfigured production deploys returned "Message sent" to visitors while the server log warned no mail was sent. Both `GET /contact` and `POST /contact` now check `EmailManager` early:
-  - `EmailManager` is not registered → render `state: 'not-configured'` and log at **error** level (was: GET rendered the form anyway; POST rendered not-configured but only after validation).
-  - `ngdpbase.mail.enabled = false` → render `state: 'not-configured'` and log at **error** level (was: GET rendered the form; POST proceeded to call `sendTo` with a `console`-provider warning, then rendered "Message sent").
+- __Mail-disabled UX honesty__ (#670 Phase B) — the `/contact` form no longer renders or accepts submissions when mail is unavailable. Closes a silent-fail bug where misconfigured production deploys returned "Message sent" to visitors while the server log warned no mail was sent. Both `GET /contact` and `POST /contact` now check `EmailManager` early:
+  - `EmailManager` is not registered → render `state: 'not-configured'` and log at __error__ level (was: GET rendered the form anyway; POST rendered not-configured but only after validation).
+  - `ngdpbase.mail.enabled = false` → render `state: 'not-configured'` and log at __error__ level (was: GET rendered the form; POST proceeded to call `sendTo` with a `console`-provider warning, then rendered "Message sent").
   - Recipient null (existing behaviour, unchanged) → render `state: 'not-configured'`.
-- POST `/contact` short-circuits the mail check **before** field validation, so a misconfigured deploy returns the not-configured view immediately rather than after the visitor's input is parsed and validated. The post-validation `mailReady` invariant guard is kept as defense-in-depth — it should never fire under the new flow.
+- POST `/contact` short-circuits the mail check __before__ field validation, so a misconfigured deploy returns the not-configured view immediately rather than after the visitor's input is parsed and validated. The post-validation `mailReady` invariant guard is kept as defense-in-depth — it should never fire under the new flow.
 
 ### Changed
 
@@ -1072,9 +1072,9 @@ An image built `FROM …-devtools` inherits npm; drop it again in your final sta
 
 ### Added
 
-- **Footer link to `/contact`** (#670 Phase A) — every page now renders a "Contact" link in the footer when the contact feature is fully available, i.e. `ngdpbase.application.contact.enabled = true` AND `ngdpbase.mail.enabled = true` AND a recipient resolves (explicit `contact.recipient` or first admin user with a non-sentinel email). When any of those is false, the link is suppressed — no advertised path that leads to a misconfigured form.
-- **`ngdpbase.application.contact.footer.enabled`** config key (default `true`). Lets operators keep `/contact` reachable without advertising it in the footer (e.g., during a soft launch).
-- **`contactAvailable` and `contactFooterEnabled`** plumbed through `WikiRoutes.getCommonTemplateData` so the footer view and any future header/menu chrome read the same single-source-of-truth boolean. The recipient resolver is only called when both `contact.enabled` and `mail.enabled` are true (short-circuit), so dormant deploys pay no per-render cost.
+- __Footer link to `/contact`__ (#670 Phase A) — every page now renders a "Contact" link in the footer when the contact feature is fully available, i.e. `ngdpbase.application.contact.enabled = true` AND `ngdpbase.mail.enabled = true` AND a recipient resolves (explicit `contact.recipient` or first admin user with a non-sentinel email). When any of those is false, the link is suppressed — no advertised path that leads to a misconfigured form.
+- __`ngdpbase.application.contact.footer.enabled`__ config key (default `true`). Lets operators keep `/contact` reachable without advertising it in the footer (e.g., during a soft launch).
+- __`contactAvailable` and `contactFooterEnabled`__ plumbed through `WikiRoutes.getCommonTemplateData` so the footer view and any future header/menu chrome read the same single-source-of-truth boolean. The recipient resolver is only called when both `contact.enabled` and `mail.enabled` are true (short-circuit), so dormant deploys pay no per-render cost.
 - New section in `docs/admin/Contact-Us.md` documenting the footer link, the `contactAvailable` derivation, and the new config key.
 
 ### Changed
@@ -1092,7 +1092,7 @@ An image built `FROM …-devtools` inherits npm; drop it again in your final sta
 
 ### Fixed
 
-- **`npm run version:*` shortcuts** (#659) — pointed `version:show` /
+- __`npm run version:*` shortcuts__ (#659) — pointed `version:show` /
   `version:patch` / `version:minor` / `version:major` / `version:help`
   in `package.json` at the working `src/utils/version.ts` (canonical per
   `AGENTS.md`) instead of the duplicate `scripts/version.ts`, which used
@@ -1107,7 +1107,7 @@ An image built `FROM …-devtools` inherits npm; drop it again in your final sta
 
 ### Added
 
-- **`POST /contact`** handler (#658 iteration 3 — closes #658) — wires up
+- __`POST /contact`__ handler (#658 iteration 3 — closes #658) — wires up
   the form preview shipped in 3.11.0. Pipeline:
   - kill switch check (`contact.enabled = false` → 404)
   - operator-redirect check (`contact.page` set → 405)
@@ -1119,13 +1119,13 @@ An image built `FROM …-devtools` inherits npm; drop it again in your final sta
   - recipient resolution via `UserManager.getContactRecipient` — null →
     render not-configured branch (no mail, no leak)
   - mail send via existing `EmailManager.sendTo()` → 200 with success view
-- **`SimpleRateLimiter`** (`src/utils/SimpleRateLimiter.ts`) — minimal
+- __`SimpleRateLimiter`__ (`src/utils/SimpleRateLimiter.ts`) — minimal
   in-memory per-key rate limiter, ~80 lines. Module-scope per pod;
   distributed deployments get per-replica counters, not a shared budget.
   Documented in `docker/HEADLESS-DEPLOYMENT-NOTES.md` §9 with guidance to
   run a real WAF / proxy upstream for cross-replica protection.
   7 unit tests in `src/utils/__tests__/SimpleRateLimiter.test.ts`.
-- **`views/contact.ejs`** updated — submit button enabled, "iteration 3
+- __`views/contact.ejs`__ updated — submit button enabled, "iteration 3
   coming" banner removed, real `<form action="/contact" method="POST">`
   with required fields, honeypot input, value-preserving form re-render
   on validation error, success view ("Message sent — we typically respond
@@ -1142,7 +1142,7 @@ An image built `FROM …-devtools` inherits npm; drop it again in your final sta
 
 ### Known limitation
 
-- POST `/contact` does **not** validate CSRF tokens. The codebase has no
+- POST `/contact` does __not__ validate CSRF tokens. The codebase has no
   app-wide CSRF middleware (`csurf` is in `package.json` but never
   imported); existing POST routes (`/register`, `/admin/*`) also skip
   the check. Adding it only for `/contact` would be inconsistent. The
@@ -1154,7 +1154,7 @@ An image built `FROM …-devtools` inherits npm; drop it again in your final sta
 
 ### Added
 
-- **`GET /contact`** route (#658 iteration 2) — built-in contact endpoint with
+- __`GET /contact`__ route (#658 iteration 2) — built-in contact endpoint with
   a four-state behavior matrix:
   - `contact.enabled = false` → 404 (kill switch)
   - `contact.page = "<slug>"` → 302 → `/view/<slug>` (operator-owned override)
@@ -1162,24 +1162,24 @@ An image built `FROM …-devtools` inherits npm; drop it again in your final sta
   - `contact.page = ""` + no routable admin email → render
     "Contact form is not configured" view
 - Three new config keys, all under `ngdpbase.application.contact.*`:
-  - **`ngdpbase.application.contact.enabled`** (boolean, default `true`) —
+  - __`ngdpbase.application.contact.enabled`__ (boolean, default `true`) —
     kill switch.
-  - **`ngdpbase.application.contact.page`** (string, default `""`) — slug to
+  - __`ngdpbase.application.contact.page`__ (string, default `""`) — slug to
     redirect `/contact` to instead of rendering the built-in form. Cannot
     equal `"contact"` — a redirect loop, rejected at startup with a clear
     error message (`ConfigurationManager.assertContactPageNotLoop`).
-  - **`ngdpbase.application.contact.recipient`** (string, default `""`) —
+  - __`ngdpbase.application.contact.recipient`__ (string, default `""`) —
     explicit recipient address (or list/alias). When empty, recipient is
     resolved at request time to the first user with the `admin` role whose
     email is non-empty AND not the install-default sentinel
     `admin@localhost`. The sentinel rule keeps the contact feature dormant
     on fresh installs that haven't set a real admin email yet, instead of
-    mailing into a black hole. The resolved address is **never rendered to
-    clients** — server-side only.
-- **`UserManager.getContactRecipient(override)`** — recipient resolution
+    mailing into a black hole. The resolved address is __never rendered to
+    clients__ — server-side only.
+- __`UserManager.getContactRecipient(override)`__ — recipient resolution
   helper (11 unit tests in
   `src/managers/__tests__/UserManager.getContactRecipient.test.ts`).
-- **`views/contact.ejs`** — branches on `state` (`form` | `not-configured`).
+- __`views/contact.ejs`__ — branches on `state` (`form` | `not-configured`).
   In iteration 2 the form view shows the field layout with the submit button
   disabled and a banner ("Submission is not yet wired up — coming in #658
   iteration 3"). The actual POST handler, mail send, rate limit, honeypot,
@@ -1199,7 +1199,7 @@ An image built `FROM …-devtools` inherits npm; drop it again in your final sta
 
 ### Added
 
-- **`Contact Us`** required page (slug `contact-us`, system-category
+- __`Contact Us`__ required page (slug `contact-us`, system-category
   `documentation`) — generic operator-overridable copy referencing the
   `[{$applicationname}]` placeholder. Closes the redlinked `[Contact Us]`
   link from the v3.10.4 `request-access` page so visitors who follow it
@@ -1214,7 +1214,7 @@ An image built `FROM …-devtools` inherits npm; drop it again in your final sta
 
 - `views/header.ejs` — replaced two hardcoded `/wiki/<slug>` URLs with the
   canonical `/view/<slug>`:
-  - Line 134 (added by #654, v3.10.3): the **Request access** button rendered
+  - Line 134 (added by #654, v3.10.3): the __Request access__ button rendered
     when `ngdpbase.application.registration: false`
   - Line 374 (added by #537): pinned-page links in the My Links sidebar
   Both were regressions against the #364 migration ("Renamed /wiki/ URL path
@@ -1248,7 +1248,7 @@ An image built `FROM …-devtools` inherits npm; drop it again in your final sta
 
 ### Added
 
-- **`ngdpbase.application.registration`** (boolean, default `true`) — operator
+- __`ngdpbase.application.registration`__ (boolean, default `true`) — operator
   switch to disable self-registration. When `false`:
   - `GET /register` and `POST /register` return HTTP 404
   - The header's "Register" button is replaced by a "Request access" link
@@ -1262,7 +1262,7 @@ An image built `FROM …-devtools` inherits npm; drop it again in your final sta
   - Login for existing users (password / magic-link / OIDC) is unaffected
   - Admin-driven user creation via `POST /admin/users` is unaffected — gated
     by the `user-create` permission, not this flag
-- **`ngdpbase.application.registration.redirect-page`** (string, default
+- __`ngdpbase.application.registration.redirect-page`__ (string, default
   `"request-access"`) — wiki slug the header button links to when
   registration is disabled.
 
@@ -1280,11 +1280,11 @@ An image built `FROM …-devtools` inherits npm; drop it again in your final sta
 
 ### Changed
 
-- **#642** Iteration 3 (final): magic-link auth now derives its verify-link host from `ConfigurationManager.getBaseURL()` at runtime instead of reading a separate config key. New `ConfigurationManager.isBaseUrlExplicit()` accessor. `AuthManager.initialize()` refuses to register the magic-link provider unless `ngdpbase.application.base-url` is explicitly configured (via custom config or `NGDPBASE_BASE_URL`) — magic-link tokens are credentials embedded in URLs, so emitting them pointing at the unconfigured localhost default would leak credentials. `WikiRoutes` magic-link initiate handler simplified — no longer computes its own baseUrl. `AuthInitiateContext.baseUrl` field removed (no longer used).
+- __#642__ Iteration 3 (final): magic-link auth now derives its verify-link host from `ConfigurationManager.getBaseURL()` at runtime instead of reading a separate config key. New `ConfigurationManager.isBaseUrlExplicit()` accessor. `AuthManager.initialize()` refuses to register the magic-link provider unless `ngdpbase.application.base-url` is explicitly configured (via custom config or `NGDPBASE_BASE_URL`) — magic-link tokens are credentials embedded in URLs, so emitting them pointing at the unconfigured localhost default would leak credentials. `WikiRoutes` magic-link initiate handler simplified — no longer computes its own baseUrl. `AuthInitiateContext.baseUrl` field removed (no longer used).
 
 ### Removed
 
-- `ngdpbase.auth.magic-link.base-url` config key (#642) — magic-link host is now derived from the canonical `ngdpbase.application.base-url` at runtime. **No migration shim** for this key — operators that previously set it can simply remove it; the canonical key is the single source of truth.
+- `ngdpbase.auth.magic-link.base-url` config key (#642) — magic-link host is now derived from the canonical `ngdpbase.application.base-url` at runtime. __No migration shim__ for this key — operators that previously set it can simply remove it; the canonical key is the single source of truth.
 - `MagicLinkConfig.baseUrl` field (#642) — the provider reads it from the engine at runtime.
 - `AuthInitiateContext.baseUrl` field (#642) — providers derive base URL from config, callers don't pass it in.
 
@@ -1294,7 +1294,7 @@ This closes #642. All three iterations shipped: canonical key + migration shim (
 
 ### Changed
 
-- **#642** Iteration 2: hardening. Added startup invariant in `ConfigurationManager` that refuses to start when `.install-complete` exists but `ngdpbase.application.base-url` is not explicitly set in custom config or via `NGDPBASE_BASE_URL`. Deleted `config/app-custom-config.example` and removed the `copyExampleConfigs()` install path that consumed it — install now writes the custom config from the form data alone. Dockerfile no longer copies the template; headless install docs updated to note operators must provide their own config or env-var overrides.
+- __#642__ Iteration 2: hardening. Added startup invariant in `ConfigurationManager` that refuses to start when `.install-complete` exists but `ngdpbase.application.base-url` is not explicitly set in custom config or via `NGDPBASE_BASE_URL`. Deleted `config/app-custom-config.example` and removed the `copyExampleConfigs()` install path that consumed it — install now writes the custom config from the form data alone. Dockerfile no longer copies the template; headless install docs updated to note operators must provide their own config or env-var overrides.
 
 ### Removed
 
@@ -1306,13 +1306,13 @@ This closes #642. All three iterations shipped: canonical key + migration shim (
 
 ### Changed
 
-- **#642** Iteration 1: unified `ngdpbase.base-url` and `ngdpbase.baseURL` onto canonical `ngdpbase.application.base-url`. Migration shim in `ConfigurationManager` copies legacy keys into the canonical one at load time with a deprecation warning. Forms addon, k8s configmap, Dockerfile comment, and docs all updated.
+- __#642__ Iteration 1: unified `ngdpbase.base-url` and `ngdpbase.baseURL` onto canonical `ngdpbase.application.base-url`. Migration shim in `ConfigurationManager` copies legacy keys into the canonical one at load time with a deprecation warning. Forms addon, k8s configmap, Dockerfile comment, and docs all updated.
 
 ## [3.9.1] - 2026-05-07
 
 ### Added
 
-- **#620** Identity-cache hit/miss telemetry. New OpenTelemetry counter `${prefix}_cache_lookups_total` with attributes `{manager, cache, result}` covers all seven cache lookup points in `RoleManager`, `PersonManager`, and `OrganizationManager`. No-op when telemetry is disabled. 8 new tests in `identityCaches.test.ts`.
+- __#620__ Identity-cache hit/miss telemetry. New OpenTelemetry counter `${prefix}_cache_lookups_total` with attributes `{manager, cache, result}` covers all seven cache lookup points in `RoleManager`, `PersonManager`, and `OrganizationManager`. No-op when telemetry is disabled. 8 new tests in `identityCaches.test.ts`.
 
 ## [3.9.0] - 2026-05-04
 
@@ -1404,7 +1404,7 @@ This closes #642. All three iterations shipped: canonical key + migration shim (
 
 ## [2.0.5] - 2026-03-23
 
-**See [docs/project_log.md](./docs/project_log.md) for detailed AI agent session logs and daily work history.**
+__See [docs/project_log.md](./docs/project_log.md) for detailed AI agent session logs and daily work history.__
 
 ## [1.5.9] - 2026-02-06
 
@@ -1444,7 +1444,7 @@ All instance-specific data directories have been consolidated under `./data/` fo
 
 #### Migration Required
 
-**Existing installations MUST run the migration script before upgrading:**
+__Existing installations MUST run the migration script before upgrading:__
 
 ```bash
 ./scripts/migrate-to-data-dir.sh
@@ -1485,12 +1485,12 @@ data/
 
 ### Added
 
-- **Docker Support**: Simplified Docker deployment with single volume mount
+- __Docker Support__: Simplified Docker deployment with single volume mount
   - Updated Dockerfile for consolidated data structure
   - Updated docker-compose.yml for single `./data` volume
   - Updated Docker documentation (README.md, DOCKER.md)
-- **Migration Script**: `scripts/migrate-to-data-dir.sh` for existing installations
-- **GitHub Issues**: #169 (LoggingProvider pattern), #170 (BackupProvider pattern)
+- __Migration Script__: `scripts/migrate-to-data-dir.sh` for existing installations
+- __GitHub Issues__: #169 (LoggingProvider pattern), #170 (BackupProvider pattern)
 
 ### Changed
 
@@ -1511,14 +1511,14 @@ Complete page versioning system with JSPWiki-style version management.
 
 #### Phase 1-2: Foundation & Core Provider
 
-- **VersioningFileProvider**: File-based storage with complete version history
+- __VersioningFileProvider__: File-based storage with complete version history
   - Delta storage using fast-diff algorithm (80-90% space savings)
   - Gzip compression for old versions
   - Checkpoint system every N versions for fast retrieval
   - LRU cache for recently accessed versions
   - Backward compatible with FileSystemProvider
-- **DeltaStorage utility**: Efficient diff creation and application
-- **VersionCompression utility**: Gzip compression/decompression
+- __DeltaStorage utility__: Efficient diff creation and application
+- __VersionCompression utility__: Gzip compression/decompression
 
 #### Phase 3: Version Retrieval & Restoration
 
@@ -1548,41 +1548,41 @@ Complete page versioning system with JSPWiki-style version management.
 
 #### Phase 6: UI Integration
 
-- **REST API Endpoints**:
+- __REST API Endpoints__:
   - `GET /api/page/:identifier/versions` - List versions
   - `GET /api/page/:identifier/version/:version` - Get version
   - `GET /api/page/:identifier/compare/:v1/:v2` - Compare versions
   - `POST /api/page/:identifier/restore/:version` - Restore version
-- **Page History View** (`/history/:page`):
+- __Page History View__ (`/history/:page`):
   - Complete version list with metadata table
   - Visual indicators (current, checkpoints, compression)
   - View, compare, and restore actions
   - AJAX-powered version preview modal
-- **Diff Viewer** (`/diff/:page`):
+- __Diff Viewer__ (`/diff/:page`):
   - Unified and side-by-side comparison modes
   - Syntax highlighting (additions/deletions/unchanged)
   - Diff statistics
-- **Page View Integration**:
+- __Page View Integration__:
   - Version info banner on all pages
   - Info dropdown → Page History link
   - Quick access to version features
 
 #### Phase 7: Testing & Documentation
 
-- **Comprehensive Test Suite**:
+- __Comprehensive Test Suite__:
   - 28 API endpoint tests (100% coverage)
   - Unit tests for VersioningFileProvider
   - Integration tests for UI workflows
   - Edge case and security testing
-- **User Documentation**:
+- __User Documentation__:
   - Complete user guide (45+ pages)
   - Step-by-step instructions
   - FAQ and troubleshooting
-- **API Documentation**:
+- __API Documentation__:
   - Full REST API reference (25+ pages)
   - Request/response examples
   - Integration examples (React, Node.js)
-- **Admin Documentation**:
+- __Admin Documentation__:
   - Deployment guide
   - Configuration reference
   - Performance tuning
@@ -1606,7 +1606,7 @@ New versioning configuration options:
 
 ### Technical Details
 
-**New Files**:
+__New Files__:
 
 - `src/providers/VersioningFileProvider.js` - Main provider implementation
 - `src/utils/DeltaStorage.js` - Diff algorithm wrapper
@@ -1617,13 +1617,13 @@ New versioning configuration options:
 - `views/page-history.ejs` - History view template
 - `views/page-diff.ejs` - Diff viewer template
 
-**Modified Files**:
+__Modified Files__:
 
 - `src/routes/WikiRoutes.js` - Added 4 API + 2 view routes
 - `views/view.ejs` - Added version info banner
 - `views/header.ejs` - Updated Page History link
 
-**Tests**:
+__Tests__:
 
 - `src/providers/__tests__/VersioningFileProvider.test.js`
 - `src/providers/__tests__/VersioningFileProvider-Maintenance.test.js`
@@ -1631,7 +1631,7 @@ New versioning configuration options:
 - `src/utils/__tests__/VersionCompression.test.js`
 - `src/routes/__tests__/WikiRoutes.versioning.test.js`
 
-**Documentation**:
+__Documentation__:
 
 - `docs/user-guide/Using-Version-History.md`
 - `docs/api/Versioning-API.md`
@@ -1758,9 +1758,9 @@ See issue #124 for planned Phase 7+ features.
 
 ## Version Numbering
 
-- **Major** (X.0.0): Breaking changes, major features
-- **Minor** (1.X.0): New features, backward compatible
-- **Patch** (1.0.X): Bug fixes, minor improvements
+- __Major__ (X.0.0): Breaking changes, major features
+- __Minor__ (1.X.0): New features, backward compatible
+- __Patch__ (1.0.X): Bug fixes, minor improvements
 
 ---
 
@@ -1772,4 +1772,4 @@ See issue #124 for planned Phase 7+ features.
 
 ---
 
-**Note**: This changelog was formalized starting with version 1.4.0. Previous version entries are abbreviated. For detailed git history, see commit logs.
+__Note__: This changelog was formalized starting with version 1.4.0. Previous version entries are abbreviated. For detailed git history, see commit logs.

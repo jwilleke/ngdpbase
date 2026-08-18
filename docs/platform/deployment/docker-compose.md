@@ -7,13 +7,13 @@ See [../Deployment.md](../Deployment.md) for project-scope context and how this 
 ## Requirements
 
 - A computer with Docker installed:
-  - **Mac / Windows:** Docker Desktop.
-  - **Linux:** Docker Engine + the `docker compose` plugin (most distros include it; on Debian/Ubuntu it's the `docker-compose-plugin` package).
+  - __Mac / Windows:__ Docker Desktop.
+  - __Linux:__ Docker Engine + the `docker compose` plugin (most distros include it; on Debian/Ubuntu it's the `docker-compose-plugin` package).
 - A few GB of free disk for the image, page data, and logs.
 - A free network port to expose the wiki on.
 - (Optional) A reverse proxy if you want HTTPS or a hostname instead of `localhost:3000`. The repo ships a Traefik variant that handles this in one file.
 
-If you don't have Docker installed and don't want to install it, the **[Direct install](./direct-install.md)** mode is simpler — it only needs Node.js.
+If you don't have Docker installed and don't want to install it, the __[Direct install](./direct-install.md)__ mode is simpler — it only needs Node.js.
 
 ## Steps
 
@@ -135,9 +135,9 @@ Trade-offs: the addon directory has to live somewhere the compose host can see, 
 
 ### Common gotchas for both patterns
 
-- **UUIDs must be real v4** — placeholder UUIDs in seed-page frontmatter silently fail. See [§7](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#7-addonsmanager-validates-seed-page-uuids-strictly).
-- **Theme / front-page / page-provider are operator settings** — addons can't override them. Set in `app-custom-config.json`. See [§3](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#3-theme-front-page-page-provider-are-not-auto-set-by-addons).
-- **Tracked in [#673](https://github.com/jwilleke/ngdpbase/issues/673)** — a "packaged" addon distribution model (npm install) is under discussion as a third pattern. Not shipped yet.
+- __UUIDs must be real v4__ — placeholder UUIDs in seed-page frontmatter silently fail. See [§7](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#7-addonsmanager-validates-seed-page-uuids-strictly).
+- __Theme / front-page / page-provider are operator settings__ — addons can't override them. Set in `app-custom-config.json`. See [§3](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#3-theme-front-page-page-provider-are-not-auto-set-by-addons).
+- __Tracked in [#673](https://github.com/jwilleke/ngdpbase/issues/673)__ — a "packaged" addon distribution model (npm install) is under discussion as a third pattern. Not shipped yet.
 
 ## Updating
 

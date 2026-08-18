@@ -7,11 +7,11 @@
 | | `POST /api/page/ingest` (this doc) | MCP `ngdpbase_create_page` ([MCP-SERVER.md](MCP-SERVER.md)) |
 | --- | --- | --- |
 | Transport | HTTP — reachable from anywhere | stdio — local child process |
-| Runs through the live server | **Yes** — in-band index update, immediately viewable + searchable | No — writes the data dir directly; a running server won't see it until reindex/restart |
+| Runs through the live server | __Yes__ — in-band index update, immediately viewable + searchable | No — writes the data dir directly; a running server won't see it until reindex/restart |
 | Author | the authenticated caller (per-user) | hardcoded `mcp-server` |
 | Auth | Authentik OAuth bearer token, or a logged-in session | none (local trust) |
 
-Prefer the HTTP endpoint for a **running** instance and for remote/automated agents. Use the stdio MCP path for local/offline batch authoring against a stopped instance.
+Prefer the HTTP endpoint for a __running__ instance and for remote/automated agents. Use the stdio MCP path for local/offline batch authoring against a stopped instance.
 
 ## Request
 
@@ -30,9 +30,9 @@ Content-Type: application/json
 }
 ```
 
-- **Upsert:** `pageName` is the key. Re-sending an edited doc **updates the page in place** (it does not create a duplicate).
-- **Author:** set from the authenticated identity on create and **immutable across edits** (later edits bump `editor`, not `author`).
-- **NCM:** the Markdown is normalized to NGDP-Compatible Markdown — link normalization, GFM-table up-conversion, frontmatter sort, and an `ncmVersion` stamp.
+- __Upsert:__ `pageName` is the key. Re-sending an edited doc __updates the page in place__ (it does not create a duplicate).
+- __Author:__ set from the authenticated identity on create and __immutable across edits__ (later edits bump `editor`, not `author`).
+- __NCM:__ the Markdown is normalized to NGDP-Compatible Markdown — link normalization, GFM-table up-conversion, frontmatter sort, and an `ncmVersion` stamp.
 
 ## Response
 
@@ -90,13 +90,13 @@ curl -s -X POST https://<host>/api/page/ingest \
 
 Re-run the same command with edited `markdown` to update the page in place.
 
-> Bearer-authenticated requests are exempt from CSRF (bearer auth is not cookie-based). A logged-in **session** can also call this endpoint, but must include the CSRF token like any other state-changing request.
+> Bearer-authenticated requests are exempt from CSRF (bearer auth is not cookie-based). A logged-in __session__ can also call this endpoint, but must include the CSRF token like any other state-changing request.
 
 ## Enabling on a deployment
 
-Set these config keys (instance custom config or env). The provider is registered only when `enabled` is true **and** issuer + jwks-url + audience are all present. No secret is stored server-side.
+Set these config keys (instance custom config or env). The provider is registered only when `enabled` is true __and__ issuer + jwks-url + audience are all present. No secret is stored server-side.
 
-ngdpbase config files use **flat dotted keys**, not nested objects — a nested `{"ngdpbase": {"auth": ...}}` block is silently ignored by `ConfigurationManager.getProperty()`:
+ngdpbase config files use __flat dotted keys__, not nested objects — a nested `{"ngdpbase": {"auth": ...}}` block is silently ignored by `ConfigurationManager.getProperty()`:
 
 ```jsonc
 {

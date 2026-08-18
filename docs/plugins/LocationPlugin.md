@@ -55,7 +55,7 @@ Comma-separated `lat,lon`. Optional whitespace after the comma. Range: `lat ∈ 
 
 Each coordinate is `Dd°Mm′Ss″H` where `M` and `S` are optional and `H` is a required hemisphere letter (`N`/`S` for latitude, `E`/`W` for longitude). Either order works — `82°27′34.0″W 40°24′23.8″N` parses the same.
 
-**Important:** use the Unicode prime characters **`′` (U+2032) and `″` (U+2033)** for minutes and seconds, not ASCII straight quotes (`'` and `"`). The plugin parameter parser treats `'` as a quote delimiter, so a value like `coords='40°24'23.8"N'` truncates at the first embedded apostrophe before reaching the coord parser. On macOS you can paste primes via Edit → Emoji & Symbols; many geocoding sources output them by default.
+__Important:__ use the Unicode prime characters __`′` (U+2032) and `″` (U+2033)__ for minutes and seconds, not ASCII straight quotes (`'` and `"`). The plugin parameter parser treats `'` as a quote delimiter, so a value like `coords='40°24'23.8"N'` truncates at the first embedded apostrophe before reaching the coord parser. On macOS you can paste primes via Edit → Emoji & Symbols; many geocoding sources output them by default.
 
 Forms accepted:
 

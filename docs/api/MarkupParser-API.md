@@ -1,15 +1,15 @@
 # MarkupParser API Documentation
 
-**Version:** 1.3.2 (Phase 6 Complete)
-**Last Updated:** 2025-10-13
-**Related Issues:** #114-#120
+__Version:__ 1.3.2 (Phase 6 Complete)
+__Last Updated:__ 2025-10-13
+__Related Issues:__ #114-#120
 
 ## Overview
 
 The `MarkupParser` is the core parsing engine for ngdpbase, responsible for converting wiki markup into HTML. As of Phase 6 (Issue #120), it supports two parsing pipelines:
 
-1. **Primary Pipeline** (default): WikiDocument DOM extraction (Issues #115-#120)
-2. **Legacy Pipeline**: 7-phase string-based parser (deprecated, fallback only)
+1. __Primary Pipeline__ (default): WikiDocument DOM extraction (Issues #115-#120)
+2. __Legacy Pipeline__: 7-phase string-based parser (deprecated, fallback only)
 
 ## Quick Start
 
@@ -31,7 +31,7 @@ const html = await parser.parse(content, {
 
 ### Parser Selection
 
-**config/app-default-config.json:**
+__config/app-default-config.json:__
 
 ```json
 {
@@ -39,7 +39,7 @@ const html = await parser.parse(content, {
 }
 ```
 
-**Options:**
+__Options:__
 
 - `true` (default): Use WikiDocument DOM extraction pipeline
 - `false`: Use legacy 7-phase pipeline
@@ -50,7 +50,7 @@ const html = await parser.parse(content, {
 
 Main entry point for parsing. Automatically selects the appropriate pipeline based on configuration.
 
-**Parameters:**
+__Parameters:__
 
 - `content` (string): Raw wiki markup to parse
 - `context` (Object): Rendering context
@@ -58,9 +58,9 @@ Main entry point for parsing. Automatically selects the appropriate pipeline bas
   - `userName` (string): Current user name
   - Additional context properties as needed
 
-**Returns:** `Promise<string>` - Rendered HTML
+__Returns:__ `Promise<string>` - Rendered HTML
 
-**Behavior:**
+__Behavior:__
 
 1. Checks configuration for `jspwiki.parser.useExtractionPipeline`
 2. Routes to `parseWithDOMExtraction()` if enabled (default)
@@ -68,7 +68,7 @@ Main entry point for parsing. Automatically selects the appropriate pipeline bas
 4. Integrates with cache for performance
 5. Tracks metrics and performance
 
-**Example:**
+__Example:__
 
 ```javascript
 const html = await parser.parse('## Welcome\n\nHello [{$username}]!', {
@@ -84,25 +84,25 @@ const html = await parser.parse('## Welcome\n\nHello [{$username}]!', {
 
 ### parseWithDOMExtraction(content, context)
 
-**New in:** Phase 3 (Issue #117)
+__New in:__ Phase 3 (Issue #117)
 
 Parses wiki markup using the WikiDocument DOM extraction pipeline. This is the primary parsing method that fixes the markdown heading bug and provides robust JSPWiki syntax processing.
 
-**Parameters:**
+__Parameters:__
 
 - `content` (string): Wiki markup content to parse
 - `context` (Object): Rendering context
 
-**Returns:** `Promise<string>` - Rendered HTML
+__Returns:__ `Promise<string>` - Rendered HTML
 
-**Pipeline Steps:**
+__Pipeline Steps:__
 
 1. Extract JSPWiki syntax (`extractJSPWikiSyntax()`)
 2. Create WikiDocument DOM nodes (`createDOMNode()`)
 3. Parse markdown with Showdown
 4. Merge DOM nodes into HTML (`mergeDOMNodes()`)
 
-**Example:**
+__Example:__
 
 ```javascript
 const content = `
@@ -119,7 +119,7 @@ const html = await parser.parseWithDOMExtraction(content, {
 });
 ```
 
-**Features:**
+__Features:__
 
 - No markdown/JSPWiki conflicts
 - Correct heading rendering
@@ -127,7 +127,7 @@ const html = await parser.parseWithDOMExtraction(content, {
 - Escaped syntax support
 - Nested syntax handling
 
-**Performance:**
+__Performance:__
 
 - Typical page: <50ms
 - Large page (5KB): <100ms
@@ -137,29 +137,29 @@ const html = await parser.parseWithDOMExtraction(content, {
 
 ### extractJSPWikiSyntax(content, context)
 
-**New in:** Phase 1 (Issue #115)
+__New in:__ Phase 1 (Issue #115)
 
 Extracts JSPWiki syntax elements from content before markdown parsing. Replaces JSPWiki syntax with HTML comment placeholders to prevent markdown interference.
 
-**Parameters:**
+__Parameters:__
 
 - `content` (string): Raw wiki markup
 - `context` (Object): Rendering context (optional)
 
-**Returns:** `Object`
+__Returns:__ `Object`
 
 - `sanitized` (string): Content with placeholders
 - `jspwikiElements` (Array): Extracted elements with metadata
 - `uuid` (string): Unique identifier for this extraction
 
-**Extracted Elements:**
+__Extracted Elements:__
 
-- **Variables**: `[{$varname}]`
-- **Plugins**: `[{PluginName param="value"}]`
-- **Wiki Links**: `[PageName]` or `[Text|PageName]`
-- **Escaped Syntax**: `[[{$var}]` → literal `[{$var}]`
+- __Variables__: `[{$varname}]`
+- __Plugins__: `[{PluginName param="value"}]`
+- __Wiki Links__: `[PageName]` or `[Text|PageName]`
+- __Escaped Syntax__: `[[{$var}]` → literal `[{$var}]`
 
-**Example:**
+__Example:__
 
 ```javascript
 const { sanitized, jspwikiElements, uuid } = parser.extractJSPWikiSyntax(
@@ -175,22 +175,22 @@ const { sanitized, jspwikiElements, uuid } = parser.extractJSPWikiSyntax(
 // uuid: "abc12345"
 ```
 
-**Features:**
+__Features:__
 
-- **Code Block Protection**: JSPWiki syntax in `` ` `` or ``` blocks not extracted
-- **UUID-based Placeholders**: Prevents conflicts with user content
-- **HTML Comment Format**: `<!--JSPWIKI-uuid-id-->` preserved by Showdown
-- **Order-Independent**: Extraction order doesn't affect result
+- __Code Block Protection__: JSPWiki syntax in `` ` `` or ``` blocks not extracted
+- __UUID-based Placeholders__: Prevents conflicts with user content
+- __HTML Comment Format__: `<!--JSPWIKI-uuid-id-->` preserved by Showdown
+- __Order-Independent__: Extraction order doesn't affect result
 
 ---
 
 ### createDOMNode(element, context, wikiDocument)
 
-**New in:** Phase 2 (Issue #116)
+__New in:__ Phase 2 (Issue #116)
 
 Creates a WikiDocument DOM node from an extracted JSPWiki element. Routes to appropriate handler based on element type.
 
-**Parameters:**
+__Parameters:__
 
 - `element` (Object): Extracted element from `extractJSPWikiSyntax()`
   - `type` (string): 'variable', 'plugin', 'link', or 'escaped'
@@ -199,16 +199,16 @@ Creates a WikiDocument DOM node from an extracted JSPWiki element. Routes to app
 - `context` (Object): Rendering context
 - `wikiDocument` (WikiDocument): WikiDocument instance for node creation
 
-**Returns:** `Promise<Element>` - WikiDocument DOM node
+__Returns:__ `Promise<Element>` - WikiDocument DOM node
 
-**Element Types:**
+__Element Types:__
 
-- **variable**: Routes to `DOMVariableHandler.createNodeFromExtract()`
-- **plugin**: Routes to `DOMPluginHandler.createNodeFromExtract()`
-- **link**: Routes to `DOMLinkHandler.createNodeFromExtract()`
-- **escaped**: Creates text node with literal content
+- __variable__: Routes to `DOMVariableHandler.createNodeFromExtract()`
+- __plugin__: Routes to `DOMPluginHandler.createNodeFromExtract()`
+- __link__: Routes to `DOMLinkHandler.createNodeFromExtract()`
+- __escaped__: Creates text node with literal content
 
-**Example:**
+__Example:__
 
 ```javascript
 const WikiDocument = require('./dom/WikiDocument');
@@ -225,7 +225,7 @@ const node = await parser.createDOMNode(element, context, wikiDocument);
 // Returns: <span data-variable="username" class="wiki-variable">Alice</span>
 ```
 
-**Error Handling:**
+__Error Handling:__
 
 - Returns error node on failure
 - Logs error message
@@ -235,26 +235,26 @@ const node = await parser.createDOMNode(element, context, wikiDocument);
 
 ### mergeDOMNodes(html, nodes, uuid)
 
-**New in:** Phase 3 (Issue #117)
+__New in:__ Phase 3 (Issue #117)
 
 Merges WikiDocument DOM nodes back into Showdown-generated HTML by replacing placeholders with rendered nodes.
 
-**Parameters:**
+__Parameters:__
 
 - `html` (string): Showdown-generated HTML with placeholders
 - `nodes` (`Array<Element>`): Array of WikiDocument DOM nodes
 - `uuid` (string): UUID from extraction (for placeholder matching)
 
-**Returns:** `string` - Final HTML with nodes merged
+__Returns:__ `string` - Final HTML with nodes merged
 
-**Algorithm:**
+__Algorithm:__
 
 1. Sort nodes by ID in descending order (handles nested syntax)
 2. For each node, find its placeholder `<!--JSPWIKI-uuid-id-->`
 3. Replace placeholder with `node.outerHTML` or `node.textContent`
 4. Return final HTML
 
-**Example:**
+__Example:__
 
 ```javascript
 const html = '<p>User: <!--JSPWIKI-abc12345-0--></p>';
@@ -265,11 +265,11 @@ const final = parser.mergeDOMNodes(html, nodes, uuid);
 // Result: '<p>User: <span class="wiki-variable">Alice</span></p>'
 ```
 
-**Features:**
+__Features:__
 
-- **Descending ID Order**: Handles nested JSPWiki syntax correctly
-- **Safe Replacement**: Regex escaping prevents injection
-- **Preserves HTML**: Showdown-generated HTML structure maintained
+- __Descending ID Order__: Handles nested JSPWiki syntax correctly
+- __Safe Replacement__: Regex escaping prevents injection
+- __Preserves HTML__: Showdown-generated HTML structure maintained
 
 ---
 
@@ -279,14 +279,14 @@ const final = parser.mergeDOMNodes(html, nodes, uuid);
 
 Creates a text node for escaped JSPWiki syntax.
 
-**Parameters:**
+__Parameters:__
 
 - `element` (Object): Escaped element with `literal` property
 - `wikiDocument` (WikiDocument): WikiDocument instance
 
-**Returns:** `TextNode` - DOM text node
+__Returns:__ `TextNode` - DOM text node
 
-**Example:**
+__Example:__
 
 ```javascript
 const element = {
@@ -305,13 +305,13 @@ const node = parser.createTextNodeForEscaped(element, wikiDocument);
 
 ### initializePhases()
 
-**@deprecated** Initializes the legacy 7-phase pipeline.
+__@deprecated__ Initializes the legacy 7-phase pipeline.
 
 Use `parseWithDOMExtraction()` instead for new code.
 
 ### executePhase(phase, content, context)
 
-**@deprecated** Executes a single phase of the legacy pipeline.
+__@deprecated__ Executes a single phase of the legacy pipeline.
 
 ---
 
@@ -327,7 +327,7 @@ Use `parseWithDOMExtraction()` instead for new code.
 }
 ```
 
-**Properties:**
+__Properties:__
 
 - `jspwiki.parser.useExtractionPipeline` (boolean): Use extraction pipeline (default: `true`)
 - `ngdpbase.parser.enabled` (boolean): Enable MarkupParser (default: `true`)
@@ -393,11 +393,11 @@ The `context` object provides page and user information:
 
 The parser implements three-level fallback:
 
-1. **Primary**: Extraction pipeline
-2. **Fallback**: Legacy 7-phase parser
-3. **Ultimate**: Return original content
+1. __Primary__: Extraction pipeline
+2. __Fallback__: Legacy 7-phase parser
+3. __Ultimate__: Return original content
 
-**Example:**
+__Example:__
 
 ```javascript
 try {
@@ -423,14 +423,14 @@ When JSPWiki element processing fails, an error node is created:
 
 ### Extraction Pipeline
 
-**Typical Performance:**
+__Typical Performance:__
 
 - Small page (<1KB): <10ms
 - Medium page (1-5KB): <50ms
 - Large page (5-10KB): <100ms
 - Very large page (10KB+): <500ms
 
-**Scaling:**
+__Scaling:__
 
 - Extraction: O(n) where n = content length
 - DOM Creation: O(m) where m = number of JSPWiki elements
@@ -440,10 +440,10 @@ When JSPWiki element processing fails, an error node is created:
 
 The parser integrates with ngdpbase's cache system:
 
-- **Parse Results Cache**: Caches final HTML output
-- **TTL**: 5 minutes (configurable)
-- **Max Size**: 1000 entries (configurable)
-- **Hit Ratio**: Typically 70-90% on production sites
+- __Parse Results Cache__: Caches final HTML output
+- __TTL__: 5 minutes (configurable)
+- __Max Size__: 1000 entries (configurable)
+- __Hit Ratio__: Typically 70-90% on production sites
 
 ---
 
@@ -512,7 +512,7 @@ const html = await parser.parse(content, {
 
 ### From Legacy Parser
 
-**Before (Manual Phase Management):**
+__Before (Manual Phase Management):__
 
 ```javascript
 // Don't do this anymore
@@ -523,7 +523,7 @@ for (const phase of phases) {
 }
 ```
 
-**After (Use Primary Method):**
+__After (Use Primary Method):__
 
 ```javascript
 // Do this instead
@@ -541,11 +541,11 @@ If you have custom syntax handlers, see the [Migration Guide](../migration/WikiD
 
 ### Issue: Placeholders visible in output
 
-**Symptom:** `<!--JSPWIKI-abc12345-0-->` appears in rendered page
+__Symptom:__ `<!--JSPWIKI-abc12345-0-->` appears in rendered page
 
-**Cause:** DOM node not created or merge failed
+__Cause:__ DOM node not created or merge failed
 
-**Solution:**
+__Solution:__
 
 1. Check handler initialization: `await parser.initialize()`
 2. Check error logs for handler failures
@@ -553,11 +553,11 @@ If you have custom syntax handlers, see the [Migration Guide](../migration/WikiD
 
 ### Issue: Markdown not rendering
 
-**Symptom:** Markdown syntax (`##`, `**`, etc.) appears literally
+__Symptom:__ Markdown syntax (`##`, `**`, etc.) appears literally
 
-**Cause:** Showdown not configured or extraction conflict
+__Cause:__ Showdown not configured or extraction conflict
 
-**Solution:**
+__Solution:__
 
 1. Verify RenderingManager has Showdown converter
 2. Check that JSPWiki syntax is extracted before Showdown runs
@@ -565,11 +565,11 @@ If you have custom syntax handlers, see the [Migration Guide](../migration/WikiD
 
 ### Issue: Variables not expanding
 
-**Symptom:** `[{$username}]` appears literally instead of expanding
+__Symptom:__ `[{$username}]` appears literally instead of expanding
 
-**Cause:** VariableManager not initialized or handler error
+__Cause:__ VariableManager not initialized or handler error
 
-**Solution:**
+__Solution:__
 
 1. Ensure `await parser.initialize()` is called
 2. Check VariableManager is available: `engine.getManager('VariableManager')`
@@ -578,11 +578,11 @@ If you have custom syntax handlers, see the [Migration Guide](../migration/WikiD
 
 ### Issue: Slow parsing
 
-**Symptom:** Page loads take >1 second
+__Symptom:__ Page loads take >1 second
 
-**Cause:** Large page, many elements, or cache disabled
+__Cause:__ Large page, many elements, or cache disabled
 
-**Solution:**
+__Solution:__
 
 1. Enable parse results cache: `ngdpbase.markup.cache.parse-results.enabled = true`
 2. Check page size (consider breaking up large pages)
@@ -595,19 +595,19 @@ If you have custom syntax handlers, see the [Migration Guide](../migration/WikiD
 
 ### Unit Tests
 
-**Extraction Tests:**
+__Extraction Tests:__
 
 ```bash
 npm test -- src/parsers/__tests__/MarkupParser-Extraction.test.js
 ```
 
-**Merge Pipeline Tests:**
+__Merge Pipeline Tests:__
 
 ```bash
 npm test -- src/parsers/__tests__/MarkupParser-MergePipeline.test.js
 ```
 
-**Comprehensive Tests:**
+__Comprehensive Tests:__
 
 ```bash
 npm test -- src/parsers/__tests__/MarkupParser-Comprehensive.test.js
@@ -678,6 +678,6 @@ See [Phase 5 Manual QA Plan](../testing/Phase5-Manual-QA-Plan.md) for comprehens
 
 ---
 
-**Last Updated:** 2025-10-13
-**Maintainer:** ngdpbase Team
-**Status:** Production Ready
+__Last Updated:__ 2025-10-13
+__Maintainer:__ ngdpbase Team
+__Status:__ Production Ready

@@ -8,17 +8,17 @@ code: addons/feeds/src/FeedManager.ts
 
 # FeedManager
 
-**Module:** `addons/feeds/src/FeedManager.ts` (ships with the `feeds` addon, not core)
-**Registered as:** `engine.registerManager('FeedManager', …)` — reachable via `engine.getManager('FeedManager')` and the `fetch='FeedManager.…'` consumer convention
-**Filed under:** #685 (data-ingestion framework)
+__Module:__ `addons/feeds/src/FeedManager.ts` (ships with the `feeds` addon, not core)
+__Registered as:__ `engine.registerManager('FeedManager', …)` — reachable via `engine.getManager('FeedManager')` and the `fetch='FeedManager.…'` consumer convention
+__Filed under:__ #685 (data-ingestion framework)
 
 ---
 
 ## Overview
 
-FeedManager is the runtime of the **feeds addon** — the generic data-ingestion framework. It pulls structured data from external feeds on a schedule, normalizes each record to a schema.org CreativeWork, and exposes the results as CatalogSources and to the `[{DataFeed}]` plugin — **without writing one wiki page per record**.
+FeedManager is the runtime of the __feeds addon__ — the generic data-ingestion framework. It pulls structured data from external feeds on a schedule, normalizes each record to a schema.org CreativeWork, and exposes the results as CatalogSources and to the `[{DataFeed}]` plugin — __without writing one wiki page per record__.
 
-The addon is **default-disabled**. It is inert until `ngdpbase.addons.feeds.enabled: true` and at least one source is configured.
+The addon is __default-disabled__. It is inert until `ngdpbase.addons.feeds.enabled: true` and at least one source is configured.
 
 Per configured source, FeedManager holds one `FeedEntry`:
 
@@ -58,16 +58,16 @@ Adapters are looked up by name from the static registry in `addons/feeds/src/ada
 
 ## Consumer surface
 
-- **`getRecords(sourceId)`** — full normalized records (with `properties`); the data behind the [`[{DataFeed}]` plugin](../plugins/DataFeedPlugin.md).
-- **`toMarqueeText(opts)`** — the `BaseManager.toMarqueeText()` convention, so a page can render the latest records with no feed-specific plugin:
+- __`getRecords(sourceId)`__ — full normalized records (with `properties`); the data behind the [`[{DataFeed}]` plugin](../plugins/DataFeedPlugin.md).
+- __`toMarqueeText(opts)`__ — the `BaseManager.toMarqueeText()` convention, so a page can render the latest records with no feed-specific plugin:
 
   ```text
   [{MarqueePlugin fetch='FeedManager.toMarqueeText(source=usgs-quakes,max=5)'}]
   ```
 
   `source` (required) · `max` (default 5) · `sep` (default `•`). Returns `''` for unknown/empty sources.
-- **`registerSources(catalogManager)`** — registers every configured feed as a CatalogSource; called by the addon's `register()` hook.
-- **`getSourceIds()`** — configured source ids (used by addon status details).
+- __`registerSources(catalogManager)`__ — registers every configured feed as a CatalogSource; called by the addon's `register()` hook.
+- __`getSourceIds()`__ — configured source ids (used by addon status details).
 
 ## Configuration
 
@@ -91,7 +91,7 @@ Some sources publish many timestamped documents per named entity — every ash a
 
 | Key | Effect |
 |---|---|
-| `dedupeBy` | Keep only the **newest record per distinct value** of this normalized property |
+| `dedupeBy` | Keep only the __newest record per distinct value__ of this normalized property |
 | `maxAgeHours` | Discard records older than N hours. Applied *after* grouping, so it reads as "this entity has not been reissued within N hours" |
 | `dedupeDateField` | Property holding the record's timestamp. Defaults to the same chain the catalog projection uses: `occurredAt` → `time` → `date` → `pubDate` → `published` |
 
@@ -102,10 +102,10 @@ Some sources publish many timestamped documents per named entity — every ash a
 
 Both are no-ops when unset, and either can be used without the other — `maxAgeHours` alone is a plain age filter.
 
-**Shaping is destructive.** `RecordStore.upsertAll()` replaces the store rather than merging, so a record dropped here is removed on the next poll. Every ambiguous case therefore resolves toward keeping the record:
+__Shaping is destructive.__ `RecordStore.upsertAll()` replaces the store rather than merging, so a record dropped here is removed on the next poll. Every ambiguous case therefore resolves toward keeping the record:
 
-- A record **lacking** the `dedupeBy` property is never grouped and always survives. A typo in `dedupeBy` is a no-op, not a feed-wiping collapse into one bucket.
-- A record with **no resolvable date** is kept by `maxAgeHours` — unknown age is not evidence of staleness.
+- A record __lacking__ the `dedupeBy` property is never grouped and always survives. A typo in `dedupeBy` is a no-op, not a feed-wiping collapse into one bucket.
+- A record with __no resolvable date__ is kept by `maxAgeHours` — unknown age is not evidence of staleness.
 - Within a group an undated record never displaces a dated one, and among all-undated records the first wins, so results are stable across polls instead of flapping on upstream ordering.
 - `maxAgeHours` must be a number > 0; anything else is rejected at config-parse with a warning rather than coerced.
 - If shaping discards *every* record of a non-empty batch, ingest logs a warning — legitimate for a genuinely stale feed, but indistinguishable from a misconfiguration, so it is never silent.
@@ -117,4 +117,4 @@ Known limitation: an adapter still fetches and parses everything before shaping 
 - [`DataFeedPlugin`](../plugins/DataFeedPlugin.md) — table/list rendering of a source's records
 - [`CatalogManager`](CatalogManager.md) — the registry feed sources register into
 - `docs/platform/feeds/design.md` — the #685 design gate
-- Required page **Using FeedManager** — operator-facing guide seeded on install
+- Required page __Using FeedManager__ — operator-facing guide seeded on install

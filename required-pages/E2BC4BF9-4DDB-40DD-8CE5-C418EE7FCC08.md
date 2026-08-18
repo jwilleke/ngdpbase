@@ -12,7 +12,7 @@ author: system
 ---
 # Using UptimePlugin
 
-The **UptimePlugin** displays how long the server has been running since its last restart, formatted as days, hours, and minutes. See [Plugins] for a complete list of available plugins.
+The __UptimePlugin__ displays how long the server has been running since its last restart, formatted as days, hours, and minutes. See [Plugins] for a complete list of available plugins.
 
 ## Syntax
 

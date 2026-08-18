@@ -32,7 +32,7 @@ Re-run on each release to track drift over time. Compare against the previous ba
 
 ## Drift vs baseline-v3.53.0-2026-07-20.md
 
-⚠️  **Regression candidate(s):** /search?q=test (+335.0%, +134ms)
+⚠️  __Regression candidate(s):__ /search?q=test (+335.0%, +134ms)
 
 | Metric | Previous | New | Δ |
 | --- | --- | --- | --- |
@@ -44,4 +44,4 @@ Re-run on each release to track drift over time. Compare against the previous ba
 
 Thresholds (override via env): memory 25% / route 50% AND 50ms (both must trip).
 
-**Post-capture note:** `/search?q=test` re-sampled immediately after capture (10 sequential curls): mean 42 ms, max 46 ms — identical to the v3.53.0 baseline (40 ms). Third consecutive release where the capture run inflates this route transiently; no release change touches the search path. Consider having baseline-profile.sh sample /search first or add a settle delay.
+__Post-capture note:__ `/search?q=test` re-sampled immediately after capture (10 sequential curls): mean 42 ms, max 46 ms — identical to the v3.53.0 baseline (40 ms). Third consecutive release where the capture run inflates this route transiently; no release change touches the search path. Consider having baseline-profile.sh sample /search first or add a settle delay.

@@ -15,13 +15,13 @@ Brief overview of the manager's purpose and responsibility.
 
 Detailed description of what this manager handles within the ngdpbase system.
 
-**Key Responsibilities:**
+__Key Responsibilities:__
 
 - Responsibility 1
 - Responsibility 2
 - Responsibility 3
 
-**Source:** `src/managers/ManagerName.js`
+__Source:__ `src/managers/ManagerName.js`
 
 ## Initialization
 
@@ -62,16 +62,16 @@ Configuration options that affect this manager's behavior.
 
 Description of what this method does.
 
-**Parameters:**
+__Parameters:__
 
 | Name | Type | Required | Description |
 | ------ | ------ | ---------- | ------------- |
 | param1 | string | Yes | Description |
 | param2 | Object | No | Description |
 
-**Returns:** `Promise<ReturnType>` - Description of return value
+__Returns:__ `Promise<ReturnType>` - Description of return value
 
-**Example:**
+__Example:__
 
 ```javascript
 const result = await manager.methodName('value', { option: true });
@@ -81,7 +81,7 @@ const result = await manager.methodName('value', { option: true });
 
 Description of this method.
 
-**Returns:** `Type` - Description
+__Returns:__ `Type` - Description
 
 ## Usage Examples
 
@@ -114,10 +114,10 @@ Common errors and how to handle them.
 
 ## Lifecycle
 
-1. **Construction:** Created by WikiEngine during startup
-2. **Initialization:** `initialize()` called with config
-3. **Operation:** Methods called during request handling
-4. **Shutdown:** `shutdown()` called during graceful stop (if applicable)
+1. __Construction:__ Created by WikiEngine during startup
+2. __Initialization:__ `initialize()` called with config
+3. __Operation:__ Methods called during request handling
+4. __Shutdown:__ `shutdown()` called during graceful stop (if applicable)
 
 ## Related Documentation
 

@@ -8,8 +8,8 @@ code: src/managers/BaseManager.ts
 
 # BaseManager
 
-**Module:** `src/managers/BaseManager.ts`
-**Complete Guide:** [BaseManager-Complete-Guide.md](BaseManager-Complete-Guide.md)
+__Module:__ `src/managers/BaseManager.ts`
+__Complete Guide:__ [BaseManager-Complete-Guide.md](BaseManager-Complete-Guide.md)
 
 ---
 

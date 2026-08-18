@@ -1,7 +1,7 @@
 # Current Save-Page Pipeline
 
-**Status**: Production Architecture (as of 2026-04-27)
-**Related**: [Current-Rendering-Pipeline.md](./Current-Rendering-Pipeline.md) | [MANAGERS-OVERVIEW.md](./MANAGERS-OVERVIEW.md)
+__Status__: Production Architecture (as of 2026-04-27)
+__Related__: [Current-Rendering-Pipeline.md](./Current-Rendering-Pipeline.md) | [MANAGERS-OVERVIEW.md](./MANAGERS-OVERVIEW.md)
 
 ---
 
@@ -59,9 +59,9 @@ HTTP redirect → view page  (or JSON response for API callers)
 
 ### [1] Inline ACL Rejection
 
-`[{ALLOW …}]` and `[{DENY …}]` markup is rejected with a 400 error. Authors must use the **Audience** field in the page editor instead. This prevents ACL rules from being encoded in page content where they are invisible to the UI.
+`[{ALLOW …}]` and `[{DENY …}]` markup is rejected with a 400 error. Authors must use the __Audience__ field in the page editor instead. This prevents ACL rules from being encoded in page content where they are invisible to the UI.
 
-**Source**: `src/managers/PageManager.ts` `savePageWithContext()` ~line 420
+__Source__: `src/managers/PageManager.ts` `savePageWithContext()` ~line 420
 
 ---
 
@@ -71,7 +71,7 @@ HTTP redirect → view page  (or JSON response for API callers)
 
 For `documentation` and `system` category pages with no logged-in user, `author` defaults to `"system"`.
 
-**Why**: `author` drives private-page ACL ownership in `ACLManager`. Changing it would break access control.
+__Why__: `author` drives private-page ACL ownership in `ACLManager`. Changing it would break access control.
 
 ---
 
@@ -81,7 +81,7 @@ If any `user-keyword` on the page maps to `storageLocation: "private"` in the ke
 
 Required pages (system-category with `storageLocation: "required"`) are never marked private regardless of user-keywords.
 
-**Source**: `src/managers/PageManager.ts` ~lines 445–472
+__Source__: `src/managers/PageManager.ts` ~lines 445–472
 
 ---
 
@@ -92,7 +92,7 @@ All string-typed metadata fields are sanitized before the provider sees them:
 - Trims leading/trailing Unicode whitespace (including non-breaking spaces, zero-width chars)
 - Decodes percent-encoded characters (e.g. `%09` → tab) — prevents invisible control characters in frontmatter (#296)
 
-**Source**: `src/managers/ValidationManager.ts` `sanitizeMetadata()`
+__Source__: `src/managers/ValidationManager.ts` `sanitizeMetadata()`
 
 ---
 
@@ -108,7 +108,7 @@ Enforces uniqueness before writing:
 
 If a conflict is found, `savePageWithContext()` throws an error and the write is aborted. `PageManager` is the single authority on uniqueness — providers do not perform this check.
 
-**Source**: `src/managers/PageManager.ts` ~lines 483–490
+__Source__: `src/managers/PageManager.ts` ~lines 483–490
 
 ---
 
@@ -129,7 +129,7 @@ The configured page provider writes the file to disk. Two providers are in use:
 
 Both write YAML frontmatter + markdown body using `gray-matter`. The file is atomically written via a temp-file rename to prevent partial writes.
 
-**Sources**: `src/providers/FileSystemProvider.ts`, `src/providers/VersioningFileProvider.ts`
+__Sources__: `src/providers/FileSystemProvider.ts`, `src/providers/VersioningFileProvider.ts`
 
 ---
 
@@ -137,25 +137,25 @@ Both write YAML frontmatter + markdown body using `gray-matter`. The file is ato
 
 After the provider write succeeds:
 
-1. **Link graph** — `RenderingManager.updatePageInLinkGraph()` parses outbound links from the new content and updates the in-memory graph used for backlink calculation.
+1. __Link graph__ — `RenderingManager.updatePageInLinkGraph()` parses outbound links from the new content and updates the in-memory graph used for backlink calculation.
 
-2. **Search index** — `SearchManager.updatePageInIndex()` re-indexes the page content for full-text search.
+2. __Search index__ — `SearchManager.updatePageInIndex()` re-indexes the page content for full-text search.
 
-3. **Cache invalidation** — The parse-result cache entry for this page is invalidated so the next view request re-renders from the new content.
+3. __Cache invalidation__ — The parse-result cache entry for this page is invalidated so the next view request re-renders from the new content.
 
 ---
 
 ## FilterChain on Save — ⚠️ Not Currently Executing
 
-The `FilterChain` (ValidationFilter, SecurityFilter, SpamFilter) is initialized in `MarkupParser` but `filterChain.execute()` is **never called** on content before it is saved. This means:
+The `FilterChain` (ValidationFilter, SecurityFilter, SpamFilter) is initialized in `MarkupParser` but `filterChain.execute()` is __never called__ on content before it is saved. This means:
 
 - `ValidationFilter.validateMarkupSyntax()` does not check content at save time
 - `SecurityFilter` HTML sanitization does not run at save time
 - Markup errors (unclosed plugin syntax, malformed `%%style%%` blocks) are not caught on save — they surface only at render time
 
-**Tracked in**: [#596 — FilterChain configured but filterChain.execute() never called](https://github.com/jwilleke/ngdpbase/issues/596)
+__Tracked in__: [#596 — FilterChain configured but filterChain.execute() never called](https://github.com/jwilleke/ngdpbase/issues/596)
 
-> Once #596 is resolved, the natural place to call `filterChain.execute()` for **save-time validation** is before `provider.savePage()` in step [7]. For **render-time filtering** it should be called at the end of `MarkupParser.parse()`.
+> Once #596 is resolved, the natural place to call `filterChain.execute()` for __save-time validation__ is before `provider.savePage()` in step [7]. For __render-time filtering__ it should be called at the end of `MarkupParser.parse()`.
 
 ---
 
@@ -168,9 +168,9 @@ The `FilterChain` (ValidationFilter, SecurityFilter, SpamFilter) is initialized 
 | Metadata sanitization | Save | `ValidationManager.sanitizeMetadata()` |
 | UUID / slug / title conflicts | Save | `ValidationManager.checkConflicts()` |
 | ACL / permission check | Save | `ACLManager.checkPermission()` |
-| Markup syntax validation | **Not run** (#596) | `ValidationFilter` (dead code) |
-| HTML sanitization | **Not run** (#596) | `SecurityFilter` (dead code) |
-| Spam detection | **Not run** (#596) | `SpamFilter` (dead code) |
+| Markup syntax validation | __Not run__ (#596) | `ValidationFilter` (dead code) |
+| HTML sanitization | __Not run__ (#596) | `SecurityFilter` (dead code) |
+| Spam detection | __Not run__ (#596) | `SpamFilter` (dead code) |
 | Inline style rendering | Render | `MarkupParser` Step 0.55 |
 | Plugin execution | Render | `MarkupParser` Phase 2 / WikiDocument |
 

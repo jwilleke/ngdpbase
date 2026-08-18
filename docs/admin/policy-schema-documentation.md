@@ -182,7 +182,7 @@ Targets a specific user by username:
 }
 ```
 
-**Use Cases:**
+__Use Cases:__
 
 - Grant specific access to individual users
 - Override general policies for specific users
@@ -199,7 +199,7 @@ Targets users with a specific role:
 }
 ```
 
-**Available Roles:**
+__Available Roles:__
 
 - `admin`: System administrators
 - `editor`: Content editors
@@ -218,7 +218,7 @@ Targets users belonging to a specific group:
 }
 ```
 
-**Use Cases:**
+__Use Cases:__
 
 - Department-based access control
 - Project team permissions
@@ -236,7 +236,7 @@ Targets users with specific attribute values:
 }
 ```
 
-**Common Attributes:**
+__Common Attributes:__
 
 - `department`: IT, HR, Marketing, Sales
 - `clearance`: public, internal, confidential, secret
@@ -253,7 +253,7 @@ Targets any logged-in user:
 }
 ```
 
-**Use Cases:**
+__Use Cases:__
 
 - General authenticated user policies
 - Override anonymous restrictions
@@ -269,7 +269,7 @@ Targets non-logged-in users:
 }
 ```
 
-**Use Cases:**
+__Use Cases:__
 
 - Public access policies
 - Guest user permissions
@@ -285,7 +285,7 @@ Targets users with administrative privileges:
 }
 ```
 
-**Use Cases:**
+__Use Cases:__
 
 - Administrative override policies
 - System management access
@@ -304,7 +304,7 @@ Controls access to wiki pages:
 }
 ```
 
-**Pattern Examples:**
+__Pattern Examples:__
 
 - `"*"`: All pages
 - `"Admin*"`: Pages starting with "Admin"
@@ -322,7 +322,7 @@ Controls access to file attachments:
 }
 ```
 
-**Pattern Examples:**
+__Pattern Examples:__
 
 - `"*.pdf"`: PDF files only
 - `"*.doc*"`: Word documents
@@ -340,7 +340,7 @@ Controls access to pages in specific categories:
 }
 ```
 
-**Use Cases:**
+__Use Cases:__
 
 - Category-based content organization
 - Department-specific categories
@@ -357,7 +357,7 @@ Controls access to pages with specific tags:
 }
 ```
 
-**Use Cases:**
+__Use Cases:__
 
 - Content classification by tags
 - Security labeling
@@ -374,7 +374,7 @@ Controls access to specific resource types:
 }
 ```
 
-**Available Types:**
+__Available Types:__
 
 - `page`: Wiki pages
 - `attachment`: File attachments
@@ -392,7 +392,7 @@ Controls access to URL paths:
 }
 ```
 
-**Pattern Examples:**
+__Pattern Examples:__
 
 - `"/api/*"`: All API endpoints
 - `"/admin/*"`: Admin interface
@@ -413,7 +413,7 @@ Restricts access to specific time periods:
 }
 ```
 
-**Configuration:**
+__Configuration:__
 
 - `startTime`: Start time in HH:MM format (24-hour)
 - `endTime`: End time in HH:MM format (24-hour)
@@ -430,7 +430,7 @@ Restricts access based on IP addresses:
 }
 ```
 
-**Configuration:**
+__Configuration:__
 
 - `ranges`: Array of IP ranges in CIDR notation
 - Supports both IPv4 and IPv6
@@ -449,7 +449,7 @@ Checks user attributes for additional constraints:
 }
 ```
 
-**Operators:**
+__Operators:__
 
 - `equals`: Exact match
 - `contains`: String contains value
@@ -468,7 +468,7 @@ Checks request context attributes:
 }
 ```
 
-**Common Context Attributes:**
+__Common Context Attributes:__
 
 - `emergencyMode`: Emergency access flag
 - `maintenanceMode`: System maintenance flag
@@ -487,7 +487,7 @@ Checks system environment:
 }
 ```
 
-**Use Cases:**
+__Use Cases:__
 
 - Development vs production policies
 - Staging environment restrictions
@@ -505,7 +505,7 @@ Checks user session attributes:
 }
 ```
 
-**Common Session Attributes:**
+__Common Session Attributes:__
 
 - `loginMethod`: Authentication method used
 - `sessionAge`: How long session has been active
@@ -690,51 +690,51 @@ Checks user session attributes:
 
 ### Policy Design Principles
 
-1. **Principle of Least Privilege**
+1. __Principle of Least Privilege__
    - Grant only necessary permissions
    - Use deny policies for exceptions
    - Regularly review and revoke unnecessary access
 
-2. **Clear Naming Conventions**
+2. __Clear Naming Conventions__
    - Use descriptive, searchable names
    - Include context in policy names
    - Use consistent naming patterns
 
-3. **Priority Management**
+3. __Priority Management__
    - Reserve high priorities (900-1000) for emergencies
    - Use ranges for different policy types
    - Document priority schemes
 
-4. **Modular Policy Design**
+4. __Modular Policy Design__
    - Create focused, single-purpose policies
    - Avoid overly complex policies
    - Use conditions for additional constraints
 
 ### Schema Compliance
 
-1. **Validation**
+1. __Validation__
    - Always validate policies against the schema
    - Use schema validation tools during development
    - Test policies in staging before production
 
-2. **Version Control**
+2. __Version Control__
    - Track policy changes in version control
    - Include policies in deployment processes
    - Maintain audit trails for policy modifications
 
-3. **Documentation**
+3. __Documentation__
    - Document the purpose of each policy
    - Include examples and use cases
    - Maintain policy catalogs
 
 ### Performance Considerations
 
-1. **Efficient Patterns**
+1. __Efficient Patterns__
    - Use specific patterns over wildcards when possible
    - Minimize the number of conditions
    - Cache frequently evaluated policies
 
-2. **Resource Optimization**
+2. __Resource Optimization__
    - Group similar policies
    - Use appropriate priority levels
    - Monitor policy evaluation performance
@@ -806,21 +806,21 @@ const policyTemplates = {
 
 ### Common Schema Errors
 
-1. **Missing Required Fields**
+1. __Missing Required Fields__
    - Ensure `id`, `name`, `effect`, `subjects`, `resources`, `actions` are present
    - Check for typos in field names
 
-2. **Invalid Subject Configuration**
+2. __Invalid Subject Configuration__
    - User/role/group subjects need `value`
    - Attribute subjects need both `key` and `value`
    - Authenticated/anonymous/admin subjects need no additional fields
 
-3. **Resource Pattern Issues**
+3. __Resource Pattern Issues__
    - Use either `value` or `pattern`, not both
    - Ensure patterns are valid glob patterns
    - Check for special character escaping
 
-4. **Condition Validation**
+4. __Condition Validation__
    - Time ranges must be in HH:MM format
    - IP ranges must be valid CIDR notation
    - Attribute conditions need proper operators
@@ -841,10 +841,10 @@ ajv validate -s policy-schema.json -d my-policy.json
 
 ### Debugging Tips
 
-1. **Start Simple**: Create basic policies first
-2. **Test Incrementally**: Add complexity gradually
-3. **Use Logging**: Enable policy evaluation logging
-4. **Monitor Performance**: Watch for slow policy evaluations
+1. __Start Simple__: Create basic policies first
+2. __Test Incrementally__: Add complexity gradually
+3. __Use Logging__: Enable policy evaluation logging
+4. __Monitor Performance__: Watch for slow policy evaluations
 
 ---
 

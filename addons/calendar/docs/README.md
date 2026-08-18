@@ -38,7 +38,7 @@ addons/calendar/
 1. `WikiEngine.initialize()` creates `AddonsManager` but defers addon loading.
 2. `app.ts` sets up `express-session` and `userContext` middleware.
 3. `app.ts` calls `engine.initializeAddons()` — addon routes are registered
-   **after** session middleware so `ApiContext.from(req, engine)` sees the correct
+   __after__ session middleware so `ApiContext.from(req, engine)` sees the correct
    authenticated user.
 
 ## Key dependencies
@@ -83,8 +83,8 @@ All routes use `ApiContext.from(req, engine)`. Guards:
 
 ## Extending
 
-- **New route**: create `routes/my-feature.ts`, export `(engine, config) => Router`,
+- __New route__: create `routes/my-feature.ts`, export `(engine, config) => Router`,
   mount in `index.ts`.
-- **New manager method**: add to `CalendarDataManager.ts`; available engine-wide
+- __New manager method__: add to `CalendarDataManager.ts`; available engine-wide
   via `engine.getManager('CalendarDataManager')`.
-- **New plugin param**: add to `CalendarPlugin.ts` `params` block.
+- __New plugin param__: add to `CalendarPlugin.ts` `params` block.

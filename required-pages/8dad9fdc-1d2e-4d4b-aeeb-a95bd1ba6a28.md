@@ -56,18 +56,18 @@ ngdpbase uses different configuration files based on the `NODE_ENV` environment 
 
 %%table-striped
 || Environment || Config File || Use Case ||
-| **production** | `config/app-production-config.json` | Production deployment (default) |
-| **development** | `config/app-development-config.json` | Local development |
-| **test** | `config/app-test-config.json` | Running tests |
-| **staging** | `config/app-staging-config.json` | Staging server (if exists) |
-| **custom** | `config/app-custom-config.json` | Local overrides (not tracked in git) |
+| __production__ | `config/app-production-config.json` | Production deployment (default) |
+| __development__ | `config/app-development-config.json` | Local development |
+| __test__ | `config/app-test-config.json` | Running tests |
+| __staging__ | `config/app-staging-config.json` | Staging server (if exists) |
+| __custom__ | `config/app-custom-config.json` | Local overrides (not tracked in git) |
 /%
 
 ### How Configuration Loading Works
 
-1. **Default Config**: `config/app-default-config.json` is always loaded first (base settings)
-2. **Environment Config**: Based on `NODE_ENV`, loads environment-specific config
-3. **Custom Config**: `config/app-custom-config.json` is loaded last and overrides everything
+1. __Default Config__: `config/app-default-config.json` is always loaded first (base settings)
+2. __Environment Config__: Based on `NODE_ENV`, loads environment-specific config
+3. __Custom Config__: `config/app-custom-config.json` is loaded last and overrides everything
    - This file is `.gitignore`d for local-only settings
    - Use this for machine-specific overrides (API keys, local ports, etc.)
 
@@ -113,7 +113,7 @@ The server uses a PID lock file (`.ngdpbase.pid`) to prevent multiple instances 
 
 ### If You Get "Another instance is already running"
 
-1. **Check if server is actually running:**
+1. __Check if server is actually running:__
 
    ```bash
    ./server.sh status
@@ -121,13 +121,13 @@ The server uses a PID lock file (`.ngdpbase.pid`) to prevent multiple instances 
    ps aux | grep "node app.js" | grep -v grep
    ```
 
-2. **If server is running but shouldn't be:**
+2. __If server is running but shouldn't be:__
 
    ```bash
    ./server.sh stop
    ```
 
-3. **If server crashed and lock file is stale:**
+3. __If server crashed and lock file is stale:__
 
    ```bash
    ./server.sh unlock
@@ -181,21 +181,21 @@ npm start
 
 ### Problem: Server won't start, says another instance is running
 
-**Solution 1:** Check if another instance is actually running
+__Solution 1:__ Check if another instance is actually running
 
 ```bash
 pm2 list
 ps aux | grep "node app.js"
 ```
 
-**Solution 2:** Stop all instances
+__Solution 2:__ Stop all instances
 
 ```bash
 pm2 stop all
 pkill -f "node app.js"
 ```
 
-**Solution 3:** Remove stale PID lock
+__Solution 3:__ Remove stale PID lock
 
 ```bash
 ./server.sh unlock
@@ -203,15 +203,15 @@ pkill -f "node app.js"
 
 ### Problem: Changes not saving
 
-**Cause:** Multiple server instances were running, saving to different instances.
+__Cause:__ Multiple server instances were running, saving to different instances.
 
-**Prevention:** Always use `./server.sh` or PM2 to manage the server. The PID lock prevents this issue.
+__Prevention:__ Always use `./server.sh` or PM2 to manage the server. The PID lock prevents this issue.
 
 ### Problem: Port 3000 already in use
 
-**Cause:** Another application or orphaned Node process is using port 3000.
+__Cause:__ Another application or orphaned Node process is using port 3000.
 
-**Solution:**
+__Solution:__
 
 ```bash
 # Find what's using port 3000
@@ -238,9 +238,9 @@ pm2 startup
 
 ## PID Lock File
 
-- **Location:** `.ngdpbase.pid` in the project root
-- **Purpose:** Prevents multiple server instances
-- **Cleanup:** Automatically removed on clean shutdown
-- **Manual Cleanup:** Use `./server.sh unlock` if needed
+- __Location:__ `.ngdpbase.pid` in the project root
+- __Purpose:__ Prevents multiple server instances
+- __Cleanup:__ Automatically removed on clean shutdown
+- __Manual Cleanup:__ Use `./server.sh unlock` if needed
 
 ---

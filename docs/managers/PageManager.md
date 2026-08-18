@@ -10,9 +10,9 @@ status: stable
 
 # PageManager
 
-**Module:** `src/managers/PageManager.ts`
-**Extends:** [BaseManager](BaseManager.md)
-**Complete Guide:** [PageManager-Complete-Guide.md](PageManager-Complete-Guide.md)
+__Module:__ `src/managers/PageManager.ts`
+__Extends:__ [BaseManager](BaseManager.md)
+__Complete Guide:__ [PageManager-Complete-Guide.md](PageManager-Complete-Guide.md)
 
 ---
 
@@ -22,13 +22,13 @@ PageManager is the central coordinator for all wiki page operations. It implemen
 
 ## Key Features
 
-- **Pluggable Providers** - Swap storage backends via configuration
-- **UUID-Based Storage** - Unique identifiers for all pages
-- **Title and UUID Lookup** - Find pages by either identifier
-- **Plural Name Matching** - "Users" finds "User" page
-- **In-Memory Caching** - Fast lookups with indexes
-- **WikiContext Support** - Context-aware save/delete operations
-- **Backup/Restore** - Full page backup support
+- __Pluggable Providers__ - Swap storage backends via configuration
+- __UUID-Based Storage__ - Unique identifiers for all pages
+- __Title and UUID Lookup__ - Find pages by either identifier
+- __Plural Name Matching__ - "Users" finds "User" page
+- __In-Memory Caching__ - Fast lookups with indexes
+- __WikiContext Support__ - Context-aware save/delete operations
+- __Backup/Restore__ - Full page backup support
 
 ## Quick Example
 

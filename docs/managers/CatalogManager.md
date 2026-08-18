@@ -8,20 +8,20 @@ code: src/managers/CatalogManager.ts
 
 # CatalogManager
 
-**Module:** `src/managers/CatalogManager.ts`
-**Extends:** [BaseManager](BaseManager.md)
-**Source of truth for shapes:** [`docs/schemas.md`](../schemas.md)
+__Module:__ `src/managers/CatalogManager.ts`
+__Extends:__ [BaseManager](BaseManager.md)
+__Source of truth for shapes:__ [`docs/schemas.md`](../schemas.md)
 
 ---
 
 ## Overview
 
-CatalogManager is a **coordinator** — it owns no records itself but routes queries across two parallel registries:
+CatalogManager is a __coordinator__ — it owns no records itself but routes queries across two parallel registries:
 
 | Registry | What it holds | Status | Filed under |
 |---|---|---|---|
-| **Vocabulary providers** | Controlled-vocabulary term lists (categories, system-keywords, SKOS concept schemes) | **Shipped** | #424 |
-| **Asset sources** | CreativeWork producers — `MediaManager`, `AttachmentManager`, `PageManager` all implement `CatalogSource`; addons can register their own | **Shipped** — Slices 3 / 4 / 5 of #755 | #755 |
+| __Vocabulary providers__ | Controlled-vocabulary term lists (categories, system-keywords, SKOS concept schemes) | __Shipped__ | #424 |
+| __Asset sources__ | CreativeWork producers — `MediaManager`, `AttachmentManager`, `PageManager` all implement `CatalogSource`; addons can register their own | __Shipped__ — Slices 3 / 4 / 5 of #755 | #755 |
 
 Both registries live on the same Manager because they share the same shape (`Map<id, Provider>`) and the same fan-out pattern (walk providers, merge or first-match). They do not interact beyond living together.
 
@@ -31,27 +31,27 @@ Per the 2026-05-20 design (see `docs/schemas.md`), this two-registry layout is t
 
 ### Shipped today (vocabulary registry, #424)
 
-- **Pluggable provider model** — `registerProvider()` lets addons contribute domain vocabularies in their `register()` hook.
-- **Config-driven default provider** — `DefaultCatalogProvider` reads `ngdpbase.system-keywords` from config and exposes its 13 default terms.
-- **AI provider scaffold** — `AICatalogProvider` stub; an LLM-backed addon replaces it by calling `registerProvider()` with a real implementation.
-- **Domain filtering** — `getTerms(domain?)` includes only providers matching the requested domain, with un-domained providers always included.
-- **Linked-Data URI resolution** — `resolveUri(term)` walks providers in registration order and returns the first non-null hit (currently used for page-keyword sameAs links in `WikiRoutes.ts:1791`).
-- **Term suggestion fan-out** — `suggestTerms(content, title)` delegates to any provider that implements it (currently only the AI stub; returns `[]` until an LLM addon is wired).
+- __Pluggable provider model__ — `registerProvider()` lets addons contribute domain vocabularies in their `register()` hook.
+- __Config-driven default provider__ — `DefaultCatalogProvider` reads `ngdpbase.system-keywords` from config and exposes its 13 default terms.
+- __AI provider scaffold__ — `AICatalogProvider` stub; an LLM-backed addon replaces it by calling `registerProvider()` with a real implementation.
+- __Domain filtering__ — `getTerms(domain?)` includes only providers matching the requested domain, with un-domained providers always included.
+- __Linked-Data URI resolution__ — `resolveUri(term)` walks providers in registration order and returns the first non-null hit (currently used for page-keyword sameAs links in `WikiRoutes.ts:1791`).
+- __Term suggestion fan-out__ — `suggestTerms(content, title)` delegates to any provider that implements it (currently only the AI stub; returns `[]` until an LLM addon is wired).
 
 ### Asset-source registry and Linked-Data emission
 
 The 2026-05-20 schema-ratification roadmap is largely shipped. Status:
 
-- **Asset-source registry** — **shipped** (Slices 3 / 4 / 5 of #755). A second `Map<sourceId, CatalogSource>` for CreativeWork producers, fanned out via `registerSource()` / `getCreativeWork()` / `listCreativeWorks()` / `checkSchemaVersions()` / `getSourceInfo()`. Currently registered core sources: `MediaManager` (Slice 3, #758), `AttachmentManager` (Slice 5, #759), `PageManager` (Slice 4, #772). Addons register additional sources from their `register()` hook — the registry is fully dynamic and per-deployment.
-- **JSON-LD embedded on page renders** — **shipped** (Slice 6a, #765). `<script type="application/ld+json">` embedded on `/view/:page`.
-- **JSON-LD content negotiation on `@id` URLs** — **shipped** (Slice 6b, #766). `Accept: application/ld+json` on any `@id` URL returns the JSON-LD document.
-- **SKOS `ConceptScheme` JSON-LD emission** — **shipped** (Slice 6c, #767). Endpoint at `/api/catalog/vocabulary/<scheme-id>` renders each vocabulary as a dereferenceable SKOS ConceptScheme document. Emitter at `src/utils/buildConceptSchemeJsonLd.ts`.
-- **SKOS-shaped vocabulary terms** — **not yet implemented**. `CatalogTerm` will gain optional fields aligned with W3C SKOS (`altLabels`, `broader`, `narrower`, `exactMatch`, `closeMatch`, `definition`, `scopeNote`, etc.). The existing flat `uri` field stays as deprecated legacy, treated as a single `exactMatch` entry when present.
-- **Runtime visibility of registered sources** — diagnostics methods `getSourceInfo()` and `checkSchemaVersions()` exist but have no admin-UI surface yet. Tracked in **#780**.
+- __Asset-source registry__ — __shipped__ (Slices 3 / 4 / 5 of #755). A second `Map<sourceId, CatalogSource>` for CreativeWork producers, fanned out via `registerSource()` / `getCreativeWork()` / `listCreativeWorks()` / `checkSchemaVersions()` / `getSourceInfo()`. Currently registered core sources: `MediaManager` (Slice 3, #758), `AttachmentManager` (Slice 5, #759), `PageManager` (Slice 4, #772). Addons register additional sources from their `register()` hook — the registry is fully dynamic and per-deployment.
+- __JSON-LD embedded on page renders__ — __shipped__ (Slice 6a, #765). `<script type="application/ld+json">` embedded on `/view/:page`.
+- __JSON-LD content negotiation on `@id` URLs__ — __shipped__ (Slice 6b, #766). `Accept: application/ld+json` on any `@id` URL returns the JSON-LD document.
+- __SKOS `ConceptScheme` JSON-LD emission__ — __shipped__ (Slice 6c, #767). Endpoint at `/api/catalog/vocabulary/<scheme-id>` renders each vocabulary as a dereferenceable SKOS ConceptScheme document. Emitter at `src/utils/buildConceptSchemeJsonLd.ts`.
+- __SKOS-shaped vocabulary terms__ — __not yet implemented__. `CatalogTerm` will gain optional fields aligned with W3C SKOS (`altLabels`, `broader`, `narrower`, `exactMatch`, `closeMatch`, `definition`, `scopeNote`, etc.). The existing flat `uri` field stays as deprecated legacy, treated as a single `exactMatch` entry when present.
+- __Runtime visibility of registered sources__ — diagnostics methods `getSourceInfo()` and `checkSchemaVersions()` exist but have no admin-UI surface yet. Tracked in __#780__.
 
 ## Bootstrapping order
 
-CatalogManager initializes **immediately after ConfigurationManager** (`src/WikiEngine.ts:176–180`):
+CatalogManager initializes __immediately after ConfigurationManager__ (`src/WikiEngine.ts:176–180`):
 
 ```text
 1.  ConfigurationManager
@@ -158,7 +158,7 @@ type SchemaVersionReport = Array<{
 | Component | Relationship |
 |---|---|
 | `AssetService` | URL-param translator (`asset-picker?source=…&type=…&limit=…`) — stays as-is, delegates to CatalogManager via `listCreativeWorks()`. Per Decision 7. |
-| `AssetManager` | Cross-source coordination role **moves into CatalogManager** as part of Slice 3+. AssetManager keeps its existing per-source duties but no longer fans out across types. |
+| `AssetManager` | Cross-source coordination role __moves into CatalogManager__ as part of Slice 3+. AssetManager keeps its existing per-source duties but no longer fans out across types. |
 | `PageManager` | Will implement `CatalogSource` in Slice 4 (#755); currently still its own thing. |
 | `MediaManager` | Will implement `CatalogSource` in Slice 3 (#755); currently still its own thing. |
 | `AttachmentManager` | Will implement `CatalogSource` in Slice 5 (#755); currently still its own thing. Its existing `mentions[]` reverse-index (#384) stays unchanged — used by the Q5 link-only decision. |
@@ -185,19 +185,19 @@ No additional config is anticipated for the asset-source registry — `CatalogSo
 
 ## Naming recommendation
 
-**Keep the name.** The current `CatalogManager` came from the vocabulary work (#424). Adding the asset-source registry is a strict extension of the same coordinator pattern — same Manager, second `Map<id, Provider>`, same fan-out semantics. Renaming would mean migration churn for the existing call sites (`WikiRoutes.ts:1791`, `TaggingService.ts`, `WikiEngine.ts:176`, `ElasticsearchSearchProvider.ts`, all addon `register()` hooks across the satellite instances) without adding meaning.
+__Keep the name.__ The current `CatalogManager` came from the vocabulary work (#424). Adding the asset-source registry is a strict extension of the same coordinator pattern — same Manager, second `Map<id, Provider>`, same fan-out semantics. Renaming would mean migration churn for the existing call sites (`WikiRoutes.ts:1791`, `TaggingService.ts`, `WikiEngine.ts:176`, `ElasticsearchSearchProvider.ts`, all addon `register()` hooks across the satellite instances) without adding meaning.
 
 Alternatives considered and rejected:
 
-- **`SchemaManager`** — confusing collision with the *decomposed* manager whose removal is still echoing through #624; reusing the name would re-introduce the over-broad pattern that #617 fixed.
-- **`CreativeWorkManager`** — accurate for the asset-source side but silent about the vocabulary side; would imply a rename of the vocabulary methods or a split into two managers (which the design explicitly rejects per Decision 7's "same Manager, two parallel registries").
-- **`MetadataCoordinator`** — generic to the point of meaning nothing; same problem as the original `SchemaManager`.
+- __`SchemaManager`__ — confusing collision with the *decomposed* manager whose removal is still echoing through #624; reusing the name would re-introduce the over-broad pattern that #617 fixed.
+- __`CreativeWorkManager`__ — accurate for the asset-source side but silent about the vocabulary side; would imply a rename of the vocabulary methods or a split into two managers (which the design explicitly rejects per Decision 7's "same Manager, two parallel registries").
+- __`MetadataCoordinator`__ — generic to the point of meaning nothing; same problem as the original `SchemaManager`.
 
 The word "Catalog" already maps cleanly to both senses in linked-data vocabulary: catalogs hold *both* term lists (controlled vocabularies) *and* item descriptions (CreativeWorks). The library-science overlap is intentional.
 
 ## Minimum-API recommendation
 
-Slice 2 (#757) should land **exactly** the surface listed in the "designed for #755" table above — no more, no less. Specifically:
+Slice 2 (#757) should land __exactly__ the surface listed in the "designed for #755" table above — no more, no less. Specifically:
 
 - The five new public methods: `registerSource`, `getCreativeWork`, `listCreativeWorks`, `checkSchemaVersions`, `getSourceInfo`.
 - The three interface shapes: `CatalogSource`, `CatalogQuery`, `CatalogPage`, plus the `SchemaVersionReport` array.
@@ -205,7 +205,7 @@ Slice 2 (#757) should land **exactly** the surface listed in the "designed for #
 - No `update()` or `write()` on `CatalogSource` — writes stay with the owning Manager's existing API (`PageManager.savePage`, `MediaManager.indexFile`, `AttachmentManager.upload`). CatalogManager is read-side coordination only.
 - `rebuild()` on `CatalogSource` so the admin "rebuild index" jobs can fan out uniformly. Per Decision 6, this is what moves a stale `schemaVersion` forward.
 
-What Slice 2 should **not** include:
+What Slice 2 should __not__ include:
 
 - A unified write API — writes remain per-Manager.
 - A unified delete API — same reason.
@@ -216,15 +216,15 @@ This minimum API leaves CatalogManager as a pure read-side coordinator, which ke
 
 ## Related issues
 
-- **#424** — Original CatalogManager + vocabulary-provider registry. Shipped.
-- **#507** — Auto-tagging (uses `getTerms()` via `TaggingService`). Shipped.
-- **#617** — Person/Organization refactor; decomposed the legacy SchemaManager. Context for why CatalogManager (not SchemaManager-reborn) is the asset-coordinator successor.
-- **#624** — Phantom-SchemaManager admin-routes bug; corollary of #617.
-- **#711** — ACL Tier-0 author/creator read mismatch; drove the `author`/`editor` terminology in `docs/schemas.md` Decision 10.
-- **#755** — EPIC: metadata schemas ratified. This doc is **Slice 1** of that EPIC.
-- **#757** — Slice 2: `src/types/Schema.ts` — codifies the interfaces sketched here.
-- **#714** — Unified access-control evaluator (`wikiContext.canAccess`). Adjacent; CatalogManager defers ACL to its sources rather than calling this directly.
-- **#660** — Docs-coverage check. This file closes the warning for `src/managers/CatalogManager.ts`.
+- __#424__ — Original CatalogManager + vocabulary-provider registry. Shipped.
+- __#507__ — Auto-tagging (uses `getTerms()` via `TaggingService`). Shipped.
+- __#617__ — Person/Organization refactor; decomposed the legacy SchemaManager. Context for why CatalogManager (not SchemaManager-reborn) is the asset-coordinator successor.
+- __#624__ — Phantom-SchemaManager admin-routes bug; corollary of #617.
+- __#711__ — ACL Tier-0 author/creator read mismatch; drove the `author`/`editor` terminology in `docs/schemas.md` Decision 10.
+- __#755__ — EPIC: metadata schemas ratified. This doc is __Slice 1__ of that EPIC.
+- __#757__ — Slice 2: `src/types/Schema.ts` — codifies the interfaces sketched here.
+- __#714__ — Unified access-control evaluator (`wikiContext.canAccess`). Adjacent; CatalogManager defers ACL to its sources rather than calling this directly.
+- __#660__ — Docs-coverage check. This file closes the warning for `src/managers/CatalogManager.ts`.
 
 ## Source of truth
 

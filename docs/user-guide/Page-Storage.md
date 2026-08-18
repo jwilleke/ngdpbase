@@ -25,14 +25,14 @@ Audience: Wiki Users, Administrators, Content Managers
 
 ## Overview
 
-ngdpbase uses a **two-tier storage system** for wiki pages, separating system/documentation pages from regular user content. This design provides clear organization, better security, and easier management of different types of content.
+ngdpbase uses a __two-tier storage system__ for wiki pages, separating system/documentation pages from regular user content. This design provides clear organization, better security, and easier management of different types of content.
 
 ### Key Concepts
 
-- **Pages Directory** (`./pages/`) - Regular user-created content
-- **Required Pages Directory** (`./required-pages/`) - System, documentation, and administrative pages
-- **System Category** - Metadata field that determines storage location
-- **UUID-based Filenames** - All pages stored with UUID filenames (e.g., `443c95f1-0b21-494a-b712-08ce0dc933e1.md`)
+- __Pages Directory__ (`./pages/`) - Regular user-created content
+- __Required Pages Directory__ (`./required-pages/`) - System, documentation, and administrative pages
+- __System Category__ - Metadata field that determines storage location
+- __UUID-based Filenames__ - All pages stored with UUID filenames (e.g., `443c95f1-0b21-494a-b712-08ce0dc933e1.md`)
 
 ---
 
@@ -55,16 +55,16 @@ ngdpbase/
 
 ### Regular Pages Directory (`./pages/`)
 
-**Purpose:** Stores everyday wiki content created by users
+__Purpose:__ Stores everyday wiki content created by users
 
-**Characteristics:**
+__Characteristics:__
 
 - User-editable content
 - Regular backup schedule
 - Can be moved, renamed, or deleted by editors
 - Standard access permissions apply
 
-**Typical Content:**
+__Typical Content:__
 
 - General articles and knowledge base entries
 - User-contributed content
@@ -74,9 +74,9 @@ ngdpbase/
 
 ### Required Pages Directory (`./required-pages/`)
 
-**Purpose:** Stores critical system pages and official documentation
+__Purpose:__ Stores critical system pages and official documentation
 
-**Characteristics:**
+__Characteristics:__
 
 - System-critical content
 - Higher backup priority
@@ -84,7 +84,7 @@ ngdpbase/
 - Protected from accidental deletion
 - Often referenced by system components
 
-**Typical Content:**
+__Typical Content:__
 
 - System configuration pages
 - Official documentation
@@ -96,7 +96,7 @@ ngdpbase/
 
 ## How Storage Location is Determined
 
-Storage location is **automatically determined** by the `system-category` field in the page's frontmatter metadata.
+Storage location is __automatically determined__ by the `system-category` field in the page's frontmatter metadata.
 
 ### Decision Flow
 
@@ -130,13 +130,13 @@ Storage location is **automatically determined** by the `system-category` field 
 
 When you save a page, ngdpbase:
 
-1. **Reads** the `system-category` from page frontmatter
-2. **Looks up** the category in configuration
-3. **Checks** the `storageLocation` property
-4. **Routes** the page to the correct directory
-5. **Saves** with UUID-based filename
+1. __Reads__ the `system-category` from page frontmatter
+2. __Looks up__ the category in configuration
+3. __Checks__ the `storageLocation` property
+4. __Routes__ the page to the correct directory
+5. __Saves__ with UUID-based filename
 
-**Example:**
+__Example:__
 
 ```yaml
 ---
@@ -159,11 +159,11 @@ These categories route pages to the `required-pages/` directory:
 
 | Category | Label | Description | Access Level |
 | ---------- | ------- | ------------- | -------------- |
-| **system** | system | System configuration and infrastructure | Admin only |
-| **documentation** | documentation | Official user and technical documentation | Editor+ |
-| **developer** | developer | Developer documentation and technical notes | Developer+ |
+| __system__ | system | System configuration and infrastructure | Admin only |
+| __documentation__ | documentation | Official user and technical documentation | Editor+ |
+| __developer__ | developer | Developer documentation and technical notes | Developer+ |
 
-**Configuration Example:**
+__Configuration Example:__
 
 ```json
 "documentation": {
@@ -181,11 +181,11 @@ These categories route pages to the `pages/` directory:
 
 | Category | Label | Description | Access Level |
 | ---------- | ------- | ------------- | -------------- |
-| **general** | general | General wiki pages (default) | All users |
-| **user** | user | User-generated content | All users |
-| **test** | test | Testing and development pages | Editor+ |
+| __general__ | general | General wiki pages (default) | All users |
+| __user__ | user | User-generated content | All users |
+| __test__ | test | Testing and development pages | Editor+ |
 
-**Configuration Example:**
+__Configuration Example:__
 
 ```json
 "general": {
@@ -199,7 +199,7 @@ These categories route pages to the `pages/` directory:
 
 ### Default Category
 
-If no `system-category` is specified, pages use the **default category** (typically `general`), which routes to `pages/`.
+If no `system-category` is specified, pages use the __default category__ (typically `general`), which routes to `pages/`.
 
 ---
 
@@ -229,50 +229,50 @@ lastModified: '2025-10-16T19:56:00.000Z'  # ISO 8601 timestamp
 
 #### `title` (Required)
 
-- **Purpose:** Human-readable page name
-- **Display:** Used in navigation, search results, page header
-- **Example:** `"Footnote Example"`, `"User Guide"`
+- __Purpose:__ Human-readable page name
+- __Display:__ Used in navigation, search results, page header
+- __Example:__ `"Footnote Example"`, `"User Guide"`
 
 #### `uuid` (Required)
 
-- **Purpose:** Unique identifier for the page
-- **Format:** UUID v4 (lowercase, hyphenated)
-- **Used for:** Filename, internal references, versioning
-- **Example:** `443c95f1-0b21-494a-b712-08ce0dc933e1`
-- **Generation:** Automatic when page is created
+- __Purpose:__ Unique identifier for the page
+- __Format:__ UUID v4 (lowercase, hyphenated)
+- __Used for:__ Filename, internal references, versioning
+- __Example:__ `443c95f1-0b21-494a-b712-08ce0dc933e1`
+- __Generation:__ Automatic when page is created
 
 #### `system-category` (Required)
 
-- **Purpose:** Determines storage location and access control
-- **Values:** Must match a defined category in configuration
-- **Default:** `general` if not specified
-- **Example:** `documentation`, `system`, `general`, `user`
+- __Purpose:__ Determines storage location and access control
+- __Values:__ Must match a defined category in configuration
+- __Default:__ `general` if not specified
+- __Example:__ `documentation`, `system`, `general`, `user`
 
 #### `user-keywords` (Optional)
 
-- **Purpose:** Searchable tags for content discovery
-- **Format:** YAML list
-- **Best Practice:** 3-5 relevant keywords
-- **Example:** `["documentation", "examples", "markdown"]`
+- __Purpose:__ Searchable tags for content discovery
+- __Format:__ YAML list
+- __Best Practice:__ 3-5 relevant keywords
+- __Example:__ `["documentation", "examples", "markdown"]`
 
 #### `slug` (Optional)
 
-- **Purpose:** URL-friendly version of title
-- **Format:** Lowercase, hyphenated
-- **Auto-generated:** From title if not provided
-- **Example:** `footnote-example`, `user-guide`
+- __Purpose:__ URL-friendly version of title
+- __Format:__ Lowercase, hyphenated
+- __Auto-generated:__ From title if not provided
+- __Example:__ `footnote-example`, `user-guide`
 
 #### `author` (Optional)
 
-- **Purpose:** Track page creator
-- **Format:** Username or "ngdpbase Team"
-- **Display:** In page metadata sidebar
+- __Purpose:__ Track page creator
+- __Format:__ Username or "ngdpbase Team"
+- __Display:__ In page metadata sidebar
 
 #### `lastModified` (Automatic)
 
-- **Purpose:** Track last edit timestamp
-- **Format:** ISO 8601 timestamp
-- **Managed by:** System automatically updates on save
+- __Purpose:__ Track last edit timestamp
+- __Format:__ ISO 8601 timestamp
+- __Managed by:__ System automatically updates on save
 
 ### Metadata Example: Documentation Page
 
@@ -296,7 +296,7 @@ lastModified: '2025-10-16T19:56:00.000Z'
 This guide explains how to use footnotes in ngdpbase...
 ```
 
-**Storage Result:** `required-pages/443c95f1-0b21-494a-b712-08ce0dc933e1.md`
+__Storage Result:__ `required-pages/443c95f1-0b21-494a-b712-08ce0dc933e1.md`
 
 ### Metadata Example: Regular User Page
 
@@ -319,7 +319,7 @@ lastModified: '2025-10-16T14:30:00.000Z'
 These are my notes for the current project...
 ```
 
-**Storage Result:** `pages/7a8b9c0d-1e2f-3g4h-5i6j-7k8l9m0n1o2p.md`
+__Storage Result:__ `pages/7a8b9c0d-1e2f-3g4h-5i6j-7k8l9m0n1o2p.md`
 
 ---
 
@@ -327,23 +327,23 @@ These are my notes for the current project...
 
 The two-directory system provides several important benefits:
 
-### 1. **Clear Separation of Concerns**
+### 1. __Clear Separation of Concerns__
 
-**Problem:** Mixing system pages with user content makes it hard to:
+__Problem:__ Mixing system pages with user content makes it hard to:
 
 - Find critical system pages
 - Protect important documentation
 - Apply different backup strategies
 - Manage permissions appropriately
 
-**Solution:** Separate directories with clear purposes:
+__Solution:__ Separate directories with clear purposes:
 
 - `required-pages/` = System-critical, protected, high-priority
 - `pages/` = User content, editable, standard-priority
 
-### 2. **Security and Access Control**
+### 2. __Security and Access Control__
 
-**Different Protection Levels:**
+__Different Protection Levels:__
 
 ```
 required-pages/
@@ -357,30 +357,30 @@ pages/
 └── Test pages       → Can be deleted freely
 ```
 
-**Benefits:**
+__Benefits:__
 
 - Prevent accidental deletion of critical pages
 - Apply stricter permissions to system content
 - Allow users to freely experiment in `pages/`
 
-### 3. **Backup and Recovery**
+### 3. __Backup and Recovery__
 
-**Different Backup Strategies:**
+__Different Backup Strategies:__
 
 | Directory | Priority | Frequency | Retention |
 | ----------- | ---------- | ----------- | ----------- |
 | `required-pages/` | High | Every hour | 90 days |
 | `pages/` | Standard | Every 6 hours | 30 days |
 
-**Benefits:**
+__Benefits:__
 
 - Ensure critical documentation is never lost
 - Optimize backup storage and performance
 - Faster recovery of system pages
 
-### 4. **Performance Optimization**
+### 4. __Performance Optimization__
 
-**Cache Strategy:**
+__Cache Strategy:__
 
 ```javascript
 // High cache priority for system pages
@@ -398,31 +398,31 @@ pages/: {
 }
 ```
 
-**Benefits:**
+__Benefits:__
 
 - Faster loading of frequently accessed documentation
 - Better memory management
 - Reduced server load
 
-### 5. **Easier Administration**
+### 5. __Easier Administration__
 
-**Clear Organization:**
+__Clear Organization:__
 
 - Administrators know exactly where to find system pages
 - Easier to audit and review critical content
 - Simpler to apply bulk operations (permissions, backups, etc.)
 - Clean separation for migrations and exports
 
-### 6. **Disaster Recovery**
+### 6. __Disaster Recovery__
 
-**Prioritized Recovery:**
+__Prioritized Recovery:__
 
 If disaster strikes:
 
-1. **First:** Restore `required-pages/` (system can function)
-2. **Then:** Restore `pages/` (user content recovered)
+1. __First:__ Restore `required-pages/` (system can function)
+2. __Then:__ Restore `pages/` (user content recovered)
 
-**Benefits:**
+__Benefits:__
 
 - Wiki can be operational quickly with just system pages
 - Users can continue viewing documentation while user content is restored
@@ -436,14 +436,14 @@ If disaster strikes:
 
 #### Choose the Right Category
 
-**Use `documentation` for:**
+__Use `documentation` for:__
 
 - ✅ Official user guides and tutorials
 - ✅ API documentation and references
 - ✅ Policy and procedure documents
 - ✅ Help pages and FAQs
 
-**Use `general` or `user` for:**
+__Use `general` or `user` for:__
 
 - ✅ Personal notes and drafts
 - ✅ Project-specific documentation
@@ -472,12 +472,12 @@ title: Page
 
 #### Follow Naming Conventions
 
-**Titles:**
+__Titles:__
 
 - ✅ Use clear, descriptive titles: "Markdown Footnotes Guide"
 - ❌ Avoid vague titles: "Guide", "Notes", "Untitled"
 
-**Keywords:**
+__Keywords:__
 
 - ✅ Use specific, searchable terms: "markdown", "footnotes", "syntax"
 - ❌ Avoid generic terms: "stuff", "things", "page"
@@ -486,7 +486,7 @@ title: Page
 
 #### Regular Audits
 
-**Check category assignments:**
+__Check category assignments:__
 
 ```bash
 # Find pages in wrong directory
@@ -508,7 +508,7 @@ find required-pages/ -name "*.md" | wc -l
 
 #### Backup Strategy
 
-**Automated Backups:**
+__Automated Backups:__
 
 ```json
 {
@@ -544,12 +544,12 @@ When moving a page between directories:
 
 ### Example 1: Creating a Documentation Page
 
-**Scenario:** You want to create an official guide for using footnotes.
+__Scenario:__ You want to create an official guide for using footnotes.
 
-**Steps:**
+__Steps:__
 
-1. **Create new page** in wiki interface
-2. **Set metadata:**
+1. __Create new page__ in wiki interface
+2. __Set metadata:__
 
 ```yaml
 ---
@@ -563,22 +563,22 @@ author: Technical Writer Team
 ---
 ```
 
-1. **Write content**
-2. **Save** → System automatically:
+1. __Write content__
+2. __Save__ → System automatically:
    - Generates UUID: `443c95f1-0b21-494a-b712-08ce0dc933e1`
    - Routes to: `required-pages/443c95f1-0b21-494a-b712-08ce0dc933e1.md`
    - Sets permissions: Editor+ can edit, all can view
 
-**Result:** Page appears at `/wiki/FootnoteExample` and is stored in `required-pages/`.
+__Result:__ Page appears at `/wiki/FootnoteExample` and is stored in `required-pages/`.
 
 ### Example 2: Creating a Personal Note
 
-**Scenario:** You want to keep project notes.
+__Scenario:__ You want to keep project notes.
 
-**Steps:**
+__Steps:__
 
-1. **Create new page**
-2. **Set metadata:**
+1. __Create new page__
+2. __Set metadata:__
 
 ```yaml
 ---
@@ -592,19 +592,19 @@ author: jane.smith
 ---
 ```
 
-1. **Write content**
-2. **Save** → System automatically:
+1. __Write content__
+2. __Save__ → System automatically:
    - Generates UUID: `7a8b9c0d-1e2f-3g4h-5i6j-7k8l9m0n1o2p`
    - Routes to: `pages/7a8b9c0d-1e2f-3g4h-5i6j-7k8l9m0n1o2p.md`
    - Sets permissions: Standard user access
 
-**Result:** Page appears at `/wiki/Q4%20Project%20Planning` and is stored in `pages/`.
+__Result:__ Page appears at `/wiki/Q4%20Project%20Planning` and is stored in `pages/`.
 
 ### Example 3: Moving a Page Between Directories
 
-**Scenario:** A draft page became official documentation.
+__Scenario:__ A draft page became official documentation.
 
-**Original Metadata (in `pages/`):**
+__Original Metadata (in `pages/`):__
 
 ```yaml
 ---
@@ -613,7 +613,7 @@ system-category: user  # Draft in pages/
 ---
 ```
 
-**Updated Metadata:**
+__Updated Metadata:__
 
 ```yaml
 ---
@@ -622,7 +622,7 @@ system-category: documentation  # Now official
 ---
 ```
 
-**System Behavior:**
+__System Behavior:__
 
 1. User edits page and changes `system-category` to `documentation`
 2. User clicks Save
@@ -633,7 +633,7 @@ system-category: documentation  # Now official
 
 ### Example 4: System Page Categories
 
-**Navigation Menu (System Page):**
+__Navigation Menu (System Page):__
 
 ```yaml
 ---
@@ -643,9 +643,9 @@ system-category: system  # ← System infrastructure
 ---
 ```
 
-**Stored in:** `required-pages/110fc9ee-90ca-4e6d-b6fa-334ce3074205.md`
+__Stored in:__ `required-pages/110fc9ee-90ca-4e6d-b6fa-334ce3074205.md`
 
-**Admin Dashboard (System Page):**
+__Admin Dashboard (System Page):__
 
 ```yaml
 ---
@@ -654,7 +654,7 @@ system-category: system  # ← Admin-only
 ---
 ```
 
-**Stored in:** `required-pages/[uuid].md` with admin-only access
+__Stored in:__ `required-pages/[uuid].md` with admin-only access
 
 ---
 
@@ -662,22 +662,22 @@ system-category: system  # ← Admin-only
 
 ### Q: Can I manually move a page between directories?
 
-**A:** Not recommended. Always use the metadata approach:
+__A:__ Not recommended. Always use the metadata approach:
 
-❌ **Don't do this:**
+❌ __Don't do this:__
 
 ```bash
 mv pages/file.md required-pages/file.md
 ```
 
-✅ **Do this instead:**
+✅ __Do this instead:__
 
 1. Edit page in wiki interface
 2. Change `system-category` in frontmatter
 3. Save page
 4. System automatically routes to correct directory
 
-**Why?** Manual moves can break:
+__Why?__ Manual moves can break:
 
 - Internal links and references
 - Cache entries
@@ -686,21 +686,21 @@ mv pages/file.md required-pages/file.md
 
 ### Q: What happens if I use a non-existent category?
 
-**A:** The system will use the default category (`general`), routing the page to `pages/`.
+__A:__ The system will use the default category (`general`), routing the page to `pages/`.
 
-**Example:**
+__Example:__
 
 ```yaml
 system-category: nonexistent-category
 ```
 
-**Result:** Page saved to `pages/` directory with `general` category.
+__Result:__ Page saved to `pages/` directory with `general` category.
 
-**Recommendation:** Always use defined categories. Check configuration for available options.
+__Recommendation:__ Always use defined categories. Check configuration for available options.
 
 ### Q: Can I add custom categories?
 
-**A:** Yes! Add them to `data/config/app-custom-config.json`:
+__A:__ Yes! Add them to `data/config/app-custom-config.json`:
 
 ```json
 {
@@ -716,17 +716,17 @@ system-category: nonexistent-category
 }
 ```
 
-**Restart required:** Server must restart to load new categories.
+__Restart required:__ Server must restart to load new categories.
 
 ### Q: Why are filenames UUIDs instead of page titles?
 
-**A:** UUID filenames provide:
+__A:__ UUID filenames provide:
 
-- **Uniqueness:** No conflicts even with identical titles
-- **Stability:** Renaming page doesn't break file references
-- **Security:** Harder to guess filenames
-- **Internationalization:** Works with any character set in titles
-- **URL Safety:** No encoding issues
+- __Uniqueness:__ No conflicts even with identical titles
+- __Stability:__ Renaming page doesn't break file references
+- __Security:__ Harder to guess filenames
+- __Internationalization:__ Works with any character set in titles
+- __URL Safety:__ No encoding issues
 
 ### Q: How do I find a page file on disk?
 
@@ -777,7 +777,7 @@ find pages/ required-pages/ -name "*.md" -exec grep -l "title: Footnote" {} \;
 | Delete | Editor+ | Admin only |
 | Rename | Editor+ | Admin only |
 
-**Note:** Specific permissions may vary based on your configuration.
+__Note:__ Specific permissions may vary based on your configuration.
 
 ---
 
@@ -785,13 +785,13 @@ find pages/ required-pages/ -name "*.md" -exec grep -l "title: Footnote" {} \;
 
 ### Issue: Page not appearing after save
 
-**Symptoms:**
+__Symptoms:__
 
 - Page saved successfully
 - Can't find page in wiki
 - File exists on disk
 
-**Diagnosis:**
+__Diagnosis:__
 
 ```bash
 # Check if file exists
@@ -801,9 +801,9 @@ ls -la pages/ required-pages/ | grep [uuid]
 cat pages/[uuid].md | head -15
 ```
 
-**Solutions:**
+__Solutions:__
 
-1. **Check category spelling:**
+1. __Check category spelling:__
 
    ```yaml
    # ❌ Typo
@@ -813,13 +813,13 @@ cat pages/[uuid].md | head -15
    system-category: documentation
    ```
 
-2. **Verify category is enabled:**
+2. __Verify category is enabled:__
 
    ```bash
    grep "documentation" config/app-default-config.json
    ```
 
-3. **Restart server to reload:**
+3. __Restart server to reload:__
 
    ```bash
    ./server.sh restart
@@ -827,22 +827,22 @@ cat pages/[uuid].md | head -15
 
 ### Issue: Page in wrong directory
 
-**Symptoms:**
+__Symptoms:__
 
 - Documentation page in `pages/` instead of `required-pages/`
 - Or vice versa
 
-**Cause:** Category doesn't match storage location configuration
+__Cause:__ Category doesn't match storage location configuration
 
-**Solution:**
+__Solution:__
 
-1. **Check category configuration:**
+1. __Check category configuration:__
 
    ```bash
    grep -A5 '"documentation"' config/app-default-config.json
    ```
 
-2. **Verify `storageLocation` is correct:**
+2. __Verify `storageLocation` is correct:__
 
    ```json
    "documentation": {
@@ -850,7 +850,7 @@ cat pages/[uuid].md | head -15
    }
    ```
 
-3. **If configuration is correct, re-save page:**
+3. __If configuration is correct, re-save page:__
    - Edit page
    - Don't change anything
    - Click Save
@@ -858,16 +858,16 @@ cat pages/[uuid].md | head -15
 
 ### Issue: Cannot delete page
 
-**Symptoms:**
+__Symptoms:__
 
 - "Permission denied" when trying to delete
 - Delete button disabled
 
-**Cause:** Page is in `required-pages/` and user doesn't have admin rights
+__Cause:__ Page is in `required-pages/` and user doesn't have admin rights
 
-**Solutions:**
+__Solutions:__
 
-**Option 1:** Change category to move it out:
+__Option 1:__ Change category to move it out:
 
 ```yaml
 # Change from:
@@ -879,9 +879,9 @@ system-category: user
 
 Then admins can safely delete from `pages/`.
 
-**Option 2:** Request admin assistance for deletion
+__Option 2:__ Request admin assistance for deletion
 
-**Option 3:** Archive instead of delete (recommended):
+__Option 3:__ Archive instead of delete (recommended):
 
 ```yaml
 # Add archived keyword
@@ -892,14 +892,14 @@ user-keywords:
 
 ### Issue: Links broken after page move
 
-**Symptoms:**
+__Symptoms:__
 
 - Internal wiki links return 404
 - Page moved between directories
 
-**Cause:** Wiki uses page name/slug for links, not UUID
+__Cause:__ Wiki uses page name/slug for links, not UUID
 
-**Solution:** Links should continue working if:
+__Solution:__ Links should continue working if:
 
 - Page title unchanged
 - Page slug unchanged
@@ -992,7 +992,7 @@ Located in: `config/app-default-config.json`
 
 ---
 
-**Questions or Issues?**
+__Questions or Issues?__
 
 - Check the [Troubleshooting](#troubleshooting) section
 - Visit the [Forum](http://localhost:3000/wiki/Forum)
@@ -1000,6 +1000,6 @@ Located in: `config/app-default-config.json`
 
 ---
 
-**Last Updated:** 2025-10-16
-**Maintained By:** ngdpbase Documentation Team
-**Status:** Current ✅
+__Last Updated:__ 2025-10-16
+__Maintained By:__ ngdpbase Documentation Team
+__Status:__ Current ✅

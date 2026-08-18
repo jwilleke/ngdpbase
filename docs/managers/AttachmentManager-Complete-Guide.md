@@ -1,9 +1,9 @@
 # AttachmentManager Complete Guide
 
-**Module:** `src/managers/AttachmentManager.js`
-**Quick Reference:** [AttachmentManager.md](AttachmentManager.md)
-**Version:** 1.0.0
-**Based on:** JSPWiki AttachmentManager pattern
+__Module:__ `src/managers/AttachmentManager.js`
+__Quick Reference:__ [AttachmentManager.md](AttachmentManager.md)
+__Version:__ 1.0.0
+__Based on:__ JSPWiki AttachmentManager pattern
 
 ---
 
@@ -28,13 +28,13 @@ The AttachmentManager is responsible for managing file attachments in ngdpbase. 
 
 ### Key Features
 
-- **Pluggable Storage Providers**: Support for multiple storage backends (filesystem, database, cloud storage)
-- **Schema.org Metadata**: Rich metadata using Schema.org CreativeWork format
-- **Content Deduplication**: Hash-based storage prevents duplicate file storage
-- **Page Mentions Tracking**: Track which pages reference which attachments
-- **Permission Enforcement**: Integration with PolicyManager for access control
-- **Backup/Restore Support**: Full backup and restore capabilities via BackupManager
-- **Provider Fallback**: Configurable default provider with fallback pattern
+- __Pluggable Storage Providers__: Support for multiple storage backends (filesystem, database, cloud storage)
+- __Schema.org Metadata__: Rich metadata using Schema.org CreativeWork format
+- __Content Deduplication__: Hash-based storage prevents duplicate file storage
+- __Page Mentions Tracking__: Track which pages reference which attachments
+- __Permission Enforcement__: Integration with PolicyManager for access control
+- __Backup/Restore Support__: Full backup and restore capabilities via BackupManager
+- __Provider Fallback__: Configurable default provider with fallback pattern
 
 ### Design Principles
 
@@ -77,7 +77,7 @@ Following JSPWiki's attachment management pattern, AttachmentManager:
 
 ### Component Responsibilities
 
-**AttachmentManager:**
+__AttachmentManager:__
 
 - Permission checking via PolicyManager
 - Provider initialization and management
@@ -85,13 +85,13 @@ Following JSPWiki's attachment management pattern, AttachmentManager:
 - Provider name normalization (lowercase → PascalCase)
 - Backup/restore coordination
 
-**BaseAttachmentProvider:**
+__BaseAttachmentProvider:__
 
 - Abstract interface all providers must implement
 - Defines standard methods (storeAttachment, getAttachment, etc.)
 - Enforces ConfigurationManager usage
 
-**Concrete Providers:**
+__Concrete Providers:__
 
 - Implement actual storage logic (filesystem, database, cloud)
 - Handle metadata persistence
@@ -171,9 +171,9 @@ AttachmentManager uses a hierarchical configuration structure with all lowercase
 
 The provider fallback pattern ensures reliability:
 
-1. **Check active provider**: `ngdpbase.attachment.provider`
-2. **Fallback to default**: `ngdpbase.attachment.provider.default`
-3. **Hardcoded fallback**: `"basicattachmentprovider"`
+1. __Check active provider__: `ngdpbase.attachment.provider`
+2. __Fallback to default__: `ngdpbase.attachment.provider.default`
+3. __Hardcoded fallback__: `"basicattachmentprovider"`
 
 This allows administrators to change providers without breaking the system.
 
@@ -196,9 +196,9 @@ Provider names follow lowercase convention in configuration but are normalized t
 
 #### 1. BasicAttachmentProvider ✅ (Implemented)
 
-**Status:** Production Ready
-**Storage:** Filesystem
-**Features:**
+__Status:__ Production Ready
+__Storage:__ Filesystem
+__Features:__
 
 - Content deduplication via SHA-256 hashing
 - Schema.org CreativeWork metadata
@@ -206,7 +206,7 @@ Provider names follow lowercase convention in configuration but are normalized t
 - Automatic metadata persistence
 - Backup/restore support
 
-**Configuration:**
+__Configuration:__
 
 ```json
 {
@@ -217,7 +217,7 @@ Provider names follow lowercase convention in configuration but are normalized t
 }
 ```
 
-**Storage Structure:**
+__Storage Structure:__
 
 ```text
 data/attachments/
@@ -229,7 +229,7 @@ data/attachments/
 └── ...
 ```
 
-**Use Cases:**
+__Use Cases:__
 
 - Small to medium-sized wikis (< 1000 attachments)
 - Single-server deployments
@@ -238,16 +238,16 @@ data/attachments/
 
 #### 2. DatabaseAttachmentProvider 🔮 (Future)
 
-**Status:** Planned
-**Storage:** SQL Database (PostgreSQL, MySQL, SQLite)
-**Benefits:**
+__Status:__ Planned
+__Storage:__ SQL Database (PostgreSQL, MySQL, SQLite)
+__Benefits:__
 
 - Transactional integrity
 - Built-in replication
 - Advanced querying capabilities
 - Better for large deployments
 
-**Planned Configuration:**
+__Planned Configuration:__
 
 ```json
 {
@@ -259,7 +259,7 @@ data/attachments/
 }
 ```
 
-**Use Cases:**
+__Use Cases:__
 
 - Large wikis (> 1000 attachments)
 - Multi-server deployments
@@ -268,16 +268,16 @@ data/attachments/
 
 #### 3. S3AttachmentProvider 🔮 (Future)
 
-**Status:** Planned
-**Storage:** AWS S3 (Simple Storage Service)
-**Benefits:**
+__Status:__ Planned
+__Storage:__ AWS S3 (Simple Storage Service)
+__Benefits:__
 
 - Unlimited scalability
 - Built-in redundancy (11 9's durability)
 - CDN integration via CloudFront
 - Pay-per-use pricing
 
-**Planned Configuration:**
+__Planned Configuration:__
 
 ```json
 {
@@ -291,7 +291,7 @@ data/attachments/
 }
 ```
 
-**Use Cases:**
+__Use Cases:__
 
 - Enterprise wikis with high availability requirements
 - Global wikis needing CDN support
@@ -300,16 +300,16 @@ data/attachments/
 
 #### 4. AzureBlobAttachmentProvider 🔮 (Future)
 
-**Status:** Planned
-**Storage:** Azure Blob Storage
-**Benefits:**
+__Status:__ Planned
+__Storage:__ Azure Blob Storage
+__Benefits:__
 
 - Integration with Microsoft ecosystem
 - Geo-redundant storage options
 - Azure CDN support
 - Competitive pricing
 
-**Planned Configuration:**
+__Planned Configuration:__
 
 ```json
 {
@@ -322,7 +322,7 @@ data/attachments/
 }
 ```
 
-**Use Cases:**
+__Use Cases:__
 
 - Organizations using Azure infrastructure
 - Need for geo-redundant storage
@@ -475,13 +475,13 @@ try {
 
 Initialize AttachmentManager with configuration.
 
-**Parameters:**
+__Parameters:__
 
 - `config` (Object): Configuration object (usually empty, loaded from ConfigurationManager)
 
-**Returns:** ```Promise<void>```
+__Returns:__ ```Promise<void>```
 
-**Example:**
+__Example:__
 
 ```javascript
 await attachmentManager.initialize();
@@ -493,9 +493,9 @@ await attachmentManager.initialize();
 
 Get the current attachment provider instance.
 
-**Returns:** BaseAttachmentProvider
+__Returns:__ BaseAttachmentProvider
 
-**Example:**
+__Example:__
 
 ```javascript
 const provider = attachmentManager.getCurrentAttachmentProvider();
@@ -508,7 +508,7 @@ console.log(provider.getProviderInfo());
 
 Upload an attachment.
 
-**Parameters:**
+__Parameters:__
 
 - `fileBuffer` (Buffer): File data
 - `fileInfo` (Object): `{ originalName, mimeType, size }`
@@ -517,11 +517,11 @@ Upload an attachment.
   - `description` (string): File description
   - `context` (Object): WikiContext with user information
 
-**Returns:** ```Promise<Object>``` - Attachment metadata
+__Returns:__ ```Promise<Object>``` - Attachment metadata
 
-**Throws:** Error if permission denied or upload fails
+__Throws:__ Error if permission denied or upload fails
 
-**Example:**
+__Example:__
 
 ```javascript
 const attachment = await attachmentManager.uploadAttachment(
@@ -537,13 +537,13 @@ const attachment = await attachmentManager.uploadAttachment(
 
 Get attachment file data and metadata.
 
-**Parameters:**
+__Parameters:__
 
 - `attachmentId` (string): Attachment identifier
 
-**Returns:** Promise<Object|null> - `{ buffer, metadata }` or null if not found
+__Returns:__ Promise<Object|null> - `{ buffer, metadata }` or null if not found
 
-**Example:**
+__Example:__
 
 ```javascript
 const result = await attachmentManager.getAttachment('abc123');
@@ -559,13 +559,13 @@ if (result) {
 
 Get attachment metadata only (no file data).
 
-**Parameters:**
+__Parameters:__
 
 - `attachmentId` (string): Attachment identifier
 
-**Returns:** Promise<Object|null> - Schema.org CreativeWork metadata
+__Returns:__ Promise<Object|null> - Schema.org CreativeWork metadata
 
-**Example:**
+__Example:__
 
 ```javascript
 const metadata = await attachmentManager.getAttachmentMetadata('abc123');
@@ -581,16 +581,16 @@ if (metadata) {
 
 Delete an attachment.
 
-**Parameters:**
+__Parameters:__
 
 - `attachmentId` (string): Attachment identifier
 - `userContext` (Object): User context for permission checking
 
-**Returns:** ```Promise<boolean>``` - True if deleted, false if not found
+__Returns:__ ```Promise<boolean>``` - True if deleted, false if not found
 
-**Throws:** Error if permission denied
+__Throws:__ Error if permission denied
 
-**Example:**
+__Example:__
 
 ```javascript
 const deleted = await attachmentManager.deleteAttachment(
@@ -605,13 +605,13 @@ const deleted = await attachmentManager.deleteAttachment(
 
 Check if attachment exists.
 
-**Parameters:**
+__Parameters:__
 
 - `attachmentId` (string): Attachment identifier
 
-**Returns:** ```Promise<boolean>```
+__Returns:__ ```Promise<boolean>```
 
-**Example:**
+__Example:__
 
 ```javascript
 if (await attachmentManager.attachmentExists('abc123')) {
@@ -625,9 +625,9 @@ if (await attachmentManager.attachmentExists('abc123')) {
 
 Get all attachments metadata (without file data).
 
-**Returns:** ```Promise<Array<Object>>``` - Array of attachment metadata
+__Returns:__ ```Promise<Array<Object>>``` - Array of attachment metadata
 
-**Example:**
+__Example:__
 
 ```javascript
 const attachments = await attachmentManager.getAllAttachments();
@@ -640,13 +640,13 @@ console.log(`Total attachments: ${attachments.length}`);
 
 Get attachments used by a specific page.
 
-**Parameters:**
+__Parameters:__
 
 - `pageName` (string): Page name/title
 
-**Returns:** ```Promise<Array<Object>>``` - Array of attachment metadata
+__Returns:__ ```Promise<Array<Object>>``` - Array of attachment metadata
 
-**Example:**
+__Example:__
 
 ```javascript
 const attachments = await attachmentManager.getAttachmentsForPage('ProjectDocs');
@@ -658,9 +658,9 @@ const attachments = await attachmentManager.getAttachmentsForPage('ProjectDocs')
 
 Refresh internal cache/index by re-scanning storage.
 
-**Returns:** ```Promise<void>```
+__Returns:__ ```Promise<void>```
 
-**Example:**
+__Example:__
 
 ```javascript
 await attachmentManager.refreshAttachmentList();
@@ -672,9 +672,9 @@ await attachmentManager.refreshAttachmentList();
 
 Create backup of all attachment data.
 
-**Returns:** ```Promise<Object>``` - Backup data
+__Returns:__ ```Promise<Object>``` - Backup data
 
-**Example:**
+__Example:__
 
 ```javascript
 const backupData = await attachmentManager.backup();
@@ -687,13 +687,13 @@ fs.writeFileSync('attachments-backup.json', JSON.stringify(backupData));
 
 Restore attachments from backup data.
 
-**Parameters:**
+__Parameters:__
 
 - `backupData` (Object): Backup data from backup()
 
-**Returns:** ```Promise<void>```
+__Returns:__ ```Promise<void>```
 
-**Example:**
+__Example:__
 
 ```javascript
 const backupData = JSON.parse(fs.readFileSync('attachments-backup.json'));
@@ -706,9 +706,9 @@ await attachmentManager.restore(backupData);
 
 Shutdown AttachmentManager and cleanup resources.
 
-**Returns:** ```Promise<void>```
+__Returns:__ ```Promise<void>```
 
-**Example:**
+__Example:__
 
 ```javascript
 await attachmentManager.shutdown();
@@ -754,10 +754,10 @@ Attachments use Schema.org CreativeWork format for metadata:
 
 AttachmentManager integrates seamlessly with BackupManager:
 
-1. **BackupManager** calls `backup()` on all registered managers
-2. **AttachmentManager** delegates to current provider's `backup()`
-3. **Provider** returns all metadata and references to files
-4. **BackupManager** aggregates data into compressed backup file
+1. __BackupManager__ calls `backup()` on all registered managers
+2. __AttachmentManager__ delegates to current provider's `backup()`
+3. __Provider__ returns all metadata and references to files
+4. __BackupManager__ aggregates data into compressed backup file
 
 ### Backup Data Structure
 
@@ -787,11 +787,11 @@ AttachmentManager integrates seamlessly with BackupManager:
 
 ### Backup Best Practices
 
-1. **Regular Backups**: Schedule daily backups via BackupManager
-2. **Include Files**: Ensure backup includes actual attachment files, not just metadata
-3. **Test Restores**: Periodically test restore procedures
-4. **Off-site Storage**: Store backups in different location from attachments
-5. **Version Control**: Keep multiple backup versions
+1. __Regular Backups__: Schedule daily backups via BackupManager
+2. __Include Files__: Ensure backup includes actual attachment files, not just metadata
+3. __Test Restores__: Periodically test restore procedures
+4. __Off-site Storage__: Store backups in different location from attachments
+5. __Version Control__: Keep multiple backup versions
 
 ### Manual Backup Example
 
@@ -814,11 +814,11 @@ console.log('Restore completed');
 
 To create a custom attachment provider:
 
-1. **Extend BaseAttachmentProvider**
-2. **Implement all required methods**
-3. **Use ConfigurationManager for all configuration**
-4. **Follow lowercase configuration pattern**
-5. **Add provider to normalization map in AttachmentManager**
+1. __Extend BaseAttachmentProvider__
+2. __Implement all required methods__
+3. __Use ConfigurationManager for all configuration__
+4. __Follow lowercase configuration pattern__
+5. __Add provider to normalization map in AttachmentManager__
 
 ### Example: CustomAttachmentProvider
 
@@ -916,31 +916,31 @@ Add your provider to the normalization map:
 
 ### Configuration
 
-1. **Always Use Lowercase Keys**: All configuration keys must be lowercase
-2. **Use Provider Fallback**: Always set both `.provider.default` and `.provider`
-3. **Environment Variables**: Use environment variables for sensitive values (API keys)
-4. **Custom Config**: Put custom settings in `app-custom-config.json`, not defaults
+1. __Always Use Lowercase Keys__: All configuration keys must be lowercase
+2. __Use Provider Fallback__: Always set both `.provider.default` and `.provider`
+3. __Environment Variables__: Use environment variables for sensitive values (API keys)
+4. __Custom Config__: Put custom settings in `app-custom-config.json`, not defaults
 
 ### Security
 
-1. **Permission Checking**: Always pass user context for uploads/deletes
-2. **File Type Validation**: Configure `allowedtypes` to restrict dangerous files
-3. **Size Limits**: Set appropriate `maxsize` based on server capacity
-4. **Access Control**: Use PolicyManager to define attachment permissions
+1. __Permission Checking__: Always pass user context for uploads/deletes
+2. __File Type Validation__: Configure `allowedtypes` to restrict dangerous files
+3. __Size Limits__: Set appropriate `maxsize` based on server capacity
+4. __Access Control__: Use PolicyManager to define attachment permissions
 
 ### Performance
 
-1. **Content Deduplication**: Enable hash-based deduplication to save space
-2. **Metadata Caching**: Enable `cachemetadata` for faster lookups
-3. **Thumbnail Generation**: Enable thumbnails for image-heavy wikis
-4. **Provider Selection**: Choose provider based on scale and requirements
+1. __Content Deduplication__: Enable hash-based deduplication to save space
+2. __Metadata Caching__: Enable `cachemetadata` for faster lookups
+3. __Thumbnail Generation__: Enable thumbnails for image-heavy wikis
+4. __Provider Selection__: Choose provider based on scale and requirements
 
 ### Maintenance
 
-1. **Regular Backups**: Schedule automated backups via BackupManager
-2. **Monitor Storage**: Track attachment count and total size
-3. **Cleanup Orphans**: Periodically remove attachments not referenced by any page
-4. **Test Providers**: Test provider functionality after configuration changes
+1. __Regular Backups__: Schedule automated backups via BackupManager
+2. __Monitor Storage__: Track attachment count and total size
+3. __Cleanup Orphans__: Periodically remove attachments not referenced by any page
+4. __Test Providers__: Test provider functionality after configuration changes
 
 ---
 
@@ -948,16 +948,16 @@ Add your provider to the normalization map:
 
 ### AttachmentManager Won't Initialize
 
-**Symptom:** AttachmentManager fails to initialize with error
+__Symptom:__ AttachmentManager fails to initialize with error
 
-**Possible Causes:**
+__Possible Causes:__
 
 1. ConfigurationManager not available
 2. Invalid provider name
 3. Provider file not found
 4. Configuration keys have uppercase characters
 
-**Solution:**
+__Solution:__
 
 ```javascript
 // Check ConfigurationManager
@@ -977,19 +977,19 @@ console.log(`Looking for: ${providerPath}`);
 
 ### Provider Name Not Normalized
 
-**Symptom:** Error "Cannot find module '../providers/basicattachmentprovider'"
+__Symptom:__ Error "Cannot find module '../providers/basicattachmentprovider'"
 
-**Cause:** Provider name not in normalization map
+__Cause:__ Provider name not in normalization map
 
-**Solution:** Add provider to `#normalizeProviderName()` method in AttachmentManager
+__Solution:__ Add provider to `#normalizeProviderName()` method in AttachmentManager
 
 ### Uploads Failing with Permission Error
 
-**Symptom:** "Permission denied for attachment:upload"
+__Symptom:__ "Permission denied for attachment:upload"
 
-**Cause:** User lacks upload permissions in PolicyManager
+__Cause:__ User lacks upload permissions in PolicyManager
 
-**Solution:** Check policies and user roles:
+__Solution:__ Check policies and user roles:
 
 ```javascript
 // Verify user has upload permission
@@ -1003,16 +1003,16 @@ const hasPermission = await policyManager.evaluate({
 
 ### Attachment Not Found
 
-**Symptom:** `getAttachment()` returns null
+__Symptom:__ `getAttachment()` returns null
 
-**Possible Causes:**
+__Possible Causes:__
 
 1. Attachment ID incorrect
 2. Attachment deleted
 3. Provider storage corrupted
 4. Metadata out of sync
 
-**Solution:**
+__Solution:__
 
 ```javascript
 // Check if attachment exists
@@ -1028,11 +1028,11 @@ if (!exists) {
 
 ### Large Files Won't Upload
 
-**Symptom:** Upload fails for files over certain size
+__Symptom:__ Upload fails for files over certain size
 
-**Cause:** `maxsize` configuration too small
+__Cause:__ `maxsize` configuration too small
 
-**Solution:** Increase max size in configuration:
+__Solution:__ Increase max size in configuration:
 
 ```json
 {
@@ -1042,11 +1042,11 @@ if (!exists) {
 
 ### Storage Directory Not Created
 
-**Symptom:** Error "ENOENT: no such file or directory"
+__Symptom:__ Error "ENOENT: no such file or directory"
 
-**Cause:** Storage directory doesn't exist and can't be created
+__Cause:__ Storage directory doesn't exist and can't be created
 
-**Solution:** Check permissions and create manually:
+__Solution:__ Check permissions and create manually:
 
 ```bash
 mkdir -p ./data/attachments
@@ -1074,6 +1074,6 @@ chmod 755 ./data/attachments
 
 ---
 
-**Last Updated:** 2025-12-20
-**Maintainer:** ngdpbase Team
-**Issues:** <https://github.com/jwilleke/ngdpbase/issues>
+__Last Updated:__ 2025-12-20
+__Maintainer:__ ngdpbase Team
+__Issues:__ <https://github.com/jwilleke/ngdpbase/issues>

@@ -16,11 +16,11 @@ The ValidationManager is ngdpbase's central system for ensuring data integrity a
 
 The ValidationManager follows JSPWiki's manager pattern with clean separation between:
 
-- **Filename Validation**: Enforces UUID v4 naming convention for all wiki pages
-- **Metadata Validation**: Ensures YAML frontmatter contains required fields with proper formats
-- **Content Validation**: Optional checks for content structure and quality
-- **Fix Generation**: Automatic suggestions for correcting validation issues
-- **Metadata Generation**: Utilities for creating properly formatted metadata
+- __Filename Validation__: Enforces UUID v4 naming convention for all wiki pages
+- __Metadata Validation__: Ensures YAML frontmatter contains required fields with proper formats
+- __Content Validation__: Optional checks for content structure and quality
+- __Fix Generation__: Automatic suggestions for correcting validation issues
+- __Metadata Generation__: Utilities for creating properly formatted metadata
 
 ## Core Responsibilities
 
@@ -28,12 +28,12 @@ The ValidationManager follows JSPWiki's manager pattern with clean separation be
 
 All wiki pages must follow the format: `{uuid}.md` where UUID is a valid RFC 4122 version 4 UUID.
 
-**Example Valid Filenames:**
+__Example Valid Filenames:__
 
 - `3463c02f-5c84-4a42-a574-a56077ff8162.md`
 - `749e0fc7-0f71-483a-ab80-538d9c598352.md`
 
-**Example Invalid Filenames:**
+__Example Invalid Filenames:__
 
 - `MyPage.md` (not a UUID)
 - `3463c02f-5c84-4a42-a574-a56077ff8162.txt` (wrong extension)
@@ -64,7 +64,7 @@ System categories are now configurable via `app-default-config.json` under `ngdp
 | `storageLocation` | string | Where pages go: `regular` (/pages) or `required` (/required-pages) |
 | `enabled` | boolean | Whether the category is active |
 
-**Default System Categories:**
+__Default System Categories:__
 
 - `general` - General wiki pages (default, regular storage)
 - `system` - System configuration and administrative pages (required storage)
@@ -118,7 +118,7 @@ Configuration is loaded from ConfigurationManager via `config/app-default-config
 }
 ```
 
-**Configuration Properties:**
+__Configuration Properties:__
 
 - `label` (string, required) - Display name used in metadata validation
 - `description` (string, optional) - Human-readable description
@@ -126,7 +126,7 @@ Configuration is loaded from ConfigurationManager via `config/app-default-config
 - `storageLocation` (string, optional) - `regular` for /pages or `required` for /required-pages
 - `enabled` (boolean, optional) - Set to false to disable category
 
-**Adding Custom Categories:**
+__Adding Custom Categories:__
 To add a custom category, add it to `app-custom-config.json`:
 
 ```json
@@ -171,7 +171,7 @@ if (result.success) {
 }
 ```
 
-**Result Object:**
+__Result Object:__
 
 ```javascript
 {
@@ -203,7 +203,7 @@ if (result.success) {
 }
 ```
 
-**Result Object:**
+__Result Object:__
 
 ```javascript
 {
@@ -228,7 +228,7 @@ if (result.success) {
 }
 ```
 
-**Result Object:**
+__Result Object:__
 
 ```javascript
 {
@@ -377,15 +377,15 @@ Maximum allowed categories per page (default: 3, configurable).
 
 Initializes the ValidationManager with configuration from ConfigurationManager.
 
-**Parameters:**
+__Parameters:__
 
 - `config` (optional): Configuration overrides
   - `maxUserKeywords` (number): Max keywords per page
   - `maxCategories` (number): Max categories per page
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 await validationManager.initialize({
@@ -400,11 +400,11 @@ await validationManager.initialize({
 
 Validates that a filename follows UUID naming convention.
 
-**Parameters:**
+__Parameters:__
 
 - `filename` (string): The filename to validate (e.g., `'{uuid}.md'`)
 
-**Returns:** Validation result object
+__Returns:__ Validation result object
 
 ```javascript
 {
@@ -413,7 +413,7 @@ Validates that a filename follows UUID naming convention.
 }
 ```
 
-**Example:**
+__Example:__
 
 ```javascript
 const result = validationManager.validateFilename('3463c02f-5c84-4a42-a574-a56077ff8162.md');
@@ -429,11 +429,11 @@ const invalid = validationManager.validateFilename('MyPage.md');
 
 Validates page metadata contains all required fields with proper values.
 
-**Parameters:**
+__Parameters:__
 
 - `metadata` (object): The metadata object from YAML frontmatter
 
-**Returns:** Validation result object
+__Returns:__ Validation result object
 
 ```javascript
 {
@@ -443,7 +443,7 @@ Validates page metadata contains all required fields with proper values.
 }
 ```
 
-**Validation Rules:**
+__Validation Rules:__
 
 - `title`: Non-empty string
 - `uuid`: Valid RFC 4122 UUID v4
@@ -452,7 +452,7 @@ Validates page metadata contains all required fields with proper values.
 - `user-keywords`: Array of non-empty strings, max `maxUserKeywords` items
 - `lastModified`: Valid ISO 8601 date string
 
-**Example:**
+__Example:__
 
 ```javascript
 const result = validationManager.validateMetadata({
@@ -472,13 +472,13 @@ const result = validationManager.validateMetadata({
 
 Validates a complete page before saving, including UUID consistency check.
 
-**Parameters:**
+__Parameters:__
 
 - `filename` (string): The target filename
 - `metadata` (object): The page metadata
 - `content` (string, optional): The page content for optional validation
 
-**Returns:** Comprehensive validation result
+__Returns:__ Comprehensive validation result
 
 ```javascript
 {
@@ -490,14 +490,14 @@ Validates a complete page before saving, including UUID consistency check.
 }
 ```
 
-**Validation Checks:**
+__Validation Checks:__
 
 1. Filename follows UUID.md convention
 2. Metadata contains all required fields
 3. UUID in filename matches UUID in metadata
 4. Optional content validation (if provided)
 
-**Example:**
+__Example:__
 
 ```javascript
 const result = validationManager.validatePage(
@@ -513,11 +513,11 @@ const result = validationManager.validatePage(
 
 Performs optional content quality checks.
 
-**Parameters:**
+__Parameters:__
 
 - `content` (string): The page content
 
-**Returns:** Content validation result
+__Returns:__ Content validation result
 
 ```javascript
 {
@@ -525,13 +525,13 @@ Performs optional content quality checks.
 }
 ```
 
-**Checks:**
+__Checks:__
 
 - Content is non-empty string
 - Contains markdown headers (`#`)
 - Has sufficient length (≥10 characters)
 
-**Example:**
+__Example:__
 
 ```javascript
 const result = validationManager.validateContent('# Title\n\nContent here...');
@@ -547,15 +547,15 @@ const short = validationManager.validateContent('Hi');
 
 Validates slug format (URL-safe).
 
-**Parameters:**
+__Parameters:__
 
 - `slug` (string): The slug to validate
 
-**Returns:** `boolean` - True if valid
+__Returns:__ `boolean` - True if valid
 
-**Rules:** Must be lowercase, alphanumeric, and hyphens only: `/^[a-z0-9]+(?:-[a-z0-9]+)*$/`
+__Rules:__ Must be lowercase, alphanumeric, and hyphens only: `/^[a-z0-9]+(?:-[a-z0-9]+)*$/`
 
-**Example:**
+__Example:__
 
 ```javascript
 validationManager.isValidSlug('my-wiki-page');  // true
@@ -570,7 +570,7 @@ validationManager.isValidSlug('-my-page');      // false (leading hyphen)
 
 Generates properly formatted metadata for a new page with all required fields.
 
-**Parameters:**
+__Parameters:__
 
 - `title` (string): Page title
 - `options` (object, optional): Additional metadata options
@@ -580,7 +580,7 @@ Generates properly formatted metadata for a new page with all required fields.
   - `user-keywords` (array): User keywords array
   - Any other fields to include in metadata
 
-**Returns:** Complete metadata object
+__Returns:__ Complete metadata object
 
 ```javascript
 {
@@ -593,7 +593,7 @@ Generates properly formatted metadata for a new page with all required fields.
 }
 ```
 
-**Example:**
+__Example:__
 
 ```javascript
 const metadata = validationManager.generateValidMetadata('My New Wiki Page', {
@@ -620,20 +620,20 @@ const metadata = validationManager.generateValidMetadata('My New Wiki Page', {
 
 Generates URL-safe slug from title.
 
-**Parameters:**
+__Parameters:__
 
 - `title` (string): Page title
 
-**Returns:** `string` - URL-safe slug
+__Returns:__ `string` - URL-safe slug
 
-**Transformation Rules:**
+__Transformation Rules:__
 
 1. Convert to lowercase
 2. Replace non-alphanumeric characters with hyphens
 3. Remove leading/trailing hyphens
 4. Collapse multiple consecutive hyphens into single hyphen
 
-**Example:**
+__Example:__
 
 ```javascript
 validationManager.generateSlug('Hello World');           // 'hello-world'
@@ -648,15 +648,15 @@ validationManager.generateSlug('  Trim Me  ');          // 'trim-me'
 
 Generates UUID-based filename from metadata.
 
-**Parameters:**
+__Parameters:__
 
 - `metadata` (object): Page metadata containing UUID
 
-**Returns:** `string` - Filename in `{uuid}.md` format
+__Returns:__ `string` - Filename in `{uuid}.md` format
 
-**Throws:** Error if metadata.uuid is missing
+__Throws:__ Error if metadata.uuid is missing
 
-**Example:**
+__Example:__
 
 ```javascript
 const filename = validationManager.generateFilename({
@@ -672,14 +672,14 @@ const filename = validationManager.generateFilename({
 
 Validates an existing file and provides fix suggestions if validation fails.
 
-**Parameters:**
+__Parameters:__
 
 - `filePath` (string): Path to the existing file
 - `fileData` (object): Object with `content` and `data` properties from gray-matter
   - `content` (string): File content without frontmatter
   - `data` (object): Parsed YAML frontmatter
 
-**Returns:** Validation result with optional fix suggestions
+__Returns:__ Validation result with optional fix suggestions
 
 ```javascript
 {
@@ -695,7 +695,7 @@ Validates an existing file and provides fix suggestions if validation fails.
 }
 ```
 
-**Example:**
+__Example:__
 
 ```javascript
 const matter = require('gray-matter');
@@ -716,11 +716,11 @@ if (!result.success && result.fixes) {
 
 Gets system category configuration by label.
 
-**Parameters:**
+__Parameters:__
 
 - `label` (string): Category label (e.g., "General", "System")
 
-**Returns:** Category configuration object or null
+__Returns:__ Category configuration object or null
 
 ```javascript
 {
@@ -733,7 +733,7 @@ Gets system category configuration by label.
 }
 ```
 
-**Example:**
+__Example:__
 
 ```javascript
 const categoryConfig = validationManager.getCategoryConfig('System');
@@ -749,13 +749,13 @@ if (categoryConfig) {
 
 Gets storage location for a category.
 
-**Parameters:**
+__Parameters:__
 
 - `category` (string): Category label
 
-**Returns:** `string` - Storage location (`'regular'` or `'required'`)
+__Returns:__ `string` - Storage location (`'regular'` or `'required'`)
 
-**Example:**
+__Example:__
 
 ```javascript
 const location = validationManager.getCategoryStorageLocation('System');
@@ -765,7 +765,7 @@ const location2 = validationManager.getCategoryStorageLocation('Documentation');
 // Returns: 'regular'
 ```
 
-**Use Case:**
+__Use Case:__
 
 ```javascript
 const category = metadata['system-category'];
@@ -784,9 +784,9 @@ if (storageLocation === 'required') {
 
 Gets all enabled system categories with their configuration.
 
-**Parameters:** None
+__Parameters:__ None
 
-**Returns:** Array of category configuration objects
+__Returns:__ Array of category configuration objects
 
 ```javascript
 [
@@ -802,7 +802,7 @@ Gets all enabled system categories with their configuration.
 ]
 ```
 
-**Example:**
+__Example:__
 
 ```javascript
 const categories = validationManager.getAllSystemCategories();
@@ -822,11 +822,11 @@ const requiredCategories = categories.filter(c => c.storageLocation === 'require
 
 Gets the default system category label.
 
-**Parameters:** None
+__Parameters:__ None
 
-**Returns:** `string` - Default category label (e.g., "General")
+__Returns:__ `string` - Default category label (e.g., "General")
 
-**Example:**
+__Example:__
 
 ```javascript
 const defaultCategory = validationManager.getDefaultSystemCategory();
@@ -846,12 +846,12 @@ const metadata = {
 
 Generates suggestions to fix validation issues in existing pages.
 
-**Parameters:**
+__Parameters:__
 
 - `filename` (string): Current filename
 - `metadata` (object): Current metadata
 
-**Returns:** Fix suggestions object
+__Returns:__ Fix suggestions object
 
 ```javascript
 {
@@ -860,7 +860,7 @@ Generates suggestions to fix validation issues in existing pages.
 }
 ```
 
-**Fix Logic:**
+__Fix Logic:__
 
 - Generates new UUID if missing or invalid
 - Creates filename matching UUID
@@ -870,7 +870,7 @@ Generates suggestions to fix validation issues in existing pages.
 - Sets current timestamp for lastModified if missing
 - Uses filename as title fallback if title missing
 
-**Example:**
+__Example:__
 
 ```javascript
 const fixes = validationManager.generateFixSuggestions('old-name.md', {
@@ -933,7 +933,7 @@ async function createPage(title, content, options) {
 }
 ```
 
-**Category-Based Storage Example:**
+__Category-Based Storage Example:__
 
 ```javascript
 // System pages go to /required-pages
@@ -1065,7 +1065,7 @@ async function validateAllPages() {
 
 ## Best Practices
 
-1. **Always Validate Before Saving**
+1. __Always Validate Before Saving__
 
    ```javascript
    const validation = validationManager.validatePage(filename, metadata, content);
@@ -1075,7 +1075,7 @@ async function validateAllPages() {
    await pageManager.savePage(filename, pageData);
    ```
 
-2. **Use Metadata Generation for New Pages**
+2. __Use Metadata Generation for New Pages__
 
    ```javascript
    // DON'T manually create metadata
@@ -1085,7 +1085,7 @@ async function validateAllPages() {
    const metadata = validationManager.generateValidMetadata('New Page', options);
    ```
 
-3. **Handle Warnings Appropriately**
+3. __Handle Warnings Appropriately__
 
    ```javascript
    if (result.warnings.length > 0) {
@@ -1094,7 +1094,7 @@ async function validateAllPages() {
    }
    ```
 
-4. **Use Fix Suggestions for Migration**
+4. __Use Fix Suggestions for Migration__
 
    ```javascript
    if (!result.success && result.fixes) {
@@ -1104,7 +1104,7 @@ async function validateAllPages() {
    }
    ```
 
-5. **Validate in Development/Testing**
+5. __Validate in Development/Testing__
 
    ```javascript
    if (process.env.NODE_ENV === 'development') {
@@ -1164,14 +1164,14 @@ describe('ValidationManager', () => {
 
 ## Location
 
-**Source:** `src/managers/ValidationManager.ts`
-**Dependencies:**
+__Source:__ `src/managers/ValidationManager.ts`
+__Dependencies:__
 
 - `BaseManager` - Base manager class
 - `uuid` - UUID generation and validation
 - `path` - Path operations
 
-**Related Managers:**
+__Related Managers:__
 
 - `PageManager` - Uses ValidationManager for page operations
 - `ConfigurationManager` - Provides configuration values

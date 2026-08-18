@@ -2,10 +2,10 @@
 
 ## Overview
 
-`ImportManager` manages the import of content from external sources into ngdpbase. It uses an extensible **converter registry** to support multiple source formats. The admin UI at `/admin/import` is the primary interface; the manager can also be used programmatically.
+`ImportManager` manages the import of content from external sources into ngdpbase. It uses an extensible __converter registry__ to support multiple source formats. The admin UI at `/admin/import` is the primary interface; the manager can also be used programmatically.
 
-**Source:** `src/managers/ImportManager.ts`  
-**Converters:** `src/converters/`
+__Source:__ `src/managers/ImportManager.ts`  
+__Converters:__ `src/converters/`
 
 ---
 
@@ -17,7 +17,7 @@
 | `html` | `HtmlConverter` | `.html`, `.htm` | Extracts article content, converts to Markdown |
 | `markdown` | *(pending #467)* | `.md`, `.markdown` | Pass-through — see [ngdpbase#467](https://github.com/jwilleke/ngdpbase/issues/467) |
 
-Select **Auto-detect** (`format: 'auto'`) to let the system choose based on file extension and content sniffing via `canHandle()`.
+Select __Auto-detect__ (`format: 'auto'`) to let the system choose based on file extension and content sniffing via `canHandle()`.
 
 ---
 
@@ -99,7 +99,7 @@ interface ImportOptions {
 7. Page index is rebuilt after all files are processed.
 8. Attachments in the archive are imported alongside pages.
 
-Duplicate detection: if a page with the same slug already exists, the **Overwrite** / **Skip** option in the UI controls behavior.
+Duplicate detection: if a page with the same slug already exists, the __Overwrite__ / __Skip__ option in the UI controls behavior.
 
 ---
 
@@ -133,7 +133,7 @@ importManager.registerConverter(new MyFormatConverter());
 
 ## Pending Work
 
-- **[#467](https://github.com/jwilleke/ngdpbase/issues/467)** — Add `MarkdownConverter` for `.md`/`.markdown` files. Currently `.md` files cannot be imported via `/admin/import`. See issue for scope and acceptance criteria.
+- __[#467](https://github.com/jwilleke/ngdpbase/issues/467)__ — Add `MarkdownConverter` for `.md`/`.markdown` files. Currently `.md` files cannot be imported via `/admin/import`. See issue for scope and acceptance criteria.
 
 ---
 
@@ -149,7 +149,7 @@ importManager.registerConverter(new MyFormatConverter());
 
 ## Sibling: FeedManager ([#685](https://github.com/jwilleke/ngdpbase/issues/685))
 
-`ImportManager` (this doc) handles **operator-triggered one-shot** imports — file upload at `/admin/import`, stateless converter registry, output is wiki pages. Its sibling **FeedManager** (filed, not yet implemented) will handle **scheduled live feeds** — URL-driven, cron-managed, state-bearing (last-fetched + dedup + change-detection), output is **catalog records** consumed by `[DataFeed]` / `[Marquee]` plugins rather than materialised as pages.
+`ImportManager` (this doc) handles __operator-triggered one-shot__ imports — file upload at `/admin/import`, stateless converter registry, output is wiki pages. Its sibling __FeedManager__ (filed, not yet implemented) will handle __scheduled live feeds__ — URL-driven, cron-managed, state-bearing (last-fetched + dedup + change-detection), output is __catalog records__ consumed by `[DataFeed]` / `[Marquee]` plugins rather than materialised as pages.
 
 Same problem family ("get external structured data into the wiki"), different lifecycle:
 
@@ -159,8 +159,8 @@ Same problem family ("get external structured data into the wiki"), different li
 | Input | File upload (JSPWiki, HTML, MD pending [#467](https://github.com/jwilleke/ngdpbase/issues/467)) | URL feed (REST, RSS, CSV, GeoJSON, WFS, XLS) |
 | Output | Wiki pages | Catalog records (queryable via `CatalogSource`) |
 | State | Stateless beyond converter registry | Last-fetched, dedup, stale-feed warnings |
-| Consumer | The created page **is** the product | `[DataFeed source=…]` + `[Marquee source=…]` plugins |
+| Consumer | The created page __is__ the product | `[DataFeed source=…]` + `[Marquee source=…]` plugins |
 | Materialise as page? | Always | Only when operator explicitly curates a subject page |
-| Packaging | Manager (in-engine) | **Addon** (long-running, disable-able) |
+| Packaging | Manager (in-engine) | __Addon__ (long-running, disable-able) |
 
-They share normalization primitives (`kind` codes from [#728](https://github.com/jwilleke/ngdpbase/issues/728), page-creation utilities) for the rare materialize-as-page case — but **do not share codepaths**. See [#685](https://github.com/jwilleke/ngdpbase/issues/685) for the full design.
+They share normalization primitives (`kind` codes from [#728](https://github.com/jwilleke/ngdpbase/issues/728), page-creation utilities) for the rare materialize-as-page case — but __do not share codepaths__. See [#685](https://github.com/jwilleke/ngdpbase/issues/685) for the full design.

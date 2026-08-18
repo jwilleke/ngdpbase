@@ -8,13 +8,13 @@ code: src/providers/FileSystemMediaProvider.ts
 
 # FileSystemMediaProvider
 
-**Quick Reference** | [MediaManager-Complete-Guide](../managers/MediaManager-Complete-Guide.md)
+__Quick Reference__ | [MediaManager-Complete-Guide](../managers/MediaManager-Complete-Guide.md)
 
-**Module:** `src/providers/FileSystemMediaProvider.ts`
-**Type:** Media Storage Provider
-**Extends:** [BaseMediaProvider](BaseMediaProvider.md)
-**Status:** Production
-**Dependencies:** `exiftool-vendored`, `sharp`, `fs-extra`
+__Module:__ `src/providers/FileSystemMediaProvider.ts`
+__Type:__ Media Storage Provider
+__Extends:__ [BaseMediaProvider](BaseMediaProvider.md)
+__Status:__ Production
+__Dependencies:__ `exiftool-vendored`, `sharp`, `fs-extra`
 
 ---
 
@@ -25,21 +25,21 @@ extracts EXIF/IPTC/XMP metadata via a persistent ExifTool worker process,
 maintains an in-memory + on-disk JSON index, and generates JPEG thumbnails
 on demand via Sharp.
 
-Source files are **never modified** — the provider is strictly read-only.
+Source files are __never modified__ — the provider is strictly read-only.
 
 ---
 
 ## Key Features
 
-- **Incremental scan** — `stat.mtimeMs` change detection; unchanged files skipped
-- **ExifTool worker** — single `ExifTool` instance reused across all reads (15 s timeout)
-- **Year extraction** — EXIF DateTimeOriginal → filename `YYYY-` → path `\d{4}` → mtime
-- **Event names** — parsed from `YYYY-MM-DD-EventName-NNN.ext` filename pattern
-- **Persistent index** — `media-index.json` loaded at `initialize()`, saved after scan
-- **Thumbnail cache** — `{thumbnailDir}/{id}-{size}.jpg`; cover-crop, 85% JPEG quality
-- **ignoreDirs** — skip directories by name (config list)
-- **`.ngdpbaseignore`** — gitignore-style pattern file; place in any directory to exclude matching entries before ExifTool runs
-- **`ngdpbaseignore` EXIF keyword** — tag a file in any photo manager; provider evicts and excludes it at scan time
+- __Incremental scan__ — `stat.mtimeMs` change detection; unchanged files skipped
+- __ExifTool worker__ — single `ExifTool` instance reused across all reads (15 s timeout)
+- __Year extraction__ — EXIF DateTimeOriginal → filename `YYYY-` → path `\d{4}` → mtime
+- __Event names__ — parsed from `YYYY-MM-DD-EventName-NNN.ext` filename pattern
+- __Persistent index__ — `media-index.json` loaded at `initialize()`, saved after scan
+- __Thumbnail cache__ — `{thumbnailDir}/{id}-{size}.jpg`; cover-crop, 85% JPEG quality
+- __ignoreDirs__ — skip directories by name (config list)
+- __`.ngdpbaseignore`__ — gitignore-style pattern file; place in any directory to exclude matching entries before ExifTool runs
+- __`ngdpbaseignore` EXIF keyword__ — tag a file in any photo manager; provider evicts and excludes it at scan time
 
 ---
 
@@ -159,8 +159,8 @@ Returns `null` for video MIME types or if Sharp throws (logged as warning).
 
 ## Index Persistence
 
-- **Load:** `initialize()` reads `config.indexFile` if it exists; populates `this.index`
-- **Save:** called after each `scan()` completes; writes `{ version: 1, updatedAt, items }` as pretty-printed JSON
+- __Load:__ `initialize()` reads `config.indexFile` if it exists; populates `this.index`
+- __Save:__ called after each `scan()` completes; writes `{ version: 1, updatedAt, items }` as pretty-printed JSON
 
 ---
 

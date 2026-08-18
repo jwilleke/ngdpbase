@@ -27,7 +27,7 @@ npm run create:addon -- --id volcano-watch --type domain \
 | Flag | Default | Meaning |
 |---|---|---|
 | `--id` | *(required)* | Canonical slug — lowercase, digits, single dashes |
-| `--type` | `additive` | `additive` augments a wiki; `domain` means the addon **is** the site |
+| `--type` | `additive` | `additive` augments a wiki; `domain` means the addon __is__ the site |
 | `--plugins` | one, named from the id | Comma-separated plugin names |
 | `--managers` | one, named from the id | Comma-separated manager names |
 | `--target` | `addons/<id>` | Output directory |
@@ -35,12 +35,12 @@ npm run create:addon -- --id volcano-watch --type domain \
 
 Two things the scaffolder gets right that are easy to get wrong by hand:
 
-- **Identity.** The `ngdpbase.slug` in `package.json` and the `name` exported
+- __Identity.__ The `ngdpbase.slug` in `package.json` and the `name` exported
   from `index.ts` are emitted from one value, so they cannot disagree — the
   mismatch [#927](https://github.com/jwilleke/ngdpbase/issues/927) exists to
   catch. A trailing `-addon` in `--id` is rejected, because `AddonsManager`
   strips it when deriving identity and the config key would not match the folder.
-- **Page UUIDs.** Seed pages get a real v4 UUID, generated and validated with the
+- __Page UUIDs.__ Seed pages get a real v4 UUID, generated and validated with the
   same library the page validator uses. A hand-copied or placeholder UUID makes
   `AddonsManager` skip the page silently.
 
@@ -112,7 +112,7 @@ The `AddonsManager` scans the path, finds all subdirectories with `index.js`, an
 
 ### Multiple Addon Paths
 
-`addons-path` accepts either a single string **or an array of strings**. This lets you mix generic
+`addons-path` accepts either a single string __or an array of strings__. This lets you mix generic
 add-ons (kept in `fairways-base/addons/`) with non-generic ones hosted in separate repositories:
 
 ```json
@@ -129,7 +129,7 @@ add-ons (kept in `fairways-base/addons/`) with non-generic ones hosted in separa
 Each path is scanned in order. If the same addon `name` appears in more than one path, the first
 occurrence wins and subsequent duplicates are skipped with a warning in the logs.
 
-**Convention:** keep generic/reusable add-ons in `fairways-base/addons/`; keep site-specific or
+__Convention:__ keep generic/reusable add-ons in `fairways-base/addons/`; keep site-specific or
 private add-ons in their own external repo and reference that path in the array.
 
 ---
@@ -215,7 +215,7 @@ async register(engine, config) {
 }
 ```
 
-> **Note:** When your add-on lives in an external repo, the core's automatic static
+> __Note:__ When your add-on lives in an external repo, the core's automatic static
 > serving at `/addons/...` only covers the ngdpbase `addons/` directory. You must
 > mount your own static middleware in `register()` as shown above.
 
@@ -267,15 +267,15 @@ Cards appear between the Add-ons summary and Page Management rows on `/admin`. T
 
 Place `.md` files in your add-on's `pages/` directory. `AddonsManager` will copy them into the instance's pages directory automatically on startup.
 
-> **Full reference:** [`addon-page-handling.md`](./addon-page-handling.md) covers where addon pages live (name-based source vs UUID-based runtime), what does and doesn't sync to an existing instance (additions ✅, updates/removals ❌), the orphan-file class, and the reseed gap ([#920](https://github.com/jwilleke/ngdpbase/issues/920)).
+> __Full reference:__ [`addon-page-handling.md`](./addon-page-handling.md) covers where addon pages live (name-based source vs UUID-based runtime), what does and doesn't sync to an existing instance (additions ✅, updates/removals ❌), the orphan-file class, and the reseed gap ([#920](https://github.com/jwilleke/ngdpbase/issues/920)).
 
 #### When does seeding run?
 
-Seeding runs once per addon per server startup, inside `AddonsManager.loadAddon()`, immediately after the addon's `register()` function completes. It is **not** triggered by install events or file-system watchers — a server restart is required to seed new pages.
+Seeding runs once per addon per server startup, inside `AddonsManager.loadAddon()`, immediately after the addon's `register()` function completes. It is __not__ triggered by install events or file-system watchers — a server restart is required to seed new pages.
 
 #### UUID requirements
 
-Each seed page **must** have a valid UUID v4 in its frontmatter `uuid` field. The destination filename in the instance pages directory is always `{uuid}.md` — the source filename is ignored.
+Each seed page __must__ have a valid UUID v4 in its frontmatter `uuid` field. The destination filename in the instance pages directory is always `{uuid}.md` — the source filename is ignored.
 
 ```markdown
 ---
@@ -292,7 +292,7 @@ Welcome to my add-on.
 
 Generate a UUID: `node -e "console.log(require('crypto').randomUUID())"`
 
-If the `uuid` field is missing or does not match the UUID v4 format, the file is **skipped with a warning** and not seeded. Pages with invalid UUIDs are never written to disk.
+If the `uuid` field is missing or does not match the UUID v4 format, the file is __skipped with a warning__ and not seeded. Pages with invalid UUIDs are never written to disk.
 
 #### Idempotency — existing pages are never overwritten
 
@@ -313,7 +313,7 @@ If `{uuid}.md` already exists in the instance pages directory, the seed file is 
 
 #### Cross-addon UUID conflicts
 
-If `{uuid}.md` exists and its `addon` frontmatter field names a **different** addon, `AddonsManager` logs a warning and skips the incoming page. The existing file is never overwritten. This protects against two addons accidentally shipping pages with the same UUID.
+If `{uuid}.md` exists and its `addon` frontmatter field names a __different__ addon, `AddonsManager` logs a warning and skips the incoming page. The existing file is never overwritten. This protects against two addons accidentally shipping pages with the same UUID.
 
 ```
 [AddonsManager] Page conflict: my-addon/pages/home.md skipped — already seeded by addon 'other-addon' (…/pages/{uuid}.md)
@@ -323,12 +323,12 @@ Use a freshly generated UUID for every seed page to avoid conflicts.
 
 #### Updating seeded pages / admin reseed
 
-By default seeding is **first-load only**: once a page exists in the instance it is skipped on every restart (see [Idempotency](#idempotency--existing-pages-are-never-overwritten) above), so operator edits are never clobbered.
+By default seeding is __first-load only__: once a page exists in the instance it is skipped on every restart (see [Idempotency](#idempotency--existing-pages-are-never-overwritten) above), so operator edits are never clobbered.
 
-**Pushing updated addon page content is supported** two ways ([#920](https://github.com/jwilleke/ngdpbase/issues/920)):
+__Pushing updated addon page content is supported__ two ways ([#920](https://github.com/jwilleke/ngdpbase/issues/920)):
 
-- **Content-aware boot reseed** — set `ngdpbase.addons.page-reseed: true` (default `false`). On each boot, a page is refreshed from source only when the source changed **and** the instance copy is unmodified since seed (edited pages are skipped). Reseed keeps the UUID and records a revertable version. Safe to leave on ("keep addon pages in sync") or flip on → restart → off for a one-time sync.
-- **On-demand via the admin UI** — **Required Pages Sync** at `/admin/required-pages` ([#513](https://github.com/jwilleke/ngdpbase/issues/513)) lists addon pages with status, previews would-update / would-skip, and applies on demand with no restart.
+- __Content-aware boot reseed__ — set `ngdpbase.addons.page-reseed: true` (default `false`). On each boot, a page is refreshed from source only when the source changed __and__ the instance copy is unmodified since seed (edited pages are skipped). Reseed keeps the UUID and records a revertable version. Safe to leave on ("keep addon pages in sync") or flip on → restart → off for a one-time sync.
+- __On-demand via the admin UI__ — __Required Pages Sync__ at `/admin/required-pages` ([#513](https://github.com/jwilleke/ngdpbase/issues/513)) lists addon pages with status, previews would-update / would-skip, and applies on demand with no restart.
 
 (The original first-boot seeding lives in the now-closed #442. There is no dedicated `POST /admin/addons/:addonName/reseed` REST route — the Required Pages Sync surface is the entry point.)
 
@@ -380,7 +380,7 @@ author: my-addon
 ### Ship a Theme
 
 Since v3.17.0 (issue #443): if your add-on ships a `theme/` subdirectory, ngdpbase auto-deploys it to the
-instance's `themes/<addon-name>/` on **first boot** — the same mental model as
+instance's `themes/<addon-name>/` on __first boot__ — the same mental model as
 `pages/`. This is how a domain add-on carries its site identity (e.g. the
 `fairways` add-on ships the Fairways theme).
 
@@ -395,21 +395,21 @@ addons/my-addon/theme/
 
 Behaviour:
 
-- **First-boot copy.** On add-on registration, if `theme/theme.json` exists
-  and `themes/<addon-name>/` does **not**, the tree is copied. Logged as
+- __First-boot copy.__ On add-on registration, if `theme/theme.json` exists
+  and `themes/<addon-name>/` does __not__, the tree is copied. Logged as
   `[AddonsManager] Deployed theme from <addon>/theme/ → themes/<addon>/`.
-- **Never overwrites.** If `themes/<addon-name>/` already exists, the copy is
+- __Never overwrites.__ If `themes/<addon-name>/` already exists, the copy is
   skipped — operator customisations to the deployed theme are preserved. The
   add-on source is *not* re-synced automatically (it's a snapshot).
-- **Activate it.** Set the active theme via `domainDefaults` in your add-on so
+- __Activate it.__ Set the active theme via `domainDefaults` in your add-on so
   it takes effect without operator config:
 
   ```json
   { "ngdpbase.theme.active": "my-addon" }
   ```
 
-- **Manual re-deploy.** `/admin/addons` shows a **Deploy Theme** button
-  (**Redeploy Theme** once deployed) for any add-on that ships a theme. This
+- __Manual re-deploy.__ `/admin/addons` shows a __Deploy Theme__ button
+  (__Redeploy Theme__ once deployed) for any add-on that ships a theme. This
   overwrites `themes/<addon-name>/` with the add-on's current `theme/` — used
   to pull in upstream theme updates. No server restart needed (theme CSS is
   served as static files; a page reload suffices).
@@ -419,9 +419,9 @@ The instance themes root is `ngdpbase.theme.directory` (default `themes`).
 puts the files there.
 
 > Drift note: because first-boot copy is a snapshot, theme changes you ship in
-> a later add-on release are **not** picked up until an operator clicks
-> Redeploy. Direct-load (no-copy) resolution for domain add-ons is **not
-> implemented and is not planned** — [#444](https://github.com/jwilleke/ngdpbase/issues/444)
+> a later add-on release are __not__ picked up until an operator clicks
+> Redeploy. Direct-load (no-copy) resolution for domain add-ons is __not
+> implemented and is not planned__ — [#444](https://github.com/jwilleke/ngdpbase/issues/444)
 > was closed 2026-05-25 as superseded-by-practice, the auto-copy mechanism
 > having run about a year without a complaint. Refile it if a concrete driver
 > appears (a domain addon with theme-size or write-frequency concerns).
@@ -569,14 +569,14 @@ async register(engine, config) {
 
 ### ApiContext — authentication and authorisation
 
-All addon API routes **MUST** use `ApiContext` for any route that restricts access.
-All addon API routes **SHOULD** use `ApiContext` even for public routes — it gives you
+All addon API routes __MUST__ use `ApiContext` for any route that restricts access.
+All addon API routes __SHOULD__ use `ApiContext` even for public routes — it gives you
 caller identity for free and establishes a consistent pattern.
 
-Do **not** access `req.userContext`, `req.session`, or `req.session.isAuthenticated` directly
+Do __not__ access `req.userContext`, `req.session`, or `req.session.isAuthenticated` directly
 in route handlers. `ApiContext` wraps these correctly and handles TypeScript typing.
 
-**`ApiContext.from()` always succeeds — it never throws for anonymous callers.**
+__`ApiContext.from()` always succeeds — it never throws for anonymous callers.__
 On an unauthenticated request it returns a context with `isAuthenticated: false`,
 `username: 'Anonymous'`, and `roles: ['Anonymous', 'All']`. The guard methods
 (`requireAuthenticated`, `requireRole`) are opt-in — a public route simply does not call them:
@@ -739,7 +739,7 @@ Keep core PRs self-contained — no add-on-specific code in the core repo.
 
 ## 12. Shipping Your Addon as a Container Image
 
-This section is for addon authors whose addon lives in **its own repo** (drop-in distribution model — see [`addon-architecture.md` § Distribution Models](./addon-architecture.md#distribution-models)) and who want to ship their site as a container. It does not apply to bundled addons, which are baked into the upstream `ghcr.io/jwilleke/ngdpbase` image automatically.
+This section is for addon authors whose addon lives in __its own repo__ (drop-in distribution model — see [`addon-architecture.md` § Distribution Models](./addon-architecture.md#distribution-models)) and who want to ship their site as a container. It does not apply to bundled addons, which are baked into the upstream `ghcr.io/jwilleke/ngdpbase` image automatically.
 
 ### What ngdpbase publishes for you
 
@@ -812,7 +812,7 @@ Enable Renovate on the repo (GitHub App or self-hosted). On every ngdpbase relea
 2. Includes the upstream changelog/release notes from `ghcr.io/jwilleke/ngdpbase`'s OCI labels.
 3. Triggers your CI to rebuild the image against the new base.
 
-Reviewer merges → CI publishes a fresh combined image → your container is current. This is the **deterministic method for container deployment builds** referenced in [#668](https://github.com/jwilleke/ngdpbase/issues/668): the platform handles publishing, Renovate handles propagation, no codegen required on either side.
+Reviewer merges → CI publishes a fresh combined image → your container is current. This is the __deterministic method for container deployment builds__ referenced in [#668](https://github.com/jwilleke/ngdpbase/issues/668): the platform handles publishing, Renovate handles propagation, no codegen required on either side.
 
 If you prefer Dependabot, the equivalent `.github/dependabot.yml` entry is:
 

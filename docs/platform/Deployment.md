@@ -4,11 +4,11 @@
 
 A statement of where ngdpbase ends and where the operator's work begins, plus a small-org-friendly map of the three supported deployment shapes. It exists to clarify project scope — what ngdpbase does and does not take responsibility for — and to give a new operator enough orientation to pick the right shape at a glance.
 
-This is **not** a step-by-step deployment manual. Each shape links to its own deeper document (still being built) for the actual run-the-commands instructions.
+This is __not__ a step-by-step deployment manual. Each shape links to its own deeper document (still being built) for the actual run-the-commands instructions.
 
 ## What ngdpbase ships
 
-ngdpbase's primary responsibility is the **build container step** — produce a versioned image, push it to GHCR, sign off. Alongside the image, the repo also ships **starter artifacts** for the three deployment shapes documented below. They're examples, not templates anyone is required to use:
+ngdpbase's primary responsibility is the __build container step__ — produce a versioned image, push it to GHCR, sign off. Alongside the image, the repo also ships __starter artifacts__ for the three deployment shapes documented below. They're examples, not templates anyone is required to use:
 
 - A versioned source release on GitHub (`vX.Y.Z` tag + release notes).
 - A container image published to GHCR (`ghcr.io/jwilleke/ngdpbase:X.Y.Z`).
@@ -23,7 +23,7 @@ The starter artifacts are intentionally minimal. Forking and adapting them is ex
 
 ## What ngdpbase does not ship
 
-ngdpbase deliberately does **not** publish:
+ngdpbase deliberately does __not__ publish:
 
 - A Helm chart or Kustomize bases. (Plain `kubectl apply`-able manifests only.)
 - A reference GitOps repository or a published image-automation workflow.
@@ -35,13 +35,13 @@ These are operator concerns. The goal is to keep ngdpbase flexible — any opera
 
 ## The reference demo: GeoHazardWatch
 
-[GeoHazardWatch](https://github.com/jwilleke/geohazardwatch) is the project's reference deployment. It exists to show what the platform can do — volcano and earthquake data, the addon API, themes, the contact form, image automation. It is **not** a template anyone is expected to copy.
+[GeoHazardWatch](https://github.com/jwilleke/geohazardwatch) is the project's reference deployment. It exists to show what the platform can do — volcano and earthquake data, the addon API, themes, the contact form, image automation. It is __not__ a template anyone is expected to copy.
 
 Forking GeoHazardWatch to build a different vertical (a hiking site, a club roster, a seismology research portal — anything) is supported and encouraged. Operators are free to choose any addon set, any Docker layering pattern, any deployment pipeline.
 
 ## Three deployment shapes
 
-Listed in increasing complexity. **Most small-org operators want Direct install.** Docker Compose is the easiest way to try ngdpbase. Kubernetes is for ops teams already running a cluster — most small organizations don't need it.
+Listed in increasing complexity. __Most small-org operators want Direct install.__ Docker Compose is the easiest way to try ngdpbase. Kubernetes is for ops teams already running a cluster — most small organizations don't need it.
 
 ### Direct install — recommended for most operators
 
@@ -69,13 +69,13 @@ Run ngdpbase in a container on a single machine with `docker compose up`. Good f
 - A free network port.
 - (Optional) A reverse proxy for HTTPS — or use the bundled Traefik variant.
 
-If you don't have Docker installed (or don't want to install it), look at **Direct install** instead. It's simpler.
+If you don't have Docker installed (or don't want to install it), look at __Direct install__ instead. It's simpler.
 
 See [docker compose →](./deployment/docker-compose.md).
 
 ### Kubernetes — for ops teams running clusters
 
-Run ngdpbase as a workload on an existing Kubernetes cluster. Appropriate when you're already running other services on K8s and have the operational tooling and habits to support it. **Most small organizations don't need this** — Direct install or Docker Compose is almost always simpler and cheaper. The repo ships plain starter manifests in [`docker/k8s/`](../../docker/k8s/) (`configmap.yaml`, `deployment.yaml`, `ingress.yaml`, `pvc.yaml`, `service.yaml`) plus a `secrets.yaml.example`. Copy, adapt to your namespace and ingress / TLS / storage choices, then `kubectl apply`.
+Run ngdpbase as a workload on an existing Kubernetes cluster. Appropriate when you're already running other services on K8s and have the operational tooling and habits to support it. __Most small organizations don't need this__ — Direct install or Docker Compose is almost always simpler and cheaper. The repo ships plain starter manifests in [`docker/k8s/`](../../docker/k8s/) (`configmap.yaml`, `deployment.yaml`, `ingress.yaml`, `pvc.yaml`, `service.yaml`) plus a `secrets.yaml.example`. Copy, adapt to your namespace and ingress / TLS / storage choices, then `kubectl apply`.
 
 #### Requirements
 
@@ -86,7 +86,7 @@ Run ngdpbase as a workload on an existing Kubernetes cluster. Appropriate when y
 - An ingress controller + a way to provision TLS (cert-manager + Let's Encrypt, or a cloud load balancer, or Cloudflare Tunnel).
 - (Optional) GitOps tooling like Flux or ArgoCD if you want pull-based deploys.
 
-If you're reading the requirements and any line is a question rather than a yes, look at **Docker Compose** or **Direct install** — both are easier on-ramps to ngdpbase. You can always move to Kubernetes later once the rest of your stack lives there.
+If you're reading the requirements and any line is a question rather than a yes, look at __Docker Compose__ or __Direct install__ — both are easier on-ramps to ngdpbase. You can always move to Kubernetes later once the rest of your stack lives there.
 
 See [kubernetes →](./deployment/kubernetes.md).
 

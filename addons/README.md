@@ -73,7 +73,7 @@ Add-ons are configured in `config/app-custom-config.json`:
 }
 ```
 
-By default, all add-ons are **disabled**. You must explicitly enable each add-on.
+By default, all add-ons are __disabled__. You must explicitly enable each add-on.
 
 ## Accessing Configuration
 

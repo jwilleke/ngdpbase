@@ -15,7 +15,7 @@ Renders a responsive image carousel (slideshow) using Bootstrap 5's carousel
 component.  Images are supplied as a comma-separated list of URLs or wiki
 attachment paths.
 
-**Source:** `plugins/SlideshowPlugin.ts`
+__Source:__ `plugins/SlideshowPlugin.ts`
 
 ## Plugin Metadata
 
@@ -51,7 +51,7 @@ attachment paths.
 
 | Parameter | Type | Default | Required | Description |
 | --- | --- | --- | --- | --- |
-| `images` | string | — | **Yes** | Comma-separated image URLs or attachment paths. |
+| `images` | string | — | __Yes__ | Comma-separated image URLs or attachment paths. |
 | `captions` | string | — | No | Comma-separated captions, one per image. Shown as an overlay on medium+ screens. |
 | `alts` | string | — | No | Comma-separated alt texts (accessibility). Falls back to `captions[i]` then filename. |
 | `interval` | number | `5000` | No | Milliseconds between auto-advances. Set to `0` to disable autoplay. |

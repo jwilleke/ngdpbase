@@ -31,7 +31,7 @@ Re-run on each release to track drift over time. Compare against the previous ba
 
 ## Drift vs baseline-v3.51.0-2026-07-17.md
 
-⚠️  **Regression candidate(s):** /search?q=test (+290.7%, +125ms)
+⚠️  __Regression candidate(s):__ /search?q=test (+290.7%, +125ms)
 
 | Metric | Previous | New | Δ |
 | --- | --- | --- | --- |
@@ -43,4 +43,4 @@ Re-run on each release to track drift over time. Compare against the previous ba
 
 Thresholds (override via env): memory 25% / route 50% AND 50ms (both must trip).
 
-**Post-capture note:** `/search?q=test` re-sampled immediately after capture (10 sequential curls): 39–45 ms, mean ~41 ms — identical to the v3.51.0 baseline (43 ms). The 168 ms figure was transient load during the capture run, not a code regression. No release change touches the search path (release range is docker/npm, trust proxy, media/import, parser class attributes).
+__Post-capture note:__ `/search?q=test` re-sampled immediately after capture (10 sequential curls): 39–45 ms, mean ~41 ms — identical to the v3.51.0 baseline (43 ms). The 168 ms figure was transient load during the capture run, not a code regression. No release change touches the search path (release range is docker/npm, trust proxy, media/import, parser class attributes).

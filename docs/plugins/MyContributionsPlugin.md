@@ -11,7 +11,7 @@ relatedModules:
 
 # MyContributionsPlugin
 
-Embeds the **My Contributions** card (familiar from `/profile`) into any wiki page. Renders different surfaces depending on whether the viewer is looking at their own profile or someone else's.
+Embeds the __My Contributions__ card (familiar from `/profile`) into any wiki page. Renders different surfaces depending on whether the viewer is looking at their own profile or someone else's.
 
 ## Usage
 
@@ -31,13 +31,13 @@ Embeds the **My Contributions** card (familiar from `/profile`) into any wiki pa
 
 The card adapts to the viewer/target relationship:
 
-- **Self-view** (target == viewer) → full six-count card: **Private · Authored · Journal · My Links · Edited · Shared**. Matches `/profile`.
-- **Cross-view** (target ≠ viewer) → reduced three-count card: **Authored · Journal · Edited**. Private / Shared / Links are viewer-specific or potentially sensitive and require viewer roles or that user's preferences.
-- **Anonymous visitor with no explicit `username`** → empty output (no leak).
+- __Self-view__ (target == viewer) → full six-count card: __Private · Authored · Journal · My Links · Edited · Shared__. Matches `/profile`.
+- __Cross-view__ (target ≠ viewer) → reduced three-count card: __Authored · Journal · Edited__. Private / Shared / Links are viewer-specific or potentially sensitive and require viewer roles or that user's preferences.
+- __Anonymous visitor with no explicit `username`__ → empty output (no leak).
 
 ## Captures row (#1004)
 
-A seventh row, **My Captures** → `/my/captures`, appears **only** when both hold:
+A seventh row, __My Captures__ → `/my/captures`, appears __only__ when both hold:
 
 1. the viewer is looking at their own card (captures are personal clippings, same reasoning as `Private Pages`), and
 2. `ngdpbase.capture.enabled` is `true` on the instance.

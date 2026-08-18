@@ -32,10 +32,10 @@ If applicable, add screenshots to help explain your problem.
 
 ## 🖥️ Environment
 
-- **OS**:
-- **Node.js Version** (if applicable):
-- **Browser** (if UI issue):
-- **Other**:
+- __OS__:
+- __Node.js Version__ (if applicable):
+- __Browser__ (if UI issue):
+- __Other__:
 
 ## 📝 Additional Context
 

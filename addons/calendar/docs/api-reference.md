@@ -13,7 +13,7 @@ Authentication uses the ngdpbase session cookie (same as the wiki UI).
 
 Return events as a FullCalendar-compatible JSON array.
 
-**Auth**: none for `public` calendars; session required for `authenticated`/`private`.
+__Auth__: none for `public` calendars; session required for `authenticated`/`private`.
 
 #### Query parameters
 
@@ -23,10 +23,10 @@ Return events as a FullCalendar-compatible JSON array.
 | `start` | ISO 8601 range start (FullCalendar passes this automatically) |
 | `end` | ISO 8601 range end |
 
-**Privacy**: `_private` blocks are stripped for callers who are not the event's
+__Privacy__: `_private` blocks are stripped for callers who are not the event's
 requester and do not hold `admin` or `clubhouse-manager`.
 
-**Response** `200 OK`
+__Response__ `200 OK`
 
 ```json
 [
@@ -50,7 +50,7 @@ requester and do not hold `admin` or `clubhouse-manager`.
 
 Create a new event on a `managed` calendar.
 
-**Auth**: `admin` or `clubhouse-manager`
+__Auth__: `admin` or `clubhouse-manager`
 
 #### Request body
 
@@ -67,7 +67,7 @@ Create a new event on a `managed` calendar.
 | `status` | no | `CONFIRMED` `TENTATIVE` `CANCELLED` (default: `CONFIRMED`) |
 | `url` | no | Link opened on event click |
 
-**Response** `201 Created` — full `FullCalendarEvent` object.
+__Response__ `201 Created` — full `FullCalendarEvent` object.
 
 #### Errors
 
@@ -83,7 +83,7 @@ Create a new event on a `managed` calendar.
 
 Keyword search across event titles and descriptions.
 
-**Auth**: none for `public` calendars.
+__Auth__: none for `public` calendars.
 
 #### Query parameters
 
@@ -92,7 +92,7 @@ Keyword search across event titles and descriptions.
 | `q` | Search string (case-insensitive) |
 | `calendarId` | Optional calendar filter |
 
-**Response** `200 OK` — array of `FullCalendarEvent`.
+__Response__ `200 OK` — array of `FullCalendarEvent`.
 
 ---
 
@@ -100,11 +100,11 @@ Keyword search across event titles and descriptions.
 
 Return a single event by UUID.
 
-**Auth**: same visibility rules as the list endpoint.
+__Auth__: same visibility rules as the list endpoint.
 
-**Response** `200 OK` — single `FullCalendarEvent`.
+__Response__ `200 OK` — single `FullCalendarEvent`.
 
-**Errors**: `404` if not found.
+__Errors__: `404` if not found.
 
 ---
 
@@ -113,11 +113,11 @@ Return a single event by UUID.
 Partial update of an existing event. Send only the fields to change.
 `id`, `created`, and `dtstamp` are protected and ignored in the patch.
 
-**Auth**: `admin` or `clubhouse-manager`
+__Auth__: `admin` or `clubhouse-manager`
 
-**Response** `200 OK` — updated `FullCalendarEvent`.
+__Response__ `200 OK` — updated `FullCalendarEvent`.
 
-**Errors**: `404`, `401`, `403`.
+__Errors__: `404`, `401`, `403`.
 
 ---
 
@@ -125,11 +125,11 @@ Partial update of an existing event. Send only the fields to change.
 
 Delete an event.
 
-**Auth**: `admin` or `clubhouse-manager`
+__Auth__: `admin` or `clubhouse-manager`
 
-**Response** `204 No Content`
+__Response__ `204 No Content`
 
-**Errors**: `404`, `401`, `403`.
+__Errors__: `404`, `401`, `403`.
 
 ---
 
@@ -141,7 +141,7 @@ Submit a reservation request. The target calendar must have `workflow: reservati
 Events are stored as `CLASS: CONFIDENTIAL` and are invisible in the public feed.
 Email notifications are sent to the requester and the manager.
 
-**Auth**: authenticated (any logged-in user)
+__Auth__: authenticated (any logged-in user)
 
 #### Request body
 
@@ -155,7 +155,7 @@ Email notifications are sent to the requester and the manager.
 | `location` | no | Specific area / room |
 | `notes` | no | Notes to the manager (stored in `_private`) |
 
-**Response** `201 Created` — `FullCalendarEvent` with `_private` visible to the requester.
+__Response__ `201 Created` — `FullCalendarEvent` with `_private` visible to the requester.
 
 #### Errors
 
@@ -172,11 +172,11 @@ Email notifications are sent to the requester and the manager.
 Cancel a reservation. The requester may cancel their own; managers and admins
 may cancel any reservation.
 
-**Auth**: authenticated
+__Auth__: authenticated
 
-**Response** `204 No Content`
+__Response__ `204 No Content`
 
-**Errors**: `401`, `403`, `404`.
+__Errors__: `401`, `403`, `404`.
 
 ---
 
@@ -187,9 +187,9 @@ may cancel any reservation.
 RFC 5545 iCalendar subscription feed for a single calendar. `CONFIDENTIAL` events
 are excluded. Subscribe from Apple Calendar, Google Calendar, or any CalDAV client.
 
-**Auth**: none for `public` calendars; session required for `authenticated`/`private`.
+__Auth__: none for `public` calendars; session required for `authenticated`/`private`.
 
-**Response** `200 OK` with `Content-Type: text/calendar`
+__Response__ `200 OK` with `Content-Type: text/calendar`
 
 ```
 BEGIN:VCALENDAR
@@ -215,9 +215,9 @@ END:VCALENDAR
 Management dashboard rendered as HTML. Shows all enabled calendars; reservation
 calendars include `_private` columns. Provides create/edit/delete UI for events.
 
-**Auth**: `admin` or `clubhouse-manager`
+__Auth__: `admin` or `clubhouse-manager`
 
-**Response** `200 OK` HTML page, or `401` redirect to login.
+__Response__ `200 OK` HTML page, or `401` redirect to login.
 
 ---
 

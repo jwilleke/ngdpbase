@@ -8,7 +8,7 @@ code: src/managers/ShareManager.ts
 
 # ShareManager
 
-Issues, validates, revokes, and lists **share links** — unguessable capability tokens granting anonymous access to a defined scope of content (epic #842, slice 1 #852). The token *is* the grant: whoever holds it may view the scoped content until expiry or revocation. Shares carry no identity; they exist precisely so anonymous visitors need no account.
+Issues, validates, revokes, and lists __share links__ — unguessable capability tokens granting anonymous access to a defined scope of content (epic #842, slice 1 #852). The token *is* the grant: whoever holds it may view the scoped content until expiry or revocation. Shares carry no identity; they exist precisely so anonymous visitors need no account.
 
 Design + signed-off decisions: `docs/planning/keyword-share-links.md`.
 
@@ -26,7 +26,7 @@ Role gating (decision 2: `admin` + `editor` may create) is the route layer's job
 
 ## Scope (v1: keyword)
 
-Scope is a typed object `{ kind: 'keyword', keyword }` (`src/types/Share.ts`); future kinds add a discriminant + evaluator without touching the token model. Resolution returns media whose EXIF/XMP keywords match plus pages whose `user-keywords` match, **excluding** (safe by construction):
+Scope is a typed object `{ kind: 'keyword', keyword }` (`src/types/Share.ts`); future kinds add a discriminant + evaluator without touching the token model. Resolution returns media whose EXIF/XMP keywords match plus pages whose `user-keywords` match, __excluding__ (safe by construction):
 
 - content carrying the reserved `owner-only` keyword — media and pages alike (decision 1)
 - pages with `private: true`, and media linked to them; unresolvable linked-page metadata excludes the item (conservative-on-security, #714 convention)

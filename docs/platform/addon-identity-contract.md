@@ -4,7 +4,7 @@
 
 An addon picks a single short identifier — a slug — and that slug is wired into more than a dozen places. They all have to agree, because ngdpbase resolves config keys, mount paths, and capability flags by exact-string match. Picking the slug carelessly, or renaming it later, is a coordinated change across runtime, build, config, and content.
 
-This doc lists every place an addon's slug appears, what it's used for, and what breaks if any of them drift. The rules apply identically whether the addon is **bundled** (in `addons/`), **drop-in** (under a configured `addons-path`), or **packaged** (an npm dependency under `node_modules/`); see [`addon-architecture.md` § Distribution Models](./addon-architecture.md#distribution-models). Examples below show the bundled path because it's the most common, but the slug requirements are the same for the other two models.
+This doc lists every place an addon's slug appears, what it's used for, and what breaks if any of them drift. The rules apply identically whether the addon is __bundled__ (in `addons/`), __drop-in__ (under a configured `addons-path`), or __packaged__ (an npm dependency under `node_modules/`); see [`addon-architecture.md` § Distribution Models](./addon-architecture.md#distribution-models). Examples below show the bundled path because it's the most common, but the slug requirements are the same for the other two models.
 
 ---
 
@@ -17,7 +17,7 @@ Before writing any addon code, pick a slug. It should be:
 - Unique within any ngdpbase instance the addon will run in (no two addons can share a mount).
 - Stable. Renaming later is breaking — see [Renaming](#renaming) below.
 
-This is your **addon slug**. The rest of this doc treats it as `<slug>`.
+This is your __addon slug__. The rest of this doc treats it as `<slug>`.
 
 ---
 
@@ -59,7 +59,7 @@ The platform resolves addon config from flat dot-notation keys scoped to the slu
 }
 ```
 
-`AddonsManager.getAddonConfig()` strips the `ngdpbase.addons.<slug>.` prefix and passes the rest to `register(engine, config)`. The slug in the key **must** match `module.exports.name`, or the addon receives empty config.
+`AddonsManager.getAddonConfig()` strips the `ngdpbase.addons.<slug>.` prefix and passes the rest to `register(engine, config)`. The slug in the key __must__ match `module.exports.name`, or the addon receives empty config.
 
 The addon's `addons/<slug>/config/default-config.json` (if it ships defaults) uses the same fully-qualified keys.
 
@@ -102,7 +102,7 @@ Anything client-rendered that calls back into the addon's own routes hardcodes `
 
 ## Display name vs slug
 
-The slug is a machine identifier. The **display name** is what humans see in the dashboard, page titles, and prose. They don't have to match.
+The slug is a machine identifier. The __display name__ is what humans see in the dashboard, page titles, and prose. They don't have to match.
 
 A typical pattern: slug `geohazardwatch`, display name `GeoHazardWatch`. Display name appears in:
 
@@ -116,14 +116,14 @@ The display name is free text; renaming it has no runtime impact, only UX impact
 
 ## Renaming
 
-Renaming an addon's slug is a **breaking change**. Every place listed above has to update in lockstep, and every consumer of the old identity breaks.
+Renaming an addon's slug is a __breaking change__. Every place listed above has to update in lockstep, and every consumer of the old identity breaks.
 
 ### What breaks for the operator
 
 - `app-custom-config.json` keys under `ngdpbase.addons.<old-slug>.*` are no longer read. The operator must rewrite them under the new slug. The platform doesn't auto-migrate.
 - Any URL bookmarks or external links to `/api/<old-slug>/*` or `/wiki/<old-slug>-*` 404.
 - Cron jobs or scripts that POST to `/addons/<old-slug>/jobs/*` 404.
-- Existing wiki pages seeded under the old slug **stay** at the old slug. `seedAddonPages` only runs when the slug-derived seed marker is missing — for an existing instance, the old pages remain at the old URLs unless the operator manually moves or recreates them.
+- Existing wiki pages seeded under the old slug __stay__ at the old slug. `seedAddonPages` only runs when the slug-derived seed marker is missing — for an existing instance, the old pages remain at the old URLs unless the operator manually moves or recreates them.
 
 ### What breaks for downstream addons
 

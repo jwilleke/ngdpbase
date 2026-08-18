@@ -23,7 +23,7 @@ Use the site name (visible in [{ConfigAccessor type='siteName'}]) when referring
 
 ## Page Title Conventions
 
-Use the title pattern that matches the page's **audience and purpose**:
+Use the title pattern that matches the page's __audience and purpose__:
 
 | Page type | Audience | Title pattern | Example |
 | --- | --- | --- | --- |
@@ -35,11 +35,11 @@ Use the title pattern that matches the page's **audience and purpose**:
 
 ### The "Using \<Feature\>" pattern — end-user only
 
-The `Using <Feature>` prefix is **reserved for true end-user documentation** — pages written for the people who visit and use the site (residents, members, the general public). It is not used for pages aimed at editors embedding plugins, administrators configuring the system, or developers building addons.
+The `Using <Feature>` prefix is __reserved for true end-user documentation__ — pages written for the people who visit and use the site (residents, members, the general public). It is not used for pages aimed at editors embedding plugins, administrators configuring the system, or developers building addons.
 
 A page titled "Using Reservation Form" answers the question a resident asks: *how do I make a reservation?* It covers what the form looks like, what to fill in, and what happens after submitting. It does not explain how the form was defined, how the plugin is embedded, or how the handler works.
 
-**What belongs in a "Using X" page:**
+__What belongs in a "Using X" page:__
 
 - Step-by-step task guidance written in plain language
 - What the user sees on the screen
@@ -47,7 +47,7 @@ A page titled "Using Reservation Form" answers the question a resident asks: *ho
 - What happens after they act (confirmation, next steps)
 - Common problems and how to resolve them
 
-**What does not belong in a "Using X" page:**
+__What does not belong in a "Using X" page:__
 
 - Plugin invocation syntax (`[{Form id='...'}]`)
 - JSON configuration or form definition properties
@@ -56,7 +56,7 @@ A page titled "Using Reservation Form" answers the question a resident asks: *ho
 
 ### File location and naming
 
-End-user pages live in the relevant addon's `pages/` directory with a **UUID filename**:
+End-user pages live in the relevant addon's `pages/` directory with a __UUID filename__:
 
 ```
 addons/<addon>/pages/<uuid>.md
@@ -79,7 +79,7 @@ Every documentation page should follow this structure:
 | `## Examples` | Recommended | Live rendered examples (see below) |
 | `## Notes` | As needed | Edge cases, caveats, limitations |
 
-Do **not** add a `## More Information` / `[{ReferringPagesPlugin}]` footer. Referring pages are now surfaced automatically in the **Referring Pages** tab injected by [Template:PageTabs].
+Do __not__ add a `## More Information` / `[{ReferringPagesPlugin}]` footer. Referring pages are now surfaced automatically in the __Referring Pages__ tab injected by [Template:PageTabs].
 
 ## Writing Style
 
@@ -98,7 +98,7 @@ Good:
 > See [Plugins] for a complete list of available plugins.
 
 Avoid:
-> **Related Pages**
+> __Related Pages__
 >
 > - Plugins
 > - Configuration
@@ -107,7 +107,7 @@ The `## More Information` footer (with `[{ReferringPagesPlugin}]`) handles autom
 
 ## Table Format
 
-Pages in `required-pages/` (rendered by the platform) must use **ngdpbase table syntax**, not markdown tables. Markdown tables are only appropriate in `docs/` files that live exclusively in GitHub.
+Pages in `required-pages/` (rendered by the platform) must use __ngdpbase table syntax__, not markdown tables. Markdown tables are only appropriate in `docs/` files that live exclusively in GitHub.
 
 Striped table (most common):
 
@@ -183,7 +183,7 @@ Use ` ``` ` code blocks for content that is not ngdpbase markup:
 - Configuration snippets showing how to set up a feature
 - Plugin invocations that require a user-supplied file (e.g. `[{Image src='photo.jpg'}]` where `photo.jpg` is not a committed asset)
 
-**Note:** Language specifiers in fenced code blocks (e.g. ` ```yaml `) are rendered with syntax highlighting via highlight.js. Use them where the language is known — plain ` ``` ` fences remain valid for content with no specific language.
+__Note:__ Language specifiers in fenced code blocks (e.g. ` ```yaml `) are rendered with syntax highlighting via highlight.js. Use them where the language is known — plain ` ``` ` fences remain valid for content with no specific language.
 
 If an example requires an image file, use one of the committed stock images rather than a placeholder path:
 
@@ -234,7 +234,7 @@ author: system
 
 ## Page Access Control
 
-When a page needs to restrict who can view, edit, or delete it, set access in **frontmatter** — never in body markup. Two frontmatter fields cover the cases:
+When a page needs to restrict who can view, edit, or delete it, set access in __frontmatter__ — never in body markup. Two frontmatter fields cover the cases:
 
 ### `audience` — gates `view`
 
@@ -260,11 +260,11 @@ When both `audience` and `access.view` are set, `access.view` wins for the `view
 
 ### Tier ordering reminder
 
-These frontmatter fields are evaluated at **Tier 1** of the ACL ladder — see [`docs/managers/ACLManager.md`](managers/ACLManager.md) for the full six-tier order. The other tiers (private, author-lock, global policies) are independent dimensions.
+These frontmatter fields are evaluated at __Tier 1__ of the ACL ladder — see [`docs/managers/ACLManager.md`](managers/ACLManager.md) for the full six-tier order. The other tiers (private, author-lock, global policies) are independent dimensions.
 
 ### Deprecated: `[{ALLOW <action> <principals>}]` body-content markup
 
-The legacy JSPWiki-style ACL markup in page **body content** is **deprecated and scheduled for removal** ([#778](https://github.com/jwilleke/ngdpbase/issues/778), follow-on to [#714](https://github.com/jwilleke/ngdpbase/issues/714)):
+The legacy JSPWiki-style ACL markup in page __body content__ is __deprecated and scheduled for removal__ ([#778](https://github.com/jwilleke/ngdpbase/issues/778), follow-on to [#714](https://github.com/jwilleke/ngdpbase/issues/714)):
 
 ```text
 [{ALLOW edit Admin}]      DO NOT use in new pages.

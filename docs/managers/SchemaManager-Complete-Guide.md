@@ -1,8 +1,8 @@
 # SchemaManager Complete Guide
 
-**Module:** `src/managers/SchemaManager.js`
-**Quick Reference:** [SchemaManager.md](SchemaManager.md)
-**Generated API:** [API Docs](../api/generated/src/managers/SchemaManager/README.md)
+__Module:__ `src/managers/SchemaManager.js`
+__Quick Reference:__ [SchemaManager.md](SchemaManager.md)
+__Generated API:__ [API Docs](../api/generated/src/managers/SchemaManager/README.md)
 
 ---
 
@@ -66,12 +66,12 @@ async initialize() {
 }
 ```
 
-**Requirements:**
+__Requirements:__
 
 - ConfigurationManager must be initialized first
 - Schema directory must be configured
 
-**Error handling:**
+__Error handling:__
 
 - Missing directory: Logs warning, continues with no schemas
 - Read errors: Logs error, continues with partial schemas
@@ -107,7 +107,7 @@ Schema files must:
 
 ### Example Schema File
 
-**schemas/page.schema.json:**
+__schemas/page.schema.json:__
 
 ```json
 {
@@ -152,13 +152,13 @@ Retrieve a loaded JSON schema by name.
 getSchema(name)
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `name` - Schema name (without `.schema.json` extension)
 
-**Returns:** `Object|undefined` - JSON Schema object or undefined
+__Returns:__ `Object|undefined` - JSON Schema object or undefined
 
-**Example:**
+__Example:__
 
 ```javascript
 const pageSchema = schemaManager.getSchema('page');
@@ -177,9 +177,9 @@ Get list of all loaded schema names.
 getAllSchemaNames()
 ```
 
-**Returns:** `string[]` - Array of schema names
+__Returns:__ `string[]` - Array of schema names
 
-**Example:**
+__Example:__
 
 ```javascript
 const names = schemaManager.getAllSchemaNames();
@@ -211,7 +211,7 @@ ngdpbase uses JSON Schema Draft-07. Key properties:
 
 ### Common Patterns
 
-**String with constraints:**
+__String with constraints:__
 
 ```json
 {
@@ -224,7 +224,7 @@ ngdpbase uses JSON Schema Draft-07. Key properties:
 }
 ```
 
-**Enum values:**
+__Enum values:__
 
 ```json
 {
@@ -235,7 +235,7 @@ ngdpbase uses JSON Schema Draft-07. Key properties:
 }
 ```
 
-**Array of strings:**
+__Array of strings:__
 
 ```json
 {
@@ -247,7 +247,7 @@ ngdpbase uses JSON Schema Draft-07. Key properties:
 }
 ```
 
-**Date format:**
+__Date format:__
 
 ```json
 {
@@ -309,10 +309,10 @@ app.get('/admin/schemas', (req, res) => {
 
 ## Notes
 
-- **ConfigurationManager required:** Must be initialized first
-- **Lazy loading:** Schemas loaded once at initialization
-- **No hot reload:** Schema changes require restart
-- **Draft-07:** Uses JSON Schema Draft-07 specification
+- __ConfigurationManager required:__ Must be initialized first
+- __Lazy loading:__ Schemas loaded once at initialization
+- __No hot reload:__ Schema changes require restart
+- __Draft-07:__ Uses JSON Schema Draft-07 specification
 
 ---
 

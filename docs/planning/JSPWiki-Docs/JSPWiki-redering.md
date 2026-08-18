@@ -2,48 +2,48 @@
 
 Apache JSPWiki renders pages using a series of Java components orchestrated by its wiki engine. Below is a concise explanation of the page rendering process, focusing on the key Java components involved, including `RenderingManager`, based on the JSPWiki architecture and the provided GitHub repository information (commit `c31d4f284983fd25e37e7ec5682fe2bdfddc439b`).
 
-1. **Request Handling**:
-   - **Component**: `WikiServlet` (or equivalent servlet defined in `WEB-INF/web.xml`).
-   - **Role**: The servlet container (e.g., Apache Tomcat) receives the HTTP request (e.g., `http://<host>/<appname>/Wiki.jsp?page=PageName`) and routes it to JSPWiki’s servlet. This servlet initializes the `WikiEngine` for processing.
+1. __Request Handling__:
+   - __Component__: `WikiServlet` (or equivalent servlet defined in `WEB-INF/web.xml`).
+   - __Role__: The servlet container (e.g., Apache Tomcat) receives the HTTP request (e.g., `http://<host>/<appname>/Wiki.jsp?page=PageName`) and routes it to JSPWiki’s servlet. This servlet initializes the `WikiEngine` for processing.
 
-2. **WikiEngine Initialization**:
-   - **Component**: `org.apache.wiki.WikiEngine`.
-   - **Role**: The `WikiEngine` is the central component that coordinates page rendering. It initializes other managers, including `RenderingManager`, and retrieves the requested page’s context (e.g., page name, user session).
-   - **Configuration**: Uses settings from `jspwiki.properties` or `jspwiki-custom.properties` (located in `$TOMCAT_HOME/lib` or `WEB-INF`).
+2. __WikiEngine Initialization__:
+   - __Component__: `org.apache.wiki.WikiEngine`.
+   - __Role__: The `WikiEngine` is the central component that coordinates page rendering. It initializes other managers, including `RenderingManager`, and retrieves the requested page’s context (e.g., page name, user session).
+   - __Configuration__: Uses settings from `jspwiki.properties` or `jspwiki-custom.properties` (located in `$TOMCAT_HOME/lib` or `WEB-INF`).
 
-3. **Page Retrieval**:
-   - **Component**: `PageManager` and `PageProvider` (e.g., `org.apache.wiki.providers.FileSystemProvider`).
-   - **Role**: The `PageManager` retrieves the page content via a `PageProvider`. The default `FileSystemProvider` reads the page’s raw wiki markup from the directory specified in `jspwiki.fileSystemProvider.pageDir`.
-   - **Interaction**: `WikiEngine` delegates to `PageManager`, which uses the provider to fetch the page as a `WikiPage` object.
+3. __Page Retrieval__:
+   - __Component__: `PageManager` and `PageProvider` (e.g., `org.apache.wiki.providers.FileSystemProvider`).
+   - __Role__: The `PageManager` retrieves the page content via a `PageProvider`. The default `FileSystemProvider` reads the page’s raw wiki markup from the directory specified in `jspwiki.fileSystemProvider.pageDir`.
+   - __Interaction__: `WikiEngine` delegates to `PageManager`, which uses the provider to fetch the page as a `WikiPage` object.
 
-4. **Parsing and Rendering**:
-   - **Component**: `RenderingManager` ( `org.apache.wiki.render.RenderingManager`).
-   - **Role**: Manages the rendering pipeline, converting wiki markup into HTML. It coordinates:
-     - **WikiParser**: Parses the raw wiki markup (e.g., `[[PageName]]` for links, `**bold**` for formatting) into an intermediate representation.
-     - **MarkupRenderer**: Converts the parsed markup into HTML, applying styles and templates.
-     - **FilterManager**: Applies filters (e.g., `org.apache.wiki.filters.WikiFilter`) to preprocess or postprocess content, such as handling plugins or custom syntax.
-   - **Plugins**: `RenderingManager` integrates plugins (via `PluginManager`) to embed dynamic content during rendering.
-   - **Output**: Produces HTML output for the page content.
+4. __Parsing and Rendering__:
+   - __Component__: `RenderingManager` ( `org.apache.wiki.render.RenderingManager`).
+   - __Role__: Manages the rendering pipeline, converting wiki markup into HTML. It coordinates:
+     - __WikiParser__: Parses the raw wiki markup (e.g., `[[PageName]]` for links, `**bold**` for formatting) into an intermediate representation.
+     - __MarkupRenderer__: Converts the parsed markup into HTML, applying styles and templates.
+     - __FilterManager__: Applies filters (e.g., `org.apache.wiki.filters.WikiFilter`) to preprocess or postprocess content, such as handling plugins or custom syntax.
+   - __Plugins__: `RenderingManager` integrates plugins (via `PluginManager`) to embed dynamic content during rendering.
+   - __Output__: Produces HTML output for the page content.
 
-5. **Access Control**:
-   - **Component**: `AuthorizationManager` and `AuthenticationManager`.
-   - **Role**: `AuthorizationManager` checks permissions using JAAS and the `WEB-INF/jspwiki.policy` file to ensure the user has access to view the page. `AuthenticationManager` handles user authentication, referencing `jspwiki.xmlUserDatabaseFile` and `jspwiki.xmlGroupDatabaseFile`.
-   - **Interaction**: `WikiEngine` consults these managers before rendering to enforce security.
+5. __Access Control__:
+   - __Component__: `AuthorizationManager` and `AuthenticationManager`.
+   - __Role__: `AuthorizationManager` checks permissions using JAAS and the `WEB-INF/jspwiki.policy` file to ensure the user has access to view the page. `AuthenticationManager` handles user authentication, referencing `jspwiki.xmlUserDatabaseFile` and `jspwiki.xmlGroupDatabaseFile`.
+   - __Interaction__: `WikiEngine` consults these managers before rendering to enforce security.
 
-6. **Template Rendering**:
-   - **Component**: JSP files (e.g., `Wiki.jsp`, `ViewTemplate.jsp`) and `TemplateManager`.
-   - **Role**: The `TemplateManager` integrates the HTML output from `RenderingManager` into a JSP-based template, which defines the page layout (e.g., headers, footers, navigation). The JSP files, executed by the servlet container, combine the rendered content with the template.
-   - **Configuration**: Templates can be customized via `jspwiki-custom.properties`.
+6. __Template Rendering__:
+   - __Component__: JSP files (e.g., `Wiki.jsp`, `ViewTemplate.jsp`) and `TemplateManager`.
+   - __Role__: The `TemplateManager` integrates the HTML output from `RenderingManager` into a JSP-based template, which defines the page layout (e.g., headers, footers, navigation). The JSP files, executed by the servlet container, combine the rendered content with the template.
+   - __Configuration__: Templates can be customized via `jspwiki-custom.properties`.
 
-7. **Output Delivery**:
-   - **Component**: Servlet container and `WikiServlet`.
-   - **Role**: The servlet container sends the final HTML response (generated by JSP files) to the client’s browser. Caching may be applied via `CacheManager` (configurable in `jspwiki.properties`) to optimize performance.
+7. __Output Delivery__:
+   - __Component__: Servlet container and `WikiServlet`.
+   - __Role__: The servlet container sends the final HTML response (generated by JSP files) to the client’s browser. Caching may be applied via `CacheManager` (configurable in `jspwiki.properties`) to optimize performance.
 
-8. **Optional Components**:
-   - **PluginManager** ( `org.apache.wiki.plugin.PluginManager`): Handles execution of wiki plugins during rendering, allowing dynamic content (e.g., tables, charts) to be embedded by `RenderingManager`.
-   - **AttachmentManager**: Manages attachments (stored in `jspwiki.basicAttachmentProvider.storageDir`), rendering links to them in the page if applicable.
+8. __Optional Components__:
+   - __PluginManager__ ( `org.apache.wiki.plugin.PluginManager`): Handles execution of wiki plugins during rendering, allowing dynamic content (e.g., tables, charts) to be embedded by `RenderingManager`.
+   - __AttachmentManager__: Manages attachments (stored in `jspwiki.basicAttachmentProvider.storageDir`), rendering links to them in the page if applicable.
 
-**Summary of Key Java Components**:
+__Summary of Key Java Components__:
 
 - `WikiEngine`: Orchestrates the rendering process.
 - `PageManager`/`PageProvider`: Retrieves page content.
@@ -55,39 +55,39 @@ Apache JSPWiki renders pages using a series of Java components orchestrated by i
 
 ## internal state flags
 
-In JSPWiki’s markup parsing workflow, the following `private boolean` member variables are **internal state flags** that track the current context while parsing wiki text to HTML. They help the parser understand and manage formatting transitions, syntax elements, and block structures:
+In JSPWiki’s markup parsing workflow, the following `private boolean` member variables are __internal state flags__ that track the current context while parsing wiki text to HTML. They help the parser understand and manage formatting transitions, syntax elements, and block structures:
 
-- **m_isbold**
-  - Tracks whether the parser is **inside a bold text segment**.
+- __m_isbold__
+  - Tracks whether the parser is __inside a bold text segment__.
   - When parsing, encountering `_` triggers toggling this flag and opening/closing `<b>` HTML tags.
-- **m_isitalic**
-  - Tracks whether the parser is **inside italic text**.
+- __m_isitalic__
+  - Tracks whether the parser is __inside italic text__.
   - Set when parsing `'` (apostrophe) for italic markup, toggling `<i>` tags as needed.
-- **m_istable**
-  - Indicates **whether the parser is inside a table block**.
+- __m_istable__
+  - Indicates __whether the parser is inside a table block__.
   - Set when a table row/cell is parsed (via `|`), used to open/close `<table>`, `<tr>`, and related tags.
-- **m_isPre**
-  - Marks **preformatted text blocks**, e.g., code or text regions using curly braces (`{{{` ... `}}}`).
+- __m_isPre__
+  - Marks __preformatted text blocks__, e.g., code or text regions using curly braces (`{{{` ... `}}}`).
   - When true, output is wrapped in `<pre>` or `<span class="inline-code">` tags, preserving whitespace.
-- **m_isEscaping**
-  - Tracks **whether the parser is escaping markup** and treating text literally.
+- __m_isEscaping__
+  - Tracks __whether the parser is escaping markup__ and treating text literally.
   - Used in contexts where Wiki syntax should be ignored (e.g., inside `<pre>`, or when escaping unusual sequences).
-- **m_isdefinition**
-  - Indicates **the parser is inside a definition list (`<dl>`)**.
+- __m_isdefinition__
+  - Indicates __the parser is inside a definition list (`<dl>`)__.
   - Set when parsing semicolons (`;`) or colons (`:`) for `<dt>`/`<dd>` meaning; toggles block structure as needed.
-- **m_isPreBlock**
-  - Tracks **whether the current preformatted block is a multi-line block** (i.e., should use `<pre>` versus inline code `<span>`).
+- __m_isPreBlock__
+  - Tracks __whether the current preformatted block is a multi-line block__ (i.e., should use `<pre>` versus inline code `<span>`).
   - Differentiates between block-level code and inline code formatting based on parser context.
-**How they work together:**
-- As parsing proceeds character by character, **flags are set/unset** depending on the markup construct encountered.
+__How they work together:__
+- As parsing proceeds character by character, __flags are set/unset__ depending on the markup construct encountered.
 - Each flag governs whether the corresponding HTML element is opened, closed, or toggled for that segment of text.
 - They maintain *stateful parsing*, so transitions between wiki blocks and inline formatting are accurately captured and rendered.
 
-**Example:**  
+__Example:__  
 
 - Parsing wiki markup with `__bold__`, `'italic'`, `{{{code}}}`, tables, or definition lists, these flags are switched on or off to control the HTML generation for each type of formatting.
 
-**Summary:**  
+__Summary:__  
 These fields collectively function as switches to manage the parsing state, ensuring correct translation of wiki syntax to HTML structure within JSPWiki’s main parser.[1]
 
 [1](/apache/jspwiki/blob/c0b16bff0046e15ed5e84762fdfaf8e49e473860/jspwiki-main/src/main/java/org/apache/wiki/parser/JSPWikiMarkupParser.java#L200)
@@ -95,7 +95,7 @@ These fields collectively function as switches to manage the parsing state, ensu
 
 ### protected static final int
 
-In JSPWiki, these `protected static final int` constants represent **link types** used by the markup parser when generating HTML anchor elements and handling different kinds of wiki links. They provide an internal code for each link category, allowing the parser to format them correctly and assign suitable CSS classes, attributes, and behavior:
+In JSPWiki, these `protected static final int` constants represent __link types__ used by the markup parser when generating HTML anchor elements and handling different kinds of wiki links. They provide an internal code for each link category, allowing the parser to format them correctly and assign suitable CSS classes, attributes, and behavior:
 
 So the system works like this:
 
@@ -105,28 +105,28 @@ So the system works like this:
 
 | Constant Name | Value | Meaning/Role in JSPWiki |
 | ---------------------- | ------- | ------------------------------------------------------------------------------ |
-| **READ** | 0 | Normal internal page link. Points to a wiki page for viewing (`<a class="wikipage">`). |
-| **EDIT** | 1 | Link to create or edit a page if it does not exist (`<a class="createpage">`). |
-| **EMPTY** | 2 | Indicates an empty link, renders as underlined text (`<u>`), not clickable. |
-| **LOCAL** | 3 | Local anchor/footnote within the same page (`<a class="footnote">`). |
-| **LOCALREF** | 4 | Reference to a footnote or section within the same page (`<a class="footnoteref">`). |
-| **IMAGE** | 5 | Image link: an embedded image (`<img>`). |
-| **EXTERNAL** | 6 | External link (URL outside wiki); may append outlink icon (`<a class="external">`). |
-| **INTERWIKI** | 7 | Link to another wiki system (“InterWiki”) (`<a class="interwiki">`). |
-| **IMAGELINK** | 8 | Clickable image that acts as a link (`<a><img></a>`). |
-| **IMAGEWIKILINK** | 9 | Wiki page link with a thumbnail image; links image to a wiki page. |
-| **ATTACHMENT** | 10 | Link to an attachment/file uploaded to the wiki (`<a class="attachment">`). |
+| __READ__ | 0 | Normal internal page link. Points to a wiki page for viewing (`<a class="wikipage">`). |
+| __EDIT__ | 1 | Link to create or edit a page if it does not exist (`<a class="createpage">`). |
+| __EMPTY__ | 2 | Indicates an empty link, renders as underlined text (`<u>`), not clickable. |
+| __LOCAL__ | 3 | Local anchor/footnote within the same page (`<a class="footnote">`). |
+| __LOCALREF__ | 4 | Reference to a footnote or section within the same page (`<a class="footnoteref">`). |
+| __IMAGE__ | 5 | Image link: an embedded image (`<img>`). |
+| __EXTERNAL__ | 6 | External link (URL outside wiki); may append outlink icon (`<a class="external">`). |
+| __INTERWIKI__ | 7 | Link to another wiki system (“InterWiki”) (`<a class="interwiki">`). |
+| __IMAGELINK__ | 8 | Clickable image that acts as a link (`<a><img></a>`). |
+| __IMAGEWIKILINK__ | 9 | Wiki page link with a thumbnail image; links image to a wiki page. |
+| __ATTACHMENT__ | 10 | Link to an attachment/file uploaded to the wiki (`<a class="attachment">`). |
 
 ***
 
-**How the parser uses these:**
+__How the parser uses these:__
 
 - When parsing wiki markup, the parser determines the type of each link, based on the syntax and destination.
 - It assigns the corresponding constant value to each link instance.
 - The value affects which rendering method is used—determining the generated HTML (tag, class, attributes, etc.)
 - This system centralizes link behavior, making it easy to adjust styling or logic in one place by using the codes.
 
-**Example:**
+__Example:__
 
 - `[SomeWikiPage]` → `READ`
 - `[NonexistentPage?edit]` → `EDIT`
@@ -135,7 +135,7 @@ So the system works like this:
 - `[[image.jpg]]` → `IMAGE`
 - `[image.jpg|http://example.com]` → `IMAGELINK` or `EXTERNAL` depending on context
 
-**Summary:**  
+__Summary:__  
 These constants enable JSPWiki’s markup parser to efficiently identify, differentiate, and format every type of wiki, external, image, interwiki, and attachment link for precise and styled HTML output.[2]
 
 [1](comet://newtab/)
@@ -145,13 +145,13 @@ These constants enable JSPWiki’s markup parser to efficiently identify, differ
 
 #### What is LinkParser.java?
 
-LinkParser is used when **reading (viewing)** a page in JSPWiki.
+LinkParser is used when __reading (viewing)__ a page in JSPWiki.
 
-- **Purpose**:  
-  `LinkParser.java` is a helper class in JSPWiki’s parser subsystem responsible for processing and splitting incoming wiki link markup. It converts text such as `[Text]`, `[Text | URL]`, or `[Text | URL | attributes]` into a structured `LinkParser.Link` object containing the **display text**, **target reference** (URL, wikipage, or interwiki), and **allowed HTML attributes**.
+- __Purpose__:  
+  `LinkParser.java` is a helper class in JSPWiki’s parser subsystem responsible for processing and splitting incoming wiki link markup. It converts text such as `[Text]`, `[Text | URL]`, or `[Text | URL | attributes]` into a structured `LinkParser.Link` object containing the __display text__, __target reference__ (URL, wikipage, or interwiki), and __allowed HTML attributes__.
 
-- **How it works**:  
-  - **parse(String linktext)**:  
+- __How it works__:  
+  - __parse(String linktext)__:  
     Main method; takes raw link markup as its argument.
     - Splits the string by pipe (`|`) characters.
     - Extracts:
@@ -160,37 +160,37 @@ LinkParser is used when **reading (viewing)** a page in JSPWiki.
       - Any valid attributes (e.g., `id='foo' rel='Next'`), which are filtered for security and captured as JDOM `Attribute` objects.
     - Returns a `LinkParser.Link` object with these components for use in rendering.
 
-  - **Attribute Filtering**:  
+  - __Attribute Filtering__:  
     Only whitelisted HTML attributes (like `id`, `rel`, `title`, `target`, etc.) are accepted. Dangerous attributes (script events, direct `href`, etc.) are ignored.
 
 #### Who calls LinkParser.java?
 
-- **Primary Invoker**:  
-  LinkParser is called mainly by `JSPWikiMarkupParser.java` within its **markup parsing workflow**:
+- __Primary Invoker__:  
+  LinkParser is called mainly by `JSPWikiMarkupParser.java` within its __markup parsing workflow__:
   - When encountering square bracketed link markup (e.g., `[Link Text | URL | attributes]`), the parser calls `LinkParser.parse()` to break up the components for rendering.
   - The resultant `LinkParser.Link` object is subsequently passed to the engine’s linking/rendering logic to generate the final HTML `<a>` element.
-- **Plugins/Extensions**:  
+- __Plugins/Extensions__:  
   Advanced plugins extending or analyzing links in JSPWiki can also directly call LinkParser methods to process custom wiki markup.
 
 #### How does LinkParser work?
 
-- **Examples**:  
+- __Examples__:  
   - `[Acme]` parses as → Text: `Acme`, Reference: `Acme` (no attributes)
   - `[Acme | http://www.acme.com/]` parses as → Text: `Acme`, Reference: `http://www.acme.com/`
   - `[Acme | http://www.acme.com/ | id='foo' rel='Next']` parses as → Text: `Acme`, Reference: `http://www.acme.com/`, Attributes: id=`foo`, rel=`Next`
 
-- **Steps**:
+- __Steps__:
   1. Receive the link markup as input.
   2. Separate into fields (text, reference, attributes).
   3. Validate and store permitted attributes.
   4. Pack everything into a `Link` struct for subsequent rendering.
   5. Return to calling parser for further processing.[1]
 
-**Summary**:  
+__Summary__:  
 
-- **Who calls it:** Primarily `JSPWikiMarkupParser` during wiki page rendering, also possible from plugins.
-- **How it works:** Splits link markup into text, reference, and safe attributes, returning a structured object for HTML output. Handles security by restricting attribute set.
-- **Why?** Ensures robust, flexible and secure linking from wiki syntax to HTML in JSPWiki.
+- __Who calls it:__ Primarily `JSPWikiMarkupParser` during wiki page rendering, also possible from plugins.
+- __How it works:__ Splits link markup into text, reference, and safe attributes, returning a structured object for HTML output. Handles security by restricting attribute set.
+- __Why?__ Ensures robust, flexible and secure linking from wiki syntax to HTML in JSPWiki.
 
 [1](https://jspwiki.apache.org/apidocs/2.11.3/org/apache/wiki/parser/LinkParser.html)
 [2](comet://newtab/)

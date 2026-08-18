@@ -8,8 +8,8 @@ code: src/managers/AssetService.ts
 
 # AssetService
 
-**Module:** `src/managers/AssetService.ts`
-**Extends:** [BaseManager](BaseManager.md)
+__Module:__ `src/managers/AssetService.ts`
+__Extends:__ [BaseManager](BaseManager.md)
 
 ---
 
@@ -20,18 +20,18 @@ asset stores — [AttachmentManager](AttachmentManager.md) (user-uploaded files)
 [MediaManager](MediaManager.md) (read-only external photo/video library). It does
 not manage its own persistent data.
 
-The primary consumer is the editor asset picker (the **Media Library** button in the
+The primary consumer is the editor asset picker (the __Media Library__ button in the
 page editor). It is also available to plugins and add-ons via the standard
 `engine.getManager('AssetService')` pattern.
 
 ## Key Features
 
-- **Unified search** — single call returns results from both stores, normalised to a common type
-- **Type filter** — restrict results to `attachment`, `media`, or both
-- **Year filter** — narrow media results to a specific year
-- **Normalised result shape** — every result includes a ready-to-paste `insertSnippet` for the editor
-- **Graceful degradation** — if either store is unavailable or throws, the other store's results are still returned
-- **No persistent state** — initialises instantly; all data lives in AttachmentManager and MediaManager
+- __Unified search__ — single call returns results from both stores, normalised to a common type
+- __Type filter__ — restrict results to `attachment`, `media`, or both
+- __Year filter__ — narrow media results to a specific year
+- __Normalised result shape__ — every result includes a ready-to-paste `insertSnippet` for the editor
+- __Graceful degradation__ — if either store is unavailable or throws, the other store's results are still returned
+- __No persistent state__ — initialises instantly; all data lives in AttachmentManager and MediaManager
 
 ## Quick Example
 
@@ -107,7 +107,7 @@ Requires: `editor`, `contributor`, or `admin` role.
 | `year` | number | Four-digit year filter (media only) |
 | `max` | number | Result cap (default 50, maximum 200) |
 
-**Response:**
+__Response:__
 
 ```json
 {
@@ -119,8 +119,8 @@ Requires: `editor`, `contributor`, or `admin` role.
 
 ## Editor Integration
 
-The **Media Library** button in the page editor calls this endpoint and renders results
-as a thumbnail grid inside a Bootstrap modal. Clicking **Insert** on any result pastes
+The __Media Library__ button in the page editor calls this endpoint and renders results
+as a thumbnail grid inside a Bootstrap modal. Clicking __Insert__ on any result pastes
 the item's `insertSnippet` at the cursor position in the editor textarea and closes
 the modal.
 
@@ -129,13 +129,13 @@ Attachment thumbnails are loaded from the attachment URL directly; media thumbna
 
 ## Implementation Notes
 
-- **Result ordering** — attachments first, then media, within each group ordered by the
+- __Result ordering__ — attachments first, then media, within each group ordered by the
   underlying store's natural sort
-- **Per-type cap** — when both types are requested, each gets `ceil(max / 2)` results
+- __Per-type cap__ — when both types are requested, each gets `ceil(max / 2)` results
   before the final `slice(0, max)` is applied
-- **Attachment query** — simple `toLowerCase().includes()` on the filename; the
+- __Attachment query__ — simple `toLowerCase().includes()` on the filename; the
   attachment store has no full-text search index
-- **Media query** — delegated to `MediaManager.search()` which uses AND-semantics
+- __Media query__ — delegated to `MediaManager.search()` which uses AND-semantics
   multi-token search across filename, title, description, keywords, and year
 
 ## Related

@@ -48,10 +48,10 @@ server.sh start [env]
 
 ### What Actually Happens
 
-The `ConfigurationManager` (`src/managers/ConfigurationManager.ts`) loads exactly **two** config files:
+The `ConfigurationManager` (`src/managers/ConfigurationManager.ts`) loads exactly __two__ config files:
 
-1. **`config/app-default-config.json`** — Base defaults, required, read-only, checked into the codebase
-2. **`INSTANCE_DATA_FOLDER/config/{INSTANCE_CONFIG_FILE}`** — Instance-specific overrides, optional
+1. __`config/app-default-config.json`__ — Base defaults, required, read-only, checked into the codebase
+2. __`INSTANCE_DATA_FOLDER/config/{INSTANCE_CONFIG_FILE}`__ — Instance-specific overrides, optional
 
 The custom config file defaults to `app-custom-config.json` unless overridden by the `INSTANCE_CONFIG_FILE` environment variable.
 
@@ -95,7 +95,7 @@ These environment variables override the corresponding config file properties at
 - Display messages in `server.sh`
 - `development` mode defaults logging level to `debug` (unless `ngdpbase.logging.level` is set in custom config)
 
-`NODE_ENV` does **not**:
+`NODE_ENV` does __not__:
 
 - Select which config file to load (there is no `app-production-config.json` or `app-development-config.json` in the loading chain)
 - Change the two-tier config loading behavior
@@ -133,7 +133,7 @@ env_production: { NODE_ENV: 'production' }
 
 | server.sh argument | NPM script   | NODE_ENV      |
 | ------------------ | ------------ | ------------- |
-| _(none)_           | `start`      | `production`  |
+| *(none)*           | `start`      | `production`  |
 | `dev`              | `start:dev`  | `development` |
 | `prod`             | `start:prod` | `production`  |
 | `test`             | `test`       | `test`        |
@@ -171,7 +171,7 @@ Sets up the minimum Express configuration needed to serve the maintenance page:
 
 ### Step 3: Initialization Gate Middleware (Maintenance Mode During Startup)
 
-An `engineReady` flag (initially `false`) gates all incoming requests. While the engine is initializing, all non-static requests receive a **503** response with the `maintenance.ejs` page:
+An `engineReady` flag (initially `false`) gates all incoming requests. While the engine is initializing, all non-static requests receive a __503__ response with the `maintenance.ejs` page:
 
 ```javascript
 app.use((req, res, next) => {
@@ -191,7 +191,7 @@ const port = parseInt(process.env.PORT || '3000', 10);
 app.listen(port);
 ```
 
-The server begins accepting connections **before** the engine initializes. Users see the maintenance page instead of "connection refused." This is especially important for large wikis (14K+ pages) where initialization can take 1-2 minutes.
+The server begins accepting connections __before__ the engine initializes. Users see the maintenance page instead of "connection refused." This is especially important for large wikis (14K+ pages) where initialization can take 1-2 minutes.
 
 ### Step 5: WikiEngine Initialization
 
@@ -216,10 +216,10 @@ During this step, the server continues accepting connections and serving the mai
 After the engine is ready, the remaining middleware is registered:
 
 - JSON/URL-encoded body parsing, cookie parser
-- **Installation check middleware**: If `INSTANCE_DATA_FOLDER/.install-complete` is missing → redirect to `/install`. If `HEADLESS_INSTALL=true` → auto-configure without the wizard.
-- **Session setup**: Storage path and options from ConfigurationManager (`ngdpbase.session.storagedir`, `ngdpbase.session.secret`, `ngdpbase.session.max-age`)
-- **User context middleware**: Attaches user info from session to each request
-- **Admin maintenance mode middleware**: When `engine.config.features.maintenance.enabled` is true, returns 503 to non-admin users (allows admin/login/logout routes through so admins can disable it)
+- __Installation check middleware__: If `INSTANCE_DATA_FOLDER/.install-complete` is missing → redirect to `/install`. If `HEADLESS_INSTALL=true` → auto-configure without the wizard.
+- __Session setup__: Storage path and options from ConfigurationManager (`ngdpbase.session.storagedir`, `ngdpbase.session.secret`, `ngdpbase.session.max-age`)
+- __User context middleware__: Attaches user info from session to each request
+- __Admin maintenance mode middleware__: When `engine.config.features.maintenance.enabled` is true, returns 503 to non-admin users (allows admin/login/logout routes through so admins can disable it)
 
 ### Step 7: Route Registration
 

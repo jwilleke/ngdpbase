@@ -15,7 +15,7 @@ Brief overview of the plugin's purpose.
 
 Detailed description of what this plugin provides and when to use it.
 
-**Source:** `plugins/PluginName.js`
+__Source:__ `plugins/PluginName.js`
 
 ## Plugin Metadata
 
@@ -54,7 +54,7 @@ Detailed description of what this plugin provides and when to use it.
 
 Detailed explanation of param1 and its valid values.
 
-**Valid values:**
+__Valid values:__
 
 - `value1` - Description
 - `value2` - Description
@@ -75,7 +75,7 @@ Controls the output format:
 [{PluginName}]
 ```
 
-**Output:**
+__Output:__
 
 ```text
 Plugin output here
@@ -87,7 +87,7 @@ Plugin output here
 [{PluginName param1='custom' param2=5}]
 ```
 
-**Output:**
+__Output:__
 
 ```html
 <div class="plugin-output">Custom output</div>
@@ -99,7 +99,7 @@ Plugin output here
 [{PluginName format='detailed'}]
 ```
 
-**Output:**
+__Output:__
 
 ```text
 Detailed output with additional information

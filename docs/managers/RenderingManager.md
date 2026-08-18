@@ -8,9 +8,9 @@ code: src/managers/RenderingManager.ts
 
 # RenderingManager
 
-**Module:** `src/managers/RenderingManager.ts`
-**Extends:** [BaseManager](BaseManager.md)
-**Complete Guide:** [RenderingManager-Complete-Guide.md](RenderingManager-Complete-Guide.md)
+__Module:__ `src/managers/RenderingManager.ts`
+__Extends:__ [BaseManager](BaseManager.md)
+__Complete Guide:__ [RenderingManager-Complete-Guide.md](RenderingManager-Complete-Guide.md)
 
 ---
 
@@ -20,14 +20,14 @@ RenderingManager orchestrates the conversion of markdown and wiki markup to HTML
 
 ## Key Features
 
-- **Dual Parser System** - Advanced MarkupParser with DOM extraction or legacy Showdown
-- **Wiki Link Processing** - Parse `[PageName]` and `[Text|Target]` wiki links
-- **Plugin Integration** - Execute `[{Plugin}]` syntax via PluginManager
-- **Variable Expansion** - Process `[{$variable}]` syntax with VariableManager
-- **Link Graph** - Build page relationships for backlinks and orphaned pages
-- **Plural Name Matching** - "Users" finds "User" page automatically
-- **JSPWiki Tables** - Convert JSPWiki-style tables to HTML
-- **Footnotes Support** - GitHub Flavored Markdown footnotes `[^1]`
+- __Dual Parser System__ - Advanced MarkupParser with DOM extraction or legacy Showdown
+- __Wiki Link Processing__ - Parse `[PageName]` and `[Text|Target]` wiki links
+- __Plugin Integration__ - Execute `[{Plugin}]` syntax via PluginManager
+- __Variable Expansion__ - Process `[{$variable}]` syntax with VariableManager
+- __Link Graph__ - Build page relationships for backlinks and orphaned pages
+- __Plural Name Matching__ - "Users" finds "User" page automatically
+- __JSPWiki Tables__ - Convert JSPWiki-style tables to HTML
+- __Footnotes Support__ - GitHub Flavored Markdown footnotes `[^1]`
 
 ## Quick Example
 
@@ -97,24 +97,24 @@ const total = renderingManager.getTotalPagesCount();
 
 ## Parser Selection Logic
 
-1. **Advanced Parser** (if `useadvancedparser: true`):
+1. __Advanced Parser__ (if `useadvancedparser: true`):
    - Uses MarkupParser with WikiDocument DOM extraction
    - Multi-phase processing pipeline
    - JSPWiki syntax handlers
    - Filter chains for pre/post processing
 
-2. **Legacy Parser** (fallback or if advanced disabled):
+2. __Legacy Parser__ (fallback or if advanced disabled):
    - Direct Showdown conversion
    - Basic JSPWiki syntax support
    - Reliable fallback for edge cases
 
 ## Supported Markdown Extensions
 
-- **Tables** - GitHub Flavored Markdown tables
-- **Strikethrough** - `~~deleted text~~`
-- **Tasklists** - `- [x] completed task`
-- **Code Blocks** - ` ``` fenced code blocks
-- **Footnotes** - `[^1]` footnote syntax
+- __Tables__ - GitHub Flavored Markdown tables
+- __Strikethrough__ - `~~deleted text~~`
+- __Tasklists__ - `- [x] completed task`
+- __Code Blocks__ - ` ``` fenced code blocks
+- __Footnotes__ - `[^1]` footnote syntax
 
 ## Wiki Link Syntax
 

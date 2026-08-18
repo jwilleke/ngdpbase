@@ -52,9 +52,9 @@ Displays only contextual variables that depend on user or page context.
 
 Shows a tabbed interface with:
 
-- **System Variables tab**: applicationname, version, baseurl, uptime, totalpages, etc.
-- **Contextual Variables tab**: username, pagename, displayname, browser, clientip, etc.
-- **Available Plugins tab**: All registered plugins with descriptions
+- __System Variables tab__: applicationname, version, baseurl, uptime, totalpages, etc.
+- __Contextual Variables tab__: username, pagename, displayname, browser, clientip, etc.
+- __Available Plugins tab__: All registered plugins with descriptions
 
 ### Example 2: Display System Variables Only
 
@@ -127,4 +127,4 @@ The plugin generates a responsive table or tabbed interface showing:
 
 ## Version History
 
-- **1.0.0** (2025-10-16) - Initial release
+- __1.0.0__ (2025-10-16) - Initial release

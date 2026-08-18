@@ -42,7 +42,7 @@ SearchManager loads it automatically when:
 - Index name: `ngdpbase-pages` (distinct from the sist2 `ngdpbase.addons.elasticsearch.es-index`)
 - Created on first `buildIndex()` call; mapping defined with explicit field types
 
-**Mapping:**
+__Mapping:__
 
 ```json
 {
@@ -64,7 +64,7 @@ SearchManager loads it automatically when:
 }
 ```
 
-**Field → metadata source mapping:**
+__Field → metadata source mapping:__
 
 | ES field | Front-matter key | Purpose |
 | --- | --- | --- |
@@ -72,7 +72,7 @@ SearchManager loads it automatically when:
 | `systemKeywords` | `system-keywords` | System-assigned classification — future home of #507 auto-tags |
 | `userKeywords` | `user-keywords` | User-assigned from controlled vocabulary |
 
-**Comparison with current Lunr internal fields:**
+__Comparison with current Lunr internal fields:__
 
 | Lunr field | ES field | Change | Reason |
 | --- | --- | --- | --- |
@@ -192,11 +192,11 @@ Tests:
 
 | File | Action |
 | --- | --- |
-| `src/providers/ElasticsearchSearchProvider.ts` | **Create** — new provider |
-| `src/providers/__tests__/ElasticsearchSearchProvider.test.js` | **Create** — tests |
-| `package.json` | **Edit** — add `@elastic/elasticsearch ^8.15.0` to dependencies |
-| `config/app-default-config.json` | **Edit** — add ES search provider config keys |
-| `/Volumes/hd2/jimstest-wiki/data/config/app-custom-config.json` | **Edit** — activate provider + set ES URL |
+| `src/providers/ElasticsearchSearchProvider.ts` | __Create__ — new provider |
+| `src/providers/__tests__/ElasticsearchSearchProvider.test.js` | __Create__ — tests |
+| `package.json` | __Edit__ — add `@elastic/elasticsearch ^8.15.0` to dependencies |
+| `config/app-default-config.json` | __Edit__ — add ES search provider config keys |
+| `/Volumes/hd2/jimstest-wiki/data/config/app-custom-config.json` | __Edit__ — activate provider + set ES URL |
 
 ### Developer Docs — Update Existing
 

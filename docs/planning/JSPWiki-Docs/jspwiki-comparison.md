@@ -44,11 +44,11 @@ Node.js Web Application (Express Framework)
 
 | Aspect | Apache JSPWiki | ngdpbase |
 | -------- | ---------------- | --------- |
-| **Language** | Java | Node.js/JavaScript |
-| **Runtime** | JVM (JDK 11+) | Node.js Runtime |
-| **Web Framework** | Servlet API 3.1, JSP | Express.js |
-| **Deployment** | WAR file to Tomcat/Jetty | npm package, PM2/Docker |
-| **Central Controller** | `WikiEngine.java` | `WikiEngine.js` + Manager System |
+| __Language__ | Java | Node.js/JavaScript |
+| __Runtime__ | JVM (JDK 11+) | Node.js Runtime |
+| __Web Framework__ | Servlet API 3.1, JSP | Express.js |
+| __Deployment__ | WAR file to Tomcat/Jetty | npm package, PM2/Docker |
+| __Central Controller__ | `WikiEngine.java` | `WikiEngine.js` + Manager System |
 
 ### 2. Rendering Pipeline Architecture
 
@@ -100,11 +100,11 @@ Final HTML Output
 
 #### Apache JSPWiki Plugins
 
-- **Interface**: `WikiPlugin` (Java interface)
-- **Manager**: `PluginManager.java` / `DefaultPluginManager.java`
-- **Location**: `org.apache.wiki.plugin` package
-- **Type Safety**: Java compile-time type checking
-- **Built-in Plugins**:
+- __Interface__: `WikiPlugin` (Java interface)
+- __Manager__: `PluginManager.java` / `DefaultPluginManager.java`
+- __Location__: `org.apache.wiki.plugin` package
+- __Type Safety__: Java compile-time type checking
+- __Built-in Plugins__:
   - `CurrentTimePlugin`
   - `RecentChangesPlugin`
   - `SearchPlugin`
@@ -114,11 +114,11 @@ Final HTML Output
 
 #### ngdpbase Plugins
 
-- **Interface**: JavaScript module exports (`execute` method)
-- **Manager**: `PluginManager.js` with dynamic loading
-- **Location**: `/plugins/` directory
-- **Type Safety**: Runtime validation with parameter schemas
-- **Built-in Plugins**:
+- __Interface__: JavaScript module exports (`execute` method)
+- __Manager__: `PluginManager.js` with dynamic loading
+- __Location__: `/plugins/` directory
+- __Type Safety__: Runtime validation with parameter schemas
+- __Built-in Plugins__:
   - `ImagePlugin.js`
   - `SessionsPlugin.js`
   - `TotalPagesPlugin.js`
@@ -153,11 +153,11 @@ Multi-layered Node.js Security
 
 | Aspect | Apache JSPWiki | ngdpbase |
 | -------- | ---------------- | --------- |
-| **Primary Config** | `jspwiki-custom.properties` | `app-custom-config.json` |
-| **Format** | Java Properties | Hierarchical JSON |
-| **Override System** | Properties file cascade | JSON merge with defaults |
-| **Deployment Config** | WAR deployment descriptors | Environment variables + JSON |
-| **Security Config** | `jspwiki.policy` (JAAS) | JSON policy definitions |
+| __Primary Config__ | `jspwiki-custom.properties` | `app-custom-config.json` |
+| __Format__ | Java Properties | Hierarchical JSON |
+| __Override System__ | Properties file cascade | JSON merge with defaults |
+| __Deployment Config__ | WAR deployment descriptors | Environment variables + JSON |
+| __Security Config__ | `jspwiki.policy` (JAAS) | JSON policy definitions |
 
 ## Key Architectural Differences
 
@@ -165,17 +165,17 @@ Multi-layered Node.js Security
 
 #### Apache JSPWiki: Strategy Pattern
 
-- **Multiple Renderers**: Different renderer classes for different output formats
-- **Renderer Selection**: Strategy pattern chooses appropriate renderer
-- **Extensibility**: Add new renderers by implementing renderer interface
-- **Focus**: Format-specific rendering strategies
+- __Multiple Renderers__: Different renderer classes for different output formats
+- __Renderer Selection__: Strategy pattern chooses appropriate renderer
+- __Extensibility__: Add new renderers by implementing renderer interface
+- __Focus__: Format-specific rendering strategies
 
 #### ngdpbase: Pipeline Processing
 
-- **Single Pipeline**: One 7-phase pipeline handles all processing
-- **Handler Priority**: Ordered handler execution within phases
-- **Extensibility**: Add handlers/filters to existing pipeline phases
-- **Focus**: Comprehensive processing with security integration
+- __Single Pipeline__: One 7-phase pipeline handles all processing
+- __Handler Priority__: Ordered handler execution within phases
+- __Extensibility__: Add handlers/filters to existing pipeline phases
+- __Focus__: Comprehensive processing with security integration
 
 ### 2. Plugin Integration
 
@@ -188,10 +188,10 @@ public interface WikiPlugin {
 }
 ```
 
-- **Compile-time Safety**: Java interface ensures method signatures
-- **Context Object**: Rich `WikiContext` with full engine access
-- **Exception Handling**: Typed exception handling
-- **Performance**: Compiled Java performance
+- __Compile-time Safety__: Java interface ensures method signatures
+- __Context Object__: Rich `WikiContext` with full engine access
+- __Exception Handling__: Typed exception handling
+- __Performance__: Compiled Java performance
 
 #### ngdpbase
 
@@ -204,36 +204,36 @@ module.exports = {
 };
 ```
 
-- **Runtime Flexibility**: Dynamic loading and parameter validation
-- **Async Support**: Native Promise/async-await support
-- **Context Isolation**: Controlled context exposure
-- **Performance**: V8 JavaScript engine optimization
+- __Runtime Flexibility__: Dynamic loading and parameter validation
+- __Async Support__: Native Promise/async-await support
+- __Context Isolation__: Controlled context exposure
+- __Performance__: V8 JavaScript engine optimization
 
 ### 3. Security Models
 
 #### Apache JSPWiki: Enterprise Security
 
-- **JAAS Integration**: Full Java Authentication and Authorization Service
-- **Container Security**: Leverages servlet container security
-- **Policy Files**: Declarative security policies
-- **Type Safety**: Compile-time security contract validation
+- __JAAS Integration__: Full Java Authentication and Authorization Service
+- __Container Security__: Leverages servlet container security
+- __Policy Files__: Declarative security policies
+- __Type Safety__: Compile-time security contract validation
 
 #### ngdpbase: Layered Web Security
 
-- **Filter Chain**: Multiple security filters in processing pipeline
-- **HTML Protection**: Prevents double-encoding vulnerabilities
-- **Content Validation**: Real-time content security analysis
-- **Dynamic Policies**: Runtime policy evaluation and updates
+- __Filter Chain__: Multiple security filters in processing pipeline
+- __HTML Protection__: Prevents double-encoding vulnerabilities
+- __Content Validation__: Real-time content security analysis
+- __Dynamic Policies__: Runtime policy evaluation and updates
 
 ### 4. Performance Characteristics
 
 | Aspect | Apache JSPWiki | ngdpbase |
 | -------- | ---------------- | --------- |
-| **Startup Time** | Slower (JVM warmup) | Faster (Node.js startup) |
-| **Runtime Performance** | Optimized JVM execution | V8 JavaScript optimization |
-| **Memory Usage** | Higher JVM overhead | Lower Node.js footprint |
-| **Concurrency Model** | Thread-based (servlet model) | Event-driven (single-threaded) |
-| **Caching** | JVM heap + external | In-memory + Redis integration |
+| __Startup Time__ | Slower (JVM warmup) | Faster (Node.js startup) |
+| __Runtime Performance__ | Optimized JVM execution | V8 JavaScript optimization |
+| __Memory Usage__ | Higher JVM overhead | Lower Node.js footprint |
+| __Concurrency Model__ | Thread-based (servlet model) | Event-driven (single-threaded) |
+| __Caching__ | JVM heap + external | In-memory + Redis integration |
 
 ## Compatibility Analysis
 
@@ -241,11 +241,11 @@ module.exports = {
 
 Both systems support identical JSPWiki markup:
 
-- **Plugin Syntax**: `[{PluginName param=value}]` ✅
-- **Variable Syntax**: `[{$variablename}]` ✅
-- **Escaped Syntax**: `[[{syntax}]` ✅
-- **Wiki Links**: `[PageName]` ✅
-- **Inter-wiki Links**: `[WikiName:PageName]` ✅
+- __Plugin Syntax__: `[{PluginName param=value}]` ✅
+- __Variable Syntax__: `[{$variablename}]` ✅
+- __Escaped Syntax__: `[[{syntax}]` ✅
+- __Wiki Links__: `[PageName]` ✅
+- __Inter-wiki Links__: `[WikiName:PageName]` ✅
 
 ### Plugin Compatibility
 
@@ -261,39 +261,39 @@ Both systems support identical JSPWiki markup:
 
 ### From JSPWiki to ngdpbase
 
-**Advantages of ngdpbase:**
+__Advantages of ngdpbase:__
 
-- **Faster Development**: JavaScript ecosystem and npm packages
-- **Modern Web Stack**: Express.js, modern frontend integration
-- **Enhanced Security**: Multi-layered security with HTML protection
-- **Better Performance**: Event-driven architecture for web workloads
-- **Easier Deployment**: Docker/container-friendly, cloud-native
+- __Faster Development__: JavaScript ecosystem and npm packages
+- __Modern Web Stack__: Express.js, modern frontend integration
+- __Enhanced Security__: Multi-layered security with HTML protection
+- __Better Performance__: Event-driven architecture for web workloads
+- __Easier Deployment__: Docker/container-friendly, cloud-native
 
-**Challenges:**
+__Challenges:__
 
-- **Plugin Migration**: Java plugins need JavaScript rewrite
-- **Configuration Changes**: Properties files → JSON configuration
-- **Security Model**: JAAS policies → JSON-based ACL system
-- **Enterprise Features**: Some enterprise Java features may need adaptation
+- __Plugin Migration__: Java plugins need JavaScript rewrite
+- __Configuration Changes__: Properties files → JSON configuration
+- __Security Model__: JAAS policies → JSON-based ACL system
+- __Enterprise Features__: Some enterprise Java features may need adaptation
 
 ### Recommended Migration Path
 
-1. **Content Migration**: Export JSPWiki pages → Import to ngdpbase
-2. **Plugin Assessment**: Inventory existing plugins → Rewrite in JavaScript
-3. **Security Mapping**: JAAS policies → ngdpbase ACL configuration
-4. **Testing**: Comprehensive rendering compatibility testing
-5. **Performance Tuning**: Node.js optimization for production load
+1. __Content Migration__: Export JSPWiki pages → Import to ngdpbase
+2. __Plugin Assessment__: Inventory existing plugins → Rewrite in JavaScript
+3. __Security Mapping__: JAAS policies → ngdpbase ACL configuration
+4. __Testing__: Comprehensive rendering compatibility testing
+5. __Performance Tuning__: Node.js optimization for production load
 
 ## Conclusion
 
 Both Apache JSPWiki and ngdpbase provide robust wiki processing capabilities with different architectural approaches:
 
-- **Apache JSPWiki**: Mature, enterprise-focused Java platform with proven scalability
-- **ngdpbase**: Modern, flexible Node.js platform with enhanced security and web-native features
+- __Apache JSPWiki__: Mature, enterprise-focused Java platform with proven scalability
+- __ngdpbase__: Modern, flexible Node.js platform with enhanced security and web-native features
 
 The choice depends on organizational requirements:
 
-- Choose **JSPWiki** for enterprise Java environments with existing infrastructure
-- Choose **ngdpbase** for modern web applications requiring flexibility and rapid development
+- Choose __JSPWiki__ for enterprise Java environments with existing infrastructure
+- Choose __ngdpbase__ for modern web applications requiring flexibility and rapid development
 
 Both maintain excellent JSPWiki markup compatibility while offering unique architectural advantages suited to their respective ecosystems.

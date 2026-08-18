@@ -1,16 +1,16 @@
-> **ARCHIVED**: This document is for historical purposes only. For the current and complete documentation, please see **[WikiDocument Complete Guide](../WikiDocument-Complete-Guide.md)**.
+> __ARCHIVED__: This document is for historical purposes only. For the current and complete documentation, please see __[WikiDocument Complete Guide](../WikiDocument-Complete-Guide.md)__.
 
 # WikiDocument API Reference
 
-**Version:** 1.0.0
-**Status:** Implemented (Phase 1 Complete)
-**Related:** [GitHub Issue #93](https://github.com/jwilleke/ngdpbase/issues/93)
+__Version:__ 1.0.0
+__Status:__ Implemented (Phase 1 Complete)
+__Related:__ [GitHub Issue #93](https://github.com/jwilleke/ngdpbase/issues/93)
 
 ## Overview
 
 The `WikiDocument` class provides a DOM-based representation of a wiki page, similar to JSPWiki's WikiDocument which extends JDOM2 Document. This class eliminates the order-dependency issues inherent in string-based parsing and provides a robust foundation for wiki content processing.
 
-**Key Features:**
+__Key Features:__
 
 - DOM-based structure using linkedom (W3C DOM API)
 - Cacheable representation (toJSON/fromJSON)
@@ -19,7 +19,7 @@ The `WikiDocument` class provides a DOM-based representation of a wiki page, sim
 - High performance (390μs per complex page)
 - Standard W3C DOM methods
 
-**JSPWiki Reference:**
+__JSPWiki Reference:__
 
 - [WikiDocument JavaDoc](https://jspwiki.apache.org/apidocs/2.12.1/org/apache/wiki/parser/WikiDocument.html)
 
@@ -29,14 +29,14 @@ The `WikiDocument` class provides a DOM-based representation of a wiki page, sim
 
 Creates a new WikiDocument instance.
 
-**Parameters:**
+__Parameters:__
 
 - `pageData` (string) - Original wiki markup content
 - `context` (Object|null) - Rendering context, stored as WeakRef for GC
 
-**Returns:** WikiDocument instance
+__Returns:__ WikiDocument instance
 
-**Example:**
+__Example:__
 
 ```javascript
 const WikiDocument = require('./src/parsers/dom/WikiDocument');
@@ -48,7 +48,7 @@ const doc = new WikiDocument('!! Welcome\nThis is a wiki page.', {
 });
 ```
 
-**Internal Structure:**
+__Internal Structure:__
 
 ```javascript
 {
@@ -66,11 +66,11 @@ const doc = new WikiDocument('!! Welcome\nThis is a wiki page.', {
 
 Returns the original wiki markup.
 
-**JSPWiki equivalent:** `getPageData()`
+__JSPWiki equivalent:__ `getPageData()`
 
-**Returns:** (string) Original page content
+__Returns:__ (string) Original page content
 
-**Example:**
+__Example:__
 
 ```javascript
 const content = doc.getPageData();
@@ -81,19 +81,19 @@ console.log(content); // "!! Welcome\nThis is a wiki page."
 
 Updates the original wiki markup.
 
-**JSPWiki equivalent:** `setPageData(String data)`
+__JSPWiki equivalent:__ `setPageData(String data)`
 
-**Parameters:**
+__Parameters:__
 
 - `data` (string) - New wiki markup
 
-**Example:**
+__Example:__
 
 ```javascript
 doc.setPageData('!! Updated\nNew content.');
 ```
 
-**Note:** This does not rebuild the DOM. To rebuild, parse again.
+__Note:__ This does not rebuild the DOM. To rebuild, parse again.
 
 ## Context Methods
 
@@ -101,11 +101,11 @@ doc.setPageData('!! Updated\nNew content.');
 
 Returns the rendering context if it hasn't been garbage collected.
 
-**JSPWiki equivalent:** `getContext()`
+__JSPWiki equivalent:__ `getContext()`
 
-**Returns:** (Object|null) Context object or null if collected
+__Returns:__ (Object|null) Context object or null if collected
 
-**Example:**
+__Example:__
 
 ```javascript
 const context = doc.getContext();
@@ -117,7 +117,7 @@ if (context) {
 }
 ```
 
-**WeakRef Behavior:**
+__WeakRef Behavior:__
 
 ```javascript
 // Context is kept alive while referenced
@@ -135,13 +135,13 @@ console.log(doc.getContext()); // null
 
 Updates or clears the rendering context.
 
-**JSPWiki equivalent:** `setContext(Context ctx)`
+__JSPWiki equivalent:__ `setContext(Context ctx)`
 
-**Parameters:**
+__Parameters:__
 
 - `context` (Object|null) - New context or null to clear
 
-**Example:**
+__Example:__
 
 ```javascript
 doc.setContext({ pageName: 'NewPage', user: 'john' });
@@ -156,9 +156,9 @@ doc.setContext(null);
 
 Returns a copy of all metadata.
 
-**Returns:** (Object) Copy of metadata object
+__Returns:__ (Object) Copy of metadata object
 
-**Example:**
+__Example:__
 
 ```javascript
 const metadata = doc.getMetadata();
@@ -175,12 +175,12 @@ console.log(metadata);
 
 Sets a metadata value.
 
-**Parameters:**
+__Parameters:__
 
 - `key` (string) - Metadata key
 - `value` (*) - Any value
 
-**Example:**
+__Example:__
 
 ```javascript
 doc.setMetadata('author', 'John Doe');
@@ -189,7 +189,7 @@ doc.setMetadata('processed', true);
 doc.setMetadata('parseTime', 1.23);
 ```
 
-**Common Metadata Keys:**
+__Common Metadata Keys:__
 
 - `author` - Page author
 - `tags` - Array of tags
@@ -203,14 +203,14 @@ doc.setMetadata('parseTime', 1.23);
 
 Gets a metadata value with optional default.
 
-**Parameters:**
+__Parameters:__
 
 - `key` (string) - Metadata key
 - `defaultValue` (*) - Default if key not found (default: null)
 
-**Returns:** (*) Metadata value or default
+__Returns:__ (*) Metadata value or default
 
-**Example:**
+__Example:__
 
 ```javascript
 const author = doc.getMetadataValue('author', 'Unknown');
@@ -224,14 +224,14 @@ const processed = doc.getMetadataValue('processed', false);
 
 Creates a new HTML element.
 
-**Parameters:**
+__Parameters:__
 
 - `tag` (string) - Element tag name
 - `attributes` (Object) - Key-value pairs of attributes (optional)
 
-**Returns:** (Element) New element
+__Returns:__ (Element) New element
 
-**Example:**
+__Example:__
 
 ```javascript
 // Simple element
@@ -257,13 +257,13 @@ const link = doc.createElement('a', {
 
 Creates a text node.
 
-**Parameters:**
+__Parameters:__
 
 - `text` (string) - Text content
 
-**Returns:** (Text) Text node
+__Returns:__ (Text) Text node
 
-**Example:**
+__Example:__
 
 ```javascript
 const text = doc.createTextNode('Hello, world!');
@@ -277,13 +277,13 @@ const special = doc.createTextNode('Use [[ to escape brackets');
 
 Creates an HTML comment node.
 
-**Parameters:**
+__Parameters:__
 
 - `text` (string) - Comment text
 
-**Returns:** (Comment) Comment node
+__Returns:__ (Comment) Comment node
 
-**Example:**
+__Example:__
 
 ```javascript
 const comment = doc.createCommentNode('This is a comment');
@@ -300,13 +300,13 @@ const marker = doc.createCommentNode('PLUGIN:IndexPlugin');
 
 Appends a child to the root element.
 
-**Parameters:**
+__Parameters:__
 
 - `node` (Node) - Node to append
 
-**Returns:** (Node) Appended node
+__Returns:__ (Node) Appended node
 
-**Example:**
+__Example:__
 
 ```javascript
 const para = doc.createElement('p');
@@ -322,14 +322,14 @@ doc.appendChild(doc.createElement('div'))
 
 Inserts a node before a reference node.
 
-**Parameters:**
+__Parameters:__
 
 - `newNode` (Node) - Node to insert
 - `referenceNode` (Node) - Reference node
 
-**Returns:** (Node) Inserted node
+__Returns:__ (Node) Inserted node
 
-**Example:**
+__Example:__
 
 ```javascript
 const first = doc.createElement('p');
@@ -350,13 +350,13 @@ doc.insertBefore(middle, second);
 
 Removes a child from the root element.
 
-**Parameters:**
+__Parameters:__
 
 - `node` (Node) - Node to remove
 
-**Returns:** (Node) Removed node
+__Returns:__ (Node) Removed node
 
-**Example:**
+__Example:__
 
 ```javascript
 const para = doc.createElement('p');
@@ -373,14 +373,14 @@ doc.appendChild(para);
 
 Replaces a child node.
 
-**Parameters:**
+__Parameters:__
 
 - `newNode` (Node) - New node
 - `oldNode` (Node) - Node to replace
 
-**Returns:** (Node) Replaced (old) node
+__Returns:__ (Node) Replaced (old) node
 
-**Example:**
+__Example:__
 
 ```javascript
 const old = doc.createElement('p');
@@ -398,13 +398,13 @@ doc.replaceChild(newEl, old);
 
 Finds the first element matching a CSS selector.
 
-**Parameters:**
+__Parameters:__
 
 - `selector` (string) - CSS selector
 
-**Returns:** (Element|null) First matching element or null
+__Returns:__ (Element|null) First matching element or null
 
-**Example:**
+__Example:__
 
 ```javascript
 // By ID
@@ -420,7 +420,7 @@ const special = doc.querySelector('div.content > p.important');
 const escaped = doc.querySelector('[data-escaped="true"]');
 ```
 
-**Common Selectors:**
+__Common Selectors:__
 
 ```javascript
 '#id'                    // Element with ID
@@ -437,13 +437,13 @@ const escaped = doc.querySelector('[data-escaped="true"]');
 
 Finds all elements matching a CSS selector.
 
-**Parameters:**
+__Parameters:__
 
 - `selector` (string) - CSS selector
 
-**Returns:** (NodeList) All matching elements
+__Returns:__ (NodeList) All matching elements
 
-**Example:**
+__Example:__
 
 ```javascript
 // All paragraphs
@@ -466,13 +466,13 @@ const array = Array.from(paras);
 
 Finds an element by ID.
 
-**Parameters:**
+__Parameters:__
 
 - `id` (string) - Element ID (without #)
 
-**Returns:** (Element|null) Element or null
+__Returns:__ (Element|null) Element or null
 
-**Example:**
+__Example:__
 
 ```javascript
 const heading = doc.getElementById('section-1');
@@ -481,19 +481,19 @@ if (heading) {
 }
 ```
 
-**Note:** Faster than `querySelector('#id')` for single ID lookups.
+__Note:__ Faster than `querySelector('#id')` for single ID lookups.
 
 ### `getElementsByClassName(className)`
 
 Finds elements by class name.
 
-**Parameters:**
+__Parameters:__
 
 - `className` (string) - Class name (without .)
 
-**Returns:** (HTMLCollection) Live collection of elements
+__Returns:__ (HTMLCollection) Live collection of elements
 
-**Example:**
+__Example:__
 
 ```javascript
 const wikis = doc.getElementsByClassName('wiki-para');
@@ -509,13 +509,13 @@ const count2 = wikis.length; // count2 > count1
 
 Finds elements by tag name.
 
-**Parameters:**
+__Parameters:__
 
 - `tagName` (string) - Tag name
 
-**Returns:** (HTMLCollection) Live collection of elements
+__Returns:__ (HTMLCollection) Live collection of elements
 
-**Example:**
+__Example:__
 
 ```javascript
 const headings = doc.getElementsByTagName('h1');
@@ -529,9 +529,9 @@ const allDivs = doc.getElementsByTagName('div');
 
 Serializes the document to HTML string.
 
-**Returns:** (string) HTML content (innerHTML of root)
+__Returns:__ (string) HTML content (innerHTML of root)
 
-**Example:**
+__Example:__
 
 ```javascript
 const html = doc.toHTML();
@@ -540,7 +540,7 @@ console.log(html);
 // <p class="wiki-para">This is content.</p>
 ```
 
-**Use Cases:**
+__Use Cases:__
 
 ```javascript
 // Render to page
@@ -559,16 +559,16 @@ const after = doc.toHTML();
 
 Returns a debug-friendly string representation.
 
-**Returns:** (string) Debug string
+__Returns:__ (string) Debug string
 
-**Example:**
+__Example:__
 
 ```javascript
 console.log(doc.toString());
 // WikiDocument[5 nodes, 123 chars]
 ```
 
-**Use in Logs:**
+__Use in Logs:__
 
 ```javascript
 logger.debug(`Processing ${doc.toString()}`);
@@ -579,9 +579,9 @@ logger.info(`Created ${doc}`); // toString() called automatically
 
 Serializes to JSON for caching.
 
-**Returns:** (Object) JSON-serializable object
+__Returns:__ (Object) JSON-serializable object
 
-**Structure:**
+__Structure:__
 
 ```javascript
 {
@@ -593,7 +593,7 @@ Serializes to JSON for caching.
 }
 ```
 
-**Example:**
+__Example:__
 
 ```javascript
 const json = doc.toJSON();
@@ -610,14 +610,14 @@ await fs.writeFile('cached.json', jsonString);
 
 Deserializes from JSON (cache restore).
 
-**Parameters:**
+__Parameters:__
 
 - `json` (Object) - JSON object from toJSON()
 - `context` (Object|null) - Optional rendering context
 
-**Returns:** (WikiDocument) Restored document
+__Returns:__ (WikiDocument) Restored document
 
-**Example:**
+__Example:__
 
 ```javascript
 // Load from cache
@@ -632,7 +632,7 @@ console.log(doc.toHTML());
 console.log(doc.getPageData());
 ```
 
-**Cache Strategy:**
+__Cache Strategy:__
 
 ```javascript
 // Check cache first
@@ -653,9 +653,9 @@ return doc;
 
 Returns the root element (body).
 
-**Returns:** (Element) Root element
+__Returns:__ (Element) Root element
 
-**Example:**
+__Example:__
 
 ```javascript
 const root = doc.getRootElement();
@@ -670,7 +670,7 @@ root.innerHTML = '<p>Direct HTML</p>';
 
 Removes all content from the document.
 
-**Example:**
+__Example:__
 
 ```javascript
 doc.clear();
@@ -678,7 +678,7 @@ console.log(doc.isEmpty()); // true
 console.log(doc.getChildCount()); // 0
 ```
 
-**Use Cases:**
+__Use Cases:__
 
 ```javascript
 // Reset document for reuse
@@ -694,9 +694,9 @@ doc.appendChild(createErrorElement('Parse failed'));
 
 Returns the number of child nodes in root.
 
-**Returns:** (number) Child count
+__Returns:__ (number) Child count
 
-**Example:**
+__Example:__
 
 ```javascript
 console.log(`Document has ${doc.getChildCount()} top-level nodes`);
@@ -710,9 +710,9 @@ if (doc.getChildCount() === 0) {
 
 Checks if the document has no content.
 
-**Returns:** (boolean) True if empty
+__Returns:__ (boolean) True if empty
 
-**Example:**
+__Example:__
 
 ```javascript
 if (doc.isEmpty()) {
@@ -726,9 +726,9 @@ if (doc.isEmpty()) {
 
 Returns document statistics.
 
-**Returns:** (Object) Statistics object
+__Returns:__ (Object) Statistics object
 
-**Structure:**
+__Structure:__
 
 ```javascript
 {
@@ -740,7 +740,7 @@ Returns document statistics.
 }
 ```
 
-**Example:**
+__Example:__
 
 ```javascript
 const stats = doc.getStatistics();
@@ -814,17 +814,17 @@ console.log('Restored:', restored.toHTML());
 
 | Feature | JSPWiki (JDOM2) | WikiDocument (linkedom) |
 | --------- | ----------------- | ------------------------- |
-| **Base Class** | `org.jdom2.Document` | Custom class with linkedom |
-| **Language** | Java | JavaScript/Node.js |
-| **DOM API** | JDOM2 API | W3C DOM API |
-| **Element Creation** | `new Element("tag")` | `createElement("tag")` |
-| **Attributes** | `element.setAttribute()` | `element.setAttribute()` |
-| **Query** | XPath via `XPathFactory` | CSS selectors via `querySelector()` |
-| **Serialization** | `XMLOutputter` | `innerHTML` / `toHTML()` |
-| **Context Storage** | `WeakReference<Context>` | `WeakRef` (ES2021) |
-| **Caching** | XML serialization | JSON serialization |
-| **Performance** | JVM-dependent | ~390μs per page |
-| **Memory** | JVM heap | ~21 KB per page |
+| __Base Class__ | `org.jdom2.Document` | Custom class with linkedom |
+| __Language__ | Java | JavaScript/Node.js |
+| __DOM API__ | JDOM2 API | W3C DOM API |
+| __Element Creation__ | `new Element("tag")` | `createElement("tag")` |
+| __Attributes__ | `element.setAttribute()` | `element.setAttribute()` |
+| __Query__ | XPath via `XPathFactory` | CSS selectors via `querySelector()` |
+| __Serialization__ | `XMLOutputter` | `innerHTML` / `toHTML()` |
+| __Context Storage__ | `WeakReference<Context>` | `WeakRef` (ES2021) |
+| __Caching__ | XML serialization | JSON serialization |
+| __Performance__ | JVM-dependent | ~390μs per page |
+| __Memory__ | JVM heap | ~21 KB per page |
 
 ### API Mapping
 
@@ -863,25 +863,25 @@ Based on benchmarks with 1000 iterations:
 
 | Operation | Time | Notes |
 | ----------- | ------ | ------- |
-| **Create Document** | 28μs | Very fast, minimal overhead |
-| **Create 100 Elements** | 690μs | Including attributes and text |
-| **Serialize to HTML** | 54μs | Fast innerHTML access |
-| **Query (querySelector)** | 4.2μs | Optimized CSS selector engine |
-| **JSON Cache Save** | 10μs | Lightweight serialization |
-| **JSON Cache Restore** | 330μs | Includes DOM rebuild |
-| **Complex Page** | 390μs | Full page with headings, lists, paragraphs |
+| __Create Document__ | 28μs | Very fast, minimal overhead |
+| __Create 100 Elements__ | 690μs | Including attributes and text |
+| __Serialize to HTML__ | 54μs | Fast innerHTML access |
+| __Query (querySelector)__ | 4.2μs | Optimized CSS selector engine |
+| __JSON Cache Save__ | 10μs | Lightweight serialization |
+| __JSON Cache Restore__ | 330μs | Includes DOM rebuild |
+| __Complex Page__ | 390μs | Full page with headings, lists, paragraphs |
 
-**Capacity:**
+__Capacity:__
 
-- **2,564 pages/second** throughput
-- **2.11 MB** memory for 100 cached pages
-- **Sub-millisecond** operations
+- __2,564 pages/second__ throughput
+- __2.11 MB__ memory for 100 cached pages
+- __Sub-millisecond__ operations
 
 ## Best Practices
 
 ### 1. Context Management
 
-✅ **Do:**
+✅ __Do:__
 
 ```javascript
 // Let context be GC'd when done
@@ -892,7 +892,7 @@ function processPage(content) {
 }
 ```
 
-❌ **Don't:**
+❌ __Don't:__
 
 ```javascript
 // Keep context in closure unnecessarily
@@ -906,7 +906,7 @@ function processPage(content) {
 
 ### 2. Metadata Usage
 
-✅ **Do:**
+✅ __Do:__
 
 ```javascript
 doc.setMetadata('processed', true);
@@ -914,7 +914,7 @@ doc.setMetadata('parseTime', performance.now() - start);
 doc.setMetadata('cacheKey', generateKey(pageName));
 ```
 
-❌ **Don't:**
+❌ __Don't:__
 
 ```javascript
 doc.setMetadata('largeObject', hugeArray); // Bloats metadata
@@ -922,7 +922,7 @@ doc.setMetadata('largeObject', hugeArray); // Bloats metadata
 
 ### 3. Caching Strategy
 
-✅ **Do:**
+✅ __Do:__
 
 ```javascript
 // Cache serialized JSON
@@ -938,7 +938,7 @@ if (cached) {
 
 ### 4. DOM Building
 
-✅ **Do:**
+✅ __Do:__
 
 ```javascript
 // Build incrementally
@@ -951,7 +951,7 @@ items.forEach(item => {
 doc.appendChild(container);
 ```
 
-❌ **Don't:**
+❌ __Don't:__
 
 ```javascript
 // Build HTML string and parse
@@ -979,7 +979,7 @@ doc.root.innerHTML = items.map(item => `<p>${item}</p>`).join('');
 
 ---
 
-**Status:** Production Ready
-**Test Coverage:** 35 tests passing
-**Performance:** Exceeds all criteria by 25-238x
-**Maintained By:** Development Team
+__Status:__ Production Ready
+__Test Coverage:__ 35 tests passing
+__Performance:__ Exceeds all criteria by 25-238x
+__Maintained By:__ Development Team

@@ -2,33 +2,33 @@
 
 ## Metadata & Organization
 
-- **[Page-Metadata](../pages/Page-Metadata)** - **COMPLETE metadata field documentation**
-- **[Categories]** - Available category values
-- **[System Keywords]** - System-level keyword management
-- **[User Keywords]** - User keyword management
-- **[Metadata Cleanup Progress]** - Metadata standardization progress
+- __[Page-Metadata](../pages/Page-Metadata)__ - __COMPLETE metadata field documentation__
+- __[Categories]__ - Available category values
+- __[System Keywords]__ - System-level keyword management
+- __[User Keywords]__ - User keyword management
+- __[Metadata Cleanup Progress]__ - Metadata standardization progress
 
 ## Templates & Styling
 
-- **[Footer]** - Wiki footer configuration
-- **[LeftMenu]** - Navigation menu configuration
-- **[Welcome]** - Default welcome page content
+- __[Footer]__ - Wiki footer configuration
+- __[LeftMenu]__ - Navigation menu configuration
+- __[Welcome]__ - Default welcome page content
 
 ## Plugins & Extensions
 
-- **[Image Plugin]** - Inline image support with upload functionality
+- __[Image Plugin]__ - Inline image support with upload functionality
 
 ### Image Plugin
 
 The Image plugin enables inline image insertion using JSPWiki-compatible syntax:
 
-**Basic Usage:**
+__Basic Usage:__
 
 ```markdown
 [{Image src='image.jpg' alt='Description'}]
 ```
 
-**Available Parameters:**
+__Available Parameters:__
 
 - `src` (required): Image path, URL, or `media://filename` for media library items
 - `alt`: Alternative text for accessibility
@@ -42,7 +42,7 @@ The Image plugin enables inline image insertion using JSPWiki-compatible syntax:
 - `border`: Border size in pixels
 - `title`: Hover text for the image
 
-**Examples:**
+__Examples:__
 
 ```markdown
 [{Image src='photo.jpg' alt='My Photo' width='300' height='200'}]
@@ -52,7 +52,7 @@ The Image plugin enables inline image insertion using JSPWiki-compatible syntax:
 [{Image src='thumbnail.jpg' link='full-image.jpg' title='Click to enlarge'}]
 ```
 
-**Media Library (media:// URI):**
+__Media Library (media:// URI):__
 
 If your wiki has a media library configured, you can embed photos directly without uploading them as attachments:
 
@@ -63,7 +63,7 @@ If your wiki has a media library configured, you can embed photos directly witho
 
 The `media://` prefix tells the wiki to look up the photo by filename in the media library. The image is served securely — items linked to private pages are only visible to authorised users.
 
-**Image Upload:**
+__Image Upload:__
 
 - Images can be uploaded through the page editor interface
 - Supported formats: JPEG, PNG, GIF, WebP

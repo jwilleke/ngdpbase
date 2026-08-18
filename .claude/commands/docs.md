@@ -18,14 +18,14 @@ Review what was built or changed in this session and ask:
 - Does an existing documentation page need to be updated to reflect changes?
 - Is there a `required-pages/` entry (or a live wiki page) that should document this?
 
-If the answer to any of the above is **yes**, proceed to Step 2. If not, state that no end-user documentation is needed and stop.
+If the answer to any of the above is __yes__, proceed to Step 2. If not, state that no end-user documentation is needed and stop.
 
 ### Step 2: Identify the page
 
 Determine whether this needs:
 
-- A **new** documentation page (new plugin, new feature, new concept)
-- An **update** to an **existing** page (changed behaviour, new parameters, renamed things)
+- A __new__ documentation page (new plugin, new feature, new concept)
+- An __update__ to an __existing__ page (changed behaviour, new parameters, renamed things)
 
 For a new page, generate a UUID v4 for the frontmatter.
 
@@ -39,11 +39,11 @@ Follow the structure and style in `docs/proper-documentation-pages.md`:
 - `## Parameters` (for plugins — four-column table: Parameter / Type / Default / Description)
 - `## Examples` (live rendered examples using `[[{...}]` escape pattern where possible)
 - `## Notes` (edge cases, caveats)
-- Do **not** add a `## More Information` footer — the Referring Pages tab handles this automatically
+- Do __not__ add a `## More Information` footer — the Referring Pages tab handles this automatically
 
 Key rules from the standard:
 
-- Do **not** use the word "Wiki" — use "this site" or the site name via `[{ConfigAccessor type='siteName'}]`
+- Do __not__ use the word "Wiki" — use "this site" or the site name via `[{ConfigAccessor type='siteName'}]`
 - Use ngdpbase table syntax (not markdown tables) for pages in `required-pages/`
 - Use `[{ConfigAccessor key='prefix.*'}]` for config property tables
 - Use built-in plugins instead of static lists

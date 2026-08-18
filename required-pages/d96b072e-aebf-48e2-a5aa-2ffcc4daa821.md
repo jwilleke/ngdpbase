@@ -90,7 +90,7 @@ External markdown links are automatically converted to footnote form by the site
 
 ## Notes
 
-- The plugin reads the **raw page source**, not the rendered output. Footnotes inside code blocks are still extracted.
+- The plugin reads the __raw page source__, not the rendered output. Footnotes inside code blocks are still extracted.
 - If the page has no footnote definitions, the plugin renders: *No footnotes on this page.*
 - The `[^id]` inline references (e.g. `text[^1]`) are rendered by the markdown parser; FootnotesPlugin only renders the definition list.
 - Bare `https://` URLs in `[^id]: url` style definitions are auto-linked.

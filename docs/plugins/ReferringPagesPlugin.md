@@ -18,7 +18,7 @@ Lists pages that contain links to the current page (backlinks).
 
 The ReferringPagesPlugin displays a list of pages that reference the current page. This is useful for navigation, understanding page relationships, and discovering related content. It uses the wiki's link graph to find referring pages.
 
-**Source:** `plugins/referringPagesPlugin.js`
+__Source:__ `plugins/referringPagesPlugin.js`
 
 ## Plugin Metadata
 
@@ -77,7 +77,7 @@ The `before` and `after` parameters support:
 [{ReferringPagesPlugin}]
 ```
 
-**Output:**
+__Output:__
 
 ```html
 <ul>
@@ -92,7 +92,7 @@ The `before` and `after` parameters support:
 This page is referenced by [{ReferringPagesPlugin show='count'}] other pages.
 ```
 
-**Output:** `This page is referenced by 5 other pages.`
+__Output:__ `This page is referenced by 5 other pages.`
 
 ### Example 3: Limited Results
 
@@ -121,7 +121,7 @@ Creates a bullet-pointed list.
 
 When no pages reference the current page:
 
-**Output:**
+__Output:__
 
 ```html
 <p><em>No pages currently refer to this page.</em></p>
