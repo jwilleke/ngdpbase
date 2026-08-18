@@ -1,0 +1,21 @@
+{
+  "status": "behind",
+  "local": "v1.11.1",
+  "source": ".agent-kit.json",
+  "marker": "v1.11.1-0-g71bbbdf",
+  "kit": "v1.11.2-0-g4a7ed5e",
+  "missing": [],
+  "collisions": [
+    {
+      "path": ".claude/commands/semver.md",
+      "installed": ".claude/commands/semver-kit.md"
+    }
+  ],
+  "modified": [],
+  "target": "/home/runner/work/ngdpbase/ngdpbase",
+  "repo": "jwilleke/ngdpbase",
+  "position": {
+    "upstream": "origin/master",
+    "behind": 0
+  }
+}
