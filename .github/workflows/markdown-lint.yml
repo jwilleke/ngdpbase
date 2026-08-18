@@ -12,19 +12,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No globs here on purpose. This block was a third hand-maintained copy
+      # of the ignore list, kept in sync by comment rather than by anything
+      # mechanical. What is linted is declared once, in .markdownlint-cli2.jsonc.
       - name: Lint markdown
         uses: DavidAnson/markdownlint-cli2-action@v24
-        with:
-          # Keep in sync with .markdownlintignore (markdownlint-cli2 does not read it)
-          globs: |
-            **/*.md
-            !**/node_modules/**
-            !dist/**
-            !CHANGELOG.md
-            !docs/api/generated/**
-            !**/versions/**
-            !exports/**
-            !private/**
-            !docs/performance/baseline-*.md
-            !data/**
-            !.claude/**
