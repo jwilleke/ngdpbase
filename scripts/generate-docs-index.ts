@@ -170,7 +170,9 @@ function renderDocStatus(byCategory: Record<Category, ModuleRow[]>): string {
     const pct = total === 0 ? 0 : Math.round((documented / total) * 100);
     const sourceOnly = rows.filter((r) => r.hasSource && !r.hasDoc).map((r) => r.name);
     const label = cat[0].toUpperCase() + cat.slice(1);
-    lines.push(`**${label}:** ${documented}/${total} with quick-reference docs (${pct}%)` +
+    // __bold__, not **bold** — MD050 is pinned to underscore, and generated
+    // output has to satisfy the same rules as everything else in the repo.
+    lines.push(`__${label}:__ ${documented}/${total} with quick-reference docs (${pct}%)` +
       (withGuide > 0 ? `; ${withGuide} with Complete Guides` : '') +
       (sourceOnly.length > 0 ? `. ${sourceOnly.length} source-only:` : '.'));
     lines.push('');

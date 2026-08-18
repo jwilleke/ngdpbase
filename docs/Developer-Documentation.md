@@ -315,11 +315,11 @@ Before contributing, please review:
 Honest accounting of doc coverage. Targets are pragmatic — abstract base classes and trivial null/no-op providers don't need long-form docs, but every module should at least have a stub or appear in this index.
 
 <!-- AUTO:doc-status BEGIN -->
-**Managers:** 39/39 with quick-reference docs (100%); 18 with Complete Guides.
+__Managers:__ 39/39 with quick-reference docs (100%); 18 with Complete Guides.
 
-**Plugins:** 32/32 with quick-reference docs (100%).
+__Plugins:__ 32/32 with quick-reference docs (100%).
 
-**Providers:** 35/35 with quick-reference docs (100%); 5 with Complete Guides.
+__Providers:__ 35/35 with quick-reference docs (100%); 5 with Complete Guides.
 <!-- AUTO:doc-status END -->
 
 See [issue #178](https://github.com/jwilleke/ngdpbase/issues/178) for the doc-coverage tracking issue and [#660](https://github.com/jwilleke/ngdpbase/issues/660) for the discoverability problem this index addresses.

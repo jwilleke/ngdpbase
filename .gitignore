@@ -273,3 +273,7 @@ private/
 .claude/worktrees/
 .kit-sync/
 .kit-check/
+
+# Agent tooling installs skills here; not repo content.
+.continue/
+.agents/
