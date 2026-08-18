@@ -8,11 +8,11 @@ code: src/providers/BaseLoggingProvider.ts
 
 # BaseLoggingProvider
 
-**Quick Reference** | [logger](../../src/utils/logger.ts)
+__Quick Reference__ | [logger](../../src/utils/logger.ts)
 
-**Module:** `src/providers/BaseLoggingProvider.ts`
-**Type:** Abstract Logging Provider Base Class
-**Status:** Production
+__Module:__ `src/providers/BaseLoggingProvider.ts`
+__Type:__ Abstract Logging Provider Base Class
+__Status:__ Production
 
 ---
 
@@ -27,7 +27,7 @@ the ~hundreds of `logger.*` call sites.
 ### Deliberate deviation from the engine-based provider pattern
 
 Unlike `BaseSearchProvider` / `BaseAuditProvider` / etc., a logging provider
-takes **no `engine`** and has **no `initialize()`**. The logger is bootstrapped
+takes __no `engine`__ and has __no `initialize()`__. The logger is bootstrapped
 at module load — before `WikiEngine` and `ConfigurationManager` exist — and is
 imported by nearly every module (including `ConfigurationManager`). A provider
 that read config in its constructor would create a bootstrap cycle. It is a

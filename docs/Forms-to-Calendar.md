@@ -1,6 +1,6 @@
 # Forms-to-Calendar Architecture
 
-> **Related issues:**
+> __Related issues:__
 >
 > - [#571](https://github.com/jwilleke/ngdpbase/issues/571) — FormsPlugin: `section` field type
 > - [#572](https://github.com/jwilleke/ngdpbase/issues/572) — FormsPlugin: prefill from user context

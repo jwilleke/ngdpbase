@@ -1,19 +1,19 @@
 # Server Management - Best Practices & Issue #167 Solution
 
-**Purpose:** Define ideal server management practices and document the solution to GitHub issue #167 (multiple instances running)
+__Purpose:__ Define ideal server management practices and document the solution to GitHub issue #167 (multiple instances running)
 
-**Status:** ✅ **IMPLEMENTED AND TESTED** (Session 2025-12-06)
+__Status:__ ✅ __IMPLEMENTED AND TESTED__ (Session 2025-12-06)
 
 ## Problem Definition (SOLVED)
 
 ### What's Wrong
 
-1. **Multiple server instances** running at once (PIDs 45254, 5754, 9905, etc.)
-2. **No proper process validation** before starting new server
-3. **Stale PID files** not cleaned up (`.ngdpbase.pid` becomes outdated)
-4. **PM2 and server.sh managing independently** - not coordinated
-5. **Old processes** continue serving cached responses after restart
-6. **Form changes** not reflected (old process still running old code)
+1. __Multiple server instances__ running at once (PIDs 45254, 5754, 9905, etc.)
+2. __No proper process validation__ before starting new server
+3. __Stale PID files__ not cleaned up (`.ngdpbase.pid` becomes outdated)
+4. __PM2 and server.sh managing independently__ - not coordinated
+5. __Old processes__ continue serving cached responses after restart
+6. __Form changes__ not reflected (old process still running old code)
 
 ### Evidence from Session 2025-12-06
 
@@ -88,7 +88,7 @@ STEP 7: Clean PM2 artifacts
 
 ### 1. Enhance server.sh
 
-**Key improvements:**
+__Key improvements:__
 
 ```bash
 start_server() {
@@ -137,7 +137,7 @@ start_server() {
 The stop sequence is PM2-aware to prevent the respawn race condition (see issue #231).
 PM2's `autorestart: true` will respawn killed processes unless the app is deleted from PM2 first.
 
-**Key insight:** Delete from PM2 FIRST before killing processes. This disables autorestart
+__Key insight:__ Delete from PM2 FIRST before killing processes. This disables autorestart
 before any kills happen, preventing the respawn race condition.
 
 ```bash
@@ -170,7 +170,7 @@ The `stop` command also includes a retry loop (up to 3 attempts) to handle the r
 where PM2 respawns a process between stop and delete. After retries, it reports an
 error and directs the user to `./server.sh unlock`.
 
-**Key insight:** Always delete the PM2 app entry *before* killing node processes.
+__Key insight:__ Always delete the PM2 app entry *before* killing node processes.
 Otherwise `autorestart: true` immediately respawns what you just killed.
 
 ### 3. Status Checking
@@ -233,15 +233,15 @@ unlock_server() {
 
 ## Single PID File Standard
 
-**Decision:** Use ONLY `.ngdpbase.pid`
+__Decision:__ Use ONLY `.ngdpbase.pid`
 
-**Never create:**
+__Never create:__
 
 - `server.pid`
 - `.ngdpbase-*.pid`
 - Any PM2 generated PID files
 
-**Rules:**
+__Rules:__
 
 1. PID file contains: single integer (the process ID)
 2. Only written by server.sh during startup
@@ -315,13 +315,13 @@ restart_server() {
 
 Before starting server, `./server.sh start` should verify:
 
-1. ✅ **No existing PID file** or stale PID file can be removed
-2. ✅ **Port 3000 is available** (nothing listening)
-3. ✅ **No orphaned Node processes** running
-4. ✅ **PM2 daemon is running** (or can be started)
-5. ✅ **Configuration files exist** (default + environment)
-6. ✅ **Logs directory exists** (./data/logs/)
-7. ✅ **Permission to write PID file** (.ngdpbase.pid)
+1. ✅ __No existing PID file__ or stale PID file can be removed
+2. ✅ __Port 3000 is available__ (nothing listening)
+3. ✅ __No orphaned Node processes__ running
+4. ✅ __PM2 daemon is running__ (or can be started)
+5. ✅ __Configuration files exist__ (default + environment)
+6. ✅ __Logs directory exists__ (./data/logs/)
+7. ✅ __Permission to write PID file__ (.ngdpbase.pid)
 
 ## Error Messages (User-Friendly)
 
@@ -394,10 +394,10 @@ Check what's using port 3000:
 
 ## Performance Impact
 
-- **Startup time:** Add 1-2 seconds for validation checks
-- **Shutdown time:** Graceful stop + verification = 3 seconds
-- **Memory:** No change (no new processes)
-- **PID file overhead:** Negligible (64 bytes)
+- __Startup time:__ Add 1-2 seconds for validation checks
+- __Shutdown time:__ Graceful stop + verification = 3 seconds
+- __Memory:__ No change (no new processes)
+- __PID file overhead:__ Negligible (64 bytes)
 
 ## Backwards Compatibility
 
@@ -409,18 +409,18 @@ Check what's using port 3000:
 
 ## Implementation Priority
 
-1. **Critical (fixes #167):**
+1. __Critical (fixes #167):__
    - Process validation before start
    - Stale PID cleanup
    - Single PID file enforcement
    - Orphaned process cleanup
 
-2. **High (prevents issues):**
+2. __High (prevents issues):__
    - Port availability check
    - Error messages improvement
    - Force unlock capability
 
-3. **Nice to have:**
+3. __Nice to have:__
    - Daemon mode (background startup)
    - Auto-restart on file changes (development)
    - Health check endpoint
@@ -448,36 +448,36 @@ Check what's using port 3000:
 
 ### Current Implementation (Bare Metal / VMs)
 
-**Strategy:** Option A - Keep PM2 for process management
+__Strategy:__ Option A - Keep PM2 for process management
 
-- **Best For:** Development, on-premises servers, single-machine deployments
-- **PM2 Features Used:**
+- __Best For:__ Development, on-premises servers, single-machine deployments
+- __PM2 Features Used:__
   - Auto-restart on crash (`autorestart: true`)
   - Memory-limit enforcement (1G max)
   - Log rotation
   - Single instance mode (instances: 1)
   - Graceful shutdown timeout
-- **Coordinator:** `server.sh` manages PM2, enforces single instance via `.ngdpbase.pid`
-- **Stop strategy (fix for #231):** Delete PM2 app entries *before* killing node processes.
+- __Coordinator:__ `server.sh` manages PM2, enforces single instance via `.ngdpbase.pid`
+- __Stop strategy (fix for #231):__ Delete PM2 app entries *before* killing node processes.
   This prevents PM2's `autorestart` from respawning killed processes. The stop command
   includes a `pm2 stop all` / `pm2 delete all` fallback to handle PM2 name mismatches,
   plus a retry loop to handle the respawn race condition.
 
 ### Docker Deployment (Recommended)
 
-**Strategy:** Option C - Simple Node process (no PM2)
+__Strategy:__ Option C - Simple Node process (no PM2)
 
-- **Architecture:** Node runs as PID 1 in container (`CMD ["node", "app.js"]`)
-- **Not affected by #231:** Docker does not use PM2 or `server.sh`. The container
+- __Architecture:__ Node runs as PID 1 in container (`CMD ["node", "app.js"]`)
+- __Not affected by #231:__ Docker does not use PM2 or `server.sh`. The container
   runtime handles process lifecycle, so the PM2 respawn race does not apply.
-- **Container Handles:**
+- __Container Handles:__
   - Process restart (via restart policy: `unless-stopped`)
   - Logging (via log driver: `json-file` with rotation)
   - Resource limits (via `--memory` and `--cpus` flags)
   - Health checks (via `HEALTHCHECK` instruction)
-- **Single Instance Enforcement:** One process per container, enforced by Docker
+- __Single Instance Enforcement:__ One process per container, enforced by Docker
 
-**Benefits:**
+__Benefits:__
 
 - ✅ Cleaner process model (standard Docker practices)
 - ✅ No PM2 overhead in lightweight containers
@@ -486,7 +486,7 @@ Check what's using port 3000:
 - ✅ Better resource efficiency
 - ✅ Immune to PM2 respawn race (#231)
 
-**Implementation:**
+__Implementation:__
 
 ```dockerfile
 # Dockerfile.prod
@@ -504,7 +504,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
 ```
 
-**Docker Compose:**
+__Docker Compose:__
 
 ```yaml
 version: '3.8'
@@ -539,12 +539,12 @@ services:
 
 ### Kubernetes Deployment
 
-**Strategy:** Option C variant - Simple Node process with K8s orchestration
+__Strategy:__ Option C variant - Simple Node process with K8s orchestration
 
-- **Pod Model:** Node runs as PID 1, K8s manages lifecycle
-- **Not affected by #231:** Like Docker, K8s does not use PM2 or `server.sh`.
+- __Pod Model:__ Node runs as PID 1, K8s manages lifecycle
+- __Not affected by #231:__ Like Docker, K8s does not use PM2 or `server.sh`.
   Pod restart policies and liveness probes handle process lifecycle.
-- **Kubernetes Handles:**
+- __Kubernetes Handles:__
   - Pod restart (via restart policy)
   - Scaling (via Deployment replicas)
   - Health checks (via liveness/readiness probes)
@@ -553,7 +553,7 @@ services:
   - ConfigMaps for environment variables
   - PersistentVolumes for data storage
 
-**Implementation:**
+__Implementation:__
 
 ```yaml
 apiVersion: apps/v1
@@ -638,7 +638,7 @@ spec:
     name: http
 ```
 
-**Important Notes for Kubernetes:**
+__Important Notes for Kubernetes:__
 
 - Each Pod gets its own `.ngdpbase.pid` (isolated file system)
 - Single instance per Pod enforced automatically
@@ -648,15 +648,15 @@ spec:
 
 ### Migration Path: Bare Metal → Docker → Kubernetes
 
-1. **Today (Current):** PM2 + server.sh (working, tested)
-2. **Next (Docker):** Remove PM2, use simple Node in containers
-3. **Future (K8s):** Standard K8s Deployment with PersistentVolumes
+1. __Today (Current):__ PM2 + server.sh (working, tested)
+2. __Next (Docker):__ Remove PM2, use simple Node in containers
+3. __Future (K8s):__ Standard K8s Deployment with PersistentVolumes
 
 All strategies keep `.ngdpbase.pid` locking mechanism:
 
-- **Bare Metal:** Enforces single instance per machine
-- **Docker:** Enforces single instance per container
-- **Kubernetes:** Enforces single instance per Pod (via shared filesystem)
+- __Bare Metal:__ Enforces single instance per machine
+- __Docker:__ Enforces single instance per container
+- __Kubernetes:__ Enforces single instance per Pod (via shared filesystem)
 
 ### Health Check Endpoint Recommendation
 

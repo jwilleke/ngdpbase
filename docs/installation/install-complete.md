@@ -1,7 +1,7 @@
 # `.install-complete` Marker File
 
-**Status**: Production (as of 2026-04-27)
-**Related**: [installation-system.md](./installation-system.md) | [startup-process.md](./startup-process.md)
+__Status__: Production (as of 2026-04-27)
+__Related__: [installation-system.md](./installation-system.md) | [startup-process.md](./startup-process.md)
 
 ---
 
@@ -39,9 +39,9 @@ FAST_STORAGE/.install-complete
 | Interactive wizard | `InstallService.#markInstallationComplete()` | Final step of `processInstallation()` — after config write, org data write, admin password set, and optional page copy |
 | Headless install | `InstallService.markHeadlessInstallationComplete()` | `processHeadlessInstallation()` — when `HEADLESS_INSTALL=true` env var is set |
 
-The marker is always the **last** step. If any earlier installation step fails, the marker is not created and the wizard will be shown again on the next request.
+The marker is always the __last__ step. If any earlier installation step fails, the marker is not created and the wizard will be shown again on the next request.
 
-**Source**: `src/services/InstallService.ts` — `#markInstallationComplete()` (~line 945), `markHeadlessInstallationComplete()` (~line 630)
+__Source__: `src/services/InstallService.ts` — `#markInstallationComplete()` (~line 945), `markHeadlessInstallationComplete()` (~line 630)
 
 ---
 
@@ -55,7 +55,7 @@ Three separate places check for the marker:
 | `FileSystemProvider` | `initialize()` | Sets `this.installationComplete = false` — affects required-pages scan behaviour |
 | `PageManager` | `seedRequiredPages()` | Skips seeding if marker is present; runs seed if missing and pages dir is empty |
 
-**Sources**:
+__Sources__:
 
 - `src/services/InstallService.ts:181` — `isInstallComplete()`
 - `src/providers/FileSystemProvider.ts:166` — `initialize()`
@@ -66,7 +66,7 @@ Three separate places check for the marker:
 
 ## Installation Required Logic
 
-`InstallService.isInstallRequired()` returns `true` if **any** of:
+`InstallService.isInstallRequired()` returns `true` if __any__ of:
 
 1. `.install-complete` file does not exist
 2. Admin user does not have the `admin` role
@@ -104,4 +104,4 @@ Or call `POST /install/reset` which removes the marker and partial installation 
 
 In Docker deployments, the marker lives in the mounted data volume at `/app/data/.install-complete`. Restarting the container without removing the volume skips the wizard. Removing the volume (or not mounting one) causes the wizard to run on first access.
 
-**See also**: [installation-system.md — Docker and Kubernetes Deployments](./installation-system.md#docker-and-kubernetes-deployments)
+__See also__: [installation-system.md — Docker and Kubernetes Deployments](./installation-system.md#docker-and-kubernetes-deployments)

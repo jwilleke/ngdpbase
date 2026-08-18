@@ -1,70 +1,70 @@
 # TODO: JSPWiki Styles Implementation
 
-## 📋 **JSPWiki Styles Analysis & Recommendation**
+## 📋 __JSPWiki Styles Analysis & Recommendation__
 
-### 🏗️ **Architecture Overview**
+### 🏗️ __Architecture Overview__
 
-**JSPWiki uses a sophisticated LESS-based build system with:**
+__JSPWiki uses a sophisticated LESS-based build system with:__
 
-1. **Modular Bootstrap 3.3.7 Integration**: Custom theme built on Bootstrap foundation
-2. **Comprehensive LESS Structure**:
+1. __Modular Bootstrap 3.3.7 Integration__: Custom theme built on Bootstrap foundation
+2. __Comprehensive LESS Structure__:
    - `haddock/` main theme directory
    - `bootstrap/` - Custom Bootstrap 3 variant  
    - `default/` - JSPWiki-specific components
    - `fontjspwiki/` - Custom icon fonts
    - `static/templates/` - Compiled CSS output
 
-3. **Component-Based Organization**:
+3. __Component-Based Organization__:
    - Core styling (type, variables, scaffolding)
    - Template-specific styles (View, Edit, Search, etc.)
    - Plugin-specific styles (TOC, Index, Weblog, etc.)
    - Dynamic components (Tabs, Accordion, Carousel, etc.)
 
-### 🎯 **Is it Good for Node.js Implementation?**
+### 🎯 __Is it Good for Node.js Implementation?__
 
-**YES - Excellent choice with modifications!** Here's why:
+__YES - Excellent choice with modifications!__ Here's why:
 
-#### ✅ **Advantages:**
+#### ✅ __Advantages:__
 
-- **Professional Design System**: Mature, battle-tested visual language
-- **Component Modularity**: Easy to pick/choose needed components
-- **Responsive Design**: Built-in mobile responsiveness
-- **Accessibility**: Proper ARIA support and keyboard navigation
-- **Customizable**: LESS variables make theming straightforward
-- **Cross-browser**: Handles vendor prefixes and compatibility
+- __Professional Design System__: Mature, battle-tested visual language
+- __Component Modularity__: Easy to pick/choose needed components
+- __Responsive Design__: Built-in mobile responsiveness
+- __Accessibility__: Proper ARIA support and keyboard navigation
+- __Customizable__: LESS variables make theming straightforward
+- __Cross-browser__: Handles vendor prefixes and compatibility
 
-#### ⚠️ **Considerations:**
+#### ⚠️ __Considerations:__
 
-- **Bootstrap 3 → 5 Migration**: JSPWiki uses Bootstrap 3.3.7, you'd want Bootstrap 5
-- **LESS vs SCSS**: Modern tooling often prefers SCSS over LESS
-- **Java-specific Components**: Some components assume JSP/Java backend
+- __Bootstrap 3 → 5 Migration__: JSPWiki uses Bootstrap 3.3.7, you'd want Bootstrap 5
+- __LESS vs SCSS__: Modern tooling often prefers SCSS over LESS
+- __Java-specific Components__: Some components assume JSP/Java backend
 
-### 🛠️ **Implementation Difficulty: MODERATE (6/10)**
+### 🛠️ __Implementation Difficulty: MODERATE (6/10)__
 
-#### **Easy Parts (2-4 weeks):**
+#### __Easy Parts (2-4 weeks):__
 
 - Basic color scheme and typography
 - Grid system and responsive breakpoints  
 - Button styles and form components
 - Navigation structure
 
-#### **Moderate Parts (4-6 weeks):**
+#### __Moderate Parts (4-6 weeks):__
 
 - Plugin-specific styling (TOC, Search, etc.)
 - Template system integration
 - Dynamic components (tabs, accordions)
 - Custom icon font integration
 
-#### **Complex Parts (6-8 weeks):**
+#### __Complex Parts (6-8 weeks):__
 
 - Full Bootstrap 3→5 migration
 - Java→Node template adaptations
 - Complete build system setup
 - Cross-browser testing
 
-### 📦 **Recommended Implementation Strategy**
+### 📦 __Recommended Implementation Strategy__
 
-#### **Phase 1: Foundation (2 weeks)**
+#### __Phase 1: Foundation (2 weeks)__
 
 ```javascript
 // Install modern equivalents
@@ -72,42 +72,42 @@ npm install sass bootstrap@5 @fortawesome/fontawesome-free
 npm install --save-dev vite postcss autoprefixer
 ```
 
-#### **Phase 2: Core Adaptation (3 weeks)**
+#### __Phase 2: Core Adaptation (3 weeks)__
 
-1. **Extract Variables**: Convert LESS variables to SCSS
-2. **Migrate Components**: Port essential components to Bootstrap 5
-3. **Custom Components**: Recreate JSPWiki-specific styling
+1. __Extract Variables__: Convert LESS variables to SCSS
+2. __Migrate Components__: Port essential components to Bootstrap 5
+3. __Custom Components__: Recreate JSPWiki-specific styling
 
-#### **Phase 3: Advanced Features (3 weeks)**
+#### __Phase 3: Advanced Features (3 weeks)__
 
-1. **Plugin Integration**: Style wiki-specific components
-2. **Dynamic Features**: Implement interactive components  
-3. **Responsive Polish**: Fine-tune mobile experience
+1. __Plugin Integration__: Style wiki-specific components
+2. __Dynamic Features__: Implement interactive components  
+3. __Responsive Polish__: Fine-tune mobile experience
 
-### 🎨 **Quick Start Recommendation**
+### 🎨 __Quick Start Recommendation__
 
 Rather than full implementation, I suggest:
 
-1. **Cherry-pick the best parts**:
+1. __Cherry-pick the best parts__:
    - Color palette and typography
    - Component spacing and shadows
    - Navigation patterns
    - Form styling
 
-2. **Use modern equivalents**:
+2. __Use modern equivalents__:
    - Bootstrap 5 instead of 3
    - CSS Custom Properties instead of LESS variables
    - CSS Grid where appropriate
 
-3. **Focus on key components**:
+3. __Focus on key components__:
    - Navigation and page layout
    - Content typography and code blocks
    - Forms and buttons
    - Plugin-specific components you actually need
 
-### 💡 **Alternative: Inspired Approach**
+### 💡 __Alternative: Inspired Approach__
 
-Instead of full port, create a **JSPWiki-inspired design system**:
+Instead of full port, create a __JSPWiki-inspired design system__:
 
 ```css
 /* JSPWiki-inspired color palette */
@@ -123,17 +123,17 @@ Instead of full port, create a **JSPWiki-inspired design system**:
 
 This gives you the professional JSPWiki aesthetic without the complexity of full migration.
 
-### 🏁 **Bottom Line**
+### 🏁 __Bottom Line__
 
-**Worth doing**: The JSPWiki styles are excellent and would give your wiki a professional, familiar feel. However, I'd recommend a **selective implementation** focusing on the visual language rather than full codebase port.
+__Worth doing__: The JSPWiki styles are excellent and would give your wiki a professional, familiar feel. However, I'd recommend a __selective implementation__ focusing on the visual language rather than full codebase port.
 
-**Time investment**: 4-6 weeks for a solid JSPWiki-inspired theme vs 8-12 weeks for full implementation.
+__Time investment__: 4-6 weeks for a solid JSPWiki-inspired theme vs 8-12 weeks for full implementation.
 
-**Best ROI**: Extract the design principles, color schemes, and component patterns while using modern CSS tools and Bootstrap 5.
+__Best ROI__: Extract the design principles, color schemes, and component patterns while using modern CSS tools and Bootstrap 5.
 
 ---
 
-## 🎯 **Immediate Action Items**
+## 🎯 __Immediate Action Items__
 
 ### High Priority
 
@@ -141,7 +141,7 @@ This gives you the professional JSPWiki aesthetic without the complexity of full
 - [ ] Port JSPWiki typography system to our current CSS
 - [ ] Implement JSPWiki-style sidebar navigation
 - [ ] Add JSPWiki-inspired form styling
-- [ ] **Implement JSPWiki TablePlugin Row Styling Features**:
+- [ ] __Implement JSPWiki TablePlugin Row Styling Features__:
   - [ ] `rowNumber`: Starting row number for counting (default: 0)
   - [ ] `style`: CSS styling for the entire table
   - [ ] `dataStyle`: CSS formatting for all data cells (single pipe |)
@@ -174,7 +174,7 @@ This gives you the professional JSPWiki aesthetic without the complexity of full
 
 ---
 
-## 📚 **Reference Links**
+## 📚 __Reference Links__
 
 - [JSPWiki Styles Repository](https://github.com/apache/jspwiki/tree/master/jspwiki-war/src/main/styles)
 - [JSPWiki Haddock Theme](https://github.com/apache/jspwiki/tree/master/jspwiki-war/src/main/styles/haddock)
@@ -183,7 +183,7 @@ This gives you the professional JSPWiki aesthetic without the complexity of full
 
 ---
 
-## 💭 **Notes**
+## 💭 __Notes__
 
 - Current implementation already uses Bootstrap 5 - good foundation
 - Page Source Dialog is already excellent - JSPWiki quality

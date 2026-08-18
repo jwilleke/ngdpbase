@@ -18,7 +18,7 @@ Displays the number of active user sessions on the wiki server.
 
 The SessionsPlugin provides real-time information about how many users are currently connected to the wiki. It can show either total session count or distinct user count.
 
-**Source:** `plugins/SessionsPlugin.js`
+__Source:__ `plugins/SessionsPlugin.js`
 
 ## Plugin Metadata
 
@@ -66,7 +66,7 @@ Shows total session count.
 Currently [{SessionsPlugin}] active sessions.
 ```
 
-**Output:** `Currently 5 active sessions.`
+__Output:__ `Currently 5 active sessions.`
 
 ### Example 2: Distinct Users
 
@@ -74,7 +74,7 @@ Currently [{SessionsPlugin}] active sessions.
 [{SessionsPlugin property='distinctUsers'}] users are online.
 ```
 
-**Output:** `3 users are online.`
+__Output:__ `3 users are online.`
 
 ### Example 3: Dashboard Display
 

@@ -8,7 +8,7 @@ code: src/plugins/MediaItem.ts
 
 # MediaItem
 
-**Stub plugin.** Will embed a single media item (image, video) inline on a page. Full implementation deferred to MediaManager Phase 4.
+__Stub plugin.__ Will embed a single media item (image, video) inline on a page. Full implementation deferred to MediaManager Phase 4.
 
 ## Intended Syntax (Phase 4)
 

@@ -10,40 +10,40 @@ WikiEngine registers managers in this sequence. Later managers may call `engine.
 
 | # | Manager | Depends on |
 |---|---|---|
-| 1 | **ConfigurationManager** | _(none — reads config files directly)_ |
-| 2 | **CatalogManager** | ConfigurationManager |
-| 3 | **CacheManager** | ConfigurationManager |
-| 4 | **MetricsManager** | ConfigurationManager |
-| 5 | **UserManager** | ConfigurationManager, SchemaManager, PageManager, TemplateManager, ValidationManager, PolicyEvaluator |
-| 6 | **EmailManager** | ConfigurationManager |
-| 7 | **AuthManager** | ConfigurationManager |
-| 8 | **NotificationManager** | ConfigurationManager |
-| 9 | **PageManager** | ConfigurationManager |
-| 10 | **TemplateManager** | _(none)_ |
-| 11 | **PolicyManager** | ConfigurationManager |
-| 12 | **PolicyValidator** | PolicyManager |
-| 13 | **PolicyEvaluator** | PolicyManager, PolicyValidator |
-| 14 | **ACLManager** | PolicyEvaluator |
-| 15 | **PluginManager** | ConfigurationManager |
-| 16 | **MarkupParser** | ConfigurationManager, PluginManager |
-| 17 | **RenderingManager** | ConfigurationManager, PageManager, PluginManager, MarkupParser, NotificationManager |
-| 18 | **SearchManager** | ConfigurationManager, PageManager |
-| 19 | **ValidationManager** | ConfigurationManager, PageManager |
-| 20 | **VariableManager** | ConfigurationManager |
-| 21 | **SchemaManager** | ConfigurationManager |
-| 22 | **ExportManager** | PageManager, RenderingManager |
-| 23 | **AttachmentManager** | ConfigurationManager, PageManager, MediaManager |
-| 24 | **MediaManager** | ConfigurationManager, NotificationManager |
-| 25 | **AssetManager** | AttachmentManager, MediaManager, ConfigurationManager |
-| 26 | **BackupManager** | ConfigurationManager, all registered managers |
-| 27 | **AuditManager** | ConfigurationManager |
-| 28 | **AddonsManager** | ConfigurationManager |
-| 29 | **ImportManager** | ConfigurationManager |
-| 30 | **BackgroundJobManager** | ConfigurationManager |
-| 31 | **CommentManager** | ConfigurationManager |
-| 32 | **FootnoteManager** | ConfigurationManager |
-| 33 | **AssetService** | AssetManager _(legacy façade)_ |
-| 34 | **ThemeManager** | _(standalone — not a BaseManager)_ |
+| 1 | __ConfigurationManager__ | *(none — reads config files directly)* |
+| 2 | __CatalogManager__ | ConfigurationManager |
+| 3 | __CacheManager__ | ConfigurationManager |
+| 4 | __MetricsManager__ | ConfigurationManager |
+| 5 | __UserManager__ | ConfigurationManager, SchemaManager, PageManager, TemplateManager, ValidationManager, PolicyEvaluator |
+| 6 | __EmailManager__ | ConfigurationManager |
+| 7 | __AuthManager__ | ConfigurationManager |
+| 8 | __NotificationManager__ | ConfigurationManager |
+| 9 | __PageManager__ | ConfigurationManager |
+| 10 | __TemplateManager__ | *(none)* |
+| 11 | __PolicyManager__ | ConfigurationManager |
+| 12 | __PolicyValidator__ | PolicyManager |
+| 13 | __PolicyEvaluator__ | PolicyManager, PolicyValidator |
+| 14 | __ACLManager__ | PolicyEvaluator |
+| 15 | __PluginManager__ | ConfigurationManager |
+| 16 | __MarkupParser__ | ConfigurationManager, PluginManager |
+| 17 | __RenderingManager__ | ConfigurationManager, PageManager, PluginManager, MarkupParser, NotificationManager |
+| 18 | __SearchManager__ | ConfigurationManager, PageManager |
+| 19 | __ValidationManager__ | ConfigurationManager, PageManager |
+| 20 | __VariableManager__ | ConfigurationManager |
+| 21 | __SchemaManager__ | ConfigurationManager |
+| 22 | __ExportManager__ | PageManager, RenderingManager |
+| 23 | __AttachmentManager__ | ConfigurationManager, PageManager, MediaManager |
+| 24 | __MediaManager__ | ConfigurationManager, NotificationManager |
+| 25 | __AssetManager__ | AttachmentManager, MediaManager, ConfigurationManager |
+| 26 | __BackupManager__ | ConfigurationManager, all registered managers |
+| 27 | __AuditManager__ | ConfigurationManager |
+| 28 | __AddonsManager__ | ConfigurationManager |
+| 29 | __ImportManager__ | ConfigurationManager |
+| 30 | __BackgroundJobManager__ | ConfigurationManager |
+| 31 | __CommentManager__ | ConfigurationManager |
+| 32 | __FootnoteManager__ | ConfigurationManager |
+| 33 | __AssetService__ | AssetManager *(legacy façade)* |
+| 34 | __ThemeManager__ | *(standalone — not a BaseManager)* |
 
 ---
 
@@ -59,9 +59,9 @@ Reads `config/*.properties` and env overrides. All other managers query it for t
 
 Centralised cache with a pluggable provider (`NodeCacheProvider` default, Redis optional, Null fallback).
 
-**Providers:** resolved by `ngdpbase.cache.provider`; falls back to `NullCacheProvider` if health check fails.
+__Providers:__ resolved by `ngdpbase.cache.provider`; falls back to `NullCacheProvider` if health check fails.
 
-**Key API:**
+__Key API:__
 
 | Method | Description |
 |---|---|
@@ -73,7 +73,7 @@ Centralised cache with a pluggable provider (`NodeCacheProvider` default, Redis 
 | `stats(region?)` | Hit/miss counts |
 | `static getCacheForManager(engine, region)` | Convenience for managers |
 
-**Flow — cache invalidation on page save:**
+__Flow — cache invalidation on page save:__
 
 ```
 PageManager.savePage()
@@ -89,7 +89,7 @@ OpenTelemetry metrics with Prometheus export (port 9464) and optional OTLP.
 
 Disabled by default (`ngdpbase.telemetry.enabled = false`). When enabled, instruments counters and histograms for page views, saves, deletes, search rebuilds, login attempts, HTTP requests, and engine init duration.
 
-**Key API:** `recordPageView(ms)`, `recordPageSave(ms)`, `recordHttpRequest(ms, attrs)`, `getMetricsHandler()` → Express handler for `/metrics`.
+__Key API:__ `recordPageView(ms)`, `recordPageSave(ms)`, `recordHttpRequest(ms, attrs)`, `getMetricsHandler()` → Express handler for `/metrics`.
 
 ---
 
@@ -97,9 +97,9 @@ Disabled by default (`ngdpbase.telemetry.enabled = false`). When enabled, instru
 
 Authentication, role assignment, session management, and user-page creation.
 
-**Provider:** `ngdpbase.user.provider` (default `FileUserProvider`). Creates a default admin on first boot.
+__Provider:__ `ngdpbase.user.provider` (default `FileUserProvider`). Creates a default admin on first boot.
 
-**Key API:**
+__Key API:__
 
 | Method | Description |
 |---|---|
@@ -120,7 +120,7 @@ Authentication, role assignment, session management, and user-page creation.
 | `isAdminUsingDefaultPassword()` | Boot-time warning check |
 | `backup()` / `restore()` | Provider-delegated |
 
-**Inter-manager calls:**
+__Inter-manager calls:__
 
 - `SchemaManager` → sync Person on create/update/delete
 - `PageManager` → detect display-name page conflict
@@ -134,7 +134,7 @@ Authentication, role assignment, session management, and user-page creation.
 
 Shared outbound mail transport. Provider is `console` (dev) or `smtp` (production), set by `ngdpbase.mail.provider`. Disabled by default.
 
-**Key API:** `send(message)`, `sendTo(to, subject, text, html?)`, `isEnabled()`.
+__Key API:__ `send(message)`, `sendTo(to, subject, text, html?)`, `isEnabled()`.
 
 Used by AuthManager (magic-link), calendar addon (confirmations), and form addon (submissions).
 
@@ -156,7 +156,7 @@ System-level notification bus. Managers emit notifications (e.g., MediaManager e
 
 Core page storage and retrieval. Provider-based (`FileSystemProvider` default).
 
-**Key API:**
+__Key API:__
 
 | Method | Description |
 |---|---|
@@ -172,7 +172,7 @@ Core page storage and retrieval. Provider-based (`FileSystemProvider` default).
 | `getPageVersion(name, version)` | Historical content |
 | `backup()` / `restore()` | Delegated to provider |
 
-**Flow — page save cascade:**
+__Flow — page save cascade:__
 
 ```
 savePage(doc)
@@ -191,7 +191,7 @@ savePage(doc)
 
 Page templates (Markdown files in `./templates/`) and themes (CSS in `./themes/`). Self-contained — no manager dependencies.
 
-**Key API:** `getTemplates()`, `getTemplate(name)`, `applyTemplate(name, vars)`, `createTemplate(name, content)`, `getThemes()`, `getTheme(name)`, `suggestTemplates(pageName, category)`.
+__Key API:__ `getTemplates()`, `getTemplate(name)`, `applyTemplate(name, vars)`, `createTemplate(name, content)`, `getThemes()`, `getTheme(name)`, `suggestTemplates(pageName, category)`.
 
 Variable substitution replaces `{{uuid}}`, `{{date}}`, `{{pageName}}`, `{{keywords}}` tokens in template content.
 
@@ -203,7 +203,7 @@ Loads access-control policies from configuration (`ngdpbase.access.policies`). D
 
 Policies define `subject` (user/role/group), `resource` (page/category), `action` (view/edit/delete), `effect` (allow/deny), and numeric `priority`.
 
-**Key API:** `getPolicy(id)`, `getAllPolicies()` (sorted by priority descending).
+__Key API:__ `getPolicy(id)`, `getAllPolicies()` (sorted by priority descending).
 
 ---
 
@@ -211,7 +211,7 @@ Policies define `subject` (user/role/group), `resource` (page/category), `action
 
 Validates policy schemas (AJV + JSON Schema) and detects conflicts between overlapping policies.
 
-**Key API:** `validatePolicy(policy)`, `validateAllPolicies()`, `detectPolicyConflicts(policies)`, `validateAndSavePolicy(policy)`.
+__Key API:__ `validatePolicy(policy)`, `validateAllPolicies()`, `detectPolicyConflicts(policies)`, `validateAndSavePolicy(policy)`.
 
 Checks subject overlap, resource overlap (including glob patterns), and action overlap. Flags priority ties between conflicting policies.
 
@@ -221,7 +221,7 @@ Checks subject overlap, resource overlap (including glob patterns), and action o
 
 Evaluates whether a `WikiContext` is permitted to perform an action on a resource.
 
-**Flow:**
+__Flow:__
 
 ```
 evaluate(context, action, resource)
@@ -251,9 +251,9 @@ Anonymous users are denied before the rendering pipeline runs.
 
 Auto-discovers and executes wiki plugins.
 
-**Discovery:** enumerates `.js` / `.ts` files from `ngdpbase.managers.plugin-manager.search-paths`. Excludes test files and `.d.ts` declarations.
+__Discovery:__ enumerates `.js` / `.ts` files from `ngdpbase.managers.plugin-manager.search-paths`. Excludes test files and `.d.ts` declarations.
 
-**Key API:**
+__Key API:__
 
 | Method | Description |
 |---|---|
@@ -290,7 +290,7 @@ FilterChain — ⚠️ Initialized but never called — see #596
 
 Not a BaseManager subclass — initialised by WikiEngine and accessed by RenderingManager via `engine.getManager('MarkupParser')`.
 
-**See also:** [Current-Rendering-Pipeline.md](./Current-Rendering-Pipeline.md)
+__See also:__ [Current-Rendering-Pipeline.md](./Current-Rendering-Pipeline.md)
 
 ---
 
@@ -298,7 +298,7 @@ Not a BaseManager subclass — initialised by WikiEngine and accessed by Renderi
 
 Orchestrates content rendering. Supports the advanced MarkupParser pipeline and a legacy Showdown converter (configurable fallback).
 
-**Key API:**
+__Key API:__
 
 | Method | Description |
 |---|---|
@@ -314,7 +314,7 @@ Orchestrates content rendering. Supports the advanced MarkupParser pipeline and 
 | `textToHTML(ctx, content)` | Render via `WikiContext.renderMarkdown` |
 | `renderPreview(content, name, ctx)` | Unsaved preview |
 
-**Flow — page view (cache miss):**
+__Flow — page view (cache miss):__
 
 ```
 GET /view/:page
@@ -328,7 +328,7 @@ GET /view/:page
   → respond with HTML
 ```
 
-**Flow — page view (cache hit):**
+__Flow — page view (cache hit):__
 
 ```
 GET /view/:page
@@ -344,7 +344,7 @@ Full-text search with pluggable providers (Lunr.js default, Elasticsearch option
 
 Index is built at startup in the background (non-blocking). Supports categories, user-keywords, and system-keywords facets. Results are filtered by `WikiContext` for private-page access.
 
-**Key API:**
+__Key API:__
 
 | Method | Description |
 |---|---|
@@ -366,7 +366,7 @@ Index is built at startup in the background (non-blocking). Supports categories,
 
 Validates and sanitizes page metadata (UUID, title, slug, system-category, user-keywords).
 
-**Key API:**
+__Key API:__
 
 | Method | Description |
 |---|---|
@@ -398,11 +398,11 @@ Manages Schema.org JSON-LD objects (Person, Article, etc.). Used by UserManager 
 
 Exports pages to styled HTML or Markdown.
 
-**Key API:** `exportPageToHtml(name, user?)`, `exportPagesToHtml(names, user?)`, `exportToMarkdown(names, user?)`, `saveExport(content, filename, format)`, `getExports()`.
+__Key API:__ `exportPageToHtml(name, user?)`, `exportPagesToHtml(names, user?)`, `exportToMarkdown(names, user?)`, `saveExport(content, filename, format)`, `getExports()`.
 
 Timestamp formatting is locale-aware via `LocaleUtils`.
 
-**Inter-manager calls:** `PageManager.getPage()`, `RenderingManager.renderMarkdown()`.
+__Inter-manager calls:__ `PageManager.getPage()`, `RenderingManager.renderMarkdown()`.
 
 ---
 
@@ -410,7 +410,7 @@ Timestamp formatting is locale-aware via `LocaleUtils`.
 
 File attachments for wiki pages. Provider-based (`BasicAttachmentProvider` default).
 
-**Key API:**
+__Key API:__
 
 | Method | Description |
 |---|---|
@@ -424,7 +424,7 @@ File attachments for wiki pages. Provider-based (`BasicAttachmentProvider` defau
 | `getThumbnail(id, size)` | Resize via provider |
 | `backup()` / `restore()` | Provider-delegated |
 
-**Inter-manager calls:** `PageManager` for private-page detection; `MediaManager` for `media://` URI resolution.
+__Inter-manager calls:__ `PageManager` for private-page detection; `MediaManager` for `media://` URI resolution.
 
 ---
 
@@ -432,7 +432,7 @@ File attachments for wiki pages. Provider-based (`BasicAttachmentProvider` defau
 
 Read-only media library browser. Scans configured external folders for photos and videos. Manages thumbnails, HEIC→JPEG transcoding, year-based filtering, and keyword indexing.
 
-**Key API:** `rebuildIndex(onProgress?)`, `scanFolders(force?)`, `getItem(id, ctx?)`, `listByYear(year, ctx?)`, `listByPage(name, ctx?)`, `search(query, ctx?)`, `getThumbnailBuffer(id, size)`, `getTranscodedBuffer(id, format)`.
+__Key API:__ `rebuildIndex(onProgress?)`, `scanFolders(force?)`, `getItem(id, ctx?)`, `listByYear(year, ctx?)`, `listByPage(name, ctx?)`, `search(query, ctx?)`, `getThumbnailBuffer(id, size)`, `getTranscodedBuffer(id, format)`.
 
 Private-page access control is enforced via `PageManager.checkPrivatePageAccess()`.
 
@@ -442,7 +442,7 @@ Private-page access control is enforced via `PageManager.checkPrivatePageAccess(
 
 Unified DAM provider registry. Fans out search across `AttachmentManager` and `MediaManager`. Maintains a reverse index (`page → assets`) in `data/page-assets-index.json`.
 
-**Key API:** `registerProvider(p)`, `search(query)`, `getById(id, providerId?)`, `getThumbnail(id, providerId, size)`, `syncPageAssets(name, content)`, `getAssetsForPage(slug)`.
+__Key API:__ `registerProvider(p)`, `search(query)`, `getById(id, providerId?)`, `getThumbnail(id, providerId, size)`, `syncPageAssets(name, content)`, `getAssetsForPage(slug)`.
 
 ---
 
@@ -452,7 +452,7 @@ Orchestrates system-wide backup and restore. Calls `backup()` on every registere
 
 Supports scheduled auto-backup (`ngdpbase.backup.auto-backup-time`, `ngdpbase.backup.auto-backup-days`).
 
-**Key API:** `createBackup(opts?)`, `restoreFromFile(path, opts?)`, `listBackups()`, `getLatestBackup()`, `updateAutoBackupConfig(partial)`.
+__Key API:__ `createBackup(opts?)`, `restoreFromFile(path, opts?)`, `listBackups()`, `getLatestBackup()`, `updateAutoBackupConfig(partial)`.
 
 ---
 
@@ -460,7 +460,7 @@ Supports scheduled auto-backup (`ngdpbase.backup.auto-backup-time`, `ngdpbase.ba
 
 Comprehensive audit trail for access decisions, authentication events, and security events. Provider-based (`FileAuditProvider` default, Null if disabled).
 
-**Key API:**
+__Key API:__
 
 | Method | Description |
 |---|---|
@@ -480,7 +480,7 @@ Comprehensive audit trail for access decisions, authentication events, and secur
 
 Discovers and loads domain addon packages from the `addons/` directory. Each addon is an ESM npm package that registers its own pages, routes, nav items, and themes.
 
-**Flow:**
+__Flow:__
 
 ```
 WikiEngine.initialize()
@@ -521,7 +521,7 @@ Page comments (stub implementation). Stores comments as JSON files keyed by page
 
 Stores per-page footnotes (display text, URL, note). JSON files keyed by page UUID. Auto-increments numeric IDs within each page.
 
-**Key API:** `getFootnotes(uuid)`, `addFootnote(uuid, data, createdBy)`, `updateFootnote(uuid, id, data)`, `deleteFootnote(uuid, id)`.
+__Key API:__ `getFootnotes(uuid)`, `addFootnote(uuid, data, createdBy)`, `updateFootnote(uuid, id, data)`, `deleteFootnote(uuid, id)`.
 
 ---
 
@@ -535,7 +535,7 @@ Legacy façade over `AssetManager`. Maintains backwards compatibility for routes
 
 Resolves active theme paths (CSS, logo, favicon) and loads `theme.json` metadata (fonts, description). Not a `BaseManager` subclass — used directly by Express static-serving middleware.
 
-**Key API:** `paths` getter → `ThemePaths`, `static listAvailable(themesDir)` → theme name list.
+__Key API:__ `paths` getter → `ThemePaths`, `static listAvailable(themesDir)` → theme name list.
 
 ---
 
@@ -564,7 +564,7 @@ WikiRoutes.viewPage()
   → render EJS template with html
 ```
 
-**See also:** [Current-Rendering-Pipeline.md](./Current-Rendering-Pipeline.md)
+__See also:__ [Current-Rendering-Pipeline.md](./Current-Rendering-Pipeline.md)
 
 ### Page Save
 
@@ -587,7 +587,7 @@ WikiRoutes.savePage()
   → redirect → view page
 ```
 
-**See also:** [Current-Save-Page-Pipeline.md](./Current-Save-Page-Pipeline.md)
+__See also:__ [Current-Save-Page-Pipeline.md](./Current-Save-Page-Pipeline.md)
 
 ### User Authentication
 

@@ -8,11 +8,11 @@ code: src/providers/BaseMediaProvider.ts
 
 # BaseMediaProvider
 
-**Quick Reference** | [MediaManager](../managers/MediaManager.md)
+__Quick Reference__ | [MediaManager](../managers/MediaManager.md)
 
-**Module:** `src/providers/BaseMediaProvider.ts`
-**Type:** Abstract Media Provider Base Class
-**Status:** Production
+__Module:__ `src/providers/BaseMediaProvider.ts`
+__Type:__ Abstract Media Provider Base Class
+__Status:__ Production
 
 ---
 

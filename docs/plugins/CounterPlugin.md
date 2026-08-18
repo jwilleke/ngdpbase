@@ -12,16 +12,16 @@ The CounterPlugin maintains page-specific counters that increment each time they
 
 ## Important: Counter Behavior
 
-**Counters reset on every page render/reload.** This is the correct JSPWiki-compatible behavior:
+__Counters reset on every page render/reload.__ This is the correct JSPWiki-compatible behavior:
 
 - ✅ Counters are per-render, not persistent across page reloads
 - ✅ Each page view starts fresh from 0
 - ✅ Different users see independent counters
 - ✅ Refreshing the page resets all counters to 0
 
-**Intended Use:** Counters are for numbering items within a single page view (like figures, sections, or list items), NOT for tracking page views across multiple visits.
+__Intended Use:__ Counters are for numbering items within a single page view (like figures, sections, or list items), NOT for tracking page views across multiple visits.
 
-**Example:** If you have `[{Counter}] [{Counter}] [{Counter}]` on a page, it will show "1 2 3" every time the page is loaded, not incrementing across different page loads.
+__Example:__ If you have `[{Counter}] [{Counter}] [{Counter}]` on a page, it will show "1 2 3" every time the page is loaded, not incrementing across different page loads.
 
 ## Usage
 
@@ -82,7 +82,7 @@ Item [{Counter}]: Second item
 Item [{Counter}]: Third item
 ```
 
-**Output:**
+__Output:__
 
 ```
 Item 1: First item
@@ -98,7 +98,7 @@ Chapter [{Counter name='chapter'}], Section [{Counter name='section'}]
 Chapter [{Counter name='chapter'}], Section [{Counter name='section'}]
 ```
 
-**Output:**
+__Output:__
 
 ```
 Chapter 1, Section 1
@@ -114,7 +114,7 @@ Chapter 3, Section 3
 [{Counter}]
 ```
 
-**Output:**
+__Output:__
 
 ```
 100
@@ -130,7 +130,7 @@ Chapter 3, Section 3
 [{Counter name='even' increment='2'}]
 ```
 
-**Output:**
+__Output:__
 
 ```
 2
@@ -146,7 +146,7 @@ Chapter 3, Section 3
 [{Counter name='countdown' increment='-1'}]
 ```
 
-**Output:**
+__Output:__
 
 ```
 10
@@ -163,7 +163,7 @@ Chapter 3, Section 3
 The counter is now at: [{$counter}]
 ```
 
-**Output:**
+__Output:__
 
 ```
 The counter is now at: 3
@@ -178,7 +178,7 @@ The counter is now at: 3
 [{Counter}]
 ```
 
-**Output:**
+__Output:__
 
 ```
 1
@@ -199,7 +199,7 @@ Current counter value: [{$counter}]
 Final counter value: [{$counter}]
 ```
 
-**Output:**
+__Output:__
 
 ```
 1
@@ -217,7 +217,7 @@ For named counters, use the format `[{$counter-name}]`:
 Chapter: [{$counter-chapter}], Section: [{$counter-section}]
 ```
 
-**Output:**
+__Output:__
 
 ```
 1
@@ -274,12 +274,12 @@ Progress: [{$counter}]/10 steps completed
 - Each counter is stored with the key format:
   - Default counter: `counter`
   - Named counters: `counter-{name}`
-- **Counters persist only for the duration of a single page render**
-- **Each page load creates a fresh context** - all counters start from 0
+- __Counters persist only for the duration of a single page render__
+- __Each page load creates a fresh context__ - all counters start from 0
 - Different users viewing the same page maintain separate, independent counters
 - Reloading/refreshing the page resets all counters to their initial state
 
-**Why per-render?** This matches JSPWiki behavior and is designed for:
+__Why per-render?__ This matches JSPWiki behavior and is designed for:
 
 - Numbering figures, tables, or sections within a page
 - Sequential item numbering that should be consistent on each view
@@ -322,7 +322,7 @@ This plugin is fully compatible with JSPWiki's Counter plugin:
 
 ## Version History
 
-- **1.0.0** (2025-10-19) - Initial release
+- __1.0.0__ (2025-10-19) - Initial release
   - Basic counter functionality
   - Named counters
   - Custom increment values

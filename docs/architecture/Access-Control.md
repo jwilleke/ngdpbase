@@ -1,8 +1,8 @@
 # Access Control — Operational Guide
 
-**Status**: Production (as of 2026-05-03, post-v3.6.0)
-**Source**: `src/context/WikiContext.ts`, `src/parsers/context/ParseContext.ts`, `src/context/ApiContext.ts`, `src/managers/UserManager.ts`, `src/managers/ACLManager.ts`, `src/managers/PolicyEvaluator.ts`
-**Related**: [policy-based-access-control-design.md](../design/policy-based-access-control-design.md) | [WikiContext-Complete-Guide.md](../WikiContext-Complete-Guide.md) | [MANAGERS-OVERVIEW.md](./MANAGERS-OVERVIEW.md)
+__Status__: Production (as of 2026-05-03, post-v3.6.0)
+__Source__: `src/context/WikiContext.ts`, `src/parsers/context/ParseContext.ts`, `src/context/ApiContext.ts`, `src/managers/UserManager.ts`, `src/managers/ACLManager.ts`, `src/managers/PolicyEvaluator.ts`
+__Related__: [policy-based-access-control-design.md](../design/policy-based-access-control-design.md) | [WikiContext-Complete-Guide.md](../WikiContext-Complete-Guide.md) | [MANAGERS-OVERVIEW.md](./MANAGERS-OVERVIEW.md)
 
 How to do permission and role checks in ngdpbase code. One canonical method per question; no inline `userContext.roles.includes('admin')` or `userContext.isAdmin` reads.
 
@@ -14,7 +14,7 @@ How to do permission and role checks in ngdpbase code. One canonical method per 
 |---|---|---|---|
 | Does the user carry a role? | `wikiContext.hasRole(...names)` | `userContext.roles` array check | sync |
 | Is the user globally allowed to do action X? | `wikiContext.hasPermission(action)` | `UserManager.hasPermission` → `PolicyEvaluator` | async |
-| Is the user allowed to do action X **on this page**? | `wikiContext.canAccess(action)` | `ACLManager.checkPagePermissionWithContext` (3-tier) | async |
+| Is the user allowed to do action X __on this page__? | `wikiContext.canAccess(action)` | `ACLManager.checkPagePermissionWithContext` (3-tier) | async |
 | What principals match this user for audience filters? | `wikiContext.getPrincipals()` | `[...roles, username]` | sync |
 | Hot-path role check, no WikiContext available? | `WikiContext.userHasRole(userContext, ...names)` | static helper | sync |
 
@@ -28,7 +28,7 @@ ngdpbase has three context types, each with the same access-check API surface:
 
 ### `WikiContext` — request-scoped, page rendering
 
-`src/context/WikiContext.ts`. Built by `WikiRoutes.createWikiContext(req, options)`. Holds engine, request, response, page name, page metadata, and userContext. **Lazy theme resolution** — calling `wikiContext.hasRole(...)` or `wikiContext.hasPermission(...)` does not trigger ConfigurationManager.getProperty for theme; that only fires when `wikiContext.activeTheme` or `wikiContext.themeInfo` is read for template rendering.
+`src/context/WikiContext.ts`. Built by `WikiRoutes.createWikiContext(req, options)`. Holds engine, request, response, page name, page metadata, and userContext. __Lazy theme resolution__ — calling `wikiContext.hasRole(...)` or `wikiContext.hasPermission(...)` does not trigger ConfigurationManager.getProperty for theme; that only fires when `wikiContext.activeTheme` or `wikiContext.themeInfo` is read for template rendering.
 
 ```ts
 const wikiContext = this.createWikiContext(req);
@@ -66,16 +66,16 @@ await ctx.requirePermission('user-edit'); // async — throws ApiError(403) if d
 
 ### 1. `hasRole(...names)` — sync, pure roles array check
 
-Returns `true` if `userContext.roles` contains any of the given role names. Does **not** consult PolicyEvaluator. Use for cheap role-name gates where the policy system isn't needed.
+Returns `true` if `userContext.roles` contains any of the given role names. Does __not__ consult PolicyEvaluator. Use for cheap role-name gates where the policy system isn't needed.
 
 ```ts
 if (wikiContext.hasRole('admin')) { ... }
 if (wikiContext.hasRole('admin', 'editor', 'contributor')) { ... }   // multi-role OR
 ```
 
-**On `ApiContext`**: same shape, sync.
+__On `ApiContext`__: same shape, sync.
 
-**Static variant** for hot paths without a context (maintenance middleware, `/metrics`):
+__Static variant__ for hot paths without a context (maintenance middleware, `/metrics`):
 
 ```ts
 import WikiContext from '../context/WikiContext.js';
@@ -99,11 +99,11 @@ if (!(await wikiContext.hasPermission('admin-system'))) return res.status(403)..
 if (!(await wikiContext.hasPermission('user-edit')))  return res.status(403)...;
 ```
 
-**On `ApiContext`**: `await ctx.hasPermission(action)`. Both `ApiContext` and `ParseContext` `hasPermission` go through the same canonical UserManager path post-v3.6.0 (`#625`, `#630`, `#633`).
+__On `ApiContext`__: `await ctx.hasPermission(action)`. Both `ApiContext` and `ParseContext` `hasPermission` go through the same canonical UserManager path post-v3.6.0 (`#625`, `#630`, `#633`).
 
 ### 3. `canAccess(action)` — async, page-resource-aware 3-tier evaluator
 
-Returns `true` if the user is allowed to perform `action` **on the current page**. Delegates to `ACLManager.checkPagePermissionWithContext(wikiContext, action)`.
+Returns `true` if the user is allowed to perform `action` __on the current page__. Delegates to `ACLManager.checkPagePermissionWithContext(wikiContext, action)`.
 
 The 3-tier evaluator runs in order; the first tier that decides wins:
 
@@ -120,7 +120,7 @@ if (!(await wikiContext.canAccess('view'))) return res.status(403)...;
 
 `canAccess('view')` is the canonical "can the user read this page?" gate. Action-name mapping inside ACLManager: `view` → `page-read`, `edit` → `page-edit`, `delete` → `page-delete`, `create` → `page-create`, `rename` → `page-rename`, `upload` → `asset-upload`.
 
-**On `ParseContext`**: synthesizes a minimal WikiContext-shaped object from `pageName + originalContent + userContext + pageMetadata` and delegates to ACLManager. **Not on `ApiContext`** — page-resource-aware checks belong to wiki-page rendering, not to API-route scope.
+__On `ParseContext`__: synthesizes a minimal WikiContext-shaped object from `pageName + originalContent + userContext + pageMetadata` and delegates to ACLManager. __Not on `ApiContext`__ — page-resource-aware checks belong to wiki-page rendering, not to API-route scope.
 
 ### 4. `getPrincipals()` — sync, audience-filter principals
 
@@ -159,7 +159,7 @@ Used by `wikiContext.canAccess()`, `parseContext.canAccess()`, and route handler
 
 Iterates registered policies in priority order. Each policy has `subjects` (roles), `resources` (page-name globs), `actions`, and `effect: 'allow' | 'deny'`. The first policy whose `subjects` + `resources` + `actions` all match decides. If no policy matches, default deny.
 
-You should **not** call `PolicyEvaluator.evaluateAccess` directly from application code — go through `UserManager` (for global) or `ACLManager` (for per-page) so the canonical role-expansion / 3-tier logic runs.
+You should __not__ call `PolicyEvaluator.evaluateAccess` directly from application code — go through `UserManager` (for global) or `ACLManager` (for per-page) so the canonical role-expansion / 3-tier logic runs.
 
 ---
 
@@ -173,7 +173,7 @@ You should **not** call `PolicyEvaluator.evaluateAccess` directly from applicati
 | `*.roles.includes(...)` call expression | Use `hasRole(...names)`. |
 | `*.roles?.includes(...)` (optional chaining variant) | Same — use `hasRole(...names)`. |
 
-**Disabled in test files** (legitimate use in mock fixtures). Two production-side `eslint-disable-next-line` annotations:
+__Disabled in test files__ (legitimate use in mock fixtures). Two production-side `eslint-disable-next-line` annotations:
 
 - `src/context/ApiContext.ts:hasRole` — canonical implementation reads `this.roles.includes(...)` internally
 - `src/routes/WikiRoutes.ts:adminUpdateUser` — form-data validation (`updates.roles.includes('admin')`), not a permission check on the caller
@@ -306,8 +306,8 @@ Defined in `config/app-default-config.json` under `ngdpbase.permissions` and `ng
 | `user-edit` | admin, user-admin | edit user records |
 | `user-create` | admin | create new users |
 | `user-delete` | admin | delete users |
-| `admin-read` | admin, demo-admin | **view** admin screens — read-only (#1029) |
-| `admin-system` | admin | admin gates (`/admin/*`) — view **and** change |
+| `admin-read` | admin, demo-admin | __view__ admin screens — read-only (#1029) |
+| `admin-system` | admin | admin gates (`/admin/*`) — view __and__ change |
 | `admin-roles` | admin | role management |
 | `asset-upload` | editor, contributor, admin | upload media/attachments |
 | `search-user` | admin, user-admin | search users via API |
@@ -315,8 +315,8 @@ Defined in `config/app-default-config.json` under `ngdpbase.permissions` and `ng
 To add a permission:
 
 1. Define it under `ngdpbase.permissions.definitions.<name>` in `app-default-config.json`.
-2. Grant it to roles via `ngdpbase.roles.definitions.<role>.permissions`. **This is display only** — `ConfigAccessorPlugin` renders the role × permission matrix from it. It grants nothing.
-3. **Add the action to a policy under `ngdpbase.access.policies`.** This is what actually enforces. `PolicyEvaluator.evaluateAccess()` reads the policies, *not* the inline arrays from step 2 — so a permission added only there is displayed and never granted, and one added only here is granted but invisible on the Roles page. Steps 2 and 3 must move together; the config file calls this display-vs-enforcement drift.
+2. Grant it to roles via `ngdpbase.roles.definitions.<role>.permissions`. __This is display only__ — `ConfigAccessorPlugin` renders the role × permission matrix from it. It grants nothing.
+3. __Add the action to a policy under `ngdpbase.access.policies`.__ This is what actually enforces. `PolicyEvaluator.evaluateAccess()` reads the policies, *not* the inline arrays from step 2 — so a permission added only there is displayed and never granted, and one added only here is granted but invisible on the Roles page. Steps 2 and 3 must move together; the config file calls this display-vs-enforcement drift.
 4. Reference it via `wikiContext.hasPermission('<name>')` or `wikiContext.canAccess('<page-action>')`.
 
 > Worked example: `admin-read` (#1029) needed all three — the catalogue entry, the `admin` role's matrix entry, and `admin-full-access.actions`.
@@ -329,29 +329,29 @@ Access-control checks are cheap enough that you don't need to memoize them per-r
 
 ### Where the data lives
 
-Page metadata and content are served from **in-memory caches**, not fresh disk reads:
+Page metadata and content are served from __in-memory caches__, not fresh disk reads:
 
 | Read | Backing store | Disk hit per call? |
 |---|---|---|
-| `pageManager.getPageMetadata(name)` | `pageCache` (Map, in-memory) via `resolvePageInfo()` | **No** — pure Map lookup, wrapped in `Promise.resolve()` for the async signature |
+| `pageManager.getPageMetadata(name)` | `pageCache` (Map, in-memory) via `resolvePageInfo()` | __No__ — pure Map lookup, wrapped in `Promise.resolve()` for the async signature |
 | `pageManager.getPage(name)` | `pageCache` for metadata + `contentCache` for content | Usually no. One-off `fs.readFile` if the page wasn't in `contentCache` at init time, cached after |
 | `pageManager.getPageContent(name)` | Same as `getPage` (content half) | Same — usually cache-hit, one-off fallback |
 | `wikiContext.pageMetadata` | Set by the route handler via `getPageMetadata()` and threaded through `WikiContextOptions` | No — already resolved by the time WikiContext sees it |
 
 These caches (`src/providers/FileSystemProvider.ts`) are populated during `provider.initialize()` at server startup and kept current via write-path invalidation (`savePage` / `deletePage` / `renamePage` update both the in-memory cache and the on-disk `data/page-index.json`). They reflect current page state — they don't go stale relative to disk.
 
-`VersioningFileProvider` adds its own `pageIndex: PageIndex` (a structured metadata index, serialized to `data/page-index.json`) loaded once at init and mutated in memory. **Don't reach into `pageIndex` directly from application code** — it's an implementation detail of one provider; route handlers should go through `pageManager.getPage*` so a different provider (e.g. database-backed) works without changes.
+`VersioningFileProvider` adds its own `pageIndex: PageIndex` (a structured metadata index, serialized to `data/page-index.json`) loaded once at init and mutated in memory. __Don't reach into `pageIndex` directly from application code__ — it's an implementation detail of one provider; route handlers should go through `pageManager.getPage*` so a different provider (e.g. database-backed) works without changes.
 
 ### Per-request cost breakdown
 
 For a typical `wikiContext.canAccess('view')` call:
 
-1. **Route handler** loads page metadata via `pageManager.getPageMetadata(pageName)` → in-memory Map hit, no disk I/O. Sets `wikiContext.pageMetadata`.
-2. **`canAccess('view')`** delegates to `ACLManager.checkPagePermissionWithContext(this, 'view')`:
-   - **Tier 0** (private user-keyword): reads `wikiContext.pageMetadata?.['user-keywords']` — already in memory.
-   - **Tier 1** (frontmatter audience/access): reads `wikiContext.pageMetadata?.audience` etc. — already in memory.
-   - **Tier 2** (PolicyEvaluator): iterates registered policies (in-memory list) and runs glob matches. No I/O.
-3. Returns `boolean`. Total cost: a few Map lookups + a small array iteration. **Sub-millisecond on warm caches.**
+1. __Route handler__ loads page metadata via `pageManager.getPageMetadata(pageName)` → in-memory Map hit, no disk I/O. Sets `wikiContext.pageMetadata`.
+2. __`canAccess('view')`__ delegates to `ACLManager.checkPagePermissionWithContext(this, 'view')`:
+   - __Tier 0__ (private user-keyword): reads `wikiContext.pageMetadata?.['user-keywords']` — already in memory.
+   - __Tier 1__ (frontmatter audience/access): reads `wikiContext.pageMetadata?.audience` etc. — already in memory.
+   - __Tier 2__ (PolicyEvaluator): iterates registered policies (in-memory list) and runs glob matches. No I/O.
+3. Returns `boolean`. Total cost: a few Map lookups + a small array iteration. __Sub-millisecond on warm caches.__
 
 For `wikiContext.hasPermission('admin-system')`:
 
@@ -361,28 +361,28 @@ For `wikiContext.hasPermission('admin-system')`:
 
 For `wikiContext.hasRole('admin')` / `WikiContext.userHasRole(...)`:
 
-- Pure `Set` over `userContext.roles`. **No I/O, no async.** Sub-microsecond.
+- Pure `Set` over `userContext.roles`. __No I/O, no async.__ Sub-microsecond.
 
 ### When to think about cost
 
-You generally **don't** need to cache the result of `canAccess` per request. The 3-tier evaluation reads in-memory state and is fast.
+You generally __don't__ need to cache the result of `canAccess` per request. The 3-tier evaluation reads in-memory state and is fast.
 
 You *might* want to think about cost if:
 
-- **Search-result filtering**: don't call `canAccess(action)` per result — that's why `getPrincipals()` exists. Search providers compare audience fields against the principals list at query-build time, not per result. See [LunrSearchProvider / ElasticsearchSearchProvider](#search-provider-audience-filter).
-- **Bulk page operations** (admin reindex, batch export): if you're iterating thousands of pages, prefer the cheaper `pageManager.getPageMetadata` over `pageManager.getPage` (which can fall back to disk for cold-cache pages).
-- **Hot-path middleware** (maintenance gate, `/metrics`): use `WikiContext.userHasRole(req.userContext, 'admin')` instead of constructing a full WikiContext. The static helper avoids the manager-reference resolution at construction time.
+- __Search-result filtering__: don't call `canAccess(action)` per result — that's why `getPrincipals()` exists. Search providers compare audience fields against the principals list at query-build time, not per result. See [LunrSearchProvider / ElasticsearchSearchProvider](#search-provider-audience-filter).
+- __Bulk page operations__ (admin reindex, batch export): if you're iterating thousands of pages, prefer the cheaper `pageManager.getPageMetadata` over `pageManager.getPage` (which can fall back to disk for cold-cache pages).
+- __Hot-path middleware__ (maintenance gate, `/metrics`): use `WikiContext.userHasRole(req.userContext, 'admin')` instead of constructing a full WikiContext. The static helper avoids the manager-reference resolution at construction time.
 
 ### Disk I/O on the access path
 
 Disk I/O happens (rarely) on:
 
-1. **Server startup** — provider scans pages directory, populates caches, loads `page-index.json`.
-2. **Page writes** — save/delete/rename update both in-memory caches and the on-disk index.
-3. **Content read for a cold-cache page** — one `fs.readFile` per page, then cached. Affects `getPage` / `getPageContent` only; `getPageMetadata` never falls through to disk.
-4. **Configuration reload** — admin saves a config change; PolicyManager / ConfigurationManager re-read.
+1. __Server startup__ — provider scans pages directory, populates caches, loads `page-index.json`.
+2. __Page writes__ — save/delete/rename update both in-memory caches and the on-disk index.
+3. __Content read for a cold-cache page__ — one `fs.readFile` per page, then cached. Affects `getPage` / `getPageContent` only; `getPageMetadata` never falls through to disk.
+4. __Configuration reload__ — admin saves a config change; PolicyManager / ConfigurationManager re-read.
 
-Per-request HTTP traffic on a steady-state server typically does **zero or one** disk reads (zero if everything's in cache; one if a content fallback fires).
+Per-request HTTP traffic on a steady-state server typically does __zero or one__ disk reads (zero if everything's in cache; one if a content fallback fires).
 
 ---
 
@@ -390,12 +390,12 @@ Per-request HTTP traffic on a steady-state server typically does **zero or one**
 
 The following remain open as separately-tracked follow-ups (none block typical access-control work):
 
-- **#622** — vitest cold-start race; band-aided with `testTimeout: 30000`, `pool: 'forks'`, `maxWorkers: 4`.
-- **#626** — `LunrSearchProvider` ignores frontmatter `audience` (drift from ES which evaluates it correctly). Lunr uses an admin-OR-creator rule only.
-- **#627 / #628** — Neither Lunr nor ES evaluates `AuthorLocked` for search visibility. Open design call: should AuthorLocked hide pages from search, or remain edit-only?
-- **#629** — `ParseContext` still copies user/page-data fields from `WikiContext.toParseOptions()` snapshot. Refactor to hold a `wikiContext` reference would let the access methods live on `WikiContext` only.
-- **#631** — Service / non-request principals (`WikiContext.system()` / `WikiContext.forUser(username)` factories for background jobs and schedulers).
-- **#632** — Three remaining callers of the deprecated 4-arg `aclManager.checkPagePermission(pageName, action, userContext, content)` (`LeftMenu`, `Footer`, `adminDashboard`). Should migrate to `checkPagePermissionWithContext` and the deprecated method should be deleted.
+- __#622__ — vitest cold-start race; band-aided with `testTimeout: 30000`, `pool: 'forks'`, `maxWorkers: 4`.
+- __#626__ — `LunrSearchProvider` ignores frontmatter `audience` (drift from ES which evaluates it correctly). Lunr uses an admin-OR-creator rule only.
+- __#627 / #628__ — Neither Lunr nor ES evaluates `AuthorLocked` for search visibility. Open design call: should AuthorLocked hide pages from search, or remain edit-only?
+- __#629__ — `ParseContext` still copies user/page-data fields from `WikiContext.toParseOptions()` snapshot. Refactor to hold a `wikiContext` reference would let the access methods live on `WikiContext` only.
+- __#631__ — Service / non-request principals (`WikiContext.system()` / `WikiContext.forUser(username)` factories for background jobs and schedulers).
+- __#632__ — Three remaining callers of the deprecated 4-arg `aclManager.checkPagePermission(pageName, action, userContext, content)` (`LeftMenu`, `Footer`, `adminDashboard`). Should migrate to `checkPagePermissionWithContext` and the deprecated method should be deleted.
 
 ---
 

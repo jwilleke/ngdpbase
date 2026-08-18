@@ -25,8 +25,8 @@ Second tab content.
 
 ## Behaviour
 
-- **Inside `[{Tabs}]`** — TabsPlugin parses these blocks directly from its body content. TabPlugin itself returns empty string to avoid double-rendering.
-- **Standalone (outside Tabs)** — also returns empty string intentionally. The plugin is a body-block marker, not a renderer.
+- __Inside `[{Tabs}]`__ — TabsPlugin parses these blocks directly from its body content. TabPlugin itself returns empty string to avoid double-rendering.
+- __Standalone (outside Tabs)__ — also returns empty string intentionally. The plugin is a body-block marker, not a renderer.
 
 ## See Also
 

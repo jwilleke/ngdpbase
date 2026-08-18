@@ -6,12 +6,12 @@ ngdpbase's Policy-Based Access Control (PBAC) system provides flexible, JSON-bas
 
 ### Key Features
 
-- **JSON Schema Validation**: Ensures policy integrity and prevents configuration errors
-- **Flexible Subject Matching**: Support for users, roles, groups, attributes, and authentication status
-- **Advanced Conditions**: Time ranges, IP restrictions, user attributes, and custom conditions
-- **Priority System**: Higher-priority policies override lower ones
-- **Performance Caching**: Optimized for repeated evaluations
-- **Audit Integration**: Full logging of policy decisions
+- __JSON Schema Validation__: Ensures policy integrity and prevents configuration errors
+- __Flexible Subject Matching__: Support for users, roles, groups, attributes, and authentication status
+- __Advanced Conditions__: Time ranges, IP restrictions, user attributes, and custom conditions
+- __Priority System__: Higher-priority policies override lower ones
+- __Performance Caching__: Optimized for repeated evaluations
+- __Audit Integration__: Full logging of policy decisions
 
 ## Accessing Policy Management
 
@@ -61,47 +61,47 @@ Every policy consists of the following components:
 
 Subjects define who the policy applies to. Supported types:
 
-- **user**: Specific username (`"value": "john.doe"`)
-- **role**: Users with specific role (`"value": "editor"`)
-- **group**: Users in specific group (`"value": "marketing"`)
-- **attribute**: Users with specific attribute (`"key": "department", "value": "IT"`)
-- **authenticated**: Any authenticated user
-- **anonymous**: Non-authenticated users
-- **admin**: Users with admin privileges
+- __user__: Specific username (`"value": "john.doe"`)
+- __role__: Users with specific role (`"value": "editor"`)
+- __group__: Users in specific group (`"value": "marketing"`)
+- __attribute__: Users with specific attribute (`"key": "department", "value": "IT"`)
+- __authenticated__: Any authenticated user
+- __anonymous__: Non-authenticated users
+- __admin__: Users with admin privileges
 
 ### Resources (What)
 
 Resources define what the policy applies to. Supported types:
 
-- **page**: Wiki pages (`"pattern": "*"`, `"pattern": "Admin*"`)
-- **attachment**: File attachments (`"pattern": "*.pdf"`)
-- **category**: Pages in specific category (`"value": "System"`)
-- **tag**: Pages with specific tag (`"value": "confidential"`)
-- **resource-type**: Specific resource types (`"value": "page"`)
-- **path**: URL path patterns (`"pattern": "/api/*"`)
+- __page__: Wiki pages (`"pattern": "*"`, `"pattern": "Admin*"`)
+- __attachment__: File attachments (`"pattern": "*.pdf"`)
+- __category__: Pages in specific category (`"value": "System"`)
+- __tag__: Pages with specific tag (`"value": "confidential"`)
+- __resource-type__: Specific resource types (`"value": "page"`)
+- __path__: URL path patterns (`"pattern": "/api/*"`)
 
 ### Actions (How)
 
 Actions define what operations are allowed/denied:
 
-- **view**: Read/view content
-- **edit**: Modify content
-- **delete**: Remove content
-- **create**: Create new content
-- **upload**: Upload files
-- **download**: Download files
-- **admin**: Administrative operations
+- __view__: Read/view content
+- __edit__: Modify content
+- __delete__: Remove content
+- __create__: Create new content
+- __upload__: Upload files
+- __download__: Download files
+- __admin__: Administrative operations
 
 ### Conditions (When)
 
 Conditions add additional constraints. Supported types:
 
-- **time-range**: Time-based restrictions
-- **ip-range**: IP address restrictions
-- **user-attribute**: User attribute checks
-- **context-attribute**: Request context checks
-- **environment**: Environment-specific rules
-- **session-attribute**: Session-based conditions
+- __time-range__: Time-based restrictions
+- __ip-range__: IP address restrictions
+- __user-attribute__: User attribute checks
+- __context-attribute__: Request context checks
+- __environment__: Environment-specific rules
+- __session-attribute__: Session-based conditions
 
 ## Creating Policies
 
@@ -109,25 +109,25 @@ Conditions add additional constraints. Supported types:
 
 1. Click "Create Policy" button
 2. Fill in basic information:
-   - **Policy Name**: Descriptive name
-   - **Priority**: Number (higher = more important)
-   - **Effect**: Allow or Deny
-   - **Description**: Optional details
+   - __Policy Name__: Descriptive name
+   - __Priority__: Number (higher = more important)
+   - __Effect__: Allow or Deny
+   - __Description__: Optional details
 
-3. Define **Subjects** (Who):
+3. Define __Subjects__ (Who):
    - Click "Add Subject"
    - Choose subject type
    - Enter value/pattern
 
-4. Define **Resources** (What):
+4. Define __Resources__ (What):
    - Click "Add Resource"
    - Choose resource type
    - Enter value/pattern
 
-5. Select **Actions** (How):
+5. Select __Actions__ (How):
    - Check applicable actions
 
-6. Add **Conditions** (When - optional):
+6. Add __Conditions__ (When - optional):
    - Click "Add Condition"
    - Choose condition type
    - Configure parameters
@@ -172,7 +172,7 @@ For complex policies, you can edit the JSON directly:
 
 ### 1. Role-Based Access
 
-**Allow editors to edit all pages:**
+__Allow editors to edit all pages:__
 
 ```json
 {
@@ -188,7 +188,7 @@ For complex policies, you can edit the JSON directly:
 
 ### 2. Time-Based Restrictions
 
-**Restrict admin access to business hours:**
+__Restrict admin access to business hours:__
 
 ```json
 {
@@ -211,7 +211,7 @@ For complex policies, you can edit the JSON directly:
 
 ### 3. IP-Based Security
 
-**Restrict sensitive content to internal network:**
+__Restrict sensitive content to internal network:__
 
 ```json
 {
@@ -233,7 +233,7 @@ For complex policies, you can edit the JSON directly:
 
 ### 4. Department-Based Access
 
-**Allow IT department full access to system pages:**
+__Allow IT department full access to system pages:__
 
 ```json
 {
@@ -255,7 +255,7 @@ For complex policies, you can edit the JSON directly:
 
 ### 5. Emergency Access Override
 
-**Allow emergency access during critical situations:**
+__Allow emergency access during critical situations:__
 
 ```json
 {
@@ -280,7 +280,7 @@ For complex policies, you can edit the JSON directly:
 
 ### Understanding Priority
 
-- **Higher numbers = Higher priority**
+- __Higher numbers = Higher priority__
 - Policies are evaluated in priority order (highest first)
 - Conflicting policies are resolved by priority
 - Default priority is 50
@@ -289,9 +289,9 @@ For complex policies, you can edit the JSON directly:
 
 When multiple policies apply to the same request:
 
-1. **Same Effect**: All matching policies are considered
-2. **Different Effects**: Highest priority policy wins
-3. **Equal Priority**: First matching policy wins (deterministic but not recommended)
+1. __Same Effect__: All matching policies are considered
+2. __Different Effects__: Highest priority policy wins
+3. __Equal Priority__: First matching policy wins (deterministic but not recommended)
 
 ### Best Practices
 
@@ -307,9 +307,9 @@ When multiple policies apply to the same request:
 
 ### Viewing Policies
 
-- **Dashboard**: Overview of all policies with statistics
-- **List View**: Detailed list with quick actions
-- **JSON View**: Raw policy structure for advanced users
+- __Dashboard__: Overview of all policies with statistics
+- __List View__: Detailed list with quick actions
+- __JSON View__: Raw policy structure for advanced users
 
 ### Editing Policies
 
@@ -328,10 +328,10 @@ When multiple policies apply to the same request:
 
 The system automatically validates policies for:
 
-- **Schema Compliance**: JSON structure correctness
-- **Business Logic**: Duplicate entries, invalid combinations
-- **Semantic Issues**: Logical inconsistencies
-- **Conflicts**: Overlapping policies with different effects
+- __Schema Compliance__: JSON structure correctness
+- __Business Logic__: Duplicate entries, invalid combinations
+- __Semantic Issues__: Logical inconsistencies
+- __Conflicts__: Overlapping policies with different effects
 
 ## Monitoring and Auditing
 
@@ -369,9 +369,9 @@ Monitor:
 
 #### Policy Not Taking Effect
 
-**Symptoms**: Expected access behavior not occurring
+__Symptoms__: Expected access behavior not occurring
 
-**Solutions**:
+__Solutions__:
 
 1. Check policy priority vs conflicting policies
 2. Verify subject/resource/action matching
@@ -380,9 +380,9 @@ Monitor:
 
 #### Unexpected Access Denied
 
-**Symptoms**: Users can't access resources they should
+__Symptoms__: Users can't access resources they should
 
-**Solutions**:
+__Solutions__:
 
 1. Look for higher-priority deny policies
 2. Check condition evaluation
@@ -391,9 +391,9 @@ Monitor:
 
 #### Performance Issues
 
-**Symptoms**: Slow page loads, high CPU usage
+__Symptoms__: Slow page loads, high CPU usage
 
-**Solutions**:
+__Solutions__:
 
 1. Review cache hit rates
 2. Optimize policy conditions
@@ -402,9 +402,9 @@ Monitor:
 
 #### Validation Errors
 
-**Symptoms**: Policies can't be saved due to validation errors
+__Symptoms__: Policies can't be saved due to validation errors
 
-**Solutions**:
+__Solutions__:
 
 1. Review error messages carefully
 2. Check JSON syntax
@@ -443,33 +443,33 @@ Monitor cache performance:
 
 ### Policy Design
 
-1. **Start Simple**: Begin with basic role-based policies
-2. **Use Descriptive Names**: Clear, searchable policy names
-3. **Document Everything**: Detailed descriptions and comments
-4. **Test Thoroughly**: Validate policies in staging environment
-5. **Plan for Growth**: Design for future requirements
+1. __Start Simple__: Begin with basic role-based policies
+2. __Use Descriptive Names__: Clear, searchable policy names
+3. __Document Everything__: Detailed descriptions and comments
+4. __Test Thoroughly__: Validate policies in staging environment
+5. __Plan for Growth__: Design for future requirements
 
 ### Security Considerations
 
-1. **Defense in Depth**: Multiple layers of access control
-2. **Least Privilege**: Grant minimum required access
-3. **Regular Reviews**: Audit policies periodically
-4. **Emergency Access**: Plan for override scenarios
-5. **Monitoring**: Log and monitor all access decisions
+1. __Defense in Depth__: Multiple layers of access control
+2. __Least Privilege__: Grant minimum required access
+3. __Regular Reviews__: Audit policies periodically
+4. __Emergency Access__: Plan for override scenarios
+5. __Monitoring__: Log and monitor all access decisions
 
 ### Performance Optimization
 
-1. **Efficient Patterns**: Use specific patterns over wildcards
-2. **Minimize Conditions**: Only add necessary conditions
-3. **Cache-Friendly**: Design for cache effectiveness
-4. **Regular Cleanup**: Remove obsolete policies
+1. __Efficient Patterns__: Use specific patterns over wildcards
+2. __Minimize Conditions__: Only add necessary conditions
+3. __Cache-Friendly__: Design for cache effectiveness
+4. __Regular Cleanup__: Remove obsolete policies
 
 ### Maintenance
 
-1. **Version Control**: Track policy changes
-2. **Backup Regularly**: Maintain policy backups
-3. **Change Management**: Document policy modifications
-4. **User Communication**: Notify users of policy changes
+1. __Version Control__: Track policy changes
+2. __Backup Regularly__: Maintain policy backups
+3. __Change Management__: Document policy modifications
+4. __User Communication__: Notify users of policy changes
 
 ## Advanced Topics
 
@@ -493,10 +493,10 @@ For complex requirements, you can implement custom condition types:
 
 Create reusable policy templates for common scenarios:
 
-- **Read-Only Access**: Basic viewing permissions
-- **Contributor Access**: View + edit permissions
-- **Moderator Access**: Contributor + delete permissions
-- **Admin Access**: Full permissions
+- __Read-Only Access__: Basic viewing permissions
+- __Contributor Access__: View + edit permissions
+- __Moderator Access__: Contributor + delete permissions
+- __Admin Access__: Full permissions
 
 ### Integration with External Systems
 
@@ -511,10 +511,10 @@ The policy system can integrate with:
 
 ### Getting Help
 
-1. **Documentation**: This guide and inline help
-2. **Logs**: Check application logs for errors
-3. **Audit Trail**: Review access decision logs
-4. **Community**: Check for similar issues/solutions
+1. __Documentation__: This guide and inline help
+2. __Logs__: Check application logs for errors
+3. __Audit Trail__: Review access decision logs
+4. __Community__: Check for similar issues/solutions
 
 ### Configuration Files
 
@@ -522,7 +522,7 @@ Key configuration files:
 
 - `config/app-default-config.json`: Policy storage (key: `ngdpbase.access.policies`)
 - `config/policy-schemas.json`: Schema definitions
-- ~~`config/access-policies.json`~~: **DEPRECATED** - Policies now in app-default-config.json
+- ~~`config/access-policies.json`~~: __DEPRECATED__ - Policies now in app-default-config.json
 
 ### API Reference
 

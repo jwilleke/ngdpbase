@@ -16,10 +16,10 @@ The VariableManager is ngdpbase's central system for managing and expanding vari
 
 The VariableManager follows JSPWiki's design patterns with clean separation between:
 
-- **System Variables**: Configuration and runtime values that don't require context
-- **Contextual Variables**: User and page-specific values that require runtime context
-- **Variable Registry**: Function-based registry system for dynamic value generation
-- **Protection System**: Safeguards escaped variables and code blocks from expansion
+- __System Variables__: Configuration and runtime values that don't require context
+- __Contextual Variables__: User and page-specific values that require runtime context
+- __Variable Registry__: Function-based registry system for dynamic value generation
+- __Protection System__: Safeguards escaped variables and code blocks from expansion
 
 ## Variable Types
 
@@ -119,39 +119,39 @@ Initializes the VariableManager and registers all default variables.
 
 Gets the value of a single variable.
 
-**Parameters:**
+__Parameters:__
 
 - `variableName` (string): Variable name (lowercase)
 - `context` (object): Context object with `userContext` and `pageName`
 
-**Returns:** string - Variable value or error message
+__Returns:__ string - Variable value or error message
 
 ##### `hasVariable(variableName)`
 
 Checks if a variable exists in the registry.
 
-**Parameters:**
+__Parameters:__
 
 - `variableName` (string): Variable name to check
 
-**Returns:** boolean
+__Returns:__ boolean
 
 ##### `expandVariables(content, context = {})`
 
 Expands all variables in content with protection for escaped variables and code blocks.
 
-**Parameters:**
+__Parameters:__
 
 - `content` (string): Content with `[{$variable}]` patterns
 - `context` (object): Context with `userContext` and `pageName`
 
-**Returns:** string - Content with expanded variables
+__Returns:__ string - Content with expanded variables
 
 ##### `registerVariable(name, valueFunction, isContextual = false)`
 
 Registers a custom variable.
 
-**Parameters:**
+__Parameters:__
 
 - `name` (string): Variable name
 - `valueFunction` (function): Function returning variable value
@@ -161,13 +161,13 @@ Registers a custom variable.
 
 Gets array of all available variable names.
 
-**Returns:** `Array<string>` - Sorted array of variable names
+__Returns:__ `Array<string>` - Sorted array of variable names
 
 ##### `getDebugInfo()`
 
 Gets debugging information about registered variables.
 
-**Returns:** object - Debug information with counts and variable lists
+__Returns:__ object - Debug information with counts and variable lists
 
 ## Integration
 
@@ -216,12 +216,12 @@ variableManager.registerVariable('currentuserrole', (context) => {
 
 Access the variable management interface at `/admin/variables` with admin privileges.
 
-**Features:**
+__Features:__
 
-- **System Variables Tab**: View all system variables with current values
-- **Contextual Variables Tab**: View contextual variables with your current values
-- **Variable Testing Tab**: Test variable expansion with custom content
-- **Custom Variables Tab**: Debug information and custom variable management
+- __System Variables Tab__: View all system variables with current values
+- __Contextual Variables Tab__: View contextual variables with your current values
+- __Variable Testing Tab__: Test variable expansion with custom content
+- __Custom Variables Tab__: Debug information and custom variable management
 
 ### Variable Testing
 
@@ -236,17 +236,17 @@ The testing interface allows real-time testing of variable expansion:
 
 ### Variable Errors
 
-- **Unknown variables**: `[Unknown: variablename]`
-- **Expansion errors**: `[Error: variablename]`
-- **Case sensitivity**: `[Error: VARIABLENAME - must be lowercase]`
+- __Unknown variables__: `[Unknown: variablename]`
+- __Expansion errors__: `[Error: variablename]`
+- __Case sensitivity__: `[Error: VARIABLENAME - must be lowercase]`
 
 ### Protection System
 
 The VariableManager protects certain content from variable expansion:
 
-- **Escaped variables**: `[[{$variable}]` becomes `[{$variable}]`
-- **Code blocks**: Variables in ``` blocks are preserved
-- **Inline code**: Variables in ` blocks are preserved
+- __Escaped variables__: `[[{$variable}]` becomes `[{$variable}]`
+- __Code blocks__: Variables in ``` blocks are preserved
+- __Inline code__: Variables in ` blocks are preserved
 
 ## Performance Considerations
 
@@ -279,18 +279,18 @@ The VariableManager maintains compatibility with JSPWiki patterns:
 
 ### Common Issues
 
-**Variables not expanding:**
+__Variables not expanding:__
 
 - Check variable name is lowercase
 - Ensure VariableManager is initialized
 - Verify variable exists with `hasVariable()`
 
-**Escaped variables showing incorrectly:**
+__Escaped variables showing incorrectly:__
 
 - Ensure double brackets: `[[{$variable}]`
 - Check for syntax errors in content
 
-**Custom variables not working:**
+__Custom variables not working:__
 
 - Verify registration with correct parameters
 - Check if variable is contextual but no context provided
@@ -351,6 +351,6 @@ The variable [{$pagename}] shows the current page.
 
 This will render as:
 
-- Normal variable: **admin**
-- Escaped variable: **[{$username}]**
-- Code example: **The variable [{$pagename}] shows the current page.** (unchanged)
+- Normal variable: __admin__
+- Escaped variable: __[{$username}]__
+- Code example: __The variable [{$pagename}] shows the current page.__ (unchanged)

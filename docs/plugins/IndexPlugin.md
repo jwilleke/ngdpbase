@@ -18,7 +18,7 @@ Generates an alphabetical index of all wiki pages with filtering support.
 
 The IndexPlugin creates a navigable alphabetical index of wiki pages, similar to JSPWiki's IndexPlugin. Pages are grouped by first letter with jump links for easy navigation. Supports include/exclude regex patterns for filtering.
 
-**Source:** `plugins/IndexPlugin.js`
+__Source:__ `plugins/IndexPlugin.js`
 
 ## Plugin Metadata
 
@@ -69,7 +69,7 @@ Patterns use JavaScript regular expression syntax:
 [{IndexPlugin}]
 ```
 
-**Output:**
+__Output:__
 
 ```html
 <div class="index-plugin">

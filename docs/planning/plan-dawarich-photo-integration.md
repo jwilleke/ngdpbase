@@ -2,15 +2,15 @@
 
 Issue: #864
 
-> **Status: IMPLEMENTED** (2026-07-19, commit `b099c5fe`) — all three gaps landed as planned; deltas from the plan are noted inline under "Implementation notes" below. Remaining: operator runs a forced media rescan (populates `captureDateField`), swaps the jimstest test key for the SOPS-managed key, confirms the tunnel excludes the two routes, and eyeballs trip-view timezones in Dawarich.
+> __Status: IMPLEMENTED__ (2026-07-19, commit `b099c5fe`) — all three gaps landed as planned; deltas from the plan are noted inline under "Implementation notes" below. Remaining: operator runs a forced media rescan (populates `captureDateField`), swaps the jimstest test key for the SOPS-managed key, confirms the tunnel excludes the two routes, and eyeballs trip-view timezones in Dawarich.
 
 ## Implementation notes (delta from plan)
 
-- **`metadata.captureDateField`** (Gap 1) holds the **literal tag name that supplied the capture date**, exactly one of the `CAPTURE_DATE_FIELDS` chain: `'DateTimeOriginal'` (true shutter time — photos), `'CreateDate'`, `'MediaCreateDate'`, `'CreationDate'` (container/file-creation times — video-typical). **Absent** when the date was filename-derived (`captureDateSource: 'filename'`), when the item has no date, or on index entries written before this field existed — a forced rescan populates it. The strict policy treats "absent" as "fails the check" (pre-rescan feed is correctly empty rather than wrongly permissive).
-- **CSRF** (not in plan): the global CSRF middleware blocked `POST /api/search/metadata`. Exemption added in `src/middleware/csrf.ts` for that exact path **only when the `x-api-key` header is present** — a custom header forces a CORS preflight, so the cookie-confused-deputy attack CSRF defends against cannot occur; the route's gate still constant-time-verifies the key.
-- **Window cache**: per-`(takenAfter, takenBefore)` in-memory cache, 60 s TTL, 50-window LRU-ish cap — matches Dawarich's page-walk access pattern.
-- **Auth ladder verified live on jimstest**: 503 (disabled) → 403 (no `x-api-key` → CSRF) → 401 (wrong key) → 200 (valid key).
-- **Privacy**: implemented as the leaning — `listByDateRange` skips `filterPrivateItems()` when called without a wikiContext; the compat layer passes undefined.
+- __`metadata.captureDateField`__ (Gap 1) holds the __literal tag name that supplied the capture date__, exactly one of the `CAPTURE_DATE_FIELDS` chain: `'DateTimeOriginal'` (true shutter time — photos), `'CreateDate'`, `'MediaCreateDate'`, `'CreationDate'` (container/file-creation times — video-typical). __Absent__ when the date was filename-derived (`captureDateSource: 'filename'`), when the item has no date, or on index entries written before this field existed — a forced rescan populates it. The strict policy treats "absent" as "fails the check" (pre-rescan feed is correctly empty rather than wrongly permissive).
+- __CSRF__ (not in plan): the global CSRF middleware blocked `POST /api/search/metadata`. Exemption added in `src/middleware/csrf.ts` for that exact path __only when the `x-api-key` header is present__ — a custom header forces a CORS preflight, so the cookie-confused-deputy attack CSRF defends against cannot occur; the route's gate still constant-time-verifies the key.
+- __Window cache__: per-`(takenAfter, takenBefore)` in-memory cache, 60 s TTL, 50-window LRU-ish cap — matches Dawarich's page-walk access pattern.
+- __Auth ladder verified live on jimstest__: 503 (disabled) → 403 (no `x-api-key` → CSRF) → 401 (wrong key) → 200 (valid key).
+- __Privacy__: implemented as the leaning — `listByDateRange` skips `filterPrivateItems()` when called without a wikiContext; the compat layer passes undefined.
 - Files: `src/routes/DawarichCompatRoutes.ts` (new), `FileSystemMediaProvider.ts` (+`getItemsByDateRange`, `extractCaptureDate` returns `field`), `BaseMediaProvider.ts` (default impl), `MediaManager.listByDateRange`, `types/Asset.ts`, `middleware/csrf.ts`, config defaults. Tests: strict-policy matrix, Immich shape mapping, date-range bounds, per-tag provenance on scan.
 
 ## Background
@@ -23,25 +23,25 @@ We evaluated deploying Immich for this and rejected it: Immich's "external libra
 
 ## Goals
 
-- Dawarich's existing Immich client works against `ngdpbase` **unmodified** — no fork, no patch to Dawarich.
+- Dawarich's existing Immich client works against `ngdpbase` __unmodified__ — no fork, no patch to Dawarich.
 - No new indexing engine — reuse `MediaManager` / `FileSystemMediaProvider` / `media-index.json` as-is.
 - No photo duplication, no write access to source files (read-only, matching the existing `MediaManager` design principle).
 - New surface area is additive: existing `/media/*` UI routes, `MediaPlugin`, and `/share/*` are untouched.
 
 ## Non-goals
 
-- **EXIF write-back ("Enrich Photos" in Dawarich)** — writing GPS into photos that lack it. Out of scope; `ngdpbase`'s media feature is read-only by design (see `MediaManager-Complete-Guide.md` roadmap). If wanted later, it's a separate proposal — this plan only covers Dawarich *reading* photo locations, not writing them.
+- __EXIF write-back ("Enrich Photos" in Dawarich)__ — writing GPS into photos that lack it. Out of scope; `ngdpbase`'s media feature is read-only by design (see `MediaManager-Complete-Guide.md` roadmap). If wanted later, it's a separate proposal — this plan only covers Dawarich *reading* photo locations, not writing them.
 - PhotoPrism-shaped adapter — Immich's contract is smaller and covers our case; no need to also implement PhotoPrism's.
 
 ## Decided: strict per-type date policy, error (exclude) on missing date
 
 Dawarich's own `time_framed_data` re-filter aside, the adapter itself must not guess: a photo shown at the wrong point in someone's timeline because we silently fell back to file mtime is worse than not showing it at all. Decision:
 
-- **Photos** (`type: "image"`): require `DateTimeOriginal` specifically. `extractCaptureDate()`'s existing fallback chain (`DateTimeOriginal` → `CreateDate` → `MediaCreateDate` → `CreationDate`) is too lenient for this purpose — those later fields are the video/container-creation-time fields, not "the photographer took this here," and using them for a photo would misplace it in time.
-- **Movies** (`type: "video"`): require one of `CreateDate` / `MediaCreateDate` / `CreationDate` — the same fields the existing chain already documents as "the file/container creation timestamps that video formats use" (`FileSystemMediaProvider`'s comment on `CAPTURE_DATE_FIELDS`, added for #750). `DateTimeOriginal` is not expected on videos and isn't required for them.
-- **Missing required field → error, not silent inclusion.** Since Dawarich's contract has no per-item error slot (it just expects a flat item list), "error" resolves to: the item is excluded from the `/api/search/metadata` response entirely, and the exclusion is counted/logged server-side (mirroring the existing `counters.noCaptureDate` / `#807` admin-visibility pattern already in `FileSystemMediaProvider`, rather than inventing a new mechanism). A hard-failing the whole paginated request over one bad file isn't viable — it would block every other photo in that date window too.
+- __Photos__ (`type: "image"`): require `DateTimeOriginal` specifically. `extractCaptureDate()`'s existing fallback chain (`DateTimeOriginal` → `CreateDate` → `MediaCreateDate` → `CreationDate`) is too lenient for this purpose — those later fields are the video/container-creation-time fields, not "the photographer took this here," and using them for a photo would misplace it in time.
+- __Movies__ (`type: "video"`): require one of `CreateDate` / `MediaCreateDate` / `CreationDate` — the same fields the existing chain already documents as "the file/container creation timestamps that video formats use" (`FileSystemMediaProvider`'s comment on `CAPTURE_DATE_FIELDS`, added for #750). `DateTimeOriginal` is not expected on videos and isn't required for them.
+- __Missing required field → error, not silent inclusion.__ Since Dawarich's contract has no per-item error slot (it just expects a flat item list), "error" resolves to: the item is excluded from the `/api/search/metadata` response entirely, and the exclusion is counted/logged server-side (mirroring the existing `counters.noCaptureDate` / `#807` admin-visibility pattern already in `FileSystemMediaProvider`, rather than inventing a new mechanism). A hard-failing the whole paginated request over one bad file isn't viable — it would block every other photo in that date window too.
 
-This means `metadata.dateTimeOriginal` (a merged, type-blind value with only `'exif' | 'filename'` provenance) is **not** sufficient on its own for this feature — see Gap 1 below.
+This means `metadata.dateTimeOriginal` (a merged, type-blind value with only `'exif' | 'filename'` provenance) is __not__ sufficient on its own for this feature — see Gap 1 below.
 
 ## What Dawarich actually needs
 
@@ -104,21 +104,21 @@ Dawarich's Settings-page "Test connection" button (`Immich::ConnectionTester`) d
 
 `FileSystemMediaProvider.processFile()` already extracts everything the contract needs, per item, into `MediaIndexEntry.metadata`:
 
-- `metadata.dateTimeOriginal` — a full `"YYYY-MM-DD HH:MM:SS"` capture timestamp, built by `extractCaptureDate()` from `DateTimeOriginal` → `CreateDate` → `MediaCreateDate` → `CreationDate`, with a `metadata.captureDateSource` provenance flag (`'exif' | 'filename'`). **This already exists — it is not gated behind the stale `year`-only facet described in `MediaManager-Complete-Guide.md`.** That doc is out of date; the code has since grown a full timestamp (Phase 5 / #807-#809).
+- `metadata.dateTimeOriginal` — a full `"YYYY-MM-DD HH:MM:SS"` capture timestamp, built by `extractCaptureDate()` from `DateTimeOriginal` → `CreateDate` → `MediaCreateDate` → `CreationDate`, with a `metadata.captureDateSource` provenance flag (`'exif' | 'filename'`). __This already exists — it is not gated behind the stale `year`-only facet described in `MediaManager-Complete-Guide.md`.__ That doc is out of date; the code has since grown a full timestamp (Phase 5 / #807-#809).
 - `metadata.gps` — structured `{ latitude, longitude, altitude }` (plus legacy flat `gpsLatitude`/`gpsLongitude` kept for back-compat).
 - `metadata.orientation` — numeric EXIF orientation tag.
 - `filename`, `mimeType`, `id` (stable `SHA-256(filePath)[0:32]`).
 - `getThumbnailBuffer(id, size)` — cached JPEG generation via Sharp.
 
-So the only genuinely missing piece is a **query method**: nothing today filters the index by a date *range* — `getItemsByYear()` is the closest existing method, and it's year-granularity only. Everything else (the raw data fields) is already there.
+So the only genuinely missing piece is a __query method__: nothing today filters the index by a date *range* — `getItemsByYear()` is the closest existing method, and it's year-granularity only. Everything else (the raw data fields) is already there.
 
 ## Gap 1: date-range query + per-type strict date field
 
 Two changes to `FileSystemMediaProvider`, since the strict per-type policy above needs to know which literal tag supplied the date, not just `'exif' | 'filename'`:
 
-1. **Track the source tag.** ✅ Done: `extractCaptureDate()` returns `{ date, partial, field }` and `processFile()` stores `metadata.captureDateField` — the literal matching tag (`'DateTimeOriginal' | 'CreateDate' | 'MediaCreateDate' | 'CreationDate'`), absent for filename-derived/dateless items and for pre-existing index entries until a rescan. Existing behavior (`metadata.dateTimeOriginal`, `captureDateSource`, the year facet) unchanged; additive.
+1. __Track the source tag.__ ✅ Done: `extractCaptureDate()` returns `{ date, partial, field }` and `processFile()` stores `metadata.captureDateField` — the literal matching tag (`'DateTimeOriginal' | 'CreateDate' | 'MediaCreateDate' | 'CreationDate'`), absent for filename-derived/dateless items and for pre-existing index entries until a rescan. Existing behavior (`metadata.dateTimeOriginal`, `captureDateSource`, the year facet) unchanged; additive.
 
-2. **Date-range query.** Add to `BaseMediaProvider`:
+2. __Date-range query.__ Add to `BaseMediaProvider`:
 
    ```typescript
    abstract getItemsByDateRange(after?: string, before?: string): Promise<MediaItem[]>;
@@ -168,8 +168,8 @@ Every existing `ngdpbase` API route either relies on an authenticated wiki sessi
 
 Decision: two layers, not one.
 
-1. **App-level shared-secret API key.** `ngdpbase.dawarichCompat.apiKey`, config-driven (analogous to how the existing `ngdpbase-ingest-creds` SOPS secret feeds credentials into `geohazardwatch`/`jimsmcp` today), checked via `req.headers['x-api-key']` with a constant-time comparison. Mirrors Immich's own convention, which is also what Dawarich's client already sends unprompted — nothing to explain in Dawarich's Settings UI, it's just "the Immich API key" field. There's no existing API-key-checking middleware in `ngdpbase` to reuse as-is, but the *shape* of `ShareManager`'s `shareGate()` — one function, checked first thing in every handler — is worth mirroring for the new `dawarichCompatGate()`.
-2. **Network-level restriction.** The two routes must not be reachable over the public Cloudflare Tunnel hostname — only over Tailscale/LAN, so a leaked API key alone isn't sufficient for access. Dawarich already supports pointing its Immich URL field at a private/internal address (it has an explicit `skip_ssl_verification` option in `Immich::ConnectionTester`, intended for exactly this kind of self-hosted/internal setup) — this is a config choice on the Dawarich side (which URL you put in Settings), not a code change to Dawarich itself. Concretely: whatever ingress/tunnel config exposes `ngdpbase` publicly today must exclude `/api/search/metadata` and `/api/assets/*` from the public hostname, or those two routes must live on a separate internal-only listener/hostname entirely. Exact mechanism (Cloudflare Tunnel path exclusion vs. Tailscale-only hostname vs. separate port) is an implementation detail to work out against however `ngdpbase` is actually deployed — not re-litigated here.
+1. __App-level shared-secret API key.__ `ngdpbase.dawarichCompat.apiKey`, config-driven (analogous to how the existing `ngdpbase-ingest-creds` SOPS secret feeds credentials into `geohazardwatch`/`jimsmcp` today), checked via `req.headers['x-api-key']` with a constant-time comparison. Mirrors Immich's own convention, which is also what Dawarich's client already sends unprompted — nothing to explain in Dawarich's Settings UI, it's just "the Immich API key" field. There's no existing API-key-checking middleware in `ngdpbase` to reuse as-is, but the *shape* of `ShareManager`'s `shareGate()` — one function, checked first thing in every handler — is worth mirroring for the new `dawarichCompatGate()`.
+2. __Network-level restriction.__ The two routes must not be reachable over the public Cloudflare Tunnel hostname — only over Tailscale/LAN, so a leaked API key alone isn't sufficient for access. Dawarich already supports pointing its Immich URL field at a private/internal address (it has an explicit `skip_ssl_verification` option in `Immich::ConnectionTester`, intended for exactly this kind of self-hosted/internal setup) — this is a config choice on the Dawarich side (which URL you put in Settings), not a code change to Dawarich itself. Concretely: whatever ingress/tunnel config exposes `ngdpbase` publicly today must exclude `/api/search/metadata` and `/api/assets/*` from the public hostname, or those two routes must live on a separate internal-only listener/hostname entirely. Exact mechanism (Cloudflare Tunnel path exclusion vs. Tailscale-only hostname vs. separate port) is an implementation detail to work out against however `ngdpbase` is actually deployed — not re-litigated here.
 
 ## Config additions
 
@@ -189,9 +189,9 @@ Mirrors the existing `ngdpbase.media.enabled` opt-in pattern — routes 503 when
 
 ## Open questions
 
-- **Privacy filtering**: should Dawarich-visible photos skip `filterPrivateItems()` entirely (treat all indexed photos as visible to the map), or should photos linked to private wiki pages (`linkedPageName` → a `private`-location page) stay hidden from Dawarich too? Leaning toward: skip filtering — Dawarich's photo layer is a personal map only you and Molly see, and "private" in `ngdpbase` means "hidden from other wiki users," a different axis. Worth confirming before implementing rather than guessing.
-- **Rate limiting**: `ShareManager`'s anonymous routes have a module-scope rate limiter (`shareRateLimiter`, #853). Dawarich's own Redis-backed 1-minute cache (`Photos::Search.cached`) already bounds request frequency from the Dawarich side, so a limiter here is probably unnecessary — flag if that assumption is wrong.
-- **`localDateTime` vs `fileCreatedAt` timezone handling**: Dawarich reads both but only actually *uses* `fileCreatedAt` for its own `time_framed_data` re-filter and `localDateTime` for display. `ngdpbase`'s `dateTimeOriginal` has no explicit timezone (EXIF rarely does) — plan is to emit the same string for both fields and let Dawarich's display-only use of `localDateTime` absorb the ambiguity. Should double check this doesn't produce visibly wrong times in trip views before considering it done.
+- __Privacy filtering__: should Dawarich-visible photos skip `filterPrivateItems()` entirely (treat all indexed photos as visible to the map), or should photos linked to private wiki pages (`linkedPageName` → a `private`-location page) stay hidden from Dawarich too? Leaning toward: skip filtering — Dawarich's photo layer is a personal map only you and Molly see, and "private" in `ngdpbase` means "hidden from other wiki users," a different axis. Worth confirming before implementing rather than guessing.
+- __Rate limiting__: `ShareManager`'s anonymous routes have a module-scope rate limiter (`shareRateLimiter`, #853). Dawarich's own Redis-backed 1-minute cache (`Photos::Search.cached`) already bounds request frequency from the Dawarich side, so a limiter here is probably unnecessary — flag if that assumption is wrong.
+- __`localDateTime` vs `fileCreatedAt` timezone handling__: Dawarich reads both but only actually *uses* `fileCreatedAt` for its own `time_framed_data` re-filter and `localDateTime` for display. `ngdpbase`'s `dateTimeOriginal` has no explicit timezone (EXIF rarely does) — plan is to emit the same string for both fields and let Dawarich's display-only use of `localDateTime` absorb the ambiguity. Should double check this doesn't produce visibly wrong times in trip views before considering it done.
 
 ## Testing plan
 

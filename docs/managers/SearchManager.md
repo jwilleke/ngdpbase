@@ -8,9 +8,9 @@ code: src/managers/SearchManager.ts
 
 # SearchManager
 
-**Module:** `src/managers/SearchManager.ts`
-**Extends:** [BaseManager](BaseManager.md)
-**Complete Guide:** [SearchManager-Complete-Guide.md](SearchManager-Complete-Guide.md)
+__Module:__ `src/managers/SearchManager.ts`
+__Extends:__ [BaseManager](BaseManager.md)
+__Complete Guide:__ [SearchManager-Complete-Guide.md](SearchManager-Complete-Guide.md)
 
 ---
 
@@ -20,13 +20,13 @@ SearchManager provides full-text search capabilities for ngdpbase through a plug
 
 ## Key Features
 
-- **Pluggable Providers** - Support for multiple search engines (Lunr.js, Elasticsearch)
-- **Full-Text Indexing** - Automatic indexing of page content and metadata
-- **Advanced Search** - Field-specific queries, boolean operators, wildcards
-- **Auto-Complete** - Search suggestions and similar page recommendations
-- **Automatic Index Updates** - Keep index synchronized with page changes
-- **Provider Fallback** - Configurable default with automatic failover
-- **WikiContext Integration** - Permission-aware search results
+- __Pluggable Providers__ - Support for multiple search engines (Lunr.js, Elasticsearch)
+- __Full-Text Indexing__ - Automatic indexing of page content and metadata
+- __Advanced Search__ - Field-specific queries, boolean operators, wildcards
+- __Auto-Complete__ - Search suggestions and similar page recommendations
+- __Automatic Index Updates__ - Keep index synchronized with page changes
+- __Provider Fallback__ - Configurable default with automatic failover
+- __WikiContext Integration__ - Permission-aware search results
 
 ## Quick Example
 
@@ -206,12 +206,12 @@ const similar = await searchManager.suggestSimilarPages('HomePage', 5);
 
 ## Best Practices
 
-1. **Update Index on Changes**: Call updatePageInIndex() when pages change
-2. **Rebuild Periodically**: Schedule index rebuilds during low traffic
-3. **Use WikiContext**: Always use permission-aware search in user-facing features
-4. **Boost Important Fields**: Use field boosting for title/metadata
-5. **Limit Results**: Always set reasonable limit to avoid performance issues
-6. **Cache Results**: Consider caching search results for common queries
+1. __Update Index on Changes__: Call updatePageInIndex() when pages change
+2. __Rebuild Periodically__: Schedule index rebuilds during low traffic
+3. __Use WikiContext__: Always use permission-aware search in user-facing features
+4. __Boost Important Fields__: Use field boosting for title/metadata
+5. __Limit Results__: Always set reasonable limit to avoid performance issues
+6. __Cache Results__: Consider caching search results for common queries
 
 ## Example: PageManager Integration
 

@@ -8,9 +8,9 @@ code: src/managers/ExportManager.ts
 
 # ExportManager
 
-**Module:** `src/managers/ExportManager.ts`
-**Extends:** [BaseManager](BaseManager.md)
-**Complete Guide:** [ExportManager-Complete-Guide.md](ExportManager-Complete-Guide.md)
+__Module:__ `src/managers/ExportManager.ts`
+__Extends:__ [BaseManager](BaseManager.md)
+__Complete Guide:__ [ExportManager-Complete-Guide.md](ExportManager-Complete-Guide.md)
 
 ---
 

@@ -8,11 +8,11 @@ code: src/providers/FileBackupProvider.ts
 
 # FileBackupProvider
 
-**Quick Reference** | [BaseBackupProvider](BaseBackupProvider.md)
+__Quick Reference__ | [BaseBackupProvider](BaseBackupProvider.md)
 
-**Module:** `src/providers/FileBackupProvider.ts`
-**Type:** Backup Provider (default)
-**Status:** Production
+__Module:__ `src/providers/FileBackupProvider.ts`
+__Type:__ Backup Provider (default)
+__Status:__ Production
 
 ---
 
@@ -27,10 +27,10 @@ unchanged.
 
 ## Behaviour
 
-- **Directory:** resolved via `ConfigurationManager.getResolvedDataPath('ngdpbase.backup.directory', './data/backups')` in `initialize()` (supports `INSTANCE_DATA_FOLDER`), then `ensureDir`'d.
-- **Path resolution:** absolute paths (from `listBackupObjects()` / `writeBackup()`) pass through; bare filenames resolve against the backup directory — so `restoreFromFile()` still accepts the absolute paths callers pass today.
-- **`listBackupObjects()`** returns *all* objects in the directory; `BackupManager` applies its own backup-naming filter.
-- **`setBackupDirectory()`** re-points the target at runtime when an admin changes the directory via the auto-backup config UI.
+- __Directory:__ resolved via `ConfigurationManager.getResolvedDataPath('ngdpbase.backup.directory', './data/backups')` in `initialize()` (supports `INSTANCE_DATA_FOLDER`), then `ensureDir`'d.
+- __Path resolution:__ absolute paths (from `listBackupObjects()` / `writeBackup()`) pass through; bare filenames resolve against the backup directory — so `restoreFromFile()` still accepts the absolute paths callers pass today.
+- __`listBackupObjects()`__ returns *all* objects in the directory; `BackupManager` applies its own backup-naming filter.
+- __`setBackupDirectory()`__ re-points the target at runtime when an admin changes the directory via the auto-backup config UI.
 
 ## Selection
 

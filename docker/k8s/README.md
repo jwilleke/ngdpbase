@@ -2,7 +2,7 @@
 
 Deploy ngdpbase to Kubernetes.
 
-> **Before you deploy:** read [`../HEADLESS-DEPLOYMENT-NOTES.md`](../HEADLESS-DEPLOYMENT-NOTES.md) — it captures real gotchas hit during a production rollout (anchor Organization, theme/front-page/page-provider config, Alpine `ndots:5` DNS, husky `prepare` script, addon UUID validation). The "Recommended deploy order" at the bottom is the short version of this README plus those gotchas.
+> __Before you deploy:__ read [`../HEADLESS-DEPLOYMENT-NOTES.md`](../HEADLESS-DEPLOYMENT-NOTES.md) — it captures real gotchas hit during a production rollout (anchor Organization, theme/front-page/page-provider config, Alpine `ndots:5` DNS, husky `prepare` script, addon UUID validation). The "Recommended deploy order" at the bottom is the short version of this README plus those gotchas.
 
 ## Quick Start
 
@@ -107,10 +107,10 @@ When `HEADLESS_INSTALL=true`:
 
 After deployment, login with default credentials:
 
-- **Username:** `admin`
-- **Password:** the value of `NGDPBASE_ADMIN_PASSWORD` — supply it from a Secret; there is no default
+- __Username:__ `admin`
+- __Password:__ the value of `NGDPBASE_ADMIN_PASSWORD` — supply it from a Secret; there is no default
 
-**Important:** Change the admin password immediately after first login. The wiki displays a security warning until you do.
+__Important:__ Change the admin password immediately after first login. The wiki displays a security warning until you do.
 
 ### Session Secret
 
@@ -216,21 +216,21 @@ spec:
 
 ## Troubleshooting
 
-**Pod not starting:**
+__Pod not starting:__
 
 ```bash
 kubectl describe pod -l app=ngdpbase
 kubectl logs -l app=ngdpbase --previous
 ```
 
-**PVC not binding:**
+__PVC not binding:__
 
 ```bash
 kubectl get pvc
 kubectl describe pvc ngdpbase-data-pvc
 ```
 
-**Ingress not working:**
+__Ingress not working:__
 
 ```bash
 kubectl get ingress

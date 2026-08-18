@@ -115,8 +115,8 @@ This documentation is organized into several key areas to help you understand, d
 - Keyboard navigation and shortcuts
 - API endpoint documentation
 - Customization and performance guide
-- **Quick Reference:** [One-page cheat sheet](features/PageLinkAutocomplete-QuickReference.md)
-- **Related Issue:** [#90 - TypeDown for Internal Page Links](https://github.com/jwilleke/ngdpbase/issues/90)
+- __Quick Reference:__ [One-page cheat sheet](features/PageLinkAutocomplete-QuickReference.md)
+- __Related Issue:__ [#90 - TypeDown for Internal Page Links](https://github.com/jwilleke/ngdpbase/issues/90)
 
 ### [Table Styles](features/TableStyles.md)
 
@@ -180,15 +180,15 @@ This documentation is organized into several key areas to help you understand, d
 
 | Area | Purpose | Key Documents |
 | ------ | --------- | --------------- |
-| **Getting Started** | Basic usage and setup | [README.md](../README.md) |
-| **Features** | User features and guides | [Page Link Autocomplete](features/PageLinkAutocomplete.md) |
-| **Architecture** | System design and structure | [WikiDocument DOM](architecture/WikiDocument-DOM-Architecture.md), [Project Structure](architecture/PROJECT-STRUCTURE.md) |
-| **Development** | Coding and contribution | [Contributing](development/CONTRIBUTING.md) |
-| **Planning** | Project vision and tasks | [Roadmap](planning/ROADMAP.md) |
-| **API** | Technical interfaces | [MarkupParser API](api/MarkupParser-API.md), [Notification Enhancement](api/NOTIFICATION_ENHANCEMENT.md) |
-| **Migration** | Upgrading and custom handlers | [WikiDocument DOM Migration](migration/WikiDocument-DOM-Migration.md) |
-| **Testing** | Test plans and procedures | [Phase 5 QA Plan](testing/Phase5-Manual-QA-Plan.md) |
-| **Issues** | Problems and solutions | [Attachment Conflicts](issues/ATTACHMENT_PERMISSION_CONFLICTS.md) |
+| __Getting Started__ | Basic usage and setup | [README.md](../README.md) |
+| __Features__ | User features and guides | [Page Link Autocomplete](features/PageLinkAutocomplete.md) |
+| __Architecture__ | System design and structure | [WikiDocument DOM](architecture/WikiDocument-DOM-Architecture.md), [Project Structure](architecture/PROJECT-STRUCTURE.md) |
+| __Development__ | Coding and contribution | [Contributing](development/CONTRIBUTING.md) |
+| __Planning__ | Project vision and tasks | [Roadmap](planning/ROADMAP.md) |
+| __API__ | Technical interfaces | [MarkupParser API](api/MarkupParser-API.md), [Notification Enhancement](api/NOTIFICATION_ENHANCEMENT.md) |
+| __Migration__ | Upgrading and custom handlers | [WikiDocument DOM Migration](migration/WikiDocument-DOM-Migration.md) |
+| __Testing__ | Test plans and procedures | [Phase 5 QA Plan](testing/Phase5-Manual-QA-Plan.md) |
+| __Issues__ | Problems and solutions | [Attachment Conflicts](issues/ATTACHMENT_PERMISSION_CONFLICTS.md) |
 
 ## 📖 Reading Guide
 
@@ -233,14 +233,14 @@ This documentation is organized into several key areas to help you understand, d
 
 When adding new documentation:
 
-1. **Choose the right location**: Use the appropriate subdirectory based on content type
-2. **Follow naming conventions**: Use clear, descriptive filenames
-3. **Update this index**: Add new documents to the appropriate section
-4. **Use consistent formatting**: Follow existing markdown style and structure
-5. **Include navigation**: Add links to related documents
+1. __Choose the right location__: Use the appropriate subdirectory based on content type
+2. __Follow naming conventions__: Use clear, descriptive filenames
+3. __Update this index__: Add new documents to the appropriate section
+4. __Use consistent formatting__: Follow existing markdown style and structure
+5. __Include navigation__: Add links to related documents
 
 ## 📞 Support
 
-- **Issues**: Report bugs and request features via GitHub Issues
-- **Discussions**: Join community discussions for questions and ideas
-- **Documentation**: Help improve docs by submitting pull requests
+- __Issues__: Report bugs and request features via GitHub Issues
+- __Discussions__: Join community discussions for questions and ideas
+- __Documentation__: Help improve docs by submitting pull requests

@@ -1,8 +1,8 @@
 # NotificationManager Complete Guide
 
-**Module:** `src/managers/NotificationManager.js`
-**Quick Reference:** [NotificationManager.md](NotificationManager.md)
-**Generated API:** [API Docs](../api/generated/src/managers/NotificationManager/README.md)
+__Module:__ `src/managers/NotificationManager.js`
+__Quick Reference:__ [NotificationManager.md](NotificationManager.md)
+__Generated API:__ [API Docs](../api/generated/src/managers/NotificationManager/README.md)
 
 ---
 
@@ -100,7 +100,7 @@ Create a new notification.
 async createNotification(notification)
 ```
 
-**Parameters:**
+__Parameters:__
 
 | Field | Type | Required | Description |
 | ------- | ------ | ---------- | ------------- |
@@ -111,9 +111,9 @@ async createNotification(notification)
 | `targetUsers` | string[] | No | Target usernames, empty = all users |
 | `expiresAt` | Date | No | Expiration date/time |
 
-**Returns:** `string` - Notification ID (e.g., `notification_1`)
+__Returns:__ `string` - Notification ID (e.g., `notification_1`)
 
-**Example:**
+__Example:__
 
 ```javascript
 const id = await notifyManager.createNotification({
@@ -142,15 +142,15 @@ Create a maintenance mode notification.
 async createMaintenanceNotification(enabled, adminUsername, config = {})
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `enabled` - Whether maintenance mode is enabled
 - `adminUsername` - Admin who toggled maintenance mode
 - `config` - Maintenance configuration (optional)
 
-**Returns:** `string` - Notification ID
+__Returns:__ `string` - Notification ID
 
-**Example:**
+__Example:__
 
 ```javascript
 // Maintenance enabled
@@ -172,14 +172,14 @@ Get notifications for a specific user.
 getUserNotifications(username, includeExpired = false)
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `username` - Username to get notifications for
 - `includeExpired` - Include expired notifications (default: false)
 
-**Returns:** `Array<Object>` - Notifications for the user
+__Returns:__ `Array<Object>` - Notifications for the user
 
-**Filters:**
+__Filters:__
 
 - Excludes expired notifications (unless includeExpired is true)
 - Includes notifications targeted to this user or all users
@@ -195,7 +195,7 @@ Get all notifications.
 getAllNotifications(includeExpired = false)
 ```
 
-**Returns:** `Array<Object>` - All notifications
+__Returns:__ `Array<Object>` - All notifications
 
 ---
 
@@ -207,7 +207,7 @@ Get notification statistics.
 getStats()
 ```
 
-**Returns:**
+__Returns:__
 
 ```javascript
 {
@@ -240,14 +240,14 @@ Dismiss a notification for a user.
 async dismissNotification(notificationId, username)
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `notificationId` - Notification ID to dismiss
 - `username` - Username dismissing the notification
 
-**Returns:** `boolean` - Success status
+__Returns:__ `boolean` - Success status
 
-**Note:** Dismissal is per-user. Other users still see the notification.
+__Note:__ Dismissal is per-user. Other users still see the notification.
 
 ---
 
@@ -271,7 +271,7 @@ Clear all active (non-expired) notifications.
 async clearAllActive()
 ```
 
-**Returns:** `number` - Count of cleared notifications
+__Returns:__ `number` - Count of cleared notifications
 
 ---
 
@@ -303,7 +303,7 @@ async saveNotifications()
 - Called after create/dismiss operations
 - Called during shutdown
 
-**Storage format:**
+__Storage format:__
 
 ```json
 {
@@ -425,10 +425,10 @@ app.get('/admin/notifications/stats', (req, res) => {
 
 ## Notes
 
-- **Auto-save:** Notifications are saved automatically at configurable intervals
-- **Graceful shutdown:** `shutdown()` clears interval and performs final save
-- **Per-user dismissal:** Each user can dismiss independently
-- **ID format:** IDs are `notification_{number}` format
+- __Auto-save:__ Notifications are saved automatically at configurable intervals
+- __Graceful shutdown:__ `shutdown()` clears interval and performs final save
+- __Per-user dismissal:__ Each user can dismiss independently
+- __ID format:__ IDs are `notification_{number}` format
 
 ---
 

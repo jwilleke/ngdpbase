@@ -1,6 +1,6 @@
 # Startup Pages
 
-This directory contains **startup pages** that are copied to the wiki when first initialized.
+This directory contains __startup pages__ that are copied to the wiki when first initialized.
 
 ## What Are Startup Pages?
 
@@ -29,14 +29,14 @@ User-facing documentation and help pages:
 
 ### For Users
 
-- These pages are **copied once** at startup to your `pages/` directory
+- These pages are __copied once__ at startup to your `pages/` directory
 - After copying, they become your wiki content
 - You can customize them freely
 - They are tracked in your `pages/` directory (gitignored by default)
 
 ### For Developers
 
-- Startup pages are **tracked in git** as part of the application
+- Startup pages are __tracked in git__ as part of the application
 - Located in `required-pages/` directory
 - Updated with new releases
 - Developer documentation lives in `docs/developer/` (GitHub only)

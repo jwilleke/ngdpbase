@@ -84,10 +84,10 @@ More content below.
 
 ## Common Issues
 
-**Plugin shows nothing?**
+__Plugin shows nothing?__
 Check that the plugin name is spelled correctly.
 
-**Output looks wrong?**
+__Output looks wrong?__
 Try using a different format option.
 
 ## See Also

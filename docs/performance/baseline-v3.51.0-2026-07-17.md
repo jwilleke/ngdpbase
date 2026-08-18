@@ -32,7 +32,7 @@ Re-run on each release to track drift over time. Compare against the previous ba
 
 ## Drift vs baseline-v3.50.0-2026-07-16.md
 
-⚠️  **Regression candidate(s):** memory (+80.8%)
+⚠️  __Regression candidate(s):__ memory (+80.8%)
 
 | Metric | Previous | New | Δ |
 | --- | --- | --- | --- |
@@ -44,4 +44,4 @@ Re-run on each release to track drift over time. Compare against the previous ba
 
 Thresholds (override via env): memory 25% / route 50% AND 50ms (both must trip).
 
-> **Drift note (2026-07-17):** the +80.8% memory delta is the established V8 post-test heap-inflation artifact — this snapshot was captured immediately after the full unit suite (6321) and 80 Playwright E2E runs against this server process. Route times are flat or dramatically faster (`/` −80.7%, `/search` −74.3%; the `/login` +7 ms is far below the 50 ms threshold). Memory-only candidates in this pattern are recorded as noise, not regressions.
+> __Drift note (2026-07-17):__ the +80.8% memory delta is the established V8 post-test heap-inflation artifact — this snapshot was captured immediately after the full unit suite (6321) and 80 Playwright E2E runs against this server process. Route times are flat or dramatically faster (`/` −80.7%, `/search` −74.3%; the `/login` +7 ms is far below the 50 ms threshold). Memory-only candidates in this pattern are recorded as noise, not regressions.

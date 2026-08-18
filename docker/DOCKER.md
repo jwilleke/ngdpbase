@@ -218,7 +218,7 @@ When `HEADLESS_INSTALL=true` is set:
 
 ### Security Note
 
-The `admin` account is created on first start with the default password `admin123`. **Change it immediately after first login** — the console warns until you do. The examples above pass `NGDPBASE_ADMIN_PASSWORD` so the account never holds the published default; that is optional, and works because `ngdpbase.user.security.defaultpassword` can be pointed at `"$NGDPBASE_ADMIN_PASSWORD"` in `app-custom-config.json`.
+The `admin` account is created on first start with the default password `admin123`. __Change it immediately after first login__ — the console warns until you do. The examples above pass `NGDPBASE_ADMIN_PASSWORD` so the account never holds the published default; that is optional, and works because `ngdpbase.user.security.defaultpassword` can be pointed at `"$NGDPBASE_ADMIN_PASSWORD"` in `app-custom-config.json`.
 
 ### Pre-configuring Settings (Optional)
 
@@ -260,7 +260,7 @@ docker run -d \
 
 ## Configuration Overview
 
-ngdpbase uses the **ConfigurationManager** which implements a two-tier configuration system:
+ngdpbase uses the __ConfigurationManager__ which implements a two-tier configuration system:
 
 1. `config/app-default-config.json` - Base defaults (read-only, in Docker image)
 2. `INSTANCE_DATA_FOLDER/config/{INSTANCE_CONFIG_FILE}` - Instance overrides (default: `app-custom-config.json`)
@@ -526,7 +526,7 @@ docker-compose restart
 }
 ```
 
-**Important:** Use `0.0.0.0` for the host in Docker to bind to all interfaces.
+__Important:__ Use `0.0.0.0` for the host in Docker to bind to all interfaces.
 
 #### Base URL
 
@@ -549,7 +549,7 @@ Set this to your actual domain or IP address.
 }
 ```
 
-**Generate a secure secret:**
+__Generate a secure secret:__
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
@@ -574,7 +574,7 @@ This enables a single Docker volume mount for all persistent data.
 
 ## Volume Mounts
 
-All instance data is consolidated under a **single volume mount**:
+All instance data is consolidated under a __single volume mount__:
 
 | Host Path | Container Path | Purpose |
 | ----------- | --------------- | --------- |
@@ -597,13 +597,13 @@ The `./data` directory contains all persistent data:
 
 ### Creating Host Directories
 
-**Auto-Creation Behavior:**
+__Auto-Creation Behavior:__
 
 - Docker Compose will automatically create the `data/` directory
 - Subdirectories are created automatically by the application
-- **Best practice:** Pre-create `data/` and configure UID/GID before first run
+- __Best practice:__ Pre-create `data/` and configure UID/GID before first run
 
-**Recommended setup:**
+__Recommended setup:__
 
 ```bash
 # Create the data directory
@@ -711,7 +711,7 @@ docker run --rm \
 
 ## Environment Variables
 
-Environment variables have the **highest priority** in the configuration system, overriding both default and custom config file values.
+Environment variables have the __highest priority__ in the configuration system, overriding both default and custom config file values.
 
 ### Configuration Override Variables
 

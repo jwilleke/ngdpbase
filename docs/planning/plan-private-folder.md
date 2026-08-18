@@ -110,7 +110,7 @@ Add `this.privateVersionsDir = path.join(this.versionsDirectory, 'private')` to 
 
 ### 1.4 — Detect "private" keyword in `PageManager.savePageWithContext()`
 
-In `PageManager.savePageWithContext()` (`src/managers/PageManager.ts` lines 274-293), use a **config-driven** check — read `storageLocation` from the keyword definition in `ngdpbase.user-keywords`, mirroring how `ngdpbase.system-category` drives location today:
+In `PageManager.savePageWithContext()` (`src/managers/PageManager.ts` lines 274-293), use a __config-driven__ check — read `storageLocation` from the keyword definition in `ngdpbase.user-keywords`, mirroring how `ngdpbase.system-category` drives location today:
 
 ```typescript
 const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
@@ -164,7 +164,7 @@ Apply in:
 - `GET /wiki/:pageName/history` (history)
 - `GET /wiki/:pageName/delete` (delete)
 
-Return **403** (not 404) so the user knows the page exists but is restricted.
+Return __403__ (not 404) so the user knows the page exists but is restricted.
 
 ### 1.6 — Exclude private pages from search
 
@@ -202,7 +202,7 @@ This is the only config change needed for Phase 1. The enforcement logic in 1.4 
 
 ### 1.8 — Privacy status change on save (removing the "private" keyword)
 
-When a user edits a private page and removes the `private` user-keyword, `PageManager.savePageWithContext()` detects the transition: current `index.location === 'private'` but new metadata has no private `storageLocation`. The provider must **move the file**:
+When a user edits a private page and removes the `private` user-keyword, `PageManager.savePageWithContext()` detects the transition: current `index.location === 'private'` but new metadata has no private `storageLocation`. The provider must __move the file__:
 
 ```typescript
 // In VersioningFileProvider.savePage() — detect location change
@@ -222,7 +222,7 @@ Pages with `location: 'required-pages'` are stored in the source repository (`re
 
 Two guards are applied:
 
-1. **Route-level (WikiRoutes.ts)** — reject any save that includes `private` in `user-keywords` for a required page:
+1. __Route-level (WikiRoutes.ts)__ — reject any save that includes `private` in `user-keywords` for a required page:
 
 ```typescript
 if (isCurrentlyRequired && userKeywordsArray.includes('private')) {
@@ -230,7 +230,7 @@ if (isCurrentlyRequired && userKeywordsArray.includes('private')) {
 }
 ```
 
-1. **Provider-level (1.4)** — `savePageWithContext()` skips the `system-location` enrichment when `currentEntry.location === 'required-pages'`, so even if the keyword somehow reaches the provider, no file move occurs.
+1. __Provider-level (1.4)__ — `savePageWithContext()` skips the `system-location` enrichment when `currentEntry.location === 'required-pages'`, so even if the keyword somehow reaches the provider, no file move occurs.
 
 ### 1.10 — URL scheme stays unchanged
 
@@ -322,7 +322,7 @@ This ensures attachment access control goes through the same `WikiContext`-based
 
 ### 3.1 — Design decision: AttachmentManager vs MediaManager boundary
 
-These two managers are **kept separate** with no handoff between them:
+These two managers are __kept separate__ with no handoff between them:
 
 | | AttachmentManager | MediaManager |
 |---|---|---|
@@ -331,9 +331,9 @@ These two managers are **kept separate** with no handoff between them:
 | Lifecycle | Bound to a wiki page | Independent of wiki pages |
 | Metadata | Schema.org CreativeWork | EXIF/IPTC/XMP via `exiftool-vendored` |
 
-AttachmentProvider does **not** delegate to MediaManager for image/video uploads. The clean architectural separation is preserved.
+AttachmentProvider does __not__ delegate to MediaManager for image/video uploads. The clean architectural separation is preserved.
 
-**Bridge without coupling**: if uploaded attachments should also appear in the media browser, add `${SLOW_STORAGE}/attachments` to `ngdpbase.media.folders` in config. MediaManager will scan and index the directory with zero code coupling.
+__Bridge without coupling__: if uploaded attachments should also appear in the media browser, add `${SLOW_STORAGE}/attachments` to `ngdpbase.media.folders` in config. MediaManager will scan and index the directory with zero code coupling.
 
 ---
 
@@ -380,19 +380,19 @@ abstract class BaseMediaProvider {
 
 ### 3.5 — FileSystemMediaProvider key behavior
 
-- **Dependencies**: `exiftool-vendored` (metadata), `sharp` (already installed, thumbnails)
-- **Index file**: `${FAST_STORAGE}/media-index.json` — same atomic write + rename pattern as `page-index.json`
-- **Incremental scan**: on startup, load index; scan only dirs whose `mtime` changed since last scan
-- **Batch processing**: process N files per event-loop tick to avoid blocking (like VersioningFileProvider write queue)
-- **Ignore config**:
+- __Dependencies__: `exiftool-vendored` (metadata), `sharp` (already installed, thumbnails)
+- __Index file__: `${FAST_STORAGE}/media-index.json` — same atomic write + rename pattern as `page-index.json`
+- __Incremental scan__: on startup, load index; scan only dirs whose `mtime` changed since last scan
+- __Batch processing__: process N files per event-loop tick to avoid blocking (like VersioningFileProvider write queue)
+- __Ignore config__:
 
   ```json
   "ngdpbase.media.ignoredirs": [".dtrash", ".ts"],
   "ngdpbase.media.ignorefiles": [".photoviewignore", ".plexignore"]
   ```
 
-- **Thumbnail generation**: lazy, on first request; stored in `${FAST_STORAGE}/media/thumbs/{sha256}.jpg`, **never** in source tree
-- **Read-only**: `ngdpbase.media.readonly: true` — refuse to write to source media folders
+- __Thumbnail generation__: lazy, on first request; stored in `${FAST_STORAGE}/media/thumbs/{sha256}.jpg`, __never__ in source tree
+- __Read-only__: `ngdpbase.media.readonly: true` — refuse to write to source media folders
 
 ### 3.6 — Metadata extraction strategy (MWG priority model)
 
@@ -420,7 +420,7 @@ Required metadata fields per item:
 - `dirPath` — source directory path (available for display; not used as an album ID)
 - `eventName` — parsed from catalog-export filenames (`YYYY-MM-DD-EventName-...`) when present; `null` otherwise
 
-The `/media` browse UI groups items **by year** using the index. Finer groupings (month, event) are filters on the same index query, not separate data structures.
+The `/media` browse UI groups items __by year__ using the index. Finer groupings (month, event) are filters on the same index query, not separate data structures.
 
 User-defined named collections are out of scope for this iteration.
 
@@ -502,9 +502,9 @@ Parameter names follow #238 conventions: `max` not `limit`, `output` for mode. S
 | `src/routes/WikiRoutes.ts` | `checkPrivatePageAccess()` guard on page/attachment routes; add `/media/*` routes |
 | `src/WikiEngine.ts` | Register MediaManager after AttachmentManager (conditional on config) |
 | `config/app-default-config.json` | Add `storageLocation: "private"` to existing `ngdpbase.user-keywords.private` entry; add all `ngdpbase.media.*` defaults |
-| `src/managers/MediaManager.ts` | **NEW** |
-| `src/providers/BaseMediaProvider.ts` | **NEW** |
-| `src/providers/FileSystemMediaProvider.ts` | **NEW** |
+| `src/managers/MediaManager.ts` | __NEW__ |
+| `src/providers/BaseMediaProvider.ts` | __NEW__ |
+| `src/providers/FileSystemMediaProvider.ts` | __NEW__ |
 
 ---
 
@@ -514,7 +514,7 @@ Parameter names follow #238 conventions: `max` not `limit`, `output` for mode. S
 
 ### Implementation sequence
 
-**Phase 1 and Phase 2 of this plan implement isolation without encryption (Option A below).** Encryption (Option B) is a natural follow-on that can be added later without restructuring the storage layout — the folder structure `pages/private/{creator}/` is the same either way.
+__Phase 1 and Phase 2 of this plan implement isolation without encryption (Option A below).__ Encryption (Option B) is a natural follow-on that can be added later without restructuring the storage layout — the folder structure `pages/private/{creator}/` is the same either way.
 
 ---
 
@@ -522,9 +522,9 @@ Parameter names follow #238 conventions: `max` not `limit`, `output` for mode. S
 
 Private pages are stored in a separate subdirectory (`pages/private/{creator}/`) and guarded by route-level checks (`checkPrivatePageAccess()`). Unauthorized wiki users receive a 403. Files on disk are plaintext.
 
-**What it protects against:** other authenticated wiki users reading your private pages through the wiki UI.
+__What it protects against:__ other authenticated wiki users reading your private pages through the wiki UI.
 
-**What it does NOT protect against:**
+__What it does NOT protect against:__
 
 | Gap | Risk |
 |-----|------|
@@ -535,13 +535,13 @@ Private pages are stored in a separate subdirectory (`pages/private/{creator}/`)
 | Admin bypass | Admins can read all private pages by design — admin account compromise exposes all users' private content |
 | Backup / snapshots | Any backup of the data directory includes all private content in plaintext |
 
-**Appropriate use cases:**
+__Appropriate use cases:__
 
 - Drafts and work-in-progress kept away from other wiki users
 - Personal notes that don't need to be shared
 - Threat model is "other authenticated users", not "server operators or admins"
 
-**Not appropriate without encryption:**
+__Not appropriate without encryption:__
 
 - Credentials, secrets, or API keys
 - Medical, legal, or financial records
@@ -574,7 +574,7 @@ pages/private/bob/    ← encrypted with Bob's key;   Alice and server operator 
 - Each user's key is independent — compromising one user's password does not affect others
 - Key must thread through `WikiContext` → `PageManager` → `VersioningFileProvider` for every read/write
 - ~2 weeks implementation + UX for the key lifecycle
-- **Security value: high**
+- __Security value: high__
 
 #### Per-wiki-instance encryption (simpler, weaker)
 
@@ -590,7 +590,7 @@ pages/private/bob/    ← encrypted with same instance master key
 - Admin knows the master key and can therefore decrypt any user's private content
 - Protects against OS/disk access by non-admins, but not against admin compromise
 - Suitable when the threat model is "disk theft" rather than "admin access"
-- **Security value: medium**
+- __Security value: medium__
 
 #### Comparison
 
@@ -614,21 +614,21 @@ Alice downloads: alice-private-backup.zip  ← same ciphertext; useless without 
 
 The zip must include a `key-params.json` file with the PBKDF2 salt and parameters so Alice can re-derive her key from her password on restore. The salt is not secret — it is safe to include in the backup.
 
-**What this enables:**
+__What this enables:__
 
 - Alice can restore her encrypted backup to any ngdpbase instance using the same key derivation
 - If Alice loses her wiki password she cannot recover on the server, but a local backup + her original password restores everything — the "lost password = lost data" liability becomes "lost password AND lost backup = lost data"
 - Alice owns her data in a meaningful sense; the server is a convenience, not the custodian
 - A small standalone decrypt tool (trivial Node.js or Python script using the same PBKDF2 + AES-256-GCM parameters) lets Alice read her pages locally without the wiki server
 
-**Routes needed:**
+__Routes needed:__
 
 | Route | Notes |
 |-------|-------|
 | `GET /user/private/backup` | Streams a zip of `pages/private/{creator}/` ciphertext as-is — no server-side decryption |
 | `POST /user/private/restore` | Uploads zip, verifies it decrypts with current key, extracts |
 
-**Effort:** ~2–3 days on top of the encryption implementation.
+__Effort:__ ~2–3 days on top of the encryption implementation.
 
 #### Cross-cutting concerns for Option B
 
@@ -645,9 +645,9 @@ The zip must include a `key-params.json` file with the PBKDF2 salt and parameter
 
 ### Decision record
 
-**Phase 1 and Phase 2 implement Option A** — filesystem isolation and route-level access control. Files remain plaintext. This is appropriate for the "keep other wiki users out" threat model.
+__Phase 1 and Phase 2 implement Option A__ — filesystem isolation and route-level access control. Files remain plaintext. This is appropriate for the "keep other wiki users out" threat model.
 
-**Option B (per-user encryption) is the recommended next step** if stronger privacy is required. The folder structure established in Phase 1 requires no changes — encryption is additive. Per-user is preferred over per-instance because it protects content even from admin access and supports independent encrypted backups per user.
+__Option B (per-user encryption) is the recommended next step__ if stronger privacy is required. The folder structure established in Phase 1 requires no changes — encryption is additive. Per-user is preferred over per-instance because it protects content even from admin access and supports independent encrypted backups per user.
 
 Per-instance encryption may be appropriate for simpler deployments where admin access to private content is acceptable and the primary concern is disk-level protection.
 
@@ -655,17 +655,17 @@ Per-instance encryption may be appropriate for simpler deployments where admin a
 
 ## New npm Dependency
 
-- **`exiftool-vendored`** — MWG-compliant EXIF/IPTC/XMP metadata for MediaManager. ExifTool binary is bundled by this package (no system Perl required). `sharp` (already a dependency) remains for thumbnail generation only.
+- __`exiftool-vendored`__ — MWG-compliant EXIF/IPTC/XMP metadata for MediaManager. ExifTool binary is bundled by this package (no system Perl required). `sharp` (already a dependency) remains for thumbnail generation only.
 
 ---
 
 ## Verification
 
-1. **Private page storage**: create a page with "private" keyword as user `alice` → verify file appears at `pages/private/alice/{uuid}.md`, NOT at `pages/{uuid}.md`
-2. **Access control**: view alice's private page as user `bob` → 403; as `admin` → 200; as `alice` → 200
-3. **Anonymous access**: unauthenticated request to a private page → 403
-4. **Search exclusion**: search for content from alice's private page as `bob` → no results; as `alice` → result appears
-5. **Private attachments**: upload file to a private page → verify stored in `attachments/private/alice/{hash}.ext`; direct `GET /attachments/{id}` as `bob` → 403
-6. **MediaManager startup**: set `ngdpbase.media.enabled: true`, configure a folder → verify `media-index.json` created at `FAST_STORAGE`, no files written to source folder
-7. **Thumbnail route**: `GET /media/thumb/{id}?size=300` → 200 JPEG, thumbnail appears in `data/media/thumbs/`, source folder unchanged
-8. **E2E tests**: Playwright tests for private page create/view/403 denial — serial mode, separate test project to avoid toggling shared server state
+1. __Private page storage__: create a page with "private" keyword as user `alice` → verify file appears at `pages/private/alice/{uuid}.md`, NOT at `pages/{uuid}.md`
+2. __Access control__: view alice's private page as user `bob` → 403; as `admin` → 200; as `alice` → 200
+3. __Anonymous access__: unauthenticated request to a private page → 403
+4. __Search exclusion__: search for content from alice's private page as `bob` → no results; as `alice` → result appears
+5. __Private attachments__: upload file to a private page → verify stored in `attachments/private/alice/{hash}.ext`; direct `GET /attachments/{id}` as `bob` → 403
+6. __MediaManager startup__: set `ngdpbase.media.enabled: true`, configure a folder → verify `media-index.json` created at `FAST_STORAGE`, no files written to source folder
+7. __Thumbnail route__: `GET /media/thumb/{id}?size=300` → 200 JPEG, thumbnail appears in `data/media/thumbs/`, source folder unchanged
+8. __E2E tests__: Playwright tests for private page create/view/403 denial — serial mode, separate test project to avoid toggling shared server state

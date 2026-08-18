@@ -2,21 +2,21 @@
 
 Welcome! We appreciate your interest in contributing to ngdpbase, a JSPWiki-inspired file-based wiki built with Node.js.
 
-📖 **First time here?** Read [README.md](README.md) for project overview, features, and structure.
+📖 __First time here?__ Read [README.md](README.md) for project overview, features, and structure.
 
 ## 🚀 Quick Start
 
-1. **Fork** the repository
-2. **Clone** your fork: `git clone https://github.com/your-username/ngdpbase.git`
-3. **Install** dependencies: `npm install`
-4. **Start** development server: `./server.sh start dev`
-5. **Test** your changes: `npm test`
+1. __Fork__ the repository
+2. __Clone__ your fork: `git clone https://github.com/your-username/ngdpbase.git`
+3. __Install__ dependencies: `npm install`
+4. __Start__ development server: `./server.sh start dev`
+5. __Test__ your changes: `npm test`
 
 ## Server Management
 
 ngdpbase uses `server.sh` for all server operations. See [SERVER.md](SERVER.md) for detailed documentation.
 
-**Common Commands:**
+__Common Commands:__
 
 ```bash
 ./server.sh start [dev|prod]   # Start server (default: production)
@@ -28,7 +28,7 @@ ngdpbase uses `server.sh` for all server operations. See [SERVER.md](SERVER.md) 
 ./server.sh unlock             # Remove PID lock (if server crashed)
 ```
 
-**Note:** Always use `./server.sh` instead of direct `npm start` or `pm2` commands for proper environment configuration and PID lock management.
+__Note:__ Always use `./server.sh` instead of direct `npm start` or `pm2` commands for proper environment configuration and PID lock management.
 
 ### Log Locations Summary
 
@@ -41,7 +41,7 @@ ngdpbase uses `server.sh` for all server operations. See [SERVER.md](SERVER.md) 
 
 ## ⚙️ Configuration System
 
-ngdpbase uses a **hierarchical configuration system** with three layers that merge in priority order:
+ngdpbase uses a __hierarchical configuration system__ with three layers that merge in priority order:
 
 1. `config/app-default-config.json` - Base defaults (required, ~1150 properties)
 2. `data/config/app-{environment}-config.json` - Environment-specific settings (optional)
@@ -51,27 +51,27 @@ ngdpbase uses a **hierarchical configuration system** with three layers that mer
 
 ### Configuration Workflow for Contributors
 
-**During Development:**
+__During Development:__
 
 - Edit `data/config/app-custom-config.json` for local testing
 - Never commit instance configs in `data/config/` (in .gitignore)
 - Test with both dev and prod configs
 
-**Adding New Configuration Properties:**
+__Adding New Configuration Properties:__
 
 1. Add to `config/app-default-config.json` with sensible defaults
 2. Document in manager's JSDoc comments
 3. Add getter method in ConfigurationManager (if needed)
 4. Update relevant documentation
 
-**Applying Configuration Changes:**
+__Applying Configuration Changes:__
 
 ```bash
 # After editing any config file
 ./server.sh restart [dev|prod]
 ```
 
-**Via Admin UI:**
+__Via Admin UI:__
 
 - Navigate to `/admin/configuration`
 - Changes automatically saved to `data/config/app-custom-config.json`
@@ -88,55 +88,55 @@ Follow JSPWiki-style naming conventions:
 "jspwiki.parser.useExtractionPipeline": true
 ```
 
-**Note:** Properties starting with `_` are treated as comments and ignored during loading (see ConfigurationManager.ts).
+__Note:__ Properties starting with `_` are treated as comments and ignored during loading (see ConfigurationManager.ts).
 
 ## 🏗️ Architecture Overview
 
-ngdpbase follows a **manager-based architecture** inspired by JSPWiki:
+ngdpbase follows a __manager-based architecture__ inspired by JSPWiki:
 
-- **WikiEngine** - Central orchestrator (`src/WikiEngine.ts`)
-- **Managers** - Modular functionality (`src/managers/`)
-- **MarkupParser** - WikiDocument DOM extraction pipeline (`src/parsers/MarkupParser.ts`)
-- **WikiDocument** - DOM-based JSPWiki element representation (`src/parsers/dom/WikiDocument.ts`)
-- **DOM Handlers** - Variable, plugin, and link processing (`src/parsers/dom/handlers/`)
-- **Plugins** - Extensible features (`plugins/`)
-- **File-based storage** - Pages as Markdown files (`data/pages/`)
-- **Additional technical guides in [docs/](docs/) folder**, such as testing and manager development.
+- __WikiEngine__ - Central orchestrator (`src/WikiEngine.ts`)
+- __Managers__ - Modular functionality (`src/managers/`)
+- __MarkupParser__ - WikiDocument DOM extraction pipeline (`src/parsers/MarkupParser.ts`)
+- __WikiDocument__ - DOM-based JSPWiki element representation (`src/parsers/dom/WikiDocument.ts`)
+- __DOM Handlers__ - Variable, plugin, and link processing (`src/parsers/dom/handlers/`)
+- __Plugins__ - Extensible features (`plugins/`)
+- __File-based storage__ - Pages as Markdown files (`data/pages/`)
+- __Additional technical guides in [docs/](docs/) folder__, such as testing and manager development.
 
-📖 **Read [ARCHITECTURE-PAGE-CLASSIFICATION.md](ARCHITECTURE-PAGE-CLASSIFICATION.md)** for detailed architecture patterns.
+📖 __Read [ARCHITECTURE-PAGE-CLASSIFICATION.md](ARCHITECTURE-PAGE-CLASSIFICATION.md)__ for detailed architecture patterns.
 
 ### WikiDocument DOM Parsing Architecture
 
-ngdpbase uses a **three-phase extraction pipeline** that separates JSPWiki syntax processing from Markdown parsing:
+ngdpbase uses a __three-phase extraction pipeline__ that separates JSPWiki syntax processing from Markdown parsing:
 
 ```text
 Content → Extract JSPWiki → Create DOM Nodes → Showdown → Merge → HTML
 ```
 
-**Key Components:**
+__Key Components:__
 
-- **MarkupParser** - Main parser orchestrator
-- **extractJSPWikiSyntax()** - Phase 1: Extract JSPWiki syntax with placeholders
-- **createDOMNode()** - Phase 2: Create WikiDocument DOM nodes via handlers
-- **mergeDOMNodes()** - Phase 3: Replace placeholders with rendered nodes
-- **DOMVariableHandler** - Handles `[{$variable}]` syntax
-- **DOMPluginHandler** - Handles `[{Plugin param="value"}]` syntax
-- **DOMLinkHandler** - Handles `[PageName]` and `[Text|Target]` syntax
+- __MarkupParser__ - Main parser orchestrator
+- __extractJSPWikiSyntax()__ - Phase 1: Extract JSPWiki syntax with placeholders
+- __createDOMNode()__ - Phase 2: Create WikiDocument DOM nodes via handlers
+- __mergeDOMNodes()__ - Phase 3: Replace placeholders with rendered nodes
+- __DOMVariableHandler__ - Handles `[{$variable}]` syntax
+- __DOMPluginHandler__ - Handles `[{Plugin param="value"}]` syntax
+- __DOMLinkHandler__ - Handles `[PageName]` and `[Text|Target]` syntax
 
-**Benefits:**
+__Benefits:__
 
 - No parsing conflicts between JSPWiki and Markdown
 - Correct heading rendering (fixes #110, #93)
 - Natural escaping via DOM text nodes
 - 376+ tests with 100% success rate
 
-📖 **Read [docs/architecture/WikiDocument-DOM-Architecture.md](docs/architecture/WikiDocument-DOM-Architecture.md)** for complete architecture details.
+📖 __Read [docs/architecture/WikiDocument-DOM-Architecture.md](docs/architecture/WikiDocument-DOM-Architecture.md)__ for complete architecture details.
 
 ### Session Management Architecture
 
-ngdpbase uses **express-session** for session management (standard Express middleware):
+ngdpbase uses __express-session__ for session management (standard Express middleware):
 
-**Session Setup (app.js):**
+__Session Setup (app.js):__
 
 ```javascript
 const session = require('express-session');
@@ -153,7 +153,7 @@ app.use(session({
 }));
 ```
 
-**User Context Middleware (app.js):**
+__User Context Middleware (app.js):__
 
 ```javascript
 app.use(async (req, res, next) => {
@@ -180,15 +180,15 @@ app.use(async (req, res, next) => {
 });
 ```
 
-**Key Points:**
+__Key Points:__
 
-- ✅ **Standard express-session** - No custom session middleware
-- ✅ **UserManager Provider Pattern** - Session loads user via FileUserProvider
-- ✅ **req.userContext** - Available on all routes with full user data
-- ✅ **Async User Loading** - Always `await userManager.getUser()`
-- ❌ **No src/middleware/session.js** - Removed (legacy)
+- ✅ __Standard express-session__ - No custom session middleware
+- ✅ __UserManager Provider Pattern__ - Session loads user via FileUserProvider
+- ✅ __req.userContext__ - Available on all routes with full user data
+- ✅ __Async User Loading__ - Always `await userManager.getUser()`
+- ❌ __No src/middleware/session.js__ - Removed (legacy)
 
-**Login Flow:**
+__Login Flow:__
 
 1. User submits credentials to `/login`
 2. `userManager.authenticateUser()` validates credentials
@@ -196,7 +196,7 @@ app.use(async (req, res, next) => {
 4. On next request, middleware loads full user via `userManager.getUser()`
 5. `req.userContext` populated for route handlers
 
-**UserManager Methods (Async):**
+__UserManager Methods (Async):__
 
 ```javascript
 // All these methods are async and require await
@@ -208,11 +208,11 @@ await userManager.getSession(sessionId)
 
 ### WikiContext - Single Source of Truth
 
-📖 **Full reference: [docs/WikiContext-Complete-Guide.md](docs/WikiContext-Complete-Guide.md)**
+📖 __Full reference: [docs/WikiContext-Complete-Guide.md](docs/WikiContext-Complete-Guide.md)__
 
-**`WikiContext`** (`src/context/WikiContext.ts`) is the request-scoped container for all page, user, and engine context. All rendering and access-control flows through it.
+__`WikiContext`__ (`src/context/WikiContext.ts`) is the request-scoped container for all page, user, and engine context. All rendering and access-control flows through it.
 
-**The two rules:**
+__The two rules:__
 
 ```typescript
 // 1. Always create via the factory in route handlers
@@ -227,7 +227,7 @@ const templateData = this.getTemplateDataFromContext(wikiContext);
 res.render('template-name', { ...templateData, content: html });
 ```
 
-**Key properties** (all `readonly`):
+__Key properties__ (all `readonly`):
 
 | Property | Type | Description |
 |---|---|---|
@@ -237,14 +237,14 @@ res.render('template-name', { ...templateData, content: html });
 | `engine` | `WikiEngine` | Engine instance |
 | `pageManager`, `renderingManager`, `pluginManager`, `variableManager`, `aclManager` | managers | Direct manager shortcuts |
 
-**DO:**
+__DO:__
 
 - ✅ Use `createWikiContext()` in every route handler
 - ✅ Use `getTemplateDataFromContext()` for all template rendering
 - ✅ Pass `WikiContext` to managers and access-control helpers
 - ✅ Use `userContext.authenticated` (typed field) not `userContext.isAuthenticated`
 
-**DO NOT:**
+__DO NOT:__
 
 - ❌ Pass `req.userContext` directly to templates
 - ❌ Construct template data objects manually
@@ -254,23 +254,23 @@ res.render('template-name', { ...templateData, content: html });
 
 ### Versioning & Storage Libraries
 
-**fast-diff** - Text diffing for delta storage
+__fast-diff__ - Text diffing for delta storage
 
-- **Purpose**: Efficiently store page versions as diffs instead of full copies
-- **Algorithm**: Myers diff algorithm (similar to git)
-- **Usage**: `src/utils/DeltaStorage.js`
-- **Why chosen**: Lightweight (no dependencies), fast, battle-tested algorithm
-- **Space savings**: 80-95% reduction for text-heavy content
-- **Documentation**: [fast-diff on npm](https://www.npmjs.com/package/fast-diff)
+- __Purpose__: Efficiently store page versions as diffs instead of full copies
+- __Algorithm__: Myers diff algorithm (similar to git)
+- __Usage__: `src/utils/DeltaStorage.js`
+- __Why chosen__: Lightweight (no dependencies), fast, battle-tested algorithm
+- __Space savings__: 80-95% reduction for text-heavy content
+- __Documentation__: [fast-diff on npm](https://www.npmjs.com/package/fast-diff)
 
-**pako** - gzip compression/decompression
+__pako__ - gzip compression/decompression
 
-- **Purpose**: Compress old version files to save disk space
-- **Implementation**: Pure JavaScript gzip (RFC 1952)
-- **Usage**: `src/utils/VersionCompression.js`
-- **Why chosen**: Pure JavaScript (no native bindings), works in Node.js and browsers
-- **Compression**: 60-80% size reduction typical for text
-- **Documentation**: [pako on npm](https://www.npmjs.com/package/pako)
+- __Purpose__: Compress old version files to save disk space
+- __Implementation__: Pure JavaScript gzip (RFC 1952)
+- __Usage__: `src/utils/VersionCompression.js`
+- __Why chosen__: Pure JavaScript (no native bindings), works in Node.js and browsers
+- __Compression__: 60-80% size reduction typical for text
+- __Documentation__: [pako on npm](https://www.npmjs.com/package/pako)
 
 ### Versioning Implementation
 
@@ -283,13 +283,13 @@ v3: diff_from_v2.diff.gz               (1.5 KB)
 v4: diff_from_v3.diff.gz               (2.2 KB)
 ```
 
-**Storage efficiency**:
+__Storage efficiency__:
 
 - Without versioning: 400 KB (4 versions × 100 KB each)
 - With delta storage: 105.7 KB (74% space savings)
 - Reconstruction: Load v1, apply diffs sequentially
 
-**See also**:
+__See also__:
 
 - `src/utils/DeltaStorage.js` - Diff creation and application
 - `src/utils/VersionCompression.js` - Compression utilities
@@ -305,15 +305,15 @@ v4: diff_from_v3.diff.gz               (2.2 KB)
 - Markdownlint Configuration using (.markdownlint.json)
 - Use of Open Standards
   - [Schema.org](https://schema.org/) when possible.
-- 📖 **Read [ARCHITECTURE-PAGE-CLASSIFICATION.md](ARCHITECTURE-PAGE-CLASSIFICATION.md)** for detailed architecture patterns.
+- 📖 __Read [ARCHITECTURE-PAGE-CLASSIFICATION.md](ARCHITECTURE-PAGE-CLASSIFICATION.md)__ for detailed architecture patterns.
 
 ### Code Style
 
-- Use **CommonJS** modules (`require/module.exports`) with TypeScript
-- Follow **existing patterns** in manager creation and route handling
-- **ESLint** and **Prettier** compliance (if configured)
-- Use **meaningful variable names** and JSDoc/TSDoc comments
-- **Required**: Comprehensive JSDoc documentation for all classes, methods, and functions (see below)
+- Use __CommonJS__ modules (`require/module.exports`) with TypeScript
+- Follow __existing patterns__ in manager creation and route handling
+- __ESLint__ and __Prettier__ compliance (if configured)
+- Use __meaningful variable names__ and JSDoc/TSDoc comments
+- __Required__: Comprehensive JSDoc documentation for all classes, methods, and functions (see below)
 
 ## 🔷 TypeScript Guidelines
 
@@ -323,10 +323,10 @@ ngdpbase is migrating to TypeScript with strict mode enabled. All new code shoul
 
 The project uses TypeScript with the following configuration:
 
-- **Strict mode enabled** (`strict: true`)
-- **CommonJS output** for Node.js compatibility
-- **ES2022 target** for modern JavaScript features
-- **ts-jest** for testing TypeScript files
+- __Strict mode enabled__ (`strict: true`)
+- __CommonJS output__ for Node.js compatibility
+- __ES2022 target__ for modern JavaScript features
+- __ts-jest__ for testing TypeScript files
 
 ### Writing TypeScript Code
 
@@ -465,11 +465,11 @@ See `eslint.config.js` for full configuration.
 
 ## 📚 JSDoc Documentation Standards
 
-**All code MUST include comprehensive JSDoc documentation.** The entire codebase (~95% of core architecture) is fully documented with JSDoc, and all new contributions must maintain this standard.
+__All code MUST include comprehensive JSDoc documentation.__ The entire codebase (~95% of core architecture) is fully documented with JSDoc, and all new contributions must maintain this standard.
 
 ### JSDoc Requirements
 
-#### 1. **Class Documentation**
+#### 1. __Class Documentation__
 
 Every class must have a JSDoc block with:
 
@@ -512,7 +512,7 @@ class ExampleManager extends BaseManager {
 }
 ```
 
-#### 2. **Constructor Documentation**
+#### 2. __Constructor Documentation__
 
 ```javascript
 /**
@@ -528,7 +528,7 @@ constructor(engine) {
 }
 ```
 
-#### 3. **Method Documentation**
+#### 3. __Method Documentation__
 
 Every method must document:
 
@@ -569,7 +569,7 @@ async processData(input, options = {}) {
 }
 ```
 
-#### 4. **Private/Protected Methods**
+#### 4. __Private/Protected Methods__
 
 ```javascript
 /**
@@ -584,7 +584,7 @@ async processData(input, options = {}) {
 }
 ```
 
-#### 5. **Type Definitions**
+#### 5. __Type Definitions__
 
 For complex data structures:
 
@@ -600,7 +600,7 @@ For complex data structures:
  */
 ```
 
-#### 6. **Provider Interface Documentation**
+#### 6. __Provider Interface Documentation__
 
 ```javascript
 /**
@@ -664,14 +664,14 @@ The `jsdoc.json` configuration is already set up in the project root.
 
 JSDoc provides excellent IDE support:
 
-**VS Code / IntelliSense:**
+__VS Code / IntelliSense:__
 
 - Hover over classes/methods to see documentation
 - Autocomplete with parameter hints
 - Type checking in JavaScript files
 - Click to navigate to definitions
 
-**Enable type checking in VS Code:**
+__Enable type checking in VS Code:__
 Add to your file or workspace settings:
 
 ```javascript
@@ -690,14 +690,14 @@ Or enable globally in `.vscode/settings.json`:
 
 Current documentation coverage:
 
-- **Core Engine**: 100% ✅
-- **Managers** (23 files): 100% ✅
-- **Providers** (18 files): 100% ✅
-- **Parsers** (2 files): 100% ✅
-- **Utilities**: ~85% ✅
-- **Overall**: ~95% ✅
+- __Core Engine__: 100% ✅
+- __Managers__ (23 files): 100% ✅
+- __Providers__ (18 files): 100% ✅
+- __Parsers__ (2 files): 100% ✅
+- __Utilities__: ~85% ✅
+- __Overall__: ~95% ✅
 
-**All new code must maintain 100% JSDoc coverage.**
+__All new code must maintain 100% JSDoc coverage.__
 
 ### Manager Development Pattern
 
@@ -790,9 +790,9 @@ const PluginName = {
 
 ### Parser Development Pattern
 
-**Adding Custom JSPWiki Syntax:**
+__Adding Custom JSPWiki Syntax:__
 
-#### 1. **Add extraction pattern** in `MarkupParser.extractJSPWikiSyntax()`
+#### 1. __Add extraction pattern__ in `MarkupParser.extractJSPWikiSyntax()`
 
 ```javascript
 // Extract custom syntax
@@ -807,7 +807,7 @@ sanitized = sanitized.replace(/\[\{CUSTOM:(.*?)\}\]/g, (match, content) => {
 });
 ```
 
-#### 2. **Create DOM handler** in `src/parsers/dom/handlers/`
+#### 2. __Create DOM handler__ in `src/parsers/dom/handlers/`
 
 ```javascript
 class CustomHandler {
@@ -822,14 +822,14 @@ class CustomHandler {
 }
 ```
 
-#### 3. **Integrate handler** in `MarkupParser.createDOMNode()`
+#### 3. __Integrate handler__ in `MarkupParser.createDOMNode()`
 
 ```javascript
 case 'custom':
   return await this.customHandler.createNodeFromExtract(element, context, wikiDocument);
 ```
 
-#### 4. **Add tests** in `src/parsers/__tests__/`
+#### 4. __Add tests__ in `src/parsers/__tests__/`
 
 ```javascript
 test('custom syntax extraction', () => {
@@ -839,26 +839,26 @@ test('custom syntax extraction', () => {
 });
 ```
 
-📖 **Read [docs/migration/WikiDocument-DOM-Migration.md](docs/migration/WikiDocument-DOM-Migration.md)** for detailed migration patterns and integration guide.
+📖 __Read [docs/migration/WikiDocument-DOM-Migration.md](docs/migration/WikiDocument-DOM-Migration.md)__ for detailed migration patterns and integration guide.
 
 ### Security Guidelines
 
-Use **ACLManager** for content filtering based on user permissions.
+Use __ACLManager__ for content filtering based on user permissions.
 See [Policies-Roles-Permissions](docs/architecture/Policies-Roles-Permissions.md)
 
 ### UI/UX Standards
 
-- Use **Bootstrap 5** components and styling for consistency.
-- Follow **JSPWiki-style navigation and layout patterns** as seen in existing templates.
-- Ensure **responsive design** for mobile compatibility.
+- Use __Bootstrap 5__ components and styling for consistency.
+- Follow __JSPWiki-style navigation and layout patterns__ as seen in existing templates.
+- Ensure __responsive design__ for mobile compatibility.
 - Implement professional styling with cards, shadows, and hover effects.
 
 ### Performance & Reliability
 
-- Implement **caching** for page lookups where applicable (e.g., titleToUuidMap, slugToUuidMap).
-- Ensure **cache rebuilding** after page modifications.
-- Handle **file system errors** gracefully to prevent crashes.
-- Use proper **cleanup** in finally blocks for resource management.
+- Implement __caching__ for page lookups where applicable (e.g., titleToUuidMap, slugToUuidMap).
+- Ensure __cache rebuilding__ after page modifications.
+- Handle __file system errors__ gracefully to prevent crashes.
+- Use proper __cleanup__ in finally blocks for resource management.
 
 ## 📋 Markdown Formatting Standards
 
@@ -868,7 +868,7 @@ All markdown files are linted with `markdownlint`. Run `npm run lint:md` to chec
 
 Tables MUST use consistent spacing. Choose ONE style per table:
 
-**Padded style (recommended):**
+__Padded style (recommended):__
 
 ```markdown
 | Column 1 | Column 2 | Column 3 |
@@ -876,7 +876,7 @@ Tables MUST use consistent spacing. Choose ONE style per table:
 | Value 1  | Value 2  | Value 3  |
 ```
 
-**Compact style:**
+__Compact style:__
 
 ```markdown
 |Column 1|Column 2|Column 3|
@@ -884,7 +884,7 @@ Tables MUST use consistent spacing. Choose ONE style per table:
 |Value 1|Value 2|Value 3|
 ```
 
-**DO NOT mix styles** - this causes MD060 errors:
+__DO NOT mix styles__ - this causes MD060 errors:
 
 ```markdown
 | Column 1|Column 2 | Column 3|   ❌ WRONG
@@ -896,19 +896,19 @@ The pre-commit hook runs `markdownlint --fix` on staged `.md` files. Fix any err
 
 ## 🧪 Testing
 
-📖 **See [docs/testing/PageManager-Testing-Guide.md](docs/testing/PageManager-Testing-Guide.md) for detailed mocking strategies.**
+📖 __See [docs/testing/PageManager-Testing-Guide.md](docs/testing/PageManager-Testing-Guide.md) for detailed mocking strategies.__
 
 ### Running Tests
 
-- **Run all tests**: `npm test`
-- **Coverage report**: `npm run test:coverage`
-- **Watch mode**: `npm run test:watch`
-- **Run specific test**: `npm test -- path/to/test.test.js`
-- **CI mode**: `npm run test:ci`
+- __Run all tests__: `npm test`
+- __Coverage report__: `npm run test:coverage`
+- __Watch mode__: `npm run test:watch`
+- __Run specific test__: `npm test -- path/to/test.test.js`
+- __CI mode__: `npm run test:ci`
 
 ### Test Organization
 
-All tests follow the **Jest `__tests__` pattern** co-located with source code:
+All tests follow the __Jest `__tests__` pattern__ co-located with source code:
 
 ```text
 src/
@@ -933,7 +933,7 @@ src/
         └── SchemaGenerator.test.js
 ```
 
-**Why this pattern:**
+__Why this pattern:__
 
 - ✅ Tests co-located with code they test
 - ✅ Easy to find and maintain
@@ -943,20 +943,20 @@ src/
 
 ### Test Requirements
 
-- **Unit tests for new managers** (extending BaseManager pattern)
-- **Integration tests** for route handlers and cross-component functionality
-- **Plugin functionality tests** for JSPWiki-style plugin syntax
-- **Parser tests** for extraction, DOM creation, and merge pipeline
-- **Use mocks instead of real file operations** - critical requirement (see CHANGELOG.md)
-- **Mock fs-extra completely** using in-memory Map-based file systems
-- **Mock gray-matter** for YAML frontmatter parsing
-- **Maintain >80% coverage** for critical managers (>90% for PageManager, UserManager, ACLManager)
-- **Maintain >90% coverage** for parser components
-- **Use testUtils.js** for common mock objects and test utilities
+- __Unit tests for new managers__ (extending BaseManager pattern)
+- __Integration tests__ for route handlers and cross-component functionality
+- __Plugin functionality tests__ for JSPWiki-style plugin syntax
+- __Parser tests__ for extraction, DOM creation, and merge pipeline
+- __Use mocks instead of real file operations__ - critical requirement (see CHANGELOG.md)
+- __Mock fs-extra completely__ using in-memory Map-based file systems
+- __Mock gray-matter__ for YAML frontmatter parsing
+- __Maintain >80% coverage__ for critical managers (>90% for PageManager, UserManager, ACLManager)
+- __Maintain >90% coverage__ for parser components
+- __Use testUtils.js__ for common mock objects and test utilities
 
 ### Writing Tests
 
-**1. Create test file in `__tests__` directory:**
+__1. Create test file in `__tests__` directory:__
 
 ```bash
 # For a new manager
@@ -966,7 +966,7 @@ touch src/managers/__tests__/NewManager.test.js
 touch src/utils/__tests__/NewUtil.test.js
 ```
 
-**2. Use Jest testing framework:**
+__2. Use Jest testing framework:__
 
 ```javascript
 const NewManager = require('../NewManager');
@@ -987,7 +987,7 @@ describe('NewManager', () => {
 });
 ```
 
-**3. Mock file operations:**
+__3. Mock file operations:__
 
 ```javascript
 jest.mock('fs-extra');
@@ -1000,19 +1000,19 @@ fs.writeFile.mockResolvedValue();
 
 ### Test Types
 
-**Unit Tests** - Test individual functions/methods
+__Unit Tests__ - Test individual functions/methods
 
 - Located: `src/**/__tests__/*.test.js`
 - Focus: Single component in isolation
 - Example: `PageManager.test.js`
 
-**Integration Tests** - Test multiple components together
+__Integration Tests__ - Test multiple components together
 
 - Located: `src/**/__tests__/*-Integration.test.js`
 - Focus: Component interactions
 - Example: `MarkupParser-Integration.test.js`
 
-**Route Tests** - Test HTTP endpoints
+__Route Tests__ - Test HTTP endpoints
 
 - Located: `src/routes/__tests__/*.test.js`
 - Use: supertest for HTTP testing
@@ -1043,9 +1043,9 @@ npm run test:coverage
 
 The WikiDocument DOM parser has comprehensive test coverage:
 
-- **MarkupParser-Extraction.test.js** (41 tests) - Phase 1: JSPWiki syntax extraction
-- **MarkupParser-MergePipeline.test.js** (31 tests) - Phase 3: DOM merge pipeline
-- **MarkupParser-Comprehensive.test.js** (55 tests) - Integration tests covering:
+- __MarkupParser-Extraction.test.js__ (41 tests) - Phase 1: JSPWiki syntax extraction
+- __MarkupParser-MergePipeline.test.js__ (31 tests) - Phase 3: DOM merge pipeline
+- __MarkupParser-Comprehensive.test.js__ (55 tests) - Integration tests covering:
   - Markdown preservation
   - JSPWiki syntax processing
   - Mixed content scenarios
@@ -1053,7 +1053,7 @@ The WikiDocument DOM parser has comprehensive test coverage:
   - Performance validation
   - Regression tests for #110, #93
 
-**Handler Tests:**
+__Handler Tests:__
 
 - `DOMVariableHandler.test.js` - Variable node creation
 - `DOMPluginHandler.test.js` - Plugin node creation
@@ -1079,20 +1079,20 @@ lastModified: ISO-date-string
 
 ### JSPWiki Syntax Support
 
-- **Links**: `[PageName]` or `[Link Text|PageName]`
-- **User variables**: `[{$username}]`, `[{$loginstatus}]`
-- **Plugins**: `[{PluginName param='value'}]`
+- __Links__: `[PageName]` or `[Link Text|PageName]`
+- __User variables__: `[{$username}]`, `[{$loginstatus}]`
+- __Plugins__: `[{PluginName param='value'}]`
 
 ## 🔀 Pull Request Process
 
 ### Before Submitting
 
-1. **Create feature branch**: `git checkout -b feature/your-feature-name`
-2. **Follow coding patterns** from existing codebase
-3. **Add tests** for new functionality
-4. **Update documentation** if needed
-5. **Run full test suite**: `npm test`
-6. **Test with server**: Test your changes in both development and production modes
+1. __Create feature branch__: `git checkout -b feature/your-feature-name`
+2. __Follow coding patterns__ from existing codebase
+3. __Add tests__ for new functionality
+4. __Update documentation__ if needed
+5. __Run full test suite__: `npm test`
+6. __Test with server__: Test your changes in both development and production modes
 
    ```bash
    ./server.sh start dev    # Test in development
@@ -1101,11 +1101,11 @@ lastModified: ISO-date-string
 
 ### PR Requirements
 
-- **Descriptive title** and detailed description
-- **Reference issues** using `#issue-number`
-- **Include tests** for new features
-- **Update CHANGELOG.md** for user-facing changes
-- **Follow semantic commit messages**: `feat:`, `fix:`, `chore:`
+- __Descriptive title__ and detailed description
+- __Reference issues__ using `#issue-number`
+- __Include tests__ for new features
+- __Update CHANGELOG.md__ for user-facing changes
+- __Follow semantic commit messages__: `feat:`, `fix:`, `chore:`
 
 ### Review Criteria
 
@@ -1116,7 +1116,7 @@ lastModified: ISO-date-string
 
 ## 🏷️ Version Management
 
-We use **Semantic Versioning** (SemVer) via `src/utils/version.ts`:
+We use __Semantic Versioning__ (SemVer) via `src/utils/version.ts`:
 
 ```bash
 npx tsx src/utils/version.ts          # Show current version
@@ -1132,7 +1132,7 @@ The version script automatically updates:
 - `config/app-default-config.json` — `ngdpbase.version` field
 - `CHANGELOG.md` — Adds new version section (if [Unreleased] exists)
 
-**Important:** Always use `src/utils/version.ts` for version changes to keep all files in sync.
+__Important:__ Always use `src/utils/version.ts` for version changes to keep all files in sync.
 
 ## 🐛 Issue Reporting
 
@@ -1153,11 +1153,11 @@ The version script automatically updates:
 
 ### High Priority
 
-- **User Authentication** improvements
-- **Page History & Versioning** features
-- **Advanced Search** enhancements
-- **Plugin Development**
-- **Parser Extensions** - Custom JSPWiki syntax handlers
+- __User Authentication__ improvements
+- __Page History & Versioning__ features
+- __Advanced Search__ enhancements
+- __Plugin Development__
+- __Parser Extensions__ - Custom JSPWiki syntax handlers
 
 ### Good First Issues
 
@@ -1169,17 +1169,17 @@ The version script automatically updates:
 
 ### Parser-Specific Contributions
 
-- **Custom Syntax Handlers** - Add new JSPWiki-style syntax
-- **Performance Optimizations** - Improve extraction/merge speed
-- **Handler Enhancements** - Improve existing DOM handlers
-- **Test Coverage** - Add edge case tests
-- **Documentation** - Improve API docs and examples
+- __Custom Syntax Handlers__ - Add new JSPWiki-style syntax
+- __Performance Optimizations__ - Improve extraction/merge speed
+- __Handler Enhancements__ - Improve existing DOM handlers
+- __Test Coverage__ - Add edge case tests
+- __Documentation__ - Improve API docs and examples
 
 ## 💬 Getting Help
 
-- **GitHub Issues** - Bug reports and feature requests
-- **GitHub Discussions** - Questions and general discussion
-- **Code Review** - Submit draft PRs for early feedback
+- __GitHub Issues__ - Bug reports and feature requests
+- __GitHub Discussions__ - Questions and general discussion
+- __Code Review__ - Submit draft PRs for early feedback
 
 ## 📜 License
 

@@ -8,9 +8,9 @@ code: src/managers/AttachmentManager.ts
 
 # AttachmentManager
 
-**Module:** `src/managers/AttachmentManager.ts`
-**Extends:** [BaseManager](BaseManager.md)
-**Complete Guide:** [AttachmentManager-Complete-Guide.md](AttachmentManager-Complete-Guide.md)
+__Module:__ `src/managers/AttachmentManager.ts`
+__Extends:__ [BaseManager](BaseManager.md)
+__Complete Guide:__ [AttachmentManager-Complete-Guide.md](AttachmentManager-Complete-Guide.md)
 
 ---
 
@@ -20,12 +20,12 @@ AttachmentManager handles file attachments for wiki pages. Following JSPWiki's p
 
 ## Key Features
 
-- **Pluggable Storage Providers** - Filesystem, database, or cloud storage backends
-- **Schema.org Metadata** - Rich metadata using CreativeWork format
-- **Content Deduplication** - SHA-256 hash-based storage prevents duplicates
-- **Page Mentions Tracking** - Track which pages reference attachments
-- **Permission Enforcement** - Integration with authenticated user context
-- **Backup/Restore Support** - Full backup via BackupManager
+- __Pluggable Storage Providers__ - Filesystem, database, or cloud storage backends
+- __Schema.org Metadata__ - Rich metadata using CreativeWork format
+- __Content Deduplication__ - SHA-256 hash-based storage prevents duplicates
+- __Page Mentions Tracking__ - Track which pages reference attachments
+- __Permission Enforcement__ - Integration with authenticated user context
+- __Backup/Restore Support__ - Full backup via BackupManager
 
 ## Quick Example
 
@@ -82,10 +82,10 @@ await attachmentManager.deleteAttachment(attachment.identifier, wikiContext);
 
 ## UI Features
 
-- **Upload Attachment** - Modal from navbar (More... → Upload Attachment)
-- **Browse Attachments** - Browse all attachments (More... → Browse Attachments)
-- **Insert from Browse** - When editing, Insert button adds syntax at cursor
-- **Admin Management** - Full management at `/admin/attachments`
+- __Upload Attachment__ - Modal from navbar (More... → Upload Attachment)
+- __Browse Attachments__ - Browse all attachments (More... → Browse Attachments)
+- __Insert from Browse__ - When editing, Insert button adds syntax at cursor
+- __Admin Management__ - Full management at `/admin/attachments`
 
 ## User Documentation
 

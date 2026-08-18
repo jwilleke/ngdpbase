@@ -9,7 +9,7 @@ When in doubt, use the term in the "Preferred" column.
 
 ### Build (Compile)
 
-Preferred: **Build**
+Preferred: __Build__
 Avoid: "compile", "transpile", "recompile"
 
 Runs `tsc` to convert TypeScript source (`src/`) into JavaScript (`dist/`).
@@ -26,7 +26,7 @@ running PM2 process. Always stop the server first.
 
 ### Restart
 
-Preferred: **Restart**
+Preferred: __Restart__
 
 Stops and starts the PM2-managed server process. Does NOT recompile source.
 Use after a config change, environment change, or to recover a crashed process.
@@ -44,7 +44,7 @@ Always use `server.sh`. Never use `kill`, `node app.js`, or direct PM2 commands.
 
 ## Storage Layout
 
-ngdpbase splits data across two volumes for performance. All config keys are **all lowercase**.
+ngdpbase splits data across two volumes for performance. All config keys are __all lowercase__.
 
 | Term | Env Var | Path (dev) | Contents |
 |---|---|---|---|
@@ -73,7 +73,7 @@ Key config paths (resolved via `ConfigurationManager.getResolvedDataPath()`):
 
 ### Page Index (`page-index.json`)
 
-Preferred: **Page Index** or **`page-index.json`**
+Preferred: __Page Index__ or __`page-index.json`__
 Avoid: "page cache file", "index file", "page index file"
 
 The on-disk JSON file that stores metadata for every wiki page (title, slug,
@@ -87,7 +87,7 @@ write queue (prevents race conditions from concurrent page saves).
 
 ### Page Cache
 
-Preferred: **Page Cache**
+Preferred: __Page Cache__
 Avoid: "pageCache", "in-memory cache", "page list"
 
 The in-memory `Map<title, PageInfo>` maintained by `VersioningFileProvider` at
@@ -99,7 +99,7 @@ from a Directory Scan.
 
 ### Directory Scan
 
-Preferred: **Directory Scan**
+Preferred: __Directory Scan__
 Avoid: "scan", "full scan", "NAS scan", "page scan", "rebuilding via directory scan"
 
 Reads every `.md` file in `$SLOW_STORAGE/pages/` from disk to build the Page
@@ -108,7 +108,7 @@ corrupt. Takes ~90s with 14K+ pages on a NAS-mounted volume.
 
 ### Fast Init
 
-Preferred: **Fast Init**
+Preferred: __Fast Init__
 Avoid: "fast-path", "fast startup", "index-based startup"
 
 The normal startup path: loads the Page Index (`page-index.json`) from disk
@@ -116,7 +116,7 @@ to populate the Page Cache in ~1s, skipping a Directory Scan.
 
 ### Page Index Rebuild
 
-Preferred: **Page Index Rebuild**
+Preferred: __Page Index Rebuild__
 Avoid: "reindex pages", "rebuild page index", "refresh index"
 
 Rewrites `page-index.json` from the current Page Cache. Happens automatically
@@ -128,7 +128,7 @@ on page save/delete/rename. Not the same as a Search Index Rebuild.
 
 ### Search Index
 
-Preferred: **Search Index**
+Preferred: __Search Index__
 Avoid: "Lunr index", "search-index", "full-text index"
 
 The in-memory Lunr.js full-text index used to power wiki search. Persisted to
@@ -137,7 +137,7 @@ Provided by `LunrSearchProvider`.
 
 ### Search Index Rebuild
 
-Preferred: **Search Index Rebuild**
+Preferred: __Search Index Rebuild__
 Avoid: "reindex", "rebuild search", "rebuild Lunr", "build search index"
 
 Rebuilds the Lunr full-text index from all page documents. Triggered
@@ -151,7 +151,7 @@ With 14K+ documents this causes a ~3GB RAM spike; `max_memory_restart` in
 
 ### Attachment
 
-Preferred: **Attachment**
+Preferred: __Attachment__
 Avoid: "upload", "file", "asset"
 
 A file uploaded to the wiki and associated with one or more pages. Stored as
@@ -167,13 +167,13 @@ Key metadata fields:
 - `identifier` — SHA-256 content hash (used as the serving ID)
 - `name` — original filename (e.g., `iran-provinces.png`)
 - `encodingFormat` — MIME type (e.g., `image/png`)
-- `storageLocation` — full filesystem path at time of upload (**may be stale** after data migration; `getAttachment()` derives the actual path from the configured `storageDirectory` instead)
+- `storageLocation` — full filesystem path at time of upload (__may be stale__ after data migration; `getAttachment()` derives the actual path from the configured `storageDirectory` instead)
 - `mentions` — array of page UUIDs that reference this attachment
 - `isPrivate` / `creator` — set when linked to a private page
 
 ### Attachment Metadata (`attachment-metadata.json`)
 
-Preferred: **Attachment Metadata** or **`attachment-metadata.json`**
+Preferred: __Attachment Metadata__ or __`attachment-metadata.json`__
 
 Single JSON file at `$SLOW_STORAGE/attachments/attachment-metadata.json`
 containing Schema.org `CreativeWork` records for every attachment. Loaded into
@@ -183,16 +183,16 @@ records the path at upload time — after a data migration this may be stale;
 
 ### `resolveAttachmentSrc(src, pageName)`
 
-Preferred: **resolveAttachmentSrc** or **attachment resolution**
+Preferred: __resolveAttachmentSrc__ or __attachment resolution__
 
 The canonical method (`AttachmentManager.resolveAttachmentSrc()`) used by all
 plugins (ImagePlugin, AttachPlugin, MediaPlugin) to convert a raw `src` value
 into a `{ url, mimeType }` pair. Resolution order:
 
-1. **External URL** — `http://` or `https://` → returned as-is, `mimeType: ''`
-2. **Absolute path** — starts with `/` → returned as-is, `mimeType: ''`
-3. **Current-page lookup** — searches attachments whose `mentions` include `pageName` for an exact filename match
-4. **Global filename search** — searches all attachments by exact `name` match
+1. __External URL__ — `http://` or `https://` → returned as-is, `mimeType: ''`
+2. __Absolute path__ — starts with `/` → returned as-is, `mimeType: ''`
+3. __Current-page lookup__ — searches attachments whose `mentions` include `pageName` for an exact filename match
+4. __Global filename search__ — searches all attachments by exact `name` match
 
 Returns `null` if unresolvable (caller decides how to render the error).
 
@@ -202,7 +202,7 @@ Returns `null` if unresolvable (caller decides how to render the error).
 
 ### Media Index (`media-index.json`)
 
-Preferred: **Media Index** or **`media-index.json`**
+Preferred: __Media Index__ or __`media-index.json`__
 Avoid: "image index", "photo index"
 
 Persistent JSON index of external media items (photos, videos stored in
@@ -217,7 +217,7 @@ from catalog-export filenames in `YYYY-MM-DD-EventName` format),
 
 ### Media Index Rebuild
 
-Preferred: **Media Index Rebuild** or **media rescan**
+Preferred: __Media Index Rebuild__ or __media rescan__
 Avoid: "rebuild image index", "rescan photos"
 
 Triggers a full re-scan of configured media folders and rewrites
@@ -225,8 +225,8 @@ Triggers a full re-scan of configured media folders and rewrites
 `ngdpbase.media.maxdepth` (default 5), `ngdpbase.media.ignoredirs`,
 `ngdpbase.media.ignorefiles`.
 
-**Manual:** `POST /admin/media/rescan` (admin UI: `/admin/media`)
-**Automatic:** background timer every `ngdpbase.media.scaninterval` ms (default 3600000 = 1 hour)
+__Manual:__ `POST /admin/media/rescan` (admin UI: `/admin/media`)
+__Automatic:__ background timer every `ngdpbase.media.scaninterval` ms (default 3600000 = 1 hour)
 
 Internally calls `mediaManager.scanFolders(true)` → `FileSystemMediaProvider.scan(force=true)`.
 
@@ -236,7 +236,7 @@ Internally calls `mediaManager.scanFolders(true)` → `FileSystemMediaProvider.s
 
 ### Plugin
 
-Preferred: **Plugin**
+Preferred: __Plugin__
 Avoid: "macro", "widget", "extension"
 
 A module that extends wiki rendering via JSPWiki-style syntax:
@@ -247,12 +247,12 @@ Plugins are loaded from directories listed in
 and compiled from `plugins/*.ts` source. Plugin discovery is case-insensitive;
 `[{Image}]` and `[{ImagePlugin}]` both resolve to `ImagePlugin`.
 
-**Two plugin shapes:**
+__Two plugin shapes:__
 
-- **Object plugin** (preferred): `{ name, execute(context, params), initialize?(engine) }`
-- **Function plugin** (legacy): `(pageName, params, linkGraph) => string`
+- __Object plugin__ (preferred): `{ name, execute(context, params), initialize?(engine) }`
+- __Function plugin__ (legacy): `(pageName, params, linkGraph) => string`
 
-**Built-in plugins:**
+__Built-in plugins:__
 
 | Plugin | Syntax | Description |
 |---|---|---|
@@ -282,7 +282,7 @@ and compiled from `plugins/*.ts` source. Plugin discovery is case-insensitive;
 
 ### WikiContext
 
-Preferred: **WikiContext**
+Preferred: __WikiContext__
 Avoid: "context", "wiki context object", "page context"
 
 Request-scoped object created per HTTP request, providing a single source of
@@ -300,7 +300,7 @@ Key methods:
 
 ### ParseContext
 
-Preferred: **ParseContext**
+Preferred: __ParseContext__
 Avoid: "parse context", "rendering context"
 
 Immutable-ish object passed through the markup processing pipeline carrying:
@@ -310,7 +310,7 @@ and check authentication/permissions during rendering.
 
 ### MarkupParser (Advanced Renderer)
 
-Preferred: **MarkupParser** or **advanced renderer**
+Preferred: __MarkupParser__ or __advanced renderer__
 Avoid: "new parser", "advanced parser", "JSPWiki parser"
 
 Multi-phase markup processing engine (`src/parsers/MarkupParser.ts`).
@@ -332,7 +332,7 @@ Key handlers (from `src/parsers/handlers/`):
 
 ### Legacy Renderer (Showdown)
 
-Preferred: **legacy renderer** or **Showdown fallback**
+Preferred: __legacy renderer__ or __Showdown fallback__
 Avoid: "old parser", "markdown parser"
 
 Fallback renderer used when `MarkupParser` is unavailable. Runs Showdown
@@ -345,7 +345,7 @@ Triggered when `RenderingManager.getParser()` returns null.
 
 ### Site Theme
 
-Preferred: **Site Theme** or **display theme**
+Preferred: __Site Theme__ or __display theme__
 Avoid: "theme", "color scheme" (ambiguous — see also Code Editor Style)
 
 The active Bootstrap/Bootswatch theme folder loaded by `ThemeManager`. Controls
@@ -365,7 +365,7 @@ Separate from Light-Dark Mode and Code Editor Style.
 
 ### Light-Dark Mode
 
-Preferred: **Light-Dark Mode** or **display mode**
+Preferred: __Light-Dark Mode__ or __display mode__
 Avoid: "dark mode toggle", "theme toggle", "color scheme"
 
 The user's brightness preference for the site: `light`, `dark`, or `system`
@@ -377,8 +377,8 @@ Applied at runtime by setting `data-bs-theme="light|dark"` on the `<html>` eleme
 
 Controlled per-user via:
 
-- The **⊕ icon** button in the top navigation bar (desktop and mobile)
-- The **Light / Dark Mode** field on the `/profile` page
+- The __⊕ icon__ button in the top navigation bar (desktop and mobile)
+- The __Light / Dark Mode__ field on the `/profile` page
 
 Persisted server-side for authenticated users via `POST /api/user/display-theme`;
 stored in `localStorage` only for anonymous users.
@@ -388,23 +388,23 @@ Code Editor Style (textarea color scheme).
 
 ### Code Editor Style
 
-Preferred: **Code Editor Style**
+Preferred: __Code Editor Style__
 Avoid: "editor theme" alone (ambiguous with display theme or site theme), "theme"
 
 The syntax-highlighting color scheme applied inside the page editor textarea only
 (e.g., `default`, `dracula`, `monokai`). Stored in `user.preferences['editor.theme']`.
 Has no effect on the rest of the site's appearance.
 
-Configured via the **Code Editor Style** field on the `/profile` page.
+Configured via the __Code Editor Style__ field on the `/profile` page.
 
 Separate from Light-Dark Mode and the active Site Theme.
 
 ### Chip
 
-Preferred: **Chip** (when the element is interactive / part of a set)
+Preferred: __Chip__ (when the element is interactive / part of a set)
 Avoid: "badge" for keyword/tag pills, "tag pill", "label"
 
-An interactive pill representing one member of a page's **taxonomy**, derived
+An interactive pill representing one member of a page's __taxonomy__, derived
 from frontmatter, not authored in Markdown body. Rendered by the view/plugin
 layer:
 
@@ -414,12 +414,12 @@ layer:
 
 A chip is part of a *set*, links/filters somewhere, and is generated from a
 frontmatter field — never written in page content. Ingestion/conversion
-(#501/#685, NCM #728) must **preserve** these fields; it must never overwrite
+(#501/#685, NCM #728) must __preserve__ these fields; it must never overwrite
 human `user-keywords`.
 
 ### Badge
 
-Preferred: **Badge** (when the element is static status / category, non-interactive)
+Preferred: __Badge__ (when the element is static status / category, non-interactive)
 Avoid: "chip" for status indicators, "tag"
 
 A static, non-interactive indicator: a single category or status, not a set
@@ -431,7 +431,7 @@ member and not a filter link. Examples in this codebase:
   `New`/`Modified`/`Current` (`admin-required-pages.ejs`, `RecentChangesPlugin`).
 
 Note: Chips and Badges currently share the Bootstrap `.badge` CSS class — the
-**visual is not the semantic**. Both are *rendered product* (produced from
+__visual is not the semantic__. Both are *rendered product* (produced from
 frontmatter/config at view time), so neither is an authoring construct in page
 Markdown — see [`docs/NGDP-Compatible-Markdown.md`](./NGDP-Compatible-Markdown.md) §2.1/§3.2 (#728).
 
@@ -441,7 +441,7 @@ Markdown — see [`docs/NGDP-Compatible-Markdown.md`](./NGDP-Compatible-Markdown
 
 ### Private Page
 
-Preferred: **private page**
+Preferred: __private page__
 
 A wiki page accessible only to its creator and admin users. Marked by the
 metadata field `system-location: 'private'`; the page creator is stored in
@@ -477,7 +477,7 @@ A per-page frontmatter flag (`author-lock: true`) that restricts the edit form t
 
 ### Manager
 
-Preferred: **Manager** (e.g., `AttachmentManager`, `PageManager`)
+Preferred: __Manager__ (e.g., `AttachmentManager`, `PageManager`)
 Avoid: "service", "controller", "handler"
 
 Singleton engine components accessed via `engine.getManager('ManagerName')`.
@@ -489,7 +489,7 @@ Key managers: `ACLManager`, `AttachmentManager`, `BackupManager`,
 
 ### Provider
 
-Preferred: **Provider** (e.g., `BasicAttachmentProvider`, `LunrSearchProvider`)
+Preferred: __Provider__ (e.g., `BasicAttachmentProvider`, `LunrSearchProvider`)
 Avoid: "backend", "driver", "adapter"
 
 Pluggable storage/service implementations selected by Managers. Abstract base

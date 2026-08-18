@@ -8,7 +8,7 @@ author: system
 ---
 # Page Content
 
-The **Content** field is where you write the body of your page. Content is written in **Markdown** with support for [{$applicationname}] plugins.
+The __Content__ field is where you write the body of your page. Content is written in __Markdown__ with support for [{$applicationname}] plugins.
 
 ## Markdown
 
@@ -59,7 +59,7 @@ Any CSS class works — the bundled Bootstrap utility classes (`card`, `clearfix
 
 ## Live Preview
 
-The edit form shows a **live preview** on the right side as you type. The preview is rendered server-side so it matches what users will see.
+The edit form shows a __live preview__ on the right side as you type. The preview is rendered server-side so it matches what users will see.
 
 ## More Information
 

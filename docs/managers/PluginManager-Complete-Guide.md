@@ -1,8 +1,8 @@
 # PluginManager Complete Guide
 
-**Module:** `src/managers/PluginManager.js`
-**Quick Reference:** [PluginManager.md](PluginManager.md)
-**Generated API:** [API Docs](../api/generated/src/managers/PluginManager/README.md)
+__Module:__ `src/managers/PluginManager.js`
+__Quick Reference:__ [PluginManager.md](PluginManager.md)
+__Generated API:__ [API Docs](../api/generated/src/managers/PluginManager/README.md)
 
 ---
 
@@ -81,7 +81,7 @@ Plugin search paths come from ConfigurationManager:
 | ---------- | ------ | --------- |
 | `ngdpbase.managers.plugin-manager.search-paths` | string[] \| string | Directories to search for plugins |
 
-**Note:** No hardcoded fallbacks. If not configured, no plugins are loaded.
+__Note:__ No hardcoded fallbacks. If not configured, no plugins are loaded.
 
 ---
 
@@ -95,7 +95,7 @@ Discover and register all plugins from configured paths.
 async registerPlugins()
 ```
 
-**Process:**
+__Process:__
 
 1. Get search paths from ConfigurationManager
 2. Accept array or comma-separated string
@@ -114,17 +114,17 @@ Load a single plugin from a validated path.
 async loadPlugin(pluginPath)
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `pluginPath` - Path to the plugin file
 
-**Security checks:**
+__Security checks:__
 
 - Resolves canonical path via `fs.realpath()`
 - Verifies path is within allowed roots
 - Blocks plugins outside allowed directories
 
-**Plugin loading:**
+__Plugin loading:__
 
 - Uses `require()` to load the module
 - Supports both default exports and named exports
@@ -143,7 +143,7 @@ Execute a plugin and return its output.
 async execute(pluginName, pageName, params, context = {})
 ```
 
-**Parameters:**
+__Parameters:__
 
 | Parameter | Type | Description |
 | ----------- | ------ | ------------- |
@@ -152,9 +152,9 @@ async execute(pluginName, pageName, params, context = {})
 | `params` | Object | Parsed plugin parameters |
 | `context` | Object | Additional context (WikiContext) |
 
-**Returns:** `string` - Plugin output (HTML or text)
+__Returns:__ `string` - Plugin output (HTML or text)
 
-**Execution flow:**
+__Execution flow:__
 
 1. Find plugin using `findPlugin()`
 2. Build context with engine, pageName, linkGraph
@@ -162,7 +162,7 @@ async execute(pluginName, pageName, params, context = {})
 4. If plugin is a function, call it directly
 5. Return result or error message
 
-**Example:**
+__Example:__
 
 ```javascript
 const result = await pluginManager.execute(
@@ -185,20 +185,20 @@ Find a plugin by name with JSPWiki-style name resolution.
 findPlugin(pluginName)
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `pluginName` - Name to search for
 
-**Returns:** `Object|null` - Plugin object or null
+__Returns:__ `Object|null` - Plugin object or null
 
-**Resolution order:**
+__Resolution order:__
 
 1. Exact match (case-sensitive)
 2. Case-insensitive match
 3. With "Plugin" suffix added (e.g., "Search" → "SearchPlugin")
 4. Without "Plugin" suffix (e.g., "SearchPlugin" → "Search")
 
-**Examples:**
+__Examples:__
 
 ```javascript
 // All of these find SearchPlugin:
@@ -218,7 +218,7 @@ Check if a plugin exists.
 hasPlugin(pluginName)
 ```
 
-**Returns:** `boolean`
+__Returns:__ `boolean`
 
 ---
 
@@ -230,7 +230,7 @@ Get all registered plugin names.
 getPluginNames()
 ```
 
-**Returns:** `Array<string>`
+__Returns:__ `Array<string>`
 
 ---
 
@@ -242,7 +242,7 @@ Get plugin metadata.
 getPluginInfo(pluginName)
 ```
 
-**Returns:**
+__Returns:__
 
 ```javascript
 {
@@ -261,12 +261,12 @@ getPluginInfo(pluginName)
 
 PluginManager implements strict path validation:
 
-1. **Allowed roots only:** Only paths from config are allowed
-2. **Canonical paths:** Uses `fs.realpath()` to resolve symlinks
-3. **Prefix checking:** File path must start with allowed root + separator
-4. **No traversal:** Prevents `../` attacks via canonical resolution
+1. __Allowed roots only:__ Only paths from config are allowed
+2. __Canonical paths:__ Uses `fs.realpath()` to resolve symlinks
+3. __Prefix checking:__ File path must start with allowed root + separator
+4. __No traversal:__ Prevents `../` attacks via canonical resolution
 
-**Example attack prevention:**
+__Example attack prevention:__
 
 ```javascript
 // This would be blocked:
@@ -354,13 +354,13 @@ module.exports = SimplePlugin;
 
 Parameters are parsed from wiki syntax and passed as an object:
 
-**Wiki syntax:**
+__Wiki syntax:__
 
 ```wiki
 [{MyPlugin foo='bar' count=5 enabled=true}]
 ```
 
-**Received params:**
+__Received params:__
 
 ```javascript
 {
@@ -385,10 +385,10 @@ The `context` object contains:
 
 ## Notes
 
-- **No hardcoded paths:** All search paths must be configured
-- **Case-insensitive:** Plugin names resolved case-insensitively
-- **JSPWiki compatible:** Supports `Search` or `SearchPlugin` naming
-- **Async execution:** All plugin execution is async
+- __No hardcoded paths:__ All search paths must be configured
+- __Case-insensitive:__ Plugin names resolved case-insensitively
+- __JSPWiki compatible:__ Supports `Search` or `SearchPlugin` naming
+- __Async execution:__ All plugin execution is async
 
 ---
 

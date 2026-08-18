@@ -8,9 +8,9 @@ code: src/managers/BackupManager.ts
 
 # BackupManager
 
-**Module:** `src/managers/BackupManager.ts`
-**Extends:** [BaseManager](BaseManager.md)
-**Complete Guide:** [BackupManager-Complete-Guide.md](BackupManager-Complete-Guide.md)
+__Module:__ `src/managers/BackupManager.ts`
+__Extends:__ [BaseManager](BaseManager.md)
+__Complete Guide:__ [BackupManager-Complete-Guide.md](BackupManager-Complete-Guide.md)
 
 ---
 
@@ -20,13 +20,13 @@ BackupManager coordinates backup and restore operations across all registered ma
 
 ## Key Features
 
-- **Auto-Discovery** - Automatically backs up all registered managers
-- **Compression** - Gzip compression for efficient storage
-- **Retention Policy** - Configurable maximum backup count
-- **Atomic Backups** - Full-system backups in single operation
-- **Restore Coordination** - Coordinated restore across all managers
-- **Error Resilience** - One manager failure doesn't stop backup
-- **Statistics Tracking** - Backup sizes, compression ratios, timing
+- __Auto-Discovery__ - Automatically backs up all registered managers
+- __Compression__ - Gzip compression for efficient storage
+- __Retention Policy__ - Configurable maximum backup count
+- __Atomic Backups__ - Full-system backups in single operation
+- __Restore Coordination__ - Coordinated restore across all managers
+- __Error Resilience__ - One manager failure doesn't stop backup
+- __Statistics Tracking__ - Backup sizes, compression ratios, timing
 
 ## Quick Example
 
@@ -118,12 +118,12 @@ Automatically backs up all registered managers that implement `backup()`:
 
 ## How It Works
 
-1. **Auto-Discovery**: Calls `engine.getRegisteredManagers()` to get all managers
-2. **Backup Loop**: Calls `manager.backup()` on each manager
-3. **Aggregation**: Collects all backup data into single object
-4. **Compression**: Serializes to JSON and compresses with gzip
-5. **Storage**: Saves as timestamped `.gz` file
-6. **Cleanup**: Removes old backups exceeding retention policy
+1. __Auto-Discovery__: Calls `engine.getRegisteredManagers()` to get all managers
+2. __Backup Loop__: Calls `manager.backup()` on each manager
+3. __Aggregation__: Collects all backup data into single object
+4. __Compression__: Serializes to JSON and compresses with gzip
+5. __Storage__: Saves as timestamped `.gz` file
+6. __Cleanup__: Removes old backups exceeding retention policy
 
 ## Backup File Format
 
@@ -166,11 +166,11 @@ node scripts/backup-cleanup.js
 
 ## Best Practices
 
-1. **Regular Backups**: Schedule daily backups via cron
-2. **Off-site Storage**: Copy backups to remote location
-3. **Test Restores**: Periodically test restore process
-4. **Monitor Size**: Watch backup sizes for anomalies
-5. **Retention Policy**: Set appropriate maxBackups value
+1. __Regular Backups__: Schedule daily backups via cron
+2. __Off-site Storage__: Copy backups to remote location
+3. __Test Restores__: Periodically test restore process
+4. __Monitor Size__: Watch backup sizes for anomalies
+5. __Retention Policy__: Set appropriate maxBackups value
 
 ## Error Handling
 

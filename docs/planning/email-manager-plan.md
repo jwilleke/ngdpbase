@@ -13,9 +13,9 @@ Mail sending was previously hard-coded inside `AuthManager` under config keys sc
 
 Goals:
 
-1. **Phase 1** — `EmailManager`: a proper manager for all outbound email, config under
+1. __Phase 1__ — `EmailManager`: a proper manager for all outbound email, config under
    `ngdpbase.mail.*`, any SMTP relay supported via config (no per-service classes).
-2. **Phase 2** — Notification escalation: `NotificationManager` optionally emails
+2. __Phase 2__ — Notification escalation: `NotificationManager` optionally emails
    admins when a notification meets a configured level threshold.
 
 Magic-link remains fully optional. Browser push notifications (Web Push / VAPID) are
@@ -30,12 +30,12 @@ out of scope — separate future issue.
 | File | Change |
 |------|--------|
 | `config/app-default-config.json` | Replaced `magic-link.smtp.*` with `ngdpbase.mail.*` |
-| `src/managers/EmailManager.ts` | **New** — extends BaseManager, implements MailProvider |
+| `src/managers/EmailManager.ts` | __New__ — extends BaseManager, implements MailProvider |
 | `src/managers/AuthManager.ts` | Removed inline mail factory; uses EmailManager |
 | `src/WikiEngine.ts` | Registers EmailManager before AuthManager |
-| `src/managers/__tests__/EmailManager.test.js` | **New** — 10 unit tests |
+| `src/managers/__tests__/EmailManager.test.js` | __New__ — 10 unit tests |
 | `src/managers/__tests__/AuthManager.test.js` | Updated mocks to use EmailManager |
-| `docs/admin/email-setup.md` | **New** — SMTP setup guide (provider-agnostic) |
+| `docs/admin/email-setup.md` | __New__ — SMTP setup guide (provider-agnostic) |
 
 Existing `src/mail/MailProvider.ts` and `src/mail/NodemailerMailProvider.ts` — kept as-is.
 

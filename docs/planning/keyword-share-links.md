@@ -2,16 +2,16 @@
 
 Status: planning. Tracks [epic #842](https://github.com/jwilleke/ngdpbase/issues/842). Purpose of this document: state what the feature provides, settle the decisions blocking implementation, and answer the architecture question "could this be a token service shared across other apps?"
 
-The feature is generic **share links** — capability tokens granting anonymous access to a defined scope of content. The token, route, expiry, revocation, and audit machinery is scope-agnostic (decision 6); only scope *evaluation* differs per kind. v1 ships exactly one scope kind: **keyword**. See [Scope kinds roadmap](#scope-kinds-roadmap).
+The feature is generic __share links__ — capability tokens granting anonymous access to a defined scope of content. The token, route, expiry, revocation, and audit machinery is scope-agnostic (decision 6); only scope *evaluation* differs per kind. v1 ships exactly one scope kind: __keyword__. See [Scope kinds roadmap](#scope-kinds-roadmap).
 
 ## What it provides (v1: keyword scope)
 
 A privileged user shares everything carrying a chosen keyword — media items (EXIF/XMP keywords) and pages (`user-keywords`) — with anonymous visitors who hold an unguessable link.
 
-- **Share by keyword, not by item.** One link exposes the live set of content tagged e.g. `2026 Trip west`. Tagging or untagging content immediately changes what the link exposes (scope is resolved at request time, never snapshotted).
-- **Time-limited or until cancelled.** Every share has an expiry or lives until explicitly revoked. Revocation is immediate.
-- **Safe by construction.** Content marked owner-only is never exposed through a share. Pages with `private: true` (and media linked to them) are always excluded. Unknown, expired, and revoked tokens return an identical 404 so share existence never leaks. Share pages are served with `X-Robots-Tag: noindex`.
-- **Auditable.** Creation and revocation are recorded; who shared what, when, and until when is always answerable.
+- __Share by keyword, not by item.__ One link exposes the live set of content tagged e.g. `2026 Trip west`. Tagging or untagging content immediately changes what the link exposes (scope is resolved at request time, never snapshotted).
+- __Time-limited or until cancelled.__ Every share has an expiry or lives until explicitly revoked. Revocation is immediate.
+- __Safe by construction.__ Content marked owner-only is never exposed through a share. Pages with `private: true` (and media linked to them) are always excluded. Unknown, expired, and revoked tokens return an identical 404 so share existence never leaks. Share pages are served with `X-Robots-Tag: noindex`.
+- __Auditable.__ Creation and revocation are recorded; who shared what, when, and until when is always answerable.
 
 ### Example flows
 
@@ -29,9 +29,9 @@ Correction to the epic text: the "known v1 caveat" refers to rendered links poin
 
 ## Design outline (per the epic, unchanged)
 
-- **ShareManager** — one JSON file per share under `ngdpbase.share.storagedir` (default `./data/shares`); fields: `token` (64-char crypto-random hex), `keyword`, `createdBy`, `createdAt`, `expiresAt` (null = until cancelled), `revokedAt` (kept for audit).
-- **Public routes** (anonymous, token-gated, re-validated per request): `GET /share/:token` (album), `GET /share/:token/file/:id`, `GET /share/:token/thumb/:id`, `GET /share/:token/page/:name`.
-- **Management routes** (authenticated, CSRF-protected): `GET /shares`, `POST /shares/create`, `POST /shares/:id/revoke`; Share button on the keyword album view.
+- __ShareManager__ — one JSON file per share under `ngdpbase.share.storagedir` (default `./data/shares`); fields: `token` (64-char crypto-random hex), `keyword`, `createdBy`, `createdAt`, `expiresAt` (null = until cancelled), `revokedAt` (kept for audit).
+- __Public routes__ (anonymous, token-gated, re-validated per request): `GET /share/:token` (album), `GET /share/:token/file/:id`, `GET /share/:token/thumb/:id`, `GET /share/:token/page/:name`.
+- __Management routes__ (authenticated, CSRF-protected): `GET /shares`, `POST /shares/create`, `POST /shares/:id/revoke`; Share button on the keyword album view.
 - Config: `ngdpbase.share.enabled`, `ngdpbase.share.storagedir` (additions to `config/app-default-config.json` need explicit operator approval per repo policy).
 
 ## Decisions — SIGNED OFF 2026-07-15
@@ -53,10 +53,10 @@ Yes in principle — but it should not start that way. Analysis:
 
 ### What kind of tokens these are
 
-Share tokens are **capability tokens**: an unguessable string that *is* the grant ("whoever holds this may view content tagged X until date Y"). They are not identity tokens. That distinction drives the architecture:
+Share tokens are __capability tokens__: an unguessable string that *is* the grant ("whoever holds this may view content tagged X until date Y"). They are not identity tokens. That distinction drives the architecture:
 
-- **Identity (who are you)** is owned by the app's own `AuthManager` with pluggable providers — local users, magic links, and optional external providers such as Cloudflare Access or Authentik (`AuthentikBearerAuthProvider`, config-gated, used by the agent-ingest epic #822 on deployments that enable it). Authentik is an option, not a dependency. Either way, nothing in this epic should duplicate identity — shares are for *anonymous* visitors precisely so no identity is involved.
-- **Capability (what does this link grant)** is inherently coupled to the resource model of the app that owns the content — a share's *scope* is "ngdpbase media + pages with keyword K, minus private/owner-only". Another app (e.g. geohazardwatch) would have entirely different scope semantics. A generic service can own token issue/validate/revoke, but scope evaluation always stays app-side.
+- __Identity (who are you)__ is owned by the app's own `AuthManager` with pluggable providers — local users, magic links, and optional external providers such as Cloudflare Access or Authentik (`AuthentikBearerAuthProvider`, config-gated, used by the agent-ingest epic #822 on deployments that enable it). Authentik is an option, not a dependency. Either way, nothing in this epic should duplicate identity — shares are for *anonymous* visitors precisely so no identity is involved.
+- __Capability (what does this link grant)__ is inherently coupled to the resource model of the app that owns the content — a share's *scope* is "ngdpbase media + pages with keyword K, minus private/owner-only". Another app (e.g. geohazardwatch) would have entirely different scope semantics. A generic service can own token issue/validate/revoke, but scope evaluation always stays app-side.
 
 ### Options
 
@@ -68,7 +68,7 @@ Share tokens are **capability tokens**: an unguessable string that *is* the gran
 
 ### Recommendation
 
-**Option A now, with a deliberate extraction seam.** Concretely:
+__Option A now, with a deliberate extraction seam.__ Concretely:
 
 - ShareManager exposes a narrow internal interface — `issue(scope, ttl)`, `validate(token) → scope | null`, `revoke(id)`, `list(owner)` — and the routes consume only that interface, never the storage.
 - The share record keeps scope as a typed object (`{ kind: 'keyword', keyword: '...' }`) rather than bare fields, so future scope kinds (or future apps' kinds) don't change the token model.
@@ -84,7 +84,7 @@ The typed scope object from decision 6 is the extension point. Nothing below cha
 
 | Kind | Scope object | Status | Notes |
 | --- | --- | --- | --- |
-| Keyword | `{ kind: 'keyword', keyword }` | **v1 — this epic** | Live set of media + pages carrying the keyword; exclusions per decisions 1 and 3 |
+| Keyword | `{ kind: 'keyword', keyword }` | __v1 — this epic__ | Live set of media + pages carrying the keyword; exclusions per decisions 1 and 3 |
 | Single page | `{ kind: 'page', name }` | Candidate v2 | Same private/owner-only/audience exclusions, then render one page. No new token machinery |
 | Query | `{ kind: 'query', q }` | Later, on real demand | Arbitrary search query resolved per request as anonymous. Requires private/owner-only/audience filtering enforced *inside* the query path, not just at render; search-index changes silently alter what the link exposes — bigger blast radius than a keyword tag |
 

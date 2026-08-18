@@ -8,12 +8,12 @@ code: src/providers/VersioningFileProvider.ts
 
 # VersioningFileProvider
 
-**Quick Reference** | [Complete Guide](VersioningFileProvider-Complete-Guide.md)
+__Quick Reference__ | [Complete Guide](VersioningFileProvider-Complete-Guide.md)
 
-**Module:** `src/providers/VersioningFileProvider.ts`
-**Type:** Page Storage Provider with Versioning
-**Extends:** FileSystemProvider
-**Status:** Production Ready
+__Module:__ `src/providers/VersioningFileProvider.ts`
+__Type:__ Page Storage Provider with Versioning
+__Extends:__ FileSystemProvider
+__Status:__ Production Ready
 
 ## Overview
 
@@ -21,13 +21,13 @@ VersioningFileProvider extends FileSystemProvider with full version history trac
 
 ## Key Features
 
-- **Full version history** - Every save creates a new version
-- **Delta compression** - 80-95% space savings vs full snapshots
-- **Fast-diff algorithm** - Efficient diff computation
-- **Pako compression** - Gzip compression for delta storage
-- **Metadata tracking** - Author, timestamp, change summary per version
-- **Unlimited undo/redo** - Restore any previous version
-- **All FileSystemProvider features** - UUID naming, title lookup, plural matching, caching
+- __Full version history__ - Every save creates a new version
+- __Delta compression__ - 80-95% space savings vs full snapshots
+- __Fast-diff algorithm__ - Efficient diff computation
+- __Pako compression__ - Gzip compression for delta storage
+- __Metadata tracking__ - Author, timestamp, change summary per version
+- __Unlimited undo/redo__ - Restore any previous version
+- __All FileSystemProvider features__ - UUID naming, title lookup, plural matching, caching
 
 ## Configuration
 
@@ -73,13 +73,13 @@ data/versions/
 
 ## "Private" is a visibility model, not encryption
 
-Pages with `private: true` are routed to `pages/private/{author}/{uuid}.md`. This is a **visibility / ACL convention**, not cryptographic privacy. The provider's job is storage routing; the page body is still plaintext on disk and accessible to anyone with filesystem access. Plaintext leak surfaces include:
+Pages with `private: true` are routed to `pages/private/{author}/{uuid}.md`. This is a __visibility / ACL convention__, not cryptographic privacy. The provider's job is storage routing; the page body is still plaintext on disk and accessible to anyone with filesystem access. Plaintext leak surfaces include:
 
-- **Version history** at `pages/versions/{uuid}/` is flat at the top level (not under `private/`). Every prior revision of a "private" page sits next to public versions.
-- **`page-index.json`** denormalises `{uuid, title, slug, lastModified, author, location, creator}` for every page, private ones included.
-- **Search indices** (Lunr `data/search-index/`, or an Elasticsearch cluster) ingest the rendered content of private pages at write time. Anyone with index access reads the content.
-- **Attachments** under `data/attachments/` are flat by UUID — attachments to private pages share a directory with public ones.
-- **Backups, logs, audit** — anywhere page content is written outside `private/{author}/` is a potential leak.
+- __Version history__ at `pages/versions/{uuid}/` is flat at the top level (not under `private/`). Every prior revision of a "private" page sits next to public versions.
+- __`page-index.json`__ denormalises `{uuid, title, slug, lastModified, author, location, creator}` for every page, private ones included.
+- __Search indices__ (Lunr `data/search-index/`, or an Elasticsearch cluster) ingest the rendered content of private pages at write time. Anyone with index access reads the content.
+- __Attachments__ under `data/attachments/` are flat by UUID — attachments to private pages share a directory with public ones.
+- __Backups, logs, audit__ — anywhere page content is written outside `private/{author}/` is a potential leak.
 
 A future "user-private encryption" story is plausible — the per-author directory layout makes `pages/private/{author}/` a natural unit for at-rest encryption — but it requires coordinated providers for versions, search, attachments, backups, and audit, plus a key-management story. Out of scope for VFP today; tracked architecturally under EPIC #790 / #802 prerequisites.
 
@@ -152,9 +152,9 @@ const v2 = "Hello Beautiful World";
 
 ## Space Savings
 
-- **Full snapshots:** 100 versions × 10KB = 1MB per page
-- **Delta compression:** 100 versions × 200 bytes = 20KB per page
-- **Savings:** 98% reduction in storage
+- __Full snapshots:__ 100 versions × 10KB = 1MB per page
+- __Delta compression:__ 100 versions × 200 bytes = 20KB per page
+- __Savings:__ 98% reduction in storage
 
 ## Version Operations
 
@@ -220,10 +220,10 @@ VersioningFileProvider reconstructs content by applying deltas sequentially:
 
 ## Performance Considerations
 
-- **Write performance** - Creates delta on every save (~10ms overhead)
-- **Read performance** - Current version is instant (no delta application)
-- **Version retrieval** - O(n) where n = versions to reverse (fast for recent versions)
-- **Storage** - 80-95% space savings vs full snapshots
+- __Write performance__ - Creates delta on every save (~10ms overhead)
+- __Read performance__ - Current version is instant (no delta application)
+- __Version retrieval__ - O(n) where n = versions to reverse (fast for recent versions)
+- __Storage__ - 80-95% space savings vs full snapshots
 
 ## Error Handling
 
@@ -280,27 +280,27 @@ All existing pages work immediately. Versions are created starting from first ed
 
 ## Related Documentation
 
-- **Complete Guide:** [VersioningFileProvider-Complete-Guide.md](VersioningFileProvider-Complete-Guide.md)
-- **Parent Class:** [FileSystemProvider.md](FileSystemProvider.md)
-- **Manager:** [PageManager.md](../managers/PageManager.md)
-- **Migration Guide:** [Versioning-Migration-Guide.md](../pageproviders/Versioning-Migration-Guide.md)
-- **Maintenance:** [Versioning-Maintenance-Guide.md](../pageproviders/Versioning-Maintenance-Guide.md)
+- __Complete Guide:__ [VersioningFileProvider-Complete-Guide.md](VersioningFileProvider-Complete-Guide.md)
+- __Parent Class:__ [FileSystemProvider.md](FileSystemProvider.md)
+- __Manager:__ [PageManager.md](../managers/PageManager.md)
+- __Migration Guide:__ [Versioning-Migration-Guide.md](../pageproviders/Versioning-Migration-Guide.md)
+- __Maintenance:__ [Versioning-Maintenance-Guide.md](../pageproviders/Versioning-Maintenance-Guide.md)
 
 ## Common Issues
 
-**Q: Too many versions consuming space?**
+__Q: Too many versions consuming space?__
 A: Use `pruneVersions()` to limit version count per page
 
-**Q: Version retrieval slow?**
+__Q: Version retrieval slow?__
 A: Older versions require more delta application - consider keeping fewer versions
 
-**Q: Version metadata file growing large?**
+__Q: Version metadata file growing large?__
 A: Prune old versions or archive to separate file
 
-**Q: Delta reconstruction failing?**
+__Q: Delta reconstruction failing?__
 A: Verify delta files not corrupted, check compression enabled
 
 ---
 
-**Last Updated:** 2025-12-22
-**Version:** 1.5.0
+__Last Updated:__ 2025-12-22
+__Version:__ 1.5.0

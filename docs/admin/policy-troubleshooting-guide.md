@@ -34,22 +34,22 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
 
 ### Issue 1: Users Cannot Access Expected Resources
 
-**Symptoms:**
+__Symptoms:__
 
 - Users report "Access Denied" for resources they should access
 - Policy evaluation returns unexpected results
 - Audit logs show policy denials
 
-**Possible Causes:**
+__Possible Causes:__
 
 1. Higher-priority deny policy is blocking access
 2. Subject matching is incorrect
 3. Resource patterns don't match
 4. Conditions are not met
 
-**Diagnostic Steps:**
+__Diagnostic Steps:__
 
-1. **Check Policy Priority**
+1. __Check Policy Priority__
 
    ```bash
    # List policies by priority
@@ -58,12 +58,12 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
 
    Look for policies with higher priority that might conflict.
 
-2. **Verify Subject Matching**
+2. __Verify Subject Matching__
    - Check user's roles and attributes
    - Ensure subject values match exactly
    - Verify case sensitivity
 
-3. **Test Resource Patterns**
+3. __Test Resource Patterns__
 
    ```javascript
    // Test pattern matching
@@ -72,14 +72,14 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    console.log(testResource.match(pattern.replace(/\*/g, '.*')));
    ```
 
-4. **Review Conditions**
+4. __Review Conditions__
    - Check time ranges for current time
    - Verify IP ranges include user's IP
    - Test user attributes match condition requirements
 
-**Resolution Steps:**
+__Resolution Steps:__
 
-1. **Adjust Policy Priority**
+1. __Adjust Policy Priority__
 
    ```json
    {
@@ -93,7 +93,7 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    }
    ```
 
-2. **Create Override Policy**
+2. __Create Override Policy__
 
    ```json
    {
@@ -107,7 +107,7 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    }
    ```
 
-3. **Fix Subject Configuration**
+3. __Fix Subject Configuration__
 
    ```json
    // Before (incorrect)
@@ -119,22 +119,22 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
 
 ### Issue 2: Policies Not Taking Effect
 
-**Symptoms:**
+__Symptoms:__
 
 - Policy changes don't appear to work
 - Old behavior persists after policy updates
 - Cache-related issues
 
-**Possible Causes:**
+__Possible Causes:__
 
 1. Policy cache not cleared
 2. Policy file not saved correctly
 3. Server restart required
 4. Policy validation errors
 
-**Diagnostic Steps:**
+__Diagnostic Steps:__
 
-1. **Check Policy File**
+1. __Check Policy File__
 
    ```bash
    # Verify policy file exists and is readable
@@ -142,7 +142,7 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    cat /path/to/policies/active-policies.json
    ```
 
-2. **Validate JSON Syntax**
+2. __Validate JSON Syntax__
 
    ```bash
    # Use jq to validate JSON
@@ -152,7 +152,7 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    python -m json.tool /path/to/policies/active-policies.json
    ```
 
-3. **Check Cache Status**
+3. __Check Cache Status__
 
    ```javascript
    // Check if cache is enabled and current
@@ -161,7 +161,7 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    console.log('Cache size:', policyManager.cache.size);
    ```
 
-4. **Review Server Logs**
+4. __Review Server Logs__
 
    ```bash
    # Check for policy loading errors
@@ -169,9 +169,9 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    grep -i "error" /var/log/ngdpbase/app.log
    ```
 
-**Resolution Steps:**
+__Resolution Steps:__
 
-1. **Clear Policy Cache**
+1. __Clear Policy Cache__
 
    ```javascript
    // Clear cache programmatically
@@ -179,7 +179,7 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    policyManager.clearCache();
    ```
 
-2. **Restart Services**
+2. __Restart Services__
 
    ```bash
    # Restart the wiki service
@@ -188,7 +188,7 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    pm2 restart ngdpbase
    ```
 
-3. **Reload Policies**
+3. __Reload Policies__
 
    ```javascript
    // Force policy reload
@@ -196,7 +196,7 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    await policyManager.loadPolicies();
    ```
 
-4. **Validate and Save**
+4. __Validate and Save__
 
    ```bash
    # Backup current policies
@@ -209,23 +209,23 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
 
 ### Issue 3: Performance Degradation
 
-**Symptoms:**
+__Symptoms:__
 
 - Slow page loads
 - High CPU usage during policy evaluation
 - Timeout errors
 - Memory usage spikes
 
-**Possible Causes:**
+__Possible Causes:__
 
 1. Too many policies
 2. Inefficient policy patterns
 3. Cache misses
 4. Complex conditions
 
-**Diagnostic Steps:**
+__Diagnostic Steps:__
 
-1. **Monitor Policy Evaluation**
+1. __Monitor Policy Evaluation__
 
    ```javascript
    // Add timing to policy evaluation
@@ -235,14 +235,14 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    console.log(`Policy evaluation took ${duration}ms`);
    ```
 
-2. **Check Policy Count**
+2. __Check Policy Count__
 
    ```bash
    # Count active policies
    jq '. | length' /path/to/policies/active-policies.json
    ```
 
-3. **Analyze Cache Performance**
+3. __Analyze Cache Performance__
 
    ```javascript
    // Check cache hit rate
@@ -250,7 +250,7 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    console.log('Hit rate:', stats.hits / (stats.hits + stats.misses));
    ```
 
-4. **Profile Resource Patterns**
+4. __Profile Resource Patterns__
 
    ```javascript
    // Test pattern performance
@@ -266,9 +266,9 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    });
    ```
 
-**Resolution Steps:**
+__Resolution Steps:__
 
-1. **Optimize Patterns**
+1. __Optimize Patterns__
 
    ```json
    // Before (inefficient)
@@ -278,7 +278,7 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    {"type": "page", "pattern": "Project-*"}
    ```
 
-2. **Implement Caching Strategy**
+2. __Implement Caching Strategy__
 
    ```javascript
    // Enable result caching
@@ -288,7 +288,7 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    });
    ```
 
-3. **Consolidate Policies**
+3. __Consolidate Policies__
 
    ```json
    // Combine similar policies
@@ -307,7 +307,7 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    }
    ```
 
-4. **Add Performance Monitoring**
+4. __Add Performance Monitoring__
 
    ```javascript
    // Monitor policy evaluation performance
@@ -320,29 +320,29 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
 
 ### Issue 4: Unexpected Access Granted
 
-**Symptoms:**
+__Symptoms:__
 
 - Users can access resources they shouldn't
 - Security violations
 - Audit logs show unauthorized access
 
-**Possible Causes:**
+__Possible Causes:__
 
 1. Overly permissive policies
 2. Incorrect allow policies
 3. Missing deny policies
 4. Subject matching too broad
 
-**Diagnostic Steps:**
+__Diagnostic Steps:__
 
-1. **Review Allow Policies**
+1. __Review Allow Policies__
 
    ```bash
    # Find overly permissive policies
    jq '.[] | select(.effect == "allow") | select(.resources[].pattern == "*")' /path/to/policies/active-policies.json
    ```
 
-2. **Check Subject Scope**
+2. __Check Subject Scope__
 
    ```javascript
    // Analyze subject breadth
@@ -351,14 +351,14 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    console.log('Subject types:', subjectTypes);
    ```
 
-3. **Audit Access Patterns**
+3. __Audit Access Patterns__
 
    ```bash
    # Check recent access logs
    grep "ALLOW" /var/log/ngdpbase/access.log | tail -20
    ```
 
-4. **Test Policy Logic**
+4. __Test Policy Logic__
 
    ```javascript
    // Simulate access request
@@ -372,9 +372,9 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    console.log('Access result:', result);
    ```
 
-**Resolution Steps:**
+__Resolution Steps:__
 
-1. **Add Deny Policies**
+1. __Add Deny Policies__
 
    ```json
    {
@@ -392,7 +392,7 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    }
    ```
 
-2. **Refine Subject Matching**
+2. __Refine Subject Matching__
 
    ```json
    // Before (too broad)
@@ -402,7 +402,7 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    {"type": "role", "value": "approved-user"}
    ```
 
-3. **Implement Defense in Depth**
+3. __Implement Defense in Depth__
 
    ```json
    // Multiple layers of protection
@@ -428,29 +428,29 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
 
 ### Issue 5: Policy Validation Errors
 
-**Symptoms:**
+__Symptoms:__
 
 - Policies cannot be saved
 - Schema validation failures
 - Import errors
 
-**Possible Causes:**
+__Possible Causes:__
 
 1. JSON syntax errors
 2. Missing required fields
 3. Invalid values
 4. Schema version mismatch
 
-**Diagnostic Steps:**
+__Diagnostic Steps:__
 
-1. **Validate JSON Syntax**
+1. __Validate JSON Syntax__
 
    ```bash
    # Check for syntax errors
    python -c "import json; json.load(open('policy.json'))"
    ```
 
-2. **Schema Validation**
+2. __Schema Validation__
 
    ```javascript
    const Ajv = require('ajv');
@@ -463,7 +463,7 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    }
    ```
 
-3. **Check Required Fields**
+3. __Check Required Fields__
 
    ```javascript
    const requiredFields = ['id', 'name', 'effect', 'subjects', 'resources', 'actions'];
@@ -471,7 +471,7 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    console.log('Missing fields:', missingFields);
    ```
 
-4. **Verify Field Values**
+4. __Verify Field Values__
 
    ```javascript
    // Check enum values
@@ -483,9 +483,9 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    }
    ```
 
-**Resolution Steps:**
+__Resolution Steps:__
 
-1. **Fix JSON Syntax**
+1. __Fix JSON Syntax__
 
    ```json
    // Before (invalid)
@@ -509,7 +509,7 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    }
    ```
 
-2. **Add Missing Fields**
+2. __Add Missing Fields__
 
    ```json
    {
@@ -524,7 +524,7 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
    }
    ```
 
-3. **Correct Invalid Values**
+3. __Correct Invalid Values__
 
    ```json
    // Before (invalid action)
@@ -538,7 +538,7 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
 
 ### Policy Conflict Analysis
 
-**Identify Conflicting Policies:**
+__Identify Conflicting Policies:__
 
 ```javascript
 function findConflicts(policies) {
@@ -563,7 +563,7 @@ function findConflicts(policies) {
 }
 ```
 
-**Resolve Conflicts:**
+__Resolve Conflicts:__
 
 1. Adjust priority levels
 2. Refine subject/resource scope
@@ -572,7 +572,7 @@ function findConflicts(policies) {
 
 ### Performance Profiling
 
-**Profile Policy Evaluation:**
+__Profile Policy Evaluation:__
 
 ```javascript
 class PolicyProfiler {
@@ -613,7 +613,7 @@ class PolicyProfiler {
 
 ### Audit Log Analysis
 
-**Analyze Access Patterns:**
+__Analyze Access Patterns:__
 
 ```bash
 # Find most accessed resources
@@ -638,7 +638,7 @@ grep "POLICY_EVAL" /var/log/ngdpbase/performance.log | \
 
 ### Automated Testing
 
-**Policy Test Suite:**
+__Policy Test Suite:__
 
 ```javascript
 const PolicyTester = {
@@ -694,13 +694,13 @@ const PolicyTester = {
 
 ### Complete Policy System Reset
 
-**When to Use:**
+__When to Use:__
 
 - Corrupted policy configuration
 - Multiple conflicting policies
 - System-wide access issues
 
-**Procedure:**
+__Procedure:__
 
 ```bash
 # 1. Backup current policies
@@ -738,7 +738,7 @@ curl -u admin:password http://localhost:3000/
 
 ### Emergency Access Override
 
-**For Immediate Access Issues:**
+__For Immediate Access Issues:__
 
 ```json
 {
@@ -767,7 +767,7 @@ curl -u admin:password http://localhost:3000/
 
 ### Regular Health Checks
 
-**Daily Checks:**
+__Daily Checks:__
 
 ```bash
 #!/bin/bash
@@ -804,7 +804,7 @@ echo "=== Health Check Complete ==="
 
 ### Performance Monitoring
 
-**Key Metrics to Monitor:**
+__Key Metrics to Monitor:__
 
 - Policy evaluation response time
 - Cache hit/miss ratio
@@ -812,7 +812,7 @@ echo "=== Health Check Complete ==="
 - Error rates
 - Policy change frequency
 
-**Alert Thresholds:**
+__Alert Thresholds:__
 
 - Evaluation time > 100ms
 - Cache hit rate < 80%
@@ -821,7 +821,7 @@ echo "=== Health Check Complete ==="
 
 ### Backup and Recovery
 
-**Regular Backup Procedure:**
+__Regular Backup Procedure:__
 
 ```bash
 #!/bin/bash
@@ -852,24 +852,24 @@ echo "Policy backup completed: $TIMESTAMP"
 
 ### Support Resources
 
-1. **Documentation**
+1. __Documentation__
    - Admin User Guide: `/docs/admin/policy-management-guide.md`
    - Schema Documentation: `/docs/admin/policy-schema-documentation.md`
    - API Documentation: `/docs/api/policy-api.md`
 
-2. **Community Support**
+2. __Community Support__
    - GitHub Issues: Report bugs and request features
    - Discussion Forums: Ask questions and share solutions
    - Wiki Pages: Community-contributed guides
 
-3. **Professional Services**
+3. __Professional Services__
    - Enterprise support contracts
    - Custom policy development
    - Security audits and assessments
 
 ### Escalation Procedures
 
-**For Critical Issues:**
+__For Critical Issues:__
 
 1. Enable emergency access override
 2. Create incident ticket
@@ -877,7 +877,7 @@ echo "Policy backup completed: $TIMESTAMP"
 4. Implement temporary workaround
 5. Schedule root cause analysis
 
-**Contact Information:**
+__Contact Information:__
 
 - Security Team: `security@company.com`
 - DevOps Team: `devops@company.com`

@@ -1,26 +1,26 @@
 # SearchManager Complete Guide
 
-**Module:** `src/managers/SearchManager.js`
-**Quick Reference:** [SearchManager.md](SearchManager.md)
-**Last Updated:** 2025-12-20
+__Module:__ `src/managers/SearchManager.js`
+__Quick Reference:__ [SearchManager.md](SearchManager.md)
+__Last Updated:__ 2025-12-20
 
 ---
 
 ## Overview
 
-The `SearchManager` is responsible for full-text search indexing and querying in ngdpbase. It provides a centralized system for searching wiki content, suggesting similar pages, autocomplete functionality, and filtering by categories and keywords. The SearchManager uses a **provider pattern** to support multiple search backends, making it flexible for different deployment scenarios from small wikis to large-scale enterprise deployments.
+The `SearchManager` is responsible for full-text search indexing and querying in ngdpbase. It provides a centralized system for searching wiki content, suggesting similar pages, autocomplete functionality, and filtering by categories and keywords. The SearchManager uses a __provider pattern__ to support multiple search backends, making it flexible for different deployment scenarios from small wikis to large-scale enterprise deployments.
 
-**Key Features:**
+__Key Features:__
 
-- **Pluggable Search Backends:** Lunr.js, Elasticsearch, Algolia, and more
-- **Full-Text Search:** Search across page content, titles, categories, and metadata
-- **Field Boosting:** Configurable relevance scoring for different content fields
-- **Autocomplete Suggestions:** Real-time search suggestions as users type
-- **Similar Pages:** Content-based page recommendations
-- **Advanced Filtering:** Search by categories, keywords, tags, and custom criteria
-- **Snippet Generation:** Context-aware excerpts with highlighted search terms
-- **Health Monitoring:** Provider health checks with automatic fallback
-- **Backup and Restore:** Full index backup and recovery support
+- __Pluggable Search Backends:__ Lunr.js, Elasticsearch, Algolia, and more
+- __Full-Text Search:__ Search across page content, titles, categories, and metadata
+- __Field Boosting:__ Configurable relevance scoring for different content fields
+- __Autocomplete Suggestions:__ Real-time search suggestions as users type
+- __Similar Pages:__ Content-based page recommendations
+- __Advanced Filtering:__ Search by categories, keywords, tags, and custom criteria
+- __Snippet Generation:__ Context-aware excerpts with highlighted search terms
+- __Health Monitoring:__ Provider health checks with automatic fallback
+- __Backup and Restore:__ Full index backup and recovery support
 
 ## Architecture
 
@@ -67,17 +67,17 @@ The `SearchManager` is responsible for full-text search indexing and querying in
 
 The SearchManager implements a provider pattern that separates the search management logic from the search engine implementation:
 
-1. **BaseSearchProvider:** Abstract interface defining the contract for all search providers
-2. **Concrete Providers:** Implementations for specific search engines (Lunr.js, Elasticsearch, etc.)
-3. **Provider Discovery:** Dynamic loading based on configuration
-4. **Health Monitoring:** Automatic health checks during initialization
-5. **Consistent API:** All providers implement the same interface
+1. __BaseSearchProvider:__ Abstract interface defining the contract for all search providers
+2. __Concrete Providers:__ Implementations for specific search engines (Lunr.js, Elasticsearch, etc.)
+3. __Provider Discovery:__ Dynamic loading based on configuration
+4. __Health Monitoring:__ Automatic health checks during initialization
+5. __Consistent API:__ All providers implement the same interface
 
 ## Configuration
 
 ### Core Search Settings
 
-All configuration keys use **lowercase** format per Issue #102 refactoring.
+All configuration keys use __lowercase__ format per Issue #102 refactoring.
 
 ```json
 {
@@ -125,7 +125,7 @@ All configuration keys use **lowercase** format per Issue #102 refactoring.
 }
 ```
 
-**LunrSearchProvider Configuration:**
+__LunrSearchProvider Configuration:__
 
 | Key | Type | Default | Description |
 | ----- | ------ | --------- | ------------- |
@@ -139,7 +139,7 @@ All configuration keys use **lowercase** format per Issue #102 refactoring.
 | `maxresults` | number | `50` | Maximum results per search |
 | `snippetlength` | number | `200` | Maximum snippet length in characters |
 
-**Best For:**
+__Best For:__
 
 - Small to medium wikis (<10,000 pages)
 - Single-instance deployments
@@ -170,7 +170,7 @@ Index `ngdpbase-pages` is created automatically on first `buildIndex()` call. Fi
 
 See `docs/providers/ElasticsearchSearchProvider.md` for the full guide.
 
-**Best For:**
+__Best For:__
 
 - Large-scale wikis (10,000+ pages)
 - Distributed / multi-node deployments
@@ -179,7 +179,7 @@ See `docs/providers/ElasticsearchSearchProvider.md` for the full guide.
 
 #### AlgoliaSearchProvider (Future)
 
-**Best For:**
+__Best For:__
 
 - Cloud-native deployments
 - Instant search-as-you-type
@@ -203,7 +203,7 @@ results.forEach(result => {
 });
 ```
 
-**Output:**
+__Output:__
 
 ```javascript
 [
@@ -347,13 +347,13 @@ await searchManager.restore(backupData);
 
 Initializes the SearchManager with the configured search provider.
 
-**Parameters:**
+__Parameters:__
 
 - `config` (Object) - Configuration options (usually empty, uses ConfigurationManager)
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 await searchManager.initialize();
@@ -363,9 +363,9 @@ await searchManager.initialize();
 
 Builds or rebuilds the entire search index from all pages.
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 await searchManager.buildSearchIndex();
@@ -376,16 +376,16 @@ await searchManager.buildSearchIndex();
 
 Searches for pages matching the query.
 
-**Parameters:**
+__Parameters:__
 
 - `query` (string) - Search query string
 - `options` (Object) - Optional search options
   - `maxResults` (number) - Maximum results to return
   - `searchIn` (`Array<string>`) - Fields to search in
 
-**Returns:** `Promise<Array<SearchResult>>`
+__Returns:__ `Promise<Array<SearchResult>>`
 
-**SearchResult Structure:**
+__SearchResult Structure:__
 
 ```javascript
 {
@@ -403,7 +403,7 @@ Searches for pages matching the query.
 }
 ```
 
-**Example:**
+__Example:__
 
 ```javascript
 const results = await searchManager.search('authentication security', {
@@ -415,7 +415,7 @@ const results = await searchManager.search('authentication security', {
 
 Performs advanced multi-criteria search.
 
-**Parameters:**
+__Parameters:__
 
 - `options` (Object)
   - `query` (string) - Text query (optional)
@@ -424,9 +424,9 @@ Performs advanced multi-criteria search.
   - `searchIn` (`Array<string>`) - Fields to search in
   - `maxResults` (number) - Maximum results
 
-**Returns:** `Promise<Array<SearchResult>>`
+__Returns:__ `Promise<Array<SearchResult>>`
 
-**Example:**
+__Example:__
 
 ```javascript
 const results = await searchManager.advancedSearch({
@@ -441,13 +441,13 @@ const results = await searchManager.advancedSearch({
 
 Gets autocomplete suggestions for a partial search term.
 
-**Parameters:**
+__Parameters:__
 
 - `partial` (string) - Partial search term (minimum 2 characters)
 
-**Returns:** `Promise<Array<string>>`
+__Returns:__ `Promise<Array<string>>`
 
-**Example:**
+__Example:__
 
 ```javascript
 const suggestions = await searchManager.getSuggestions('doc');
@@ -458,14 +458,14 @@ const suggestions = await searchManager.getSuggestions('doc');
 
 Finds similar pages based on content analysis.
 
-**Parameters:**
+__Parameters:__
 
 - `pageName` (string) - Source page name
 - `limit` (number) - Maximum suggestions (default: 5)
 
-**Returns:** `Promise<Array<SearchResult>>`
+__Returns:__ `Promise<Array<SearchResult>>`
 
-**Example:**
+__Example:__
 
 ```javascript
 const similar = await searchManager.suggestSimilarPages('APIDocumentation', 5);
@@ -475,13 +475,13 @@ const similar = await searchManager.suggestSimilarPages('APIDocumentation', 5);
 
 Searches for pages in a specific category.
 
-**Parameters:**
+__Parameters:__
 
 - `category` (string) - Category name to search
 
-**Returns:** `Promise<Array<SearchResult>>`
+__Returns:__ `Promise<Array<SearchResult>>`
 
-**Example:**
+__Example:__
 
 ```javascript
 const systemPages = await searchManager.searchByCategory('system');
@@ -491,13 +491,13 @@ const systemPages = await searchManager.searchByCategory('system');
 
 Searches for pages in multiple categories.
 
-**Parameters:**
+__Parameters:__
 
 - `categories` (`Array<string>`) - Array of category names
 
-**Returns:** `Promise<Array<SearchResult>>`
+__Returns:__ `Promise<Array<SearchResult>>`
 
-**Example:**
+__Example:__
 
 ```javascript
 const pages = await searchManager.searchByCategories([
@@ -511,13 +511,13 @@ const pages = await searchManager.searchByCategories([
 
 Searches for pages with a specific user keyword.
 
-**Parameters:**
+__Parameters:__
 
 - `keyword` (string) - User keyword to search
 
-**Returns:** `Promise<Array<SearchResult>>`
+__Returns:__ `Promise<Array<SearchResult>>`
 
-**Example:**
+__Example:__
 
 ```javascript
 const medicalPages = await searchManager.searchByUserKeywords('medicine');
@@ -527,13 +527,13 @@ const medicalPages = await searchManager.searchByUserKeywords('medicine');
 
 Searches for pages with multiple user keywords.
 
-**Parameters:**
+__Parameters:__
 
 - `keywords` (`Array<string>`) - Array of user keywords
 
-**Returns:** `Promise<Array<SearchResult>>`
+__Returns:__ `Promise<Array<SearchResult>>`
 
-**Example:**
+__Example:__
 
 ```javascript
 const pages = await searchManager.searchByUserKeywordsList([
@@ -547,9 +547,9 @@ const pages = await searchManager.searchByUserKeywordsList([
 
 Gets all unique categories from indexed documents.
 
-**Returns:** `Promise<Array<string>>`
+__Returns:__ `Promise<Array<string>>`
 
-**Example:**
+__Example:__
 
 ```javascript
 const categories = await searchManager.getAllCategories();
@@ -560,9 +560,9 @@ const categories = await searchManager.getAllCategories();
 
 Gets all unique user keywords from indexed documents.
 
-**Returns:** `Promise<Array<string>>`
+__Returns:__ `Promise<Array<string>>`
 
-**Example:**
+__Example:__
 
 ```javascript
 const keywords = await searchManager.getAllUserKeywords();
@@ -573,9 +573,9 @@ const keywords = await searchManager.getAllUserKeywords();
 
 Gets comprehensive search index statistics.
 
-**Returns:** `Promise<Object>`
+__Returns:__ `Promise<Object>`
 
-**Statistics Structure:**
+__Statistics Structure:__
 
 ```javascript
 {
@@ -589,7 +589,7 @@ Gets comprehensive search index statistics.
 }
 ```
 
-**Example:**
+__Example:__
 
 ```javascript
 const stats = await searchManager.getStatistics();
@@ -600,9 +600,9 @@ console.log(`Indexed ${stats.totalDocuments} pages`);
 
 Gets the total number of indexed documents.
 
-**Returns:** `Promise<number>`
+__Returns:__ `Promise<number>`
 
-**Example:**
+__Example:__
 
 ```javascript
 const count = await searchManager.getDocumentCount();
@@ -615,9 +615,9 @@ console.log(`${count} pages indexed`);
 
 Alias for `buildSearchIndex()`. Rebuilds the entire search index.
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 await searchManager.rebuildIndex();
@@ -627,16 +627,16 @@ await searchManager.rebuildIndex();
 
 Adds or updates a single page in the search index.
 
-**Parameters:**
+__Parameters:__
 
 - `pageName` (string) - Page name/ID
 - `pageData` (Object) - Page data
   - `content` (string) - Page content
   - `metadata` (Object) - Page metadata
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 await searchManager.updatePageInIndex('NewPage', {
@@ -654,13 +654,13 @@ await searchManager.updatePageInIndex('NewPage', {
 
 Removes a page from the search index.
 
-**Parameters:**
+__Parameters:__
 
 - `pageName` (string) - Page name to remove
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 await searchManager.removePageFromIndex('DeletedPage');
@@ -670,13 +670,13 @@ await searchManager.removePageFromIndex('DeletedPage');
 
 Adds a page object to the index.
 
-**Parameters:**
+__Parameters:__
 
 - `page` (Object) - Page object with `name`, `content`, and `metadata`
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 await searchManager.addToIndex({
@@ -693,11 +693,11 @@ await searchManager.addToIndex({
 
 Alias for `removePageFromIndex()`.
 
-**Parameters:**
+__Parameters:__
 
 - `pageName` (string) - Page name to remove
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
 ### Backup and Recovery Methods
 
@@ -705,9 +705,9 @@ Alias for `removePageFromIndex()`.
 
 Creates a backup of the search index and configuration.
 
-**Returns:** `Promise<Object>` - Backup data object
+__Returns:__ `Promise<Object>` - Backup data object
 
-**Example:**
+__Example:__
 
 ```javascript
 const backup = await searchManager.backup();
@@ -723,13 +723,13 @@ await fs.writeFile(
 
 Restores the search index from backup data.
 
-**Parameters:**
+__Parameters:__
 
 - `backupData` (Object) - Backup data from `backup()`
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 const fs = require('fs').promises;
@@ -743,9 +743,9 @@ await searchManager.restore(backup);
 
 Gracefully shuts down the SearchManager and closes the provider.
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 await searchManager.shutdown();
@@ -784,12 +784,12 @@ The LunrSearchProvider uses field boosting to improve search relevance:
 
 The relevance score is calculated using:
 
-1. **Term Frequency (TF):** How often the search term appears
-2. **Inverse Document Frequency (IDF):** How unique the term is across all documents
-3. **Field Boosting:** Multiplier based on which field contains the match
-4. **Length Normalization:** Adjusts for document length
+1. __Term Frequency (TF):__ How often the search term appears
+2. __Inverse Document Frequency (IDF):__ How unique the term is across all documents
+3. __Field Boosting:__ Multiplier based on which field contains the match
+4. __Length Normalization:__ Adjusts for document length
 
-**Example:**
+__Example:__
 
 ```javascript
 // Searching for "authentication"
@@ -804,16 +804,16 @@ The SearchManager generates context-aware snippets with highlighted search terms
 
 ### Snippet Features
 
-1. **Best Position Selection:** Finds the text window with the most search term matches
-2. **Configurable Length:** Default 200 characters (configurable)
-3. **Term Highlighting:** Wraps matches in `<mark>` tags
-4. **Ellipsis Truncation:** Adds `...` for long content
+1. __Best Position Selection:__ Finds the text window with the most search term matches
+2. __Configurable Length:__ Default 200 characters (configurable)
+3. __Term Highlighting:__ Wraps matches in `<mark>` tags
+4. __Ellipsis Truncation:__ Adds `...` for long content
 
 ### Example
 
-**Query:** `"wiki documentation"`
+__Query:__ `"wiki documentation"`
 
-**Snippet Output:**
+__Snippet Output:__
 
 ```html
 This is the main <mark>wiki</mark> <mark>documentation</mark> page.
@@ -833,14 +833,14 @@ including creating pages, editing content...
 
 ### LunrSearchProvider
 
-**Current Implementation:** ✅ **Available**
+__Current Implementation:__ ✅ __Available__
 
 ```javascript
 const info = searchManager.provider.getProviderInfo();
 console.log(info);
 ```
 
-**Output:**
+__Output:__
 
 ```javascript
 {
@@ -857,7 +857,7 @@ console.log(info);
 }
 ```
 
-**Capabilities:**
+__Capabilities:__
 
 - ✅ Full-text search with stemming
 - ✅ Field-based relevance boosting
@@ -870,7 +870,7 @@ console.log(info);
 - ✅ In-memory indexing
 - ⚠️ Limited to ~10,000 pages
 
-**Use Cases:**
+__Use Cases:__
 
 - Small to medium wikis
 - Single-instance deployments
@@ -879,9 +879,9 @@ console.log(info);
 
 ### ElasticsearchProvider (Future)
 
-**Status:** 🔮 **Planned**
+__Status:__ 🔮 __Planned__
 
-**Capabilities:**
+__Capabilities:__
 
 - Distributed full-text search
 - Real-time indexing
@@ -892,7 +892,7 @@ console.log(info);
 - Multi-language support
 - Geographic search
 
-**Use Cases:**
+__Use Cases:__
 
 - Large-scale enterprise wikis
 - Multi-tenant deployments
@@ -901,9 +901,9 @@ console.log(info);
 
 ### AlgoliaSearchProvider (Future)
 
-**Status:** 🔮 **Planned**
+__Status:__ 🔮 __Planned__
 
-**Capabilities:**
+__Capabilities:__
 
 - Instant search-as-you-type
 - Managed cloud service
@@ -914,7 +914,7 @@ console.log(info);
 - Typo tolerance
 - Query suggestions
 
-**Use Cases:**
+__Use Cases:__
 
 - Cloud-native deployments
 - Public-facing wikis
@@ -955,13 +955,13 @@ await searchManager.rebuildIndex();
 
 ### LunrSearchProvider Performance
 
-**Index Building:**
+__Index Building:__
 
 - Time: ~0.1-0.5 seconds per 100 pages
 - Memory: ~5-10 MB per 1,000 pages
 - Recommended: <10,000 pages
 
-**Search Performance:**
+__Search Performance:__
 
 - Time: <10ms for most queries
 - Memory: Constant (index in memory)
@@ -969,28 +969,28 @@ await searchManager.rebuildIndex();
 
 ### Optimization Tips
 
-1. **Index Building:**
+1. __Index Building:__
 
    ```javascript
    // Build index during startup or off-peak hours
    await searchManager.buildSearchIndex();
    ```
 
-2. **Incremental Updates:**
+2. __Incremental Updates:__
 
    ```javascript
    // Update individual pages instead of full rebuild
    await searchManager.updatePageInIndex(pageName, pageData);
    ```
 
-3. **Result Limiting:**
+3. __Result Limiting:__
 
    ```javascript
    // Limit results for faster response
    const results = await searchManager.search(query, { maxResults: 10 });
    ```
 
-4. **Field Boosting:**
+4. __Field Boosting:__
 
    ```json
    // Fine-tune boost values for your content
@@ -1006,14 +1006,14 @@ await searchManager.rebuildIndex();
 
 #### 1. Search Returns No Results
 
-**Symptoms:**
+__Symptoms:__
 
 ```javascript
 const results = await searchManager.search('test');
 console.log(results); // []
 ```
 
-**Solutions:**
+__Solutions:__
 
 1. Check if index is built:
 
@@ -1038,13 +1038,13 @@ console.log(results); // []
 
 #### 2. Provider Load Failure
 
-**Symptoms:**
+__Symptoms:__
 
 ```
 Error: Failed to load search provider: Cannot find module '../providers/LunrSearchProvider'
 ```
 
-**Solutions:**
+__Solutions:__
 
 1. Verify provider file exists:
 
@@ -1068,7 +1068,7 @@ Error: Failed to load search provider: Cannot find module '../providers/LunrSear
 
 #### 3. Poor Search Relevance
 
-**Solutions:**
+__Solutions:__
 
 1. Adjust field boost values
 2. Use more specific search terms
@@ -1077,7 +1077,7 @@ Error: Failed to load search provider: Cannot find module '../providers/LunrSear
 
 #### 4. Slow Index Building
 
-**Solutions:**
+__Solutions:__
 
 1. Reduce page count
 2. Build index asynchronously
@@ -1107,14 +1107,14 @@ console.log(`Provider healthy: ${isHealthy}`);
 
 ### 1. Index Management
 
-✅ **Do:**
+✅ __Do:__
 
 - Build index during application startup
 - Use incremental updates for single page changes
 - Schedule periodic full rebuilds (e.g., daily)
 - Monitor index size and performance
 
-❌ **Don't:**
+❌ __Don't:__
 
 - Rebuild index on every page update
 - Build index synchronously in request handlers
@@ -1122,14 +1122,14 @@ console.log(`Provider healthy: ${isHealthy}`);
 
 ### 2. Search Queries
 
-✅ **Do:**
+✅ __Do:__
 
 - Use specific search terms
 - Limit results with `maxResults`
 - Use advanced search for complex queries
 - Cache frequently searched queries
 
-❌ **Don't:**
+❌ __Don't:__
 
 - Search with single-character terms
 - Return unlimited results
@@ -1137,14 +1137,14 @@ console.log(`Provider healthy: ${isHealthy}`);
 
 ### 3. Configuration
 
-✅ **Do:**
+✅ __Do:__
 
 - Tune boost values for your content
 - Configure appropriate snippet length
 - Set reasonable result limits
 - Use provider-specific optimizations
 
-❌ **Don't:**
+❌ __Don't:__
 
 - Use default values without testing
 - Set extremely high boost values
@@ -1152,14 +1152,14 @@ console.log(`Provider healthy: ${isHealthy}`);
 
 ### 4. Performance
 
-✅ **Do:**
+✅ __Do:__
 
 - Monitor search performance metrics
 - Use appropriate provider for scale
 - Implement result caching
 - Paginate large result sets
 
-❌ **Don't:**
+❌ __Don't:__
 
 - Block on index building
 - Load entire index for every search
@@ -1169,7 +1169,7 @@ console.log(`Provider healthy: ${isHealthy}`);
 
 ### From Direct Lunr.js to SearchManager
 
-**Before:**
+__Before:__
 
 ```javascript
 const lunr = require('lunr');
@@ -1182,7 +1182,7 @@ const idx = lunr(function () {
 const results = idx.search('query');
 ```
 
-**After:**
+__After:__
 
 ```javascript
 const searchManager = engine.getManager('SearchManager');
@@ -1192,7 +1192,7 @@ const results = await searchManager.search('query');
 
 ### Configuration Migration
 
-**Before:**
+__Before:__
 
 ```json
 {
@@ -1200,7 +1200,7 @@ const results = await searchManager.search('query');
 }
 ```
 
-**After:**
+__After:__
 
 ```json
 {
@@ -1237,6 +1237,6 @@ const results = await searchManager.search('query');
 
 ---
 
-**Maintained By:** Development Team
-**Status:** Active Development
-**Related Issue:** #102
+__Maintained By:__ Development Team
+__Status:__ Active Development
+__Related Issue:__ #102

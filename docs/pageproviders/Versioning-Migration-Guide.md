@@ -15,30 +15,30 @@ Complete guide for migrating existing ngdpbase installations from FileSystemProv
 
 ## Prerequisites
 
-- **ngdpbase version**: 1.3.2 or higher
-- **Node.js version**: 14.x or higher
-- **Disk space**: At least 2x your current pages directory size (for safety margin)
-- **Backup**: Complete backup of your wiki data (mandatory)
+- __ngdpbase version__: 1.3.2 or higher
+- __Node.js version__: 14.x or higher
+- __Disk space__: At least 2x your current pages directory size (for safety margin)
+- __Backup__: Complete backup of your wiki data (mandatory)
 
 ## Overview
 
 The migration process converts your existing pages to versioned format without modifying the original page files. The migration:
 
-1. **Discovers** all existing pages in `./pages/` and `./required-pages/`
-2. **Creates** version directories alongside existing pages
-3. **Generates** v1 (initial version) for each page
-4. **Builds** centralized page index for fast lookups
-5. **Validates** migration integrity
+1. __Discovers__ all existing pages in `./pages/` and `./required-pages/`
+2. __Creates__ version directories alongside existing pages
+3. __Generates__ v1 (initial version) for each page
+4. __Builds__ centralized page index for fast lookups
+5. __Validates__ migration integrity
 
-**Time Estimate**:
+__Time Estimate__:
 
 - Small wiki (< 100 pages): 1-2 minutes
 - Medium wiki (100-1000 pages): 5-10 minutes
 - Large wiki (> 1000 pages): 15-30 minutes
 
-**Data Safety**:
+__Data Safety__:
 
-- ✅ Original page files are **NOT** modified
+- ✅ Original page files are __NOT__ modified
 - ✅ Version directories are created separately
 - ✅ Migration can be rolled back
 - ✅ Content integrity verified with SHA-256 hashes
@@ -47,7 +47,7 @@ The migration process converts your existing pages to versioned format without m
 
 ### 1. Backup Your Data
 
-**CRITICAL**: Create a complete backup before proceeding.
+__CRITICAL__: Create a complete backup before proceeding.
 
 ```bash
 # Example backup command (adjust paths as needed)
@@ -121,7 +121,7 @@ Or with verbose output:
 node scripts/migrate-to-versioning.js --dry-run --verbose
 ```
 
-**Review the dry run output**:
+__Review the dry run output__:
 
 - Number of pages discovered
 - Any warnings about duplicate UUIDs
@@ -129,7 +129,7 @@ node scripts/migrate-to-versioning.js --dry-run --verbose
 
 ### Step 2: Stop Your Wiki
 
-**IMPORTANT**: Stop your ngdpbase application before migration.
+__IMPORTANT__: Stop your ngdpbase application before migration.
 
 ```bash
 # If using PM2
@@ -148,13 +148,13 @@ ps aux | grep node
 npm run migrate:versioning
 ```
 
-**Follow the interactive prompts**:
+__Follow the interactive prompts__:
 
-1. **Confirmation**: Review the summary and type `yes` to proceed
-2. **Progress**: Watch the progress bar as pages are migrated
-3. **Report**: Review the migration report when complete
+1. __Confirmation__: Review the summary and type `yes` to proceed
+2. __Progress__: Watch the progress bar as pages are migrated
+3. __Report__: Review the migration report when complete
 
-**Example Output**:
+__Example Output__:
 
 ```
 ═══════════════════════════════════════════════════════════════════
@@ -229,7 +229,7 @@ Edit your `app-custom-config.json`:
 }
 ```
 
-**Configuration Options**:
+__Configuration Options__:
 
 | Option | Default | Description |
 | -------- | --------- | ------------- |
@@ -369,18 +369,18 @@ pm2 logs ngdpbase --err
 
 #### Common Post-Migration Issues
 
-**Issue**: Pages not found after migration
+__Issue__: Pages not found after migration
 
-**Solution**:
+__Solution__:
 
 ```bash
 # Verify page index exists and is valid
 cat ./data/page-index.json | jq .
 ```
 
-**Issue**: Version history not showing
+__Issue__: Version history not showing
 
-**Solution**:
+__Solution__:
 
 ```bash
 # Check manifest files exist
@@ -398,9 +398,9 @@ find ./pages/versions -name "manifest.json" | wc -l
 Error: Duplicate UUID found: abc-123
 ```
 
-**Cause**: Two or more pages have the same UUID.
+__Cause__: Two or more pages have the same UUID.
 
-**Solution**:
+__Solution__:
 
 1. Find the duplicate pages:
 
@@ -417,9 +417,9 @@ Error: Duplicate UUID found: abc-123
 Error: EACCES: permission denied, mkdir './pages/versions'
 ```
 
-**Cause**: Insufficient permissions to create directories.
+__Cause__: Insufficient permissions to create directories.
 
-**Solution**:
+__Solution__:
 
 ```bash
 # Fix permissions
@@ -434,9 +434,9 @@ chmod -R u+w ./pages ./required-pages ./data
 Error: ENOSPC: no space left on device
 ```
 
-**Cause**: Insufficient disk space.
+__Cause__: Insufficient disk space.
 
-**Solution**:
+__Solution__:
 
 1. Free up disk space
 2. Remove old backups or logs
@@ -471,9 +471,9 @@ validate();
 Error: Content hash mismatch for uuid-123
 ```
 
-**Cause**: Content was modified during migration or file corruption.
+__Cause__: Content was modified during migration or file corruption.
 
-**Solution**:
+__Solution__:
 
 1. Check if files were modified during migration
 2. Re-run migration
@@ -528,17 +528,17 @@ rm -f ./data/page-index.json
 pm2 start ngdpbase
 ```
 
-**Note**: Rollback removes version history but preserves all original page files.
+__Note__: Rollback removes version history but preserves all original page files.
 
 ## FAQ
 
 ### Q: Will my existing pages be modified?
 
-**A**: No. The migration creates new version directories alongside your existing pages. Original page files are not modified.
+__A__: No. The migration creates new version directories alongside your existing pages. Original page files are not modified.
 
 ### Q: How much disk space will versioning use?
 
-**A**: With delta storage enabled:
+__A__: With delta storage enabled:
 
 - v1: Same size as original page
 - v2+: Only stores differences (typically 5-20% of original size)
@@ -547,11 +547,11 @@ pm2 start ngdpbase
 
 ### Q: Can I rollback after editing pages?
 
-**A**: Yes, but versions created after migration will be lost. Original pages remain unchanged.
+__A__: Yes, but versions created after migration will be lost. Original pages remain unchanged.
 
 ### Q: What happens if migration fails mid-way?
 
-**A**: The migration is designed to be safe:
+__A__: The migration is designed to be safe:
 
 - Atomic writes prevent corruption
 - Original pages are never modified
@@ -559,7 +559,7 @@ pm2 start ngdpbase
 
 ### Q: Can I migrate in batches?
 
-**A**: Not directly, but you can:
+__A__: Not directly, but you can:
 
 1. Move some pages to a temporary directory
 2. Run migration on remaining pages
@@ -568,23 +568,23 @@ pm2 start ngdpbase
 
 ### Q: How do I migrate from versioning back to non-versioning?
 
-**A**: Use the rollback process above. Original pages remain functional.
+__A__: Use the rollback process above. Original pages remain functional.
 
 ### Q: Will search and page lookups still work?
 
-**A**: Yes. VersioningFileProvider is fully backward compatible with FileSystemProvider's lookup mechanisms.
+__A__: Yes. VersioningFileProvider is fully backward compatible with FileSystemProvider's lookup mechanisms.
 
 ### Q: What if I have custom modifications to FileSystemProvider?
 
-**A**: Review your modifications. VersioningFileProvider extends FileSystemProvider, so most custom changes should still work. Test in a staging environment first.
+__A__: Review your modifications. VersioningFileProvider extends FileSystemProvider, so most custom changes should still work. Test in a staging environment first.
 
 ### Q: Can I disable delta storage after migration?
 
-**A**: Yes. Set `ngdpbase.page.provider.versioning.deltastorage: false` in config. New versions will store full content, but existing diffs remain.
+__A__: Yes. Set `ngdpbase.page.provider.versioning.deltastorage: false` in config. New versions will store full content, but existing diffs remain.
 
 ### Q: How do I access old versions?
 
-**A**: Version retrieval methods are available in VersioningFileProvider:
+__A__: Version retrieval methods are available in VersioningFileProvider:
 
 ```javascript
 // Get version history
@@ -605,7 +605,7 @@ const diff = await provider.compareVersions('PageName', 1, 3);
 
 ### Q: Are version directories backed up?
 
-**A**: Include `./pages/versions/` and `./required-pages/versions/` in your backup strategy. The page index `./data/page-index.json` should also be backed up.
+__A__: Include `./pages/versions/` and `./required-pages/versions/` in your backup strategy. The page index `./data/page-index.json` should also be backed up.
 
 ## Additional Resources
 
@@ -629,5 +629,5 @@ If you encounter issues not covered in this guide:
 
 ---
 
-**Last Updated**: January 2025
-**ngdpbase Version**: 1.3.2+
+__Last Updated__: January 2025
+__ngdpbase Version__: 1.3.2+

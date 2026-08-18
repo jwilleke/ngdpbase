@@ -5,9 +5,9 @@ user-keywords: [{{userKeywords}}]
 ---
 # Overview
 
-**Date:** {{date}}  
-**Attendees:**
-**Location:**
+__Date:__ {{date}}  
+__Attendees:__
+__Location:__
 
 ## Agenda
 
@@ -31,5 +31,5 @@ user-keywords: [{{userKeywords}}]
 
 ## Next Meeting
 
-**Date:** TBD  
-**Location:** TBD
+__Date:__ TBD  
+__Location:__ TBD

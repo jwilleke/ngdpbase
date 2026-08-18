@@ -1,11 +1,11 @@
 # JSPWikiPreprocessor Architecture
 
-**Status**: Production Architecture (as of 2026-04-27)
-**Related**: [Current-Rendering-Pipeline.md](./Current-Rendering-Pipeline.md) | [MANAGERS-OVERVIEW.md](./MANAGERS-OVERVIEW.md)
+__Status__: Production Architecture (as of 2026-04-27)
+__Related__: [Current-Rendering-Pipeline.md](./Current-Rendering-Pipeline.md) | [MANAGERS-OVERVIEW.md](./MANAGERS-OVERVIEW.md)
 
 ## Overview
 
-`JSPWikiPreprocessor` is a registered markup handler that converts JSPWiki-specific table syntax and `%%class%%` style blocks to HTML **before** Showdown markdown conversion. It runs as **Phase 2.5** in the `parseWithDOMExtraction()` pipeline with registration priority 95 (highest among handlers).
+`JSPWikiPreprocessor` is a registered markup handler that converts JSPWiki-specific table syntax and `%%class%%` style blocks to HTML __before__ Showdown markdown conversion. It runs as __Phase 2.5__ in the `parseWithDOMExtraction()` pipeline with registration priority 95 (highest among handlers).
 
 ## Position in the Rendering Pipeline
 
@@ -39,15 +39,15 @@ MarkupParser.parseWithDOMExtraction()
 
 ### Why Phase 2.5 (After Phase 1)?
 
-JSPWikiPreprocessor runs after `extractJSPWikiSyntax()` for a critical reason: Phase 1 extracts style blocks wrapped in `%%class … /%` into UUID placeholder spans. JSPWikiPreprocessor handles the **bare table rows** (`|| header ||` / `| cell |`) and any remaining `%%class%%` blocks that were not captured as style blocks in Phase 1.
+JSPWikiPreprocessor runs after `extractJSPWikiSyntax()` for a critical reason: Phase 1 extracts style blocks wrapped in `%%class … /%` into UUID placeholder spans. JSPWikiPreprocessor handles the __bare table rows__ (`|| header ||` / `| cell |`) and any remaining `%%class%%` blocks that were not captured as style blocks in Phase 1.
 
-**Why table syntax must run before Showdown (Phase 3):**
+__Why table syntax must run before Showdown (Phase 3):__
 
 Without Phase 2.5, Showdown wraps `|| header ||` in `<p>` tags during Phase 3, which prevents the table from being parsed. Producing the `<table>` HTML in Phase 2.5 leaves it unchanged by Showdown. ✅
 
-**Inline styles (`%%(css)`, `%%sup/sub/strike`) no longer use a post-processing pass (#907):**
+__Inline styles (`%%(css)`, `%%sup/sub/strike`) no longer use a post-processing pass (#907):__
 
-Earlier revisions ran a "Step 0.55" string-replace *after* Phase 2.5 to turn `%%sup 2%%` → `<sup>2</sup>`, because `JSPWikiPreprocessor.parseTable()` `escapeHtml()`'d cell values and `%` survived unescaped. That pass — and `convertInlineCssStyles()` — are **removed**. Inline styles are now extracted to typed DOM elements in Phase 1 (`type: 'inline-style'`), *before* block extraction, so a swatch's `/%` can't be mis-paired with an enclosing block and table cells receive an inert `data-jspwiki-placeholder` span that `populateCell` restores after the table is built. See [The DOM Extraction Pipeline → Style syntax is DOM-native too](../WikiDocument-Complete-Guide.md#style-syntax--is-dom-native-too-907). ([#592](https://github.com/jwilleke/ngdpbase/issues/592), [#907](https://github.com/jwilleke/ngdpbase/issues/907))
+Earlier revisions ran a "Step 0.55" string-replace *after* Phase 2.5 to turn `%%sup 2%%` → `<sup>2</sup>`, because `JSPWikiPreprocessor.parseTable()` `escapeHtml()`'d cell values and `%` survived unescaped. That pass — and `convertInlineCssStyles()` — are __removed__. Inline styles are now extracted to typed DOM elements in Phase 1 (`type: 'inline-style'`), *before* block extraction, so a swatch's `/%` can't be mis-paired with an enclosing block and table cells receive an inert `data-jspwiki-placeholder` span that `populateCell` restores after the table is built. See [The DOM Extraction Pipeline → Style syntax is DOM-native too](../WikiDocument-Complete-Guide.md#style-syntax--is-dom-native-too-907). ([#592](https://github.com/jwilleke/ngdpbase/issues/592), [#907](https://github.com/jwilleke/ngdpbase/issues/907))
 
 ## How JSPWikiPreprocessor Works
 
@@ -62,7 +62,7 @@ async process(content, context) {
 
 ### 2. Nested Block Parsing
 
-**Input:**
+__Input:__
 
 ```markdown
 %%zebra-table
@@ -73,7 +73,7 @@ async process(content, context) {
 /%
 ```
 
-**Processing Flow:**
+__Processing Flow:__
 
 ```javascript
 parseStyleBlocks(content, accumulatedClasses = [])
@@ -91,14 +91,14 @@ parseStyleBlocks(content, accumulatedClasses = [])
 
 ### 3. Table Parsing
 
-**JSPWiki Syntax:**
+__JSPWiki Syntax:__
 
 ``` markdown
 || Header 1 || Header 2 ||   ← Double pipes = header row
 | Cell 1 | Cell 2 |          ← Single pipes = data row
 ```
 
-**Parsing Logic:**
+__Parsing Logic:__
 
 ```javascript
 parseTableRow(line) {
@@ -109,7 +109,7 @@ parseTableRow(line) {
 }
 ```
 
-**HTML Output:**
+__HTML Output:__
 
 ```html
 <table class="table zebra-table sortable">
@@ -124,9 +124,9 @@ parseTableRow(line) {
 
 ### 4. Custom Color Support
 
-**Syntax:** `%%zebra-HEXCOLOR` (e.g., `%%zebra-ffe0e0`)
+__Syntax:__ `%%zebra-HEXCOLOR` (e.g., `%%zebra-ffe0e0`)
 
-**Processing:**
+__Processing:__
 
 ```javascript
 extractCustomStyles(['zebra-ffe0e0'])
@@ -140,7 +140,7 @@ extractCustomStyles(['zebra-ffe0e0'])
   └─ Output styles: '--zebra-row-even: #ffe0e0; --zebra-text-color: #000000;'
 ```
 
-**HTML Output:**
+__HTML Output:__
 
 ```html
 <table class="table zebra-table" style="--zebra-row-even: #ffe0e0; --zebra-text-color: #000000;">
@@ -150,7 +150,7 @@ extractCustomStyles(['zebra-ffe0e0'])
 
 ### With MarkupParser
 
-**Registration** (`src/parsers/MarkupParser.ts` — `registerDefaultHandlers()`):
+__Registration__ (`src/parsers/MarkupParser.ts` — `registerDefaultHandlers()`):
 
 ```typescript
 const jspwikiPreprocessor = new JSPWikiPreprocessor(this.engine);
@@ -159,7 +159,7 @@ await this.registerHandler(jspwikiPreprocessor);
 
 The handler sets `this.priority = 95` in its constructor, making it the first handler to run in Phase 2.5 / Phase 2.6.
 
-**Phase Execution** (`src/parsers/MarkupParser.ts` — `parseWithDOMExtraction()`):
+__Phase Execution__ (`src/parsers/MarkupParser.ts` — `parseWithDOMExtraction()`):
 
 ```typescript
 // Phase 2.5 / 2.6 — registered handlers in priority order
@@ -169,7 +169,7 @@ for (const handler of allHandlers) {
 }
 ```
 
-**Source:** `src/parsers/handlers/JSPWikiPreprocessor.ts`
+__Source:__ `src/parsers/handlers/JSPWikiPreprocessor.ts`
 
 ### With Client-Side JavaScript
 
@@ -201,7 +201,7 @@ JSPWikiPreprocessor generates HTML that client-side JavaScript enhances:
 
 ### With CSS
 
-**CSS Variables Flow:**
+__CSS Variables Flow:__
 
 ```css
 JSPWikiPreprocessor (JS)
@@ -314,15 +314,15 @@ describe('JSPWikiPreprocessor', () => {
 
 ### Integration Test Scenarios
 
-1. **End-to-End Rendering**
+1. __End-to-End Rendering__
    - Markdown file → MarkupParser → HTML output
    - Verify table structure, classes, inline styles
 
-2. **JavaScript Enhancement**
+2. __JavaScript Enhancement__
    - HTML table → zebraTable.js → .zebra-even classes
    - HTML table → tableSort.js → sortable columns
 
-3. **Theme Compatibility**
+3. __Theme Compatibility__
    - Light mode, dark mode, system preference
    - Custom colors in all themes
 
@@ -330,26 +330,26 @@ describe('JSPWikiPreprocessor', () => {
 
 ### Complexity Analysis
 
-- **Nested blocks:** O(n) where n = content length
-- **Table parsing:** O(rows × cells) per table
-- **Color calculation:** O(1) per custom color
+- __Nested blocks:__ O(n) where n = content length
+- __Table parsing:__ O(rows × cells) per table
+- __Color calculation:__ O(1) per custom color
 
 ### Optimization Strategies
 
-1. **Early Exit**
+1. __Early Exit__
 
    ```javascript
    if (!content.includes('%%')) return content; // No JSPWiki syntax
    ```
 
-2. **Regex Compilation**
+2. __Regex Compilation__
 
    ```javascript
    // Compile once in constructor
    this.blockPattern = /^%%([a-zA-Z0-9_-]+)$/;
    ```
 
-3. **Minimal DOM Manipulation**
+3. __Minimal DOM Manipulation__
    - Generate complete HTML strings
    - Single innerHTML assignment client-side
 
@@ -370,20 +370,20 @@ if (this.debug) {
 
 ### Common Issues
 
-**Issue:** Custom colors not applied
+__Issue:__ Custom colors not applied
 
-- **Check:** zebraTable.js selector includes `table.zebra-table`
-- **Check:** CSS rule includes `table.zebra-table tbody tr.zebra-even`
+- __Check:__ zebraTable.js selector includes `table.zebra-table`
+- __Check:__ CSS rule includes `table.zebra-table tbody tr.zebra-even`
 
-**Issue:** Headers outside table
+__Issue:__ Headers outside table
 
-- **Check:** JSPWikiPreprocessor registered in Phase 1
-- **Check:** Handler phase property: `this.phase = 1`
+- __Check:__ JSPWikiPreprocessor registered in Phase 1
+- __Check:__ Handler phase property: `this.phase = 1`
 
-**Issue:** Nested blocks not working
+__Issue:__ Nested blocks not working
 
-- **Check:** Matching `/%` for each `%%`
-- **Check:** Recursive call passes `accumulatedClasses`
+- __Check:__ Matching `/%` for each `%%`
+- __Check:__ Recursive call passes `accumulatedClasses`
 
 ## Related Documentation
 
@@ -394,4 +394,4 @@ if (this.debug) {
 
 ---
 
-**Last Updated:** 2026-04-27
+__Last Updated:__ 2026-04-27

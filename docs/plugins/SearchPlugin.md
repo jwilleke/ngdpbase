@@ -17,7 +17,7 @@ Embeds search results directly in wiki pages with filtering and formatting optio
 
 The SearchPlugin allows embedding search results within wiki content. It supports text queries, category filtering, keyword filtering, and multiple output formats. This enables creating dynamic pages that automatically display related content.
 
-**Source:** `plugins/SearchPlugin.js`
+__Source:__ `plugins/SearchPlugin.js`
 
 ## Plugin Metadata
 
@@ -92,7 +92,7 @@ Matches pages with either "economics" OR "geology" keywords.
 [{Search query='plugin' max=10}]
 ```
 
-**Output:** Table of pages containing "plugin" with relevance scores.
+__Output:__ Table of pages containing "plugin" with relevance scores.
 
 ### Example 2: All Pages in Category
 
@@ -108,7 +108,7 @@ Shows all pages categorized as "documentation".
 There are [{Search system-category='system' format='count'}] system pages.
 ```
 
-**Output:** `There are 42 system pages.`
+__Output:__ `There are 42 system pages.`
 
 ### Example 4: Titles Format
 
@@ -116,7 +116,7 @@ There are [{Search system-category='system' format='count'}] system pages.
 [{Search system-category='documentation' format='titles'}]
 ```
 
-**Output:**
+__Output:__
 
 ```html
 <div class="search-plugin search-titles">
@@ -133,7 +133,7 @@ There are [{Search system-category='system' format='count'}] system pages.
 [{Search user-keywords='test' format='list'}]
 ```
 
-**Output:** Simple unordered list of page names.
+__Output:__ Simple unordered list of page names.
 
 ### Example 6: Combined Query and Filter
 
@@ -173,9 +173,9 @@ Fetches up to 100 results and paginates them 20 per page.
 [{Search date='2026-05-01'}]
 ```
 
-Filters by **last-modified** date (inclusive, whole-day; combined AND with `author`/`editor`/category/keywords). `date='X'` is shorthand for `since='X' until='X'`. Invalid dates (non-`YYYY-MM-DD`) return an error.
+Filters by __last-modified__ date (inclusive, whole-day; combined AND with `author`/`editor`/category/keywords). `date='X'` is shorthand for `since='X' until='X'`. Invalid dates (non-`YYYY-MM-DD`) return an error.
 
-> Note: this is **last-modified only**. ngdpbase pages do not store a creation timestamp (frontmatter carries `lastModified`, not `created`), so a `created`-date filter is intentionally not offered.
+> Note: this is __last-modified only__. ngdpbase pages do not store a creation timestamp (frontmatter carries `lastModified`, not `created`), so a `created`-date filter is intentionally not offered.
 
 ## Output Formats
 
@@ -257,7 +257,7 @@ async execute(context, params) {
 | Invalid format | Unknown format type | Error message |
 | Search failure | Internal error | Error with message |
 
-> **Note:** Invalid `max`, `page`, or `pageSize` values fall back to their defaults rather than returning an error.
+> __Note:__ Invalid `max`, `page`, or `pageSize` values fall back to their defaults rather than returning an error.
 
 ## CSS Classes
 

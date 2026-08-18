@@ -77,9 +77,9 @@ Histograms track the distribution of durations (in milliseconds).
 
 The `http_requests_total` counter and `http_request_duration_ms` histogram include:
 
-- **method** -- HTTP method (`GET`, `POST`, etc.)
-- **route** -- Normalized path (e.g., `/wiki/:page`, `/edit/:page`) to avoid high-cardinality page names
-- **status** -- HTTP status code as a string (`200`, `404`, `500`, etc.)
+- __method__ -- HTTP method (`GET`, `POST`, etc.)
+- __route__ -- Normalized path (e.g., `/wiki/:page`, `/edit/:page`) to avoid high-cardinality page names
+- __status__ -- HTTP status code as a string (`200`, `404`, `500`, etc.)
 
 ## OTLP Export (Push-Based)
 

@@ -8,9 +8,9 @@ code: src/managers/AssetManager.ts
 
 # AssetProvider Implementation Guide
 
-**For:** Plugin authors and contributors building a new asset storage backend.
+__For:__ Plugin authors and contributors building a new asset storage backend.
 
-**Quick Reference** | [AssetService consumer API](../managers/AssetService.md)
+__Quick Reference__ | [AssetService consumer API](../managers/AssetService.md)
 
 ---
 
@@ -69,7 +69,7 @@ readonly id = 'my-plugin';   // good
 readonly id = 'MyPlugin';    // avoid — case-sensitive, breaks routing
 ```
 
-**Never reuse an id** that another provider might use. Built-in ids are `'local'`
+__Never reuse an id__ that another provider might use. Built-in ids are `'local'`
 (BasicAttachmentProvider) and `'media-library'` (FileSystemMediaProvider).
 
 ### `displayName` — human-readable label
@@ -88,7 +88,7 @@ readonly displayName = 'AWS S3 Asset Store';
 type ProviderCapability = 'upload' | 'search' | 'thumbnail' | 'stream';
 ```
 
-**Rule: never declare a capability you have not implemented.** `AssetManager`
+__Rule: never declare a capability you have not implemented.__ `AssetManager`
 guards optional method calls by checking capabilities first — if you declare
 `'thumbnail'` but omit `getThumbnail()`, the guard passes but the call throws.
 
@@ -102,7 +102,7 @@ guards optional method calls by checking capabilities first — if you declare
 All providers must implement `search()` and `getById()` regardless of
 capabilities — those are always required.
 
-**Examples:**
+__Examples:__
 
 ```typescript
 // Read-only media library — browse and thumbnails only
@@ -123,7 +123,7 @@ readonly capabilities: ProviderCapability[] = ['search'];
 
 Return a page of matching assets. `AssetManager` calls this with `pageSize: 9999`
 and `offset: 0` — it handles pagination across all providers itself. Return
-**all** matching items for the given query.
+__all__ matching items for the given query.
 
 ```typescript
 interface AssetQuery {
@@ -190,7 +190,7 @@ interface AssetRecord {
 }
 ```
 
-**`insertSnippet` convention** used by built-in providers:
+__`insertSnippet` convention__ used by built-in providers:
 
 ```typescript
 // Image MIME type
@@ -258,7 +258,7 @@ Optional liveness check. Return `true` when your backend can serve requests,
 - The remote service is unreachable
 
 `AssetManager` calls `healthCheck()` at startup and marks degraded providers.
-Degraded providers are **skipped in fan-out** so their errors never reach end
+Degraded providers are __skipped in fan-out__ so their errors never reach end
 users. A re-check via `AssetManager.checkProviderHealth()` can restore a
 recovered provider.
 
@@ -338,7 +338,7 @@ export default class MyStorageAddon {
 After registration your provider is included in every `AssetManager.search()` and
 `AssetManager.getById()` fan-out call, and appears in `getProviderHealth()` reports.
 
-**Replacing an existing provider:** `registerProvider()` replaces any provider
+__Replacing an existing provider:__ `registerProvider()` replaces any provider
 already registered under the same id and logs a warning. Use this deliberately
 to swap a built-in provider for a custom one (e.g. replacing `'local'` with an
 S3-backed attachment store).

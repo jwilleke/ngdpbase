@@ -35,8 +35,8 @@ All keys live under `ngdpbase.addons.calendar` in `app-custom-config.json`.
 
 | Field | Values | Description |
 |-------|--------|-------------|
-| `workflow` | `reservation` \| `managed` | **reservation**: members submit booking requests via `POST /api/calendar/reservations`; conflict detection enforced; events stored as `CLASS: CONFIDENTIAL`. **managed**: admin/clubhouse-manager create events directly via `POST /api/calendar/events`. |
-| `visibility` | `public` \| `authenticated` \| `private` | **public**: any visitor. **authenticated**: logged-in users. **private**: `admin` or `clubhouse-manager` roles only. |
+| `workflow` | `reservation` \| `managed` | __reservation__: members submit booking requests via `POST /api/calendar/reservations`; conflict detection enforced; events stored as `CLASS: CONFIDENTIAL`. __managed__: admin/clubhouse-manager create events directly via `POST /api/calendar/events`. |
+| `visibility` | `public` \| `authenticated` \| `private` | __public__: any visitor. __authenticated__: logged-in users. __private__: `admin` or `clubhouse-manager` roles only. |
 | `enabled` | boolean | Whether this calendar is active. Disabled calendars are excluded from all API responses and the admin dashboard. |
 
 ## Full example
@@ -115,8 +115,8 @@ Events with `class: CONFIDENTIAL` are always excluded from the marquee output.
 
 When `EmailManager` is configured and a reservation is submitted:
 
-- The **requester** receives a confirmation to their account email.
-- The **clubhouse-manager-email** receives a `[Manager]`-prefixed copy.
+- The __requester__ receives a confirmation to their account email.
+- The __clubhouse-manager-email__ receives a `[Manager]`-prefixed copy.
 
 Email delivery is fire-and-forget — a failed send does not fail the reservation.
 If `EmailManager` is not configured the reservation still succeeds silently.

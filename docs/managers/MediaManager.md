@@ -8,9 +8,9 @@ code: src/managers/MediaManager.ts
 
 # MediaManager
 
-**Module:** `src/managers/MediaManager.ts`
-**Extends:** [BaseManager](BaseManager.md)
-**Complete Guide:** [MediaManager-Complete-Guide.md](MediaManager-Complete-Guide.md)
+__Module:__ `src/managers/MediaManager.ts`
+__Extends:__ [BaseManager](BaseManager.md)
+__Complete Guide:__ [MediaManager-Complete-Guide.md](MediaManager-Complete-Guide.md)
 
 ---
 
@@ -18,22 +18,22 @@ code: src/managers/MediaManager.ts
 
 MediaManager browses, searches, and serves thumbnails for pre-existing media files
 (photos, videos) stored on external drives or local folders. It is strictly
-**read-only** with respect to source files. A persistent JSON index and on-demand
+__read-only__ with respect to source files. A persistent JSON index and on-demand
 Sharp thumbnails are maintained in the configured data directory.
 
 ## Key Features
 
-- **Filesystem scanning** — recursive walk of configured folders via `exiftool-vendored`
-- **EXIF / IPTC / XMP metadata** — date, title, description, keywords, camera, GPS
-- **Persistent JSON index** — loaded at startup; incrementally updated on each scan
-- **Thumbnail generation** — Sharp, cached to disk; images only (videos show placeholder)
-- **Year-based browse** — items grouped by year (from EXIF or filename/path fallback)
-- **Keyword browsing** — `listByKeyword()` returns items whose EXIF/XMP keywords contain a given value; powers `/media/keyword/:keyword` album pages
-- **Full-text search** — multi-token AND search across all metadata fields
-- **Private-page awareness** — items linked to private pages hidden from non-owners
-- **MediaPlugin integration** — `[{MediaPlugin}]` wiki plugin embeds counts, lists, and thumbnail albums in wiki pages
-- **Opt-in** — disabled by default (`ngdpbase.media.enabled = false`)
-- **Background rescan** — configurable periodic timer
+- __Filesystem scanning__ — recursive walk of configured folders via `exiftool-vendored`
+- __EXIF / IPTC / XMP metadata__ — date, title, description, keywords, camera, GPS
+- __Persistent JSON index__ — loaded at startup; incrementally updated on each scan
+- __Thumbnail generation__ — Sharp, cached to disk; images only (videos show placeholder)
+- __Year-based browse__ — items grouped by year (from EXIF or filename/path fallback)
+- __Keyword browsing__ — `listByKeyword()` returns items whose EXIF/XMP keywords contain a given value; powers `/media/keyword/:keyword` album pages
+- __Full-text search__ — multi-token AND search across all metadata fields
+- __Private-page awareness__ — items linked to private pages hidden from non-owners
+- __MediaPlugin integration__ — `[{MediaPlugin}]` wiki plugin embeds counts, lists, and thumbnail albums in wiki pages
+- __Opt-in__ — disabled by default (`ngdpbase.media.enabled = false`)
+- __Background rescan__ — configurable periodic timer
 
 ## Quick Example
 
@@ -121,7 +121,7 @@ No attachment upload is needed. The media library index is consulted only for `m
 | `GET` | `/admin/media` | Admin: stats + rescan |
 | `POST` | `/admin/media/rescan` | Trigger full rescan (admin only) |
 
-All routes return **503** when `ngdpbase.media.enabled = false`.
+All routes return __503__ when `ngdpbase.media.enabled = false`.
 
 ## Configuration
 

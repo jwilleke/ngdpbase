@@ -32,7 +32,7 @@ Re-run on each release to track drift over time. Compare against the previous ba
 
 ## Drift vs baseline-v3.44.6-2026-05-28.md
 
-⚠️  **Regression candidate(s):** memory (+124.0%)
+⚠️  __Regression candidate(s):__ memory (+124.0%)
 
 | Metric | Previous | New | Δ |
 | --- | --- | --- | --- |

@@ -6,9 +6,9 @@ ngdpbase uses a layered configuration system inspired by JSPWiki's properties fi
 
 Configuration files are loaded and merged in the following order (later files override earlier ones):
 
-1. **`app-default-config.json`** - Base configuration with all defaults
-2. **`app-{environment}-config.json`** - Environment-specific overrides (optional)
-3. **`app-custom-config.json`** - Local custom overrides (optional, .gitignored)
+1. __`app-default-config.json`__ - Base configuration with all defaults
+2. __`app-{environment}-config.json`__ - Environment-specific overrides (optional)
+3. __`app-custom-config.json`__ - Local custom overrides (optional, .gitignored)
 
 ## Environment Detection
 
@@ -126,12 +126,12 @@ Result in development: `port = 8080` (custom wins)
 
 ## Best Practices
 
-1. **Never modify `app-default-config.json` directly** - It's the base template
-2. **Use environment configs for environment-specific settings** - Debug flags, URLs, etc.
-3. **Use custom config for personal/local settings** - Ports, paths, secrets
-4. **Comment fields starting with `_` are ignored** - Use for documentation
-5. **Keep secrets out of environment configs** - They're committed to git
-6. **Use environment variables for sensitive data** - Database passwords, API keys
+1. __Never modify `app-default-config.json` directly__ - It's the base template
+2. __Use environment configs for environment-specific settings__ - Debug flags, URLs, etc.
+3. __Use custom config for personal/local settings__ - Ports, paths, secrets
+4. __Comment fields starting with `_` are ignored__ - Use for documentation
+5. __Keep secrets out of environment configs__ - They're committed to git
+6. __Use environment variables for sensitive data__ - Database passwords, API keys
 
 ## Checking Active Configuration
 

@@ -22,7 +22,7 @@ If you haven't already created the `traefik_net` network on your deployment host
 docker network create traefik_net
 ```
 
-**Note:** This network should be the same network that Traefik is using on 192.168.68.71.
+__Note:__ This network should be the same network that Traefik is using on 192.168.68.71.
 
 ### 2. Configure Environment
 
@@ -124,11 +124,11 @@ docker-compose -f docker-compose-traefik.yml logs -f
 
 ## How It Works
 
-1. **HTTP to HTTPS Redirect**: Traefik automatically redirects HTTP to HTTPS
-2. **SSL/TLS**: Traefik handles SSL termination using Let's Encrypt certificates
-3. **Authentication**: Traefik forwards authentication requests to Authelia
-4. **Routing**: After authentication, Traefik forwards requests to ngdpbase container
-5. **Session Management**: ngdpbase handles its own session management after initial auth
+1. __HTTP to HTTPS Redirect__: Traefik automatically redirects HTTP to HTTPS
+2. __SSL/TLS__: Traefik handles SSL termination using Let's Encrypt certificates
+3. __Authentication__: Traefik forwards authentication requests to Authelia
+4. __Routing__: After authentication, Traefik forwards requests to ngdpbase container
+5. __Session Management__: ngdpbase handles its own session management after initial auth
 
 ## Configuration Details
 
@@ -200,7 +200,7 @@ volumes:
   - ../config/app-custom-config.json:/app/config/app-custom-config.json
 ```
 
-**Note:** ConfigurationManager loads configuration in two tiers:
+__Note:__ ConfigurationManager loads configuration in two tiers:
 
 - `config/app-default-config.json` (built into image, read-only defaults)
 - `config/app-custom-config.json` (your instance overrides)
@@ -292,12 +292,12 @@ docker-compose -f docker-compose-traefik.yml up -d
 
 ## Security Considerations
 
-1. **Session Secret**: Change the default session secret in production
-2. **User Permissions**: Run container as non-root user (already configured)
-3. **Network Isolation**: Container only accessible through Traefik
-4. **Authentication**: All access protected by Authelia 2FA
-5. **SSL/TLS**: Automatic HTTPS with Let's Encrypt certificates
-6. **Security Headers**: Consider adding security headers in Traefik
+1. __Session Secret__: Change the default session secret in production
+2. __User Permissions__: Run container as non-root user (already configured)
+3. __Network Isolation__: Container only accessible through Traefik
+4. __Authentication__: All access protected by Authelia 2FA
+5. __SSL/TLS__: Automatic HTTPS with Let's Encrypt certificates
+6. __Security Headers__: Consider adding security headers in Traefik
 
 ### Recommended Traefik Security Headers
 

@@ -86,7 +86,7 @@ For testing versioning in development:
 }
 ```
 
-**Note:** No separate `enabled` flag needed - switching to `versioningfileprovider` enables versioning
+__Note:__ No separate `enabled` flag needed - switching to `versioningfileprovider` enables versioning
 
 ## VersioningFileProvider Structure
 
@@ -119,14 +119,14 @@ VersioningFileProvider maintains current page storage locations and adds version
               └── content.diff
 ```
 
-**Design Rationale:**
+__Design Rationale:__
 
-- **Centralized index**: `./data/page-index.json` provides fast lookup across all pages
-- **Co-located versions**: Version history lives in `versions/` subfolder within each directory
-- **Minimal migration**: Pages stay in current locations, reducing migration complexity
-- **Delta storage**: v1 stores full content, v2+ stores diffs (saves disk space)
-- **Scalability**: Nested version folders scale to thousands of versions per page
-- **Single source of truth**: All version metadata (author, date, hash, etc.) stored ONLY in `manifest.json` to prevent inconsistency. Individual v{N}/meta.json files are NOT used.
+- __Centralized index__: `./data/page-index.json` provides fast lookup across all pages
+- __Co-located versions__: Version history lives in `versions/` subfolder within each directory
+- __Minimal migration__: Pages stay in current locations, reducing migration complexity
+- __Delta storage__: v1 stores full content, v2+ stores diffs (saves disk space)
+- __Scalability__: Nested version folders scale to thousands of versions per page
+- __Single source of truth__: All version metadata (author, date, hash, etc.) stored ONLY in `manifest.json` to prevent inconsistency. Individual v{N}/meta.json files are NOT used.
 
 ## Missing Metadata Fields
 
@@ -188,18 +188,18 @@ Add to schema.org properties:
 
 ### Delta Storage Implementation
 
-- **Library**: Use `fast-diff` (npm package) for efficient text diffing
-- **Storage**: v1 = full content, v2+ = diffs from previous version
-- **Retrieval**: Load v1, sequentially apply diffs to reconstruct any version
-- **Benefits**: 80-95% disk space savings for text-heavy wikis
-- **Algorithm**: Myers diff algorithm (similar to git)
+- __Library__: Use `fast-diff` (npm package) for efficient text diffing
+- __Storage__: v1 = full content, v2+ = diffs from previous version
+- __Retrieval__: Load v1, sequentially apply diffs to reconstruct any version
+- __Benefits__: 80-95% disk space savings for text-heavy wikis
+- __Algorithm__: Myers diff algorithm (similar to git)
 
 ### Additional Optimizations
 
-- **Compression**: gzip old versions (especially diffs compress well)
-- **Lazy loading**: Don't load version history unless requested
-- **Caching**: Cache current versions in memory (FileSystemProvider already does this)
-- **Parallel reconstruction**: For frequently accessed versions, cache reconstructed content
+- __Compression__: gzip old versions (especially diffs compress well)
+- __Lazy loading__: Don't load version history unless requested
+- __Caching__: Cache current versions in memory (FileSystemProvider already does this)
+- __Parallel reconstruction__: For frequently accessed versions, cache reconstructed content
 
 ### Implementation Libraries
 

@@ -2,7 +2,7 @@
 
 Guide for deploying ngdpbase to various environments.
 
-> **For headless / containerized deploys** (Docker, Kubernetes), also read [`HEADLESS-DEPLOYMENT-NOTES.md`](./HEADLESS-DEPLOYMENT-NOTES.md). It captures gotchas — anchor Organization JSON-LD, theme/front-page/page-provider config, addons-path array form, Alpine `ndots:5` DNS, `npm ci --omit=dev` + husky, addon UUID validation — that aren't obvious from the default config alone.
+> __For headless / containerized deploys__ (Docker, Kubernetes), also read [`HEADLESS-DEPLOYMENT-NOTES.md`](./HEADLESS-DEPLOYMENT-NOTES.md). It captures gotchas — anchor Organization JSON-LD, theme/front-page/page-provider config, addons-path array form, Alpine `ndots:5` DNS, `npm ci --omit=dev` + husky, addon UUID validation — that aren't obvious from the default config alone.
 
 ## Published Image
 
@@ -10,12 +10,12 @@ ngdpbase publishes a container image to `ghcr.io/jwilleke/ngdpbase:<version>` on
 
 This image is the single canonical container artifact for ngdpbase. It's intended for:
 
-- **Container deployments** — `docker run`, `docker-compose`, Kubernetes manifests pulling the image directly.
-- **Downstream domain-addon images** that layer on top using `FROM ghcr.io/jwilleke/ngdpbase:<version>` and add their own addon code (e.g. [`jwilleke/geohazardwatch`](https://github.com/jwilleke/geohazardwatch)). These consumers should add a [Renovate](https://docs.renovatebot.com/) (or Dependabot) annotation so the `FROM` tag auto-bumps when ngdpbase ships a new version — see [`docs/platform/addon-development-guide.md`](../docs/platform/addon-development-guide.md) for the recipe.
+- __Container deployments__ — `docker run`, `docker-compose`, Kubernetes manifests pulling the image directly.
+- __Downstream domain-addon images__ that layer on top using `FROM ghcr.io/jwilleke/ngdpbase:<version>` and add their own addon code (e.g. [`jwilleke/geohazardwatch`](https://github.com/jwilleke/geohazardwatch)). These consumers should add a [Renovate](https://docs.renovatebot.com/) (or Dependabot) annotation so the `FROM` tag auto-bumps when ngdpbase ships a new version — see [`docs/platform/addon-development-guide.md`](../docs/platform/addon-development-guide.md) for the recipe.
 
-It is **not** consumed by host-deployed instances managed via `./server.sh` and PM2 (jimstest, fairways-base, ngdp-temp-builds, etc.). Those run from a git checkout against Node directly; they pull source on every release, build locally with `npm run build`, and never touch the image. Sister-site working copies do contain `.github/workflows/docker-build.yml` because it's tracked in upstream master, but the workflow only fires in the canonical `jwilleke/ngdpbase` repo — clones never trigger it.
+It is __not__ consumed by host-deployed instances managed via `./server.sh` and PM2 (jimstest, fairways-base, ngdp-temp-builds, etc.). Those run from a git checkout against Node directly; they pull source on every release, build locally with `npm run build`, and never touch the image. Sister-site working copies do contain `.github/workflows/docker-build.yml` because it's tracked in upstream master, but the workflow only fires in the canonical `jwilleke/ngdpbase` repo — clones never trigger it.
 
-Net effect: exactly **one** image build per ngdpbase release, regardless of how many sister-site clones exist.
+Net effect: exactly __one__ image build per ngdpbase release, regardless of how many sister-site clones exist.
 
 ## Table of Contents
 
@@ -49,12 +49,12 @@ Deploy to a remote Linux server via SSH.
 
 ### Prerequisites
 
-**On your local machine:**
+__On your local machine:__
 
 - SSH access to remote server
 - Git (recommended for deployment)
 
-**On remote server:**
+__On remote server:__
 
 - Docker and Docker Compose installed
 - Git installed
@@ -122,7 +122,7 @@ curl http://localhost:3000
 # Or from another machine: curl http://192.168.68.71:3000
 ```
 
-**Important directories:**
+__Important directories:__
 
 - `required-pages/` - System pages (IN REPO - automatically cloned)
 - `pages/` - User wiki content (created at runtime, persisted across restarts)
@@ -144,7 +144,7 @@ docker-compose up -d --build
 docker-compose logs -f ngdpbase
 ```
 
-**Note:** Updates preserve your `pages/`, `data/`, `logs/`, and `sessions/` directories.
+__Note:__ Updates preserve your `pages/`, `data/`, `logs/`, and `sessions/` directories.
 
 ### Deployment Methods
 
@@ -156,7 +156,7 @@ Uses git to deploy from repository:
 DEPLOY_METHOD=git ./deploy-remote.sh
 ```
 
-**Pros:**
+__Pros:__
 
 - Version controlled on server
 - Easy rollbacks and updates
@@ -164,12 +164,12 @@ DEPLOY_METHOD=git ./deploy-remote.sh
 - Ensures `required-pages/` system directory is present
 - Cleaner deployment process
 
-**Cons:**
+__Cons:__
 
 - Requires git repository
 - Server needs network access to git remote
 
-**Important:** The `required-pages/` directory is **required** and is part of the repository. It contains system pages like "Everything We Know About You", "LeftMenu", etc. Git-based deployment ensures this directory is present.
+__Important:__ The `required-pages/` directory is __required__ and is part of the repository. It contains system pages like "Everything We Know About You", "LeftMenu", etc. Git-based deployment ensures this directory is present.
 
 #### Method 2: rsync (Alternative)
 
@@ -179,13 +179,13 @@ Copies files directly from local to remote:
 DEPLOY_METHOD=rsync ./deploy-remote.sh
 ```
 
-**Pros:**
+__Pros:__
 
 - Fast for updates
 - No need for git repository on server
 - Excludes development files automatically
 
-**Cons:**
+__Cons:__
 
 - Requires rsync on both machines
 - Doesn't track version history on server
@@ -409,7 +409,7 @@ docker cp ngdpbase:/tmp/backup.tar.gz ./backup_$(date +%Y%m%d).tar.gz
 
 ### Deployment Script Issues
 
-**Cannot connect via SSH:**
+__Cannot connect via SSH:__
 
 ```bash
 # Test SSH manually
@@ -422,7 +422,7 @@ cat ~/.ssh/config
 ssh -i ~/.ssh/id_rsa user@host
 ```
 
-**rsync not found:**
+__rsync not found:__
 
 ```bash
 # Install rsync on macOS
@@ -432,7 +432,7 @@ brew install rsync
 sudo apt-get install rsync
 ```
 
-**Docker not found on remote:**
+__Docker not found on remote:__
 
 ```bash
 # Install Docker on remote server
@@ -443,7 +443,7 @@ sudo usermod -aG docker $USER
 
 ### Container Issues
 
-**Container won't start:**
+__Container won't start:__
 
 ```bash
 # Check logs
@@ -457,7 +457,7 @@ docker-compose down
 docker-compose up -d --build
 ```
 
-**Permission errors:**
+__Permission errors:__
 
 ```bash
 # Check UID/GID in .env
@@ -469,7 +469,7 @@ sudo chown -R $(id -u):$(id -g) pages data logs sessions
 
 ### Firewall Issues
 
-**Can't access from outside:**
+__Can't access from outside:__
 
 ```bash
 # Check if port is open locally

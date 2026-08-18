@@ -8,36 +8,36 @@ code: src/managers/PolicyValidator.ts
 
 # PolicyValidator Documentation
 
-**Version:** 1.3.2
-**Last Updated:** 2025-10-11
-**Manager Path:** [src/managers/PolicyValidator.ts](../../src/managers/PolicyValidator.ts)
+__Version:__ 1.3.2
+__Last Updated:__ 2025-10-11
+__Manager Path:__ [src/managers/PolicyValidator.ts](../../src/managers/PolicyValidator.ts)
 
 ---
 
 ## Overview
 
-The **PolicyValidator** validates policy schemas, detects conflicts between policies, and ensures policy integrity before they are used by PolicyEvaluator. It uses JSON Schema (Ajv) for structural validation and custom logic for semantic validation.
+The __PolicyValidator__ validates policy schemas, detects conflicts between policies, and ensures policy integrity before they are used by PolicyEvaluator. It uses JSON Schema (Ajv) for structural validation and custom logic for semantic validation.
 
 ### Key Features
 
-- ✅ **Schema Validation:** Uses JSON Schema (Ajv) to validate policy structure
-- ✅ **Business Logic Validation:** Checks for duplicates, invalid ranges
-- ✅ **Semantic Validation:** Detects logical inconsistencies
-- ✅ **Conflict Detection:** Identifies overlapping or conflicting policies
-- ✅ **Priority Analysis:** Finds policies that override each other
-- ✅ **Warning Generation:** Provides warnings for potential issues
-- ✅ **Validation Caching:** Caches validation results for performance
+- ✅ __Schema Validation:__ Uses JSON Schema (Ajv) to validate policy structure
+- ✅ __Business Logic Validation:__ Checks for duplicates, invalid ranges
+- ✅ __Semantic Validation:__ Detects logical inconsistencies
+- ✅ __Conflict Detection:__ Identifies overlapping or conflicting policies
+- ✅ __Priority Analysis:__ Finds policies that override each other
+- ✅ __Warning Generation:__ Provides warnings for potential issues
+- ✅ __Validation Caching:__ Caches validation results for performance
 
 ---
 
 ## Purpose
 
-PolicyValidator serves as the **quality assurance system** for policies. It ensures:
+PolicyValidator serves as the __quality assurance system__ for policies. It ensures:
 
-1. **Structural Integrity** - Policies have required fields and correct types
-2. **Logical Consistency** - Policies don't have contradictory conditions
-3. **No Conflicts** - Policies don't unexpectedly override each other
-4. **Best Practices** - Policies follow recommended patterns
+1. __Structural Integrity__ - Policies have required fields and correct types
+2. __Logical Consistency__ - Policies don't have contradictory conditions
+3. __No Conflicts__ - Policies don't unexpectedly override each other
+4. __Best Practices__ - Policies follow recommended patterns
 
 ---
 
@@ -133,11 +133,11 @@ PolicyValidator serves as the **quality assurance system** for policies. It ensu
 
 Validates a single policy for structural, business logic, and semantic correctness.
 
-**Parameters:**
+__Parameters:__
 
 - `policy` (object) - Policy to validate
 
-**Returns:** `object`
+__Returns:__ `object`
 
 ```javascript
 {
@@ -147,7 +147,7 @@ Validates a single policy for structural, business logic, and semantic correctne
 }
 ```
 
-**Example:**
+__Example:__
 
 ```javascript
 const policyValidator = engine.getManager('PolicyValidator');
@@ -173,12 +173,12 @@ if (result.warnings.length > 0) {
 }
 ```
 
-**Validation Layers:**
+__Validation Layers:__
 
-1. **Schema Validation** - Uses JSON Schema (Ajv)
-2. **Business Logic** - Custom validation rules
-3. **Semantic Check** - Logical consistency checks
-4. **Warning Generation** - Best practice recommendations
+1. __Schema Validation__ - Uses JSON Schema (Ajv)
+2. __Business Logic__ - Custom validation rules
+3. __Semantic Check__ - Logical consistency checks
+4. __Warning Generation__ - Best practice recommendations
 
 ---
 
@@ -186,11 +186,11 @@ if (result.warnings.length > 0) {
 
 Validates all policies and detects conflicts between them.
 
-**Parameters:**
+__Parameters:__
 
 - `policies` (`Array<object>`, optional) - Policies to validate (default: get from PolicyManager)
 
-**Returns:** `object`
+__Returns:__ `object`
 
 ```javascript
 {
@@ -205,7 +205,7 @@ Validates all policies and detects conflicts between them.
 }
 ```
 
-**Example:**
+__Example:__
 
 ```javascript
 const policyValidator = engine.getManager('PolicyValidator');
@@ -222,7 +222,7 @@ if (!result.isValid) {
 }
 ```
 
-**Checks:**
+__Checks:__
 
 1. Validates each policy individually
 2. Checks for duplicate policy IDs
@@ -235,11 +235,11 @@ if (!result.isValid) {
 
 Detects conflicting policies that might override each other.
 
-**Parameters:**
+__Parameters:__
 
 - `policies` (`Array<object>`) - Policies to check
 
-**Returns:** `object`
+__Returns:__ `object`
 
 ```javascript
 {
@@ -248,17 +248,17 @@ Detects conflicting policies that might override each other.
 }
 ```
 
-**Conflict Types:**
+__Conflict Types:__
 
-1. **Same Priority Conflict** (ERROR)
+1. __Same Priority Conflict__ (ERROR)
    - Multiple policies with same highest priority
    - Evaluation order becomes unpredictable
 
-2. **Override Warning** (WARNING)
+2. __Override Warning__ (WARNING)
    - Higher priority policy overrides lower priority
    - Expected behavior but worth noting
 
-**Example:**
+__Example:__
 
 ```javascript
 const conflicts = policyValidator.detectPolicyConflicts(policies);
@@ -287,11 +287,11 @@ if (conflicts.warnings.length > 0) {
 
 Validates a policy and saves it (if valid) to PolicyManager.
 
-**Parameters:**
+__Parameters:__
 
 - `policy` (object) - Policy to validate and save
 
-**Returns:** `Promise<object>`
+__Returns:__ `Promise<object>`
 
 ```javascript
 {
@@ -302,7 +302,7 @@ Validates a policy and saves it (if valid) to PolicyManager.
 }
 ```
 
-**Example:**
+__Example:__
 
 ```javascript
 try {
@@ -315,7 +315,7 @@ try {
 }
 ```
 
-**Process:**
+__Process:__
 
 1. Validates policy structure
 2. Checks for conflicts with existing policies
@@ -330,7 +330,7 @@ try {
 
 Uses JSON Schema to validate structure and types.
 
-**Checks:**
+__Checks:__
 
 - Required fields present
 - Correct data types
@@ -338,7 +338,7 @@ Uses JSON Schema to validate structure and types.
 - Pattern matching
 - Array constraints
 
-**Example Errors:**
+__Example Errors:__
 
 ```javascript
 {
@@ -349,7 +349,7 @@ Uses JSON Schema to validate structure and types.
 }
 ```
 
-**Policy Schema:**
+__Policy Schema:__
 
 ```javascript
 {
@@ -382,14 +382,14 @@ Uses JSON Schema to validate structure and types.
 
 Custom validation rules for business constraints.
 
-**Checks:**
+__Checks:__
 
 - No duplicate subjects
 - No duplicate resources
 - No duplicate actions
 - Priority in valid range (0-1000)
 
-**Example Errors:**
+__Example Errors:__
 
 ```javascript
 {
@@ -411,14 +411,14 @@ Custom validation rules for business constraints.
 
 Checks for logical consistency and completeness.
 
-**Checks:**
+__Checks:__
 
 - Time-range conditions have both start and end times
 - IP-range conditions have ranges defined
 - Attribute conditions have key, operator, and value
 - Deny policies don't include admin actions (anti-pattern)
 
-**Example Errors:**
+__Example Errors:__
 
 ```javascript
 {
@@ -440,9 +440,9 @@ Checks for logical consistency and completeness.
 
 Generates warnings for potential issues (non-critical).
 
-**Warning Types:**
+__Warning Types:__
 
-1. **Priority Warnings**
+1. __Priority Warnings__
 
    ```javascript
    {
@@ -451,7 +451,7 @@ Generates warnings for potential issues (non-critical).
    }
    ```
 
-2. **Scope Warnings**
+2. __Scope Warnings__
 
    ```javascript
    {
@@ -461,7 +461,7 @@ Generates warnings for potential issues (non-critical).
    }
    ```
 
-3. **Condition Warnings**
+3. __Condition Warnings__
 
    ```javascript
    {
@@ -476,13 +476,13 @@ Generates warnings for potential issues (non-critical).
 
 ### Overlap Detection
 
-Policies are considered **overlapping** if they have:
+Policies are considered __overlapping__ if they have:
 
 1. Matching subjects (same roles/users)
 2. Matching resources (same pages/patterns)
 3. Matching actions
 
-**Example Overlap:**
+__Example Overlap:__
 
 ```javascript
 // Policy A
@@ -504,7 +504,7 @@ Policies are considered **overlapping** if they have:
 
 When overlapping policies have different effects:
 
-1. **Higher Priority Wins** (if priorities differ)
+1. __Higher Priority Wins__ (if priorities differ)
 
    ```
    Policy A: priority 80, effect: allow
@@ -512,7 +512,7 @@ When overlapping policies have different effects:
    Result: WARNING (A overrides B)
    ```
 
-2. **Unpredictable Order** (if priorities are equal)
+2. __Unpredictable Order__ (if priorities are equal)
 
    ```
    Policy A: priority 50, effect: allow
@@ -536,7 +536,7 @@ const cacheKey = `policy_${policy.id}`;
 
 ### Cache Operations
 
-**Check Cache:**
+__Check Cache:__
 
 ```javascript
 if (this.validationCache.has(cacheKey)) {
@@ -544,19 +544,19 @@ if (this.validationCache.has(cacheKey)) {
 }
 ```
 
-**Store Result:**
+__Store Result:__
 
 ```javascript
 this.validationCache.set(cacheKey, result);
 ```
 
-**Clear Cache:**
+__Clear Cache:__
 
 ```javascript
 this.validationCache.clear();
 ```
 
-**When to Clear:**
+__When to Clear:__
 
 - After saving a policy
 - After updating policies
@@ -771,7 +771,7 @@ async function checkPolicyConflicts() {
 
 ### 1. Always Validate Before Saving
 
-✅ **Do:**
+✅ __Do:__
 
 ```javascript
 const validation = policyValidator.validatePolicy(newPolicy);
@@ -780,7 +780,7 @@ if (validation.isValid) {
 }
 ```
 
-❌ **Don't:**
+❌ __Don't:__
 
 ```javascript
 await savePolicyToConfig(newPolicy); // No validation!
@@ -788,7 +788,7 @@ await savePolicyToConfig(newPolicy); // No validation!
 
 ### 2. Handle Warnings Appropriately
 
-✅ **Do:**
+✅ __Do:__
 
 ```javascript
 if (result.warnings.length > 0) {
@@ -799,7 +799,7 @@ if (result.warnings.length > 0) {
 
 ### 3. Use Unique Priority Values
 
-✅ **Do:**
+✅ __Do:__
 
 ```json
 [
@@ -809,7 +809,7 @@ if (result.warnings.length > 0) {
 ]
 ```
 
-❌ **Don't:**
+❌ __Don't:__
 
 ```json
 [
@@ -820,7 +820,7 @@ if (result.warnings.length > 0) {
 
 ### 4. Clear Cache After Updates
 
-✅ **Do:**
+✅ __Do:__
 
 ```javascript
 await policyManager.savePolicy(updatedPolicy);
@@ -879,5 +879,5 @@ policyValidator.clearCache(); // Clear validation cache
 
 ---
 
-**Maintained By:** Development Team
-**Status:** Active Development
+__Maintained By:__ Development Team
+__Status:__ Active Development

@@ -8,7 +8,7 @@ code: src/plugins/MediaSearch.ts
 
 # MediaSearch
 
-**Stub plugin.** Will render search results from the media index. Full implementation deferred to MediaManager Phase 4.
+__Stub plugin.__ Will render search results from the media index. Full implementation deferred to MediaManager Phase 4.
 
 ## Intended Syntax (Phase 4)
 

@@ -10,7 +10,7 @@ code: src/providers/AuthentikBearerAuthProvider.ts
 
 Authenticates non-browser/API requests by verifying an [Authentik](https://goauthentik.io/)-issued OAuth/OIDC bearer JWT presented on the `Authorization: Bearer <token>` header. Use when a headless client — e.g. an AI agent driving `POST /api/page/ingest` (#819) — must authenticate without an interactive login.
 
-Unlike the interactive [GoogleOIDCProvider](GoogleOIDCProvider.md) code-exchange flow, this provider trusts a token the client already holds (typically minted via the `client_credentials` grant against a per-person Authentik service account). It is verification-only — ngdpbase stores **no** client secret; only the issuer, JWKS URL, and audience are needed. The pattern mirrors [CloudflareAccessAuthProvider](CloudflareAccessAuthProvider.md).
+Unlike the interactive [GoogleOIDCProvider](GoogleOIDCProvider.md) code-exchange flow, this provider trusts a token the client already holds (typically minted via the `client_credentials` grant against a per-person Authentik service account). It is verification-only — ngdpbase stores __no__ client secret; only the issuer, JWKS URL, and audience are needed. The pattern mirrors [CloudflareAccessAuthProvider](CloudflareAccessAuthProvider.md).
 
 ## Configuration
 

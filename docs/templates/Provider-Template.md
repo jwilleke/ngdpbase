@@ -15,9 +15,9 @@ Brief overview of the provider's purpose within the provider pattern.
 
 Detailed description of what this provider implements and its role in the system.
 
-**Implements:** `BaseProviderName` interface
+__Implements:__ `BaseProviderName` interface
 
-**Source:** `src/providers/ProviderName.js`
+__Source:__ `src/providers/ProviderName.js`
 
 ## Provider Pattern Context
 
@@ -73,9 +73,9 @@ data/
 
 Initializes the provider, creating necessary directories/connections.
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 await provider.initialize();
@@ -85,15 +85,15 @@ await provider.initialize();
 
 Retrieves data by identifier.
 
-**Parameters:**
+__Parameters:__
 
 | Name | Type | Required | Description |
 | ------ | ------ | ---------- | ------------- |
 | identifier | string | Yes | Unique identifier |
 
-**Returns:** `Promise<Object|null>` - The data object or null if not found
+__Returns:__ `Promise<Object|null>` - The data object or null if not found
 
-**Example:**
+__Example:__
 
 ```javascript
 const data = await provider.getData('item-id');
@@ -103,16 +103,16 @@ const data = await provider.getData('item-id');
 
 Saves data with the given identifier.
 
-**Parameters:**
+__Parameters:__
 
 | Name | Type | Required | Description |
 | ------ | ------ | ---------- | ------------- |
 | identifier | string | Yes | Unique identifier |
 | data | Object | Yes | Data to save |
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 await provider.saveData('item-id', { field: 'value' });

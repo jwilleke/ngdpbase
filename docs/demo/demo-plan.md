@@ -4,7 +4,7 @@ Tracking issue: [#1029](https://github.com/jwilleke/ngdpbase/issues/1029). Live 
 
 ## Why an addon
 
-The demo pages were originally added to core `required-pages/`, which ships them to **every** instance. The Fairways and the temp build both carry `Demo Welcome`, `Demo Sandbox` and `Demo Feature Tour` on disk today, listed as **New** in their required-pages sync screens — one click from putting demo content on a production site. They were never live anywhere, which was luck rather than design.
+The demo pages were originally added to core `required-pages/`, which ships them to __every__ instance. The Fairways and the temp build both carry `Demo Welcome`, `Demo Sandbox` and `Demo Feature Tour` on disk today, listed as __New__ in their required-pages sync screens — one click from putting demo content on a production site. They were never live anywhere, which was luck rather than design.
 
 Demo content belongs to the demo. An addon is how this project scopes content to the instances that ask for it, and it carries the role definition and config alongside the pages instead of scattering them across deployment manifests.
 
@@ -12,11 +12,11 @@ Demo content belongs to the demo. An addon is how this project scopes content to
 
 Showing the software to someone who has not installed it. That means:
 
-- **Anonymous visitors read everything.** No account needed to look around.
-- **Signing up is easy and passwordless** — magic link only, no password form.
-- **A signed-in visitor can edit** and create pages, and edit other visitors' pages.
-- **The documentation cannot be defaced.** Seeded pages are author-locked; `Demo Sandbox` is deliberately not.
-- **The admin dashboard is demonstrable** — the trash view from #969, required-pages sync, configuration, logs — without letting a stranger change anything.
+- __Anonymous visitors read everything.__ No account needed to look around.
+- __Signing up is easy and passwordless__ — magic link only, no password form.
+- __A signed-in visitor can edit__ and create pages, and edit other visitors' pages.
+- __The documentation cannot be defaced.__ Seeded pages are author-locked; `Demo Sandbox` is deliberately not.
+- __The admin dashboard is demonstrable__ — the trash view from #969, required-pages sync, configuration, logs — without letting a stranger change anything.
 
 ## Status
 
@@ -31,12 +31,12 @@ Showing the software to someone who has not installed it. That means:
 | `demo-admin` role registered by the addon | done |
 | Red warning on the Welcome page about visibility | done |
 | Demo `app-custom-config.json` moved onto the volume, editable | done |
-| Enable the addon — **after** the release, see ordering below | done |
+| Enable the addon — __after__ the release, see ordering below | done |
 | `admindemo` seeded by the addon, profile locked, credentials on the Welcome page | done |
 
 ### Ordering — the addon flag cannot be set early
 
-`ngdpbase.addons.<id>.enabled = true` naming an addon that is not in the image is a **hard startup refusal** (#672), not a no-op. Setting it before the release put the demo into CrashLoopBackOff:
+`ngdpbase.addons.<id>.enabled = true` naming an addon that is not in the image is a __hard startup refusal__ (#672), not a no-op. Setting it before the release put the demo into CrashLoopBackOff:
 
 ```text
 [ConfigurationManager] Refusing to start: 'ngdpbase.addons.<id>.enabled = true'
@@ -47,7 +47,7 @@ The guard is correct — a key naming a non-existent addon is far more often a t
 
 1. Release ngdpbase (minor — new permission surface)
 2. Flux bumps the demo to that image
-3. Set `ngdpbase.addons.demo.enabled: true` in `app-custom-config.json` **on the volume** — one line, over SSH or through `/admin/configuration`, no manifest edit and no PR
+3. Set `ngdpbase.addons.demo.enabled: true` in `app-custom-config.json` __on the volume__ — one line, over SSH or through `/admin/configuration`, no manifest edit and no PR
 4. Nothing — the addon seeds `admindemo` / `admin123` itself on the next boot
 
 No password to choose and no file to write: the demo login is printed on the Welcome page, so its value is not a secret and the addon ships it. Safety comes from the account holding only `admin-read` and being created `profileLocked`, not from secrecy. The core `admin` account also ships `admin123`, but for a different reason — convenience of first boot, not publication — and it is the operator's job to change it. `admindemo` is meant to stay as published.
@@ -68,12 +68,12 @@ Step 3 is a config edit rather than a deployment change because the demo's `app-
 
 The interesting part, and the reason the addon needs a core change first.
 
-The admin surface is gated by two coarse permissions, `admin-system` and `admin-roles`. `admin-system` grants viewing **and** mutating, so there is no way today to hand someone a look-but-don't-touch dashboard.
+The admin surface is gated by two coarse permissions, `admin-system` and `admin-roles`. `admin-system` grants viewing __and__ mutating, so there is no way today to hand someone a look-but-don't-touch dashboard.
 
 The split maps cleanly onto HTTP method — 26 `GET /admin*` against 45 mutating routes — so:
 
-- **New `admin-read` permission.** The 26 GET handlers accept `admin-read` **or** `admin-system`. `GET /admin/roles` accepts it too; its three mutations keep requiring `admin-roles`, so viewing the permission model is separated from editing it with no escalation path.
-- **The 45 mutating routes are untouched.** They keep requiring `admin-system`. That is the entire read-only guarantee — not a new check anywhere, just the absence of a permission. Nothing to remember and nothing to miss.
+- __New `admin-read` permission.__ The 26 GET handlers accept `admin-read` __or__ `admin-system`. `GET /admin/roles` accepts it too; its three mutations keep requiring `admin-roles`, so viewing the permission model is separated from editing it with no escalation path.
+- __The 45 mutating routes are untouched.__ They keep requiring `admin-system`. That is the entire read-only guarantee — not a new check anywhere, just the absence of a permission. Nothing to remember and nothing to miss.
 
 ### Why not a `demomode` flag
 
@@ -93,27 +93,27 @@ Roles are collections of permissions. A read/write distinction belongs *in* that
 }
 ```
 
-Registered by the addon's `register()`, **not** `domainDefaults`. That distinction is load-bearing: `applyDomainDefaults` uses `setRuntimeProperty`, which is whole-key replacement. Declaring `ngdpbase.access.policies` there would replace all eight shipped policies — including `admin-full-access` — and lock the operator out of their own instance. The addon reads the current roles and policies, appends its own if absent, and writes back.
+Registered by the addon's `register()`, __not__ `domainDefaults`. That distinction is load-bearing: `applyDomainDefaults` uses `setRuntimeProperty`, which is whole-key replacement. Declaring `ngdpbase.access.policies` there would replace all eight shipped policies — including `admin-full-access` — and lock the operator out of their own instance. The addon reads the current roles and policies, appends its own if absent, and writes back.
 
 Both halves are needed. A role's inline `permissions[]` is what `ConfigAccessorPlugin` renders on the Roles page; `PolicyEvaluator` decides real access from `ngdpbase.access.policies`. The addon adds a `demo-admin-access` policy at priority 90 — below `admin-full-access` at 100, so it can never widen what an admin already has.
 
 Deliberately absent:
 
-- **`admin-system`** — every admin mutation refused. The read-only guarantee.
-- **`user-read`** — `/admin/users` stays hidden. The one screen withheld, and for privacy rather than security: it lists every visitor's email address.
-- **`admin-roles`** — the roles screen is viewable, but creating, editing and deleting roles still require this, so a demo account cannot grant itself anything.
-- **`page-delete`** — author-lock covers `edit` only, so a delete permission would let a demo account remove a locked documentation page.
+- __`admin-system`__ — every admin mutation refused. The read-only guarantee.
+- __`user-read`__ — `/admin/users` stays hidden. The one screen withheld, and for privacy rather than security: it lists every visitor's email address.
+- __`admin-roles`__ — the roles screen is viewable, but creating, editing and deleting roles still require this, so a demo account cannot grant itself anything.
+- __`page-delete`__ — author-lock covers `edit` only, so a delete permission would let a demo account remove a locked documentation page.
 
 `/admin/configuration` is safe to expose: secret values are stripped server-side and the reveal endpoint requires `admin-system`, so a demo admin sees the screen fully populated with masked values and no reveal control.
 
 ## Open questions
 
-- ~~**Should the Welcome page publish the `admindemo` credentials, or should they be handed out on request?**~~ **Resolved: publish.** `admindemo`, with the password the operator sets in `NGDPBASE_DEMO_ADMIN_PASSWORD`, printed on the Welcome page. No default ships — the addon seeds no account at all rather than one with a guessable password, and says so in the log. Handing them out on request is not a demo. The `/admin/logs` exposure stands — anyone signed in can read visitor email addresses until the next pod restart — and the red warning on the Welcome page covers it.
+- ~~__Should the Welcome page publish the `admindemo` credentials, or should they be handed out on request?__~~ __Resolved: publish.__ `admindemo`, with the password the operator sets in `NGDPBASE_DEMO_ADMIN_PASSWORD`, printed on the Welcome page. No default ships — the addon seeds no account at all rather than one with a guessable password, and says so in the log. Handing them out on request is not a demo. The `/admin/logs` exposure stands — anyone signed in can read visitor email addresses until the next pod restart — and the red warning on the Welcome page covers it.
 
-  Publishing a shared password only works if the holder cannot take the account over, so it is seeded with `profileLocked`: password, email and display name are refused on `/profile`. **Email is the reason the lock covers more than the password.** Magic-link login resolves an account by address, so a visitor who repointed `admindemo`'s email at their own inbox would have permanent exclusive access and the published password would stop working for everyone else. A password-only lock looks right and leaves that open. An administrator can still change all three through `/admin/users/admindemo/edit`, which needs `user-edit`.
+  Publishing a shared password only works if the holder cannot take the account over, so it is seeded with `profileLocked`: password, email and display name are refused on `/profile`. __Email is the reason the lock covers more than the password.__ Magic-link login resolves an account by address, so a visitor who repointed `admindemo`'s email at their own inbox would have permanent exclusive access and the published password would stop working for everyone else. A password-only lock looks right and leaves that open. An administrator can still change all three through `/admin/users/admindemo/edit`, which needs `user-edit`.
 
   `profileLocked` is deliberately not `isSystem`. `isSystem` means "cannot be deleted" and is set on `admin` — an account that must keep self-service password change.
-- **Does the demo still need its mounted anchor Organization** now that #1027 seeds one? It is redundant but harmless, and the mount survives a volume reset. Left as-is deliberately.
+- __Does the demo still need its mounted anchor Organization__ now that #1027 seeds one? It is redundant but harmless, and the mount survives a volume reset. Left as-is deliberately.
 
 ## Verification
 
@@ -129,4 +129,4 @@ Locally, with the addon enabled and a user holding only `demo-admin`:
 | Edit `Demo Sandbox` | allowed |
 | `admin`, all of the above | unchanged |
 
-With the addon **disabled** — the default, i.e. The Fairways and the temp build — no demo pages are seeded, no `demo-admin` role exists, and `/admin/required-pages` shows no demo entries. That last one is the regression this addon exists to fix, so it is worth checking explicitly.
+With the addon __disabled__ — the default, i.e. The Fairways and the temp build — no demo pages are seeded, no `demo-admin` role exists, and `/admin/required-pages` shows no demo entries. That last one is the regression this addon exists to fix, so it is worth checking explicitly.

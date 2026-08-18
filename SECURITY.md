@@ -11,14 +11,14 @@ We release patches for security vulnerabilities. Which versions are eligible for
 
 ## Reporting a Vulnerability
 
-**Please do not report security vulnerabilities through public GitHub issues.**
+__Please do not report security vulnerabilities through public GitHub issues.__
 
 If you discover a security vulnerability in ngdpbase, please report it to us privately. This allows us to assess and fix the issue before it becomes public knowledge.
 
 ### How to Report
 
-1. **Email**: Send details to the repository maintainer via GitHub
-2. **Include**:
+1. __Email__: Send details to the repository maintainer via GitHub
+2. __Include__:
    - Type of vulnerability
    - Full paths of source file(s) related to the vulnerability
    - Location of the affected source code (tag/branch/commit or direct URL)
@@ -28,10 +28,10 @@ If you discover a security vulnerability in ngdpbase, please report it to us pri
 
 ### What to Expect
 
-- **Acknowledgment**: Within 48 hours of your report
-- **Initial Assessment**: Within 5 business days
-- **Regular Updates**: At least every 7 days until resolution
-- **Disclosure**: We will work with you to coordinate disclosure timing
+- __Acknowledgment__: Within 48 hours of your report
+- __Initial Assessment__: Within 5 business days
+- __Regular Updates__: At least every 7 days until resolution
+- __Disclosure__: We will work with you to coordinate disclosure timing
 
 ## Security Update Policy
 
@@ -50,14 +50,14 @@ If you discover a security vulnerability in ngdpbase, please report it to us pri
 
 When running ngdpbase:
 
-1. **Keep Updated**: Always run the latest stable version
-2. **Dependencies**: Regularly update npm dependencies (`npm audit`)
-3. **Authentication**: Use strong passwords and enable session security
-4. **HTTPS**: Run behind a reverse proxy with TLS/SSL in production
-5. **File Permissions**: Restrict write access to `pages/` and `logs/` directories
-6. **Backups**: Maintain regular backups of wiki content
-7. **Environment Variables**: Never commit secrets to version control
-8. **PM2 Logs**: Regularly rotate and secure log files
+1. __Keep Updated__: Always run the latest stable version
+2. __Dependencies__: Regularly update npm dependencies (`npm audit`)
+3. __Authentication__: Use strong passwords and enable session security
+4. __HTTPS__: Run behind a reverse proxy with TLS/SSL in production
+5. __File Permissions__: Restrict write access to `pages/` and `logs/` directories
+6. __Backups__: Maintain regular backups of wiki content
+7. __Environment Variables__: Never commit secrets to version control
+8. __PM2 Logs__: Regularly rotate and secure log files
 
 ## Known Security Considerations
 

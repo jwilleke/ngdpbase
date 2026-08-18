@@ -10,8 +10,8 @@ code: src/plugins/MyLinksPlugin.ts
 
 Renders the current user's pinned pages as a scrollable list in the sidebar.
 
-**Version:** 1.0.0  
-**Issue:** #537
+__Version:__ 1.0.0  
+__Issue:__ #537
 
 ## Overview
 
@@ -19,7 +19,7 @@ Renders the current user's pinned pages as a scrollable list in the sidebar.
 
 Anonymous and unauthenticated users receive an empty string — the section disappears entirely.
 
-> **Note:** As of the header.ejs template-level injection (fix for #420), My Links renders automatically in the sidebar for all instances regardless of which LeftMenu page variant is loaded. The `[{MyLinks}]` plugin invocation still works on any page but is no longer required in LeftMenu.
+> __Note:__ As of the header.ejs template-level injection (fix for #420), My Links renders automatically in the sidebar for all instances regardless of which LeftMenu page variant is loaded. The `[{MyLinks}]` plugin invocation still works on any page but is no longer required in LeftMenu.
 
 ## Usage
 

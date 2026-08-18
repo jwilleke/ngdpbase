@@ -25,9 +25,9 @@ The installation system provides a professional first-run experience with:
 
 The installation system separates code from instance data. All data paths are defined in `config/app-default-config.json` using `${FAST_STORAGE}` and `${SLOW_STORAGE}` template variables:
 
-- **Code/config defaults**: `./config/` — base configuration shipped with the codebase (read-only)
-- **Fast storage** (`FAST_STORAGE`, default `./data`): sessions, users, search index, page index, logs, backups — high I/O, should be local SSD
-- **Slow storage** (`SLOW_STORAGE`, default `./data`): pages, attachments, comments, footnotes — can be NAS/SMB
+- __Code/config defaults__: `./config/` — base configuration shipped with the codebase (read-only)
+- __Fast storage__ (`FAST_STORAGE`, default `./data`): sessions, users, search index, page index, logs, backups — high I/O, should be local SSD
+- __Slow storage__ (`SLOW_STORAGE`, default `./data`): pages, attachments, comments, footnotes — can be NAS/SMB
 
 Both default to `./data` in development. In production they can point to different volumes.
 
@@ -102,12 +102,12 @@ Success Page: `views/install-success.ejs` (100+ lines)
 
 #### 4. Configuration
 
-**Configuration Files:**
+__Configuration Files:__
 
 - `config/app-default-config.json` — base defaults shipped with the codebase (read-only)
 - `./data/config/app-custom-config.json` — instance-specific overrides (path controlled by `INSTANCE_CONFIG_FILE`); written from install-form data, no template copied (#642)
 
-**Configuration Load Order (ConfigurationManager):**
+__Configuration Load Order (ConfigurationManager):__
 
 ```text
 1. config/app-default-config.json      (base defaults — required, read-only)
@@ -116,7 +116,7 @@ Success Page: `views/install-success.ejs` (100+ lines)
 
 Custom config overrides default. Environment variables can also override specific properties.
 
-**Environment Variables:**
+__Environment Variables:__
 
 - `FAST_STORAGE` — fast local storage path (default: `./data`); used for sessions, users, search index, logs, backups
 - `SLOW_STORAGE` — slow/NAS storage path (default: `./data`); used for pages, attachments, comments, footnotes
@@ -124,7 +124,7 @@ Custom config overrides default. Environment variables can also override specifi
 
 ## Environment Variable Overrides
 
-The ConfigurationManager supports environment variables that **override** values from both the default and custom config files. Environment variables have the highest priority in the configuration hierarchy.
+The ConfigurationManager supports environment variables that __override__ values from both the default and custom config files. Environment variables have the highest priority in the configuration hierarchy.
 
 ### Configuration Priority Order
 
@@ -233,19 +233,19 @@ In this example, most settings come from `my-config.json`, but the session secre
 
 The Docker image (`docker/Dockerfile`) is designed for instance data separation:
 
-**Build-time:**
+__Build-time:__
 
 - Copies `config/app-default-config.json` to `/app/config/` (base defaults)
 - Creates `/app/data/` directory structure with subdirectories
 
-**Runtime:**
+__Runtime:__
 
 - Sets `FAST_STORAGE=/app/data` and `SLOW_STORAGE=/app/data`
 - Volume mount: `/app/data` for persistent instance data
 - Installation wizard runs on first access (no `.install-complete` file)
 - Wizard writes `/app/data/config/app-custom-config.json` from form data (#642 — no template file is copied)
 
-**docker-compose.yml usage:**
+__docker-compose.yml usage:__
 
 ```yaml
 environment:
@@ -260,26 +260,26 @@ volumes:
 
 The Kubernetes manifests (`docker/k8s/`) provide:
 
-**deployment.yaml:**
+__deployment.yaml:__
 
 - Sets `FAST_STORAGE=/app/data` and `SLOW_STORAGE=/app/data`
 - Mounts PersistentVolumeClaim at `/app/data`
 - Optionally mounts ConfigMap for pre-configured `app-custom-config.json`
 
-**configmap.yaml:**
+__configmap.yaml:__
 
 - Pre-populates `/app/data/config/app-custom-config.json`
 - Skips interactive installation wizard if config is complete
 - Mounted as read-only file
 
-**Two deployment strategies:**
+__Two deployment strategies:__
 
 | Strategy | ConfigMap | Installation Wizard | Use Case |
 | --- | --- | --- | --- |
 | Interactive | Not used | Runs on first access | Development, manual setup |
 | Pre-configured | Mounted | Skipped (if admin exists) | Production, GitOps |
 
-**Pre-configured deployment:**
+__Pre-configured deployment:__
 
 ```yaml
 # configmap.yaml - pre-populate configuration

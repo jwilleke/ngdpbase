@@ -15,7 +15,7 @@ author: system
 ---
 # Using ImagePlugin
 
-The **ImagePlugin** embeds images in pages with flexible layout and display options. See [Plugins] for a complete list of available plugins.
+The __ImagePlugin__ embeds images in pages with flexible layout and display options. See [Plugins] for a complete list of available plugins.
 
 ## Syntax
 

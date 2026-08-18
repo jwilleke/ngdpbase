@@ -8,17 +8,17 @@ code: src/plugins/AppHealthPlugin.ts
 
 # AppHealthPlugin
 
-`AppHealthPlugin` renders a deterministic **app-health audit** on any page. It surfaces data-quality issues that accumulate silently on a large instance, using only data the platform already has — no LLM, no new index.
+`AppHealthPlugin` renders a deterministic __app-health audit__ on any page. It surfaces data-quality issues that accumulate silently on a large instance, using only data the platform already has — no LLM, no new index.
 
 ## Overview
 
 Three pure graph/text checks, composed from existing sources (`PageManager.getAllPages()`, the page link graph, and `PageManager.getRecentChanges()`):
 
-- **Orphan pages** — existing pages with no inbound page-link from any other page.
-- **Broken / undefined links** — page titles that are linked to but do not exist (red-links / missing-entity). Same computation as `UndefinedPagesPlugin`; rendered as create-links.
-- **Stale pages** — existing pages not modified within `staleDays`.
+- __Orphan pages__ — existing pages with no inbound page-link from any other page.
+- __Broken / undefined links__ — page titles that are linked to but do not exist (red-links / missing-entity). Same computation as `UndefinedPagesPlugin`; rendered as create-links.
+- __Stale pages__ — existing pages not modified within `staleDays`.
 
-Section headers always show the **true total**; the per-section list is capped at `max` with an "… and N more" line so a large result set never hides the count.
+Section headers always show the __true total__; the per-section list is capped at `max` with an "… and N more" line so a large result set never hides the count.
 
 ## Usage
 
@@ -64,7 +64,7 @@ Renders e.g. `Orphans: 1405 · Broken links: 18806 · Stale: 0`.
 
 ## Notes
 
-- **`staleDays` is threshold-sensitive.** On instances whose corpus was recently re-stamped by a migration, every page's `lastModified` may be within the last year, so the default `staleDays=365` legitimately reports `0`. Lower the threshold (e.g. `staleDays=30`) for a meaningful stale view on such instances.
+- __`staleDays` is threshold-sensitive.__ On instances whose corpus was recently re-stamped by a migration, every page's `lastModified` may be within the last year, so the default `staleDays=365` legitimately reports `0`. Lower the threshold (e.g. `staleDays=30`) for a meaningful stale view on such instances.
 - The stale check requests an explicit large limit from `getRecentChanges` — its default limit is 50 and `includeAll` only widens the privacy filter, not the count, so without the explicit limit the check would only ever see the 50 freshest pages.
 - All checks are scan-on-demand. No sidecar index is written or maintained, so there is no consistency state to drift.
 

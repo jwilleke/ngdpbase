@@ -1,10 +1,10 @@
 # PageManager Complete Guide
 
-**Module:** `src/managers/PageManager.js`
-**Quick Reference:** [PageManager.md](PageManager.md)
-**Version:** 1.3.2
-**Last Updated:** 2025-12-20
-**Status:** Production Ready
+__Module:__ `src/managers/PageManager.js`
+__Quick Reference:__ [PageManager.md](PageManager.md)
+__Version:__ 1.3.2
+__Last Updated:__ 2025-12-20
+__Status:__ Production Ready
 
 ---
 
@@ -27,18 +27,18 @@
 
 ## Overview
 
-The **PageManager** is the central coordinator for all wiki page operations in ngdpbase. It implements a **pluggable provider architecture** following the JSPWiki pattern, allowing different storage backends (filesystem, database, cloud) to be swapped via configuration without changing application code.
+The __PageManager__ is the central coordinator for all wiki page operations in ngdpbase. It implements a __pluggable provider architecture__ following the JSPWiki pattern, allowing different storage backends (filesystem, database, cloud) to be swapped via configuration without changing application code.
 
 ### Key Responsibilities
 
-- **Provider Management**: Load and initialize the configured page storage provider
-- **API Coordination**: Provide a stable public API that delegates to the active provider
-- **Backward Compatibility**: Maintain existing method signatures while supporting provider abstraction
-- **Configuration Integration**: Work with ConfigurationManager for dynamic provider loading
+- __Provider Management__: Load and initialize the configured page storage provider
+- __API Coordination__: Provide a stable public API that delegates to the active provider
+- __Backward Compatibility__: Maintain existing method signatures while supporting provider abstraction
+- __Configuration Integration__: Work with ConfigurationManager for dynamic provider loading
 
 ### Design Philosophy
 
-The PageManager follows the **Separation of Concerns** principle:
+The PageManager follows the __Separation of Concerns__ principle:
 
 - PageManager: Thin coordinator layer (public API)
 - Provider: Storage implementation (filesystem, database, etc.)
@@ -46,10 +46,10 @@ The PageManager follows the **Separation of Concerns** principle:
 
 This architecture enables:
 
-- **Pluggability**: Swap storage backends via configuration
-- **Testability**: Mock providers for testing
-- **Scalability**: Move from filesystem to database/cloud without code changes
-- **Maintainability**: Clear separation between coordination and implementation
+- __Pluggability__: Swap storage backends via configuration
+- __Testability__: Mock providers for testing
+- __Scalability__: Move from filesystem to database/cloud without code changes
+- __Maintainability__: Clear separation between coordination and implementation
 
 ---
 
@@ -168,7 +168,7 @@ User Request: POST /edit/MyPage
 
 ### Core Configuration (ALL LOWERCASE)
 
-All PageManager configuration keys use **lowercase** naming:
+All PageManager configuration keys use __lowercase__ naming:
 
 ```json
 {
@@ -193,7 +193,7 @@ All PageManager configuration keys use **lowercase** naming:
 | `ngdpbase.page.provider.default` | string | `"filesystemprovider"` | Default provider name (fallback) |
 | `ngdpbase.page.provider` | string | `"filesystemprovider"` | Active provider name |
 
-**Provider Fallback Pattern:**
+__Provider Fallback Pattern:__
 
 ```javascript
 // 1. Try specific provider setting
@@ -214,7 +214,7 @@ const defaultProvider = getProperty('ngdpbase.page.provider.default')
 
 ### Provider Name Normalization
 
-Configuration uses **lowercase** provider names, which are normalized to **PascalCase** class names:
+Configuration uses __lowercase__ provider names, which are normalized to __PascalCase__ class names:
 
 | Configuration Value | Class Name |
 | --------------------- | ------------ |
@@ -336,10 +336,10 @@ class BasePageProvider {
 
 ### Provider Lifecycle
 
-1. **Construction**: Provider instance created with engine reference
-2. **Initialization**: `initialize()` called to load configuration and set up storage
-3. **Operation**: Provider handles all page operations via public API
-4. **Coordination**: Provider may interact with other managers (SearchManager, CacheManager, etc.)
+1. __Construction__: Provider instance created with engine reference
+2. __Initialization__: `initialize()` called to load configuration and set up storage
+3. __Operation__: Provider handles all page operations via public API
+4. __Coordination__: Provider may interact with other managers (SearchManager, CacheManager, etc.)
 
 ---
 
@@ -347,7 +347,7 @@ class BasePageProvider {
 
 ### Overview
 
-The **FileSystemProvider** stores pages as Markdown files with YAML frontmatter. It implements filesystem-based storage with in-memory caching and multiple lookup indexes.
+The __FileSystemProvider__ stores pages as Markdown files with YAML frontmatter. It implements filesystem-based storage with in-memory caching and multiple lookup indexes.
 
 ### Features
 
@@ -428,7 +428,7 @@ this.uuidIndex = new Map();
 // Example: "3463c02f-..." → "Welcome"
 ```
 
-**Lookup Flow:**
+__Lookup Flow:__
 
 ```
 User requests page: "welcome" (lowercase)
@@ -697,15 +697,15 @@ s3://ngdpbase-pages/
 
 Initialize the PageManager and load the configured provider.
 
-**Parameters:**
+__Parameters:__
 
 - `config` (object, optional): Additional configuration options
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Throws:** Error if ConfigurationManager is not available or provider fails to load
+__Throws:__ Error if ConfigurationManager is not available or provider fails to load
 
-**Example:**
+__Example:__
 
 ```javascript
 await pageManager.initialize();
@@ -717,9 +717,9 @@ await pageManager.initialize();
 
 Get the currently active page provider instance.
 
-**Returns:** `BasePageProvider` - The active provider instance
+__Returns:__ `BasePageProvider` - The active provider instance
 
-**Example:**
+__Example:__
 
 ```javascript
 const provider = pageManager.getCurrentPageProvider();
@@ -733,13 +733,13 @@ console.log(`Using ${info.name} v${info.version}`);
 
 Get page content and metadata together.
 
-**Parameters:**
+__Parameters:__
 
 - `identifier` (string): Page UUID or title
 
-**Returns:** `Promise<Object|null>` - Page object or null if not found
+__Returns:__ `Promise<Object|null>` - Page object or null if not found
 
-**Page Object Structure:**
+__Page Object Structure:__
 
 ```javascript
 {
@@ -751,7 +751,7 @@ Get page content and metadata together.
 }
 ```
 
-**Example:**
+__Example:__
 
 ```javascript
 const page = await pageManager.getPage('Welcome');
@@ -768,13 +768,13 @@ if (page) {
 
 Get only page content (without metadata).
 
-**Parameters:**
+__Parameters:__
 
 - `identifier` (string): Page UUID or title
 
-**Returns:** `Promise<string>` - Markdown content
+__Returns:__ `Promise<string>` - Markdown content
 
-**Example:**
+__Example:__
 
 ```javascript
 const content = await pageManager.getPageContent('Welcome');
@@ -787,13 +787,13 @@ console.log(content);
 
 Get only page metadata (without content).
 
-**Parameters:**
+__Parameters:__
 
 - `identifier` (string): Page UUID or title
 
-**Returns:** `Promise<Object|null>` - Metadata object or null if not found
+__Returns:__ `Promise<Object|null>` - Metadata object or null if not found
 
-**Example:**
+__Example:__
 
 ```javascript
 const metadata = await pageManager.getPageMetadata('Welcome');
@@ -807,15 +807,15 @@ console.log(`Created: ${metadata.created}`);
 
 Save page content and metadata.
 
-**Parameters:**
+__Parameters:__
 
 - `pageName` (string): Page title
 - `content` (string): Page content (Markdown)
 - `metadata` (object, optional): Page metadata
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 await pageManager.savePage('New Page', '# Hello World', {
@@ -831,13 +831,13 @@ await pageManager.savePage('New Page', '# Hello World', {
 
 Delete a page.
 
-**Parameters:**
+__Parameters:__
 
 - `identifier` (string): Page UUID or title
 
-**Returns:** `Promise<boolean>` - `true` if deleted, `false` if not found
+__Returns:__ `Promise<boolean>` - `true` if deleted, `false` if not found
 
-**Example:**
+__Example:__
 
 ```javascript
 const deleted = await pageManager.deletePage('Old Page');
@@ -852,13 +852,13 @@ if (deleted) {
 
 Check if a page exists.
 
-**Parameters:**
+__Parameters:__
 
 - `identifier` (string): Page UUID or title
 
-**Returns:** `boolean` - `true` if page exists
+__Returns:__ `boolean` - `true` if page exists
 
-**Example:**
+__Example:__
 
 ```javascript
 if (pageManager.pageExists('Welcome')) {
@@ -872,9 +872,9 @@ if (pageManager.pageExists('Welcome')) {
 
 Get all page titles.
 
-**Returns:** `Promise<string[]>` - Sorted array of page titles
+__Returns:__ `Promise<string[]>` - Sorted array of page titles
 
-**Example:**
+__Example:__
 
 ```javascript
 const pages = await pageManager.getAllPages();
@@ -888,9 +888,9 @@ pages.forEach(title => console.log(title));
 
 Get all pages with their metadata.
 
-**Returns:** `Promise<Array>` - Array of page objects with metadata
+__Returns:__ `Promise<Array>` - Array of page objects with metadata
 
-**Example:**
+__Example:__
 
 ```javascript
 const pages = await pageManager.getAllPagesWithMetadata();
@@ -905,13 +905,13 @@ pages.forEach(page => {
 
 Search pages by content or title.
 
-**Parameters:**
+__Parameters:__
 
 - `query` (string): Search query
 
-**Returns:** `Promise<Array>` - Array of matching pages
+__Returns:__ `Promise<Array>` - Array of matching pages
 
-**Example:**
+__Example:__
 
 ```javascript
 const results = await pageManager.searchPages('authentication');
@@ -924,14 +924,14 @@ console.log(`Found ${results.length} pages`);
 
 Rename a page.
 
-**Parameters:**
+__Parameters:__
 
 - `oldName` (string): Current page title
 - `newName` (string): New page title
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 await pageManager.renamePage('Old Name', 'New Name');
@@ -943,13 +943,13 @@ await pageManager.renamePage('Old Name', 'New Name');
 
 Get page version history (if supported by provider).
 
-**Parameters:**
+__Parameters:__
 
 - `identifier` (string): Page UUID or title
 
-**Returns:** `Promise<Array>` - Array of version objects
+__Returns:__ `Promise<Array>` - Array of version objects
 
-**Example:**
+__Example:__
 
 ```javascript
 const history = await pageManager.getPageHistory('Welcome');
@@ -1238,21 +1238,21 @@ async function getCachedPage(pageName) {
 
 ### Configuration
 
-1. **Use Lowercase Keys**: All configuration keys should be lowercase
+1. __Use Lowercase Keys__: All configuration keys should be lowercase
 
    ```json
    "ngdpbase.page.provider": "filesystemprovider"  ✅
    "ngdpbase.page.Provider": "FileSystemProvider"  ❌
    ```
 
-2. **Provider Fallback**: Always configure both default and active provider
+2. __Provider Fallback__: Always configure both default and active provider
 
    ```json
    "ngdpbase.page.provider.default": "filesystemprovider",
    "ngdpbase.page.provider": "filesystemprovider"
    ```
 
-3. **Never Modify app-default-config.json in Production**: Use `app-custom-config.json` for overrides
+3. __Never Modify app-default-config.json in Production__: Use `app-custom-config.json` for overrides
 
    ```json
    // app-custom-config.json
@@ -1263,7 +1263,7 @@ async function getCachedPage(pageName) {
 
 ### Page Management
 
-1. **Always Use UUID Lookups for Programmatic Access**:
+1. __Always Use UUID Lookups for Programmatic Access__:
 
    ```javascript
    // Good - UUID is stable
@@ -1273,7 +1273,7 @@ async function getCachedPage(pageName) {
    const page = await pageManager.getPage('Welcome');
    ```
 
-2. **Preserve Metadata When Updating**:
+2. __Preserve Metadata When Updating__:
 
    ```javascript
    const page = await pageManager.getPage('MyPage');
@@ -1283,7 +1283,7 @@ async function getCachedPage(pageName) {
    });
    ```
 
-3. **Check Existence Before Operations**:
+3. __Check Existence Before Operations__:
 
    ```javascript
    if (pageManager.pageExists('MyPage')) {
@@ -1293,7 +1293,7 @@ async function getCachedPage(pageName) {
 
 ### Error Handling
 
-1. **Handle Null Returns**:
+1. __Handle Null Returns__:
 
    ```javascript
    const page = await pageManager.getPage('NonExistent');
@@ -1303,7 +1303,7 @@ async function getCachedPage(pageName) {
    }
    ```
 
-2. **Catch Provider Errors**:
+2. __Catch Provider Errors__:
 
    ```javascript
    try {
@@ -1316,7 +1316,7 @@ async function getCachedPage(pageName) {
 
 ### Performance
 
-1. **Use Caching for Frequently Accessed Pages**:
+1. __Use Caching for Frequently Accessed Pages__:
 
    ```javascript
    const cacheKey = `page:${pageName}`;
@@ -1327,7 +1327,7 @@ async function getCachedPage(pageName) {
    }
    ```
 
-2. **Batch Operations When Possible**:
+2. __Batch Operations When Possible__:
 
    ```javascript
    // Instead of multiple individual saves
@@ -1337,7 +1337,7 @@ async function getCachedPage(pageName) {
    ));
    ```
 
-3. **Use `getAllPages()` Instead of Multiple `getPage()` Calls**:
+3. __Use `getAllPages()` Instead of Multiple `getPage()` Calls__:
 
    ```javascript
    // Good
@@ -1356,11 +1356,11 @@ async function getCachedPage(pageName) {
 
 #### 1. PageManager Initialization Fails
 
-**Symptom**: Error message "PageManager requires ConfigurationManager"
+__Symptom__: Error message "PageManager requires ConfigurationManager"
 
-**Cause**: ConfigurationManager not initialized before PageManager
+__Cause__: ConfigurationManager not initialized before PageManager
 
-**Solution**: Ensure proper manager initialization order in `Engine.js`:
+__Solution__: Ensure proper manager initialization order in `Engine.js`:
 
 ```javascript
 await this.registerManager('ConfigurationManager', ...);
@@ -1371,11 +1371,11 @@ await this.registerManager('PageManager', ...);
 
 #### 2. Provider Not Found
 
-**Symptom**: Error message "Failed to initialize page provider: DatabaseProvider"
+__Symptom__: Error message "Failed to initialize page provider: DatabaseProvider"
 
-**Cause**: Provider class doesn't exist or wrong name in configuration
+__Cause__: Provider class doesn't exist or wrong name in configuration
 
-**Solution**: Check provider name normalization:
+__Solution__: Check provider name normalization:
 
 ```json
 {
@@ -1387,11 +1387,11 @@ await this.registerManager('PageManager', ...);
 
 #### 3. Pages Not Loading
 
-**Symptom**: `getPage()` returns null for known pages
+__Symptom__: `getPage()` returns null for known pages
 
-**Cause**: Cache not refreshed or incorrect directory path
+__Cause__: Cache not refreshed or incorrect directory path
 
-**Solution**: Check logs for initialization messages:
+__Solution__: Check logs for initialization messages:
 
 ```
 📄 Loading page provider: filesystemprovider (FileSystemProvider)
@@ -1405,11 +1405,11 @@ Verify directory exists and contains `.md` files.
 
 #### 4. Page Saves Failing
 
-**Symptom**: `savePage()` throws error or pages don't persist
+__Symptom__: `savePage()` throws error or pages don't persist
 
-**Cause**: File permission issues or invalid metadata
+__Cause__: File permission issues or invalid metadata
 
-**Solution**:
+__Solution__:
 
 1. Check directory permissions: `ls -la pages/`
 2. Validate metadata structure
@@ -1419,11 +1419,11 @@ Verify directory exists and contains `.md` files.
 
 #### 5. Plural Matching Not Working
 
-**Symptom**: Links like `[Users]` don't find page titled "User"
+__Symptom__: Links like `[Users]` don't find page titled "User"
 
-**Cause**: Plural matching disabled in configuration
+__Cause__: Plural matching disabled in configuration
 
-**Solution**: Enable plural matching:
+__Solution__: Enable plural matching:
 
 ```json
 {
@@ -1486,15 +1486,15 @@ If you're upgrading from an older version with different configuration keys:
 
 #### Migration Steps
 
-1. **Backup Configuration**: Copy `app-custom-config.json` to `app-custom-config.json.backup`
+1. __Backup Configuration__: Copy `app-custom-config.json` to `app-custom-config.json.backup`
 
-2. **Update Keys**: Replace old keys with new lowercase keys
+2. __Update Keys__: Replace old keys with new lowercase keys
 
-3. **Update Provider Name**: Change from `FileSystemProvider` to `filesystemprovider`
+3. __Update Provider Name__: Change from `FileSystemProvider` to `filesystemprovider`
 
-4. **Test Configuration**: Restart server and check logs for successful initialization
+4. __Test Configuration__: Restart server and check logs for successful initialization
 
-5. **Verify Pages Load**: Access a few pages to confirm everything works
+5. __Verify Pages Load__: Access a few pages to confirm everything works
 
 ---
 
@@ -1502,7 +1502,7 @@ If you're upgrading from an older version with different configuration keys:
 
 To create a new page storage provider:
 
-1. **Create Provider Class**:
+1. __Create Provider Class__:
 
 ```javascript
 // src/providers/CustomProvider.js
@@ -1536,7 +1536,7 @@ class CustomProvider extends BasePageProvider {
 module.exports = CustomProvider;
 ```
 
-1. **Update Provider Normalization**:
+1. __Update Provider Normalization__:
 
 ```javascript
 // src/managers/PageManager.js
@@ -1550,7 +1550,7 @@ module.exports = CustomProvider;
 }
 ```
 
-1. **Add Configuration**:
+1. __Add Configuration__:
 
 ```json
 {
@@ -1560,26 +1560,26 @@ module.exports = CustomProvider;
 }
 ```
 
-1. **Test Provider**: Restart server and verify initialization logs
+1. __Test Provider__: Restart server and verify initialization logs
 
 ---
 
 ## Summary
 
-The **PageManager** provides a flexible, pluggable architecture for wiki page storage. Key takeaways:
+The __PageManager__ provides a flexible, pluggable architecture for wiki page storage. Key takeaways:
 
-- ✅ **Pluggable Providers**: Swap storage backends via configuration
-- ✅ **Lowercase Configuration**: All config keys use lowercase naming
-- ✅ **Provider Fallback**: Default + active provider pattern
-- ✅ **FileSystemProvider**: Production-ready filesystem storage with caching
-- ✅ **Future Providers**: Database and cloud storage planned
-- ✅ **Clean API**: Stable public API with provider delegation
-- ✅ **Integration**: Works seamlessly with other managers
+- ✅ __Pluggable Providers__: Swap storage backends via configuration
+- ✅ __Lowercase Configuration__: All config keys use lowercase naming
+- ✅ __Provider Fallback__: Default + active provider pattern
+- ✅ __FileSystemProvider__: Production-ready filesystem storage with caching
+- ✅ __Future Providers__: Database and cloud storage planned
+- ✅ __Clean API__: Stable public API with provider delegation
+- ✅ __Integration__: Works seamlessly with other managers
 
 For questions or issues, check the [Troubleshooting](#troubleshooting) section or review server logs for detailed error messages.
 
 ---
 
-**Document Version**: 1.0.0
-**ngdpbase Version**: 1.3.2
-**Last Updated**: 2025-10-12
+__Document Version__: 1.0.0
+__ngdpbase Version__: 1.3.2
+__Last Updated__: 2025-10-12

@@ -1,9 +1,9 @@
 # WikiContext Complete Guide
 
-**Version:** 2.0.0
-**Last Updated:** 2026-05-03 (post-v3.6.0)
-**Status:** Production Ready
-**Source:** `src/context/WikiContext.ts`
+__Version:__ 2.0.0
+__Last Updated:__ 2026-05-03 (post-v3.6.0)
+__Status:__ Production Ready
+__Source:__ `src/context/WikiContext.ts`
 
 This guide covers everything about WikiContext in ngdpbase — its purpose, TypeScript API, usage patterns, and role as the central rendering orchestrator. v2.0 captures the access-control consolidation from #625 (v3.6.0): four canonical access methods on WikiContext + a static helper, lazy theme resolution, and an ESLint guard against reintroduction of the inline role-check boilerplate.
 
@@ -28,32 +28,32 @@ This guide covers everything about WikiContext in ngdpbase — its purpose, Type
 
 ## Overview
 
-**`WikiContext` is the central orchestrator for content rendering in ngdpbase.** For each page request, a `WikiContext` instance is created to act as a request-scoped container, bundling all information related to the request — page details, user info, HTTP request, and manager references.
+__`WikiContext` is the central orchestrator for content rendering in ngdpbase.__ For each page request, a `WikiContext` instance is created to act as a request-scoped container, bundling all information related to the request — page details, user info, HTTP request, and manager references.
 
 Inspired by JSPWiki's architectural patterns, `WikiContext` solves "parameter explosion" by providing a single, consistent object to the upper levels of the application, while keeping lower-level components decoupled and reusable.
 
 ### Key Features
 
-- **Request-scoped container** for all contextual information
-- **Orchestration**: manages the rendering pipeline (variable expansion, plugin execution, Markdown → HTML)
-- **Decoupling**: passes a plain `pageContext` data object to lower-level systems via `toParseOptions()` — parsers and plugins do not depend on `WikiContext` itself
-- **Manager access**: holds direct references to all core engine managers
-- **Single source of truth**: all user and page context flows through one object
-- **Fallback handling**: graceful degradation when managers are unavailable
-- **JSPWiki compatibility**: follows JSPWiki's proven architectural patterns
+- __Request-scoped container__ for all contextual information
+- __Orchestration__: manages the rendering pipeline (variable expansion, plugin execution, Markdown → HTML)
+- __Decoupling__: passes a plain `pageContext` data object to lower-level systems via `toParseOptions()` — parsers and plugins do not depend on `WikiContext` itself
+- __Manager access__: holds direct references to all core engine managers
+- __Single source of truth__: all user and page context flows through one object
+- __Fallback handling__: graceful degradation when managers are unavailable
+- __JSPWiki compatibility__: follows JSPWiki's proven architectural patterns
 
 ### Implementation Status
 
 | Component | Status | Tests |
 |---|---|---|
-| **WikiContext class** (`src/context/WikiContext.ts`) | ✅ Production | 35 in `WikiContext.test.ts` |
-| **Route integration** (`src/routes/WikiRoutes.ts`) | ✅ Active | All routes |
-| **Access-method consolidation** (#625, v3.6.0) | ✅ Production | `hasRole`, `hasPermission`, `canAccess`, `getPrincipals`, static `userHasRole` |
-| **`ParseContext` mirror** | ✅ Production | `hasRole(...names)` rest-args, `getPrincipals` (#625); `hasPermission` async, `canAccess` (#633) |
-| **`ApiContext` parity** | ✅ Production | `hasRole`/`requireRole` sync; `hasPermission`/`requirePermission` async (#630) |
-| **Lazy theme resolution** | ✅ Production | `activeTheme` / `themeInfo` are lazy getters; permission-only callers don't trigger ConfigurationManager.getProperty |
-| **ESLint guard** | ✅ Production | `no-restricted-syntax` flags `.isAdmin` and `.roles.includes(...)` reads outside test files |
-| **Manager method migration** | 🔄 In Progress | `savePageWithContext()` done; new managers start with WikiContext |
+| __WikiContext class__ (`src/context/WikiContext.ts`) | ✅ Production | 35 in `WikiContext.test.ts` |
+| __Route integration__ (`src/routes/WikiRoutes.ts`) | ✅ Active | All routes |
+| __Access-method consolidation__ (#625, v3.6.0) | ✅ Production | `hasRole`, `hasPermission`, `canAccess`, `getPrincipals`, static `userHasRole` |
+| __`ParseContext` mirror__ | ✅ Production | `hasRole(...names)` rest-args, `getPrincipals` (#625); `hasPermission` async, `canAccess` (#633) |
+| __`ApiContext` parity__ | ✅ Production | `hasRole`/`requireRole` sync; `hasPermission`/`requirePermission` async (#630) |
+| __Lazy theme resolution__ | ✅ Production | `activeTheme` / `themeInfo` are lazy getters; permission-only callers don't trigger ConfigurationManager.getProperty |
+| __ESLint guard__ | ✅ Production | `no-restricted-syntax` flags `.isAdmin` and `.roles.includes(...)` reads outside test files |
+| __Manager method migration__ | 🔄 In Progress | `savePageWithContext()` done; new managers start with WikiContext |
 
 ---
 
@@ -65,11 +65,11 @@ WikiContext is a request-scoped object that encapsulates everything needed for r
 
 Instead of passing multiple parameters through the rendering pipeline, WikiContext provides one object containing:
 
-- **Page information** (`pageName`, `content`)
-- **User context** (`userContext` — authentication, roles, session)
-- **Request details** (`request`, `response`)
-- **Manager references** (`pageManager`, `renderingManager`, `pluginManager`, `variableManager`, `aclManager`)
-- **Rendering context type** (`WikiContext.CONTEXT.VIEW`, `EDIT`, `PREVIEW`, etc.)
+- __Page information__ (`pageName`, `content`)
+- __User context__ (`userContext` — authentication, roles, session)
+- __Request details__ (`request`, `response`)
+- __Manager references__ (`pageManager`, `renderingManager`, `pluginManager`, `variableManager`, `aclManager`)
+- __Rendering context type__ (`WikiContext.CONTEXT.VIEW`, `EDIT`, `PREVIEW`, etc.)
 
 ### JSPWiki Inspiration
 
@@ -127,7 +127,7 @@ const wikiContext = this.createWikiContext(req, {
 const html = await wikiContext.renderMarkdown();
 ```
 
-**Benefits:**
+__Benefits:__
 
 1. Cleaner APIs — single parameter instead of many
 2. Easier testing — mock one object
@@ -212,7 +212,7 @@ export interface ParseOptions {
 
 ### Constructor
 
-**In route handlers, always use `this.createWikiContext()` — not the constructor directly.**
+__In route handlers, always use `this.createWikiContext()` — not the constructor directly.__
 
 ```typescript
 // ✅ Correct — always use the factory in WikiRoutes
@@ -234,7 +234,7 @@ const wikiContext = new WikiContext(engine, {
 
 `createWikiContext()` (`src/routes/WikiRoutes.ts:132`) populates `userContext` from `req.userContext` (set by session middleware) automatically.
 
-**Throws:** `Error` if `engine` is not provided.
+__Throws:__ `Error` if `engine` is not provided.
 
 ### Context Type Constants
 
@@ -251,7 +251,7 @@ WikiContext.CONTEXT = {
 
 ### Instance Properties
 
-All properties are **`readonly`** — `WikiContext` is immutable after construction.
+All properties are __`readonly`__ — `WikiContext` is immutable after construction.
 
 ```typescript
 // Core
@@ -271,7 +271,7 @@ wikiContext.variableManager     // VariableManager
 wikiContext.aclManager          // ACLManager
 ```
 
-> **Immutability note**: all properties are `readonly`. If you need a different `pageName` with the same user context (e.g. in MediaManager), construct a new instance:
+> __Immutability note__: all properties are `readonly`. If you need a different `pageName` with the same user context (e.g. in MediaManager), construct a new instance:
 >
 > ```typescript
 > const linkedPageContext = new WikiContext(this.engine, {
@@ -300,7 +300,7 @@ The four canonical methods for role/permission checks. Use these instead of inli
 
 ##### `hasRole(...names: string[]): boolean`
 
-Pure roles-array check. Sync. Returns `true` if `userContext.roles` contains any of the given names. Does **not** consult PolicyEvaluator. Backed by `WikiContext.userHasRole(this.userContext, ...names)`.
+Pure roles-array check. Sync. Returns `true` if `userContext.roles` contains any of the given names. Does __not__ consult PolicyEvaluator. Backed by `WikiContext.userHasRole(this.userContext, ...names)`.
 
 ```typescript
 if (wikiContext.hasRole('admin')) { ... }
@@ -364,10 +364,10 @@ const html = await wikiContext.renderMarkdown();
 const html = await wikiContext.renderMarkdown('# Custom Content [{$pagename}]');
 ```
 
-**Processing pipeline:**
+__Processing pipeline:__
 
-1. **MarkupParser** (primary) — WikiDocument DOM, variables, plugins, links
-2. **Showdown fallback** (if parser unavailable) — variables expanded, basic Markdown
+1. __MarkupParser__ (primary) — WikiDocument DOM, variables, plugins, links
+2. __Showdown fallback__ (if parser unavailable) — variables expanded, basic Markdown
 
 #### `toParseOptions(): ParseOptions`
 
@@ -386,7 +386,7 @@ const html = await parser.parse(content, options);
 
 ## Lazy theme resolution (v3.6.0)
 
-Pre-v3.6.0, `createWikiContext()` eagerly resolved the active theme: it called `configManager.getProperty('ngdpbase.theme.active')` and constructed a `ThemeManager` (which did fs I/O for theme.json + asset paths) on **every** request, even if the request never read theme info.
+Pre-v3.6.0, `createWikiContext()` eagerly resolved the active theme: it called `configManager.getProperty('ngdpbase.theme.active')` and constructed a `ThemeManager` (which did fs I/O for theme.json + asset paths) on __every__ request, even if the request never read theme info.
 
 After v3.6.0, theme resolution is lazy:
 
@@ -458,7 +458,7 @@ src/
 
 ### Architectural Note: Decoupling via toParseOptions()
 
-`WikiContext` does **not** pass itself to lower-level systems. It passes a plain object:
+`WikiContext` does __not__ pass itself to lower-level systems. It passes a plain object:
 
 ```
 WikiContext → toParseOptions() → { pageContext, engine } → MarkupParser → plugins/variables
@@ -701,7 +701,7 @@ The deprecated 4-arg `checkPagePermission(pageName, action, userContext, content
 | `hasPermission(action)` | 3 | ✅ |
 | `canAccess(action)` | 3 | ✅ |
 | `getPrincipals()` | 5 | ✅ |
-| **Total** | **35** | **✅** |
+| __Total__ | __35__ | __✅__ |
 
 Plus 12 tests in `src/parsers/context/__tests__/ParseContext.test.ts` (hasRole rest-args + getPrincipals) and 31 tests in `src/context/__tests__/ApiContext.test.ts` (post-#630 contract-based tests).
 
@@ -750,7 +750,7 @@ const wikiContext = new WikiContext(mockEngine as unknown as WikiEngine, {
 | `toParseOptions()` | Object construction (~0.1ms) |
 | `renderMarkdown()` | Depends on parser and content (20–30ms typical) |
 
-**Key:** `WikiContext` is created once per request. Manager references are stored as pointers — no copying. Always create one instance per request and reuse it for multiple operations within that request. Permission-only callers (most route handlers post-#625) never trigger theme resolution.
+__Key:__ `WikiContext` is created once per request. Manager references are stored as pointers — no copying. Always create one instance per request and reuse it for multiple operations within that request. Permission-only callers (most route handlers post-#625) never trigger theme resolution.
 
 ```typescript
 // ✅ One context, multiple operations
@@ -884,5 +884,5 @@ if (wikiContext.userContext?.authenticated) { ... }
 
 ---
 
-**Last Updated:** 2026-05-03 (post-v3.6.0)
-**Maintained By:** ngdpbase Development Team
+__Last Updated:__ 2026-05-03 (post-v3.6.0)
+__Maintained By:__ ngdpbase Development Team

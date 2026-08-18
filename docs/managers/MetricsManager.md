@@ -8,9 +8,9 @@ code: src/managers/MetricsManager.ts
 
 # MetricsManager
 
-**Module:** `src/managers/MetricsManager.ts`
-**Extends:** [BaseManager](BaseManager.md)
-**Complete Guide:** [MetricsManager-Complete-Guide.md](MetricsManager-Complete-Guide.md)
+__Module:__ `src/managers/MetricsManager.ts`
+__Extends:__ [BaseManager](BaseManager.md)
+__Complete Guide:__ [MetricsManager-Complete-Guide.md](MetricsManager-Complete-Guide.md)
 
 ---
 

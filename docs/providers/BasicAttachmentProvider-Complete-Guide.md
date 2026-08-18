@@ -206,10 +206,10 @@ protected static final int ATTACHMENT = 10;   Link to an attachment/file uploade
 
 ### "jspwiki.translatorReader.useAttachmentImage"
 
-the MarkupParser must determine if it is an attachement and use PROP_USEATTACHMENTIMAGE is a static final String property in JSPWiki (`"jspwiki.translatorReader.useAttachmentImage"`). It is used to control whether **attachment info links** in rendered wiki pages include a small attachment image icon.[1]
+the MarkupParser must determine if it is an attachement and use PROP_USEATTACHMENTIMAGE is a static final String property in JSPWiki (`"jspwiki.translatorReader.useAttachmentImage"`). It is used to control whether __attachment info links__ in rendered wiki pages include a small attachment image icon.[1]
 
 - Purpose: If this property is set to `true`, any links to attachments (such as file uploads or page attachments) shown in wiki output will have a small image icon appended, marking the item visually as an attachment rather than a simple link.
 - Usage:
   - The value is loaded from `jspwiki.properties` (or overridden in custom property files or system properties) into the parser's `m_useAttachmentImage` boolean field.[2]
   - When the parser renders an attachment link, if `m_useAttachmentImage` is `true`, an attachment icon (typically `images/attachment_small.png`) is added near the link in the HTML output.
-- Summary: Set **PROP_USEATTACHMENTIMAGE** to `true` in your configuration to display attachment icons next to every rendered attachment info link in JSPWiki.
+- Summary: Set __PROP_USEATTACHMENTIMAGE__ to `true` in your configuration to display attachment icons next to every rendered attachment info link in JSPWiki.

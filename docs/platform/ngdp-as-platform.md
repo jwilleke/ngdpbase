@@ -7,7 +7,7 @@
 
 ## What is ngdpbase?
 
-ngdpbase is a **clone-and-extend wiki platform** built on Node.js / Express / TypeScript.
+ngdpbase is a __clone-and-extend wiki platform__ built on Node.js / Express / TypeScript.
 You clone the repo, configure it, and add domain-specific logic through its extension system — without modifying core.
 
 Two deployments, both live:
@@ -17,9 +17,9 @@ Two deployments, both live:
 | The Fairways | [operator guide](../demo/the-fairways-operator.md) | Condo/HOA community site — role-per-unit, private pages, contact data |
 | GeoHazardWatch | [jwilleke/geohazardwatch](https://github.com/jwilleke/geohazardwatch) | Volcano and earthquake data — the project's reference deployment (see [`Deployment.md`](./Deployment.md)). Formerly "Volcano Wiki" / `ve-geology` |
 
-Neither lives in this repo. Both are **satellite** deployments that consume ngdpbase as a base image or npm dependency — the model described in [`deployment/addon-packaged.md`](./deployment/addon-packaged.md). The original plan put each domain in an `addons/<name>/` directory here; that was superseded once domain addons started shipping on their own release cadence.
+Neither lives in this repo. Both are __satellite__ deployments that consume ngdpbase as a base image or npm dependency — the model described in [`deployment/addon-packaged.md`](./deployment/addon-packaged.md). The original plan put each domain in an `addons/<name>/` directory here; that was superseded once domain addons started shipping on their own release cadence.
 
-The key insight: **ngdpbase provides horizontal infrastructure; add-ons provide vertical domain logic.**
+The key insight: __ngdpbase provides horizontal infrastructure; add-ons provide vertical domain logic.__
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -104,7 +104,7 @@ Minimal custom code: `addons/fairways/` + `plugins/EmbedPlugin.ts` + `themes/fai
 | Community editing | Core (UserManager + ACL) | Standard wiki editing |
 | Photo/gallery | Core (AttachmentManager + MediaPlugin) | Already functional |
 
-**Add-on structure:**
+__Add-on structure:__
 
 ```
 addons/volcano-wiki/
@@ -141,7 +141,7 @@ Each add-on lives in its own GitHub repository. Wire it into a running ngdpbase 
 }
 ```
 
-**Local dev layout:**
+__Local dev layout:__
 
 ```
 /workspaces/github/
@@ -235,7 +235,7 @@ Phases 2 and 3 completed in a different shape than planned: both domains ship as
 | [#405](https://github.com/jwilleke/ngdpbase/issues/405) | DAM Epic — unified AssetProvider |
 | [#673](https://github.com/jwilleke/ngdpbase/issues/673) | `packaged` addon distribution (npm) — how satellites consume the platform |
 | [#675](https://github.com/jwilleke/ngdpbase/issues/675) | Addon scaffolder + reference template — done; see [`ngdpbase-addon-template`](https://github.com/jwilleke/ngdpbase-addon-template) |
-| [#686](https://github.com/jwilleke/ngdpbase/issues/686) | Auto-enable addons discovered in non-default `addons-path` dirs — **open** |
+| [#686](https://github.com/jwilleke/ngdpbase/issues/686) | Auto-enable addons discovered in non-default `addons-path` dirs — __open__ |
 
 ---
 

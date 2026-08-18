@@ -46,17 +46,17 @@ Every provider below uses standard SMTP — only the host/credentials change.
 
 | Provider | Host | Port | Notes |
 |----------|------|------|-------|
-| **Resend** | `smtp.resend.com` | 587 | User = `resend`, Pass = API key. Free tier 100/day. |
-| **SendGrid** | `smtp.sendgrid.net` | 587 | User = `apikey`, Pass = API key. |
-| **Gmail** | `smtp.gmail.com` | 587 | Requires an App Password (not your account password). |
-| **AWS SES** | region-specific | 587 | IAM SMTP credentials, not regular AWS keys. |
-| **Mailhog** (local) | `localhost` | 1025 | No auth. Development/testing only. |
-| **Self-hosted Postfix** | your server IP | 587 | Configure relay or smarthost as needed. |
+| __Resend__ | `smtp.resend.com` | 587 | User = `resend`, Pass = API key. Free tier 100/day. |
+| __SendGrid__ | `smtp.sendgrid.net` | 587 | User = `apikey`, Pass = API key. |
+| __Gmail__ | `smtp.gmail.com` | 587 | Requires an App Password (not your account password). |
+| __AWS SES__ | region-specific | 587 | IAM SMTP credentials, not regular AWS keys. |
+| __Mailhog__ (local) | `localhost` | 1025 | No auth. Development/testing only. |
+| __Self-hosted Postfix__ | your server IP | 587 | Configure relay or smarthost as needed. |
 
 ### Gmail App Password
 
 1. Enable 2FA on the Google account.
-2. Go to **Google Account → Security → App passwords**.
+2. Go to __Google Account → Security → App passwords__.
 3. Generate a password for "Mail / Other".
 4. Use that 16-character password as `smtp.pass` (no spaces).
 
@@ -69,9 +69,9 @@ mail as spam.
 
 | Record | Purpose | Who configures it |
 |--------|---------|-------------------|
-| **SPF** | Authorize your SMTP relay to send for your domain | You, in your DNS |
-| **DKIM** | Cryptographic signature on outgoing mail | Your SMTP provider (gives you a DNS record to add) |
-| **DMARC** | Policy for what to do with failing mail | You, in your DNS (start with `p=none`) |
+| __SPF__ | Authorize your SMTP relay to send for your domain | You, in your DNS |
+| __DKIM__ | Cryptographic signature on outgoing mail | Your SMTP provider (gives you a DNS record to add) |
+| __DMARC__ | Policy for what to do with failing mail | You, in your DNS (start with `p=none`) |
 
 Most managed relays (Resend, SendGrid, SES) walk you through adding these records in
 their onboarding flow.
@@ -91,22 +91,22 @@ their onboarding flow.
 
 ## Troubleshooting
 
-**Emails printing to log instead of being sent**
+__Emails printing to log instead of being sent__
 : Check `ngdpbase.mail.provider` is `"smtp"` and `ngdpbase.mail.enabled` is `true`.
 
-**Connection refused on port 587**
+__Connection refused on port 587__
 : Some hosts block outbound SMTP. Try port 465 with `secure: true`, or use a relay that
   supports port 2587.
 
-**"Self-signed certificate" error**
+__"Self-signed certificate" error__
 : Add `"ngdpbase.mail.provider.smtp.tls-reject-unauthorized": false` — only for
   self-hosted dev instances.
 
-**Gmail "Username and Password not accepted"**
+__Gmail "Username and Password not accepted"__
 : You must use an App Password, not your Google account password. See section above.
 
-**Startup error: `smtp.host is not configured`**
+__Startup error: `smtp.host is not configured`__
 : Set `ngdpbase.mail.provider.smtp.host` in your instance config.
 
-**Startup error: `No from address configured`**
+__Startup error: `No from address configured`__
 : Set either `ngdpbase.mail.from` or `ngdpbase.mail.provider.smtp.from`.

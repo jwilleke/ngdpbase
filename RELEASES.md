@@ -1,8 +1,8 @@
 # ngdpbase Release & Publishing Contract
 
-This document is the **explicit contract** between `jwilleke/ngdpbase` (publisher) and its downstream consumers (`jwilleke/geohazardwatch`, `jwilleke/fairways-gen2-website`, `jwilleke/mj-infra-flux`, and any future site or deployment that depends on a ngdpbase release).
+This document is the __explicit contract__ between `jwilleke/ngdpbase` (publisher) and its downstream consumers (`jwilleke/geohazardwatch`, `jwilleke/fairways-gen2-website`, `jwilleke/mj-infra-flux`, and any future site or deployment that depends on a ngdpbase release).
 
-It states **what ngdpbase publishes, when, and where**. It does **not** state how consumers should consume — that is the consumer's responsibility. The intent is loose coupling: ngdpbase publishes on its own cadence; consumers subscribe on theirs.
+It states __what ngdpbase publishes, when, and where__. It does __not__ state how consumers should consume — that is the consumer's responsibility. The intent is loose coupling: ngdpbase publishes on its own cadence; consumers subscribe on theirs.
 
 ## What ngdpbase publishes for every release
 
@@ -23,13 +23,13 @@ For every push of a `v*` git tag (e.g., `v3.39.3`), ngdpbase produces the follow
 |---|---|---|
 | `major` | Yes | Breaking change — visible release entry required |
 | `minor` | Yes | New feature surface — visible release entry required |
-| `patch` | **Deferred** | Patch chains accumulate; one consolidated GH Release per minor cycle is cheaper than per-patch publishes. Backfill possible via the `/release` skill if a specific patch needs a visible entry. |
+| `patch` | __Deferred__ | Patch chains accumulate; one consolidated GH Release per minor cycle is cheaper than per-patch publishes. Backfill possible via the `/release` skill if a specific patch needs a visible entry. |
 
-A deferred GH Release does **not** affect the Docker image publish — that fires for every tag regardless of bump type. Consumers tracking the ghcr.io image will always see new versions even when no GitHub Release entry exists.
+A deferred GH Release does __not__ affect the Docker image publish — that fires for every tag regardless of bump type. Consumers tracking the ghcr.io image will always see new versions even when no GitHub Release entry exists.
 
 ## When publishing happens
 
-`/semver patch|minor|major` (in `.claude/commands/semver.md`) drives the release. The relevant gate is that it tags **only** when:
+`/semver patch|minor|major` (in `.claude/commands/semver.md`) drives the release. The relevant gate is that it tags __only__ when:
 
 1. The working tree is clean and on `master`
 2. The local branch is up to date with `origin/master`
@@ -41,14 +41,14 @@ Once the tag is pushed, `docker-build.yml` runs unattended and publishes the ima
 
 ## What ngdpbase does NOT do
 
-To keep the contract clean, the following are **explicit non-promises**:
+To keep the contract clean, the following are __explicit non-promises__:
 
-- ngdpbase **does not** notify consumers when a release ships (no webhook, no email, no Slack post). Consumers must poll / subscribe through their own mechanism.
-- ngdpbase **does not** update consumer Dockerfiles, `package.json` pins, GitOps manifests, or any other file in any consumer repo.
-- ngdpbase **does not** re-deploy consumer instances (production, staging, geohazardwatch, fairways, mj-infra-flux managed clusters, etc.).
-- ngdpbase **does not** wait for consumers to be ready before publishing. A new release ships when ngdpbase is ready to ship it; consumer readiness is independent.
-- ngdpbase **does not** maintain backwards-compatibility shims for consumers that lag multiple major versions. Consumers behind by ≥1 major version should expect breaking changes when they catch up.
-- ngdpbase **does not** track or coordinate consumer rollout. If `jwilleke/geohazardwatch` is on `3.24.4` while ngdpbase is on `3.39.3`, that's a consumer-side problem (their Renovate / their pin / their workflow) — not a ngdpbase problem.
+- ngdpbase __does not__ notify consumers when a release ships (no webhook, no email, no Slack post). Consumers must poll / subscribe through their own mechanism.
+- ngdpbase __does not__ update consumer Dockerfiles, `package.json` pins, GitOps manifests, or any other file in any consumer repo.
+- ngdpbase __does not__ re-deploy consumer instances (production, staging, geohazardwatch, fairways, mj-infra-flux managed clusters, etc.).
+- ngdpbase __does not__ wait for consumers to be ready before publishing. A new release ships when ngdpbase is ready to ship it; consumer readiness is independent.
+- ngdpbase __does not__ maintain backwards-compatibility shims for consumers that lag multiple major versions. Consumers behind by ≥1 major version should expect breaking changes when they catch up.
+- ngdpbase __does not__ track or coordinate consumer rollout. If `jwilleke/geohazardwatch` is on `3.24.4` while ngdpbase is on `3.39.3`, that's a consumer-side problem (their Renovate / their pin / their workflow) — not a ngdpbase problem.
 
 ## Consumer guidance (informational, not promised)
 
@@ -86,7 +86,7 @@ A consumer that is more than ~2 minor versions behind is likely missing security
 
 ## Out-of-band notifications
 
-When a consumer is observed to be significantly behind, ngdpbase **may** (but is not obliged to) file an informational issue on the consumer repo pointing at this contract and the current ngdpbase tag. This is a courtesy, not a promise — see for example [`jwilleke/ngdpbase#783`](https://github.com/jwilleke/ngdpbase/issues/783) for the originating discussion. The fix is always on the consumer side.
+When a consumer is observed to be significantly behind, ngdpbase __may__ (but is not obliged to) file an informational issue on the consumer repo pointing at this contract and the current ngdpbase tag. This is a courtesy, not a promise — see for example [`jwilleke/ngdpbase#783`](https://github.com/jwilleke/ngdpbase/issues/783) for the originating discussion. The fix is always on the consumer side.
 
 ## Changes to this contract
 

@@ -8,9 +8,9 @@ code: src/managers/TemplateManager.ts
 
 # TemplateManager
 
-**Module:** `src/managers/TemplateManager.ts`
-**Extends:** [BaseManager](BaseManager.md)
-**Complete Guide:** [TemplateManager-Complete-Guide.md](TemplateManager-Complete-Guide.md)
+__Module:__ `src/managers/TemplateManager.ts`
+__Extends:__ [BaseManager](BaseManager.md)
+__Complete Guide:__ [TemplateManager-Complete-Guide.md](TemplateManager-Complete-Guide.md)
 
 ---
 

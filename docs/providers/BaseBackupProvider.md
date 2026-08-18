@@ -8,19 +8,19 @@ code: src/providers/BaseBackupProvider.ts
 
 # BaseBackupProvider
 
-**Quick Reference** | [BackupManager](../managers/BackupManager.md)
+__Quick Reference__ | [BackupManager](../managers/BackupManager.md)
 
-**Module:** `src/providers/BaseBackupProvider.ts`
-**Type:** Abstract Backup Provider Base Class
-**Status:** Production
+__Module:__ `src/providers/BaseBackupProvider.ts`
+__Type:__ Abstract Backup Provider Base Class
+__Status:__ Production
 
 ---
 
 ## Overview
 
-`BaseBackupProvider` (Issue #170) abstracts **only the backup storage
-target** — where the assembled archive is written, read, listed, and pruned.
-It deliberately does **not** re-abstract the content side: collecting
+`BaseBackupProvider` (Issue #170) abstracts __only the backup storage
+target__ — where the assembled archive is written, read, listed, and pruned.
+It deliberately does __not__ re-abstract the content side: collecting
 `backup()` from every manager, gzip, JSON, validation, retention policy, and
 the auto-backup scheduler all remain in [BackupManager](../managers/BackupManager.md),
 because per-manager serialization was already provider-abstracted via

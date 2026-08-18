@@ -1,8 +1,8 @@
 # ngdpbase
 
-A file-based wiki application built with **Node.js**, **Express**, **TypeScript**, and **Markdown**, inspired by [JSPWiki](https://github.com/apache/jspwiki).
+A file-based wiki application built with __Node.js__, __Express__, __TypeScript__, and __Markdown__, inspired by [JSPWiki](https://github.com/apache/jspwiki).
 
-📋 **See [docs/planning/ROADMAP.md](docs/planning/ROADMAP.md) for project vision, technical specifications, and feature priorities.**
+📋 __See [docs/planning/ROADMAP.md](docs/planning/ROADMAP.md) for project vision, technical specifications, and feature priorities.__
 
 ## Features
 
@@ -14,28 +14,28 @@ A file-based wiki application built with **Node.js**, **Express**, **TypeScript*
 - Three-state authentication system
 - Professional UI with Bootstrap styling
 - Pages are stored as Markdown files
-- **Inline image support with upload functionality**
-- **Plugin system for extensible functionality**
-- **Policy-Based Access Control**: Advanced permission system with JSON configuration
-- **Comprehensive Audit Trail**: Complete security monitoring and access logging
-- **Time-Based Permissions**: Context-aware permissions with scheduling and maintenance mode
-- **Admin Dashboard**: Full administrative interface for user management and system monitoring
-- **WikiDocument DOM Architecture**: Robust, JSPWiki-inspired parsing engine with DOM-based processing
-- **Conflict-Free Parsing**: JSPWiki syntax and Markdown coexist without interference
-- **📚 Page Version History**: Complete version control with diff comparison and restore capabilities
+- __Inline image support with upload functionality__
+- __Plugin system for extensible functionality__
+- __Policy-Based Access Control__: Advanced permission system with JSON configuration
+- __Comprehensive Audit Trail__: Complete security monitoring and access logging
+- __Time-Based Permissions__: Context-aware permissions with scheduling and maintenance mode
+- __Admin Dashboard__: Full administrative interface for user management and system monitoring
+- __WikiDocument DOM Architecture__: Robust, JSPWiki-inspired parsing engine with DOM-based processing
+- __Conflict-Free Parsing__: JSPWiki syntax and Markdown coexist without interference
+- __📚 Page Version History__: Complete version control with diff comparison and restore capabilities
   - View all previous versions of any page
   - Compare versions side-by-side or unified diff
   - Restore to any previous version
   - Automatic delta storage for efficiency
   - Full version metadata tracking
-- **🤖 Model Context Protocol (MCP) Server**: AI assistant integration for enhanced productivity
+- __🤖 Model Context Protocol (MCP) Server__: AI assistant integration for enhanced productivity
   - Direct AI access to wiki content and metadata
   - Full-text search with advanced filtering
   - Metadata validation and generation
   - 12 specialized tools for wiki operations
   - Integration with Claude Desktop and Claude Code CLI
 
-📖 **Detailed technical documentation available in [docs/](docs/) folder.**
+📖 __Detailed technical documentation available in [docs/](docs/) folder.__
 
 ## Getting Started
 
@@ -57,7 +57,7 @@ A file-based wiki application built with **Node.js**, **Express**, **TypeScript*
 
 3. Open your browser and navigate to `http://localhost:3000`
 
-**Server Management:**
+__Server Management:__
 
 ```bash
 ./server.sh start [dev|prod]   # Start server (default: production)
@@ -72,11 +72,11 @@ A file-based wiki application built with **Node.js**, **Express**, **TypeScript*
 ### For Developers
 
 - Follow the setup steps above
-- The codebase uses **TypeScript with strict mode** enabled
+- The codebase uses __TypeScript with strict mode__ enabled
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) for coding standards, TypeScript guidelines, and contribution guidelines
 - Check [CHANGELOG.md](CHANGELOG.md) for version history and migration notes
 
-**TypeScript Commands:**
+__TypeScript Commands:__
 
 ```bash
 npm run typecheck       # Type checking (no output)
@@ -97,7 +97,7 @@ npm run build
 npm run mcp
 ```
 
-**Integration with Claude Desktop:**
+__Integration with Claude Desktop:__
 Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
@@ -112,11 +112,11 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-📖 **See [docs/MCP-SERVER.md](docs/MCP-SERVER.md) for complete documentation.**
+📖 __See [docs/MCP-SERVER.md](docs/MCP-SERVER.md) for complete documentation.__
 
 ## Configuration
 
-ngdpbase uses a **hierarchical configuration system** with three layers (later overrides earlier):
+ngdpbase uses a __hierarchical configuration system__ with three layers (later overrides earlier):
 
 1. `config/app-default-config.json` - Base defaults (required, ~1150 properties)
 2. `config/app-{environment}-config.json` - Environment-specific settings (optional)
@@ -125,13 +125,13 @@ ngdpbase uses a **hierarchical configuration system** with three layers (later o
 
 ### Making Configuration Changes
 
-**Via Admin UI:**
+__Via Admin UI:__
 
 - Navigate to [/admin/configuration](/admin/configuration)
 - Changes saved to `app-custom-config.json`
 - Restart required: [/admin/restart](/admin/restart)
 
-**Manual Editing:**
+__Manual Editing:__
 
 - Edit `config/app-custom-config.json` directly
 - Restart server to apply changes:
@@ -153,7 +153,7 @@ ngdpbase uses a **hierarchical configuration system** with three layers (later o
 }
 ```
 
-**Note:** Properties starting with `_` are treated as comments and ignored.
+__Note:__ Properties starting with `_` are treated as comments and ignored.
 
 ### Operator Guides
 
@@ -212,18 +212,18 @@ ngdpbase/
 └── coverage/              # Istanbul coverage data
 ```
 
-📖 **Detailed project structure documentation available in [docs/architecture/PROJECT-STRUCTURE.md](docs/architecture/PROJECT-STRUCTURE.md)**
+📖 __Detailed project structure documentation available in [docs/architecture/PROJECT-STRUCTURE.md](docs/architecture/PROJECT-STRUCTURE.md)__
 
 ## Examples
 
-**Creating a Wiki Page Link (JSPWiki Syntax):**
+__Creating a Wiki Page Link (JSPWiki Syntax):__
 
 ```markdown
 [Link Text|PageName]  # Links to PageName with custom text
 [PageName]           # Simple link to PageName
 ```
 
-**Inserting Images (JSPWiki Plugin Syntax):**
+__Inserting Images (JSPWiki Plugin Syntax):__
 
 ```markdown
 [{Image src='image.jpg' alt='Description' width='300'}]  # Basic image
@@ -231,7 +231,7 @@ ngdpbase/
 [{Image src='https://example.com/image.png' class='responsive'}]  # External image
 ```
 
-**Image Upload:**
+__Image Upload:__
 
 - Use the image upload section in the page editor
 - Select an image file and click "Upload Image"
@@ -240,22 +240,22 @@ ngdpbase/
 
 ## Parser Architecture
 
-ngdpbase uses a **WikiDocument DOM extraction pipeline** that provides robust, conflict-free parsing of JSPWiki syntax and Markdown:
+ngdpbase uses a __WikiDocument DOM extraction pipeline__ that provides robust, conflict-free parsing of JSPWiki syntax and Markdown:
 
 ### How It Works
 
-1. **Extract** - JSPWiki syntax (`[{$var}]`, `[{Plugin}]`, `[Link]`) extracted before Markdown parsing
-2. **Create DOM Nodes** - WikiDocument DOM nodes created for each JSPWiki element
-3. **Parse Markdown** - Showdown processes ALL Markdown without JSPWiki interference
-4. **Merge** - DOM nodes merged back into final HTML
+1. __Extract__ - JSPWiki syntax (`[{$var}]`, `[{Plugin}]`, `[Link]`) extracted before Markdown parsing
+2. __Create DOM Nodes__ - WikiDocument DOM nodes created for each JSPWiki element
+3. __Parse Markdown__ - Showdown processes ALL Markdown without JSPWiki interference
+4. __Merge__ - DOM nodes merged back into final HTML
 
 ### Benefits
 
-- ✅ **No parsing conflicts** - JSPWiki and Markdown processed independently
-- ✅ **Correct heading rendering** - All Markdown headings (`##`, `###`) render properly
-- ✅ **Natural escaping** - `[[{$var}]]` creates literal text via DOM nodes
-- ✅ **Extensible** - Easy to add custom syntax via DOM handlers
-- ✅ **Production-ready** - 376+ tests with 100% success rate
+- ✅ __No parsing conflicts__ - JSPWiki and Markdown processed independently
+- ✅ __Correct heading rendering__ - All Markdown headings (`##`, `###`) render properly
+- ✅ __Natural escaping__ - `[[{$var}]]` creates literal text via DOM nodes
+- ✅ __Extensible__ - Easy to add custom syntax via DOM handlers
+- ✅ __Production-ready__ - 376+ tests with 100% success rate
 
 ### Parser Configuration
 
@@ -271,9 +271,9 @@ Then restart the server (see [Configuration](#configuration) section above).
 
 ### Documentation
 
-- **API Reference:** [docs/api/MarkupParser-API.md](docs/api/MarkupParser-API.md)
-- **Migration Guide:** [docs/migration/WikiDocument-DOM-Migration.md](docs/migration/WikiDocument-DOM-Migration.md)
-- **Architecture:** [docs/architecture/WikiDocument-DOM-Architecture.md](docs/architecture/WikiDocument-DOM-Architecture.md)
+- __API Reference:__ [docs/api/MarkupParser-API.md](docs/api/MarkupParser-API.md)
+- __Migration Guide:__ [docs/migration/WikiDocument-DOM-Migration.md](docs/migration/WikiDocument-DOM-Migration.md)
+- __Architecture:__ [docs/architecture/WikiDocument-DOM-Architecture.md](docs/architecture/WikiDocument-DOM-Architecture.md)
 
 ## Documentation
 

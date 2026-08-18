@@ -2,8 +2,8 @@
 
 [Quick Reference](ElasticsearchSearchProvider.md)
 
-**Module:** `src/providers/ElasticsearchSearchProvider.ts`
-**Extends:** `src/providers/BaseSearchProvider.ts`
+__Module:__ `src/providers/ElasticsearchSearchProvider.ts`
+__Extends:__ `src/providers/BaseSearchProvider.ts`
 
 ---
 
@@ -49,9 +49,9 @@ All other keys default to sensible values (see below).
 
 ## ES Index
 
-- **Name:** `ngdpbase-pages` (configurable)
-- **Created:** automatically on first `buildIndex()` call
-- **Distinct from:** `ngdpbase.addons.elasticsearch.es-index` (sist2 asset index)
+- __Name:__ `ngdpbase-pages` (configurable)
+- __Created:__ automatically on first `buildIndex()` call
+- __Distinct from:__ `ngdpbase.addons.elasticsearch.es-index` (sist2 asset index)
 
 ### Mapping
 
@@ -177,13 +177,13 @@ When #507 is implemented:
 
 ## Troubleshooting
 
-**Provider not loading:** Verify `ngdpbase.search.provider` is exactly `elasticsearchsearchprovider` (all lowercase).
+__Provider not loading:__ Verify `ngdpbase.search.provider` is exactly `elasticsearchsearchprovider` (all lowercase).
 
-**Index not found errors:** The index is created automatically on first `buildIndex()`. If the
+__Index not found errors:__ The index is created automatically on first `buildIndex()`. If the
 index was manually deleted, trigger a reindex from `/admin` or restart the server.
 
-**`isHealthy()` returns false:** Check that the ES URL is reachable and the cluster is healthy.
+__`isHealthy()` returns false:__ Check that the ES URL is reachable and the cluster is healthy.
 Run `GET <es-url>/_cluster/health` to verify.
 
-**Wrong `indexname`:** Ensure `ngdpbase.search.provider.elasticsearch.indexname` is `ngdpbase-pages`,
+__Wrong `indexname`:__ Ensure `ngdpbase.search.provider.elasticsearch.indexname` is `ngdpbase-pages`,
 not `ngdpbase` (the old placeholder value in earlier config stubs).

@@ -25,7 +25,7 @@ Per the architecture: managers are agnostic to the filesystem; providers carry t
 | `getPageContent(identifier)` | Just the markdown body |
 | `getPageMetadata(identifier)` | Just the frontmatter |
 | `savePage(name, content, metadata, options?)` | Persist |
-| `deletePage(identifier, deletedBy?)` | Remove — **hard or soft depending on the provider**, see below |
+| `deletePage(identifier, deletedBy?)` | Remove — __hard or soft depending on the provider__, see below |
 | `pageExists(identifier)` | Boolean check |
 | `getAllPages()` / `getAllPageInfo(opts?)` | Enumerate |
 | `findPage(identifier)` | Resolve UUID / title / slug |
@@ -47,17 +47,17 @@ Non-versioning providers leave these as the abstract default (which throws).
 
 ## Delete Semantics — provider-dependent (#947, #981)
 
-**A delete is not the same operation on every provider, and callers must not assume it is recoverable.**
+__A delete is not the same operation on every provider, and callers must not assume it is recoverable.__
 
 | Provider | `deletePage()` behaviour | Recoverable? |
 |---|---|---|
-| `FileSystemProvider` | **Hard delete** — unlinks the file, drops it from the caches | No |
-| `VersioningFileProvider` | **Soft delete** — moves the file to `<location>/deleted/`, keeps the whole version directory, moves the index entry to a tombstone | Yes, for the retention window |
+| `FileSystemProvider` | __Hard delete__ — unlinks the file, drops it from the caches | No |
+| `VersioningFileProvider` | __Soft delete__ — moves the file to `<location>/deleted/`, keeps the whole version directory, moves the index entry to a tombstone | Yes, for the retention window |
 
 This follows directly from what each provider is: soft delete exists to preserve
 version history, and a provider with no versions has none to preserve. There is
 nothing to fix here — `FileSystemProvider` deleting outright is correct for what
-it is. What matters is that **nothing downstream may assume otherwise.**
+it is. What matters is that __nothing downstream may assume otherwise.__
 
 ### Detecting the capability
 
@@ -68,8 +68,8 @@ The soft-delete surface is optional, exactly like the versioning surface above:
 - `purgeDeletedPage(uuid)`
 - `purgeExpiredDeletedPages()`
 
-A provider without them has no trash. The admin trash API answers **501
-`Soft delete not supported`** rather than pretending, so the right capability
+A provider without them has no trash. The admin trash API answers __501
+`Soft delete not supported`__ rather than pretending, so the right capability
 check is the response status — not the presence of a delete route, and not an
 assumption carried over from another instance.
 

@@ -23,7 +23,7 @@ Renders as a table where the leading `#` cells are auto-numbered 1, 2, 3, …
 
 ## Behaviour
 
-The plugin itself outputs nothing. The actual auto-numbering of cells containing only `#` is handled by the table renderer in `MarkupParser`. TablePlugin is the JSPWiki-compatible **opt-in marker** that signals the renderer to treat `#` cells specially.
+The plugin itself outputs nothing. The actual auto-numbering of cells containing only `#` is handled by the table renderer in `MarkupParser`. TablePlugin is the JSPWiki-compatible __opt-in marker__ that signals the renderer to treat `#` cells specially.
 
 ## See Also
 

@@ -6,13 +6,13 @@ Complete REST API reference for ngdpbase's version management system.
 
 The Version Management API provides programmatic access to page version history, comparison, and restoration features. All endpoints require VersioningFileProvider to be enabled.
 
-**Base URL**: `http://your-wiki-domain.com/api`
+__Base URL__: `http://your-wiki-domain.com/api`
 
-**Authentication**: Required for destructive operations (POST/PUT/DELETE)
+__Authentication__: Required for destructive operations (POST/PUT/DELETE)
 
-**Content-Type**: `application/json`
+__Content-Type__: `application/json`
 
-**Response Format**: JSON
+__Response Format__: JSON
 
 ---
 
@@ -37,11 +37,11 @@ The Version Management API provides programmatic access to page version history,
 
 All API requests use session-based authentication via cookies.
 
-**Login Required For**:
+__Login Required For__:
 
 - POST `/api/page/:identifier/restore/:version` (Restore version)
 
-**Anonymous Access**:
+__Anonymous Access__:
 
 - GET endpoints (history, version, compare) - Subject to page permissions
 
@@ -63,17 +63,17 @@ Retrieve all versions for a specific page.
 GET /api/page/:identifier/versions
 ```
 
-**Parameters**:
+__Parameters__:
 
 - `identifier` (path, required): Page title or UUID
 
-**Headers**:
+__Headers__:
 
 - None required
 
 #### Response
 
-**Success (200)**:
+__Success (200)__:
 
 ```json
 {
@@ -121,7 +121,7 @@ GET /api/page/:identifier/versions
 }
 ```
 
-**Error Responses**:
+__Error Responses__:
 
 - `404 Not Found`: Page doesn't exist
 - `501 Not Implemented`: Versioning not enabled
@@ -151,18 +151,18 @@ Retrieve the content and metadata for a specific version.
 GET /api/page/:identifier/version/:version
 ```
 
-**Parameters**:
+__Parameters__:
 
 - `identifier` (path, required): Page title or UUID
 - `version` (path, required): Version number (positive integer)
 
-**Headers**:
+__Headers__:
 
 - None required
 
 #### Response
 
-**Success (200)**:
+__Success (200)__:
 
 ```json
 {
@@ -184,7 +184,7 @@ GET /api/page/:identifier/version/:version
 }
 ```
 
-**Error Responses**:
+__Error Responses__:
 
 - `400 Bad Request`: Invalid version number
 - `404 Not Found`: Page or version doesn't exist
@@ -218,24 +218,24 @@ Compare two versions to see what changed.
 GET /api/page/:identifier/compare/:v1/:v2
 ```
 
-**Parameters**:
+__Parameters__:
 
 - `identifier` (path, required): Page title or UUID
 - `v1` (path, required): First version number (positive integer)
 - `v2` (path, required): Second version number (positive integer)
 
-**Headers**:
+__Headers__:
 
 - None required
 
-**Notes**:
+__Notes__:
 
 - Order matters: `v1` is the "old" version, `v2` is the "new" version
 - Can compare any two versions (not just consecutive)
 
 #### Response
 
-**Success (200)**:
+__Success (200)__:
 
 ```json
 {
@@ -272,13 +272,13 @@ GET /api/page/:identifier/compare/:v1/:v2
 }
 ```
 
-**Diff Format**:
+__Diff Format__:
 
 - `[0, "text"]`: Unchanged line
 - `[1, "text"]`: Added line (in v2, not in v1)
 - `[-1, "text"]`: Deleted line (in v1, not in v2)
 
-**Error Responses**:
+__Error Responses__:
 
 - `400 Bad Request`: Invalid version numbers
 - `404 Not Found`: Page or versions don't exist
@@ -313,17 +313,17 @@ Restore a page to a previous version by creating a new version with old content.
 POST /api/page/:identifier/restore/:version
 ```
 
-**Parameters**:
+__Parameters__:
 
 - `identifier` (path, required): Page title or UUID
 - `version` (path, required): Version number to restore to (positive integer)
 
-**Headers**:
+__Headers__:
 
 - `Content-Type: application/json`
-- `Cookie: connect.sid=...` (session cookie - **required**)
+- `Cookie: connect.sid=...` (session cookie - __required__)
 
-**Body** (optional):
+__Body__ (optional):
 
 ```json
 {
@@ -331,13 +331,13 @@ POST /api/page/:identifier/restore/:version
 }
 ```
 
-**Body Fields**:
+__Body Fields__:
 
 - `comment` (string, optional): Reason for restore. Default: "Restored from vX"
 
 #### Response
 
-**Success (200)**:
+__Success (200)__:
 
 ```json
 {
@@ -349,7 +349,7 @@ POST /api/page/:identifier/restore/:version
 }
 ```
 
-**Error Responses**:
+__Error Responses__:
 
 - `400 Bad Request`: Invalid version number
 - `401 Unauthorized`: Not authenticated
@@ -455,7 +455,7 @@ Summary statistics for a comparison.
 
 ### Common Error Messages
 
-**Page Not Found**:
+__Page Not Found__:
 
 ```json
 {
@@ -464,7 +464,7 @@ Summary statistics for a comparison.
 }
 ```
 
-**Invalid Version**:
+__Invalid Version__:
 
 ```json
 {
@@ -473,7 +473,7 @@ Summary statistics for a comparison.
 }
 ```
 
-**Versioning Not Supported**:
+__Versioning Not Supported__:
 
 ```json
 {
@@ -482,7 +482,7 @@ Summary statistics for a comparison.
 }
 ```
 
-**Authentication Required**:
+__Authentication Required__:
 
 ```json
 {
@@ -497,7 +497,7 @@ Summary statistics for a comparison.
 
 Currently, no rate limiting is enforced on version management endpoints.
 
-**Best Practices**:
+__Best Practices__:
 
 - Cache version history results when possible
 - Don't poll for updates; use websockets if available
@@ -789,12 +789,12 @@ backupPageVersions('Main', './backups');
 
 For issues or questions:
 
-- **Documentation**: See [User Guide](../user-guide/Using-Version-History.md)
-- **Administration**: See [Deployment Guide](../admin/Versioning-Deployment-Guide.md)
-- **Issues**: Report at your wiki's issue tracker
+- __Documentation__: See [User Guide](../user-guide/Using-Version-History.md)
+- __Administration__: See [Deployment Guide](../admin/Versioning-Deployment-Guide.md)
+- __Issues__: Report at your wiki's issue tracker
 
 ---
 
-**Last Updated**: 2024-10-16
-**API Version**: 1.0
-**Applies to**: ngdpbase 1.3.2+
+__Last Updated__: 2024-10-16
+__API Version__: 1.0
+__Applies to__: ngdpbase 1.3.2+

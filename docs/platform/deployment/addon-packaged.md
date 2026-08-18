@@ -1,28 +1,28 @@
 # Packaged Addons (npm distribution)
 
-> See also: [`addon-architecture.md`](../addon-architecture.md) for the three distribution models, [`addon-development-guide.md`](../addon-development-guide.md) for building an addon, and [`addon-page-handling.md`](../addon-page-handling.md) for how an addon's pages seed/update. This document covers the **`packaged`** model (#673): shipping an addon as an npm package discovered from `node_modules`.
+> See also: [`addon-architecture.md`](../addon-architecture.md) for the three distribution models, [`addon-development-guide.md`](../addon-development-guide.md) for building an addon, and [`addon-page-handling.md`](../addon-page-handling.md) for how an addon's pages seed/update. This document covers the __`packaged`__ model (#673): shipping an addon as an npm package discovered from `node_modules`.
 
 ---
 
 ## What it is
 
-An addon published as an **npm package** and discovered from `node_modules/<scope>/<slug>-addon/` after `npm install`. It reaches a running instance the same way any dependency does — pinned in `package.json`, integrity-locked in `package-lock.json`, tracked by Renovate against npm semver.
+An addon published as an __npm package__ and discovered from `node_modules/<scope>/<slug>-addon/` after `npm install`. It reaches a running instance the same way any dependency does — pinned in `package.json`, integrity-locked in `package-lock.json`, tracked by Renovate against npm semver.
 
-It uses the **identical** slug / module / `register()` contract as `bundled` and `drop-in` addons. Only *discovery* changes: instead of scanning a directory, `AddonsManager` expands a `node_modules:<glob>` entry.
+It uses the __identical__ slug / module / `register()` contract as `bundled` and `drop-in` addons. Only *discovery* changes: instead of scanning a directory, `AddonsManager` expands a `node_modules:<glob>` entry.
 
 ## When to use which model
 
 | Model | Use it for | Trade-off |
 |---|---|---|
-| **bundled** (`addons/<slug>/` in this repo) | First-party addons that ship *with* ngdpbase and release on its cadence (feeds, calendar, journal, forms, elasticsearch) | Coupled to ngdpbase releases; not for third parties |
-| **drop-in** (a directory in `addons-path`) | Local development, quick iteration, or a simple/private addon copied into the image / mounted as a volume | No version pinning — "whatever is in the directory at boot" (the drift that caused #672) |
-| **packaged** (`npm install`) | **Production distribution of an independent addon** — versioned, lockfile-pinned, Renovate-tracked; installable into a *generic* ngdpbase image with no bespoke Dockerfile. **The recommended model for `type: 'domain'` addons in production** (see below) | Requires an npm registry + a publish step |
+| __bundled__ (`addons/<slug>/` in this repo) | First-party addons that ship *with* ngdpbase and release on its cadence (feeds, calendar, journal, forms, elasticsearch) | Coupled to ngdpbase releases; not for third parties |
+| __drop-in__ (a directory in `addons-path`) | Local development, quick iteration, or a simple/private addon copied into the image / mounted as a volume | No version pinning — "whatever is in the directory at boot" (the drift that caused #672) |
+| __packaged__ (`npm install`) | __Production distribution of an independent addon__ — versioned, lockfile-pinned, Renovate-tracked; installable into a *generic* ngdpbase image with no bespoke Dockerfile. __The recommended model for `type: 'domain'` addons in production__ (see below) | Requires an npm registry + a publish step |
 
 ### Policy
 
-- **`type: 'domain'` addons → `packaged` for production, `drop-in` for development.** A domain addon is a whole downstream product built on ngdpbase (e.g. `geohazardwatch`) — the most independent kind, deployed to production, versioned on its own cadence. That is precisely the case `packaged` exists for, and precisely the case that hit the #672 version-drift outage under `drop-in`. Develop it as a `drop-in` (edit-in-place, no publish cycle); ship it to production as a `packaged` npm dependency.
-- **`bundled`** stays the model for first-party addons that are part of ngdpbase's release surface.
-- **`drop-in`** remains supported and is the right choice for local development and truly private one-offs where standing up a registry isn't worth it.
+- __`type: 'domain'` addons → `packaged` for production, `drop-in` for development.__ A domain addon is a whole downstream product built on ngdpbase (e.g. `geohazardwatch`) — the most independent kind, deployed to production, versioned on its own cadence. That is precisely the case `packaged` exists for, and precisely the case that hit the #672 version-drift outage under `drop-in`. Develop it as a `drop-in` (edit-in-place, no publish cycle); ship it to production as a `packaged` npm dependency.
+- __`bundled`__ stays the model for first-party addons that are part of ngdpbase's release surface.
+- __`drop-in`__ remains supported and is the right choice for local development and truly private one-offs where standing up a registry isn't worth it.
 
 All three remain first-class — the platform makes no trust distinction between them. The recommendation is about *how to ship*, not what an addon may do.
 
@@ -35,12 +35,12 @@ A domain addon today typically owns its whole image (`FROM ngdpbase + WORKDIR + 
 | `COPY addons ./addons` | `npm install @scope/<slug>-addon@x.y.z` in a builder stage, then `COPY --from=` its `node_modules` into a generic ngdpbase image (see [Deploying](#deploying)) |
 | the addon's own deps via its `npm ci` | the addon package's `dependencies` — pulled transitively by the install |
 | image `LABEL`s / branding | deployment config (`ngdpbase.application-name`, theme) or a thin wrapper image |
-| runtime data volume (quakes/HANS/etc.) | **unchanged** — stays mounted; never was in the image |
-| `NGDPBASE_VERSION` ARG bump (base image) | **still the base image pin** — but now *independent* of the addon version, each pinned + Renovate-tracked separately |
+| runtime data volume (quakes/HANS/etc.) | __unchanged__ — stays mounted; never was in the image |
+| `NGDPBASE_VERSION` ARG bump (base image) | __still the base image pin__ — but now *independent* of the addon version, each pinned + Renovate-tracked separately |
 
 Net: the bespoke per-addon image collapses to a generic base image + a two-stage install + config. The two version axes (ngdpbase base, addon package) decouple, which is what removes the drift.
 
-> **Audit every deployment artifact that references the addon's drop-in path directly — not just the main Dockerfile.** CronJobs, init containers, sidecars, and debug/exec scripts that hardcode the old drop-in layout (e.g. `workingDir: /opt/<slug>`, `node addons/<slug>/import/*.js`) break **silently on their next scheduled run** rather than at deploy time, because the packaged model changes where the addon's files physically live (`node_modules/<scope>/<slug>-addon/`, not `addons/<slug>/` or `/opt/<slug>/`). Image-automation (e.g. Flux) will happily bump such a job's pinned tag to the new packaged image with nothing positioned to catch the broken path. Grep your whole deployment — every manifest, not just the app Deployment — for the old path before cutting over. (Surfaced in geohazardwatch#152: a daily data-import CronJob was a second, independent consumer of `/opt/geohazardwatch` and was not on the migration checklist.)
+> __Audit every deployment artifact that references the addon's drop-in path directly — not just the main Dockerfile.__ CronJobs, init containers, sidecars, and debug/exec scripts that hardcode the old drop-in layout (e.g. `workingDir: /opt/<slug>`, `node addons/<slug>/import/*.js`) break __silently on their next scheduled run__ rather than at deploy time, because the packaged model changes where the addon's files physically live (`node_modules/<scope>/<slug>-addon/`, not `addons/<slug>/` or `/opt/<slug>/`). Image-automation (e.g. Flux) will happily bump such a job's pinned tag to the new packaged image with nothing positioned to catch the broken path. Grep your whole deployment — every manifest, not just the app Deployment — for the old path before cutting over. (Surfaced in geohazardwatch#152: a daily data-import CronJob was a second, independent consumer of `/opt/geohazardwatch` and was not on the migration checklist.)
 
 ## How discovery works
 
@@ -53,16 +53,16 @@ Add a `node_modules:<glob>` entry to `addons-path`:
 ]
 ```
 
-- Entries **not** prefixed `node_modules:` are directory paths (bundled/drop-in), resolved to absolute and scanned as before.
+- Entries __not__ prefixed `node_modules:` are directory paths (bundled/drop-in), resolved to absolute and scanned as before.
 - A `node_modules:<glob>` entry is a package glob. `@scope/name-glob` matches `node_modules/@scope/<name-glob>`; a bare `glob` matches top-level `node_modules/<glob>`. Matching uses `minimatch` against the package directory name.
-- **npm discovery runs after all directory scans.** If a bundled/drop-in addon and an npm package register the same addon `name`, the directory one wins and the npm duplicate is skipped (logged).
+- __npm discovery runs after all directory scans.__ If a bundled/drop-in addon and an npm package register the same addon `name`, the directory one wins and the npm duplicate is skipped (logged).
 - `node_modules` is resolved from the instance's working directory (`<cwd>/node_modules`).
 
 ## Authoring a packaged addon
 
 A packaged addon is an ordinary npm package whose installed directory satisfies the addon contract.
 
-**`package.json`:**
+__`package.json`:__
 
 ```json
 {
@@ -78,9 +78,9 @@ A packaged addon is an ordinary npm package whose installed directory satisfies 
 
 - Package name convention: `@<scope>/<slug>-addon` (so the `*-addon` glob catches it).
 - `main` must resolve to an `index.js` (or the discovery falls back to `index.js`/`index.ts` in the package root).
-- `ngdpbase.slug` is the addon's **canonical identity** (#927): it is the registry key, the `ngdpbase.addons.<slug>.enabled` config-gate key, the dependency-reference name, and what the boot-time validator matches — all resolved from `package.json` *without importing the module*. **Declare it.** If omitted, identity falls back to the package directory name minus a trailing `-addon` (so `@jwilleke/geohazardwatch-addon` → `geohazardwatch`), but relying on that couples your identity to the package folder name — declaring `slug` is authoritative and explicit.
+- `ngdpbase.slug` is the addon's __canonical identity__ (#927): it is the registry key, the `ngdpbase.addons.<slug>.enabled` config-gate key, the dependency-reference name, and what the boot-time validator matches — all resolved from `package.json` *without importing the module*. __Declare it.__ If omitted, identity falls back to the package directory name minus a trailing `-addon` (so `@jwilleke/geohazardwatch-addon` → `geohazardwatch`), but relying on that couples your identity to the package folder name — declaring `slug` is authoritative and explicit.
 
-**`index.js`** — the module contract, unchanged across all three models:
+__`index.js`__ — the module contract, unchanged across all three models:
 
 ```js
 module.exports = {
@@ -99,14 +99,14 @@ The addon is still gated by `ngdpbase.addons.<name>.enabled` — installing the 
 
 The addon needs a registry the instance can `npm install` from:
 
-- **GitHub Packages** (recommended for private/org addons) — an npm registry scoped to the org, authenticated with the same GitHub token flow already used for GHCR. Add an `.npmrc` mapping the scope to `npm.pkg.github.com`.
-- **Public npmjs** — fine for open addons.
+- __GitHub Packages__ (recommended for private/org addons) — an npm registry scoped to the org, authenticated with the same GitHub token flow already used for GHCR. Add an `.npmrc` mapping the scope to `npm.pkg.github.com`.
+- __Public npmjs__ — fine for open addons.
 
 Publish is a normal `npm publish` (typically from the addon repo's CI on a version tag), independent of ngdpbase's own release cadence.
 
 ## Deploying
 
-The ngdpbase runtime image has **no npm** — it was removed in [#956](https://github.com/jwilleke/ngdpbase/issues/956) so the deployed artifact carries none of npm's vendored CVEs. So the install cannot happen in the image you ship. Do it in a **separate build stage** and copy the result across:
+The ngdpbase runtime image has __no npm__ — it was removed in [#956](https://github.com/jwilleke/ngdpbase/issues/956) so the deployed artifact carries none of npm's vendored CVEs. So the install cannot happen in the image you ship. Do it in a __separate build stage__ and copy the result across:
 
 ```dockerfile
 ARG NGDPBASE_VERSION=4.0.1
@@ -124,17 +124,17 @@ COPY --from=addon-installer /app/node_modules/. ./node_modules/
 # addons-path includes "node_modules:@jwilleke/*-addon"; enable the addon in config
 ```
 
-**The trailing `/.` is load-bearing.** `COPY --from=… /app/node_modules/. ./node_modules/` copies the *contents* into the destination, merging with the runtime image's existing `node_modules` from ngdpbase's own build. Without it the copy replaces the directory and takes ngdpbase's own dependencies with it. Because the addon still lands at `node_modules/@scope/<slug>-addon`, the existing `node_modules:@jwilleke/*-addon` glob finds it with no config change.
+__The trailing `/.` is load-bearing.__ `COPY --from=… /app/node_modules/. ./node_modules/` copies the *contents* into the destination, merging with the runtime image's existing `node_modules` from ngdpbase's own build. Without it the copy replaces the directory and takes ngdpbase's own dependencies with it. Because the addon still lands at `node_modules/@scope/<slug>-addon`, the existing `node_modules:@jwilleke/*-addon` glob finds it with no config change.
 
 The image you deploy therefore contains no npm at all — the security property #956 bought is preserved end to end, not just for ngdpbase's own image.
 
-Renovate then tracks `@jwilleke/geohazardwatch-addon` against npm semver — the addon version and the ngdpbase base-image version bump **independently**, each lockfile/tag-pinned. No cross-repo build context, no directory drift.
+Renovate then tracks `@jwilleke/geohazardwatch-addon` against npm semver — the addon version and the ngdpbase base-image version bump __independently__, each lockfile/tag-pinned. No cross-repo build context, no directory drift.
 
 > This is the pattern `jwilleke/geohazardwatch` uses; its `Dockerfile` is the working reference implementation.
 
 ### Installing from a private registry
 
-If the addon lives in GitHub Packages (the recommendation under [Publishing](#publishing)), stage 1 needs a token. Mount it as a BuildKit secret so it never lands in an image layer, and remove the `.npmrc` in the **same** `RUN` — a later layer deleting it does not remove it from the earlier one:
+If the addon lives in GitHub Packages (the recommendation under [Publishing](#publishing)), stage 1 needs a token. Mount it as a BuildKit secret so it never lands in an image layer, and remove the `.npmrc` in the __same__ `RUN` — a later layer deleting it does not remove it from the earlier one:
 
 ```dockerfile
 # syntax=docker/dockerfile:1.4
@@ -155,10 +155,10 @@ Two tags are published per release, from the same build:
 
 | Tag | Has npm | Use for |
 |---|---|---|
-| `ghcr.io/jwilleke/ngdpbase:X.Y.Z` | no | **deploying**, and the base of the two-stage build above |
+| `ghcr.io/jwilleke/ngdpbase:X.Y.Z` | no | __deploying__, and the base of the two-stage build above |
 | `ghcr.io/jwilleke/ngdpbase:X.Y.Z-devtools` | yes | an escape hatch — derived builds that must run npm *in the ngdpbase layer itself* |
 
-`-devtools` exists ([#1001](https://github.com/jwilleke/ngdpbase/issues/1001)) because removing npm broke the ability to build `FROM` the image at all. It is a lower-friction one-line change, but it is **not** the recommended shape: an image built `FROM …-devtools` inherits npm, so the addon image you ship carries npm's vendored CVEs even though ngdpbase's own image does not.
+`-devtools` exists ([#1001](https://github.com/jwilleke/ngdpbase/issues/1001)) because removing npm broke the ability to build `FROM` the image at all. It is a lower-friction one-line change, but it is __not__ the recommended shape: an image built `FROM …-devtools` inherits npm, so the addon image you ship carries npm's vendored CVEs even though ngdpbase's own image does not.
 
 If you use it and the result is deployed, drop npm again in the final stage:
 

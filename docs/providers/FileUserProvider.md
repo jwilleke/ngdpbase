@@ -8,12 +8,12 @@ code: src/providers/FileUserProvider.ts
 
 # FileUserProvider
 
-**Quick Reference** | [Complete Guide](FileUserProvider-Complete-Guide.md)
+__Quick Reference__ | [Complete Guide](FileUserProvider-Complete-Guide.md)
 
-**Module:** `src/providers/FileUserProvider.ts`
-**Type:** User Storage Provider
-**Extends:** BaseUserProvider
-**Status:** Production Ready
+__Module:__ `src/providers/FileUserProvider.ts`
+__Type:__ User Storage Provider
+__Extends:__ BaseUserProvider
+__Status:__ Production Ready
 
 ## Overview
 
@@ -21,11 +21,11 @@ FileUserProvider implements JSON file-based user and session storage. It's the d
 
 ## Key Features
 
-- **JSON file storage** - Simple, human-readable user database
-- **In-memory caching** - Fast lookups via Map structures
-- **Session management** - File-based session persistence
-- **Automatic cleanup** - Expired sessions pruned on load
-- **Configurable paths** - Flexible storage location
+- __JSON file storage__ - Simple, human-readable user database
+- __In-memory caching__ - Fast lookups via Map structures
+- __Session management__ - File-based session persistence
+- __Automatic cleanup__ - Expired sessions pruned on load
+- __Configurable paths__ - Flexible storage location
 
 ## Configuration
 
@@ -217,10 +217,10 @@ if (await provider.userExists('admin')) {
 
 ## Performance Considerations
 
-- **In-memory cache** - All users loaded at startup, O(1) lookups
-- **File writes** - Every create/update/delete writes to disk
-- **Session cleanup** - Automatic pruning on load prevents file bloat
-- **No database** - Simple JSON files, no SQL overhead
+- __In-memory cache__ - All users loaded at startup, O(1) lookups
+- __File writes__ - Every create/update/delete writes to disk
+- __Session cleanup__ - Automatic pruning on load prevents file bloat
+- __No database__ - Simple JSON files, no SQL overhead
 
 ## Dependencies
 
@@ -230,19 +230,19 @@ if (await provider.userExists('admin')) {
 
 ## Security Notes
 
-- **Passwords are NOT stored in provider** - UserManager handles hashing
-- **Provider stores hashed passwords only** - Never plaintext
-- **Sessions in filesystem** - Consider memory-based sessions for production
-- **File permissions** - Ensure users.json is not world-readable
+- __Passwords are NOT stored in provider__ - UserManager handles hashing
+- __Provider stores hashed passwords only__ - Never plaintext
+- __Sessions in filesystem__ - Consider memory-based sessions for production
+- __File permissions__ - Ensure users.json is not world-readable
 
 ## Related Documentation
 
-- **Complete Guide:** [FileUserProvider-Complete-Guide.md](FileUserProvider-Complete-Guide.md)
-- **Parent Class:** [BaseUserProvider.md](BaseUserProvider.md)
-- **Manager:** [UserManager.md](../managers/UserManager.md)
-- **Security:** [Policies-Roles-Permissions.md](../architecture/Policies-Roles-Permissions.md)
+- __Complete Guide:__ [FileUserProvider-Complete-Guide.md](FileUserProvider-Complete-Guide.md)
+- __Parent Class:__ [BaseUserProvider.md](BaseUserProvider.md)
+- __Manager:__ [UserManager.md](../managers/UserManager.md)
+- __Security:__ [Policies-Roles-Permissions.md](../architecture/Policies-Roles-Permissions.md)
 
 ---
 
-**Last Updated:** 2025-12-22
-**Version:** 1.5.0
+__Last Updated:__ 2025-12-22
+__Version:__ 1.5.0

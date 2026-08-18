@@ -4,7 +4,7 @@
 
 ngdpbase provides intelligent autocomplete functionality for internal page links. As you type page names in the editor or search boxes, the system suggests matching pages with real-time dropdown menus and keyboard navigation.
 
-**Related:** GitHub Issue #90 - TypeDown for Internal Page Links
+__Related:__ GitHub Issue #90 - TypeDown for Internal Page Links
 
 ## Table of Contents
 
@@ -49,31 +49,31 @@ Click: Navigate directly to the page
 
 ### ✅ Smart Matching
 
-- **Exact match priority:** Pages that exactly match your query appear first
-- **Prefix matching:** Pages starting with your query appear next
-- **Contains matching:** Any page containing your query text
-- **Case-insensitive:** Searches ignore case differences
+- __Exact match priority:__ Pages that exactly match your query appear first
+- __Prefix matching:__ Pages starting with your query appear next
+- __Contains matching:__ Any page containing your query text
+- __Case-insensitive:__ Searches ignore case differences
 
 ### ✅ Context-Aware
 
-- **Editor mode:** Detects `[page name]` bracket syntax
-- **Excludes plugins:** Won't trigger for `[{Plugin}]` syntax
-- **Excludes variables:** Won't trigger for `[{$variable}]` syntax
-- **Smart positioning:** Dropdown appears next to your cursor
+- __Editor mode:__ Detects `[page name]` bracket syntax
+- __Excludes plugins:__ Won't trigger for `[{Plugin}]` syntax
+- __Excludes variables:__ Won't trigger for `[{$variable}]` syntax
+- __Smart positioning:__ Dropdown appears next to your cursor
 
 ### ✅ Performance Optimized
 
-- **Debouncing:** API calls delayed by 200ms to reduce server load
-- **Minimal data:** Only loads page name, title, and category
-- **Efficient sorting:** Client-side sorting after fetch
-- **Cached responses:** Browser caches API responses
+- __Debouncing:__ API calls delayed by 200ms to reduce server load
+- __Minimal data:__ Only loads page name, title, and category
+- __Efficient sorting:__ Client-side sorting after fetch
+- __Cached responses:__ Browser caches API responses
 
 ### ✅ User-Friendly
 
-- **Visual feedback:** Highlighted query text in results
-- **Category badges:** See page categories in dropdown
-- **Keyboard navigation:** Full keyboard support
-- **Mouse interaction:** Click or hover to select
+- __Visual feedback:__ Highlighted query text in results
+- __Category badges:__ See page categories in dropdown
+- __Keyboard navigation:__ Full keyboard support
+- __Mouse interaction:__ Click or hover to select
 
 ---
 
@@ -81,18 +81,18 @@ Click: Navigate directly to the page
 
 ### 1. Page Editor (views/edit.ejs)
 
-**Location:** Content textarea when editing any page
+__Location:__ Content textarea when editing any page
 
-**Trigger:** Type `[` followed by 2+ characters
+__Trigger:__ Type `[` followed by 2+ characters
 
-**Behavior:**
+__Behavior:__
 
 - Shows autocomplete dropdown below cursor
 - Filters out plugin and variable syntax
 - Inserts selected page name and closes bracket
 - Updates preview automatically
 
-**Example:**
+__Example:__
 
 ```
 Type:    [home
@@ -101,7 +101,7 @@ Select:  HomePage
 Result:  [HomePage]
 ```
 
-**Exclusions:**
+__Exclusions:__
 
 - `[{Image src='...'}]` - Plugin syntax ignored
 - `[{$applicationname}]` - Variable syntax ignored
@@ -109,18 +109,18 @@ Result:  [HomePage]
 
 ### 2. Search Results Page (views/search-results.ejs)
 
-**Location:** Main search input at top of page
+__Location:__ Main search input at top of page
 
-**Trigger:** Type 2+ characters in "Search Text" field
+__Trigger:__ Type 2+ characters in "Search Text" field
 
-**Behavior:**
+__Behavior:__
 
 - Shows matching pages in dropdown
 - Displays page title and category
 - Clicking navigates directly to page
 - Works alongside filters (categories, keywords)
 
-**Example:**
+__Example:__
 
 ```
 Search: test
@@ -130,17 +130,17 @@ Select: Navigate to /wiki/Test%20Simple%20Table
 
 ### 3. Header Navigation Bar (views/header.ejs)
 
-**Location:** Global search bar in top navigation (all pages)
+__Location:__ Global search bar in top navigation (all pages)
 
-**Trigger:** Type 2+ characters in header search
+__Trigger:__ Type 2+ characters in header search
 
-**Behavior:**
+__Behavior:__
 
 - Always available on every page
 - Immediate navigation to selected page
 - Consistent across entire site
 
-**Example:**
+__Example:__
 
 ```
 Type anywhere: sys
@@ -150,18 +150,18 @@ Result: Navigate to selected page
 
 ### 4. Edit Index Page (views/edit-index.ejs)
 
-**Location:** Page search at `/edit-index`
+__Location:__ Page search at `/edit-index`
 
-**Trigger:** Type 2+ characters in "Search Pages" field
+__Trigger:__ Type 2+ characters in "Search Pages" field
 
-**Behavior:**
+__Behavior:__
 
 - Shows autocomplete alongside list filtering
 - Both dropdown and filtered list work together
 - Selecting from dropdown navigates to edit page
 - Typing also filters the visible list
 
-**Example:**
+__Example:__
 
 ```
 Search: home
@@ -175,12 +175,12 @@ Also:  List filters to show only matching pages
 
 ### How It Works
 
-1. **Detection:** Monitors textarea for `[` character
-2. **Extraction:** Finds text between last `[` and cursor position
-3. **Validation:** Checks it's not a plugin `[{` or variable `[{$`
-4. **Query:** Sends query to API when 2+ characters entered
-5. **Display:** Shows dropdown with matching pages
-6. **Selection:** Inserts page name and closes bracket `]`
+1. __Detection:__ Monitors textarea for `[` character
+2. __Extraction:__ Finds text between last `[` and cursor position
+3. __Validation:__ Checks it's not a plugin `[{` or variable `[{$`
+4. __Query:__ Sends query to API when 2+ characters entered
+5. __Display:__ Shows dropdown with matching pages
+6. __Selection:__ Inserts page name and closes bracket `]`
 
 ### Code Example
 
@@ -221,21 +221,21 @@ contentTextarea.addEventListener('input', function(e) {
 
 ### Special Cases
 
-**Multiple Brackets:**
+__Multiple Brackets:__
 
 ```
 Text: See [HomePage] and [sys
 Shows: Autocomplete for "sys" only (last bracket)
 ```
 
-**Nested Brackets:**
+__Nested Brackets:__
 
 ```
 Text: [Something [sys
 Shows: Autocomplete for "sys" (treats each [ independently)
 ```
 
-**Already Closed:**
+__Already Closed:__
 
 ```
 Text: [HomePage] sys
@@ -300,13 +300,13 @@ searchInput.addEventListener('input', function(e) {
 - ArrowDown at bottom → wraps to top
 - ArrowUp at top → wraps to bottom
 
-**Visual Feedback:**
+__Visual Feedback:__
 
 - Selected item highlighted with blue background
 - Hover shows same highlight
 - Query text bolded in results
 
-**Keyboard vs Mouse:**
+__Keyboard vs Mouse:__
 
 - Both methods can be used interchangeably
 - Mouse hover updates keyboard selection
@@ -403,13 +403,13 @@ views/
 
 ### Data Flow
 
-**Request:**
+__Request:__
 
 ```
 GET /api/page-suggestions?q=system&limit=5
 ```
 
-**Processing:**
+__Processing:__
 
 1. Extract query parameter `q=system`
 2. Fetch all page names from PageManager
@@ -418,7 +418,7 @@ GET /api/page-suggestions?q=system&limit=5
 5. Load full page details (title, category, slug)
 6. Return top 5 results
 
-**Response:**
+__Response:__
 
 ```json
 {
@@ -447,16 +447,16 @@ GET /api/page-suggestions?q=system&limit=5
 
 ### Endpoint: `/api/page-suggestions`
 
-**Method:** `GET`
+__Method:__ `GET`
 
-**Parameters:**
+__Parameters:__
 
 | Parameter | Type | Required | Default | Description |
 | ----------- | ------ | ---------- | --------- | ------------- |
 | `q` | string | Yes | - | Search query (2+ chars recommended) |
 | `limit` | integer | No | 10 | Maximum number of results |
 
-**Response Schema:**
+__Response Schema:__
 
 ```typescript
 {
@@ -471,7 +471,7 @@ GET /api/page-suggestions?q=system&limit=5
 }
 ```
 
-**Example Requests:**
+__Example Requests:__
 
 ```bash
 # Basic search
@@ -487,7 +487,7 @@ curl "http://localhost:3000/api/page-suggestions?q=HomePage"
 curl "http://localhost:3000/api/page-suggestions?q=sys"
 ```
 
-**Error Handling:**
+__Error Handling:__
 
 ```javascript
 // Empty query
@@ -502,13 +502,13 @@ curl "http://localhost:3000/api/page-suggestions?q=sys"
 
 ### Client-Side Class: `PageAutocomplete`
 
-**Constructor:**
+__Constructor:__
 
 ```javascript
 new PageAutocomplete(options)
 ```
 
-**Options:**
+__Options:__
 
 ```typescript
 {
@@ -520,7 +520,7 @@ new PageAutocomplete(options)
 }
 ```
 
-**Methods:**
+__Methods:__
 
 ```javascript
 // Search for suggestions
@@ -536,7 +536,7 @@ autocomplete.hideDropdown()
 autocomplete.destroy()
 ```
 
-**Usage Example:**
+__Usage Example:__
 
 ```javascript
 const autocomplete = new PageAutocomplete({
@@ -570,7 +570,7 @@ inputElement.addEventListener('keydown', (e) => {
 
 The autocomplete dropdown uses inline styles for maximum compatibility. To customize:
 
-**Location:** `public/js/page-autocomplete.js` (lines 69-79)
+__Location:__ `public/js/page-autocomplete.js` (lines 69-79)
 
 ```javascript
 this.dropdown.style.cssText = `
@@ -608,7 +608,7 @@ this.dropdown.style.cssText = `
 
 ### Adjusting Behavior
 
-**Change minimum characters:**
+__Change minimum characters:__
 
 ```javascript
 // In your page's script
@@ -617,7 +617,7 @@ const autocomplete = new PageAutocomplete({
 });
 ```
 
-**Change debounce delay:**
+__Change debounce delay:__
 
 ```javascript
 const autocomplete = new PageAutocomplete({
@@ -625,7 +625,7 @@ const autocomplete = new PageAutocomplete({
 });
 ```
 
-**Change result limit:**
+__Change result limit:__
 
 ```javascript
 const autocomplete = new PageAutocomplete({
@@ -637,7 +637,7 @@ const autocomplete = new PageAutocomplete({
 
 To show additional information in the dropdown:
 
-**1. Modify API endpoint** (`src/routes/WikiRoutes.js`):
+__1. Modify API endpoint__ (`src/routes/WikiRoutes.js`):
 
 ```javascript
 const matchingPages = await Promise.all(
@@ -656,7 +656,7 @@ const matchingPages = await Promise.all(
 );
 ```
 
-**2. Update dropdown rendering** (`public/js/page-autocomplete.js`):
+__2. Update dropdown rendering__ (`public/js/page-autocomplete.js`):
 
 ```javascript
 item.innerHTML = `
@@ -678,7 +678,7 @@ JSPWiki has autocomplete for plugin insertion:
 - Shows available plugins
 - Manual trigger required
 
-**ngdpbase improvements:**
+__ngdpbase improvements:__
 
 - ✅ Automatic triggering (no hotkey needed)
 - ✅ Works for page links (not just plugins)
@@ -701,28 +701,28 @@ If migrating from JSPWiki:
 
 ### Optimization Techniques
 
-**1. Debouncing:**
+__1. Debouncing:__
 
 - Default 200ms delay prevents excessive API calls
 - Adjustable via `debounceMs` option
 
-**2. Result Limiting:**
+__2. Result Limiting:__
 
 - Default 10 suggestions reduces payload size
 - Adjustable via `maxSuggestions` option
 
-**3. Efficient Filtering:**
+__3. Efficient Filtering:__
 
 - Case-insensitive string matching
 - Early exit for empty queries
 - Slice operation limits results
 
-**4. Client-Side Sorting:**
+__4. Client-Side Sorting:__
 
 - Sorting happens on server
 - Client only renders received data
 
-**5. Minimal Data Transfer:**
+__5. Minimal Data Transfer:__
 
 - Only essential fields (name, slug, title, category)
 - No full page content loaded
@@ -742,12 +742,12 @@ With 1000+ pages:
 
 ### Caching Strategy
 
-**Browser Caching:**
+__Browser Caching:__
 
 - GET requests automatically cached by browser
 - Cache duration controlled by server headers
 
-**Future Enhancements:**
+__Future Enhancements:__
 
 - Add localStorage caching of page list
 - Implement incremental search on cached data
@@ -761,16 +761,16 @@ With 1000+ pages:
 
 ### Dropdown Not Appearing**
 
-**Symptoms:** Type in input, nothing shows
+__Symptoms:__ Type in input, nothing shows
 
-**Checks:**
+__Checks:__
 
 - Browser console for errors
 - Verify `page-autocomplete.js` is loaded
 - Check network tab for API calls
 - Ensure typing 2+ characters
 
-**Fix:**
+__Fix:__
 
 ```javascript
 // Check if PageAutocomplete is defined
@@ -781,15 +781,15 @@ if (typeof PageAutocomplete === 'undefined') {
 
 ### API Returns Empty Results**
 
-**Symptoms:** Dropdown appears but shows "No suggestions"
+__Symptoms:__ Dropdown appears but shows "No suggestions"
 
-**Checks:**
+__Checks:__
 
 - Verify pages exist in wiki
 - Check query matches page names
 - Test API directly: `curl "http://localhost:3000/api/page-suggestions?q=test"`
 
-**Fix:**
+__Fix:__
 
 ```bash
 # Test API endpoint
@@ -800,11 +800,11 @@ curl "http://localhost:3000/api/page-suggestions?q=home"
 
 ### Dropdown Positioned Incorrectly**
 
-**Symptoms:** Dropdown appears in wrong location
+__Symptoms:__ Dropdown appears in wrong location
 
-**Cause:** Parent element has `position: relative` or transform
+__Cause:__ Parent element has `position: relative` or transform
 
-**Fix:** Adjust z-index and positioning in `page-autocomplete.js`
+__Fix:__ Adjust z-index and positioning in `page-autocomplete.js`
 
 ```javascript
 // Increase z-index
@@ -816,15 +816,15 @@ this.dropdown.style.position = 'fixed';
 
 ### Keyboard Navigation Not Working**
 
-**Symptoms:** Arrow keys don't navigate suggestions
+__Symptoms:__ Arrow keys don't navigate suggestions
 
-**Checks:**
+__Checks:__
 
 - Verify `handleKeydown` is attached
 - Check for event.preventDefault() conflicts
 - Look for other keyboard handlers
 
-**Fix:**
+__Fix:__
 
 ```javascript
 inputElement.addEventListener('keydown', (e) => {
@@ -839,11 +839,11 @@ inputElement.addEventListener('keydown', (e) => {
 
 ### Autocomplete Triggers for Plugins**
 
-**Symptoms:** Dropdown shows when typing `[{Image...}`
+__Symptoms:__ Dropdown shows when typing `[{Image...}`
 
-**Cause:** Plugin detection not working
+__Cause:__ Plugin detection not working
 
-**Fix:** Verify bracket detection logic in `views/edit.ejs`:
+__Fix:__ Verify bracket detection logic in `views/edit.ejs`:
 
 ```javascript
 // Should exclude queries starting with '{'
@@ -880,7 +880,7 @@ if (this.debug) {
 
 ## Version History
 
-- **v1.0.0** (2025-10-12) - Initial implementation
+- __v1.0.0__ (2025-10-12) - Initial implementation
   - API endpoint `/api/page-suggestions`
   - Client-side `PageAutocomplete` class
   - Editor bracket detection
@@ -892,9 +892,9 @@ if (this.debug) {
 
 ## Credits
 
-- **Issue:** #90 - TypeDown for Internal Page Links
-- **Implementation:** Claude Code
-- **Testing:** API endpoint tests confirm functionality
-- **Documentation:** This guide
+- __Issue:__ #90 - TypeDown for Internal Page Links
+- __Implementation:__ Claude Code
+- __Testing:__ API endpoint tests confirm functionality
+- __Documentation:__ This guide
 
 For questions or issues, please refer to GitHub issue #90.

@@ -39,8 +39,8 @@ Either writes `docs/performance/baseline-v<VERSION>-<DATE>.md`. Same file path a
 
 Print the generated markdown table to the user. Highlight anything that looks off:
 
-- **Memory** materially different from the previous baseline file (compare against `ls -t docs/performance/*.md | head -2` and diff).
-- **Response times** above ~500 ms on simple routes.
+- __Memory__ materially different from the previous baseline file (compare against `ls -t docs/performance/*.md | head -2` and diff).
+- __Response times__ above ~500 ms on simple routes.
 
 ### Step 4 (optional): Commit
 

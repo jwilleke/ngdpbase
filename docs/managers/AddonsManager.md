@@ -12,12 +12,12 @@ Core add-on management system. Discovers add-ons in the configured `addons/` dir
 
 ## Responsibilities
 
-- **Discovery** — scan `addons/*/package.json` for ngdpbase-add-on metadata.
-- **Registration** — call each add-on's `register(engine, config)` hook in dependency order.
-- **Lifecycle** — invoke `init` → `register` → `shutdown` in the correct sequence; per-add-on try/catch keeps a failing add-on from blocking the others.
-- **Capability flags** — addons can call `engine.setCapability(name, true)` to advertise their availability; consumers gate behaviour on `engine.hasCapability(name)`.
-- **Profile-section hooks** — addons that contribute to `/profile` register a `profileSection(user)` callback; AddonsManager fans the call out.
-- **Dashboard cards / stylesheets** — addons register UI surfaces here.
+- __Discovery__ — scan `addons/*/package.json` for ngdpbase-add-on metadata.
+- __Registration__ — call each add-on's `register(engine, config)` hook in dependency order.
+- __Lifecycle__ — invoke `init` → `register` → `shutdown` in the correct sequence; per-add-on try/catch keeps a failing add-on from blocking the others.
+- __Capability flags__ — addons can call `engine.setCapability(name, true)` to advertise their availability; consumers gate behaviour on `engine.hasCapability(name)`.
+- __Profile-section hooks__ — addons that contribute to `/profile` register a `profileSection(user)` callback; AddonsManager fans the call out.
+- __Dashboard cards / stylesheets__ — addons register UI surfaces here.
 
 ## See Also
 

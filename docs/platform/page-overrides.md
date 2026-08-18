@@ -34,7 +34,7 @@ addons/
       footer-content.md      ← seeded on first boot
 ```
 
-`AddonsManager.seedAddonPages()` copies these files to `data/pages/` on every boot, but **only if the destination UUID file does not already exist**. User edits and edits from other add-ons are never overwritten.
+`AddonsManager.seedAddonPages()` copies these files to `data/pages/` on every boot, but __only if the destination UUID file does not already exist__. User edits and edits from other add-ons are never overwritten.
 
 The seeder uses the `uuid` field in the page's frontmatter as the destination filename (`{uuid}.md`), so every seed page must carry a stable UUID.
 

@@ -1,8 +1,8 @@
 # TemplateManager Complete Guide
 
-**Module:** `src/managers/TemplateManager.js`
-**Quick Reference:** [TemplateManager.md](TemplateManager.md)
-**Generated API:** [API Docs](../api/generated/src/managers/TemplateManager/README.md)
+__Module:__ `src/managers/TemplateManager.js`
+__Quick Reference:__ [TemplateManager.md](TemplateManager.md)
+__Generated API:__ [API Docs](../api/generated/src/managers/TemplateManager/README.md)
 
 ---
 
@@ -92,7 +92,7 @@ Get all loaded templates.
 getTemplates()
 ```
 
-**Returns:** `Array<Object>` - All template objects
+__Returns:__ `Array<Object>` - All template objects
 
 Each template object:
 
@@ -114,11 +114,11 @@ Get a specific template.
 getTemplate(templateName)
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `templateName` - Name of the template
 
-**Returns:** `Object|null` - Template object or null
+__Returns:__ `Object|null` - Template object or null
 
 ---
 
@@ -130,16 +130,16 @@ Apply template with variable substitution.
 applyTemplate(templateName, variables = {})
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `templateName` - Template to use
 - `variables` - Variables to substitute
 
-**Returns:** `string` - Generated page content
+__Returns:__ `string` - Generated page content
 
-**Throws:** `Error` if template not found
+__Throws:__ `Error` if template not found
 
-**Example:**
+__Example:__
 
 ```javascript
 const content = templateManager.applyTemplate('meeting-notes', {
@@ -159,7 +159,7 @@ Create a new template.
 async createTemplate(templateName, content)
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `templateName` - Name for the template
 - `content` - Template content (with `{{variables}}`)
@@ -174,14 +174,14 @@ Get template suggestions based on page name or category.
 suggestTemplates(pageName, category)
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `pageName` - Page name (optional)
 - `category` - Page category (optional)
 
-**Returns:** `Array<string>` - Suggested template names
+__Returns:__ `Array<string>` - Suggested template names
 
-**Logic:**
+__Logic:__
 
 - Category contains "documentation" → suggest `documentation`
 - Category contains "category" → suggest `category`
@@ -201,7 +201,7 @@ Get all loaded themes.
 getThemes()
 ```
 
-**Returns:** `Array<Object>` - All theme objects
+__Returns:__ `Array<Object>` - All theme objects
 
 ---
 
@@ -213,7 +213,7 @@ Get a specific theme.
 getTheme(themeName)
 ```
 
-**Returns:** `Object|null` - Theme object with `name`, `content`, `path`
+__Returns:__ `Object|null` - Theme object with `name`, `content`, `path`
 
 ---
 
@@ -225,7 +225,7 @@ Create a new theme.
 async createTheme(themeName, content)
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `themeName` - Name for the theme
 - `content` - CSS content
@@ -238,7 +238,7 @@ async createTheme(themeName, content)
 
 Templates use `{{variableName}}` syntax for substitution.
 
-**Default variables (auto-generated):**
+__Default variables (auto-generated):__
 
 | Variable | Description |
 | ---------- | ------------- |
@@ -249,7 +249,7 @@ Templates use `{{variableName}}` syntax for substitution.
 | `{{category}}` | Category (from variables or empty) |
 | `{{userKeywords}}` | Comma-separated keywords |
 
-**Custom variables:** Any key passed in `variables` object is substituted.
+__Custom variables:__ Any key passed in `variables` object is substituted.
 
 ### generateUUID()
 
@@ -259,7 +259,7 @@ Generate a UUID for new pages.
 generateUUID()
 ```
 
-**Returns:** `string` - UUID v4 format
+__Returns:__ `string` - UUID v4 format
 
 ---
 
@@ -484,10 +484,10 @@ app.post('/user/preferences/theme', async (req, res) => {
 
 ## Notes
 
-- **Auto-creation:** Default templates and theme created if directory is empty
-- **JSPWiki variables:** Templates support `[{$pagename}]` syntax
-- **YAML frontmatter:** All templates include frontmatter for page metadata
-- **UUID generation:** Uses Math.random() UUID v4 format
+- __Auto-creation:__ Default templates and theme created if directory is empty
+- __JSPWiki variables:__ Templates support `[{$pagename}]` syntax
+- __YAML frontmatter:__ All templates include frontmatter for page metadata
+- __UUID generation:__ Uses Math.random() UUID v4 format
 
 ---
 

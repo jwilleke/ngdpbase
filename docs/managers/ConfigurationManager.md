@@ -8,8 +8,8 @@ code: src/managers/ConfigurationManager.ts
 
 # ConfigurationManager
 
-**Module:** `src/managers/ConfigurationManager.ts`
-**Complete Guide:** [ConfigurationManager-Complete-Guide.md](ConfigurationManager-Complete-Guide.md)
+__Module:__ `src/managers/ConfigurationManager.ts`
+__Complete Guide:__ [ConfigurationManager-Complete-Guide.md](ConfigurationManager-Complete-Guide.md)
 
 ---
 
@@ -19,14 +19,14 @@ ConfigurationManager provides JSPWiki-compatible configuration management with a
 
 ## Key Features
 
-- **Two-Tier Configuration** - Default (read-only) + custom overrides
-- **Instance Data Separation** - Config location controlled by `INSTANCE_DATA_FOLDER`
-- **Configurable Config File** - Config filename controlled by `INSTANCE_CONFIG_FILE`
-- **Property Merging** - Custom properties override defaults automatically
-- **Environment Variables** - Docker/Traefik/Kubernetes deployment support
-- **Runtime Updates** - Change configuration via admin interface
-- **Convenience Methods** - Type-safe getters for common settings
-- **Backup/Restore** - Full configuration backup support
+- __Two-Tier Configuration__ - Default (read-only) + custom overrides
+- __Instance Data Separation__ - Config location controlled by `INSTANCE_DATA_FOLDER`
+- __Configurable Config File__ - Config filename controlled by `INSTANCE_CONFIG_FILE`
+- __Property Merging__ - Custom properties override defaults automatically
+- __Environment Variables__ - Docker/Traefik/Kubernetes deployment support
+- __Runtime Updates__ - Change configuration via admin interface
+- __Convenience Methods__ - Type-safe getters for common settings
+- __Backup/Restore__ - Full configuration backup support
 
 ## Configuration Merge Order
 
@@ -35,7 +35,7 @@ ConfigurationManager provides JSPWiki-compatible configuration management with a
 2. INSTANCE_DATA_FOLDER/config/{INSTANCE_CONFIG_FILE}          (instance overrides - optional)
 ```
 
-**Environment Variables:**
+__Environment Variables:__
 
 - `INSTANCE_DATA_FOLDER` - Base path for instance data (default: `./data`, Docker: `/app/data`)
 - `INSTANCE_CONFIG_FILE` - Config filename to load (default: `app-custom-config.json`)
@@ -133,7 +133,7 @@ path templates. Multiple refs per string and embedded use are both supported.
 
 ### `$VAR` bare-whole-value form (strict, throws on missing) — for secrets
 
-The ENTIRE config value is a single env-var reference. **Throws** at lookup time
+The ENTIRE config value is a single env-var reference. __Throws__ at lookup time
 when the var is unset — loud failure beats silent misconfiguration for credentials.
 
 ```dotenv

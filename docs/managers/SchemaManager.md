@@ -8,9 +8,9 @@ code: src/managers/SchemaManager.ts
 
 # SchemaManager
 
-**Module:** `src/managers/SchemaManager.ts`
-**Extends:** [BaseManager](BaseManager.md)
-**Complete Guide:** [SchemaManager-Complete-Guide.md](SchemaManager-Complete-Guide.md)
+__Module:__ `src/managers/SchemaManager.ts`
+__Extends:__ [BaseManager](BaseManager.md)
+__Complete Guide:__ [SchemaManager-Complete-Guide.md](SchemaManager-Complete-Guide.md)
 
 ---
 

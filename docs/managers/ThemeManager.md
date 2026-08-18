@@ -34,10 +34,10 @@ interface ThemePaths {
 
 ## Responsibilities
 
-- **Discovery** — list available themes under `themes/<name>/theme.json`.
-- **Active-theme resolution** — read `ngdpbase.theme.active` config; fall back to `default`.
-- **Path resolution** — produce `ThemePaths` for the render pipeline.
-- **Font preload** — surface `fonts[]` URLs so the renderer can inject `<link rel="stylesheet">` for Google Fonts etc.
+- __Discovery__ — list available themes under `themes/<name>/theme.json`.
+- __Active-theme resolution__ — read `ngdpbase.theme.active` config; fall back to `default`.
+- __Path resolution__ — produce `ThemePaths` for the render pipeline.
+- __Font preload__ — surface `fonts[]` URLs so the renderer can inject `<link rel="stylesheet">` for Google Fonts etc.
 
 ## See Also
 

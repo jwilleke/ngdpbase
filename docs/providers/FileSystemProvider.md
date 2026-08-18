@@ -10,12 +10,12 @@ status: stable
 
 # FileSystemProvider
 
-**Quick Reference** | [Complete Guide](FileSystemProvider-Complete-Guide.md)
+__Quick Reference__ | [Complete Guide](FileSystemProvider-Complete-Guide.md)
 
-**Module:** `src/providers/FileSystemProvider.ts`
-**Type:** Page Storage Provider
-**Extends:** BasePageProvider
-**Status:** Production Ready
+__Module:__ `src/providers/FileSystemProvider.ts`
+__Type:__ Page Storage Provider
+__Extends:__ BasePageProvider
+__Status:__ Production Ready
 
 ## Overview
 
@@ -23,12 +23,12 @@ FileSystemProvider implements file-based page storage using Markdown files with 
 
 ## Key Features
 
-- **UUID-based file naming** - Reliable page identity across renames
-- **Title-based lookup** - Case-insensitive title matching
-- **Plural name matching** - "Page" matches "Pages" automatically
-- **Dual storage locations** - Regular pages and required/system pages
-- **In-memory caching** - Multiple lookup indexes for performance
-- **Frontmatter parsing** - Gray-matter for YAML metadata
+- __UUID-based file naming__ - Reliable page identity across renames
+- __Title-based lookup__ - Case-insensitive title matching
+- __Plural name matching__ - "Page" matches "Pages" automatically
+- __Dual storage locations__ - Regular pages and required/system pages
+- __In-memory caching__ - Multiple lookup indexes for performance
+- __Frontmatter parsing__ - Gray-matter for YAML metadata
 
 ## Configuration
 
@@ -82,27 +82,27 @@ required-pages/                                 (Only loaded during installation
 
 ## Installation-Aware Loading
 
-- **During installation:** `installationComplete = false` → Loads from both `pagesDirectory` and `requiredPagesDirectory`
-- **After installation:** `installationComplete = true` → Loads only from `pagesDirectory`
+- __During installation:__ `installationComplete = false` → Loads from both `pagesDirectory` and `requiredPagesDirectory`
+- __After installation:__ `installationComplete = true` → Loads only from `pagesDirectory`
 
-**Why?** Required pages (system docs, templates) are copied once during installation, not loaded every time.
+__Why?__ Required pages (system docs, templates) are copied once during installation, not loaded every time.
 
 ## Cache Structure
 
 FileSystemProvider uses a multi-index cache:
 
-- **pageCache** - Main cache by canonical identifier
-- **titleIndex** - Maps lowercase title to canonical identifier
-- **uuidIndex** - Maps UUID to canonical identifier
-- **slugIndex** - Maps URL slug to canonical identifier
+- __pageCache__ - Main cache by canonical identifier
+- __titleIndex__ - Maps lowercase title to canonical identifier
+- __uuidIndex__ - Maps UUID to canonical identifier
+- __slugIndex__ - Maps URL slug to canonical identifier
 
 ## Related Documentation
 
-- **Complete Guide:** [FileSystemProvider-Complete-Guide.md](FileSystemProvider-Complete-Guide.md)
-- **Parent Class:** [BasePageProvider.md](BasePageProvider.md)
-- **Manager:** [PageManager.md](../managers/PageManager.md)
+- __Complete Guide:__ [FileSystemProvider-Complete-Guide.md](FileSystemProvider-Complete-Guide.md)
+- __Parent Class:__ [BasePageProvider.md](BasePageProvider.md)
+- __Manager:__ [PageManager.md](../managers/PageManager.md)
 
 ---
 
-**Last Updated:** 2025-12-22
-**Version:** 1.5.0
+__Last Updated:__ 2025-12-22
+__Version:__ 1.5.0

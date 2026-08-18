@@ -1,10 +1,10 @@
 # MediaManager — Complete Guide
 
-**Module:** `src/managers/MediaManager.ts`
-**Quick Reference:** [MediaManager.md](MediaManager.md)
-**Version:** 1.2.0
-**Last Updated:** 2026-03-11
-**Issue:** #273
+__Module:__ `src/managers/MediaManager.ts`
+__Quick Reference:__ [MediaManager.md](MediaManager.md)
+__Version:__ 1.2.0
+__Last Updated:__ 2026-03-11
+__Issue:__ #273
 
 ---
 
@@ -42,7 +42,7 @@ MediaManager is the high-level coordinator for ngdpbase's media browsing feature
 - Applies private-page access control before returning items to callers
 - Manages a periodic background rescan timer
 
-The manager is **opt-in**: it is only instantiated by `WikiEngine` when
+The manager is __opt-in__: it is only instantiated by `WikiEngine` when
 `ngdpbase.media.enabled = true`. All HTTP routes return 503 when the manager
 is absent.
 
@@ -166,7 +166,7 @@ Two complementary mechanisms allow files and folders to be excluded from the ind
 
 Place a `.ngdpbaseignore` file in any directory within a configured media folder. The scanner reads its contents and applies the patterns to files and subdirectories in that directory before calling ExifTool — excluded items incur no metadata-read overhead.
 
-**Pattern syntax** (gitignore-compatible):
+__Pattern syntax__ (gitignore-compatible):
 
 | Pattern | Effect |
 |---------|--------|
@@ -328,7 +328,7 @@ async listByKeyword(keyword: string, wikiContext?: WikiContext): Promise<MediaIt
 ```
 
 Delegates to `provider.getItemsByKeyword(keyword)`. The provider performs an
-**exact, case-sensitive match** against each entry in `metadata.keywords`
+__exact, case-sensitive match__ against each entry in `metadata.keywords`
 (which may be a string or a string array). Items with no keywords are excluded.
 The result is then passed through `filterPrivateItems()` before being returned.
 
@@ -499,7 +499,7 @@ Requires `keyword=`; returns an error message otherwise.
 ### Quote syntax for keywords with apostrophes
 
 Wiki plugin syntax uses single quotes for attribute values. When a keyword
-itself contains an apostrophe, use **double quotes** around the value:
+itself contains an apostrophe, use __double quotes__ around the value:
 
 ```wiki
 [{MediaPlugin format='album' keyword="Molly's Cooking"}]
@@ -511,7 +511,7 @@ use single quotes.
 
 ### Plugin Syntax helper in the item detail page
 
-The **Media Information** collapsible panel on the item detail page
+The __Media Information__ collapsible panel on the item detail page
 auto-generates ready-to-copy `[{MediaPlugin ...}]` snippets for each keyword
 associated with the item. This provides a convenient entry point for embedding
 a media album on a related wiki page without writing the syntax by hand.

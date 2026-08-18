@@ -13,7 +13,7 @@ Both keys live in `config/app-default-config.json`; override per instance in `ap
 
 ## Absolute links and base-url
 
-Share links shown on `/shares` are built from `ngdpbase.application.base-url` (falling back to the request origin when unset). **The configured base-url must actually resolve and route for recipients** — a dead hostname means every minted link is dead (see closed issue #860, where the fix was a path-filtered Cloudflare Tunnel exposing only `/share/*` publicly).
+Share links shown on `/shares` are built from `ngdpbase.application.base-url` (falling back to the request origin when unset). __The configured base-url must actually resolve and route for recipients__ — a dead hostname means every minted link is dead (see closed issue #860, where the fix was a path-filtered Cloudflare Tunnel exposing only `/share/*` publicly).
 
 ## Who can do what
 

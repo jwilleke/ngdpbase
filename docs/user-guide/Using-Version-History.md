@@ -35,14 +35,14 @@ There are three ways to access a page's version history:
 ### Method 1: Info Dropdown (Recommended)
 
 1. Navigate to any page
-2. Click the **Info** button in the page toolbar
-3. Select **Page History** from the dropdown menu
+2. Click the __Info__ button in the page toolbar
+3. Select __Page History__ from the dropdown menu
 
 ### Method 2: Version Info Banner
 
 If you see a version info banner at the top of a page:
 
-1. Click the **View History** button in the banner
+1. Click the __View History__ button in the banner
 
 ### Method 3: Direct URL
 
@@ -60,21 +60,21 @@ The Page History view shows all versions of a page in a table format.
 
 | Column | Description |
 | -------- | ------------- |
-| **Version** | Version number (e.g., v1, v2, v3) |
-| **Date** | When this version was created |
-| **Author** | Who made the changes |
-| **Change Type** | Type of change (Created, Updated, Restored) |
-| **Comment** | Description of what changed |
-| **Size** | Content size in KB |
-| **Actions** | Buttons to view, compare, or restore |
+| __Version__ | Version number (e.g., v1, v2, v3) |
+| __Date__ | When this version was created |
+| __Author__ | Who made the changes |
+| __Change Type__ | Type of change (Created, Updated, Restored) |
+| __Comment__ | Description of what changed |
+| __Size__ | Content size in KB |
+| __Actions__ | Buttons to view, compare, or restore |
 
 ### Visual Indicators
 
-- **Blue highlight**: Current version (most recent)
-- **Green "Current" badge**: Marks the latest version
-- **Flag icon** 🚩: Checkpoint version (performance optimization)
-- **Compress icon**: Version is compressed to save space
-- **Branch icon**: Uses delta storage (diff-based)
+- __Blue highlight__: Current version (most recent)
+- __Green "Current" badge__: Marks the latest version
+- __Flag icon__ 🚩: Checkpoint version (performance optimization)
+- __Compress icon__: Version is compressed to save space
+- __Branch icon__: Uses delta storage (diff-based)
 
 ### Example History View
 
@@ -107,14 +107,14 @@ To view the content of a previous version:
 
 1. Navigate to the page's history view
 2. Find the version you want to view in the table
-3. Click the **👁 View** button for that version
+3. Click the __👁 View__ button for that version
 4. A modal window opens showing the version content
 
 ### What You'll See
 
-- **Modal title**: "Version X of PageName"
-- **Content**: Rendered markdown content as it appeared in that version
-- **Close button**: Click to return to the history view
+- __Modal title__: "Version X of PageName"
+- __Content__: Rendered markdown content as it appeared in that version
+- __Close button__: Click to return to the history view
 
 ### Notes
 
@@ -132,16 +132,16 @@ Compare two versions to see what changed between them.
 ### Method 1: Quick Compare (Adjacent Versions)
 
 1. Navigate to the page history
-2. Click the **⚖️ Compare** button next to any version
+2. Click the __⚖️ Compare__ button next to any version
 3. This compares that version with the previous one
 
 ### Method 2: Compare Any Two Versions
 
 1. Navigate to the page history
 2. Scroll down to the "Compare Versions" section
-3. Select **From:** version from the first dropdown
-4. Select **To:** version from the second dropdown
-5. Click the **Compare** button
+3. Select __From:__ version from the first dropdown
+4. Select __To:__ version from the second dropdown
+5. Click the __Compare__ button
 
 ### Understanding the Diff View
 
@@ -151,8 +151,8 @@ The comparison view shows two sections:
 
 Two side-by-side cards showing:
 
-- **Left (Red)**: Older version metadata
-- **Right (Green)**: Newer version metadata
+- __Left (Red)__: Older version metadata
+- __Right (Green)__: Newer version metadata
 
 Each card displays:
 
@@ -166,9 +166,9 @@ Each card displays:
 
 Statistics showing:
 
-- **Additions** (green): Lines added
-- **Deletions** (red): Lines removed
-- **Unchanged** (gray): Lines that stayed the same
+- __Additions__ (green): Lines added
+- __Deletions__ (red): Lines removed
+- __Unchanged__ (gray): Lines that stayed the same
 
 Example:
 
@@ -182,14 +182,14 @@ Unchanged: 142 lines
 
 Two viewing modes:
 
-**Unified View** (default):
+__Unified View__ (default):
 
 - Single column showing all content
 - Green background: Added lines (+)
 - Red background: Deleted lines (-)
 - White background: Unchanged lines
 
-**Side-by-Side View**:
+__Side-by-Side View__:
 
 - Two columns
 - Left column: Old version (deletions in red)
@@ -199,8 +199,8 @@ Two viewing modes:
 
 Click the view mode buttons at the top:
 
-- **Unified View**: Traditional diff format
-- **Side-by-Side**: Dual-pane comparison
+- __Unified View__: Traditional diff format
+- __Side-by-Side__: Dual-pane comparison
 
 ### Tips for Comparing
 
@@ -217,15 +217,15 @@ Restore a page to a previous version if changes need to be reverted.
 
 ### Important Notes
 
-⚠️ **Restoring creates a new version** - it doesn't delete history
-⚠️ **You must be logged in** to restore versions
-⚠️ **Action is logged** with your username
+⚠️ __Restoring creates a new version__ - it doesn't delete history
+⚠️ __You must be logged in__ to restore versions
+⚠️ __Action is logged__ with your username
 
 ### Steps to Restore
 
 1. Navigate to the page history
 2. Find the version you want to restore to
-3. Click the **↩️ Restore** button for that version
+3. Click the __↩️ Restore__ button for that version
 4. Review the confirmation dialog:
 
    ```
@@ -234,7 +234,7 @@ Restore a page to a previous version if changes need to be reverted.
    This will create a new version with the content from version X.
    ```
 
-5. Click **OK** to confirm or **Cancel** to abort
+5. Click __OK__ to confirm or __Cancel__ to abort
 
 ### What Happens During Restore
 
@@ -247,20 +247,20 @@ Restore a page to a previous version if changes need to be reverted.
 
 ### Example Restore Scenario
 
-**Before restore:**
+__Before restore:__
 
 - v1: Original content
 - v2: Bad edit (spam added)
 - v3: More spam
-- **Current**: v3 (with spam)
+- __Current__: v3 (with spam)
 
-**After restoring to v1:**
+__After restoring to v1:__
 
 - v1: Original content
 - v2: Bad edit
 - v3: More spam
 - v4: Original content (restored from v1)
-- **Current**: v4 (spam removed)
+- __Current__: v4 (spam removed)
 
 ### Undoing a Restore
 
@@ -287,16 +287,16 @@ Located at the top of the page content, shows:
 └──────────────────────────────────────────────────────────────┘
 ```
 
-**What it tells you:**
+__What it tells you:__
 
-- **Current version number**: "Version 5"
-- **Total versions**: "of 5"
-- **Last editor**: Who made the most recent change
-- **When**: Timestamp of last change
+- __Current version number__: "Version 5"
+- __Total versions__: "of 5"
+- __Last editor__: Who made the most recent change
+- __When__: Timestamp of last change
 
-**Quick access:**
+__Quick access:__
 
-- Click **View History** to jump to the history view
+- Click __View History__ to jump to the history view
 
 ### When You'll See It
 
@@ -310,28 +310,28 @@ Located at the top of the page content, shows:
 
 ### For Readers
 
-1. **Check history when confused**: If content seems wrong, check history to see if it was recently changed
-2. **Use compare to understand changes**: See exactly what was added or removed
-3. **Bookmark important versions**: Note version numbers of known-good content
+1. __Check history when confused__: If content seems wrong, check history to see if it was recently changed
+2. __Use compare to understand changes__: See exactly what was added or removed
+3. __Bookmark important versions__: Note version numbers of known-good content
 
 ### For Editors
 
-1. **Add meaningful comments**: Help others understand your changes
+1. __Add meaningful comments__: Help others understand your changes
    - ❌ Bad: "Updated"
    - ✅ Good: "Fixed formatting in Requirements section"
 
-2. **Review before saving**: Use the preview feature to avoid creating unnecessary versions
+2. __Review before saving__: Use the preview feature to avoid creating unnecessary versions
 
-3. **Check history before major edits**: See what others have done recently
+3. __Check history before major edits__: See what others have done recently
 
-4. **Restore carefully**: Make sure you're restoring to the right version
+4. __Restore carefully__: Make sure you're restoring to the right version
 
 ### For Administrators
 
-1. **Configure retention**: Set appropriate `maxVersions` and `retentionDays`
-2. **Monitor storage**: Run periodic analytics to track disk usage
-3. **Educate users**: Share this guide with your wiki users
-4. **Set up backups**: Version history complements but doesn't replace backups
+1. __Configure retention__: Set appropriate `maxVersions` and `retentionDays`
+2. __Monitor storage__: Run periodic analytics to track disk usage
+3. __Educate users__: Share this guide with your wiki users
+4. __Set up backups__: Version history complements but doesn't replace backups
 
 ---
 
@@ -339,55 +339,55 @@ Located at the top of the page content, shows:
 
 ### General Questions
 
-**Q: How far back does version history go?**
+__Q: How far back does version history go?__
 A: Depends on administrator configuration. Default is 50 versions or 365 days, whichever comes first.
 
-**Q: Can I delete a version?**
+__Q: Can I delete a version?__
 A: No, individual versions cannot be deleted through the UI. Contact your administrator if you need specific versions removed.
 
-**Q: Does every page have version history?**
+__Q: Does every page have version history?__
 A: Only if versioning is enabled. Check with your administrator.
 
-**Q: Can I see who viewed versions?**
+__Q: Can I see who viewed versions?__
 A: No, viewing is not tracked. Only edit/restore actions are logged.
 
 ### Comparing Versions
 
-**Q: What do the numbers in brackets mean?**
+__Q: What do the numbers in brackets mean?__
 A: Those are line numbers in the unified diff view, helping you locate changes.
 
-**Q: Why can't I compare certain versions?**
+__Q: Why can't I compare certain versions?__
 A: All versions should be comparable. If you encounter issues, contact your administrator.
 
-**Q: Can I compare non-consecutive versions?**
+__Q: Can I compare non-consecutive versions?__
 A: Yes! Use the "Compare Versions" tool at the bottom of the history page.
 
 ### Restoring Versions
 
-**Q: Will restoring delete newer versions?**
+__Q: Will restoring delete newer versions?__
 A: No! Restoring creates a new version with old content. All history is preserved.
 
-**Q: Can I restore if I'm not logged in?**
+__Q: Can I restore if I'm not logged in?__
 A: No, you must be authenticated to restore versions.
 
-**Q: What if I restore the wrong version?**
+__Q: What if I restore the wrong version?__
 A: Just restore again to the correct version. Each restore creates a new version.
 
-**Q: Can I restore someone else's page?**
+__Q: Can I restore someone else's page?__
 A: Depends on your permissions. Check with your administrator about page permissions.
 
 ### Technical Questions
 
-**Q: How much storage does version history use?**
+__Q: How much storage does version history use?__
 A: Typically 10-20% overhead with delta storage and compression enabled. Your administrator can provide specifics.
 
-**Q: Are versions compressed?**
+__Q: Are versions compressed?__
 A: Older versions may be compressed to save space. This happens automatically.
 
-**Q: What's a "checkpoint" version?**
+__Q: What's a "checkpoint" version?__
 A: Periodic full content snapshots (every 10 versions by default) for faster retrieval.
 
-**Q: Can version history be disabled?**
+__Q: Can version history be disabled?__
 A: Yes, by the administrator. If disabled, pages revert to single-version storage.
 
 ---
@@ -396,17 +396,17 @@ A: Yes, by the administrator. If disabled, pages revert to single-version storag
 
 ### "Versioning not supported" Error
 
-**Cause**: Your wiki is not using VersioningFileProvider
-**Solution**: Contact your administrator to enable versioning
+__Cause__: Your wiki is not using VersioningFileProvider
+__Solution__: Contact your administrator to enable versioning
 
 ### "Page not found" Error
 
-**Cause**: Page or version doesn't exist
-**Solution**: Check the page name and version number
+__Cause__: Page or version doesn't exist
+__Solution__: Check the page name and version number
 
 ### Can't Restore Versions
 
-**Causes**:
+__Causes__:
 
 1. Not logged in → Log in first
 2. No permission → Contact administrator
@@ -414,29 +414,29 @@ A: Yes, by the administrator. If disabled, pages revert to single-version storag
 
 ### Diff Viewer Shows Nothing
 
-**Cause**: Versions are identical
-**Solution**: This is normal if no changes occurred
+__Cause__: Versions are identical
+__Solution__: This is normal if no changes occurred
 
 ### Modal Won't Close
 
-**Cause**: Browser issue
-**Solution**: Click outside the modal or press ESC key
+__Cause__: Browser issue
+__Solution__: Click outside the modal or press ESC key
 
 ---
 
 ## Getting Help
 
-- **Administrator**: Contact your wiki administrator for:
+- __Administrator__: Contact your wiki administrator for:
   - Configuration issues
   - Permission problems
   - Storage concerns
 
-- **Documentation**: See also:
+- __Documentation__: See also:
   - [API Documentation](../api/Versioning-API.md)
   - [Admin Guide](../admin/Versioning-Deployment-Guide.md)
   - [Maintenance Guide](../Versioning-Maintenance-Guide.md)
 
-- **Support**: Report bugs at your wiki's issue tracker
+- __Support__: Report bugs at your wiki's issue tracker
 
 ---
 
@@ -460,6 +460,6 @@ Use version history to:
 
 ---
 
-**Last Updated**: 2024-10-16
-**Version**: 1.0
-**Applies to**: ngdpbase 1.3.2+
+__Last Updated__: 2024-10-16
+__Version__: 1.0
+__Applies to__: ngdpbase 1.3.2+

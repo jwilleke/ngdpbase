@@ -1,10 +1,10 @@
 # CacheManager Complete Guide
 
-**Module:** `src/managers/CacheManager.ts`
-**Quick Reference:** [CacheManager.md](CacheManager.md)
-**Version:** 2.0.0
-**Last Updated:** 2026-05-03 (post-v3.6.0)
-**Based on:** JSPWiki caching patterns with provider architecture
+__Module:__ `src/managers/CacheManager.ts`
+__Quick Reference:__ [CacheManager.md](CacheManager.md)
+__Version:__ 2.0.0
+__Last Updated:__ 2026-05-03 (post-v3.6.0)
+__Based on:__ JSPWiki caching patterns with provider architecture
 
 ---
 
@@ -31,13 +31,13 @@ The CacheManager provides centralized cache management for ngdpbase with support
 
 ### Key Features
 
-- **Pluggable Cache Providers**: Support for multiple backends (node-cache, Redis, Memcached)
-- **Cache Regions**: Namespace isolation for different managers
-- **Provider Fallback**: Configurable default provider with automatic failover
-- **Health Monitoring**: Automatic health checks with fallback to NullCacheProvider
-- **Statistics**: Comprehensive cache statistics and hit rate tracking
-- **Pattern Matching**: Support for glob-style key patterns
-- **All Lowercase Config**: Follows ngdpbase configuration standards (issue #102)
+- __Pluggable Cache Providers__: Support for multiple backends (node-cache, Redis, Memcached)
+- __Cache Regions__: Namespace isolation for different managers
+- __Provider Fallback__: Configurable default provider with automatic failover
+- __Health Monitoring__: Automatic health checks with fallback to NullCacheProvider
+- __Statistics__: Comprehensive cache statistics and hit rate tracking
+- __Pattern Matching__: Support for glob-style key patterns
+- __All Lowercase Config__: Follows ngdpbase configuration standards (issue #102)
 
 ### Design Principles
 
@@ -53,30 +53,30 @@ Following the provider pattern established in AttachmentManager, PageManager, an
 
 ## Two cache layers in ngdpbase
 
-ngdpbase has **two distinct caching layers** that serve different purposes. CacheManager (this document) is one of them. Understanding the split prevents confusion when "where is X cached?" comes up.
+ngdpbase has __two distinct caching layers__ that serve different purposes. CacheManager (this document) is one of them. Understanding the split prevents confusion when "where is X cached?" comes up.
 
 ### Layer 1 — CacheManager-managed regions (this doc)
 
-**Opportunistic memoization**, TTL-based, pluggable backends.
+__Opportunistic memoization__, TTL-based, pluggable backends.
 
-- **What it caches**: result-of-computation values that benefit from temporary memoization — rendered HTML, policy decisions, ACL parses, search results, etc.
-- **Lifetime**: TTL-bounded (default 300s). Auto-evicted on expiry; explicitly invalidated on data changes.
-- **Backend**: pluggable — `NodeCacheProvider` (in-memory, current default), `NullCacheProvider` (no-op for tests/disabled), planned `RedisCacheProvider` for multi-instance deployments.
-- **Topology**: in-process or remote.
-- **API**: `engine.getManager('CacheManager').region('foo').get/set/del/...`.
-- **Behavior on miss**: caller re-computes and caches.
+- __What it caches__: result-of-computation values that benefit from temporary memoization — rendered HTML, policy decisions, ACL parses, search results, etc.
+- __Lifetime__: TTL-bounded (default 300s). Auto-evicted on expiry; explicitly invalidated on data changes.
+- __Backend__: pluggable — `NodeCacheProvider` (in-memory, current default), `NullCacheProvider` (no-op for tests/disabled), planned `RedisCacheProvider` for multi-instance deployments.
+- __Topology__: in-process or remote.
+- __API__: `engine.getManager('CacheManager').region('foo').get/set/del/...`.
+- __Behavior on miss__: caller re-computes and caches.
 
 This layer is what the rest of this document covers in detail.
 
 ### Layer 2 — Provider-level structural caches
 
-**Authoritative in-memory copies** of source-of-truth data, built at init time, kept current via write-through invalidation. **Not managed by CacheManager.**
+__Authoritative in-memory copies__ of source-of-truth data, built at init time, kept current via write-through invalidation. __Not managed by CacheManager.__
 
-- **What it caches**: the data itself (page metadata, content, search index, theme paths). These structures *are* the lookup tables; cache misses are usually impossible (everything was loaded at init).
-- **Lifetime**: process lifetime. Updated on every relevant write (savePage / deletePage / rename → cache update).
-- **Backend**: plain JavaScript `Map` / `Object`, sometimes persisted to disk for fast restart (`data/page-index.json`, `data/search-index/documents.json`).
-- **Topology**: always in-process (with the exception of ES, which lives in its own cluster).
-- **API**: provider-specific — not exposed through CacheManager.
+- __What it caches__: the data itself (page metadata, content, search index, theme paths). These structures *are* the lookup tables; cache misses are usually impossible (everything was loaded at init).
+- __Lifetime__: process lifetime. Updated on every relevant write (savePage / deletePage / rename → cache update).
+- __Backend__: plain JavaScript `Map` / `Object`, sometimes persisted to disk for fast restart (`data/page-index.json`, `data/search-index/documents.json`).
+- __Topology__: always in-process (with the exception of ES, which lives in its own cluster).
+- __API__: provider-specific — not exposed through CacheManager.
 
 The full inventory is in [Provider-level structural caches](#provider-level-structural-caches) below.
 
@@ -92,7 +92,7 @@ The full inventory is in [Provider-level structural caches](#provider-level-stru
 | Topology | In-process or remote | Always in-process (ES being the exception by design) |
 | Documented here | ✅ Layer 1 sections | Inventory in [Provider-level structural caches](#provider-level-structural-caches) |
 
-> **Quick rule of thumb**: if the value would be expensive to recompute and is fine to be slightly stale (rendered HTML, policy decisions), it goes in a CacheManager region. If the value *is* the lookup table you need to serve a request synchronously (which page exists, what's its frontmatter, what tokens does it contain for search), it lives in a provider-level structural cache.
+> __Quick rule of thumb__: if the value would be expensive to recompute and is fine to be slightly stale (rendered HTML, policy decisions), it goes in a CacheManager region. If the value *is* the lookup table you need to serve a request synchronously (which page exists, what's its frontmatter, what tokens does it contain for search), it lives in a provider-level structural cache.
 
 ---
 
@@ -125,7 +125,7 @@ The full inventory is in [Provider-level structural caches](#provider-level-stru
 
 ### Component Responsibilities
 
-**CacheManager:**
+__CacheManager:__
 
 - Provider initialization and management
 - Cache region management (namespaces)
@@ -133,20 +133,20 @@ The full inventory is in [Provider-level structural caches](#provider-level-stru
 - Health check and automatic failover
 - Statistics aggregation
 
-**BaseCacheProvider:**
+__BaseCacheProvider:__
 
 - Abstract interface all providers must implement
 - Defines standard methods (get, set, del, clear, keys, stats)
 - Enforces ConfigurationManager usage
 
-**Concrete Providers:**
+__Concrete Providers:__
 
 - Implement actual cache storage (in-memory, Redis, etc.)
 - Handle TTL and expiration
 - Provide statistics and health checks
 - Support pattern matching for keys
 
-**RegionCache:**
+__RegionCache:__
 
 - Provides namespace isolation for different managers
 - Wraps provider with region prefix
@@ -235,8 +235,8 @@ All configuration keys follow the lowercase standard from issue #102:
 
 CacheManager uses a two-tier fallback system:
 
-1. **Configuration Fallback**: `.provider.default` → `.provider`
-2. **Health Check Fallback**: Failed provider → `NullCacheProvider`
+1. __Configuration Fallback__: `.provider.default` → `.provider`
+2. __Health Check Fallback__: Failed provider → `NullCacheProvider`
 
 ```javascript
 // 1. Load default provider
@@ -261,24 +261,24 @@ if (!isHealthy) {
 
 #### 1. NodeCacheProvider (Implemented)
 
-**File:** `src/providers/NodeCacheProvider.js`
+__File:__ `src/providers/NodeCacheProvider.js`
 
 In-memory cache using the `node-cache` library. Best for single-instance deployments.
 
-**Features:**
+__Features:__
 
 - TTL support
 - Pattern matching
 - Statistics tracking
 - Memory-efficient
 
-**Use Cases:**
+__Use Cases:__
 
 - Development environments
 - Single-instance production
 - Low-traffic wikis
 
-**Configuration Example:**
+__Configuration Example:__
 
 ```json
 {
@@ -290,17 +290,17 @@ In-memory cache using the `node-cache` library. Best for single-instance deploym
 
 #### 2. NullCacheProvider (Implemented)
 
-**File:** `src/providers/NullCacheProvider.js`
+__File:__ `src/providers/NullCacheProvider.js`
 
 No-op cache provider. All operations are no-ops.
 
-**Use Cases:**
+__Use Cases:__
 
 - Caching disabled (`ngdpbase.cache.enabled: false`)
 - Testing environments
 - Automatic fallback when other providers fail
 
-**Configuration Example:**
+__Configuration Example:__
 
 ```json
 {
@@ -310,18 +310,18 @@ No-op cache provider. All operations are no-ops.
 
 #### 3. RedisCacheProvider (Future)
 
-**File:** `src/providers/RedisCacheProvider.js` (stub)
+__File:__ `src/providers/RedisCacheProvider.js` (stub)
 
 Distributed cache using Redis. Best for multi-instance production deployments.
 
-**Planned Features:**
+__Planned Features:__
 
 - Distributed caching
 - Persistence
 - Pub/sub for cache invalidation
 - Cluster support
 
-**Use Cases:**
+__Use Cases:__
 
 - Multi-instance production
 - High-traffic wikis
@@ -476,10 +476,10 @@ const pageStats = await pageCache.stats();
 
 ### Region Best Practices
 
-1. **One Region Per Manager**: Each manager should use its own region
-2. **Consistent Naming**: Use manager class name as region name
-3. **Structured Keys**: Use hierarchical key patterns (e.g., `page:uuid`, `user:session:token`)
-4. **Namespace Isolation**: Don't access other regions directly
+1. __One Region Per Manager__: Each manager should use its own region
+2. __Consistent Naming__: Use manager class name as region name
+3. __Structured Keys__: Use hierarchical key patterns (e.g., `page:uuid`, `user:session:token`)
+4. __Namespace Isolation__: Don't access other regions directly
 
 ---
 
@@ -491,13 +491,13 @@ const pageStats = await pageCache.stats();
 
 Initialize the cache manager and load provider.
 
-**Parameters:**
+__Parameters:__
 
 - `config` (Object): Configuration object (optional)
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 await cacheManager.initialize();
@@ -509,13 +509,13 @@ await cacheManager.initialize();
 
 Get or create a cache region.
 
-**Parameters:**
+__Parameters:__
 
 - `regionName` (string): Region name (typically manager name)
 
-**Returns:** `RegionCache`
+__Returns:__ `RegionCache`
 
-**Example:**
+__Example:__
 
 ```javascript
 const cache = cacheManager.region('PageManager');
@@ -527,13 +527,13 @@ const cache = cacheManager.region('PageManager');
 
 Get a value from the cache (global scope).
 
-**Parameters:**
+__Parameters:__
 
 - `key` (string): Cache key
 
-**Returns:** `Promise<any|undefined>` - Cached value or undefined
+__Returns:__ `Promise<any|undefined>` - Cached value or undefined
 
-**Example:**
+__Example:__
 
 ```javascript
 const value = await cacheManager.get('mykey');
@@ -545,16 +545,16 @@ const value = await cacheManager.get('mykey');
 
 Set a value in the cache (global scope).
 
-**Parameters:**
+__Parameters:__
 
 - `key` (string): Cache key
 - `value` (any): Value to cache
 - `options` (Object): Options
   - `ttl` (number): Time to live in seconds
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 await cacheManager.set('mykey', 'myvalue', { ttl: 300 });
@@ -566,13 +566,13 @@ await cacheManager.set('mykey', 'myvalue', { ttl: 300 });
 
 Delete one or more keys from the cache.
 
-**Parameters:**
+__Parameters:__
 
 - `keys` (string|string[]): Single key or array of keys
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 await cacheManager.del('key1');
@@ -585,14 +585,14 @@ await cacheManager.del(['key1', 'key2', 'key3']);
 
 Clear cache entries.
 
-**Parameters:**
+__Parameters:__
 
 - `region` (string): Optional region to clear
 - `pattern` (string): Optional pattern to match keys
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Example:**
+__Example:__
 
 ```javascript
 await cacheManager.clear();                    // Clear all
@@ -606,13 +606,13 @@ await cacheManager.clear(null, 'temp:*');      // Clear pattern
 
 Get keys matching a pattern.
 
-**Parameters:**
+__Parameters:__
 
 - `pattern` (string): Pattern to match (default: '*')
 
-**Returns:** `Promise<string[]>`
+__Returns:__ `Promise<string[]>`
 
-**Example:**
+__Example:__
 
 ```javascript
 const keys = await cacheManager.keys('user:*');
@@ -624,13 +624,13 @@ const keys = await cacheManager.keys('user:*');
 
 Get cache statistics.
 
-**Parameters:**
+__Parameters:__
 
 - `region` (string): Optional region name
 
-**Returns:** `Promise<Object>` - Statistics object
+__Returns:__ `Promise<Object>` - Statistics object
 
-**Example:**
+__Example:__
 
 ```javascript
 const stats = await cacheManager.stats();
@@ -643,9 +643,9 @@ console.log(`Hit rate: ${stats.global.hitRate}%`);
 
 Check if cache provider is healthy.
 
-**Returns:** `Promise<boolean>`
+__Returns:__ `Promise<boolean>`
 
-**Example:**
+__Example:__
 
 ```javascript
 if (await cacheManager.isHealthy()) {
@@ -659,9 +659,9 @@ if (await cacheManager.isHealthy()) {
 
 Get cache configuration.
 
-**Returns:** `Object` - Configuration object
+__Returns:__ `Object` - Configuration object
 
-**Example:**
+__Example:__
 
 ```javascript
 const config = cacheManager.getConfig();
@@ -674,9 +674,9 @@ console.log(`Provider: ${config.provider}`);
 
 Get all active region names.
 
-**Returns:** `string[]`
+__Returns:__ `string[]`
 
-**Example:**
+__Example:__
 
 ```javascript
 const regions = cacheManager.getRegions();
@@ -689,9 +689,9 @@ console.log(`Active regions: ${regions.join(', ')}`);
 
 Flush all caches (dangerous operation).
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Warning:** This clears ALL cache data across all regions.
+__Warning:__ This clears ALL cache data across all regions.
 
 ---
 
@@ -699,7 +699,7 @@ Flush all caches (dangerous operation).
 
 Close and cleanup cache resources.
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
 ---
 
@@ -709,14 +709,14 @@ Close and cleanup cache resources.
 
 Helper method to get a cache region from any manager.
 
-**Parameters:**
+__Parameters:__
 
 - `engine` (WikiEngine): Engine instance
 - `region` (string): Region name
 
-**Returns:** `RegionCache`
+__Returns:__ `RegionCache`
 
-**Example:**
+__Example:__
 
 ```javascript
 const cache = CacheManager.getCacheForManager(this.engine, 'MyManager');
@@ -816,7 +816,7 @@ curl -X POST -H "Cookie: ngdpbase.sid=<session>" -H "x-csrf-token: <token>" \
   http://localhost:3000/api/admin/cache/clear/RenderingManager
 ```
 
-Both clear endpoints require `admin-system` permission and a valid CSRF token. Both affect only **CacheManager-managed regions** — provider-level structural caches (page metadata, search index) are not cleared.
+Both clear endpoints require `admin-system` permission and a valid CSRF token. Both affect only __CacheManager-managed regions__ — provider-level structural caches (page metadata, search index) are not cleared.
 
 ---
 
@@ -826,7 +826,7 @@ These are the Layer 2 caches mentioned in [Two cache layers in ngdpbase](#two-ca
 
 ### `FileSystemProvider` — page data
 
-**File**: `src/providers/FileSystemProvider.ts`
+__File__: `src/providers/FileSystemProvider.ts`
 
 | Cache | Type | Populated | Invalidated |
 |---|---|---|---|
@@ -839,7 +839,7 @@ Hit rate is essentially 100% after init — `getPageMetadata` never falls throug
 
 ### `VersioningFileProvider` — versioned page metadata index
 
-**File**: `src/providers/VersioningFileProvider.ts`
+__File__: `src/providers/VersioningFileProvider.ts`
 
 | Cache | Type | Persisted? |
 |---|---|---|
@@ -849,7 +849,7 @@ Loaded once at init via `loadOrCreatePageIndex()`, mutated in memory, queued wri
 
 ### `LunrSearchProvider` — full-text index + denormalized documents
 
-**File**: `src/providers/LunrSearchProvider.ts`
+__File__: `src/providers/LunrSearchProvider.ts`
 
 | Cache | Type | Persisted? |
 |---|---|---|
@@ -862,7 +862,7 @@ Search-time visibility filters operate on fields denormalized into `LunrDocument
 
 ### `ElasticsearchSearchProvider` — distributed full-text index
 
-**File**: `src/providers/ElasticsearchSearchProvider.ts`
+__File__: `src/providers/ElasticsearchSearchProvider.ts`
 
 | Cache | Type | Persisted? |
 |---|---|---|
@@ -872,7 +872,7 @@ Topology: out-of-process. ngdpbase indexes documents into ES at indexing time an
 
 ### `MarkupParser` — parse-result cache
 
-**File**: `src/parsers/MarkupParser.ts`
+__File__: `src/parsers/MarkupParser.ts`
 
 | Cache | Type | Persisted? |
 |---|---|---|
@@ -882,7 +882,7 @@ This one straddles the two layers: it's TTL-based like a CacheManager region but
 
 ### Engine-wide ThemeManager cache (#625)
 
-**File**: `src/managers/ThemeManager.ts`
+__File__: `src/managers/ThemeManager.ts`
 
 | Cache | Type | Persisted? |
 |---|---|---|
@@ -892,15 +892,15 @@ Built lazily on first `getThemeManager(activeTheme, themesDir)` call. Ensures `W
 
 ### `UserManager` / `RoleManager` — user records and role definitions
 
-**Files**: `src/managers/UserManager.ts`, `src/providers/FileUserProvider.ts`, `src/managers/RoleManager.ts`
+__Files__: `src/managers/UserManager.ts`, `src/providers/FileUserProvider.ts`, `src/managers/RoleManager.ts`
 
 These have their own in-memory user / role records loaded at init from JSON files. Used by `userManager.hasPermission(...)` (PolicyEvaluator path) and role-resolution helpers without disk hits. See [Access-Control.md](../architecture/Access-Control.md) for the access-path performance characteristics.
 
 ### Other in-process caches
 
-- **Configuration**: `ConfigurationManager` holds the merged config in memory; `getProperty` is a Map lookup.
-- **Policies**: `PolicyManager` keeps the loaded policy file in memory; `PolicyEvaluator.evaluateAccess` iterates them in-process.
-- **Plugin output cache**: `MarkupParser`'s handler-result cache (separate from parse-result cache).
+- __Configuration__: `ConfigurationManager` holds the merged config in memory; `getProperty` is a Map lookup.
+- __Policies__: `PolicyManager` keeps the loaded policy file in memory; `PolicyEvaluator.evaluateAccess` iterates them in-process.
+- __Plugin output cache__: `MarkupParser`'s handler-result cache (separate from parse-result cache).
 
 None of these are CacheManager regions; all are in-process structural caches.
 
@@ -942,9 +942,9 @@ None of these are CacheManager regions; all are in-process structural caches.
 
 ### RedisCacheProvider (Planned)
 
-**Status:** Stub implementation in `src/providers/RedisCacheProvider.js`
+__Status:__ Stub implementation in `src/providers/RedisCacheProvider.js`
 
-**Planned Features:**
+__Planned Features:__
 
 - Distributed caching across multiple instances
 - Persistence for cache durability
@@ -953,7 +953,7 @@ None of these are CacheManager regions; all are in-process structural caches.
 - Connection pooling
 - Sentinel support for high availability
 
-**Configuration Example:**
+__Configuration Example:__
 
 ```json
 {
@@ -965,7 +965,7 @@ None of these are CacheManager regions; all are in-process structural caches.
 }
 ```
 
-**Implementation TODO:**
+__Implementation TODO:__
 
 - [ ] Install Redis client (`redis` or `ioredis`)
 - [ ] Implement connection management
@@ -977,9 +977,9 @@ None of these are CacheManager regions; all are in-process structural caches.
 
 ### MemcachedProvider (Planned)
 
-**Status:** Not yet started
+__Status:__ Not yet started
 
-**Use Cases:**
+__Use Cases:__
 
 - High-performance distributed caching
 - Simple key-value caching
@@ -987,9 +987,9 @@ None of these are CacheManager regions; all are in-process structural caches.
 
 ### CloudCacheProvider (Planned)
 
-**Status:** Not yet started
+__Status:__ Not yet started
 
-**Options:**
+__Options:__
 
 - AWS ElastiCache
 - Azure Cache for Redis
@@ -1121,15 +1121,15 @@ if (!upperCase) {
 
 ### Cache Not Working
 
-**Symptom:** Cache always returns undefined
+__Symptom:__ Cache always returns undefined
 
-**Possible Causes:**
+__Possible Causes:__
 
 1. CacheManager not initialized
 2. Caching disabled in configuration
 3. Provider failed health check and fell back to NullCacheProvider
 
-**Solutions:**
+__Solutions:__
 
 ```javascript
 // Check if CacheManager is available
@@ -1149,15 +1149,15 @@ console.log('Healthy:', isHealthy);
 
 ### High Memory Usage
 
-**Symptom:** Node process memory growing over time
+__Symptom:__ Node process memory growing over time
 
-**Possible Causes:**
+__Possible Causes:__
 
 1. maxKeys set too high
 2. TTL too long
 3. Storing large objects in cache
 
-**Solutions:**
+__Solutions:__
 
 ```json
 {
@@ -1168,15 +1168,15 @@ console.log('Healthy:', isHealthy);
 
 ### Low Hit Rate
 
-**Symptom:** Cache hit rate below 50%
+__Symptom:__ Cache hit rate below 50%
 
-**Possible Causes:**
+__Possible Causes:__
 
 1. TTL too short
 2. Keys not consistent
 3. High cache invalidation rate
 
-**Solutions:**
+__Solutions:__
 
 - Increase TTL for stable data
 - Review key generation logic
@@ -1184,15 +1184,15 @@ console.log('Healthy:', isHealthy);
 
 ### Provider Load Failed
 
-**Symptom:** Logs show "Failed to load cache provider"
+__Symptom:__ Logs show "Failed to load cache provider"
 
-**Possible Causes:**
+__Possible Causes:__
 
 1. Provider file not found
 2. Syntax error in provider
 3. Missing dependencies
 
-**Solutions:**
+__Solutions:__
 
 ```bash
 # Check provider exists
@@ -1207,11 +1207,11 @@ npm install node-cache
 
 ### Keys Not Found After Restart
 
-**Symptom:** Cache empty after server restart
+__Symptom:__ Cache empty after server restart
 
-**Explanation:** This is expected behavior for NodeCacheProvider (in-memory cache).
+__Explanation:__ This is expected behavior for NodeCacheProvider (in-memory cache).
 
-**Solutions:**
+__Solutions:__
 
 - Use RedisCacheProvider for persistence
 - Pre-populate cache on startup
@@ -1223,7 +1223,7 @@ npm install node-cache
 
 ### From Old Configuration to New (Issue #102)
 
-**Old Configuration (Mixed Case):**
+__Old Configuration (Mixed Case):__
 
 ```json
 {
@@ -1234,7 +1234,7 @@ npm install node-cache
 }
 ```
 
-**New Configuration (All Lowercase):**
+__New Configuration (All Lowercase):__
 
 ```json
 {
@@ -1246,7 +1246,7 @@ npm install node-cache
 }
 ```
 
-**Key Changes:**
+__Key Changes:__
 
 1. All keys now lowercase
 2. Provider value changed: `"node-cache"` → `"nodecacheprovider"`
@@ -1266,7 +1266,7 @@ npm install node-cache
 
 ## Implementation Status
 
-✅ **Completed (v1.0.0):**
+✅ __Completed (v1.0.0):__
 
 - BaseCacheProvider interface
 - NodeCacheProvider (in-memory)
@@ -1277,7 +1277,7 @@ npm install node-cache
 - Statistics and monitoring
 - All lowercase configuration
 
-🔮 **Future Enhancements:**
+🔮 __Future Enhancements:__
 
 - RedisCacheProvider implementation
 - MemcachedProvider implementation
@@ -1287,6 +1287,6 @@ npm install node-cache
 
 ---
 
-**Last Updated:** October 12, 2025
-**Related Issues:** #102 (Configuration Reorganization)
-**Version:** 1.0.0
+__Last Updated:__ October 12, 2025
+__Related Issues:__ #102 (Configuration Reorganization)
+__Version:__ 1.0.0

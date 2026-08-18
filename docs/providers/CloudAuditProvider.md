@@ -23,7 +23,7 @@ Forwards audit events to an external cloud audit service (HTTPS endpoint with be
 |---|---|
 | [FileAuditProvider](FileAuditProvider.md) | Single-instance / local-only — append-only JSONL files |
 | [DatabaseAuditProvider](DatabaseAuditProvider.md) | SQL-queryable audit trail in your existing DB |
-| **CloudAuditProvider** | Multi-instance / immutable / external-SIEM ingestion |
+| __CloudAuditProvider__ | Multi-instance / immutable / external-SIEM ingestion |
 | [NullAuditProvider](NullAuditProvider.md) | Tests / minimal config |
 
 ## See Also

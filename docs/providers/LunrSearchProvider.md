@@ -29,7 +29,7 @@ Default search backend. Builds an in-memory Lunr.js index covering page title + 
 
 | Provider | When |
 |---|---|
-| **LunrSearchProvider** | Small-medium instances (≲ 50K pages); zero infrastructure; in-process |
+| __LunrSearchProvider__ | Small-medium instances (≲ 50K pages); zero infrastructure; in-process |
 | [ElasticsearchSearchProvider](ElasticsearchSearchProvider.md) | Large datasets; want vector / hybrid search (#550); already running an ES cluster |
 
 ## See Also

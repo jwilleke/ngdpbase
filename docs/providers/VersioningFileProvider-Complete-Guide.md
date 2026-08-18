@@ -1,13 +1,13 @@
 # VersioningFileProvider Complete Guide
 
-[Quick Reference](VersioningFileProvider.md) | **Complete Guide**
+[Quick Reference](VersioningFileProvider.md) | __Complete Guide__
 
-**Module:** `src/providers/VersioningFileProvider.js`
-**Type:** Page Storage Provider with Versioning
-**Extends:** FileSystemProvider
-**Status:** Production Ready
-**Version:** 1.0.0
-**Last Updated:** 2025-12-22
+__Module:__ `src/providers/VersioningFileProvider.js`
+__Type:__ Page Storage Provider with Versioning
+__Extends:__ FileSystemProvider
+__Status:__ Production Ready
+__Version:__ 1.0.0
+__Last Updated:__ 2025-12-22
 
 ---
 
@@ -35,36 +35,36 @@ VersioningFileProvider extends FileSystemProvider with full version history trac
 
 ### Design Philosophy
 
-- **Delta Storage**: Store differences between versions, not full copies
-- **Compression**: Gzip compress deltas for maximum space efficiency
-- **Backward Compatibility**: Drop-in replacement for FileSystemProvider
-- **Auto-Migration**: Automatically adds versioning to existing pages
-- **Reliability**: Centralized page index for fast lookups
+- __Delta Storage__: Store differences between versions, not full copies
+- __Compression__: Gzip compress deltas for maximum space efficiency
+- __Backward Compatibility__: Drop-in replacement for FileSystemProvider
+- __Auto-Migration__: Automatically adds versioning to existing pages
+- __Reliability__: Centralized page index for fast lookups
 
 ### Key Features
 
-**Version Management:**
+__Version Management:__
 
 - Full version history for every page
 - Delta-compressed storage (v1 = full, v2+ = diffs)
 - Gzip compression for deltas
 - Unlimited undo/redo
 
-**Storage Efficiency:**
+__Storage Efficiency:__
 
 - 80-95% space savings vs full snapshots
 - Checkpoint intervals (full snapshots every N versions)
 - Configurable max versions per page
 - Automatic old version pruning
 
-**Migration & Recovery:**
+__Migration & Recovery:__
 
 - Auto-migration from FileSystemProvider
 - Centralized page index for fast lookups
 - Index rebuilding from manifests
 - Version manifest per page
 
-**All FileSystemProvider Features:**
+__All FileSystemProvider Features:__
 
 - UUID-based file naming
 - Title-based lookup
@@ -112,15 +112,15 @@ data/
 
 ### "Private" is a visibility model, not encryption
 
-Routing a page with `private: true` to `pages/private/{author}/` is a **visibility / ACL convention** enforced by ACLManager + the providers, not cryptographic privacy. Page bodies remain plaintext on disk, and several adjacent stores hold plaintext copies or denormalised metadata about private pages:
+Routing a page with `private: true` to `pages/private/{author}/` is a __visibility / ACL convention__ enforced by ACLManager + the providers, not cryptographic privacy. Page bodies remain plaintext on disk, and several adjacent stores hold plaintext copies or denormalised metadata about private pages:
 
 | Surface | Path | What leaks |
 |---|---|---|
-| **Version history** | `pages/versions/{uuid}/` | Flat at the top level, NOT under `private/`. Every prior revision of a "private" page is stored next to public versions in the same directory tree. |
-| **Page index** | `page-index.json` | Denormalises `{uuid, title, slug, lastModified, author, location, creator}` for every page in the system, including private ones. |
-| **Search index** | `data/search-index/` (Lunr) or external Elasticsearch | Indexes the rendered content of private pages at save time. Anyone with index access reads private content. |
-| **Attachments** | `data/attachments/{uuid}.bin` | Flat by UUID — attachments to private pages share a directory with public ones. |
-| **Backups / logs / audit** | `data/backups/`, `data/logs/`, `data/audit/` | Anywhere page content is written outside `pages/private/{author}/` is a potential leak. |
+| __Version history__ | `pages/versions/{uuid}/` | Flat at the top level, NOT under `private/`. Every prior revision of a "private" page is stored next to public versions in the same directory tree. |
+| __Page index__ | `page-index.json` | Denormalises `{uuid, title, slug, lastModified, author, location, creator}` for every page in the system, including private ones. |
+| __Search index__ | `data/search-index/` (Lunr) or external Elasticsearch | Indexes the rendered content of private pages at save time. Anyone with index access reads private content. |
+| __Attachments__ | `data/attachments/{uuid}.bin` | Flat by UUID — attachments to private pages share a directory with public ones. |
+| __Backups / logs / audit__ | `data/backups/`, `data/logs/`, `data/audit/` | Anywhere page content is written outside `pages/private/{author}/` is a potential leak. |
 
 The per-author directory layout makes `pages/private/{author}/` a natural unit for at-rest encryption — an `EncryptedFileSystemProvider` wrapping FSP/VFP would be one path. But "truly private" requires coordinated encryption across versions, search, attachments, backups, and audit, plus a key-management story (per-user keys derived from passphrase / external KMS / etc.). Out of scope for VFP today; tracked architecturally under EPIC #790 / #802 prerequisites. EPIC #790's #802 (canonicalising `private: true` as THE semantic flag) is a prerequisite — once every reader agrees on a single privacy signal, an encryption layer has a reliable input.
 
@@ -221,28 +221,28 @@ Inherits all FileSystemProvider configuration, plus:
 
 ### Initialization Sequence
 
-1. **Call Parent Initialize**
+1. __Call Parent Initialize__
    - FileSystemProvider initialization
    - Load pages, build caches
 
-2. **Load Versioning Config**
+2. __Load Versioning Config__
    - Read all versioning settings
    - Set defaults
 
-3. **Create Version Directories**
+3. __Create Version Directories__
    - Ensure `./data/versions/` exists
    - Create subdirectories for pages and required-pages
 
-4. **Load Page Index**
+4. __Load Page Index__
    - Read `page-index.json`
    - If missing, create empty index
 
-5. **Auto-Migration (if needed)**
+5. __Auto-Migration (if needed)__
    - If index empty but pages exist
    - Create v1 for all existing pages
    - Build index from manifests
 
-6. **Mark Initialized**
+6. __Mark Initialized__
    - Log versioning status
 
 ### Page Index Structure
@@ -283,9 +283,9 @@ Inherits all FileSystemProvider configuration, plus:
 
 Each page has a manifest tracking all versions:
 
-**Location:** `./data/pages/versions/{uuid}/manifest.json`
+__Location:__ `./data/pages/versions/{uuid}/manifest.json`
 
-**Structure:**
+__Structure:__
 
 ```json
 {
@@ -328,28 +328,28 @@ Each page has a manifest tracking all versions:
 
 When `savePage()` is called, VersioningFileProvider:
 
-1. **Read Previous Version**
+1. __Read Previous Version__
    - Get current page content (v N)
 
-2. **Compute Delta**
+2. __Compute Delta__
    - Use fast-diff to create diff from v N to v N+1
    - Result: array of operations (keep, insert, delete)
 
-3. **Compress Delta**
+3. __Compress Delta__
    - Gzip compress delta using pako
    - Store compressed bytes
 
-4. **Save Delta File**
+4. __Save Delta File__
    - Write to `v{N+1}/content.diff`
 
-5. **Update Manifest**
+5. __Update Manifest__
    - Add version entry with metadata
    - Update currentVersion
 
-6. **Update Page Index**
+6. __Update Page Index__
    - Update central index with new version number
 
-7. **Update Current Page**
+7. __Update Current Page__
    - Write v N+1 content to `{uuid}.md`
 
 ### Checkpoint Snapshots
@@ -368,7 +368,7 @@ v11: delta from v10
 v20: full snapshot (checkpoint)
 ```
 
-**Benefits:**
+__Benefits:__
 
 - Faster retrieval of old versions
 - Limit delta chain length
@@ -402,21 +402,21 @@ const pageV3 = await provider.getPageVersion('Home', 3);
 
 To retrieve version N:
 
-1. **Find Nearest Checkpoint**
+1. __Find Nearest Checkpoint__
    - Look backwards from version N
    - Find most recent full snapshot or v1
 
-2. **Load Baseline**
+2. __Load Baseline__
    - Read full content from checkpoint
 
-3. **Apply Deltas**
+3. __Apply Deltas__
    - Apply each delta sequentially
    - From checkpoint → version N
 
-4. **Return Content**
+4. __Return Content__
    - Reconstructed content for version N
 
-**Example:**
+__Example:__
 
 ```
 Request: v17
@@ -469,7 +469,7 @@ const history = await provider.getVersionHistory('Home');
 
 ### Restoring Previous Version
 
-Restoring creates a **new version** with old content (non-destructive):
+Restoring creates a __new version__ with old content (non-destructive):
 
 ```javascript
 // Current version: v5
@@ -497,7 +497,7 @@ const history = await provider.getVersionHistory('Home');
 */
 ```
 
-**Why non-destructive?**
+__Why non-destructive?__
 
 - Preserves audit trail
 - Can undo a restore (restore back to v5)
@@ -546,7 +546,7 @@ const compressed = pako.gzip(deltaJSON);
 
 ### Space Savings Example
 
-**Without versioning (full snapshots):**
+__Without versioning (full snapshots):__
 
 ```
 v1: 10 KB (full)
@@ -558,7 +558,7 @@ v100: 12 KB (full)
 Total: 100 × 11 KB (avg) = 1.1 MB
 ```
 
-**With delta compression:**
+__With delta compression:__
 
 ```
 v1: 10 KB (full)
@@ -579,13 +579,13 @@ Savings: 97% reduction!
 
 The page index provides O(1) lookups without scanning version directories:
 
-**Without index:**
+__Without index:__
 
 - Must scan all version directories
 - O(n) lookup time
 - Slow for large wikis
 
-**With index:**
+__With index:__
 
 - Single JSON file with all page metadata
 - O(1) lookup by UUID
@@ -618,21 +618,21 @@ await provider._rebuildPageIndexFromManifests();
 
 VersioningFileProvider automatically detects existing pages without versions and creates v1:
 
-**Migration Process:**
+__Migration Process:__
 
-1. **Detect Pages Without Versions**
+1. __Detect Pages Without Versions__
    - Check if page index is empty
    - Scan existing pages
 
-2. **Create v1 for Each Page**
+2. __Create v1 for Each Page__
    - Read current page content
    - Create manifest.json
    - Store as v1/content.md
 
-3. **Update Page Index**
+3. __Update Page Index__
    - Add entry for each migrated page
 
-**Migration Example:**
+__Migration Example:__
 
 ```
 Before Migration:
@@ -649,7 +649,7 @@ data/pages/
                     └── content.md
 ```
 
-**Log Output:**
+__Log Output:__
 
 ```
 [VersioningFileProvider] Auto-migrating 42 existing pages...
@@ -670,14 +670,14 @@ data/pages/
 
 Get specific version of a page.
 
-**Parameters:**
+__Parameters:__
 
 - `identifier` (String) - Page title, UUID, or slug
 - `version` (Number) - Version number
 
-**Returns:** `Promise<Object>` - Page object with content from that version
+__Returns:__ `Promise<Object>` - Page object with content from that version
 
-**Example:**
+__Example:__
 
 ```javascript
 const v3 = await provider.getPageVersion('Home', 3);
@@ -690,13 +690,13 @@ console.log(v3.content);  // Content from version 3
 
 Get all versions for a page.
 
-**Parameters:**
+__Parameters:__
 
 - `identifier` (String) - Page title, UUID, or slug
 
-**Returns:** `Promise<Array>` - Array of version metadata (newest first)
+__Returns:__ `Promise<Array>` - Array of version metadata (newest first)
 
-**Example:**
+__Example:__
 
 ```javascript
 const history = await provider.getVersionHistory('Home');
@@ -710,7 +710,7 @@ console.log(history[0].version);  // Latest version number
 
 Restore page to previous version (creates new version).
 
-**Parameters:**
+__Parameters:__
 
 - `identifier` (String) - Page title, UUID, or slug
 - `version` (Number) - Version to restore
@@ -718,9 +718,9 @@ Restore page to previous version (creates new version).
   - `editor` (String) - Editor name
   - `comment` (String) - Restore comment
 
-**Returns:** `Promise<Number>` - New version number
+__Returns:__ `Promise<Number>` - New version number
 
-**Example:**
+__Example:__
 
 ```javascript
 const newVersion = await provider.restoreVersion('Home', 3, {
@@ -736,20 +736,20 @@ console.log(`Restored to v3, created v${newVersion}`);
 
 Delete a specific version.
 
-**Parameters:**
+__Parameters:__
 
 - `identifier` (String) - Page title, UUID, or slug
 - `version` (Number) - Version to delete
 
-**Returns:** `Promise<Boolean>` - true if deleted
+__Returns:__ `Promise<Boolean>` - true if deleted
 
-**Example:**
+__Example:__
 
 ```javascript
 await provider.deleteVersion('Home', 2);
 ```
 
-**Note:** Cannot delete current version or v1 (baseline).
+__Note:__ Cannot delete current version or v1 (baseline).
 
 ---
 
@@ -757,14 +757,14 @@ await provider.deleteVersion('Home', 2);
 
 Keep only the N most recent versions.
 
-**Parameters:**
+__Parameters:__
 
 - `identifier` (String) - Page title, UUID, or slug
 - `keepCount` (Number) - Number of versions to keep
 
-**Returns:** `Promise<Number>` - Number of versions deleted
+__Returns:__ `Promise<Number>` - Number of versions deleted
 
-**Example:**
+__Example:__
 
 ```javascript
 const deleted = await provider.pruneVersions('Home', 50);
@@ -791,33 +791,33 @@ All FileSystemProvider methods available:
 
 ### Performance Characteristics
 
-**Version Creation:**
+__Version Creation:__
 
 - savePage(): ~15-25ms (includes delta computation)
 - Delta computation: ~5ms for 10KB page
 - Compression: ~3ms
 - File I/O: ~10ms
 
-**Version Retrieval:**
+__Version Retrieval:__
 
 - Current version: ~5ms (no delta application)
 - Recent version (< 10 versions back): ~10-20ms
 - Old version (> 50 versions back): ~50-100ms
 - With checkpoints: ~20-30ms (any version)
 
-**History Operations:**
+__History Operations:__
 
 - getVersionHistory(): ~5ms (reads manifest only)
 - restoreVersion(): Same as version retrieval + savePage()
 
-**Storage:**
+__Storage:__
 
 - Space savings: 80-95% vs full snapshots
 - Compression ratio: 60-70% additional savings
 
 ### Optimization Strategies
 
-1. **Use Checkpoints for Large Pages**
+1. __Use Checkpoints for Large Pages__
 
    ```javascript
    // Large documentation page with frequent edits
@@ -825,7 +825,7 @@ All FileSystemProvider methods available:
    // Creates full snapshot every 5 versions
    ```
 
-2. **Prune Old Versions**
+2. __Prune Old Versions__
 
    ```javascript
    // Keep only last 50 versions per page
@@ -834,7 +834,7 @@ All FileSystemProvider methods available:
    }
    ```
 
-3. **Limit Max Versions**
+3. __Limit Max Versions__
 
    ```javascript
    'ngdpbase.page.provider.versioning.maxversions': 100
@@ -847,15 +847,15 @@ All FileSystemProvider methods available:
 
 ### Version Reconstruction Failures
 
-**Symptom:** getPageVersion() returns corrupted content
+__Symptom:__ getPageVersion() returns corrupted content
 
-**Causes:**
+__Causes:__
 
 - Missing delta files
 - Corrupted compression
 - Manifest out of sync
 
-**Solution:**
+__Solution:__
 
 - Check delta files exist
 - Verify compression integrity
@@ -864,9 +864,9 @@ All FileSystemProvider methods available:
 
 ### Page Index Out of Sync
 
-**Symptom:** Pages not found or wrong versions
+__Symptom:__ Pages not found or wrong versions
 
-**Solution:**
+__Solution:__
 
 ```javascript
 await provider._rebuildPageIndexFromManifests();
@@ -874,9 +874,9 @@ await provider._rebuildPageIndexFromManifests();
 
 ### Migration Failures
 
-**Symptom:** Auto-migration errors
+__Symptom:__ Auto-migration errors
 
-**Checks:**
+__Checks:__
 
 1. Verify page files exist
 2. Check file permissions
@@ -885,9 +885,9 @@ await provider._rebuildPageIndexFromManifests();
 
 ### Performance Issues
 
-**Symptom:** Slow version retrieval
+__Symptom:__ Slow version retrieval
 
-**Solutions:**
+__Solutions:__
 
 1. Enable checkpoints
 2. Prune old versions
@@ -898,13 +898,13 @@ await provider._rebuildPageIndexFromManifests();
 
 ## Related Documentation
 
-- **Quick Reference:** [VersioningFileProvider.md](VersioningFileProvider.md)
-- **Parent Class:** [FileSystemProvider.md](FileSystemProvider.md)
-- **Manager:** [PageManager.md](../managers/PageManager.md)
-- **Migration Guide:** [Versioning-Migration-Guide.md](../pageproviders/Versioning-Migration-Guide.md)
-- **Maintenance:** [Versioning-Maintenance-Guide.md](../pageproviders/Versioning-Maintenance-Guide.md)
+- __Quick Reference:__ [VersioningFileProvider.md](VersioningFileProvider.md)
+- __Parent Class:__ [FileSystemProvider.md](FileSystemProvider.md)
+- __Manager:__ [PageManager.md](../managers/PageManager.md)
+- __Migration Guide:__ [Versioning-Migration-Guide.md](../pageproviders/Versioning-Migration-Guide.md)
+- __Maintenance:__ [Versioning-Maintenance-Guide.md](../pageproviders/Versioning-Maintenance-Guide.md)
 
 ---
 
-**Last Updated:** 2025-12-22
-**Version:** 1.0.0
+__Last Updated:__ 2025-12-22
+__Version:__ 1.0.0

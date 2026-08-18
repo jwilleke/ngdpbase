@@ -13,7 +13,7 @@ author: system
 ---
 # Using CalendarPlugin
 
-The **CalendarPlugin** embeds an interactive event calendar into any page.
+The __CalendarPlugin__ embeds an interactive event calendar into any page.
 
 ## Description
 
@@ -21,7 +21,7 @@ Use this plugin to display a calendar of events on a page.  Visitors can switch
 between month, week, day, and agenda views using the toolbar.  Events can link
 to pages for full details. See [Plugins] for a complete list of available plugins.
 
-> **Note:** This plugin requires the `calendar` add-on to be enabled by your
+> __Note:__ This plugin requires the `calendar` add-on to be enabled by your
 > administrator before it will work.
 
 ## Syntax

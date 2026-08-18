@@ -8,34 +8,34 @@ code: src/managers/PolicyManager.ts
 
 # PolicyManager Documentation
 
-**Version:** 1.3.2
-**Last Updated:** 2025-10-11
-**Manager Path:** [src/managers/PolicyManager.ts](../../src/managers/PolicyManager.ts)
+__Version:__ 1.3.2
+__Last Updated:__ 2025-10-11
+__Manager Path:__ [src/managers/PolicyManager.ts](../../src/managers/PolicyManager.ts)
 
 ---
 
 ## Overview
 
-The **PolicyManager** manages the lifecycle of access control policies in ngdpbase. It loads policies from ConfigurationManager, stores them in memory, and provides access to all defined policies for evaluation by PolicyEvaluator.
+The __PolicyManager__ manages the lifecycle of access control policies in ngdpbase. It loads policies from ConfigurationManager, stores them in memory, and provides access to all defined policies for evaluation by PolicyEvaluator.
 
 ### Key Features
 
-- ✅ **Config-Driven:** Loads policies from `ngdpbase.access.policies` in configuration
-- ✅ **Priority Sorting:** Automatically sorts policies by priority (descending)
-- ✅ **Centralized Storage:** Single source of truth for all access policies
-- ✅ **Fast Retrieval:** In-memory Map storage for O(1) policy lookup
-- ✅ **Dynamic Loading:** Policies can be updated via config file changes
+- ✅ __Config-Driven:__ Loads policies from `ngdpbase.access.policies` in configuration
+- ✅ __Priority Sorting:__ Automatically sorts policies by priority (descending)
+- ✅ __Centralized Storage:__ Single source of truth for all access policies
+- ✅ __Fast Retrieval:__ In-memory Map storage for O(1) policy lookup
+- ✅ __Dynamic Loading:__ Policies can be updated via config file changes
 
 ---
 
 ## Purpose
 
-PolicyManager serves as the **policy repository** in ngdpbase's access control system. It doesn't make access decisions itself—that's the job of PolicyEvaluator. Instead, it:
+PolicyManager serves as the __policy repository__ in ngdpbase's access control system. It doesn't make access decisions itself—that's the job of PolicyEvaluator. Instead, it:
 
-1. **Loads** policies from configuration
-2. **Stores** policies in memory for fast access
-3. **Provides** policies to PolicyEvaluator for decision-making
-4. **Sorts** policies by priority for correct evaluation order
+1. __Loads__ policies from configuration
+2. __Stores__ policies in memory for fast access
+3. __Provides__ policies to PolicyEvaluator for decision-making
+4. __Sorts__ policies by priority for correct evaluation order
 
 ---
 
@@ -100,7 +100,7 @@ PolicyManager serves as the **policy repository** in ngdpbase's access control s
 
 ### Policy Configuration Location
 
-**File:** `config/app-default-config.json`
+__File:__ `config/app-default-config.json`
 
 ```json
 {
@@ -181,7 +181,7 @@ Add custom policies in `data/config/app-custom-config.json`:
 }
 ```
 
-**Note:** Custom policies are automatically merged with default policies by ConfigurationManager.
+__Note:__ Custom policies are automatically merged with default policies by ConfigurationManager.
 
 ---
 
@@ -191,9 +191,9 @@ Add custom policies in `data/config/app-custom-config.json`:
 
 Initializes PolicyManager by loading policies from ConfigurationManager.
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Process:**
+__Process:__
 
 1. Gets ConfigurationManager instance
 2. Checks if policies are enabled via `ngdpbase.access.policies.enabled`
@@ -202,13 +202,13 @@ Initializes PolicyManager by loading policies from ConfigurationManager.
 5. Stores policies in Map by ID
 6. Logs number of policies loaded
 
-**Example Output:**
+__Example Output:__
 
 ```text
 📋 Loaded 7 policies from ConfigurationManager.
 ```
 
-**Error Handling:**
+__Error Handling:__
 
 - Throws error if ConfigurationManager not available
 - Logs warning if policies array is invalid
@@ -220,13 +220,13 @@ Initializes PolicyManager by loading policies from ConfigurationManager.
 
 Retrieves a single policy by its unique ID.
 
-**Parameters:**
+__Parameters:__
 
 - `id` (string) - The unique policy ID
 
-**Returns:** Policy object or `undefined` if not found
+__Returns:__ Policy object or `undefined` if not found
 
-**Example:**
+__Example:__
 
 ```javascript
 const policyManager = engine.getManager('PolicyManager');
@@ -239,7 +239,7 @@ if (policy) {
 }
 ```
 
-**Use Case:**
+__Use Case:__
 
 - Debugging specific policy
 - Checking if policy exists
@@ -249,11 +249,11 @@ if (policy) {
 
 ### `getAllPolicies()`
 
-Returns all loaded policies, **sorted by priority (descending)**.
+Returns all loaded policies, __sorted by priority (descending)__.
 
-**Returns:** `Array<object>` - Array of policy objects sorted by priority
+__Returns:__ `Array<object>` - Array of policy objects sorted by priority
 
-**Example:**
+__Example:__
 
 ```javascript
 const policyManager = engine.getManager('PolicyManager');
@@ -273,19 +273,19 @@ policies.forEach(policy => {
 // anonymous-read-only (priority: 20)
 ```
 
-**Sorting:**
+__Sorting:__
 
-- Policies with **higher priority** are evaluated **first**
+- Policies with __higher priority__ are evaluated __first__
 - Priority range: 0-1000
 - Default priority: 50 (if not specified)
 - Sorting formula: `(b.priority || 0) - (a.priority || 0)`
 
-**Use Case:**
+__Use Case:__
 
-- **PolicyEvaluator:** Gets all policies for evaluation
-- **UserManager:** Collects permissions from policies
-- **Admin UI:** Displays all policies to administrators
-- **PolicyValidator:** Validates policy conflicts
+- __PolicyEvaluator:__ Gets all policies for evaluation
+- __UserManager:__ Collects permissions from policies
+- __Admin UI:__ Displays all policies to administrators
+- __PolicyValidator:__ Validates policy conflicts
 
 ---
 
@@ -343,20 +343,20 @@ policies.forEach(policy => {
 
 ### How Priority Works
 
-1. **Higher priority = evaluated first**
-2. **First matching policy wins**
-3. **No fallthrough** - evaluation stops at first match
+1. __Higher priority = evaluated first__
+2. __First matching policy wins__
+3. __No fallthrough__ - evaluation stops at first match
 
 ### Priority Ranges
 
 | Priority | Use Case | Example |
 | ---------- | ---------- | --------- |
-| **90-100** | Critical system policies | Admin full access |
-| **70-89** | High-level role permissions | Editor permissions |
-| **50-69** | Standard role permissions | Contributor permissions |
-| **30-49** | Basic role permissions | Reader permissions |
-| **10-29** | Public access | Anonymous read-only |
-| **0-9** | Catch-all/fallback | Default deny |
+| __90-100__ | Critical system policies | Admin full access |
+| __70-89__ | High-level role permissions | Editor permissions |
+| __50-69__ | Standard role permissions | Contributor permissions |
+| __30-49__ | Basic role permissions | Reader permissions |
+| __10-29__ | Public access | Anonymous read-only |
+| __0-9__ | Catch-all/fallback | Default deny |
 
 ### Example Priority Ordering
 
@@ -370,10 +370,10 @@ const policies = [
 ];
 ```
 
-**Scenario:** User with roles `['editor', 'reader']` tries to edit a page.
+__Scenario:__ User with roles `['editor', 'reader']` tries to edit a page.
 
 1. Check `admin` policy (priority 100) → No match (user not admin)
-2. Check `editor` policy (priority 80) → **MATCH!** → Allow
+2. Check `editor` policy (priority 80) → __MATCH!__ → Allow
 3. Stop evaluation (first match wins)
 
 ---
@@ -476,7 +476,7 @@ if (!configManager) {
 }
 ```
 
-**Solution:** Ensure ConfigurationManager is registered before PolicyManager in WikiEngine.
+__Solution:__ Ensure ConfigurationManager is registered before PolicyManager in WikiEngine.
 
 ---
 
@@ -490,7 +490,7 @@ if (!policiesEnabled) {
 }
 ```
 
-**Solution:** Set `ngdpbase.access.policies.enabled: true` in config.
+__Solution:__ Set `ngdpbase.access.policies.enabled: true` in config.
 
 ---
 
@@ -504,7 +504,7 @@ if (!Array.isArray(policies)) {
 }
 ```
 
-**Solution:** Ensure `ngdpbase.access.policies` is an array in config.
+__Solution:__ Ensure `ngdpbase.access.policies` is an array in config.
 
 ---
 
@@ -518,9 +518,9 @@ for (const policy of policies) {
 }
 ```
 
-**Behavior:** Policies without `id` are silently skipped.
+__Behavior:__ Policies without `id` are silently skipped.
 
-**Solution:** Ensure all policies have unique `id` fields.
+__Solution:__ Ensure all policies have unique `id` fields.
 
 ---
 
@@ -528,15 +528,15 @@ for (const policy of policies) {
 
 ### Storage: Map<string, object>
 
-- **Lookup by ID:** O(1)
-- **Get all policies:** O(n)
-- **Memory:** O(n) where n = number of policies
+- __Lookup by ID:__ O(1)
+- __Get all policies:__ O(n)
+- __Memory:__ O(n) where n = number of policies
 
 ### Sorting
 
-- **Sort on retrieval:** O(n log n)
-- **Performed each time** `getAllPolicies()` is called
-- **Optimization:** Consider caching sorted array if performance critical
+- __Sort on retrieval:__ O(n log n)
+- __Performed each time__ `getAllPolicies()` is called
+- __Optimization:__ Consider caching sorted array if performance critical
 
 ---
 
@@ -544,13 +544,13 @@ for (const policy of policies) {
 
 ### 1. Use Descriptive Policy IDs
 
-❌ **Don't:**
+❌ __Don't:__
 
 ```json
 { "id": "p1", "name": "Policy 1" }
 ```
 
-✅ **Do:**
+✅ __Do:__
 
 ```json
 { "id": "editor-page-permissions", "name": "Editor Page Permissions" }
@@ -558,7 +558,7 @@ for (const policy of policies) {
 
 ### 2. Set Appropriate Priorities
 
-❌ **Don't:** Use same priority for different policies
+❌ __Don't:__ Use same priority for different policies
 
 ```json
 [
@@ -567,7 +567,7 @@ for (const policy of policies) {
 ]
 ```
 
-✅ **Do:** Use distinct priorities
+✅ __Do:__ Use distinct priorities
 
 ```json
 [
@@ -578,13 +578,13 @@ for (const policy of policies) {
 
 ### 3. Keep Policies in Config
 
-❌ **Don't:** Try to programmatically add policies at runtime
+❌ __Don't:__ Try to programmatically add policies at runtime
 
-✅ **Do:** Add policies in config files (auto-loaded on restart)
+✅ __Do:__ Add policies in config files (auto-loaded on restart)
 
 ### 4. Validate Policies
 
-✅ **Use PolicyValidator to check policies before deployment:**
+✅ __Use PolicyValidator to check policies before deployment:__
 
 ```javascript
 const validator = engine.getManager('PolicyValidator');
@@ -663,17 +663,17 @@ validateAllPolicies() {
 
 ### Issue: "PolicyManager requires ConfigurationManager"
 
-**Cause:** ConfigurationManager not initialized
+__Cause:__ ConfigurationManager not initialized
 
-**Solution:** Check WikiEngine initialization order
+__Solution:__ Check WikiEngine initialization order
 
 ---
 
 ### Issue: "Loaded 0 policies from ConfigurationManager"
 
-**Cause:** No policies in config or policies disabled
+__Cause:__ No policies in config or policies disabled
 
-**Solution:**
+__Solution:__
 
 1. Check `ngdpbase.access.policies.enabled: true`
 2. Verify `ngdpbase.access.policies` array exists
@@ -683,9 +683,9 @@ validateAllPolicies() {
 
 ### Issue: Policies not being evaluated in expected order
 
-**Cause:** Incorrect priority values
+__Cause:__ Incorrect priority values
 
-**Solution:** Check policy priorities - higher priority = evaluated first
+__Solution:__ Check policy priorities - higher priority = evaluated first
 
 ---
 
@@ -710,5 +710,5 @@ validateAllPolicies() {
 
 ---
 
-**Maintained By:** Development Team
-**Status:** Active Development
+__Maintained By:__ Development Team
+__Status:__ Active Development

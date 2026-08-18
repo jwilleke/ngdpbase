@@ -4,10 +4,10 @@
 
 ngdpbase needs a comprehensive page classification system that serves multiple purposes:
 
-1. **Operational Safety**: Distinguish app-managed vs user-managed content for safe upgrades
-2. **Content Organization**: Logical categorization for navigation and search
-3. **Documentation Types**: Separate user docs, developer docs, and API docs
-4. **Storage Strategy**: Physical file organization that supports the operational model
+1. __Operational Safety__: Distinguish app-managed vs user-managed content for safe upgrades
+2. __Content Organization__: Logical categorization for navigation and search
+3. __Documentation Types__: Separate user docs, developer docs, and API docs
+4. __Storage Strategy__: Physical file organization that supports the operational model
 
 ## Proposed Architecture
 
@@ -43,20 +43,20 @@ see: docs/page-metadata.md
 
 #### By Page Type
 
-- **System Pages**: Admin navigation, system information
-- **User Pages**: Main content navigation, search results
-- **Documentation**: Help system, developer resources
+- __System Pages__: Admin navigation, system information
+- __User Pages__: Main content navigation, search results
+- __Documentation__: Help system, developer resources
 
 #### By Category
 
-- **Content-based**: Logical organization for users
-- **System-based**: Technical organization for admins
+- __Content-based__: Logical organization for users
+- __System-based__: Technical organization for admins
 
 #### By Documentation Type
 
-- **User Docs**: End-user help and tutorials
-- **Developer Docs**: Technical implementation guides  
-- **API Docs**: Reference documentation for integration
+- __User Docs__: End-user help and tutorials
+- __Developer Docs__: Technical implementation guides  
+- __API Docs__: Reference documentation for integration
 
 ### 7. Implementation Strategy
 
@@ -105,28 +105,28 @@ find docs/ -name "*.md" | head -10
 
 ### 9. Benefits
 
-1. **Upgrade Safety**: Clear separation of app vs user content
-2. **Content Organization**: Multiple classification dimensions
-3. **Documentation Structure**: Proper audience targeting
-4. **Developer Experience**: Clear development vs user content boundaries
-5. **User Experience**: Preserved customizations during upgrades
-6. **Maintenance**: Automated page management with manual override capability
+1. __Upgrade Safety__: Clear separation of app vs user content
+2. __Content Organization__: Multiple classification dimensions
+3. __Documentation Structure__: Proper audience targeting
+4. __Developer Experience__: Clear development vs user content boundaries
+5. __User Experience__: Preserved customizations during upgrades
+6. __Maintenance__: Automated page management with manual override capability
 
 ### 10. Future Enhancements
 
-- **Template System**: Page templates based on pageType
-- **Workflow Integration**: Approval processes for different page types
-- **Version Control**: Git integration for documentation pages
-- **Access Control**: Role-based permissions by page type
-- **Content Validation**: Schema validation based on page classification
+- __Template System__: Page templates based on pageType
+- __Workflow Integration__: Approval processes for different page types
+- __Version Control__: Git integration for documentation pages
+- __Access Control__: Role-based permissions by page type
+- __Content Validation__: Schema validation based on page classification
 
 ## Implementation Notes
 
 This architecture provides:
 
-- **Clear operational boundaries** for upgrades
-- **Flexible content organization** for users
-- **Proper documentation management** for developers
-- **Extensible classification system** for future needs
+- __Clear operational boundaries__ for upgrades
+- __Flexible content organization__ for users
+- __Proper documentation management__ for developers
+- __Extensible classification system__ for future needs
 
-The key insight is that we need **both** physical organization (file system) **and** logical organization (metadata) to achieve all goals effectively.
+The key insight is that we need __both__ physical organization (file system) __and__ logical organization (metadata) to achieve all goals effectively.

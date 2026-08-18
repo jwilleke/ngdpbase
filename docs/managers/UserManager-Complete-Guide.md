@@ -1,25 +1,25 @@
 # UserManager Complete Guide
 
-**Module:** `src/managers/UserManager.js`
-**Quick Reference:** [UserManager.md](UserManager.md)
-**Version:** 1.3.2
-**Last Updated:** 2025-12-20
+__Module:__ `src/managers/UserManager.js`
+__Quick Reference:__ [UserManager.md](UserManager.md)
+__Version:__ 1.3.2
+__Last Updated:__ 2025-12-20
 
 ---
 
 ## Overview
 
-The **UserManager** handles user authentication, authorization, role management, and session management in ngdpbase. It provides a centralized system for managing user accounts, authenticating credentials, and determining user permissions through integration with the policy system.
+The __UserManager__ handles user authentication, authorization, role management, and session management in ngdpbase. It provides a centralized system for managing user accounts, authenticating credentials, and determining user permissions through integration with the policy system.
 
 ### Key Features
 
-- ✅ **Config-Driven:** All settings loaded from ConfigurationManager (lowercase keys)
-- ✅ **Role-Based Access Control (RBAC):** Roles defined in config, permissions via policies
-- ✅ **Policy Integration:** Queries PolicyManager for actual permissions
-- ✅ **Session Management:** File-based session storage with expiration
-- ✅ **External Authentication:** Supports OAuth/JWT external users
-- ✅ **Schema.org Integration:** Auto-syncs users to Schema.org Person data
-- ✅ **User Pages:** Automatically creates user pages for new accounts
+- ✅ __Config-Driven:__ All settings loaded from ConfigurationManager (lowercase keys)
+- ✅ __Role-Based Access Control (RBAC):__ Roles defined in config, permissions via policies
+- ✅ __Policy Integration:__ Queries PolicyManager for actual permissions
+- ✅ __Session Management:__ File-based session storage with expiration
+- ✅ __External Authentication:__ Supports OAuth/JWT external users
+- ✅ __Schema.org Integration:__ Auto-syncs users to Schema.org Person data
+- ✅ __User Pages:__ Automatically creates user pages for new accounts
 
 ---
 
@@ -96,7 +96,7 @@ The **UserManager** handles user authentication, authorization, role management,
 
 ### User Storage Configuration
 
-**Location:** `config/app-default-config.json`
+__Location:__ `config/app-default-config.json`
 
 ```json
 {
@@ -158,7 +158,7 @@ The **UserManager** handles user authentication, authorization, role management,
 }
 ```
 
-**Note:** Custom roles can be added in `app-custom-config.json` and will be merged automatically by ConfigurationManager.
+__Note:__ Custom roles can be added in `app-custom-config.json` and will be merged automatically by ConfigurationManager.
 
 ---
 
@@ -170,14 +170,14 @@ The **UserManager** handles user authentication, authorization, role management,
 
 Authenticates a user with username/password credentials.
 
-**Parameters:**
+__Parameters:__
 
 - `username` (string) - Username
 - `password` (string) - Plain text password
 
-**Returns:** User object with `isAuthenticated: true`, or `null` if invalid
+__Returns:__ User object with `isAuthenticated: true`, or `null` if invalid
 
-**Example:**
+__Example:__
 
 ```javascript
 const user = await userManager.authenticateUser('admin', process.env.NGDPBASE_ADMIN_PASSWORD);
@@ -186,7 +186,7 @@ if (user) {
 }
 ```
 
-**Features:**
+__Features:__
 
 - Verifies password using SHA-256 hash + salt
 - Updates `lastLogin` and `loginCount`
@@ -201,14 +201,14 @@ if (user) {
 
 Checks if user has permission to perform an action using policy-based access control.
 
-**Parameters:**
+__Parameters:__
 
 - `username` (string) - Username (null for anonymous)
 - `action` (string) - Action to check (e.g., 'page:create', 'admin:users')
 
-**Returns:** `Promise<boolean>` - True if user has permission
+__Returns:__ `Promise<boolean>` - True if user has permission
 
-**Example:**
+__Example:__
 
 ```javascript
 const canEdit = await userManager.hasPermission('editor', 'page:edit');
@@ -217,7 +217,7 @@ if (canEdit) {
 }
 ```
 
-**User Context:**
+__User Context:__
 
 - Anonymous: `roles: ['anonymous', 'All']`
 - Asserted: `roles: ['reader', 'All']`
@@ -229,20 +229,20 @@ if (canEdit) {
 
 Gets all effective permissions for a user by querying PolicyManager.
 
-**Parameters:**
+__Parameters:__
 
 - `username` (string) - Username (null for anonymous)
 
-**Returns:** `Array<string>` - Array of permission strings
+__Returns:__ `Array<string>` - Array of permission strings
 
-**Example:**
+__Example:__
 
 ```javascript
 const permissions = userManager.getUserPermissions('admin');
 // Returns: ['page:read', 'page:edit', 'page:create', 'admin:users', ...]
 ```
 
-**How It Works:**
+__How It Works:__
 
 1. Queries PolicyManager for all policies
 2. Builds user's role list (including built-in roles)
@@ -257,7 +257,7 @@ const permissions = userManager.getUserPermissions('admin');
 
 Creates a new user account.
 
-**Parameters:**
+__Parameters:__
 
 - `userData` (object):
   - `username` (string, required) - Unique username
@@ -270,9 +270,9 @@ Creates a new user account.
   - `profileLocked` (boolean, default: false) - Freeze password, email and display name against self-service change; for shared accounts whose credentials are published (#1029)
   - `acceptLanguage` (string, optional) - Browser language
 
-**Returns:** User object (without password)
+__Returns:__ User object (without password)
 
-**Example:**
+__Example:__
 
 ```javascript
 const newUser = await userManager.createUser({
@@ -284,7 +284,7 @@ const newUser = await userManager.createUser({
 });
 ```
 
-**Features:**
+__Features:__
 
 - Hashes password with configurable salt
 - Checks for username/display name conflicts
@@ -298,12 +298,12 @@ const newUser = await userManager.createUser({
 
 Updates user information.
 
-**Parameters:**
+__Parameters:__
 
 - `username` (string) - Username to update
 - `updates` (object) - Fields to update
 
-**Example:**
+__Example:__
 
 ```javascript
 await userManager.updateUser('john', {
@@ -312,7 +312,7 @@ await userManager.updateUser('john', {
 });
 ```
 
-**Features:**
+__Features:__
 
 - Cannot change password for external OAuth users
 - Syncs changes to Schema.org data
@@ -324,17 +324,17 @@ await userManager.updateUser('john', {
 
 Deletes a user account.
 
-**Parameters:**
+__Parameters:__
 
 - `username` (string) - Username to delete
 
-**Example:**
+__Example:__
 
 ```javascript
 await userManager.deleteUser('olduser');
 ```
 
-**Features:**
+__Features:__
 
 - Cannot delete system users
 - Syncs deletion to Schema.org data
@@ -348,13 +348,13 @@ await userManager.deleteUser('olduser');
 
 Gets role metadata by name.
 
-**Parameters:**
+__Parameters:__
 
 - `roleName` (string) - Role name
 
-**Returns:** Role object or null
+__Returns:__ Role object or null
 
-**Example:**
+__Example:__
 
 ```javascript
 const adminRole = userManager.getRole('admin');
@@ -367,9 +367,9 @@ console.log(adminRole.displayname); // "Administrator"
 
 Gets all role definitions.
 
-**Returns:** Array of role objects
+__Returns:__ Array of role objects
 
-**Example:**
+__Example:__
 
 ```javascript
 const roles = userManager.getRoles();
@@ -382,12 +382,12 @@ const roles = userManager.getRoles();
 
 Assigns a role to a user.
 
-**Parameters:**
+__Parameters:__
 
 - `username` (string) - Username
 - `roleName` (string) - Role name to assign
 
-**Example:**
+__Example:__
 
 ```javascript
 await userManager.assignRole('john', 'editor');
@@ -399,12 +399,12 @@ await userManager.assignRole('john', 'editor');
 
 Removes a role from a user.
 
-**Parameters:**
+__Parameters:__
 
 - `username` (string) - Username
 - `roleName` (string) - Role name to remove
 
-**Example:**
+__Example:__
 
 ```javascript
 await userManager.removeRole('john', 'contributor');
@@ -418,14 +418,14 @@ await userManager.removeRole('john', 'contributor');
 
 Creates a new session for a user.
 
-**Parameters:**
+__Parameters:__
 
 - `username` (string) - Username
 - `additionalData` (object, optional) - Extra session data
 
-**Returns:** Session ID (string)
+__Returns:__ Session ID (string)
 
-**Example:**
+__Example:__
 
 ```javascript
 const sessionId = await userManager.createSession('john', {
@@ -434,7 +434,7 @@ const sessionId = await userManager.createSession('john', {
 });
 ```
 
-**Features:**
+__Features:__
 
 - Generates cryptographically random session ID
 - Default expiration: 24 hours (configurable)
@@ -446,11 +446,11 @@ const sessionId = await userManager.createSession('john', {
 
 Retrieves session data by ID.
 
-**Parameters:**
+__Parameters:__
 
 - `sessionId` (string) - Session ID
 
-**Returns:** Session object or null
+__Returns:__ Session object or null
 
 ---
 
@@ -458,7 +458,7 @@ Retrieves session data by ID.
 
 Deletes a session.
 
-**Parameters:**
+__Parameters:__
 
 - `sessionId` (string) - Session ID to delete
 
@@ -468,7 +468,7 @@ Deletes a session.
 
 Deletes all sessions for a user.
 
-**Parameters:**
+__Parameters:__
 
 - `username` (string) - Username
 
@@ -480,13 +480,13 @@ Deletes all sessions for a user.
 
 Gets the current user context from the request session.
 
-**Parameters:**
+__Parameters:__
 
 - `req` (object) - Express request object
 
-**Returns:** User context object with roles and authentication status
+__Returns:__ User context object with roles and authentication status
 
-**Example:**
+__Example:__
 
 ```javascript
 const currentUser = await userManager.getCurrentUser(req);
@@ -526,7 +526,7 @@ The `User` interface in `src/types/User.ts` is authoritative; this is an illustr
 }
 ```
 
-`roles` is **not** part of the record. It was removed in #617 iteration 3b — role membership is owned by `RoleManager` as `OrganizationRole` records. Call `resolveUserRoles(username)`.
+`roles` is __not__ part of the record. It was removed in #617 iteration 3b — role membership is owned by `RoleManager` as `OrganizationRole` records. Call `resolveUserRoles(username)`.
 
 #### Account flags
 
@@ -585,7 +585,7 @@ These roles are added dynamically and never stored in user data.
 
 ### users.json
 
-**Location:** `./users/users.json` (configurable)
+__Location:__ `./users/users.json` (configurable)
 
 ```json
 {
@@ -608,7 +608,7 @@ These roles are added dynamically and never stored in user data.
 
 ### sessions.json
 
-**Location:** `./users/sessions.json` (configurable)
+__Location:__ `./users/sessions.json` (configurable)
 
 ```json
 {
@@ -694,7 +694,7 @@ These methods now throw errors with migration instructions:
 
 #### ✅ New Behavior
 
-- All configuration keys are now **lowercase** (`ngdpbase.user.provider.storagedir`)
+- All configuration keys are now __lowercase__ (`ngdpbase.user.provider.storagedir`)
 - Roles loaded from `ngdpbase.roles.definitions` in config
 - Permissions queried from PolicyManager (not hardcoded in roles)
 - Custom roles added via `app-custom-config.json` (auto-merged by ConfigurationManager)
@@ -705,14 +705,14 @@ These methods now throw errors with migration instructions:
 
 ### 1. Use Policy-Based Permissions
 
-❌ **Don't** hardcode permissions in roles:
+❌ __Don't__ hardcode permissions in roles:
 
 ```javascript
 // Old way - NO LONGER SUPPORTED
 role.permissions = ['page:read', 'page:edit'];
 ```
 
-✅ **Do** define permissions via policies:
+✅ __Do__ define permissions via policies:
 
 ```json
 {
@@ -725,14 +725,14 @@ role.permissions = ['page:read', 'page:edit'];
 
 ### 2. Add Custom Roles in Config
 
-❌ **Don't** use `createRole()`:
+❌ __Don't__ use `createRole()`:
 
 ```javascript
 // Deprecated - throws error
 await userManager.createRole({ name: 'moderator', ... });
 ```
 
-✅ **Do** add to `app-custom-config.json`:
+✅ __Do__ add to `app-custom-config.json`:
 
 ```json
 {
@@ -749,7 +749,7 @@ await userManager.createRole({ name: 'moderator', ... });
 
 ### 3. Check Permissions with Policy System
 
-✅ **Use `hasPermission()` for access control:**
+✅ __Use `hasPermission()` for access control:__
 
 ```javascript
 if (await userManager.hasPermission(username, 'page:edit')) {
@@ -757,7 +757,7 @@ if (await userManager.hasPermission(username, 'page:edit')) {
 }
 ```
 
-✅ **Use `getUserPermissions()` for UI rendering:**
+✅ __Use `getUserPermissions()` for UI rendering:__
 
 ```javascript
 const permissions = userManager.getUserPermissions(username);
@@ -768,7 +768,7 @@ if (permissions.includes('admin:users')) {
 
 ### 4. Handle External Users
 
-✅ **Create OAuth users properly:**
+✅ __Create OAuth users properly:__
 
 ```javascript
 const user = await userManager.createOrUpdateExternalUser({
@@ -811,25 +811,25 @@ const user = await userManager.createOrUpdateExternalUser({
 
 ### Issue: "UserManager requires ConfigurationManager"
 
-**Cause:** ConfigurationManager not initialized before UserManager
+__Cause:__ ConfigurationManager not initialized before UserManager
 
-**Solution:** Ensure ConfigurationManager is registered first in WikiEngine
+__Solution:__ Ensure ConfigurationManager is registered first in WikiEngine
 
 ---
 
 ### Issue: "PolicyManager not available, returning empty permissions"
 
-**Cause:** PolicyManager not initialized or disabled
+__Cause:__ PolicyManager not initialized or disabled
 
-**Solution:** Check `ngdpbase.access.policies.enabled` is `true` in config
+__Solution:__ Check `ngdpbase.access.policies.enabled` is `true` in config
 
 ---
 
 ### Issue: User can't perform expected action
 
-**Cause:** No matching policy for user's roles
+__Cause:__ No matching policy for user's roles
 
-**Solution:**
+__Solution:__
 
 1. Check user's roles: `userManager.getUser(username).roles`
 2. Check available policies: `policyManager.getAllPolicies()`
@@ -870,5 +870,5 @@ const user = await userManager.createOrUpdateExternalUser({
 
 ---
 
-**Maintained By:** Development Team
-**Status:** Active Development
+__Maintained By:__ Development Team
+__Status:__ Active Development

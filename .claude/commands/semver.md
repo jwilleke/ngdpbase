@@ -4,10 +4,10 @@ Cut a new semver release: bump `package.json` (and `config/app-default-config.js
 
 ## Relationship to /session-commit
 
-`/semver` is **release mechanics only** (Steps 1–9: gate → container smoke test → bump → baseline → tag → push → GitHub release → watch the image build → jimstest-first re-validate → `/othersites`). It does **NOT** update `docs/project_log.md`, comment on / close GitHub issues, or run `/check-todos` — that bookkeeping lives in `/session-commit` Steps 6–9.
+`/semver` is __release mechanics only__ (Steps 1–9: gate → container smoke test → bump → baseline → tag → push → GitHub release → watch the image build → jimstest-first re-validate → `/othersites`). It does __NOT__ update `docs/project_log.md`, comment on / close GitHub issues, or run `/check-todos` — that bookkeeping lives in `/session-commit` Steps 6–9.
 
-- **"I did work, ship it"** → run **`/session-commit`**, not `/semver`. `/session-commit` commits the work, pre-flights jimstest, makes the semver decision and **invokes `/semver` internally** (Step 4), propagates, then logs + comments issues + freshens TODO. Running `/semver` yourself in this case skips the log/issue/TODO updates.
-- **"Work is already committed & logged, just cut/consolidate a release"** → standalone `/semver` is correct. But it leaves a bookkeeping gap: after it finishes you must still add a project_log entry for the *release event itself* (version, baseline drift, `/othersites` results, any flakes) and comment/close any issues the release ships. `/semver` will not do this for you.
+- __"I did work, ship it"__ → run __`/session-commit`__, not `/semver`. `/session-commit` commits the work, pre-flights jimstest, makes the semver decision and __invokes `/semver` internally__ (Step 4), propagates, then logs + comments issues + freshens TODO. Running `/semver` yourself in this case skips the log/issue/TODO updates.
+- __"Work is already committed & logged, just cut/consolidate a release"__ → standalone `/semver` is correct. But it leaves a bookkeeping gap: after it finishes you must still add a project_log entry for the *release event itself* (version, baseline drift, `/othersites` results, any flakes) and comment/close any issues the release ships. `/semver` will not do this for you.
 
 `/semver` also requires a clean tree on `master` (Step 1) — it never commits your feature work. Commit (or `/session-commit`) first.
 
@@ -35,7 +35,7 @@ Run in parallel:
 
 - Read `package.json` `version` field.
 - Compute the next version from the requested bump (`patch` increments the third number, `minor` increments the second and zeros the third, `major` increments the first and zeros the rest).
-- Show the user: `current → next` and confirm before continuing **only if** the bump is `major` or if there are no commits since the last tag (i.e., nothing to release). For `patch` / `minor` with new commits, proceed without prompting.
+- Show the user: `current → next` and confirm before continuing __only if__ the bump is `major` or if there are no commits since the last tag (i.e., nothing to release). For `patch` / `minor` with new commits, proceed without prompting.
 
 ### Step 3: Summarize what's in the release
 
@@ -44,7 +44,7 @@ Run in parallel:
 
 ### Step 4: Build, then run the full test suite
 
-A release that doesn't pass tests should not exist. Run tests **before** any version bump so nothing on disk has to be rolled back if a test fails.
+A release that doesn't pass tests should not exist. Run tests __before__ any version bump so nothing on disk has to be rolled back if a test fails.
 
 Run sequentially:
 
@@ -52,13 +52,13 @@ Run sequentially:
 - `npm test` — must pass (Vitest unit + integration).
 - `npm run test:e2e` — must pass (Playwright). The dev server must be up; if it isn't, run `./server.sh restart` and wait for `http://localhost:3000` before invoking E2E.
 
-If anything fails, **stop**. Fix the failures and start again from Step 1. The working tree is still clean at this point — nothing to roll back.
+If anything fails, __stop__. Fix the failures and start again from Step 1. The working tree is still clean at this point — nothing to roll back.
 
 ### Step 4a: Build the container image and smoke-test it (#1035)
 
-`npm test` and E2E run against the dev server, so they say nothing about whether the **image** works. Both v4.8.0 and v4.8.1 passed this gate and produced a broken image: a change to core startup behaviour made a fresh container refuse to boot, which only the container smoke test exercises. Because the image workflow triggers *on the tag*, the failure arrived after the release was already public — and because the plain tag is pushed before the smoke test while `-devtools` is built after it, the damage was invisible until a downstream repo needed `-devtools`, two releases later.
+`npm test` and E2E run against the dev server, so they say nothing about whether the __image__ works. Both v4.8.0 and v4.8.1 passed this gate and produced a broken image: a change to core startup behaviour made a fresh container refuse to boot, which only the container smoke test exercises. Because the image workflow triggers *on the tag*, the failure arrived after the release was already public — and because the plain tag is pushed before the smoke test while `-devtools` is built after it, the damage was invisible until a downstream repo needed `-devtools`, two releases later.
 
-This step reproduces CI's smoke test locally, **before** anything is tagged, so that failure means no tag is ever created.
+This step reproduces CI's smoke test locally, __before__ anything is tagged, so that failure means no tag is ever created.
 
 ```bash
 docker build -f docker/Dockerfile --target runtime --build-arg NODE_VERSION=24 -t ngdpbase-release-smoke:local .
@@ -83,28 +83,28 @@ Then always clean up, whatever the outcome:
 docker rm -f ngdpbase-release-smoke; docker rmi -f ngdpbase-release-smoke:local
 ```
 
-- **Reaches `healthy`** → continue to Step 5.
-- **Exits or goes `unhealthy`** → **stop**. Read `docker logs` — a container that will not boot is a broken release, and nothing is tagged yet. This is the whole point of the step.
-- **Deliberately passes no `NGDPBASE_ADMIN_PASSWORD`.** A fresh container with an empty volume must come up unattended on the shipped defaults; if it cannot, that is the regression this step exists to catch.
+- __Reaches `healthy`__ → continue to Step 5.
+- __Exits or goes `unhealthy`__ → __stop__. Read `docker logs` — a container that will not boot is a broken release, and nothing is tagged yet. This is the whole point of the step.
+- __Deliberately passes no `NGDPBASE_ADMIN_PASSWORD`.__ A fresh container with an empty volume must come up unattended on the shipped defaults; if it cannot, that is the regression this step exists to catch.
 
-**If Docker is not running**, do not block the release: say so plainly, note it in the Step 9 report, and rely on Step 7a. A skipped check that is announced is fine; a skipped check that is silent is how #1035 happened.
+__If Docker is not running__, do not block the release: say so plainly, note it in the Step 9 report, and rely on Step 7a. A skipped check that is announced is fine; a skipped check that is silent is how #1035 happened.
 
 This does not replace Step 7a. It cannot cover registry pushes, multi-arch, Trivy, or the `devtools` stage.
 
 ### Step 5: Bump the version with `version.ts`
 
-ngdpbase ships its own version tool at `src/utils/version.ts` which keeps `package.json`, `package-lock.json`, `config/app-default-config.json`, and `CHANGELOG.md` in lockstep. **Do not** edit those files by hand.
+ngdpbase ships its own version tool at `src/utils/version.ts` which keeps `package.json`, `package-lock.json`, `config/app-default-config.json`, and `CHANGELOG.md` in lockstep. __Do not__ edit those files by hand.
 
 Run sequentially:
 
 - `node dist/src/utils/version.js <bump>` — bumps all four files in one shot. Output looks like `Version updated: 3.3.6 → 3.3.7`.
 - Stage all four updated files: `git add package.json package-lock.json config/app-default-config.json CHANGELOG.md`.
 
-`package-lock.json` now **always** changes on a bump — the tool writes the two places the lockfile mirrors the project version (top-level `version` and `packages[""].version`). Before this, it was left stale, npm rewrote it on the next `npm install`, and every satellite checkout showed a two-line lockfile diff that had to be inspected and discarded by hand at each release. If you see that diff on a satellite now, it is **not** the old benign drift — investigate it.
+`package-lock.json` now __always__ changes on a bump — the tool writes the two places the lockfile mirrors the project version (top-level `version` and `packages[""].version`). Before this, it was left stale, npm rewrote it on the next `npm install`, and every satellite checkout showed a two-line lockfile diff that had to be inspected and discarded by hand at each release. If you see that diff on a satellite now, it is __not__ the old benign drift — investigate it.
 
 ### Step 5a: Capture a performance baseline + diff vs previous (#611)
 
-After the version bump (so the new `<VERSION>` is reflected in the filename) and before the release commit, capture a baseline snapshot **and** diff it against the most recent prior baseline in one shot:
+After the version bump (so the new `<VERSION>` is reflected in the filename) and before the release commit, capture a baseline snapshot __and__ diff it against the most recent prior baseline in one shot:
 
 - `npm run test:baseline:compare` — runs `scripts/baseline-profile.sh --compare`. Writes `docs/performance/baseline-v<VERSION>-<DATE>.md` (or `-r2.md` etc. if a same-day same-version baseline already exists), then appends a `## Drift vs <previous>` section to it and prints the same table to stdout.
 - Stage the new file: `git add docs/performance/baseline-v<VERSION>-*.md`.
@@ -115,23 +115,23 @@ The script auto-detects the previous baseline. If this is the first-ever baselin
 
 ### Step 5b: Surface the perf diff to the user (and maybe stop)
 
-The script flags regression candidates with `⚠️` and **exits non-zero** when any threshold trips. Default thresholds (override via env var if you have a reason):
+The script flags regression candidates with `⚠️` and __exits non-zero__ when any threshold trips. Default thresholds (override via env var if you have a reason):
 
 - `BASELINE_MEM_DELTA_PCT=25` — memory % regression
 - `BASELINE_RT_DELTA_PCT=50` — route % regression (must trip together with the ms threshold below)
 - `BASELINE_RT_DELTA_MS=50` — route absolute regression (avoids 1ms-on-already-fast-route false positives)
 
-**Default thresholds** — override via env var if needed:
+__Default thresholds__ — override via env var if needed:
 
 - `BASELINE_MEM_DELTA_PCT=25` — memory % regression
 - `BASELINE_RT_DELTA_PCT=50` — route % regression (must trip together with the ms threshold below)
 - `BASELINE_RT_DELTA_MS=50` — route absolute regression (avoids 1ms-on-already-fast-route false positives)
 
-Behavior on regression: the script exits 1 with the warning printed. Acknowledge the regression in your reply, surface it in the release report (Step 9), and ask the user whether to proceed before continuing to Step 6. **Don't auto-rollback** — measurement noise is real (cold-cache snapshots show 100ms+ outliers across the historical baseline series; see `docs/performance/`). User judgment required.
+Behavior on regression: the script exits 1 with the warning printed. Acknowledge the regression in your reply, surface it in the release report (Step 9), and ask the user whether to proceed before continuing to Step 6. __Don't auto-rollback__ — measurement noise is real (cold-cache snapshots show 100ms+ outliers across the historical baseline series; see `docs/performance/`). User judgment required.
 
-**No regressions** (script exits 0): just include the printed Drift table in the report and continue.
+__No regressions__ (script exits 0): just include the printed Drift table in the report and continue.
 
-**First release** (no prior baseline): the script prints "no prior baseline to compare against" and exits 0 — proceed normally.
+__First release__ (no prior baseline): the script prints "no prior baseline to compare against" and exits 0 — proceed normally.
 
 ### Step 6: Commit, tag, and push
 
@@ -144,11 +144,11 @@ Run sequentially:
 
 ### Step 7: Create the GitHub release (conditional)
 
-**Auto-release rule:**
+__Auto-release rule:__
 
-- **`minor` or `major`** — always create the GitHub release. New feature surface or breaking change deserves a visible release entry every time.
-- **`patch`** — skip the GitHub release unless the user explicitly asked for one in this turn (or in an earlier turn of the same session). Patch chains shipped without releases can be consolidated later via the `/release` skill — see `.claude/commands/release.md`.
-- **When in doubt or when the user asks** — create the release.
+- __`minor` or `major`__ — always create the GitHub release. New feature surface or breaking change deserves a visible release entry every time.
+- __`patch`__ — skip the GitHub release unless the user explicitly asked for one in this turn (or in an earlier turn of the same session). Patch chains shipped without releases can be consolidated later via the `/release` skill — see `.claude/commands/release.md`.
+- __When in doubt or when the user asks__ — create the release.
 
 When creating:
 
@@ -164,7 +164,7 @@ When skipping (patch with no explicit request):
 
 Pushing the tag triggers `docker-build.yml`. Nothing used to check the result, so a red release build was invisible: `/semver` finished minutes before the workflow did. Two consecutive releases shipped with a failed image build and it surfaced only when a downstream repo could not resolve a `-devtools` tag.
 
-Start the watch, then **run Step 8 while it builds** — propagation takes longer than the image (v4.8.2: 5m42s), so this costs no wall-clock. Collect the result before reporting.
+Start the watch, then __run Step 8 while it builds__ — propagation takes longer than the image (v4.8.2: 5m42s), so this costs no wall-clock. Collect the result before reporting.
 
 ```bash
 # The run for this tag — the newest, since the tag push just triggered it
@@ -175,7 +175,7 @@ gh run list --workflow=docker-build.yml --limit 1 \
 gh run view <id> --json status,conclusion --jq '"\(.status)/\(.conclusion // "-")"'
 ```
 
-On **success**, verify the tags actually exist rather than trusting a green run — the plain image is pushed by an earlier step than `-devtools`, so a partial publish looks green in isolation:
+On __success__, verify the tags actually exist rather than trusting a green run — the plain image is pushed by an earlier step than `-devtools`, so a partial publish looks green in isolation:
 
 ```bash
 for t in <version> <version>-devtools latest-devtools; do
@@ -184,25 +184,25 @@ for t in <version> <version>-devtools latest-devtools; do
 done
 ```
 
-On **failure**:
+On __failure__:
 
-1. **Stop before the satellites** if they have not already been done. They pull from git rather than GHCR so they are not directly broken, but a release whose image fails is a release with something wrong in it, and propagating further is the wrong reflex.
+1. __Stop before the satellites__ if they have not already been done. They pull from git rather than GHCR so they are not directly broken, but a release whose image fails is a release with something wrong in it, and propagating further is the wrong reflex.
 2. Get the failing step — `gh run view <id> --log-failed` — and report it.
-3. Say plainly in Step 9 that **the tag and GitHub release are already published**. This step is detection, not prevention; the tag cannot be unshipped. Prevention lives in Step 4a.
+3. Say plainly in Step 9 that __the tag and GitHub release are already published__. This step is detection, not prevention; the tag cannot be unshipped. Prevention lives in Step 4a.
 4. Fix forward with a patch release. Re-running the old workflow re-runs the old code and will fail identically.
 
 ### Step 8: Update sister installs
 
-**Step 8a — Re-validate jimstest on the release commit FIRST (mandatory, before any satellite).**
+__Step 8a — Re-validate jimstest on the release commit FIRST (mandatory, before any satellite).__
 
-The Step 4 test gate ran on the **pre-release** commit. Step 5/6 then bumped the version and created the release commit *after* that gate, so jimstest's running server has NOT been validated on the final released code. jimstest is the source of truth and must never lag the satellites. Before invoking `/othersites`:
+The Step 4 test gate ran on the __pre-release__ commit. Step 5/6 then bumped the version and created the release commit *after* that gate, so jimstest's running server has NOT been validated on the final released code. jimstest is the source of truth and must never lag the satellites. Before invoking `/othersites`:
 
 - `npm run build` (release commit is checked out) → `./server.sh stop && ./server.sh start` → `npm test` (unit must be GREEN) → `npm run test:e2e` if the release range touches any UI-affecting path (`views/**`, `public/**`, `src/plugins/**`, `addons/**`, `tests/e2e/**`; when unsure, run it).
-- Only after jimstest is green on the **release commit** do you proceed to the satellites.
+- Only after jimstest is green on the __release commit__ do you proceed to the satellites.
 
 This is non-negotiable: never propagate a release to satellites while jimstest is still on pre-release code. See `feedback_jimstest_first` in memory.
 
-**Step 8b — Propagate to the satellites.**
+__Step 8b — Propagate to the satellites.__
 
 Sister ngdpbase installs (e.g., The Fairways, the temp build) need to be told about the new release. Invoke the `/othersites` skill — defined in `.claude/commands/othersites.md`. It knows the list of installs and the update sequence (`git pull` → `./server.sh stop` → `npm run build` → `./server.sh start` → unit tests + E2E per site → file `[BUG]` issues for any failures). Because Step 8a already validated jimstest on the release commit, `/othersites` may run in satellite-only mode here (skip jimstest) — that skip is valid *only* because Step 8a was performed on the final code.
 
@@ -212,11 +212,11 @@ Sister ngdpbase installs (e.g., The Fairways, the temp build) need to be told ab
 - `/Volumes/hd2A/workspaces/github/ngdpbase` (port 3000, "jimstest" — the source of truth)
 - `/Volumes/hd2/ngdp-temp-builds/ngdpbase` (port 3001, "ngdpbase temp build")
 
-**Propagate only to the three instances above.** In particular, the locally-running **GeoHazardWatch** instance on port 3333 is a separate satellite with its own tracker, updated via the GHCR + Renovate delivery chain — *not* by this flow. Building in its working directory replaces `dist/` underneath a running server, silently staging a version the operator never chose to deploy.
+__Propagate only to the three instances above.__ In particular, the locally-running __GeoHazardWatch__ instance on port 3333 is a separate satellite with its own tracker, updated via the GHCR + Renovate delivery chain — *not* by this flow. Building in its working directory replaces `dist/` underneath a running server, silently staging a version the operator never chose to deploy.
 
 If a site has uncommitted local diffs that block the pull (typically the seed required-pages file from an auto-migration), the pattern that's worked across past releases is `git checkout -- <file>` for the known-identical-to-master files, then re-run the pull. Untracked working notes in `private/` and similar are fine to leave alone.
 
-**Read the diff before discarding it.** `package-lock.json` used to show up here every release as a benign two-line version-string drift, and reflexive `git checkout --` became the habit. Step 5 now keeps the lockfile in lockstep, so that drift should no longer appear — a lockfile diff on a satellite today is a real change worth reading, not the old noise.
+__Read the diff before discarding it.__ `package-lock.json` used to show up here every release as a benign two-line version-string drift, and reflexive `git checkout --` became the habit. Step 5 now keeps the lockfile in lockstep, so that drift should no longer appear — a lockfile diff on a satellite today is a real change worth reading, not the old noise.
 
 ### Step 9: Report
 
@@ -225,11 +225,11 @@ Output to the user:
 - Old version → new version
 - Tag URL (from `gh release view v<next> --json url --jq .url`)
 - Number of commits in this release (from Step 3)
-- **Perf diff table** from Step 5b (re-included here for easy reference; if any regression candidate was flagged, repeat the warning)
-- **Container image**: the Step 4a local smoke-test result (or that it was skipped because Docker was unavailable), and the Step 7a workflow conclusion with the tag-existence check. State both — a green workflow with a missing `-devtools` tag is the exact shape of #1035.
+- __Perf diff table__ from Step 5b (re-included here for easy reference; if any regression candidate was flagged, repeat the warning)
+- __Container image__: the Step 4a local smoke-test result (or that it was skipped because Docker was unavailable), and the Step 7a workflow conclusion with the tag-existence check. State both — a green workflow with a missing `-devtools` tag is the exact shape of #1035.
 - Whether `/othersites` propagation succeeded.
 
-**Bookkeeping reminder (standalone `/semver` only):** `/semver` does not touch `docs/project_log.md`, GitHub issues, or `/check-todos`. If this was a standalone invocation (not driven by `/session-commit`), add a project_log entry for the release event (version, baseline drift, `/othersites` results + any flakes) and comment/close any issues the release ships — see [Relationship to /session-commit](#relationship-to-session-commit). When `/semver` was invoked from `/session-commit`, its Steps 6–9 cover this; do not duplicate.
+__Bookkeeping reminder (standalone `/semver` only):__ `/semver` does not touch `docs/project_log.md`, GitHub issues, or `/check-todos`. If this was a standalone invocation (not driven by `/session-commit`), add a project_log entry for the release event (version, baseline drift, `/othersites` results + any flakes) and comment/close any issues the release ships — see [Relationship to /session-commit](#relationship-to-session-commit). When `/semver` was invoked from `/session-commit`, its Steps 6–9 cover this; do not duplicate.
 
 ## Rules
 

@@ -28,7 +28,7 @@ ngdpbase implements JSPWiki-compatible table styles with extensions for modern w
 | Bob | 35 | Seattle |
 ```
 
-**Result:** Plain table with headers
+__Result:__ Plain table with headers
 
 ### Striped Table
 
@@ -40,7 +40,7 @@ ngdpbase implements JSPWiki-compatible table styles with extensions for modern w
 /%
 ```
 
-**Result:** Alternating row colors for readability
+__Result:__ Alternating row colors for readability
 
 ### Sortable Table
 
@@ -52,7 +52,7 @@ ngdpbase implements JSPWiki-compatible table styles with extensions for modern w
 /%
 ```
 
-**Result:** Click column headers to sort
+__Result:__ Click column headers to sort
 
 ---
 
@@ -60,7 +60,7 @@ ngdpbase implements JSPWiki-compatible table styles with extensions for modern w
 
 ### Row Types
 
-**Header Row** - Double pipes (`||`):
+__Header Row__ - Double pipes (`||`):
 
 ```
 || Column 1 || Column 2 || Column 3 ||
@@ -68,7 +68,7 @@ ngdpbase implements JSPWiki-compatible table styles with extensions for modern w
 
 Rendered as: `<th>Column 1</th>`
 
-**Data Row** - Single pipes (`|`):
+__Data Row__ - Single pipes (`|`):
 
 ```
 | Data 1 | Data 2 | Data 3 |
@@ -78,7 +78,7 @@ Rendered as: `<td>Data 1</td>`
 
 ### Style Blocks
 
-**Single Style:**
+__Single Style:__
 
 ```
 %%style-name
@@ -87,7 +87,7 @@ Rendered as: `<td>Data 1</td>`
 /%
 ```
 
-**Nested Styles (JSPWiki Compatible):**
+__Nested Styles (JSPWiki Compatible):__
 
 ```
 %%style-1
@@ -99,7 +99,7 @@ Rendered as: `<td>Data 1</td>`
 /%
 ```
 
-**Important:** Each `%%` requires a matching `/%`
+__Important:__ Each `%%` requires a matching `/%`
 
 ---
 
@@ -107,9 +107,9 @@ Rendered as: `<td>Data 1</td>`
 
 ### 1. Zebra Table / Table Striped
 
-**Purpose:** Alternating row colors for easier reading
+__Purpose:__ Alternating row colors for easier reading
 
-**Syntax:**
+__Syntax:__
 
 ```
 %%zebra-table
@@ -120,19 +120,19 @@ Rendered as: `<td>Data 1</td>`
 /%
 ```
 
-**Alternative:** `%%table-striped` (Bootstrap-compatible)
+__Alternative:__ `%%table-striped` (Bootstrap-compatible)
 
-**CSS Classes:** `zebra-table`, `table-striped`
+__CSS Classes:__ `zebra-table`, `table-striped`
 
-**JavaScript:** zebraTable.js applies `.zebra-even` and `.zebra-odd` classes dynamically
+__JavaScript:__ zebraTable.js applies `.zebra-even` and `.zebra-odd` classes dynamically
 
 ---
 
 ### 2. Table Bordered
 
-**Purpose:** Add borders around all cells
+__Purpose:__ Add borders around all cells
 
-**Syntax:**
+__Syntax:__
 
 ```
 %%table-bordered
@@ -141,17 +141,17 @@ Rendered as: `<td>Data 1</td>`
 /%
 ```
 
-**CSS Class:** `table-bordered`
+__CSS Class:__ `table-bordered`
 
-**Visual:** All cells have visible borders
+__Visual:__ All cells have visible borders
 
 ---
 
 ### 3. Table Fit (Auto-Width)
 
-**Purpose:** Size table to content width (not full width)
+__Purpose:__ Size table to content width (not full width)
 
-**Syntax:**
+__Syntax:__
 
 ```
 %%table-fit
@@ -161,17 +161,17 @@ Rendered as: `<td>Data 1</td>`
 /%
 ```
 
-**CSS Class:** `table-fit`
+__CSS Class:__ `table-fit`
 
-**CSS Rule:** `width: auto !important`
+__CSS Rule:__ `width: auto !important`
 
 ---
 
 ### 4. Table Hover
 
-**Purpose:** Highlight row on mouse hover
+__Purpose:__ Highlight row on mouse hover
 
-**Syntax:**
+__Syntax:__
 
 ```
 %%table-hover
@@ -181,17 +181,17 @@ Rendered as: `<td>Data 1</td>`
 /%
 ```
 
-**CSS Class:** `table-hover`
+__CSS Class:__ `table-hover`
 
-**JavaScript:** zebraTable.js adds `.zebra-hover` on mouseenter
+__JavaScript:__ zebraTable.js adds `.zebra-hover` on mouseenter
 
 ---
 
 ### 5. Table Compact (table-sm / table-condensed)
 
-**Purpose:** Reduce padding for dense information
+__Purpose:__ Reduce padding for dense information
 
-**Syntax:**
+__Syntax:__
 
 ```
 %%table-sm
@@ -201,17 +201,17 @@ Rendered as: `<td>Data 1</td>`
 /%
 ```
 
-**CSS Classes:** `table-sm`, `table-condensed`
+__CSS Classes:__ `table-sm`, `table-condensed`
 
-**CSS Rule:** Reduced padding (4px vs 8px)
+__CSS Rule:__ Reduced padding (4px vs 8px)
 
 ---
 
 ### 6. Table Responsive
 
-**Purpose:** Horizontal scroll on mobile devices
+__Purpose:__ Horizontal scroll on mobile devices
 
-**Syntax:**
+__Syntax:__
 
 ```
 %%table-responsive
@@ -220,9 +220,9 @@ Rendered as: `<td>Data 1</td>`
 /%
 ```
 
-**CSS Class:** `table-responsive`
+__CSS Class:__ `table-responsive`
 
-**Behavior:** Scrollable on screens < 768px
+__Behavior:__ Scrollable on screens < 768px
 
 ---
 
@@ -230,9 +230,9 @@ Rendered as: `<td>Data 1</td>`
 
 ### 1. Sortable Tables
 
-**Purpose:** Click column headers to sort
+__Purpose:__ Click column headers to sort
 
-**Syntax:**
+__Syntax:__
 
 ```
 %%sortable
@@ -243,30 +243,30 @@ Rendered as: `<td>Data 1</td>`
 /%
 ```
 
-**Alternative:** `%%table-sort`
+__Alternative:__ `%%table-sort`
 
-**Features:**
+__Features:__
 
-- **Natural sorting:** "Item 2" before "Item 10"
-- **Type detection:** Numbers, dates, text
-- **Click toggle:** Ascending → Descending → Ascending
-- **Visual indicator:** `.sort-asc` / `.sort-desc` classes
+- __Natural sorting:__ "Item 2" before "Item 10"
+- __Type detection:__ Numbers, dates, text
+- __Click toggle:__ Ascending → Descending → Ascending
+- __Visual indicator:__ `.sort-asc` / `.sort-desc` classes
 
-**Implementation:** [tableSort.js](../../public/js/tableSort.js)
+__Implementation:__ [tableSort.js](../../public/js/tableSort.js)
 
-**Sort Types:**
+__Sort Types:__
 
-- **Number:** 123, 45.67, -10
-- **Date:** 2025-01-15, Jan 15 2025
-- **Text:** Alphabetical (case-insensitive)
+- __Number:__ 123, 45.67, -10
+- __Date:__ 2025-01-15, Jan 15 2025
+- __Text:__ Alphabetical (case-insensitive)
 
 ---
 
 ### 2. Filterable Tables
 
-**Purpose:** Filter rows based on column values
+__Purpose:__ Filter rows based on column values
 
-**Syntax:**
+__Syntax:__
 
 ```
 %%table-filter
@@ -277,25 +277,25 @@ Rendered as: `<td>Data 1</td>`
 /%
 ```
 
-**Features:**
+__Features:__
 
-- **Filter row:** Input fields for each column
-- **Live filtering:** 300ms debounce
-- **Filter operators:**
+- __Filter row:__ Input fields for each column
+- __Live filtering:__ 300ms debounce
+- __Filter operators:__
   - `text` - Contains (default)
   - `=exact` - Exact match
   - `^starts` - Starts with
   - `ends$` - Ends with
   - `/regex/` - Regular expression
 
-**Examples:**
+__Examples:__
 
 - `Electronics` - Show rows containing "Electronics"
 - `=29` - Show rows with exactly "29"
 - `^L` - Show rows starting with "L"
 - `/^[A-M]/` - Show rows matching regex
 
-**Implementation:** [tableFilter.js](../../public/js/tableFilter.js)
+__Implementation:__ [tableFilter.js](../../public/js/tableFilter.js)
 
 ---
 
@@ -303,13 +303,13 @@ Rendered as: `<td>Data 1</td>`
 
 ### Syntax
 
-**Format:** `%%zebra-HEXCOLOR`
+__Format:__ `%%zebra-HEXCOLOR`
 
-Where `HEXCOLOR` is a 6-digit hex color **without** the `#` symbol.
+Where `HEXCOLOR` is a 6-digit hex color __without__ the `#` symbol.
 
 ### Examples
 
-**Pink Stripes:**
+__Pink Stripes:__
 
 ```
 %%zebra-ffe0e0
@@ -319,7 +319,7 @@ Where `HEXCOLOR` is a 6-digit hex color **without** the `#` symbol.
 /%
 ```
 
-**Light Blue Stripes:**
+__Light Blue Stripes:__
 
 ```
 %%zebra-e0e0ff
@@ -329,7 +329,7 @@ Where `HEXCOLOR` is a 6-digit hex color **without** the `#` symbol.
 /%
 ```
 
-**Dark Green Stripes:**
+__Dark Green Stripes:__
 
 ```
 %%zebra-006400
@@ -341,22 +341,22 @@ Where `HEXCOLOR` is a 6-digit hex color **without** the `#` symbol.
 
 ### Automatic Text Contrast
 
-**Algorithm:** WCAG relative luminance
+__Algorithm:__ WCAG relative luminance
 
 ```javascript
 luminance = (0.299 * R + 0.587 * G + 0.114 * B) / 255
 textColor = luminance > 0.5 ? 'black' : 'white'
 ```
 
-**Examples:**
+__Examples:__
 
-- `%%zebra-ffe0e0` (pink, luminance 0.90) → **Black text**
-- `%%zebra-800000` (maroon, luminance 0.15) → **White text**
-- `%%zebra-808080` (gray, luminance 0.50) → **Black text**
+- `%%zebra-ffe0e0` (pink, luminance 0.90) → __Black text__
+- `%%zebra-800000` (maroon, luminance 0.15) → __White text__
+- `%%zebra-808080` (gray, luminance 0.50) → __Black text__
 
 ### Color Palette Ideas
 
-**Semantic Colors:**
+__Semantic Colors:__
 
 ```
 %%zebra-d4edda  # Success (light green)
@@ -365,7 +365,7 @@ textColor = luminance > 0.5 ? 'black' : 'white'
 %%zebra-d1ecf1  # Info (light blue)
 ```
 
-**Brand Colors:**
+__Brand Colors:__
 
 ```
 %%zebra-e3f2fd  # Material Blue 50
@@ -392,7 +392,7 @@ textColor = luminance > 0.5 ? 'black' : 'white'
 /%
 ```
 
-**Result:** Bordered + Hover + Auto-width
+__Result:__ Bordered + Hover + Auto-width
 
 ---
 
@@ -409,7 +409,7 @@ textColor = luminance > 0.5 ? 'black' : 'white'
 /%
 ```
 
-**Result:** Striped rows + Click to sort
+__Result:__ Striped rows + Click to sort
 
 ---
 
@@ -428,7 +428,7 @@ textColor = luminance > 0.5 ? 'black' : 'white'
 /%
 ```
 
-**Result:** Light green stripes + Sortable + Filterable
+__Result:__ Light green stripes + Sortable + Filterable
 
 ---
 
@@ -451,7 +451,7 @@ textColor = luminance > 0.5 ? 'black' : 'white'
 /%
 ```
 
-**Result:** All features combined!
+__Result:__ All features combined!
 
 ---
 
@@ -461,13 +461,13 @@ textColor = luminance > 0.5 ? 'black' : 'white'
 
 ngdpbase supports three dark mode approaches:
 
-1. **Manual toggle:** `[data-theme="dark"]`
-2. **System preference:** `@media (prefers-color-scheme: dark)`
-3. **Hybrid:** Manual override system
+1. __Manual toggle:__ `[data-theme="dark"]`
+2. __System preference:__ `@media (prefers-color-scheme: dark)`
+3. __Hybrid:__ Manual override system
 
 ### Default Colors
 
-**Light Mode:**
+__Light Mode:__
 
 ```css
 --table-stripe: #f0f0f0;        /* Light gray */
@@ -475,7 +475,7 @@ ngdpbase supports three dark mode approaches:
 --zebra-row-odd: transparent;
 ```
 
-**Dark Mode:**
+__Dark Mode:__
 
 ```css
 --table-stripe: #252525;        /* Dark gray */
@@ -485,7 +485,7 @@ ngdpbase supports three dark mode approaches:
 
 ### Text Brightness
 
-**Dark Mode Enhancement:**
+__Dark Mode Enhancement:__
 
 ```css
 /* Even rows (striped) get brighter text */
@@ -507,7 +507,7 @@ Custom colors (`%%zebra-HEXCOLOR`) override theme colors:
 %%zebra-4a90e2  /* Medium blue */
 ```
 
-**Renders as:**
+__Renders as:__
 
 ```html
 <table style="--zebra-row-even: #4a90e2; --zebra-text-color: #ffffff;">
@@ -588,7 +588,7 @@ Text color calculated independently of theme.
 /%
 ```
 
-**Filter examples:**
+__Filter examples:__
 
 - Department: `Engineering` - Show only engineers
 - Email: `@company.com` - Show all (contains)
@@ -616,7 +616,7 @@ Text color calculated independently of theme.
 
 ### HTML Structure
 
-**Generated by JSPWikiPreprocessor:**
+__Generated by JSPWikiPreprocessor:__
 
 ```html
 <table class="table zebra-table sortable" style="--zebra-row-even: #ffe0e0; --zebra-text-color: #000000;">
@@ -666,7 +666,7 @@ Text color calculated independently of theme.
 
 ### JavaScript APIs
 
-**zebraTable.js:**
+__zebraTable.js:__
 
 ```javascript
 // Manually refresh zebra striping
@@ -674,7 +674,7 @@ window.ZebraTable.init();
 window.ZebraTable.refresh();
 ```
 
-**tableSort.js:**
+__tableSort.js:__
 
 ```javascript
 // Manually sort a table
@@ -682,7 +682,7 @@ window.TableSort.sortTable(tableElement, columnIndex, ascending);
 window.TableSort.refresh();
 ```
 
-**tableFilter.js:**
+__tableFilter.js:__
 
 ```javascript
 // Manually refresh filters
@@ -692,19 +692,19 @@ window.TableFilter.refresh();
 
 ### Performance
 
-**Server-Side (JSPWikiPreprocessor):**
+__Server-Side (JSPWikiPreprocessor):__
 
 - Parsing: O(n) where n = content length
 - Table generation: O(rows × cells)
 - Color calculation: O(1) per custom color
 
-**Client-Side (JavaScript):**
+__Client-Side (JavaScript):__
 
 - zebraTable.js: O(rows) per table
 - tableSort.js: O(rows × log rows) per sort
 - tableFilter.js: O(rows × columns) per filter
 
-**Memory:**
+__Memory:__
 
 - Minimal: HTML strings only
 - No DOM caching
@@ -741,49 +741,49 @@ window.TableFilter.refresh();
 
 ### Issue: Custom colors not showing
 
-**Check:**
+__Check:__
 
 1. zebraTable.js loaded: `<script src="/js/zebraTable.js"></script>`
 2. zebraTable.js selector includes `table.zebra-table`
 3. CSS rule includes `table.zebra-table tbody tr.zebra-even`
 
-**Solution:** Clear browser cache, check console for errors
+__Solution:__ Clear browser cache, check console for errors
 
 ---
 
 ### Issue: Headers outside table
 
-**Check:**
+__Check:__
 
 1. JSPWikiPreprocessor registered in Phase 1
 2. Handler has `this.phase = 1`
 3. Using correct syntax: `|| Header ||` not `| Header |`
 
-**Solution:** Verify MarkupParser.js registration order
+__Solution:__ Verify MarkupParser.js registration order
 
 ---
 
 ### Issue: Sorting not working
 
-**Check:**
+__Check:__
 
 1. tableSort.js loaded
 2. Table has `class="sortable"`
 3. Table has `<thead>` with `<th>` elements
 
-**Solution:** Check browser console for JavaScript errors
+__Solution:__ Check browser console for JavaScript errors
 
 ---
 
 ### Issue: Dark mode contrast too low
 
-**Check:**
+__Check:__
 
 1. CSS variables defined in `[data-theme="dark"]`
 2. Text color set for `.zebra-even td`
 3. Theme actually applied (check `<html data-theme="dark">`)
 
-**Solution:** Inspect element, verify computed styles
+__Solution:__ Inspect element, verify computed styles
 
 ---
 
@@ -791,7 +791,7 @@ window.TableFilter.refresh();
 
 ### From Old WikiStyleHandler/WikiTableHandler
 
-**Before (Phase 4):**
+__Before (Phase 4):__
 
 ```
 Headers appear as <p> tags outside tables
@@ -799,7 +799,7 @@ TABLE_CLASSES markers used
 Complex priority dependencies
 ```
 
-**After (Phase 1):**
+__After (Phase 1):__
 
 ```
 Headers inside <thead> correctly
@@ -807,7 +807,7 @@ Direct HTML generation
 Simple, clean architecture
 ```
 
-**No syntax changes required!** All existing `%%` blocks work.
+__No syntax changes required!__ All existing `%%` blocks work.
 
 ---
 
@@ -822,14 +822,14 @@ Simple, clean architecture
 
 ## Credits
 
-**Implementation:**
+__Implementation:__
 
 - JSPWikiPreprocessor: Server-side parser (Phase 1)
 - zebraTable.js: Dynamic row striping
 - tableSort.js: Interactive sorting
 - tableFilter.js: Column filtering
 
-**Inspired by:**
+__Inspired by:__
 
 - [Apache JSPWiki](https://jspwiki.apache.org/)
 - [JSPWiki Haddock Styles](https://jspwiki-wiki.apache.org/Wiki.jsp?page=Haddock%20Styles)
@@ -838,6 +838,6 @@ Simple, clean architecture
 
 ---
 
-**Last Updated:** 2025-10-07
-**Version:** 1.0.0
-**Maintainer:** ngdpbase Development Team
+__Last Updated:__ 2025-10-07
+__Version:__ 1.0.0
+__Maintainer:__ ngdpbase Development Team

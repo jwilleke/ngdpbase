@@ -8,14 +8,14 @@ The rules are domain-neutral. Nothing in the model below mentions pages, media o
 
 ## The invariant
 
-**All code that touches a resource goes through that resource's manager. There is no second path.**
+__All code that touches a resource goes through that resource's manager. There is no second path.__
 
 Everything else follows. Access logging, authorization, backup and encryption are each truthful only if the chokepoint is real:
 
-- **Access logging.** "Who read this" is answerable only if every read passed one place. A path that reaches around does not make the log incomplete — it makes it wrong, and silently.
-- **Authorization.** A policy evaluated at the door is enforced once. A policy evaluated in twenty-five handlers is bypassed by the twenty-sixth.
-- **Backup.** A manager can answer "how are you backed up" only because it sees every write.
-- **Encryption.** Same door, same argument.
+- __Access logging.__ "Who read this" is answerable only if every read passed one place. A path that reaches around does not make the log incomplete — it makes it wrong, and silently.
+- __Authorization.__ A policy evaluated at the door is enforced once. A policy evaluated in twenty-five handlers is bypassed by the twenty-sixth.
+- __Backup.__ A manager can answer "how are you backed up" only because it sees every write.
+- __Encryption.__ Same door, same argument.
 
 A manager is justified by being the only door to a resource — not by having alternative implementations, and not by symmetry with any existing list. The test is: *is this a resource, and would code otherwise reach it directly?* If two managers own the same store, neither is a chokepoint and the invariant is already gone.
 
@@ -54,8 +54,8 @@ Build the context fresh per request from session state. A session outlives a req
 
 Two kinds of field live in it, with opposite safety needs:
 
-- **Authorization facts** — subject, roles, scope, token generation. Built once at the edge, then treated as immutable. A handler that can write to the context can widen its own permissions.
-- **Request incidentals** — locale, timezone, theme, user agent, client IP. Mutable and harmless.
+- __Authorization facts__ — subject, roles, scope, token generation. Built once at the edge, then treated as immutable. A handler that can write to the context can widen its own permissions.
+- __Request incidentals__ — locale, timezone, theme, user agent, client IP. Mutable and harmless.
 
 Holding the engine on the context is fine. The hazard was never `ctx.engine`; it is `ctx.engine.getManager('x').store` — reaching past a manager. That is what the boundary rule forbids.
 
@@ -65,7 +65,7 @@ Holding the engine on the context is fine. The hazard was never `ctx.engine`; it
 
 ## Capabilities, providers and configuration
 
-A **capability** is one job: audit storage, search index, cache, authentication. A **provider type** is a reusable implementation of that job. The **binding** is what configuration chooses, and one type may be bound several times with different settings.
+A __capability__ is one job: audit storage, search index, cache, authentication. A __provider type__ is a reusable implementation of that job. The __binding__ is what configuration chooses, and one type may be bound several times with different settings.
 
 ### Configuration convention
 
@@ -87,14 +87,14 @@ The test is therefore not "does a `Null` implementation exist" but "can this cap
 
 ### Not configured means not loaded
 
-The gate must be a **dynamic `import()` inside the factory**. A top-level import of the implementation defeats config gating entirely: the module loads and its native bindings initialise regardless, and the config key only decides whether it is called.
+The gate must be a __dynamic `import()` inside the factory__. A top-level import of the implementation defeats config gating entirely: the module loads and its native bindings initialise regardless, and the config key only decides whether it is called.
 
 The saving is rarely memory. It is dependency weight — an image toolchain, a headless browser, a Redis client — and it is attack surface. Code that never loads cannot be exploited.
 
 Two rules keep this from becoming a different bug:
 
-- **Absent must not mean null.** If `getManager('x')` returns null, every call site needs a check and the one that forgets crashes on real data. Keep the capability addressable and make the *implementation* inert.
-- **Absent must be visible.** Log the resolved provider set at boot. Inert is fine; inert and invisible is a support ticket.
+- __Absent must not mean null.__ If `getManager('x')` returns null, every call site needs a check and the one that forgets crashes on real data. Keep the capability addressable and make the *implementation* inert.
+- __Absent must be visible.__ Log the resolved provider set at boot. Inert is fine; inert and invisible is a support ticket.
 
 ### Cardinality is a property of the capability
 
@@ -113,8 +113,8 @@ For a one-active capability, switching providers is a data migration — which i
 
 A capability declares whether it is required.
 
-- **Optional** capabilities fall back to inert on a load error or failed health check, and log it.
-- **Required** capabilities refuse to boot.
+- __Optional__ capabilities fall back to inert on a load error or failed health check, and log it.
+- __Required__ capabilities refuse to boot.
 
 The precedent for refusing is already here: the magic-link provider will not register unless `ngdpbase.application.base-url` is set explicitly, because a token in a URL is a credential and must not point at the localhost default.
 
@@ -132,8 +132,8 @@ Named `{target}-{action}` — target first, hyphen separated, URL-safe — and d
 
 Two splits are load-bearing rather than stylistic:
 
-- **Export is separate from read.** Reading one item on screen and extracting the whole set to a file are different acts with different risk: access versus disclosure.
-- **Search is a target, not an action.** Search leaks existence. "3 results you may not open" already discloses that they exist.
+- __Export is separate from read.__ Reading one item on screen and extracting the whole set to a file are different acts with different risk: access versus disclosure.
+- __Search is a target, not an action.__ Search leaks existence. "3 results you may not open" already discloses that they exist.
 
 ### Roles
 
@@ -146,7 +146,7 @@ Because roles are additive, they cannot express "everything except". The tiered 
 
 ### Scope is never in a name
 
-Not `record-read-patient-123` as a permission, and not `guardian-of-alice` as a role. Both explode combinatorially and neither can be listed in a registry. The role stays scope-free; the **assignment** carries the scope.
+Not `record-read-patient-123` as a permission, and not `guardian-of-alice` as a role. Both explode combinatorially and neither can be listed in a registry. The role stays scope-free; the __assignment__ carries the scope.
 
 ### The evaluator is tiered
 
@@ -157,7 +157,7 @@ Resource-level attributes beat global policy. That ordering is how "everything e
 - `decide(ctx, action, resource)` for a single item
 - `filter(ctx, action, query)` — policy compiled into a query predicate for lists
 
-If only the first exists, list endpoints grow their own path, and that path will not be audited. **Anything that lists resources must reach the same evaluator as the thing that decides access to one.** A lister that reimplements the check will eventually disagree with it, and the disagreement is silent in both directions: it can list what it should hide, and hide what it should list.
+If only the first exists, list endpoints grow their own path, and that path will not be audited. __Anything that lists resources must reach the same evaluator as the thing that decides access to one.__ A lister that reimplements the check will eventually disagree with it, and the disagreement is silent in both directions: it can list what it should hide, and hide what it should list.
 
 ### Access without an account
 
@@ -173,13 +173,13 @@ Backup is therefore not a feature some managers have. It is part of what it mean
 
 These are the failure shapes this codebase has actually produced. Each is now a rule.
 
-- **One rule, one implementation.** When the same policy is decided in more than one place, the copies drift, and the drift is silent because every copy still passes its own tests. Extract the decision; let the callers call it.
-- **A cached copy of an authorization attribute is not authoritative.** Denormalised fields are written at save time, so any record not re-saved since the field appeared carries a stale value. Use the cache to enumerate; read the record to decide.
-- **Fail closed when a fact cannot be resolved.** "We could not tell" must never become "allow" or "list it".
-- **A type must admit the fields that actually travel.** A field passed through but undeclared compiles clean when a provider misspells it, and silently delivers nothing.
-- **Two settings that are only correct together are one decision.** Resolve them in one place; a valid-looking combination that cannot work should be refused at boot with a message naming the symptom.
-- **A template renders what the route hands it.** Data derived inside a view cannot be shared or tested, and a second view will derive it differently.
-- **State the absence.** A count of zero and an unanswered question look identical in a log; say which one it is.
+- __One rule, one implementation.__ When the same policy is decided in more than one place, the copies drift, and the drift is silent because every copy still passes its own tests. Extract the decision; let the callers call it.
+- __A cached copy of an authorization attribute is not authoritative.__ Denormalised fields are written at save time, so any record not re-saved since the field appeared carries a stale value. Use the cache to enumerate; read the record to decide.
+- __Fail closed when a fact cannot be resolved.__ "We could not tell" must never become "allow" or "list it".
+- __A type must admit the fields that actually travel.__ A field passed through but undeclared compiles clean when a provider misspells it, and silently delivers nothing.
+- __Two settings that are only correct together are one decision.__ Resolve them in one place; a valid-looking combination that cannot work should be refused at boot with a message naming the symptom.
+- __A template renders what the route hands it.__ Data derived inside a view cannot be shared or tested, and a second view will derive it differently.
+- __State the absence.__ A count of zero and an unanswered question look identical in a log; say which one it is.
 
 ## Enforcement
 
@@ -192,8 +192,8 @@ Present in this repo:
 
 Worth adding wherever this core is used:
 
-- **A store-boundary lint rule** — only `managers/` may import from `providers/`; everything else goes through a manager ([#1057](https://github.com/jwilleke/ngdpbase/issues/1057)). Cheapest to add while the count of exceptions is small: here it is two, both benign — the logger, which bootstraps before any manager exists, and one type-only import that erases at compile time.
-- **A registry-drift test** — assert that every permission in config is checked somewhere in code, and that every permission checked in code exists in config ([#1058](https://github.com/jwilleke/ngdpbase/issues/1058)). It catches drift in both directions: an orphan permission that protects nothing, and a check spelled `x-view` where the registry says `x-read`. One fails open and looks fine; the other fails closed and also looks fine.
+- __A store-boundary lint rule__ — only `managers/` may import from `providers/`; everything else goes through a manager ([#1057](https://github.com/jwilleke/ngdpbase/issues/1057)). Cheapest to add while the count of exceptions is small: here it is two, both benign — the logger, which bootstraps before any manager exists, and one type-only import that erases at compile time.
+- __A registry-drift test__ — assert that every permission in config is checked somewhere in code, and that every permission checked in code exists in config ([#1058](https://github.com/jwilleke/ngdpbase/issues/1058)). It catches drift in both directions: an orphan permission that protects nothing, and a check spelled `x-view` where the registry says `x-read`. One fails open and looks fine; the other fails closed and also looks fine.
 
 Both are currently clean here — zero orphan permissions, zero unregistered checks, two justified boundary exceptions. That is the argument for writing the checks now: a passing guard written today pins a property, while the same guard written after the first drift is a bug report.
 
@@ -226,10 +226,10 @@ Measured against this repository at v4.10.0. Included so the model above can be 
 
 Stated as facts, each re-verified against `src/` at v4.10.0 rather than inferred from a file listing. None is resolved by the model above.
 
-- **Provider resolution is a convention, not a mechanism.** Ten managers each repeat the same sequence — read the key, apply the default, normalise the name, dynamic-import — and no shared factory exists. It is consistent because everyone remembers, not because anything enforces it. One factory mapping `(capability, config) → instance` would remove the repetition and make a fake injectable in tests without touching config files.
-- **Boot ordering is an explicit hand-written list, with no validation.** Thirty-eight managers are registered in source order, and nothing declares or checks a dependency. A manager initialising before the configuration it reads does not crash — it silently takes defaults, which is worse.
-- **Per-manager `backup()` yields a torn snapshot across managers.** Nine managers implement `backup()` and nothing quiesces or orders them, so the parts are captured at different instants. Each manager can answer for itself; the coordination is engine-level work that is not designed.
-- **`UserManager` is 1,682 lines** carrying password hashing, permission resolution, middleware and page creation, with three role methods left as `never` after a split to `RoleManager`. It is the example of a single path being read as a single class.
-- **Authorization fields on the context are optional.** Because `undefined` is falsy, a missing value fails closed by luck rather than by design.
-- **`required-factors` is declared but never enforced.** The key is read into `AuthManager` at boot and exposed by `getRequiredFactors()`, which nothing outside its own tests calls. Its documented meaning is "must be satisfied, in order" — an all-of list — while six providers are registered simultaneously as alternatives. Whoever implements multi-factor must satisfy every entry; wiring it as "try each until one succeeds" turns the same config into a bypass, because an attacker presents the single factor they hold.
-- **No restart-required marker on configuration keys.** The config carries a `secret-keys` marker but no restart marker, while the admin UI can write any key at runtime via `setProperty`. Changing a provider binding that way leaves stated and actual configuration disagreeing silently.
+- __Provider resolution is a convention, not a mechanism.__ Ten managers each repeat the same sequence — read the key, apply the default, normalise the name, dynamic-import — and no shared factory exists. It is consistent because everyone remembers, not because anything enforces it. One factory mapping `(capability, config) → instance` would remove the repetition and make a fake injectable in tests without touching config files.
+- __Boot ordering is an explicit hand-written list, with no validation.__ Thirty-eight managers are registered in source order, and nothing declares or checks a dependency. A manager initialising before the configuration it reads does not crash — it silently takes defaults, which is worse.
+- __Per-manager `backup()` yields a torn snapshot across managers.__ Nine managers implement `backup()` and nothing quiesces or orders them, so the parts are captured at different instants. Each manager can answer for itself; the coordination is engine-level work that is not designed.
+- __`UserManager` is 1,682 lines__ carrying password hashing, permission resolution, middleware and page creation, with three role methods left as `never` after a split to `RoleManager`. It is the example of a single path being read as a single class.
+- __Authorization fields on the context are optional.__ Because `undefined` is falsy, a missing value fails closed by luck rather than by design.
+- __`required-factors` is declared but never enforced.__ The key is read into `AuthManager` at boot and exposed by `getRequiredFactors()`, which nothing outside its own tests calls. Its documented meaning is "must be satisfied, in order" — an all-of list — while six providers are registered simultaneously as alternatives. Whoever implements multi-factor must satisfy every entry; wiring it as "try each until one succeeds" turns the same config into a bypass, because an attacker presents the single factor they hold.
+- __No restart-required marker on configuration keys.__ The config carries a `secret-keys` marker but no restart marker, while the admin UI can write any key at runtime via `setProperty`. Changing a provider binding that way leaves stated and actual configuration disagreeing silently.

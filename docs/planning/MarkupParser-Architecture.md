@@ -19,7 +19,7 @@ This document outlines the architecture for implementing a comprehensive MarkupP
 
 ### Supported Enhancements (9/19 - 47%)
 
-✅ **Currently Supported:**
+✅ __Currently Supported:__
 
 - Basic Plugin Syntax: `[{PluginName param=value}]`
 - Wiki Variables: `[{$variable}]`
@@ -31,7 +31,7 @@ This document outlines the architecture for implementing a comprehensive MarkupP
 - Variable Manager integration
 - Plugin Manager integration
 
-❌ **Missing JSPWiki Enhancements:**
+❌ __Missing JSPWiki Enhancements:__
 
 - WikiTags (JSP-like): `<wiki:If>`, `<wiki:Include>`
 - WikiForms: `[{FormOpen}]`, `[{FormInput}]`, `[{FormClose}]`
@@ -48,11 +48,11 @@ This document outlines the architecture for implementing a comprehensive MarkupP
 
 ### Core Design Principles
 
-1. **Phase-based Processing**: Multi-stage parsing pipeline
-2. **Extensible Plugin System**: Easy addition of new syntax handlers
-3. **JSPWiki Compatibility**: 100% syntax compatibility
-4. **Performance Optimized**: Caching and efficient parsing
-5. **Error Resilient**: Graceful degradation for malformed syntax
+1. __Phase-based Processing__: Multi-stage parsing pipeline
+2. __Extensible Plugin System__: Easy addition of new syntax handlers
+3. __JSPWiki Compatibility__: 100% syntax compatibility
+4. __Performance Optimized__: Caching and efficient parsing
+5. __Error Resilient__: Graceful degradation for malformed syntax
 
 ### Architecture Overview
 
@@ -378,17 +378,17 @@ class SpamFilter extends BaseFilter {
 
 ### Caching Strategy
 
-- **Parse Result Caching**: Cache final parsed content with TTL
-- **Handler Result Caching**: Cache expensive plugin/tag results
-- **Pattern Compilation**: Pre-compile all regex patterns
-- **Context Caching**: Cache context-dependent resolutions
+- __Parse Result Caching__: Cache final parsed content with TTL
+- __Handler Result Caching__: Cache expensive plugin/tag results
+- __Pattern Compilation__: Pre-compile all regex patterns
+- __Context Caching__: Cache context-dependent resolutions
 
 ### Optimization Techniques
 
-- **Lazy Loading**: Load handlers only when needed
-- **Parallel Processing**: Process independent syntax in parallel
-- **Stream Processing**: Handle large content efficiently
-- **Memory Management**: Proper cleanup and garbage collection
+- __Lazy Loading__: Load handlers only when needed
+- __Parallel Processing__: Process independent syntax in parallel
+- __Stream Processing__: Handle large content efficiently
+- __Memory Management__: Proper cleanup and garbage collection
 
 ## Security Considerations
 
@@ -426,13 +426,13 @@ class SpamFilter extends BaseFilter {
 
 ### Existing Managers
 
-- **RenderingManager**: Primary integration point
-- **PluginManager**: Plugin execution
-- **VariableManager**: Variable resolution
-- **CacheManager**: Performance caching
-- **PolicyManager**: Security integration
-- **UserManager**: Context information
-- **AttachmentManager**: File handling
+- __RenderingManager__: Primary integration point
+- __PluginManager__: Plugin execution
+- __VariableManager__: Variable resolution
+- __CacheManager__: Performance caching
+- __PolicyManager__: Security integration
+- __UserManager__: Context information
+- __AttachmentManager__: File handling
 
 ### New Dependencies
 
@@ -474,20 +474,20 @@ class SpamFilter extends BaseFilter {
 
 ### Rollout Plan
 
-1. **Development Environment**: Full testing
-2. **Staging Environment**: Real content testing
-3. **Production Rollout**: Gradual deployment
-4. **Legacy Support**: Maintain old system temporarily
-5. **Full Migration**: Complete transition
+1. __Development Environment__: Full testing
+2. __Staging Environment__: Real content testing
+3. __Production Rollout__: Gradual deployment
+4. __Legacy Support__: Maintain old system temporarily
+5. __Full Migration__: Complete transition
 
 ## Success Metrics
 
 ### Compatibility Goals
 
-- **100% JSPWiki Syntax Support**: All documented enhancements
-- **Performance Improvement**: 20% faster rendering
-- **Error Reduction**: 90% fewer parsing errors
-- **Feature Parity**: Match JSPWiki 2.12.x capabilities
+- __100% JSPWiki Syntax Support__: All documented enhancements
+- __Performance Improvement__: 20% faster rendering
+- __Error Reduction__: 90% fewer parsing errors
+- __Feature Parity__: Match JSPWiki 2.12.x capabilities
 
 ### Technical Metrics
 
@@ -500,10 +500,10 @@ class SpamFilter extends BaseFilter {
 
 The MarkupParser architecture will transform ngdpbase from a basic wiki with limited enhancements to a fully JSPWiki-compatible system with modern architecture. This design provides:
 
-1. **Complete Enhancement Support**: All JSPWiki syntax patterns
-2. **Extensible Architecture**: Easy addition of new features
-3. **Performance Optimization**: Caching and efficient processing
-4. **Security Integration**: Built-in permission and validation
-5. **Modern JavaScript**: Clean, maintainable codebase
+1. __Complete Enhancement Support__: All JSPWiki syntax patterns
+2. __Extensible Architecture__: Easy addition of new features
+3. __Performance Optimization__: Caching and efficient processing
+4. __Security Integration__: Built-in permission and validation
+5. __Modern JavaScript__: Clean, maintainable codebase
 
 The phased implementation approach ensures minimal disruption while achieving full compatibility and enhanced functionality.

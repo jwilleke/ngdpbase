@@ -1,7 +1,7 @@
 # ConfigurationManager Complete Guide
 
-**Module:** `src/managers/ConfigurationManager.ts`
-**Quick Reference:** [ConfigurationManager.md](ConfigurationManager.md)
+__Module:__ `src/managers/ConfigurationManager.ts`
+__Quick Reference:__ [ConfigurationManager.md](ConfigurationManager.md)
 
 ---
 
@@ -13,13 +13,13 @@ The ConfigurationManager provides JSPWiki-compatible configuration management fo
 
 The ConfigurationManager follows JSPWiki's configuration patterns with Docker/Kubernetes support:
 
-- **Default Configuration**: `config/app-default-config.json` contains all default settings (read-only, in codebase)
-- **Custom Overrides**: `INSTANCE_DATA_FOLDER/config/{INSTANCE_CONFIG_FILE}` contains instance customizations
-- **Instance Separation**: `INSTANCE_DATA_FOLDER` env var controls where instance data is stored
-- **Configurable Filename**: `INSTANCE_CONFIG_FILE` env var controls which config file to load
-- **Property Merging**: Custom config overrides defaults
-- **Runtime Access**: Provides getter methods for commonly used configuration values
-- **Admin Interface**: Web-based configuration management with validation
+- __Default Configuration__: `config/app-default-config.json` contains all default settings (read-only, in codebase)
+- __Custom Overrides__: `INSTANCE_DATA_FOLDER/config/{INSTANCE_CONFIG_FILE}` contains instance customizations
+- __Instance Separation__: `INSTANCE_DATA_FOLDER` env var controls where instance data is stored
+- __Configurable Filename__: `INSTANCE_CONFIG_FILE` env var controls which config file to load
+- __Property Merging__: Custom config overrides defaults
+- __Runtime Access__: Provides getter methods for commonly used configuration values
+- __Admin Interface__: Web-based configuration management with validation
 
 ## Configuration Files
 
@@ -34,24 +34,24 @@ INSTANCE_DATA_FOLDER/config/               # Instance-specific (default: ./data/
                                           # Written from install-form data; no template (#642)
 ```
 
-**Environment Variables:**
+__Environment Variables:__
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `INSTANCE_DATA_FOLDER` | `./data` | Base path for all instance data |
 | `INSTANCE_CONFIG_FILE` | `app-custom-config.json` | Config filename to load |
 
-**Deployment examples:**
+__Deployment examples:__
 
-- **Local development**: `INSTANCE_DATA_FOLDER=./data`
-- **Docker**: `INSTANCE_DATA_FOLDER=/app/data`
-- **Kubernetes**: `INSTANCE_DATA_FOLDER=/app/data` (mounted PVC)
+- __Local development__: `INSTANCE_DATA_FOLDER=./data`
+- __Docker__: `INSTANCE_DATA_FOLDER=/app/data`
+- __Kubernetes__: `INSTANCE_DATA_FOLDER=/app/data` (mounted PVC)
 
 ### config/app-default-config.json
 
 Contains all default configuration properties. This file should not be modified directly.
 
-**Key sections:**
+__Key sections:__
 
 ```json
 {
@@ -72,7 +72,7 @@ Contains all default configuration properties. This file should not be modified 
 
 Contains custom overrides for default properties. Created by installation wizard or manually.
 
-**Example:**
+__Example:__
 
 ```json
 {
@@ -103,11 +103,11 @@ node scripts/configurationmanage-get-config.js ngdpbase.notifications --prefix -
 
 All properties follow JSPWiki's naming convention:
 
-- **Namespace prefix**: `ngdpbase.` or `log4j.`
-- **Hierarchical structure**: Use dots to separate levels
-- **Descriptive names**: Clear, self-documenting property names
+- __Namespace prefix__: `ngdpbase.` or `log4j.`
+- __Hierarchical structure__: Use dots to separate levels
+- __Descriptive names__: Clear, self-documenting property names
 
-**Examples:**
+__Examples:__
 
 - `ngdpbase.server.port` - Server configuration
 - `ngdpbase.session.max-age` - Session settings
@@ -126,16 +126,16 @@ Initializes the ConfigurationManager by loading and merging configuration files.
 
 ##### `getProperty(key, defaultValue = null)`
 
-Gets a configuration property value with optional default. String values may carry **env-var references** that are resolved at lookup time — see [#775 in `ConfigurationManager.md`](ConfigurationManager.md#env-var-references-in-config-values-775-v3380) for the two-form spec (`${VAR}` embedded paths vs `$VAR` whole-value secrets).
+Gets a configuration property value with optional default. String values may carry __env-var references__ that are resolved at lookup time — see [#775 in `ConfigurationManager.md`](ConfigurationManager.md#env-var-references-in-config-values-775-v3380) for the two-form spec (`${VAR}` embedded paths vs `$VAR` whole-value secrets).
 
-**Parameters:**
+__Parameters:__
 
 - `key` (string): Property key (e.g., 'ngdpbase.application-name')
 - `defaultValue` (any): Default value if property not found
 
-**Returns:** any — Property value (with env-refs resolved) or default.
+__Returns:__ any — Property value (with env-refs resolved) or default.
 
-**Throws:** when a bare-form `$VAR` config value references an unset env var — loud failure is preferred for secrets.
+__Throws:__ when a bare-form `$VAR` config value references an unset env var — loud failure is preferred for secrets.
 
 ##### `getMaskedProperty(key, defaultValue = null)`
 
@@ -145,7 +145,7 @@ Like `getProperty()` but returns `"***"` for any value sourced from a bare-form 
 
 Sets a custom configuration property (saves to `INSTANCE_DATA_FOLDER/config/app-custom-config.json`).
 
-**Parameters:**
+__Parameters:__
 
 - `key` (string): Property key
 - `value` (any): Property value
@@ -154,13 +154,13 @@ Sets a custom configuration property (saves to `INSTANCE_DATA_FOLDER/config/app-
 
 Gets merged configuration properties (defaults + environment + custom overrides).
 
-**Returns:** object - Complete merged configuration
+__Returns:__ object - Complete merged configuration
 
 ##### `getInstanceDataFolder()`
 
 Gets the resolved path to the instance data folder.
 
-**Returns:** string - Absolute path to instance data folder
+__Returns:__ string - Absolute path to instance data folder
 
 ```javascript
 const dataFolder = configManager.getInstanceDataFolder();
@@ -171,11 +171,11 @@ const dataFolder = configManager.getInstanceDataFolder();
 
 Resolves a path relative to the instance data folder.
 
-**Parameters:**
+__Parameters:__
 
 - `relativePath` (string): Path relative to instance data folder (e.g., './pages')
 
-**Returns:** string - Absolute path
+__Returns:__ string - Absolute path
 
 ```javascript
 const pagesDir = configManager.resolveDataPath('./pages');
@@ -186,13 +186,13 @@ const pagesDir = configManager.resolveDataPath('./pages');
 
 Gets default properties from app-default-config.json.
 
-**Returns:** object - Default configuration properties
+__Returns:__ object - Default configuration properties
 
 ##### `getCustomProperties()`
 
 Gets custom override properties from app-custom-config.json.
 
-**Returns:** object - Custom configuration overrides
+__Returns:__ object - Custom configuration overrides
 
 #### Convenience Methods
 
@@ -231,7 +231,7 @@ getRSSConfig()         // Complete RSS configuration object
 
 ### Application Configuration
 
-**Core application settings:**
+__Core application settings:__
 
 ```json
 {
@@ -246,7 +246,7 @@ getRSSConfig()         // Complete RSS configuration object
 
 ### Server Configuration
 
-**Server and network settings:**
+__Server and network settings:__
 
 ```json
 {
@@ -261,7 +261,7 @@ getRSSConfig()         // Complete RSS configuration object
 
 ### Provider Configuration
 
-**Data and service providers:**
+__Data and service providers:__
 
 ```json
 {
@@ -276,7 +276,7 @@ getRSSConfig()         // Complete RSS configuration object
 
 ### Feature Configuration
 
-**Feature toggles and settings:**
+__Feature toggles and settings:__
 
 ```json
 {
@@ -295,7 +295,7 @@ getRSSConfig()         // Complete RSS configuration object
 
 Access at `/admin/configuration` with admin privileges.
 
-**Features:**
+__Features:__
 
 #### Current Configuration Tab
 
@@ -326,9 +326,9 @@ Access at `/admin/configuration` with admin privileges.
 
 The admin interface validates:
 
-- **Property names** must start with `ngdpbase.` or `log4j.`
-- **Property values** are properly formatted
-- **Duplicate properties** are handled correctly
+- __Property names__ must start with `ngdpbase.` or `log4j.`
+- __Property values__ are properly formatted
+- __Duplicate properties__ are handled correctly
 
 ## Integration Examples
 
@@ -420,10 +420,10 @@ INSTANCE_CONFIG_FILE=app-test-config.json npm test
 
 For containerized deployments, configuration can be provided via:
 
-- **Environment variables**: `NGDPBASE_BASE_URL`, `NGDPBASE_PORT`, etc.
-- **Volume mount**: Mount config file to `INSTANCE_DATA_FOLDER/config/`
-- **ConfigMap (K8s)**: Mount ConfigMap as config file
-- **Installation wizard**: Complete wizard on first access (writes to PVC)
+- __Environment variables__: `NGDPBASE_BASE_URL`, `NGDPBASE_PORT`, etc.
+- __Volume mount__: Mount config file to `INSTANCE_DATA_FOLDER/config/`
+- __ConfigMap (K8s)__: Mount ConfigMap as config file
+- __Installation wizard__: Complete wizard on first access (writes to PVC)
 
 ```yaml
 # Kubernetes example
@@ -441,16 +441,16 @@ volumeMounts:
 
 When adding new configuration properties:
 
-1. **Add to app-default-config.json** with sensible defaults
-2. **Update ConfigurationManager** with getter method if commonly used
-3. **Document the property** in this documentation
-4. **Update admin interface** if UI changes needed
+1. __Add to app-default-config.json__ with sensible defaults
+2. __Update ConfigurationManager__ with getter method if commonly used
+3. __Document the property__ in this documentation
+4. __Update admin interface__ if UI changes needed
 
 ## Security Considerations
 
 ### Session Security
 
-**Important session-related properties:**
+__Important session-related properties:__
 
 ```json
 {
@@ -498,19 +498,19 @@ The ConfigurationManager maintains compatibility with JSPWiki patterns:
 
 ### Common Issues
 
-**Configuration not loading:**
+__Configuration not loading:__
 
 - Check JSON syntax in configuration files
 - Verify file permissions
 - Review startup logs for errors
 
-**Properties not taking effect:**
+__Properties not taking effect:__
 
 - Restart server after manual file changes
 - Use admin interface for immediate updates
 - Check property name spelling
 
-**Admin interface errors:**
+__Admin interface errors:__
 
 - Verify admin privileges
 - Check CSRF token issues

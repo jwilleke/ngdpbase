@@ -328,7 +328,7 @@ Returns metadata references delegating to its provider:
 
 #### What's NOT backed up
 
-❌ Actual file contents (binaries stay in filesystem) --> **MUST include**
+❌ Actual file contents (binaries stay in filesystem) --> __MUST include__
 Storage Model: The provider at BasicAttachmentProvider.js:420-428 backs up the metadata Map which tracks all attachments. The actual files remain in ./data/attachments/ directory and are referenced by their SHA-256 hash.
 Need to modify backup() and restore() functions in BasicAttachmentProvider.js so AttachmentManager can make appropriate calls.
 
@@ -341,7 +341,7 @@ PageManager itself has no custom backup method at PageManager.js:17-170, so it u
   data: null
 }
 
-However: The provider (FileSystemProvider)  **needs to implement backup/restore**. Currently it doesn't have these methods implemented, which means:
+However: The provider (FileSystemProvider)  __needs to implement backup/restore__. Currently it doesn't have these methods implemented, which means:
 
 - Page data stays in the filesystem (./pages/ directory)
 - Metadata/frontmatter is in the markdown files

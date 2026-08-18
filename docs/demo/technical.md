@@ -1,8 +1,8 @@
 # ngdpbase — Technical Demo Guide
 
-**Audience:** Developers, architects, technical evaluators
-**Duration:** 25–35 minutes
-**Servers needed:** ngdpbase (port 3000), fairways-base (port 2121)
+__Audience:__ Developers, architects, technical evaluators
+__Duration:__ 25–35 minutes
+__Servers needed:__ ngdpbase (port 3000), fairways-base (port 2121)
 
 ---
 
@@ -35,7 +35,7 @@ Demo Sites
 
 ## Act 1 — Architecture Overview (5 min)
 
-**Goal:** Orient the audience before touching the UI.
+__Goal:__ Orient the audience before touching the UI.
 
 ### What it is
 
@@ -45,12 +45,12 @@ ngdpbase is a TypeScript/Node.js content platform built around a plugin-driven m
 
 | Concept | What to say |
 | --- | --- |
-| **No database** | All content is Markdown files on disk. Swap storage providers without changing application code. |
-| **Manager pattern** | 30 managers (`PageManager`, `PluginManager`, `CacheManager`, …) each own one concern and are initialized in dependency order. |
-| **Plugin auto-discovery** | Drop a `.ts` file into `src/plugins/` — it is loaded and registered automatically on next build. |
-| **Domain addons** | A single codebase runs multiple sites. Each addon (calendar, forms, journal, elasticsearch) contributes pages, routes, themes, and nav items independently. All addons are TypeScript/ESM packages. |
-| **Required pages** | System UI pages (LeftMenu, Header, About You, …) are Markdown files versioned in the repo and seeded on first boot. |
-| **Rendered HTML cache** | Parsed and rendered page HTML is cached in `CacheManager` per page per role-set. Cache is invalidated on save, rename, or delete — zero stale reads. |
+| __No database__ | All content is Markdown files on disk. Swap storage providers without changing application code. |
+| __Manager pattern__ | 30 managers (`PageManager`, `PluginManager`, `CacheManager`, …) each own one concern and are initialized in dependency order. |
+| __Plugin auto-discovery__ | Drop a `.ts` file into `src/plugins/` — it is loaded and registered automatically on next build. |
+| __Domain addons__ | A single codebase runs multiple sites. Each addon (calendar, forms, journal, elasticsearch) contributes pages, routes, themes, and nav items independently. All addons are TypeScript/ESM packages. |
+| __Required pages__ | System UI pages (LeftMenu, Header, About You, …) are Markdown files versioned in the repo and seeded on first boot. |
+| __Rendered HTML cache__ | Parsed and rendered page HTML is cached in `CacheManager` per page per role-set. Cache is invalidated on save, rename, or delete — zero stale reads. |
 
 ### Show the project structure briefly
 
@@ -73,7 +73,7 @@ Point to [docs/architecture/MANAGERS-OVERVIEW.md](../architecture/MANAGERS-OVERV
 
 ## Act 2 — The Rendering Pipeline (7 min)
 
-**Goal:** Show the technical heart of the system — the 7-phase MarkupParser.
+__Goal:__ Show the technical heart of the system — the 7-phase MarkupParser.
 
 ### Diagram to draw / show
 
@@ -91,7 +91,7 @@ Raw Markup
 
 ### Live demonstration
 
-1. **Open any page → Edit**
+1. __Open any page → Edit__
 2. Add this markup and save:
 
    ```
@@ -107,7 +107,7 @@ Raw Markup
    - `[{ConfigAccessor key='ngdpbase.server.*'}]` renders a live table from the running config — no separate API call from the browser
    - The config table is rendered server-side and included in the page HTML
 
-4. **Show the cache** (talk track):
+4. __Show the cache__ (talk track):
 
    > "Rendered HTML is cached in `CacheManager` under the key `rendered-pages:<pageName>:<sortedRoles>`. The role-set in the key ensures users with different access levels never see each other's cached output. On a cache hit the entire rendering pipeline — textToHTML, tab sections, all plugin execution — is skipped entirely. Cache is invalidated automatically on every save, rename, or delete."
 
@@ -137,7 +137,7 @@ export default UptimePlugin;
 
 ## Act 3 — Domain Addons (5 min)
 
-**Goal:** Show that one codebase powers multiple sites with zero code duplication.
+__Goal:__ Show that one codebase powers multiple sites with zero code duplication.
 
 ### Side-by-side
 
@@ -164,16 +164,16 @@ The four current addons and what each contributes:
 
 | Addon | What it adds |
 | --- | --- |
-| **calendar** | Reservation system with admin view, conflict detection, email confirmations |
-| **forms** | Schema-driven forms: JSON field definitions, multi-type fields (text, dropdown, section/fieldset, hidden), proxy submission (on-behalf-of), handler hooks, email confirmation, submission store |
-| **journal** | Timestamped log entries with per-page journals and admin management |
-| **elasticsearch** | Full-text + sist2 asset search via Elasticsearch, admin status dashboard |
+| __calendar__ | Reservation system with admin view, conflict detection, email confirmations |
+| __forms__ | Schema-driven forms: JSON field definitions, multi-type fields (text, dropdown, section/fieldset, hidden), proxy submission (on-behalf-of), handler hooks, email confirmation, submission store |
+| __journal__ | Timestamped log entries with per-page journals and admin management |
+| __elasticsearch__ | Full-text + sist2 asset search via Elasticsearch, admin status dashboard |
 
 > "The host engine never knows what addons are installed. Addons register themselves. Adding a new vertical is a new directory and a new JSON form definition — not a fork."
 
 ### My Links — a concrete addon-aware feature
 
-Navigate to any page on fairways-base → More menu → **Add to My Links**.
+Navigate to any page on fairways-base → More menu → __Add to My Links__.
 
 > "My Links is per-user and renders directly in the EJS template — not inside a LeftMenu wiki page — so it works regardless of which LeftMenu variant an addon installs. The pinned pages are in `nav.pinnedPages` inside the user preferences JSON and are included in the MarkupParser cache key so the sidebar always reflects the current state."
 
@@ -181,7 +181,7 @@ Navigate to any page on fairways-base → More menu → **Add to My Links**.
 
 ## Act 4 — Storage & Data Model (5 min)
 
-**Goal:** Explain why there is no database and why that is a feature, not a gap.
+__Goal:__ Explain why there is no database and why that is a feature, not a gap.
 
 ### Page storage
 
@@ -226,7 +226,7 @@ Each user is a JSON file in `data/users/`. Preferences (including `nav.pinnedPag
 
 ## Act 5 — Auth, ACL & Policy (5 min)
 
-**Goal:** Show the security model is real and layered.
+__Goal:__ Show the security model is real and layered.
 
 ### Authentication
 
@@ -262,7 +262,7 @@ Separate from ACL — `PolicyManager` loads JSON policy files that express broad
 
 ## Act 6 — Developer Experience (5 min)
 
-**Goal:** Show the system is easy to extend.
+__Goal:__ Show the system is easy to extend.
 
 ### Write a plugin live (or walk through the steps)
 
@@ -291,7 +291,7 @@ Then on any page:
 [{Hello name='Audience'}]
 ```
 
-Result: **Hello, Audience!** — rendered live on page load.
+Result: __Hello, Audience!__ — rendered live on page load.
 
 ### Emoji shortcodes
 

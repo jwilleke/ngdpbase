@@ -4,7 +4,7 @@ ngdpbase ships a built-in `/contact` route that operators can use as a zero-auth
 
 The form is server-rendered, posts back to `/contact`, validates inputs, defends against bot spam (honeypot + per-IP rate limit), resolves a recipient (explicit config or first-admin fallback), and delivers via the existing `EmailManager`. When mail is unconfigured the form renders a "not configured" state instead, so visitors don't get a misleading success.
 
-This doc covers the current shipping behaviour as of **v3.13.0**. The feature originally landed in #658 (v3.11.0 GET preview, v3.11.1 closed the form-and-send loop). Subsequent improvements ship under the umbrella issue #670 in five phases (A–E); see the *Roadmap* section at the end for what's done vs planned.
+This doc covers the current shipping behaviour as of __v3.13.0__. The feature originally landed in #658 (v3.11.0 GET preview, v3.11.1 closed the form-and-send loop). Subsequent improvements ship under the umbrella issue #670 in five phases (A–E); see the *Roadmap* section at the end for what's done vs planned.
 
 ---
 
@@ -15,7 +15,7 @@ This doc covers the current shipping behaviour as of **v3.13.0**. The feature or
 | `GET` | `/contact` | Renders the built-in form (`views/contact.ejs`) — name, email, optional subject, message, plus a hidden honeypot field. |
 | `POST` | `/contact` | Validates and sends the message; re-renders the same view with a success banner, a validation error, or a "not configured" notice. |
 
-What it is **not**:
+What it is __not__:
 
 - It is not a ticketing system. Submissions go to email and to a local JSONL audit log (added in v3.12.0); there is no inbox, no thread, no reply tracking.
 - It is not the same thing as the seeded `contact-us` *wiki page*. That page is a static text page at `/view/contact-us` that operators can edit. The `/contact` *route* is the form. They share a name but are independent.
@@ -26,8 +26,8 @@ What it is **not**:
 
 Out of the box, `/contact` is reachable in two ways:
 
-1. **Footer link on every page** (since v3.11.4 / #670 Phase A) — when the contact feature is *fully available*. See the next subsection for what "fully available" means.
-2. **Direct URL** (`/contact`) — always works as long as `ngdpbase.application.contact.enabled` is true.
+1. __Footer link on every page__ (since v3.11.4 / #670 Phase A) — when the contact feature is *fully available*. See the next subsection for what "fully available" means.
+2. __Direct URL__ (`/contact`) — always works as long as `ngdpbase.application.contact.enabled` is true.
 
 Operators can also author wiki-page links to `/contact` (JSPWiki syntax `[Send us a message|/contact]`) on any page; this is independent of the footer.
 
@@ -69,7 +69,7 @@ Four keys, all in your instance config at `$FAST_STORAGE/config/app-custom-confi
 | Key | Default | Description |
 |---|---|---|
 | `ngdpbase.application.contact.enabled` | `true` | Master kill switch. `false` → both `GET` and `POST` return 404. |
-| `ngdpbase.application.contact.page` | `""` | Empty → use the built-in form. Set to a page slug → `GET /contact` 302-redirects to `/view/<slug>`; `POST /contact` returns **405 Method Not Allowed**. |
+| `ngdpbase.application.contact.page` | `""` | Empty → use the built-in form. Set to a page slug → `GET /contact` 302-redirects to `/view/<slug>`; `POST /contact` returns __405 Method Not Allowed__. |
 | `ngdpbase.application.contact.recipient` | `""` | Empty → resolve at request time to the first admin user whose email isn't the install-default sentinel `admin@localhost`. Set to a single address or an inline CSV → use verbatim. Each address is regex-checked at startup (#670 Phase D); a malformed segment refuses to start. See *Recipient patterns* below. |
 | `ngdpbase.application.contact.footer.enabled` | `true` | Render a "Contact" link in the page footer when `contactAvailable` is true (#670 Phase A). Set `false` to keep `/contact` reachable without advertising it. |
 | `ngdpbase.application.contact.persist.enabled` | `true` | Append every legitimate `POST /contact` submission to a JSONL audit log (#670 Phase C, v3.12.0). Set `false` to disable persistence entirely. |
@@ -187,28 +187,28 @@ The handlers mirror each other on the front-of-pipeline checks; submission adds 
 
 | `enabled` | `page` | `mail.enabled` | `EmailManager` | `recipient` resolves | Result |
 |---|---|---|---|---|---|
-| `false` | * | * | * | * | **404** Not found |
-| `true` | `<slug>` (≠ "contact") | * | * | * | **302** → `/view/<slug>` |
-| `true` | `""` | * | not registered | * | **200** "not configured" (logged at error) |
-| `true` | `""` | `false` | registered | * | **200** "not configured" (logged at error) |
-| `true` | `""` | `true` | registered | no | **200** "not configured" |
-| `true` | `""` | `true` | registered | yes | **200** form view (`state: "form"`) |
+| `false` | * | * | * | * | __404__ Not found |
+| `true` | `<slug>` (≠ "contact") | * | * | * | __302__ → `/view/<slug>` |
+| `true` | `""` | * | not registered | * | __200__ "not configured" (logged at error) |
+| `true` | `""` | `false` | registered | * | __200__ "not configured" (logged at error) |
+| `true` | `""` | `true` | registered | no | __200__ "not configured" |
+| `true` | `""` | `true` | registered | yes | __200__ form view (`state: "form"`) |
 
 ### `POST /contact`
 
 | Step | On failure | On success |
 |---|---|---|
-| `enabled = false` | **404** | continue |
-| `page = "<slug>"` (≠ "contact") | **405** Method Not Allowed | continue |
-| Per-IP rate limit (5 / 15-min rolling) | **429** + `Retry-After` header | continue |
-| Honeypot field `_website` non-empty | **200** silent success view, **no mail** sent (logged) | continue |
+| `enabled = false` | __404__ | continue |
+| `page = "<slug>"` (≠ "contact") | __405__ Method Not Allowed | continue |
+| Per-IP rate limit (5 / 15-min rolling) | __429__ + `Retry-After` header | continue |
+| Honeypot field `_website` non-empty | __200__ silent success view, __no mail__ sent (logged) | continue |
 | `EmailManager` is registered | render "not configured" (logged at error) | continue |
 | `mail.enabled = true` | render "not configured" (logged at error) | continue |
 | Recipient resolves | render "not configured" view | continue |
-| Field validation (name 1–100, email 1–254 + shape, subject ≤200, message 1–5000) | **400** + form re-render with error + preserved values | continue |
-| `EmailManager.sendTo` | **200** form re-render with "We could not send your message right now." | **200** success view (`state: "submitted"`) |
+| Field validation (name 1–100, email 1–254 + shape, subject ≤200, message 1–5000) | __400__ + form re-render with error + preserved values | continue |
+| `EmailManager.sendTo` | __200__ form re-render with "We could not send your message right now." | __200__ success view (`state: "submitted"`) |
 
-The mail / recipient checks now run **before** field validation, so a misconfigured deploy short-circuits to "not configured" without parsing the visitor's input. This is a behaviour change in v3.11.5 (#670 Phase B) — earlier versions accepted submissions and silently dropped them when mail was disabled.
+The mail / recipient checks now run __before__ field validation, so a misconfigured deploy short-circuits to "not configured" without parsing the visitor's input. This is a behaviour change in v3.11.5 (#670 Phase B) — earlier versions accepted submissions and silently dropped them when mail was disabled.
 
 ---
 
@@ -218,9 +218,9 @@ See *Recipient patterns* above for the three operator-facing patterns. This sect
 
 `UserManager.getContactRecipient(recipientOverride)`:
 
-1. **If the override is non-empty** (after trim), return it as-is. Each address segment was already validated at startup (since v3.12.1, #670 Phase D); the resolver does not re-parse. If you need fine-grained control (CC, BCC, per-category routing), it's not in this resolver — wire it yourself or file an issue.
-2. **Otherwise** iterate users in `getUsers()` order. For each user where `email` is non-empty AND `email !== "admin@localhost"` AND the user has the `admin` role, return their email. **First match wins.** "First" here means the iteration order returned by `UserManager.getUsers()`, which is filesystem-load order — predictable but not guaranteed alphabetical.
-3. **If no admin with a real email exists**, return `null`. The handler renders the "not configured" view in that case; no mail is attempted.
+1. __If the override is non-empty__ (after trim), return it as-is. Each address segment was already validated at startup (since v3.12.1, #670 Phase D); the resolver does not re-parse. If you need fine-grained control (CC, BCC, per-category routing), it's not in this resolver — wire it yourself or file an issue.
+2. __Otherwise__ iterate users in `getUsers()` order. For each user where `email` is non-empty AND `email !== "admin@localhost"` AND the user has the `admin` role, return their email. __First match wins.__ "First" here means the iteration order returned by `UserManager.getUsers()`, which is filesystem-load order — predictable but not guaranteed alphabetical.
+3. __If no admin with a real email exists__, return `null`. The handler renders the "not configured" view in that case; no mail is attempted.
 
 The recipient is never written into the rendered HTML. Even on the success view, the visitor sees only "Message sent" — never the address it went to.
 
@@ -235,7 +235,7 @@ The `/contact` POST handler delegates mail send to `EmailManager.sendTo(recipien
 | `console` (default) | Prints the message body to the server log; nothing is delivered. | Local development, tests. |
 | `smtp` | Sends via Nodemailer to a configured SMTP relay. | Production. |
 
-If `ngdpbase.mail.enabled` is `false`, both `GET /contact` and `POST /contact` render the **"not configured"** view rather than the form, and log at error level (#670 Phase B, v3.11.5):
+If `ngdpbase.mail.enabled` is `false`, both `GET /contact` and `POST /contact` render the __"not configured"__ view rather than the form, and log at error level (#670 Phase B, v3.11.5):
 
 ```
 [contactPage] ngdpbase.mail.enabled is false — rendering not-configured view;
@@ -245,7 +245,7 @@ visitors cannot submit until mail is configured
 not-configured view (was previously a silent drop)
 ```
 
-The form is suppressed entirely; visitors see the operator-facing "please use whatever other channel" copy. The previous behaviour (return "Message sent" while silently dropping the submission) is gone. POST checks the mail subsystem **before** field validation, so a misconfigured deploy short-circuits without parsing input.
+The form is suppressed entirely; visitors see the operator-facing "please use whatever other channel" copy. The previous behaviour (return "Message sent" while silently dropping the submission) is gone. POST checks the mail subsystem __before__ field validation, so a misconfigured deploy short-circuits without parsing input.
 
 `EmailManager` not being registered at all is treated identically — both handlers render "not configured" and log at error.
 
@@ -266,9 +266,9 @@ Since v3.12.0 (#670 Phase C), every legitimate `POST /contact` submission is app
 | `EmailManager` not registered | yes | `"mail-disabled"` |
 | `ngdpbase.mail.enabled = false` | yes | `"mail-disabled"` |
 | Recipient resolver returned null | yes | `"no-recipient"` |
-| Honeypot field `_website` non-empty | **no** — visitor sees silent success; warn log records it |
-| Per-IP rate limit (429) | **no** — rejected before any per-submission processing |
-| Field validation error (400) | **no** — visitor mistake, not an attempted communication |
+| Honeypot field `_website` non-empty | __no__ — visitor sees silent success; warn log records it |
+| Per-IP rate limit (429) | __no__ — rejected before any per-submission processing |
+| Field validation error (400) | __no__ — visitor mistake, not an attempted communication |
 
 The four `mailResult` values cover every legitimate submission path. Honeypot, rate-limit, and validation rejections are deliberately excluded so the log file stays useful — operators can ack each entry as a real attempted contact.
 
@@ -296,7 +296,7 @@ Notes:
 - `ts` is ISO 8601 UTC, captured at write time.
 - `ip` comes from `req.ip`; falls back to `null` if Express can't resolve it. Trust depends on whether `trust proxy` is configured upstream.
 - `recipient` is `null` for `mail-disabled` and `no-recipient` outcomes (the address either wasn't resolved or didn't exist). For `sent` and `mail-failed`, it's the resolved address.
-- The recipient address appears in the **log file** but never in the **response body** — there's an explicit test for that invariant.
+- The recipient address appears in the __log file__ but never in the __response body__ — there's an explicit test for that invariant.
 
 ### Path resolution
 
@@ -328,11 +328,11 @@ The form continues to work normally; nothing is written to disk. Note that this 
 
 ### Operational notes
 
-- **No log rotation in v1.** The file grows monotonically. Operators who expect significant submission volume should rotate externally (logrotate, etc.) — see the [logrotate(8) man page](https://linux.die.net/man/8/logrotate) for the typical pattern.
-- **Best-effort writes.** A failure to append is logged at error level via the main app logger but does NOT throw. Persistence must never block the response on the visitor-facing path.
-- **Append-only.** The writer never truncates or rewrites the file. Existing entries are preserved across restarts.
-- **No inbox UI.** There's no admin route for browsing the log today. Operators read it directly via `tail`, `jq`, or grep.
-- **GDPR / right to erasure.** Submissions contain visitor-supplied PII (name, email, message body, IP, user-agent). If a visitor invokes deletion rights, operators must remove the relevant lines from the log file by hand — there's no built-in scrubber.
+- __No log rotation in v1.__ The file grows monotonically. Operators who expect significant submission volume should rotate externally (logrotate, etc.) — see the [logrotate(8) man page](https://linux.die.net/man/8/logrotate) for the typical pattern.
+- __Best-effort writes.__ A failure to append is logged at error level via the main app logger but does NOT throw. Persistence must never block the response on the visitor-facing path.
+- __Append-only.__ The writer never truncates or rewrites the file. Existing entries are preserved across restarts.
+- __No inbox UI.__ There's no admin route for browsing the log today. Operators read it directly via `tail`, `jq`, or grep.
+- __GDPR / right to erasure.__ Submissions contain visitor-supplied PII (name, email, message body, IP, user-agent). If a visitor invokes deletion rights, operators must remove the relevant lines from the log file by hand — there's no built-in scrubber.
 
 ### Reading the log
 
@@ -355,10 +355,10 @@ jq -c "select(.ts > \"$(date -u -v-24H +%Y-%m-%dT%H:%M:%SZ)\")" /path/to/data/co
 
 ### What's in place
 
-- **Honeypot field `_website`** — hidden via inline CSS in `views/contact.ejs` (positioned `-10000px` off-screen, `tabindex="-1"`, `aria-hidden`). Bots that scrape and fill every field are caught; the request returns the success view but no mail is sent (rate-limit budget is still consumed). Logged at warn level. Toggleable via `ngdpbase.mail.honeypot.enabled` (#670 Phase E, v3.13.0); default `true`.
-- **Per-IP rate limit** — default 5 submissions per IP per 15-minute rolling window, enforced by `SimpleRateLimiter`. Module-scope counter; distributed deployments get per-replica budgets, not a shared one. Run a real WAF or proxy upstream if you need cross-replica enforcement. Toggleable + tunable via `ngdpbase.mail.rate-limit.{enabled,max-submissions,window-minutes}` (#670 Phase E, v3.13.0).
-- **Recipient sentinel** — install-default `admin@localhost` is excluded from auto-resolution, so a freshly installed dormant instance can't be turned into an open mail relay just by enabling `/contact`. The form renders "not configured" until an admin sets a real email or `contact.recipient` is set explicitly.
-- **No HTML emails** — `EmailManager.sendTo` is called with plain-text body only; the subject prefix and from-address are server-controlled. Visitor-supplied HTML in the message field is delivered verbatim as text.
+- __Honeypot field `_website`__ — hidden via inline CSS in `views/contact.ejs` (positioned `-10000px` off-screen, `tabindex="-1"`, `aria-hidden`). Bots that scrape and fill every field are caught; the request returns the success view but no mail is sent (rate-limit budget is still consumed). Logged at warn level. Toggleable via `ngdpbase.mail.honeypot.enabled` (#670 Phase E, v3.13.0); default `true`.
+- __Per-IP rate limit__ — default 5 submissions per IP per 15-minute rolling window, enforced by `SimpleRateLimiter`. Module-scope counter; distributed deployments get per-replica budgets, not a shared one. Run a real WAF or proxy upstream if you need cross-replica enforcement. Toggleable + tunable via `ngdpbase.mail.rate-limit.{enabled,max-submissions,window-minutes}` (#670 Phase E, v3.13.0).
+- __Recipient sentinel__ — install-default `admin@localhost` is excluded from auto-resolution, so a freshly installed dormant instance can't be turned into an open mail relay just by enabling `/contact`. The form renders "not configured" until an admin sets a real email or `contact.recipient` is set explicitly.
+- __No HTML emails__ — `EmailManager.sendTo` is called with plain-text body only; the subject prefix and from-address are server-controlled. Visitor-supplied HTML in the message field is delivered verbatim as text.
 
 ### Tuning (#670 Phase E, v3.13.0)
 
@@ -397,7 +397,7 @@ The rate limiter's `configure()` method preserves existing bucket counters when 
 
 ### Known gap: CSRF
 
-`POST /contact` **does not validate CSRF tokens**. This is documented in the handler comment block (`WikiRoutes.ts` around line 4119) and the v3.11.1 CHANGELOG entry. Rationale: the codebase has no application-wide CSRF middleware (`csurf` is in `package.json` but never imported), and other POST routes — `/register`, `/admin/*` — also skip the check. Adding CSRF only on `/contact` would be inconsistent with that broader gap.
+`POST /contact` __does not validate CSRF tokens__. This is documented in the handler comment block (`WikiRoutes.ts` around line 4119) and the v3.11.1 CHANGELOG entry. Rationale: the codebase has no application-wide CSRF middleware (`csurf` is in `package.json` but never imported), and other POST routes — `/register`, `/admin/*` — also skip the check. Adding CSRF only on `/contact` would be inconsistent with that broader gap.
 
 For an unauthenticated mail-send surface, the honeypot + rate limit + recipient sentinel cover realistic abuse. CSRF mainly matters for state-mutating actions a logged-in user could be tricked into; submitting an anonymous contact form on the attacker's behalf isn't a useful attack.
 
@@ -435,7 +435,7 @@ curl -s -X POST http://your-host/contact \
 tail -n 200 /path/to/data/logs/*.log | grep -iE "ConsoleMail|sendTo|processContact"
 ```
 
-For an SMTP-configured production instance, replace the log-tail step with a check of the recipient's inbox. Check both the submission **and** that `Retry-After` rate-limit headers fire on the 6th rapid POST from the same IP.
+For an SMTP-configured production instance, replace the log-tail step with a check of the recipient's inbox. Check both the submission __and__ that `Retry-After` rate-limit headers fire on the 6th rapid POST from the same IP.
 
 ---
 
@@ -445,10 +445,10 @@ These aren't bugs you need to work around — they're current-state limitations 
 
 | Limitation | Status | Tracking |
 |---|---|---|
-| `mail.enabled = false` returns "Message sent" to the visitor | **Fixed in v3.11.5** | #670 Phase B — both handlers now render "not configured" and log at error level when `EmailManager` is unregistered or `mail.enabled = false` |
-| Submissions are email-only (not persisted) | **Fixed in v3.12.0** | #670 Phase C — every legitimate POST is appended to `data/contact-submissions.log` (JSONL); see *Submission persistence* above |
-| Recipient list pass-through is undocumented and unvalidated | **Fixed in v3.12.1** | #670 Phase D — startup invariant in `ConfigurationManager.assertContactRecipientWellFormed`; *Recipient patterns* doc section above |
-| Anti-spam settings are hard-coded | **Fixed in v3.13.0** | #670 Phase E — config under `ngdpbase.mail.{honeypot,rate-limit}.*`; see *Tuning* under *Security & abuse defenses* |
+| `mail.enabled = false` returns "Message sent" to the visitor | __Fixed in v3.11.5__ | #670 Phase B — both handlers now render "not configured" and log at error level when `EmailManager` is unregistered or `mail.enabled = false` |
+| Submissions are email-only (not persisted) | __Fixed in v3.12.0__ | #670 Phase C — every legitimate POST is appended to `data/contact-submissions.log` (JSONL); see *Submission persistence* above |
+| Recipient list pass-through is undocumented and unvalidated | __Fixed in v3.12.1__ | #670 Phase D — startup invariant in `ConfigurationManager.assertContactRecipientWellFormed`; *Recipient patterns* doc section above |
+| Anti-spam settings are hard-coded | __Fixed in v3.13.0__ | #670 Phase E — config under `ngdpbase.mail.{honeypot,rate-limit}.*`; see *Tuning* under *Security & abuse defenses* |
 | No CSRF validation on `POST /contact` | Codebase-wide gap, not route-specific | Tracked separately |
 | Rate limit is per-replica, not shared | Architectural | Run a WAF / proxy upstream; per `docker/HEADLESS-DEPLOYMENT-NOTES.md` §9 |
 | `contact-us` *page* is incorrectly tagged `system-category: documentation` | Cosmetic — wrong filter bucket in admin views | One-line fix to `required-pages/c0a01d19-…md`; not blocking |
@@ -463,11 +463,11 @@ Tracked as one umbrella `[FEATURE]` issue with five phases:
 
 | Phase | Description | Status |
 |---|---|---|
-| A | Footer link to `/contact`, `contactAvailable` plumbing, `contact.footer.enabled` toggle | **Shipped v3.11.4** |
-| B | Mail-disabled UX honesty (render "not configured", log at error) | **Shipped v3.11.5** |
-| C | Submission persistence to `data/contact-submissions.log` (JSONL) | **Shipped v3.12.0** |
-| D | Recipient list validation at startup + docs for inline-CSV vs distribution-list patterns | **Shipped v3.12.1** |
-| E | Configurable anti-spam under `ngdpbase.mail.{honeypot,rate-limit}.*` | **Shipped v3.13.0** |
+| A | Footer link to `/contact`, `contactAvailable` plumbing, `contact.footer.enabled` toggle | __Shipped v3.11.4__ |
+| B | Mail-disabled UX honesty (render "not configured", log at error) | __Shipped v3.11.5__ |
+| C | Submission persistence to `data/contact-submissions.log` (JSONL) | __Shipped v3.12.0__ |
+| D | Recipient list validation at startup + docs for inline-CSV vs distribution-list patterns | __Shipped v3.12.1__ |
+| E | Configurable anti-spam under `ngdpbase.mail.{honeypot,rate-limit}.*` | __Shipped v3.13.0__ |
 
 This doc is updated as each phase merges.
 
@@ -489,5 +489,5 @@ This doc is updated as each phase merges.
 - `src/utils/ContactSubmissionLog.ts` — the JSONL writer (#670 Phase C); append-only, best-effort, never throws.
 - `views/contact.ejs` — the form template, including the `_website` honeypot field.
 - `views/footer.ejs` — the footer view; renders the `/contact` link when `contactAvailable && contactFooterEnabled`.
-- Issue **#658** — the original `/contact` feature; closed in v3.11.1.
-- Issue **#670** — umbrella for ongoing improvements; phases A–E.
+- Issue __#658__ — the original `/contact` feature; closed in v3.11.1.
+- Issue __#670__ — umbrella for ongoing improvements; phases A–E.

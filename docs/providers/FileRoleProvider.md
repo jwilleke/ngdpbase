@@ -17,7 +17,7 @@ Default storage backend for [RoleManager](../managers/RoleManager.md). One JSON 
 
 ## Distinction
 
-This is for **business roles** (RoleManager domain — e.g. "Board President at Acme Corp"). Distinct from the platform's **system roles** (`admin`, `editor`, `contributor`, …) which live in `app-default-config.json` under `ngdpbase.roles.definitions` and are read by the ACL evaluator.
+This is for __business roles__ (RoleManager domain — e.g. "Board President at Acme Corp"). Distinct from the platform's __system roles__ (`admin`, `editor`, `contributor`, …) which live in `app-default-config.json` under `ngdpbase.roles.definitions` and are read by the ACL evaluator.
 
 ## See Also
 

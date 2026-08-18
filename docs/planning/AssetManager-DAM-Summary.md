@@ -11,7 +11,7 @@ architecture with a unified `AssetManager` that acts as the foundation for a ful
 Digital Asset Management (DAM) system. Any addon or plugin can now contribute or consume
 assets through a single, extensible `AssetProvider` interface.
 
-**Core problem solved:** Two parallel, incompatible asset stores with different storage
+__Core problem solved:__ Two parallel, incompatible asset stores with different storage
 mechanisms, page-linkage fields, write support, and provider patterns. The unified
 framework eliminates that split without changing the on-disk storage layout or breaking
 the existing HTTP API contract.
@@ -99,7 +99,7 @@ Commit: `025f7fcf`
 | `/api/assets/search` | Stable | API contract unchanged; changes were additive only |
 | Unit tests | Passing | `AssetService.test.js`, `WikiRoutes.assetSearch.test.js` |
 
-**What was not changed:** file storage locations on disk, `/api/assets/search` API
+__What was not changed:__ file storage locations on disk, `/api/assets/search` API
 contract, or the access control model (private-page filtering preserved).
 
 ---
@@ -119,7 +119,7 @@ Phase 7 — Additional storage providers. Full details in issue #423.
 ### Design constraints defined in #423
 
 - Credentials stored in operator config (`ngdpbase.assets.providers.<id>.*`), never in page content
-- Each cloud provider is an **optional peer dependency** — its absence must not break core startup
+- Each cloud provider is an __optional peer dependency__ — its absence must not break core startup
 - Remote providers should cache presigned URLs or buffers via `CacheManager`
 - Prefer `stream()` for large files; `store()` may need multipart upload for large files
 

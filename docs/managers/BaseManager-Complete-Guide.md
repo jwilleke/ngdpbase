@@ -1,8 +1,8 @@
 # BaseManager Complete Guide
 
-**Module:** `src/managers/BaseManager.js`
-**Quick Reference:** [BaseManager.md](BaseManager.md)
-**Generated API:** [API Docs](../api/generated/src/managers/BaseManager/README.md)
+__Module:__ `src/managers/BaseManager.js`
+__Quick Reference:__ [BaseManager.md](BaseManager.md)
+__Generated API:__ [API Docs](../api/generated/src/managers/BaseManager/README.md)
 
 ---
 
@@ -53,11 +53,11 @@ constructor(engine) {
 }
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `engine` - WikiEngine instance that creates this manager
 
-**Usage:**
+__Usage:__
 
 ```javascript
 class MyManager extends BaseManager {
@@ -85,13 +85,13 @@ async initialize(config = {}) {
 }
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `config` - Configuration object (optional)
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Usage in subclass:**
+__Usage in subclass:__
 
 ```javascript
 async initialize(config = {}) {
@@ -107,7 +107,7 @@ async initialize(config = {}) {
 }
 ```
 
-**Important:** Always call `super.initialize(config)` first in overridden implementations.
+__Important:__ Always call `super.initialize(config)` first in overridden implementations.
 
 ---
 
@@ -121,9 +121,9 @@ async shutdown() {
 }
 ```
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Usage in subclass:**
+__Usage in subclass:__
 
 ```javascript
 async shutdown() {
@@ -136,7 +136,7 @@ async shutdown() {
 }
 ```
 
-**Important:** Always call `super.shutdown()` at the end of overridden implementations.
+__Important:__ Always call `super.shutdown()` at the end of overridden implementations.
 
 ---
 
@@ -152,9 +152,9 @@ isInitialized() {
 }
 ```
 
-**Returns:** `boolean`
+__Returns:__ `boolean`
 
-**Usage:**
+__Usage:__
 
 ```javascript
 const pageManager = engine.getManager('PageManager');
@@ -175,9 +175,9 @@ getEngine() {
 }
 ```
 
-**Returns:** `WikiEngine`
+__Returns:__ `WikiEngine`
 
-**Usage:**
+__Usage:__
 
 ```javascript
 // Access other managers from within a manager
@@ -205,13 +205,13 @@ async backup() {
 }
 ```
 
-**Returns:** `Promise<Object>` with structure:
+__Returns:__ `Promise<Object>` with structure:
 
 - `managerName` - Name of the manager class
 - `timestamp` - ISO timestamp of backup
 - `data` - Manager-specific backup data
 
-**Override example:**
+__Override example:__
 
 ```javascript
 async backup() {
@@ -240,15 +240,15 @@ async restore(backupData) {
 }
 ```
 
-**Parameters:**
+__Parameters:__
 
 - `backupData` - Backup object from `backup()` method
 
-**Returns:** `Promise<void>`
+__Returns:__ `Promise<void>`
 
-**Throws:** `Error` if backupData is missing
+__Throws:__ `Error` if backupData is missing
 
-**Override example:**
+__Override example:__
 
 ```javascript
 async restore(backupData) {
@@ -356,10 +356,10 @@ await this.getManager('MyManager').initialize();
 
 ## Notes
 
-- **Abstract class:** BaseManager is meant to be extended, not used directly
-- **Engine reference:** Always available via `this.engine` or `this.getEngine()`
-- **Configuration:** Use ConfigurationManager for all configuration access
-- **23 managers:** ngdpbase has 23 specialized managers extending BaseManager
+- __Abstract class:__ BaseManager is meant to be extended, not used directly
+- __Engine reference:__ Always available via `this.engine` or `this.getEngine()`
+- __Configuration:__ Use ConfigurationManager for all configuration access
+- __23 managers:__ ngdpbase has 23 specialized managers extending BaseManager
 
 ---
 

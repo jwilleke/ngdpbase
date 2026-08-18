@@ -1,40 +1,40 @@
-> **ARCHIVED**: This document is for historical purposes only. For the current and complete documentation, please see **[WikiDocument Complete Guide](../WikiDocument-Complete-Guide.md)**.
+> __ARCHIVED__: This document is for historical purposes only. For the current and complete documentation, please see __[WikiDocument Complete Guide](../WikiDocument-Complete-Guide.md)__.
 
 ---
 
 # WikiDocument DOM Architecture - Production Ready
 
-- **UUID**: wikidocument-dom-architecture
-- **Category**: documentation
-- **Keywords**: architecture, parser, DOM, JSPWiki
-- **Last Modified**: 2025-10-13
-- **Status**: IMPLEMENTED
+- __UUID__: wikidocument-dom-architecture
+- __Category__: documentation
+- __Keywords__: architecture, parser, DOM, JSPWiki
+- __Last Modified__: 2025-10-13
+- __Status__: IMPLEMENTED
 
-**Status:** ✅ Phases 1-6 Complete (Issues #115, #116, #117, #118, #119, #120)
-**Last Updated:** 2025-10-13
-**Test Coverage:** 376+ tests passing
-**Production Status:** DEPLOYED (extraction pipeline active by default)
+__Status:__ ✅ Phases 1-6 Complete (Issues #115, #116, #117, #118, #119, #120)
+__Last Updated:__ 2025-10-13
+__Test Coverage:__ 376+ tests passing
+__Production Status:__ DEPLOYED (extraction pipeline active by default)
 
 ## Problem Statement
 
-**Issue**: The `[[` escaping problem keeps recurring despite multiple fixes because our current string-based parsing pipeline is inherently fragile and order-dependent.
+__Issue__: The `[[` escaping problem keeps recurring despite multiple fixes because our current string-based parsing pipeline is inherently fragile and order-dependent.
 
-**Root Cause**: ngdpbase's MarkupParser processes content as **strings** through multiple phases, making it impossible to reliably handle escaping, variables, plugins, and links without conflicts.
+__Root Cause__: ngdpbase's MarkupParser processes content as __strings__ through multiple phases, making it impossible to reliably handle escaping, variables, plugins, and links without conflicts.
 
-**Example of the Issue**:
+__Example of the Issue__:
 
 ```markdown
 ## Basic System Variables
 - Application Name ( [[{$applicationname}] ) : [{$applicationname}]
 ```
 
-**Expected Output**:
+__Expected Output__:
 
 ```text
 Application Name ([{$applicationname}]) : ngdpbase
 ```
 
-**Actual Output**:
+__Actual Output__:
 
 ```text
 Application Name ([ngdpbase: ngdpbase
@@ -46,7 +46,7 @@ The `[[` escape is being processed incorrectly because string replacements happe
 
 ### Architecture Overview
 
-JSPWiki solves this problem by **building an internal DOM tree** (not string processing):
+JSPWiki solves this problem by __building an internal DOM tree__ (not string processing):
 
 ```text
 Raw Wiki Markup
@@ -82,7 +82,7 @@ public class WikiDocument extends org.jdom2.Document {
 }
 ```
 
-**Benefits**:
+__Benefits__:
 
 - DOM is cached separately from page metadata
 - Context uses weak reference for garbage collection
@@ -106,7 +106,7 @@ public abstract class MarkupParser {
 }
 ```
 
-**Benefits**:
+__Benefits__:
 
 - Processes input character-by-character
 - Creates DOM nodes (Elements) incrementally
@@ -122,7 +122,7 @@ public class XHTMLRenderer {
 }
 ```
 
-**Benefits**:
+__Benefits__:
 
 - Trivial rendering: DOM is already XHTML
 - Just dumps out the DOM tree
@@ -130,11 +130,11 @@ public class XHTMLRenderer {
 
 ### Why This Works
 
-1. **Structure Preservation**: DOM nodes have types (Element, Text, Attribute)
-2. **No Order Dependency**: Variables, plugins, links are DOM nodes that can be processed independently
-3. **Escaping is Natural**: Escaped content becomes Text nodes, not Elements
-4. **Cacheable**: WikiDocument can be cached and reused
-5. **Transformable**: DOM can be manipulated before rendering
+1. __Structure Preservation__: DOM nodes have types (Element, Text, Attribute)
+2. __No Order Dependency__: Variables, plugins, links are DOM nodes that can be processed independently
+3. __Escaping is Natural__: Escaped content becomes Text nodes, not Elements
+4. __Cacheable__: WikiDocument can be cached and reused
+5. __Transformable__: DOM can be manipulated before rendering
 
 ## ngdpbase's Current Architecture (String-Based)
 
@@ -162,26 +162,26 @@ Final HTML (string)
 
 ### Problems with String-Based Approach
 
-1. **Order Dependency**: Each phase must run in exact order
+1. __Order Dependency__: Each phase must run in exact order
    - Variables before plugins? Or plugins before variables?
    - Escape before or after variables?
    - One change breaks everything
 
-2. **State Loss**: After string replacement, you lose track of what was what
+2. __State Loss__: After string replacement, you lose track of what was what
    - Was `[{$var}]` originally `[[{$var}]`?
    - Is this `[text]` a link or an escaped bracket?
    - Context is lost after replacement
 
-3. **Fragile Escaping**: Escape sequences must survive ALL phases
+3. __Fragile Escaping__: Escape sequences must survive ALL phases
    - `[[` → temporary token → hope it survives → convert back
    - Any phase can accidentally process escaped content
    - Leads to bugs like the one you're seeing
 
-4. **Performance**: Can't cache intermediate results
+4. __Performance__: Can't cache intermediate results
    - Must reprocess entire string for each request
    - No way to cache "parsed but not rendered" state
 
-5. **Hard to Debug**: String transformations are opaque
+5. __Hard to Debug__: String transformations are opaque
    - Can't inspect "what is this element?"
    - Can't trace "where did this come from?"
 
@@ -206,7 +206,7 @@ The problem: Phase 3 matches `___ESCAPED_BRACKET___{$var}]` because the `[` is n
 
 ### Architecture Overview
 
-**The solution was implemented using a pre-extraction strategy** that separates JSPWiki syntax processing from markdown parsing:
+__The solution was implemented using a pre-extraction strategy__ that separates JSPWiki syntax processing from markdown parsing:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -271,20 +271,20 @@ The problem: Phase 3 matches `___ESCAPED_BRACKET___{$var}]` because the `[` is n
 
 ### Implementation Files
 
-**Core Implementation** (src/parsers/MarkupParser.js):
+__Core Implementation__ (src/parsers/MarkupParser.js):
 
 - `extractJSPWikiSyntax()` - Lines 1235-1393 (Phase 1)
 - `createDOMNode()` - Lines 1395-1439 (Phase 2)
 - `mergeDOMNodes()` - Lines 1441-1496 (Phase 3)
 - `parseWithDOMExtraction()` - Lines 1498-1571 (Phase 3 - main entry point)
 
-**DOM Handlers**:
+__DOM Handlers__:
 
 - `DOMVariableHandler.js` - Variable node creation
 - `DOMPluginHandler.js` - Plugin node creation
 - `DOMLinkHandler.js` - Link node creation
 
-**Reference-Only Code** (Phase 4, Issue #118):
+__Reference-Only Code__ (Phase 4, Issue #118):
 
 - `Tokenizer.js` - Token-based parsing (reference)
 - `DOMParser.js` - Alternative parser approach (reference)
@@ -296,19 +296,19 @@ All reference files contain comprehensive architecture notes explaining why they
 
 Total: 95 tests passing
 
-- **Phase 1 Tests:** 41 tests (MarkupParser-Extraction.test.js)
+- __Phase 1 Tests:__ 41 tests (MarkupParser-Extraction.test.js)
   - Variable extraction
   - Plugin extraction
   - Link extraction
   - Escaped text extraction
   - Edge cases and error handling
 
-- **Phase 2 Tests:** 23 tests (handler test files)
+- __Phase 2 Tests:__ 23 tests (handler test files)
   - DOMVariableHandler.test.js
   - DOMPluginHandler.test.js
   - DOMLinkHandler.test.js
 
-- **Phase 3 Tests:** 31 tests (MarkupParser-MergePipeline.test.js)
+- __Phase 3 Tests:__ 31 tests (MarkupParser-MergePipeline.test.js)
   - Basic replacement
   - Markdown preservation
   - Multiple elements
@@ -316,7 +316,7 @@ Total: 95 tests passing
   - Edge cases
   - Performance
 
-**Verification Test:** test_markdown_heading_fix.js demonstrates the markdown heading bug is fixed:
+__Verification Test:__ test_markdown_heading_fix.js demonstrates the markdown heading bug is fixed:
 
 ```
 ✓ H2 headings present: YES ✅
@@ -332,34 +332,34 @@ Total: 95 tests passing
 
 #### 1. Inline Span Placeholders (Updated October 2025)
 
-**Decision:** Use `<span data-jspwiki-placeholder="uuid-id"></span>` format
+__Decision:__ Use `<span data-jspwiki-placeholder="uuid-id"></span>` format
 
-**Rationale:**
+__Rationale:__
 
 - Inline HTML elements preserved by markdown parsers as inline content
 - Don't interfere with markdown syntax
 - Prevent block-level rendering issues (HTML comments caused unwanted line breaks)
 - Valid HTML if replacement fails
 
-**Previous Decision (Deprecated):** HTML comments (`<!--JSPWIKI-uuid-id-->`)
+__Previous Decision (Deprecated):__ HTML comments (`<!--JSPWIKI-uuid-id-->`)
 
-- **Issue Found:** Showdown treats HTML comments at start of line as block-level elements
-- **Problem:** `[{$pagename}] text` rendered as two blocks instead of inline
-- **Fixed:** Changed to inline span elements to maintain inline rendering
+- __Issue Found:__ Showdown treats HTML comments at start of line as block-level elements
+- __Problem:__ `[{$pagename}] text` rendered as two blocks instead of inline
+- __Fixed:__ Changed to inline span elements to maintain inline rendering
 
-**Rejected Alternative:** `__JSPWIKI_uuid_id__` (underscores interpreted as markdown)
+__Rejected Alternative:__ `__JSPWIKI_uuid_id__` (underscores interpreted as markdown)
 
 #### 2. Reverse ID Order Merging
 
-**Decision:** Sort nodes by descending ID before merging
+__Decision:__ Sort nodes by descending ID before merging
 
-**Rationale:** Handles nested JSPWiki syntax correctly (e.g., plugin containing variable)
+__Rationale:__ Handles nested JSPWiki syntax correctly (e.g., plugin containing variable)
 
 #### 3. Keep Tokenization Code as Reference
 
-**Decision:** Keep Tokenizer/DOMParser/DOMBuilder with clear documentation (Phase 4)
+__Decision:__ Keep Tokenizer/DOMParser/DOMBuilder with clear documentation (Phase 4)
 
-**Rationale:**
+__Rationale:__
 
 - Preserves JSPWiki syntax pattern knowledge
 - Educational value
@@ -368,24 +368,24 @@ Total: 95 tests passing
 
 ### Benefits Achieved
 
-1. **Markdown Heading Bug Fixed** (#110, #93)
+1. __Markdown Heading Bug Fixed__ (#110, #93)
    - `## Heading` now correctly becomes `<h2>Heading</h2>`
    - Showdown handles ALL markdown without JSPWiki interference
 
-2. **No Order Dependency**
+2. __No Order Dependency__
    - JSPWiki syntax extracted before markdown parsing
    - Variables, plugins, links can't interfere with markdown
 
-3. **Natural Escaping**
+3. __Natural Escaping__
    - `[[...]]` handled during extraction phase
    - Creates text nodes, not parsed syntax
 
-4. **DOM-Based Processing**
+4. __DOM-Based Processing__
    - WikiDocument nodes for JSPWiki elements
    - Type-safe node creation
    - Inspectable structure
 
-5. **Clean Architecture**
+5. __Clean Architecture__
    - Clear separation: Extract → Create → Merge
    - Each phase has single responsibility
    - Testable components
@@ -424,7 +424,7 @@ const html = await parser.parseWithDOMExtraction(content, context);
 
 ## Original Proposed Solution (Pre-Implementation)
 
-**Note:** The section below was the original proposal. The actual implementation used a **pre-extraction strategy** (documented above) rather than the full tokenization approach proposed here. The pre-extraction approach proved simpler and more effective.
+__Note:__ The section below was the original proposal. The actual implementation used a __pre-extraction strategy__ (documented above) rather than the full tokenization approach proposed here. The pre-extraction approach proved simpler and more effective.
 
 ### Original Architecture Overview (Proposed, Not Implemented)
 
@@ -496,12 +496,12 @@ class XHTMLRenderer {
 
 ### Benefits of DOM Approach
 
-1. **No Order Dependency**:
+1. __No Order Dependency__:
    - Parse everything into DOM first
    - Then process nodes independently
    - Variables don't interfere with plugins
 
-2. **Natural Escaping**:
+2. __Natural Escaping__:
 
    ```javascript
    // [[ becomes a text node with value "["
@@ -509,7 +509,7 @@ class XHTMLRenderer {
    // These can't interfere because they're different node types
    ```
 
-3. **Cacheable**:
+3. __Cacheable__:
 
    ```javascript
    // Cache the WikiDocument, not the HTML
@@ -519,7 +519,7 @@ class XHTMLRenderer {
    const html = renderer.render(wikiDocument);
    ```
 
-4. **Inspectable**:
+4. __Inspectable__:
 
    ```javascript
    // Can query the DOM
@@ -527,7 +527,7 @@ class XHTMLRenderer {
    doc.querySelectorAll('.wiki-plugin');     // All plugins
    ```
 
-5. **Transformable**:
+5. __Transformable__:
 
    ```javascript
    // Plugins can manipulate DOM before rendering
@@ -541,47 +541,47 @@ class XHTMLRenderer {
 
 ### Phase 1: Extraction (Issue #115) - ✅ COMPLETE
 
-**Objective:** Extract JSPWiki syntax before markdown parsing
+__Objective:__ Extract JSPWiki syntax before markdown parsing
 
-**Status:** Complete - `extractJSPWikiSyntax()` implemented with code block protection
-**Test Coverage:** 41 tests passing
+__Status:__ Complete - `extractJSPWikiSyntax()` implemented with code block protection
+__Test Coverage:__ 41 tests passing
 
 ### Phase 2: DOM Node Creation (Issue #116) - ✅ COMPLETE
 
-**Objective:** Create WikiDocument DOM nodes from extracted elements
+__Objective:__ Create WikiDocument DOM nodes from extracted elements
 
-**Status:** Complete - Handler methods implemented (`createNodeFromExtract()`)
-**Test Coverage:** 23 tests passing
+__Status:__ Complete - Handler methods implemented (`createNodeFromExtract()`)
+__Test Coverage:__ 23 tests passing
 
 ### Phase 3: Merge Pipeline (Issue #117) - ✅ COMPLETE
 
-**Objective:** Merge DOM nodes into Showdown HTML
+__Objective:__ Merge DOM nodes into Showdown HTML
 
-**Status:** Complete - `parseWithDOMExtraction()` implemented
-**Test Coverage:** 31 tests passing
+__Status:__ Complete - `parseWithDOMExtraction()` implemented
+__Test Coverage:__ 31 tests passing
 
 ### Phase 4: Document Reference Code (Issue #118) - ✅ COMPLETE
 
-**Objective:** Document tokenization code as reference-only
+__Objective:__ Document tokenization code as reference-only
 
-**Status:** Complete - Architecture notes added to Tokenizer, DOMParser, DOMBuilder
-**Documentation:** Updated
+__Status:__ Complete - Architecture notes added to Tokenizer, DOMParser, DOMBuilder
+__Documentation:__ Updated
 
 ### Phase 5: Comprehensive Testing (Issue #119) - ✅ COMPLETE
 
-**Objective:** Integration testing before production deployment
+__Objective:__ Integration testing before production deployment
 
-**Status:** Complete - 55 comprehensive integration tests added
-**Test Coverage:** 376+ total tests passing
-**Manual QA:** Test plan created (docs/testing/Phase5-Manual-QA-Plan.md)
+__Status:__ Complete - 55 comprehensive integration tests added
+__Test Coverage:__ 376+ total tests passing
+__Manual QA:__ Test plan created (docs/testing/Phase5-Manual-QA-Plan.md)
 
 ### Phase 6: Production Integration (Issue #120) - ✅ COMPLETE
 
-**Objective:** Deploy new pipeline to production
+__Objective:__ Deploy new pipeline to production
 
-**Status:** Complete - Integrated into `MarkupParser.parse()`
+__Status:__ Complete - Integrated into `MarkupParser.parse()`
 
-**Implementation:**
+__Implementation:__
 
 - ✅ Configuration property added (`jspwiki.parser.useExtractionPipeline = true`)
 - ✅ Automatic routing to `parseWithDOMExtraction()` when enabled
@@ -590,18 +590,18 @@ class XHTMLRenderer {
 - ✅ Cache integration
 - ✅ Metrics tracking
 
-**Files Modified:**
+__Files Modified:__
 
 - `src/parsers/MarkupParser.js` (lines 636-781): Updated `parse()` method
 - `config/app-default-config.json`: Added configuration property
 
 ### Phase 7: Cleanup & Documentation (Issue #121) - ✅ COMPLETE
 
-**Objective:** Mark deprecated code and complete comprehensive documentation
+__Objective:__ Mark deprecated code and complete comprehensive documentation
 
-**Status:** Complete - Production-ready documentation suite created
+__Status:__ Complete - Production-ready documentation suite created
 
-**Implementation:**
+__Implementation:__
 
 - ✅ GitHub issue #121 created
 - ✅ Legacy 7-phase parser marked as deprecated with clear warnings
@@ -610,23 +610,23 @@ class XHTMLRenderer {
 - ✅ Architecture documentation updated
 - ✅ All issues ready for closure
 
-**Files Created:**
+__Files Created:__
 
 - `docs/api/MarkupParser-API.md` - Complete API reference with examples, troubleshooting, and migration guidance
 - `docs/migration/WikiDocument-DOM-Migration.md` - Migration patterns, integration guide, common pitfalls, and FAQ
 
-**Files Modified:**
+__Files Modified:__
 
 - `src/parsers/MarkupParser.js` - Added @deprecated warnings to legacy code
 - `docs/architecture/WikiDocument-DOM-Architecture.md` - Updated status and phase information
 
-**Note:** Legacy 7-phase parser code was KEPT (not removed) for backward compatibility and emergency fallback. It is clearly marked as deprecated with detailed migration guidance.
+__Note:__ Legacy 7-phase parser code was KEPT (not removed) for backward compatibility and emergency fallback. It is clearly marked as deprecated with detailed migration guidance.
 
 ---
 
 ## Original Implementation Plan (Pre-Implementation Reference)
 
-**Note:** The section below was the original proposed implementation plan. The actual implementation followed a different approach (pre-extraction strategy, Phases 1-4 documented above). This is kept for historical reference.
+__Note:__ The section below was the original proposed implementation plan. The actual implementation followed a different approach (pre-extraction strategy, Phases 1-4 documented above). This is kept for historical reference.
 
 ### Original Phase 1: Add WikiDocument Class (Non-Breaking) - NOT IMPLEMENTED
 
@@ -650,7 +650,7 @@ class WikiDocument {
 
 ### Original Phase 2: Refactor MarkupParser to Build DOM - NOT IMPLEMENTED
 
-**Note:** The actual implementation used extraction instead of tokenization.
+__Note:__ The actual implementation used extraction instead of tokenization.
 
 ```javascript
 // Modify: src/parsers/MarkupParser.js
@@ -673,7 +673,7 @@ async parse(content, context) {
 
 ### Original Phase 3: Update Handlers to Work with DOM - PARTIALLY IMPLEMENTED
 
-**Note:** Handlers were updated to create DOM nodes, but via `createNodeFromExtract()` methods instead of processing a full WikiDocument tree.
+__Note:__ Handlers were updated to create DOM nodes, but via `createNodeFromExtract()` methods instead of processing a full WikiDocument tree.
 
 ```javascript
 // Handlers modify DOM nodes, not strings
@@ -691,7 +691,7 @@ class VariableHandler {
 
 ### Original Phase 4: Add Renderer - NOT IMPLEMENTED
 
-**Note:** The actual implementation merges DOM nodes directly into Showdown's HTML output instead of using a separate renderer.
+__Note:__ The actual implementation merges DOM nodes directly into Showdown's HTML output instead of using a separate renderer.
 
 ```javascript
 // New file: src/parsers/XHTMLRenderer.js
@@ -710,7 +710,7 @@ class XHTMLRenderer {
 
 ### Original Phase 5: Integrate with RenderingManager - PENDING (see Phase 6 above)
 
-**Note:** This integration is planned for Phase 6 of the actual implementation.
+__Note:__ This integration is planned for Phase 6 of the actual implementation.
 
 ```javascript
 // Modify: src/managers/RenderingManager.js
@@ -728,7 +728,7 @@ async textToHTML(context, pageContent) {
 
 ## Original Migration Strategy (Pre-Implementation Reference)
 
-**Note:** The actual implementation followed a different timeline and approach (Phases 1-4 completed in ~3 days). This is kept for historical reference.
+__Note:__ The actual implementation followed a different timeline and approach (Phases 1-4 completed in ~3 days). This is kept for historical reference.
 
 ### Original Step 1: Create WikiDocument Class (Week 1) - MODIFIED
 
@@ -736,7 +736,7 @@ async textToHTML(context, pageContent) {
 - Add basic DOM manipulation methods
 - Write unit tests
 
-**Actual implementation:** Used linkedom instead of JSDOM, focused on node creation methods.
+__Actual implementation:__ Used linkedom instead of JSDOM, focused on node creation methods.
 
 ### Original Step 2: Add Token-Based Parser (Week 2) - NOT IMPLEMENTED
 
@@ -744,7 +744,7 @@ async textToHTML(context, pageContent) {
 - Parse into WikiDocument DOM
 - Keep existing string-based parser as fallback
 
-**Actual implementation:** Used pre-extraction strategy instead of tokenization.
+__Actual implementation:__ Used pre-extraction strategy instead of tokenization.
 
 ### Original Step 3: Migrate Handlers (Week 3-4) - MODIFIED
 
@@ -752,7 +752,7 @@ async textToHTML(context, pageContent) {
 - One handler at a time
 - Test each migration
 
-**Actual implementation:** Added `createNodeFromExtract()` methods to existing handlers (completed in Phase 2).
+__Actual implementation:__ Added `createNodeFromExtract()` methods to existing handlers (completed in Phase 2).
 
 ### Original Step 4: Deprecate String Pipeline (Week 5) - PENDING
 
@@ -760,7 +760,7 @@ async textToHTML(context, pageContent) {
 - Remove string-based phases
 - Update documentation
 
-**Actual status:** Planned for Phase 6 (Production Integration).
+__Actual status:__ Planned for Phase 6 (Production Integration).
 
 ### Original Step 5: Remove Legacy Code (Week 6) - PENDING
 
@@ -768,11 +768,11 @@ async textToHTML(context, pageContent) {
 - Performance tuning
 - Final testing
 
-**Actual status:** Planned for Phase 7 (Cleanup & Documentation).
+__Actual status:__ Planned for Phase 7 (Cleanup & Documentation).
 
 ## Original Technical Decisions (Pre-Implementation Reference)
 
-**Note:** This section contains the original technical considerations. See "Key Design Decisions" in the "Implemented Solution" section above for the actual decisions made during implementation.
+__Note:__ This section contains the original technical considerations. See "Key Design Decisions" in the "Implemented Solution" section above for the actual decisions made during implementation.
 
 ### DOM Library Choice (Original Proposal)
 
@@ -791,9 +791,9 @@ async textToHTML(context, pageContent) {
   - Only what we need
   - More work, but lighter
 
-**Recommendation**: Start with jsdom for full compatibility, optimize later if needed.
+__Recommendation__: Start with jsdom for full compatibility, optimize later if needed.
 
-**Actual decision:** Used linkedom (lightweight, server-side DOM library) for WikiDocument implementation.
+__Actual decision:__ Used linkedom (lightweight, server-side DOM library) for WikiDocument implementation.
 
 ### Caching Strategy (Original Proposal)
 
@@ -838,7 +838,7 @@ async parse(content, context) {
 
 ## Expected Benefits (from Original Proposal)
 
-**Note:** See "Benefits Achieved" in the "Implemented Solution" section above for actual results. This section is kept for comparison.
+__Note:__ See "Benefits Achieved" in the "Implemented Solution" section above for actual results. This section is kept for comparison.
 
 ### 1. Fixes Escaping Issues Permanently - ✅ ACHIEVED
 
@@ -852,7 +852,7 @@ async parse(content, context) {
 - Reuse parsed DOM with different contexts
 - Avoid redundant parsing
 
-**Status:** Not yet measured; planned for Phase 5 (Comprehensive Testing).
+__Status:__ Not yet measured; planned for Phase 5 (Comprehensive Testing).
 
 ### 3. Enables Advanced Features - ✅ ACHIEVED
 
@@ -860,7 +860,7 @@ async parse(content, context) {
 - Query parsed content
 - Transform before rendering
 
-**Status:** DOM nodes can be inspected and manipulated.
+__Status:__ DOM nodes can be inspected and manipulated.
 
 ### 4. Better Debugging - ✅ ACHIEVED
 
@@ -868,7 +868,7 @@ async parse(content, context) {
 - See what each element is
 - Trace parsing issues
 
-**Status:** Nodes have data-jspwiki-id attributes for debugging.
+__Status:__ Nodes have data-jspwiki-id attributes for debugging.
 
 ### 5. JSPWiki Compatibility - ✅ PARTIALLY ACHIEVED
 
@@ -876,13 +876,13 @@ async parse(content, context) {
 - Easier to port JSPWiki features
 - Familiar to JSPWiki developers
 
-**Status:** Uses WikiDocument and DOM-based approach, though implementation differs from full tokenization.
+__Status:__ Uses WikiDocument and DOM-based approach, though implementation differs from full tokenization.
 
 ## Risks and Mitigations
 
 ### Risk 1: Performance Overhead
 
-**Mitigation**:
+__Mitigation__:
 
 - Cache WikiDocument objects
 - Use lightweight DOM library
@@ -890,7 +890,7 @@ async parse(content, context) {
 
 ### Risk 2: Breaking Changes
 
-**Mitigation**:
+__Mitigation__:
 
 - Phased migration
 - Keep old parser as fallback
@@ -898,7 +898,7 @@ async parse(content, context) {
 
 ### Risk 3: Complexity
 
-**Mitigation**:
+__Mitigation__:
 
 - Start simple
 - Add features incrementally
@@ -906,7 +906,7 @@ async parse(content, context) {
 
 ### Risk 4: Learning Curve
 
-**Mitigation**:
+__Mitigation__:
 
 - Follow JSPWiki patterns
 - Clear examples
@@ -916,20 +916,20 @@ async parse(content, context) {
 
 ### Original Conclusion (Pre-Implementation)
 
-The recurring `[[` escaping issue is a symptom of a deeper architectural problem: **string-based parsing is inherently fragile**.
+The recurring `[[` escaping issue is a symptom of a deeper architectural problem: __string-based parsing is inherently fragile__.
 
-JSPWiki solved this problem 20 years ago by using an **internal DOM representation**. The recommendation was to follow their proven approach.
+JSPWiki solved this problem 20 years ago by using an __internal DOM representation__. The recommendation was to follow their proven approach.
 
 ### Implementation Complete (October 2025)
 
-**The WikiDocument DOM architecture has been successfully implemented** using a pre-extraction strategy (Phases 1-4):
+__The WikiDocument DOM architecture has been successfully implemented__ using a pre-extraction strategy (Phases 1-4):
 
-✅ **Phase 1 (Issue #115):** Extract JSPWiki syntax before markdown parsing
-✅ **Phase 2 (Issue #116):** Create WikiDocument DOM nodes via handlers
-✅ **Phase 3 (Issue #117):** Merge DOM nodes into Showdown HTML
-✅ **Phase 4 (Issue #118):** Document reference code with architecture notes
+✅ __Phase 1 (Issue #115):__ Extract JSPWiki syntax before markdown parsing
+✅ __Phase 2 (Issue #116):__ Create WikiDocument DOM nodes via handlers
+✅ __Phase 3 (Issue #117):__ Merge DOM nodes into Showdown HTML
+✅ __Phase 4 (Issue #118):__ Document reference code with architecture notes
 
-**Results:**
+__Results:__
 
 - ✅ Markdown heading bug fixed (Issue #110, #93)
 - ✅ No order dependency between JSPWiki and markdown
@@ -938,14 +938,14 @@ JSPWiki solved this problem 20 years ago by using an **internal DOM representati
 - ✅ Clean separation of concerns
 - ✅ Maintainable, testable architecture
 
-**The parser is now:**
+__The parser is now:__
 
 - More robust (no parsing conflicts)
 - Better tested (comprehensive test suite)
 - Easier to maintain (clear phases)
 - JSPWiki-inspired (DOM-based approach)
 
-**Next Steps:**
+__Next Steps:__
 
 - Phase 5: Comprehensive testing (Issue #119)
 - Phase 6: Production integration
@@ -955,7 +955,7 @@ JSPWiki solved this problem 20 years ago by using an **internal DOM representati
 
 ### Implementation Files
 
-**Core Implementation:**
+__Core Implementation:__
 
 - `src/parsers/MarkupParser.js` - Main parser with extraction, node creation, and merge methods
 - `src/parsers/dom/WikiDocument.js` - WikiDocument DOM class (linkedom-based)
@@ -963,13 +963,13 @@ JSPWiki solved this problem 20 years ago by using an **internal DOM representati
 - `src/parsers/dom/handlers/DOMPluginHandler.js` - Plugin node creation
 - `src/parsers/dom/handlers/DOMLinkHandler.js` - Link node creation
 
-**Reference Implementation:**
+__Reference Implementation:__
 
 - `src/parsers/dom/Tokenizer.js` - Token-based parser (reference)
 - `src/parsers/dom/DOMParser.js` - Alternative parser (reference)
 - `src/parsers/dom/DOMBuilder.js` - DOM builder from tokens (reference)
 
-**Tests:**
+__Tests:__
 
 - `src/parsers/__tests__/MarkupParser-Extraction.test.js` - Phase 1 tests (41 tests)
 - `src/parsers/__tests__/MarkupParser-MergePipeline.test.js` - Phase 3 tests (31 tests)
@@ -978,11 +978,11 @@ JSPWiki solved this problem 20 years ago by using an **internal DOM representati
 
 ### Related Issues
 
-**Epic:**
+__Epic:__
 
 - Issue #114 - WikiDocument DOM Solution
 
-**Implementation Phases:**
+__Implementation Phases:__
 
 - Issue #115 - Phase 1: Extraction
 - Issue #116 - Phase 2: DOM Node Creation
@@ -990,7 +990,7 @@ JSPWiki solved this problem 20 years ago by using an **internal DOM representati
 - Issue #118 - Phase 4: Document Reference Code
 - Issue #119 - Phase 5: Comprehensive Testing (pending)
 
-**Bug Fixes:**
+__Bug Fixes:__
 
 - Issue #110 - Markdown heading bug
 - Issue #93 - Original DOM migration issue

@@ -8,12 +8,12 @@ code: src/providers/ElasticsearchSearchProvider.ts
 
 # ElasticsearchSearchProvider
 
-**Quick Reference** | [Complete Guide](ElasticsearchSearchProvider-Complete-Guide.md)
+__Quick Reference__ | [Complete Guide](ElasticsearchSearchProvider-Complete-Guide.md)
 
-**Module:** `src/providers/ElasticsearchSearchProvider.ts`
-**Type:** Search Provider
-**Extends:** BaseSearchProvider
-**Status:** Production Ready — opt-in
+__Module:__ `src/providers/ElasticsearchSearchProvider.ts`
+__Type:__ Search Provider
+__Extends:__ BaseSearchProvider
+__Status:__ Production Ready — opt-in
 
 ## Overview
 
@@ -25,12 +25,12 @@ Lunr remains the default. Switch by setting one config key — no code changes r
 
 ## Key Features
 
-- **Elasticsearch-backed** — persistent index survives restarts without a cold rebuild
-- **Incremental updates** — `updatePageInIndex()` writes a single document; no full rebuild
-- **Field aggregations** — `getAllCategories()`, `getAllUserKeywords()`, `getAllSystemKeywords()`
-- **Private-page access control** — mirrors LunrSearchProvider; `isPrivate` + `audience` fields
-- **Auto-tagging ready** — `systemKeywords` field pre-wired for #507 Transformers.js auto-tags
-- **Backup / restore** — scroll-based backup; bulk restore
+- __Elasticsearch-backed__ — persistent index survives restarts without a cold rebuild
+- __Incremental updates__ — `updatePageInIndex()` writes a single document; no full rebuild
+- __Field aggregations__ — `getAllCategories()`, `getAllUserKeywords()`, `getAllSystemKeywords()`
+- __Private-page access control__ — mirrors LunrSearchProvider; `isPrivate` + `audience` fields
+- __Auto-tagging ready__ — `systemKeywords` field pre-wired for #507 Transformers.js auto-tags
+- __Backup / restore__ — scroll-based backup; bulk restore
 
 ## Activation
 
