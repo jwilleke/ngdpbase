@@ -4,6 +4,7 @@
  * @jest-environment node
  */
 import { parseSize, transformImage } from '../imageTransform';
+import sharp from 'sharp';
 
 const mockPipeline = vi.hoisted(() => ({
   rotate: vi.fn().mockReturnThis(),
@@ -14,8 +15,14 @@ const mockPipeline = vi.hoisted(() => ({
   toBuffer: vi.fn().mockResolvedValue(Buffer.from('mock-image-data'))
 }));
 
+const mockHeicDecode = vi.hoisted(() => vi.fn());
+
 vi.mock('sharp', () => ({
   default: vi.fn().mockReturnValue(mockPipeline)
+}));
+
+vi.mock('heic-decode', () => ({
+  default: mockHeicDecode
 }));
 
 describe('parseSize', () => {
@@ -97,5 +104,55 @@ describe('transformImage', () => {
     expect(result).toBeInstanceOf(Buffer);
     expect(mockPipeline.png).toHaveBeenCalled();
     expect(mockPipeline.jpeg).not.toHaveBeenCalled();
+  });
+});
+
+describe('transformImage — WASM HEIF fallback (#1076)', () => {
+  // Minimal ISO-BMFF header: 4 size bytes, 'ftyp', major brand 'heic'.
+  const heifBuffer = Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from('ftypheic'), Buffer.alloc(16)]);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPipeline.rotate.mockReturnThis();
+    mockPipeline.resize.mockReturnThis();
+    mockPipeline.jpeg.mockReturnThis();
+    mockPipeline.webp.mockReturnThis();
+    mockPipeline.png.mockReturnThis();
+  });
+
+  test('falls back to heic-decode when sharp rejects a HEIF buffer', async () => {
+    mockPipeline.toBuffer
+      .mockRejectedValueOnce(new Error('heif: Security limit exceeded'))
+      .mockResolvedValueOnce(Buffer.from('fallback-jpeg'));
+    mockHeicDecode.mockResolvedValue({ width: 2, height: 2, data: new Uint8Array(16).buffer });
+
+    const result = await transformImage(heifBuffer, { format: 'jpeg' });
+
+    expect(result).toEqual(Buffer.from('fallback-jpeg'));
+    expect(mockHeicDecode).toHaveBeenCalledWith({ buffer: heifBuffer });
+    // Second sharp() call receives the raw RGBA descriptor.
+    expect(vi.mocked(sharp)).toHaveBeenLastCalledWith(
+      expect.any(Buffer),
+      { raw: { width: 2, height: 2, channels: 4 } }
+    );
+    // Raw RGBA has no EXIF and libheif already applied orientation — one
+    // rotate() from the failed primary attempt only.
+    expect(mockPipeline.rotate).toHaveBeenCalledTimes(1);
+  });
+
+  test('rethrows the original sharp error for a non-HEIF input', async () => {
+    mockPipeline.toBuffer.mockRejectedValueOnce(new Error('Input buffer has corrupt header'));
+
+    await expect(transformImage(Buffer.from('not-an-image'), { format: 'jpeg' }))
+      .rejects.toThrow('Input buffer has corrupt header');
+    expect(mockHeicDecode).not.toHaveBeenCalled();
+  });
+
+  test('rethrows the original sharp error when the fallback also fails', async () => {
+    mockPipeline.toBuffer.mockRejectedValueOnce(new Error('heif: Security limit exceeded'));
+    mockHeicDecode.mockRejectedValue(new Error('WASM decode failed'));
+
+    await expect(transformImage(heifBuffer, { format: 'jpeg' }))
+      .rejects.toThrow('heif: Security limit exceeded');
   });
 });
