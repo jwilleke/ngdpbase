@@ -5331,8 +5331,27 @@ ${panes}
       // definition reachable from the browser that is installing it.
       const baseUrl = `${req.protocol}://${req.get('host')}`.replace(/\/$/, '');
       const applicationName = (configManager?.getProperty('ngdpbase.application-name', 'ngdpbase')) || 'ngdpbase';
+      // #1077: preserve hyperlinks inside the highlighted text. The old
+      // String(getSelection()) flattened anchors to their label. Now the
+      // selection is cloned into an offscreen div, each `a[href]` is rewritten
+      // as a markdown link `[label](url)` (labels lose []/whitespace runs, the
+      // same flattening captureSubmit applies to the source title), and the
+      // text is read back via innerText — attached to the DOM, because
+      // innerText derives line breaks from layout while textContent would
+      // collapse every paragraph into one line. Partially-selected anchors
+      // clone with their href intact; non-http(s) schemes are left as bare
+      // label text.
       const bookmarklet =
-        'javascript:(function(){var s=window.getSelection?String(window.getSelection()):\'\';' +
+        'javascript:(function(){var s=\'\',sel=window.getSelection&&window.getSelection();' +
+        'if(sel&&sel.rangeCount&&!sel.isCollapsed){' +
+        'var d=document.createElement(\'div\'),i;d.style.position=\'fixed\';d.style.left=\'-9999px\';' +
+        'for(i=0;i<sel.rangeCount;i++)d.appendChild(sel.getRangeAt(i).cloneContents());' +
+        'var as=d.querySelectorAll(\'a[href]\'),j,a,t,h;' +
+        'for(j=0;j<as.length;j++){a=as[j];h=a.href;' +
+        't=(a.textContent||\'\').replace(/[[\\]]/g,\' \').replace(/\\s+/g,\' \').replace(/^\\s+|\\s+$/g,\'\');' +
+        'if(t&&/^https?:/.test(h))a.textContent=\'[\'+t+\'](\'+h+\')\';}' +
+        'document.body.appendChild(d);s=d.innerText||d.textContent||\'\';document.body.removeChild(d);' +
+        '}else if(sel){s=String(sel);}' +
         'var q=\'url=\'+encodeURIComponent(location.href)+\'&title=\'+encodeURIComponent(document.title)+' +
         '\'&text=\'+encodeURIComponent(s.slice(0,4000));' +
         `window.open('${baseUrl}/capture?'+q,'ngdpcapture','width=560,height=680');})();`;

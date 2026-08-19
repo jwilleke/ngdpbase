@@ -437,5 +437,28 @@ describe('WikiRoutes capture (#881)', () => {
         applicationName: 'ngdpbase'
       }));
     });
+
+    test('#1077: bookmarklet is valid JS and rewrites selection anchors as markdown links', async () => {
+      const req = createMockReq(authedUser);
+      const res = createMockRes();
+      await wikiRoutes.captureInstall(req, res);
+      const { bookmarklet } = res.render.mock.calls[0][1];
+
+      // Parses as a program — a quoting slip in the string concat would land
+      // here, not in a browser months later.
+      const vm = await import('node:vm');
+      expect(() => new vm.Script(bookmarklet.replace(/^javascript:/, ''))).not.toThrow();
+
+      // Link preservation machinery is present: selection cloned, anchors
+      // found, rewritten to [label](url), text read via innerText (layout
+      // line breaks; textContent would flatten paragraphs).
+      expect(bookmarklet).toContain('cloneContents()');
+      expect(bookmarklet).toContain("querySelectorAll('a[href]')");
+      expect(bookmarklet).toContain("a.textContent='['+t+']('+h+')'");
+      expect(bookmarklet).toContain('innerText');
+
+      // Fallback for no-range selections keeps the pre-#1077 behavior.
+      expect(bookmarklet).toContain('s=String(sel)');
+    });
   });
 });
