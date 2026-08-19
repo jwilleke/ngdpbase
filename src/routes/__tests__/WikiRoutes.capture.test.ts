@@ -450,11 +450,12 @@ describe('WikiRoutes capture (#881)', () => {
       expect(() => new vm.Script(bookmarklet.replace(/^javascript:/, ''))).not.toThrow();
 
       // Link preservation machinery is present: selection cloned, anchors
-      // found, rewritten to [label](url), text read via innerText (layout
-      // line breaks; textContent would flatten paragraphs).
+      // found, rewritten to NCM [label|url|target='_blank'] (the same shape
+      // captureSubmit emits for the source heading), text read via innerText
+      // (layout line breaks; textContent would flatten paragraphs).
       expect(bookmarklet).toContain('cloneContents()');
       expect(bookmarklet).toContain("querySelectorAll('a[href]')");
-      expect(bookmarklet).toContain("a.textContent='['+t+']('+h+')'");
+      expect(bookmarklet).toContain("a.textContent='['+t+'|'+h+'|target=\\'_blank\\']'");
       expect(bookmarklet).toContain('innerText');
 
       // Fallback for no-range selections keeps the pre-#1077 behavior.
