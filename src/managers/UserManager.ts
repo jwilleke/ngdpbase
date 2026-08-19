@@ -1246,7 +1246,12 @@ class UserManager extends BaseManager {
     return {
       username: 'Anonymous',
       displayName: 'Anonymous User',
-      roles: ['Anonymous', 'All'],
+      // 'anonymous' lowercase — the role key in ngdpbase.roles.definitions and
+      // the subject the anonymous-read-only policy names. The capitalized
+      // spelling matched no policy subject, so every capability check that
+      // took the resolved-context path (WikiContext.hasPermission) denied
+      // anonymous even where the catalogue granted it (#1059).
+      roles: ['anonymous', 'All'],
       isAuthenticated: false,
       authenticated: false
     };
