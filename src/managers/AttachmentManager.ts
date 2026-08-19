@@ -400,23 +400,53 @@ class AttachmentManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * Check permission for attachment operation
-   * Any authenticated user can upload/delete attachments
-   * @param {string} action - Action to check (attachment:upload, attachment:delete)
+   * Check a registry permission for an attachment operation (#1059).
+   *
+   * Evaluates through UserManager.hasPermission → PolicyEvaluator, the same
+   * path WikiContext.hasPermission takes. Until #1059 this was a stub that
+   * ignored its argument and granted any authenticated user, which made every
+   * permission passed to it decorative — asset-delete sat on the editor role
+   * while any logged-in account could delete any attachment.
+   *
+   * Fails closed when UserManager is unavailable: an attachment mutation with
+   * no policy engine to consult is denied, not waved through.
+   *
+   * @param {string} permission - Registry permission ({target}-{action}, e.g. 'asset-upload')
    * @param {UserContext} userContext - User context with username and roles
    * @returns {Promise<boolean>} True if allowed
    * @private
    */
-  private async checkPermission(action: string, userContext?: UserContext): Promise<boolean> {
+  private async checkPermission(permission: string, userContext?: UserContext): Promise<boolean> {
     // Check if user is authenticated
     if (!userContext || !userContext.isAuthenticated) {
-      logger.warn(`📎 Permission denied for ${action}: User not authenticated`);
+      logger.warn(`📎 Permission denied for ${permission}: User not authenticated`);
       return false;
     }
 
-    // Any authenticated user can upload/delete attachments
-    logger.info(`📎 Permission granted for ${action}: User ${userContext.username} is authenticated`);
-    return true;
+    const userManager = this.engine.getManager<{
+      hasPermission(
+        usernameOrContext: string | { username: string; roles: string[]; isAuthenticated: boolean },
+        action: string
+      ): Promise<boolean>;
+        }>('UserManager');
+    if (!userManager) {
+      logger.warn(`📎 Permission denied for ${permission}: UserManager unavailable`);
+      return false;
+    }
+
+    // Pass the resolved context when the caller supplied roles; otherwise let
+    // UserManager resolve them from the username (the string path expands
+    // anonymous/asserted roles itself).
+    const allowed = userContext.roles
+      ? await userManager.hasPermission(
+        { username: userContext.username ?? '', roles: userContext.roles, isAuthenticated: true },
+        permission
+      )
+      : await userManager.hasPermission(userContext.username ?? '', permission);
+    if (!allowed) {
+      logger.warn(`📎 Permission denied: ${userContext.username} lacks ${permission}`);
+    }
+    return allowed;
   }
 
   /**
@@ -436,7 +466,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     }
 
     // Check permission
-    const allowed = await this.checkPermission('attachment:upload', options.context);
+    const allowed = await this.checkPermission('asset-upload', options.context);
     if (!allowed) {
       throw new Error('Permission denied: You do not have permission to upload attachments');
     }
@@ -631,7 +661,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     }
 
     // Check permission
-    const allowed = await this.checkPermission('attachment:delete', context);
+    const allowed = await this.checkPermission('asset-delete', context);
     if (!allowed) {
       throw new Error('Permission denied: You do not have permission to delete attachments');
     }
@@ -653,7 +683,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     }
 
     // Check permission (requires upload permission to edit metadata)
-    const allowed = await this.checkPermission('attachment:upload', context);
+    const allowed = await this.checkPermission('asset-upload', context);
     if (!allowed) {
       throw new Error('Permission denied: You do not have permission to update attachment metadata');
     }
@@ -689,7 +719,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * attachment or a media-library item.
    *
    * Note the older `updateAttachmentMetadata` still gates on
-   * `attachment:upload`. Two paths edit attachment metadata under two different
+   * `asset-upload`. Two paths edit attachment metadata under two different
    * permissions; that divergence predates this method and is left alone rather
    * than changed as a side effect of adding a route.
    *

@@ -1305,4 +1305,29 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       expect(service.search.mock.calls[0][0].year).toBeUndefined();
     });
   });
+
+  describe('#1059: search-page permission gate', () => {
+    function makeDeniedRoutes(assetService) {
+      const engine = makeEngine(assetService);
+      const routes = new WikiRoutes(engine);
+      routes.createWikiContext = vi.fn((req: Request) =>
+        createMockWikiContext(
+          { userContext: (req as { userContext?: unknown }).userContext as never },
+          { engine, mockUserManager: { hasPermission: vi.fn().mockResolvedValue(false) } }
+        )
+      );
+      return routes;
+    }
+
+    it('types=page 403s when the caller lacks search-page', async () => {
+      const routes = makeDeniedRoutes(makeAssetService());
+      const req = makeReq({ query: { types: 'page' } });
+      const res = makeRes();
+
+      await routes.assetSearch(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Access denied' });
+    });
+  });
 });

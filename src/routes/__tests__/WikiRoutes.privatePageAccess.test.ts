@@ -124,6 +124,10 @@ function makeEngine(pageManager, attachmentManager, aclManager = makeACLManagerS
       if (name === 'PageManager')       return pageManager;
       if (name === 'AttachmentManager') return attachmentManager;
       if (name === 'ACLManager')        return aclManager;
+      // #1059: serveAttachment now gates on asset-read via
+      // WikiContext.hasPermission → UserManager. Grant it — these tests
+      // exercise the private-page ACL layer, not the capability gate.
+      if (name === 'UserManager')       return { hasPermission: vi.fn().mockResolvedValue(true) };
       return null;
     })
   } as unknown as WikiEngine;

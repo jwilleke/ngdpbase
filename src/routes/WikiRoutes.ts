@@ -4774,6 +4774,19 @@ ${panes}
    */
   async searchPages(req: Request, res: Response) {
     try {
+      // #1059: search-page gates the search surface. Anonymous holds it in
+      // the default catalogue (granted alongside this enforcement, operator
+      // approved), so out of the box every visitor can still search; the gate
+      // exists so revoking search-page from a role actually revokes search.
+      const gateContext = this.createWikiContext(req);
+      if (!(await gateContext.hasPermission('search-page'))) {
+        return res.status(403).render('error', {
+          code: 403,
+          message: 'You do not have permission to search',
+          currentUser: req.userContext
+        });
+      }
+
       // Helpers (local to keep the rewrite self-contained).
       const firstString = (val: unknown): string =>
         Array.isArray(val) ? (typeof val[0] === 'string' ? val[0] : '')
@@ -5367,6 +5380,18 @@ ${panes}
       const { attachmentId } = req.params;
       const attachmentManager = this.engine.getManager('AttachmentManager');
 
+      // #1059: asset-read gates attachment bytes. Anonymous holds it in the
+      // default catalogue, so out of the box nothing changes — the gate exists
+      // so revoking asset-read from a role actually revokes something.
+      const wikiContext = this.createWikiContext(req);
+      if (!(await wikiContext.hasPermission('asset-read'))) {
+        return res.status(403).render('error', {
+          code: 403,
+          message: 'You do not have permission to access attachments',
+          currentUser: req.userContext
+        });
+      }
+
       // 🔒 PRIVACY: Check if this attachment belongs to a private page before serving
       const meta = await attachmentManager.getAttachmentMetadata(attachmentId);
       if (meta?.isPrivate) {
@@ -5398,7 +5423,6 @@ ${panes}
         // private attachments whose owning-page name was unresolvable
         // will now 403 where they previously served. This is the
         // conservative-on-security default the EPIC adopts.
-        const wikiContext = this.createWikiContext(req);
         if (!(await wikiContext.canAccess('view', linkedPageName))) {
           return res.status(403).render('error', {
             code: 403,
@@ -5471,6 +5495,13 @@ ${panes}
       const attachmentManager = this.engine.getManager('AttachmentManager');
       if (!attachmentManager) {
         return res.status(503).send('Attachment manager not available');
+      }
+
+      // #1059: same asset-read gate as serveAttachment — a thumbnail is the
+      // attachment's bytes at a smaller size, not a separate surface.
+      const wikiContext = this.createWikiContext(req);
+      if (!(await wikiContext.hasPermission('asset-read'))) {
+        return res.status(403).send('Forbidden');
       }
       const buffer = await attachmentManager.getThumbnail(attachmentId, size);
       if (!buffer) {
@@ -11386,7 +11417,10 @@ ${panes}
         };
         // #720/#745: a file-format or media-year facet is meaningless for
         // pages/users — when one is set, "All sources" narrows to files only.
-        if (!mimeCategory && !year && searchManager?.advancedSearchWithContext) {
+        // #1059: search-page gates the page source; a caller lacking it gets
+        // no page hits, silently — same shape as the users branch below.
+        if (!mimeCategory && !year && searchManager?.advancedSearchWithContext
+          && await wikiContext.hasPermission('search-page')) {
           const hits = await searchManager.advancedSearchWithContext(wikiContext, {
             query,
             categories: [],
@@ -11503,9 +11537,10 @@ ${panes}
         return res.json({ success: true, results, total, hasMore: offset + pageSize < total, capped: anyCapped });
       }
 
-      // Auth model (#696):
-      //   types=page  → anon allowed; SearchManager filters per-page ACL via
-      //                 wikiContext. Matches the previous /search behaviour.
+      // Auth model (#696, #1059):
+      //   types=page  → search-page permission (anonymous holds it in the
+      //                 default catalogue); SearchManager then filters
+      //                 per-page ACL via wikiContext.
       //   types=user  → handled inside the user branch (search-user permission).
       //   anything else (attachments, media) → editor surface, keep the
       //                 editor/contributor/admin gate.
@@ -11528,6 +11563,12 @@ ${panes}
       // keywords, systemKeywords} switches to the advanced-search path so
       // the URL surface matches what /search supports today.
       if (typesParam === 'page') {
+        // #1059: search-page gates page search (anonymous holds it in the
+        // default catalogue). SearchManager's per-page ACL filter still runs
+        // below — this decides whether the caller may search at all.
+        if (!(await wikiContext.hasPermission('search-page'))) {
+          return res.status(403).json({ success: false, error: 'Access denied' });
+        }
         const pageManager = this.engine.getManager('PageManager');
         if (!pageManager) {
           return res.status(503).json({ success: false, error: 'PageManager unavailable' });

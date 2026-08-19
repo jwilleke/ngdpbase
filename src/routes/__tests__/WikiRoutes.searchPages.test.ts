@@ -245,4 +245,22 @@ describe('WikiRoutes.searchPages — GET /search (post-#693 swap)', () => {
       assetPickerCategories: []
     }));
   });
+
+  it('#1059: 403s when the caller lacks search-page', async () => {
+    const engine = makeEngine();
+    const routes = new WikiRoutes(engine);
+    routes.createWikiContext = vi.fn((req: Request) =>
+      createMockWikiContext(
+        { userContext: (req as { userContext?: unknown }).userContext as never },
+        { engine, mockUserManager: { hasPermission: vi.fn().mockResolvedValue(false) } }
+      )
+    );
+    routes.getCommonTemplateData = vi.fn().mockResolvedValue({ user: null });
+    const res = makeRes();
+
+    await routes.searchPages(makeReq(), res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.render).toHaveBeenCalledWith('error', expect.objectContaining({ code: 403 }));
+  });
 });

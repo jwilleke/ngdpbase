@@ -64,10 +64,6 @@ const ACTION_MAP_BLOCK = /const actionMap[^=]*=\s*\{([\s\S]*?)\};/;
  * cannot quietly become a place to hide new drift.
  */
 const KNOWN_UNENFORCED: Record<string, string> = {
-  // Four permissions are declared in the registry, given a description in
-  // UserManager, and reach no check anywhere in src/. An operator can grant
-  // each of them, and each gates nothing.
-  //
   // `page-export` is here for a reason worth reading before "fixing" it.
   //
   // Chasing it as an orphan found #1060: the export routes had no
@@ -83,29 +79,20 @@ const KNOWN_UNENFORCED: Record<string, string> = {
   // take arrays — but no route reaches either today. Enforce it on the bulk
   // route when one is built, on the act that is actually different.
   //
-  // Attachment upload and delete are gated on `isAuthenticated` alone, because
-  // AttachmentManager.checkPermission ignores its `action` argument entirely.
-  //
-  // Enforcing these changes what the permission catalogue means, which is an
-  // operator decision rather than a test fix.
-  'page-export': 'ngdpbase#1059',
-  'asset-read': 'ngdpbase#1059',
-  'asset-delete': 'ngdpbase#1059',
-  'search-page': 'ngdpbase#1059'
+  // The other three #1059 orphans (asset-read, asset-delete, search-page) were
+  // enforced in #1059: AttachmentManager.checkPermission became a real
+  // UserManager.hasPermission check, asset-read gates attachment serve/thumb,
+  // and search-page gates the search surfaces.
+  'page-export': 'ngdpbase#1059'
 };
 
 /**
  * Names that reach a check but are not permissions. These are real call sites
  * passing a role or a legacy vocabulary; recorded rather than silently allowed.
+ * Currently empty — the `attachment:upload` / `attachment:delete` strings that
+ * used to live here became real registry permissions in #1059.
  */
-const KNOWN_NON_PERMISSION_CHECKS: Record<string, string> = {
-  // AttachmentManager.checkPermission is a private stub that ignores its
-  // argument and grants any authenticated user, so these strings are log
-  // labels rather than permissions. They also use `:` where the registry
-  // format is `{target}-{action}`. Tracked with the orphan above.
-  'attachment:upload': 'ngdpbase#1059',
-  'attachment:delete': 'ngdpbase#1059'
-};
+const KNOWN_NON_PERMISSION_CHECKS: Record<string, string> = {};
 
 function sourceFiles(dir: string, acc: string[] = []): string[] {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

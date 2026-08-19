@@ -10,9 +10,16 @@ const mockAttachmentManager = {
   getAttachmentPath: vi.fn()
 };
 
+// #1059: serveAttachment gates on asset-read via WikiContext.hasPermission →
+// UserManager. Default grant; individual tests flip it to exercise the deny path.
+const mockUserManager = {
+  hasPermission: vi.fn().mockResolvedValue(true)
+};
+
 const mockEngine = {
   getManager: vi.fn((name) => {
     if (name === 'AttachmentManager') return mockAttachmentManager;
+    if (name === 'UserManager') return mockUserManager;
     return null;
   })
 };
@@ -245,6 +252,54 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
 
       // Verify
       expect(mockRes.status).toHaveBeenCalledWith(500);
+    });
+
+    test('#1059: 403s when the caller lacks asset-read', async () => {
+      const mockReq = createMockReq(
+        { username: 'norights', isAuthenticated: true, roles: [] },
+        { attachmentId: 'test-attachment-id' }
+      );
+      const mockRes = { ...createMockRes(), render: vi.fn().mockReturnThis() };
+
+      mockUserManager.hasPermission.mockResolvedValueOnce(false);
+
+      await wikiRoutes.serveAttachment(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockAttachmentManager.getAttachment).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('attachmentThumb (#1059)', () => {
+    test('403s when the caller lacks asset-read, before touching the store', async () => {
+      const mockReq = {
+        ...createMockReq(
+          { username: 'norights', isAuthenticated: true, roles: [] },
+          { attachmentId: 'test-attachment-id' }
+        ),
+        query: {}
+      };
+      const mockRes = createMockRes();
+      const getThumbnail = vi.fn();
+      mockEngine.getManager.mockImplementation((name) => {
+        if (name === 'AttachmentManager') return { ...mockAttachmentManager, getThumbnail };
+        if (name === 'UserManager') return mockUserManager;
+        return null;
+      });
+      mockUserManager.hasPermission.mockResolvedValueOnce(false);
+
+      await wikiRoutes.attachmentThumb(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(getThumbnail).not.toHaveBeenCalled();
+
+      // vi.clearAllMocks() does not undo mockImplementation — restore the
+      // module-scope wiring so later describes see the original managers.
+      mockEngine.getManager.mockImplementation((name) => {
+        if (name === 'AttachmentManager') return mockAttachmentManager;
+        if (name === 'UserManager') return mockUserManager;
+        return null;
+      });
     });
   });
 

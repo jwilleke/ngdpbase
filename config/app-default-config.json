@@ -1446,7 +1446,8 @@
       "color": "#adb5bd",
       "permissions": [
         "page-read",
-        "asset-read"
+        "asset-read",
+        "search-page"
       ]
     }
   },
@@ -1660,7 +1661,7 @@
     {
       "id": "anonymous-read-only",
       "name": "Anonymous Read Access",
-      "description": "Anonymous users can only read pages",
+      "description": "Anonymous users can read pages and attachments, and search pages",
       "priority": 50,
       "effect": "allow",
       "subjects": [
@@ -1676,7 +1677,9 @@
         }
       ],
       "actions": [
-        "page-read"
+        "page-read",
+        "asset-read",
+        "search-page"
       ]
     },
     {

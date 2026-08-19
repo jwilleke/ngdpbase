@@ -493,3 +493,68 @@ describe('AttachmentManager.quarantineOrphans (#865 Slice 3)', () => {
       .rejects.toThrow('does not support quarantine');
   });
 });
+
+describe('AttachmentManager permission enforcement (#1059)', () => {
+  const authed = { username: 'jim', isAuthenticated: true, roles: ['editor'] };
+
+  function makePermEngine(hasPermission: ((ctx: unknown, action: string) => Promise<boolean>) | null) {
+    const userManager = hasPermission ? { hasPermission: vi.fn(hasPermission) } : null;
+    const engine = {
+      getManager: vi.fn((name: string) => {
+        if (name === 'ConfigurationManager') return makeConfigManager();
+        if (name === 'UserManager') return userManager;
+        return null;
+      })
+    } as unknown as WikiEngine;
+    const mgr = new AttachmentManager(engine);
+    (mgr as unknown as { attachmentProvider: unknown }).attachmentProvider = {
+      deleteAttachment: vi.fn(async () => true),
+      updateAttachmentMetadata: vi.fn(async () => true)
+    };
+    return { mgr, userManager };
+  }
+
+  test('deleteAttachment checks asset-delete and denies a caller lacking it', async () => {
+    const { mgr, userManager } = makePermEngine(async (_ctx, action) => action !== 'asset-delete');
+    await expect(mgr.deleteAttachment('abc', authed)).rejects.toThrow('Permission denied');
+    expect(userManager.hasPermission).toHaveBeenCalledWith(
+      expect.objectContaining({ username: 'jim', roles: ['editor'] }),
+      'asset-delete'
+    );
+  });
+
+  test('deleteAttachment allows a caller holding asset-delete', async () => {
+    const { mgr } = makePermEngine(async () => true);
+    await expect(mgr.deleteAttachment('abc', authed)).resolves.toBe(true);
+  });
+
+  test('updateAttachmentMetadata checks asset-upload and denies a caller lacking it', async () => {
+    const { mgr, userManager } = makePermEngine(async (_ctx, action) => action !== 'asset-upload');
+    await expect(mgr.updateAttachmentMetadata('abc', {}, authed)).rejects.toThrow('Permission denied');
+    expect(userManager.hasPermission).toHaveBeenCalledWith(expect.anything(), 'asset-upload');
+  });
+
+  test('uploadAttachment checks asset-upload and denies a caller lacking it', async () => {
+    const { mgr } = makePermEngine(async (_ctx, action) => action !== 'asset-upload');
+    await expect(
+      mgr.uploadAttachment(Buffer.from('x'), { originalName: 'a.txt', mimeType: 'text/plain', size: 1 }, { context: authed })
+    ).rejects.toThrow('Permission denied');
+  });
+
+  test('unauthenticated caller is denied without consulting UserManager', async () => {
+    const { mgr, userManager } = makePermEngine(async () => true);
+    await expect(mgr.deleteAttachment('abc', { username: 'guest', isAuthenticated: false })).rejects.toThrow('Permission denied');
+    expect(userManager.hasPermission).not.toHaveBeenCalled();
+  });
+
+  test('fails closed when UserManager is unavailable', async () => {
+    const { mgr } = makePermEngine(null);
+    await expect(mgr.deleteAttachment('abc', authed)).rejects.toThrow('Permission denied');
+  });
+
+  test('a context without roles resolves permissions by username (string path)', async () => {
+    const { mgr, userManager } = makePermEngine(async () => true);
+    await mgr.deleteAttachment('abc', { username: 'jim', isAuthenticated: true });
+    expect(userManager.hasPermission).toHaveBeenCalledWith('jim', 'asset-delete');
+  });
+});
