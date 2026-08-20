@@ -24,7 +24,7 @@
  * nothing going red. This scan is the part that would notice.
  */
 import { describe, test, expect } from 'vitest';
-import { readdirSync, readFileSync, statSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import path from 'path';
 
 const SRC = path.resolve(__dirname, '..');
@@ -43,13 +43,26 @@ const ADVISORY_FOR: Record<string, string> = {
   completeHTMLDocument: 'GHSA-cr32-g25g-vxjj (XSS via metadata title, with metadata)'
 };
 
-/** Every .ts file under src/, excluding test files. */
+/**
+ * Every .ts file under src/, excluding test files.
+ *
+ * #1065: withFileTypes, and ENOENT on a subdirectory is skipped — the
+ * readdir-then-statSync shape this was copied from raced against other suite
+ * workers' temp trees; a path vanishing between the two calls threw mid-scan
+ * and failed every test in this file at once. See showdownGuardCoverage.
+ */
 function sourceFiles(dir: string, acc: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
-    const full = path.join(dir, entry);
-    if (statSync(full).isDirectory()) {
-      if (entry !== '__tests__' && entry !== 'node_modules') sourceFiles(full, acc);
-    } else if (entry.endsWith('.ts') && !entry.endsWith('.test.ts')) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name !== '__tests__' && entry.name !== 'node_modules') {
+        try {
+          sourceFiles(full, acc);
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+        }
+      }
+    } else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) {
       acc.push(full);
     }
   }

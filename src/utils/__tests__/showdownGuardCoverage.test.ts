@@ -20,19 +20,34 @@
  * any `.makeHtml(` whose argument does not visibly name the guard. Adding a new
  * converter call without guarding it breaks the build.
  */
-import { readdirSync, readFileSync, statSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
-/** Every .ts file under src/, excluding test files. */
+/**
+ * Every .ts file under src/, excluding test files.
+ *
+ * #1065: withFileTypes, and ENOENT on a subdirectory is skipped — the old
+ * readdir-then-statSync pair raced against other suite workers creating and
+ * deleting temp trees, and a path vanishing between the two calls threw
+ * mid-scan, failing every test in this file at once (full-suite-only, green
+ * in isolation). The temp trees have been moved out of src/, but a scan that
+ * dies on a transient entry is wrong regardless of who writes one next.
+ */
 function sourceFiles(dir: string, acc: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
-    const full = path.join(dir, entry);
-    if (statSync(full).isDirectory()) {
-      if (entry !== '__tests__' && entry !== 'node_modules') sourceFiles(full, acc);
-    } else if (entry.endsWith('.ts') && !entry.endsWith('.test.ts')) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name !== '__tests__' && entry.name !== 'node_modules') {
+        try {
+          sourceFiles(full, acc);
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+        }
+      }
+    } else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) {
       acc.push(full);
     }
   }

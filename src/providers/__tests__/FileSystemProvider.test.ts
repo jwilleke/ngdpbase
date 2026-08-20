@@ -13,6 +13,7 @@
  */
 
 import path from 'path';
+import os from 'os';
 import fs from 'fs-extra';
 import FileSystemProvider from '../FileSystemProvider';
 
@@ -86,8 +87,15 @@ ${content}
 
 describe('FileSystemProvider', () => {
   beforeEach(async () => {
-    // Create unique test directories for each test
-    TEST_DIR = path.join(__dirname, `../../temp-test-fsp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+    // Create unique test directories for each test.
+    //
+    // #1065: under the OS tmpdir, NOT under src/. This suite used to park its
+    // temp tree at src/temp-test-fsp-* — the source-scanning invariant tests
+    // (showdownGuardCoverage, showdown-converter-options) walk src/ from other
+    // workers, and a directory vanishing between their readdir and stat threw
+    // ENOENT mid-scan: the "fails in the full suite, passes in isolation"
+    // flake. Tests must never create files under src/ outside __tests__/.
+    TEST_DIR = path.join(os.tmpdir(), `temp-test-fsp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
     TEST_PAGES_DIR = path.join(TEST_DIR, 'pages');
     TEST_REQUIRED_DIR = path.join(TEST_DIR, 'required-pages');
 

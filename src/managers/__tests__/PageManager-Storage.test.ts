@@ -18,6 +18,7 @@ vi.unmock('../../providers/FileSystemProvider');
 vi.unmock('../../utils/PageNameMatcher');
 
 import path from 'path';
+import os from 'os';
 import fs from 'fs-extra';
 import PageManager from '../PageManager';
 
@@ -65,8 +66,12 @@ describe('PageManager Storage Integration', () => {
   let engine;
 
   beforeEach(async () => {
-    // Create unique test directories
-    TEST_DIR = path.join(__dirname, `../../temp-test-pm-storage-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+    // Create unique test directories.
+    //
+    // #1065: under the OS tmpdir, NOT under src/ — see the same note in
+    // FileSystemProvider.test.ts. A temp tree churning at src/ top level made
+    // the source-scanning invariant tests flake with ENOENT mid-scan.
+    TEST_DIR = path.join(os.tmpdir(), `temp-test-pm-storage-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
     TEST_PAGES_DIR = path.join(TEST_DIR, 'pages');
     TEST_REQUIRED_DIR = path.join(TEST_DIR, 'required-pages');
 
