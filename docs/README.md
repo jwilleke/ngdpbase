@@ -69,6 +69,12 @@ This documentation is organized into several key areas to help you understand, d
 - Priority management
 - Completion status
 
+### [Fernfiles Comparison](fernfiles.md)
+
+- What activescott/fernfiles does better (durability checklist, mutation audit, conditional writes, health probes)
+- What not to copy
+- Twelve candidate issues ranked by observed friction
+
 ## 🔌 API Documentation
 
 ### [MarkupParser API](api/MarkupParser-API.md)
