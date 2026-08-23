@@ -1,17 +1,62 @@
 # Preventing Regressions - Comprehensive Strategy
 
-__Last Updated:__ 2025-12-12
-__Version:__ 1.5.0
+__Last Updated:__ 2026-08-23
+__Version:__ 1.6.0
 
 __Problem:__ Changes can break previously working services despite documentation.
 
 __Solution:__ Automated testing with enforcement at multiple levels.
 
+## Non-negotiable rules
+
+These are not style preferences. Each one exists because skipping it produced a
+false result that cost real time.
+
+### Never wipe `./data/` in test teardown
+
+Remove only the specific subdirectories a test created. Patterns like
+`fs.rmSync(dataDir, { recursive: true })` or
+`fs.remove(path.join(cwd(), 'data'))` have previously destroyed live page,
+config, and install state on an ordinary `npm test` run.
+
+Prefer a `mkdtemp` directory under the OS temp dir over anything inside the
+repo — `#1065` traced an intermittent suite failure to temp trees churning at
+the top of `src/`, where the source scanners were watching.
+
+### Prove a regression test can fail
+
+A test written alongside a fix must be run __once with the fix reverted__ and
+observed to go red. A test that passes both ways reports coverage that does not
+exist, and it is worse than no test because it is counted as protection.
+
+This is not hypothetical. A regression test for a mid-download client abort in
+another project passed against the build that still had the bug: it downloaded
+64 bytes, which the server writes in a single shot, so the response was already
+finished before the abort landed. It was only caught by deliberately reverting
+the fix and watching CI stay green.
+
+When a test cannot be made to fail, say so in the PR rather than letting the
+green tick imply something it does not. Some tests are guards for behaviour that
+already worked — those are legitimate, but they are regression guards, not
+proof of the fix, and the difference belongs in the description.
+
+### Re-run a failure the way the suite runs it
+
+Do not change the conditions when reproducing a failure — skipping a fixture
+reset, reusing state, or running one spec alone when the suite runs it in a
+batch. Altered conditions manufacture failures that look reproducible and are
+not.
+
+A spec that failed twice in a row under a flag which skipped the usual user
+wipe read exactly like a hard regression; it passed 4/4 the moment it was run
+without the flag. Reproduce first, then diagnose — a theory built on a
+manufactured failure sends the fix somewhere real code is not broken.
+
 ## Current Status
 
 __✅ Implemented:__
 
-- Jest test framework with 1692 tests (83.3% pass rate)
+- Vitest test framework (see `vitest.config.ts`), run with `npm test`
 - GitHub Actions CI/CD workflow
 - Smoke test script (`npm run smoke`)
 - Global test mocks (logger, providers)
@@ -254,9 +299,9 @@ __Add to package.json:__
 ```json
 {
   "scripts": {
-    "test:integration": "jest --testPathPattern=integration.test.js --runInBand",
-    "test:unit": "jest --testPathIgnorePatterns=integration.test.js",
-    "test:changed": "jest --changedSince=HEAD --bail"
+    "test:integration": "vitest run --testNamePattern=integration --pool=forks --poolOptions.forks.singleFork",
+    "test:unit": "vitest run --exclude='**/*integration*'",
+    "test:changed": "vitest run --changed HEAD --bail=1"
   }
 }
 ```
@@ -472,32 +517,34 @@ jobs:
 
 ### 7. __Coverage Ratcheting__ (PREVENT COVERAGE REGRESSION)
 
-Create `jest.config.js` with coverage thresholds:
+Set coverage thresholds in `vitest.config.ts`:
 
-```javascript
-module.exports = {
-  coverageThreshold: {
-    global: {
-      branches: 80,
-      functions: 80,
-      lines: 80,
-      statements: 80
-    },
-    // Critical files must have higher coverage
-    './src/managers/PageManager.js': {
-      branches: 90,
-      functions: 95,
-      lines: 90,
-      statements: 90
-    },
-    './src/managers/RenderingManager.js': {
-      branches: 90,
-      functions: 95,
-      lines: 90,
-      statements: 90
+```typescript
+export default defineConfig({
+  test: {
+    coverage: {
+      thresholds: {
+        branches: 80,
+        functions: 80,
+        lines: 80,
+        statements: 80,
+        // Critical files must have higher coverage
+        'src/managers/PageManager.ts': {
+          branches: 90,
+          functions: 95,
+          lines: 90,
+          statements: 90
+        },
+        'src/managers/RenderingManager.ts': {
+          branches: 90,
+          functions: 95,
+          lines: 90,
+          statements: 90
+        }
+      }
     }
   }
-};
+});
 ```
 
 __Impact:__ Coverage can only go up, never down.
@@ -597,7 +644,7 @@ A: Initial setup takes time, but after that:
 - Net result: Faster because fewer regressions to fix
 
 __Q: What if tests are flaky?__
-A: Fix flaky tests immediately. They erode confidence. Use `jest --detectLeaks` to find issues.
+A: Fix flaky tests immediately. They erode confidence. Re-run the failing spec __the way the suite runs it__ (see "Prove a regression test can fail" below) before concluding it is flaky rather than a real regression.
 
 __Q: What about manual testing?__
 A: Still needed for UX validation, but not for regression prevention.
@@ -607,7 +654,7 @@ A: Yes! Start with critical paths, then expand. Use coverage ratcheting to preve
 
 ## Resources
 
-- [Jest Documentation](https://jestjs.io/)
+- [Vitest Documentation](https://vitest.dev/)
 - [GitHub Actions](https://docs.github.com/en/actions)
 - [Husky (Git Hooks)](https://typicode.github.io/husky/)
 - [Contract Testing Guide](https://martinfowler.com/bliki/ContractTest.html)

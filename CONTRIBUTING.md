@@ -326,7 +326,7 @@ The project uses TypeScript with the following configuration:
 - __Strict mode enabled__ (`strict: true`)
 - __CommonJS output__ for Node.js compatibility
 - __ES2022 target__ for modern JavaScript features
-- __ts-jest__ for testing TypeScript files
+- __Vitest__ for testing TypeScript files (native TS, no transform step)
 
 ### Writing TypeScript Code
 
@@ -908,7 +908,7 @@ The pre-commit hook runs `markdownlint --fix` on staged `.md` files. Fix any err
 
 ### Test Organization
 
-All tests follow the __Jest `__tests__` pattern__ co-located with source code:
+All tests follow the __`__tests__` pattern__ co-located with source code:
 
 ```text
 src/
@@ -937,8 +937,8 @@ __Why this pattern:__
 
 - ✅ Tests co-located with code they test
 - ✅ Easy to find and maintain
-- ✅ Jest automatically discovers all tests
-- ✅ Follows Jest best practices
+- ✅ Vitest automatically discovers all tests
+- ✅ Conventional and familiar layout
 - ✅ Clear separation from source code
 
 ### Test Requirements
@@ -960,16 +960,17 @@ __1. Create test file in `__tests__` directory:__
 
 ```bash
 # For a new manager
-touch src/managers/__tests__/NewManager.test.js
+touch src/managers/__tests__/NewManager.test.ts
 
 # For a new utility
-touch src/utils/__tests__/NewUtil.test.js
+touch src/utils/__tests__/NewUtil.test.ts
 ```
 
-__2. Use Jest testing framework:__
+__2. Use the Vitest testing framework:__
 
-```javascript
-const NewManager = require('../NewManager');
+```typescript
+import { describe, test, expect, beforeEach } from 'vitest';
+import NewManager from '../NewManager.js';
 
 describe('NewManager', () => {
   let manager;
@@ -989,9 +990,11 @@ describe('NewManager', () => {
 
 __3. Mock file operations:__
 
-```javascript
-jest.mock('fs-extra');
-const fs = require('fs-extra');
+```typescript
+import { vi } from 'vitest';
+
+vi.mock('fs-extra');
+const fs = await import('fs-extra');
 
 // Setup mocks
 fs.readFile.mockResolvedValue('file content');
@@ -1020,7 +1023,7 @@ __Route Tests__ - Test HTTP endpoints
 
 ### Test Coverage
 
-Jest configuration excludes test files from coverage:
+Coverage configuration excludes test files:
 
 ```json
 {

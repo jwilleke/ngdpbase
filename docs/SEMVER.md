@@ -1,148 +1,44 @@
-# Semantic Versioning Implementation
+# Semantic Versioning
 
-This document outlines the semantic versioning implementation for ngdpbase.
+How ngdpbase versions and releases. Format is [Semantic Versioning 2.0.0](https://semver.org/): `MAJOR.MINOR.PATCH`.
 
-## Overview
+There is deliberately __no "current version" stated here__. `package.json` is the answer, and a number copied into prose is wrong the moment the next release lands — this file previously claimed `1.2.0` for months while the project shipped `4.x`.
 
-The project now follows [Semantic Versioning 2.0.0](https://semver.org/) specification:
+## The tool
 
-__Format__: MAJOR.MINOR.PATCH
-
-- __MAJOR__: Incompatible API changes
-- __MINOR__: Backward-compatible functionality additions
-- __PATCH__: Backward-compatible bug fixes
-
-## Current Version
-
-__Version__: 1.2.0 (as of September 7, 2025)
-
-This represents a MINOR version increment from the baseline due to significant new features:
-
-- Advanced search system
-- Enhanced authentication
-- UI/UX improvements
-- JSPWiki-style functionality
-
-## Tools Implemented
-
-### 1. Version Management Script (`scripts/version.js`)
-
-__Usage__:
+Version bumps go through `src/utils/version.ts`. Never edit the version in `package.json` by hand: the tool updates `package.json`, `config/app-default-config.json`, and `CHANGELOG.md` together, and a hand edit leaves the other two behind.
 
 ```bash
-node scripts/version.js                    # Show current version
-node scripts/version.js patch              # Increment patch version
-node scripts/version.js minor              # Increment minor version
-node scripts/version.js major              # Increment major version
-node scripts/version.js set <version>      # Set specific version
-node scripts/version.js help               # Show help
+npm run version:show     # print the current version
+npm run version:patch    # 4.11.1 → 4.11.2
+npm run version:minor    # 4.11.1 → 4.12.0
+npm run version:major    # 4.11.1 → 5.0.0
+npm run version:help
 ```
 
-### 2. NPM Scripts
+## Releasing
 
-Added to `package.json`:
+`/semver` is the release path, not the tool above on its own. It runs the full sequence: gate → container smoke test → bump → performance baseline → annotated tag → push → GitHub release → watch the image build → re-validate jimstest → propagate to satellites via `/othersites`.
 
-```json
-{
-  "scripts": {
-    "version:show": "node scripts/version.js",
-    "version:patch": "node scripts/version.js patch",
-    "version:minor": "node scripts/version.js minor",
-    "version:major": "node scripts/version.js major",
-    "version:help": "node scripts/version.js help"
-  }
-}
-```
+Two rules that are easy to get wrong:
 
-### 3. Enhanced Package.json
+- __"I did work, ship it" means `/session-commit`, not `/semver`.__ `/session-commit` commits, pre-flights jimstest, makes the semver decision, invokes `/semver` internally, then writes the session log, comments on issues, and refreshes `TODO.md`. Running `/semver` directly skips all of that bookkeeping.
+- __A build is not a deploy.__ `npm run build` and `/semver` write `dist/` but do not cycle the running pm2 process. Run `./server.sh restart` afterwards or the instance keeps serving the previous code.
 
-Updated with:
+What each release publishes — and what it deliberately does not do for downstream consumers — is stated in [RELEASES.md](../RELEASES.md). Read that before answering a consumer-side lag question.
 
-- Proper semantic version (1.2.0)
-- Descriptive project description
-- Correct main entry point
-- Version management scripts
+## Choosing the bump
 
-### 4. Semantic Versioning in Changelog
+__PATCH__ — bug fixes, documentation, performance work, internal refactoring. No behaviour a caller depends on changes.
 
-The `CHANGELOG.md` now follows [Keep a Changelog](https://keepachangelog.com/) format with:
+__MINOR__ — new features, new endpoints or plugin/addon capabilities, backward-compatible additions.
 
-- Proper version headers with dates
-- Version type indicators (MAJOR/MINOR/PATCH)
-- Semantic versioning guide
-- [Unreleased] section for future changes
+__MAJOR__ — breaking API changes, removed functionality, architecture overhauls, anything that requires a consumer to change.
 
-## Version History
+Version history lives in [CHANGELOG.md](./CHANGELOG.md) and the git tags, not here.
 
-- __1.2.0__ (2025-09-07): MINOR - Advanced search system, enhanced authentication, UI improvements
-- __1.1.0__ (2025-08-01): MINOR - Basic feature set with authentication and templates  
-- __1.0.0__ (2025-07-01): MAJOR - Initial release
+## Related
 
-## Automation Features
-
-The version management script automatically:
-
-1. __Updates package.json__ with new version
-2. __Updates CHANGELOG.md__ with release information
-3. __Validates version format__ to ensure SemVer compliance
-4. __Provides guidance__ on version type selection
-5. __Shows warnings__ for major version bumps
-
-## Usage Guidelines
-
-### When to increment versions
-
-__PATCH (1.2.0 → 1.2.1)__:
-
-- Bug fixes
-- Documentation updates
-- Performance improvements (no API changes)
-- Internal refactoring
-
-__MINOR (1.2.0 → 1.3.0)__:
-
-- New features
-- New API methods/endpoints
-- Enhanced functionality
-- Backward-compatible changes
-
-__MAJOR (1.2.0 → 2.0.0)__:
-
-- Breaking API changes
-- Removed functionality
-- Incompatible changes
-- Architecture overhauls
-
-## Best Practices
-
-1. __Always update CHANGELOG.md__ before releasing
-2. __Test thoroughly__ before version increments
-3. __Document breaking changes__ for major versions
-4. __Use descriptive commit messages__ referencing version changes
-5. __Tag releases__ in Git with version numbers
-
-## Examples
-
-```bash
-# After fixing a bug
-npm run version:patch
-
-# After adding search filters feature  
-npm run version:minor
-
-# After changing authentication API
-npm run version:major
-
-# Set specific version for hotfix
-node scripts/version.js set 1.2.1
-```
-
-## Integration with Development Workflow
-
-1. __Feature Development__: Work on features in branches
-2. __Testing__: Ensure all features work before versioning
-3. __Documentation__: Update changelog with changes
-4. __Version Increment__: Use appropriate version bump
-5. __Release__: Tag and deploy the new version
-
-This semantic versioning implementation provides clear version management and helps users understand the impact of updates.
+- [RELEASES.md](../RELEASES.md) — the publishing contract
+- [CHANGELOG.md](./CHANGELOG.md) — what changed in each version
+- `.claude/commands/semver.md` — the release runbook
