@@ -126,6 +126,83 @@ describe('DOMLinkHandler', () => {
       expect(html).toContain('Create page: NonExistingPage');
     });
 
+    // #1082: a rename used to break every inbound link silently — apiRenamePage
+    // says so in its own comment ("the old title is simply gone"). These cover
+    // the fallback that resolves a link to a page's former title, and the
+    // ambiguity rule that stops it guessing.
+    describe('renamed pages (#1082)', () => {
+      const withRenameMap = (resolveRenamedPage) => {
+        const engine = createMockEngine();
+        const inner = engine.getManager;
+        engine.getManager = vi.fn((name) => {
+          if (name === 'RenderingManager') return { resolveRenamedPage };
+          return inner(name);
+        });
+        return engine;
+      };
+
+      test('a link to a renamed page resolves to its current title instead of a red link', async () => {
+        const renamedHandler = new DOMLinkHandler(withRenameMap(
+          (title) => (title === 'OldName' ? 'HomePage' : null)
+        ));
+        await renamedHandler.initialize();
+
+        const wikiDoc = parser.parse('[OldName]', {});
+        await renamedHandler.processLinks(wikiDoc, { pageName: 'TestPage' });
+
+        const html = wikiDoc.toHTML();
+        expect(html).toContain('href="/view/HomePage"');
+        expect(html).not.toContain('redlink');
+      });
+
+      test('a live page still wins over the rename map', async () => {
+        // The fallback runs only after live resolution fails, so a stale
+        // rename can never shadow a page that exists.
+        const shadowing = vi.fn().mockReturnValue('SomewhereElse');
+        const renamedHandler = new DOMLinkHandler(withRenameMap(shadowing));
+        await renamedHandler.initialize();
+
+        const wikiDoc = parser.parse('[HomePage]', {});
+        await renamedHandler.processLinks(wikiDoc, { pageName: 'TestPage' });
+
+        expect(wikiDoc.toHTML()).toContain('href="/view/HomePage"');
+        expect(shadowing).not.toHaveBeenCalled();
+      });
+
+      test('an unresolvable title stays a red link', async () => {
+        const renamedHandler = new DOMLinkHandler(withRenameMap(() => null));
+        await renamedHandler.initialize();
+
+        const wikiDoc = parser.parse('[NeverExisted]', {});
+        await renamedHandler.processLinks(wikiDoc, { pageName: 'TestPage' });
+
+        expect(wikiDoc.toHTML()).toContain('class="wiki-link redlink"');
+      });
+
+      test('a RenderingManager without the rename map does not break link rendering', async () => {
+        // The map is derived state a deployment may not have populated.
+        const renamedHandler = new DOMLinkHandler(withRenameMap(undefined));
+        await renamedHandler.initialize();
+
+        const wikiDoc = parser.parse('[NonExistingPage]', {});
+        await renamedHandler.processLinks(wikiDoc, { pageName: 'TestPage' });
+
+        expect(wikiDoc.toHTML()).toContain('class="wiki-link redlink"');
+      });
+
+      test('a throwing rename lookup degrades to a red link rather than failing the render', async () => {
+        const renamedHandler = new DOMLinkHandler(withRenameMap(() => {
+          throw new Error('rename map exploded');
+        }));
+        await renamedHandler.initialize();
+
+        const wikiDoc = parser.parse('[NonExistingPage]', {});
+        await renamedHandler.processLinks(wikiDoc, { pageName: 'TestPage' });
+
+        expect(wikiDoc.toHTML()).toContain('class="wiki-link redlink"');
+      });
+    });
+
     test('processes internal link with display text', async () => {
       const wikiDoc = parser.parse('[Go Home|HomePage]', {});
 

@@ -4009,6 +4009,9 @@ ${panes}
         // Remove old title from link graph and register new title
         renderingManager.removePageFromLinkGraph(pageName);
         renderingManager.addPageToCache(finalTitle);
+        // #1082: remember the old title so existing [Old Title] links keep
+        // resolving instead of turning into red links.
+        renderingManager.recordPageRename?.(pageName, finalTitle);
         logger.info(`[WikiRoutes] Page renamed: '${pageName}' → '${finalTitle}', link graph updated`);
       }
       renderingManager.updatePageInLinkGraph(finalTitle, content);
@@ -4486,6 +4489,9 @@ ${panes}
       const searchManager = this.engine.getManager('SearchManager');
       renderingManager?.removePageFromLinkGraph(pageName);
       renderingManager?.addPageToCache(newTitle);
+      // #1082: same former-title record the form save makes, so a rename
+      // behaves identically however it was invoked.
+      renderingManager?.recordPageRename?.(pageName, newTitle);
       renderingManager?.updatePageInLinkGraph(newTitle, pageData.content);
       await searchManager?.removePageFromIndex(pageName);
       await searchManager?.updatePageInIndex(newTitle, {

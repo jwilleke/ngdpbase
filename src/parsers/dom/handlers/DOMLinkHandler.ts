@@ -435,6 +435,25 @@ class DOMLinkHandler {
    * @param linkInfo - Link information
    * @param _context - Rendering context (unused)
    */
+  /**
+   * Ask RenderingManager whether an unresolved title belonged to a renamed
+   * page (#1082).
+   *
+   * Optional-chained throughout: the rename map is derived state that a
+   * deployment may not have populated, and a link render must never fail
+   * because a diagnostic lookup was unavailable.
+   */
+  private resolveRenamedTarget(pageName: string): string | null {
+    try {
+      const renderingManager = this.engine?.getManager?.('RenderingManager') as {
+        resolveRenamedPage?: (title: string) => string | null;
+      } | null;
+      return renderingManager?.resolveRenamedPage?.(pageName) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   processInternalLink(linkElement: LinkedomElement, linkInfo: LinkInfo, _context: RenderContext): void {
     const rawTarget = linkInfo.target || linkInfo.text;
 
@@ -454,6 +473,15 @@ class DOMLinkHandler {
     } else {
       // Fallback to exact match
       matchedPage = this.pageNames.has(pageName) ? pageName : null;
+    }
+
+    // #1082: only now, after live resolution has failed, ask whether this
+    // title belonged to a page that was renamed. Deliberately last so a stale
+    // rename can never shadow a page that exists — and it answers null on
+    // ambiguity, leaving the red link rather than guessing which of two pages
+    // that once shared a name was meant.
+    if (matchedPage === null) {
+      matchedPage = this.resolveRenamedTarget(pageName);
     }
 
     const exists = matchedPage !== null;

@@ -23,6 +23,7 @@ import showdownSubSuperscript from '../extensions/showdown-sub-superscript.js';
 import showdownHeadingIds from '../extensions/showdown-heading-ids.js';
 import { LinkParser } from '../parsers/LinkParser.js';
 import PageNameMatcher from '../utils/PageNameMatcher.js';
+import { RenameMap } from '../utils/renameMap.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import fs from 'fs';
 import path from 'path';
@@ -113,6 +114,15 @@ class RenderingManager extends BaseManager {
   private pageNameMatcher: PageNameMatcher | null;
   private renderingConfig!: RenderingConfig;
   private cachedPageNames: string[] = [];
+
+  /**
+   * Former-title → current-title map for renamed pages (#1082).
+   *
+   * Derived state, held next to the link graph and rebuildable from the
+   * `page.rename` audit events added in #1080. Consulted only after live
+   * resolution fails, so it can never override a real page.
+   */
+  private renameMap: RenameMap = new RenameMap();
 
   /**
    * Creates a new RenderingManager instance
@@ -1319,6 +1329,37 @@ class RenderingManager extends BaseManager {
    * Remove a page from the link graph and cached names (for deleted pages)
    * @param {string} pageName - Name of the deleted page
    */
+  /**
+   * Record that a page changed title, so links to the old one keep resolving (#1082).
+   *
+   * Called from both rename paths — the form save and `apiRenamePage` — right
+   * where the link graph is already being reconciled, since that is the moment
+   * both titles are known.
+   */
+  recordPageRename(fromPageName: string, toPageName: string): void {
+    this.renameMap.record(fromPageName, toPageName);
+  }
+
+  /**
+   * Resolve a link target that matched no live page to a page it was renamed
+   * from, or null (#1082).
+   *
+   * Callers must have already failed live resolution — this is a fallback, not
+   * a lookup, and answering for a title that still exists would let a stale
+   * rename shadow a real page. Returns null on ambiguity rather than guessing:
+   * a confidently wrong link to a page that merely once shared a name is worse
+   * than the red link it would replace.
+   */
+  resolveRenamedPage(formerTitle: string): string | null {
+    return this.renameMap.resolve(formerTitle, (title) => this.linkGraph[title] !== undefined
+      || this.cachedPageNames.includes(title));
+  }
+
+  /** Number of former titles currently resolvable (#1082). Diagnostics only. */
+  getRenameMapSize(): number {
+    return this.renameMap.size;
+  }
+
   removePageFromLinkGraph(pageName: string): void {
     // Remove the page's entry
     delete this.linkGraph[pageName];
