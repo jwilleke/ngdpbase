@@ -22,6 +22,10 @@
                 <ul id="validation-errors-list" class="mb-0"></ul>
             </div>
 
+            <%# #1083: draft recovery. Pure client-side — nothing is sent to the
+                server and the save path is untouched. %>
+            <script src="/js/editor-draft.js"></script>
+            <div id="draft-restore-banner" class="alert d-none align-items-start mb-3" role="status"></div>
             <form id="editForm" action="/save/<%= pageName %>" method="POST">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                 <%# #1061: the version this edit is based on. The server compares it
@@ -438,6 +442,10 @@
 
         // 200 OK or 302 redirect (fetch reports 0/opaque-redirect on manual): success path.
         if (response.ok || response.status === 0 || response.type === 'opaqueredirect') {
+            // #1083: the work is safely on the server, so the local draft has
+            // served its purpose. Left behind, it would be offered back on the
+            // next edit as though it were unsaved.
+            if (window.__clearEditorDraft) window.__clearEditorDraft();
             // Server normally redirects to /view/<page>; navigate there.
             window.location.href = '/view/<%= encodeURIComponent(pageName) %>';
             return;
@@ -862,3 +870,130 @@ if (document.readyState === 'loading') {
 </script>
 
 <%- include('footer') %>
+
+<%# ── #1083: editor draft recovery (Option A) ───────────────────────────────
+    Keeps a copy of the textarea in localStorage while typing and offers it
+    back on reopen. Nothing reaches the server; the save path is unchanged.
+
+    The stale case is the one that matters: a draft records the
+    `baseLastModified` it was written against, and if the page has moved on
+    since, restoring silently would paste over whatever someone else saved —
+    the clobber #1061's conflict check exists to prevent. Such a draft is
+    still offered (it is the user's own work) but as a divergent copy, with
+    the difference stated and restoring made a deliberate click. %>
+<script>
+(function () {
+    'use strict';
+    if (!window.EditorDraft) return;
+
+    const textarea = document.getElementById('content');
+    const banner = document.getElementById('draft-restore-banner');
+    if (!textarea || !banner) return;
+
+    const baseInput = document.querySelector('input[name="baseLastModified"]');
+    const sectionInput = document.querySelector('input[name="section"]');
+    const currentBase = baseInput ? baseInput.value : null;
+
+    const key = window.EditorDraft.draftKey(
+        <%- JSON.stringify(pageName) %>,
+        <%- JSON.stringify((typeof metadata !== 'undefined' && metadata && metadata.uuid) ? metadata.uuid : null) %>,
+        sectionInput ? sectionInput.value : null
+    );
+
+    // Content as the server rendered it — the baseline a draft is compared
+    // against, captured before any restore can change it.
+    const serverContent = textarea.value;
+
+    window.__clearEditorDraft = function () { window.EditorDraft.clear(key); };
+
+    function describeAge(savedAt) {
+        if (!savedAt) return '';
+        const mins = Math.round((Date.now() - savedAt) / 60000);
+        if (mins < 1) return ' (from moments ago)';
+        if (mins < 60) return ' (from ' + mins + ' minute' + (mins === 1 ? '' : 's') + ' ago)';
+        const hours = Math.round(mins / 60);
+        if (hours < 24) return ' (from ' + hours + ' hour' + (hours === 1 ? '' : 's') + ' ago)';
+        const days = Math.round(hours / 24);
+        return ' (from ' + days + ' day' + (days === 1 ? '' : 's') + ' ago)';
+    }
+
+    function showRestoreOffer(draft, stale) {
+        banner.className = 'alert d-flex align-items-start mb-3 ' + (stale ? 'alert-warning' : 'alert-info');
+
+        const text = document.createElement('div');
+        text.className = 'flex-grow-1';
+        const strong = document.createElement('strong');
+        strong.textContent = stale
+            ? 'Unsaved draft found — but this page has changed since'
+            : 'Unsaved draft found';
+        text.appendChild(strong);
+        const detail = document.createElement('div');
+        detail.className = 'small mt-1';
+        detail.textContent = stale
+            ? 'You have unsaved text' + describeAge(draft.savedAt) + ', written before someone else saved this page. '
+              + 'Restoring replaces what is in the editor with your draft — review it against the current text before saving.'
+            : 'You have unsaved text' + describeAge(draft.savedAt) + ' from a previous session.';
+        text.appendChild(detail);
+        banner.appendChild(text);
+
+        const actions = document.createElement('div');
+        actions.className = 'ms-3 flex-shrink-0';
+
+        const restore = document.createElement('button');
+        restore.type = 'button';
+        restore.className = 'btn btn-sm ' + (stale ? 'btn-warning' : 'btn-primary');
+        restore.textContent = 'Restore draft';
+        restore.addEventListener('click', function () {
+            textarea.value = draft.content;
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            dismiss();
+        });
+        actions.appendChild(restore);
+
+        const discard = document.createElement('button');
+        discard.type = 'button';
+        discard.className = 'btn btn-sm btn-outline-secondary ms-2';
+        discard.textContent = 'Discard';
+        discard.addEventListener('click', function () {
+            window.EditorDraft.clear(key);
+            dismiss();
+        });
+        actions.appendChild(discard);
+
+        banner.appendChild(actions);
+    }
+
+    function dismiss() {
+        banner.className = 'alert d-none align-items-start mb-3';
+        banner.innerHTML = '';
+    }
+
+    const stored = window.EditorDraft.load(key);
+    const verdict = window.EditorDraft.evaluate(stored, {
+        content: serverContent,
+        baseLastModified: currentBase
+    });
+    if (verdict.action === 'offer' || verdict.action === 'offer-stale') {
+        showRestoreOffer(stored, verdict.action === 'offer-stale');
+    }
+
+    let timer = null;
+    textarea.addEventListener('input', function () {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(function () {
+            window.EditorDraft.save(key, {
+                content: textarea.value,
+                baseLastModified: currentBase
+            });
+        }, window.EditorDraft.DEBOUNCE_MS);
+    });
+
+    // Cancel navigates away deliberately, so the draft would otherwise be
+    // offered back next time as though the user had lost it.
+    document.querySelectorAll('a.btn-secondary').forEach(function (link) {
+        if ((link.textContent || '').trim() === 'Cancel') {
+            link.addEventListener('click', function () { window.EditorDraft.clear(key); });
+        }
+    });
+})();
+</script>
