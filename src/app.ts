@@ -19,6 +19,8 @@ import cookieParser from 'cookie-parser';
 import session from 'express-session';
 import sessionFileStore from 'session-file-store';
 import fs from 'fs-extra';
+import { constants as fsConstants } from 'fs';
+import { runReadinessChecks, buildReadinessReport } from './utils/healthChecks.js';
 
 import logger from './utils/logger.js';
 import WikiEngine from './WikiEngine.js';
@@ -142,6 +144,72 @@ void (async (): Promise<void> => {
   app.use(express.static(path.join(projectRoot, 'public')));
   app.use('/themes', express.static(path.join(projectRoot, 'themes')));
   app.use('/addons', express.static(path.join(projectRoot, 'addons')));
+
+  // 1b. Health probes (#1079).
+  //
+  // Registered here — before the initialization gate, before session, CSRF and
+  // userContext middleware, and before every route — for three reasons:
+  //
+  //   1. No session. `saveUninitialized: false` alone is not enough, because
+  //      the CSRF middleware touches `req.session` on every request, which
+  //      makes it initialized and writes a file. A probe running every 10s
+  //      would fill ${FAST_STORAGE}/sessions with garbage.
+  //   2. No maintenance gate. Behind it, liveness would answer 503 during
+  //      boot and an orchestrator would restart a pod that is merely still
+  //      indexing.
+  //   3. No shadowing. A page slug named "health" cannot take these paths.
+  //
+  // They replace probing `/` (docker/k8s/deployment.yaml, docker/Dockerfile
+  // HEALTHCHECK), which rendered a full page through auth, ACL and the
+  // template layer on every check and accepted 200 *or* 302 — so an instance
+  // that redirected everything read as healthy, while a slow render under
+  // load failed the probe and pulled a pod that was only busy.
+
+  // Liveness checks nothing, deliberately. If this cannot answer, the process
+  // is wedged — the one condition a restart actually fixes. It answers during
+  // startup too, so a slow boot is never mistaken for a hung process.
+  app.get('/health/liveness', (_req: Request, res: Response): void => {
+    res.status(200).json({ status: 'ok' });
+  });
+
+  // Readiness gates traffic: 503 removes the pod from rotation as a circuit
+  // breaker without terminating it. While the engine is still initializing it
+  // reports not-ready, which is precisely the "up but not yet serving" state
+  // that probing `/` could not express.
+  //
+  // Deliberately narrow. SLOW_STORAGE, search and addons are real
+  // dependencies, but cached pages and the admin UI still serve without them,
+  // and pulling the pod would turn a partial outage into a total one.
+  app.get('/health/readiness', async (_req: Request, res: Response): Promise<void> => {
+    const engineForCheck = engineRef;
+    const results = engineForCheck
+      ? await runReadinessChecks([
+        {
+          // Non-null provider means the engine finished wiring storage.
+          name: 'pageProvider',
+          run: () => !!(engineForCheck.getManager('PageManager') as {
+            getCurrentPageProvider?: () => unknown;
+          } | null)?.getCurrentPageProvider?.()
+        },
+        {
+          // FAST_STORAGE holds sessions, config, logs and the page index.
+          // Unwritable means the app is up but cannot serve a login.
+          name: 'dataDirWritable',
+          run: async () => {
+            const dir = (engineForCheck.getManager('ConfigurationManager') as {
+              getProperty?: (key: string) => unknown;
+            } | null)?.getProperty?.('ngdpbase.directories.data') as string | undefined;
+            if (!dir) return false;
+            await fs.access(dir, fsConstants.W_OK);
+            return true;
+          }
+        }
+      ])
+      : { engineInitialized: false };
+
+    const report = buildReadinessReport(results);
+    res.status(report.httpStatus).json({ status: report.status, checks: report.checks });
+  });
 
   // 2. Initialization gate middleware — serves maintenance page while engine starts
   app.use((req: Request, res: Response, next: NextFunction): void => {

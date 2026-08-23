@@ -153,7 +153,11 @@ spec:
           # Health checks
           livenessProbe:
             httpGet:
-              path: /
+              # #1079: was `/`, a full page render through auth, ACL and the
+              # template layer. This route checks nothing and touches no
+              # session — a wedged process is the only thing it can fail on,
+              # which is the only condition a restart fixes.
+              path: /health/liveness
               port: 3000
             initialDelaySeconds: 30
             periodSeconds: 30
@@ -161,7 +165,10 @@ spec:
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /
+              # #1079: 503 here removes the pod from rotation without killing
+              # it, and reports not-ready while the engine is still indexing —
+              # a state probing `/` could not express.
+              path: /health/readiness
               port: 3000
             initialDelaySeconds: 10
             periodSeconds: 10

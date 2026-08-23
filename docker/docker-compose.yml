@@ -68,7 +68,9 @@ services:
     # Health check
     # Note: Health check uses container internal port (always 3000)
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:${CONTAINER_PORT:-3000}/', (r) => process.exit((r.statusCode === 200 || r.statusCode === 302) ? 0 : 1))"]
+      # #1079: was `/` accepting 200 OR 302 — a full page render, and a
+      # redirect-everything misconfiguration passed it.
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:${CONTAINER_PORT:-3000}/health/liveness', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
       interval: 30s
       timeout: 10s
       start_period: 40s

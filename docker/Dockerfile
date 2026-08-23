@@ -165,7 +165,10 @@ ENV HEADLESS_INSTALL=true
 # Health check
 # Accepts both 200 (OK) and 302 (Redirect) as healthy responses
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:3000/', (r) => process.exit((r.statusCode === 200 || r.statusCode === 302) ? 0 : 1))"
+    # #1079: was `/` accepting 200 OR 302 — so an instance that redirected
+# everything, including a misconfigured one, reported healthy. /health/liveness
+# returns 200 and nothing else.
+CMD node -e "require('http').get('http://localhost:3000/health/liveness', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
 
 # Volume mounts for persistent data
 VOLUME ["/app/data"]
