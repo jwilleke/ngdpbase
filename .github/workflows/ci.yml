@@ -5,6 +5,15 @@ on:
     branches: [master, develop]
   pull_request:
     branches: [master, develop]
+  # Manual trigger. This workflow sat `disabled_manually` from 2026-04-14 to
+  # 2026-08-23 because two auxiliary jobs went permanently red (a renamed
+  # config key in Smoke Tests, a pre-TypeScript-migration server path in E2E)
+  # and the whole pipeline was switched off rather than the jobs fixed. Both
+  # causes were repaired in the tree long before anyone noticed CI was off.
+  # Without a dispatch trigger the only way to test a CI change is to push to
+  # master, which is what made it cheaper to leave it disabled than to verify
+  # a fix. See https://github.com/jwilleke/ngdpbase/issues/1085
+  workflow_dispatch:
 
 jobs:
   test:
