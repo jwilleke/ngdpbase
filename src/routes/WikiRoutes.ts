@@ -37,6 +37,8 @@ import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
 import type ShareManager from '../managers/ShareManager.js';
 import type { ShareScope } from '../types/Share.js';
 import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../utils/ContactSubmissionLog.js';
+import { pipeline } from 'stream';
+import { resolveRange } from '../utils/httpRange.js';
 import { stringifyJsonLdForScript, wantsJsonLd } from '../utils/buildPageJsonLd.js';
 import { articleToPageJsonLd } from '../utils/articleToPageJsonLd.js';
 import { buildSocialMeta } from '../utils/buildSocialMeta.js';
@@ -16321,23 +16323,35 @@ ${description}
     }
 
     const fileSize = stat.size;
-    const rangeHeader = req.headers.range;
 
-    if (rangeHeader) {
-      // Parse "bytes=start-end"
-      const parts = rangeHeader.replace(/bytes=/, '').split('-');
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-      const chunkSize = end - start + 1;
+    // #1078: resolve the range BEFORE writing any header. The previous code
+    // parsed with parseInt and no bounds check, so `bytes=999999999-`,
+    // `bytes=abc-`, and `bytes=50-10` each sent 206 headers and then threw
+    // inside createReadStream — too late to change the status, so the
+    // response never completed and the socket was held until the client
+    // timed out. resolveRange guarantees a satisfiable slice is streamable.
+    const range = resolveRange(req.headers.range, fileSize);
 
+    if (range.kind === 'unsatisfiable') {
+      // RFC 7233 §4.4 — tell the client the real length so it can retry.
+      res.writeHead(416, {
+        'Content-Range': `bytes */${fileSize}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Type': mimeType
+      });
+      return res.end();
+    }
+
+    if (range.kind === 'satisfiable') {
+      const { start, end } = range;
       res.writeHead(206, {
         'Content-Range': `bytes ${start}-${end}/${fileSize}`,
         'Accept-Ranges': 'bytes',
-        'Content-Length': chunkSize,
+        'Content-Length': end - start + 1,
         'Content-Type': mimeType,
         'Content-Disposition': 'inline'
       });
-      fs.createReadStream(filePath, { start, end }).pipe(res);
+      this.pipeFileToResponse(fs.createReadStream(filePath, { start, end }), res, filePath);
       return;
     }
 
@@ -16347,8 +16361,38 @@ ${description}
       'Content-Length': fileSize,
       'Content-Type': mimeType
     });
-    fs.createReadStream(filePath).pipe(res);
+    this.pipeFileToResponse(fs.createReadStream(filePath), res, filePath);
     return;
+  }
+
+  /**
+   * Pipe a file stream to the response, destroying both sides on any failure.
+   *
+   * #1078: the previous bare `.pipe(res)` left the read stream alive when the
+   * client disconnected mid-body — a routine event for video seeking, where a
+   * browser opens and abandons many range requests per scrub. It also left an
+   * fs read error (EIO, or the file removed under us) to reach a stream with
+   * no `error` listener, which in Node is an uncaught exception. `src/app.ts`
+   * installs a process-level handler so that does not take the server down,
+   * but that handler is a backstop, not a design.
+   *
+   * Errors here cannot become an HTTP status: the headers are already sent by
+   * the time any byte moves. Logging and closing the connection is the whole
+   * available response, and it is the correct one — a truncated body with a
+   * promised Content-Length tells the client something went wrong.
+   */
+  private pipeFileToResponse(source: NodeJS.ReadableStream, res: Response, filePath: string): void {
+    pipeline(source, res, (err) => {
+      if (!err) return;
+      // A client that navigates away or seeks mid-download aborts the
+      // response. That is normal traffic, not a fault worth an error line.
+      const { code } = err;
+      if (code === 'ERR_STREAM_PREMATURE_CLOSE' || code === 'EPIPE' || code === 'ECONNRESET') {
+        logger.debug(`[media] Client disconnected while streaming ${filePath}`);
+        return;
+      }
+      logger.error(`[media] Error streaming ${filePath}:`, err);
+    });
   }
 
   /**

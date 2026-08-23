@@ -312,6 +312,87 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
       expect(res.text).toBe('Not Found');
     });
 
+    // ── #1078: Range handling ────────────────────────────────────────────────
+    //
+    // These go through the shared streamMediaItemFile helper, so they cover
+    // GET /media/file/:id equally. Every one of them HUNG before the fix:
+    // the route wrote 206 headers from unvalidated parseInt output, then
+    // createReadStream threw, and with the headers already sent nothing could
+    // complete the response. Reverting the fix turns these into timeouts, not
+    // assertion failures — which is exactly what a user saw.
+    //
+    // The file is 15 bytes: 'jpeg-bytes-here'.
+    const FILE_SIZE = 15;
+
+    test('serves a satisfiable range as 206 with the right slice', async () => {
+      shareState.media = [{ id: 'm1', filePath: mediaFilePath, mimeType: 'image/jpeg' }];
+      const res = await request(app).get(`/share/${VALID_TOKEN}/file/m1`).set('Range', 'bytes=0-3');
+      expect(res.status).toBe(206);
+      expect(res.headers['content-range']).toBe(`bytes 0-3/${FILE_SIZE}`);
+      expect(res.headers['content-length']).toBe('4');
+      expect(res.body.toString()).toBe('jpeg');
+    });
+
+    test('serves an open-ended range to the last byte', async () => {
+      shareState.media = [{ id: 'm1', filePath: mediaFilePath, mimeType: 'image/jpeg' }];
+      const res = await request(app).get(`/share/${VALID_TOKEN}/file/m1`).set('Range', 'bytes=5-');
+      expect(res.status).toBe(206);
+      expect(res.headers['content-range']).toBe(`bytes 5-14/${FILE_SIZE}`);
+      expect(res.body.toString()).toBe('bytes-here');
+    });
+
+    test('serves a suffix range as the last N bytes', async () => {
+      shareState.media = [{ id: 'm1', filePath: mediaFilePath, mimeType: 'image/jpeg' }];
+      const res = await request(app).get(`/share/${VALID_TOKEN}/file/m1`).set('Range', 'bytes=-4');
+      expect(res.status).toBe(206);
+      expect(res.headers['content-range']).toBe(`bytes 11-14/${FILE_SIZE}`);
+      expect(res.body.toString()).toBe('here');
+    });
+
+    test('a start past the end returns 416 instead of hanging', async () => {
+      shareState.media = [{ id: 'm1', filePath: mediaFilePath, mimeType: 'image/jpeg' }];
+      const res = await request(app).get(`/share/${VALID_TOKEN}/file/m1`).set('Range', 'bytes=999999999-');
+      expect(res.status).toBe(416);
+      expect(res.headers['content-range']).toBe(`bytes */${FILE_SIZE}`);
+      expect(res.body.toString()).toBe('');
+    });
+
+    test('an unparseable range is ignored and the whole file is served', async () => {
+      shareState.media = [{ id: 'm1', filePath: mediaFilePath, mimeType: 'image/jpeg' }];
+      const res = await request(app).get(`/share/${VALID_TOKEN}/file/m1`).set('Range', 'bytes=abc-');
+      expect(res.status).toBe(200);
+      expect(res.headers['content-length']).toBe(String(FILE_SIZE));
+      expect(res.body.toString()).toBe('jpeg-bytes-here');
+    });
+
+    test('an inverted range is ignored and the whole file is served', async () => {
+      shareState.media = [{ id: 'm1', filePath: mediaFilePath, mimeType: 'image/jpeg' }];
+      const res = await request(app).get(`/share/${VALID_TOKEN}/file/m1`).set('Range', 'bytes=10-2');
+      expect(res.status).toBe(200);
+      expect(res.body.toString()).toBe('jpeg-bytes-here');
+    });
+
+    test('a multi-range request is ignored rather than answered with one range', async () => {
+      shareState.media = [{ id: 'm1', filePath: mediaFilePath, mimeType: 'image/jpeg' }];
+      const res = await request(app).get(`/share/${VALID_TOKEN}/file/m1`).set('Range', 'bytes=0-3,8-11');
+      expect(res.status).toBe(200);
+      expect(res.body.toString()).toBe('jpeg-bytes-here');
+    });
+
+    test('an end past the last byte is clamped, not refused', async () => {
+      shareState.media = [{ id: 'm1', filePath: mediaFilePath, mimeType: 'image/jpeg' }];
+      const res = await request(app).get(`/share/${VALID_TOKEN}/file/m1`).set('Range', 'bytes=10-99999');
+      expect(res.status).toBe(206);
+      expect(res.headers['content-range']).toBe(`bytes 10-14/${FILE_SIZE}`);
+      expect(res.body.toString()).toBe('-here');
+    });
+
+    test('advertises Accept-Ranges on a normal request', async () => {
+      shareState.media = [{ id: 'm1', filePath: mediaFilePath, mimeType: 'image/jpeg' }];
+      const res = await request(app).get(`/share/${VALID_TOKEN}/file/m1`);
+      expect(res.headers['accept-ranges']).toBe('bytes');
+    });
+
     test('serves an in-scope thumbnail with private cache', async () => {
       shareState.media = [{ id: 'm1', filePath: mediaFilePath, mimeType: 'image/jpeg' }];
       const res = await request(app).get(`/share/${VALID_TOKEN}/thumb/m1`);
