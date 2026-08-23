@@ -324,6 +324,69 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       );
     });
 
+    // #1080: attachment deletes produced no audit record at all. These pin
+    // that one is emitted, that it carries the filename (read BEFORE the
+    // delete, since afterwards the name is gone and an id alone does not
+    // answer "what was lost?"), and that a failing audit backend cannot turn
+    // a committed delete into an error.
+    test('emits an attachment.delete audit event naming the deleted file', async () => {
+      const logAuditEvent = vi.fn().mockResolvedValue('audit-id');
+      mockAttachmentManager.getAttachmentMetadata.mockResolvedValue({
+        id: 'test-attachment-id',
+        filename: 'invoice.pdf',
+        size: 4096
+      });
+      mockEngine.getManager.mockImplementation((name) => {
+        if (name === 'AttachmentManager') return mockAttachmentManager;
+        if (name === 'UserManager') return mockUserManager;
+        if (name === 'AuditManager') return { logAuditEvent };
+        return null;
+      });
+      mockAttachmentManager.deleteAttachment.mockResolvedValue(true);
+
+      const mockReq = createMockReq(
+        { username: 'testuser', isAuthenticated: true },
+        { attachmentId: 'test-attachment-id' }
+      );
+      await wikiRoutes.deleteAttachment(mockReq, createMockRes());
+
+      expect(logAuditEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'attachment.delete',
+          user: 'testuser',
+          metadata: expect.objectContaining({
+            attachmentId: 'test-attachment-id',
+            filename: 'invoice.pdf',
+            sizeBytes: 4096
+          })
+        })
+      );
+      // Reset for the tests that follow, which assume no AuditManager.
+      mockAttachmentManager.getAttachmentMetadata.mockResolvedValue(null);
+    });
+
+    test('a failing audit backend does not fail the delete', async () => {
+      const logAuditEvent = vi.fn().mockRejectedValue(new Error('audit disk full'));
+      mockEngine.getManager.mockImplementation((name) => {
+        if (name === 'AttachmentManager') return mockAttachmentManager;
+        if (name === 'UserManager') return mockUserManager;
+        if (name === 'AuditManager') return { logAuditEvent };
+        return null;
+      });
+      mockAttachmentManager.deleteAttachment.mockResolvedValue(true);
+
+      const mockReq = createMockReq(
+        { username: 'testuser', isAuthenticated: true },
+        { attachmentId: 'test-attachment-id' }
+      );
+      const mockRes = createMockRes();
+      await wikiRoutes.deleteAttachment(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({ success: true })
+      );
+    });
+
     test('should deny delete access for unauthenticated users', async () => {
       // Setup
       const mockReq = createMockReq(

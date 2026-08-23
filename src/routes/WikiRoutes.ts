@@ -39,6 +39,13 @@ import type { ShareScope } from '../types/Share.js';
 import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../utils/ContactSubmissionLog.js';
 import { pipeline } from 'stream';
 import { resolveRange } from '../utils/httpRange.js';
+import {
+  buildPageMutationAuditEvent,
+  buildAttachmentAuditEvent,
+  recordAuditEvent,
+  type AuditEventSink,
+  type AuditViaToken
+} from '../utils/auditEvents.js';
 import { stringifyJsonLdForScript, wantsJsonLd } from '../utils/buildPageJsonLd.js';
 import { articleToPageJsonLd } from '../utils/articleToPageJsonLd.js';
 import { buildSocialMeta } from '../utils/buildSocialMeta.js';
@@ -3979,6 +3986,19 @@ ${panes}
       const finalTitle = (metadata.title as string) || pageName;
       const isRename = !isNewPage && pageName !== finalTitle;
 
+      // #1080: audit the mutation now that the write has committed. Not
+      // awaited — the page is on disk either way, and a slow audit backend
+      // must not delay the response. A rename is logged as a rename rather
+      // than an edit because #1082 resolves links to a page's former title
+      // from exactly these events.
+      this.auditPageMutation(
+        req,
+        isNewPage ? 'create' : isRename ? 'rename' : 'edit',
+        finalTitle,
+        metadata.uuid as string | undefined,
+        isRename ? pageName : null
+      );
+
       // Capture old referring pages BEFORE removing from link graph (used for cache invalidation)
       const oldReferringPages = isRename ? renderingManager.getReferringPages(pageName) : [];
 
@@ -4457,6 +4477,10 @@ ${panes}
       (wikiContext as { content: string | null }).content = pageData.content;
       await pageManager.savePageWithContext(wikiContext, metadata);
 
+      // #1080: same audit event the form-save rename path emits, so a rename
+      // is recorded identically however it was invoked.
+      this.auditPageMutation(req, 'rename', newTitle, metadata.uuid, pageName);
+
       // Same index reconciliation the form save performs on a rename.
       const renderingManager = this.engine.getManager('RenderingManager');
       const searchManager = this.engine.getManager('SearchManager');
@@ -4532,6 +4556,67 @@ ${panes}
    *
    * Best-effort: a failing audit backend must not block the delete.
    */
+  /** The AuditManager, or null when it is disabled or absent. */
+  private auditSink(): AuditEventSink | null {
+    return this.engine.getManager('AuditManager') as AuditEventSink | null;
+  }
+
+  /** Agent-token identity on this request, when it authenticated with one (#946). */
+  private static viaTokenOf(req: Request): AuditViaToken | null {
+    return (req.userContext as { viaToken?: AuditViaToken } | undefined)?.viaToken ?? null;
+  }
+
+  /**
+   * Record a page create / edit / rename in the audit log (#1080).
+   *
+   * Called after the write commits, and deliberately not awaited by the save
+   * path: the page is already on disk, so a slow or failing audit backend must
+   * not delay the response or turn a successful save into an error.
+   */
+  private auditPageMutation(
+    req: Request,
+    op: 'create' | 'edit' | 'rename',
+    pageName: string,
+    uuid: string | null | undefined,
+    fromPageName?: string | null
+  ): void {
+    const event = buildPageMutationAuditEvent({
+      op,
+      username: req.userContext?.username,
+      ipAddress: req.ip,
+      pageName,
+      uuid,
+      fromPageName,
+      viaToken: WikiRoutes.viaTokenOf(req)
+    });
+    void recordAuditEvent(this.auditSink(), event, (err) =>
+      logger.warn(`Audit log failed for page.${op} of '${pageName}':`, err)
+    );
+  }
+
+  /** Record an attachment upload / delete in the audit log (#1080). */
+  private auditAttachment(
+    req: Request,
+    op: 'upload' | 'delete',
+    attachmentId: string,
+    filename: string,
+    extra?: { pageName?: string | null; sizeBytes?: number | null }
+  ): void {
+    const event = buildAttachmentAuditEvent({
+      op,
+      username: req.userContext?.username,
+      ipAddress: req.ip,
+      attachmentId,
+      filename,
+      pageName: extra?.pageName,
+      sizeBytes: extra?.sizeBytes,
+      viaToken: WikiRoutes.viaTokenOf(req)
+    });
+    void recordAuditEvent(this.auditSink(), event, (err) =>
+      logger.warn(`Audit log failed for attachment.${op} of '${filename}':`, err)
+    );
+  }
+
   private async auditPageDelete(
     req: Request,
     wikiContext: { userContext?: { username?: string } | null },
@@ -5042,6 +5127,12 @@ ${panes}
         attachNote = await this.appendAttachDirective(req, res, pageName, req.file.originalname);
         attachedToPage = attachNote === undefined;
       }
+
+      // #1080: the bytes are stored by this point, so audit after the fact.
+      this.auditAttachment(req, 'upload', attachment.identifier, req.file.originalname, {
+        pageName: attachedToPage ? pageName : null,
+        sizeBytes: req.file.size
+      });
 
       return res.json({
         success: true,
@@ -5555,6 +5646,20 @@ ${panes}
         });
       }
 
+      // #1080: read the filename BEFORE the delete — afterwards it is gone,
+      // and an audit line naming only an opaque id does not answer "what was
+      // lost?". Best-effort: a metadata read failure must not block the
+      // delete, so the audit record degrades to the id alone.
+      let deletedFilename = attachmentId;
+      let deletedSize: number | null = null;
+      try {
+        const meta = await attachmentManager.getAttachmentMetadata(attachmentId);
+        if (typeof meta?.filename === 'string') deletedFilename = meta.filename;
+        if (typeof meta?.size === 'number') deletedSize = meta.size;
+      } catch {
+        // fall through with the id as the filename
+      }
+
       // Delete via AttachmentManager (handles permission checks)
       // Pass full userContext for PolicyManager
       const deleted = await attachmentManager.deleteAttachment(
@@ -5568,6 +5673,8 @@ ${panes}
           error: 'Attachment not found'
         });
       }
+
+      this.auditAttachment(req, 'delete', attachmentId, deletedFilename, { sizeBytes: deletedSize });
 
       return res.json({
         success: true,
