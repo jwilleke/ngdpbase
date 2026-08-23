@@ -262,6 +262,14 @@ jobs:
         env:
           NODE_ENV: test
           E2E_BASE_URL: http://localhost:3099
+          # The seed step writes data/.install-complete, and from that point
+          # ConfigurationManager refuses to start without an explicit base URL
+          # rather than silently defaulting to localhost:3000 and emitting
+          # broken absolute URLs (#642). Playwright's webServer inherits this
+          # env, so it has to be set here and has to match the 3099 the
+          # webServer command binds to — a mismatch would boot the app fine
+          # and then hand every absolute URL the wrong port.
+          NGDPBASE_BASE_URL: http://localhost:3099
           CI: true
 
       - name: Upload E2E test results
