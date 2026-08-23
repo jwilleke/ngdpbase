@@ -26,6 +26,7 @@ import type { WikiConfig } from './src/types/Config.js';
 import matter from 'gray-matter';
 import { normalizeExistingPageToNcm } from './src/converters/ncm/index.js';
 import { notifyNcmConversion } from './src/utils/ncmNotify.js';
+import { isStaleSave, versionTokenOf } from './src/utils/pageVersionToken.js';
 
 /**
  * Tool arguments interfaces
@@ -110,6 +111,12 @@ interface UpdatePageArgs {
   content?: string;
   category?: string;
   keywords?: string[];
+  /**
+   * #1081: optimistic-concurrency token — the `lastModified` this edit was
+   * based on. Optional: omitting it keeps the previous last-writer-wins
+   * behaviour, so existing callers and scripts are unaffected.
+   */
+  baseLastModified?: string;
 }
 
 interface DeletePageArgs {
@@ -589,6 +596,14 @@ class NgdpbaseMCPServer {
                 type: 'array',
                 items: { type: 'string' },
                 description: 'New user keywords (replaces existing keywords)'
+              },
+              baseLastModified: {
+                type: 'string',
+                description:
+                  'Optional optimistic-concurrency token: the `lastModified` value returned when you read this page. '
+                  + 'If the page has changed since then the update is refused with a conflict error carrying the '
+                  + 'current content, so you can merge and retry instead of silently overwriting someone else. '
+                  + 'Omit it to keep the previous last-writer-wins behaviour.'
               }
             },
             required: ['identifier']
@@ -1253,7 +1268,7 @@ class NgdpbaseMCPServer {
     const ncmDoc = matter(ncm.content);
     const ncmWarnings = ncm.warnings.map(w => `${w.kind}: ${w.detail}`);
 
-    await pageManager.savePage(title, ncmDoc.content, ncmDoc.data as Record<string, unknown>);
+    await pageManager.savePage(title, ncmDoc.content, ncmDoc.data);
     notifyNcmConversion(this.wikiEngine!, 'MCP create_page', title, ncmWarnings);
 
     const savedPage = await pageManager.getPage(title);
@@ -1261,7 +1276,7 @@ class NgdpbaseMCPServer {
       name: title,
       title: savedPage.metadata.title,
       content: savedPage.content,
-      metadata: savedPage.metadata as unknown as Record<string, unknown>,
+      metadata: savedPage.metadata,
       category: savedPage.metadata['system-category'],
       userKeywords: savedPage.metadata['user-keywords'] || []
     });
@@ -1290,7 +1305,7 @@ class NgdpbaseMCPServer {
    * Tool Implementation: Update Page
    */
   private async updatePage(args: UpdatePageArgs) {
-    const { identifier, content, category, keywords } = args;
+    const { identifier, content, category, keywords, baseLastModified } = args;
     const pageManager = this.wikiEngine!.getPageManager() as PageManagerType;
     const searchManager = this.wikiEngine!.getManager('SearchManager') as SearchManagerType;
 
@@ -1304,6 +1319,25 @@ class NgdpbaseMCPServer {
 
     const existing = await pageManager.getPage(identifier);
     const pageName = existing.metadata.title;
+
+    // #1081: refuse an edit built on a version someone else has already
+    // replaced. Optional by design — a caller that sends no token keeps the
+    // previous last-writer-wins behaviour, so existing scripts and satellite
+    // ingest paths are unaffected.
+    //
+    // The error carries the current token AND the current content, because an
+    // agent that cannot see what it collided with can only retry blindly,
+    // which is the overwrite this check exists to prevent.
+    if (isStaleSave(baseLastModified ?? null, versionTokenOf(existing.metadata))) {
+      throw new Error(JSON.stringify({
+        error: 'conflict',
+        message:
+          `Page "${pageName}" changed after you read it. Your edit was not applied. `
+          + 'Merge your changes into currentContent and retry with the currentLastModified token.',
+        currentLastModified: versionTokenOf(existing.metadata),
+        currentContent: existing.content
+      }, null, 2));
+    }
 
     const updatedMetadata: Record<string, unknown> = {
       ...(existing.metadata as unknown as Record<string, unknown>),
@@ -1322,7 +1356,7 @@ class NgdpbaseMCPServer {
     const ncmDoc = matter(ncm.content);
     const ncmWarnings = ncm.warnings.map(w => `${w.kind}: ${w.detail}`);
 
-    await pageManager.savePage(pageName, ncmDoc.content, ncmDoc.data as Record<string, unknown>);
+    await pageManager.savePage(pageName, ncmDoc.content, ncmDoc.data);
     notifyNcmConversion(this.wikiEngine!, 'MCP update_page', pageName, ncmWarnings);
 
     const savedPage = await pageManager.getPage(pageName);
@@ -1330,7 +1364,7 @@ class NgdpbaseMCPServer {
       name: pageName,
       title: savedPage.metadata.title,
       content: savedPage.content,
-      metadata: savedPage.metadata as unknown as Record<string, unknown>,
+      metadata: savedPage.metadata,
       category: savedPage.metadata['system-category'],
       userKeywords: savedPage.metadata['user-keywords'] || []
     });

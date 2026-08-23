@@ -207,6 +207,123 @@ describe('WikiRoutes.ingestPageMarkdown() — POST /api/page/ingest (#819)', () 
     expect(pm.savePageWithContext).toHaveBeenCalledTimes(1);
   });
 
+  // #1081: optimistic concurrency reaches this endpoint too. It did not
+  // before — the check existed only for the browser form, which submits
+  // `baseLastModified` as a hidden field, so every programmatic write was
+  // last-writer-wins. An agent that read a page, thought, and wrote it back
+  // silently discarded whatever a human wrote in between.
+  describe('optimistic concurrency (#1081)', () => {
+    const LAST_MODIFIED = '2026-08-23T12:00:00.000Z';
+
+    const pmWith = (existing: unknown) => ({
+      getPage: vi.fn().mockResolvedValueOnce(existing).mockResolvedValueOnce(makeSavedPage()),
+      savePageWithContext: vi.fn().mockResolvedValue(undefined),
+      getPageUUID: vi.fn().mockReturnValue('uuid-doc-1')
+    });
+
+    test('409 without writing when the page moved on after the caller read it', async () => {
+      const pm = pmWith(makeSavedPage({ lastModified: LAST_MODIFIED }));
+      const routes = new WikiRoutes(makeEngine(pm));
+      installContextSpy(routes, true);
+      const res = createRes();
+
+      await routes.ingestPageMarkdown(
+        createReq(AUTHED, {
+          pageName: 'My Doc',
+          markdown: '# My Doc\n\nMy edit.',
+          baseLastModified: '2026-08-20T09:00:00.000Z'
+        }),
+        res
+      );
+
+      expect(res.status).toHaveBeenCalledWith(409);
+      // Nothing written is the point — a 409 that still saved would be worse
+      // than no check at all.
+      expect(pm.savePageWithContext).not.toHaveBeenCalled();
+    });
+
+    test('the 409 hands back the current token and content so the caller can merge', async () => {
+      // An agent that cannot see what it collided with can only retry blindly,
+      // which is the overwrite this check exists to prevent.
+      const pm = pmWith(makeSavedPage({ lastModified: LAST_MODIFIED }));
+      const routes = new WikiRoutes(makeEngine(pm));
+      installContextSpy(routes, true);
+      const res = createRes();
+
+      await routes.ingestPageMarkdown(
+        createReq(AUTHED, {
+          pageName: 'My Doc',
+          markdown: '# My Doc\n\nMy edit.',
+          baseLastModified: '2026-08-20T09:00:00.000Z'
+        }),
+        res
+      );
+
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        success: false,
+        error: 'conflict',
+        currentLastModified: LAST_MODIFIED,
+        currentContent: '# My Doc\n\nBody text.'
+      }));
+    });
+
+    test('writes when the submitted token still matches', async () => {
+      const pm = pmWith(makeSavedPage({ lastModified: LAST_MODIFIED }));
+      const routes = new WikiRoutes(makeEngine(pm));
+      installContextSpy(routes, true);
+      const res = createRes();
+
+      await routes.ingestPageMarkdown(
+        createReq(AUTHED, {
+          pageName: 'My Doc',
+          markdown: '# My Doc\n\nMy edit.',
+          baseLastModified: LAST_MODIFIED
+        }),
+        res
+      );
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(pm.savePageWithContext).toHaveBeenCalledTimes(1);
+    });
+
+    test('writes when no token is supplied — the feature is opt-in', async () => {
+      // This is what keeps existing ingest scripts and satellite reseed paths
+      // working. Making the token mandatory would have broken every
+      // programmatic writer at once.
+      const pm = pmWith(makeSavedPage({ lastModified: LAST_MODIFIED }));
+      const routes = new WikiRoutes(makeEngine(pm));
+      installContextSpy(routes, true);
+      const res = createRes();
+
+      await routes.ingestPageMarkdown(
+        createReq(AUTHED, { pageName: 'My Doc', markdown: '# My Doc\n\nMy edit.' }),
+        res
+      );
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(pm.savePageWithContext).toHaveBeenCalledTimes(1);
+    });
+
+    test('creates normally when there is no existing page to conflict with', async () => {
+      const pm = pmWith(null);
+      const routes = new WikiRoutes(makeEngine(pm));
+      installContextSpy(routes, true);
+      const res = createRes();
+
+      await routes.ingestPageMarkdown(
+        createReq(AUTHED, {
+          pageName: 'My Doc',
+          markdown: '# My Doc\n\nNew.',
+          baseLastModified: 'whatever'
+        }),
+        res
+      );
+
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(pm.savePageWithContext).toHaveBeenCalledTimes(1);
+    });
+  });
+
   // #596 save-time validation reaches this endpoint too. It did not before:
   // the only gate was `isAuthenticated`, so any account — including a
   // magic-link visitor on a public demo — could POST content the editor

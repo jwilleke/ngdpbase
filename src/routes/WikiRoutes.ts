@@ -8279,6 +8279,32 @@ ${panes}
         }
       }
 
+      // #1081: refuse an ingest built on a version someone else has already
+      // replaced. Deliberately the LAST check before the write, matching the
+      // form save path — the page can move while validation runs.
+      //
+      // Optional: a caller that sends no `baseLastModified` keeps the previous
+      // last-writer-wins behaviour, so existing ingest scripts are unaffected.
+      // The 409 carries the current token and content so an agent can merge
+      // and retry rather than retry blindly, which is the overwrite this
+      // exists to prevent.
+      const ingestBase = typeof (req.body as { baseLastModified?: unknown }).baseLastModified === 'string'
+        ? (req.body as { baseLastModified: string }).baseLastModified
+        : null;
+      if (existing && isStaleSave(ingestBase, versionTokenOf(existing.metadata))) {
+        logger.warn(
+          `⚠️  ingest(${pageName}) blocked: stale base version `
+          + `(submitted ${ingestBase}, current ${versionTokenOf(existing.metadata)})`
+        );
+        return res.status(409).json({
+          success: false,
+          error: 'conflict',
+          message: `Page "${pageName}" changed after you read it. Nothing was written.`,
+          currentLastModified: versionTokenOf(existing.metadata),
+          currentContent: existing.content
+        });
+      }
+
       const wikiContext = this.createWikiContext(req, {
         context: WikiContext.CONTEXT.EDIT,
         pageName,
