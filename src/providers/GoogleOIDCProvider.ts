@@ -234,10 +234,16 @@ export class GoogleOIDCProvider implements AuthProvider {
   }
 
   /**
-   * Delete state entry after session is created. Single-use guarantee.
+   * Delete the state entry and report whether THIS caller was the one that did.
+   *
+   * #1021: same single-use gate as the magic-link provider. A state nonce is
+   * also good for exactly one sign-in, so a replayed OAuth callback — the user
+   * refreshing the redirect, or a retry — must not be able to establish a
+   * second session. `Map.delete` is synchronous and returns true only for the
+   * call that found the entry.
    */
-  consumeToken(nonce: string): void {
-    this.states.delete(nonce);
+  consumeToken(nonce: string): boolean {
+    return this.states.delete(nonce);
   }
 
   // ── Private helpers ─────────────────────────────────────────────────────────

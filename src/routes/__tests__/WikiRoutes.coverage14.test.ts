@@ -151,7 +151,10 @@ const mockAuthManager = {
   initiate: vi.fn().mockResolvedValue(undefined),
   getFlowRedirect: vi.fn().mockReturnValue('/'),
   provisionIfNew: vi.fn().mockResolvedValue(undefined),
-  consumeToken: vi.fn(),
+  // #1021: consumeToken returns whether THIS caller consumed the token, and
+  // the routes gate session creation on it. A mock returning undefined reads
+  // as "another request got there first" and blocks every sign-in.
+  consumeToken: vi.fn().mockReturnValue(true),
   startFlow: vi.fn().mockReturnValue('https://accounts.google.com/o/oauth2/auth')
 };
 
@@ -300,7 +303,7 @@ function resetMocks() {
   mockAuthManager.authenticate.mockResolvedValue({ success: true, username: 'testuser' });
   mockAuthManager.initiate.mockResolvedValue(undefined);
   mockAuthManager.getFlowRedirect.mockReturnValue('/');
-  mockAuthManager.consumeToken.mockImplementation(() => {});
+  mockAuthManager.consumeToken.mockImplementation(() => true);
 
   mockConfigManager.getProperty.mockImplementation((key: string, defaultValue: unknown) => {
     const map: Record<string, unknown> = {
@@ -559,6 +562,37 @@ describe('WikiRoutes — coverage batch 14', () => {
   });
 
   describe('POST /auth/magic-link/verify (completeMagicLink)', () => {
+    // #1021: consumption is the single-use gate. The route verifies with an
+    // `await` — a real suspension point — so two POSTs carrying the same token
+    // (a double-clicked confirmation button, a client retry, a prefetch racing
+    // the real submit) could both clear verification before either consumed,
+    // and both would establish a session. #1019's CSRF-protected POST does not
+    // close it: both submits come from the same session with the same token.
+    test('a second submit of the same token is refused rather than minting a second session', async () => {
+      // Model the real provider: the first consume wins, every later one loses.
+      let consumed = false;
+      mockAuthManager.consumeToken.mockImplementation(() => {
+        if (consumed) return false;
+        consumed = true;
+        return true;
+      });
+
+      const first = await request(app)
+        .post('/auth/magic-link/verify')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ token: 'valid-token' });
+      // Whatever the configured landing page is, it is not the failure page.
+      expect(first.headers.location).not.toContain('error=');
+
+      const second = await request(app)
+        .post('/auth/magic-link/verify')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ token: 'valid-token' });
+      expect(second.headers.location).toBe('/login?error=Link+expired+or+already+used');
+
+      mockAuthManager.consumeToken.mockImplementation(() => true);
+    });
+
     test('redirects to login when no token provided', async () => {
       mockUserContext = null;
       const res = await request(app)

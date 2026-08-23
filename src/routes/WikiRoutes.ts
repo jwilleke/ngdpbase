@@ -6354,8 +6354,21 @@ ${panes}
         return res.redirect('/login?error=Link+expired+or+already+used');
       }
 
-      // Consume token — single-use
-      authManager.consumeToken('magic-link', token);
+      // #1021: consumption is the gate, not a cleanup step that happens to run
+      // after. The `await` above is a real suspension point, so two POSTs with
+      // the same token — a double-clicked confirmation button, a client retry,
+      // a prefetch racing the real submit — can both clear authenticate()
+      // before either consumes. #1019's CSRF-protected POST does not close
+      // that: both come from the same session with the same valid token.
+      //
+      // consumeToken() returns true only for the caller whose Map delete found
+      // the entry, and that delete is synchronous, so exactly one request can
+      // ever proceed past here. The loser is told the link is used, which is
+      // the truth from its point of view.
+      if (!authManager.consumeToken('magic-link', token)) {
+        logger.warn('🔁 Magic-link token already consumed by a concurrent request — refusing duplicate session');
+        return res.redirect('/login?error=Link+expired+or+already+used');
+      }
 
       await this.regenerateSession(req); // #1043
 
@@ -6427,8 +6440,14 @@ ${panes}
         return res.redirect(denyRedirect);
       }
 
-      // Consume state — single-use
-      authManager.consumeToken('google-oidc', state);
+      // #1021: same single-use gate as the magic-link path. A state nonce is
+      // good for exactly one sign-in, and the `await` above is a real
+      // suspension point, so a replayed callback — the user refreshing the
+      // redirect, or a retry — could otherwise establish a second session.
+      if (!authManager.consumeToken('google-oidc', state)) {
+        logger.warn('🔁 OIDC state already consumed by a concurrent request — refusing duplicate session');
+        return res.redirect('/login?error=Sign-in+link+already+used');
+      }
 
       await this.regenerateSession(req); // #1043
 

@@ -101,7 +101,15 @@ export interface AuthProvider {
    * Consume a single-use token after a session has been created.
    * Only needed for token-based providers (magic link, OAuth).
    */
-  consumeToken?(token: string): void;
+  /**
+   * Consume a single-use token, returning whether this caller consumed it.
+   *
+   * #1021: callers gate session creation on the return value — a `false` means
+   * another request got there first and this one must not establish a session.
+   * An implementation that cannot distinguish the two must return `false`
+   * rather than `true`, since a wrong `true` re-opens the double-session hole.
+   */
+  consumeToken?(token: string): boolean;
 
   /**
    * Begin a redirect-based flow; returns the URL to send the browser to (#1049).

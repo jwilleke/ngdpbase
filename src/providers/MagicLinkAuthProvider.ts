@@ -6,7 +6,7 @@
  * Flow:
  *   1. initiate()  — look up user by email, generate token, send link via mail transport
  *   2. verify()    — validate token (exists + not expired), return AuthResult
- *   3. consumeToken() — delete token after session is created (single-use guarantee)
+ *   3. consumeToken() — delete token; its return value gates the session (#1021)
  *
  * `verify()` being side-effect free is load-bearing, not incidental (#1019): the
  * route layer calls it twice, once on the GET that renders the sign-in
@@ -178,10 +178,23 @@ export class MagicLinkAuthProvider implements AuthProvider {
   }
 
   /**
-   * Delete the token after the session has been created. Single-use guarantee.
+   * Delete the token and report whether THIS caller was the one that did.
+   *
+   * #1021: the return value is the single-use gate, not a courtesy. The route
+   * used to verify, then consume, with an `await` between the two — so two
+   * POSTs carrying the same token (a double-clicked confirmation button, a
+   * client retry, a prefetch racing the real submit) could both clear
+   * verification before either consumed, and both would then establish a
+   * session. #1019's CSRF-protected POST does not close that: both submits
+   * come from the same session with the same valid token.
+   *
+   * `Map.delete` returns true only for the call that found an entry, and it is
+   * synchronous so it cannot interleave. Exactly one caller can ever see true,
+   * which makes consumption — not verification — the thing a session is gated
+   * on.
    */
-  consumeToken(token: string): void {
-    this.tokens.delete(token);
+  consumeToken(token: string): boolean {
+    return this.tokens.delete(token);
   }
 
   /**

@@ -242,11 +242,18 @@ class AuthManager extends BaseManager {
   }
 
   /**
-   * Consume a single-use token after the session has been created.
+   * Consume a single-use token, returning whether this caller consumed it.
+   *
+   * #1021: the return value is the single-use gate — a caller must not create
+   * a session when it is false, because that means another request consumed
+   * the token first. A provider with no `consumeToken` has no single-use
+   * semantics to enforce, so it reports true rather than blocking sign-in.
    */
-  consumeToken(providerId: string, token: string): void {
+  consumeToken(providerId: string, token: string): boolean {
     const provider = this.providers.get(providerId);
-    provider?.consumeToken?.(token);
+    if (!provider) return false;
+    if (!provider.consumeToken) return true;
+    return provider.consumeToken(token);
   }
 
   /**
