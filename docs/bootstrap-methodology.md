@@ -1,6 +1,6 @@
 # Bootstrap Methodology
 
-How an ngdpbase instance comes up: how environment variables are found, how configuration is layered on top of them, and how a fresh install completes. Written 2026-08-24 against v4.11.1, describing __what the code does now__ — where a comment in the source disagrees, this document follows the code and links the issue.
+How an ngdpbase instance comes up: how environment variables are found, how configuration is layered on top of them, and how a fresh install completes. Written 2026-08-24 against v4.11.1 and revised the same day as #1088/#1089/#1090 landed, describing __what the code does now__ — where a comment in the source disagrees, this document follows the code and links the issue.
 
 ## The short version
 
@@ -50,7 +50,19 @@ Sourcing order is reversed relative to `bootstrap-env.ts`, but the __precedence 
 
 When launched via `server.sh`, both files are already in the ambient environment by the time node starts, so `bootstrap-env.ts` finds nothing to conflict with and is effectively a no-op. It earns its keep in containers.
 
-> __Known defect:__ `app.ts:41-50` contains a second, hand-rolled `.env` parser that duplicates this. It cannot have any effect — it assigns only when a variable is unset, and `bootstrap-env.ts` has already applied the same file — but it reads as a competing source of truth and is a strictly weaker parser. Tracked in [#1088](https://github.com/jwilleke/ngdpbase/issues/1088).
+### Every entry point loads it
+
+`bootstrap-env.ts` is the __single__ mechanism, and every entry point that touches instance data imports it: `src/app.ts`, `mcp-server.ts`, and the scripts under `scripts/` that read pages, attachments, or config.
+
+That was not always true, and the ways it failed are worth knowing:
+
+- `npm run mcp` loaded no `.env` at all. It builds a `WikiEngine` whose `ConfigurationManager` falls back to `./data`, so launched from an MCP client — which has no reason to export `FAST_STORAGE` — it operated on the wrong instance entirely.
+- Eight npm scripts used `tsx --env-file-if-exists=.env`, which reads only the root file and silently ignores `<FAST_STORAGE>/.env`.
+- `app.ts` carried a second hand-rolled parser that duplicated `bootstrap-env` and could never fire.
+
+All three were consolidated in `3d8ef679` ([#1088](https://github.com/jwilleke/ngdpbase/issues/1088)). The four repo-only tools — `check-csrf-fetch`, `check-docs-coverage`, `generate-docs-index`, `version` — deliberately load nothing; they read the tree they are run in.
+
+__If you add an entry point that reads instance data, import `bootstrap-env` first.__ Without it the process silently operates on `./data`.
 
 ## Layer 2 — configuration
 
@@ -58,9 +70,11 @@ When launched via `server.sh`, both files are already in the ambient environment
 
 1. `config/app-default-config.json` — shipped defaults, read-only, in the image
 2. `<FAST_STORAGE>/config/<INSTANCE_CONFIG_FILE>` — instance overrides; the filename defaults to `app-custom-config.json` and is overridable via `INSTANCE_CONFIG_FILE` (`ConfigurationManager.ts:87-89`)
-3. Six named environment overrides, checked before the merged config on every `getProperty` call (`ConfigurationManager.ts:649-660`)
+3. Environment-owned keys, checked before the merged config on every `getProperty` call
 
-The six env overrides exist for Docker/Traefik/k8s deployments where editing a config file is awkward:
+### Environment-owned keys
+
+Six keys are __owned by the environment__, declared in `ngdpbase.config.env-keys` and existing for Docker/Traefik/k8s deployments where editing a config file is awkward — or impossible, as in a fresh headless boot onto an empty volume:
 
 | Env var | Config key |
 |---|---|
@@ -70,6 +84,16 @@ The six env overrides exist for Docker/Traefik/k8s deployments where editing a c
 | `NGDPBASE_PORT` | `ngdpbase.server.port` |
 | `NGDPBASE_SESSION_SECRET` | `ngdpbase.session.secret` |
 | `NGDPBASE_APP_NAME` | `ngdpbase.application-name` |
+
+The governing rule is __a key is owned by exactly one layer, never both__. These six are the environment's, so:
+
+- They are __always read-only__ on `/admin/configuration`, whether or not the variable is currently set — shown with an `Environment` badge naming the variable. A write is refused with a `409`.
+- The value shipped in `app-default-config.json` for such a key is a __boot fallback__, not a setting. It exists so a fresh install comes up.
+- To change one: set the variable in `.env` and restart. Nothing here writes `.env`, by design.
+
+`ngdpbase.application.base-url` is the one asymmetry: it may equally be set in `app-custom-config.json` — the install wizard writes it there — so its UI copy names both routes. It is listed because `docker-compose-traefik.yml` composes it at deploy time and `InstallService` names the variable as the alternative for headless installs, so the environment must remain a valid source.
+
+This replaced a hardcoded map inside `getProperty` that nothing outside could see, which is how the admin screen came to accept and persist edits that could never take effect ([#1089](https://github.com/jwilleke/ngdpbase/issues/1089), `a1c0d38c`).
 
 ### Env references inside config values
 
@@ -92,6 +116,18 @@ Add `NGDPBASE_ADMIN_PASSWORD=...` to your .env (or k8s Secret) and restart.
 ```
 
 The brace form is legacy behaviour preserved for __path templates__, where an unresolved placeholder surfaces loudly at filesystem use-time anyway (`"${UNSET}/sessions"` throws `ENOENT` when something tries to use it). Both forms increment audit counters used for a boot-time summary log.
+
+### The listen port
+
+`app.listen` binds at boot step 3, before `engine.initialize()` at step 4 — deliberately, so the process accepts connections and serves the maintenance page while the engine indexes. There is therefore no `ConfigurationManager` to ask when the socket is bound, which is why the port has its own small resolver (`src/utils/resolveListenPort.ts`):
+
+`PORT` → `NGDPBASE_PORT` → `ngdpbase.server.port` → `3000`
+
+`PORT` wins because containers set it. The config key is consulted by reading the two config files directly — no `${VAR}` resolution and no override handling, since duplicating those would be a second config implementation rather than a bridge.
+
+A value that is not a valid port is skipped rather than fatal, and resolution continues to the next source: refusing to boot over a typo would be worse than ignoring it, and a bad `PORT` must not discard a good configured value.
+
+Until `a47f6932` ([#1090](https://github.com/jwilleke/ngdpbase/issues/1090)) `app.listen` read `PORT` alone and never consulted the key at all, while a separate expression resolved a "port" through the config layer for the startup banner — so the two could disagree, and the config screen could report a port the server was not listening on.
 
 ## Layer 3 — install
 
@@ -169,5 +205,7 @@ Instance separation is environment-driven rather than first-class: give each ins
 - [`docs/SEMVER.md`](./SEMVER.md) — release and version bumping
 - `config/app-default-config.json` — every shipped key, with `_comment_*` entries explaining the non-obvious ones
 - `.env.example` — annotated template
-- [#1087](https://github.com/jwilleke/ngdpbase/issues/1087) — headless install admin-password documentation defect
-- [#1088](https://github.com/jwilleke/ngdpbase/issues/1088) — dead duplicate `.env` parser in `app.ts`
+- [#1087](https://github.com/jwilleke/ngdpbase/issues/1087) — __open__: headless install admin-password documentation defect
+- [#1088](https://github.com/jwilleke/ngdpbase/issues/1088) — resolved in `3d8ef679`: `bootstrap-env` consolidated across every entry point
+- [#1089](https://github.com/jwilleke/ngdpbase/issues/1089) — resolved in `a1c0d38c`: environment-owned keys declared and read-only in the admin UI
+- [#1090](https://github.com/jwilleke/ngdpbase/issues/1090) — resolved in `a47f6932`: `ngdpbase.server.port` now binds the port
