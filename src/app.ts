@@ -21,6 +21,7 @@ import sessionFileStore from 'session-file-store';
 import fs from 'fs-extra';
 import { constants as fsConstants } from 'fs';
 import { runReadinessChecks, buildReadinessReport } from './utils/healthChecks.js';
+import { resolveListenPort } from './utils/resolveListenPort.js';
 
 import logger from './utils/logger.js';
 import WikiEngine from './WikiEngine.js';
@@ -127,6 +128,46 @@ function checkAndCreatePidLock(): void {
 // Check for existing instance before starting
 checkAndCreatePidLock();
 
+/**
+ * Read the merged configuration directly from disk, before the engine exists.
+ *
+ * `app.listen` runs at boot step 3 and `engine.initialize()` at step 4, so there
+ * is no ConfigurationManager to ask when the socket is bound (#1090). This reads
+ * the same two files the manager would, in the same order, purely so the listen
+ * port can honour `ngdpbase.server.port`.
+ *
+ * Deliberately narrow: it does NOT resolve `${VAR}` refs or apply environment
+ * overrides — that is the manager's job, and duplicating it here would be a
+ * second config implementation. `resolveListenPort` skips any value it cannot
+ * read as a port, which covers an unexpanded template.
+ *
+ * Returns null on any failure. A missing or malformed config file must not stop
+ * the server binding; the port simply falls back.
+ */
+function readConfigForPort(): Record<string, unknown> | null {
+  try {
+    const instanceDataFolder =
+      process.env.FAST_STORAGE || process.env.INSTANCE_DATA_FOLDER || './data';
+    const customConfigFile = process.env.INSTANCE_CONFIG_FILE || 'app-custom-config.json';
+
+    let merged: Record<string, unknown> = {};
+
+    const defaultPath = path.join(projectRoot, 'config', 'app-default-config.json');
+    if (fs.existsSync(defaultPath)) {
+      merged = { ...(fs.readJsonSync(defaultPath) as Record<string, unknown>) };
+    }
+
+    const customPath = path.join(instanceDataFolder, 'config', customConfigFile);
+    if (fs.existsSync(customPath)) {
+      merged = { ...merged, ...(fs.readJsonSync(customPath) as Record<string, unknown>) };
+    }
+
+    return merged;
+  } catch {
+    return null;
+  }
+}
+
 // --- Main Application Bootstrap ---
 void (async (): Promise<void> => {
   const app = express();
@@ -228,7 +269,11 @@ void (async (): Promise<void> => {
   });
 
   // 3. Start listening immediately so the server accepts connections during initialization
-  const defaultPort = parseInt(process.env.PORT ?? '3000', 10);
+  // #1090: honour ngdpbase.server.port when neither PORT nor NGDPBASE_PORT is
+  // set. Previously this read PORT alone and the config key was never consulted,
+  // so the startup banner and the config screen could report a port the server
+  // was not listening on.
+  const defaultPort = resolveListenPort(process.env, readConfigForPort());
 
   app.listen(defaultPort, () => {
     console.log(`🚀 Server listening on port ${defaultPort} (initializing engine...)`);
@@ -736,9 +781,10 @@ void (async (): Promise<void> => {
   // 8. Mark engine as ready
   engineReady = true;
 
-  const port = process.env.PORT
-    ? parseInt(process.env.PORT, 10)
-    : configManager.getProperty('ngdpbase.server.port', 3000);
+  // #1090: the same resolution app.listen used, so the banner and base URL
+  // report the port actually bound. This used to be an independent expression
+  // that could disagree with it.
+  const port = defaultPort;
   const hostname = configManager.getProperty('ngdpbase.server.host', 'localhost');
 
   const externalPort = process.env.EXTERNAL_PORT ? parseInt(process.env.EXTERNAL_PORT) : port;
