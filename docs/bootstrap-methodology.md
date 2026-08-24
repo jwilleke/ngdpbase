@@ -69,7 +69,16 @@ When launched via `server.sh`, both files are already in the ambient environment
 
 ### Every entry point loads it
 
-`bootstrap-env.ts` is the __single__ mechanism, and every entry point that touches instance data imports it: `src/app.ts`, `mcp-server.ts`, and the scripts under `scripts/` that read pages, attachments, or config.
+`bootstrap-env.ts` is the __single__ mechanism, and every entry point that touches instance data imports it: `src/app.ts`, `mcp-server.ts`, and every script under `scripts/` that reads pages, attachments, users, or config.
+
+You can check that claim rather than trust it — this finds any data-touching script missing the import, and should print nothing:
+
+```bash
+for f in scripts/*.ts; do
+  grep -q 'FAST_STORAGE\|SLOW_STORAGE\|ConfigurationManager\|WikiEngine\|storagedir' "$f" \
+    && ! grep -q bootstrap-env "$f" && echo "MISSING: $f"
+done
+```
 
 That was not always true, and the ways it failed are worth knowing:
 

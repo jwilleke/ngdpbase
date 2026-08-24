@@ -11,6 +11,11 @@
  * descriptions were chosen.
  */
 
+// Loads .env (root and <FAST_STORAGE>/.env) into process.env before anything
+// else evaluates. MUST stay the first import — see src/bootstrap-env.ts and
+// docs/bootstrap-methodology.md. Without it this script resolves instance
+// paths against an empty environment and silently operates on ./data.
+import '../src/bootstrap-env.js';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';

@@ -136,11 +136,17 @@ export default tseslint.config(
 
   // Scripts outside the TypeScript project (#1092).
   //
-  // `tsconfig.json` enumerates the scripts it covers one by one, and these
-  // three predate that list — they were converted from JS in #186 and never
-  // added. Type-aware ESLint rules need a `parserOptions.project` that
-  // includes the file, so on these they do not merely fail to find problems:
-  // they fail to parse at all.
+  // `tsconfig.json` enumerates the scripts it covers one file at a time, and
+  // 21 of the 37 in scripts/ are not on that list. Type-aware ESLint rules
+  // need a `parserOptions.project` that includes the file, so on those they do
+  // not merely fail to find problems: they fail to parse at all.
+  //
+  // Applied as a glob rather than a list of the 21. An explicit list is a list
+  // that rots — this exception was first written naming three files, and grew
+  // to eight the next time a script was touched. The cost is that the 16
+  // scripts which ARE in the project lose type-aware rules here, but that
+  // coverage was accidental rather than designed: which scripts are on the
+  // list is a hand-maintained accident of history, not a decision anyone made.
   //
   // That is invisible in a normal run, because `lint:code` is
   // `eslint src/**/*.ts` and never looks at scripts/. It surfaces only through
@@ -152,11 +158,7 @@ export default tseslint.config(
   // hiding a finding. The real fix is to bring these into the TS project,
   // which is ~93 pre-existing type errors and its own piece of work: #1092.
   {
-    files: [
-      "scripts/maintain-versions.ts",
-      "scripts/migrate-to-versioning.ts",
-      "scripts/repair-jspwiki-frontmatter.ts"
-    ],
+    files: ["scripts/**/*.ts"],
     ...tseslint.configs.disableTypeChecked,
     languageOptions: {
       parserOptions: { project: null, projectService: false }

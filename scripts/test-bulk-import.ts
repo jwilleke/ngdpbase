@@ -3,6 +3,11 @@
  * Tests importing 5 files from a source directory
  */
 
+// Loads .env (root and <FAST_STORAGE>/.env) into process.env before anything
+// else evaluates. MUST stay the first import — see src/bootstrap-env.ts and
+// docs/bootstrap-methodology.md. Without it this script resolves instance
+// paths against an empty environment and silently operates on ./data.
+import '../src/bootstrap-env.js';
 import path from 'path';
 import fs from 'fs-extra';
 
