@@ -188,6 +188,11 @@ const mockConfigManager = {
   getDefaultProperties: vi.fn().mockReturnValue({}),
   getCustomProperties: vi.fn().mockReturnValue({}),
   setProperty: vi.fn().mockResolvedValue(undefined),
+  // #1089: keys the environment owns. The route refuses writes to these.
+  getEnvControlledKeys: vi.fn().mockReturnValue({}),
+  describeProperty: vi.fn().mockReturnValue({
+    envControlled: false, envVar: null, effective: null, source: 'config'
+  }),
   resetToDefaults: vi.fn().mockResolvedValue(undefined)
 };
 
@@ -602,6 +607,91 @@ describe('WikiRoutes — coverage batch 11', () => {
         .set('x-csrf-token', 'test-csrf-token')
         .send({ value: 'Home' });
       expect(res.status).toBe(400);
+    });
+
+    // #1089: six keys are owned by the environment. The screen used to accept
+    // and persist edits to them that could never take effect, because
+    // getProperty consulted the override BEFORE the merged config — the write
+    // was inert immediately, not merely on next boot.
+    describe('environment-owned keys (#1089)', () => {
+      afterEach(() => {
+        mockConfigManager.getEnvControlledKeys.mockReturnValue({});
+      });
+
+      test('refuses a write to an env-owned key and does not persist it', async () => {
+        mockConfigManager.getEnvControlledKeys.mockReturnValue({
+          'ngdpbase.application-name': 'NGDPBASE_APP_NAME'
+        });
+        mockConfigManager.setProperty.mockClear();
+
+        const res = await request(app)
+          .post('/admin/configuration')
+          .set('x-csrf-token', 'test-csrf-token')
+          .send({ property: 'ngdpbase.application-name', value: 'FromUI' });
+
+        expect(res.status).toBe(409);
+        // Not persisting is the point — a 409 that still wrote would be worse
+        // than no check at all.
+        expect(mockConfigManager.setProperty).not.toHaveBeenCalled();
+      });
+
+      test('names the variable so the operator knows where the value lives', async () => {
+        mockConfigManager.getEnvControlledKeys.mockReturnValue({
+          'ngdpbase.application-name': 'NGDPBASE_APP_NAME'
+        });
+
+        const res = await request(app)
+          .post('/admin/configuration')
+          .set('x-csrf-token', 'test-csrf-token')
+          .send({ property: 'ngdpbase.application-name', value: 'FromUI' });
+
+        expect(res.body.error).toContain('NGDPBASE_APP_NAME');
+        expect(res.body.reason).toContain('.env');
+      });
+
+      test('refuses even when the variable is not currently set', async () => {
+        // The whole design decision: ownership is declared, not conditional.
+        // A conditional would hand this screen the source of truth whenever the
+        // variable is absent.
+        delete process.env.NGDPBASE_APP_NAME;
+        mockConfigManager.getEnvControlledKeys.mockReturnValue({
+          'ngdpbase.application-name': 'NGDPBASE_APP_NAME'
+        });
+
+        const res = await request(app)
+          .post('/admin/configuration')
+          .set('x-csrf-token', 'test-csrf-token')
+          .send({ property: 'ngdpbase.application-name', value: 'FromUI' });
+
+        expect(res.status).toBe(409);
+      });
+
+      test('base-url mentions app-custom-config.json as well as the variable', async () => {
+        // The install wizard writes it there, so telling an operator only about
+        // the env var would misdescribe how most direct installs are set up.
+        mockConfigManager.getEnvControlledKeys.mockReturnValue({
+          'ngdpbase.application.base-url': 'NGDPBASE_BASE_URL'
+        });
+
+        const res = await request(app)
+          .post('/admin/configuration')
+          .set('x-csrf-token', 'test-csrf-token')
+          .send({ property: 'ngdpbase.application.base-url', value: 'https://x.example.com' });
+
+        expect(res.body.reason).toContain('app-custom-config.json');
+      });
+
+      test('still allows a write to a key the environment does not own', async () => {
+        mockConfigManager.setProperty.mockClear();
+
+        const res = await request(app)
+          .post('/admin/configuration')
+          .set('x-csrf-token', 'test-csrf-token')
+          .send({ property: 'ngdpbase.front-page', value: 'Home' });
+
+        expect(res.status).toBeLessThan(400);
+        expect(mockConfigManager.setProperty).toHaveBeenCalled();
+      });
     });
 
     test('returns 400 for invalid property prefix', async () => {

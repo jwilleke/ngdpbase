@@ -96,14 +96,30 @@
                                                             <span class="badge bg-secondary ms-2">hidden</span>
                                                         <% } %>
                                                         <% } %>
-                                                    <% } else if (typeof value === 'object') { %>
-                                                        <code><%= JSON.stringify(value) %></code>
                                                     <% } else { %>
-                                                        <code><%= value %></code>
+                                                        <%# #1089: for an environment-owned key the merged config value is
+                                                            NOT what is in force — getProperty consults the environment
+                                                            first. Showing the raw JSON here made the read side wrong
+                                                            before anyone edited anything. %>
+                                                        <% const envInfo = (typeof envControlled !== 'undefined' && envControlled) ? envControlled[key] : null; %>
+                                                        <% const shown = envInfo ? envInfo.effective : value; %>
+                                                        <% if (typeof shown === 'object' && shown !== null) { %>
+                                                            <code><%= JSON.stringify(shown) %></code>
+                                                        <% } else { %>
+                                                            <code><%= shown %></code>
+                                                        <% } %>
                                                     <% } %>
                                                 </td>
                                                 <td>
-                                                    <% if (customProperties[key] !== undefined) { %>
+                                                    <% const envSrc = (typeof envControlled !== 'undefined' && envControlled) ? envControlled[key] : null; %>
+                                                    <% if (envSrc) { %>
+                                                        <%# #1089: env-owned. Read-only wherever it appears; the variable
+                                                            is named so an operator knows where to change it. %>
+                                                        <span class="badge bg-dark" title="Set <%= envSrc.envVar %> in .env and restart">
+                                                            <i class="fas fa-lock"></i> Environment
+                                                        </span>
+                                                        <div class="small text-muted mt-1"><code><%= envSrc.envVar %></code></div>
+                                                    <% } else if (customProperties[key] !== undefined) { %>
                                                         <span class="badge bg-warning text-dark">Custom</span>
                                                     <% } else { %>
                                                         <span class="badge bg-secondary">Default</span>
@@ -150,11 +166,50 @@
                                             </tr>
                                         </thead>
                                         <tbody>
+                                            <%# #1089: a key the environment owns is ALWAYS read-only —
+                                                not "read-only while the variable happens to be set". The
+                                                shipped value is a boot fallback, not a setting, so an
+                                                editable field here would be a write that cannot take
+                                                effect. Nothing in ngdpbase writes .env, by design. %>
                                             <% Object.entries(customProperties).sort().forEach(([key, value]) => { %>
+                                                <% const envInfo = (typeof envControlled !== 'undefined' && envControlled) ? envControlled[key] : null; %>
                                                 <tr>
                                                     <td>
                                                         <code><%= key %></code>
+                                                        <% if (envInfo) { %>
+                                                            <span class="badge bg-secondary ms-1" title="Owned by the environment">
+                                                                <i class="fas fa-lock"></i> env
+                                                            </span>
+                                                        <% } %>
                                                     </td>
+                                                    <% if (envInfo) { %>
+                                                        <td>
+                                                            <input type="text" class="form-control form-control-sm" readonly disabled
+                                                                   value="<%= envInfo.effective === null ? '(hidden)' : (typeof envInfo.effective === 'object' ? JSON.stringify(envInfo.effective) : envInfo.effective) %>">
+                                                            <div class="form-text small">
+                                                                Controlled by <code><%= envInfo.envVar %></code>
+                                                                <% if (envInfo.source === 'env') { %>
+                                                                    &mdash; currently supplied by that variable.
+                                                                <% } else { %>
+                                                                    &mdash; not currently set, so the value above is the configured fallback.
+                                                                <% } %>
+                                                                <br>
+                                                                <% if (key === 'ngdpbase.application.base-url') { %>
+                                                                    To change it, set <code><%= envInfo.envVar %></code> in <code>.env</code>
+                                                                    (root or <code>&lt;FAST_STORAGE&gt;/.env</code>), or set this key in
+                                                                    <code>app-custom-config.json</code>, then restart.
+                                                                <% } else { %>
+                                                                    To change it, set <code><%= envInfo.envVar %></code> in <code>.env</code>
+                                                                    (root or <code>&lt;FAST_STORAGE&gt;/.env</code>) and restart.
+                                                                <% } %>
+                                                            </div>
+                                                        </td>
+                                                        <td>
+                                                            <button type="button" class="btn btn-sm btn-secondary" disabled title="Set this in .env and restart">
+                                                                <i class="fas fa-lock"></i>
+                                                            </button>
+                                                        </td>
+                                                    <% } else { %>
                                                     <td>
                                                         <form method="POST" action="/admin/configuration" class="d-inline">
                                                             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
@@ -167,6 +222,7 @@
                                                             </button>
                                                         </form>
                                                     </td>
+                                                    <% } %>
                                                 </tr>
                                             <% }); %>
                                         </tbody>

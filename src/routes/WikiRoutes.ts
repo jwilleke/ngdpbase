@@ -175,6 +175,10 @@ interface IConfigManager {
   getCustomProperties(): unknown;
   getDefaultProperties(): unknown;
   getAllProperties(): unknown;
+  /** #1089: keys the environment owns, key -> variable name. */
+  getEnvControlledKeys?(): Record<string, string>;
+  /** #1089: effective value plus where it came from, for the admin screen. */
+  describeProperty?(key: string): { envControlled: boolean; envVar: string | null; effective: unknown; source: string };
   getResolvedDataPath(key: string, defaultValue?: string): string;
   getInstanceDataFolder?(): string;
   resetToDefaults(): Promise<void> | void;
@@ -9889,6 +9893,23 @@ ${panes}
         secretIsSet[k] = v !== undefined && v !== null && v !== '';
       }
 
+      // #1089: which keys the environment owns, and what is actually in force
+      // for each. The screen previously rendered `mergedConfig` — the raw JSON —
+      // while getProperty returned the environment value, so the READ side was
+      // wrong before anyone edited anything.
+      const envControlledKeys = configManager.getEnvControlledKeys?.() ?? {};
+      const envControlled: Record<string, { envVar: string; source: string; effective: unknown }> = {};
+      for (const [key, envVar] of Object.entries(envControlledKeys)) {
+        const described = configManager.describeProperty?.(key);
+        envControlled[key] = {
+          envVar,
+          source: described?.source ?? 'config',
+          // Never leak a secret's value into the page — the same deny-list that
+          // strips them above applies here.
+          effective: secretKeys.has(key) ? null : described?.effective ?? null
+        };
+      }
+
       const commonData = await this.getCommonTemplateData(req);
 
       const templateData = {
@@ -9899,6 +9920,7 @@ ${panes}
         defaultProperties,
         customProperties,
         mergedProperties,
+        envControlled,
         secretKeys: Array.from(secretKeys),
         secretIsSet,
         // NOT hasAdminViewAccess: revealing a secret is a privileged action,
@@ -10019,6 +10041,25 @@ ${panes}
         return res
           .status(400)
           .json({ error: 'Property must start with ngdpbase. or log4j.' });
+      }
+
+      // #1089: a key the environment owns is never writable here. Refused
+      // UNCONDITIONALLY — not "when the variable happens to be set" — because a
+      // conditional would make this screen the source of truth whenever the
+      // variable is absent, which is the ambiguity the declared map removes.
+      // The disabled input handles the honest case; this is the backstop for a
+      // forged or scripted request.
+      const envOwned = configManager.getEnvControlledKeys?.() ?? {};
+      if (envOwned[property]) {
+        const envVar = envOwned[property];
+        const detail =
+          property === 'ngdpbase.application.base-url'
+            ? `Set ${envVar} in .env (root or <FAST_STORAGE>/.env), or set this key in app-custom-config.json, then restart.`
+            : `Set ${envVar} in .env (root or <FAST_STORAGE>/.env) and restart.`;
+        return res.status(409).json({
+          error: `'${property}' is controlled by the environment variable ${envVar}`,
+          reason: detail
+        });
       }
 
       // Attempt JSON parse so array/object values entered in the UI (e.g. ["/a","/b"]) are

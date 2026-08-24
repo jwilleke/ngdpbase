@@ -35,6 +35,15 @@
     "ngdpbase.auth.google-oidc.client-secret",
     "ngdpbase.dawarichCompat.apiKey"
   ],
+  "_comment_config_env_keys": "Config keys OWNED BY THE ENVIRONMENT, and the variable that supplies each (#1089). These are ALWAYS read-only on the Admin Configuration screen — not 'read-only while the variable happens to be set'. A conditional would make the UI the source of truth whenever the variable is unset, which is exactly the ambiguity this removes: a key is owned by one layer, never two. The value shipped for such a key in this file is a BOOT FALLBACK so a fresh install comes up; it is not a setting. To change one, set the variable in .env (root or <FAST_STORAGE>/.env) and restart — nothing in ngdpbase writes .env, by design, and a config screen that restarts the server is a different feature. Deliberately SHORT: a key earns a place only if the environment must be able to supply it in a deployment where NO config file exists — a fresh headless container boot onto an empty volume is the case that decides it. NOTE application.base-url may equally be set in app-custom-config.json (the install wizard writes it there); it is listed because docker-compose-traefik.yml composes it at deploy time and InstallService names the env var as the alternative for headless installs, so the environment must remain a valid source. Replaces a hardcoded map that used to live in ConfigurationManager.getProperty() where nothing could see it.",
+  "ngdpbase.config.env-keys": {
+    "ngdpbase.session.secret": "NGDPBASE_SESSION_SECRET",
+    "ngdpbase.server.port": "NGDPBASE_PORT",
+    "ngdpbase.server.host": "NGDPBASE_HOST",
+    "ngdpbase.hostname": "NGDPBASE_HOSTNAME",
+    "ngdpbase.application-name": "NGDPBASE_APP_NAME",
+    "ngdpbase.application.base-url": "NGDPBASE_BASE_URL"
+  },
   "ngdpbase.session.secret": "ngdpbase-session-secret-change-in-production",
   "ngdpbase.session.max-age": 86400000,
   "ngdpbase.session.secure": false,

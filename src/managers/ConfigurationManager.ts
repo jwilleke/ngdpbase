@@ -1,5 +1,13 @@
 import fs from 'fs-extra';
 import path from 'path';
+import {
+  coerceToTypeOf,
+  describePropertySource,
+  ENV_KEYS_CONFIG_KEY,
+  FALLBACK_ENV_KEYS,
+  type EnvKeyMap,
+  type PropertyDescription
+} from '../utils/configEnvKeys.js';
 import { WikiConfig } from '../types/Config.js';
 import logger from '../utils/logger.js';
 import BaseManager, { BackupData } from './BaseManager.js';
@@ -643,23 +651,24 @@ class ConfigurationManager extends BaseManager {
    * const appName = configManager.getProperty('ngdpbase.application-name', 'MyWiki');
    */
   getProperty(key: string, defaultValue: unknown = null): unknown {
-    // Check environment variables for Docker/Traefik/K8s deployments
-    // Allows dynamic configuration without editing config files
-    // Used especially for headless installation mode (HEADLESS_INSTALL=true)
-    const envOverrides: { [key: string]: string | undefined } = {
-      'ngdpbase.application.base-url': process.env.NGDPBASE_BASE_URL,
-      'ngdpbase.hostname': process.env.NGDPBASE_HOSTNAME,
-      'ngdpbase.server.host': process.env.NGDPBASE_HOST,
-      'ngdpbase.server.port': process.env.NGDPBASE_PORT,
-      'ngdpbase.session.secret': process.env.NGDPBASE_SESSION_SECRET,
-      'ngdpbase.application-name': process.env.NGDPBASE_APP_NAME
-    };
-
-    if (envOverrides[key]) {
-      return envOverrides[key];
-    }
-
+    // #1089: environment-owned keys are DECLARED in `ngdpbase.config.env-keys`
+    // rather than hardcoded here, so the admin configuration screen can see
+    // which keys it must render read-only. This used to be a six-entry object
+    // literal that nothing outside this method knew about — which is how the UI
+    // came to accept and persist edits that could never take effect.
+    //
+    // Ownership is not conditional on the variable being set: a declared key is
+    // env-owned either way, and the shipped value is a boot fallback rather
+    // than a setting. See src/utils/configEnvKeys.ts.
     const raw = this.mergedConfig?.[key] ?? defaultValue;
+
+    const envVar = this.getEnvKeyMap()[key];
+    if (envVar) {
+      const fromEnv = process.env[envVar];
+      if (fromEnv !== undefined && fromEnv !== '') {
+        return coerceToTypeOf(fromEnv, raw);
+      }
+    }
 
     return this.resolveEnvRef(raw, key);
   }
@@ -863,6 +872,61 @@ class ConfigurationManager extends BaseManager {
    * const allConfig = configManager.getAllProperties();
    * console.log(JSON.stringify(allConfig, null, 2));
    */
+  /**
+   * The declared map of environment-owned config keys (#1089).
+   *
+   * Read straight from `mergedConfig` rather than through `getProperty`, which
+   * would recurse — `getProperty` calls this to decide whether the key it was
+   * asked for is env-owned.
+   */
+  private getEnvKeyMap(): EnvKeyMap {
+    const raw = this.mergedConfig?.[ENV_KEYS_CONFIG_KEY];
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      return raw as EnvKeyMap;
+    }
+    // Config declares none — fall back rather than silently dropping every
+    // override, including NGDPBASE_SESSION_SECRET. See FALLBACK_ENV_KEYS.
+    return FALLBACK_ENV_KEYS;
+  }
+
+  /**
+   * Which keys the environment owns, and the variable that supplies each (#1089).
+   *
+   * Exposed so the admin configuration screen can render those keys read-only
+   * instead of accepting a write that cannot take effect.
+   */
+  getEnvControlledKeys(): EnvKeyMap {
+    return { ...this.getEnvKeyMap() };
+  }
+
+  /**
+   * Describe where a key's value actually comes from (#1089).
+   *
+   * The admin screen needs three separate facts that `getProperty` alone cannot
+   * express: the effective value, whether the environment owns the key, and
+   * which variable does. Without this it displayed `mergedConfig` — the raw JSON
+   * — while `getProperty` returned something else entirely, so the *read* side
+   * was wrong before anyone edited anything.
+   */
+  describeProperty(key: string): PropertyDescription {
+    const configValue = this.mergedConfig?.[key] ?? null;
+    const described = describePropertySource(key, this.getEnvKeyMap(), process.env, configValue);
+
+    // A config-sourced value may still be a `${VAR}` template or a `$VAR`
+    // secret ref, so run it through the same resolver getProperty uses.
+    if (described.source === 'config') {
+      try {
+        return { ...described, effective: this.resolveEnvRef(described.effective, key) };
+      } catch {
+        // A bare ref to an unset variable throws by design. The screen should
+        // show that the value is unresolvable, not fail to render.
+        return { ...described, effective: null };
+      }
+    }
+
+    return described;
+  }
+
   getAllProperties(): WikiConfig {
     return { ...this.mergedConfig } as WikiConfig;
   }
