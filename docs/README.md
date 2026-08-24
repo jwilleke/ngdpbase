@@ -69,6 +69,13 @@ This documentation is organized into several key areas to help you understand, d
 - Priority management
 - Completion status
 
+### [Bootstrap Methodology](bootstrap-methodology.md)
+
+- How `.env` is found and layered (`bootstrap-env.ts` vs `server.sh`)
+- Config merge order and the three `$VAR` reference forms
+- Install paths: wizard, headless, and `./server.sh setup`
+- How to set `.env` values (by hand — nothing writes them)
+
 ### [Fernfiles Comparison](fernfiles.md)
 
 - What activescott/fernfiles does better (durability checklist, mutation audit, conditional writes, health probes)
