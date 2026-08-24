@@ -13,7 +13,8 @@
 import express from 'express';
 import request from 'supertest';
 import path from 'path';
-import WikiRoutes from '../WikiRoutes';
+import WikiRoutes, { signupRateLimiter } from '../WikiRoutes';
+import { UserCreateError } from '../../utils/userCreateError';
 
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
@@ -521,6 +522,78 @@ describe('WikiRoutes — coverage batch 7', () => {
         .send({ username: 'newuser', email: 'new@example.com', password: 'securepass', confirmPassword: 'securepass' });
       expect(res.status).toBe(302);
       expect(res.headers.location).toContain('/login');
+    });
+
+    // #1086: POST /register disclosed every username on the instance to an
+    // unauthenticated visitor. `createUser` joined `getAllUsernames()` into its
+    // error and the route forwarded `getErrorMessage(err)` straight into the
+    // redirect the register page renders. Reproduced on jimstest as:
+    //   /register?error=Username already exists: "admin".
+    //             Existing users: admin, jim, molly
+    describe('error messages never leak internal detail (#1086)', () => {
+      // The signup limiter is module-level and allows 5 per 15 minutes per IP.
+      // This block posts four times on top of the tests above it, which
+      // exhausts the budget and turns later responses into 429s with no
+      // Location header — the assertions then pass vacuously against
+      // `undefined`. Reset per test so each one exercises the real path.
+      beforeEach(() => signupRateLimiter.reset());
+
+      const post = () => request(app)
+        .post('/register')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ username: 'admin', email: 'x@example.com', password: 'securepass', confirmPassword: 'securepass' });
+
+      test('a username list in the thrown message never reaches the visitor', async () => {
+        mockUserManager.createUser.mockRejectedValue(
+          new UserCreateError('username-taken', 'Username already exists: "admin". Existing users: admin, jim, molly')
+        );
+
+        const location = decodeURIComponent((await post()).headers.location);
+
+        expect(location).not.toContain('jim');
+        expect(location).not.toContain('molly');
+        expect(location).not.toContain('Existing users');
+      });
+
+      test('the visitor is still told the username is unavailable', async () => {
+        // Registration cannot hide THIS fact — the visitor has to pick another
+        // name. It can hide everything else.
+        mockUserManager.createUser.mockRejectedValue(
+          new UserCreateError('username-taken', 'internal detail')
+        );
+
+        const location = decodeURIComponent((await post()).headers.location);
+
+        expect(location).toContain('That username is not available');
+      });
+
+      test('a display-name conflict does not reveal that a page exists', async () => {
+        // The internal cause names the colliding page, which would tell an
+        // anonymous visitor whether it exists — including a private one.
+        mockUserManager.createUser.mockRejectedValue(
+          new UserCreateError('display-name-conflict', 'Display name "Secret Project" conflicts with an existing page')
+        );
+
+        const location = decodeURIComponent((await post()).headers.location);
+
+        expect(location).not.toContain('Secret Project');
+        expect(location).not.toContain('page');
+        expect(location).toContain('That display name is not available');
+      });
+
+      test('an arbitrary internal error becomes the generic failure', async () => {
+        // The structural half: the route must not treat exception text as
+        // user-facing copy, or the next internal throw re-creates this bug.
+        mockUserManager.createUser.mockRejectedValue(
+          new Error('ENOSPC: no space left on device, open /Volumes/hd2/secret/path')
+        );
+
+        const location = decodeURIComponent((await post()).headers.location);
+
+        expect(location).not.toContain('ENOSPC');
+        expect(location).not.toContain('/Volumes');
+        expect(location).toContain('Registration failed');
+      });
     });
 
     test('redirects with error when createUser throws', async () => {

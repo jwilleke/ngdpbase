@@ -21,6 +21,7 @@ import type { Organization } from '../types/Organization.js';
 import type { Role as OrganizationRoleRecord } from '../types/Role.js';
 import type { Request, Response, NextFunction } from 'express';
 import { assertHeadlessBootstrapPassword } from '../utils/headlessAdminPassword.js';
+import { UserCreateError } from '../utils/userCreateError.js';
 
 /**
  * Catalog entry shape under `ngdpbase.roles.definitions[<name>]`. Snapshot
@@ -935,15 +936,24 @@ class UserManager extends BaseManager {
     const { username, email, displayName, password, roles = ['reader'], isExternal = false, isActive = true, acceptLanguage, profileLocked = false } = userData;
 
     if (await this.provider.userExists(username)) {
-      const existingUsers = await this.provider.getAllUsernames();
-
-      throw new Error(`Username already exists: "${username}". Existing users: ${existingUsers.join(', ')}`);
+      // #1086: this used to append `getAllUsernames()` to the message, and
+      // processRegister forwarded the text straight to an unauthenticated
+      // visitor — so guessing one existing username returned the whole roster.
+      // The reason is what callers branch on; the message is for logs only.
+      throw new UserCreateError('username-taken', `Username already exists: "${username}"`);
     }
 
     const finalDisplayName = displayName || username;
     const hasPageConflict = await this.checkDisplayNamePageConflict(finalDisplayName);
     if (hasPageConflict) {
-      throw new Error(`Display name "${finalDisplayName}" conflicts with an existing page. Please choose a different display name.`);
+      // #1086: the cause names a page, so this message tells its reader whether
+      // a given page exists — including a private one. Safe for a log and for
+      // an admin; not for the unauthenticated registration form, which now maps
+      // the reason to a message that does not say why.
+      throw new UserCreateError(
+        'display-name-conflict',
+        `Display name "${finalDisplayName}" conflicts with an existing page`
+      );
     }
 
     const hashedPassword = isExternal ? '' : this.hashPassword(password);

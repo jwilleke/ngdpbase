@@ -39,6 +39,7 @@ import type { ShareScope } from '../types/Share.js';
 import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../utils/ContactSubmissionLog.js';
 import { pipeline } from 'stream';
 import { resolveRange } from '../utils/httpRange.js';
+import { safeRegistrationMessage } from '../utils/userCreateError.js';
 import {
   DEVICE_STATE_COOKIE,
   deviceStateCookieOptions,
@@ -7239,9 +7240,13 @@ ${panes}
       logger.debug(`👤 User registered: ${username}`);
       res.redirect('/login?success=Registration successful');
     } catch (err: unknown) {
+      // #1086: the full error goes to the log; the visitor gets a message from
+      // a closed set. This used to forward `getErrorMessage(err)` verbatim,
+      // which is how `createUser`'s "Existing users: …" reached an
+      // unauthenticated caller — and would have carried whatever any other
+      // layer threw next.
       logger.error('Error processing registration:', err);
-      const errorMessage = getErrorMessage(err) || 'Registration failed';
-      res.redirect('/register?error=' + encodeURIComponent(errorMessage));
+      res.redirect('/register?error=' + encodeURIComponent(safeRegistrationMessage(err)));
     }
   }
 
