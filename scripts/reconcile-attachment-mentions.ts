@@ -33,6 +33,11 @@
  * are surfaced so the #865 report slice can show them.
  */
 
+// Loads .env (root and <FAST_STORAGE>/.env) into process.env before anything
+// else evaluates. MUST stay the first import — see src/bootstrap-env.ts and
+// docs/bootstrap-methodology.md. Without it this script resolves instance
+// paths against an empty environment (#1091).
+import '../src/bootstrap-env.js';
 import fs from 'fs-extra';
 import path from 'path';
 import matter from 'gray-matter';

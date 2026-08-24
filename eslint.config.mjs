@@ -134,6 +134,35 @@ export default tseslint.config(
     rules: { "no-console": "off" }
   },
 
+  // Scripts outside the TypeScript project (#1092).
+  //
+  // `tsconfig.json` enumerates the scripts it covers one by one, and these
+  // three predate that list — they were converted from JS in #186 and never
+  // added. Type-aware ESLint rules need a `parserOptions.project` that
+  // includes the file, so on these they do not merely fail to find problems:
+  // they fail to parse at all.
+  //
+  // That is invisible in a normal run, because `lint:code` is
+  // `eslint src/**/*.ts` and never looks at scripts/. It surfaces only through
+  // lint-staged, which passes staged paths explicitly — so touching one of
+  // these files makes the pre-commit hook fail on a file the linter otherwise
+  // ignores entirely.
+  //
+  // Disabling type-aware rules here states what is already true rather than
+  // hiding a finding. The real fix is to bring these into the TS project,
+  // which is ~93 pre-existing type errors and its own piece of work: #1092.
+  {
+    files: [
+      "scripts/maintain-versions.ts",
+      "scripts/migrate-to-versioning.ts",
+      "scripts/repair-jspwiki-frontmatter.ts"
+    ],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      parserOptions: { project: null, projectService: false }
+    }
+  },
+
   {
     files: ["scripts/**/*.ts", "tests/e2e/**/*.ts", "playwright.config.ts"],
     rules: {

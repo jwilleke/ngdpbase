@@ -38,16 +38,12 @@ import type PageManager from './managers/PageManager.js';
 // views/, public/, themes/, addons/, .env, or the PID file.
 const projectRoot = process.cwd();
 
-// Load .env file so PORT and other env vars are available without shell export
-const envPath = path.join(projectRoot, '.env');
-if (fs.existsSync(envPath)) {
-  for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
-    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
-    if (m && !process.env[m[1]]) {
-      process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
-    }
-  }
-}
+// .env is loaded by the bootstrap-env import at the top of this file, which
+// handles both the root file and <FAST_STORAGE>/.env with documented
+// precedence. A second hand-rolled parser used to sit here (#1088); it could
+// never fire — it assigned only when a variable was still unset, and
+// bootstrap-env had already applied the same file — while reading as a
+// competing source of truth.
 
 // --- PID File Lock to Prevent Multiple Instances ---
 const PID_FILE = path.join(projectRoot, '.ngdpbase.pid');

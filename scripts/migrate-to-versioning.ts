@@ -20,6 +20,11 @@
  *   node scripts/migrate-to-versioning.js --auto
  */
 
+// Loads .env (root and <FAST_STORAGE>/.env) into process.env before anything
+// else evaluates. MUST stay the first import — see src/bootstrap-env.ts and
+// docs/bootstrap-methodology.md. Without it this script resolves instance
+// paths against an empty environment (#1091).
+import '../src/bootstrap-env.js';
 import readline from 'readline';
 import fs from 'fs-extra';
 import path from 'path';
@@ -155,36 +160,75 @@ function prompt(question) {
  * Load configuration
  */
 async function loadConfiguration() {
-  const configPath = options.configPath || path.join(process.cwd(), 'app-custom-config.json');
-  const defaultConfigPath = path.join(process.cwd(), 'app-default-config.json');
+  // #1091: these used to look in process.cwd(), where neither file has ever
+  // lived — the shipped default is `config/app-default-config.json` and the
+  // instance override is `<FAST_STORAGE>/config/<INSTANCE_CONFIG_FILE>`. The
+  // result was that no configuration was ever loaded, every lookup fell
+  // through to its literal default, and the migration silently targeted
+  // `<repo>/pages`. On a real install that is not the page store, so it
+  // reported nothing to migrate — which reads as "already migrated".
+  const instanceDataFolder =
+    process.env.FAST_STORAGE || process.env.INSTANCE_DATA_FOLDER || './data';
+  const customConfigFile = process.env.INSTANCE_CONFIG_FILE || 'app-custom-config.json';
+
+  const defaultConfigPath = path.join(process.cwd(), 'config', 'app-default-config.json');
+  const configPath =
+    options.configPath || path.join(instanceDataFolder, 'config', customConfigFile);
 
   let config = {};
 
-  // Try to load default config
   if (await fs.pathExists(defaultConfigPath)) {
     try {
-      const defaultConfig = await fs.readJson(defaultConfigPath);
-      config = { ...defaultConfig };
+      config = { ...(await fs.readJson(defaultConfigPath)) };
     } catch (error) {
       printWarning(`Failed to load default config: ${error.message}`);
     }
+  } else {
+    printWarning(`Default config not found: ${defaultConfigPath}`);
   }
 
-  // Try to load custom config
   if (await fs.pathExists(configPath)) {
     try {
-      const customConfig = await fs.readJson(configPath);
-      config = { ...config, ...customConfig };
+      config = { ...config, ...(await fs.readJson(configPath)) };
     } catch (error) {
       printError(`Failed to load config from ${configPath}: ${error.message}`);
       return null;
     }
   } else {
-    printWarning(`Config file not found: ${configPath}`);
-    printInfo('Using default paths: ./pages, ./required-pages, ./data');
+    printWarning(`Instance config not found: ${configPath}`);
+    printInfo('Continuing with shipped defaults only.');
   }
 
   return config;
+}
+
+/**
+ * Resolve `${VAR}` placeholders against the environment (#1091).
+ *
+ * The storage keys ship as templates — `"${SLOW_STORAGE}/pages"` — and this
+ * script reads the config JSON directly rather than through
+ * ConfigurationManager, so nothing else expands them. Without this, once the
+ * config paths above were corrected, `path.resolve()` would happily produce a
+ * directory literally named `${SLOW_STORAGE}`. That exact bug has been fixed
+ * once already in the application (#278, commit 92694a65) and left a
+ * `.gitignore` entry behind as a safety net.
+ *
+ * Throws rather than guessing: a migration that silently targets the wrong
+ * tree is far worse than one that refuses to start.
+ */
+function expandEnvRefs(value, key) {
+  if (typeof value !== 'string') return value;
+  return value.replace(/\$\{([^}]+)\}/g, (_match, varName) => {
+    const resolved = process.env[varName];
+    if (resolved === undefined || resolved === '') {
+      throw new Error(
+        `Config key \`${key}\` is \`${value}\`, but \`${varName}\` is not set. ` +
+        'Add it to .env (root or <FAST_STORAGE>/.env) and re-run — refusing to ' +
+        'resolve it as a literal path.'
+      );
+    }
+    return resolved;
+  });
 }
 
 /**
@@ -192,11 +236,18 @@ async function loadConfiguration() {
  */
 function getDirectoryPaths(config) {
   const cwd = process.cwd();
+  const dataDir = process.env.FAST_STORAGE || process.env.INSTANCE_DATA_FOLDER || './data';
+
+  // #1091: every value goes through expandEnvRefs first — the shipped storage
+  // keys are `${VAR}` templates and this script does not use
+  // ConfigurationManager, which is what normally expands them.
+  const resolve = (key, fallback) =>
+    path.resolve(cwd, expandEnvRefs(config[key] || fallback, key));
 
   return {
-    pagesDir: path.resolve(cwd, config['ngdpbase.page.provider.filesystem.storagedir'] || './pages'),
-    requiredPagesDir: path.resolve(cwd, config['ngdpbase.page.provider.filesystem.requiredpagesdir'] || './required-pages'),
-    dataDir: path.resolve(cwd, './data')
+    pagesDir: resolve('ngdpbase.page.provider.filesystem.storagedir', './pages'),
+    requiredPagesDir: resolve('ngdpbase.page.provider.filesystem.requiredpagesdir', './required-pages'),
+    dataDir: path.resolve(cwd, dataDir)
   };
 }
 

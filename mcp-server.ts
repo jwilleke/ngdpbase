@@ -9,6 +9,15 @@
  * @see https://modelcontextprotocol.io
  */
 
+// Loads .env (root and <FAST_STORAGE>/.env) into process.env before anything else
+// evaluates. MUST stay the first import: ES imports are hoisted, so a side-effecting
+// module imported first is the only reliable way to populate the environment ahead of
+// every other module's top-level code. Without it, ConfigurationManager falls back to
+// './data' and the MCP server operates on the wrong instance entirely — it is launched
+// by an MCP client that has no reason to export FAST_STORAGE.
+// See src/bootstrap-env.ts and docs/bootstrap-methodology.md.
+import './src/bootstrap-env.js';
+
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
