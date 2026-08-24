@@ -105,3 +105,39 @@ describe('bootstrap admin recreation', () => {
     expect(admin.isSystem).toBe(true);
   });
 });
+
+/**
+ * #1087 — `InstallService` documented that a headless install "refuses to
+ * start" without an admin password. It did not: the config key ships as the
+ * literal `admin123` and `getBootstrapPassword()` falls back to a matching
+ * constant, so an unattended deploy came up on a credential published in this
+ * repository — failing open where the docs said it failed closed.
+ *
+ * These cover the wiring, not the guard itself (that has its own unit tests):
+ * that `createDefaultAdmin` consults it, and that the interactive path is
+ * untouched.
+ */
+describe('headless bootstrap admin guard (#1087)', () => {
+  afterEach(() => {
+    delete process.env.HEADLESS_INSTALL;
+  });
+
+  test('refuses to create the admin on the shipped password when headless', async () => {
+    process.env.HEADLESS_INSTALL = 'true';
+    const { manager, store } = makeManager({});
+
+    await expect(manager.createDefaultAdmin()).rejects.toThrow(/NGDPBASE_ADMIN_PASSWORD/);
+    // Refusing but creating the account anyway would be worse than no guard.
+    expect(store.has('admin')).toBe(false);
+  });
+
+  test('still creates the admin on the shipped password when NOT headless', async () => {
+    // Deliberate: a fresh local install must come up so the setup wizard is
+    // reachable, and there is a human present to see the startup banner.
+    const { manager, store } = makeManager({});
+
+    await manager.createDefaultAdmin();
+
+    expect(store.has('admin')).toBe(true);
+  });
+});

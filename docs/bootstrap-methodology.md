@@ -1,6 +1,6 @@
 # Bootstrap Methodology
 
-How an ngdpbase instance comes up: how environment variables are found, how configuration is layered on top of them, and how a fresh install completes. Written 2026-08-24 against v4.11.1 and revised the same day as #1088/#1089/#1090 landed, describing __what the code does now__ — where a comment in the source disagrees, this document follows the code and links the issue.
+How an ngdpbase instance comes up: how environment variables are found, how configuration is layered on top of them, and how a fresh install completes. Written 2026-08-24 against v4.11.1 and revised the same day as #1087/#1088/#1089/#1090 landed, describing __what the code does now__ — where a comment in the source disagrees, this document follows the code and links the issue.
 
 ## The short version
 
@@ -11,6 +11,23 @@ Three layers, in the order they run:
 3. __Install__ — a `.install-complete` marker gates the setup wizard; `HEADLESS_INSTALL=true` skips it.
 
 Nothing in the codebase ever __writes__ a `.env`. You create it by hand from `.env.example`.
+
+### What `bootstrap-env.ts` is, and is not
+
+It is the __environment__ bootstrap: layer 1 only. Roughly twenty lines of code whose entire job is to populate `process.env` from two `.env` files in a defined precedence, before anything else evaluates. It is the single mechanism for that, and the first thing that runs in any ngdpbase process.
+
+It is __not__ the whole bootstrap, and importing it does not make a script behave like the app:
+
+| Layer | Lives in |
+|---|---|
+| Environment | `src/bootstrap-env.ts` |
+| Application boot | the bootstrap IIFE in `src/app.ts` — static files → init gate → `listen` → `engine.initialize()` → middleware → routes → ready |
+| Engine boot | `WikiEngine.initialize()` — managers in dependency order |
+| Install | `InstallService` — the `.install-complete` marker, wizard vs `HEADLESS_INSTALL` |
+
+A script that imports `bootstrap-env` gets the right `FAST_STORAGE`. It still has no `ConfigurationManager`, no managers, and no `${VAR}` resolution.
+
+That gap is not theoretical: `migrate-to-versioning.ts` had it. Adding the import fixed the environment half and left path resolution reading raw JSON with unexpanded `${SLOW_STORAGE}` templates — which is why [#1091](https://github.com/jwilleke/ngdpbase/issues/1091) needed both halves fixed together.
 
 ## Layer 1 — environment
 
@@ -28,7 +45,7 @@ Precedence, highest first:
 
 The ambient environment wins so an explicitly-set variable is never silently overridden by a file.
 
-There is a chicken-and-egg step worth knowing about: `FAST_STORAGE` may itself be declared in the root `.env`. So that file is __parsed but not applied__ first, purely to discover where the per-instance file lives (`bootstrap-env.ts:47-59`). Then the per-instance file is applied, then the root file. Because `dotenv` does not overwrite an existing value, first-applied wins — which is why the instance file takes precedence over the root one.
+There is a chicken-and-egg step worth knowing about: `FAST_STORAGE` may itself be declared in the root `.env`. So that file is __parsed but not applied__ first, purely to discover where the per-instance file lives (`resolveInstanceDataDir()` in `bootstrap-env.ts`). Then the per-instance file is applied, then the root file. Because `dotenv` does not overwrite an existing value, first-applied wins — which is why the instance file takes precedence over the root one.
 
 ### Why this module exists
 
@@ -36,7 +53,7 @@ There is a chicken-and-egg step worth knowing about: `FAST_STORAGE` may itself b
 
 ### The shell path
 
-`server.sh` reaches the same precedence by the opposite route (`server.sh:17-31`):
+`server.sh` reaches the same precedence by the opposite route (near the top of `server.sh`):
 
 ```bash
 # root first
@@ -69,7 +86,7 @@ __If you add an entry point that reads instance data, import `bootstrap-env` fir
 ### Merge order
 
 1. `config/app-default-config.json` — shipped defaults, read-only, in the image
-2. `<FAST_STORAGE>/config/<INSTANCE_CONFIG_FILE>` — instance overrides; the filename defaults to `app-custom-config.json` and is overridable via `INSTANCE_CONFIG_FILE` (`ConfigurationManager.ts:87-89`)
+2. `<FAST_STORAGE>/config/<INSTANCE_CONFIG_FILE>` — instance overrides; the filename defaults to `app-custom-config.json` and is overridable via `INSTANCE_CONFIG_FILE` (`ConfigurationManager`'s constructor)
 3. Environment-owned keys, checked before the merged config on every `getProperty` call
 
 ### Environment-owned keys
@@ -97,7 +114,7 @@ This replaced a hardcoded map inside `getProperty` that nothing outside could se
 
 ### Env references inside config values
 
-Any config value may reference an environment variable. Resolution happens __at lookup time__, per `getProperty()` call — not at config load — so a test that mutates `process.env` mid-run sees the new value on the next read (`ConfigurationManager.ts:710-756`).
+Any config value may reference an environment variable. Resolution happens __at lookup time__, per `getProperty()` call — not at config load — so a test that mutates `process.env` mid-run sees the new value on the next read (`ConfigurationManager.resolveEnvRef()`).
 
 There are three forms, with deliberately different failure modes:
 
@@ -131,7 +148,7 @@ Until `a47f6932` ([#1090](https://github.com/jwilleke/ngdpbase/issues/1090)) `ap
 
 ## Layer 3 — install
 
-Installation state is a `.install-complete` marker file in `FAST_STORAGE` (`InstallService.ts:181-211`). Its absence means the setup wizard at `/install` is required.
+Installation state is a `.install-complete` marker file in `FAST_STORAGE` (`InstallService.isInstallComplete()`). Its absence means the setup wizard at `/install` is required.
 
 ### Interactive
 
@@ -139,7 +156,7 @@ A fresh instance with no marker serves the wizard. `WikiEngine` creates the boot
 
 ### Headless
 
-`HEADLESS_INSTALL=true` skips the wizard entirely (`app.ts:262`, `InstallService.ts:620-660`): copies required pages into the pages directory, writes the marker, done. The operator supplies `<FAST_STORAGE>/config/app-custom-config.json` beforehand — via volume mount or ConfigMap — or relies on the env-var overrides above. __No template config is seeded__; there is no `*.example` file to copy.
+`HEADLESS_INSTALL=true` skips the wizard entirely (`app.ts`, and `InstallService.processHeadlessInstallation()`): copies required pages into the pages directory, writes the marker, done. The operator supplies `<FAST_STORAGE>/config/app-custom-config.json` beforehand — via volume mount or ConfigMap — or relies on the env-var overrides above. __No template config is seeded__; there is no `*.example` file to copy.
 
 ### Fresh-clone helper
 
@@ -147,7 +164,7 @@ A fresh instance with no marker serves the wizard. `WikiEngine` creates the boot
 ./server.sh setup --config /path/to/app-custom-config.json
 ```
 
-Installs dependencies, builds, copies the supplied config into `<FAST_STORAGE>/config/app-custom-config.json`, exports `HEADLESS_INSTALL=true`, and starts the server (`server.sh:540-568`). Without `--config` it is just install + build + start, and the wizard is reachable.
+Installs dependencies, builds, copies the supplied config into `<FAST_STORAGE>/config/app-custom-config.json`, exports `HEADLESS_INSTALL=true`, and starts the server (the `setup)` branch of `server.sh`). Without `--config` it is just install + build + start, and the wizard is reachable.
 
 ### The bootstrap admin password
 
@@ -157,7 +174,9 @@ To supply it from the environment instead, set the key to `"$NGDPBASE_ADMIN_PASS
 
 `isAdminUsingDefaultPassword()` drives a startup warning banner that persists until the password is changed.
 
-> __Known defect:__ `InstallService.ts:606-609` states that a headless install "refuses to start" when `NGDPBASE_ADMIN_PASSWORD` is unset. __It does not.__ The env-ref is opt-in, not shipped, so a headless deploy with that variable unset comes up with `admin` / `admin123` — failing open to a well-known credential where the doc says it fails closed. `UserManager.ts:247` carries the same wrong claim while `UserManager.ts:430` states it correctly. Tracked in [#1087](https://github.com/jwilleke/ngdpbase/issues/1087).
+The refusal is real and enforced in `assertHeadlessBootstrapPassword()` (`src/utils/headlessAdminPassword.ts`), called from `UserManager.createDefaultAdmin()` — which runs only on the boot that finds an empty user store, so an existing deployment is unaffected by a restart. It refuses when the resolved password is absent or still the shipped one, catching both "variable unset" and "operator never changed the config".
+
+Until `#1087` this was documentation without implementation: the comment claimed a headless install refused, while the key shipped as the literal `admin123` and a hardcoded fallback matched it — so an unattended deploy came up on a credential published in this repository, failing open where the docs said it failed closed.
 
 ## Setting `.env` values
 
@@ -205,7 +224,7 @@ Instance separation is environment-driven rather than first-class: give each ins
 - [`docs/SEMVER.md`](./SEMVER.md) — release and version bumping
 - `config/app-default-config.json` — every shipped key, with `_comment_*` entries explaining the non-obvious ones
 - `.env.example` — annotated template
-- [#1087](https://github.com/jwilleke/ngdpbase/issues/1087) — __open__: headless install admin-password documentation defect
+- [#1087](https://github.com/jwilleke/ngdpbase/issues/1087) — resolved: headless installs now genuinely refuse to create the admin on the shipped password
 - [#1088](https://github.com/jwilleke/ngdpbase/issues/1088) — resolved in `3d8ef679`: `bootstrap-env` consolidated across every entry point
 - [#1089](https://github.com/jwilleke/ngdpbase/issues/1089) — resolved in `a1c0d38c`: environment-owned keys declared and read-only in the admin UI
 - [#1090](https://github.com/jwilleke/ngdpbase/issues/1090) — resolved in `a47f6932`: `ngdpbase.server.port` now binds the port

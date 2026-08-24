@@ -20,6 +20,7 @@ import type { Person, PersonUpdate } from '../types/Person.js';
 import type { Organization } from '../types/Organization.js';
 import type { Role as OrganizationRoleRecord } from '../types/Role.js';
 import type { Request, Response, NextFunction } from 'express';
+import { assertHeadlessBootstrapPassword } from '../utils/headlessAdminPassword.js';
 
 /**
  * Catalog entry shape under `ngdpbase.roles.definitions[<name>]`. Snapshot
@@ -244,12 +245,14 @@ class UserManager extends BaseManager {
     this.passwordSalt = configManager.getProperty('ngdpbase.user.security.passwordsalt', 'amdwiki-salt') as string;
 
     // NOT read here on purpose. `ngdpbase.user.security.defaultpassword` ships
-    // as the bare env-ref "$NGDPBASE_ADMIN_PASSWORD", and a bare ref throws
-    // when the variable is unset (#775). Reading it on every startup would
-    // therefore refuse to boot every existing install whose operator has no
-    // such variable — even though those installs already have an admin and
-    // will never use the value. It is read where it is actually needed, in
-    // createDefaultAdmin(), which runs only when the user store is empty.
+    // as the literal `admin123` (#1087 — an earlier version of this comment
+    // wrongly claimed it shipped as the bare env-ref). An operator MAY point it
+    // at "$NGDPBASE_ADMIN_PASSWORD", and a bare ref throws when the variable is
+    // unset (#775) — so reading it on every startup would refuse to boot every
+    // install that had made that choice and then removed the variable, even
+    // though those installs already have an admin and will never use the value.
+    // It is read where it is actually needed, in createDefaultAdmin(), which
+    // runs only when the user store is empty.
 
     // Load role definitions from config
     const roleDefinitions = configManager.getProperty('ngdpbase.roles.definitions', {}) as Record<string, Role>;
@@ -502,6 +505,11 @@ class UserManager extends BaseManager {
     }
 
     const defaultPassword = this.getBootstrapPassword();
+
+    // #1087: a headless install must not create this account on the password
+    // shipped in the repository. Only reachable on the boot that finds an empty
+    // user store, so an existing deployment is unaffected by a restart.
+    assertHeadlessBootstrapPassword(defaultPassword, process.env.HEADLESS_INSTALL === 'true');
 
     const adminUser: User = {
       username: 'admin',

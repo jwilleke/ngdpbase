@@ -603,10 +603,24 @@ class InstallService {
    * - Creates .install-complete marker
    * - Skips wizard entirely
    *
-   * Note: WikiEngine creates the `admin` account automatically, using
-   * NGDPBASE_ADMIN_PASSWORD. There is no default — a headless install with
-   * that variable unset refuses to start. User is prompted to change the
-   * password on first login (existing behavior).
+   * Note: WikiEngine creates the `admin` account automatically. A headless
+   * install refuses to start unless an admin password has actually been
+   * configured — either by exporting NGDPBASE_ADMIN_PASSWORD and pointing
+   * `ngdpbase.user.security.defaultpassword` at it, or by setting that key
+   * directly in app-custom-config.json.
+   *
+   * That refusal is enforced in `assertHeadlessBootstrapPassword`
+   * (src/utils/headlessAdminPassword.ts), called from
+   * `UserManager.createDefaultAdmin()`. Until #1087 this comment claimed the
+   * behaviour without the code implementing it: the config key ships as the
+   * literal `admin123`, so a headless deploy with nothing configured came up on
+   * a credential published in this repository — failing open where this said it
+   * failed closed.
+   *
+   * Interactive installs are deliberately unaffected: a fresh local install
+   * comes up on the shipped password so the setup wizard is reachable, with a
+   * startup banner warning until it is changed. An unattended deploy has nobody
+   * to read that banner, which is why only the headless path refuses.
    *
    * Custom config: the operator must provide
    * `INSTANCE_DATA_FOLDER/config/app-custom-config.json` (e.g., via a Docker
