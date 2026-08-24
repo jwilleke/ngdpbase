@@ -32,31 +32,6 @@ export const ENV_KEYS_CONFIG_KEY = 'ngdpbase.config.env-keys';
 /** key → environment variable that supplies it. */
 export type EnvKeyMap = Record<string, string>;
 
-/**
- * Last-resort map used when the merged config declares none.
- *
- * Not a second source of truth in the harmful sense: it applies *only* when
- * `ngdpbase.config.env-keys` is absent entirely, which is an abnormal state —
- * the shipped default config always declares it. It exists because the
- * alternative failure mode is worse: without it, a partial or unreadable
- * default config makes every environment override silently stop working,
- * including `NGDPBASE_SESSION_SECRET`. An override that keeps working is a
- * safer degradation than one that vanishes without a word.
- *
- * Keep in step with `ngdpbase.config.env-keys` in
- * `config/app-default-config.json`; a drift here only shows up when the config
- * cannot be read at all.
- */
-export const FALLBACK_ENV_KEYS: EnvKeyMap = {
-  'ngdpbase.session.secret': 'NGDPBASE_SESSION_SECRET',
-  'ngdpbase.server.port': 'NGDPBASE_PORT',
-  'ngdpbase.server.host': 'NGDPBASE_HOST',
-  'ngdpbase.hostname': 'NGDPBASE_HOSTNAME',
-  'ngdpbase.application-name': 'NGDPBASE_APP_NAME',
-  'ngdpbase.application.base-url': 'NGDPBASE_BASE_URL'
-};
-
-
 export interface PropertyDescription {
   /** Whether this key is declared env-owned. Independent of whether the variable is set. */
   envControlled: boolean;

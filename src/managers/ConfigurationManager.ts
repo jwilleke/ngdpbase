@@ -4,7 +4,6 @@ import {
   coerceToTypeOf,
   describePropertySource,
   ENV_KEYS_CONFIG_KEY,
-  FALLBACK_ENV_KEYS,
   type EnvKeyMap,
   type PropertyDescription
 } from '../utils/configEnvKeys.js';
@@ -881,12 +880,9 @@ class ConfigurationManager extends BaseManager {
    */
   private getEnvKeyMap(): EnvKeyMap {
     const raw = this.mergedConfig?.[ENV_KEYS_CONFIG_KEY];
-    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-      return raw as EnvKeyMap;
-    }
-    // Config declares none — fall back rather than silently dropping every
-    // override, including NGDPBASE_SESSION_SECRET. See FALLBACK_ENV_KEYS.
-    return FALLBACK_ENV_KEYS;
+    return (raw && typeof raw === 'object' && !Array.isArray(raw))
+      ? (raw as EnvKeyMap)
+      : {};
   }
 
   /**

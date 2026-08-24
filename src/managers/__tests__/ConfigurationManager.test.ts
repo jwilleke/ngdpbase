@@ -656,6 +656,14 @@ describe('ConfigurationManager', () => {
         {
           'ngdpbase.application-name': 'TestWiki',
           'ngdpbase.application.base-url': 'http://localhost:3000',
+          // #1089: the shipped default config declares which keys the
+          // environment owns, and getProperty reads that declaration. A
+          // fixture without it silently disables every override, which is not
+          // how any real instance behaves.
+          'ngdpbase.config.env-keys': {
+            'ngdpbase.application.base-url': 'NGDPBASE_BASE_URL',
+            'ngdpbase.application-name': 'NGDPBASE_APP_NAME'
+          },
           ...extra
         },
         { spaces: 2 }
