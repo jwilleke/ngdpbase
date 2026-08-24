@@ -46,6 +46,12 @@ interface TokenEntry {
   expiresAt: number; // Date.now() + ttlMs
   /** True when verifying this token must create the account first (#1026) */
   isNewUser: boolean;
+  /**
+   * #1022: the requesting browser's opaque state value, or undefined for a
+   * token issued before the feature existed. Compared at redemption; see
+   * `src/utils/magicLinkDeviceState.ts` for why absence is not a match.
+   */
+  deviceState?: string;
 }
 
 export interface MagicLinkConfig {
@@ -114,7 +120,10 @@ export class MagicLinkAuthProvider implements AuthProvider {
         email,
         redirect: context.redirect || '/',
         expiresAt,
-        isNewUser
+        isNewUser,
+        // #1022: undefined when the caller did not supply one, which reads as
+        // 'unknown' at redemption rather than as a mismatch.
+        deviceState: context.deviceState
       });
 
       this.rateLimitMap.set(email, Date.now());
@@ -195,6 +204,16 @@ export class MagicLinkAuthProvider implements AuthProvider {
    */
   consumeToken(token: string): boolean {
     return this.tokens.delete(token);
+  }
+
+  /**
+   * The requesting browser's state value for this token (#1022), or null.
+   *
+   * Must be read BEFORE consumeToken(), which deletes the entry — same
+   * constraint as getFlowRedirect below, and for the same reason.
+   */
+  getDeviceState(token: string): string | null {
+    return this.tokens.get(token)?.deviceState ?? null;
   }
 
   /**

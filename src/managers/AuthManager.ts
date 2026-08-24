@@ -356,6 +356,21 @@ class AuthManager extends BaseManager {
   }
 
   /**
+   * The device-state recorded when this flow was initiated (#1022), or null.
+   *
+   * Must be called BEFORE `consumeToken()`, which deletes the entry.
+   *
+   * Null means "nothing to compare against" — a provider that does not bind,
+   * or a handle issued before binding existed. It never means "did not match":
+   * that distinction is made in `evaluateDeviceBinding`, and collapsing the two
+   * here would make an unbindable flow look like an attack.
+   */
+  getDeviceState(providerId: string, handle: string): string | null {
+    const provider = this.providers.get(providerId);
+    return provider?.getDeviceState?.(handle) ?? null;
+  }
+
+  /**
    * Create the account behind a first-time credential (#1026, #1049).
    *
    * Must be called before `authenticate(providerId, …)` on the completing

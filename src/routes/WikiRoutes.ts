@@ -40,6 +40,12 @@ import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../
 import { pipeline } from 'stream';
 import { resolveRange } from '../utils/httpRange.js';
 import {
+  DEVICE_STATE_COOKIE,
+  deviceStateCookieOptions,
+  newDeviceState,
+  evaluateDeviceBinding
+} from '../utils/magicLinkDeviceState.js';
+import {
   buildPageMutationAuditEvent,
   buildAttachmentAuditEvent,
   recordAuditEvent,
@@ -4623,6 +4629,57 @@ ${panes}
     );
   }
 
+  /**
+   * Record a magic-link redemption in the audit log (#1022).
+   *
+   * The observability half of the issue, and the half that ships regardless of
+   * whether enforcement is switched on. Before this, the only trace of a
+   * redemption was `👤 User logged in via magic link: <username>` in the app
+   * log — no IP, no User-Agent, so a login from an unexpected place was
+   * indistinguishable from a normal one after the fact.
+   *
+   * Goes through `AuditManager.logAuthentication`, which already carries
+   * `ipAddress` and `userAgent`, so this is queryable and retained rather than
+   * buried in a log line.
+   *
+   * A refused redemption is graded `high` — that is an attempted sign-in from
+   * a browser that did not request the link. An allowed mismatch is `medium`:
+   * suspicious enough to find later, but it is also exactly what the ordinary
+   * cross-device flow looks like, so it is not a failure.
+   *
+   * Best-effort: never throws. A logging failure must not cost a valid login.
+   */
+  private async auditMagicLinkRedemption(
+    req: Request,
+    username: string | undefined,
+    outcome: string,
+    allowed: boolean
+  ): Promise<void> {
+    try {
+      const auditManager = this.engine.getManager('AuditManager') as {
+        logAuthentication?: (
+          context: Record<string, unknown>,
+          result: string,
+          reason: string
+        ) => Promise<string>;
+      } | null;
+      if (!auditManager?.logAuthentication) return;
+
+      await auditManager.logAuthentication(
+        {
+          username: username ?? 'unknown',
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent'),
+          loginMethod: 'magic-link'
+        },
+        allowed ? 'success' : 'failure',
+        `device-binding:${outcome}`
+      );
+    } catch (auditErr) {
+      logger.warn('Audit log failed for magic-link redemption:', auditErr);
+    }
+  }
+
   private async auditPageDelete(
     req: Request,
     wikiContext: { userContext?: { username?: string } | null },
@@ -6261,10 +6318,33 @@ ${panes}
       const authManager = this.engine.getManager('AuthManager');
 
       if (authManager?.isEnabled('magic-link')) {
+        // #1022: remember which browser asked. The value goes into an
+        // HTTP-only cookie AND alongside the token, so redemption can say
+        // whether the same browser came back. Set unconditionally — the
+        // observability half carries no UX cost; only enforcement is gated.
+        const deviceState = newDeviceState();
+        const configManager = this.engine.getManager('ConfigurationManager');
+        // Cookie lifetime tracks the token's, so it never outlives what it
+        // describes. Reads the same key the provider builds its TTL from
+        // (`ttl-minutes`, not a separate ms setting) — a second spelling here
+        // would silently diverge the moment an operator changed one of them.
+        const ttlMinutes = Number(
+          configManager?.getProperty('ngdpbase.auth.magic-link.ttl-minutes', 15)
+        ) || 15;
+        const ttlMs = ttlMinutes * 60_000;
+        const cookieSecure = Boolean(
+          configManager?.getProperty('ngdpbase.session.secure', false)
+        );
+        res.cookie(
+          DEVICE_STATE_COOKIE,
+          deviceState,
+          deviceStateCookieOptions(ttlMs, cookieSecure)
+        );
+
         // #642 Iteration 3: provider derives baseUrl from
         // ConfigurationManager.getBaseURL() at runtime. The provider is
         // only registered when base-url is explicitly configured.
-        await authManager.initiate('magic-link', { email, redirect });
+        await authManager.initiate('magic-link', { email, redirect, deviceState });
       }
 
       // Always redirect with success — never reveal whether email exists
@@ -6336,6 +6416,11 @@ ${panes}
       // Read the redirect before consuming — consumeToken() deletes the entry.
       const redirect = authManager.getFlowRedirect('magic-link', token);
 
+      // #1022: same read-before-consume constraint. Evaluated after the token
+      // is known valid but before the session exists, so a refusal costs
+      // nothing to unwind.
+      const storedDeviceState = authManager.getDeviceState('magic-link', token);
+
       // #1026: for a link issued to an address with no account, create it now.
       // Deliberately on the POST, not the GET above — a mail scanner following
       // the link must not be able to bring an account into existence, for the
@@ -6368,6 +6453,39 @@ ${panes}
       if (!authManager.consumeToken('magic-link', token)) {
         logger.warn('🔁 Magic-link token already consumed by a concurrent request — refusing duplicate session');
         return res.redirect('/login?error=Link+expired+or+already+used');
+      }
+
+      // #1022: is the browser redeeming the link the one that asked for it?
+      //
+      // A magic link is bearer-only, so a forwarded mail or a link pasted into
+      // a chat is an account takeover with no second factor. Recording the
+      // answer — with IP and User-Agent — makes that visible after the fact.
+      //
+      // Enforcement is opt-in and defaults OFF, because "request on a laptop,
+      // open the mail on a phone" is the common real flow and breaking it
+      // silently would be worse than the risk. With the flag off a mismatch is
+      // recorded and the user proceeds.
+      const configManager = this.engine.getManager('ConfigurationManager');
+      const enforceBinding = Boolean(
+        configManager?.getProperty('ngdpbase.auth.magic-link.bind-to-requesting-device', false)
+      );
+      const binding = evaluateDeviceBinding({
+        stored: storedDeviceState,
+        presented: (req.cookies as Record<string, string> | undefined)?.[DEVICE_STATE_COOKIE],
+        enforce: enforceBinding
+      });
+
+      // The cookie has served its purpose either way; leaving it set would let
+      // a later link inherit a stale value.
+      res.clearCookie(DEVICE_STATE_COOKIE, { path: '/' });
+
+      await this.auditMagicLinkRedemption(req, result.username, binding.outcome, binding.allowed);
+
+      if (!binding.allowed) {
+        logger.warn(
+          `🚫 Magic-link redemption refused for '${result.username}': device binding ${binding.outcome}`
+        );
+        return res.redirect('/login?error=This+link+must+be+opened+on+the+device+that+requested+it');
       }
 
       await this.regenerateSession(req); // #1043

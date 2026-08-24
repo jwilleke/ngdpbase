@@ -24,6 +24,12 @@ export interface AuthInitiateContext {
   email?: string;
   /** URL to redirect to after successful authentication */
   redirect?: string;
+  /**
+   * #1022: opaque per-request value identifying the browser that asked for the
+   * link, mirrored into an HTTP-only cookie. Stored with the token so the
+   * redeeming browser can be compared against the requesting one.
+   */
+  deviceState?: string;
 }
 
 /**
@@ -134,6 +140,14 @@ export interface AuthProvider {
    * and failing the login over it would be a worse outcome than the front page.
    */
   getFlowRedirect?(handle: string): string;
+
+  /**
+   * The device-state value recorded when this flow was initiated (#1022), or
+   * null when the provider does not bind, or the handle predates the feature.
+   *
+   * Must be read BEFORE `consumeToken()`, which deletes the entry.
+   */
+  getDeviceState?(handle: string): string | null;
 
   /**
    * Create the account behind a first-time credential (#1049).

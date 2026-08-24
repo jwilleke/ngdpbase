@@ -3,6 +3,7 @@
  *   page history/diff, preview, export.
  */
 import express from 'express';
+import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import path from 'path';
 import WikiRoutes, { signupRateLimiter } from '../WikiRoutes';
@@ -150,6 +151,9 @@ const mockAuthManager = {
   authenticate: vi.fn().mockResolvedValue({ success: true, username: 'testuser' }),
   initiate: vi.fn().mockResolvedValue(undefined),
   getFlowRedirect: vi.fn().mockReturnValue('/'),
+  // #1022: the state recorded when the link was requested. null = a token
+  // issued before binding existed, which must not read as a mismatch.
+  getDeviceState: vi.fn().mockReturnValue(null),
   provisionIfNew: vi.fn().mockResolvedValue(undefined),
   // #1021: consumeToken returns whether THIS caller consumed the token, and
   // the routes gate session creation on it. A mock returning undefined reads
@@ -303,6 +307,7 @@ function resetMocks() {
   mockAuthManager.authenticate.mockResolvedValue({ success: true, username: 'testuser' });
   mockAuthManager.initiate.mockResolvedValue(undefined);
   mockAuthManager.getFlowRedirect.mockReturnValue('/');
+  mockAuthManager.getDeviceState.mockReturnValue(null);
   mockAuthManager.consumeToken.mockImplementation(() => true);
 
   mockConfigManager.getProperty.mockImplementation((key: string, defaultValue: unknown) => {
@@ -330,6 +335,9 @@ function resetMocks() {
 
 function buildApp() {
   const appInstance = express();
+  // #1022 reads the device-state cookie off req.cookies, which the real app
+  // populates via cookieParser in app.ts.
+  appInstance.use(cookieParser());
   appInstance.use(express.json());
   appInstance.use(express.urlencoded({ extended: true }));
   appInstance.set('view engine', 'ejs');
@@ -495,6 +503,111 @@ describe('WikiRoutes — coverage batch 14', () => {
   });
 
   describe('GET /auth/magic-link/verify (verifyMagicLink)', () => {
+    // #1022: a magic link is bearer-only — a forwarded mail or a link pasted
+    // into a chat is an account takeover with no second factor. These cover
+    // the binding decision and, critically, that enforcement defaults OFF so
+    // the ordinary "request on laptop, open on phone" flow still works.
+    describe('device binding (#1022)', () => {
+      const STATE = 'a'.repeat(64);
+      const OTHER = 'b'.repeat(64);
+
+      const withEnforcement = (on: boolean) => {
+        mockConfigManager.getProperty.mockImplementation((key: string, dflt: unknown) => {
+          if (key === 'ngdpbase.auth.magic-link.bind-to-requesting-device') return on;
+          if (key === 'ngdpbase.auth.magic-link.ttl-minutes') return 15;
+          return dflt;
+        });
+      };
+
+      afterEach(() => {
+        mockConfigManager.getProperty.mockReset();
+        mockAuthManager.getDeviceState.mockReturnValue(null);
+      });
+
+      test('a mismatched browser still signs in when enforcement is off (the default)', async () => {
+        // The observability half ships alone: recorded, not blocked.
+        withEnforcement(false);
+        mockAuthManager.getDeviceState.mockReturnValue(STATE);
+
+        const res = await request(app)
+          .post('/auth/magic-link/verify')
+          .set('x-csrf-token', 'test-csrf-token')
+          .set('Cookie', `ngdp_ml_state=${OTHER}`)
+          .send({ token: 'valid-token' });
+
+        expect(res.headers.location).not.toContain('error=');
+      });
+
+      test('a mismatched browser is refused when enforcement is on', async () => {
+        withEnforcement(true);
+        mockAuthManager.getDeviceState.mockReturnValue(STATE);
+
+        const res = await request(app)
+          .post('/auth/magic-link/verify')
+          .set('x-csrf-token', 'test-csrf-token')
+          .set('Cookie', `ngdp_ml_state=${OTHER}`)
+          .send({ token: 'valid-token' });
+
+        expect(res.headers.location).toContain('error=');
+      });
+
+      test('a missing cookie is refused under enforcement — the forwarded-link case', async () => {
+        // A forwarded link arrives with no cookie at all. If absence read as a
+        // pass, the setting would do nothing against the attacker it targets.
+        withEnforcement(true);
+        mockAuthManager.getDeviceState.mockReturnValue(STATE);
+
+        const res = await request(app)
+          .post('/auth/magic-link/verify')
+          .set('x-csrf-token', 'test-csrf-token')
+          .send({ token: 'valid-token' });
+
+        expect(res.headers.location).toContain('error=');
+      });
+
+      test('the matching browser signs in under enforcement', async () => {
+        withEnforcement(true);
+        mockAuthManager.getDeviceState.mockReturnValue(STATE);
+
+        const res = await request(app)
+          .post('/auth/magic-link/verify')
+          .set('x-csrf-token', 'test-csrf-token')
+          .set('Cookie', `ngdp_ml_state=${STATE}`)
+          .send({ token: 'valid-token' });
+
+        expect(res.headers.location).not.toContain('error=');
+      });
+
+      test('a token issued before binding existed is allowed even under enforcement', async () => {
+        // Tokens live ~15 minutes in memory, so the deploy that ships this has
+        // live tokens with no stored state. Refusing them would sign people
+        // out mid-flow for no security gain.
+        withEnforcement(true);
+        mockAuthManager.getDeviceState.mockReturnValue(null);
+
+        const res = await request(app)
+          .post('/auth/magic-link/verify')
+          .set('x-csrf-token', 'test-csrf-token')
+          .send({ token: 'valid-token' });
+
+        expect(res.headers.location).not.toContain('error=');
+      });
+
+      test('the state cookie is cleared after redemption', async () => {
+        withEnforcement(false);
+        mockAuthManager.getDeviceState.mockReturnValue(STATE);
+
+        const res = await request(app)
+          .post('/auth/magic-link/verify')
+          .set('x-csrf-token', 'test-csrf-token')
+          .set('Cookie', `ngdp_ml_state=${STATE}`)
+          .send({ token: 'valid-token' });
+
+        const setCookie = String(res.headers['set-cookie'] ?? '');
+        expect(setCookie).toContain('ngdp_ml_state=;');
+      });
+    });
+
     test('redirects to login when no token provided', async () => {
       mockUserContext = null;
       const res = await request(app).get('/auth/magic-link/verify');
