@@ -50,6 +50,7 @@ import {
   buildPageMutationAuditEvent,
   buildAttachmentAuditEvent,
   recordAuditEvent,
+  type PageMutationOp,
   type AuditEventSink,
   type AuditViaToken
 } from '../utils/auditEvents.js';
@@ -57,6 +58,7 @@ import { stringifyJsonLdForScript, wantsJsonLd } from '../utils/buildPageJsonLd.
 import { articleToPageJsonLd } from '../utils/articleToPageJsonLd.js';
 import { buildSocialMeta } from '../utils/buildSocialMeta.js';
 import { versionTokenOf, isStaleSave } from '../utils/pageVersionToken.js';
+import { rewriteLinkTargets } from '../utils/renameLinkRewrite.js';
 import { buildKeywordPool } from '../utils/buildKeywordPool.js';
 import {
   buildSitemapXml,
@@ -104,6 +106,25 @@ import { ApiContext, ApiError } from '../context/ApiContext.js';
 import { safeRedirect } from '../utils/safeRedirect.js';
 import { generateCsrfToken } from '../middleware/csrf.js';
 import { LoginThrottle } from '../utils/LoginThrottle.js';
+
+/**
+ * Ceiling on how many referring pages one rename may rewrite (#1094).
+ *
+ * Not a config key on purpose: this is a safety bound on a background pass,
+ * not a preference. A number an operator can raise is a number that will be
+ * raised the first time a rewrite is skipped, which is exactly when the bound
+ * is doing its job. Anything beyond the cap is logged by count.
+ */
+const MAX_REWRITE_REFERRERS = 200;
+
+/**
+ * Wall-clock budget for the whole rewrite pass, in milliseconds.
+ *
+ * Checked between pages rather than interrupting one, so a single slow save
+ * can overrun it slightly. The point is to bound a pathological fan-out, not
+ * to be exact.
+ */
+const REWRITE_BUDGET_MS = 20_000;
 
 /** Helper to extract error message from unknown error */
 function getErrorMessage(error: unknown): string {
@@ -4023,6 +4044,10 @@ ${panes}
         // #1082: remember the old title so existing [Old Title] links keep
         // resolving instead of turning into red links.
         renderingManager.recordPageRename?.(pageName, finalTitle);
+        // #1094: rewrite `[Old Title]` in the pages that referred to it, so the
+        // content becomes correct rather than depending on the map above.
+        // Not awaited — see rewriteInboundLinksAfterRename.
+        void this.rewriteInboundLinksAfterRename(req, oldReferringPages, pageName, finalTitle);
         logger.info(`[WikiRoutes] Page renamed: '${pageName}' → '${finalTitle}', link graph updated`);
       }
       renderingManager.updatePageInLinkGraph(finalTitle, content);
@@ -4503,6 +4528,9 @@ ${panes}
       // #1082: same former-title record the form save makes, so a rename
       // behaves identically however it was invoked.
       renderingManager?.recordPageRename?.(pageName, newTitle);
+      // #1094: same content rewrite the form-save rename performs, so a rename
+      // behaves identically however it was invoked.
+      void this.rewriteInboundLinksAfterRename(req, oldReferringPages, pageName, newTitle);
       renderingManager?.updatePageInLinkGraph(newTitle, pageData.content);
       await searchManager?.removePageFromIndex(pageName);
       await searchManager?.updatePageInIndex(newTitle, {
@@ -4527,6 +4555,210 @@ ${panes}
     } catch (error: unknown) {
       logger.error(`API rename failed: ${getErrorMessage(error)}`);
       return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+    }
+  }
+
+  /**
+   * Rewrite `[Old Title]` links in the pages that referred to a renamed page (#1094).
+   *
+   * #1082 kept those links working with an in-memory former-title map. The map
+   * has no durable backing, so a restart forgets every rename and the links go
+   * red again — it works right up until it silently stops. Rewriting the
+   * content makes the referring pages correct instead of correct-looking.
+   *
+   * The map is deliberately still in place. It covers what this cannot: links
+   * whose text only fuzzy-matches the old title, and anything this pass skips.
+   * Removing it is gated on #1095, which needs a former-title lookup for
+   * `/view/<Old Title>` that no amount of content rewriting can supply.
+   *
+   * ## Rules, and why each one is here
+   *
+   * __Never throws.__ The rename has already committed by the time this runs.
+   * An exception escaping here would report "rename failed" for a rename that
+   * succeeded, inviting a retry that renames the page a second time.
+   *
+   * __Not awaited by the rename.__ The budget below is measured in seconds;
+   * blocking the response on it would make renaming a well-linked page feel
+   * broken. Callers `void` it, as they already do for the audit write.
+   *
+   * __Bounded, and says what it dropped.__ At most {@link MAX_REWRITE_REFERRERS}
+   * pages and {@link REWRITE_BUDGET_MS} of wall clock. A silent truncation
+   * would read as "all done" when it was not.
+   *
+   * __Candidates are sorted.__ A crash part-way through then leaves a
+   * reproducible prefix rather than an arbitrary subset.
+   *
+   * __One retry on a lost race, then skip.__ Each rewrite re-reads immediately
+   * before saving and compares version tokens — the same guard a human editor
+   * gets (#1061). It deliberately writes __no conflict sibling__: the loser
+   * would be machine-derived text carrying no human information, and spraying
+   * conflict copies across a library after one rename would destroy trust in
+   * the feature far faster than a skipped link.
+   *
+   * @param req - The request that performed the rename; supplies the identity
+   *   the rewrites are attributed to. There is no system principal to use
+   *   instead (#631), and attributing them to the person who caused them is
+   *   the honest answer anyway.
+   * @param referrers - Pages that linked to the old title, captured before the
+   *   link graph was reconciled.
+   */
+  private async rewriteInboundLinksAfterRename(
+    req: Request,
+    referrers: readonly string[],
+    oldTitle: string,
+    newTitle: string
+  ): Promise<void> {
+    try {
+      const candidates = Array.from(new Set(referrers)).filter(Boolean).sort();
+      if (candidates.length === 0) return;
+
+      const deadline = Date.now() + REWRITE_BUDGET_MS;
+      const budgeted = candidates.slice(0, MAX_REWRITE_REFERRERS);
+      const overCap = candidates.length - budgeted.length;
+
+      const rewrittenPages: string[] = [];
+      const noMatch: string[] = [];
+      const conflicted: string[] = [];
+      const failed: string[] = [];
+      let outOfTime = 0;
+
+      for (const refPage of budgeted) {
+        if (Date.now() > deadline) {
+          outOfTime++;
+          continue;
+        }
+        try {
+          const outcome = await this.rewriteOneReferrer(req, refPage, oldTitle, newTitle);
+          if (outcome === 'rewritten') rewrittenPages.push(refPage);
+          else if (outcome === 'conflict') conflicted.push(refPage);
+          else if (outcome === 'no-match') noMatch.push(refPage);
+        } catch (err: unknown) {
+          // One bad page must not stop the pass; the others are still fixable.
+          failed.push(refPage);
+          logger.warn(
+            `[WikiRoutes] Link rewrite failed for '${refPage}' after rename ` +
+            `'${oldTitle}' → '${newTitle}': ${getErrorMessage(err)}`
+          );
+        }
+      }
+
+      logger.info(
+        `[WikiRoutes] Link rewrite after rename '${oldTitle}' → '${newTitle}': ` +
+        `${rewrittenPages.length} rewritten, ${noMatch.length} unchanged, ` +
+        `${conflicted.length} skipped on conflict, ${failed.length} failed` +
+        (overCap > 0 ? `, ${overCap} beyond the ${MAX_REWRITE_REFERRERS}-page cap` : '') +
+        (outOfTime > 0 ? `, ${outOfTime} past the ${REWRITE_BUDGET_MS}ms budget` : '')
+      );
+
+      // Named, not just counted. A page listed here still points at the old
+      // title in its source and is only resolving through the #1082 map — the
+      // operator needs to be able to go and look at it.
+      if (noMatch.length > 0) {
+        logger.info(
+          `[WikiRoutes] Referrers with no literal '${oldTitle}' link to rewrite ` +
+          `(fuzzy variant, markdown-syntax link, or a stale graph edge): ${noMatch.join(', ')}`
+        );
+      }
+      if (conflicted.length > 0) {
+        logger.warn(
+          '[WikiRoutes] Referrers skipped — edited concurrently, no conflict copy ' +
+          `written: ${conflicted.join(', ')}`
+        );
+      }
+    } catch (err: unknown) {
+      // Belt and braces. The rename is already committed and this is the last
+      // thing anyone should be told about it.
+      logger.error(
+        '[WikiRoutes] Link rewrite pass aborted after rename ' +
+        `'${oldTitle}' → '${newTitle}': ${getErrorMessage(err)}`
+      );
+    }
+  }
+
+  /**
+   * Rewrite one referring page. Returns what happened rather than throwing for
+   * the expected outcomes, so the caller can report them together.
+   *
+   * Reads, rewrites, then re-reads and compares version tokens before writing.
+   * A page that moved under us is retried once from its new content — the
+   * rewrite is idempotent, so redoing it against a fresh copy is safe — and
+   * skipped if it moves again.
+   */
+  private async rewriteOneReferrer(
+    req: Request,
+    refPage: string,
+    oldTitle: string,
+    newTitle: string
+  ): Promise<'rewritten' | 'no-match' | 'conflict' | 'missing'> {
+    const pageManager = this.engine.getManager('PageManager');
+    if (!pageManager) return 'missing';
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const page = await pageManager.getPage(refPage);
+      if (!page) return 'missing';
+
+      const baseToken = versionTokenOf(page.metadata);
+      const result = rewriteLinkTargets(page.content ?? '', oldTitle, newTitle);
+      if (result.rewritten === 0) return 'no-match';
+
+      // Re-read as late as possible. This is the same window the editor's
+      // stale-base check lives in (#1061) — narrow, not closed.
+      const fresh = await pageManager.getPage(refPage);
+      if (!fresh) return 'missing';
+      if (isStaleSave(baseToken, versionTokenOf(fresh.metadata))) continue;
+
+      const wikiContext = this.createWikiContext(req, {
+        context: WikiContext.CONTEXT.EDIT,
+        pageName: refPage,
+        content: result.content
+      });
+      (wikiContext as { content: string | null }).content = result.content;
+
+      // Title is untouched: this page was not renamed, its links were.
+      await pageManager.savePageWithContext(wikiContext, { ...page.metadata });
+
+      const uuid = (page.metadata as { uuid?: string } | undefined)?.uuid;
+      this.auditPageMutation(req, 'link-rewrite', refPage, uuid, null, {
+        from: oldTitle,
+        to: newTitle
+      });
+
+      await this.reconcileIndexesAfterRewrite(refPage, result.content, page.metadata, uuid);
+      return 'rewritten';
+    }
+
+    return 'conflict';
+  }
+
+  /**
+   * Bring the derived indexes back in line after a link rewrite.
+   *
+   * The same reconciliation an ordinary edit performs — the page's content
+   * changed, so the link graph, the search index and the rendered cache are all
+   * stale. Best-effort throughout: the write has landed, and a failure to
+   * reindex must not be reported as a failed rewrite.
+   */
+  private async reconcileIndexesAfterRewrite(
+    pageName: string,
+    content: string,
+    metadata: unknown,
+    uuid: string | undefined
+  ): Promise<void> {
+    try {
+      this.engine.getManager('RenderingManager')?.updatePageInLinkGraph(pageName, content);
+      await this.engine.getManager('SearchManager')?.updatePageInIndex(pageName, {
+        name: pageName,
+        content,
+        metadata: metadata as Record<string, unknown>
+      });
+      const cacheManager = this.engine.getManager('CacheManager');
+      if (cacheManager?.isInitialized?.()) {
+        await cacheManager.clear(undefined, `rendered-pages:${uuid ?? pageName}:*`);
+      }
+    } catch (err: unknown) {
+      logger.warn(
+        `[WikiRoutes] Reindex after link rewrite of '${pageName}' failed: ${getErrorMessage(err)}`
+      );
     }
   }
 
@@ -4584,7 +4816,7 @@ ${panes}
   }
 
   /**
-   * Record a page create / edit / rename in the audit log (#1080).
+   * Record a page create / edit / rename / link-rewrite in the audit log (#1080, #1094).
    *
    * Called after the write commits, and deliberately not awaited by the save
    * path: the page is already on disk, so a slow or failing audit backend must
@@ -4592,10 +4824,11 @@ ${panes}
    */
   private auditPageMutation(
     req: Request,
-    op: 'create' | 'edit' | 'rename',
+    op: PageMutationOp,
     pageName: string,
     uuid: string | null | undefined,
-    fromPageName?: string | null
+    fromPageName?: string | null,
+    rewriteOf?: { from: string; to: string } | null
   ): void {
     const event = buildPageMutationAuditEvent({
       op,
@@ -4604,6 +4837,7 @@ ${panes}
       pageName,
       uuid,
       fromPageName,
+      rewriteOf,
       viaToken: WikiRoutes.viaTokenOf(req)
     });
     void recordAuditEvent(this.auditSink(), event, (err) =>

@@ -46,7 +46,14 @@ export interface AuditEvent {
   metadata: Record<string, unknown>;
 }
 
-export type PageMutationOp = 'create' | 'edit' | 'rename';
+/**
+ * `link-rewrite` is a machine write, not a human one (#1094): when a page is
+ * renamed, the referring pages have their `[Old Title]` links rewritten. It is
+ * a distinct op so a reader of the history can tell why a page they did not
+ * edit changed, and so those writes can be excluded from "who is editing what"
+ * queries without having to guess from the content.
+ */
+export type PageMutationOp = 'create' | 'edit' | 'rename' | 'link-rewrite';
 export type AttachmentOp = 'upload' | 'delete';
 
 interface CommonInput {
@@ -61,6 +68,12 @@ export interface PageMutationInput extends CommonInput {
   uuid: string | null | undefined;
   /** Previous title. Only meaningful for `rename`; ignored otherwise. */
   fromPageName?: string | null;
+  /**
+   * The rename that caused a `link-rewrite`. Ignored for every other op — the
+   * page being rewritten did not itself change title, so `fromPageName` would
+   * be the wrong field to carry it.
+   */
+  rewriteOf?: { from: string; to: string } | null;
 }
 
 export interface AttachmentInput extends CommonInput {
@@ -84,7 +97,7 @@ function tokenMetadata(viaToken: AuditViaToken | null | undefined): Record<strin
 }
 
 /**
- * Build the audit event for a page create, edit, or rename.
+ * Build the audit event for a page create, edit, rename, or link rewrite.
  *
  * `result` is always `success`: these are recorded *after* the write lands,
  * unlike `page.delete`, which logs `attempted` before unlinking so that a
@@ -93,7 +106,7 @@ function tokenMetadata(viaToken: AuditViaToken | null | undefined): Record<strin
  * nothing the file does not already say.
  */
 export function buildPageMutationAuditEvent(input: PageMutationInput): AuditEvent {
-  const { op, username, ipAddress, pageName, uuid, fromPageName, viaToken } = input;
+  const { op, username, ipAddress, pageName, uuid, fromPageName, rewriteOf, viaToken } = input;
 
   const metadata: Record<string, unknown> = {
     pageName,
@@ -105,6 +118,13 @@ export function buildPageMutationAuditEvent(input: PageMutationInput): AuditEven
   // every edit would make the field useless as a filter for #1082.
   if (op === 'rename' && fromPageName) {
     metadata.fromPageName = fromPageName;
+  }
+
+  // Which rename this rewrite belongs to. Emitted only for `link-rewrite`, for
+  // the same reason: a field present on every event is useless as a filter.
+  if (op === 'link-rewrite' && rewriteOf) {
+    metadata.rewriteFrom = rewriteOf.from;
+    metadata.rewriteTo = rewriteOf.to;
   }
 
   return {

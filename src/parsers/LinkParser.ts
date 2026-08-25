@@ -43,6 +43,41 @@ import logger from '../utils/logger.js';
 import { headingSlug } from '../utils/SectionUtils.js';
 
 /**
+ * The wiki link syntax, as a source string: `[text]`, `[text|target]` or
+ * `[text|target|attributes]`. The trailing `(?!\()` skips `[text](url)` —
+ * that is a markdown link, and its bracket text is not a wiki link target.
+ *
+ * Exported as a source string rather than a RegExp because the compiled form
+ * needs the `g` flag, and a shared global RegExp carries `lastIndex` between
+ * callers. Use {@link wikiLinkPattern} to get a fresh one.
+ *
+ * Shared so that anything reasoning about link targets — rendering, the
+ * link graph, the rename rewriter (#1094) — agrees with the parser about what
+ * a link *is*. A second copy of this pattern is a second answer waiting to
+ * drift from this one.
+ */
+export const WIKI_LINK_PATTERN_SOURCE = '\\[([^|\\]]+)(?:\\|([^|\\]]+))?(?:\\|([^\\]]+))?\\](?!\\()';
+
+/** A fresh global RegExp for the wiki link syntax. Never share one. */
+export function wikiLinkPattern(): RegExp {
+  return new RegExp(WIKI_LINK_PATTERN_SOURCE, 'g');
+}
+
+/**
+ * Target shapes that are NOT internal wiki page names. Non-global, so these
+ * are stateless and safe to share.
+ */
+export const LINK_URL_PATTERNS = {
+  external: /^https?:\/\//i,
+  email: /^mailto:/i,
+  anchor: /^#/,
+  absolute: /^\//
+} as const;
+
+/** `Site:path` — an InterWiki reference, not a local page. */
+export const INTERWIKI_PATTERN = /^([A-Za-z0-9]+):(.+)$/;
+
+/**
  * Default CSS classes for different link types
  */
 export interface DefaultClasses {
@@ -226,15 +261,10 @@ export class LinkParser {
       },
 
       // URL patterns for validation
-      urlPatterns: {
-        external: /^https?:\/\//i,
-        email: /^mailto:/i,
-        anchor: /^#/,
-        absolute: /^\//
-      },
+      urlPatterns: { ...LINK_URL_PATTERNS },
 
       // InterWiki site patterns
-      interWikiPattern: /^([A-Za-z0-9]+):(.+)$/,
+      interWikiPattern: INTERWIKI_PATTERN,
 
       // Enable security features
       security: {
@@ -257,7 +287,7 @@ export class LinkParser {
     this.interWikiSites = new Map<string, InterWikiSiteConfig>();
 
     // Link pattern: [text] or [text|target] or [text|target|attributes]
-    this.linkPattern = /\[([^|\]]+)(?:\|([^|\]]+))?(?:\|([^\]]+))?\](?!\()/g;
+    this.linkPattern = wikiLinkPattern();
   }
 
   /**
