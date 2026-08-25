@@ -39,6 +39,22 @@ describe('parseDateFromFilename (#809)', () => {
     test('Android screenshot form — Screenshot_20260113-123414.png', () => {
       expect(parseDateFromFilename('Screenshot_20260113-123414.png')).toBe('2026-01-13 12:34:14');
     });
+
+    // #1096: a dashed date followed by a compact time fell between the ISO
+    // matcher (which wanted separators inside the time) and the compact
+    // matcher (which wanted the date compact too), and silently degraded to
+    // midnight rather than failing.
+    test('dashed date with compact time — 2010-05-24-045250-Ireland.m2ts', () => {
+      expect(parseDateFromFilename('2010-05-24-045250-Ireland.m2ts')).toBe('2010-05-24 04:52:50');
+    });
+
+    test('dashed date with hyphen-separated time — 2010-05-24-04-52-50.mp4', () => {
+      expect(parseDateFromFilename('2010-05-24-04-52-50.mp4')).toBe('2010-05-24 04:52:50');
+    });
+
+    test('dashed date with compact time and no trailing text — 2010-05-24-045250.m2ts', () => {
+      expect(parseDateFromFilename('2010-05-24-045250.m2ts')).toBe('2010-05-24 04:52:50');
+    });
   });
 
   describe('conservative rejections (return null → caller falls back to mtime)', () => {
@@ -67,6 +83,29 @@ describe('parseDateFromFilename (#809)', () => {
 
     test('invalid hour — compact 20260113_253414.jpg', () => {
       expect(parseDateFromFilename('20260113_253414.jpg')).toBeNull();
+    });
+
+    // #1096: an out-of-range time must not take the DATE down with it. The
+    // whole-match-or-nothing behaviour meant a bad time discarded a perfectly
+    // good date, which is strictly worse than the midnight it replaced.
+    test('out-of-range time after a dashed date falls back to the date — 2026-01-02-253414.jpg', () => {
+      expect(parseDateFromFilename('2026-01-02-253414.jpg')).toBe('2026-01-02 00:00:00');
+    });
+
+    test('out-of-range separated time also falls back to the date — 2026-01-02_25:34:14.jpg', () => {
+      expect(parseDateFromFilename('2026-01-02_25:34:14.jpg')).toBe('2026-01-02 00:00:00');
+    });
+
+    test('too few digits after a dashed date is not a time — 2026-04-03-05-Ireland.jpg', () => {
+      expect(parseDateFromFilename('2026-04-03-05-Ireland.jpg')).toBe('2026-04-03 00:00:00');
+    });
+
+    // The accepted cost of #1096, pinned so it is a decision rather than a
+    // surprise: six digits after a dashed date are read as a time even when
+    // they are a sequence number. The same bet the compact matcher already
+    // makes for `20260102-123456`.
+    test('a six-digit sequence number after a dashed date IS read as a time', () => {
+      expect(parseDateFromFilename('2026-01-02-123456.jpg')).toBe('2026-01-02 12:34:56');
     });
 
     test('empty / extensionless junk', () => {

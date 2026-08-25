@@ -57,11 +57,31 @@ const MATCHERS: ReadonlyArray<(name: string) => string | null> = [
     return build(+m[3], mo, +m[2], +(m[4] ?? 0), +(m[5] ?? 0), +(m[6] ?? 0));
   },
 
-  // ISO date prefix: 2026-04-03[_14.00.00] / 2026-04-03-IMG_4654
+  // ISO date prefix: 2026-04-03[_14.00.00] / 2026-04-03-045250 / 2026-04-03-IMG_4654
+  //
+  // The time is optional in three ways, each earned by a real filename (#1096):
+  //   - the separator may be a HYPHEN as well as space/T/underscore, because
+  //     `2010-05-24-045250-Ireland.m2ts` is what AVCHD imports look like;
+  //   - the time's own separators are optional, so a COMPACT `045250` parses.
+  //     Without this the hyphen alone is not enough: the compact matcher below
+  //     handles `20100524-045250` but insists the *date* be compact too, so a
+  //     dashed date with a compact time fell between the two and silently
+  //     degraded to midnight;
+  //   - and an out-of-range time falls back to the date rather than discarding
+  //     the whole match, so `2026-01-02-253414.jpg` still yields its date.
+  //
+  // The cost, stated because it is a real one: a six-digit SEQUENCE number
+  // after a dashed date now reads as a time — `2026-01-02-123456.jpg` becomes
+  // 12:34:56. That bet is already taken for compact dates by the matcher
+  // below (`20260102-123456`), and the range check in `build` is what stands
+  // behind it in both places. Extending an accepted tradeoff, not a new one.
   (name) => {
-    const m = name.match(/(?:^|[^\d])(\d{4})-(\d{2})-(\d{2})(?:[ T_](\d{2})[:.-](\d{2})[:.-](\d{2}))?/);
+    const m = name.match(/(?:^|[^\d])(\d{4})-(\d{2})-(\d{2})(?:[ T_-](\d{2})[:.-]?(\d{2})[:.-]?(\d{2}))?/);
     if (!m) return null;
-    return build(+m[1], +m[2], +m[3], +(m[4] ?? 0), +(m[5] ?? 0), +(m[6] ?? 0));
+    const withTime = m[4] !== undefined
+      ? build(+m[1], +m[2], +m[3], +m[4], +m[5], +m[6])
+      : null;
+    return withTime ?? build(+m[1], +m[2], +m[3], 0, 0, 0);
   },
 
   // Compact form WITH a time component (the separator + time is what makes it
