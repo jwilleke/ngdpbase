@@ -66,7 +66,11 @@ export const DEFAULT_MEDIA_EXTENSIONS: string[] = [
   'jpg', 'jpeg', 'png', 'gif', 'heic', 'heif', 'tiff', 'tif',
   'webp', 'raw', 'orf', 'cr2', 'nef', 'arw', 'dng', 'bmp',
   // Videos
-  'mp4', 'mov', 'avi', 'mkv', 'm4v', 'wmv', '3gp'
+  // m2ts is AVCHD camcorder output (#1097). Its MIME entry below is what
+  // makes it a *video* to the rest of the system — without it the fallback is
+  // application/octet-stream and getThumbnailBuffer skips it, so it would
+  // index with no poster frame.
+  'mp4', 'mov', 'avi', 'mkv', 'm4v', 'wmv', '3gp', 'm2ts'
 ];
 
 /** MIME type lookup by extension */
@@ -93,7 +97,10 @@ const MIME_MAP: Record<string, string> = {
   mkv: 'video/x-matroska',
   m4v: 'video/x-m4v',
   wmv: 'video/x-ms-wmv',
-  '3gp': 'video/3gpp'
+  '3gp': 'video/3gpp',
+  // AVCHD / MPEG-2 Transport Stream (#1097). ffmpeg reads it, so the poster
+  // frame works; no browser decodes it inline, so playback will not.
+  m2ts: 'video/mp2t'
 };
 
 /**
