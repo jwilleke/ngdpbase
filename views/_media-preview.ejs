@@ -1,0 +1,114 @@
+<%#
+  Media preview block — the picture, the player, or the honest fallback (#1098).
+
+  Extracted from media-item.ejs so branch selection can be render-tested on its
+  own. It was wrong for four of the eight indexed video containers for a long
+  time precisely because nothing could render it without a full page's worth of
+  locals.
+
+  Locals: item, unplayableVideo
+%>
+<% if (item.mimeType && item.mimeType.startsWith('image/')) { %>
+    <img
+        src="/media/thumb/<%= item.id %>?size=800x600"
+        class="img-fluid rounded shadow"
+        alt="<%= item.filename %>"
+        style="max-width:100%;"
+        itemprop="thumbnail"
+    >
+<% } else if (item.mimeType && item.mimeType.startsWith('video/') && typeof unplayableVideo !== 'undefined' && unplayableVideo) { %>
+    <%# #1098: a container no browser decodes. Show the poster
+        frame ffmpeg already extracted plus a download, rather
+        than a <video> element that renders controls and then
+        fails silently. %>
+    <div class="media-unplayable" data-media-id="<%= item.id %>">
+        <img
+            src="/media/thumb/<%= item.id %>?size=800x600"
+            class="img-fluid rounded shadow"
+            alt="<%= item.filename %>"
+            style="max-width:100%;"
+            itemprop="thumbnail"
+        >
+        <div class="alert alert-secondary d-flex align-items-center gap-3 mt-2 mb-0" role="status">
+            <i class="fas fa-circle-info fa-lg" aria-hidden="true"></i>
+            <div class="flex-grow-1">
+                <strong>This video cannot play in a browser.</strong>
+                <div class="small text-muted">
+                    <%= item.filename.split('.').pop().toUpperCase() %> files use a container no
+                    browser can decode. Download it to play in a media player.
+                </div>
+            </div>
+            <a href="/media/file/<%= item.id %>" class="btn btn-sm btn-secondary flex-shrink-0" download>
+                <i class="fas fa-download me-1" aria-hidden="true"></i>Download
+            </a>
+        </div>
+    </div>
+<% } else if (item.mimeType && item.mimeType.startsWith('video/')) { %>
+    <%# Worth trying, which is not the same as known to work.
+        The server refuses to guess about ambiguous containers
+        (Matroska plays in Chromium, never in Safari), so the
+        browser decides by trying and the script below swaps in
+        the same poster-and-download panel if it fails. %>
+    <div id="mediaVideoWrap">
+        <video
+            id="mediaVideo"
+            controls
+            preload="metadata"
+            style="max-width:100%; width:100%; border-radius:0.375rem; box-shadow:0 .5rem 1rem rgba(0,0,0,.15);"
+        >
+            <source src="/media/file/<%= item.id %>" type="<%= item.mimeType %>" itemprop="contentUrl">
+            Your browser does not support the video tag.
+        </video>
+    </div>
+    <template id="mediaVideoFallback">
+        <img
+            src="/media/thumb/<%= item.id %>?size=800x600"
+            class="img-fluid rounded shadow"
+            alt="<%= item.filename %>"
+            style="max-width:100%;"
+        >
+        <div class="alert alert-secondary d-flex align-items-center gap-3 mt-2 mb-0" role="status">
+            <i class="fas fa-circle-info fa-lg" aria-hidden="true"></i>
+            <div class="flex-grow-1">
+                <strong>Your browser cannot play this video.</strong>
+                <div class="small text-muted">Download it to play in a media player.</div>
+            </div>
+            <a href="/media/file/<%= item.id %>" class="btn btn-sm btn-secondary flex-shrink-0" download>
+                <i class="fas fa-download me-1" aria-hidden="true"></i>Download
+            </a>
+        </div>
+    </template>
+    <script>
+    // #1098: the <video> element's inline fallback content only
+    // renders for a browser with NO <video> support at all. A
+    // browser that has the element but cannot decode the source
+    // shows player chrome and an error, and never reaches it —
+    // so the one message written for this case is unreachable
+    // without this handler.
+    (function () {
+        const wrap = document.getElementById('mediaVideoWrap');
+        const video = document.getElementById('mediaVideo');
+        const fallback = document.getElementById('mediaVideoFallback');
+        if (!wrap || !video || !fallback) return;
+        let swapped = false;
+        function useFallback() {
+            if (swapped) return;
+            swapped = true;
+            wrap.replaceChildren(fallback.content.cloneNode(true));
+        }
+        // The error fires on the <source>, not the <video>, when a
+        // single source fails to load or decode.
+        const source = video.querySelector('source');
+        if (source) source.addEventListener('error', useFallback);
+        video.addEventListener('error', useFallback);
+    })();
+    </script>
+<% } else { %>
+    <div class="d-flex align-items-center justify-content-center bg-body-secondary rounded" style="min-height:300px;">
+        <div class="text-center text-muted">
+            <i class="fas fa-file fa-5x mb-3"></i>
+            <p><%= item.filename %></p>
+            <a href="/media/file/<%= item.id %>" class="btn btn-sm btn-secondary">Download</a>
+        </div>
+    </div>
+<% } %>

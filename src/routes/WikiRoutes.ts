@@ -59,6 +59,7 @@ import { articleToPageJsonLd } from '../utils/articleToPageJsonLd.js';
 import { buildSocialMeta } from '../utils/buildSocialMeta.js';
 import { versionTokenOf, isStaleSave } from '../utils/pageVersionToken.js';
 import { rewriteLinkTargets } from '../utils/renameLinkRewrite.js';
+import { isDefinitelyUnplayable } from '../utils/videoPlayability.js';
 import { buildKeywordPool } from '../utils/buildKeywordPool.js';
 import {
   buildSitemapXml,
@@ -16506,10 +16507,20 @@ ${description}
           Array.isArray(item?.metadata?.keywords) ? item.metadata.keywords as string[] : []
         )
         : [];
+      // #1098: a container no browser decodes gets its poster frame and a
+      // download rather than a <video> element that would show controls and
+      // then do nothing. Computed here rather than in the template so the
+      // decision is testable and lives next to the codec data that informs it.
+      const unplayableVideo = isDefinitelyUnplayable(
+        item?.mimeType,
+        item?.metadata?.videoCodec
+      );
+
       return res.render('media-item', {
         ...commonData,
         wikiContext,
         item,
+        unplayableVideo,
         prevItem,
         nextItem,
         albumKeyword,

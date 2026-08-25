@@ -45,32 +45,7 @@
                 <!-- Image / video preview -->
                 <div class="col-md-8 mb-4">
                     <meta itemprop="contentUrl" content="/media/file/<%= item.id %>">
-                    <% if (item.mimeType && item.mimeType.startsWith('image/')) { %>
-                        <img
-                            src="/media/thumb/<%= item.id %>?size=800x600"
-                            class="img-fluid rounded shadow"
-                            alt="<%= item.filename %>"
-                            style="max-width:100%;"
-                            itemprop="thumbnail"
-                        >
-                    <% } else if (item.mimeType && item.mimeType.startsWith('video/')) { %>
-                        <video
-                            controls
-                            preload="metadata"
-                            style="max-width:100%; width:100%; border-radius:0.375rem; box-shadow:0 .5rem 1rem rgba(0,0,0,.15);"
-                        >
-                            <source src="/media/file/<%= item.id %>" type="<%= item.mimeType %>" itemprop="contentUrl">
-                            Your browser does not support the video tag.
-                        </video>
-                    <% } else { %>
-                        <div class="d-flex align-items-center justify-content-center bg-body-secondary rounded" style="min-height:300px;">
-                            <div class="text-center text-muted">
-                                <i class="fas fa-file fa-5x mb-3"></i>
-                                <p><%= item.filename %></p>
-                                <a href="/media/file/<%= item.id %>" class="btn btn-sm btn-secondary">Download</a>
-                            </div>
-                        </div>
-                    <% } %>
+                    <%- include('_media-preview', { item: item, unplayableVideo: (typeof unplayableVideo !== 'undefined' && unplayableVideo) }) %>
                     <% if (prevItem || nextItem) { %>
                     <div class="d-flex justify-content-between mt-2">
                         <% if (prevItem) { %>
