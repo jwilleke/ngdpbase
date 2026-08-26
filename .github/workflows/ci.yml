@@ -93,6 +93,12 @@ jobs:
             mem=$(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)
             procs=$(ls -d /proc/[0-9]* 2>/dev/null | wc -l)
             echo "$(date -u +%H:%M:%S) fds=${allocated}/${max} procs=${procs} mem_avail=${mem}MB"
+            # NAME the mutator. node_modules is rewritten on failing runs and
+            # nothing in this repo spawns npm, so log any process that could be
+            # installing. Whole command lines, deduplicated per sample.
+            ps -eo args= 2>/dev/null \
+              | grep -E '(^|/)(npm|npx|pnpm|yarn|node-gyp)( |$)|install' \
+              | grep -v grep | sort -u | sed "s/^/$(date -u +%H:%M:%S) PROC /"
             sleep 2
           done
           SAMPLER
@@ -133,6 +139,10 @@ jobs:
           echo "::endgroup::"
           echo "::group::Kernel messages (OOM killer, if any)"
           sudo dmesg --time-format iso 2>/dev/null | tail -40 || echo "dmesg unavailable"
+          echo "::endgroup::"
+          echo "::group::Processes seen that could rewrite node_modules"
+          grep " PROC " /tmp/resource-samples.log 2>/dev/null | sort -u | head -40 \
+            || echo "no install-like process ever observed"
           echo "::endgroup::"
           echo "::group::Resource samples during the run"
           # Guarded: a bare `kill 0` would signal the whole process group,
