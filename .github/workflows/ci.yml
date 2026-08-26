@@ -69,6 +69,13 @@ jobs:
                    node_modules/vitest/dist/workers/forks.js; do
             if [ -f "$f" ]; then echo "present: $f"; else echo "MISSING: $f"; exit 1; fi
           done
+          # Full manifest, so the post-run step can NAME what disappeared
+          # rather than only counting it. Confirmed necessary: failing runs end
+          # with 114 files under node_modules/vitest where green runs end with
+          # 124, and errors have also named fs-extra and expect-type — so the
+          # deletions are not confined to vitest and the whole tree is snapshot.
+          find node_modules -type f 2>/dev/null | sort > /tmp/nm-before.txt
+          echo "manifest: $(wc -l < /tmp/nm-before.txt) files under node_modules"
           echo "::endgroup::"
 
       - name: Sample resource use during tests (#1093)
@@ -111,6 +118,14 @@ jobs:
                    node_modules/vitest/dist/workers/forks.js; do
             if [ -f "$f" ]; then echo "STILL PRESENT: $f"; else echo "GONE: $f"; fi
           done
+          echo "::endgroup::"
+          echo "::group::What changed under node_modules during the run"
+          find node_modules -type f 2>/dev/null | sort > /tmp/nm-after.txt
+          echo "before: $(wc -l < /tmp/nm-before.txt)  after: $(wc -l < /tmp/nm-after.txt)"
+          echo "--- DELETED during the run (first 200) ---"
+          comm -23 /tmp/nm-before.txt /tmp/nm-after.txt | head -200
+          echo "--- CREATED during the run (first 50) ---"
+          comm -13 /tmp/nm-before.txt /tmp/nm-after.txt | head -50
           echo "::endgroup::"
           echo "::group::Capacity after the run"
           free -m
