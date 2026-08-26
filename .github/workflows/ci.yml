@@ -39,10 +39,95 @@ jobs:
       - name: Build TypeScript
         run: npm run build
 
+      # --- #1093 diagnostics -------------------------------------------------
+      # The Test Suite job goes red in roughly 1 run in 7 with a Vitest file
+      # "missing" from node_modules, while every test passes. The stack says
+      # `requireStack: ['internal/preload']`, i.e. Node failing to preload
+      # vitest/suppress-warnings.cjs when the pool FORKS A WORKER — not an
+      # incomplete install: npm ci finished a minute earlier and hundreds of
+      # files already ran against the same tree.
+      #
+      # Node's resolver reports MODULE_NOT_FOUND when `stat` fails for ANY
+      # reason, so a genuinely-present file looks missing under fd exhaustion.
+      # These steps exist to tell that apart from the file actually being gone.
+      # Remove them once #1093 is closed.
+      - name: Record capacity before tests (#1093)
+        run: |
+          echo "::group::Limits and capacity"
+          echo "nproc:             $(nproc)"
+          echo "ulimit -n (fds):   $(ulimit -n)"
+          echo "ulimit -u (procs): $(ulimit -u)"
+          echo "fs.file-max:       $(cat /proc/sys/fs/file-max)"
+          free -m
+          df -h /home/runner/work
+          echo "::endgroup::"
+          echo "::group::Vitest install integrity"
+          node -p "'vitest ' + require('vitest/package.json').version"
+          echo "files under node_modules/vitest: $(find node_modules/vitest -type f | wc -l)"
+          # Fail HERE, where the message is unambiguous, if the tree is short.
+          for f in node_modules/vitest/suppress-warnings.cjs \
+                   node_modules/vitest/dist/workers/forks.js; do
+            if [ -f "$f" ]; then echo "present: $f"; else echo "MISSING: $f"; exit 1; fi
+          done
+          echo "::endgroup::"
+
+      - name: Sample resource use during tests (#1093)
+        run: |
+          # Backgrounded sampler. Open descriptors across all processes and
+          # memory, every 2s, so a spike that coincides with the failure is
+          # visible rather than inferred.
+          # /proc/sys/fs/file-nr is "allocated / free / max" system-wide and
+          # costs a single read — lsof would take seconds per sample and
+          # consume the very descriptors being counted.
+          cat > /tmp/sampler.sh <<'SAMPLER'
+          #!/bin/bash
+          while true; do
+            read -r allocated _ max < /proc/sys/fs/file-nr
+            mem=$(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)
+            procs=$(ls -d /proc/[0-9]* 2>/dev/null | wc -l)
+            echo "$(date -u +%H:%M:%S) fds=${allocated}/${max} procs=${procs} mem_avail=${mem}MB"
+            sleep 2
+          done
+          SAMPLER
+          chmod +x /tmp/sampler.sh
+          nohup /tmp/sampler.sh > /tmp/resource-samples.log 2>&1 &
+          echo "sampler_pid=$!" >> "$GITHUB_ENV"
+
       - name: Run all tests
         run: npm test -- --maxWorkers=2
         env:
           NODE_ENV: test
+
+      # THE decisive measurement. If the files are still here after a run that
+      # said they were missing, nothing deleted them and the cause is transient
+      # resolution failure under load. If they are genuinely gone, something in
+      # the suite is removing them and the hunt moves into the tests.
+      - name: Check whether Vitest files survived (#1093)
+        if: always()
+        run: |
+          echo "::group::Vitest install integrity AFTER the run"
+          echo "files under node_modules/vitest: $(find node_modules/vitest -type f 2>/dev/null | wc -l)"
+          for f in node_modules/vitest/suppress-warnings.cjs \
+                   node_modules/vitest/dist/workers/forks.js; do
+            if [ -f "$f" ]; then echo "STILL PRESENT: $f"; else echo "GONE: $f"; fi
+          done
+          echo "::endgroup::"
+          echo "::group::Capacity after the run"
+          free -m
+          df -h /home/runner/work
+          echo "::endgroup::"
+          echo "::group::Kernel messages (OOM killer, if any)"
+          sudo dmesg --time-format iso 2>/dev/null | tail -40 || echo "dmesg unavailable"
+          echo "::endgroup::"
+          echo "::group::Resource samples during the run"
+          # Guarded: a bare `kill 0` would signal the whole process group,
+          # this step included.
+          if [ -n "${sampler_pid:-}" ] && [ "${sampler_pid}" -gt 0 ] 2>/dev/null; then
+            kill "${sampler_pid}" 2>/dev/null || true
+          fi
+          tail -60 /tmp/resource-samples.log 2>/dev/null || echo "no samples captured"
+          echo "::endgroup::"
+      # --- end #1093 diagnostics ---------------------------------------------
 
       - name: Generate coverage report
         run: npm test -- --coverage --maxWorkers=2
