@@ -45,6 +45,11 @@ export function parseSourceConfigs(raw: unknown): FeedSourceConfig[] {
     // configured `linkPattern` silently never reached the adapter and xml-index
     // sources could not be configured at all from app config (#989).
     if (typeof v.delimiter === 'string') cfg.delimiter = v.delimiter;
+    // #1102. Validated, not coerced: a negative or fractional value would slice
+    // the row array in ways that silently drop data rather than erroring.
+    if (typeof v.skipLines === 'number' && Number.isInteger(v.skipLines) && v.skipLines >= 0) {
+      cfg.skipLines = v.skipLines;
+    }
     if (typeof v.linkPattern === 'string') cfg.linkPattern = v.linkPattern;
     if (typeof v.maxItems === 'number' && Number.isFinite(v.maxItems) && v.maxItems > 0) cfg.maxItems = v.maxItems;
 

@@ -83,7 +83,9 @@ All under `ngdpbase.addons.feeds.*` (flat dotted keys in instance config):
 }
 ```
 
-Per source: `adapter` + `url` + `type` (schema.org `@type`) are required — entries missing any are skipped with a log line. Optional: `schemaType` (default `Article`; must be an implemented type or the source is skipped), `intervalMinutes` | `dailyAt`, `recordIdField`, `itemsPath`, `map` (dotpath field mapping for `rest-json`), `delimiter` (`csv`), `linkPattern` + `maxItems` (`xml-index`).
+Per source: `adapter` + `url` + `type` (schema.org `@type`) are required — entries missing any are skipped with a log line. Optional: `schemaType` (default `Article`; must be an implemented type or the source is skipped), `intervalMinutes` | `dailyAt`, `recordIdField`, `itemsPath`, `map` (dotpath field mapping for `rest-json`), `delimiter` + `skipLines` (`csv`), `linkPattern` + `maxItems` (`xml-index`).
+
+`skipLines` (#1102) drops N leading lines before the header row, for feeds that emit a human-readable caption above it — common in government data exports. Without it the caption becomes the sole column name, the real header is consumed as the first record, and every column but the first is discarded. That failure is silent: HTTP 200, a successful parse, records upserted, and a rendered table of empty values. The adapter therefore logs a warning once per poll when a parse yields a single column whose name reads like prose, naming the source and suggesting `skipLines`. It warns rather than throws — a genuine one-column CSV is legal, just unusual.
 
 ### Record shaping — `dedupeBy` / `maxAgeHours` (#989)
 

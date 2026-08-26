@@ -33,6 +33,15 @@ export interface FeedSourceConfig {
   itemsPath?: string;
   /** csv only: field delimiter. Default ','. Use '\t' for TSV. */
   delimiter?: string;
+  /**
+   * csv only: skip N leading lines before the header row. Default 0.
+   *
+   * For feeds that emit a human-readable caption above the real header — common
+   * in government data exports. Without it the caption is taken as the header,
+   * the real header is consumed as the first record, and every column but the
+   * first is discarded, all without erroring (#1102).
+   */
+  skipLines?: number;
   /** xml-index only: regex matched against index-page hrefs to discover item URLs (e.g. 'xml_files/.*\\.xml$'). */
   linkPattern?: string;
   /** xml-index only: cap on item documents fetched per poll. Default 100. */

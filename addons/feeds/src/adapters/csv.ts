@@ -14,6 +14,14 @@
  * doesn't churn ids, and content-addressed so change-detection still works.
  *
  * Delimiter defaults to `,`; override per-source with `cfg.delimiter` (e.g. `\t`).
+ *
+ * `cfg.skipLines` skips N leading lines before the header (#1102). Some feeds —
+ * government data exports especially — emit a human-readable caption above the
+ * real header. Without skipping it, the caption becomes the sole column name,
+ * the real header is consumed as the first record, and every column but the
+ * first is discarded. That failure is entirely silent: HTTP 200, a successful
+ * parse, records upserted, and a table of empty values. Hence
+ * {@link preambleSuspicion}, which makes it visible without blocking it.
  */
 
 import { createHash } from 'node:crypto';
@@ -27,8 +35,12 @@ import { buildRecord } from './buildRecord.js';
  * escaped quotes (`""`), embedded commas/newlines inside quotes, CRLF/CR/LF line
  * endings, and a leading UTF-8 BOM. Values are returned verbatim (strings);
  * header cells are trimmed. Fully-empty lines are skipped.
+ *
+ * `skipLines` drops that many leading lines before the header is taken, for
+ * feeds with a caption preamble (#1102). Default 0 — byte-identical to the
+ * previous behaviour.
  */
-export function parseCsv(text: string, delimiter = ','): Record<string, string>[] {
+export function parseCsv(text: string, delimiter = ',', skipLines = 0): Record<string, string>[] {
   const rows: string[][] = [];
   let field = '';
   let row: string[] = [];
@@ -58,17 +70,53 @@ export function parseCsv(text: string, delimiter = ','): Record<string, string>[
   // Flush the final field/row when the text has no trailing newline.
   if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
 
-  if (rows.length === 0) return [];
-  const header = rows[0].map(h => h.trim());
+  // Drop the preamble before anything is treated as a header. A skipLines
+  // larger than the file yields no rows, which returns [] rather than throwing —
+  // an over-large value is a misconfiguration, not a crash.
+  const body = skipLines > 0 ? rows.slice(skipLines) : rows;
+  if (body.length === 0) return [];
+  const header = body[0].map(h => h.trim());
   const out: Record<string, string>[] = [];
-  for (let r = 1; r < rows.length; r++) {
-    const cells = rows[r];
+  for (let r = 1; r < body.length; r++) {
+    const cells = body[r];
     if (cells.length === 1 && cells[0] === '') continue; // skip blank line
     const obj: Record<string, string> = {};
     for (let c = 0; c < header.length; c++) obj[header[c]] = cells[c] ?? '';
     out.push(obj);
   }
   return out;
+}
+
+/**
+ * Longest a single column name can be before it reads as prose rather than a
+ * field name. Deliberately generous — this only decides whether to log.
+ */
+const PROSE_HEADER_MAX = 40;
+
+/**
+ * Return the suspect header when a parse looks like it consumed an unskipped
+ * preamble, or `null` when it looks fine (#1102).
+ *
+ * The signature of the failure is a single column whose name reads like a
+ * sentence: a caption line has no delimiter in it, so the whole line becomes one
+ * field. A legitimate single-column CSV has a short, word-like header, so the
+ * two are distinguishable in practice.
+ *
+ * Deliberately advisory. A one-column CSV is legal, just unusual, and a caller
+ * that guessed and re-parsed would only trade a visible wrong answer for an
+ * invisible one.
+ */
+export function preambleSuspicion(columns: readonly string[]): string | null {
+  if (columns.length !== 1) return null;
+  const only = columns[0] ?? '';
+  const looksLikeProse = /\s/.test(only.trim()) || only.length > PROSE_HEADER_MAX;
+  return looksLikeProse ? only : null;
+}
+
+/** Best-effort console; the addon uses console at this layer (no logger import). */
+function warn(msg: string): void {
+  // eslint-disable-next-line no-console
+  console.warn(msg);
 }
 
 /** Order-independent, content-addressed id for a row with no natural id. */
@@ -85,7 +133,23 @@ export const csvAdapter: SourceAdapter = {
     if (!res.ok) {
       throw new Error(`feed '${cfg.sourceId}': HTTP ${res.status} ${res.statusText} from ${cfg.url}`);
     }
-    return parseCsv(await res.text(), cfg.delimiter) as RawRecord[];
+    const rows = parseCsv(await res.text(), cfg.delimiter, cfg.skipLines) as RawRecord[];
+
+    // Once per poll, not per record. Fires whether or not skipLines is set: if
+    // it is set and the result still looks like prose, the value is wrong and
+    // that is worth saying too.
+    if (rows.length > 0) {
+      const suspect = preambleSuspicion(Object.keys(rows[0]));
+      if (suspect) {
+        const shown = suspect.length > 60 ? `${suspect.slice(0, 60)}…` : suspect;
+        warn(
+          `feed '${cfg.sourceId}': parsed 1 column named "${shown}" — this looks like a ` +
+          'caption line being read as the header, which discards every other column. ' +
+          'Set `skipLines` if the feed has a preamble.'
+        );
+      }
+    }
+    return rows;
   },
 
   parse(raw: RawRecord, cfg: FeedSourceConfig): NormalizedRecord | null {

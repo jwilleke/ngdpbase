@@ -4,7 +4,7 @@
  * @jest-environment node
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { csvAdapter, parseCsv } from '../src/adapters/csv';
+import { csvAdapter, parseCsv, preambleSuspicion } from '../src/adapters/csv';
 import type { FeedSourceConfig } from '../src/types';
 
 const base: FeedSourceConfig = { sourceId: 'firms', adapter: 'csv', url: 'https://x.test/csv', type: 'Event' };
@@ -46,6 +46,69 @@ describe('parseCsv (#911)', () => {
   });
 });
 
+// The FEMS NFDRS shape from #1102: a human-readable caption above the real header.
+const PREAMBLE = [
+  '"Stations used in the building of the data sheet are: PINE CREEK, TOWN CREEK"',
+  '"ObservationDate","NFDRType","AvgERC"',
+  '"2026-08-21","O",58.1',
+  ''
+].join('\n');
+
+describe('parseCsv skipLines (#1102)', () => {
+  it('without skipLines, a caption is taken as the header and every other column is lost', () => {
+    // Pinning the BUG, so the fix below is measured against the real behaviour
+    // rather than an assumed one.
+    const rows = parseCsv(PREAMBLE);
+    expect(Object.keys(rows[0])).toHaveLength(1);
+    expect(Object.keys(rows[0])[0]).toMatch(/^Stations used/);
+    expect(rows[0]['Stations used in the building of the data sheet are: PINE CREEK, TOWN CREEK'])
+      .toBe('ObservationDate');
+  });
+
+  it('skipLines: 1 yields the real header and every column', () => {
+    const rows = parseCsv(PREAMBLE, ',', 1);
+    expect(rows).toHaveLength(1);
+    expect(Object.keys(rows[0])).toEqual(['ObservationDate', 'NFDRType', 'AvgERC']);
+    expect(rows[0].AvgERC).toBe('58.1');
+  });
+
+  it('skipLines: 0 is identical to omitting it — no regression for existing feeds', () => {
+    expect(parseCsv(FIRMS, ',', 0)).toEqual(parseCsv(FIRMS));
+  });
+
+  it('skipLines beyond the row count returns [] rather than throwing', () => {
+    expect(parseCsv(PREAMBLE, ',', 99)).toEqual([]);
+  });
+
+  it('skipLines consuming all but the header returns [] — a header with no data rows', () => {
+    expect(parseCsv(PREAMBLE, ',', 2)).toEqual([]);
+  });
+});
+
+describe('preambleSuspicion (#1102)', () => {
+  it('flags a single prose column', () => {
+    expect(preambleSuspicion(['Stations used in the building of the data sheet are: PINE CREEK']))
+      .toMatch(/^Stations used/);
+  });
+
+  it('flags a single over-long column even without whitespace', () => {
+    expect(preambleSuspicion(['a'.repeat(41)])).not.toBeNull();
+  });
+
+  it('does NOT flag a legitimate single-column CSV with a short field name', () => {
+    expect(preambleSuspicion(['id'])).toBeNull();
+    expect(preambleSuspicion(['station_id'])).toBeNull();
+  });
+
+  it('does not flag a multi-column parse, however prose-like the names', () => {
+    expect(preambleSuspicion(['a long name here', 'b'])).toBeNull();
+  });
+
+  it('does not flag an empty column list', () => {
+    expect(preambleSuspicion([])).toBeNull();
+  });
+});
+
 describe('csvAdapter (#911)', () => {
   it('fetch() parses the CSV body into RawRecords', async () => {
     stubFetch(FIRMS);
@@ -72,6 +135,34 @@ describe('csvAdapter (#911)', () => {
     expect(reordered!.sourceRecordId).toBe(a!.sourceRecordId);
     // ...and the synthetic id does not leak into properties.
     expect(a!.properties.id).toBeUndefined();
+  });
+
+  it('fetch() warns when the parse looks like it hit an unskipped preamble', async () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    stubFetch(PREAMBLE);
+    await csvAdapter.fetch(base);
+    expect(spy).toHaveBeenCalledTimes(1);
+    const msg = String(spy.mock.calls[0][0]);
+    expect(msg).toContain("feed 'firms'");
+    expect(msg).toContain('skipLines');
+    spy.mockRestore();
+  });
+
+  it('fetch() does not warn once skipLines is set correctly', async () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    stubFetch(PREAMBLE);
+    const rows = await csvAdapter.fetch({ ...base, skipLines: 1 });
+    expect(spy).not.toHaveBeenCalled();
+    expect(Object.keys(rows[0])).toEqual(['ObservationDate', 'NFDRType', 'AvgERC']);
+    spy.mockRestore();
+  });
+
+  it('fetch() does not warn for an ordinary multi-column feed', async () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    stubFetch(FIRMS);
+    await csvAdapter.fetch(base);
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 
   it('parse() honours recordIdField when the CSV carries an id column', () => {
