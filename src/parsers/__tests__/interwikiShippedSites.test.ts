@@ -47,6 +47,26 @@ describe('shipped InterWiki sites', () => {
       const bad = Object.entries(sites).filter(([, s]) => typeof s.enabled !== 'boolean');
       expect(bad.map(([k]) => k)).toEqual([]);
     });
+
+    it('every site is https', () => {
+      // The two plain-http entries were MeatBall and C2, both since dropped.
+      // A shipped prefix sending readers to http is a downgrade the page author
+      // never chose, so this keeps the set clean rather than trusting review.
+      const bad = Object.entries(sites).filter(([, s]) => !s.url?.startsWith('https://'));
+      expect(bad.map(([k]) => k)).toEqual([]);
+    });
+
+    it('does not ship the dropped MeatBall or C2 prefixes', () => {
+      // MeatBall's host returned an error page for EVERY request, real page
+      // names included, while shipping `enabled: true` — so every MeatBall link
+      // was broken. C2 became a JS-only app whose prefix cannot be verified by
+      // any HTTP check. Both removed on operator instruction; pinned so neither
+      // returns by copy-paste.
+      expect(sites.MeatBall).toBeUndefined();
+      expect(sites.C2).toBeUndefined();
+      expect(JSON.stringify(sites)).not.toContain('usemod.com');
+      expect(JSON.stringify(sites)).not.toContain('wiki.c2.com');
+    });
   });
 
   describe('geo: — GeoHazardWatch (#1101)', () => {

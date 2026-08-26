@@ -521,20 +521,6 @@
       "enabled": true,
       "openInNewWindow": true
     },
-    "MeatBall": {
-      "url": "http://www.usemod.com/cgi-bin/mb.pl?%s",
-      "description": "MeatBall Wiki",
-      "icon": "meatball.png",
-      "enabled": true,
-      "openInNewWindow": true
-    },
-    "C2": {
-      "url": "http://wiki.c2.com/?%s",
-      "description": "C2 Wiki (Portland Pattern Repository)",
-      "icon": "c2.png",
-      "enabled": false,
-      "openInNewWindow": true
-    },
     "GVP": {
       "url": "https://volcano.si.edu/volcano.cfm?vn=%s",
       "description": "GVP (Global Volcanism Program)",
