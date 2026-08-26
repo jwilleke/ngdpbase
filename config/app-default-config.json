@@ -548,6 +548,18 @@
       "icon": "gvp-icon.jpg",
       "enabled": true,
       "openInNewWindow": true
+    },
+    "geo": {
+      "url": "https://geohazardwatch.com/view/%s",
+      "description": "GeoHazardWatch",
+      "enabled": true,
+      "openInNewWindow": true
+    },
+    "grok": {
+      "url": "https://grokipedia.com/page/%s",
+      "description": "Grokipedia",
+      "enabled": true,
+      "openInNewWindow": true
     }
   },
   "_comment_features": "Feature toggle settings",
