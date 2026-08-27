@@ -413,3 +413,99 @@ describe('VariableManager', () => {
     });
   });
 });
+
+/**
+ * #1104 — variables documented in docs/managers/VariableManager.md but never
+ * registered. An unregistered name is returned verbatim by expandVariables(),
+ * so the reader saw the raw placeholder. These assert the documented set
+ * actually resolves, and that each degrades sanely when its manager is absent.
+ */
+describe('#1104 documented variables', () => {
+  const DOCUMENTED = [
+    'encoding',
+    'frontpage',
+    'ngdpbaseversion',
+    'pageprovider',
+    'pageproviderdescription',
+    'requestcontext',
+    'interwikilinks',
+    'inlinedimages'
+  ];
+
+  function makeConfiguredEngine(): WikiEngine {
+    const config: Record<string, unknown> = {
+      'ngdpbase.encoding': 'UTF-8',
+      'ngdpbase.front-page': 'Welcome',
+      'ngdpbase.version': '4.11.1',
+      'ngdpbase.features.images.enabled': true,
+      'ngdpbase.interwiki.sites': {
+        Wikipedia: {}, JSPWiki: {}, GVP: {}, 'GVP-COUNTRY': {}, geo: {}, grok: {}
+      }
+    };
+    return {
+      getManager: vi.fn((name: string) => {
+        if (name === 'ConfigurationManager') {
+          return {
+            getProperty: (key: string, fallback?: unknown) =>
+              key in config ? config[key] : fallback
+          };
+        }
+        if (name === 'PageManager') {
+          return {
+            getCurrentPageProvider: () => ({
+              getProviderInfo: () => ({
+                name: 'VersioningFileProvider',
+                version: '1.0.0',
+                description: 'File storage with version history and delta storage'
+              })
+            })
+          };
+        }
+        return null;
+      })
+    } as WikiEngine;
+  }
+
+  test.each(DOCUMENTED)('[{$%s}] is registered', async (name) => {
+    const vm = await makeInitializedManager();
+    expect(vm.getDebugInfo().allVariables).toContain(name);
+  });
+
+  test.each(DOCUMENTED)('[{$%s}] does not render as the raw placeholder', async (name) => {
+    const vm = new VariableManager(makeConfiguredEngine());
+    await vm.initialize();
+    expect(vm.expandVariables(`[{$${name}}]`)).not.toBe(`[{$${name}}]`);
+  });
+
+  test('resolves documented values from configuration', async () => {
+    const vm = new VariableManager(makeConfiguredEngine());
+    await vm.initialize();
+    expect(vm.expandVariables('[{$encoding}]')).toBe('UTF-8');
+    expect(vm.expandVariables('[{$frontpage}]')).toBe('Welcome');
+    expect(vm.expandVariables('[{$ngdpbaseversion}]')).toBe('4.11.1');
+    expect(vm.expandVariables('[{$inlinedimages}]')).toBe('true');
+    expect(vm.expandVariables('[{$interwikilinks}]')).toBe('6');
+  });
+
+  test('resolves provider name and description from the page provider', async () => {
+    const vm = new VariableManager(makeConfiguredEngine());
+    await vm.initialize();
+    expect(vm.expandVariables('[{$pageprovider}]')).toBe('VersioningFileProvider');
+    expect(vm.expandVariables('[{$pageproviderdescription}]'))
+      .toBe('File storage with version history and delta storage');
+  });
+
+  test('requestcontext defaults to view and honours the context', async () => {
+    const vm = new VariableManager(makeConfiguredEngine());
+    await vm.initialize();
+    expect(vm.expandVariables('[{$requestcontext}]')).toBe('view');
+    expect(vm.expandVariables('[{$requestcontext}]', { requestContext: 'edit' })).toBe('edit');
+  });
+
+  test.each(DOCUMENTED)('[{$%s}] degrades without its manager', async (name) => {
+    const vm = await makeInitializedManager();
+    const result = vm.expandVariables(`[{$${name}}]`);
+    expect(typeof result).toBe('string');
+    expect(result).not.toContain('[Error:');
+  });
+});

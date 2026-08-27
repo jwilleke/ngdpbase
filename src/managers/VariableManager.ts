@@ -125,6 +125,44 @@ class VariableManager extends BaseManager {
       return configManager?.getProperty('ngdpbase.application.base-url', 'http://localhost:3000') as string ?? 'http://localhost:3000';
     });
 
+    // Configuration variables documented in docs/managers/VariableManager.md (#1104).
+    // These were documented but never registered, and expandVariables() returns an
+    // unknown name verbatim — so a page using one printed the raw placeholder at
+    // the reader with no signal to the author that the name was wrong.
+    this.registerVariable('encoding', (_context) => {
+      return configManager?.getProperty('ngdpbase.encoding', 'UTF-8') as string ?? 'UTF-8';
+    });
+    this.registerVariable('frontpage', (_context) => {
+      return configManager?.getProperty('ngdpbase.front-page', 'Welcome') as string ?? 'Welcome';
+    });
+    // Alias of [{$version}]; both are documented, so both must resolve.
+    this.registerVariable('ngdpbaseversion', (_context) => {
+      return configManager?.getProperty('ngdpbase.version', '1.0.0') as string ?? '1.0.0';
+    });
+    this.registerVariable('inlinedimages', (_context) => {
+      const enabled = configManager
+        ? configManager.getProperty('ngdpbase.features.images.enabled', true)
+        : true;
+      return enabled ? 'true' : 'false';
+    });
+    this.registerVariable('interwikilinks', (_context) => {
+      const sites = configManager?.getProperty('ngdpbase.interwiki.sites', {}) as Record<string, unknown> | undefined;
+      return Object.keys(sites ?? {}).length.toString();
+    });
+    this.registerVariable('pageprovider', (_context) => {
+      return this.getPageProviderInfo()?.name ?? 'UnknownProvider';
+    });
+    this.registerVariable('pageproviderdescription', (_context) => {
+      return this.getPageProviderInfo()?.description ?? 'Unknown provider';
+    });
+    // JSPWiki's request context ('view', 'edit', 'info'). Nothing populates it
+    // yet, so it reads from the context when a caller supplies one and reports
+    // the common case otherwise.
+    this.registerVariable('requestcontext', (context) => {
+      const requestContext = context?.requestContext;
+      return typeof requestContext === 'string' && requestContext ? requestContext : 'view';
+    });
+
     // Page context - ParseContext has pageName directly
     this.registerVariable('pagename', (context) => {
       return context?.pageName || 'unknown';
@@ -260,6 +298,27 @@ class VariableManager extends BaseManager {
    * Get user's preferred locale from context.
    * Priority: 1) preferences.locale, 2) userContext.locale, 3) Accept-Language header, 4) en-US
    */
+  /**
+   * Resolve the current page provider's self-description, or null when the
+   * provider is absent or does not implement getProviderInfo().
+   *
+   * @private
+   * @returns {{ name?: string; description?: string } | null} Provider info or null
+   */
+  private getPageProviderInfo(): { name?: string; description?: string } | null {
+    const pageManager = this.engine.getManager<PageManager>('PageManager');
+    const provider = pageManager?.getCurrentPageProvider?.() as
+      { getProviderInfo?: () => { name?: string; description?: string } } | null | undefined;
+    if (!provider?.getProviderInfo) {
+      return null;
+    }
+    try {
+      return provider.getProviderInfo();
+    } catch {
+      return null;
+    }
+  }
+
   private getUserLocale(context?: VariableContext): string {
     const userCtx = context?.userContext;
     const prefs = userCtx?.['preferences'];
