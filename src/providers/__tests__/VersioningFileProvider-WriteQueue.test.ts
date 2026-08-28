@@ -204,3 +204,86 @@ describe('VersioningFileProvider - Write Queue', () => {
     await expect(async () => provider['savePageIndex']()).rejects.toThrow('Page index not initialized');
   });
 });
+
+/**
+ * #1112 — one failed write must not stop every later write.
+ *
+ * `this.pageIndexWriteQueue = this.pageIndexWriteQueue.then(fn)` supplies only
+ * a fulfilled handler, and the handler rethrows. So after any rejection the
+ * stored chain is a permanently rejected promise: every later save chains
+ * `.then(fn)` off it, `fn` never runs, no write is attempted, and the returned
+ * promise rejects with the STALE original error.
+ *
+ * The blast radius is the fast-init source of truth for 18k pages —
+ * page-index.json freezes on disk while the in-memory index keeps changing,
+ * and the next restart loads the stale file. Nothing goes red.
+ */
+describe('VersioningFileProvider - write queue recovery (#1112)', () => {
+  let testDir;
+  let indexPath;
+  let provider;
+
+  beforeEach(async () => {
+    testDir = path.join(os.tmpdir(), `write-queue-recover-${Date.now()}-${Math.floor(performance.now())}`);
+    await fs.ensureDir(path.join(testDir, 'data'));
+    indexPath = path.join(testDir, 'data', 'page-index.json');
+
+    const engine = {
+      getManager: vi.fn(() => null),
+      config: {}
+    } as unknown as WikiEngine;
+
+    // Same shape as the block above: set the internal state savePageIndex needs
+    // rather than running a full initialize(), which this behaviour does not
+    // depend on.
+    provider = new VersioningFileProvider(engine);
+    provider['pageIndexPath'] = indexPath;
+    provider['pageIndex'] = { version: '1.0.0', lastUpdated: new Date().toISOString(), pageCount: 0, pages: {} };
+    provider['pageIndexWriteQueue'] = Promise.resolve();
+  });
+
+  afterEach(async () => {
+    await fs.chmod(path.dirname(indexPath), 0o700).catch(() => {});
+    await fs.remove(testDir);
+  });
+
+  test('a failed write does not stop the next write from succeeding', async () => {
+    // Real fault injection rather than a mock: the point is that the queue
+    // recovers from a genuine rejection, not that a stub was called twice.
+    await fs.chmod(path.dirname(indexPath), 0o500);
+    await expect(provider['savePageIndex']()).rejects.toThrow();
+
+    await fs.chmod(path.dirname(indexPath), 0o700);
+    await expect(provider['savePageIndex']()).resolves.toBeUndefined();
+
+    const written = await fs.readJson(indexPath);
+    expect(written.lastUpdated).toBeDefined();
+  });
+
+  test('the caller of a later write sees its own outcome, not the stale error', async () => {
+    await fs.chmod(path.dirname(indexPath), 0o500);
+    const first = provider['savePageIndex']().catch((e) => e);
+    const firstErr = await first;
+    expect(firstErr).toBeInstanceOf(Error);
+
+    await fs.chmod(path.dirname(indexPath), 0o700);
+    // Before the fix this rejected with firstErr — an error from a write that
+    // had already been reported, describing a condition that no longer held.
+    await expect(provider['savePageIndex']()).resolves.toBeUndefined();
+  });
+
+  test('writes still land in order after a failure', async () => {
+    await fs.chmod(path.dirname(indexPath), 0o500);
+    await expect(provider['savePageIndex']()).rejects.toThrow();
+    await fs.chmod(path.dirname(indexPath), 0o700);
+
+    provider['pageIndex'].pageCount = 1;
+    const a = provider['savePageIndex']();
+    provider['pageIndex'].pageCount = 2;
+    const b = provider['savePageIndex']();
+    await Promise.all([a, b]);
+
+    // The queue still serialises: the last save queued is the state on disk.
+    expect((await fs.readJson(indexPath)).pageCount).toBe(2);
+  });
+});

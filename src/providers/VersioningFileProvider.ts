@@ -1088,7 +1088,7 @@ class VersioningFileProvider extends FileSystemProvider {
     const data = JSON.stringify(this.pageIndex, null, 2);
     const _metricsStart = Date.now();
 
-    this.pageIndexWriteQueue = this.pageIndexWriteQueue.then(async () => {
+    const next = this.pageIndexWriteQueue.then(async () => {
       // #1062: was a hand-rolled temp-then-rename here. Same rule, one
       // implementation — and it now fsyncs, which this copy never did, so the
       // index survives a power loss rather than only a process kill.
@@ -1101,7 +1101,15 @@ class VersioningFileProvider extends FileSystemProvider {
       }
     });
 
-    return this.pageIndexWriteQueue;
+    // #1112: the caller sees its own failure; the QUEUE must not inherit it.
+    // Storing `next` directly meant one rejection left the chain permanently
+    // rejected — every later save chained off it, never ran, and rejected with
+    // the STALE error. page-index.json then froze on disk while the in-memory
+    // index kept changing, and the next restart fast-inited from the stale
+    // file. Silent, and the blast radius is every page.
+    this.pageIndexWriteQueue = next.catch(() => {});
+
+    return next;
   }
 
   /**
