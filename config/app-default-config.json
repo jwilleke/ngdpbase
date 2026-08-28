@@ -235,6 +235,8 @@
   "ngdpbase.auth.agent-token.max-ttl-hours": 24,
   "ngdpbase.auth.agent-token.max-per-user": 10,
   "ngdpbase.auth.agent-token.retention-days": 30,
+  "ngdpbase.auth.agent-token.maintenance-interval-seconds": 60,
+  "ngdpbase.auth.agent-token.backup-keep": 5,
   "ngdpbase.auth.agent-token.directory": "./data/tokens",
   "_comment_google_oidc": "Google OIDC ('Sign in with Google') — see jwilleke/ngdpbase#447. Set credentials in app-custom-config.json (never commit secrets).",
   "ngdpbase.auth.google-oidc.enabled": false,

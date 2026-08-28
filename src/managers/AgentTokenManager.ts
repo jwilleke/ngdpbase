@@ -18,10 +18,43 @@
  *  - **Roles are never stored on the token.** Only `owner` is kept, and
  *    permissions resolve live from the user record at request time — so
  *    demoting or disabling a user immediately weakens every token they hold.
- *  - **Scopes only narrow.** Effective permission is owner ∩ scopes.
+ *  - **Scopes only narrow.** Effective permission is owner ∩ scopes, enforced
+ *    live by ACLManager and UserManager against `viaToken.scopes`.
  *
  * Store: `<FAST_STORAGE>/tokens/agent-tokens.json`, a map keyed by token id,
  * matching the map-not-array convention of `users.json`.
+ *
+ * ## Correctness rules this file is built around (#1108)
+ *
+ * A review of the original implementation found seven defects, all of which
+ * came back to three rules that were implied but never stated. They are stated
+ * here because each was violated by code that read as though it respected them:
+ *
+ *  1. **The read path does no disk IO.** `verify()` runs on every agent
+ *     request. The original stamped `lastUsedAt` and persisted synchronously —
+ *     and `persist()` took a timestamped backup copy first, so authenticating
+ *     wrote an unbounded pile of hash-bearing files into the token directory.
+ *     `lastUsedAt` is now buffered in memory and flushed by the maintenance
+ *     timer; backups are taken only on structural change, and are bounded.
+ *  2. **An unreadable date means expired, everywhere.** `Date.parse` returns
+ *     `NaN` for a malformed value, and `NaN <= now` and `NaN > now` are *both*
+ *     false — so `verify()` read a broken `expiresAt` as "not expired" while
+ *     `isLive()` read the same value as "not live". The result was a token that
+ *     authenticated forever and appeared in no listing, not even an admin's.
+ *     Every expiry comparison now goes through `expiryOf()`, which collapses
+ *     unparseable to `-Infinity`: unreadable fails closed.
+ *  3. **Nothing hands out a live reference to a stored record.** `verify()`
+ *     returned the record straight out of the Map — hash included — and
+ *     AgentTokenAuthProvider put its `scopes` array into `req.userContext`,
+ *     where the ACL layer treats it as the permission ceiling. Anything
+ *     downstream holding that array was editing the store. Every exit from this
+ *     class is now a copy via `toPublic()`.
+ *
+ * ## Extraction note
+ *
+ * The two namespace-bound values live in `CONFIG_PREFIX` and `TOKEN_PREFIX`
+ * below. When this class moves into the shared framework package, those are the
+ * parameters a derivative supplies — nothing else in the file names the host.
  */
 
 import { randomBytes, createHash, timingSafeEqual } from 'crypto';
@@ -29,11 +62,18 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import BaseManager from './BaseManager.js';
 import type { BackupData } from './BaseManager.js';
+import { writeFileAtomic } from '../utils/atomicWrite.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 
-/** Prefix — makes a leaked token greppable and scanner-matchable. */
+/** Configuration namespace. See the extraction note in the file header. */
+const CONFIG_PREFIX = 'ngdpbase.auth.agent-token';
+
+/**
+ * Prefix — makes a leaked token greppable and scanner-matchable.
+ * See the extraction note: a derivative must use its own.
+ */
 const TOKEN_PREFIX = 'ngdp_at_';
 const TOKEN_BYTES = 32;
 
@@ -47,16 +87,22 @@ const FORBIDDEN_SCOPE_PREFIX = 'admin-';
  * because that is what both permission paths ask for. `page-ingest` reads well
  * in an API call but is not itself an action, so it is expanded and stored in
  * its expanded form — the store always holds real action names.
+ *
+ * A Map, not an object literal (#1108): scope names arrive from an HTTP body,
+ * and a plain object answers `SCOPE_ALIASES['constructor']` with a function
+ * inherited from `Object.prototype`. `?? [scope]` never fired for it, and the
+ * expansion loop threw `TypeError: function is not iterable` — a user-supplied
+ * scope name turning a clean validation error into a 500.
  */
-const SCOPE_ALIASES: Record<string, string[]> = {
-  'page-ingest': ['page-create', 'page-edit']
-};
+const SCOPE_ALIASES = new Map<string, string[]>([
+  ['page-ingest', ['page-create', 'page-edit']]
+]);
 
 /** Expand any aliases and de-duplicate, preserving order. */
 function expandScopes(scopes: string[]): string[] {
   const out: string[] = [];
   for (const scope of scopes) {
-    for (const expanded of SCOPE_ALIASES[scope] ?? [scope]) {
+    for (const expanded of SCOPE_ALIASES.get(scope) ?? [scope]) {
       if (!out.includes(expanded)) out.push(expanded);
     }
   }
@@ -93,6 +139,8 @@ interface AgentTokenConfig {
   maxTtlHours: number;
   maxPerUser: number;
   retentionDays: number;
+  maintenanceIntervalSeconds: number;
+  backupKeep: number;
 }
 
 function sha256(value: string): string {
@@ -105,14 +153,106 @@ function hashEquals(a: string, b: string): boolean {
   return timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
 
+/**
+ * Expiry as a number, where **unparseable means expired**.
+ *
+ * The single most important function in this file. `Date.parse('')`,
+ * `Date.parse(undefined as never)` and `Date.parse('soon')` all return `NaN`,
+ * and every comparison against `NaN` is false — so a naive `<=` reads a broken
+ * date as "still valid" and a naive `>` reads the same value as "not live".
+ * Collapsing to `-Infinity` makes both readings agree on *expired*, which is
+ * the safe direction: the token stops working and stays visible for revocation.
+ */
+function expiryOf(record: Pick<AgentTokenRecord, 'expiresAt'>): number {
+  const parsed = Date.parse(record.expiresAt);
+  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
+}
+
+/**
+ * A number from configuration, or the fallback when it is not a usable one.
+ *
+ * `Number('24h')` is `NaN`, and the original compared `ttl > this.maxTtlHours`
+ * directly — so a single typo in a config file did not raise an error, it
+ * silently removed the TTL ceiling and let any caller mint a token lasting
+ * years. A limit that can be disabled by a typo is not a limit.
+ */
+function positiveNumber(value: unknown, fallback: number, key: string): number {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) {
+    if (value !== undefined && value !== null) {
+      // JSON.stringify, not String(): the value arrives from a config file and
+      // may be an object, which stringifies to a useless "[object Object]" in
+      // the one message an operator has to diagnose the typo from.
+      logger.warn(`[AgentTokenManager] ${key}=${JSON.stringify(value)} is not a positive number — using ${fallback}`);
+    }
+    return fallback;
+  }
+  return n;
+}
+
+/**
+ * Does this parsed record carry every field the class relies on?
+ *
+ * The store was previously `JSON.parse`d and cast, so nothing checked it. A
+ * record missing `expiresAt` — a hand edit, a bad migration, a partial write
+ * from before writes were atomic — became the immortal invisible token
+ * described in the file header. Validation is what makes rule 2 enforceable at
+ * the boundary rather than defended at each comparison.
+ */
+function isWellFormed(value: unknown): value is AgentTokenRecord {
+  if (typeof value !== 'object' || value === null) return false;
+  const r = value as Record<string, unknown>;
+  const str = (v: unknown): boolean => typeof v === 'string' && v.length > 0;
+  const nullableStr = (v: unknown): boolean => v === null || typeof v === 'string';
+  return (
+    str(r.id) &&
+    str(r.owner) &&
+    str(r.name) &&
+    typeof r.hash === 'string' && r.hash.startsWith('sha256:') &&
+    typeof r.prefix === 'string' &&
+    Array.isArray(r.scopes) && r.scopes.every(s => typeof s === 'string') &&
+    str(r.createdAt) &&
+    str(r.expiresAt) && !Number.isNaN(Date.parse(r.expiresAt as string)) &&
+    nullableStr(r.lastUsedAt) &&
+    nullableStr(r.revokedAt) &&
+    nullableStr(r.revokedBy)
+  );
+}
+
 class AgentTokenManager extends BaseManager {
   private storePath = '';
   private tokens: Map<string, AgentTokenRecord> = new Map();
+
+  /**
+   * Records that failed validation on load, kept verbatim and written back.
+   *
+   * They are deliberately NOT in `tokens`, so they authenticate nothing and
+   * appear in no listing. But dropping them would rewrite the store without
+   * them on the next save — destroying the only evidence that something
+   * corrupted the file. Fail closed, keep the evidence, stay up.
+   */
+  private quarantined: Map<string, unknown> = new Map();
+
+  /** Ids whose `lastUsedAt` has moved in memory but not yet on disk. */
+  private dirtyLastUsed: Set<string> = new Set();
+
+  /**
+   * Serialises saves. `writeFileAtomic` guarantees no *partial* file, and says
+   * so in its own header — it is explicitly not a lock, and two concurrent
+   * writers still race for last-writer-wins. This is the queue the page index
+   * uses for the same reason.
+   */
+  private writeQueue: Promise<void> = Promise.resolve();
+
+  private maintenanceTimer: NodeJS.Timeout | null = null;
+
   private tokenConfig: AgentTokenConfig = {
     defaultTtlHours: 24,
     maxTtlHours: 24,
     maxPerUser: 10,
-    retentionDays: 30
+    retentionDays: 30,
+    maintenanceIntervalSeconds: 60,
+    backupKeep: 5
   };
 
   constructor(engine: WikiEngine) {
@@ -125,28 +265,60 @@ class AgentTokenManager extends BaseManager {
       throw new Error('AgentTokenManager requires ConfigurationManager');
     }
 
+    const num = (key: string, fallback: number): number =>
+      positiveNumber(configManager.getProperty(`${CONFIG_PREFIX}.${key}`, fallback), fallback, `${CONFIG_PREFIX}.${key}`);
+
     this.tokenConfig = {
-      defaultTtlHours: Number(configManager.getProperty('ngdpbase.auth.agent-token.default-ttl-hours', 24)),
-      maxTtlHours: Number(configManager.getProperty('ngdpbase.auth.agent-token.max-ttl-hours', 24)),
-      maxPerUser: Number(configManager.getProperty('ngdpbase.auth.agent-token.max-per-user', 10)),
-      retentionDays: Number(configManager.getProperty('ngdpbase.auth.agent-token.retention-days', 30))
+      defaultTtlHours: num('default-ttl-hours', 24),
+      maxTtlHours: num('max-ttl-hours', 24),
+      maxPerUser: num('max-per-user', 10),
+      retentionDays: num('retention-days', 30),
+      maintenanceIntervalSeconds: num('maintenance-interval-seconds', 60),
+      backupKeep: num('backup-keep', 5)
     };
 
-    const dir = configManager.getResolvedDataPath('ngdpbase.auth.agent-token.directory', './data/tokens');
+    const dir = configManager.getResolvedDataPath(`${CONFIG_PREFIX}.directory`, './data/tokens');
     this.storePath = path.join(dir, 'agent-tokens.json');
 
     await fs.mkdir(dir, { recursive: true });
     await this.load();
     await this.purgeExpired();
+    this.startMaintenance();
 
     logger.info(`🔑 AgentTokenManager initialized (${this.tokens.size} tokens, ttl≤${this.tokenConfig.maxTtlHours}h)`);
   }
 
+  /**
+   * Flush buffered `lastUsedAt` stamps and purge dead records, on a timer.
+   *
+   * Purging used to happen only in `initialize()`, so a server up for months
+   * never applied its own retention policy again — the config promised a
+   * 30-day window that was only ever honoured at boot.
+   *
+   * `unref()` so this never holds the process open: a maintenance tick is not a
+   * reason for node to stay alive, and a test that forgets to shut a manager
+   * down should still exit.
+   */
+  private startMaintenance(): void {
+    if (this.maintenanceTimer) return;
+    const everyMs = this.tokenConfig.maintenanceIntervalSeconds * 1000;
+    this.maintenanceTimer = setInterval(() => {
+      void (async () => {
+        try {
+          await this.flushLastUsed();
+          await this.purgeExpired();
+        } catch (err) {
+          logger.warn('[AgentTokenManager] Maintenance tick failed:', err);
+        }
+      })();
+    }, everyMs);
+    this.maintenanceTimer.unref?.();
+  }
+
   private async load(): Promise<void> {
+    let raw: string;
     try {
-      const raw = await fs.readFile(this.storePath, 'utf8');
-      const parsed = JSON.parse(raw) as Record<string, AgentTokenRecord>;
-      this.tokens = new Map(Object.entries(parsed));
+      raw = await fs.readFile(this.storePath, 'utf8');
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code === 'ENOENT') {
@@ -158,18 +330,94 @@ class AgentTokenManager extends BaseManager {
       logger.error(`[AgentTokenManager] Could not read ${this.storePath}:`, err);
       throw err;
     }
+
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    this.tokens = new Map();
+    this.quarantined = new Map();
+    for (const [id, record] of Object.entries(parsed)) {
+      if (isWellFormed(record)) {
+        this.tokens.set(id, record);
+      } else {
+        this.quarantined.set(id, record);
+      }
+    }
+
+    if (this.quarantined.size > 0) {
+      // Loud, and at error level: a malformed record in a credential store is
+      // either corruption or tampering, and both want a human.
+      logger.error(
+        `[AgentTokenManager] ${this.quarantined.size} malformed record(s) in ${this.storePath} ` +
+        `— quarantined (they authenticate nothing and are kept on disk): ${[...this.quarantined.keys()].join(', ')}`
+      );
+    }
   }
 
-  /** Persist, keeping a timestamped backup like users.json does. */
-  private async persist(): Promise<void> {
-    const payload = JSON.stringify(Object.fromEntries(this.tokens), null, 2);
+  /**
+   * Persist the store atomically, serialised behind the write queue.
+   *
+   * Quarantined records are written back untouched so a save never destroys
+   * evidence of corruption.
+   */
+  private persist(): Promise<void> {
+    const payload = JSON.stringify(
+      { ...Object.fromEntries(this.tokens), ...Object.fromEntries(this.quarantined) },
+      null,
+      2
+    );
+    this.writeQueue = this.writeQueue.then(() => writeFileAtomic(this.storePath, payload, 'utf8'));
+    return this.writeQueue;
+  }
+
+  /**
+   * Copy the current store aside, then persist — for structural changes only.
+   *
+   * The original took one of these inside `persist()`, which `verify()` called
+   * on every request: at millisecond-granular names, an active server wrote a
+   * new hash-bearing file per millisecond of traffic and never removed any,
+   * while same-millisecond writes silently overwrote each other. So it grew
+   * without bound *and* was lossy as a backup.
+   *
+   * Kept — bounded — because temp-then-rename protects against a torn write but
+   * not against this class deleting a record it should not have. That is the
+   * only failure a copy still answers for.
+   */
+  private async snapshotThenPersist(now: number): Promise<void> {
     try {
       const existing = await fs.readFile(this.storePath, 'utf8');
-      await fs.writeFile(`${this.storePath}.backup-${Date.now()}`, existing, 'utf8');
-    } catch {
-      /* no prior file — nothing to back up */
+      await writeFileAtomic(`${this.storePath}.backup-${new Date(now).toISOString().replace(/[:.]/g, '-')}`, existing, 'utf8');
+      await this.pruneBackups();
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT') {
+        // A failed backup must not block the write it was protecting.
+        logger.warn('[AgentTokenManager] Could not snapshot the token store:', err);
+      }
     }
-    await fs.writeFile(this.storePath, payload, 'utf8');
+    await this.persist();
+  }
+
+  /** Keep only the newest `backupKeep` snapshots. */
+  private async pruneBackups(): Promise<void> {
+    const dir = path.dirname(this.storePath);
+    const base = `${path.basename(this.storePath)}.backup-`;
+    const backups = (await fs.readdir(dir)).filter(f => f.startsWith(base)).sort();
+    for (const stale of backups.slice(0, Math.max(0, backups.length - this.tokenConfig.backupKeep))) {
+      await fs.rm(path.join(dir, stale), { force: true });
+    }
+  }
+
+  /**
+   * Write out buffered `lastUsedAt` stamps, if any.
+   *
+   * Public so a caller — a test, or a shutdown path — can make the in-memory
+   * stamp durable on demand without waiting for the maintenance tick.
+   */
+  async flushLastUsed(): Promise<number> {
+    if (this.dirtyLastUsed.size === 0) return 0;
+    const count = this.dirtyLastUsed.size;
+    this.dirtyLastUsed.clear();
+    await this.persist();
+    return count;
   }
 
   /**
@@ -189,6 +437,12 @@ class AgentTokenManager extends BaseManager {
     // An unscoped token is rejected, never treated as unrestricted (#946 decision 4).
     if (!Array.isArray(scopes) || scopes.length === 0) {
       throw new Error('At least one scope is required');
+    }
+    // Scopes arrive from a request body. A non-string here would be stored and
+    // then match no action for the life of the token — a credential that fails
+    // silently rather than at the point of the mistake.
+    if (!scopes.every(s => typeof s === 'string' && s.trim().length > 0)) {
+      throw new Error('Every scope must be a non-empty string');
     }
 
     const effectiveScopes = expandScopes(scopes);
@@ -231,16 +485,20 @@ class AgentTokenManager extends BaseManager {
     };
 
     this.tokens.set(id, record);
-    await this.persist();
+    await this.snapshotThenPersist(now);
 
     return { token, record: this.toPublic(record) };
   }
 
   /**
    * Verify a presented cleartext token.
-   * Returns the record when valid, else null. Stamps `lastUsedAt`.
+   * Returns a COPY of the record when valid, else null. Buffers `lastUsedAt`.
+   *
+   * No disk IO: see rule 1 in the file header. The stamp lands in memory and is
+   * flushed by the maintenance tick, so a token used a thousand times a minute
+   * costs one write, not a thousand writes and a thousand backup files.
    */
-  async verify(token: string, now: number = Date.now()): Promise<AgentTokenRecord | null> {
+  async verify(token: string, now: number = Date.now()): Promise<AgentTokenPublic | null> {
     if (typeof token !== 'string' || !token.startsWith(TOKEN_PREFIX)) return null;
 
     const presented = sha256(token);
@@ -254,16 +512,11 @@ class AgentTokenManager extends BaseManager {
     if (!match) return null;
 
     if (match.revokedAt) return null;
-    if (Date.parse(match.expiresAt) <= now) return null;
+    if (expiryOf(match) <= now) return null;
 
     match.lastUsedAt = new Date(now).toISOString();
-    // Best-effort — a failed lastUsedAt write must not fail the request.
-    try {
-      await this.persist();
-    } catch (err) {
-      logger.warn('[AgentTokenManager] Could not persist lastUsedAt:', err);
-    }
-    return match;
+    this.dirtyLastUsed.add(match.id);
+    return this.toPublic(match);
   }
 
   /** Live (not expired, not revoked) tokens for an owner. */
@@ -286,15 +539,15 @@ class AgentTokenManager extends BaseManager {
   }
 
   /**
-   * Revoke a token. Effective immediately — verify() reads the store per
-   * request, so there is no cache to wait out.
+   * Revoke a token. Effective immediately — verify() reads the in-memory store
+   * per request, so there is no cache to wait out.
    */
   async revoke(id: string, byUsername: string, now: number = Date.now()): Promise<boolean> {
     const record = this.tokens.get(id);
     if (!record || record.revokedAt) return false;
     record.revokedAt = new Date(now).toISOString();
     record.revokedBy = byUsername;
-    await this.persist();
+    await this.snapshotThenPersist(now);
     logger.info(`[AgentTokenManager] Token ${id} (owner=${record.owner}) revoked by ${byUsername}`);
     return true;
   }
@@ -304,39 +557,74 @@ class AgentTokenManager extends BaseManager {
     const cutoff = now - this.tokenConfig.retentionDays * 86_400_000;
     let purged = 0;
     for (const [id, record] of this.tokens) {
-      const dead = Date.parse(record.expiresAt) <= now || record.revokedAt !== null;
+      const expiry = expiryOf(record);
+      const dead = expiry <= now || record.revokedAt !== null;
       if (!dead) continue;
-      const deadSince = record.revokedAt ? Date.parse(record.revokedAt) : Date.parse(record.expiresAt);
+      const revokedAtMs = record.revokedAt ? Date.parse(record.revokedAt) : Number.NaN;
+      const deadSince = Number.isNaN(revokedAtMs) ? expiry : revokedAtMs;
       if (deadSince <= cutoff) {
         this.tokens.delete(id);
+        this.dirtyLastUsed.delete(id);
         purged++;
       }
     }
     if (purged > 0) {
-      await this.persist();
+      await this.snapshotThenPersist(now);
       logger.info(`[AgentTokenManager] Purged ${purged} expired/revoked token record(s)`);
     }
     return purged;
   }
 
   private isLive(record: AgentTokenRecord, now: number): boolean {
-    return record.revokedAt === null && Date.parse(record.expiresAt) > now;
+    return record.revokedAt === null && expiryOf(record) > now;
   }
 
+  /**
+   * A copy safe to hand out: no hash, and its own `scopes` array.
+   *
+   * The array copy is the load-bearing half. `scopes` becomes the permission
+   * ceiling in `req.userContext.viaToken`, so sharing the stored array with a
+   * caller means anything downstream can widen a token's authority in place.
+   */
   private toPublic(record: AgentTokenRecord): AgentTokenPublic {
-    const publicRecord = { ...record } as Partial<AgentTokenRecord>;
-    delete publicRecord.hash;
-    return publicRecord as AgentTokenPublic;
+    const { hash: _hash, ...rest } = record;
+    return { ...rest, scopes: [...record.scopes] };
   }
 
-  backup(): Promise<BackupData> {
-    // Deliberately excludes token hashes — a backup file should not carry
-    // material that can be checked against a presented token.
-    return Promise.resolve({
+  /**
+   * Flush pending stamps and stop the maintenance timer.
+   *
+   * Without this, `lastUsedAt` movement since the last tick is lost on a clean
+   * shutdown — and the timer would keep a reference to a dead manager.
+   */
+  async shutdown(): Promise<void> {
+    if (this.maintenanceTimer) {
+      clearInterval(this.maintenanceTimer);
+      this.maintenanceTimer = null;
+    }
+    try {
+      await this.flushLastUsed();
+    } catch (err) {
+      logger.warn('[AgentTokenManager] Could not flush lastUsedAt on shutdown:', err);
+    }
+    await super.shutdown();
+  }
+
+  async backup(): Promise<BackupData> {
+    // Token hashes are deliberately excluded — a backup file should not carry
+    // material that can be checked against a presented token. The consequence
+    // is stated rather than left to be discovered: this backup CANNOT restore
+    // working tokens, and a restore leaves every agent needing a fresh mint.
+    // What it does preserve is the audit trail of what existed.
+    return {
       managerName: 'AgentTokenManager',
-      data: { count: this.tokens.size },
-      timestamp: new Date().toISOString()
-    } as unknown as BackupData);
+      timestamp: new Date().toISOString(),
+      data: {
+        restorable: false,
+        count: this.tokens.size,
+        tokens: this.listAll()
+      }
+    };
   }
 }
 

@@ -14,7 +14,7 @@ Verification is exposed through [AgentTokenAuthProvider](../providers/AgentToken
 
 ## Store
 
-`<FAST_STORAGE>/tokens/agent-tokens.json` — a map keyed by token id, matching the map-not-array convention of `users.json`, with `agent-tokens.json.backup-<timestamp>` siblings written on each change.
+`<FAST_STORAGE>/tokens/agent-tokens.json` — a map keyed by token id, matching the map-not-array convention of `users.json`. Writes are atomic (`writeFileAtomic`, temp-then-rename) and serialised behind a write queue. `agent-tokens.json.backup-<timestamp>` siblings are written on __structural change only__ — a mint, a revoke, a purge — and pruned to `backup-keep`. They are deliberately not written on `verify()`: see [#1108](https://github.com/jwilleke/ngdpbase/issues/1103), where authenticating wrote an unbounded pile of hash-bearing files into the token directory.
 
 `FAST_STORAGE` is correct per the deployment split (sessions, logs, users, config) rather than `SLOW_STORAGE` (pages, attachments, backups). On deployments where those are separate volumes, tokens belong with sessions and users.
 
@@ -53,11 +53,13 @@ A record:
 | Method | Purpose |
 |---|---|
 | `mint(owner, name, scopes, ttlHours?)` | Returns `{ token, record }`. The cleartext is returned __once__ and never persisted. |
-| `verify(token)` | Returns the record, or `null` for unknown/expired/revoked. Stamps `lastUsedAt`. |
+| `verify(token)` | Returns a __copy__ of the record without its hash, or `null` for unknown/expired/revoked. Buffers `lastUsedAt` in memory — no disk IO on the request path. |
 | `listForOwner(owner)` | That owner's live tokens, without hashes. |
 | `listAll()` | Every live token — admin oversight. |
 | `revoke(id, byUsername)` | Effective immediately; `verify()` reads the store per request, so there is no cache to wait out. |
-| `purgeExpired()` | Drops dead records past `retention-days`. Audit records are unaffected. |
+| `purgeExpired()` | Drops dead records past `retention-days`. Audit records are unaffected. Also runs on the maintenance timer, not only at boot. |
+| `flushLastUsed()` | Writes buffered `lastUsedAt` stamps to disk. Runs on the maintenance timer and on `shutdown()`; public so a caller can force it. |
+| `backup()` | Public records only — __no hashes, and so not restorable__. It preserves the audit trail of what existed, not working credentials. |
 
 ### Mint-time rules
 
@@ -76,3 +78,19 @@ A record:
 
 - [AgentTokenAuthProvider](../providers/AgentTokenAuthProvider.md) — verification and scope enforcement
 - [Agent Ingest API](../Agent-Ingest-API.md) — the endpoint these tokens were built for
+
+## Invariants ([#1108](https://github.com/jwilleke/ngdpbase/issues/1108))
+
+A review found seven defects here, each tracing back to a rule that was implied but never written down. They are recorded in the class header and enforced by tests in `src/managers/__tests__/AgentTokenManager.test.ts`:
+
+1. __The read path does no disk IO.__ `verify()` runs on every agent request; it buffers `lastUsedAt` and the maintenance timer flushes it.
+2. __An unreadable date means expired, everywhere.__ `Date.parse` gives `NaN` for a malformed value, and `NaN <= now` and `NaN > now` are *both* false — which previously made `verify()` read a broken `expiresAt` as valid while `isLive()` read it as not-live, producing a token that authenticated forever and appeared in no listing. All expiry comparisons go through `expiryOf()`, which collapses unparseable to `-Infinity`.
+3. __Nothing hands out a live reference to a stored record.__ Every exit is a copy via `toPublic()`, including the `scopes` array — which becomes the permission ceiling in `req.userContext.viaToken`.
+
+Malformed records found at load are __quarantined__: excluded from the live map so they authenticate nothing, and written back untouched so a later save cannot destroy evidence of corruption.
+
+Numeric configuration is validated on read. `Number('24h')` is `NaN` and `ttl > NaN` is false, so a single typo previously removed the TTL ceiling silently; a non-positive or non-finite value now falls back to the default and logs a warning.
+
+## Extraction note
+
+`CONFIG_PREFIX` and `TOKEN_PREFIX` are the only host-bound values in the class. When this manager moves into the shared framework package, those are the two parameters a derivative supplies.

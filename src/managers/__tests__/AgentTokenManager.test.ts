@@ -284,3 +284,204 @@ describe('scope aliases (#946 — found by live testing)', () => {
     await expect(m.mint('jim', 'x', ['page-ingest', 'admin-system'])).rejects.toThrow(/admin/i);
   });
 });
+
+/**
+ * The seven defects found reviewing this manager, plus the config hole found
+ * while fixing them (#1108).
+ *
+ * Each test below failed against the original implementation. They are grouped
+ * by the rule in the class header that the defect broke, because the individual
+ * bugs are less useful to remember than the rules are.
+ */
+describe('AgentTokenManager hardening (#1108)', () => {
+  const backupsIn = async (): Promise<string[]> =>
+    (await fs.readdir(tmpDir)).filter(f => f.includes('.backup-'));
+
+  describe('rule 1 — the read path does no disk IO', () => {
+    test('verify() writes nothing, however many times it is called', async () => {
+      const m = await makeManager();
+      const { token } = await m.mint('jim', 'a', ['page-ingest']);
+      const before = (await fs.readdir(tmpDir)).length;
+
+      for (let i = 0; i < 25; i++) expect(await m.verify(token)).not.toBeNull();
+
+      // The original wrote a fresh hash-bearing backup copy per millisecond of
+      // traffic, into the token directory, forever.
+      expect((await fs.readdir(tmpDir)).length).toBe(before);
+    });
+
+    test('a buffered lastUsedAt is visible immediately and durable after a flush', async () => {
+      const m = await makeManager();
+      const { token, record } = await m.mint('jim', 'a', ['page-ingest']);
+      await m.verify(token);
+
+      expect(m.getById(record.id)?.lastUsedAt).not.toBeNull();
+      expect(await m.flushLastUsed()).toBe(1);
+
+      const onDisk = JSON.parse(await fs.readFile(path.join(tmpDir, 'agent-tokens.json'), 'utf8'));
+      expect(onDisk[record.id].lastUsedAt).not.toBeNull();
+    });
+
+    test('shutdown flushes a pending stamp rather than losing it', async () => {
+      const m = await makeManager();
+      const { token, record } = await m.mint('jim', 'a', ['page-ingest']);
+      await m.verify(token);
+      await m.shutdown();
+
+      const onDisk = JSON.parse(await fs.readFile(path.join(tmpDir, 'agent-tokens.json'), 'utf8'));
+      expect(onDisk[record.id].lastUsedAt).not.toBeNull();
+    });
+
+    test('snapshots are taken on structural change and stay bounded', async () => {
+      const m = await makeManager({ 'ngdpbase.auth.agent-token.backup-keep': 2 });
+      for (let i = 0; i < 6; i++) await m.mint('jim', `t${i}`, ['page-ingest'], 1, Date.now() + i);
+      // Exactly the bound, not merely under it: five structural changes after
+      // the first (which has no prior file to copy), pruned to backup-keep.
+      // The original collided on Date.now() milliseconds, so its snapshots
+      // overwrote each other and stayed few BY ACCIDENT rather than by policy.
+      expect((await backupsIn()).length).toBe(2);
+    });
+  });
+
+  describe('rule 2 — an unreadable date means expired, everywhere', () => {
+    /** Write a store by hand, the way corruption or a bad migration would. */
+    async function seedStore(record: Record<string, unknown>): Promise<void> {
+      await fs.writeFile(
+        path.join(tmpDir, 'agent-tokens.json'),
+        JSON.stringify({ [record.id as string]: record }, null, 2),
+        'utf8'
+      );
+    }
+
+    test('a record with no expiresAt does not authenticate — and is not invisible', async () => {
+      // The original accepted this forever in verify() while hiding it from
+      // every listing, including the admin one: an immortal token nobody could
+      // see to revoke.
+      const token = 'ngdp_at_handwritten-value-for-this-test';
+      const hash = `sha256:${require('crypto').createHash('sha256').update(token).digest('hex')}`;
+      await seedStore({
+        id: 'tok_broken', owner: 'jim', name: 'broken', hash, prefix: 'ngdp_at_hand',
+        scopes: ['page-edit'], createdAt: new Date().toISOString(),
+        lastUsedAt: null, revokedAt: null, revokedBy: null
+        // expiresAt deliberately absent
+      });
+
+      const m = await makeManager();
+      expect(await m.verify(token)).toBeNull();
+      expect(m.listAll()).toHaveLength(0);
+    });
+
+    test('a malformed record is quarantined, not silently deleted', async () => {
+      await seedStore({ id: 'tok_broken', owner: 'jim', name: 'broken', hash: 'not-a-hash' });
+      const m = await makeManager();
+
+      // It authenticates nothing and lists nowhere...
+      expect(m.listAll()).toHaveLength(0);
+      expect(m.getById('tok_broken')).toBeNull();
+
+      // ...but a later save must not destroy the evidence of corruption.
+      await m.mint('jim', 'fresh', ['page-ingest']);
+      const onDisk = JSON.parse(await fs.readFile(path.join(tmpDir, 'agent-tokens.json'), 'utf8'));
+      expect(onDisk.tok_broken).toBeTruthy();
+    });
+
+    test('an unparseable expiresAt is treated as expired by verify and by listings alike', async () => {
+      const m = await makeManager();
+      const { token, record } = await m.mint('jim', 'a', ['page-ingest']);
+      // Reach in and break the date the way a bad edit would.
+      const stored = (m as unknown as { tokens: Map<string, { expiresAt: string }> }).tokens.get(record.id);
+      if (!stored) throw new Error('expected the minted record to be in the store');
+      stored.expiresAt = 'soon';
+
+      expect(await m.verify(token)).toBeNull();
+      expect(m.listAll()).toHaveLength(0);
+    });
+  });
+
+  describe('rule 3 — nothing hands out a live reference to a stored record', () => {
+    test('verify() returns no hash', async () => {
+      const m = await makeManager();
+      const { token } = await m.mint('jim', 'a', ['page-ingest']);
+      const record = await m.verify(token);
+      expect((record as unknown as Record<string, unknown>).hash).toBeUndefined();
+    });
+
+    test('widening the scopes of a returned record cannot widen the token', async () => {
+      // AgentTokenAuthProvider puts these scopes into req.userContext, where
+      // ACLManager reads them as the permission ceiling. Sharing the stored
+      // array let anything downstream grant itself admin in place.
+      const m = await makeManager();
+      const { token, record } = await m.mint('jim', 'a', ['page-edit']);
+
+      const seen = await m.verify(token);
+      seen!.scopes.push('admin-system');
+
+      expect(m.getById(record.id)?.scopes).toEqual(['page-edit']);
+      expect((await m.verify(token))!.scopes).toEqual(['page-edit']);
+    });
+
+    test('listings hand out their own arrays too', async () => {
+      const m = await makeManager();
+      const { record } = await m.mint('jim', 'a', ['page-edit']);
+      m.listAll()[0]!.scopes.push('admin-system');
+      expect(m.getById(record.id)?.scopes).toEqual(['page-edit']);
+    });
+  });
+
+  describe('scope input is validated rather than trusted', () => {
+    test('an inherited object key is a clean error, not a TypeError', async () => {
+      // `SCOPE_ALIASES['constructor']` used to resolve off Object.prototype and
+      // throw "function is not iterable" — a 500 from a user-supplied string.
+      const m = await makeManager();
+      for (const evil of ['constructor', '__proto__', 'toString']) {
+        await expect(m.mint('jim', 'x', [evil])).resolves.toBeTruthy();
+      }
+    });
+
+    test('a non-string scope is refused at the mint rather than stored', async () => {
+      const m = await makeManager();
+      // Parsed from a body, which is how a non-string scope actually arrives.
+      const fromRequestBody = JSON.parse('{"scopes":[42]}') as { scopes: string[] };
+      await expect(m.mint('jim', 'x', fromRequestBody.scopes)).rejects.toThrow(/non-empty string/i);
+      await expect(m.mint('jim', 'x', ['  '])).rejects.toThrow(/non-empty string/i);
+    });
+  });
+
+  describe('limits cannot be disabled by a typo', () => {
+    test('a non-numeric max-ttl-hours falls back to the default instead of removing the cap', async () => {
+      // Number('24h') is NaN, and `ttl > NaN` is false — so the original let a
+      // config typo silently mint tokens of any length.
+      const m = await makeManager({ 'ngdpbase.auth.agent-token.max-ttl-hours': '24h' });
+      await expect(m.mint('jim', 'x', ['page-ingest'], 24 * 365)).rejects.toThrow(/maximum/i);
+    });
+
+    test('a negative max-per-user falls back rather than locking everyone out', async () => {
+      const m = await makeManager({ 'ngdpbase.auth.agent-token.max-per-user': -1 });
+      await expect(m.mint('jim', 'x', ['page-ingest'])).resolves.toBeTruthy();
+    });
+  });
+
+  describe('durability', () => {
+    test('concurrent writes leave a store that still parses', async () => {
+      const m = await makeManager({ 'ngdpbase.auth.agent-token.max-per-user': 50 });
+      await Promise.all(
+        Array.from({ length: 20 }, (_, i) => m.mint('jim', `concurrent-${i}`, ['page-ingest']))
+      );
+      const onDisk = JSON.parse(await fs.readFile(path.join(tmpDir, 'agent-tokens.json'), 'utf8'));
+      expect(Object.keys(onDisk)).toHaveLength(20);
+    });
+  });
+
+  describe('backup', () => {
+    test('carries no hashes and says plainly that it cannot restore', async () => {
+      const m = await makeManager();
+      await m.mint('jim', 'a', ['page-ingest']);
+      const result = await m.backup();
+      const data = result.data as { restorable: boolean; count: number; tokens: unknown[] };
+
+      expect(data.restorable).toBe(false);
+      expect(data.count).toBe(1);
+      expect(JSON.stringify(data)).not.toContain('sha256:');
+    });
+  });
+});
