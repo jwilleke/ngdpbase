@@ -4135,7 +4135,6 @@ ${panes}
         renderingManager.addPageToCache(finalTitle);
         // #1082: remember the old title so existing [Old Title] links keep
         // resolving instead of turning into red links.
-        renderingManager.recordPageRename?.(pageName, finalTitle);
         // #1094: rewrite `[Old Title]` in the pages that referred to it, so the
         // content becomes correct rather than depending on the map above.
         // Not awaited — see rewriteInboundLinksAfterRename.
@@ -4619,7 +4618,6 @@ ${panes}
       renderingManager?.addPageToCache(newTitle);
       // #1082: same former-title record the form save makes, so a rename
       // behaves identically however it was invoked.
-      renderingManager?.recordPageRename?.(pageName, newTitle);
       // #1094: same content rewrite the form-save rename performs, so a rename
       // behaves identically however it was invoked.
       void this.rewriteInboundLinksAfterRename(req, oldReferringPages, pageName, newTitle);
