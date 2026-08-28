@@ -11486,9 +11486,51 @@ ${panes}
           await fse.ensureDir(pagesDirResolved);
           await fse.writeFile(canonicalPath, updatedContent, 'utf8');
           if (liveUuid !== sourceUuid) {
+            // #1107: version history is stored per-UUID, so it must travel with
+            // the page. Without this the tree kept the OLD uuid while the page
+            // answered to the new one — and renamePageInIndex below copies the
+            // index entry wholesale, carrying `currentVersion` and `hasVersions`
+            // across to describe a tree that was not there. The index asserted
+            // history nobody could read.
+            //
+            // Moved BEFORE the old file is removed, so a failure here leaves the
+            // page recoverable rather than half-adopted.
+            const oldVersionsDir = path.join(pagesDirResolved, 'versions', liveUuid);
+            const newVersionsDir = path.join(pagesDirResolved, 'versions', sourceUuid);
+            if (await fse.pathExists(oldVersionsDir)) {
+              if (await fse.pathExists(newVersionsDir)) {
+                // Two histories cannot be interleaved without inventing an order
+                // for edits that never shared one. Refuse and report, as orphan
+                // removal does when its precondition fails.
+                logger.warn(
+                  `[adminSyncRequiredPages] refused version-history move ${liveUuid} → ${sourceUuid} ` +
+                  '— a version tree already exists at the destination; both left in place'
+                );
+              } else {
+                await fse.move(oldVersionsDir, newVersionsDir);
+                const manifestPath = path.join(newVersionsDir, 'manifest.json');
+                try {
+                  const manifest = await fse.readJson(manifestPath) as Record<string, unknown>;
+                  manifest.pageId = sourceUuid;
+                  await fse.writeJson(manifestPath, manifest, { spaces: 2 });
+                } catch (err) {
+                  // The tree moved; a manifest we could not rewrite still points
+                  // at the old id. Say so rather than failing the adopt.
+                  logger.warn(
+                    `[adminSyncRequiredPages] moved version history for ${sourceUuid} but could not rewrite its manifest pageId:`,
+                    err
+                  );
+                }
+                logger.info(`[adminSyncRequiredPages] moved version history ${liveUuid} → ${sourceUuid}`);
+              }
+            }
+
             // Remove old NAS file if it existed there
             if (removeOldData) {
               await fse.remove(oldDataPath);
+              // #1107: this step destroys data and used to be silent, while the
+              // cosmetic required-pages cleanup below was logged.
+              logger.info(`[adminSyncRequiredPages] removed superseded page file ${liveUuid} (adopted as ${sourceUuid})`);
             }
             // Always clean up stale required-pages copy (may exist alongside a NAS copy)
             if (await fse.pathExists(oldRequiredPath)) {
