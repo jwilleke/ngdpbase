@@ -55,11 +55,29 @@ The same holds one layer up. A filesystem pages provider and a SQL pages provide
 Each of these is falsifiable, which is the only reason to write them down:
 
 - Every read and write of a resource passes its manager, and a lint rule fails CI if anything else imports a store or a driver. Delete the rule, prove CI goes red.
-- A request that writes through two managers either commits both or neither, and a test that kills the process mid-request proves it. Who owns that unit of work is currently undecided — see [#1109](https://github.com/jwilleke/ngdpbase/issues/1109).
+- A request that writes through two managers either lands both, or loses only the audit record and __says so where an operator will see it__. Which of those is acceptable is a per-resource judgement, not a global rule — see below.
 - Turning on encryption for any resource is a configuration change and touches no provider code.
 - Every manager answers `backup()` and `restore()`, and a default install has a working backup with encryption on.
 - A capability that is not configured is not loaded; a required one that cannot be loaded refuses the boot rather than degrading to inert.
 - The application is built with zero edits to framework files, and the count of exceptions is collected rather than estimated.
+
+### Two writes, one request
+
+A resource has one door. A *request* often crosses several: writing a record and writing the audit entry that says it happened are two managers, two stores, and no boundary around the pair.
+
+__This is not a database problem, and framing it as one is the mistake to avoid.__ It does not arrive with SQL or with transactions. It arrives with __the second store__, and both stacks already have one — ngdpbase writes a page file and an audit log, and has since audit events were added. A transaction is one possible *answer*; the question is what happens when a request must land two writes and only one lands.
+
+__The decision, for audit specifically: the write wins, and the loss is made visible.__
+
+Audit writes are fire-and-forget with a caught error. Losing the log is bad; refusing a page save or a credential mint because the log failed is worse — it converts a recording problem into an outage. So the request completes and the audit entry may not.
+
+That is a real cost and it points one way: not "an audit entry describing a write that never happened", but __a write with no audit entry__. For a page edit that is a gap in history. For a credential it is worse, because knowing the token exists is the entire reason to audit the mint.
+
+The trade is only defensible if the loss is __observable__. An accepted risk nobody can see is indistinguishable from an unnoticed bug, which is the failure shape this project keeps finding. So dropped audit writes are counted since boot, the most recent is described, the first loss and each power of ten are logged at error level, and the count is surfaced on the admin audit page — where it appears only when something has actually been lost.
+
+__What this does not settle.__ Where an unaudited action is genuinely unacceptable, the answer has to be atomicity rather than observability, and that needs an owner for the unit of work: the engine, or the datastore binding the two providers share. Note the second cannot span the tamper-evidence case — PHI local, audit off-box — by construction. That remains open in [#1109](https://github.com/jwilleke/ngdpbase/issues/1109).
+
+For a PHR the bar is higher than for a wiki: [yourphr#507](https://github.com/jwilleke/yourphr/issues/507) makes audit a __required__ capability that refuses to boot, on the principle that an unaudited disclosure did not happen. A system holding that line cannot also quietly drop audit records for disclosures that did. So this decision is inherited as a __starting point with a known exception__, not as settled law.
 
 ### Known gaps against this target
 
@@ -67,7 +85,7 @@ Recorded so the distance is visible rather than implied:
 
 | Gap | Where it stands |
 |---|---|
-| Transaction ownership across managers | Undecided — [#1109](https://github.com/jwilleke/ngdpbase/issues/1109) |
+| Atomicity across managers | Partly decided — see [Two writes, one request](#two-writes-one-request) below and [#1109](https://github.com/jwilleke/ngdpbase/issues/1109) |
 | `DatabaseManager` is singular; the target needs named, plural datastores | Shaped for one connection, with a public `handle` getter marked "composition root only" and enforced only by a comment |
 | Encryption and egress as binding attributes | Today a global `database.encryption.enabled` flag, asked of configuration rather than of the component holding the key |
 | The store-boundary lint | Not written. Until it exists, the invariant is documentation, and documentation decays while the tests stay green |

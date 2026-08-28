@@ -23,6 +23,8 @@
  * rather than descriptive.
  */
 
+import logger from './logger.js';
+
 /** Agent-token identity attached to a request that authenticated with one. */
 export interface AuditViaToken {
   id?: string;
@@ -198,15 +200,84 @@ export function buildAttachmentAuditEvent(input: AttachmentInput): AuditEvent {
  * a successful save into an error response and invite a destructive retry.
  * A missing or unconfigured `AuditManager` is a no-op for the same reason.
  */
+/**
+ * Audit writes that were attempted and lost (#1109).
+ *
+ * Every audit write here is fire-and-forget with a caught error, deliberately:
+ * losing the log is bad, but refusing a page save or a token mint because the
+ * log failed is worse. The consequence is that a request can land its write and
+ * lose its audit entry — a page edited with no history, or a credential minted
+ * with no record it exists.
+ *
+ * That trade is defensible. What is not is leaving its only trace in a
+ * `logger.warn` nobody reads: an accepted risk nobody can see is
+ * indistinguishable from an unnoticed bug. So the drops are counted, the last
+ * one is described, and the count is surfaced where an operator already looks.
+ */
+export interface AuditDropStats {
+  /** Audit writes attempted and lost since boot. */
+  dropped: number;
+  /** `eventType` of the most recent loss, or null. */
+  lastEventType: string | null;
+  /** Message of the most recent failure, or null. */
+  lastError: string | null;
+  /** ISO timestamp of the most recent loss, or null. */
+  lastAt: string | null;
+}
+
+const dropStats: AuditDropStats = { dropped: 0, lastEventType: null, lastError: null, lastAt: null };
+
+/** Audit writes lost since boot. Read-only snapshot. */
+export function getAuditDropStats(): AuditDropStats {
+  return { ...dropStats };
+}
+
+/** Reset the counter. For tests; nothing in the running app calls this. */
+export function resetAuditDropStats(): void {
+  dropStats.dropped = 0;
+  dropStats.lastEventType = null;
+  dropStats.lastError = null;
+  dropStats.lastAt = null;
+}
+
+/**
+ * Loud on the first loss, then at each power of ten.
+ *
+ * One line per dropped event would bury the signal in the noise of whatever
+ * outage caused it — and the first loss is the one that matters, because it is
+ * the moment the log stopped being complete.
+ */
+function shouldShout(count: number): boolean {
+  if (count === 1) return true;
+  let threshold = 10;
+  while (threshold <= count) {
+    if (threshold === count) return true;
+    threshold *= 10;
+  }
+  return false;
+}
+
 export async function recordAuditEvent(
   sink: AuditEventSink | null | undefined,
   event: AuditEvent,
   onError?: (err: unknown) => void
 ): Promise<void> {
+  // An absent sink is a configuration state, not a failure. Counting it would
+  // make the number meaningless on any instance that never enabled auditing.
   if (!sink?.logAuditEvent) return;
   try {
     await sink.logAuditEvent(event as unknown as Record<string, unknown>);
   } catch (err) {
+    dropStats.dropped += 1;
+    dropStats.lastEventType = event.eventType;
+    dropStats.lastError = err instanceof Error ? err.message : String(err);
+    dropStats.lastAt = new Date().toISOString();
+    if (shouldShout(dropStats.dropped)) {
+      logger.error(
+        `[audit] ${dropStats.dropped} audit event(s) lost since boot — latest ${event.eventType}: ${dropStats.lastError}. ` +
+        'The write itself succeeded; only its audit record was lost.'
+      );
+    }
     onError?.(err);
   }
 }

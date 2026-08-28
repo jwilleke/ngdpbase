@@ -4,6 +4,8 @@ import {
   buildAttachmentAuditEvent,
   buildTokenAuditEvent,
   recordAuditEvent,
+  getAuditDropStats,
+  resetAuditDropStats,
   type AuditEventSink
 } from '../auditEvents.js';
 
@@ -235,5 +237,66 @@ describe('buildTokenAuditEvent() — #1111', () => {
   it('an unknown actor is named rather than left undefined', () => {
     const e = buildTokenAuditEvent({ ...base, username: undefined, op: 'revoke', revokedBy: 'system' });
     expect(e.user).toBe('unknown');
+  });
+});
+
+/**
+ * #1109 option 5 — an accepted failure must be observable.
+ *
+ * Every audit write in this codebase is fire-and-forget with a caught error:
+ * losing the log is bad, but refusing a page save or a token mint because the
+ * log failed is worse. That is a deliberate choice, and it means a request can
+ * land its write and lose its audit entry — a page edited with no history, or
+ * a credential minted with no record it exists.
+ *
+ * The choice is defensible. What is not is that the only trace was a
+ * logger.warn nobody reads. An accepted risk nobody can see is
+ * indistinguishable from an unnoticed bug.
+ */
+describe('dropped audit events are counted — #1109', () => {
+  beforeEach(() => resetAuditDropStats());
+
+  const event = () => buildTokenAuditEvent({
+    op: 'mint', username: 'alice', ipAddress: undefined,
+    id: 'tok_1', owner: 'alice', scopes: [], expiresAt: 'x'
+  });
+
+  it('starts at zero', () => {
+    expect(getAuditDropStats().dropped).toBe(0);
+  });
+
+  it('a successful write counts nothing', async () => {
+    await recordAuditEvent({ logAuditEvent: async () => 'id' }, event());
+    expect(getAuditDropStats().dropped).toBe(0);
+  });
+
+  it('a failed write is counted', async () => {
+    const sink: AuditEventSink = { logAuditEvent: async () => { throw new Error('sink down'); } };
+    await recordAuditEvent(sink, event());
+    await recordAuditEvent(sink, event());
+    expect(getAuditDropStats().dropped).toBe(2);
+  });
+
+  it('records what was lost and when, not just how many', async () => {
+    await recordAuditEvent({ logAuditEvent: async () => { throw new Error('ENOSPC'); } }, event());
+    const stats = getAuditDropStats();
+    expect(stats.lastEventType).toBe('token.mint');
+    expect(stats.lastError).toMatch(/ENOSPC/);
+    expect(stats.lastAt).toBeTruthy();
+  });
+
+  it('an absent sink is not a drop', async () => {
+    // No AuditManager registered is a configuration state, not a failure.
+    // Counting it would make the number meaningless on any instance that
+    // never enabled auditing.
+    await recordAuditEvent(null, event());
+    await recordAuditEvent({}, event());
+    expect(getAuditDropStats().dropped).toBe(0);
+  });
+
+  it('still calls the caller onError, so existing handling is unchanged', async () => {
+    const onError = vi.fn();
+    await recordAuditEvent({ logAuditEvent: async () => { throw new Error('x'); } }, event(), onError);
+    expect(onError).toHaveBeenCalledOnce();
   });
 });

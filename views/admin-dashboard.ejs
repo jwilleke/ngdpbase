@@ -15,6 +15,26 @@
         </div>
     <% } %>
 
+    <%# #1109 — audit writes are fire-and-forget: a failed log must not fail the
+        write it describes, so the log goes incomplete rather than the request
+        breaking. That trade is deliberate, but it is invisible unless shown
+        where an operator already looks. Not dismissible, and rendered only when
+        something has actually been lost, so a healthy instance shows nothing. %>
+    <% if (typeof auditDrops !== 'undefined' && auditDrops && auditDrops.dropped > 0) { %>
+        <div class="alert alert-danger d-flex align-items-start" role="alert">
+            <i class="fas fa-triangle-exclamation me-2 mt-1" aria-hidden="true"></i>
+            <div>
+                <strong><%= auditDrops.dropped %></strong> audit event<%= auditDrops.dropped === 1 ? '' : 's' %>
+                lost since this server started &mdash; the actions they describe still happened, but the audit log
+                does not record them.
+                <div class="small text-muted mt-1">
+                    Most recent: <code><%= auditDrops.lastEventType %></code>
+                    at <%= auditDrops.lastAt %> &mdash; <%= auditDrops.lastError %>
+                </div>
+            </div>
+        </div>
+    <% } %>
+
     <div class="row">
         <div class="col-12 d-flex justify-content-between align-items-start flex-wrap gap-2">
             <div>

@@ -52,7 +52,8 @@ import {
   recordAuditEvent,
   type PageMutationOp,
   type AuditEventSink,
-  type AuditViaToken
+  type AuditViaToken,
+  getAuditDropStats
 } from '../utils/auditEvents.js';
 import { stringifyJsonLdForScript, wantsJsonLd } from '../utils/buildPageJsonLd.js';
 import { articleToPageJsonLd } from '../utils/articleToPageJsonLd.js';
@@ -9295,7 +9296,12 @@ ${panes}
         addonCards,
         shareSummary,
         agentTokenSummary, // #946
-        catalogSources
+        catalogSources,
+        // #1109: audit writes are fire-and-forget by design — a failed log must
+        // not fail the write it describes, so the log goes incomplete rather
+        // than the request breaking. That trade is only defensible if the loss
+        // is visible, and the dashboard is where an operator actually lands.
+        auditDrops: getAuditDropStats()
       };
 
       res.render('admin-dashboard', templateData);
