@@ -26,6 +26,33 @@
     issue body live in header.ejs and are deferred to a follow-up. %>
 <%- (typeof extraBodyPreContent !== 'undefined' ? extraBodyPreContent : '') %>
 
+<%# #1105 — arrived here by a former title. `renamedFrom` is the value stored in
+    this page's own frontmatter, already matched against the `?from=` parameter
+    server-side, so it is safe to render and cannot be forged by the query string.
+    The 301 is cached by the browser, so this notice persists on every use of the
+    stale bookmark — that is deliberate: it is the only nudge the reader ever gets
+    to re-bookmark. %>
+<% if (typeof renamedFrom !== 'undefined' && renamedFrom) { %>
+  <div class="alert alert-info d-flex align-items-center mb-4" role="status">
+    <i class="fas fa-right-left me-2" aria-hidden="true"></i>
+    <div>
+      You followed a link to <strong><%= renamedFrom %></strong>, which was renamed to
+      <strong><%= pageName %></strong>. Please update your bookmark.
+    </div>
+  </div>
+  <script>
+    // Drop ?from= from the address bar so re-bookmarking captures the canonical
+    // URL. The notice has already rendered; this only tidies what the user sees.
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.has('from')) {
+        url.searchParams.delete('from');
+        window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+      }
+    } catch { /* address bar cosmetics only — never break the page for this */ }
+  </script>
+<% } %>
+
 <!-- Page content -->
 <article class="markdown-body mb-4">
   <%- content %>

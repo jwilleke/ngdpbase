@@ -16,6 +16,7 @@ import type {
 } from '../types/Schema.js';
 import { pageToArticle } from '../utils/pageToArticle.js';
 import { dedupeKeywords, normalizeKeywordValue } from '../utils/keywordNormalizer.js';
+import { computeFormerTitles, buildFormerTitleIndex, AMBIGUOUS } from '../utils/formerTitles.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { FilterValidationError } from '../parsers/filters/FilterChain.js';
 
@@ -122,6 +123,15 @@ class PageManager extends BaseManager implements CatalogSource {
   readonly currentSchemaVersion = PageManager.CURRENT_SCHEMA_VERSION;
 
   private provider: PageProvider | null = null;
+
+  /**
+   * Lowercased former title → current title, or AMBIGUOUS (#1105).
+   *
+   * Null until first use. Built lazily rather than at boot: it is only ever
+   * consulted on the 404 path, so an instance that never serves a stale URL
+   * never pays for it. Invalidated on any save that changes `formerTitles`.
+   */
+  private formerTitleIndex: Map<string, string | typeof AMBIGUOUS> | null = null;
   private providerClass?: string;
 
   /**
@@ -678,6 +688,66 @@ class PageManager extends BaseManager implements CatalogSource {
     return map;
   }
 
+  /**
+   * Resolve a former page title to the page that holds it now, or null (#1105).
+   *
+   * **Callers must have already failed live resolution.** This is a fallback, not
+   * a lookup: answering for a title that still exists would let a stale name
+   * shadow a real page. `viewPage` calls it only on the not-found path.
+   *
+   * Returns null on ambiguity rather than guessing. A confidently wrong redirect
+   * to a page that merely once shared a name is worse than the 404 it replaces —
+   * a 404 is visibly broken, and the wrong page is not.
+   *
+   * @param formerTitle - The title that failed to resolve
+   * @returns The current title of the page that was renamed from it, or null
+   */
+  async resolveFormerTitle(formerTitle: string): Promise<string | null> {
+    const key = (formerTitle ?? '').trim().toLowerCase();
+    if (!key || !this.provider) return null;
+
+    if (!this.formerTitleIndex) {
+      this.formerTitleIndex = await this.buildFormerTitleIndexFromPages();
+    }
+
+    const hit = this.formerTitleIndex.get(key);
+    if (hit === undefined || hit === AMBIGUOUS) return null;
+    return hit;
+  }
+
+  /**
+   * Walk the page set and derive the former-title index.
+   *
+   * Metadata comes from the provider's already-loaded cache, so this is memory
+   * work rather than I/O. A page whose metadata cannot be read is skipped — a
+   * single unreadable page must not deny resolution for every other.
+   *
+   * @private
+   */
+  private async buildFormerTitleIndexFromPages(): Promise<Map<string, string | typeof AMBIGUOUS>> {
+    const sources: Array<{ title: string; formerTitles?: unknown }> = [];
+    try {
+      const titles = await this.getAllPages();
+      for (const title of titles) {
+        try {
+          const metadata = await this.provider?.getPageMetadata(title);
+          sources.push({
+            title: (metadata?.title) ?? title,
+            formerTitles: (metadata as Record<string, unknown> | null | undefined)?.formerTitles
+          });
+        } catch {
+          sources.push({ title });
+        }
+      }
+    } catch (err) {
+      logger.warn('[PageManager] Could not build former-title index:', err);
+      return new Map();
+    }
+    const index = buildFormerTitleIndex(sources);
+    logger.info(`[PageManager] Former-title index built: ${index.size} entries from ${sources.length} pages`);
+    return index;
+  }
+
   async getPageMetadata(identifier: string): Promise<PageFrontmatter | null> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
@@ -916,6 +986,30 @@ class PageManager extends BaseManager implements CatalogSource {
     }
     // else: left absent — a human wrote this revision, so any prior stamp is
     // deliberately not carried forward.
+
+    // #1105: record the outgoing title so the page stays reachable by its old
+    // name. Both rename paths — the editor form and POST /api/page/:id/rename —
+    // pass the OLD name as wikiContext.pageName with the new one in
+    // metadata.title, so detecting it here covers both without either knowing.
+    //
+    // Frontmatter is the store on purpose: the page is its own durable record,
+    // so this survives restart, backup/restore and a full index rebuild. Nothing
+    // seeds the field, so the #803 carry-forward preserves it on ordinary saves
+    // (#1106 closed the class of bug that would otherwise have eaten it).
+    const previousTitle = (existingPage?.metadata as Record<string, unknown> | undefined)?.title as string | undefined
+      ?? existingPage?.title;
+    const formerTitles = computeFormerTitles(
+      (existingPage?.metadata as Record<string, unknown> | undefined)?.formerTitles,
+      previousTitle,
+      (rawMetadata.title) ?? pageName
+    );
+    if (formerTitles) {
+      (rawMetadata as Record<string, unknown>).formerTitles = formerTitles;
+      // The index is derived state; keep it in step rather than rebuilding.
+      this.formerTitleIndex = null;
+    } else {
+      delete (rawMetadata as Record<string, unknown>).formerTitles;
+    }
 
     // Determine if this is a required page by checking the system-category config.
     // Required pages (storageLocation === 'required') cannot be marked private.

@@ -261,6 +261,9 @@ interface IPageManager {
   pageExists(name: string): boolean;
   savePage(name: string, content: string, metadata?: Partial<PageFrontmatter>, options?: unknown): Promise<void>;
   savePageWithContext(wikiContext: unknown, metadata?: Partial<PageFrontmatter>): Promise<void>;
+
+  /** #1105: former title -> current title, consulted only after live resolution fails. */
+  resolveFormerTitle?(formerTitle: string): Promise<string | null>;
   deletePage(name: string, options?: unknown): Promise<boolean>;
   deletePageWithContext(wikiContext: unknown): Promise<boolean>;
   getCurrentPageProvider(): IVersioningProvider | null;
@@ -2713,6 +2716,31 @@ ${panes}
         });
 
       if (markdown === null) {
+        // #1105: the four-step live ladder missed, so this may be a page's former
+        // title — a bookmark or an external link that predates a rename. Those
+        // are not ours to rewrite the way inbound page links are, so resolution
+        // is the only repair available.
+        //
+        // 301, not 302: a rename is permanent, and this exists for links followed
+        // months or years later, where moving search ranking to the new title is
+        // the point. Accepted cost: browsers cache a 301 hard, so if a former
+        // title is ever reused by a NEW page, a client holding the cached
+        // redirect never asks us again and lands on the wrong page. The server
+        // side stays correct — live resolution runs first, and the index refuses
+        // an ambiguous title — but we cannot reach a cached client.
+        //
+        // `from` drives the "renamed" notice on the target page. It is rendered
+        // only after the target confirms the value is one of its own former
+        // titles, never echoed from the query string.
+        const renamedTo = await pageManager.resolveFormerTitle?.(pageName);
+        if (renamedTo) {
+          logger.info(`[VIEW] former title '${pageName}' -> '${renamedTo}' (301)`);
+          return res.redirect(
+            301,
+            `/view/${encodeURIComponent(renamedTo)}?from=${encodeURIComponent(pageName)}`
+          );
+        }
+
         return await this.renderError(
           req,
           res,
@@ -2952,9 +2980,25 @@ ${panes}
         })
         : [];
 
+      // #1105: the "arrived via a former title" notice. The value rendered is the
+      // one stored in the page's own frontmatter, never the query string —
+      // `from` is attacker-controlled, and echoing it would put arbitrary text on
+      // the page. Validating against the page's own formerTitles is also the only
+      // OFF switch: the 301 is cached client-side, so clients keep sending
+      // `?from=` whatever we do, and removing the frontmatter entry is the sole
+      // way to stop the notice appearing.
+      const _renamedFromParam = typeof req.query.from === 'string' ? req.query.from.trim() : '';
+      const _pageFormerTitles: string[] = Array.isArray((metadata as Record<string, unknown> | null)?.formerTitles)
+        ? ((metadata as Record<string, unknown>).formerTitles as unknown[]).filter((t): t is string => typeof t === 'string')
+        : [];
+      const renamedFrom = _renamedFromParam
+        ? _pageFormerTitles.find((t) => t.toLowerCase() === _renamedFromParam.toLowerCase()) ?? null
+        : null;
+
       res.render(template, {
         socialMeta,
         ...templateData,
+        renamedFrom,
         pageName,
         title: pageName, // For reader view template
         content: html,
