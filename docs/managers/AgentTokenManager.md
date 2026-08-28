@@ -59,7 +59,7 @@ __Emitted from the manager, not the route.__ `page.*` events are built in `WikiR
 
 The emit is fire-and-forget with a caught error: losing the log is bad, but refusing to mint because the log failed is worse.
 
-Because the lifecycle is audited, `retention-days` no longer has to keep dead records as a stand-in audit trail. It may be set to `0` to purge as soon as a record is dead.
+Because the lifecycle is audited, `retention-days` no longer has to keep dead records as a stand-in audit trail. The default is __1 day__, not 30: long enough for the admin token list to show what happened to a token yesterday, short enough that hash-bearing records do not linger. `0` purges as soon as a record is dead.
 
 ## Design decisions
 
