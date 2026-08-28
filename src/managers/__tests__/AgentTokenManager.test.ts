@@ -332,14 +332,14 @@ describe('AgentTokenManager hardening (#1108)', () => {
       expect(onDisk[record.id].lastUsedAt).not.toBeNull();
     });
 
-    test('snapshots are taken on structural change and stay bounded', async () => {
-      const m = await makeManager({ 'ngdpbase.auth.agent-token.backup-keep': 2 });
+    test('a structural change writes no snapshot either (#1110)', async () => {
+      // aed2e42a bounded the snapshot to `backup-keep`; #1110 removed it. The
+      // read path was never the whole problem — a copy of a credential store is
+      // a liability whichever path writes it, and restoring one un-revokes
+      // tokens somebody deliberately killed.
+      const m = await makeManager();
       for (let i = 0; i < 6; i++) await m.mint('jim', `t${i}`, ['page-ingest'], 1, Date.now() + i);
-      // Exactly the bound, not merely under it: five structural changes after
-      // the first (which has no prior file to copy), pruned to backup-keep.
-      // The original collided on Date.now() milliseconds, so its snapshots
-      // overwrote each other and stayed few BY ACCIDENT rather than by policy.
-      expect((await backupsIn()).length).toBe(2);
+      expect(await backupsIn()).toEqual([]);
     });
   });
 
@@ -483,5 +483,93 @@ describe('AgentTokenManager hardening (#1108)', () => {
       expect(data.count).toBe(1);
       expect(JSON.stringify(data)).not.toContain('sha256:');
     });
+  });
+});
+
+/**
+ * #1110 — three defects found reviewing aed2e42a, plus removal of the store
+ * snapshot.
+ *
+ * The snapshot existed to survive a torn write. aed2e42a replaced plain
+ * writeFile with writeFileAtomic, which removes that failure — what remained
+ * was a full copy of every token hash beside the live store, defended as
+ * insurance against this class deleting a record it should not have. That does
+ * not hold up: restoring un-revokes tokens someone deliberately killed, tokens
+ * are short-lived so re-minting is trivial, and backup() excludes hashes on the
+ * stated grounds that a backup must not carry material checkable against a
+ * presented token — while the snapshot wrote exactly that, unencrypted, beside
+ * the original.
+ */
+describe('#1110 no snapshots, and a failed write does not poison the queue', () => {
+  const KEY = 'ngdpbase.auth.agent-token';
+
+  test('a mutation writes no backup file beside the store', async () => {
+    const mgr = await makeManager();
+    const { record } = await mgr.mint('alice', 'probe', ['page-read']);
+    await mgr.revoke(record.id, 'alice');
+    await mgr.purgeExpired();
+
+    expect(await fs.readdir(tmpDir)).toEqual(['agent-tokens.json']);
+  });
+
+  test('a failed write does not stop the next write from succeeding', async () => {
+    // The bug: `this.writeQueue = this.writeQueue.then(fn)` supplies only a
+    // fulfilled handler, so one rejection leaves the stored chain permanently
+    // rejected — every later persist reports the STALE error without ever
+    // attempting a write. Real fault injection rather than a mock: the point is
+    // that the queue recovers from a genuine rejection.
+    const mgr = await makeManager();
+    await fs.chmod(tmpDir, 0o500);
+    await expect(mgr.mint('alice', 'doomed', ['page-read'])).rejects.toThrow();
+
+    await fs.chmod(tmpDir, 0o700);
+    await expect(mgr.mint('alice', 'later', ['page-read'])).resolves.toBeDefined();
+
+    const onDisk = JSON.parse(await fs.readFile(path.join(tmpDir, 'agent-tokens.json'), 'utf8'));
+    const names = Object.values(onDisk).map((r) => (r as { name: string }).name);
+    expect(names).toContain('later');
+  });
+
+  test('shutdown waits for an in-flight write', async () => {
+    // A revoke whose write has not landed is lost if shutdown returns before it
+    // does: app.ts awaits engine.shutdown() and then exits, so the token is
+    // live again after restart.
+    const mgr = await makeManager();
+    const { record } = await mgr.mint('alice', 'doomed', ['page-read']);
+    void mgr.revoke(record.id, 'alice');
+    await mgr.shutdown();
+
+    const onDisk = JSON.parse(await fs.readFile(path.join(tmpDir, 'agent-tokens.json'), 'utf8'));
+    expect(onDisk[record.id].revokedAt).not.toBeNull();
+  });
+
+  test('zero is a legal value for count-style settings', async () => {
+    // `n <= 0` fell back for every key and logged "is not a positive number",
+    // which is wrong where zero is meaningful: retention-days: 0 means purge as
+    // soon as dead, max-per-user: 0 means allow none.
+    const mgr = await makeManager({ [`${KEY}.retention-days`]: 0, [`${KEY}.max-per-user`]: 0 });
+    expect((mgr as unknown as { tokenConfig: Record<string, number> }).tokenConfig)
+      .toMatchObject({ retentionDays: 0, maxPerUser: 0 });
+  });
+
+  test('zero is still refused for interval and TTL settings', async () => {
+    // A zero TTL mints a token already expired; a zero interval is a busy loop.
+    const mgr = await makeManager({
+      [`${KEY}.default-ttl-hours`]: 0,
+      [`${KEY}.max-ttl-hours`]: 0,
+      [`${KEY}.maintenance-interval-seconds`]: 0
+    });
+    const cfg = (mgr as unknown as { tokenConfig: Record<string, number> }).tokenConfig;
+    expect(cfg.defaultTtlHours).toBeGreaterThan(0);
+    expect(cfg.maxTtlHours).toBeGreaterThan(0);
+    expect(cfg.maintenanceIntervalSeconds).toBeGreaterThan(0);
+  });
+
+  test('retention-days: 0 purges a revoked record on the next sweep', async () => {
+    const mgr = await makeManager({ [`${KEY}.retention-days`]: 0 });
+    const { record } = await mgr.mint('alice', 'probe', ['page-read']);
+    await mgr.revoke(record.id, 'alice');
+    expect(await mgr.purgeExpired()).toBe(1);
+    expect(mgr.listAll()).toHaveLength(0);
   });
 });

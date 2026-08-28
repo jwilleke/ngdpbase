@@ -140,7 +140,6 @@ interface AgentTokenConfig {
   maxPerUser: number;
   retentionDays: number;
   maintenanceIntervalSeconds: number;
-  backupKeep: number;
 }
 
 function sha256(value: string): string {
@@ -176,14 +175,14 @@ function expiryOf(record: Pick<AgentTokenRecord, 'expiresAt'>): number {
  * silently removed the TTL ceiling and let any caller mint a token lasting
  * years. A limit that can be disabled by a typo is not a limit.
  */
-function positiveNumber(value: unknown, fallback: number, key: string): number {
+function boundedNumber(value: unknown, fallback: number, key: string, min: number): number {
   const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) {
+  if (!Number.isFinite(n) || n < min) {
     if (value !== undefined && value !== null) {
       // JSON.stringify, not String(): the value arrives from a config file and
       // may be an object, which stringifies to a useless "[object Object]" in
       // the one message an operator has to diagnose the typo from.
-      logger.warn(`[AgentTokenManager] ${key}=${JSON.stringify(value)} is not a positive number — using ${fallback}`);
+      logger.warn(`[AgentTokenManager] ${key}=${JSON.stringify(value)} is not a number >= ${min} — using ${fallback}`);
     }
     return fallback;
   }
@@ -251,8 +250,7 @@ class AgentTokenManager extends BaseManager {
     maxTtlHours: 24,
     maxPerUser: 10,
     retentionDays: 30,
-    maintenanceIntervalSeconds: 60,
-    backupKeep: 5
+    maintenanceIntervalSeconds: 60
   };
 
   constructor(engine: WikiEngine) {
@@ -265,16 +263,24 @@ class AgentTokenManager extends BaseManager {
       throw new Error('AgentTokenManager requires ConfigurationManager');
     }
 
-    const num = (key: string, fallback: number): number =>
-      positiveNumber(configManager.getProperty(`${CONFIG_PREFIX}.${key}`, fallback), fallback, `${CONFIG_PREFIX}.${key}`);
+    // #1110: validate against what a setting MEANS, not a blanket positivity
+    // check. An interval or a TTL has no meaningful zero — a zero TTL mints a
+    // token already expired, a zero interval is a busy loop. A count or a
+    // retention window does: `retention-days: 0` means purge as soon as dead,
+    // `max-per-user: 0` means allow none. Rejecting those told the operator
+    // their deliberate value "is not a positive number" and silently used the
+    // default instead.
+    const positive = (key: string, fallback: number): number =>
+      boundedNumber(configManager.getProperty(`${CONFIG_PREFIX}.${key}`, fallback), fallback, `${CONFIG_PREFIX}.${key}`, 1);
+    const count = (key: string, fallback: number): number =>
+      boundedNumber(configManager.getProperty(`${CONFIG_PREFIX}.${key}`, fallback), fallback, `${CONFIG_PREFIX}.${key}`, 0);
 
     this.tokenConfig = {
-      defaultTtlHours: num('default-ttl-hours', 24),
-      maxTtlHours: num('max-ttl-hours', 24),
-      maxPerUser: num('max-per-user', 10),
-      retentionDays: num('retention-days', 30),
-      maintenanceIntervalSeconds: num('maintenance-interval-seconds', 60),
-      backupKeep: num('backup-keep', 5)
+      defaultTtlHours: positive('default-ttl-hours', 24),
+      maxTtlHours: positive('max-ttl-hours', 24),
+      maxPerUser: count('max-per-user', 10),
+      retentionDays: count('retention-days', 30),
+      maintenanceIntervalSeconds: positive('maintenance-interval-seconds', 60)
     };
 
     const dir = configManager.getResolvedDataPath(`${CONFIG_PREFIX}.directory`, './data/tokens');
@@ -364,46 +370,14 @@ class AgentTokenManager extends BaseManager {
       null,
       2
     );
-    this.writeQueue = this.writeQueue.then(() => writeFileAtomic(this.storePath, payload, 'utf8'));
-    return this.writeQueue;
-  }
-
-  /**
-   * Copy the current store aside, then persist — for structural changes only.
-   *
-   * The original took one of these inside `persist()`, which `verify()` called
-   * on every request: at millisecond-granular names, an active server wrote a
-   * new hash-bearing file per millisecond of traffic and never removed any,
-   * while same-millisecond writes silently overwrote each other. So it grew
-   * without bound *and* was lossy as a backup.
-   *
-   * Kept — bounded — because temp-then-rename protects against a torn write but
-   * not against this class deleting a record it should not have. That is the
-   * only failure a copy still answers for.
-   */
-  private async snapshotThenPersist(now: number): Promise<void> {
-    try {
-      const existing = await fs.readFile(this.storePath, 'utf8');
-      await writeFileAtomic(`${this.storePath}.backup-${new Date(now).toISOString().replace(/[:.]/g, '-')}`, existing, 'utf8');
-      await this.pruneBackups();
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code !== 'ENOENT') {
-        // A failed backup must not block the write it was protecting.
-        logger.warn('[AgentTokenManager] Could not snapshot the token store:', err);
-      }
-    }
-    await this.persist();
-  }
-
-  /** Keep only the newest `backupKeep` snapshots. */
-  private async pruneBackups(): Promise<void> {
-    const dir = path.dirname(this.storePath);
-    const base = `${path.basename(this.storePath)}.backup-`;
-    const backups = (await fs.readdir(dir)).filter(f => f.startsWith(base)).sort();
-    for (const stale of backups.slice(0, Math.max(0, backups.length - this.tokenConfig.backupKeep))) {
-      await fs.rm(path.join(dir, stale), { force: true });
-    }
+    // #1110: the caller sees its own failure; the QUEUE must not inherit it.
+    // `writeQueue = writeQueue.then(fn)` supplies only a fulfilled handler, so
+    // one rejection left the stored chain permanently rejected: every later
+    // persist chained off it, never ran, and reported the stale original error.
+    // One second of a full volume and nothing was written again until restart.
+    const next = this.writeQueue.then(() => writeFileAtomic(this.storePath, payload, 'utf8'));
+    this.writeQueue = next.catch(() => {});
+    return next;
   }
 
   /**
@@ -485,7 +459,7 @@ class AgentTokenManager extends BaseManager {
     };
 
     this.tokens.set(id, record);
-    await this.snapshotThenPersist(now);
+    await this.persist();
 
     return { token, record: this.toPublic(record) };
   }
@@ -547,7 +521,7 @@ class AgentTokenManager extends BaseManager {
     if (!record || record.revokedAt) return false;
     record.revokedAt = new Date(now).toISOString();
     record.revokedBy = byUsername;
-    await this.snapshotThenPersist(now);
+    await this.persist();
     logger.info(`[AgentTokenManager] Token ${id} (owner=${record.owner}) revoked by ${byUsername}`);
     return true;
   }
@@ -569,7 +543,7 @@ class AgentTokenManager extends BaseManager {
       }
     }
     if (purged > 0) {
-      await this.snapshotThenPersist(now);
+      await this.persist();
       logger.info(`[AgentTokenManager] Purged ${purged} expired/revoked token record(s)`);
     }
     return purged;
@@ -607,6 +581,12 @@ class AgentTokenManager extends BaseManager {
     } catch (err) {
       logger.warn('[AgentTokenManager] Could not flush lastUsedAt on shutdown:', err);
     }
+    // #1110: flushLastUsed() returns immediately when nothing is dirty, so it
+    // never touches the queue. A revoke whose write had not landed was lost on
+    // SIGTERM — app.ts awaits engine.shutdown() and then exits — and the token
+    // was live again after restart, which is exactly the durability this method
+    // claims to provide.
+    await this.writeQueue.catch(() => {});
     await super.shutdown();
   }
 
