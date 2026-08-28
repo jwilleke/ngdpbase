@@ -557,12 +557,12 @@ describe('#1110 no snapshots, and a failed write does not poison the queue', () 
     const mgr = await makeManager({
       [`${KEY}.default-ttl-hours`]: 0,
       [`${KEY}.max-ttl-hours`]: 0,
-      [`${KEY}.maintenance-interval-seconds`]: 0
+      [`${KEY}.sweep-interval-seconds`]: 0
     });
     const cfg = (mgr as unknown as { tokenConfig: Record<string, number> }).tokenConfig;
     expect(cfg.defaultTtlHours).toBeGreaterThan(0);
     expect(cfg.maxTtlHours).toBeGreaterThan(0);
-    expect(cfg.maintenanceIntervalSeconds).toBeGreaterThan(0);
+    expect(cfg.sweepIntervalSeconds).toBeGreaterThan(0);
   });
 
   test('retention-days: 0 purges a revoked record on the next sweep', async () => {

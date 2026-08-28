@@ -139,7 +139,7 @@ interface AgentTokenConfig {
   maxTtlHours: number;
   maxPerUser: number;
   retentionDays: number;
-  maintenanceIntervalSeconds: number;
+  sweepIntervalSeconds: number;
 }
 
 function sha256(value: string): string {
@@ -250,7 +250,7 @@ class AgentTokenManager extends BaseManager {
     maxTtlHours: 24,
     maxPerUser: 10,
     retentionDays: 30,
-    maintenanceIntervalSeconds: 60
+    sweepIntervalSeconds: 60
   };
 
   constructor(engine: WikiEngine) {
@@ -280,7 +280,7 @@ class AgentTokenManager extends BaseManager {
       maxTtlHours: positive('max-ttl-hours', 24),
       maxPerUser: count('max-per-user', 10),
       retentionDays: count('retention-days', 30),
-      maintenanceIntervalSeconds: positive('maintenance-interval-seconds', 60)
+      sweepIntervalSeconds: positive('sweep-interval-seconds', 60)
     };
 
     const dir = configManager.getResolvedDataPath(`${CONFIG_PREFIX}.directory`, './data/tokens');
@@ -307,7 +307,7 @@ class AgentTokenManager extends BaseManager {
    */
   private startMaintenance(): void {
     if (this.maintenanceTimer) return;
-    const everyMs = this.tokenConfig.maintenanceIntervalSeconds * 1000;
+    const everyMs = this.tokenConfig.sweepIntervalSeconds * 1000;
     this.maintenanceTimer = setInterval(() => {
       void (async () => {
         try {

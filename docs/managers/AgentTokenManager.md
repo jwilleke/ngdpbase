@@ -14,7 +14,9 @@ Verification is exposed through [AgentTokenAuthProvider](../providers/AgentToken
 
 ## Store
 
-`<FAST_STORAGE>/tokens/agent-tokens.json` — a map keyed by token id, matching the map-not-array convention of `users.json`. Writes are atomic (`writeFileAtomic`, temp-then-rename) and serialised behind a write queue. `agent-tokens.json.backup-<timestamp>` siblings are written on __structural change only__ — a mint, a revoke, a purge — and pruned to `backup-keep`. They are deliberately not written on `verify()`: see [#1108](https://github.com/jwilleke/ngdpbase/issues/1103), where authenticating wrote an unbounded pile of hash-bearing files into the token directory.
+`<FAST_STORAGE>/tokens/agent-tokens.json` — a map keyed by token id, matching the map-not-array convention of `users.json`. Writes are atomic (`writeFileAtomic`, temp-then-rename) and serialised behind a write queue; a failed write does not poison that queue, so a transient disk error does not stop every later write ([#1110](https://github.com/jwilleke/ngdpbase/issues/1110)).
+
+Nothing else is written to that directory. The store is __never copied aside__. An earlier version snapshotted it before each write — originally on every `verify()`, which meant authenticating wrote an unbounded pile of hash-bearing files ([#1108](https://github.com/jwilleke/ngdpbase/issues/1108)), and later bounded to a few. Both were removed in [#1110](https://github.com/jwilleke/ngdpbase/issues/1110), because a copy of a credential store is a liability whichever path writes it: restoring one un-revokes tokens somebody deliberately killed, tokens are short-lived so a wrongly purged one is re-minted in a minute, and `backup()` excludes hashes precisely because a backup must not carry material checkable against a presented token.
 
 `FAST_STORAGE` is correct per the deployment split (sessions, logs, users, config) rather than `SLOW_STORAGE` (pages, attachments, backups). On deployments where those are separate volumes, tokens belong with sessions and users.
 
