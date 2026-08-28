@@ -62,6 +62,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import BaseManager from './BaseManager.js';
 import type { BackupData } from './BaseManager.js';
+import { buildTokenAuditEvent, recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { writeFileAtomic } from '../utils/atomicWrite.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -398,6 +399,17 @@ class AgentTokenManager extends BaseManager {
    * Mint a token for `owner`.
    * @throws Error with a caller-safe message on validation failure.
    */
+  /**
+   * The audit sink, or null when no AuditManager is registered (#1111).
+   *
+   * Fire-and-forget with a caught error at the call site: the credential is the
+   * product and the log is a record of it, so losing the log is bad but
+   * refusing to mint because the log failed is worse.
+   */
+  private auditSink(): AuditEventSink | null {
+    return this.engine.getManager('AuditManager') as AuditEventSink | null;
+  }
+
   async mint(
     owner: string,
     name: string,
@@ -461,6 +473,21 @@ class AgentTokenManager extends BaseManager {
     this.tokens.set(id, record);
     await this.persist();
 
+    void recordAuditEvent(
+      this.auditSink(),
+      buildTokenAuditEvent({
+        op: 'mint',
+        username: owner,
+        ipAddress: undefined,
+        id,
+        owner,
+        name: record.name,
+        scopes: record.scopes,
+        expiresAt: record.expiresAt
+      }),
+      (err) => logger.warn(`[AgentTokenManager] Audit log failed for token.mint of ${id}:`, err)
+    );
+
     return { token, record: this.toPublic(record) };
   }
 
@@ -522,11 +549,34 @@ class AgentTokenManager extends BaseManager {
     record.revokedAt = new Date(now).toISOString();
     record.revokedBy = byUsername;
     await this.persist();
+
+    void recordAuditEvent(
+      this.auditSink(),
+      buildTokenAuditEvent({
+        op: 'revoke',
+        username: byUsername,
+        ipAddress: undefined,
+        id,
+        owner: record.owner,
+        name: record.name,
+        revokedBy: byUsername
+      }),
+      (err) => logger.warn(`[AgentTokenManager] Audit log failed for token.revoke of ${id}:`, err)
+    );
+
     logger.info(`[AgentTokenManager] Token ${id} (owner=${record.owner}) revoked by ${byUsername}`);
     return true;
   }
 
-  /** Drop expired/revoked records past the retention window. Audit is unaffected. */
+  /**
+   * Drop expired/revoked records past the retention window.
+   *
+   * The audit log is unaffected — and since #1111 that is true rather than
+   * aspirational: `token.mint` and `token.revoke` events outlive the records
+   * here, so purging loses the credential and keeps the history of it. Before
+   * that, this comment claimed an audit trail that did not exist, which made
+   * `retention-days` load-bearing by accident.
+   */
   async purgeExpired(now: number = Date.now()): Promise<number> {
     const cutoff = now - this.tokenConfig.retentionDays * 86_400_000;
     let purged = 0;
@@ -595,16 +645,39 @@ class AgentTokenManager extends BaseManager {
     // material that can be checked against a presented token. The consequence
     // is stated rather than left to be discovered: this backup CANNOT restore
     // working tokens, and a restore leaves every agent needing a fresh mint.
-    // What it does preserve is the audit trail of what existed.
+    //
+    // #1111: every record, not `listAll()`. That filters to live tokens, so a
+    // token revoked an hour before the backup — the case incident response
+    // most wants — was absent, while the comment here claimed to preserve
+    // "what existed". The lifecycle is now in the audit log too; this carries
+    // the roster so a restored instance can still say what it had.
     return {
       managerName: 'AgentTokenManager',
       timestamp: new Date().toISOString(),
       data: {
         restorable: false,
         count: this.tokens.size,
-        tokens: this.listAll()
+        tokens: [...this.tokens.values()].map((r) => this.toPublic(r))
       }
     };
+  }
+
+  /**
+   * Refuse. A token backup carries no hashes, so there is nothing to restore
+   * from (#1111).
+   *
+   * This used to inherit `BaseManager`'s no-op default, which meant
+   * `restorable: false` was honoured because nobody had implemented the
+   * alternative rather than because anything declined. If someone later wrote a
+   * restore from that payload, records would return with NO hash, and whether
+   * they failed closed would depend entirely on how `verify()` compares. A
+   * refusal that is written down cannot be undone by accident.
+   */
+  async restore(_backupData: BackupData): Promise<void> {
+    throw new Error(
+      'AgentTokenManager: agent tokens cannot be restored — the backup excludes hashes by design, ' +
+      'so every agent needs a fresh mint after a restore'
+    );
   }
 }
 

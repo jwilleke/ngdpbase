@@ -42,6 +42,25 @@ A record:
 
 `owner` is a __reference, not a copy of the user's roles.__ That is what makes permissions resolve live — demoting or disabling a user immediately weakens every token they hold.
 
+## Audit events
+
+Mint and revoke emit audit events through `AuditManager` ([#1111](https://github.com/jwilleke/ngdpbase/issues/1111)):
+
+| Event | `action` | Carries |
+|---|---|---|
+| `token.mint` | `token-mint` | `id`, `owner`, `name`, `scopes`, `expiresAt` |
+| `token.revoke` | `token-revoke` | `id`, `owner`, `name`, `revokedBy` |
+
+Both also carry `viaTokenId` / `viaTokenName`, as explicit nulls for a human action so a query can filter on the field existing rather than treating "absent" and "not a token" as the same thing.
+
+Severity is `medium` for a human action and `high` when a token was minted or revoked __by another token__ — delegation widening unattended is the case a reader of the log is looking for.
+
+__Emitted from the manager, not the route.__ `page.*` events are built in `WikiRoutes`, so only the HTTP path is audited and an internal caller produces nothing. Survivable for a page edit; not for a credential, where an unaudited mint is a token nobody knows exists. The manager is the one door, so the record is written at the door.
+
+The emit is fire-and-forget with a caught error: losing the log is bad, but refusing to mint because the log failed is worse.
+
+Because the lifecycle is audited, `retention-days` no longer has to keep dead records as a stand-in audit trail. It may be set to `0` to purge as soon as a record is dead.
+
 ## Design decisions
 
 - __Opaque, not JWT.__ A 24-hour credential must be revocable *before* it expires; a self-signed JWT cannot be withdrawn.

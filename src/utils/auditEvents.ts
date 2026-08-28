@@ -55,6 +55,7 @@ export interface AuditEvent {
  */
 export type PageMutationOp = 'create' | 'edit' | 'rename' | 'link-rewrite';
 export type AttachmentOp = 'upload' | 'delete';
+export type TokenOp = 'mint' | 'revoke';
 
 interface CommonInput {
   username: string | undefined;
@@ -74,6 +75,22 @@ export interface PageMutationInput extends CommonInput {
    * be the wrong field to carry it.
    */
   rewriteOf?: { from: string; to: string } | null;
+}
+
+export interface TokenInput extends CommonInput {
+  op: TokenOp;
+  /** Token id — the handle every later question about this credential uses. */
+  id: string;
+  /** Whose token it is, which is not always who acted: an admin may revoke. */
+  owner: string;
+  /** Operator-supplied label. Optional; a token need not be named. */
+  name?: string | null;
+  /** Only meaningful for `mint`; ignored otherwise. */
+  scopes?: readonly string[];
+  /** Only meaningful for `mint`; ignored otherwise. */
+  expiresAt?: string;
+  /** Only meaningful for `revoke`; ignored otherwise. */
+  revokedBy?: string;
 }
 
 export interface AttachmentInput extends CommonInput {
@@ -192,4 +209,57 @@ export async function recordAuditEvent(
   } catch (err) {
     onError?.(err);
   }
+}
+
+/**
+ * Build the audit event for an agent token mint or revoke (#1111).
+ *
+ * Before this, the token store was the only record that a credential had ever
+ * existed — and `purgeExpired()` claimed otherwise in a comment ("Audit is
+ * unaffected") while nothing emitted anything. That made `retention-days`
+ * load-bearing by accident: hash-bearing records were kept a month past
+ * usefulness purely so somebody could answer "what could this token do, and
+ * who stopped it?" With the lifecycle audited, the store can keep only what it
+ * needs to authenticate.
+ *
+ * Emitted from the manager rather than the route, unlike `page.*`. A page
+ * mutation logged at the HTTP layer misses an internal caller and that is
+ * survivable; an unaudited mint is a credential nobody knows exists.
+ *
+ * `scopes` and `expiresAt` appear on a mint only, and `revokedBy` on a revoke
+ * only — the same rule `page.rename` follows for `fromPageName`. A field
+ * present on every event is useless as a filter.
+ */
+export function buildTokenAuditEvent(input: TokenInput): AuditEvent {
+  const { op, username, ipAddress, id, owner, name, scopes, expiresAt, revokedBy, viaToken } = input;
+
+  const metadata: Record<string, unknown> = {
+    id,
+    owner,
+    name: name ?? null,
+    ...tokenMetadata(viaToken)
+  };
+
+  if (op === 'mint') {
+    metadata.scopes = [...(scopes ?? [])];
+    metadata.expiresAt = expiresAt;
+  }
+
+  if (op === 'revoke' && revokedBy) {
+    metadata.revokedBy = revokedBy;
+  }
+
+  return {
+    eventType: `token.${op}`,
+    user: username ?? 'unknown',
+    ipAddress,
+    action: `token-${op}`,
+    result: 'success',
+    // Every credential event outranks ordinary content traffic: a token acts
+    // unattended, so its creation and its revocation are what a reader of the
+    // log is looking for. A token minted BY a token is higher still — that is
+    // delegation widening on its own, and the case worth surfacing loudest.
+    severity: viaToken ? 'high' : 'medium',
+    metadata
+  };
 }

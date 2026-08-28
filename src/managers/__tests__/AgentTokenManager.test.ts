@@ -573,3 +573,124 @@ describe('#1110 no snapshots, and a failed write does not poison the queue', () 
     expect(mgr.listAll()).toHaveLength(0);
   });
 });
+
+/**
+ * #1111 — the credential store was the only record a token ever existed.
+ * Nothing emitted audit events, while `purgeExpired()`'s comment claimed
+ * "Audit is unaffected". Emitted from the MANAGER, not the route: a page
+ * mutation logged at the HTTP layer misses an internal caller and that is
+ * survivable, but an unaudited mint is a credential nobody knows exists.
+ */
+describe('#1111 the token lifecycle is audited', () => {
+  const KEY = 'ngdpbase.auth.agent-token';
+
+  function withAudit(overrides: Record<string, unknown> = {}) {
+    const events: Array<Record<string, unknown>> = [];
+    const logAuditEvent = vi.fn(async (e: Record<string, unknown>) => { events.push(e); return 'id'; });
+    const engine = {
+      getManager: (name: string) => {
+        if (name === 'ConfigurationManager') {
+          return {
+            getProperty: (key: string, dflt: unknown) => (key in overrides ? overrides[key] : dflt),
+            getResolvedDataPath: () => tmpDir
+          };
+        }
+        if (name === 'AuditManager') return { logAuditEvent };
+        return null;
+      }
+    } as never;
+    return { engine, events, logAuditEvent };
+  }
+
+  test('a mint is audited with the scopes and expiry it was granted', async () => {
+    const { engine, events } = withAudit();
+    const m = new AgentTokenManager(engine);
+    await m.initialize();
+    const { record } = await m.mint('alice', 'ci', ['page-read']);
+
+    const minted = events.filter((e) => e.eventType === 'token.mint');
+    expect(minted).toHaveLength(1);
+    expect(minted[0].metadata).toMatchObject({
+      id: record.id, owner: 'alice', name: 'ci', scopes: ['page-read']
+    });
+  });
+
+  test('a revoke is audited with who did it', async () => {
+    const { engine, events } = withAudit();
+    const m = new AgentTokenManager(engine);
+    await m.initialize();
+    const { record } = await m.mint('alice', 'ci', ['page-read']);
+    await m.revoke(record.id, 'admin');
+
+    const revoked = events.filter((e) => e.eventType === 'token.revoke');
+    expect(revoked).toHaveLength(1);
+    expect(revoked[0].metadata).toMatchObject({ id: record.id, owner: 'alice', revokedBy: 'admin' });
+  });
+
+  test('a revoke that finds nothing to revoke emits nothing', async () => {
+    const { engine, events } = withAudit();
+    const m = new AgentTokenManager(engine);
+    await m.initialize();
+    expect(await m.revoke('tok_missing', 'admin')).toBe(false);
+    expect(events.filter((e) => e.eventType === 'token.revoke')).toHaveLength(0);
+  });
+
+  test('a failing audit sink does not fail the mint', async () => {
+    // The credential is the product; the log is a record of it. Losing the log
+    // is bad, but refusing to mint because the log failed is worse.
+    const engine = {
+      getManager: (name: string) => {
+        if (name === 'ConfigurationManager') {
+          return { getProperty: (_k: string, d: unknown) => d, getResolvedDataPath: () => tmpDir };
+        }
+        if (name === 'AuditManager') return { logAuditEvent: async () => { throw new Error('sink down'); } };
+        return null;
+      }
+    } as never;
+    const m = new AgentTokenManager(engine);
+    await m.initialize();
+    await expect(m.mint('alice', 'ci', ['page-read'])).resolves.toBeDefined();
+  });
+
+  test('no audit manager at all is not an error', async () => {
+    const m = await makeManager();
+    await expect(m.mint('alice', 'ci', ['page-read'])).resolves.toBeDefined();
+  });
+
+  test('backup carries dead records, not just live ones', async () => {
+    // The comment claimed to preserve "the audit trail of what existed" while
+    // shipping listAll(), which filters to live. A token revoked an hour before
+    // the backup — the case incident response wants — was absent.
+    const m = await makeManager();
+    const { record } = await m.mint('alice', 'ci', ['page-read']);
+    await m.revoke(record.id, 'alice');
+
+    const data = (await m.backup()).data as { restorable: boolean; tokens: Array<{ id: string }> };
+    expect(data.restorable).toBe(false);
+    expect(data.tokens.map((t) => t.id)).toContain(record.id);
+  });
+
+  test('backup never carries hashes', async () => {
+    const m = await makeManager();
+    await m.mint('alice', 'ci', ['page-read']);
+    const data = (await m.backup()).data as { tokens: Array<Record<string, unknown>> };
+    expect(JSON.stringify(data)).not.toContain('hash');
+    expect(data.tokens.every((t) => !('hash' in t))).toBe(true);
+  });
+
+  test('restore refuses rather than silently doing nothing', async () => {
+    // It inherited BaseManager's no-op default, so `restorable: false` was
+    // honoured by accident. If someone later writes a restore from that
+    // payload, records return with NO hash.
+    const m = await makeManager();
+    await expect(m.restore((await m.backup()))).rejects.toThrow(/restor/i);
+  });
+
+  test('retention-days: 0 leaves nothing behind once the lifecycle is audited', async () => {
+    const m = await makeManager({ [`${KEY}.retention-days`]: 0 });
+    const { record } = await m.mint('alice', 'ci', ['page-read']);
+    await m.revoke(record.id, 'alice');
+    await m.purgeExpired();
+    expect(m.listAll()).toHaveLength(0);
+  });
+});

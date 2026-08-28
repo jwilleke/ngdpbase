@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   buildPageMutationAuditEvent,
   buildAttachmentAuditEvent,
+  buildTokenAuditEvent,
   recordAuditEvent,
   type AuditEventSink
 } from '../auditEvents.js';
@@ -170,5 +171,69 @@ describe('recordAuditEvent', () => {
     await expect(recordAuditEvent({}, buildPageMutationAuditEvent({
       username: 'a', ipAddress: '1', pageName: 'P', uuid: 'u', op: 'edit'
     }))).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * #1111 — agent token lifecycle events.
+ *
+ * The credential store was the only record that a token ever existed:
+ * `AgentTokenManager` emitted nothing, while `purgeExpired()`'s comment claimed
+ * "Audit is unaffected". There was no audit to be unaffected, which made
+ * `retention-days: 30` load-bearing by accident — hash-bearing records kept a
+ * month past usefulness to serve as an audit log they were never designed to be.
+ */
+describe('buildTokenAuditEvent() — #1111', () => {
+  const base = { username: 'alice', ipAddress: '10.0.0.1', id: 'tok_1', owner: 'alice' };
+
+  it('a mint carries what the token can do and until when', () => {
+    const e = buildTokenAuditEvent({
+      ...base, op: 'mint', scopes: ['page-read', 'page-edit'], expiresAt: '2026-09-01T00:00:00.000Z', name: 'ci'
+    });
+    expect(e.eventType).toBe('token.mint');
+    expect(e.action).toBe('token-mint');
+    expect(e.result).toBe('success');
+    expect(e.metadata).toMatchObject({
+      id: 'tok_1', owner: 'alice', name: 'ci',
+      scopes: ['page-read', 'page-edit'], expiresAt: '2026-09-01T00:00:00.000Z'
+    });
+  });
+
+  it('a revoke records who did it, which is the question afterwards', () => {
+    const e = buildTokenAuditEvent({ ...base, op: 'revoke', username: 'admin', revokedBy: 'admin' });
+    expect(e.eventType).toBe('token.revoke');
+    expect(e.metadata).toMatchObject({ id: 'tok_1', owner: 'alice', revokedBy: 'admin' });
+  });
+
+  it('scopes are absent from a revoke rather than emitted empty', () => {
+    // Same rule the page builders follow: a field present on every event is
+    // useless as a filter.
+    const e = buildTokenAuditEvent({ ...base, op: 'revoke', revokedBy: 'alice' });
+    expect(e.metadata).not.toHaveProperty('scopes');
+    expect(e.metadata).not.toHaveProperty('expiresAt');
+  });
+
+  it('minting a credential outranks ordinary content traffic', () => {
+    // A token writes unattended, so its creation is worth surfacing above an
+    // edit even when a human did it.
+    expect(buildTokenAuditEvent({ ...base, op: 'mint', scopes: [], expiresAt: 'x' }).severity).toBe('medium');
+  });
+
+  it('a token minted BY a token is the case to surface loudest', () => {
+    const e = buildTokenAuditEvent({
+      ...base, op: 'mint', scopes: [], expiresAt: 'x', viaToken: { id: 't0', name: 'ci' }
+    });
+    expect(e.severity).toBe('high');
+    expect(e.metadata).toMatchObject({ viaTokenId: 't0', viaTokenName: 'ci' });
+  });
+
+  it('token identity is always present, as explicit nulls for a human action', () => {
+    const e = buildTokenAuditEvent({ ...base, op: 'revoke', revokedBy: 'alice' });
+    expect(e.metadata).toMatchObject({ viaTokenId: null, viaTokenName: null });
+  });
+
+  it('an unknown actor is named rather than left undefined', () => {
+    const e = buildTokenAuditEvent({ ...base, username: undefined, op: 'revoke', revokedBy: 'system' });
+    expect(e.user).toBe('unknown');
   });
 });
