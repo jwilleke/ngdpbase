@@ -116,6 +116,19 @@ import { LoginThrottle } from '../utils/LoginThrottle.js';
  * raised the first time a rewrite is skipped, which is exactly when the bound
  * is doing its job. Anything beyond the cap is logged by count.
  */
+/**
+ * Frontmatter fields that `generateValidMetadata` seeds with defaults (#1106).
+ *
+ * Its docstring says "for a new page", but the save path calls it for updates
+ * too. The #803 carry-forward cannot rescue these: it fills only keys that are
+ * ABSENT, and a seeded key is always present. So on an update they must yield
+ * to what is already on disk unless the caller explicitly supplied one.
+ *
+ * This is the general form of the fix #1017 applied to `system-keywords` alone
+ * after it silently destroyed capture marks on first edit (#1008).
+ */
+const DEFAULT_SEEDED_FIELDS = ['system-category', 'system-keywords', 'user-keywords', 'slug'] as const;
+
 const MAX_REWRITE_REFERRERS = 200;
 
 /**
@@ -1762,7 +1775,8 @@ class WikiRoutes {
 
   buildNewPageMetadata(
     title: string,
-    options: Record<string, unknown> = {}
+    options: Record<string, unknown> = {},
+    existingMetadata?: Record<string, unknown> | null
   ): Record<string, unknown> {
     const validationManager = this.engine.getManager('ValidationManager');
 
@@ -1775,7 +1789,11 @@ class WikiRoutes {
     }
 
     if (validationManager && typeof validationManager.generateValidMetadata === 'function') {
-      return validationManager.generateValidMetadata(title, cleanOptions);
+      return this.preserveSeededFields(
+        validationManager.generateValidMetadata(title, cleanOptions),
+        cleanOptions,
+        existingMetadata
+      );
     }
 
     // Fallback when ValidationManager unavailable — get defaults from ConfigurationManager
@@ -1803,7 +1821,7 @@ class WikiRoutes {
       }
     }
 
-    return {
+    return this.preserveSeededFields({
       title: title.trim(),
       'system-category': cleanOptions['system-category'] || defaultCategory,
       'user-keywords': cleanOptions['user-keywords'] || [],
@@ -1811,7 +1829,36 @@ class WikiRoutes {
       slug: title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''),
       lastModified: new Date().toISOString(),
       ...cleanOptions
-    };
+    }, cleanOptions, existingMetadata);
+  }
+
+  /**
+   * Restore seeded fields from the page's existing frontmatter (#1106).
+   *
+   * Applies only to `DEFAULT_SEEDED_FIELDS`, and only where the caller did not
+   * explicitly supply the field. General preservation of every other key stays
+   * with the #803 carry-forward — two mechanisms doing the same job would drift.
+   *
+   * An existing empty array is preserved as empty. That is a state a user chose,
+   * not a reason to restore defaults (the rule #1017 established).
+   *
+   * @param generated - Metadata just built, with defaults already seeded
+   * @param supplied - Caller-supplied options, after undefined/null filtering
+   * @param existingMetadata - The page's current on-disk frontmatter, if it exists
+   * @returns The metadata, with seeded fields yielded back to disk where applicable
+   */
+  private preserveSeededFields(
+    generated: Record<string, unknown>,
+    supplied: Record<string, unknown>,
+    existingMetadata?: Record<string, unknown> | null
+  ): Record<string, unknown> {
+    if (!existingMetadata) return generated;
+    for (const field of DEFAULT_SEEDED_FIELDS) {
+      if (field in supplied) continue;
+      if (!(field in existingMetadata)) continue;
+      generated[field] = existingMetadata[field];
+    }
+    return generated;
   }
 
   /**
@@ -3809,7 +3856,7 @@ ${panes}
         ...(statusValue ? { status: statusValue } : {}),
         author: pageAuthor,
         uuid: existingPage?.metadata?.uuid || undefined
-      });
+      }, existingPage?.metadata);
 
       // #803 — preserve addon-claimed unknown frontmatter fields (EPIC #790).
       // Step 1: carry forward existing on-disk frontmatter fields the form

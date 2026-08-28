@@ -293,3 +293,110 @@ describe('WikiRoutes.buildNewPageMetadata()', () => {
     });
   });
 });
+
+/**
+ * #1106 — fields that generateValidMetadata seeds unconditionally are lost on an
+ * UPDATE unless the caller reposts them. Its own docstring says "for a new page",
+ * but the save path calls it for updates too, and the #803 carry-forward at
+ * WikiRoutes.ts:3833 cannot restore them because it only fills keys that are
+ * ABSENT — and these are always present. Same defect as #1017/#1008, which was
+ * hand-rescued for one field.
+ *
+ * Governing rule: frontmatter is the author's or editor's to change. A save that
+ * does not mention a field must leave it alone. Deleting a field requires intent,
+ * never an omission.
+ */
+describe('#1106 seeded fields yield to existing frontmatter', () => {
+  let routes;
+  let engine;
+
+  beforeEach(() => {
+    const validation = {
+      generateValidMetadata: vi.fn((title, options) => ({
+        title,
+        'system-category': options['system-category'] || 'general',
+        'system-keywords': options['system-keywords'] || ['general'],
+        'user-keywords': options['user-keywords'] || [],
+        uuid: options.uuid || 'mock-uuid-1234',
+        slug: options.slug || title.toLowerCase().replace(/\s+/g, '-'),
+        lastModified: '2026-02-06T00:00:00.000Z',
+        ...options
+      }))
+    };
+    engine = {
+      getManager: vi.fn((name) => (name === 'ValidationManager' ? validation : null))
+    };
+    routes = new WikiRoutes(engine);
+  });
+
+  const existing = {
+    'system-category': 'documentation',
+    'system-keywords': ['capture'],
+    'user-keywords': ['interwiki', 'links'],
+    slug: 'a-deliberately-custom-slug',
+    uuid: 'mock-uuid-1234'
+  };
+
+  test.each([
+    ['system-category', 'documentation'],
+    ['system-keywords', ['capture']],
+    ['user-keywords', ['interwiki', 'links']],
+    ['slug', 'a-deliberately-custom-slug']
+  ])('an omitted %s keeps the on-disk value', (field, expected) => {
+    const result = routes.buildNewPageMetadata('New Title', {}, existing);
+    expect(result[field]).toEqual(expected);
+  });
+
+  test('an explicitly supplied value still wins over the on-disk one', () => {
+    const result = routes.buildNewPageMetadata('New Title', {
+      'system-category': 'general',
+      'user-keywords': ['replaced']
+    }, existing);
+    expect(result['system-category']).toBe('general');
+    expect(result['user-keywords']).toEqual(['replaced']);
+  });
+
+  test('an existing empty array is preserved as empty, not re-seeded', () => {
+    // #1017's rule: an empty array is a real state a user chose, not a reason
+    // to restore defaults.
+    const result = routes.buildNewPageMetadata('New Title', {}, {
+      ...existing,
+      'user-keywords': []
+    });
+    expect(result['user-keywords']).toEqual([]);
+  });
+
+  test('a new page still gets the seeded defaults', () => {
+    const result = routes.buildNewPageMetadata('Brand New', {});
+    expect(result['system-category']).toBe('general');
+    expect(result['user-keywords']).toEqual([]);
+    expect(result.slug).toBe('brand-new');
+  });
+
+  test('a field missing from the existing page falls through to the default', () => {
+    const result = routes.buildNewPageMetadata('New Title', {}, { uuid: 'mock-uuid-1234' });
+    expect(result['system-category']).toBe('general');
+    expect(result['user-keywords']).toEqual([]);
+  });
+
+  test('title and lastModified are never taken from the existing page', () => {
+    const result = routes.buildNewPageMetadata('New Title', {}, {
+      ...existing,
+      title: 'Stale Title',
+      lastModified: '1999-01-01T00:00:00.000Z'
+    });
+    expect(result.title).toBe('New Title');
+    expect(result.lastModified).not.toBe('1999-01-01T00:00:00.000Z');
+  });
+
+  test('unrelated existing fields are not copied in by this rule', () => {
+    // The #803 carry-forward owns general preservation; this rule covers only
+    // the fields the generator seeds. Two mechanisms doing the same job would
+    // drift.
+    const result = routes.buildNewPageMetadata('New Title', {}, {
+      ...existing,
+      status: 'draft'
+    });
+    expect(result.status).toBeUndefined();
+  });
+});
