@@ -118,6 +118,14 @@
                             <a href="/view/logs" class="text-muted small" title="Documentation" target="_blank"><i class="fas fa-question-circle"></i></a>
                         </span>
 
+                        <%# #1113 — the audit page existed with no route and no link, so the
+                            audit log had no reader in the application at all. %>
+                        <span class="d-inline-flex align-items-center gap-1">
+                            <a href="/admin/audit" class="btn btn-outline-secondary btn-sm">
+                                <i class="fas fa-clipboard-list"></i> Audit
+                            </a>
+                        </span>
+
                         <span class="d-inline-flex align-items-center gap-1">
                             <button class="btn btn-outline-success btn-sm" onclick="clearCache()">
                                 <i class="fas fa-broom"></i> Clear Cache

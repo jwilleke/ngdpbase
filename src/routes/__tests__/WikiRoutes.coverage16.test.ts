@@ -109,9 +109,7 @@ const mockACLManager = {
   checkPagePermission: vi.fn(),
   checkPagePermissionWithContext: vi.fn(),
   removeACLMarkup: vi.fn(),
-  parseACL: vi.fn(),
-  getAccessControlStats: vi.fn().mockReturnValue({}),
-  getAccessLog: vi.fn().mockReturnValue([])
+  parseACL: vi.fn()
 };
 
 const mockRenderingManager = {

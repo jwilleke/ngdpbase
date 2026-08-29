@@ -286,9 +286,7 @@ interface IACLManager {
   /** #714 Slice F: rich-return form — `{ allowed, reason }`. Lets callers
    *  specialise 403 messages on `reason` (e.g. `author_lock_deny`). */
   evaluatePagePermission(wikiContext: WikiContext, action: string): Promise<{ allowed: boolean; reason: string }>;
-  getAccessLog(limit?: number, filters?: unknown): unknown[];
   removeACLMarkup(content: string): string;
-  getAccessControlStats(): unknown;
 }
 
 interface ISchemaManager {
@@ -13897,6 +13895,13 @@ ${panes}
     app.post('/admin/settings/theme', (req: Request, res: Response) => this.adminUpdateTheme(req, res));
     app.post('/admin/settings/general', (req: Request, res: Response) => this.adminUpdateGeneralSettings(req, res));
     app.get('/admin/logs', (req: Request, res: Response) => this.adminLogs(req, res));
+    // #1113: these four handlers and views/admin-audit.ejs existed with no
+    // registration at all, so /admin/audit was a 404 and the audit log had no
+    // reader in the application.
+    app.get('/admin/audit', (req: Request, res: Response) => void this.adminAuditLogs(req, res));
+    app.get('/admin/audit/api', (req: Request, res: Response) => void this.adminAuditLogsApi(req, res));
+    app.get('/admin/audit/export', (req: Request, res: Response) => void this.adminAuditExport(req, res));
+    app.get('/admin/audit/details/:id', (req: Request, res: Response) => void this.adminAuditLogDetails(req, res));
     app.get('/admin/addons', (req: Request, res: Response) => void this.adminAddons(req, res));
     app.post('/admin/addons/:name/toggle', (req: Request, res: Response) => void this.adminAddonToggle(req, res));
     app.post('/admin/addons/:name/deploy-theme', (req: Request, res: Response) => void this.adminAddonDeployTheme(req, res));
@@ -14534,7 +14539,46 @@ ${panes}
   // ============================================================================
 
   /**
-   * Admin audit logs page
+   * Build audit filters from query parameters (#1113).
+   *
+   * Shared by the page, the API and the export so all three answer the same
+   * question for the same query string — otherwise a filtered export quietly
+   * disagrees with the table it was exported from.
+   */
+  private auditFiltersFromQuery(req: Request): Record<string, unknown> {
+    const pick = (key: string): string | undefined => {
+      const value = req.query[key];
+      return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+    };
+    const filters: Record<string, unknown> = {};
+    for (const key of ['user', 'eventType', 'result', 'severity', 'startDate', 'endDate', 'resource', 'action']) {
+      const value = pick(key);
+      if (value !== undefined) filters[key] = value;
+    }
+    return filters;
+  }
+
+  /** The audit sink as a queryable manager, or null when auditing is unconfigured. */
+  private auditQuery(): {
+    searchAuditLogs?: (f: unknown, o: unknown) => Promise<unknown>;
+    getAuditStats?: (f: unknown) => Promise<unknown>;
+    exportAuditLogs?: (f: unknown, format: string) => Promise<string>;
+  } | null {
+    return this.engine.getManager('AuditManager') as {
+      searchAuditLogs?: (f: unknown, o: unknown) => Promise<unknown>;
+      getAuditStats?: (f: unknown) => Promise<unknown>;
+      exportAuditLogs?: (f: unknown, format: string) => Promise<string>;
+    } | null;
+  }
+
+  /**
+   * Admin audit logs page (#1113).
+   *
+   * Reads AuditManager. It previously read `ACLManager.getAccessControlStats()`
+   * and `getAccessLog()`, which do not exist — the handler compiled because a
+   * local interface declared them and passed tests because a mock supplied
+   * them. Those were a second door to "what happened"; AuditManager is the
+   * first, and two managers owning one resource means neither is a chokepoint.
    */
   async adminAuditLogs(req: Request, res: Response) {
     try {
@@ -14542,26 +14586,30 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = await userManager.getCurrentUser(req);
 
-      if (
-        !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
-      ) {
-        return await this.renderError(
-          req,
-          res,
-          403,
-          'Access Denied',
-          'You do not have permission to view audit logs.'
-        );
+      if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
+        return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to view audit logs.');
       }
 
-      const aclManager = this.engine.getManager('ACLManager');
-      const auditStats = aclManager.getAccessControlStats();
+      const audit = this.auditQuery();
+      const filters = this.auditFiltersFromQuery(req);
+      const limit = parseInt(req.query.limit as string) || 50;
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      // An unconfigured audit provider renders an empty page rather than a
+      // 500: "auditing is off" and "auditing is broken" must not look alike.
+      const emptyStats = { totalEvents: 0, eventsByType: {}, eventsByResult: {}, eventsBySeverity: {}, eventsByUser: {}, recentActivity: [], securityIncidents: 0 };
+      const auditStats = audit?.getAuditStats ? await audit.getAuditStats(filters) : emptyStats;
+      const auditLogs = audit?.searchAuditLogs
+        ? await audit.searchAuditLogs(filters, { limit, offset, sortBy: 'timestamp', sortOrder: 'desc' })
+        : { results: [], total: 0, limit, offset, hasMore: false };
 
       const templateData = await this.getCommonTemplateData(req);
       return res.render('admin-audit', {
         ...templateData,
         auditStats,
+        auditLogs,
+        auditAvailable: Boolean(audit?.searchAuditLogs),
+        filters,
         title: 'Audit Logs - Admin',
         currentUser
       });
@@ -14571,169 +14619,90 @@ ${panes}
     }
   }
 
-  /**
-   * API endpoint for audit logs data
-   */
+  /** API endpoint for audit logs data (#1113). */
   async adminAuditLogsApi(req: Request, res: Response) {
     try {
       const userManager = this.engine.getManager('UserManager');
       const wikiContext = this.createWikiContext(req);
       const currentUser = await userManager.getCurrentUser(req);
 
-      if (
-        !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
-      ) {
+      if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
         return res.status(403).json({ error: 'Access denied' });
       }
 
-      const aclManager = this.engine.getManager('ACLManager');
-
-      // Parse query parameters
-      const filters = {
-        user: req.query.user || null,
-        action: req.query.action || null,
-        decision:
-          req.query.decision !== undefined
-            ? req.query.decision === 'true'
-            : null,
-        pageName: req.query.pageName || null
-      };
-
+      const audit = this.auditQuery();
       const limit = parseInt(req.query.limit as string) || 50;
       const offset = parseInt(req.query.offset as string) || 0;
+      if (!audit?.searchAuditLogs) {
+        return res.json({ results: [], total: 0, limit, offset, hasMore: false });
+      }
 
-      // Get filtered logs
-      const allFilteredLogs = aclManager.getAccessLog(1000, filters); // Get more than needed for pagination
-      const total = allFilteredLogs.length;
-      const auditLogs = allFilteredLogs.slice(offset, offset + limit);
-
-      return res.json({
-        results: auditLogs,
-        total: total,
-        limit: limit,
-        offset: offset
-      });
+      return res.json(await audit.searchAuditLogs(
+        this.auditFiltersFromQuery(req),
+        { limit, offset, sortBy: 'timestamp', sortOrder: 'desc' }
+      ));
     } catch (err: unknown) {
       logger.error('Error retrieving audit logs:', err);
       return res.status(500).json({ error: 'Error retrieving audit logs' });
     }
   }
 
-  /**
-   * API endpoint for individual audit log details
-   */
+  /** API endpoint for one audit event (#1113). */
   async adminAuditLogDetails(req: Request, res: Response) {
     try {
       const userManager = this.engine.getManager('UserManager');
       const wikiContext = this.createWikiContext(req);
       const currentUser = await userManager.getCurrentUser(req);
 
-      if (
-        !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
-      ) {
+      if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
         return res.status(403).json({ error: 'Access denied' });
       }
 
-      const aclManager = this.engine.getManager('ACLManager');
-      const logId = req.params.id;
-
-      // Get all audit logs and find the specific one
-      const allLogs = aclManager.getAccessLog(10000); // Get a large number to find the specific log
-      const logDetails = allLogs.find((log) => (log as { timestamp?: string }).timestamp === logId);
-
-      if (!logDetails) {
+      const audit = this.auditQuery();
+      if (!audit?.searchAuditLogs) {
         return res.status(404).json({ error: 'Audit log not found' });
       }
 
-      return res.json(logDetails);
+      // The provider has no get-by-id, so this pages through recent events.
+      // Bounded deliberately: an unbounded scan on a large log is a denial of
+      // service wearing a detail view.
+      const logId = req.params.id;
+      const page = await audit.searchAuditLogs({}, { limit: 1000, sortBy: 'timestamp', sortOrder: 'desc' }) as { results?: Array<{ id?: string }> };
+      const details = (page.results ?? []).find((entry) => entry.id === logId);
+
+      if (!details) {
+        return res.status(404).json({ error: 'Audit log not found' });
+      }
+      return res.json(details);
     } catch (err: unknown) {
       logger.error('Error retrieving audit log details:', err);
       return res.status(500).json({ error: 'Error retrieving audit log details' });
     }
   }
 
-  /**
-   * Export audit logs
-   */
+  /** Export audit logs (#1113). */
   async adminAuditExport(req: Request, res: Response) {
     try {
       const userManager = this.engine.getManager('UserManager');
       const wikiContext = this.createWikiContext(req);
       const currentUser = await userManager.getCurrentUser(req);
 
-      if (
-        !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
-      ) {
+      if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
         return res.status(403).send('Access denied');
       }
 
-      const aclManager = this.engine.getManager('ACLManager');
-
-      // Parse query parameters
-      const filters = {
-        user: req.query.user || null,
-        action: req.query.action || null,
-        decision:
-          req.query.decision !== undefined
-            ? req.query.decision === 'true'
-            : null,
-        pageName: req.query.pageName || null
-      };
-
-      const format = req.query.format || 'json';
-
-      // Get filtered logs for export
-      const exportData = aclManager.getAccessLog(10000, filters); // Get all matching logs
-
-      if (format === 'json') {
-        res.setHeader('Content-Type', 'application/json');
-        res.setHeader(
-          'Content-Disposition',
-          'attachment; filename="audit-logs.json"'
-        );
-        return res.send(JSON.stringify(exportData, null, 2));
-      } else if (format === 'csv') {
-        // Convert to CSV format
-        const csvHeaders = [
-          'timestamp',
-          'user',
-          'pageName',
-          'action',
-          'decision',
-          'reason',
-          'ip',
-          'userAgent'
-        ];
-        const csvRows = exportData.map((logEntry) => {
-          const log = logEntry as { timestamp?: string; user?: string; pageName?: string; action?: string; decision?: string; reason?: string; context?: { ip?: string; userAgent?: string } };
-          return [
-            log.timestamp,
-            log.user,
-            log.pageName,
-            log.action,
-            log.decision,
-            log.reason,
-            log.context?.ip || '',
-            log.context?.userAgent || ''
-          ];
-        });
-
-        const csvContent = [csvHeaders, ...csvRows]
-          .map((row: (string | undefined)[]) => row.map((field: string | undefined) => `"${field}"`).join(','))
-          .join('\n');
-
-        res.setHeader('Content-Type', 'text/csv');
-        res.setHeader(
-          'Content-Disposition',
-          'attachment; filename="audit-logs.csv"'
-        );
-        return res.send(csvContent);
-      } else {
-        return res.status(400).send('Invalid format. Supported formats: json, csv');
+      const audit = this.auditQuery();
+      if (!audit?.exportAuditLogs) {
+        return res.status(503).send('Audit logging is not configured');
       }
+
+      const format = req.query.format === 'csv' ? 'csv' : 'json';
+      const data = await audit.exportAuditLogs(this.auditFiltersFromQuery(req), format);
+      const stamp = new Date().toISOString().slice(0, 10);
+
+      res.setHeader('Content-Type', format === 'csv' ? 'text/csv' : 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="audit-log-${stamp}.${format}"`);
+      return res.send(data);
     } catch (err: unknown) {
       logger.error('Error exporting audit logs:', err);
       return res.status(500).send('Error exporting audit logs');
