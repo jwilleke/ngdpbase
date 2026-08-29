@@ -61,7 +61,12 @@ interface FileAuditConfig {
  * - ngdpbase.audit.provider.file.maxfilesize - Maximum file size
  * - ngdpbase.audit.provider.file.maxfiles - Maximum number of archived files
  */
+const RETENTION_INTERVAL_MS = 60 * 60 * 1000;
+
 class FileAuditProvider extends BaseAuditProvider {
+  /** #1122: how often retention runs after boot. Hourly is far finer than a day-scale window. */
+  private retentionTimer: NodeJS.Timeout | null = null;
+
   private auditLogs: ExtendedAuditEvent[];
   private auditQueue: ExtendedAuditEvent[];
   private isProcessing: boolean;
@@ -143,6 +148,16 @@ class FileAuditProvider extends BaseAuditProvider {
     // Clean up old logs
     await this.cleanup();
 
+    // #1122: and keep doing it. Running retention once at boot meant a
+    // long-lived instance applied its own policy exactly once — the same
+    // defect #1110 fixed for the token store's purgeExpired.
+    this.retentionTimer = setInterval(() => {
+      void this.cleanup().catch((err: unknown) => {
+        logger.warn('[FileAuditProvider] Scheduled retention pass failed:', err);
+      });
+    }, RETENTION_INTERVAL_MS);
+    this.retentionTimer.unref?.();
+
     this.initialized = true;
 
     logger.info(`[FileAuditProvider] Initialized - directory: ${this.config.logDirectory}`);
@@ -162,6 +177,67 @@ class FileAuditProvider extends BaseAuditProvider {
     };
   }
 
+  /** Parse "10MB" / "512KB" / "400" into bytes (#1122). */
+  private maxFileSizeBytes(): number {
+    const raw = String(this.config?.maxFileSize ?? '10MB').trim();
+    const m = /^(\d+(?:\.\d+)?)\s*(B|KB|MB|GB)?$/i.exec(raw);
+    if (!m) return 10 * 1024 * 1024;
+    const n = parseFloat(m[1]);
+    const unit = (m[2] ?? 'B').toUpperCase();
+    const factor = unit === 'GB' ? 1024 ** 3 : unit === 'MB' ? 1024 ** 2 : unit === 'KB' ? 1024 : 1;
+    return Math.floor(n * factor);
+  }
+
+  /** Archive files, oldest first. Names are ISO-derived so lexical order is chronological. */
+  private async listArchives(): Promise<string[]> {
+    if (!this.config) return [];
+    const prefix = `${this.config.archiveFileName}.`;
+    const entries = await fs.readdir(this.config.logDirectory).catch(() => [] as string[]);
+    return entries.filter((f) => f.startsWith(prefix)).sort();
+  }
+
+  /**
+   * Rotate the live log once it passes maxFileSize, then prune to maxFiles (#1122).
+   *
+   * The chain spans files by construction: rotation only MOVES bytes, and the
+   * in-memory chain head is untouched, so the next record links to the last one
+   * in the archive. A verifier reads archives then the live log, in order.
+   *
+   * Pruning removes the OLDEST archives, which drops a prefix of the chain.
+   * That is a deliberate trade — bounded disk against verifiability of the
+   * distant past — and it is why a verifier reports a non-genesis start rather
+   * than silently accepting it.
+   */
+  private async rotateIfNeeded(): Promise<void> {
+    if (!this.config) return;
+    const auditLogPath = path.join(this.config.logDirectory, this.config.auditFileName);
+
+    try {
+      const stats = await fs.stat(auditLogPath).catch(() => null);
+      if (!stats || stats.size < this.maxFileSizeBytes()) return;
+
+      // Colons are stripped so the name is safe on every filesystem, and the
+      // ISO prefix keeps lexical order chronological.
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const target = path.join(this.config.logDirectory, `${this.config.archiveFileName}.${stamp}`);
+      await fs.move(auditLogPath, target, { overwrite: false });
+      logger.info(`[FileAuditProvider] Rotated audit log to ${path.basename(target)}`);
+
+      const archives = await this.listArchives();
+      const excess = archives.length - this.config.maxFiles;
+      for (let i = 0; i < excess; i++) {
+        await fs.remove(path.join(this.config.logDirectory, archives[i]));
+        logger.warn(
+          `[FileAuditProvider] Removed audit archive ${archives[i]} — over the ${this.config.maxFiles}-file limit. ` +
+          'Those records are gone; the chain no longer verifies from genesis.'
+        );
+      }
+    } catch (error) {
+      // A failed rotation must not lose the write it was making room for.
+      logger.error('[FileAuditProvider] Log rotation failed:', error);
+    }
+  }
+
   /**
    * Resume the chain from the last record on disk (#1119).
    *
@@ -176,8 +252,21 @@ class FileAuditProvider extends BaseAuditProvider {
     if (!this.config) return null;
     const auditLogPath = path.join(this.config.logDirectory, this.config.auditFileName);
     try {
-      if (!(await fs.pathExists(auditLogPath))) return null;
-      const contents = await fs.readFile(auditLogPath, 'utf8');
+      // #1122: straight after a rotation the live log is empty, so fall back
+      // to the newest archive — otherwise every rotation would restart the
+      // sequence and read as a chain break.
+      const candidates = [auditLogPath];
+      for (const archive of (await this.listArchives()).reverse()) {
+        candidates.push(path.join(this.config.logDirectory, archive));
+      }
+
+      let contents = '';
+      for (const candidate of candidates) {
+        if (!(await fs.pathExists(candidate))) continue;
+        const text = await fs.readFile(candidate, 'utf8');
+        if (text.trim()) { contents = text; break; }
+      }
+      if (!contents) return null;
       const lines = contents.split('\n').filter((l) => l.trim());
       for (let i = lines.length - 1; i >= 0; i--) {
         try {
@@ -470,6 +559,10 @@ class FileAuditProvider extends BaseAuditProvider {
 
       logger.debug(`[FileAuditProvider] Flushed ${eventsToFlush.length} audit events to disk`);
 
+      // #1122: after the write, so a rotation never delays the record it was
+      // triggered by.
+      await this.rotateIfNeeded();
+
     } catch (error) {
       logger.error('[FileAuditProvider] Failed to flush audit queue:', error);
       // Re-queue failed events
@@ -521,19 +614,37 @@ class FileAuditProvider extends BaseAuditProvider {
     if (!this.config) return;
 
     try {
-      const auditLogPath = path.join(this.config.logDirectory, this.config.auditFileName);
-      const archivePath = path.join(this.config.logDirectory, this.config.archiveFileName);
+      // #1122: this used to test the mtime of the LIVE log and move the whole
+      // file to a single archive, overwriting whatever was there. On an active
+      // instance the live log was always just written to, so the branch was
+      // unreachable and retention never fired at all — and had it fired it
+      // would have discarded the previous archive rather than expiring records.
+      //
+      // Retention now applies to ARCHIVES: an archive whose newest record is
+      // past the window is removed whole. Expiring individual records inside a
+      // live file is deliberately not done — it would punch sequence gaps in
+      // the #1119 chain that are indistinguishable from tampering until
+      // #1124's chain-restart marker exists.
+      const retentionMs = this.config.retentionDays * 24 * 60 * 60 * 1000;
+      const cutoff = Date.now() - retentionMs;
+      let removed = 0;
 
-      if (await fs.pathExists(auditLogPath)) {
-        const stats = await fs.stat(auditLogPath);
-        const fileAge = Date.now() - stats.mtime.getTime();
-        const retentionMs = this.config.retentionDays * 24 * 60 * 60 * 1000;
+      for (const archive of await this.listArchives()) {
+        const archivePath = path.join(this.config.logDirectory, archive);
+        const stats = await fs.stat(archivePath).catch(() => null);
+        // An archive is only ever appended to before it is rotated, so its
+        // mtime IS the timestamp of its newest record.
+        if (!stats || stats.mtime.getTime() > cutoff) continue;
+        await fs.remove(archivePath);
+        removed++;
+        logger.info(`[FileAuditProvider] Removed audit archive ${archive} — past the ${this.config.retentionDays}-day window`);
+      }
 
-        if (fileAge > retentionMs) {
-          // Archive old log
-          await fs.move(auditLogPath, archivePath, { overwrite: true });
-          logger.info('[FileAuditProvider] Archived old audit log file');
-        }
+      if (removed > 0) {
+        logger.warn(
+          `[FileAuditProvider] Retention removed ${removed} archive(s). Those records are gone, ` +
+          'so the chain no longer verifies from genesis.'
+        );
       }
     } catch (error) {
       logger.error('[FileAuditProvider] Failed to cleanup old audit logs:', error);
@@ -571,6 +682,13 @@ class FileAuditProvider extends BaseAuditProvider {
     if (this.flushTimer) {
       clearInterval(this.flushTimer);
       this.flushTimer = null;
+    }
+
+    // #1122: and the retention timer, or it keeps a reference to a closed
+    // provider alive.
+    if (this.retentionTimer) {
+      clearInterval(this.retentionTimer);
+      this.retentionTimer = null;
     }
 
     this.initialized = false;
