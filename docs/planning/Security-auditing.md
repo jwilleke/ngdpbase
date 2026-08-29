@@ -2,20 +2,74 @@
 
 > __Status: analysis and proposal, 2026-08-29.__ Not adopted. Records the findings from a session that started with one naming inconsistency and ended in a structural question. The operator's framing sets the bar: __security and audit must be extremely defined and provable, and the system should be able to meet any security assessment.__
 
+## The plan — the end state
+
+Nine statements. Each is __falsifiable__, because a security property you cannot test is a property you cannot be assessed on — which is the whole thesis of this document.
+
+| # | When this is done | Provable by |
+|---|---|---|
+| 1 | Every permission in the registry has a declared audit event type | A table an assessor reads, generated from the registry |
+| 2 | Something demonstrably emits each declared type | A test that fails when a permission gains no audit path |
+| 3 | Every record carries a monotonic sequence number | A gap in the sequence is detectable |
+| 4 | Every record carries the hash of its predecessor | Altering a record breaks the chain from there on |
+| 5 | The chain verifies across file rotations and to an off-box anchor | A verifier run in front of the assessor |
+| 6 | Integrity holds whichever provider is configured | It is stamped in `BaseAuditProvider`, not in one implementation |
+| 7 | Any instance can be asked what it guarantees | `getProviderInfo()` reports `tamperEvident` / `durable` / `queryable` / `offBox` |
+| 8 | Critical events are durable before the action completes | Kill the process mid-action; the record is there or the action did not happen |
+| 9 | Non-critical losses are counted and surfaced, never silent | The dashboard shows them; a healthy instance shows nothing |
+
+Two properties are deliberately __not__ on this list. __Reviewability__ (an operator can read and search the log) was the gap [#1113](https://github.com/jwilleke/ngdpbase/issues/1113) closed, and is now met. __Attribution__ (who acted, including delegation) was already met before any of this work.
+
+## Where we are now
+
+| # | End state | Now |
+|---|---|---|
+| 1 | Required set declared | ✗ Nothing declares it. Denials __are__ audited at 10 call sites; nobody could state that without grepping |
+| 2 | Emission proven | ✗ No parity test. Documented and emitted vocabularies disagree in both directions |
+| 3 | Sequence number | ✗ Wall-clock timestamps only |
+| 4 | Hash chain | ✗ `FileAuditProvider.ts:406` is a bare `fs.appendFile` of JSONL |
+| 5 | Verifiable across rotation | ✗ Nothing to verify |
+| 6 | Provider-independent | ✗ `logAuditEvent` is abstract (`BaseAuditProvider.ts:214`); each provider owns its whole write |
+| 7 | Guarantees reportable | ✗ `getProviderInfo()` reports identity, not guarantees |
+| 8 | Critical durability | ✗ All events are fire-and-forget, by the decision in [#1109](https://github.com/jwilleke/ngdpbase/issues/1109) |
+| 9 | Losses visible | ✓ Counted since boot, escalating error log, surfaced on the admin dashboard |
+| — | Reviewability | ✓ [#1113](https://github.com/jwilleke/ngdpbase/issues/1113) |
+| — | Attribution | ✓ `user`, `ipAddress`, `viaTokenId`, `viaTokenName` |
+| — | Retention | ~ 90 days configured and enforced by rotation, but not demonstrable — see below |
+
+Two of twelve met outright, one of them today, and one partial. The pluggable provider shape is already in place — `BaseAuditProvider` exists and `File` / `Database` / `Cloud` / `Null` all extend it — so none of this requires new architecture, only a stronger contract.
+
+## The gaps
+
+Ordered by what each unblocks rather than by severity, since three of the four are prerequisites for the ones after.
+
+| Gap | Closes | Cost | Blocked by |
+|---|---|---|---|
+| __A. No declared required set__ | 1, 2 | Low — the permission registry is already enumerable data | nothing |
+| __B. No integrity in the contract__ | 3, 4, 5, 6, 7 | Low __now__: `Database` and `Cloud` are scaffolds, so there is nothing to migrate | nothing |
+| __C. Audit is emitted by callers, not doors__ | strengthens 1, 2 | High — touches every manager | A, to know what is missing |
+| __D. One durability tier for everything__ | 8 | Medium | A, to declare which events are critical |
+
+__Gap B is the one to take first__, despite A being listed first in the layered proposal below. It is self-contained in the provider layer, it is the thing an assessor will actually test, it gets cheaper-to-later only, and unlike C and D it depends on none of the architectural questions still open in [#1109](https://github.com/jwilleke/ngdpbase/issues/1109) and [#1116](https://github.com/jwilleke/ngdpbase/issues/1116).
+
+The rest of this document is the evidence behind that table, and the proposal behind the fixes.
+
 ## Why "provable" is the operative word
 
-An audit log that is correct but unprovable fails an assessment. Every framework worth naming — HIPAA §164.312(b), SOC 2 CC7, ISO 27001 A.12.4, NIST 800-53 AU — asks the same six questions, and each one is a demonstration rather than an assertion.
+An audit log that is correct but unprovable fails an assessment. Every framework worth naming — HIPAA §164.312(b), SOC 2 CC7, ISO 27001 A.12.4, NIST 800-53 AU — asks the same six questions, and each is a __demonstration__ rather than an assertion. The nine statements above exist to answer them:
 
-| | The question an assessor asks | Where ngdpbase stands |
-|---|---|---|
-| __Completeness__ | Prove every security-relevant action is recorded | __Gap.__ Nothing declares the required set |
-| __Integrity__ | Prove records were not altered or deleted | __Gap.__ `fs.appendFile` of JSONL, no chain — and no base-contract guarantee, so it would vary by provider |
-| __Attribution__ | Who did it, including delegated actors | __Strong.__ `user`, `ipAddress`, `viaTokenId`, `viaTokenName` |
-| __Ordering and time__ | Prove sequence; detect gaps | __Gap.__ Wall-clock strings only |
-| __Retention__ | Defined, enforced, demonstrable | __Partial.__ 90 days by file rotation |
-| __Failure__ | What happens when audit itself fails | __Partial.__ Fire-and-forget, now counted ([#1109](https://github.com/jwilleke/ngdpbase/issues/1109)) |
+| The question an assessor asks | Answered by |
+|---|---|
+| __Completeness__ — prove every security-relevant action is recorded | 1, 2 |
+| __Integrity__ — prove records were not altered or deleted | 3, 4, 5, 6 |
+| __Ordering and time__ — prove sequence, detect gaps | 3, 5 |
+| __Failure__ — what happens when audit itself fails | 8, 9 |
+| __Attribution__ — who did it, including delegated actors | already met |
+| __Retention__ — defined, enforced, demonstrable | see below |
 
-Attribution is genuinely good and worth saying so: `viaTokenId` / `viaTokenName` answer *"which agent did this, on whose behalf"*, which many systems cannot. The rest is where the work is.
+Statement 7 — that an instance can be asked what it guarantees — answers none of the six directly and enables all of them. Without it, every answer above is *"depends how it is configured"*.
+
+__Retention deserves its own note, because it is the one question that looks met and is not.__ Ninety days is configured and enforced by file rotation, which satisfies "defined" and "enforced". It does not satisfy __demonstrable__: nothing proves that a record which *should* still exist has not been aged out early, or that rotation deleted only what policy allowed. The sequence numbers in statement 3 are what would close that — a gap at the boundary of a rotated file is either legitimate retention or a deletion, and today those look identical. Retention is therefore folded into the integrity work rather than tracked separately.
 
 ## What the evidence actually showed
 
