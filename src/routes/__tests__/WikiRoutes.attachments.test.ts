@@ -367,12 +367,18 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       mockAttachmentManager.getAttachmentMetadata.mockResolvedValue(null);
     });
 
-    test('a failing audit backend does not fail the delete', async () => {
+    // #1121 REVERSES this. It previously asserted that a failing audit backend
+    // could not turn a committed delete into an error — right for a page edit,
+    // wrong for destruction: an unrecorded delete loses the only answer to
+    // "what was destroyed?". attachment.delete is declared critical in the
+    // audit registry and the record is written BEFORE the file is removed, so
+    // refusing costs nothing but a retry.
+    test('a failing audit backend REFUSES the delete rather than destroying unrecorded', async () => {
       const logAuditEvent = vi.fn().mockRejectedValue(new Error('audit disk full'));
       mockEngine.getManager.mockImplementation((name) => {
         if (name === 'AttachmentManager') return mockAttachmentManager;
         if (name === 'UserManager') return mockUserManager;
-        if (name === 'AuditManager') return { logAuditEvent };
+        if (name === 'AuditManager') return { logAuditEvent, flushAuditQueue: async () => {} };
         return null;
       });
       mockAttachmentManager.deleteAttachment.mockResolvedValue(true);
@@ -384,9 +390,12 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       const mockRes = createMockRes();
       await wikiRoutes.deleteAttachment(mockReq, mockRes);
 
+      expect(mockRes.status).toHaveBeenCalledWith(503);
       expect(mockRes.json).toHaveBeenCalledWith(
-        expect.objectContaining({ success: true })
+        expect.objectContaining({ success: false })
       );
+      // And nothing was destroyed — the point of auditing first.
+      expect(mockAttachmentManager.deleteAttachment).not.toHaveBeenCalled();
     });
 
     test('should deny delete access for unauthenticated users', async () => {
@@ -411,6 +420,15 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
         { attachmentId: 'test-attachment-id' }
       );
       const mockRes = createMockRes();
+
+      // Its own engine mock: getManager's implementation persists between
+      // tests, and the preceding one installs a failing audit sink that now
+      // refuses the delete before it is attempted (#1121).
+      mockEngine.getManager.mockImplementation((name) => {
+        if (name === 'AttachmentManager') return mockAttachmentManager;
+        if (name === 'UserManager') return mockUserManager;
+        return null;
+      });
 
       mockAttachmentManager.deleteAttachment.mockRejectedValue(new Error('Delete failed'));
 

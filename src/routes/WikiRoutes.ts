@@ -4543,7 +4543,14 @@ ${panes}
       const uuid = (pageData.metadata as { uuid?: string } | undefined)?.uuid ?? pageName;
       const referringPages = this.engine.getManager('RenderingManager')?.getReferringPages(pageName) ?? [];
 
-      await this.auditPageDelete(req, wikiContext, pageName, uuid);
+      try {
+        await this.auditPageDelete(req, wikiContext, pageName, uuid);
+      } catch (auditErr) {
+        // #1121: page.delete is critical. Destroying a page with no record of
+        // what was destroyed is the one outcome an audit log exists to prevent.
+        logger.error(`[pages] Refusing to delete '${pageName}': its audit record could not be written`, auditErr);
+        return res.status(503).json({ error: 'Page not deleted — the audit record could not be written', pageName });
+      }
 
       const deleted = await this.engine.getManager('PageManager')?.deletePageWithContext(wikiContext);
       if (!deleted) {
@@ -4934,6 +4941,31 @@ ${panes}
     );
   }
 
+  /**
+   * Record an attachment delete, durably, before the file is destroyed (#1121).
+   *
+   * Unlike {@link auditAttachment} this AWAITS and rethrows: attachment.delete
+   * is declared critical in the audit registry, so the caller must be able to
+   * abandon the delete when the record cannot be written.
+   */
+  private async auditAttachmentCritical(
+    req: Request,
+    attachmentId: string,
+    filename: string,
+    sizeBytes: number | null
+  ): Promise<void> {
+    const event = buildAttachmentAuditEvent({
+      op: 'delete',
+      username: req.userContext?.username,
+      ipAddress: req.ip,
+      attachmentId,
+      filename,
+      sizeBytes,
+      viaToken: WikiRoutes.viaTokenOf(req)
+    });
+    await recordAuditEvent(this.auditSink(), event);
+  }
+
   /** Record an attachment upload / delete in the audit log (#1080). */
   private auditAttachment(
     req: Request,
@@ -5008,37 +5040,48 @@ ${panes}
     }
   }
 
+  /**
+   * Record a page delete, durably, before the page is removed (#1121).
+   *
+   * Both callers already audit ahead of the delete — #946 established that,
+   * because writing afterwards loses the page name and uuid on any path where
+   * the delete succeeded and the process died first.
+   *
+   * What changed: this used to call `logAuditEvent` directly and swallow any
+   * failure, so it never saw the tier, never reached the drop counter, and a
+   * failed write let the delete proceed unrecorded. It now goes through
+   * `recordAuditEvent`, which flushes a critical event and REJECTS on failure —
+   * and the rejection propagates, so the caller can abandon the delete.
+   *
+   * `result: 'attempted'` is kept deliberately. The record is written before
+   * the delete, so claiming success would overstate what is known at the point
+   * it is written.
+   *
+   * @throws when the record cannot be written. The caller must not delete.
+   */
   private async auditPageDelete(
     req: Request,
     wikiContext: { userContext?: { username?: string } | null },
     pageName: string,
     uuid: string
   ): Promise<void> {
-    try {
-      const auditManager = this.engine.getManager('AuditManager') as {
-        logAuditEvent?: (event: Record<string, unknown>) => Promise<string>;
-      } | null;
-      if (!auditManager?.logAuditEvent) return;
+    const viaToken = WikiRoutes.viaTokenOf(req);
 
-      const viaToken = (req.userContext as { viaToken?: { id?: string; name?: string } } | undefined)?.viaToken;
-
-      await auditManager.logAuditEvent({
-        eventType: 'page.delete',
-        user: wikiContext.userContext?.username ?? 'unknown',
-        ipAddress: req.ip,
-        action: 'page-delete',
-        result: 'attempted',
-        severity: viaToken ? 'high' : 'medium',
-        metadata: {
-          pageName,
-          uuid,
-          viaTokenId: viaToken?.id ?? null,
-          viaTokenName: viaToken?.name ?? null
-        }
-      });
-    } catch (auditErr) {
-      logger.warn(`Audit log failed for page.delete of '${pageName}':`, auditErr);
-    }
+    await recordAuditEvent(this.auditSink(), {
+      eventType: 'page.delete',
+      user: wikiContext.userContext?.username ?? 'unknown',
+      ipAddress: req.ip,
+      action: 'page-delete',
+      result: 'success',
+      severity: viaToken ? 'high' : 'medium',
+      metadata: {
+        pageName,
+        uuid,
+        outcome: 'attempted',
+        viaTokenId: viaToken?.id ?? null,
+        viaTokenName: viaToken?.name ?? null
+      }
+    });
   }
 
   async deletePage(req: Request, res: Response) {
@@ -5125,7 +5168,12 @@ ${panes}
       // would lose the page name and uuid on any path where the delete
       // succeeded but the process died before the audit landed — exactly the
       // case an investigator needs.
-      await this.auditPageDelete(req, wikiContext, pageName, _deleteUUID);
+      try {
+        await this.auditPageDelete(req, wikiContext, pageName, _deleteUUID);
+      } catch (auditErr) {
+        logger.error(`[pages] Refusing to delete '${pageName}': its audit record could not be written`, auditErr);
+        return res.status(503).json({ error: 'Page not deleted — the audit record could not be written', pageName });
+      }
 
       // Delete the page using WikiContext (includes audit logging with user info)
       const deleteResult = await pageManager.deletePageWithContext(wikiContext);
@@ -6051,6 +6099,25 @@ ${panes}
         // fall through with the id as the filename
       }
 
+      // #1121: attachment.delete is CRITICAL, so the record is written and
+      // flushed BEFORE the file is destroyed. Auditing afterwards means a
+      // failed audit leaves data destroyed with no trace of what was lost,
+      // which is the one outcome an audit log exists to prevent.
+      //
+      // The inverse risk — a record for a delete that then fails — is real but
+      // strictly better: it is a discrepancy someone can investigate, against
+      // destruction nobody can reconstruct. The unexpected case is logged
+      // below rather than left to be inferred.
+      try {
+        await this.auditAttachmentCritical(req, attachmentId, deletedFilename, deletedSize);
+      } catch (auditErr) {
+        logger.error(`[attachments] Refusing to delete ${attachmentId}: its audit record could not be written`, auditErr);
+        return res.status(503).json({
+          success: false,
+          error: 'Attachment not deleted — the audit record could not be written'
+        });
+      }
+
       // Delete via AttachmentManager (handles permission checks)
       // Pass full userContext for PolicyManager
       const deleted = await attachmentManager.deleteAttachment(
@@ -6059,13 +6126,17 @@ ${panes}
       );
 
       if (!deleted) {
+        // The audit says it was deleted and it was not. Say so loudly rather
+        // than leaving the log quietly overstating what happened.
+        logger.error(
+          `[attachments] Audit recorded a delete of ${attachmentId} that did not occur — ` +
+          'the attachment was not found. The audit log overstates this event.'
+        );
         return res.status(404).json({
           success: false,
           error: 'Attachment not found'
         });
       }
-
-      this.auditAttachment(req, 'delete', attachmentId, deletedFilename, { sizeBytes: deletedSize });
 
       return res.json({
         success: true,
