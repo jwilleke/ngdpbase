@@ -99,6 +99,25 @@ await configManager.setProperty('ngdpbase.application-name', 'My Wiki');
 | `app-default-config.json` | `config/` (codebase) | Base defaults | No (read-only) |
 | `app-custom-config.json` | `INSTANCE_DATA_FOLDER/config/` | Instance overrides | Yes |
 
+### Writing a default value
+
+`app-default-config.json` is read by an operator deciding what an instance does, so a default has to say what happens — not leave it to be inferred.
+
+__An empty string means "no sensible default exists".__ It is correct for a credential, an address, or an optional override: `ngdpbase.mail.provider.smtp.pass`, `ngdpbase.auth.google-oidc.client-secret`, `ngdpbase.telemetry.otlp.endpoint`, `ngdpbase.chrome.left-menu-page`. There is no value ngdpbase could ship for an SMTP password, and empty reads correctly as *not configured*.
+
+__An empty string is wrong for a key that selects behaviour from a fixed set.__ An enum with no value means the behaviour is decided somewhere the reader cannot see — a different code path, a profile, a fallback expression. Ship the actual default:
+
+```json
+"ngdpbase.audit.on-failure": "continue",     ← the effective policy, visible
+"ngdpbase.audit.on-failure": "",             ← decided elsewhere; do not do this
+```
+
+This is not a style preference. An empty enum shipped a security control that silently did nothing: `getProperty(key, fallback)` returns the empty string rather than the fallback, because `""` is not `undefined`, so a profile-derived default was never reached and a hardened deployment would not have refused to boot ([#1118](https://github.com/jwilleke/ngdpbase/issues/1118)).
+
+__A preset does not override a key.__ Where a key like `ngdpbase.security.profile` names a posture, it declares __intent__ and the individual keys remain authoritative. Nothing is silently overridden; a manager that finds the two disagreeing says so at boot. A configuration file whose effective values cannot be read off the page is one an operator will get wrong.
+
+__Document a group with a `_comment_` key__ immediately above the keys it describes — `_comment_audit_on_failure` sits above `ngdpbase.audit.on-failure`. The prefix keeps it out of the namespace, and placement matters: a comment that drifts from its keys is worse than none, because it describes the wrong thing convincingly.
+
 ## Environment Variable Overrides
 
 For Docker/Traefik/Kubernetes deployments:
