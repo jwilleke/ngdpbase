@@ -39,6 +39,12 @@ function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
   const entries = Object.entries(value as Record<string, unknown>)
     .filter(([k]) => !STAMPED_FIELDS.includes(k))
+    // JSON.stringify DROPS undefined-valued keys, so a record hashed with them
+    // present could never verify after being written and read back. Matching
+    // that here is what makes the chain survive its own serialisation — the
+    // first run of scripts/verify-audit-chain.ts against a real log failed on
+    // exactly this.
+    .filter(([, v]) => v !== undefined)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(',')}}`;
 }

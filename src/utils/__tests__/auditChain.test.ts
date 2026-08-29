@@ -116,3 +116,34 @@ describe('verifyChain()', () => {
     expect(r.brokenAt).toBe(2);
   });
 });
+
+describe('hashing survives a JSON round trip', () => {
+  // Found by scripts/verify-audit-chain.ts against the real jimstest log on the
+  // first run: every stamped record failed. canonical() rendered undefined as
+  // null, but JSON.stringify DROPS undefined-valued keys when the record is
+  // written — so the hash covered a field that did not reach disk, and no
+  // chained record could ever verify. The chain has to be stable across the
+  // serialisation the provider actually uses.
+  it('a record with undefined fields verifies after being written and read back', () => {
+    const withUndefined = { id: 'e1', user: 'alice', userId: undefined, sessionId: undefined };
+    const stamped = stampRecord(withUndefined, 1, GENESIS_HASH);
+    const roundTripped = JSON.parse(JSON.stringify(stamped)) as Record<string, unknown>;
+    expect(verifyChain([roundTripped])).toEqual({ ok: true, checked: 1 });
+  });
+
+  it('an undefined field and an absent field hash identically', () => {
+    expect(hashRecord({ a: 1, b: undefined }, 1, GENESIS_HASH))
+      .toBe(hashRecord({ a: 1 }, 1, GENESIS_HASH));
+  });
+
+  it('an explicit null is still distinct from absent', () => {
+    // JSON.stringify keeps null, so it must keep affecting the hash.
+    expect(hashRecord({ a: 1, b: null }, 1, GENESIS_HASH))
+      .not.toBe(hashRecord({ a: 1 }, 1, GENESIS_HASH));
+  });
+
+  it('nested undefined is dropped too', () => {
+    expect(hashRecord({ c: { x: 1, y: undefined } }, 1, GENESIS_HASH))
+      .toBe(hashRecord({ c: { x: 1 } }, 1, GENESIS_HASH));
+  });
+});

@@ -13,6 +13,7 @@
     "build": "tsc && npm run build:addons",
     "build:addons": "cd addons/forms && npm install --silent && cd ../calendar && npm install --silent && npx tsc -p tsconfig.json && cd ../elasticsearch && npm install --silent && npx tsc -p tsconfig.json && cd ../journal && npm install --silent && npx tsc -p tsconfig.json && cd ../feeds && npm install --silent && npx tsc -p tsconfig.json && cd ../demo && npx tsc -p tsconfig.json",
     "create:addon": "tsx scripts/create-addon.ts",
+    "audit:verify": "tsx scripts/verify-audit-chain.ts",
     "build:watch": "tsc --watch",
     "typecheck": "tsc --noEmit",
     "test": "NODE_ENV=test vitest run",
