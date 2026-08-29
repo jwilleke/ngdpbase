@@ -78,7 +78,7 @@ import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
 import { renderCommentListHtml } from '../plugins/CommentsPlugin.js';
 import WikiContext from '../context/WikiContext.js';
-import { PageContentValidationError } from '../managers/PageManager.js';
+import { PageContentValidationError, type PageSaveOptions } from '../managers/PageManager.js';
 import { ThemeManager, getThemeManager } from '../managers/ThemeManager.js';
 import { registerDawarichCompatRoutes } from './DawarichCompatRoutes.js';
 import type { ReportProgress } from '../managers/BackgroundJobManager.js';
@@ -261,7 +261,15 @@ interface IPageManager {
   getPageMetadata(name: string): Promise<PageFrontmatter | null>;
   pageExists(name: string): boolean;
   savePage(name: string, content: string, metadata?: Partial<PageFrontmatter>, options?: unknown): Promise<void>;
-  savePageWithContext(wikiContext: unknown, metadata?: Partial<PageFrontmatter>): Promise<void>;
+  // #1121: the options argument is NOT `unknown` on purpose. This local
+  // interface is a claim about code this file does not own, and a claim loose
+  // enough to accept anything would have let the audit enrichment below be
+  // silently wrong — the same shape of defect the audit work kept finding.
+  savePageWithContext(
+    wikiContext: unknown,
+    metadata?: Partial<PageFrontmatter>,
+    options?: PageSaveOptions
+  ): Promise<void>;
 
   /** #1105: former title -> current title, consulted only after live resolution fails. */
   resolveFormerTitle?(formerTitle: string): Promise<string | null>;
@@ -4065,7 +4073,11 @@ ${panes}
       }
 
       // Save the page using WikiContext (author is automatically extracted from context)
-      await pageManager.savePageWithContext(wikiContext, metadata);
+      // #1121: PageManager emits the page.* audit event. The route only adds
+      // the client IP, which is the one thing it knows and the manager cannot.
+      await pageManager.savePageWithContext(wikiContext, metadata, {
+        audit: { ipAddress: req.ip }
+      });
 
       // Notify admins when a required page is edited in the wiki UI
       if (storageLocation === 'required') {
@@ -4611,11 +4623,12 @@ ${panes}
       const metadata = { ...(pageData.metadata ?? {}), title: newTitle };
 
       (wikiContext as { content: string | null }).content = pageData.content;
-      await pageManager.savePageWithContext(wikiContext, metadata);
-
-      // #1080: same audit event the form-save rename path emits, so a rename
-      // is recorded identically however it was invoked.
-      this.auditPageMutation(req, 'rename', newTitle, metadata.uuid, pageName);
+      // #1121: the rename audit event comes from PageManager, which derives
+      // `rename` from the title change — the same derivation for both rename
+      // paths, rather than each route classifying its own write.
+      await pageManager.savePageWithContext(wikiContext, metadata, {
+        audit: { ipAddress: req.ip }
+      });
 
       // Same index reconciliation the form save performs on a rename.
       const renderingManager = this.engine.getManager('RenderingManager');
@@ -4811,13 +4824,17 @@ ${panes}
       (wikiContext as { content: string | null }).content = result.content;
 
       // Title is untouched: this page was not renamed, its links were.
-      await pageManager.savePageWithContext(wikiContext, { ...page.metadata });
+      // #1121: `link-rewrite` is the one op PageManager cannot infer — from
+      // inside the manager this is an ordinary edit — so the route declares it.
+      await pageManager.savePageWithContext(wikiContext, { ...page.metadata }, {
+        audit: {
+          op: 'link-rewrite',
+          ipAddress: req.ip,
+          rewriteOf: { from: oldTitle, to: newTitle }
+        }
+      });
 
       const uuid = (page.metadata as { uuid?: string } | undefined)?.uuid;
-      this.auditPageMutation(req, 'link-rewrite', refPage, uuid, null, {
-        from: oldTitle,
-        to: newTitle
-      });
 
       await this.reconcileIndexesAfterRewrite(refPage, result.content, page.metadata, uuid);
       return 'rewritten';

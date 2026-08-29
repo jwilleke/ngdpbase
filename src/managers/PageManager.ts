@@ -17,7 +17,7 @@ import type {
 import { pageToArticle } from '../utils/pageToArticle.js';
 import { dedupeKeywords, normalizeKeywordValue } from '../utils/keywordNormalizer.js';
 import { computeFormerTitles, buildFormerTitleIndex, AMBIGUOUS } from '../utils/formerTitles.js';
-import { buildPageMutationAuditEvent, recordAuditEvent } from '../utils/auditEvents.js';
+import { buildPageMutationAuditEvent, recordAuditEvent, type PageMutationOp } from '../utils/auditEvents.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { FilterValidationError } from '../parsers/filters/FilterChain.js';
 
@@ -40,6 +40,33 @@ export interface PageSaveOptions {
   skipValidation?: boolean;
   /** Attributed to the validation log line; purely diagnostic. */
   userName?: string;
+  /**
+   * Request-level detail the manager cannot see, for the audit record (#1121).
+   *
+   * The event is emitted by the manager either way — a caller that omits this
+   * still gets audited, which is the whole point of auditing at the door. This
+   * only ENRICHES the record with what lives on the HTTP request (the client
+   * IP) or with a semantic the manager cannot infer (a link-rewrite looks
+   * exactly like an ordinary edit from inside PageManager).
+   */
+  audit?: {
+    /**
+     * Override the derived op. Only `link-rewrite` needs this: create, edit
+     * and rename are all derivable here from the existing page and the
+     * incoming title, so a caller that passes nothing still gets them right.
+     */
+    op?: PageMutationOp;
+    /** Client IP, when the write arrived over HTTP. */
+    ipAddress?: string;
+    /** The rename that caused a `link-rewrite`. Ignored for other ops. */
+    rewriteOf?: { from: string; to: string } | null;
+    /**
+     * Suppress the event. For writes that are a side effect of an already
+     * audited operation, where a second record would describe the same act
+     * twice.
+     */
+    skip?: boolean;
+  };
 }
 
 export class PageContentValidationError extends Error {
@@ -1147,7 +1174,44 @@ class PageManager extends BaseManager implements CatalogSource {
       }
     }
 
-    return this.provider.savePage(pageName, content, enrichedMetadata);
+    await this.provider.savePage(pageName, content, enrichedMetadata);
+
+    // #1121 gap C: audit at the DOOR, not at the caller.
+    //
+    // This used to be emitted by WikiRoutes, and the result is the reason the
+    // gap was worth closing: of the eight route paths that save a page, four
+    // simply forgot — createPageFromTemplate, appendAttachDirective,
+    // captureSubmit and ingestPageMarkdown all wrote pages that appeared in no
+    // audit log at all. ingestPageMarkdown is the MCP write path, so an agent
+    // could create pages and leave no trace, which is precisely the
+    // attribution the audit trail exists to provide.
+    //
+    // Emitted from here, a caller cannot forget. The op is derived from state
+    // the manager already had to compute anyway (existingPage for the author
+    // carry-forward, the title change for #1105 formerTitles), so the routes
+    // are not trusted to classify their own writes either.
+    if (!options.audit?.skip) {
+      const finalTitle = (enrichedMetadata as Record<string, unknown>).title as string | undefined || pageName;
+      const derivedOp: PageMutationOp = !existingPage
+        ? 'create'
+        : finalTitle !== pageName ? 'rename' : 'edit';
+      const op = options.audit?.op ?? derivedOp;
+
+      void recordAuditEvent(
+        this.engine.getManager('AuditManager'),
+        buildPageMutationAuditEvent({
+          op,
+          username: wikiContext.userContext?.username,
+          ipAddress: options.audit?.ipAddress,
+          pageName: op === 'rename' ? finalTitle : pageName,
+          uuid: (enrichedMetadata as Record<string, unknown>).uuid as string | undefined,
+          fromPageName: op === 'rename' ? pageName : null,
+          rewriteOf: options.audit?.rewriteOf ?? null,
+          viaToken: viaToken
+        }),
+        (err) => logger.warn(`Audit log failed for page.${op} of '${pageName}':`, err)
+      );
+    }
   }
 
   /**

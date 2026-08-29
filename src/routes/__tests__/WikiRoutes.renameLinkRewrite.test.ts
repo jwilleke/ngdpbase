@@ -102,22 +102,23 @@ describe('WikiRoutes.rewriteInboundLinksAfterRename()', () => {
   });
 
   describe('attribution', () => {
-    it('records a link-rewrite audit event naming the rename that caused it', async () => {
+    // #1121 moved the page.* emission out of WikiRoutes and into PageManager,
+    // so a page write cannot be saved without being audited. What the ROUTE is
+    // still responsible for is the one thing the manager cannot work out: from
+    // inside PageManager a link rewrite is an ordinary edit, because the page's
+    // own title did not change. So the route must declare the op and name the
+    // rename that caused it.
+    //
+    // That the declaration becomes a page.link-rewrite record is proven in
+    // PageManager.audit.test.ts, against the real manager rather than a double.
+    it('declares the link-rewrite op and the rename that caused it', async () => {
       pages.set('Alpha', page('Alpha', '[Old Title]'));
       await run(['Alpha']);
-      // The audit write is deliberately not awaited by the caller.
-      await new Promise(resolve => setImmediate(resolve));
 
-      expect(auditEvents).toHaveLength(1);
-      expect(auditEvents[0]).toMatchObject({
-        eventType: 'page.link-rewrite',
-        action: 'page-link-rewrite',
-        user: 'jim',
-        metadata: expect.objectContaining({
-          pageName: 'Alpha',
-          rewriteFrom: OLD,
-          rewriteTo: NEW
-        })
+      const options = mockPageManager.savePageWithContext.mock.calls[0][2];
+      expect(options?.audit).toMatchObject({
+        op: 'link-rewrite',
+        rewriteOf: { from: OLD, to: NEW }
       });
     });
   });
