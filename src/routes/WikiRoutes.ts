@@ -9299,7 +9299,12 @@ ${panes}
         // not fail the write it describes, so the log goes incomplete rather
         // than the request breaking. That trade is only defensible if the loss
         // is visible, and the dashboard is where an operator actually lands.
-        auditDrops: getAuditDropStats()
+        auditDrops: getAuditDropStats(),
+        // #1118: a DIFFERENT failure — not "some events were lost" but "no
+        // events are being recorded at all, and the instance did not say so".
+        auditPosture: (this.engine.getManager('AuditManager') as {
+          getAuditPosture?: () => { provider: string; configured: string; degraded: boolean; reason: string | null };
+        } | null)?.getAuditPosture?.() ?? null
       };
 
       res.render('admin-dashboard', templateData);

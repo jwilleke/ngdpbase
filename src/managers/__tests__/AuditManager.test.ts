@@ -258,3 +258,81 @@ describe('AuditManager', () => {
     });
   });
 });
+
+/**
+ * #1118 — a failed audit provider was silently replaced by NullAuditProvider,
+ * which discards every event, while the server booted healthy and the admin
+ * audit page rendered empty.
+ *
+ * That is an instance believing it has an audit trail and having none — worse
+ * than no audit at all, because the only thing that would have recorded the
+ * problem is the thing that failed. The configuration made it reachable rather
+ * than theoretical: it advertises full setup for databaseauditprovider and
+ * cloudauditprovider, both of which are scaffolds that refuse at initialize().
+ *
+ * Falling back to inert is right for mail, where somebody notices an unsent
+ * message. It is wrong for audit, where the degradation is unobservable.
+ *
+ * The posture split (docs/planning/Security-auditing.md): refuse-boot is the
+ * hardened default, continue is baseline — and continue must mark the instance
+ * DEGRADED rather than carrying on quietly. It is not about whether the
+ * instance keeps running; it is that an instance running without audit must
+ * know and say so.
+ */
+describe('#1118 a failed audit provider is never silent', () => {
+  const BROKEN = { 'ngdpbase.audit.provider': 'databaseauditprovider' };
+
+  test('refuse-boot: initialize rejects, naming the provider and the cause', async () => {
+    const am = new AuditManager(makeEngine({ ...BROKEN, 'ngdpbase.audit.on-failure': 'refuse-boot' }));
+    await expect(am.initialize()).rejects.toThrow(/DatabaseAuditProvider/);
+  });
+
+  test('refuse-boot is the hardened default', async () => {
+    const am = new AuditManager(makeEngine({ ...BROKEN, 'ngdpbase.security.profile': 'hardened' }));
+    await expect(am.initialize()).rejects.toThrow();
+  });
+
+  test('continue: boots, but the instance is marked degraded', async () => {
+    const am = new AuditManager(makeEngine({ ...BROKEN, 'ngdpbase.audit.on-failure': 'continue' }));
+    await am.initialize();
+    expect(am.isDegraded()).toBe(true);
+    expect(am.degradedReason()).toMatch(/DatabaseAuditProvider/);
+  });
+
+  test('continue is the baseline default', async () => {
+    const am = new AuditManager(makeEngine({ ...BROKEN, 'ngdpbase.security.profile': 'baseline' }));
+    await am.initialize();
+    expect(am.isDegraded()).toBe(true);
+  });
+
+  test('an explicitly chosen null provider is NOT degraded', async () => {
+    // "Auditing is off" and "auditing is broken" must not look alike. An
+    // operator who chooses no audit has made a decision on the record.
+    const am = await makeInitializedManager();
+    expect(am.isDegraded()).toBe(false);
+  });
+
+  test('auditing disabled by configuration is NOT degraded', async () => {
+    const am = new AuditManager(makeEngine({ 'ngdpbase.audit.enabled': false }));
+    await am.initialize();
+    expect(am.isDegraded()).toBe(false);
+  });
+
+  test('a healthy provider is not degraded', async () => {
+    const am = await makeInitializedManager({ 'ngdpbase.audit.on-failure': 'refuse-boot' });
+    expect(am.isDegraded()).toBe(false);
+  });
+
+  test('the degraded state is reportable, not just logged', async () => {
+    // A log line is not a signal — nobody reads it until an assessor asks for
+    // six months of records that do not exist.
+    const am = new AuditManager(makeEngine({ ...BROKEN, 'ngdpbase.audit.on-failure': 'continue' }));
+    await am.initialize();
+    const posture = am.getAuditPosture();
+    // The provider NAME is whatever the suite's provider mock reports, so
+    // asserting it would test the harness. What matters is that the posture
+    // names what was CONFIGURED and admits it is not running.
+    expect(posture).toMatchObject({ degraded: true, configured: 'DatabaseAuditProvider' });
+    expect(posture.reason).toBeTruthy();
+  });
+});

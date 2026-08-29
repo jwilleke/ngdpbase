@@ -217,6 +217,7 @@ class AuditManager extends BaseManager {
     // Check if audit is enabled (ALL LOWERCASE)
     const auditEnabled = configManager.getProperty('ngdpbase.audit.enabled', true) as boolean;
     if (!auditEnabled) {
+      // #1118: a deliberate choice, on the record. Not degraded.
       logger.info('📋 AuditManager: Auditing disabled by configuration');
       // Load NullAuditProvider when disabled
       this.providerClass = 'NullAuditProvider';
@@ -237,7 +238,12 @@ class AuditManager extends BaseManager {
     // Load and initialize provider
     await this.loadProvider();
 
-    logger.info(`📋 AuditManager initialized with ${this.providerClass}`);
+    // #1118: one line saying what auditing this instance actually does.
+    const posture = this.getAuditPosture();
+    logger.info(
+      `📋 AuditManager initialized — provider=${posture.provider}` +
+      (posture.degraded ? ` (DEGRADED: configured ${posture.configured}, ${posture.reason})` : '')
+    );
 
     if (!this.provider) {
       throw new Error('Audit provider not initialized');
@@ -254,43 +260,109 @@ class AuditManager extends BaseManager {
    * @private
    * @returns {Promise<void>}
    */
+  /**
+   * Whether auditing is running degraded — configured but not actually working
+   * (#1118).
+   *
+   * Distinct from auditing being OFF. An operator who selects
+   * `nullauditprovider`, or sets `ngdpbase.audit.enabled: false`, has made a
+   * decision that is on the record. An instance whose configured provider
+   * failed has not, and until this existed it had no way to say so: the server
+   * booted healthy, the audit page rendered empty, and the only thing that
+   * would have recorded the problem was the thing that failed.
+   */
+  private degraded: { configured: string; reason: string } | null = null;
+
+  /** True when audit is configured but not working. */
+  isDegraded(): boolean {
+    return this.degraded !== null;
+  }
+
+  /** Why audit is degraded, or null. */
+  degradedReason(): string | null {
+    return this.degraded?.reason ?? null;
+  }
+
+  /**
+   * What this instance's auditing actually does right now (#1118).
+   *
+   * Reportable rather than inferable: a security property that has to be
+   * deduced from configuration is not one an instance can be assessed on.
+   */
+  getAuditPosture(): { provider: string; configured: string; degraded: boolean; reason: string | null } {
+    return {
+      provider: this.provider?.getProviderInfo().name ?? 'none',
+      configured: this.degraded?.configured ?? this.providerClass ?? 'none',
+      degraded: this.isDegraded(),
+      reason: this.degradedReason()
+    };
+  }
+
+  /**
+   * Fall back to the inert provider, recording that we did (#1118).
+   *
+   * @private
+   */
+  private async degradeToNull(configured: string, reason: string): Promise<void> {
+    const NullModule = await import('../providers/NullAuditProvider.js') as unknown as { default: AuditProviderConstructor };
+    const NullAuditProvider = NullModule.default;
+    this.provider = new NullAuditProvider(this.engine);
+    if (!this.provider) {
+      throw new Error('Failed to create fallback NullAuditProvider');
+    }
+    await this.provider.initialize();
+    this.degraded = { configured, reason };
+    logger.error(
+      `🚨 AUDIT DEGRADED: ${configured} could not be used (${reason}). ` +
+      'Events are being DISCARDED. Set ngdpbase.audit.on-failure=refuse-boot to make this fatal.'
+    );
+  }
+
   private async loadProvider(): Promise<void> {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    // #1118: refuse-boot is the hardened default, continue the baseline one.
+    // The profile is a preset — an explicit on-failure key always wins.
+    const profile = configManager?.getProperty('ngdpbase.security.profile', 'baseline') as string;
+    // An empty string is how the shipped config expresses "unset", and it is
+    // NOT undefined — so it has to be collapsed explicitly or the profile
+    // default is silently ignored.
+    const configured = configManager?.getProperty('ngdpbase.audit.on-failure', '') as string;
+    const onFailure = (configured && configured.trim())
+      ? configured.trim()
+      : (profile === 'hardened' ? 'refuse-boot' : 'continue');
+
+    const fail = async (reason: string): Promise<void> => {
+      const configured = this.providerClass ?? 'unknown';
+      if (onFailure === 'refuse-boot') {
+        // Name the provider AND the cause: an operator reading a boot failure
+        // needs both to act on it.
+        throw new Error(
+          `Audit provider ${configured} could not be used: ${reason}. ` +
+          'Auditing is configured but not working, and ngdpbase.audit.on-failure=refuse-boot. ' +
+          'Fix the provider, choose another, or set ngdpbase.audit.provider=nullauditprovider to run without auditing deliberately.'
+        );
+      }
+      await this.degradeToNull(configured, reason);
+    };
+
     try {
-      // Try to load provider class
       const ProviderModule = await import(/* @vite-ignore */ `../providers/${this.providerClass}.js`) as { default: AuditProviderConstructor };
       const ProviderClass = ProviderModule.default;
 
       this.provider = new ProviderClass(this.engine);
       if (!this.provider) {
-        throw new Error('Failed to create audit provider');
+        throw new Error('provider constructor returned nothing');
       }
       await this.provider.initialize();
 
-      // Test provider health
-      const isHealthy = await this.provider.isHealthy();
-      if (!isHealthy) {
-        logger.warn(`Audit provider ${this.providerClass} health check failed, switching to NullAuditProvider`);
-        const NullModule = await import('../providers/NullAuditProvider.js') as unknown as { default: AuditProviderConstructor };
-        const NullAuditProvider = NullModule.default;
-
-        this.provider = new NullAuditProvider(this.engine);
-        if (!this.provider) {
-          throw new Error('Failed to create NullAuditProvider');
-        }
-        await this.provider.initialize();
+      if (!(await this.provider.isHealthy())) {
+        await fail('health check failed');
       }
     } catch (error) {
-      logger.error(`Failed to load audit provider: ${this.providerClass}`, error);
-      // Fall back to NullAuditProvider on any error
-      logger.warn('Falling back to NullAuditProvider due to provider load error');
-      const NullModule = await import('../providers/NullAuditProvider.js') as unknown as { default: AuditProviderConstructor };
-      const NullAuditProvider = NullModule.default;
-
-      this.provider = new NullAuditProvider(this.engine);
-      if (!this.provider) {
-        throw new Error('Failed to create fallback NullAuditProvider');
-      }
-      await this.provider.initialize();
+      // An error thrown by fail() above is the refusal itself — rethrow it
+      // rather than treating it as one more reason to fall back.
+      if (error instanceof Error && error.message.startsWith('Audit provider ')) throw error;
+      await fail(error instanceof Error ? error.message : String(error));
     }
   }
 

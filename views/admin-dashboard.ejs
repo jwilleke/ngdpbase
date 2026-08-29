@@ -15,6 +15,25 @@
         </div>
     <% } %>
 
+    <%# #1118 — auditing is configured but not working, so events are being
+        discarded entirely. Distinct from the #1109 banner below, which reports
+        individual losses from a working sink. Not dismissible: an instance
+        without an audit trail should not be able to look normal. %>
+    <% if (typeof auditPosture !== 'undefined' && auditPosture && auditPosture.degraded) { %>
+        <div class="alert alert-danger d-flex align-items-start" role="alert">
+            <i class="fas fa-triangle-exclamation me-2 mt-1" aria-hidden="true"></i>
+            <div>
+                <strong>Auditing is not recording.</strong>
+                <code><%= auditPosture.configured %></code> is configured but could not be used, so audit events are being
+                <strong>discarded</strong>. Actions on this instance are not being recorded.
+                <div class="small text-muted mt-1">
+                    <%= auditPosture.reason %> &mdash; now running <code><%= auditPosture.provider %></code>.
+                    Set <code>ngdpbase.audit.on-failure</code> to <code>refuse-boot</code> to make this fatal instead.
+                </div>
+            </div>
+        </div>
+    <% } %>
+
     <%# #1109 — audit writes are fire-and-forget: a failed log must not fail the
         write it describes, so the log goes incomplete rather than the request
         breaking. That trade is deliberate, but it is invisible unless shown
