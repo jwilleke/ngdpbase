@@ -96,7 +96,30 @@ The manager checks the permission; the manager emits the audit. If an action pas
 
 Already partly established: [#1111](https://github.com/jwilleke/ngdpbase/issues/1111) emits token events from `AgentTokenManager` rather than the route, deliberately, on the grounds that *"an unaudited mint is a credential nobody knows exists"*. `page.*` events are still emitted from `WikiRoutes`, so only the HTTP path is audited.
 
-### 3. Integrity: hash chain and sequence number
+### 3. Integrity belongs in the provider CONTRACT, not in one provider
+
+`BaseAuditProvider` already exists, and `File`, `Database`, `Cloud` and `Null` all extend it — the pluggable shape is in place. The gap is what the base guarantees.
+
+`logAuditEvent` is __abstract__ (`BaseAuditProvider.ts:214`), so each provider implements the entire write. Integrity stamped inside `FileAuditProvider` would protect nothing in `DatabaseAuditProvider`, and __whether an instance is tamper-evident would depend on which provider is configured__. That is exactly the kind of conditional guarantee an assessment finds, and it cannot be answered with "it depends on your storage backend".
+
+So integrity must be a property of the __contract__:
+
+```text
+BaseAuditProvider.logAuditEvent(event)      // concrete, final
+  -> stamp seq, prevHash, timestamp          // integrity, always
+  -> this.writeEvent(stamped)                // abstract: storage only
+```
+
+A template method. The subclass implements __storage__ and cannot skip integrity, because it never sees the un-stamped record. Adding a fifth provider gets tamper evidence for free rather than having to remember it.
+
+Two notes on the existing providers, since they affect what "works everywhere" means today:
+
+- `DatabaseAuditProvider` (197 lines) and `CloudAuditProvider` (204 lines) are __scaffolds__ — their headers are lists of `TODO: Implement …`. So the contract change is cheap now and expensive later, which argues for doing it before either is built out.
+- `NullAuditProvider` must stay exempt by design: it stores nothing, so it has nothing to chain. That is a legitimate configuration state, not a hole — but an instance running `Null` should not be able to claim tamper evidence, which means the __capability must be reportable__, not assumed.
+
+That last point generalises: `getProviderInfo()` should carry what the provider actually guarantees — `tamperEvident`, `durable`, `queryable` — so an operator or an assessor can ask the system what it provides rather than inferring it from configuration.
+
+### 3a. The mechanism: hash chain and sequence number
 
 Each record carries a monotonic `seq` and the `prevHash` of its predecessor.
 
