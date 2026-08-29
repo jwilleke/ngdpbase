@@ -9,7 +9,7 @@ An audit log that is correct but unprovable fails an assessment. Every framework
 | | The question an assessor asks | Where ngdpbase stands |
 |---|---|---|
 | __Completeness__ | Prove every security-relevant action is recorded | __Gap.__ Nothing declares the required set |
-| __Integrity__ | Prove records were not altered or deleted | __Gap.__ `fs.appendFile` of JSONL, no chain |
+| __Integrity__ | Prove records were not altered or deleted | __Gap.__ `fs.appendFile` of JSONL, no chain — and no base-contract guarantee, so it would vary by provider |
 | __Attribution__ | Who did it, including delegated actors | __Strong.__ `user`, `ipAddress`, `viaTokenId`, `viaTokenName` |
 | __Ordering and time__ | Prove sequence; detect gaps | __Gap.__ Wall-clock strings only |
 | __Retention__ | Defined, enforced, demonstrable | __Partial.__ 90 days by file rotation |
@@ -117,7 +117,9 @@ Two notes on the existing providers, since they affect what "works everywhere" m
 - `DatabaseAuditProvider` (197 lines) and `CloudAuditProvider` (204 lines) are __scaffolds__ — their headers are lists of `TODO: Implement …`. So the contract change is cheap now and expensive later, which argues for doing it before either is built out.
 - `NullAuditProvider` must stay exempt by design: it stores nothing, so it has nothing to chain. That is a legitimate configuration state, not a hole — but an instance running `Null` should not be able to claim tamper evidence, which means the __capability must be reportable__, not assumed.
 
-That last point generalises: `getProviderInfo()` should carry what the provider actually guarantees — `tamperEvident`, `durable`, `queryable` — so an operator or an assessor can ask the system what it provides rather than inferring it from configuration.
+That last point generalises, and it is the piece that makes the whole thing answerable: `getProviderInfo()` should carry what the provider actually guarantees — `tamperEvident`, `durable`, `queryable`, `offBox` — so an operator or an assessor can __ask the system what it provides__ rather than inferring it from configuration.
+
+That is worth stating as the general rule this document is really about: __a security property that has to be inferred is not a property you can be assessed on.__ It is the same shape as completeness — the difference between the system being correct and the system being able to demonstrate it.
 
 ### 3a. The mechanism: hash chain and sequence number
 
@@ -144,7 +146,7 @@ Putting the tier in the registry makes *"which events must be durable"* data rat
 ## Staging, cheapest first
 
 1. __Registry and parity test.__ No behaviour change. Immediately answers "prove completeness", and resolves [#1115](https://github.com/jwilleke/ngdpbase/issues/1115) as a side effect.
-2. __Hash chain and sequence.__ Self-contained in `FileAuditProvider`; nothing upstream changes. The largest assessment win per line of code.
+2. __Integrity in the base contract.__ Make `logAuditEvent` concrete on `BaseAuditProvider` — stamp `seq` and `prevHash`, delegate storage to an abstract `writeEvent` — and have `getProviderInfo()` report what the provider guarantees. Contained to the provider layer; no manager or caller changes. The largest assessment win per line of code, and __cheapest now__: `DatabaseAuditProvider` and `CloudAuditProvider` are still scaffolds, so the contract can change before there is anything to migrate.
 3. __Audit at the door.__ A real refactor touching every manager. Do it after the registry says what is missing.
 4. __Tiered durability.__ Needs step 1 to define the tiers, and answers the remaining open question in [#1109](https://github.com/jwilleke/ngdpbase/issues/1109) for the critical tier.
 
@@ -155,6 +157,8 @@ Recorded deliberately — a proposal about provability that overclaims is self-d
 __Audit-at-the-door does not cover un-permissioned events.__ A failed login has no permission check to hang off, because nobody is authenticated yet. Layer 2 covers authorization; authentication needs its own hook, and that should be designed before committing to the approach.
 
 __A hash chain conflicts with file rotation.__ The current provider rotates; a chain must either span rotations or each file becomes an independent chain with an unverifiable join. Solvable, and it is the detail that decides whether the integrity claim is real.
+
+__A concrete `logAuditEvent` narrows what a provider may do.__ Making the base stamp integrity means a provider can no longer own its whole write — a store with native append-only semantics or its own sequencing might reasonably want to. The template method should leave `writeEvent` free to add its own guarantees, and `getProviderInfo()` is how it says so, but this does trade some provider freedom for a guarantee that holds everywhere. That is the right trade for audit and would be the wrong one for, say, search.
 
 __The permission registry is a floor, not a ceiling.__ It defines what is __gated__, not what is __sensitive__. Reading a private page may warrant an entry without a distinct permission existing. Layer 1 therefore yields a provable floor for completeness, and that limit should be stated to an assessor rather than papered over.
 
