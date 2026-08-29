@@ -15,7 +15,7 @@ Nine statements. Each is __falsifiable__, because a security property you cannot
 | 5 | The chain verifies across file rotations and to an off-box anchor | A verifier run in front of the assessor |
 | 6 | Integrity holds whichever provider is configured | It is stamped in `BaseAuditProvider`, not in one implementation |
 | 7 | Any instance can be asked what it guarantees | `getProviderInfo()` reports `tamperEvident` / `durable` / `queryable` / `offBox` |
-| 8 | Critical events are durable before the action completes | Kill the process mid-action; the record is there or the action did not happen |
+| 8 | Critical events are durable before the action completes __where the profile asks for it__ | Kill the process mid-action; the record is there or the action did not happen |
 | 9 | Non-critical losses are counted and surfaced, never silent | The dashboard shows them; a healthy instance shows nothing |
 
 Two properties are deliberately __not__ on this list. __Reviewability__ (an operator can read and search the log) was the gap [#1113](https://github.com/jwilleke/ngdpbase/issues/1113) closed, and is now met. __Attribution__ (who acted, including delegation) was already met before any of this work.
@@ -58,6 +58,54 @@ The configuration makes it reachable rather than theoretical: `config/app-defaul
 __Gap 0 first, then gap B.__ Gap 0 is small and unblocks the credibility of everything else. Gap B is next, despite A being listed first in the layered proposal below. It is self-contained in the provider layer, it is the thing an assessor will actually test, it gets cheaper-to-later only, and unlike C and D it depends on none of the architectural questions still open in [#1109](https://github.com/jwilleke/ngdpbase/issues/1109) and [#1116](https://github.com/jwilleke/ngdpbase/issues/1116).
 
 The rest of this document is the evidence behind that table, and the proposal behind the fixes.
+
+## Not every deployment needs the same posture
+
+A home wiki and a records system should not be forced into the same failure policy. But *"is this secure?"* is the wrong question to put in a configuration file, for two reasons worth stating before the shape.
+
+__A flag that gates a mechanism creates two code paths, and the weak one is what everybody runs.__ If tamper evidence is skipped when security is off, the chain code is exercised only on the rare hardened instance — so the path compliance depends on is the least tested. That is how security modes rot.
+
+__It also decides something retroactively.__ Flip an instance from lax to strict a year in and its history is unverifiable: records written without hashes cannot be chained after the fact. The flag would have quietly decided, months earlier, that this instance can never be assessed.
+
+### Sort the work by what it actually costs
+
+Most of the plan costs nothing, and the split falls out:
+
+| Item | Cost on a home wiki | Configurable? |
+|---|---|---|
+| Hash chain and sequence numbers | One `sha256` per event | __No.__ Always on |
+| Provider reports its guarantees | Nothing | __No.__ Always on |
+| Event registry and parity test | CI only | __No.__ Always on |
+| Refuse to boot when audit fails | Real — a full disk stops the wiki | __Yes__ |
+| Critical events durable before the action | Latency on login and mint | __Yes__ |
+| `page.view` auditing | Volume and noise | __Yes__ |
+
+So the mechanism is always present; what varies is __how hard the system fails__ and __how much it records__. Three knobs, not a security switch.
+
+### Precedent, including one instructive failure
+
+Named profiles over individually-settable keys is well-trodden: __Kubernetes Pod Security Standards__ (`privileged` / `baseline` / `restricted`), __CIS Benchmarks__ Level 1 and Level 2 — explicitly divided by functional impact rather than by whether security exists — and __NIST SP 800-53__ LOW / MODERATE / HIGH control baselines. __SLSA__ contributes a different idea worth stealing: each level is defined by what you can __demonstrate__, and you publish which one you meet.
+
+The cautionary case is __NIST SP 800-63__. Its 2013 edition had a single Level of Assurance, LOA 1–4. The 2017 revision deleted it in favour of three independent axes — IAL, AAL and FAL — because the components do not move together, and one dial forced deployments to over-implement one property to obtain another.
+
+That applies directly here. Our three knobs are independent: a home instance might want tamper evidence with no read auditing and no refuse-to-boot; a regulated one might want refuse-to-boot and still no read auditing. A single scale cannot express either.
+
+### The shape
+
+```text
+ngdpbase.security.profile: "baseline" | "hardened"     # selects defaults only
+ngdpbase.audit.on-failure: "continue" | "refuse-boot"
+ngdpbase.audit.critical-durability: "async" | "sync"
+ngdpbase.audit.reads: "off" | "sampled" | "full"
+```
+
+Three rules keep it honest:
+
+- __The profile is a preset, never a gate.__ It sets defaults for keys that remain individually settable, so *"baseline, but refuse-to-boot"* is expressible. Yes, two profile values is a boolean wearing better manners — that is fine, because the expressiveness lives in the keys beneath it, which is exactly the 800-63 lesson.
+- __No profile disables a mechanism.__ Integrity, the registry and capability reporting are unconditional. A profile changes failure policy and volume only.
+- __The instance publishes its effective posture__, not its profile name. A home wiki says *"I guarantee tamper evidence and completeness; I do not guarantee critical durability or read auditing"* — a true and useful statement rather than a lesser one.
+
+Naming avoids `strict` and `secure` deliberately: both imply the alternative is insecure, which is what makes an operator pick the wrong one for the wrong reason. `baseline` and `hardened` follow the Kubernetes convention.
 
 ## Why "provable" is the operative word
 
