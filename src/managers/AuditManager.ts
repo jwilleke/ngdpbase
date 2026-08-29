@@ -289,12 +289,25 @@ class AuditManager extends BaseManager {
    * Reportable rather than inferable: a security property that has to be
    * deduced from configuration is not one an instance can be assessed on.
    */
-  getAuditPosture(): { provider: string; configured: string; degraded: boolean; reason: string | null } {
+  getAuditPosture(): {
+    provider: string;
+    configured: string;
+    degraded: boolean;
+    reason: string | null;
+    guarantees: { tamperEvident: boolean; durable: boolean; queryable: boolean; offBox: boolean } | null;
+    } {
+    const withGuarantees = this.provider as unknown as {
+      getGuarantees?: () => { tamperEvident: boolean; durable: boolean; queryable: boolean; offBox: boolean };
+    } | null;
     return {
       provider: this.provider?.getProviderInfo().name ?? 'none',
       configured: this.degraded?.configured ?? this.providerClass ?? 'none',
       degraded: this.isDegraded(),
-      reason: this.degradedReason()
+      reason: this.degradedReason(),
+      // #1119: what the ACTIVE provider guarantees — which is not the same as
+      // what the configured one would have, and a degraded instance must not
+      // be able to claim the guarantees it lost.
+      guarantees: withGuarantees?.getGuarantees?.() ?? null
     };
   }
 

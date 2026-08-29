@@ -1,5 +1,4 @@
 import BaseAuditProvider, { WikiEngine, AuditFilters, AuditSearchResults, AuditStats } from './BaseAuditProvider.js';
-import { AuditEvent } from '../types/index.js';
 
 /**
  * NullAuditProvider - No-op audit provider
@@ -8,6 +7,21 @@ import { AuditEvent } from '../types/index.js';
  * All audit operations are no-ops that return immediately.
  */
 class NullAuditProvider extends BaseAuditProvider {
+  /**
+   * Not chained (#1119): this provider stores nothing, so there is nothing to
+   * chain. A legitimate configuration rather than a hole — provided the
+   * instance cannot then claim tamper evidence, which is what
+   * getProviderInfo().guarantees reports.
+   */
+  protected override chainEnabled(): boolean {
+    return false;
+  }
+
+  /** Nothing is stored, so nothing is guaranteed (#1119). */
+  override getGuarantees(): { tamperEvident: boolean; durable: boolean; queryable: boolean; offBox: boolean } {
+    return { tamperEvident: false, durable: false, queryable: false, offBox: false };
+  }
+
   constructor(engine: WikiEngine) {
     super(engine);
   }
@@ -39,7 +53,7 @@ class NullAuditProvider extends BaseAuditProvider {
    * @param {AuditEvent} _auditEvent - Audit event data
    * @returns {Promise<string>} Dummy event ID
    */
-  logAuditEvent(_auditEvent: AuditEvent): Promise<string> {
+  writeEvent(_record: Record<string, unknown>): Promise<string> {
     return Promise.resolve('null-event-id');
   }
 

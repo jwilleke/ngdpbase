@@ -2,7 +2,6 @@ import BaseAuditProvider, { AuditFilters, AuditSearchResults, AuditStats } from 
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import logger from '../utils/logger.js';
-import { AuditEvent } from '../types/index.js';
 
 /**
  * Database configuration
@@ -106,12 +105,12 @@ class DatabaseAuditProvider extends BaseAuditProvider {
    * @param {AuditEvent} _auditEvent - Audit event data
    * @returns {Promise<string>} Event ID
    */
-  logAuditEvent(_auditEvent: AuditEvent): Promise<string> {
+  writeEvent(_record: Record<string, unknown>): Promise<string> {
     // TODO: Implement database insert
     // Example SQL:
     // INSERT INTO audit_logs (id, timestamp, event_type, user, resource, action, result, ...)
     // VALUES ($1, $2, $3, $4, $5, $6, $7, ...)
-    throw new Error('DatabaseAuditProvider.logAuditEvent() not yet implemented');
+    throw new Error('DatabaseAuditProvider.writeEvent() not yet implemented');
   }
 
   /**

@@ -1,4 +1,5 @@
 import { AuditEvent } from '../types/index.js';
+import { stampRecord, GENESIS_HASH } from '../utils/auditChain.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 
 /**
@@ -203,15 +204,126 @@ abstract class BaseAuditProvider {
   }
 
   /**
-   * Log an audit event
+   * What this provider actually guarantees (#1119).
+   *
+   * Reportable rather than inferable. A security property that has to be
+   * deduced from configuration is not one an instance can be assessed on — so
+   * an operator or an assessor asks the system instead of reading the config
+   * and hoping.
+   *
+   * `tamperEvident` follows from the chain and is therefore true for every
+   * storing provider and false for the inert one, without a subclass having to
+   * remember to say so.
+   */
+  getGuarantees(): { tamperEvident: boolean; durable: boolean; queryable: boolean; offBox: boolean } {
+    return {
+      tamperEvident: this.chainEnabled(),
+      durable: this.chainEnabled(),
+      queryable: true,
+      offBox: false
+    };
+  }
+
+  /** Sequence of the last record this provider stamped (#1119). */
+  protected chainSeq = 0;
+
+  /** Hash of the last record this provider stamped (#1119). */
+  protected chainPrevHash: string = GENESIS_HASH;
+
+  /**
+   * Whether this provider chains its records (#1119).
+   *
+   * True for anything that stores events. `NullAuditProvider` overrides it: it
+   * keeps nothing, so it has nothing to chain — a legitimate state rather than
+   * a hole, provided the instance cannot then CLAIM tamper evidence, which is
+   * what `getProviderInfo().guarantees` is for.
+   */
+  protected chainEnabled(): boolean {
+    return true;
+  }
+
+  /**
+   * Resume the chain from storage, or null to start a new one (#1119).
+   *
+   * Called once, lazily, before the first record is stamped. A provider that
+   * cannot resume returns null and starts a fresh chain — honest, and visible
+   * as a `seq` restarting at 1 rather than as a silent break.
+   *
+   * @protected
+   */
+  protected loadChainHead(): Promise<{ seq: number; hash: string } | null> {
+    return Promise.resolve(null);
+  }
+
+  /** Whether the chain head has been resumed yet. */
+  private chainResumed = false;
+
+  /**
+   * Record an audit event.
+   *
+   * __Deliberately concrete and not overridable in spirit.__ Integrity is a
+   * property of the CONTRACT, not of one implementation: stamped in a subclass
+   * it would protect that subclass only, and whether an instance were
+   * tamper-evident would depend on which storage backend was configured. "It
+   * depends on your backend" is not an answer that survives an assessment.
+   *
+   * A subclass implements {@link writeEvent} — storage — and never sees the
+   * un-stamped record, so it cannot skip the integrity step. Adding a fifth
+   * provider gets tamper evidence without having to remember it.
+   *
+   * @param auditEvent - The event to record
+   * @returns The stored event's id
+   */
+  async logAuditEvent(auditEvent: AuditEvent): Promise<string> {
+    // Normalise BEFORE stamping. A provider that adds its own id or timestamp
+    // must do it here, or the hash would cover a record different from the one
+    // stored and every verification would fail.
+    const prepared = this.prepareRecord(auditEvent as unknown as Record<string, unknown>);
+
+    if (!this.chainEnabled()) {
+      return this.writeEvent(prepared);
+    }
+
+    if (!this.chainResumed) {
+      this.chainResumed = true;
+      const head = await this.loadChainHead();
+      if (head) {
+        this.chainSeq = head.seq;
+        this.chainPrevHash = head.hash;
+      }
+    }
+
+    const stamped = stampRecord(prepared, this.chainSeq + 1, this.chainPrevHash);
+
+    // Advance only after stamping succeeds, so a throw cannot leave a gap.
+    this.chainSeq += 1;
+    this.chainPrevHash = stamped.hash as string;
+
+    return this.writeEvent(stamped);
+  }
+
+  /**
+   * Normalise an incoming event into the record that will be stored (#1119).
+   *
+   * Identity by default. A provider that assigns its own id, timestamp or
+   * field shape overrides this rather than doing it in {@link writeEvent},
+   * because the stamp must cover exactly what is written.
+   *
+   * @protected
+   */
+  protected prepareRecord(record: Record<string, unknown>): Record<string, unknown> {
+    return record;
+  }
+
+  /**
+   * Store an already-stamped record.
    *
    * @async
    * @abstract
-   * @param {AuditEvent} auditEvent - Audit event data
+   * @param record - The record to store, with seq/prevHash/hash already applied
    * @returns {Promise<string>} Event ID
-   * @throws {Error} Always throws - must be implemented by subclass
    */
-  abstract logAuditEvent(auditEvent: AuditEvent): Promise<string>;
+  abstract writeEvent(record: Record<string, unknown>): Promise<string>;
 
   /**
    * Search audit logs

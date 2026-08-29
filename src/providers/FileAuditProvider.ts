@@ -163,35 +163,90 @@ class FileAuditProvider extends BaseAuditProvider {
   }
 
   /**
-   * Log an audit event
-   * @param {AuditEvent} auditEvent - Audit event data
-   * @returns {Promise<string>} Event ID
+   * Resume the chain from the last record on disk (#1119).
+   *
+   * Without this the sequence restarts at 1 on every boot, which reads as a
+   * chain break at each restart and makes the whole mechanism useless — a
+   * verifier could not tell a restart from a deletion.
+   *
+   * Reads the tail of the log rather than parsing all of it: on a large file
+   * only the final record matters, and this runs once per process.
    */
-  async logAuditEvent(auditEvent: AuditEvent): Promise<string> {
+  protected override async loadChainHead(): Promise<{ seq: number; hash: string } | null> {
+    if (!this.config) return null;
+    const auditLogPath = path.join(this.config.logDirectory, this.config.auditFileName);
+    try {
+      if (!(await fs.pathExists(auditLogPath))) return null;
+      const contents = await fs.readFile(auditLogPath, 'utf8');
+      const lines = contents.split('\n').filter((l) => l.trim());
+      for (let i = lines.length - 1; i >= 0; i--) {
+        try {
+          const parsed = JSON.parse(lines[i]) as { seq?: number; hash?: string };
+          if (typeof parsed.seq === 'number' && typeof parsed.hash === 'string') {
+            return { seq: parsed.seq, hash: parsed.hash };
+          }
+          // A record with no seq predates chaining. Everything before it is
+          // unchained too, so start a fresh chain rather than pretending.
+          return null;
+        } catch {
+          // A truncated final line — a kill mid-write. Step back one record
+          // rather than abandoning the chain over a partial write.
+          continue;
+        }
+      }
+      return null;
+    } catch (error) {
+      logger.warn('[FileAuditProvider] Could not resume the audit chain, starting a new one:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Normalise an incoming event into the stored record shape (#1119).
+   *
+   * Split out of `logAuditEvent` so it runs BEFORE the base stamps the chain:
+   * the id and timestamp assigned here are part of what gets hashed, and
+   * assigning them afterwards would mean the hash covered a record different
+   * from the one written.
+   */
+  protected override prepareRecord(auditEvent: Record<string, unknown>): Record<string, unknown> {
     // AuditEvent may come in different shapes - need flexible property access
-    const evt = auditEvent as unknown as Record<string, unknown>;
+    const evt = auditEvent;
+    const legacy = auditEvent as unknown as { type?: string; actor?: string; target?: string; action?: string; result?: string; error?: string; data?: Record<string, unknown>; ipAddress?: string; userAgent?: string };
     const event: ExtendedAuditEvent = {
       id: uuidv4(),
       timestamp: new Date().toISOString(),
       level: (evt.level as string) || 'info',
-      eventType: (evt.eventType as string) || auditEvent.type,
-      user: (evt.user as string) || auditEvent.actor || 'anonymous',
+      eventType: (evt.eventType as string) || legacy.type || 'unknown',
+      user: (evt.user as string) || legacy.actor || 'anonymous',
       userId: evt.userId as string | undefined,
       sessionId: evt.sessionId as string | undefined,
-      ipAddress: auditEvent.ipAddress,
-      userAgent: auditEvent.userAgent,
-      resource: (evt.resource as string) || auditEvent.target,
+      ipAddress: legacy.ipAddress,
+      userAgent: legacy.userAgent,
+      resource: (evt.resource as string) || legacy.target,
       resourceType: evt.resourceType as string | undefined,
-      action: auditEvent.action,
-      result: (evt.result as string) || (auditEvent.result === 'success' ? 'allow' : 'deny'),
-      reason: (evt.reason as string) || auditEvent.error,
+      action: legacy.action,
+      result: (evt.result as string) || (legacy.result === 'success' ? 'allow' : 'deny'),
+      reason: (evt.reason as string) || legacy.error,
       policyId: evt.policyId as string | undefined,
       policyName: evt.policyName as string | undefined,
       context: (evt.context as Record<string, unknown>) || {},
-      metadata: (evt.metadata as Record<string, unknown>) || auditEvent.data || {},
+      metadata: (evt.metadata as Record<string, unknown>) || legacy.data || {},
       duration: evt.duration as number | undefined,
       severity: (evt.severity as string) || 'low'
     };
+
+    return event as unknown as Record<string, unknown>;
+  }
+
+  /**
+   * Queue an already-stamped record for the next flush (#1119).
+   *
+   * The base has applied seq, prevHash and hash by this point; this only
+   * decides when the bytes reach disk.
+   */
+  async writeEvent(record: Record<string, unknown>): Promise<string> {
+    const event = record as unknown as ExtendedAuditEvent;
 
     // Add to in-memory queue
     this.auditQueue.push(event);

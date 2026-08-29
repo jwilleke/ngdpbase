@@ -2,7 +2,6 @@ import BaseAuditProvider, { AuditFilters, AuditSearchResults, AuditStats } from 
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import logger from '../utils/logger.js';
-import { AuditEvent } from '../types/index.js';
 
 /**
  * Cloud configuration
@@ -104,7 +103,7 @@ class CloudAuditProvider extends BaseAuditProvider {
    * @param {AuditEvent} _auditEvent - Audit event data
    * @returns {Promise<string>} Event ID
    */
-  logAuditEvent(_auditEvent: AuditEvent): Promise<string> {
+  writeEvent(_record: Record<string, unknown>): Promise<string> {
     // TODO: Implement cloud logging
     // Example for CloudWatch:
     // await this._client.putLogEvents({
@@ -115,7 +114,7 @@ class CloudAuditProvider extends BaseAuditProvider {
     //     message: JSON.stringify(auditEvent)
     //   }]
     // }).promise();
-    throw new Error('CloudAuditProvider.logAuditEvent() not yet implemented');
+    throw new Error('CloudAuditProvider.writeEvent() not yet implemented');
   }
 
   /**
