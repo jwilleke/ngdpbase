@@ -24,6 +24,7 @@
  */
 
 import logger from './logger.js';
+import { AUDIT_REQUIREMENTS, UNGATED_REQUIREMENTS } from './auditRegistry.js';
 
 /** Agent-token identity attached to a request that authenticated with one. */
 export interface AuditViaToken {
@@ -34,6 +35,19 @@ export interface AuditViaToken {
 /** The subset of `AuditManager` these helpers need. */
 export interface AuditEventSink {
   logAuditEvent?: (event: Record<string, unknown>) => Promise<string>;
+  /**
+   * Force queued records to storage (#1121).
+   *
+   * Named for the method AuditManager actually has. An earlier draft called it
+   * `flush`, which nothing implements — so every critical event would have
+   * refused in production while the tests passed. Third time this exact
+   * mismatch has bitten in this issue chain.
+   *
+   * Optional because not every sink batches, but a sink WITHOUT it cannot
+   * promise durability, so a critical event refuses rather than reporting a
+   * guarantee the system does not have.
+   */
+  flushAuditQueue?: () => Promise<void>;
 }
 
 export type AuditSeverity = 'low' | 'medium' | 'high';
@@ -257,16 +271,55 @@ function shouldShout(count: number): boolean {
   return false;
 }
 
+/**
+ * Is this event type declared critical (#1121)?
+ *
+ * The tier comes from the #1120 registry, so "which events must be durable" is
+ * data rather than a judgement remade at each call site — and adding a critical
+ * event does not mean remembering to change a call.
+ */
+function isCritical(eventType: string): boolean {
+  return [...Object.values(AUDIT_REQUIREMENTS), ...Object.values(UNGATED_REQUIREMENTS)]
+    .some((r) => r.eventType === eventType && r.tier === 'critical');
+}
+
+/**
+ * Record an audit event, honouring its tier (#1121).
+ *
+ * __Standard__ events are fire-and-forget with a caught error, per the #1109
+ * decision: losing the log is bad, but refusing a page save because the log
+ * failed is worse.
+ *
+ * __Critical__ events reverse that. The record IS the evidence — a credential
+ * minted with nothing saying it exists is the case this exists for — so the
+ * write is flushed to storage and a failure REJECTS, letting the caller
+ * abandon the action. "Durable before the action completes" is not satisfied by
+ * a queue that flushes on a timer, because the process can die in between.
+ */
 export async function recordAuditEvent(
   sink: AuditEventSink | null | undefined,
   event: AuditEvent,
   onError?: (err: unknown) => void
 ): Promise<void> {
   // An absent sink is a configuration state, not a failure. Counting it would
-  // make the number meaningless on any instance that never enabled auditing.
+  // make the number meaningless on any instance that never enabled auditing —
+  // and it must not turn every critical action into an error either, since
+  // auditing being off is already visible through #1118's posture.
   if (!sink?.logAuditEvent) return;
+
+  const critical = isCritical(event.eventType);
+
+  if (critical && !sink.flushAuditQueue) {
+    const message =
+      `Audit sink cannot guarantee durability for ${event.eventType}, which is declared critical. ` +
+      'The action was refused rather than completed without a record.';
+    logger.error(`[audit] ${message}`);
+    throw new Error(message);
+  }
+
   try {
     await sink.logAuditEvent(event as unknown as Record<string, unknown>);
+    if (critical) await sink.flushAuditQueue?.();
   } catch (err) {
     dropStats.dropped += 1;
     dropStats.lastEventType = event.eventType;
@@ -279,6 +332,14 @@ export async function recordAuditEvent(
       );
     }
     onError?.(err);
+
+    // A critical event's failure is the caller's problem: it must be able to
+    // abandon the action rather than complete it unrecorded.
+    if (critical) {
+      throw new Error(
+        `Audit write failed for ${event.eventType}, which is declared critical: ${dropStats.lastError}`
+      );
+    }
   }
 }
 

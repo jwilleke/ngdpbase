@@ -256,9 +256,10 @@ describe('buildTokenAuditEvent() — #1111', () => {
 describe('dropped audit events are counted — #1109', () => {
   beforeEach(() => resetAuditDropStats());
 
-  const event = () => buildTokenAuditEvent({
-    op: 'mint', username: 'alice', ipAddress: undefined,
-    id: 'tok_1', owner: 'alice', scopes: [], expiresAt: 'x'
+  // A STANDARD event: these cover drop counting, not tiering. Using a critical
+  // one would exercise #1121's durability guard instead of what is under test.
+  const event = () => buildPageMutationAuditEvent({
+    op: 'edit', username: 'alice', ipAddress: undefined, pageName: 'P', uuid: null
   });
 
   it('starts at zero', () => {
@@ -280,7 +281,7 @@ describe('dropped audit events are counted — #1109', () => {
   it('records what was lost and when, not just how many', async () => {
     await recordAuditEvent({ logAuditEvent: async () => { throw new Error('ENOSPC'); } }, event());
     const stats = getAuditDropStats();
-    expect(stats.lastEventType).toBe('token.mint');
+    expect(stats.lastEventType).toBe('page.edit');
     expect(stats.lastError).toMatch(/ENOSPC/);
     expect(stats.lastAt).toBeTruthy();
   });
@@ -298,5 +299,89 @@ describe('dropped audit events are counted — #1109', () => {
     const onError = vi.fn();
     await recordAuditEvent({ logAuditEvent: async () => { throw new Error('x'); } }, event(), onError);
     expect(onError).toHaveBeenCalledOnce();
+  });
+});
+
+/**
+ * #1121 gap D — not every event needs the same guarantee.
+ *
+ * The #1109 decision was fire-and-forget for everything: losing the log is bad,
+ * refusing a page save because the log failed is worse. That is right for
+ * page.view and wrong for token.mint, where the record IS the only evidence the
+ * credential exists.
+ *
+ * The tier lives in the #1120 registry, so "which events must be durable" is
+ * data rather than a judgement remade at each call site.
+ */
+describe('#1121 tiered durability', () => {
+  const critical = () => buildTokenAuditEvent({
+    op: 'mint', username: 'alice', ipAddress: undefined, id: 'tok_1', owner: 'alice', scopes: [], expiresAt: 'x'
+  });
+  const standard = () => buildPageMutationAuditEvent({
+    op: 'edit', username: 'alice', ipAddress: undefined, pageName: 'P', uuid: null
+  });
+
+  it('a standard event survives a failing sink, as before', async () => {
+    const onError = vi.fn();
+    await expect(recordAuditEvent(
+      { logAuditEvent: async () => { throw new Error('sink down'); } },
+      standard(),
+      onError
+    )).resolves.toBeUndefined();
+    expect(onError).toHaveBeenCalledOnce();
+  });
+
+  it('a critical event REJECTS when the sink fails', async () => {
+    // The caller must be able to abandon the action. A credential minted with
+    // no record of it existing is the case this exists for.
+    await expect(recordAuditEvent(
+      { logAuditEvent: async () => { throw new Error('sink down'); } },
+      critical()
+    )).rejects.toThrow(/audit/i);
+  });
+
+  it('a critical event is flushed, not merely queued', async () => {
+    // "Durable before the action completes" is not satisfied by a queue that
+    // flushes on a timer — the process can die in between.
+    const flush = vi.fn(async () => {});
+    await recordAuditEvent({ logAuditEvent: async () => 'id', flushAuditQueue: flush }, critical());
+    expect(flush).toHaveBeenCalledOnce();
+  });
+
+  it('a standard event is not flushed, so the common path keeps its batching', async () => {
+    const flush = vi.fn(async () => {});
+    await recordAuditEvent({ logAuditEvent: async () => 'id', flushAuditQueue: flush }, standard());
+    expect(flush).not.toHaveBeenCalled();
+  });
+
+  it('a critical event rejects when the FLUSH fails, not just the write', async () => {
+    await expect(recordAuditEvent(
+      { logAuditEvent: async () => 'id', flushAuditQueue: async () => { throw new Error('disk full'); } },
+      critical()
+    )).rejects.toThrow(/audit/i);
+  });
+
+  it('a critical event on a sink that cannot flush still rejects rather than pretending', async () => {
+    // A provider with no flush cannot promise durability. Silently accepting
+    // would report a guarantee the system does not have.
+    await expect(recordAuditEvent({ logAuditEvent: async () => 'id' }, critical()))
+      .rejects.toThrow(/durab/i);
+  });
+
+  it('an absent sink does not fail a critical action', async () => {
+    // Auditing switched off is a configuration decision, already visible via
+    // #1118's posture. It must not turn every mint into an error.
+    await expect(recordAuditEvent(null, critical())).resolves.toBeUndefined();
+  });
+
+  it('counts a critical loss too', async () => {
+    resetAuditDropStats();
+    // Needs a flush, or the durability guard refuses before any write is
+    // attempted and there is nothing to count.
+    await recordAuditEvent(
+      { logAuditEvent: async () => { throw new Error('x'); }, flushAuditQueue: async () => {} },
+      critical()
+    ).catch(() => {});
+    expect(getAuditDropStats().dropped).toBe(1);
   });
 });

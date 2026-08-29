@@ -470,10 +470,16 @@ class AgentTokenManager extends BaseManager {
       revokedBy: null
     };
 
-    this.tokens.set(id, record);
-    await this.persist();
-
-    void recordAuditEvent(
+    // #1121: token.mint is CRITICAL, so the audit is written and flushed BEFORE
+    // the token is persisted, and a failure aborts the mint.
+    //
+    // Ordering is the whole point. Persisting first and auditing after would
+    // mean a failed audit throws while the credential is already on disk — a
+    // live token the caller believes was never created, which is precisely the
+    // failure this tier exists to prevent. Audit-first inverts the residual
+    // risk to an audit record for a token that does not exist: a puzzle rather
+    // than a vulnerability.
+    await recordAuditEvent(
       this.auditSink(),
       buildTokenAuditEvent({
         op: 'mint',
@@ -487,6 +493,9 @@ class AgentTokenManager extends BaseManager {
       }),
       (err) => logger.warn(`[AgentTokenManager] Audit log failed for token.mint of ${id}:`, err)
     );
+
+    this.tokens.set(id, record);
+    await this.persist();
 
     return { token, record: this.toPublic(record) };
   }
@@ -548,9 +557,10 @@ class AgentTokenManager extends BaseManager {
     if (!record || record.revokedAt) return false;
     record.revokedAt = new Date(now).toISOString();
     record.revokedBy = byUsername;
-    await this.persist();
-
-    void recordAuditEvent(
+    // #1121: critical, and audited before the state reaches disk for the same
+    // reason as mint — a revocation the caller is told failed, while the token
+    // is in fact revoked, is a different lie but a lie all the same.
+    await recordAuditEvent(
       this.auditSink(),
       buildTokenAuditEvent({
         op: 'revoke',
@@ -563,6 +573,8 @@ class AgentTokenManager extends BaseManager {
       }),
       (err) => logger.warn(`[AgentTokenManager] Audit log failed for token.revoke of ${id}:`, err)
     );
+
+    await this.persist();
 
     logger.info(`[AgentTokenManager] Token ${id} (owner=${record.owner}) revoked by ${byUsername}`);
     return true;

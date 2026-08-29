@@ -595,7 +595,9 @@ describe('#1111 the token lifecycle is audited', () => {
             getResolvedDataPath: () => tmpDir
           };
         }
-        if (name === 'AuditManager') return { logAuditEvent };
+        // #1121: token.mint and token.revoke are CRITICAL, so the sink must be
+        // able to flush or the write is refused rather than silently unrecorded.
+        if (name === 'AuditManager') return { logAuditEvent, flushAuditQueue: async () => {} };
         return null;
       }
     } as never;
@@ -635,21 +637,29 @@ describe('#1111 the token lifecycle is audited', () => {
     expect(events.filter((e) => e.eventType === 'token.revoke')).toHaveLength(0);
   });
 
-  test('a failing audit sink does not fail the mint', async () => {
-    // The credential is the product; the log is a record of it. Losing the log
-    // is bad, but refusing to mint because the log failed is worse.
+  test('a failing audit sink FAILS the mint (#1121 reverses #1111)', async () => {
+    // #1111 asserted the opposite — "the credential is the product; the log is
+    // a record of it" — and that reasoning is right for a page edit and wrong
+    // for a credential. An unrecorded mint is a live token nobody knows exists,
+    // which is worse than a mint that visibly failed and can be retried.
+    //
+    // token.mint is declared CRITICAL in the #1120 registry, and the audit is
+    // written before the token is persisted, so a refusal leaves nothing behind.
     const engine = {
       getManager: (name: string) => {
         if (name === 'ConfigurationManager') {
           return { getProperty: (_k: string, d: unknown) => d, getResolvedDataPath: () => tmpDir };
         }
-        if (name === 'AuditManager') return { logAuditEvent: async () => { throw new Error('sink down'); } };
+        if (name === 'AuditManager') return { logAuditEvent: async () => { throw new Error('sink down'); }, flushAuditQueue: async () => {} };
         return null;
       }
     } as never;
     const m = new AgentTokenManager(engine);
     await m.initialize();
-    await expect(m.mint('alice', 'ci', ['page-read'])).resolves.toBeDefined();
+    await expect(m.mint('alice', 'ci', ['page-read'])).rejects.toThrow(/critical/i);
+
+    // And nothing was left behind — the point of auditing before persisting.
+    expect(m.listAll()).toHaveLength(0);
   });
 
   test('no audit manager at all is not an error', async () => {

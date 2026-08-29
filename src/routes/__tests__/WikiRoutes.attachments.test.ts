@@ -339,7 +339,9 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       mockEngine.getManager.mockImplementation((name) => {
         if (name === 'AttachmentManager') return mockAttachmentManager;
         if (name === 'UserManager') return mockUserManager;
-        if (name === 'AuditManager') return { logAuditEvent };
+        // #1121: attachment.delete is CRITICAL — destruction — so the sink must
+        // be able to flush or the write is refused rather than unrecorded.
+        if (name === 'AuditManager') return { logAuditEvent, flushAuditQueue: async () => {} };
         return null;
       });
       mockAttachmentManager.deleteAttachment.mockResolvedValue(true);
