@@ -43,14 +43,19 @@ Two of twelve met outright, one of them today, and one partial. The pluggable pr
 
 Ordered by what each unblocks rather than by severity, since three of the four are prerequisites for the ones after.
 
-| Gap | Closes | Cost | Blocked by |
-|---|---|---|---|
-| __A. No declared required set__ | 1, 2 | Low — the permission registry is already enumerable data | nothing |
-| __B. No integrity in the contract__ | 3, 4, 5, 6, 7 | Low __now__: `Database` and `Cloud` are scaffolds, so there is nothing to migrate | nothing |
-| __C. Audit is emitted by callers, not doors__ | strengthens 1, 2 | High — touches every manager | A, to know what is missing |
-| __D. One durability tier for everything__ | 8 | Medium | A, to declare which events are critical |
+| Gap | Issue | Closes | Cost | Blocked by |
+|---|---|---|---|---|
+| __0. A failed audit provider silently becomes `Null`__ | [#1118](https://github.com/jwilleke/ngdpbase/issues/1118) | all of them | Low | nothing |
+| __A. No declared required set__ | [#1120](https://github.com/jwilleke/ngdpbase/issues/1120) | 1, 2 | Low — the permission registry is already enumerable data | nothing |
+| __B. No integrity in the contract__ | [#1119](https://github.com/jwilleke/ngdpbase/issues/1119) | 3, 4, 5, 6, 7 | Low __now__: `Database` and `Cloud` are scaffolds, so there is nothing to migrate | nothing |
+| __C. Audit is emitted by callers, not doors__ | [#1121](https://github.com/jwilleke/ngdpbase/issues/1121) | strengthens 1, 2 | High — touches every manager | A, to know what is missing |
+| __D. One durability tier for everything__ | [#1121](https://github.com/jwilleke/ngdpbase/issues/1121) | 8 | Medium | A, to declare which events are critical |
 
-__Gap B is the one to take first__, despite A being listed first in the layered proposal below. It is self-contained in the provider layer, it is the thing an assessor will actually test, it gets cheaper-to-later only, and unlike C and D it depends on none of the architectural questions still open in [#1109](https://github.com/jwilleke/ngdpbase/issues/1109) and [#1116](https://github.com/jwilleke/ngdpbase/issues/1116).
+__Gap 0 was not in the original analysis and outranks everything else.__ `AuditManager.ts:281-285` catches any provider load failure and falls back to `NullAuditProvider`, which discards every event, while the server boots healthy. An operator who points audit at the advertised `databaseauditprovider` — a scaffold — gets an instance that believes it has an audit trail and has none. So does an instance whose log directory becomes unwritable. Every other statement in the plan is conditional on this, because a guarantee that evaporates on a configuration error is not a guarantee.
+
+The configuration makes it reachable rather than theoretical: `config/app-default-config.json` advertises `database.type`, `connectionstring`, `tablename`, `maxconnections`, `cloud.service`, `region` and `loggroup` for two providers that are `TODO` lists.
+
+__Gap 0 first, then gap B.__ Gap 0 is small and unblocks the credibility of everything else. Gap B is next, despite A being listed first in the layered proposal below. It is self-contained in the provider layer, it is the thing an assessor will actually test, it gets cheaper-to-later only, and unlike C and D it depends on none of the architectural questions still open in [#1109](https://github.com/jwilleke/ngdpbase/issues/1109) and [#1116](https://github.com/jwilleke/ngdpbase/issues/1116).
 
 The rest of this document is the evidence behind that table, and the proposal behind the fixes.
 
