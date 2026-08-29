@@ -560,6 +560,20 @@ describe('ValidationManager', () => {
       expect(result['user-keywords']).toEqual(['Illinois', 'economics']);
     });
 
+    test('preserves a literal + in titles and keywords (#1114)', () => {
+      // #1114: sanitize applied x-www-form-urlencoded semantics (+ → space) to
+      // values body-parser had already decoded. A title like
+      // 'ambu ABS on a P2S + AMS 2 Pro' was stored with the + turned into a
+      // space, so the next save at the original name missed the title lookup,
+      // took the new-page path, and died on its own slug conflict.
+      const result = validationManager.sanitizeMetadata({
+        title: 'ambu ABS on a P2S + AMS 2 Pro',
+        'user-keywords': ['C++', 'A + B']
+      });
+      expect(result.title).toBe('ambu ABS on a P2S + AMS 2 Pro');
+      expect(result['user-keywords']).toEqual(['C++', 'A + B']);
+    });
+
     test('does not mutate the input object', () => {
       const input = { title: '  My Page  ', 'user-keywords': ['  tag  '] };
       validationManager.sanitizeMetadata(input);

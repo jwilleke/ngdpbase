@@ -470,8 +470,10 @@ class ValidationManager extends BaseManager {
     const sanitizeString = (value: unknown): string => {
       if (typeof value !== 'string') return value as string;
       let s = value;
-      // Decode percent-encoded characters (e.g. %09 → tab) before trimming
-      try { s = decodeURIComponent(s.replace(/\+/g, ' ')); } catch { /* leave as-is */ }
+      // Decode percent-encoded characters (e.g. %09 → tab) before trimming.
+      // No +→space here: these values arrive already form-decoded, so a
+      // literal + is content — converting it corrupted titles (#1114).
+      try { s = decodeURIComponent(s); } catch { /* leave as-is */ }
       // Trim all Unicode whitespace from both ends
       return s.replace(/^[\s\u00A0\u200B\uFEFF]+|[\s\u00A0\u200B\uFEFF]+$/gu, '');
     };
