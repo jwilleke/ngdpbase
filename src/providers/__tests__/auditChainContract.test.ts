@@ -106,3 +106,50 @@ describe('#1119 the base stamps, the subclass only stores', () => {
     expect(v.brokenAt).toBe(2);
   });
 });
+
+/**
+ * #1124 — restarting a chain is an operator action that leaves a record.
+ */
+describe('#1124 chain restart', () => {
+  it('writes a marker that begins a new chain', async () => {
+    const p = new MemoryProvider(engine);
+    for (let i = 1; i <= 3; i++) await p.logAuditEvent(event(i));
+    const abandoned = p.written[2].hash as string;
+
+    await p.restartChain('records predate the #1119 fix', 'jim');
+
+    const marker = p.written[3];
+    expect(marker.eventType).toBe('audit.chain-restart');
+    expect(marker.seq).toBe(1);
+    expect(marker.prevHash).toBe(GENESIS_HASH);
+    expect((marker.metadata as Record<string, unknown>).previousHash).toBe(abandoned);
+  });
+
+  it('subsequent records continue from the marker', async () => {
+    const p = new MemoryProvider(engine);
+    await p.logAuditEvent(event(1));
+    await p.restartChain('why', 'jim');
+    await p.logAuditEvent(event(2));
+    expect(p.written[2].seq).toBe(2);
+    expect(p.written[2].prevHash).toBe(p.written[1].hash);
+  });
+
+  it('refuses without a reason, because an unexplained restart is a finding', async () => {
+    const p = new MemoryProvider(engine);
+    await expect(p.restartChain('   ', 'jim')).rejects.toThrow(/reason/i);
+  });
+
+  it('refuses on a provider that does not chain', async () => {
+    const p = new UnchainedProvider(engine);
+    await expect(p.restartChain('why', 'jim')).rejects.toThrow(/does not chain/i);
+  });
+
+  it('records a null previous head rather than inventing one', async () => {
+    // When the abandoned chain cannot be read, admitting ignorance beats an
+    // unverifiable claim about what came before.
+    const p = new MemoryProvider(engine);
+    p.resumeFrom = null;
+    await p.restartChain('previous log unreadable', 'jim');
+    expect((p.written[0].metadata as Record<string, unknown>).previousHash).toBeNull();
+  });
+});

@@ -312,6 +312,23 @@ class AuditManager extends BaseManager {
   }
 
   /**
+   * Begin a new audit chain, recording that the old one was abandoned (#1124).
+   *
+   * Exposed so the operator command can reach it. Never called automatically —
+   * a system that silently repairs its own audit chain is worse than one that
+   * stays visibly broken.
+   */
+  async restartAuditChain(reason: string, actor: string): Promise<string> {
+    const withRestart = this.provider as unknown as {
+      restartChain?: (reason: string, actor: string) => Promise<string>;
+    } | null;
+    if (!withRestart?.restartChain) {
+      throw new Error('The active audit provider does not support chain restart');
+    }
+    return withRestart.restartChain(reason, actor);
+  }
+
+  /**
    * Fall back to the inert provider, recording that we did (#1118).
    *
    * @private

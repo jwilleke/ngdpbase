@@ -8,7 +8,7 @@
  * delete a line and leave no trace, which is exactly the tamper scenario the
  * architecture note argues against.
  */
-import { hashRecord, stampRecord, verifyChain, GENESIS_HASH } from '../auditChain';
+import { hashRecord, stampRecord, verifyChain, verifyLog, GENESIS_HASH, CHAIN_RESTART_EVENT } from '../auditChain';
 
 const rec = (n: number) => ({ id: `e${n}`, eventType: 'page.edit', user: 'alice', timestamp: `2026-01-0${n}T00:00:00.000Z` });
 
@@ -145,5 +145,101 @@ describe('hashing survives a JSON round trip', () => {
   it('nested undefined is dropped too', () => {
     expect(hashRecord({ c: { x: 1, y: undefined } }, 1, GENESIS_HASH))
       .toBe(hashRecord({ c: { x: 1 } }, 1, GENESIS_HASH));
+  });
+});
+
+/**
+ * #1124 — an explained break is not the same as tampering.
+ *
+ * The chain has one state for every kind of break: an attacker editing a line,
+ * a bug writing an unverifiable record, a migration, a restore. All four look
+ * identical, and once a break exists everything after it is unverifiable
+ * forever — the verifier stops at the first one.
+ *
+ * jimstest is in that state now: 16 records written by the build that had the
+ * #1119 hashing bug can never verify, so the live chain is permanently broken
+ * at seq 1. The chain is behaving correctly; there was no honest way to move
+ * on. A restart marker is that way — and because it lives IN the log, an
+ * attacker who wants a clean chain has to write a record saying they broke it.
+ */
+describe('verifyLog() — explained breaks (#1124)', () => {
+  const restart = (previousSeq: number | null, previousHash: string | null, reason = 'test') =>
+    stampRecord(
+      { eventType: CHAIN_RESTART_EVENT, id: 'r', metadata: { previousSeq, previousHash, reason, actor: 'operator' } },
+      1,
+      GENESIS_HASH
+    );
+
+  it('a single intact chain is one verified segment', () => {
+    const r = verifyLog(chainOf(3));
+    expect(r.ok).toBe(true);
+    expect(r.segments).toHaveLength(1);
+    expect(r.segments[0].verdict.checked).toBe(3);
+  });
+
+  it('a broken chain followed by a restart marker verifies the new segment', () => {
+    const broken = chainOf(3);
+    (broken[1] as { user: string }).user = 'mallory';
+
+    const marker = restart(3, broken[2].hash as string);
+    let prev = marker.hash as string;
+    const after = [marker];
+    for (let i = 2; i <= 3; i++) {
+      const s = stampRecord({ id: `n${i}`, user: 'alice' }, i, prev);
+      after.push(s);
+      prev = s.hash as string;
+    }
+
+    const r = verifyLog([...broken, ...after]);
+    expect(r.segments).toHaveLength(2);
+    expect(r.segments[0].verdict.ok).toBe(false);
+    expect(r.segments[0].explained).toBe(true);
+    expect(r.segments[1].verdict.ok).toBe(true);
+  });
+
+  it('a break with NO restart marker is still unexplained', () => {
+    // The whole guarantee: a marker is the only way to move on, so an attacker
+    // must leave a record saying they broke it.
+    const broken = chainOf(4);
+    (broken[1] as { user: string }).user = 'mallory';
+    const r = verifyLog(broken);
+    expect(r.ok).toBe(false);
+    expect(r.segments[0].explained).toBe(false);
+  });
+
+  it('a restart marker records what it abandoned', () => {
+    const first = chainOf(2);
+    const marker = restart(2, first[1].hash as string, 'records predate the #1119 fix');
+    const r = verifyLog([...first, marker]);
+    const meta = r.segments[1].restart?.metadata as Record<string, unknown>;
+    expect(meta.previousSeq).toBe(2);
+    expect(meta.previousHash).toBe(first[1].hash);
+    expect(meta.reason).toMatch(/1119/);
+  });
+
+  it('a marker claiming the wrong previous head is itself a finding', () => {
+    // Otherwise a restart could assert any history it liked.
+    const first = chainOf(2);
+    const marker = restart(2, 'not-the-real-head');
+    const r = verifyLog([...first, marker]);
+    expect(r.ok).toBe(false);
+    expect(r.segments[1].mismatchedPrevious).toBe(true);
+  });
+
+  it('a marker with a null previous head is allowed and noted', () => {
+    // When the abandoned chain is unreadable, admitting ignorance beats an
+    // unverifiable claim about what came before.
+    const marker = restart(null, null, 'previous log unreadable');
+    const r = verifyLog([marker]);
+    expect(r.ok).toBe(true);
+    expect(r.segments[0].mismatchedPrevious).toBe(false);
+  });
+
+  it('counts segments so a log restarted repeatedly is visibly suspicious', () => {
+    const a = chainOf(2);
+    const m1 = restart(2, a[1].hash as string);
+    const m2 = restart(1, m1.hash as string);
+    const r = verifyLog([...a, m1, m2]);
+    expect(r.segments).toHaveLength(3);
   });
 });

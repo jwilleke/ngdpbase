@@ -22,7 +22,7 @@
  */
 import fs from 'fs-extra';
 import path from 'path';
-import { verifyChain } from '../src/utils/auditChain.js';
+import { verifyLog } from '../src/utils/auditChain.js';
 
 interface Parsed {
   records: Record<string, unknown>[];
@@ -86,25 +86,47 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  const verdict = verifyChain(records, expectedHead ? { expectedHead } : {});
+  const verdict = verifyLog(records);
   const head = records[records.length - 1].hash as string;
 
+  // #1124: a log may contain deliberate discontinuities. Reporting each
+  // segment separately is the difference between "somebody tampered with this"
+  // and "this was restarted on purpose, here is who and why".
+  verdict.segments.forEach((segment, i) => {
+    const label = `segment ${i + 1}`;
+    const meta = segment.restart?.metadata as Record<string, unknown> | undefined;
+    if (segment.restart) {
+      console.log(`  ${label} begins at a RESTART marker — ${String(meta?.actor)}: ${String(meta?.reason)}`);
+    }
+    if (segment.verdict.ok) {
+      console.log(`  ✓ ${label}: ${segment.verdict.checked} record(s) intact`);
+    } else if (segment.explained) {
+      console.log(`  ~ ${label}: broken at ${segment.verdict.brokenAt} (${segment.verdict.reason}) — EXPLAINED by the restart that follows`);
+    } else {
+      console.error(`  ✗ ${label}: broken at ${segment.verdict.brokenAt} — ${segment.verdict.reason}`);
+    }
+    if (segment.mismatchedPrevious) {
+      console.error(`  ✗ ${label}: its restart marker names a previous head that does not match. This is a finding.`);
+    }
+  });
+
+  if (verdict.segments.length > 1) {
+    console.log(`  ${verdict.segments.length} segments — a log restarted repeatedly is worth asking about.`);
+  }
+
   if (verdict.ok) {
-    console.log(`✓ Chain intact across ${verdict.checked} record(s)`);
-    console.log(`  seq ${records[0].seq} → ${records[records.length - 1].seq}`);
-    console.log(`  head ${head}`);
+    console.log(`✓ Verified. head ${head}`);
+    if (expectedHead && head !== expectedHead) {
+      console.error('✗ but the head does not match --head: records were removed from the end');
+      process.exit(1);
+    }
     if (!expectedHead) {
       console.log('  Note: no --head supplied, so truncation of the most recent records is NOT detectable.');
     }
     process.exit(0);
   }
 
-  console.error(`✗ Chain BROKEN after ${verdict.checked} record(s)`);
-  if (verdict.brokenAt !== undefined) {
-    const bad = records[verdict.brokenAt - 1];
-    console.error(`  at record ${verdict.brokenAt} (seq ${String(bad?.seq)}, id ${String(bad?.id)}, ${String(bad?.timestamp)})`);
-  }
-  console.error(`  ${verdict.reason}`);
+  console.error('✗ The log did not verify.');
   process.exit(1);
 }
 

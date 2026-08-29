@@ -1,5 +1,6 @@
 import { AuditEvent } from '../types/index.js';
-import { stampRecord, GENESIS_HASH } from '../utils/auditChain.js';
+import logger from '../utils/logger.js';
+import { stampRecord, GENESIS_HASH, CHAIN_RESTART_EVENT } from '../utils/auditChain.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 
 /**
@@ -300,6 +301,75 @@ abstract class BaseAuditProvider {
     this.chainPrevHash = stamped.hash as string;
 
     return this.writeEvent(stamped);
+  }
+
+  /**
+   * Begin a new chain, recording that the old one was abandoned (#1124).
+   *
+   * __Never called automatically.__ A system that silently repairs its own
+   * audit chain is worse than one that stays visibly broken, so this exists
+   * only for an explicit operator action — `npm run audit:restart-chain`.
+   *
+   * The marker is written INTO the log as an ordinary record, which is what
+   * stops it being an escape hatch: an attacker who wants a clean chain has to
+   * leave a record saying they broke it. It does not repair the past — the
+   * abandoned segment stays in the file and stays unverifiable. It only says
+   * the discontinuity is known, by whom, and why.
+   *
+   * @param reason - Why the chain is being restarted. Recorded verbatim.
+   * @param actor - Who authorised it.
+   * @returns The id of the marker record.
+   */
+  async restartChain(reason: string, actor: string): Promise<string> {
+    if (!this.chainEnabled()) {
+      throw new Error('This audit provider does not chain its records, so there is no chain to restart');
+    }
+    if (!reason.trim()) {
+      // An unexplained restart is itself a finding, so refuse to write one.
+      throw new Error('A chain restart must record a reason');
+    }
+
+    // Resolve the head being abandoned. The IN-MEMORY head wins when this
+    // process has written anything — it is what actually reached storage, and
+    // asking the store again could read a stale or partial tail. Only fall back
+    // to storage when this process has written nothing yet.
+    //
+    // Null is legitimate and honest: when the previous chain cannot be read at
+    // all, admitting ignorance beats an unverifiable claim about what came
+    // before.
+    const head = this.chainSeq > 0
+      ? { seq: this.chainSeq, hash: this.chainPrevHash }
+      : await this.loadChainHead().catch(() => null);
+
+    // Through prepareRecord like any other record, so the marker gets whatever
+    // id and timestamp the provider assigns. Building it directly meant it had
+    // no id and the write returned undefined.
+    const prepared = this.prepareRecord({
+      eventType: CHAIN_RESTART_EVENT,
+      user: actor,
+      severity: 'high',
+      result: 'success',
+      action: 'audit-chain-restart',
+      metadata: {
+        previousSeq: head?.seq ?? null,
+        previousHash: head?.hash ?? null,
+        reason: reason.trim(),
+        actor
+      }
+    });
+
+    const marker = stampRecord(prepared, 1, GENESIS_HASH);
+
+    this.chainSeq = 1;
+    this.chainPrevHash = marker.hash as string;
+
+    logger.warn(
+      `[audit] CHAIN RESTARTED by ${actor}: ${reason.trim()}. ` +
+      `Abandoned chain head ${head?.hash ?? '(unreadable)'} at seq ${head?.seq ?? '(unknown)'}. ` +
+      'The abandoned records remain in the log and remain unverifiable.'
+    );
+
+    return this.writeEvent(marker);
   }
 
   /**

@@ -130,3 +130,90 @@ export function verifyChain(
 
   return { ok: true, checked: records.length };
 }
+
+/** Event type of a record that declares a deliberate chain discontinuity (#1124). */
+export const CHAIN_RESTART_EVENT = 'audit.chain-restart';
+
+/** One contiguous chain within a log. */
+export interface ChainSegment {
+  /** Index of the segment's first record in the input. */
+  startIndex: number;
+  verdict: ChainVerdict;
+  /** The restart marker that begins this segment, if it was started by one. */
+  restart?: Record<string, unknown>;
+  /** True when a break at the END of this segment is followed by a restart marker. */
+  explained: boolean;
+  /** True when this segment's marker names a previous head that does not match. */
+  mismatchedPrevious: boolean;
+}
+
+export interface LogVerdict {
+  ok: boolean;
+  segments: ChainSegment[];
+}
+
+/** Is this a chain-restart marker? */
+function isRestart(record: Record<string, unknown>): boolean {
+  return record.eventType === CHAIN_RESTART_EVENT && record.seq === 1 && record.prevHash === GENESIS_HASH;
+}
+
+/**
+ * Verify a log that may contain deliberate discontinuities (#1124).
+ *
+ * `verifyChain` answers "is this one chain intact", which is the right question
+ * for a chain and the wrong one for a log that has legitimately restarted — a
+ * migration, a restore, or a bug that wrote unverifiable records. Without this,
+ * one bad record leaves a log unverifiable forever and the only ways forward
+ * are dishonest: edit the log, delete it, or ignore the verifier.
+ *
+ * A break is __explained__ only when the very next record is a restart marker.
+ * That is what keeps the marker from being an escape hatch: an attacker who
+ * wants a clean chain must write a record saying they broke it, which is a
+ * confession rather than a cover-up.
+ *
+ * The marker's claimed `previousHash` is checked against the head it actually
+ * follows. A marker asserting a history that did not happen is itself a
+ * finding — otherwise a restart could claim anything.
+ */
+export function verifyLog(records: readonly Record<string, unknown>[]): LogVerdict {
+  const segments: ChainSegment[] = [];
+  let start = 0;
+
+  while (start < records.length) {
+    let end = start + 1;
+    while (end < records.length && !isRestart(records[end])) end++;
+
+    const slice = records.slice(start, end);
+    const marker = isRestart(slice[0]) ? slice[0] : undefined;
+    const verdict = verifyChain(slice);
+
+    // A marker may name the head it abandoned. Null is legitimate — when the
+    // previous chain is unreadable, admitting ignorance beats an unverifiable
+    // claim about what came before.
+    let mismatchedPrevious = false;
+    if (marker && start > 0) {
+      const claimed = (marker.metadata as Record<string, unknown> | undefined)?.previousHash;
+      if (claimed !== null && claimed !== undefined) {
+        mismatchedPrevious = claimed !== records[start - 1].hash;
+      }
+    }
+
+    segments.push({
+      startIndex: start,
+      verdict,
+      restart: marker,
+      // Explained by whatever follows, filled in below once we know.
+      explained: false,
+      mismatchedPrevious
+    });
+    start = end;
+  }
+
+  // A segment's break is explained when the NEXT segment opens with a marker.
+  for (let i = 0; i < segments.length - 1; i++) {
+    if (segments[i + 1].restart) segments[i].explained = true;
+  }
+
+  const ok = segments.every((s) => (s.verdict.ok || s.explained) && !s.mismatchedPrevious);
+  return { ok, segments };
+}
