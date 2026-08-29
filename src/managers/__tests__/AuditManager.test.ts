@@ -17,6 +17,7 @@
  */
 
 import AuditManager from '../AuditManager';
+import logger from '../../utils/logger';
 import type { WikiEngine } from '../../types/WikiEngine';
 
 function makeConfigManager(overrides: Record<string, unknown> = {}) {
@@ -334,5 +335,63 @@ describe('#1118 a failed audit provider is never silent', () => {
     // names what was CONFIGURED and admits it is not running.
     expect(posture).toMatchObject({ degraded: true, configured: 'DatabaseAuditProvider' });
     expect(posture.reason).toBeTruthy();
+  });
+});
+
+/**
+ * #1118 follow-up — the shipped config now carries a real value rather than an
+ * empty string, because an empty enum means "behaviour decided somewhere you
+ * cannot see". That is the same shape as the bug it caused: a value that looks
+ * absent but is not.
+ *
+ * The consequence is that a concrete key can no longer be defaulted by the
+ * profile. So the profile becomes a DECLARED INTENT checked against the keys,
+ * rather than a hidden override — which is a better answer than the one it
+ * replaces, and the same declaration-versus-reality check this codebase has
+ * needed everywhere else.
+ */
+describe('#1118 profile and keys are checked against each other', () => {
+  test('an explicit key is honoured over the profile', async () => {
+    const am = new AuditManager(makeEngine({
+      'ngdpbase.audit.provider': 'databaseauditprovider',
+      'ngdpbase.security.profile': 'hardened',
+      'ngdpbase.audit.on-failure': 'continue'
+    }));
+    await am.initialize();
+    expect(am.isDegraded()).toBe(true);
+  });
+
+  test('a hardened profile with a lax key warns rather than silently choosing', async () => {
+    const warn = vi.spyOn(logger, 'warn');
+    const am = new AuditManager(makeEngine({
+      'ngdpbase.security.profile': 'hardened',
+      'ngdpbase.audit.on-failure': 'continue',
+      'ngdpbase.audit.provider': 'nullauditprovider'
+    }));
+    await am.initialize();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('profile=hardened'));
+  });
+
+  test('a cleared key still falls back to the profile', async () => {
+    // Empty is how an operator clears a key, as opposed to how the shipped
+    // config expresses a default — which it no longer does.
+    const am = new AuditManager(makeEngine({
+      'ngdpbase.audit.provider': 'databaseauditprovider',
+      'ngdpbase.security.profile': 'hardened',
+      'ngdpbase.audit.on-failure': '   '
+    }));
+    await expect(am.initialize()).rejects.toThrow(/DatabaseAuditProvider/);
+  });
+
+  test('matching profile and key produce no warning', async () => {
+    const warn = vi.spyOn(logger, 'warn');
+    warn.mockClear();
+    const am = new AuditManager(makeEngine({
+      'ngdpbase.security.profile': 'hardened',
+      'ngdpbase.audit.on-failure': 'refuse-boot',
+      'ngdpbase.audit.provider': 'nullauditprovider'
+    }));
+    await am.initialize();
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('profile=hardened'));
   });
 });
