@@ -302,14 +302,14 @@ Place your provider file in `src/providers/CustomAuditProvider.js`. The AuditMan
 ```javascript
 const auditManager = engine.getManager('AuditManager');
 
-// Log a successful page view
+// Log a page edit
 await auditManager.logAuditEvent({
-  eventType: 'page.view',
+  eventType: 'page.edit',
   user: 'john.doe',
   userId: 'user-123',
   sessionId: 'session-456',
   ipAddress: '192.168.1.100',
-  resource: '/wiki/HomePage',
+  resource: '/view/HomePage',
   resourceType: 'page',
   action: 'read',
   result: 'allow',
@@ -324,7 +324,7 @@ await auditManager.logAuditEvent({
 await auditManager.logAuditEvent({
   eventType: 'authorization.deny',
   user: 'jane.smith',
-  resource: '/wiki/PrivatePage',
+  resource: '/view/PrivatePage',
   action: 'edit',
   result: 'deny',
   reason: 'Insufficient permissions',
@@ -339,7 +339,7 @@ await auditManager.logAuditEvent({
 
 // Log a security incident
 await auditManager.logAuditEvent({
-  eventType: 'security.breach_attempt',
+  eventType: 'security.event',   // the specific kind goes in metadata.securityEventType
   user: 'attacker',
   ipAddress: '192.168.1.200',
   resource: '/admin/users',
@@ -378,7 +378,7 @@ const authFailures = await auditManager.searchAuditLogs({
 // Search denied access attempts
 const deniedAccess = await auditManager.searchAuditLogs({
   result: 'deny',
-  resource: '/wiki/PrivatePage',
+  resource: '/view/PrivatePage',
   limit: 100
 });
 
@@ -468,26 +468,74 @@ if (!isHealthy) {
 
 ### Event Types
 
+The vocabulary is `{target}.{action}`, mirroring the permission registry's
+`{target}-{action}`. Dotted, so a prefix means something: `page.` is everything
+that happened to pages, `token.` is everything a credential did.
+
+__This table is generated from `src/utils/auditVocabulary.ts` and checked against
+it by `auditVocabulary.test.ts`.__ Editing one without the other fails CI. Before
+that check existed, 14 of the 19 types listed here were emitted by nothing and
+twelve emitted types were listed nowhere (#1115).
+
 | Event Type | Description | Typical Severity |
- | ----- | ----- | ----- |
-| `authentication.success` | User logged in successfully | low |
-| `authentication.failed` | Failed login attempt | medium |
-| `authentication.logout` | User logged out | low |
-| `authorization.allow` | Access granted | low |
-| `authorization.deny` | Access denied | medium |
-| `page.view` | Page viewed | low |
-| `page.create` | New page created | low |
+| ----- | ----- | ----- |
+| `page.create` | Page created | low |
 | `page.edit` | Page edited | low |
+| `page.rename` | Page renamed | low |
 | `page.delete` | Page deleted | medium |
+| `page.link-rewrite` | Inbound links rewritten after a rename | low |
 | `attachment.upload` | File uploaded | low |
-| `attachment.download` | File downloaded | low |
 | `attachment.delete` | File deleted | medium |
-| `user.create` | User account created | medium |
-| `user.update` | User account updated | medium |
-| `user.delete` | User account deleted | high |
+| `token.mint` | Agent token minted | medium |
+| `token.revoke` | Agent token revoked | medium |
+| `authentication.success` | Sign-in succeeded | low |
+| `authentication.failed` | Sign-in failed | medium |
+| `authentication.logout` | User signed out | low |
+| `authorization.deny` | Access denied | medium |
+| `authorization.allow` | Access granted | low |
 | `policy.evaluate` | Security policy evaluated | low |
-| `security.breach_attempt` | Security breach detected | critical |
-| `configuration.change` | System config changed | high |
+| `security.event` | Security violation detected | high |
+| `share.create` | Share link created | medium |
+| `share.access` | Share link used | low |
+| `share.revoke` | Share link revoked | medium |
+| `admin.page.raw-edit` | Page edited through the admin raw editor | medium |
+| `admin.sessions.revoke` | Session revoked by an admin | medium |
+| `admin.sessions.clear-anonymous` | Anonymous sessions cleared | low |
+| `audit.chain-restart` | Hash chain restarted, with the reason | high |
+
+#### Retired names
+
+Six bare snake_case names were retired in the #1115 rename. Records already on
+disk keep the name they were written with, so `AuditManager.searchAuditLogs()`
+maps them forward on read and history stays filterable under the new
+vocabulary — a filter for `security.event` returns the pre-cutover
+`security_event` rows too.
+
+| Retired | Maps to |
+| ----- | ----- |
+| `access_decision` | `authorization.deny` or `authorization.allow`, by `result` |
+| `authentication` | `authentication.failed` / `.logout` / `.success`, by `result` |
+| `policy_evaluation` | `policy.evaluate` |
+| `security_event` | `security.event` |
+| `share_access` | `share.access` |
+| `share_create` | `share.create` |
+| `share_revoke` | `share.revoke` |
+
+Two of those mappings are result-aware on purpose. A legacy `authentication`
+row is a success, a failure or a logout depending on its `result`, and
+flattening all three to one name would lose exactly the distinction an operator
+is filtering for.
+
+#### What is deliberately not recorded
+
+`authorization.allow` has an emitter but nothing reaches it: `ACLManager`
+records denials only. An allow fires on every page view, which is the
+read-volume `auditRegistry` exempts `page-read` for and that #334 was filed
+about. A denial is rare and is the half a security assessment asks about.
+
+`page.view` is not in the vocabulary at all. For a wiki it is noise; for a
+PHR-style deployment it is the point. See #1115 for the discussion — it needs
+its own decision rather than being assumed.
 
 ### Result Values
 
@@ -517,7 +565,7 @@ if (!isHealthy) {
   sessionId: 'session-456',              // Session identifier
   ipAddress: '192.168.1.100',            // Client IP address
   userAgent: 'Mozilla/5.0...',           // Client user agent
-  resource: '/wiki/HomePage',            // Resource being accessed
+  resource: '/view/HomePage',            // Resource being accessed
   resourceType: 'page',                  // Type of resource
   action: 'edit',                        // Action performed
   result: 'allow',                       // Result (allow, deny, error)
@@ -562,9 +610,9 @@ Log an audit event to the configured provider.
 
 ```javascript
 const eventId = await auditManager.logAuditEvent({
-  eventType: 'page.view',
+  eventType: 'page.edit',
   user: 'john.doe',
-  resource: '/wiki/HomePage',
+  resource: '/view/HomePage',
   action: 'read',
   result: 'allow',
   severity: 'low'
@@ -762,7 +810,7 @@ class PageManager {
       await auditManager.logAuditEvent({
         eventType: 'page.edit',
         user: user.username,
-        resource: `/wiki/${pageId}`,
+        resource: `/view/${pageId}`,
         resourceType: 'page',
         action: 'edit',
         result: 'success',
@@ -780,7 +828,7 @@ class PageManager {
       await auditManager.logAuditEvent({
         eventType: 'page.edit',
         user: user.username,
-        resource: `/wiki/${pageId}`,
+        resource: `/view/${pageId}`,
         action: 'edit',
         result: 'error',
         reason: error.message,
@@ -866,7 +914,7 @@ __Good Event:__
 {
   eventType: 'authorization.deny',
   user: 'john.doe',
-  resource: '/wiki/PrivatePage',
+  resource: '/view/PrivatePage',
   action: 'edit',
   result: 'deny',
   reason: 'User lacks required role: admin',
@@ -922,7 +970,7 @@ await auditManager.logAuditEvent(event);  // Non-blocking
   user: 'john.doe',           // Username (not email)
   userId: 'user-123',         // Internal ID
   ipAddress: '192.168.1.100', // IP address (may need anonymization)
-  resource: '/wiki/PageName',
+  resource: '/view/PageName',
   action: 'edit'
 }
 

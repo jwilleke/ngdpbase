@@ -20,6 +20,7 @@
  */
 import BaseManager from './BaseManager.js';
 import logger from '../utils/logger.js';
+import { canonicalEventTypeOf, legacyTypesFor } from '../utils/auditVocabulary.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 
@@ -467,7 +468,10 @@ class AuditManager extends BaseManager {
    */
   async logAccessDecision(context: AccessContext, result: string, reason: string, policy: PolicyInfo | null = null): Promise<string> {
     const auditEvent: AuditEvent = {
-      eventType: 'access_decision',
+      // #1115: `{target}.{action}`, and result-aware. An allow and a deny are
+      // different events to anyone filtering, so they get different names
+      // rather than one name plus a field nobody remembers to check.
+      eventType: result === 'deny' ? 'authorization.deny' : 'authorization.allow',
       user: context.user?.username || 'anonymous',
       userId: context.user?.id,
       sessionId: context.sessionId,
@@ -504,7 +508,7 @@ class AuditManager extends BaseManager {
    */
   async logPolicyEvaluation(context: AccessContext, policies: PolicyInfo[], finalResult: string, duration: number): Promise<string> {
     const auditEvent: AuditEvent = {
-      eventType: 'policy_evaluation',
+      eventType: 'policy.evaluate',   // #1115
       user: context.user?.username || 'anonymous',
       resource: context.resource,
       action: context.action,
@@ -532,7 +536,12 @@ class AuditManager extends BaseManager {
    */
   async logAuthentication(context: AuthenticationContext, result: string, reason: string): Promise<string> {
     const auditEvent: AuditEvent = {
-      eventType: 'authentication',
+      // #1115: three outcomes, three names. `authentication` with a result
+      // field meant the docs said authentication.failed and the code said
+      // something else, for the same event.
+      eventType: result === 'failure' ? 'authentication.failed'
+        : result === 'logout' ? 'authentication.logout'
+          : 'authentication.success',
       user: context.username || 'unknown',
       ipAddress: context.ipAddress,
       userAgent: context.userAgent,
@@ -559,7 +568,7 @@ class AuditManager extends BaseManager {
    */
   async logSecurityEvent(context: SecurityContext, eventType: string, severity: 'low' | 'medium' | 'high' | 'critical', description: string): Promise<string> {
     const auditEvent: AuditEvent = {
-      eventType: 'security_event',
+      eventType: 'security.event',   // #1115: the specific kind is in metadata.securityEventType
       user: context.user?.username || 'system',
       ipAddress: context.ipAddress,
       userAgent: context.userAgent,
@@ -586,7 +595,30 @@ class AuditManager extends BaseManager {
     if (!this.provider) {
       throw new Error('Audit provider not initialized');
     }
-    return await this.provider.searchAuditLogs(filters, options);
+
+    // #1115: records keep the name they were written with, so reading has to
+    // map the retired names forward. Without this the rename would split the
+    // log at its cutover date — an operator filtering `security.event` would
+    // see nothing before the deploy and could not tell that from a quiet
+    // period, which is the exact failure this issue is about.
+    const requested = filters.eventType;
+    const legacy = requested ? legacyTypesFor(requested) : [];
+
+    // Only widen when the requested type actually has history under another
+    // name. Dropping the filter unconditionally would make every query read
+    // the whole log.
+    const providerFilters = legacy.length > 0 ? { ...filters, eventType: undefined } : filters;
+    const found = await this.provider.searchAuditLogs(providerFilters, options);
+
+    const canonicalised = (found.results ?? []).map((record) => {
+      const canonical = canonicalEventTypeOf(record);
+      return canonical && canonical !== record.eventType ? { ...record, eventType: canonical } : record;
+    });
+
+    if (legacy.length === 0) return { ...found, results: canonicalised };
+
+    const matched = canonicalised.filter((record) => record.eventType === requested);
+    return { ...found, results: matched, total: matched.length };
   }
 
   /**

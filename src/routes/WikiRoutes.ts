@@ -79,6 +79,7 @@ import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
 import { renderCommentListHtml } from '../plugins/CommentsPlugin.js';
 import WikiContext from '../context/WikiContext.js';
 import { PageContentValidationError, type PageSaveOptions } from '../managers/PageManager.js';
+import { auditEventTypes } from '../utils/auditVocabulary.js';
 import { ThemeManager, getThemeManager } from '../managers/ThemeManager.js';
 import { registerDawarichCompatRoutes } from './DawarichCompatRoutes.js';
 import type { ReportProgress } from '../managers/BackgroundJobManager.js';
@@ -5026,6 +5027,47 @@ ${panes}
    *
    * Best-effort: never throws. A logging failure must not cost a valid login.
    */
+  /**
+   * Record a sign-in outcome in the audit trail (#1115).
+   *
+   * Goes through AuditManager.logAuthentication, which names the event from the
+   * result — authentication.success / .failed / .logout — so the three
+   * outcomes are three filterable types rather than one type plus a field.
+   *
+   * Best-effort: never throws. A logging failure must not cost a valid login,
+   * and must not turn a rejected password into a 500 either.
+   */
+  private async auditAuthentication(
+    req: Request,
+    username: string | undefined,
+    result: 'success' | 'failure' | 'logout',
+    reason: string
+  ): Promise<void> {
+    try {
+      const auditManager = this.engine.getManager('AuditManager') as {
+        logAuthentication?: (
+          context: Record<string, unknown>,
+          result: string,
+          reason: string
+        ) => Promise<string>;
+      } | null;
+      if (!auditManager?.logAuthentication) return;
+
+      await auditManager.logAuthentication(
+        {
+          username: username ?? 'unknown',
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent'),
+          loginMethod: 'password'
+        },
+        result,
+        reason
+      );
+    } catch (auditErr) {
+      logger.warn('Audit log failed for sign-in:', auditErr);
+    }
+  }
+
   private async auditMagicLinkRedemption(
     req: Request,
     username: string | undefined,
@@ -6676,6 +6718,18 @@ ${panes}
           }
         }
 
+        // #1115: record the failed attempt itself, not only the lockout it may
+        // eventually cause.
+        //
+        // This deliberately revisits #1044, whose comment above calls an
+        // ordinary wrong password noise. That was the right call for the
+        // WARNING log, which a human reads; it is the wrong one for the audit
+        // trail, which is queried. Failed sign-in attempts are named explicitly
+        // by the frameworks docs/planning/Security-auditing.md scores against —
+        // HIPAA 164.312(b), SOC 2 CC7 — and "several failures then a success"
+        // is a pattern that only exists if the failures were recorded.
+        await this.auditAuthentication(req, username, 'failure', 'invalid username or password');
+
         return res.redirect(
           '/login?error=Invalid username or password&redirect=' +
             encodeURIComponent(redirect)
@@ -6685,6 +6739,11 @@ ${panes}
       // #1044: a success clears the record, so a fat-fingered password costs
       // a legitimate user nothing.
       if (throttle) keys.forEach((k) => throttle.recordSuccess(k));
+
+      // #1115: the success half. A trail with only failures cannot answer
+      // "did the attacker eventually get in", which is the question that
+      // matters after a run of them.
+      await this.auditAuthentication(req, result.username || username, 'success', 'password');
 
       // #1043: new session ID before the identity lands on it.
       await this.regenerateSession(req);
@@ -14702,6 +14761,11 @@ ${panes}
         auditStats,
         auditLogs,
         auditAvailable: Boolean(audit?.searchAuditLogs),
+        // #1115: the filter options come from the vocabulary rather than a
+        // hand-kept list in the template. The hand-kept list offered four
+        // options of which three matched zero records in a 2,687-record log,
+        // while page.* — 91% of the log — could not be filtered for at all.
+        eventTypeOptions: auditEventTypes(),
         filters,
         title: 'Audit Logs - Admin',
         currentUser

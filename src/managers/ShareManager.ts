@@ -132,7 +132,7 @@ export default class ShareManager extends BaseManager {
     this.byToken.set(record.token, record);
     this.byId.set(record.id, record);
 
-    await this.audit('share_create', createdBy, record);
+    await this.audit('share.create', createdBy, record);
     logger.info(`[ShareManager] Share ${record.id} created by ${createdBy} (${record.scope.kind}: ${record.scope.keyword}, expires ${record.expiresAt ?? 'never'})`);
     return record;
   }
@@ -165,7 +165,7 @@ export default class ShareManager extends BaseManager {
     record.revokedAt = new Date().toISOString();
     this.persist(record);
 
-    await this.audit('share_revoke', revokedBy, record);
+    await this.audit('share.revoke', revokedBy, record);
     logger.info(`[ShareManager] Share ${id} revoked by ${revokedBy}`);
     return true;
   }
@@ -328,7 +328,7 @@ export default class ShareManager extends BaseManager {
 
   /**
    * Flush aggregated access counts (one share, or all when `id` omitted) to
-   * the log and audit trail as a single `share_access` row each (decision 5).
+   * the log and audit trail as a single `share.access` row each (decision 5).
    */
   private async flushAccessCounts(id?: string): Promise<void> {
     const ids = id !== undefined ? [id] : [...this.accessCounts.keys()];
@@ -342,7 +342,7 @@ export default class ShareManager extends BaseManager {
         const auditManager = this.engine.getManager<AuditManager>('AuditManager');
         if (!auditManager) continue;
         await auditManager.logAuditEvent({
-          eventType: 'share_access',
+          eventType: 'share.access',
           user: 'anonymous',
           resource: shareId,
           resourceType: 'share',
@@ -351,7 +351,7 @@ export default class ShareManager extends BaseManager {
           metadata: { count: entry.count, since }
         });
       } catch (err) {
-        logger.warn(`[ShareManager] Audit logging failed for share_access ${shareId}: ${String(err)}`);
+        logger.warn(`[ShareManager] Audit logging failed for share.access ${shareId}: ${String(err)}`);
       }
     }
   }
@@ -366,7 +366,7 @@ export default class ShareManager extends BaseManager {
         user,
         resource: record.id,
         resourceType: 'share',
-        action: eventType === 'share_create' ? 'create' : 'revoke',
+        action: eventType === 'share.create' ? 'create' : 'revoke',
         result: 'success',
         metadata: {
           scope: record.scope,

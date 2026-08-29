@@ -1107,6 +1107,54 @@ class ACLManager extends BaseManager {
     }
     // ACL decisions are audit-log entries only — do NOT forward to NotificationManager
     // as they fire on every page view and flood the notification UI (#334)
+
+    // #1115: until now this method wrote to the APPLICATION log and stopped
+    // there, despite its name and despite the comment above calling these
+    // audit-log entries. Every access denial in the system was invisible to the
+    // audit trail — a real gap rather than a naming one, since a denied access
+    // going unrecorded is the first thing an assessment asks about.
+    //
+    // Denials only. An allow fires on every page view, which is the read-volume
+    // that auditRegistry exempts `page-read` for and that #334 was filed about.
+    // A denial is rare and is the half worth keeping.
+    if (!allowed) {
+      void this.auditDenial(username, pageName, action, reason);
+    }
+  }
+
+  /**
+   * Record a denied access decision in the audit trail (#1115).
+   *
+   * Best-effort and never awaited by the decision path: the answer to "may
+   * this user do this" must not depend on the audit backend being healthy, and
+   * a slow sink must not delay a page render. `authorization.deny` is standard
+   * tier for that reason — the critical tier is destruction and credentials.
+   */
+  private async auditDenial(
+    username: string,
+    pageName: string | undefined,
+    action: string | undefined,
+    reason: string | undefined
+  ): Promise<void> {
+    try {
+      const auditManager = this.engine?.getManager?.('AuditManager') as {
+        logAuditEvent?: (event: Record<string, unknown>) => Promise<string>;
+      } | null;
+      if (!auditManager?.logAuditEvent) return;
+
+      await auditManager.logAuditEvent({
+        eventType: 'authorization.deny',
+        user: username,
+        action: action ?? 'unknown',
+        resource: pageName ?? '',
+        resourceType: 'page',
+        result: 'deny',
+        reason: reason || 'not permitted',
+        severity: 'medium'
+      });
+    } catch (err) {
+      logger.warn(`Audit log failed for authorization.deny of '${pageName}':`, err);
+    }
   }
 
   /**

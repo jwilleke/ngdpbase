@@ -141,10 +141,12 @@
                             <label class="form-label">Event Type</label>
                             <select class="form-select" id="filterEventType">
                                 <option value="">All Events</option>
-                                <option value="access_decision">Access Decision</option>
-                                <option value="authentication">Authentication</option>
-                                <option value="security_event">Security Event</option>
-                                <option value="policy_evaluation">Policy Evaluation</option>
+                                <%# #1115: generated from the audit vocabulary. The previous
+                                    hand-kept list offered four options, three of which matched
+                                    zero records, and omitted page.* entirely. %>
+                                <% (typeof eventTypeOptions !== 'undefined' ? eventTypeOptions : []).forEach(function (t) { %>
+                                <option value="<%= t %>"><%= t %></option>
+                                <% }); %>
                             </select>
                         </div>
                         <div class="col-md-3">
@@ -208,7 +210,7 @@
                                         <td><%= log.user %></td>
                                         <td>
                                             <span class="badge bg-secondary event-type-badge">
-                                                <%= log.eventType.replace('_', ' ') %>
+                                                <%= log.eventType %>
                                             </span>
                                         </td>
                                         <td><%= log.resource || '-' %></td>
