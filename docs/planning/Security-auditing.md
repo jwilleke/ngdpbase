@@ -24,20 +24,20 @@ Two properties are deliberately __not__ on this list. __Reviewability__ (an oper
 
 | # | End state | Now |
 |---|---|---|
-| 1 | Required set declared | ✗ Nothing declares it. Denials __are__ audited at 10 call sites; nobody could state that without grepping |
-| 2 | Emission proven | ✗ No parity test. Documented and emitted vocabularies disagree in both directions |
-| 3 | Sequence number | ✗ Wall-clock timestamps only |
-| 4 | Hash chain | ✗ `FileAuditProvider.ts:406` is a bare `fs.appendFile` of JSONL |
-| 5 | Verifiable across rotation | ✗ Nothing to verify |
-| 6 | Provider-independent | ✗ `logAuditEvent` is abstract (`BaseAuditProvider.ts:214`); each provider owns its whole write |
-| 7 | Guarantees reportable | ✗ `getProviderInfo()` reports identity, not guarantees |
+| 1 | Required set declared | ✓ [#1120](https://github.com/jwilleke/ngdpbase/issues/1120) — `src/utils/auditRegistry.ts`. __6 of 19__ permissions audited, 8 known gaps, 5 read-volume exemptions |
+| 2 | Emission proven | ✓ [#1120](https://github.com/jwilleke/ngdpbase/issues/1120) — a declared type with no emitter fails CI |
+| 3 | Sequence number | ✓ [#1119](https://github.com/jwilleke/ngdpbase/issues/1119) |
+| 4 | Hash chain | ✓ [#1119](https://github.com/jwilleke/ngdpbase/issues/1119), with `npm run audit:verify` |
+| 5 | Verifiable across rotation | ~ [#1122](https://github.com/jwilleke/ngdpbase/issues/1122) chains across rotation; truncation still undetectable without an off-box anchor |
+| 6 | Provider-independent | ✓ [#1119](https://github.com/jwilleke/ngdpbase/issues/1119) — the base stamps, the subclass only stores |
+| 7 | Guarantees reportable | ✓ [#1119](https://github.com/jwilleke/ngdpbase/issues/1119) `getGuarantees()` + [#1118](https://github.com/jwilleke/ngdpbase/issues/1118) `getAuditPosture()` |
 | 8 | Critical durability | ✗ All events are fire-and-forget, by the decision in [#1109](https://github.com/jwilleke/ngdpbase/issues/1109) |
 | 9 | Losses visible | ✓ Counted since boot, escalating error log, surfaced on the admin dashboard |
 | — | Reviewability | ✓ [#1113](https://github.com/jwilleke/ngdpbase/issues/1113) |
 | — | Attribution | ✓ `user`, `ipAddress`, `viaTokenId`, `viaTokenName` |
-| — | Retention | ~ 90 days configured and enforced by rotation, but not demonstrable — see below |
+| — | Retention | ~ [#1122](https://github.com/jwilleke/ngdpbase/issues/1122) — rotation and archive expiry now run hourly; per-record expiry waits on [#1124](https://github.com/jwilleke/ngdpbase/issues/1124) |
 
-Two of twelve met outright, one of them today, and one partial. The pluggable provider shape is already in place — `BaseAuditProvider` exists and `File` / `Database` / `Cloud` / `Null` all extend it — so none of this requires new architecture, only a stronger contract.
+__Seven of twelve met, two partial__ — up from two, across one session. The remaining work is statement 8 (tiered durability, [#1121](https://github.com/jwilleke/ngdpbase/issues/1121)), the emitter gaps the registry now counts, and a chain-restart marker ([#1124](https://github.com/jwilleke/ngdpbase/issues/1124)) without which one bad record leaves a log unverifiable forever. The pluggable provider shape is already in place — `BaseAuditProvider` exists and `File` / `Database` / `Cloud` / `Null` all extend it — so none of this requires new architecture, only a stronger contract.
 
 ## The gaps
 
@@ -45,9 +45,9 @@ Ordered by what each unblocks rather than by severity, since three of the four a
 
 | Gap | Issue | Closes | Cost | Blocked by |
 |---|---|---|---|---|
-| __0. A failed audit provider silently becomes `Null`__ | [#1118](https://github.com/jwilleke/ngdpbase/issues/1118) | all of them | Low | nothing |
-| __A. No declared required set__ | [#1120](https://github.com/jwilleke/ngdpbase/issues/1120) | 1, 2 | Low — the permission registry is already enumerable data | nothing |
-| __B. No integrity in the contract__ | [#1119](https://github.com/jwilleke/ngdpbase/issues/1119) | 3, 4, 5, 6, 7 | Low __now__: `Database` and `Cloud` are scaffolds, so there is nothing to migrate | nothing |
+| ~~0. A failed audit provider silently becomes `Null`~~ | [#1118](https://github.com/jwilleke/ngdpbase/issues/1118) ✓ | all of them | done | — |
+| ~~A. No declared required set~~ | [#1120](https://github.com/jwilleke/ngdpbase/issues/1120) ✓ | 1, 2 | done | — |
+| ~~B. No integrity in the contract~~ | [#1119](https://github.com/jwilleke/ngdpbase/issues/1119) ✓ | 3, 4, 5, 6, 7 | done | — |
 | __C. Audit is emitted by callers, not doors__ | [#1121](https://github.com/jwilleke/ngdpbase/issues/1121) | strengthens 1, 2 | High — touches every manager | A, to know what is missing |
 | __D. One durability tier for everything__ | [#1121](https://github.com/jwilleke/ngdpbase/issues/1121) | 8 | Medium | A, to declare which events are critical |
 
@@ -55,7 +55,7 @@ __Gap 0 was not in the original analysis and outranks everything else.__ `AuditM
 
 The configuration makes it reachable rather than theoretical: `config/app-default-config.json` advertises `database.type`, `connectionstring`, `tablename`, `maxconnections`, `cloud.service`, `region` and `loggroup` for two providers that are `TODO` lists.
 
-__Gap 0 first, then gap B.__ Gap 0 is small and unblocks the credibility of everything else. Gap B is next, despite A being listed first in the layered proposal below. It is self-contained in the provider layer, it is the thing an assessor will actually test, it gets cheaper-to-later only, and unlike C and D it depends on none of the architectural questions still open in [#1109](https://github.com/jwilleke/ngdpbase/issues/1109) and [#1116](https://github.com/jwilleke/ngdpbase/issues/1116).
+__Gaps 0, A and B are done__ (in that order, over one session). What remains is C and D — both of which needed A to know what the required set is, and now have it. Two new gaps surfaced while closing the others: rotation and retention never ran at all ([#1122](https://github.com/jwilleke/ngdpbase/issues/1122), done), and there is no way to record a legitimate chain discontinuity ([#1124](https://github.com/jwilleke/ngdpbase/issues/1124), open) — without which one bad record leaves a log unverifiable forever, which jimstest is demonstrating right now. It is self-contained in the provider layer, it is the thing an assessor will actually test, it gets cheaper-to-later only, and unlike C and D it depends on none of the architectural questions still open in [#1109](https://github.com/jwilleke/ngdpbase/issues/1109) and [#1116](https://github.com/jwilleke/ngdpbase/issues/1116).
 
 The rest of this document is the evidence behind that table, and the proposal behind the fixes.
 
