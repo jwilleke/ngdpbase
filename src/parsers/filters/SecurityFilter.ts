@@ -30,7 +30,8 @@ interface SecurityViolation {
   originalLength: number;
   filteredLength: number;
   timestamp: string;
-  severity: string;
+  /** #1115: was `string`, so a severity the audit layer rejects compiled fine. */
+  severity: 'low' | 'medium' | 'high' | 'critical';
 }
 
 /**
@@ -64,7 +65,17 @@ interface ConfigManager {
  * Audit manager interface
  */
 interface AuditManager {
-  logSecurityEvent: (violation: SecurityViolation) => void;
+  /**
+   * #1115: this used to be declared `(violation) => void`, a shape
+   * AuditManager has never had. The call compiled and passed `undefined` for
+   * eventType, severity and description on every security violation.
+   */
+  logSecurityEvent: (
+    context: Record<string, unknown>,
+    eventType: string,
+    severity: 'low' | 'medium' | 'high' | 'critical',
+    description: string
+  ) => void;
 }
 
 /**
@@ -698,7 +709,17 @@ class SecurityFilter extends BaseFilter {
     // Send to audit system if available
     const auditManager = context.engine?.getManager('AuditManager') as AuditManager | null;
     if (auditManager) {
-      auditManager.logSecurityEvent(violation);
+      auditManager.logSecurityEvent(
+        {
+          user: { username: violation.userName },
+          resource: violation.pageName,
+          resourceType: 'page',
+          violation
+        },
+        violation.type,
+        violation.severity,
+        `Security filter removed ${violation.originalLength - violation.filteredLength} characters from ${violation.pageName || 'a page'}`
+      );
     }
   }
 

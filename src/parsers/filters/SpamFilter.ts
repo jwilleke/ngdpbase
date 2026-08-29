@@ -44,7 +44,8 @@ interface SpamEvent {
   reasons: string[];
   analysis: SpamAnalysis['analysis'];
   timestamp: string;
-  severity: string;
+  /** #1115: was `string`, so a severity the audit layer rejects compiled fine. */
+  severity: 'low' | 'medium' | 'high' | 'critical';
 }
 
 /**
@@ -78,7 +79,18 @@ interface ConfigManager {
  * Audit manager interface
  */
 interface AuditManager {
-  logSecurityEvent: (event: SpamEvent) => void;
+  /**
+   * #1115: this used to be declared `(event) => void`, a shape AuditManager
+   * has never had. The call compiled and passed `undefined` for eventType,
+   * severity and description on every spam detection — including the severity
+   * this filter had just computed.
+   */
+  logSecurityEvent: (
+    context: Record<string, unknown>,
+    eventType: string,
+    severity: 'low' | 'medium' | 'high' | 'critical',
+    description: string
+  ) => void;
 }
 
 /**
@@ -445,7 +457,17 @@ class SpamFilter extends BaseFilter {
     // Send to audit system if available
     const auditManager = context.engine?.getManager('AuditManager') as AuditManager | undefined;
     if (auditManager) {
-      auditManager.logSecurityEvent(spamEvent);
+      auditManager.logSecurityEvent(
+        {
+          user: { username: spamEvent.userName },
+          resource: spamEvent.pageName,
+          resourceType: 'page',
+          spamEvent
+        },
+        spamEvent.type,
+        spamEvent.severity,
+        `Spam score ${spamEvent.spamScore}: ${spamEvent.reasons.join(', ')}`
+      );
     }
   }
 
