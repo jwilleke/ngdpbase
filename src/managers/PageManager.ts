@@ -17,6 +17,7 @@ import type {
 import { pageToArticle } from '../utils/pageToArticle.js';
 import { dedupeKeywords, normalizeKeywordValue } from '../utils/keywordNormalizer.js';
 import { computeFormerTitles, buildFormerTitleIndex, AMBIGUOUS } from '../utils/formerTitles.js';
+import { buildPageMutationAuditEvent, recordAuditEvent } from '../utils/auditEvents.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { FilterValidationError } from '../parsers/filters/FilterChain.js';
 
@@ -1187,7 +1188,36 @@ class PageManager extends BaseManager implements CatalogSource {
         throw new Error(conflict.message ?? `Page conflict: ${conflict.conflictType}`);
       }
     }
-    return this.provider.savePage(pageName, content, metadata);
+
+    // Best-effort create-vs-edit. A provider without getPage, or a read that
+    // fails, must not break the save — the distinction is a nicety and the
+    // record is worth more than the accuracy of one field.
+    const existed = typeof this.provider.getPage === 'function'
+      ? Boolean(await this.provider.getPage(pageName).catch(() => null))
+      : true;
+
+    await this.provider.savePage(pageName, content, metadata);
+
+    // #1121 gap C: this path produces NO audit event from the route layer,
+    // because it has no request to audit from. Five callers use it —
+    // UserManager profile pages, ImportManager, AddonsManager seeding — and
+    // every one of them wrote content that appeared in no audit log at all.
+    //
+    // Emitted from the MANAGER rather than the caller, which is the point of
+    // the gap: a record written here cannot be forgotten by the next caller.
+    // The actor is 'system' because there is no user behind these, which is a
+    // fact worth recording rather than a reason to record nothing.
+    void recordAuditEvent(
+      this.engine.getManager('AuditManager'),
+      buildPageMutationAuditEvent({
+        op: existed ? 'edit' : 'create',
+        username: (metadata as Record<string, unknown>).editor as string | undefined ?? 'system',
+        ipAddress: undefined,
+        pageName,
+        uuid: (metadata as Record<string, unknown>).uuid as string | undefined ?? null
+      }),
+      (err) => logger.warn(`[PageManager] Audit log failed for a system page write of '${pageName}':`, err)
+    );
   }
 
   /**
