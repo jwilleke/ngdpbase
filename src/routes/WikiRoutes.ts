@@ -14699,16 +14699,21 @@ ${panes}
     return filters;
   }
 
-  /** The audit sink as a queryable manager, or null when auditing is unconfigured. */
+  /**
+   * The audit sink as a queryable manager, or null when auditing is
+   * unconfigured. #1116: every query takes the caller's username — a fact —
+   * and the manager derives the admin-system decision itself; the route's
+   * own 403 gate is defense in depth, no longer the only door.
+   */
   private auditQuery(): {
-    searchAuditLogs?: (f: unknown, o: unknown) => Promise<unknown>;
-    getAuditStats?: (f: unknown) => Promise<unknown>;
-    exportAuditLogs?: (f: unknown, format: string) => Promise<string>;
+    searchAuditLogs?: (f: unknown, o: unknown, caller: { username?: string | null }) => Promise<unknown>;
+    getAuditStats?: (f: unknown, caller: { username?: string | null }) => Promise<unknown>;
+    exportAuditLogs?: (f: unknown, format: string, caller: { username?: string | null }) => Promise<string>;
   } | null {
     return this.engine.getManager('AuditManager') as {
-      searchAuditLogs?: (f: unknown, o: unknown) => Promise<unknown>;
-      getAuditStats?: (f: unknown) => Promise<unknown>;
-      exportAuditLogs?: (f: unknown, format: string) => Promise<string>;
+      searchAuditLogs?: (f: unknown, o: unknown, caller: { username?: string | null }) => Promise<unknown>;
+      getAuditStats?: (f: unknown, caller: { username?: string | null }) => Promise<unknown>;
+      exportAuditLogs?: (f: unknown, format: string, caller: { username?: string | null }) => Promise<string>;
     } | null;
   }
 
@@ -14739,9 +14744,10 @@ ${panes}
       // An unconfigured audit provider renders an empty page rather than a
       // 500: "auditing is off" and "auditing is broken" must not look alike.
       const emptyStats = { totalEvents: 0, eventsByType: {}, eventsByResult: {}, eventsBySeverity: {}, eventsByUser: {}, recentActivity: [], securityIncidents: 0 };
-      const auditStats = audit?.getAuditStats ? await audit.getAuditStats(filters) : emptyStats;
+      const caller = { username: currentUser.username as string };
+      const auditStats = audit?.getAuditStats ? await audit.getAuditStats(filters, caller) : emptyStats;
       const auditLogs = audit?.searchAuditLogs
-        ? await audit.searchAuditLogs(filters, { limit, offset, sortBy: 'timestamp', sortOrder: 'desc' })
+        ? await audit.searchAuditLogs(filters, { limit, offset, sortBy: 'timestamp', sortOrder: 'desc' }, caller)
         : { results: [], total: 0, limit, offset, hasMore: false };
 
       const templateData = await this.getCommonTemplateData(req);
@@ -14785,7 +14791,8 @@ ${panes}
 
       return res.json(await audit.searchAuditLogs(
         this.auditFiltersFromQuery(req),
-        { limit, offset, sortBy: 'timestamp', sortOrder: 'desc' }
+        { limit, offset, sortBy: 'timestamp', sortOrder: 'desc' },
+        { username: currentUser.username }
       ));
     } catch (err: unknown) {
       logger.error('Error retrieving audit logs:', err);
@@ -14813,7 +14820,7 @@ ${panes}
       // Bounded deliberately: an unbounded scan on a large log is a denial of
       // service wearing a detail view.
       const logId = req.params.id;
-      const page = await audit.searchAuditLogs({}, { limit: 1000, sortBy: 'timestamp', sortOrder: 'desc' }) as { results?: Array<{ id?: string }> };
+      const page = await audit.searchAuditLogs({}, { limit: 1000, sortBy: 'timestamp', sortOrder: 'desc' }, { username: currentUser.username }) as { results?: Array<{ id?: string }> };
       const details = (page.results ?? []).find((entry) => entry.id === logId);
 
       if (!details) {
@@ -14843,7 +14850,7 @@ ${panes}
       }
 
       const format = req.query.format === 'csv' ? 'csv' : 'json';
-      const data = await audit.exportAuditLogs(this.auditFiltersFromQuery(req), format);
+      const data = await audit.exportAuditLogs(this.auditFiltersFromQuery(req), format, { username: currentUser.username });
       const stamp = new Date().toISOString().slice(0, 10);
 
       res.setHeader('Content-Type', format === 'csv' ? 'text/csv' : 'application/json');

@@ -163,6 +163,14 @@ interface ProviderInfo {
 }
 
 /**
+ * Who is asking for audit records (#1116). A fact about the caller — the
+ * permission decision is derived inside AuditManager, never passed in.
+ */
+export interface AuditQueryCaller {
+  username?: string | null;
+}
+
+/**
  * Base audit provider interface
  */
 interface BaseAuditProvider {
@@ -585,13 +593,41 @@ class AuditManager extends BaseManager {
   }
 
   /**
+   * #1116: the gate on every audit query, inside the door.
+   *
+   * The audit list was the counterexample to the list-gate rule: this manager
+   * applied no authorization of its own, safe only because one admin-system
+   * check gated the whole page at the route — exactly the reasoning that
+   * stops working the moment a second caller appears. The caller supplies a
+   * FACT (its username); the decision is derived here, against UserManager.
+   * Fail closed: no caller, no username, no UserManager, or no permission
+   * all refuse. The audit log has no per-record narrowing, and a list that
+   * cannot be narrowed refuses rather than returning everything.
+   */
+  private async assertQueryCallerAllowed(caller?: AuditQueryCaller): Promise<void> {
+    const username = caller?.username;
+    if (username) {
+      const userManager = this.engine.getManager('UserManager') as
+        { hasPermission?: (username: string, permission: string) => Promise<boolean> } | null;
+      if (userManager?.hasPermission && await userManager.hasPermission(username, 'admin-system')) {
+        return;
+      }
+    }
+    throw new Error(
+      `Audit queries require an admin-system caller; refused for '${username ?? 'anonymous'}' (#1116)`
+    );
+  }
+
+  /**
    * Search audit logs
    *
    * @param {AuditFilters} filters - Search filters
    * @param {AuditSearchOptions} options - Search options
+   * @param {AuditQueryCaller} caller - Who is asking (username fact; the decision is made here)
    * @returns {Promise<AuditSearchResults>} Search results
    */
-  async searchAuditLogs(filters: AuditFilters = {}, options: AuditSearchOptions = {}): Promise<AuditSearchResults> {
+  async searchAuditLogs(filters: AuditFilters = {}, options: AuditSearchOptions = {}, caller?: AuditQueryCaller): Promise<AuditSearchResults> {
+    await this.assertQueryCallerAllowed(caller);
     if (!this.provider) {
       throw new Error('Audit provider not initialized');
     }
@@ -627,7 +663,8 @@ class AuditManager extends BaseManager {
    * @param {AuditFilters} filters - Optional filters
    * @returns {Promise<AuditStats>} Audit statistics
    */
-  async getAuditStats(filters: AuditFilters = {}): Promise<AuditStats> {
+  async getAuditStats(filters: AuditFilters = {}, caller?: AuditQueryCaller): Promise<AuditStats> {
+    await this.assertQueryCallerAllowed(caller);
     if (!this.provider) {
       throw new Error('Audit provider not initialized');
     }
@@ -639,9 +676,11 @@ class AuditManager extends BaseManager {
    *
    * @param {AuditFilters} filters - Export filters
    * @param {string} format - Export format ('json', 'csv')
+   * @param {AuditQueryCaller} caller - Who is asking (#1116)
    * @returns {Promise<string>} Exported data
    */
-  async exportAuditLogs(filters: AuditFilters = {}, format = 'json'): Promise<string> {
+  async exportAuditLogs(filters: AuditFilters = {}, format = 'json', caller?: AuditQueryCaller): Promise<string> {
+    await this.assertQueryCallerAllowed(caller);
     if (!this.provider) {
       throw new Error('Audit provider not initialized');
     }

@@ -32,10 +32,22 @@ function makeEngine(configOverrides: Record<string, unknown> = {}): WikiEngine {
   return {
     getManager: vi.fn((name: string) => {
       if (name === 'ConfigurationManager') return cm;
+      // #1116: audit queries verify their caller against UserManager. The
+      // default harness grants 'root' admin-system so pre-gate tests keep
+      // exercising the delegation they were written for.
+      if (name === 'UserManager') {
+        return {
+          hasPermission: vi.fn(async (username: string, permission: string) =>
+            username === 'root' && permission === 'admin-system')
+        };
+      }
       return null;
     })
   };
 }
+
+/** #1116: the caller the default harness authorizes. */
+const rootCaller = { username: 'root' };
 
 async function makeInitializedManager(configOverrides: Record<string, unknown> = {}): Promise<AuditManager> {
   const engine = makeEngine({
@@ -190,7 +202,7 @@ describe('AuditManager', () => {
   describe('getAuditStats()', () => {
     test('returns stats object', async () => {
       const am = makeManagerWithMockProvider();
-      const stats = await am.getAuditStats({});
+      const stats = await am.getAuditStats({}, rootCaller);
       expect(typeof stats).toBe('object');
     });
   });
@@ -205,12 +217,12 @@ describe('AuditManager', () => {
   describe('searchAuditLogs()', () => {
     test('throws when provider not initialized', async () => {
       const am = new AuditManager(makeEngine());
-      await expect(am.searchAuditLogs()).rejects.toThrow('not initialized');
+      await expect(am.searchAuditLogs({}, {}, rootCaller)).rejects.toThrow('not initialized');
     });
 
     test('delegates to provider when initialized', async () => {
       const am = makeManagerWithMockProvider();
-      const result = await am.searchAuditLogs({ username: 'admin' }, { limit: 10 });
+      const result = await am.searchAuditLogs({ username: 'admin' }, { limit: 10 }, rootCaller);
       expect(result).toHaveProperty('results');
     });
   });
@@ -218,19 +230,19 @@ describe('AuditManager', () => {
   describe('getAuditStats() no-provider path', () => {
     test('throws when provider not initialized', async () => {
       const am = new AuditManager(makeEngine());
-      await expect(am.getAuditStats()).rejects.toThrow('not initialized');
+      await expect(am.getAuditStats({}, rootCaller)).rejects.toThrow('not initialized');
     });
   });
 
   describe('exportAuditLogs()', () => {
     test('throws when provider not initialized', async () => {
       const am = new AuditManager(makeEngine());
-      await expect(am.exportAuditLogs()).rejects.toThrow('not initialized');
+      await expect(am.exportAuditLogs({}, 'json', rootCaller)).rejects.toThrow('not initialized');
     });
 
     test('delegates to provider when initialized', async () => {
       const am = makeManagerWithMockProvider();
-      const result = await am.exportAuditLogs({}, 'json');
+      const result = await am.exportAuditLogs({}, 'json', rootCaller);
       expect(typeof result).toBe('string');
     });
   });
@@ -393,5 +405,69 @@ describe('#1118 profile and keys are checked against each other', () => {
     }));
     await am.initialize();
     expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('profile=hardened'));
+  });
+});
+
+// #1116: the audit list was the counterexample to the list-gate rule — the
+// manager applied no authorization of its own, safe only because one
+// admin-system check gated the whole page at the route. A resource whose
+// list cannot be narrowed must refuse instead of returning everything, and
+// the refusal must live inside the door.
+describe('#1116 audit queries refuse without an admin-system caller', () => {
+  function makeEngineWithUsers(grants: Record<string, boolean>, configOverrides: Record<string, unknown> = {}) {
+    const cm = makeConfigManager(configOverrides);
+    const um = {
+      hasPermission: vi.fn(async (username: string, permission: string) =>
+        permission === 'admin-system' && grants[username] === true)
+    };
+    return {
+      getManager: vi.fn((name: string) => {
+        if (name === 'ConfigurationManager') return cm;
+        if (name === 'UserManager') return um;
+        return null;
+      })
+    } as unknown as WikiEngine;
+  }
+
+  async function makeGatedManager(grants: Record<string, boolean>) {
+    const am = new AuditManager(makeEngineWithUsers(grants));
+    (am as unknown as { provider: unknown }).provider = {
+      searchAuditLogs: vi.fn().mockResolvedValue({ results: [], total: 0, limit: 100, offset: 0, hasMore: false }),
+      getAuditStats: vi.fn().mockResolvedValue({ totalEvents: 0 }),
+      exportAuditLogs: vi.fn().mockResolvedValue('[]')
+    };
+    return am;
+  }
+
+  test('an admin-system caller gets results', async () => {
+    const am = await makeGatedManager({ root: true });
+    await expect(am.searchAuditLogs({}, {}, { username: 'root' })).resolves.toBeDefined();
+    await expect(am.getAuditStats({}, { username: 'root' })).resolves.toBeDefined();
+    await expect(am.exportAuditLogs({}, 'json', { username: 'root' })).resolves.toBeDefined();
+  });
+
+  test('a caller without admin-system is refused', async () => {
+    const am = await makeGatedManager({ root: true });
+    await expect(am.searchAuditLogs({}, {}, { username: 'mallory' })).rejects.toThrow(/admin-system/);
+    await expect(am.getAuditStats({}, { username: 'mallory' })).rejects.toThrow(/admin-system/);
+    await expect(am.exportAuditLogs({}, 'json', { username: 'mallory' })).rejects.toThrow(/admin-system/);
+  });
+
+  test('a missing or anonymous caller is refused — absence is not authority', async () => {
+    const am = await makeGatedManager({ root: true });
+    await expect(am.searchAuditLogs({}, {}, {})).rejects.toThrow(/admin-system/);
+    await expect(am.searchAuditLogs({}, {}, { username: null })).rejects.toThrow(/admin-system/);
+  });
+
+  test('no UserManager to verify against: fail closed', async () => {
+    const bareEngine = {
+      getManager: vi.fn((name: string) =>
+        name === 'ConfigurationManager' ? makeConfigManager() : null)
+    } as unknown as WikiEngine;
+    const am = new AuditManager(bareEngine);
+    (am as unknown as { provider: unknown }).provider = {
+      searchAuditLogs: vi.fn().mockResolvedValue({ results: [] })
+    };
+    await expect(am.searchAuditLogs({}, {}, { username: 'root' })).rejects.toThrow(/admin-system/);
   });
 });

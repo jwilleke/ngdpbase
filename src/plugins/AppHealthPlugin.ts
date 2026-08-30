@@ -139,46 +139,51 @@ const AppHealthPlugin: SimplePlugin = {
         );
       }
 
+      // #1116: both title-listing checks are narrowed to the VIEWER's
+      // principals. The plugin renders inside any page its viewer can reach,
+      // so an unnarrowed list here shows private page titles to whoever
+      // loaded the page — the stale check did exactly that via
+      // `includeAll: true`, and the orphans check via raw getAllPages().
+      // The provider derives the admin bypass from the principals, so an
+      // admin viewing still sees everything.
+      const userContext = (context as { userContext?: { username?: string; roles?: string[] } }).userContext;
+      const principals = [
+        ...(userContext?.roles ?? []),
+        ...(userContext?.username ? [userContext.username] : [])
+      ];
+      const canNarrow = typeof pageManager.getRecentChanges === 'function';
+      const visibleChanges = canNarrow && (selected.includes('orphans') || selected.includes('stale'))
+        ? await pageManager.getRecentChanges!({ principals, limit: Number.MAX_SAFE_INTEGER })
+        : [];
+
       if (selected.includes('orphans')) {
         // A page is orphaned if nothing links to it: not present as a
-        // link-graph key with at least one referrer.
+        // link-graph key with at least one referrer. Only pages the viewer
+        // may see are listed; without a narrowing-capable provider the check
+        // reports nothing rather than everything (#1116: an unnarrowable
+        // list refuses, it does not return all rows).
         const linkedTo = new Set(
           Object.keys(linkGraph)
             .filter((k) => (linkGraph[k]?.length ?? 0) > 0)
             .map((k) => k.toLowerCase())
         );
+        const visibleTitles = new Set(visibleChanges.map((c) => c.title.toLowerCase()));
         results.orphans = allPages.filter(
-          (p) => !linkedTo.has(p.toLowerCase()) && filter.ok(p)
+          (p) => visibleTitles.has(p.toLowerCase()) && !linkedTo.has(p.toLowerCase()) && filter.ok(p)
         );
       }
 
       let staleSkipped = false;
       const staleDays = parseMaxParam(opts.staleDays, 365);
       if (selected.includes('stale')) {
-        if (staleDays <= 0) {
-          staleSkipped = true;
-        } else if (typeof pageManager.getRecentChanges !== 'function') {
+        if (staleDays <= 0 || !canNarrow) {
           staleSkipped = true;
         } else {
           const cutoff = Date.now() - staleDays * 86_400_000;
-          // getRecentChanges defaults to limit=50 and sorts newest-first; an
-          // explicit large limit is required or the stale check only ever
-          // sees the 50 freshest pages (→ structurally always ~0 stale).
-          //
-          // #1116: the stale list is narrowed to the VIEWER's principals. The
-          // plugin renders inside any page its viewer can reach, so the old
-          // `includeAll: true` listed private page titles to whoever loaded
-          // the page. An admin viewing sees everything; others see their own.
-          const userContext = (context as { userContext?: { username?: string; roles?: string[] } }).userContext;
-          const principals = [
-            ...(userContext?.roles ?? []),
-            ...(userContext?.username ? [userContext.username] : [])
-          ];
-          const changes = await pageManager.getRecentChanges({
-            principals,
-            limit: Number.MAX_SAFE_INTEGER
-          });
-          results.stale = changes
+          // getRecentChanges defaults to limit=50 and sorts newest-first; the
+          // explicit large limit above is required or the stale check only
+          // ever sees the 50 freshest pages (→ structurally always ~0 stale).
+          results.stale = visibleChanges
             .filter((c) => {
               const t = new Date(c.lastModified).getTime();
               return Number.isFinite(t) && t < cutoff && filter.ok(c.title);

@@ -11,8 +11,16 @@ type LinkGraph = Record<string, string[]>;
 function makeContext(
   allPages: string[],
   linkGraph: LinkGraph,
-  recentChanges: { title: string; lastModified: string }[] | null = []
+  recentChanges: { title: string; lastModified: string }[] | null | undefined = undefined
 ) {
+  // #1116: title-listing checks are narrowed through getRecentChanges. The
+  // default harness makes every page visible (fresh lastModified), matching
+  // the pre-narrowing semantics these tests were written against; pass an
+  // explicit array to model restricted visibility, or null to model a
+  // provider without getRecentChanges.
+  const visible = recentChanges === undefined
+    ? allPages.map((title) => ({ title, lastModified: new Date().toISOString() }))
+    : recentChanges;
   return {
     engine: {
       getManager: (name: string) => {
@@ -20,8 +28,8 @@ function makeContext(
           const pm: Record<string, unknown> = {
             getAllPages: async () => allPages
           };
-          if (recentChanges !== null) {
-            pm.getRecentChanges = async () => recentChanges;
+          if (visible !== null) {
+            pm.getRecentChanges = async () => visible;
           }
           return pm;
         }
@@ -165,5 +173,29 @@ describe('#1116 stale check supplies viewer facts, not an includeAll conclusion'
     const { ctx, calls } = makeSpyContext();
     await AppHealthPlugin.execute!(ctx, { checks: 'stale' });
     expect(calls[0].principals).toEqual([]);
+  });
+});
+
+describe('#1116 orphans are narrowed to what the viewer may see', () => {
+  it('a private page invisible to the viewer never appears as an orphan', async () => {
+    // 'Secret' exists and nothing links to it — a textbook orphan — but the
+    // narrowed visible set excludes it, so this viewer must not learn the
+    // title from a health report embedded in a page they can read.
+    const ctx = makeContext(
+      ['Public', 'Secret'],
+      {},
+      [{ title: 'Public', lastModified: new Date().toISOString() }]
+    );
+    const html = await AppHealthPlugin.execute!(ctx, { checks: 'orphans' });
+    expect(html).toContain('Orphan pages (1)');
+    expect(html).toContain('>Public</a>');
+    expect(html).not.toContain('Secret');
+  });
+
+  it('without a narrowing-capable provider the orphans check reports nothing', async () => {
+    // An unnarrowable list refuses rather than returning every row.
+    const ctx = makeContext(['A', 'B'], {}, null);
+    const html = await AppHealthPlugin.execute!(ctx, { checks: 'orphans' });
+    expect(html).toContain('Orphan pages (0)');
   });
 });

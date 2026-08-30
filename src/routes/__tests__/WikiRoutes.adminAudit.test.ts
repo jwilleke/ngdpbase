@@ -81,8 +81,8 @@ describe('#1113 admin audit routes', () => {
     await routes.adminAuditExport(makeReq(query), makeRes());
 
     const expected = { user: 'alice', eventType: 'token.mint', severity: 'high' };
-    expect(audit.searchAuditLogs).toHaveBeenCalledWith(expected, expect.anything());
-    expect(audit.exportAuditLogs).toHaveBeenCalledWith(expected, 'json');
+    expect(audit.searchAuditLogs).toHaveBeenCalledWith(expected, expect.anything(), expect.objectContaining({ username: expect.any(String) }));
+    expect(audit.exportAuditLogs).toHaveBeenCalledWith(expected, 'json', expect.objectContaining({ username: expect.any(String) }));
   });
 
   test('blank and absent parameters are not passed as filters', async () => {
@@ -90,13 +90,13 @@ describe('#1113 admin audit routes', () => {
     // silently return zero rows rather than everything.
     const audit = workingAudit();
     await makeRoutes(audit).adminAuditLogsApi(makeReq({ user: '   ', eventType: '' }), makeRes());
-    expect(audit.searchAuditLogs).toHaveBeenCalledWith({}, expect.anything());
+    expect(audit.searchAuditLogs).toHaveBeenCalledWith({}, expect.anything(), expect.anything());
   });
 
   test('newest first, because an audit reader is looking at what just happened', async () => {
     const audit = workingAudit();
     await makeRoutes(audit).adminAuditLogsApi(makeReq(), makeRes());
-    expect(audit.searchAuditLogs).toHaveBeenCalledWith({}, expect.objectContaining({ sortBy: 'timestamp', sortOrder: 'desc' }));
+    expect(audit.searchAuditLogs).toHaveBeenCalledWith({}, expect.objectContaining({ sortBy: 'timestamp', sortOrder: 'desc' }), expect.anything());
   });
 
   test('details finds an event by id', async () => {
