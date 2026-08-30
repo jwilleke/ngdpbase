@@ -24,7 +24,7 @@ Two properties are deliberately __not__ on this list. __Reviewability__ (an oper
 
 | # | End state | Now |
 |---|---|---|
-| 1 | Required set declared | ✓ [#1120](https://github.com/jwilleke/ngdpbase/issues/1120) — `src/utils/auditRegistry.ts`. __6 of 19__ permissions audited, 8 known gaps, 5 read-volume exemptions |
+| 1 | Required set declared | ✓ [#1120](https://github.com/jwilleke/ngdpbase/issues/1120) — `src/utils/auditRegistry.ts`. __7 of 19__ permissions audited (`page-read` config-gated via [#1129](https://github.com/jwilleke/ngdpbase/issues/1129)), 8 known gaps, 4 read-volume exemptions |
 | 2 | Emission proven | ✓ [#1120](https://github.com/jwilleke/ngdpbase/issues/1120) — a declared type with no emitter fails CI |
 | 3 | Sequence number | ✓ [#1119](https://github.com/jwilleke/ngdpbase/issues/1119) |
 | 4 | Hash chain | ✓ [#1119](https://github.com/jwilleke/ngdpbase/issues/1119), with `npm run audit:verify` |

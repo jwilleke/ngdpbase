@@ -50,6 +50,7 @@ export const AUDIT_EVENT_TYPES: Record<string, AuditEventTypeSpec> = {
   'page.edit':          { description: 'Page edited', severity: 'low', emitted: true },
   'page.rename':        { description: 'Page renamed', severity: 'low', emitted: true },
   'page.delete':        { description: 'Page deleted', severity: 'medium', emitted: true },
+  'page.view':          { description: 'Page viewed — emitted only when ngdpbase.audit.read-events is on (#1129)', severity: 'low', emitted: true },
   'page.link-rewrite':  { description: 'Inbound links rewritten after a rename', severity: 'low', emitted: true },
 
   // ── attachments ──────────────────────────────────────────────────────────

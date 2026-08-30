@@ -48,6 +48,7 @@ import {
 } from '../utils/magicLinkDeviceState.js';
 import {
   buildAttachmentAuditEvent,
+  buildPageViewAuditEvent,
   recordAuditEvent,
   type AuditEventSink,
   type AuditViaToken,
@@ -2782,6 +2783,11 @@ ${panes}
         );
       }
 
+      // #1129: access accounting, recorded at the moment access was GRANTED —
+      // an assessor asks who saw the page, not who requested it. Gated inside
+      // the helper; a no-op on the default (wiki) posture.
+      this.auditPageView(req, pageName, (metadata as { uuid?: string } | null)?.uuid);
+
       // Check if user can edit this page
       const canEdit = await aclManager.checkPagePermissionWithContext(wikiContext, 'edit');
 
@@ -4912,6 +4918,34 @@ ${panes}
   /** Agent-token identity on this request, when it authenticated with one (#946). */
   private static viaTokenOf(req: Request): AuditViaToken | null {
     return (req.userContext as { viaToken?: AuditViaToken } | undefined)?.viaToken ?? null;
+  }
+
+  /**
+   * Record a page view — when the deployment asks for it (#1129).
+   *
+   * `ngdpbase.audit.read-events` is the posture switch: off (the default) a
+   * wiki does not drown its audit log in reads; on, a records-style deployment
+   * gets access accounting — who looked at what — which is the single most
+   * important audit question for that posture. Fire-and-forget: a read already
+   * happened and a slow audit backend must not delay the render.
+   *
+   * Emitted from the route because the route is the door for an HTTP view:
+   * PageManager.getPage cannot tell a user viewing a page from the dozens of
+   * internal reads (ACL checks, conflict checks, indexing) that call it.
+   */
+  private auditPageView(req: Request, pageName: string, uuid: string | null | undefined): void {
+    const configManager = this.engine.getManager('ConfigurationManager');
+    if (configManager?.getProperty('ngdpbase.audit.read-events', false) !== true) return;
+    const event = buildPageViewAuditEvent({
+      username: req.userContext?.username,
+      ipAddress: req.ip,
+      pageName,
+      uuid,
+      viaToken: WikiRoutes.viaTokenOf(req)
+    });
+    void recordAuditEvent(this.auditSink(), event, (err) =>
+      logger.warn(`Audit log failed for page.view of '${pageName}':`, err)
+    );
   }
 
   /**

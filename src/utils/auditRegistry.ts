@@ -37,6 +37,14 @@ export interface AuditRequirement {
   eventType: string | null;
   tier?: AuditTier;
   exempt?: AuditExemption;
+  /**
+   * Config key that switches emission at runtime (#1129). The emitter must
+   * exist unconditionally — the parity tests hold that — but it fires only
+   * when the named key is true. This is still contract, not configuration:
+   * the registry declares WHAT is emitted when the gate is open; the operator
+   * only chooses the posture, never the vocabulary.
+   */
+  gatedBy?: string;
   /** Why, in one line. Required for an exemption so the reasoning survives. */
   note?: string;
 }
@@ -54,7 +62,7 @@ export const AUDIT_REQUIREMENTS: Record<string, AuditRequirement> = {
   'page-edit':   { eventType: 'page.edit',   tier: 'standard' },
   'page-rename': { eventType: 'page.rename', tier: 'standard' },
   'page-delete': { eventType: 'page.delete', tier: 'critical', note: 'destruction; the record must outlive the page' },
-  'page-read':   { eventType: null, exempt: 'read-volume', note: 'every page view; noise on a wiki, the point for a PHR — see #1115' },
+  'page-read':   { eventType: 'page.view', tier: 'volume', gatedBy: 'ngdpbase.audit.read-events', note: 'noise on a wiki, the point for a PHR — a posture, decided per deployment (#1129)' },
   'page-export': { eventType: null, exempt: 'not-implemented', note: 'bulk extraction of content and worth recording' },
 
   // ---- assets ------------------------------------------------------------

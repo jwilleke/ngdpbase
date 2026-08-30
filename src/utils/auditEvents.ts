@@ -173,6 +173,38 @@ export function buildPageMutationAuditEvent(input: PageMutationInput): AuditEven
   };
 }
 
+export interface PageViewInput extends CommonInput {
+  pageName: string;
+  uuid: string | null | undefined;
+}
+
+/**
+ * Build the audit event for a page view (#1129).
+ *
+ * Emission is a deployment posture: the route emits only when
+ * `ngdpbase.audit.read-events` is on. Off (the default), a wiki does not drown
+ * its log in reads; on, a records-style deployment gets the access accounting
+ * — who looked at what — that read auditing exists for.
+ */
+export function buildPageViewAuditEvent(input: PageViewInput): AuditEvent {
+  const { username, ipAddress, pageName, uuid, viaToken } = input;
+  return {
+    eventType: 'page.view',
+    user: username ?? 'unknown',
+    ipAddress,
+    action: 'page-view',
+    result: 'success',
+    // Same convention as the mutations: an unattended (token-driven) read is
+    // the one a reviewer is scanning for.
+    severity: viaToken ? 'medium' : 'low',
+    metadata: {
+      pageName,
+      uuid: uuid ?? null,
+      ...tokenMetadata(viaToken)
+    }
+  };
+}
+
 /**
  * Build the audit event for an attachment upload or delete.
  *

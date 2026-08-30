@@ -385,3 +385,29 @@ describe('#1121 tiered durability', () => {
     expect(getAuditDropStats().dropped).toBe(1);
   });
 });
+
+describe('buildPageViewAuditEvent (#1129)', () => {
+  const base = {
+    username: 'jim',
+    ipAddress: '10.0.0.1',
+    pageName: 'Lab Results',
+    uuid: 'uuid-1'
+  };
+
+  it('builds a page.view event carrying who saw what', async () => {
+    const { buildPageViewAuditEvent } = await import('../auditEvents');
+    const event = buildPageViewAuditEvent(base);
+    expect(event.eventType).toBe('page.view');
+    expect(event.action).toBe('page-view');
+    expect(event.user).toBe('jim');
+    expect(event.severity).toBe('low');
+    expect(event.metadata).toMatchObject({ pageName: 'Lab Results', uuid: 'uuid-1', viaTokenId: null, viaTokenName: null });
+  });
+
+  it('a token-driven read is surfaced above human browsing', async () => {
+    const { buildPageViewAuditEvent } = await import('../auditEvents');
+    const event = buildPageViewAuditEvent({ ...base, viaToken: { id: 't1', name: 'agent' } });
+    expect(event.severity).toBe('medium');
+    expect(event.metadata).toMatchObject({ viaTokenId: 't1', viaTokenName: 'agent' });
+  });
+});

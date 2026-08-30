@@ -101,3 +101,20 @@ describe('#1120 the gap is countable', () => {
     expect(audited).toBeGreaterThan(0);
   });
 });
+
+describe('#1129 page-read is gated, not exempt', () => {
+  it('declares page.view behind the read-events config gate', () => {
+    const r = AUDIT_REQUIREMENTS['page-read'];
+    expect(r.eventType).toBe('page.view');
+    expect(r.tier).toBe('volume');
+    expect(r.gatedBy).toBe('ngdpbase.audit.read-events');
+    // The gate is a contract term: the reason must survive next to it.
+    expect(r.note).toBeTruthy();
+  });
+
+  it('a gated requirement is not an exemption', () => {
+    // Exemptions answer "why is this not audited". A gated event IS audited —
+    // conditionally — so it must not appear in the honest-absence list.
+    expect(exemptions().map((e) => e.permission)).not.toContain('page-read');
+  });
+});

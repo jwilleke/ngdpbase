@@ -483,6 +483,7 @@ twelve emitted types were listed nowhere (#1115).
 | `page.edit` | Page edited | low |
 | `page.rename` | Page renamed | low |
 | `page.delete` | Page deleted | medium |
+| `page.view` | Page viewed — emitted only when `ngdpbase.audit.read-events` is on (#1129) | low |
 | `page.link-rewrite` | Inbound links rewritten after a rename | low |
 | `attachment.upload` | File uploaded | low |
 | `attachment.delete` | File deleted | medium |
@@ -533,9 +534,12 @@ records denials only. An allow fires on every page view, which is the
 read-volume `auditRegistry` exempts `page-read` for and that #334 was filed
 about. A denial is rare and is the half a security assessment asks about.
 
-`page.view` is not in the vocabulary at all. For a wiki it is noise; for a
-PHR-style deployment it is the point. See #1115 for the discussion — it needs
-its own decision rather than being assumed.
+`page.view` is in the vocabulary but gated (#1129): the emitter exists
+unconditionally, and `ngdpbase.audit.read-events` decides at runtime whether it
+fires. Off — the default — a wiki does not drown its log in reads; on, a
+PHR-style deployment gets access accounting, recorded at the moment view access
+is granted. The same mechanism (`gatedBy` in `auditRegistry.ts`) is the intended
+path for the remaining read-volume exemptions when their turn comes.
 
 ### Result Values
 
