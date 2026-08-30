@@ -1,6 +1,6 @@
 # Security auditing — the bar, where we stand, and what would meet it
 
-> __Status: analysis and proposal, 2026-08-29.__ Not adopted. Records the findings from a session that started with one naming inconsistency and ended in a structural question. The operator's framing sets the bar: __security and audit must be extremely defined and provable, and the system should be able to meet any security assessment.__
+> __Status: analysis and proposal, 2026-08-29; scorecard updated 2026-08-30.__ Not adopted. Records the findings from a session that started with one naming inconsistency and ended in a structural question. The operator's framing sets the bar: __security and audit must be extremely defined and provable, and the system should be able to meet any security assessment.__
 
 ## The plan — the end state
 
@@ -28,16 +28,16 @@ Two properties are deliberately __not__ on this list. __Reviewability__ (an oper
 | 2 | Emission proven | ✓ [#1120](https://github.com/jwilleke/ngdpbase/issues/1120) — a declared type with no emitter fails CI |
 | 3 | Sequence number | ✓ [#1119](https://github.com/jwilleke/ngdpbase/issues/1119) |
 | 4 | Hash chain | ✓ [#1119](https://github.com/jwilleke/ngdpbase/issues/1119), with `npm run audit:verify` |
-| 5 | Verifiable across rotation | ~ [#1122](https://github.com/jwilleke/ngdpbase/issues/1122) chains across rotation; truncation still undetectable without an off-box anchor |
+| 5 | Verifiable across rotation | ~ [#1122](https://github.com/jwilleke/ngdpbase/issues/1122) chains across rotation, and [#1124](https://github.com/jwilleke/ngdpbase/issues/1124)'s restart marker makes a legitimate discontinuity recordable instead of leaving the log unverifiable forever; truncation still undetectable without an off-box anchor |
 | 6 | Provider-independent | ✓ [#1119](https://github.com/jwilleke/ngdpbase/issues/1119) — the base stamps, the subclass only stores |
 | 7 | Guarantees reportable | ✓ [#1119](https://github.com/jwilleke/ngdpbase/issues/1119) `getGuarantees()` + [#1118](https://github.com/jwilleke/ngdpbase/issues/1118) `getAuditPosture()` |
-| 8 | Critical durability | ✗ All events are fire-and-forget, by the decision in [#1109](https://github.com/jwilleke/ngdpbase/issues/1109) |
+| 8 | Critical durability | ✓ [#1121](https://github.com/jwilleke/ngdpbase/issues/1121) gap D — critical events flush before the action; a page/attachment delete whose record cannot be written refuses rather than destroying unrecorded |
 | 9 | Losses visible | ✓ Counted since boot, escalating error log, surfaced on the admin dashboard |
 | — | Reviewability | ✓ [#1113](https://github.com/jwilleke/ngdpbase/issues/1113) |
 | — | Attribution | ✓ `user`, `ipAddress`, `viaTokenId`, `viaTokenName` |
-| — | Retention | ~ [#1122](https://github.com/jwilleke/ngdpbase/issues/1122) — rotation and archive expiry now run hourly; per-record expiry waits on [#1124](https://github.com/jwilleke/ngdpbase/issues/1124) |
+| — | Retention | ~ [#1122](https://github.com/jwilleke/ngdpbase/issues/1122) — rotation and archive expiry now run hourly; per-record expiry remains deliberately absent ([#1124](https://github.com/jwilleke/ngdpbase/issues/1124)'s restart marker, its prerequisite, has shipped) |
 
-__Seven of twelve met, two partial__ — up from two, across one session. The remaining work is statement 8 (tiered durability, [#1121](https://github.com/jwilleke/ngdpbase/issues/1121)), the emitter gaps the registry now counts, and a chain-restart marker ([#1124](https://github.com/jwilleke/ngdpbase/issues/1124)) without which one bad record leaves a log unverifiable forever. The pluggable provider shape is already in place — `BaseAuditProvider` exists and `File` / `Database` / `Cloud` / `Null` all extend it — so none of this requires new architecture, only a stronger contract.
+__Ten of twelve met, two partial__ — up from two across two sessions. Since the first scorecard: [#1121](https://github.com/jwilleke/ngdpbase/issues/1121) shipped both halves (gap D tiered durability, gap C door emission), [#1124](https://github.com/jwilleke/ngdpbase/issues/1124) the chain-restart marker, [#1115](https://github.com/jwilleke/ngdpbase/issues/1115) one written-down vocabulary held by a parity test, and [#1128](https://github.com/jwilleke/ngdpbase/issues/1128) removed the double emission every save had been writing. What remains is the emitter gaps the registry counts (8 `not-implemented` permissions, statement 1's table), the off-box anchor for statement 5, and per-record expiry. The pluggable provider shape is already in place — `BaseAuditProvider` exists and `File` / `Database` / `Cloud` / `Null` all extend it — so none of this requires new architecture, only a stronger contract.
 
 ## The gaps
 
@@ -48,14 +48,14 @@ Ordered by what each unblocks rather than by severity, since three of the four a
 | ~~0. A failed audit provider silently becomes `Null`~~ | [#1118](https://github.com/jwilleke/ngdpbase/issues/1118) ✓ | all of them | done | — |
 | ~~A. No declared required set~~ | [#1120](https://github.com/jwilleke/ngdpbase/issues/1120) ✓ | 1, 2 | done | — |
 | ~~B. No integrity in the contract~~ | [#1119](https://github.com/jwilleke/ngdpbase/issues/1119) ✓ | 3, 4, 5, 6, 7 | done | — |
-| __C. Audit is emitted by callers, not doors__ | [#1121](https://github.com/jwilleke/ngdpbase/issues/1121) | strengthens 1, 2 | High — touches every manager | A, to know what is missing |
-| __D. One durability tier for everything__ | [#1121](https://github.com/jwilleke/ngdpbase/issues/1121) | 8 | Medium | A, to declare which events are critical |
+| ~~C. Audit is emitted by callers, not doors~~ | [#1121](https://github.com/jwilleke/ngdpbase/issues/1121) ✓ | strengthens 1, 2 | done | — |
+| ~~D. One durability tier for everything~~ | [#1121](https://github.com/jwilleke/ngdpbase/issues/1121) ✓ | 8 | done | — |
 
 __Gap 0 was not in the original analysis and outranks everything else.__ `AuditManager.ts:281-285` catches any provider load failure and falls back to `NullAuditProvider`, which discards every event, while the server boots healthy. An operator who points audit at the advertised `databaseauditprovider` — a scaffold — gets an instance that believes it has an audit trail and has none. So does an instance whose log directory becomes unwritable. Every other statement in the plan is conditional on this, because a guarantee that evaporates on a configuration error is not a guarantee.
 
 The configuration makes it reachable rather than theoretical: `config/app-default-config.json` advertises `database.type`, `connectionstring`, `tablename`, `maxconnections`, `cloud.service`, `region` and `loggroup` for two providers that are `TODO` lists.
 
-__Gaps 0, A and B are done__ (in that order, over one session). What remains is C and D — both of which needed A to know what the required set is, and now have it. Two new gaps surfaced while closing the others: rotation and retention never ran at all ([#1122](https://github.com/jwilleke/ngdpbase/issues/1122), done), and there is no way to record a legitimate chain discontinuity ([#1124](https://github.com/jwilleke/ngdpbase/issues/1124), open) — without which one bad record leaves a log unverifiable forever, which jimstest is demonstrating right now. It is self-contained in the provider layer, it is the thing an assessor will actually test, it gets cheaper-to-later only, and unlike C and D it depends on none of the architectural questions still open in [#1109](https://github.com/jwilleke/ngdpbase/issues/1109) and [#1116](https://github.com/jwilleke/ngdpbase/issues/1116).
+__All five gaps are done__ — 0, A, B in the first session; C, D and the two that surfaced along the way (rotation/retention never ran, [#1122](https://github.com/jwilleke/ngdpbase/issues/1122); no way to record a legitimate chain discontinuity, [#1124](https://github.com/jwilleke/ngdpbase/issues/1124)) in the second. Closing C then produced its own follow-up: the route-level emission it superseded was left in place, so every save was audited twice until [#1128](https://github.com/jwilleke/ngdpbase/issues/1128) removed it.
 
 The rest of this document is the evidence behind that table, and the proposal behind the fixes.
 
