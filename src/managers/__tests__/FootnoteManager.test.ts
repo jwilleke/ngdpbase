@@ -279,4 +279,28 @@ describe('FootnoteManager', () => {
       expect(mockPm.invalidatePageCache).toHaveBeenCalledWith('page-cache2');
     });
   });
+
+  // #1125: NCM conversion transfers body definitions into the sidecar. The
+  // body's [^id] refs must keep resolving, so the import PRESERVES the
+  // author's id — unlike addFootnote, which assigns the next sequential one.
+  describe('importFootnote (#1125)', () => {
+    test('preserves the given id, including non-numeric ones', async () => {
+      const ok = await fm.importFootnote('uuid-a', 'note-1', { display: '', url: '', note: 'text' }, 'jim');
+      expect(ok).toBe(true);
+      const all = await fm.getFootnotes('uuid-a');
+      expect(all).toHaveLength(1);
+      expect(all[0].id).toBe('note-1');
+      expect(all[0].note).toBe('text');
+      expect(all[0].createdBy).toBe('jim');
+    });
+
+    test('refuses to clobber an existing id', async () => {
+      await fm.importFootnote('uuid-a', '1', { display: '', url: '', note: 'original' }, 'jim');
+      const ok = await fm.importFootnote('uuid-a', '1', { display: '', url: '', note: 'other' }, 'jim');
+      expect(ok).toBe(false);
+      const all = await fm.getFootnotes('uuid-a');
+      expect(all[0].note).toBe('original');
+    });
+  });
+
 });

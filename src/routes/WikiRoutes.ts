@@ -20,7 +20,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import fse from 'fs-extra';
 import matter from 'gray-matter';
-import { normalizeExistingPageToNcm, localizeNcmImages } from '../converters/ncm/index.js';
+import { normalizeExistingPageToNcm, localizeNcmImages, extractFootnoteDefs, ensureFootnotesPlugin } from '../converters/ncm/index.js';
 import type { NcmImageDeps } from '../converters/ncm/index.js';
 import { createPatch } from 'diff';
 import { exec } from 'child_process';
@@ -13156,14 +13156,19 @@ ${panes}
       const ncm = normalizeExistingPageToNcm(original);
       // S5a-ii: dry-run image localization (preview must not persist).
       const img = await this.localizePageImages(ncm.content, pageName, wikiContext.userContext, true);
+      // #1125: dry-run footnote transfer — the preview shows the body with
+      // definitions moved to the footnote list, but writes nothing.
+      const fn = await this.transferPageFootnotes(
+        img.content, page.metadata?.uuid, wikiContext.userContext?.username ?? 'unknown', true
+      );
       return res.json({
         success: true,
         page: pageName,
-        changed: img.content !== original,
+        changed: fn.content !== original,
         ncmVersion: ncm.ncmVersion,
         original,
-        proposed: img.content,
-        warnings: [...ncm.warnings.map(w => `${w.kind}: ${w.detail}`), ...img.warnings]
+        proposed: fn.content,
+        warnings: [...ncm.warnings.map(w => `${w.kind}: ${w.detail}`), ...img.warnings, ...fn.warnings]
       });
     } catch (err: unknown) {
       logger.error('Error previewing page conversion:', err);
@@ -13195,11 +13200,15 @@ ${panes}
       const ncm = normalizeExistingPageToNcm(original);
       // S5a-ii: real image localization (persists attachments via AttachmentManager).
       const img = await this.localizePageImages(ncm.content, pageName, wikiContext.userContext, false);
-      const warnings = [...ncm.warnings.map(w => `${w.kind}: ${w.detail}`), ...img.warnings];
-      if (img.content === original) {
+      // #1125: real footnote transfer — definitions land in the sidecar list.
+      const fn = await this.transferPageFootnotes(
+        img.content, page.metadata?.uuid, wikiContext.userContext?.username ?? 'unknown', false
+      );
+      const warnings = [...ncm.warnings.map(w => `${w.kind}: ${w.detail}`), ...img.warnings, ...fn.warnings];
+      if (fn.content === original) {
         return res.json({ success: true, page: pageName, changed: false, warnings });
       }
-      const split = matter(img.content);
+      const split = matter(fn.content);
       // #1127: through the door WITH the user — savePage would audit this
       // write as 'system', and the person who converted is exactly what the
       // record is for.
@@ -13220,6 +13229,53 @@ ${panes}
       logger.error('Error executing page conversion:', err);
       return res.status(500).json({ success: false, error: getErrorMessage(err) || 'Error executing conversion' });
     }
+  }
+
+  /**
+   * #1125: transfer `[^id]: text` definitions from a page body into the
+   * FootnoteManager sidecar (the footnote list with the CRUD UI), leaving
+   * the `[^id]` refs in place and appending a [{FootnotesPlugin}] section
+   * when the page has none. The pure extraction lives in
+   * converters/ncm/footnotes.ts; this owns the side effect, mirroring the
+   * image-localization split. dryRun reports without writing.
+   *
+   * An id already present in the sidecar is NOT clobbered: the body
+   * definition stays where it is and a warning names the collision.
+   */
+  private async transferPageFootnotes(
+    content: string,
+    pageUuid: string | undefined,
+    username: string,
+    dryRun: boolean
+  ): Promise<{ content: string; warnings: string[] }> {
+    const footnoteManager = this.engine.getManager('FootnoteManager') as
+      | { isEnabled?: () => boolean; importFootnote?: (uuid: string, id: string, d: { display: string; url: string; note: string }, by: string) => Promise<boolean> }
+      | null;
+    if (!pageUuid || !footnoteManager?.isEnabled?.() || !footnoteManager.importFootnote) {
+      return { content, warnings: [] };
+    }
+    const extracted = extractFootnoteDefs(content);
+    if (extracted.defs.length === 0) return { content, warnings: [] };
+
+    const warnings: string[] = [];
+    const kept: string[] = [];
+    for (const def of extracted.defs) {
+      if (dryRun) {
+        warnings.push(`footnote-transferred: [^${def.id}] → footnote list`);
+        continue;
+      }
+      const ok = await footnoteManager.importFootnote(pageUuid, def.id, def, username);
+      if (ok) {
+        warnings.push(`footnote-transferred: [^${def.id}] → footnote list`);
+      } else {
+        warnings.push(`footnote-skipped-exists: [^${def.id}] already in the footnote list; body definition kept`);
+        kept.push(`[^${def.id}]: ${def.display && def.url ? `[${def.display}](${def.url})` : def.url || def.note}`);
+      }
+    }
+    const body = kept.length > 0
+      ? `${extracted.content.replace(/\s*$/, '')}\n\n${kept.join('\n')}\n`
+      : extracted.content;
+    return { content: ensureFootnotesPlugin(body), warnings };
   }
 
   /**

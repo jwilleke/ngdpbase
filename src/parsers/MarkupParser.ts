@@ -2462,9 +2462,17 @@ class MarkupParser extends BaseManager {
       return this.createTextNodeForEscaped(element, wikiDocument);
 
     case 'footnote-ref': {
-      // [^1] → <a href="#footnote-1"><sup>[1]</sup></a>
+      // [^1] → <a id="footnote-ref-1" href="#footnote-1"><sup>[1]</sup></a>
+      //
+      // #1125: the id is the back-link target — FootnotesPlugin's sidecar
+      // list links each entry to `#footnote-ref-<id>`, which resolved to
+      // nothing before this. A page referencing one footnote twice emits the
+      // id twice; browsers jump to the first occurrence, which is the wanted
+      // destination, so the duplicate-id wart is accepted over threading
+      // per-parse state through the render.
       const fnId = element.footnoteId ?? '';
       const refNode = wikiDocument.createElement('a', {
+        'id': `footnote-ref-${fnId}`,
         'href': `#footnote-${fnId}`,
         'class': 'footnote-ref',
         'data-jspwiki-id': element.id.toString()

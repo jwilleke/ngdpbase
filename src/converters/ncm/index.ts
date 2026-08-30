@@ -17,3 +17,5 @@ export type { NcmImageConfig, NcmImageDeps } from './images.js';
 export { normalizeToNcm } from './normalize.js';
 export { ncmToConversionResult } from './bridge.js';
 export { normalizeExistingPageToNcm } from './existing.js';
+export { extractFootnoteDefs, ensureFootnotesPlugin } from './footnotes.js';
+export type { ExtractedFootnoteDef, FootnoteExtraction } from './footnotes.js';

@@ -105,6 +105,37 @@ export default class FootnoteManager extends BaseManager {
     return footnote;
   }
 
+  /**
+   * #1125: import a footnote with an EXPLICIT id — the NCM conversion path.
+   *
+   * Unlike {@link addFootnote}, which assigns the next sequential id, this
+   * preserves the author's id verbatim: the body's `[^note-1]` refs resolve
+   * to `#footnote-note-1` in the rendered list, so renumbering would break
+   * every ref. Refuses to clobber an existing id (returns false) — the
+   * caller surfaces that as a warning and leaves the body definition alone.
+   */
+  async importFootnote(
+    pageUuid: string,
+    id: string,
+    data: { display: string; url: string; note: string },
+    createdBy: string
+  ): Promise<boolean> {
+    const map = this.readMap(pageUuid);
+    if (map[id]) return false;
+
+    map[id] = {
+      id,
+      display: data.display.trim(),
+      url: data.url.trim(),
+      note: data.note.trim(),
+      createdBy,
+      createdAt: new Date().toISOString()
+    };
+    this.writeMap(pageUuid, map);
+    this.invalidateHandlerCache(pageUuid);
+    return true;
+  }
+
   async updateFootnote(
     pageUuid: string,
     id: string,

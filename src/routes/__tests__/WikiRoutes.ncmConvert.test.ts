@@ -95,3 +95,66 @@ describe('#1127 convert-to-NCM is gated on the page edit ACL', () => {
     expect(savePage).not.toHaveBeenCalled();
   });
 });
+
+describe('#1125 convert transfers footnote definitions to the sidecar list', () => {
+  function makeFootnoteRoutes() {
+    const importFootnote = vi.fn().mockResolvedValue(true);
+    const savePageWithContext = vi.fn().mockResolvedValue(undefined);
+    const pageManager = {
+      getPage: vi.fn().mockResolvedValue({
+        content: 'A claim[^1] and another[^src].\n\n[^1]: Supporting note.\n\n[^src]: https://example.org/paper\n',
+        metadata: { title: 'Noted', uuid: 'uuid-n', 'system-category': 'general' }
+      }),
+      savePageWithContext
+    };
+    const engine = {
+      getManager: vi.fn((name: string) => {
+        if (name === 'PageManager') return pageManager;
+        if (name === 'ACLManager') return { checkPagePermissionWithContext: vi.fn().mockResolvedValue(true) };
+        if (name === 'FootnoteManager') return { isEnabled: () => true, importFootnote };
+        if (name === 'ConfigurationManager') return { getProperty: (_k: string, d: unknown) => d };
+        return null;
+      })
+    };
+    const routes = new WikiRoutes(engine) as unknown as Record<string, (q: unknown, r: unknown) => Promise<unknown>>;
+    (routes as unknown as { createWikiContext: () => unknown }).createWikiContext =
+      () => ({ userContext: editor, hasPermission: vi.fn().mockResolvedValue(false) });
+    (routes as unknown as { localizePageImages: (...a: unknown[]) => Promise<unknown> }).localizePageImages =
+      async (content: unknown) => ({ content, warnings: [] });
+    return { routes, importFootnote, savePageWithContext };
+  }
+
+  test('preview reports the transfer, removes defs from the proposed body, writes nothing', async () => {
+    const { routes, importFootnote } = makeFootnoteRoutes();
+    const res = makeRes();
+    await routes.adminConvertPreview(makeReq({ page: 'Noted' }), res);
+    const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>;
+    expect(importFootnote).not.toHaveBeenCalled();
+    expect(payload.changed).toBe(true);
+    const proposed = String(payload.proposed);
+    expect(proposed).not.toContain('[^1]:');
+    expect(proposed).not.toContain('[^src]:');
+    expect(proposed).toContain('claim[^1]');
+    expect(proposed).toContain('[{FootnotesPlugin}]');
+    expect((payload.warnings as string[]).filter(w => w.startsWith('footnote-transferred'))).toHaveLength(2);
+  });
+
+  test('execute imports each definition with its id preserved and the caller as author', async () => {
+    const { routes, importFootnote, savePageWithContext } = makeFootnoteRoutes();
+    const res = makeRes();
+    await routes.adminConvertExecute(makeReq({ page: 'Noted' }), res);
+    expect(importFootnote).toHaveBeenCalledTimes(2);
+    expect(importFootnote).toHaveBeenCalledWith('uuid-n', '1', expect.objectContaining({ note: 'Supporting note.' }), 'alice');
+    expect(importFootnote).toHaveBeenCalledWith('uuid-n', 'src', expect.objectContaining({ url: 'https://example.org/paper' }), 'alice');
+    expect(savePageWithContext).toHaveBeenCalledOnce();
+  });
+
+  test('a sidecar collision keeps the body definition and warns', async () => {
+    const { routes, importFootnote } = makeFootnoteRoutes();
+    importFootnote.mockImplementation(async (_u: string, id: string) => id !== '1');
+    const res = makeRes();
+    await routes.adminConvertExecute(makeReq({ page: 'Noted' }), res);
+    const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>;
+    expect((payload.warnings as string[]).some(w => w.startsWith('footnote-skipped-exists: [^1]'))).toBe(true);
+  });
+});
