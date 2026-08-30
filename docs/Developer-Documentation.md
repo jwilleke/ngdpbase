@@ -30,7 +30,7 @@ Workflow:
 <!-- AUTO:quick-nav BEGIN -->
 | Category | Count (src/) | Documented | Description |
 | ---------- | --- | --- | ------------- |
-| [Managers](#managers) | 39 | 40 | Core system managers |
+| [Managers](#managers) | 40 | 41 | Core system managers |
 | [Plugins](#plugins) | 32 | 36 | JSPWiki-style content plugins |
 | [Providers](#providers) | 35 | 36 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
@@ -67,6 +67,7 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | EmailManager | ✅ [doc](managers/EmailManager.md) | Shared outbound email transport — pluggable provider (console / SMTP) |
 | ExportManager | 📘 [doc](managers/ExportManager.md) + [guide](managers/ExportManager-Complete-Guide.md) | Per-page export to HTML or Markdown with frontmatter stripping and link rewriting |
 | FeedManager | ✅ [doc](managers/FeedManager.md) | Runtime of the feeds addon (#685) — one record store + CatalogSource per configured external feed; runs the ingest pipeline (adapter fetch → parse → change-detected upsert) on a poll scheduler. |
+| FilterManager | ✅ [doc](managers/FilterManager.md) | Owns the content-filter pipeline: registration, lifecycle, and the one chain both save and render paths use |
 | FootnoteManager | ✅ [doc](managers/FootnoteManager.md) | Sidecar storage + CRUD for page footnotes (migrated out of page body in |
 | ImportManager | 📘 [doc](managers/ImportManager.md) + [guide](managers/ImportManager-Complete-Guide.md) | Pluggable importer for external wiki formats — extensible converter registry (JSPWiki, MediaWiki, Confluence, …) |
 | MediaManager | 📘 [doc](managers/MediaManager.md) + [guide](managers/MediaManager-Complete-Guide.md) | Read-only external photo/video library (filesystem-backed) with EXIF indexing and keyword facets |
@@ -315,7 +316,7 @@ Before contributing, please review:
 Honest accounting of doc coverage. Targets are pragmatic — abstract base classes and trivial null/no-op providers don't need long-form docs, but every module should at least have a stub or appear in this index.
 
 <!-- AUTO:doc-status BEGIN -->
-__Managers:__ 39/39 with quick-reference docs (100%); 18 with Complete Guides.
+__Managers:__ 40/40 with quick-reference docs (100%); 18 with Complete Guides.
 
 __Plugins:__ 32/32 with quick-reference docs (100%).
 

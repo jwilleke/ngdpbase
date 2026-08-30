@@ -45,6 +45,7 @@ import RoleManager from './managers/RoleManager.js';
 
 // Parsers
 import MarkupParser from './parsers/MarkupParser.js';
+import FilterManager from './managers/FilterManager.js';
 
 /**
  * WikiEngine - The core orchestrator for the wiki application
@@ -291,6 +292,12 @@ class WikiEngine extends Engine {
     // Call engine.initializeAddons() from app.ts after session middleware.
     const addonsManager = new AddonsManager(this);
     this.registerManager('AddonsManager', addonsManager);
+
+    // FilterManager owns the content-filter chain (#1117); MarkupParser and
+    // ValidationManager both read it from here, so it initializes first.
+    const filterManager = new FilterManager(this);
+    this.registerManager('FilterManager', filterManager);
+    await filterManager.initialize();
 
     // Initialize MarkupParser before RenderingManager (RenderingManager depends on it)
     const markupParser = new MarkupParser(this);

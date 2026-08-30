@@ -250,17 +250,32 @@ describe('MarkupParser Configuration Integration', () => {
     });
   });
 
-  describe('Filter Configuration', () => {
-    test('should load filter configuration', async () => {
+  describe('Filter Configuration (#1117: owned by FilterManager)', () => {
+    test('parser consumes the FilterManager chain built from configuration', async () => {
       mockConfigManager.config['ngdpbase.markup.filters.enabled'] = true;
       mockConfigManager.config['ngdpbase.markup.filters.spam.enabled'] = false;
       mockConfigManager.config['ngdpbase.markup.filters.security.enabled'] = true;
-      
+
+      const { default: FilterManager } = await import('../../managers/FilterManager');
+      const filterManager = new FilterManager(mockEngine);
+      await filterManager.initialize();
+      mockEngine.registerManager('FilterManager', filterManager);
+
       await markupParser.initialize();
-      
-      expect(markupParser.config.filters.enabled).toBe(true);
-      expect(markupParser.config.filters.spam.enabled).toBe(false);
-      expect(markupParser.config.filters.security.enabled).toBe(true);
+
+      // The parser holds the manager's chain — same instance, one owner.
+      expect(markupParser.getFilterChain()).toBe(filterManager.getFilterChain());
+      const names = markupParser.getFilterChain().getFilters(false).map((f) => f.constructor.name);
+      expect(names).toContain('SecurityFilter');
+      expect(names).not.toContain('SpamFilter');
+      await filterManager.shutdown();
+    });
+
+    test('without a FilterManager the parser has no chain and still parses', async () => {
+      await markupParser.initialize();
+      expect(markupParser.getFilterChain()).toBeNull();
+      const html = await markupParser.parse('plain text');
+      expect(html).toContain('plain text');
     });
   });
 

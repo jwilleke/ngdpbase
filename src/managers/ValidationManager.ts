@@ -746,10 +746,11 @@ class ValidationManager extends BaseManager {
   /**
    * Collect blocking validation errors for save-time enforcement (#596).
    *
-   * Delegates to MarkupParser's FilterChain, which runs each enabled filter's
-   * own collectErrors() method. Only `severity: 'error'` rule violations are
-   * returned — warnings are surfaced through the render-time annotation path
-   * inside MarkupParser, not here.
+   * Delegates to FilterManager's chain (#1117 — the one owner of the filter
+   * capability), which runs each enabled filter's own collectErrors()
+   * method. Only `severity: 'error'` rule violations are returned —
+   * warnings are surfaced through the render-time annotation path inside
+   * MarkupParser, not here.
    *
    * Public surface for the save path: WikiRoutes.savePage calls this and
    * returns 400 with the structured error array if non-empty. Frontend uses
@@ -758,9 +759,8 @@ class ValidationManager extends BaseManager {
    *
    * Returns an empty array when:
    *   - content is empty or not a string
-   *   - MarkupParser is not available (shouldn't happen at runtime)
-   *   - FilterChain has no filters that implement collectErrors
-   *   - FilterChain itself is disabled in config
+   *   - FilterManager is not available (shouldn't happen at runtime)
+   *   - the pipeline is disabled in config, or no filter implements collectErrors
    *
    * @param content - The page content to validate
    * @param context - Optional context (pageName, userName) passed through to filters
@@ -778,10 +778,10 @@ class ValidationManager extends BaseManager {
         ctx: { pageName?: string; userName?: string; engine?: unknown }
       ) => Promise<Array<{ filterId: string; rule: string; severity: 'error'; message: string; line?: number; column?: number }>>;
     };
-    type MarkupParserLike = { getFilterChain?: () => FilterChainLike | null };
+    type FilterManagerLike = { getFilterChain?: () => FilterChainLike | null };
 
-    const markupParser = this.engine.getManager('MarkupParser') as MarkupParserLike | null;
-    const filterChain = markupParser?.getFilterChain?.();
+    const filterManager = this.engine.getManager('FilterManager') as FilterManagerLike | null;
+    const filterChain = filterManager?.getFilterChain?.();
     if (!filterChain || typeof filterChain.collectErrors !== 'function') return [];
 
     try {

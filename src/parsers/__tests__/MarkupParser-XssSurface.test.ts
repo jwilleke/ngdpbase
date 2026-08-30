@@ -23,6 +23,7 @@
  */
 
 import MarkupParser from '../MarkupParser';
+import FilterManager from '../../managers/FilterManager';
 
 function makeEngine(securityFilterEnabled: boolean) {
   const configManager = {
@@ -42,13 +43,20 @@ function makeEngine(securityFilterEnabled: boolean) {
     }
   };
 
+  const managers = new Map<string, unknown>([['ConfigurationManager', configManager]]);
   return {
-    getManager: (name: string) => (name === 'ConfigurationManager' ? configManager : null)
+    managers,
+    getManager: (name: string) => managers.get(name) ?? null
   };
 }
 
 async function render(markdown: string, securityFilterEnabled = false): Promise<string> {
-  const parser = new MarkupParser(makeEngine(securityFilterEnabled));
+  // #1117: FilterManager owns the chain — construct it first, as WikiEngine does.
+  const engine = makeEngine(securityFilterEnabled);
+  const filterManager = new FilterManager(engine);
+  await filterManager.initialize();
+  engine.managers.set('FilterManager', filterManager);
+  const parser = new MarkupParser(engine);
   await parser.initialize();
   return parser.parse(markdown, { pageName: 'XssSurface', userContext: { isAuthenticated: true } });
 }

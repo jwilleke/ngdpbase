@@ -12,6 +12,7 @@
 
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import MarkupParser from '../MarkupParser';
+import FilterManager from '../../managers/FilterManager';
 
 class MockEngine {
   managers: Map<string, unknown>;
@@ -55,14 +56,22 @@ class MockEngine {
 
 describe('MarkupParser FilterChain integration (#596)', () => {
   let parser: MarkupParser;
+  let filterManager: FilterManager;
 
   beforeEach(async () => {
-    parser = new MarkupParser(new MockEngine());
+    // #1117: FilterManager owns the chain; the parser reads it from the
+    // engine, mirroring WikiEngine's initialization order.
+    const engine = new MockEngine();
+    filterManager = new FilterManager(engine);
+    await filterManager.initialize();
+    engine.managers.set('FilterManager', filterManager);
+    parser = new MarkupParser(engine);
     await parser.initialize();
   });
 
   afterEach(async () => {
     await parser.shutdown();
+    await filterManager.shutdown();
   });
 
   test('filterChain.process is invoked twice per parse — once per phase', async () => {

@@ -10,9 +10,6 @@ import DOMPluginHandler from './dom/handlers/DOMPluginHandler.js';
 import DOMLinkHandler from './dom/handlers/DOMLinkHandler.js';
 import logger from '../utils/logger.js';
 import { guardShowdownInput } from '../utils/showdownGuard.js';
-import SecurityFilter from './filters/SecurityFilter.js';
-import SpamFilter from './filters/SpamFilter.js';
-import ValidationFilter from './filters/ValidationFilter.js';
 import JSPWikiPreprocessor from './handlers/JSPWikiPreprocessor.js';
 import PluginSyntaxHandler from './handlers/PluginSyntaxHandler.js';
 import WikiTagHandler from './handlers/WikiTagHandler.js';
@@ -42,8 +39,6 @@ export interface MarkupParserConfig extends Record<string, unknown> {
   handlerRegistry: HandlerRegistryConfig;
   /** Handler configurations */
   handlers: Record<string, HandlerConfig>;
-  /** Filter configuration */
-  filters: FilterConfig;
   /** Cache configuration */
   cache: CacheConfig;
   /** Performance configuration */
@@ -80,26 +75,6 @@ export interface HandlerConfig {
   thumbnails?: boolean;
   /** Whether metadata collection is enabled */
   metadata?: boolean;
-}
-
-/** Individual filter type configuration */
-export interface FilterTypeConfig {
-  /** Whether this filter type is enabled */
-  enabled: boolean;
-}
-
-/** Filter configuration */
-export interface FilterConfig {
-  /** Whether filters are enabled */
-  enabled: boolean;
-  /** Filter mode (sequential or parallel) */
-  mode?: 'sequential' | 'parallel';
-  /** Security filter configuration */
-  security: FilterTypeConfig;
-  /** Spam filter configuration */
-  spam: FilterTypeConfig;
-  /** Validation filter configuration */
-  validation: FilterTypeConfig;
 }
 
 /** Cache configuration */
@@ -413,7 +388,8 @@ class MarkupParser extends BaseManager {
   constructor(engine: WikiEngine) {
     super(engine);
     this.handlerRegistry = new HandlerRegistry(engine);
-    this.filterChain = new FilterChain(engine);
+    // #1117: the chain is owned by FilterManager; resolved in initialize().
+    this.filterChain = null;
     this.cache = null;
     this.cacheStrategies = {};
     this.performanceMonitor = null;
@@ -462,9 +438,14 @@ class MarkupParser extends BaseManager {
 
     // Initialize performance monitoring
     this.initializePerformanceMonitoring();
-    
-    // Initialize filter chain
-    await this.initializeFilterChain();
+
+    // #1117: FilterManager owns the chain — registration, built-ins, and the
+    // contributed path all live there. The parser only consumes it. Absent
+    // manager (or pipeline disabled) → null chain → both process() calls in
+    // the pipeline are skipped by their existing guards.
+    const filterManager = this.engine.getManager('FilterManager') as
+      { getFilterChain?: () => FilterChain | null } | null;
+    this.filterChain = filterManager?.getFilterChain?.() ?? null;
 
     // Initialize DOM handlers
     await this.domVariableHandler.initialize();
@@ -484,83 +465,9 @@ class MarkupParser extends BaseManager {
    * @returns {boolean} - True if initialized
    */
   isInitialized(): boolean {
-    return !!(this.initialized && this.config && this.handlerRegistry && this.filterChain);
-  }
-
-  /**
-   * Initialize filter chain with modular configuration
-   */
-  async initializeFilterChain(): Promise<void> {
-    if (!this.config.filters.enabled) {
-      logger.debug('🔧 Filter pipeline disabled by configuration');
-      return;
-    }
-
-    if (!this.filterChain) {
-      logger.warn('🔧 Filter chain not available');
-      return;
-    }
-
-    // Initialize the filter chain
-    await this.filterChain.initialize({ engine: this.engine });
-
-    // Register default filters based on configuration
-    await this.registerDefaultFilters();
-
-    const filterCount = this.filterChain.getFilters().length;
-    logger.debug(`🔄 Filter pipeline initialized with ${filterCount} filters`);
-  }
-
-  /**
-   * Register default filters based on modular configuration
-   */
-  async registerDefaultFilters(): Promise<void> {
-    if (!this.filterChain) {
-      return;
-    }
-
-    // Register when EITHER render filtering or save-time blocking is on.
-    // FilterChain.collectErrors() only iterates registered, enabled filters,
-    // so a filter that is not registered contributes no save-time rules —
-    // which is why blocking used to require render filtering as well (#1037).
-    const securityConfig = this.config.filters.security as { enabled: boolean; blockOnSave?: boolean };
-    if (securityConfig.enabled || securityConfig.blockOnSave !== false) {
-      const securityFilter = new SecurityFilter();
-
-      try {
-        await securityFilter.initialize({ engine: this.engine });
-        this.filterChain.addFilter(securityFilter);
-        logger.debug('🔒 SecurityFilter registered successfully');
-      } catch (error) {
-        logger.warn('⚠️  Failed to register SecurityFilter:', getErrorMessage(error));
-      }
-    }
-
-    // Register SpamFilter if enabled
-    if (this.config.filters.spam.enabled) {
-      const spamFilter = new SpamFilter();
-      
-      try {
-        await spamFilter.initialize({ engine: this.engine });
-        this.filterChain.addFilter(spamFilter);
-        logger.debug('🛡️  SpamFilter registered successfully');
-      } catch (error) {
-        logger.warn('⚠️  Failed to register SpamFilter:', getErrorMessage(error));
-      }
-    }
-
-    // Register ValidationFilter if enabled
-    if (this.config.filters.validation.enabled) {
-      const validationFilter = new ValidationFilter();
-      
-      try {
-        await validationFilter.initialize({ engine: this.engine });
-        this.filterChain.addFilter(validationFilter);
-        logger.debug('✅ ValidationFilter registered successfully');
-      } catch (error) {
-        logger.warn('⚠️  Failed to register ValidationFilter:', getErrorMessage(error));
-      }
-    }
+    // #1117: the filter chain is no longer required — it belongs to
+    // FilterManager, and a parser without one still parses (filtering off).
+    return !!(this.initialized && this.config && this.handlerRegistry);
   }
 
   /**
@@ -702,15 +609,7 @@ class MarkupParser extends BaseManager {
         search: { enabled: true, priority: 65 },
         rss: { enabled: true, priority: 60 }
       },
-      // Filter defaults must match app-default-config.json so tests without
-      // explicit filter mocks behave the same as production. SpamFilter and
-      // SecurityFilter are opt-in (#596 ships ValidationFilter only).
-      filters: {
-        enabled: true,
-        spam: { enabled: false },
-        security: { enabled: false },
-        validation: { enabled: true }
-      },
+      // #1117: filter configuration moved to FilterManager with the chain.
       cache: {
         parseResults: { enabled: true, ttl: 300, maxSize: 1000 },
         handlerResults: { enabled: true, ttl: 600, maxSize: 2000 },
@@ -764,13 +663,6 @@ class MarkupParser extends BaseManager {
             handler.metadata = configManager.getProperty('ngdpbase.markup.handlers.attachment.metadata', handler.metadata);
           }
         }
-        
-        // Filter configuration
-        this.config.filters.enabled = configManager.getProperty('ngdpbase.markup.filters.enabled', this.config.filters.enabled);
-        this.config.filters.spam.enabled = configManager.getProperty('ngdpbase.markup.filters.spam.enabled', this.config.filters.spam.enabled);
-        this.config.filters.security.enabled = configManager.getProperty('ngdpbase.markup.filters.security.enabled', this.config.filters.security.enabled);
-        (this.config.filters.security as { blockOnSave?: boolean }).blockOnSave = configManager.getProperty('ngdpbase.markup.filters.security.block-on-save', true);
-        this.config.filters.validation.enabled = configManager.getProperty('ngdpbase.markup.filters.validation.enabled', this.config.filters.validation.enabled);
         
         // Advanced cache configuration
         this.config.cache.parseResults.enabled = configManager.getProperty('ngdpbase.markup.cache.parse-results.enabled', this.config.cache.parseResults.enabled);
@@ -1161,14 +1053,14 @@ class MarkupParser extends BaseManager {
   }
 
   /**
-   * Get the configured FilterChain (#596).
+   * Get the FilterChain (#596), which FilterManager owns (#1117).
    *
-   * Used by the save path (`WikiRoutes.savePage`) to call
-   * `filterChain.collectErrors()` for save-time validation. Returns null
-   * when MarkupParser hasn't been fully initialized — callers should treat
-   * a null chain as "validation skipped, proceed".
+   * A delegating view kept for existing callers (the admin stats route,
+   * legacy save-path lookups). New code should ask FilterManager directly.
+   * Returns null when the pipeline is disabled or the manager is absent —
+   * callers should treat a null chain as "validation skipped, proceed".
    *
-   * @returns The FilterChain instance, or null if not initialized
+   * @returns The FilterChain instance, or null
    */
   getFilterChain(): FilterChain | null {
     return this.filterChain;
@@ -3206,11 +3098,9 @@ class MarkupParser extends BaseManager {
     // Clear handler registry
     await this.handlerRegistry.clearAll();
     
-    // Clear filter chain
-    if (this.filterChain) {
-      await this.filterChain.shutdown();
-      this.filterChain = null;
-    }
+    // #1117: drop the reference only — FilterManager owns the chain and
+    // shuts it down; a consumer must not destroy shared state.
+    this.filterChain = null;
     
     // Clear cache references
     this.cache = null;

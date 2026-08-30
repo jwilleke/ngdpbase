@@ -48,14 +48,23 @@ class MockEngine {
 
 describe('MarkupParser inline styles (#592)', () => {
   let parser: MarkupParser;
+  let filterManager: import('../../managers/FilterManager').default;
 
   beforeEach(async () => {
-    parser = new MarkupParser(new MockEngine() as any);
+    // #1117: ValidationFilter (whose warnings some cases assert) registers
+    // through FilterManager, the chain's owner.
+    const engine = new MockEngine() as any;
+    const { default: FilterManager } = await import('../../managers/FilterManager');
+    filterManager = new FilterManager(engine);
+    await filterManager.initialize();
+    engine.managers.set('FilterManager', filterManager);
+    parser = new MarkupParser(engine);
     await parser.initialize();
   });
 
   afterEach(async () => {
     await parser.shutdown();
+    await filterManager.shutdown();
   });
 
   // ── outside tables ────────────────────────────────────────────────────────

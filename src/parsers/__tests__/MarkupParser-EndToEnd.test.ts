@@ -187,14 +187,22 @@ describe('MarkupParser End-to-End JSPWiki Compatibility', () => {
   let markupParser;
   let mockEngine;
 
+  let filterManager;
+
   beforeEach(async () => {
     mockEngine = new ComprehensiveMockEngine();
+    // #1117: FilterManager owns the chain; mirror WikiEngine's order.
+    const { default: FilterManager } = await import('../../managers/FilterManager');
+    filterManager = new FilterManager(mockEngine);
+    await filterManager.initialize();
+    mockEngine.managers.set('FilterManager', filterManager);
     markupParser = new MarkupParser(mockEngine);
     await markupParser.initialize();
   });
 
   afterEach(async () => {
     await markupParser.shutdown();
+    await filterManager.shutdown();
   });
 
   describe('Complete System Integration', () => {
@@ -836,6 +844,12 @@ Links: [Wikipedia:Section${i}] and [JSPWiki:Test${i}].
         return securityConfig[key] !== undefined ? securityConfig[key] : defaultValue;
       };
 
+      // #1117: chain comes from FilterManager.
+      const { default: FilterManager } = await import('../../managers/FilterManager');
+      const securityFilterManager = new FilterManager(securityEngine);
+      await securityFilterManager.initialize();
+      securityEngine.managers.set('FilterManager', securityFilterManager);
+
       const securityParser = new MarkupParser(securityEngine);
       await securityParser.initialize();
 
@@ -855,6 +869,7 @@ Links: [Wikipedia:Section${i}] and [JSPWiki:Test${i}].
       expect(filters.length).toBeGreaterThan(0);
 
       await securityParser.shutdown();
+      await securityFilterManager.shutdown();
     });
 
     test('should support development deployment with relaxed settings', async () => {
