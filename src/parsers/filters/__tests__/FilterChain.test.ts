@@ -39,11 +39,11 @@ class ErrorFilter extends BaseFilter {
 class MockConfigurationManager {
   constructor(config = {}) {
     this.config = {
-      'ngdpbase.markup.filters.enabled': true,
-      'ngdpbase.markup.filters.pipeline.max-filters': 50,
-      'ngdpbase.markup.filters.pipeline.timeout': 10000,
-      'ngdpbase.markup.filters.pipeline.enable-profiling': true,
-      'ngdpbase.markup.filters.pipeline.fail-on-error': false,
+      'ngdpbase.filters.enabled': true,
+      'ngdpbase.filters.pipeline.max-filters': 50,
+      'ngdpbase.filters.pipeline.timeout': 10000,
+      'ngdpbase.filters.pipeline.enable-profiling': true,
+      'ngdpbase.filters.pipeline.fail-on-error': false,
       ...config
     };
   }
@@ -89,9 +89,9 @@ describe('FilterChain Modular Configuration', () => {
 
     test('should override with app-custom-config.json values', async () => {
       const customConfig = {
-        'ngdpbase.markup.filters.pipeline.max-filters': 25,
-        'ngdpbase.markup.filters.pipeline.timeout': 5000,
-        'ngdpbase.markup.filters.pipeline.fail-on-error': true
+        'ngdpbase.filters.pipeline.max-filters': 25,
+        'ngdpbase.filters.pipeline.timeout': 5000,
+        'ngdpbase.filters.pipeline.fail-on-error': true
       };
       
       const customEngine = createMockEngine(customConfig);
@@ -292,7 +292,7 @@ describe('FilterChain Modular Configuration', () => {
 
     test('should disable performance monitoring when configured', async () => {
       const noPerfConfig = {
-        'ngdpbase.markup.filters.pipeline.enable-profiling': false
+        'ngdpbase.filters.pipeline.enable-profiling': false
       };
 
       const customEngine = createMockEngine(noPerfConfig);
@@ -319,8 +319,8 @@ describe('FilterChain Modular Configuration', () => {
   describe('Configuration Flexibility', () => {
     test('should support different filter limits per deployment', async () => {
       const prodConfig = {
-        'ngdpbase.markup.filters.pipeline.max-filters': 100,
-        'ngdpbase.markup.filters.pipeline.timeout': 15000
+        'ngdpbase.filters.pipeline.max-filters': 100,
+        'ngdpbase.filters.pipeline.timeout': 15000
       };
       
       const prodEngine = createMockEngine(prodConfig);
@@ -335,7 +335,7 @@ describe('FilterChain Modular Configuration', () => {
 
     test('should disable entire filter system when configured', async () => {
       const disabledConfig = {
-        'ngdpbase.markup.filters.enabled': false
+        'ngdpbase.filters.enabled': false
       };
       
       const disabledEngine = createMockEngine(disabledConfig);
@@ -493,7 +493,7 @@ describe('FilterChain Modular Configuration', () => {
   describe('performance threshold checking', () => {
     test('checkPerformanceThresholds() via enough recent executions', async () => {
       const engine = createMockEngine({
-        'ngdpbase.markup.filters.pipeline.enable-profiling': true
+        'ngdpbase.filters.pipeline.enable-profiling': true
       });
       const fc = new FilterChain(engine);
       await fc.initialize({ engine });

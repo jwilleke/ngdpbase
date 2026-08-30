@@ -1481,4 +1481,76 @@ describe('ConfigurationManager', () => {
       );
     });
   });
+
+  // #1117 slice 2: the filter namespace said the wrong thing —
+  // `ngdpbase.filters.security.block-on-save` is a write-path gate, not
+  // a markup option. Keys move to `ngdpbase.filters.*`; legacy custom-config
+  // keys are migrated at load so an operator's explicit setting (e.g. the
+  // public demo's security.enabled=true) cannot silently stop applying.
+  describe('filter namespace migration (#1117)', () => {
+    const writeCustom = async (custom: Record<string, unknown>) => {
+      const instanceConfigDir = path.join(tempDir, 'data', 'config');
+      await fs.ensureDir(instanceConfigDir);
+      await fs.writeJson(
+        path.join(instanceConfigDir, 'app-custom-config.json'),
+        custom,
+        { spaces: 2 }
+      );
+    };
+
+    const writeDefault = async () => {
+      await fs.writeJson(
+        path.join(tempDir, 'config', 'app-default-config.json'),
+        {
+          'ngdpbase.application-name': 'TestWiki',
+          'ngdpbase.application.base-url': 'http://localhost:3000',
+          'ngdpbase.config.env-keys': {},
+          'ngdpbase.filters.security.enabled': false,
+          'ngdpbase.filters.validation.enabled': true
+        },
+        { spaces: 2 }
+      );
+    };
+
+    test('legacy ngdpbase.markup.filters.* custom keys land on the new namespace', async () => {
+      await writeDefault();
+      await writeCustom({
+        'ngdpbase.markup.filters.security.enabled': true,
+        'ngdpbase.markup.filters.spam.max-links': 3
+      });
+
+      const cm = new ConfigurationManager(mockEngine);
+      await cm.initialize();
+
+      // The operator's explicit legacy setting overrides the shipped default.
+      expect(cm.getProperty('ngdpbase.filters.security.enabled')).toBe(true);
+      expect(cm.getProperty('ngdpbase.filters.spam.max-links')).toBe(3);
+      // Legacy keys are gone from the merged view.
+      expect(cm.getProperty('ngdpbase.markup.filters.security.enabled', '__missing__')).toBe('__missing__');
+    });
+
+    test('an explicit new-namespace custom key wins over its legacy twin', async () => {
+      await writeDefault();
+      await writeCustom({
+        'ngdpbase.filters.security.enabled': false,
+        'ngdpbase.markup.filters.security.enabled': true
+      });
+
+      const cm = new ConfigurationManager(mockEngine);
+      await cm.initialize();
+
+      expect(cm.getProperty('ngdpbase.filters.security.enabled')).toBe(false);
+    });
+
+    test('no legacy keys: nothing to migrate, new namespace reads its defaults', async () => {
+      await writeDefault();
+      await writeCustom({});
+
+      const cm = new ConfigurationManager(mockEngine);
+      await cm.initialize();
+
+      expect(cm.getProperty('ngdpbase.filters.validation.enabled')).toBe(true);
+    });
+  });
 });
+

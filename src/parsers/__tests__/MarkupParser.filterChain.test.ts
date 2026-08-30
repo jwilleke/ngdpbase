@@ -31,12 +31,12 @@ class MockEngine {
             'ngdpbase.markup.handlers.linkparser.enabled': false,
             // FilterChain on, ValidationFilter on, others off — matches
             // production default config.
-            'ngdpbase.markup.filters.enabled': true,
-            'ngdpbase.markup.filters.security.enabled': false,
-            'ngdpbase.markup.filters.spam.enabled': false,
-            'ngdpbase.markup.filters.validation.enabled': true,
-            'ngdpbase.markup.filters.validation.validate-markup': true,
-            'ngdpbase.markup.filters.validation.report-errors': true
+            'ngdpbase.filters.enabled': true,
+            'ngdpbase.filters.security.enabled': false,
+            'ngdpbase.filters.spam.enabled': false,
+            'ngdpbase.filters.validation.enabled': true,
+            'ngdpbase.filters.validation.validate-markup': true,
+            'ngdpbase.filters.validation.report-errors': true
           };
           return cfg[key] ?? defaultValue;
         },

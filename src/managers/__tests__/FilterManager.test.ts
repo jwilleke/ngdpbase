@@ -48,8 +48,8 @@ describe('FilterManager built-in registration follows configuration', () => {
 
   test('block-on-save false and security disabled: no SecurityFilter', async () => {
     const m = await makeManager({
-      'ngdpbase.markup.filters.security.enabled': false,
-      'ngdpbase.markup.filters.security.block-on-save': false
+      'ngdpbase.filters.security.enabled': false,
+      'ngdpbase.filters.security.block-on-save': false
     });
     expect(filterIds(m)).toEqual(['ValidationFilter']);
     await m.shutdown();
@@ -57,16 +57,16 @@ describe('FilterManager built-in registration follows configuration', () => {
 
   test('everything on', async () => {
     const m = await makeManager({
-      'ngdpbase.markup.filters.security.enabled': true,
-      'ngdpbase.markup.filters.spam.enabled': true,
-      'ngdpbase.markup.filters.validation.enabled': true
+      'ngdpbase.filters.security.enabled': true,
+      'ngdpbase.filters.spam.enabled': true,
+      'ngdpbase.filters.validation.enabled': true
     });
     expect(filterIds(m)).toEqual(['SecurityFilter', 'SpamFilter', 'ValidationFilter']);
     await m.shutdown();
   });
 
   test('pipeline disabled: no chain at all', async () => {
-    const m = await makeManager({ 'ngdpbase.markup.filters.enabled': false });
+    const m = await makeManager({ 'ngdpbase.filters.enabled': false });
     expect(m.getFilterChain()).toBeNull();
     expect(await m.collectErrors('content', {})).toEqual([]);
     expect(m.getStats()).toBeNull();
@@ -95,9 +95,9 @@ describe('the contributed path (#1117)', () => {
   test('a contributed filter actually runs in the chain', async () => {
     const m = await makeManager({
       // Only the contributed filter, so the assertion isolates it.
-      'ngdpbase.markup.filters.security.enabled': false,
-      'ngdpbase.markup.filters.security.block-on-save': false,
-      'ngdpbase.markup.filters.validation.enabled': false
+      'ngdpbase.filters.security.enabled': false,
+      'ngdpbase.filters.security.block-on-save': false,
+      'ngdpbase.filters.validation.enabled': false
     });
     await m.registerFilter(new HouseStyleFilter());
     const out = await m.getFilterChain()!.process(
@@ -110,7 +110,7 @@ describe('the contributed path (#1117)', () => {
   });
 
   test('registration against a disabled pipeline reports false, never throws', async () => {
-    const m = await makeManager({ 'ngdpbase.markup.filters.enabled': false });
+    const m = await makeManager({ 'ngdpbase.filters.enabled': false });
     expect(await m.registerFilter(new HouseStyleFilter())).toBe(false);
     await m.shutdown();
   });

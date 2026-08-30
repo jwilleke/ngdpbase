@@ -158,8 +158,8 @@ describe('ValidationFilter', () => {
       const f = new ValidationFilter();
       const configManager = {
         getProperty: vi.fn((key: string, dv: unknown) => {
-          if (key === 'ngdpbase.markup.filters.validation.validate-markup') return true;
-          if (key === 'ngdpbase.markup.filters.validation.validate-links') return true;
+          if (key === 'ngdpbase.filters.validation.validate-markup') return true;
+          if (key === 'ngdpbase.filters.validation.validate-links') return true;
           return dv;
         })
       };

@@ -271,19 +271,19 @@ class FilterChain {
     if (configManager) {
       try {
         // Filter pipeline configuration (modular)
-        this.config.enabled = configManager.getProperty('ngdpbase.markup.filters.enabled', this.config.enabled) as boolean;
-        this.config.maxFilters = configManager.getProperty('ngdpbase.markup.filters.pipeline.max-filters', this.config.maxFilters) as number;
-        this.config.timeout = configManager.getProperty('ngdpbase.markup.filters.pipeline.timeout', this.config.timeout) as number;
-        this.config.enableProfiling = configManager.getProperty('ngdpbase.markup.filters.pipeline.enable-profiling', this.config.enableProfiling) as boolean;
-        this.config.failOnError = configManager.getProperty('ngdpbase.markup.filters.pipeline.fail-on-error', this.config.failOnError) as boolean;
+        this.config.enabled = configManager.getProperty('ngdpbase.filters.enabled', this.config.enabled) as boolean;
+        this.config.maxFilters = configManager.getProperty('ngdpbase.filters.pipeline.max-filters', this.config.maxFilters) as number;
+        this.config.timeout = configManager.getProperty('ngdpbase.filters.pipeline.timeout', this.config.timeout) as number;
+        this.config.enableProfiling = configManager.getProperty('ngdpbase.filters.pipeline.enable-profiling', this.config.enableProfiling) as boolean;
+        this.config.failOnError = configManager.getProperty('ngdpbase.filters.pipeline.fail-on-error', this.config.failOnError) as boolean;
 
         // Cache configuration (modular)
-        this.config.cacheResults = configManager.getProperty('ngdpbase.markup.filters.cache-results', this.config.cacheResults) as boolean;
-        this.config.cacheTTL = configManager.getProperty('ngdpbase.markup.filters.cache-ttl', this.config.cacheTTL) as number;
+        this.config.cacheResults = configManager.getProperty('ngdpbase.filters.cache-results', this.config.cacheResults) as boolean;
+        this.config.cacheTTL = configManager.getProperty('ngdpbase.filters.cache-ttl', this.config.cacheTTL) as number;
 
         // Performance configuration (modular)
-        this.config.enableParallelExecution = configManager.getProperty('ngdpbase.markup.filters.enable-parallel-execution', this.config.enableParallelExecution) as boolean;
-        this.config.maxConcurrentFilters = configManager.getProperty('ngdpbase.markup.filters.max-concurrent-filters', this.config.maxConcurrentFilters) as number;
+        this.config.enableParallelExecution = configManager.getProperty('ngdpbase.filters.enable-parallel-execution', this.config.enableParallelExecution) as boolean;
+        this.config.maxConcurrentFilters = configManager.getProperty('ngdpbase.filters.max-concurrent-filters', this.config.maxConcurrentFilters) as number;
 
       } catch (error) {
         logger.warn('⚠️  Failed to load FilterChain configuration, using defaults:', (error as Error).message);

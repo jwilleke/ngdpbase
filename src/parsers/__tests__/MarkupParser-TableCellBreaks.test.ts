@@ -41,10 +41,10 @@ class MockEngine {
             'ngdpbase.markup.handlers.interwiki.enabled': false,
             'ngdpbase.markup.handlers.attachment.enabled': false,
             'ngdpbase.markup.handlers.linkparser.enabled': false,
-            'ngdpbase.markup.filters.enabled': true,
-            'ngdpbase.markup.filters.security.enabled': false,
-            'ngdpbase.markup.filters.spam.enabled': false,
-            'ngdpbase.markup.filters.validation.enabled': false
+            'ngdpbase.filters.enabled': true,
+            'ngdpbase.filters.security.enabled': false,
+            'ngdpbase.filters.spam.enabled': false,
+            'ngdpbase.filters.validation.enabled': false
           };
           return cfg[key] ?? defaultValue;
         },

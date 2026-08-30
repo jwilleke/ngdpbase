@@ -55,18 +55,18 @@ class ComprehensiveMockEngine {
           // disabled in production (app-default-config.json) and are out of
           // scope for #596 — keeping them off here so this test reflects
           // real-world default behavior.
-          'ngdpbase.markup.filters.enabled': true,
-          'ngdpbase.markup.filters.security.enabled': false,
-          'ngdpbase.markup.filters.spam.enabled': false,
-          'ngdpbase.markup.filters.validation.enabled': true,
+          'ngdpbase.filters.enabled': true,
+          'ngdpbase.filters.security.enabled': false,
+          'ngdpbase.filters.spam.enabled': false,
+          'ngdpbase.filters.validation.enabled': true,
           
           // Security configuration
-          'ngdpbase.markup.filters.security.prevent-xss': true,
-          'ngdpbase.markup.filters.security.allowed-tags': 'p,div,span,strong,em,h1,h2,h3,a,img',
+          'ngdpbase.filters.security.prevent-xss': true,
+          'ngdpbase.filters.security.allowed-tags': 'p,div,span,strong,em,h1,h2,h3,a,img',
           
           // Spam configuration
-          'ngdpbase.markup.filters.spam.max-links': 10,
-          'ngdpbase.markup.filters.spam.blacklist-words': 'spam,casino',
+          'ngdpbase.filters.spam.max-links': 10,
+          'ngdpbase.filters.spam.blacklist-words': 'spam,casino',
           
           // InterWiki sites
           'ngdpbase.interwiki.sites.Wikipedia': 'https://en.wikipedia.org/wiki/%s',
@@ -837,9 +837,9 @@ Links: [Wikipedia:Section${i}] and [JSPWiki:Test${i}].
           'ngdpbase.markup.handlers.form.enabled': false,           // No forms
           'ngdpbase.markup.handlers.attachment.enabled': false,     // No attachments
           'ngdpbase.style.security.allow-inline-css': false,         // No inline CSS
-          'ngdpbase.markup.filters.security.prevent-xss': true,     // Max security
-          'ngdpbase.markup.filters.spam.auto-block': true,          // Auto-block spam
-          'ngdpbase.markup.filters.validation.fail-on-validation-error': true
+          'ngdpbase.filters.security.prevent-xss': true,     // Max security
+          'ngdpbase.filters.spam.auto-block': true,          // Auto-block spam
+          'ngdpbase.filters.validation.fail-on-validation-error': true
         };
         return securityConfig[key] !== undefined ? securityConfig[key] : defaultValue;
       };
@@ -879,7 +879,7 @@ Links: [Wikipedia:Section${i}] and [JSPWiki:Test${i}].
         const devConfig = {
           'ngdpbase.markup.cache.parse-results.ttl': 60,            // Short cache
           'ngdpbase.style.security.allow-inline-css': true,         // Allow for testing
-          'ngdpbase.markup.filters.spam.auto-block': false,        // Don't auto-block
+          'ngdpbase.filters.spam.auto-block': false,        // Don't auto-block
           'ngdpbase.markup.performance.monitoring': true,         // Monitor closely
           'ngdpbase.markup.log-parsing-method': true               // Debug logging
         };

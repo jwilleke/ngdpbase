@@ -14,7 +14,7 @@ class MockConfigurationManager {
       'ngdpbase.markup.handlers.plugin.enabled': true,
       'ngdpbase.markup.handlers.plugin.priority': 90,
       'ngdpbase.markup.handlers.wikitag.enabled': false,
-      'ngdpbase.markup.filters.enabled': true,
+      'ngdpbase.filters.enabled': true,
       ...config
     };
   }
@@ -252,9 +252,9 @@ describe('MarkupParser Configuration Integration', () => {
 
   describe('Filter Configuration (#1117: owned by FilterManager)', () => {
     test('parser consumes the FilterManager chain built from configuration', async () => {
-      mockConfigManager.config['ngdpbase.markup.filters.enabled'] = true;
-      mockConfigManager.config['ngdpbase.markup.filters.spam.enabled'] = false;
-      mockConfigManager.config['ngdpbase.markup.filters.security.enabled'] = true;
+      mockConfigManager.config['ngdpbase.filters.enabled'] = true;
+      mockConfigManager.config['ngdpbase.filters.spam.enabled'] = false;
+      mockConfigManager.config['ngdpbase.filters.security.enabled'] = true;
 
       const { default: FilterManager } = await import('../../managers/FilterManager');
       const filterManager = new FilterManager(mockEngine);

@@ -429,6 +429,10 @@ class ConfigurationManager extends BaseManager {
     // merge so user intent wins over default.
     this.migrateLegacyBaseUrl();
 
+    // #1117: migrate legacy ngdpbase.markup.filters.* keys onto the
+    // ngdpbase.filters.* namespace, same shape and for the same reason.
+    this.migrateLegacyFilterNamespace();
+
     // Merge configurations with deep-merge for object-type properties
     this.mergedConfig = this.deepMergeConfigs(this.defaultConfig, this.customConfig);
 
@@ -476,6 +480,46 @@ class ConfigurationManager extends BaseManager {
 
     delete this.customConfig[legacyKebab];
     delete this.customConfig[legacyCamel];
+  }
+
+  /**
+   * #1117 slice 2: migration shim for the filter namespace. The old
+   * `ngdpbase.markup.filters.*` prefix described one consumer (markup
+   * rendering) of a capability that also gates saves —
+   * `…security.block-on-save` refuses content at the door, and an operator
+   * disabling "markup filters" to fix a rendering glitch would not expect to
+   * change what the system accepts. Keys now live under `ngdpbase.filters.*`.
+   *
+   * Every legacy key found in the CUSTOM config is copied to its new name
+   * (unless the new name is itself set explicitly — an explicit new key
+   * wins), then dropped, with one deprecation warning naming the count.
+   * Operating on customConfig before the merge means an operator's explicit
+   * legacy setting still overrides the shipped default under the new name —
+   * the case that must not silently break is a custom
+   * `…security.enabled=true` on an open-registration instance.
+   */
+  private migrateLegacyFilterNamespace(): void {
+    if (!this.customConfig) return;
+
+    const LEGACY_PREFIX = 'ngdpbase.markup.filters.';
+    const NEW_PREFIX = 'ngdpbase.filters.';
+
+    const legacyKeys = Object.keys(this.customConfig).filter((k) => k.startsWith(LEGACY_PREFIX));
+    if (legacyKeys.length === 0) return;
+
+    for (const legacyKey of legacyKeys) {
+      const newKey = NEW_PREFIX + legacyKey.slice(LEGACY_PREFIX.length);
+      if (!(newKey in this.customConfig)) {
+        this.customConfig[newKey] = this.customConfig[legacyKey];
+      }
+      delete this.customConfig[legacyKey];
+    }
+
+    logger.warn(
+      `[ConfigurationManager] DEPRECATED: ${legacyKeys.length} 'ngdpbase.markup.filters.*' key(s) in custom config ` +
+      `migrated to 'ngdpbase.filters.*' (e.g. '${legacyKeys[0]}'). ` +
+      `Update ${this.customConfigPath} to the new names. (#1117)`
+    );
   }
 
   /**

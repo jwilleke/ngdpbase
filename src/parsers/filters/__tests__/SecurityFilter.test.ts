@@ -34,7 +34,7 @@ function makeFilter(): SecurityFilter {
     engine: {
       getManager: vi.fn(() => ({
         getProperty: (key: string, dflt: unknown) =>
-          key === 'ngdpbase.markup.filters.security.enabled' ? true : dflt
+          key === 'ngdpbase.filters.security.enabled' ? true : dflt
       }))
     }
   });
@@ -330,8 +330,8 @@ describe('SecurityFilter', () => {
       const f = new SecurityFilter();
       const configManager = {
         getProperty: vi.fn((key: string, dv: unknown) => {
-          if (key === 'ngdpbase.markup.filters.security.prevent-xss') return true;
-          if (key === 'ngdpbase.markup.filters.security.allowed-tags') return 'p,div,span';
+          if (key === 'ngdpbase.filters.security.prevent-xss') return true;
+          if (key === 'ngdpbase.filters.security.allowed-tags') return 'p,div,span';
           return dv;
         })
       };

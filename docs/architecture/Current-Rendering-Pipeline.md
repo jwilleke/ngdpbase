@@ -164,9 +164,9 @@ Three filters are registered and initialized:
 
 | Filter | Config key | Default |
 |---|---|---|
-| `SecurityFilter` | `ngdpbase.markup.filters.security.enabled` | `false` |
-| `SpamFilter` | `ngdpbase.markup.filters.spam.enabled` | `false` |
-| `ValidationFilter` | `ngdpbase.markup.filters.validation.enabled` | `true` |
+| `SecurityFilter` | `ngdpbase.filters.security.enabled` | `false` |
+| `SpamFilter` | `ngdpbase.filters.spam.enabled` | `false` |
+| `ValidationFilter` | `ngdpbase.filters.validation.enabled` | `true` |
 
 __However, `filterChain.execute()` is never called__ in `parse()` or `parseWithDOMExtraction()`. All three filters are dead code in the current production path.
 
@@ -203,10 +203,10 @@ Key config properties controlling the rendering pipeline:
 | `ngdpbase.markup.enabled` | `true` | Enable MarkupParser; falls back to basic Showdown if false |
 | `ngdpbase.markup.caching` | `true` | Enable parse-result caching |
 | `ngdpbase.markup.cache-ttl` | `300` | Cache TTL in seconds |
-| `ngdpbase.markup.filters.enabled` | `true` | Global filter switch (has no effect until #596 is fixed) |
-| `ngdpbase.markup.filters.validation.enabled` | `true` | Enable ValidationFilter (has no effect until #596 is fixed) |
-| `ngdpbase.markup.filters.security.enabled` | `false` | Enable SecurityFilter (has no effect until #596 is fixed) |
-| `ngdpbase.markup.filters.spam.enabled` | `false` | Enable SpamFilter (has no effect until #596 is fixed) |
+| `ngdpbase.filters.enabled` | `true` | Global filter switch (has no effect until #596 is fixed) |
+| `ngdpbase.filters.validation.enabled` | `true` | Enable ValidationFilter (has no effect until #596 is fixed) |
+| `ngdpbase.filters.security.enabled` | `false` | Enable SecurityFilter (has no effect until #596 is fixed) |
+| `ngdpbase.filters.spam.enabled` | `false` | Enable SpamFilter (has no effect until #596 is fixed) |
 
 ---
 

@@ -42,15 +42,15 @@ A failed contributed filter is logged and skipped (`registerFilter` returns `fal
 
 ## Configuration
 
-Read at initialization, currently from the historical `ngdpbase.markup.filters.*` namespace (migration to `ngdpbase.filters.*` is #1117 slice 2; the reads are concentrated in this manager so that migration touches one file):
+Read at initialization from `ngdpbase.filters.*`. The namespace was renamed from `ngdpbase.markup.filters.*` in #1117 slice 2 — the old prefix described one consumer (markup rendering) of a capability that also gates saves. Legacy keys in an instance's custom config are migrated automatically at load with a deprecation warning; update custom configs to the new names.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `ngdpbase.markup.filters.enabled` | `true` | Pipeline master switch — off means no chain at all |
-| `ngdpbase.markup.filters.security.enabled` | `false` | SecurityFilter on the render path |
-| `ngdpbase.markup.filters.security.block-on-save` | `true` | Save-time gate — registers SecurityFilter even when render filtering is off (#1037) |
-| `ngdpbase.markup.filters.spam.enabled` | `false` | SpamFilter |
-| `ngdpbase.markup.filters.validation.enabled` | `true` | ValidationFilter |
+| `ngdpbase.filters.enabled` | `true` | Pipeline master switch — off means no chain at all |
+| `ngdpbase.filters.security.enabled` | `false` | SecurityFilter on the render path |
+| `ngdpbase.filters.security.block-on-save` | `true` | Save-time gate — registers SecurityFilter even when render filtering is off (#1037) |
+| `ngdpbase.filters.spam.enabled` | `false` | SpamFilter |
+| `ngdpbase.filters.validation.enabled` | `true` | ValidationFilter |
 
 Pipeline-level policy (`max-filters`, `timeout`, `enable-profiling`, `fail-on-error`, per-filter settings) is read by `FilterChain` itself.
 

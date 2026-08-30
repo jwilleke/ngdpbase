@@ -211,9 +211,9 @@ describe('SpamFilter', () => {
       const f = new SpamFilter();
       const configManager = {
         getProperty: vi.fn((key: string, dv: unknown) => {
-          if (key === 'ngdpbase.markup.filters.spam.max-links') return 5;
-          if (key === 'ngdpbase.markup.filters.spam.blacklist-words') return 'spam,casino';
-          if (key === 'ngdpbase.markup.filters.spam.whitelist-domains') return 'example.com';
+          if (key === 'ngdpbase.filters.spam.max-links') return 5;
+          if (key === 'ngdpbase.filters.spam.blacklist-words') return 'spam,casino';
+          if (key === 'ngdpbase.filters.spam.whitelist-domains') return 'example.com';
           return dv;
         })
       };

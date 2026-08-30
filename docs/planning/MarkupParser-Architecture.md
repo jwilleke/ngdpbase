@@ -362,7 +362,7 @@ class SpamFilter extends BaseFilter {
     "form": { "enabled": true, "priority": 85 },
     "interwiki": { "enabled": true, "priority": 80 }
   },
-  "ngdpbase.markup.filters": [
+  "ngdpbase.filters": [
     "SpamFilter",
     "SecurityFilter",
     "ValidationFilter"

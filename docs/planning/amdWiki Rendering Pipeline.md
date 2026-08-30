@@ -66,7 +66,7 @@ __Phase 3d: Content Transformation__ (`MarkupParser.js:phaseContentTransformatio
 
 __Phase 3e: Filter Pipeline__ (`MarkupParser.js:phaseFilterPipeline`)
 
-- Applies content filters if enabled (configurable via `ngdpbase.markup.filters.enabled`):
+- Applies content filters if enabled (configurable via `ngdpbase.filters.enabled`):
   - __SecurityFilter__: XSS prevention, HTML sanitization
   - __SpamFilter__: Spam link detection and blocking
   - __ValidationFilter__: Content validation and compliance checks
@@ -250,7 +250,7 @@ Response
   - Advanced parser mode: `ngdpbase.markup.use-advanced-parser=true` (default)
   - Legacy fallback: `ngdpbase.markup.fallback-to-legacy=true`
   - Individual handlers: `ngdpbase.markup.handlers.[handler].enabled`
-  - Filters: `ngdpbase.markup.filters.enabled`
+  - Filters: `ngdpbase.filters.enabled`
   - Cache strategies: `ngdpbase.markup.cache.[strategy].enabled`
   - Performance monitoring: `ngdpbase.markup.performance.monitoring`
 - __Documentation__: See [PROJECT-STRUCTURE.md](https://github.com/jwilleke/ngdpbase/blob/master/docs/architecture/PROJECT-STRUCTURE.md) and [ROADMAP.md](https://github.com/jwilleke/ngdpbase/blob/master/docs/planning/ROADMAP.md) for deeper details.

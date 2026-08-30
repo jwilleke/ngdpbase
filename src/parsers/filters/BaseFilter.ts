@@ -253,11 +253,11 @@ abstract class BaseFilter {
         if (filterType) {
           // Load filter-specific configuration
           this.config.enabled = configManager.getProperty(
-            `ngdpbase.markup.filters.${filterType}.enabled`,
+            `ngdpbase.filters.${filterType}.enabled`,
             this.config.enabled
           ) as boolean;
           this.config.priority = configManager.getProperty(
-            `ngdpbase.markup.filters.${filterType}.priority`,
+            `ngdpbase.filters.${filterType}.priority`,
             this.config.priority
           ) as number;
 

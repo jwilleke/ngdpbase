@@ -9,7 +9,7 @@
  * Neither option is enabled anywhere in ngdpbase, so neither advisory is
  * reachable. But checking that raised the larger question those advisories
  * only hint at: markdown permits raw HTML by design, and `SecurityFilter` —
- * which strips it — ships DISABLED (`ngdpbase.markup.filters.security.enabled`
+ * which strips it — ships DISABLED (`ngdpbase.filters.security.enabled`
  * defaults to false, deliberately, per #596).
  *
  * These tests record what the pipeline does by default. They are deliberately
@@ -31,13 +31,13 @@ function makeEngine(securityFilterEnabled: boolean) {
       const config: Record<string, unknown> = {
         'ngdpbase.markup.enabled': true,
         'ngdpbase.markup.caching': false,
-        'ngdpbase.markup.filters.enabled': true,
-        'ngdpbase.markup.filters.security.enabled': securityFilterEnabled,
-        'ngdpbase.markup.filters.security.prevent-xss': true,
-        'ngdpbase.markup.filters.security.sanitize-html': true,
-        'ngdpbase.markup.filters.security.strip-dangerous-content': true,
-        'ngdpbase.markup.filters.spam.enabled': false,
-        'ngdpbase.markup.filters.validation.enabled': true
+        'ngdpbase.filters.enabled': true,
+        'ngdpbase.filters.security.enabled': securityFilterEnabled,
+        'ngdpbase.filters.security.prevent-xss': true,
+        'ngdpbase.filters.security.sanitize-html': true,
+        'ngdpbase.filters.security.strip-dangerous-content': true,
+        'ngdpbase.filters.spam.enabled': false,
+        'ngdpbase.filters.validation.enabled': true
       };
       return key in config ? config[key] : defaultValue;
     }

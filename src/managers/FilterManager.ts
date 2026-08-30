@@ -51,9 +51,9 @@ class FilterManager extends BaseManager {
   /**
    * Create the chain and register the built-in filters per configuration.
    *
-   * Config keys are read from `ngdpbase.markup.filters.*` — the historical
-   * namespace. #1117 slice 2 migrates them to `ngdpbase.filters.*`; the reads
-   * are concentrated here so that migration touches one file.
+   * Config keys are read from `ngdpbase.filters.*` (#1117 slice 2 renamed
+   * the namespace; legacy `ngdpbase.markup.filters.*` custom-config keys are
+   * migrated by ConfigurationManager at load, with a deprecation warning).
    */
   async initialize(config: Record<string, unknown> = {}): Promise<void> {
     await super.initialize(config);
@@ -62,7 +62,7 @@ class FilterManager extends BaseManager {
     const prop = (key: string, fallback: unknown): unknown =>
       configManager ? configManager.getProperty(key, fallback) : fallback;
 
-    const pipelineEnabled = prop('ngdpbase.markup.filters.enabled', true) === true;
+    const pipelineEnabled = prop('ngdpbase.filters.enabled', true) === true;
     if (!pipelineEnabled) {
       logger.debug('🔧 [FilterManager] filter pipeline disabled by configuration');
       return;
@@ -78,15 +78,15 @@ class FilterManager extends BaseManager {
     // blocking is on: FilterChain.collectErrors() only iterates registered
     // filters, so an unregistered filter contributes no save-time rules —
     // which is why blocking used to require render filtering as well (#1037).
-    const securityEnabled = prop('ngdpbase.markup.filters.security.enabled', false) === true;
-    const blockOnSave = prop('ngdpbase.markup.filters.security.block-on-save', true) !== false;
+    const securityEnabled = prop('ngdpbase.filters.security.enabled', false) === true;
+    const blockOnSave = prop('ngdpbase.filters.security.block-on-save', true) !== false;
     if (securityEnabled || blockOnSave) {
       await this.registerFilter(new SecurityFilter());
     }
-    if (prop('ngdpbase.markup.filters.spam.enabled', false) === true) {
+    if (prop('ngdpbase.filters.spam.enabled', false) === true) {
       await this.registerFilter(new SpamFilter());
     }
-    if (prop('ngdpbase.markup.filters.validation.enabled', true) === true) {
+    if (prop('ngdpbase.filters.validation.enabled', true) === true) {
       await this.registerFilter(new ValidationFilter());
     }
 
