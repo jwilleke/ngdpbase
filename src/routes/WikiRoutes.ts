@@ -9060,12 +9060,13 @@ ${panes}
       }
       const comments = await commentManager.getComments(pageUuid);
       const u = req.userContext;
-      const html = renderCommentListHtml(
+      const html = await renderCommentListHtml(
         comments,
         u?.isAuthenticated === true,
         u?.username ?? '',
         (u?.roles ?? []).includes('admin'),
-        pageUuid
+        pageUuid,
+        this.engine
       );
       return res.type('text/html').send(html);
     } catch (err: unknown) {

@@ -120,6 +120,17 @@ When the normalizer drops content (stripped HTML, rejected/over-cap/ad image, an
 - Always paired with a structured `warnings[]` entry of matching `kind`.
 - __Idempotence (hard rule):__ the normalizer recognises its own placeholder and passes it through byte-identical on re-run — re-converting/re-ingesting a page that already contains one must not re-wrap, duplicate, or mutate it.
 
+## 3.4 Render profiles — trust decides composition (#1123)
+
+The render pipeline was designed for __trusted page authors__: raw HTML survives by configuration, `[{Plugin}]` and `[{$variable}]` execute, and the SecurityFilter allow-list admits `<iframe>`/`<img>` because an author-written one is refused at save. Content from authors who are __not__ trusted — comments today; any user-of-user surface tomorrow — must not be piped through that composition, and must never get a parallel renderer either (the #599/#1032 lesson). So one engine, two profiles:
+
+| Profile | Used for | Composition |
+|---|---|---|
+| `trusted-page` | Page bodies | Full pipeline: MarkupParser (plugins, variables, wiki links), showdown, filter chain per site config |
+| `untrusted-inline` | Comments (`renderUntrustedInline`, `src/utils/renderUntrustedInline.ts`) | Same showdown core (CommonMark only — plugin/variable/wiki-link syntax inert __by construction__, MarkupParser never runs); same SecurityFilter with its config __forced on__ (not site-configurable — an operator toggling render filtering must not change what commenters can inject) and a tightened tag list (no `iframe`, no `img`); the #1000 ReDoS guard on input; escape-everything fallback on any failure — degraded is safe, never open |
+
+A future surface with untrusted authors adopts `untrusted-inline` rather than re-deciding; wiki-link support inside it (with viewer-context resolution, per the #1116 rule) is a possible extension, deliberately not in the first cut — a red-link in a comment is a page-creation lure and an existence probe.
+
 ## 4. Consumers
 
 - __#501 — JSON → NCM serializer.__ A `json + template → NCM` serializer registered as an `IContentConverter`. The standalone surface (InterWiki/plugin rendering a JSON URL) is a thin consumer of it.

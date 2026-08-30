@@ -137,8 +137,11 @@ describe('CommentsPlugin', () => {
       expect(result).toContain('id="comment-cmt-abc"');
     });
 
-    test('escapes HTML in comment content', async () => {
-      const comment = sampleComment({ content: '<script>alert("xss")</script>' });
+    test('hostile HTML in comment content never survives as markup (#1123)', async () => {
+      // Pre-#1123 this was entity-escaped into visible text; the
+      // untrusted-inline profile STRIPS it instead. Either way the invariant
+      // under test is the same: a commenter's script tag must not execute.
+      const comment = sampleComment({ content: '<script>alert("xss")</script> still here' });
       const cm = makeCommentManager(true, [comment]);
       const context = {
         engine: makeEngine({ CommentManager: cm }),
@@ -146,8 +149,10 @@ describe('CommentsPlugin', () => {
         userContext: { isAuthenticated: false }
       };
       const result = await CommentsPlugin.execute(context, {});
-      expect(result).not.toContain('<script>');
-      expect(result).toContain('&lt;script&gt;');
+      // The tag is stripped; its inner text may remain as inert prose —
+      // SecurityFilter's own doctrine: text cannot execute, script needs a tag.
+      expect(result).not.toContain('<script');
+      expect(result).toContain('still here');
     });
   });
 

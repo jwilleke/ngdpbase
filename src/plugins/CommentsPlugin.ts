@@ -3,6 +3,10 @@ import WikiContext from '../context/WikiContext.js';
 import type CommentManager from '../managers/CommentManager.js';
 import type { PageComment } from '../types/Comment.js';
 import { parseBoolParam } from '../utils/pluginFormatters.js';
+import { renderUntrustedInline } from '../utils/renderUntrustedInline.js';
+
+/** Engine shape the untrusted-inline profile needs; kept loose for tests. */
+type WikiEngineLike = { getManager: (name: string) => unknown };
 
 function escapeHtml(text: string): string {
   return text
@@ -27,19 +31,27 @@ function formatDate(iso: string): string {
  * Returns either a `<div class="comment-list">…</div>` or a "no comments yet"
  * paragraph — never wraps in the outer `<section>` or container.
  */
-export function renderCommentListHtml(
+export async function renderCommentListHtml(
   comments: PageComment[],
   isAuthenticated: boolean,
   username: string,
   isAdmin: boolean,
-  pageUuid: string
-): string {
+  pageUuid: string,
+  engine?: WikiEngineLike
+): Promise<string> {
   if (comments.length === 0) {
     return '<p class="no-comments"><em>No comments yet.</em></p>';
   }
   const parts: string[] = ['<div class="comment-list">'];
   for (const c of comments) {
     const canDelete = isAdmin || (isAuthenticated && c.author === username);
+    // #1123: comment bodies render through the untrusted-inline profile —
+    // CommonMark formatting, plugin/variable syntax inert, SecurityFilter
+    // forced on. Without an engine (or on any failure inside the profile)
+    // this degrades to the pre-#1123 escaped text, never to raw HTML.
+    const body = engine
+      ? await renderUntrustedInline(c.content, engine as never)
+      : escapeHtml(c.content).replace(/\n/g, '<br>');
     parts.push(`<div class="comment" id="comment-${escapeHtml(c.id)}">`);
     parts.push('  <div class="comment-meta">');
     parts.push(`    <span class="comment-author">${escapeHtml(c.authorDisplayName)}</span>`);
@@ -48,7 +60,7 @@ export function renderCommentListHtml(
       parts.push(`    <button class="comment-delete-btn btn btn-sm btn-outline-danger ms-2" onclick="ngdpDeleteComment('${escapeHtml(pageUuid)}','${escapeHtml(c.id)}')">Delete</button>`);
     }
     parts.push('  </div>');
-    parts.push(`  <div class="comment-body">${escapeHtml(c.content).replace(/\n/g, '<br>')}</div>`);
+    parts.push(`  <div class="comment-body">${body}</div>`);
     parts.push('</div>');
   }
   parts.push('</div>');
@@ -95,7 +107,7 @@ const CommentsPlugin: SimplePlugin = {
     // Wrap the list in a stable container so #590 can swap its innerHTML
     // after add/delete instead of doing a full page reload.
     parts.push(`<div id="comment-list-host" data-page-uuid="${escapeHtml(pageUuid)}">`);
-    parts.push(renderCommentListHtml(comments, isAuthenticated, username, isAdmin, pageUuid));
+    parts.push(await renderCommentListHtml(comments, isAuthenticated, username, isAdmin, pageUuid, engine));
     parts.push('</div>');
 
     if (isAuthenticated) {
