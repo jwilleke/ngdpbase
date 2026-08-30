@@ -90,6 +90,16 @@ export interface IContentConverter {
    * @returns True if this converter can handle the content
    */
   canHandle(content: string, filename: string): boolean;
+
+  /**
+   * #1131: convert a BINARY source (e.g. .docx) — optional; its presence
+   * tells ImportManager to read the file as a Buffer instead of UTF-8 and
+   * call this instead of {@link convert}. The result's `content` may be an
+   * intermediate format (DocxConverter returns HTML) that ImportManager
+   * routes through the NCM normalizer like any other registered source.
+   * Async because binary converters (mammoth) are.
+   */
+  convertBuffer?(buffer: Buffer): Promise<ConversionResult>;
 }
 
 export default IContentConverter;

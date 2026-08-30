@@ -38,6 +38,7 @@ import { notifyNcmConversion } from '../utils/ncmNotify.js';
 import { writeRunSummary, type ImportRunSummary } from '../utils/importRunSummary.js';
 import JSPWikiConverter from '../converters/JSPWikiConverter.js';
 import HtmlConverter from '../converters/HtmlConverter.js';
+import DocxConverter from '../converters/DocxConverter.js';
 import MarkdownConverter from '../converters/MarkdownConverter.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type ValidationManager from './ValidationManager.js';
@@ -248,6 +249,7 @@ class ImportManager extends BaseManager {
     this.registerConverter(new JSPWikiConverter());
     this.registerConverter(new HtmlConverter());
     this.registerConverter(new MarkdownConverter());
+    this.registerConverter(new DocxConverter());
 
     logger.info('[ImportManager] Initialized with converters:', this.getAvailableFormats());
   }
@@ -617,10 +619,22 @@ class ImportManager extends BaseManager {
       'ngdpbase.markdown.ncm.table.default-classes',
       DEFAULT_TABLE_CLASSES
     ) as string[] ?? DEFAULT_TABLE_CLASSES;
-    const conversionResult: ConversionResult =
-      (formatId === 'html' || formatId === 'jspwiki' || formatId === 'markdown')
-        ? ncmToConversionResult(normalizeToNcm(content, formatId, { tableClasses }))
-        : converter.convert(content);
+    let conversionResult: ConversionResult;
+    if (converter.convertBuffer) {
+      // #1131: a binary source (docx). The utf-8 read above was zip garbage —
+      // re-read as a Buffer, let the converter produce intermediate HTML, and
+      // route THAT through the same html→NCM path every HTML import takes, so
+      // links, tables, images and footnotes all come from the funnel.
+      const buffer = await fs.readFile(filePath);
+      const intermediate = await converter.convertBuffer(buffer);
+      conversionResult = ncmToConversionResult(normalizeToNcm(intermediate.content, 'html', { tableClasses }));
+      conversionResult.warnings.unshift(...intermediate.warnings);
+      conversionResult.metadata = { ...intermediate.metadata, ...conversionResult.metadata };
+    } else if (formatId === 'html' || formatId === 'jspwiki' || formatId === 'markdown') {
+      conversionResult = ncmToConversionResult(normalizeToNcm(content, formatId, { tableClasses }));
+    } else {
+      conversionResult = converter.convert(content);
+    }
 
     // The NCM markdown path does not stamp provenance the way MarkdownConverter
     // does; preserve `importedFrom: markdown` for parity with the JSPWiki/HTML

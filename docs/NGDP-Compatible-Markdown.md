@@ -79,7 +79,7 @@ Normalizer rules: absolute `http(s)://` target → external form (`target="_blan
 
 ## 3. The normalizer contract
 
-NCM extends the __existing__ `IContentConverter` registry — no parallel system. Public API (`src/converters/ncm/`, barrel `index.ts`):
+NCM extends the __existing__ `IContentConverter` registry — no parallel system. Binary sources ([#1131](https://github.com/jwilleke/ngdpbase/issues/1131)) join through the optional `convertBuffer(Buffer)` contract: the converter produces intermediate HTML (a full document, not a fragment) and `ImportManager` routes it through the same html→NCM path as any HTML import — `DocxConverter` (mammoth) is the first. Known docx limitation: Word footnotes arrive as mammoth's anchor/list HTML, not `[^id]` markdown, so they survive as ordinary links rather than sidecar records. Public API (`src/converters/ncm/`, barrel `index.ts`):
 
 | Export | Role |
 |---|---|

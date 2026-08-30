@@ -113,6 +113,7 @@
     "jose": "^6.2.3",
     "linkedom": "^0.18.12",
     "lunr": "^2.3.9",
+    "mammoth": "^1.12.2",
     "markdownlint": "^0.38.0",
     "micromatch": "^4.0.8",
     "minimatch": "^10.2.5",

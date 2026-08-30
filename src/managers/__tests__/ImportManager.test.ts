@@ -948,4 +948,43 @@ See [OtherPage] for more.`;
       expect(mockUpdatePageInIndex).not.toHaveBeenCalled();
     });
   });
+
+  // #1131: the first binary source format — .docx through the full pipeline.
+  describe('docx import (#1131)', () => {
+    const FIXTURE = path.join(__dirname, '..', '..', 'converters', '__tests__', 'fixtures', 'sample.docx');
+
+    it('auto-detects .docx by extension and converts through the html→NCM path', async () => {
+      await fs.copy(FIXTURE, path.join(testDir, 'sample.docx'));
+      const result = await importManager.importPages({
+        sourceDir: testDir,
+        targetDir: path.join(testDir, 'output'),
+        format: 'auto',
+        dryRun: true
+      });
+      expect(result.success).toBe(true);
+      const file = result.files.find((f) => f.sourcePath.endsWith('sample.docx'));
+      expect(file).toBeDefined();
+      expect(file.format).toBe('docx');
+      // The heading and bold survived docx → mammoth HTML → NCM markdown.
+      expect(file.metadata['ncmVersion']).toBeDefined();
+      expect(file.metadata['importedFrom']).toBe('docx');
+    });
+
+    it('the converted body is NCM markdown, not HTML', async () => {
+      await fs.copy(FIXTURE, path.join(testDir, 'body.docx'));
+      const single = await importManager.importPages({
+        sourceDir: testDir,
+        targetDir: path.join(testDir, 'out2'),
+        format: 'auto',
+        dryRun: false
+      });
+      const file = single.files.find((f) => f.sourcePath.endsWith('body.docx'));
+      expect(file.written).toBe(true);
+      const written = await fs.readFile(file.targetPath, 'utf-8');
+      expect(written).toContain('# Docx Import Title');
+      expect(written).toContain('**bold words**');
+      expect(written).not.toContain('<h1>');
+    });
+  });
+
 });
