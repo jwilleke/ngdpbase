@@ -70,3 +70,21 @@ describe('ensureFootnotesPlugin', () => {
     expect(ensureFootnotesPlugin(src)).toBe(src);
   });
 });
+
+describe('#1125 CRLF regression — the live bug', () => {
+  // Browser form posts save CRLF bodies. \r is a JS regex LineTerminator, so
+  // `.` and `$` refuse a line ending in \r — the extractor found [^src] (the
+  // final, \r-less line) and silently skipped [^1] on a real page.
+  test('CRLF definitions extract exactly like LF ones', () => {
+    const src = 'A claim[^1] and a source[^src].\r\n\r\n[^1]: Supporting note text.\r\n\r\n[^src]: https://example.org/paper';
+    const out = extractFootnoteDefs(src);
+    expect(out.defs.map(d => d.id)).toEqual(['1', 'src']);
+    expect(out.content).not.toContain('[^1]:');
+  });
+
+  test('an already-normalized (JSPWiki-form) link definition maps to display + url', () => {
+    // The link normalizer runs before extraction in the convert pipeline.
+    const out = extractFootnoteDefs('x[^s]\n\n[^s]: [Example Paper|https://example.org/paper|target="_blank"]\n');
+    expect(out.defs).toEqual([{ id: 's', display: 'Example Paper', url: 'https://example.org/paper', note: '' }]);
+  });
+});

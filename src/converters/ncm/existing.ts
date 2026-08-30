@@ -27,7 +27,8 @@ import { normalizeToNcm } from './normalize.js';
  */
 export function normalizeExistingPageToNcm(raw: string): NcmResult {
   const warnings: NcmWarning[] = [];
-  const parsed = matter(raw);
+  // #1125: LF-only before anything touches the body — see normalizeToNcm.
+  const parsed = matter(raw.replace(/\r\n?/g, '\n'));
   const body = normalizeLinks(parsed.content, warnings);
   const reassembled = matter.stringify(body, parsed.data);
   const fixed = normalizeToNcm(reassembled, 'markdown');

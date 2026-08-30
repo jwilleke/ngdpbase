@@ -33,12 +33,19 @@ const DEF_LINE = /^\[\^([^\]\s]+)\]:\s*(.*)$/;
 const CONTINUATION = /^(?: {4,}|\t)(.*)$/;
 /** Definition text that is exactly a markdown link. */
 const MD_LINK_ONLY = /^\[([^\]]+)\]\((https?:[^)\s]+)\)$/;
+/**
+ * Definition text that is exactly an NCM/JSPWiki external link —
+ * `[Display|https://url|target="_blank"]`. The link normalizer runs before
+ * footnote extraction in the convert pipeline, so a markdown-link definition
+ * arrives here already in this form.
+ */
+const NCM_LINK_ONLY = /^\[([^|\]]+)\|(https?:[^|\]\s]+)(?:\|[^\]]*)?\]$/;
 /** Definition text that is exactly a bare URL. */
 const BARE_URL_ONLY = /^https?:\/\/\S+$/;
 
 function toRecord(id: string, text: string): ExtractedFootnoteDef {
   const trimmed = text.trim();
-  const asLink = trimmed.match(MD_LINK_ONLY);
+  const asLink = trimmed.match(MD_LINK_ONLY) ?? trimmed.match(NCM_LINK_ONLY);
   if (asLink) return { id, display: asLink[1], url: asLink[2], note: '' };
   if (BARE_URL_ONLY.test(trimmed)) return { id, display: '', url: trimmed, note: '' };
   return { id, display: '', url: '', note: trimmed };
@@ -51,7 +58,12 @@ function toRecord(id: string, text: string): ExtractedFootnoteDef {
  * with newlines.
  */
 export function extractFootnoteDefs(content: string): FootnoteExtraction {
-  const lines = content.split('\n');
+  // Defensive: \r is a JS regex LineTerminator, so `.` and `$` silently
+  // refuse a line ending in \r. The NCM normalizer canonicalizes to LF
+  // upstream; this guards direct callers handing us CRLF anyway. When
+  // nothing matches, the ORIGINAL content is returned byte-identical.
+  const hadCr = content.includes('\r');
+  const lines = (hadCr ? content.replace(/\r\n?/g, '\n') : content).split('\n');
   const defs: ExtractedFootnoteDef[] = [];
   const kept: string[] = [];
 

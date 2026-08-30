@@ -60,6 +60,14 @@ export function normalizeToNcm(
 ): NcmResult {
   const warnings: NcmWarning[] = [];
 
+  // #1125: canonicalize line endings FIRST. CRLF arrives from browser form
+  // posts and Windows-authored imports, and §3.1's byte-determinism is
+  // meaningless with two line-ending conventions. It is also load-bearing:
+  // \r is a JS regex LineTerminator, so `.` and `$` silently refuse to match
+  // a line that ends in \r — the footnote-definition extractor missed every
+  // CRLF definition while looking correct in LF-only tests.
+  input = input.replace(/\r\n?/g, '\n');
+
   if (sourceFormat === 'html' || sourceFormat === 'jspwiki') {
     const converter = sourceFormat === 'html'
       ? new HtmlConverter()
