@@ -47,10 +47,8 @@ import {
   evaluateDeviceBinding
 } from '../utils/magicLinkDeviceState.js';
 import {
-  buildPageMutationAuditEvent,
   buildAttachmentAuditEvent,
   recordAuditEvent,
-  type PageMutationOp,
   type AuditEventSink,
   type AuditViaToken,
   getAuditDropStats
@@ -4122,19 +4120,6 @@ ${panes}
       const finalTitle = (metadata.title as string) || pageName;
       const isRename = !isNewPage && pageName !== finalTitle;
 
-      // #1080: audit the mutation now that the write has committed. Not
-      // awaited — the page is on disk either way, and a slow audit backend
-      // must not delay the response. A rename is logged as a rename rather
-      // than an edit because #1082 resolves links to a page's former title
-      // from exactly these events.
-      this.auditPageMutation(
-        req,
-        isNewPage ? 'create' : isRename ? 'rename' : 'edit',
-        finalTitle,
-        metadata.uuid as string | undefined,
-        isRename ? pageName : null
-      );
-
       // Capture old referring pages BEFORE removing from link graph (used for cache invalidation)
       const oldReferringPages = isRename ? renderingManager.getReferringPages(pageName) : [];
 
@@ -4927,36 +4912,6 @@ ${panes}
   /** Agent-token identity on this request, when it authenticated with one (#946). */
   private static viaTokenOf(req: Request): AuditViaToken | null {
     return (req.userContext as { viaToken?: AuditViaToken } | undefined)?.viaToken ?? null;
-  }
-
-  /**
-   * Record a page create / edit / rename / link-rewrite in the audit log (#1080, #1094).
-   *
-   * Called after the write commits, and deliberately not awaited by the save
-   * path: the page is already on disk, so a slow or failing audit backend must
-   * not delay the response or turn a successful save into an error.
-   */
-  private auditPageMutation(
-    req: Request,
-    op: PageMutationOp,
-    pageName: string,
-    uuid: string | null | undefined,
-    fromPageName?: string | null,
-    rewriteOf?: { from: string; to: string } | null
-  ): void {
-    const event = buildPageMutationAuditEvent({
-      op,
-      username: req.userContext?.username,
-      ipAddress: req.ip,
-      pageName,
-      uuid,
-      fromPageName,
-      rewriteOf,
-      viaToken: WikiRoutes.viaTokenOf(req)
-    });
-    void recordAuditEvent(this.auditSink(), event, (err) =>
-      logger.warn(`Audit log failed for page.${op} of '${pageName}':`, err)
-    );
   }
 
   /**
