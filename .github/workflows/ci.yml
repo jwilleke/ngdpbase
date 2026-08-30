@@ -78,6 +78,46 @@ jobs:
           echo "manifest: $(wc -l < /tmp/nm-before.txt) files under node_modules"
           echo "::endgroup::"
 
+      # THE FIX for #1093, after the diagnostics above named the mutator: a
+      # literal bare `npm update` runs DURING the test step (process sampler,
+      # run 32972478260 — 0 samples on every green run, 14 on the red one).
+      # `npm update` re-resolves against semver ranges and reifies
+      # node_modules mid-suite, which deletes vitest's worker files under a
+      # running pool: every downstream symptom follows (preload
+      # MODULE_NOT_FOUND, tree ending 799 files LARGER, the silent 359→357
+      # collection shrink). Nothing in this repo or this workflow spawns it —
+      # the caller is environmental and unnamed.
+      #
+      # So the fix does not require naming it: a PATH shim makes `npm update`
+      # a refused no-op for the remainder of the job, and when the mystery
+      # caller strikes, the shim logs its full parent-process chain — turning
+      # the next occurrence into the identification the hunt was missing,
+      # while the run stays green because the tree is never mutated.
+      - name: Shim npm — refuse `npm update` during tests (#1093)
+        run: |
+          mkdir -p /tmp/npm-shim
+          real_npm="$(command -v npm)"
+          cat > /tmp/npm-shim/npm <<SHIM
+          #!/bin/bash
+          if [ "\$1" = "update" ]; then
+            {
+              echo "=== BLOCKED: npm update at \$(date -u +%H:%M:%S) (#1093) ==="
+              echo "argv: npm \$*"
+              pid=\$\$
+              while [ -n "\$pid" ] && [ "\$pid" != "0" ] && [ "\$pid" != "1" ]; do
+                args=\$(tr '\0' ' ' < "/proc/\$pid/cmdline" 2>/dev/null)
+                echo "  pid \$pid: \${args:-<gone>}"
+                pid=\$(awk '{print \$4}' "/proc/\$pid/stat" 2>/dev/null)
+              done
+            } >> /tmp/npm-update-blocked.log 2>&1
+            exit 0
+          fi
+          exec "$real_npm" "\$@"
+          SHIM
+          chmod +x /tmp/npm-shim/npm
+          echo "/tmp/npm-shim" >> "$GITHUB_PATH"
+          echo "npm shim installed in front of $real_npm"
+
       - name: Sample resource use during tests (#1093)
         run: |
           # Backgrounded sampler. Open descriptors across all processes and
@@ -118,11 +158,20 @@ jobs:
       - name: Check whether Vitest files survived (#1093)
         if: always()
         run: |
+          echo "::group::Did the mystery npm update strike (and get blocked)? (#1093)"
+          if [ -s /tmp/npm-update-blocked.log ]; then
+            echo "::warning title=#1093 npm update blocked::The environmental 'npm update' fired during tests and was refused by the shim. Caller chain below — paste it into #1093."
+            cat /tmp/npm-update-blocked.log
+          else
+            echo "no npm update attempt observed this run"
+          fi
+          echo "::endgroup::"
           echo "::group::Vitest install integrity AFTER the run"
           echo "files under node_modules/vitest: $(find node_modules/vitest -type f 2>/dev/null | wc -l)"
+          integrity_ok=1
           for f in node_modules/vitest/suppress-warnings.cjs \
                    node_modules/vitest/dist/workers/forks.js; do
-            if [ -f "$f" ]; then echo "STILL PRESENT: $f"; else echo "GONE: $f"; fi
+            if [ -f "$f" ]; then echo "STILL PRESENT: $f"; else echo "GONE: $f"; integrity_ok=0; fi
           done
           echo "::endgroup::"
           echo "::group::What changed under node_modules during the run"
@@ -152,6 +201,15 @@ jobs:
           fi
           tail -60 /tmp/resource-samples.log 2>/dev/null || echo "no samples captured"
           echo "::endgroup::"
+          # #1093 enforcement: with the shim blocking the mutator, the guard
+          # files must survive every run. If they are still vanishing, the
+          # mutator found a path around the shim — fail HERE, by name, rather
+          # than through a preload stack trace that reads like an install
+          # problem (or worse, the silent 359→357 collection shrink).
+          if [ "${integrity_ok:-1}" = "0" ]; then
+            echo "::error title=#1093 node_modules mutated during tests::vitest guard files were deleted mid-run DESPITE the npm-update shim. The mutator bypassed PATH — reopen the hunt with the process samples above."
+            exit 1
+          fi
       # --- end #1093 diagnostics ---------------------------------------------
 
       - name: Generate coverage report
