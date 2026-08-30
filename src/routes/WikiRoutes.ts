@@ -13135,10 +13135,6 @@ ${panes}
    */
   async adminConvertPreview(req: Request, res: Response) {
     try {
-      const wikiContext = this.createWikiContext(req);
-      if (!wikiContext.userContext || !(await wikiContext.hasPermission('admin-system'))) {
-        return res.status(403).json({ success: false, error: 'You do not have permission to convert pages' });
-      }
       const pageName = (req.body as { page?: string }).page;
       if (!pageName) {
         return res.status(400).json({ success: false, error: 'page is required' });
@@ -13147,6 +13143,14 @@ ${panes}
       const page = await pageManager?.getPage(pageName);
       if (!page) {
         return res.status(404).json({ success: false, error: `Page not found: ${pageName}` });
+      }
+      // #1127: converting IS an edit — anyone who may edit the page could
+      // paste the converted text by hand — so the gate is the page's own
+      // edit ACL, not admin-system. Lets the editor "More.." entry work for
+      // page authors while the /admin/convert tool keeps its admin page gate.
+      const wikiContext = await this.convertEditContext(req, pageName, page);
+      if (!wikiContext) {
+        return res.status(403).json({ success: false, error: 'You do not have permission to convert this page' });
       }
       const original = matter.stringify(page.content, page.metadata);
       const ncm = normalizeExistingPageToNcm(original);
@@ -13173,10 +13177,6 @@ ${panes}
    */
   async adminConvertExecute(req: Request, res: Response) {
     try {
-      const wikiContext = this.createWikiContext(req);
-      if (!wikiContext.userContext || !(await wikiContext.hasPermission('admin-system'))) {
-        return res.status(403).json({ success: false, error: 'You do not have permission to convert pages' });
-      }
       const pageName = (req.body as { page?: string }).page;
       if (!pageName) {
         return res.status(400).json({ success: false, error: 'page is required' });
@@ -13185,6 +13185,11 @@ ${panes}
       const page = await pageManager?.getPage(pageName);
       if (!page) {
         return res.status(404).json({ success: false, error: `Page not found: ${pageName}` });
+      }
+      // #1127: page-edit ACL, same reasoning as the preview gate.
+      const wikiContext = await this.convertEditContext(req, pageName, page);
+      if (!wikiContext) {
+        return res.status(403).json({ success: false, error: 'You do not have permission to convert this page' });
       }
       const original = matter.stringify(page.content, page.metadata);
       const ncm = normalizeExistingPageToNcm(original);
@@ -13195,7 +13200,15 @@ ${panes}
         return res.json({ success: true, page: pageName, changed: false, warnings });
       }
       const split = matter(img.content);
-      await pageManager?.savePage(pageName, split.content, split.data);
+      // #1127: through the door WITH the user — savePage would audit this
+      // write as 'system', and the person who converted is exactly what the
+      // record is for.
+      (wikiContext as unknown as { content: string | null }).content = split.content;
+      await pageManager?.savePageWithContext(
+        wikiContext as unknown as Parameters<NonNullable<typeof pageManager>['savePageWithContext']>[0],
+        split.data,
+        { audit: { ipAddress: req.ip } }
+      );
       return res.json({
         success: true,
         page: pageName,
@@ -13207,6 +13220,29 @@ ${panes}
       logger.error('Error executing page conversion:', err);
       return res.status(500).json({ success: false, error: getErrorMessage(err) || 'Error executing conversion' });
     }
+  }
+
+  /**
+   * #1127: resolve the request into a WikiContext holding the target page,
+   * or null when the caller may not edit it. The shared gate for the two
+   * convert endpoints — the ACL evaluator gets the page's metadata and
+   * content so audience/private rules apply exactly as they do on /save.
+   */
+  private async convertEditContext(
+    req: Request,
+    pageName: string,
+    page: { content: string; metadata: Record<string, unknown> }
+  ): Promise<ReturnType<WikiRoutes['createWikiContext']> | null> {
+    const wikiContext = this.createWikiContext(req, {
+      context: WikiContext.CONTEXT.EDIT,
+      pageName
+    });
+    if (!wikiContext.userContext) return null;
+    (wikiContext as unknown as { pageMetadata: unknown }).pageMetadata = page.metadata;
+    (wikiContext as unknown as { content: string | null }).content = page.content;
+    const aclManager = this.engine.getManager('ACLManager');
+    const canEdit = await aclManager?.checkPagePermissionWithContext?.(wikiContext, 'edit');
+    return canEdit ? wikiContext : null;
   }
 
   /**

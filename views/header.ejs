@@ -331,6 +331,11 @@
                                     <li><a class="dropdown-item" href="/view/<%= encodeURIComponent(pageName) %>?view=reader">
                                         <i class="fas fa-book-reader"></i> Show Reader View
                                     </a></li>
+                                    <% if (typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated && currentUser.roles && (currentUser.roles.includes('admin') || currentUser.roles.includes('editor') || currentUser.roles.includes('contributor'))) { %>
+                                    <li><a class="dropdown-item" href="#" onclick="ngdpNcmConvertOpen(); return false;" title="Preview this page normalized to ngdp Compatible Markdown, then apply. (#1127)">
+                                        <i class="fas fa-wand-magic-sparkles"></i> Convert to NCM&hellip;
+                                    </a></li>
+                                    <% } %>
                                     <% if (typeof currentUser !== 'undefined' && currentUser && currentUser.roles && currentUser.roles.includes('admin')) { %>
                                     <li><a class="dropdown-item text-warning" href="/admin/edit-raw/<%= encodeURIComponent(pageName) %>" title="Edit raw page file (frontmatter + body). Admin override — bypasses validation. (#689)">
                                         <i class="fas fa-file-code"></i> Edit raw (admin)
@@ -1738,6 +1743,88 @@ function openBrowseAttachments() {
     } else {
         window.location.href = '/attachments/browse';
     }
+}
+
+// #1127: Convert-to-NCM from the More menu — preview, confirm, apply.
+// Reuses the /admin/convert endpoints, now gated on the page's edit ACL.
+function ngdpNcmConvertOpen() {
+    const raw = window.location.pathname.split('/view/')[1] || window.location.pathname.split('/edit/')[1];
+    const page = raw ? decodeURIComponent(raw) : null;
+    if (!page) { alert('No page in context to convert.'); return; }
+
+    let host = document.getElementById('ncm-convert-modal');
+    if (!host) {
+        host = document.createElement('div');
+        host.id = 'ncm-convert-modal';
+        host.className = 'modal fade';
+        host.tabIndex = -1;
+        host.innerHTML =
+            '<div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">' +
+            '<div class="modal-header"><h5 class="modal-title">Convert to NCM</h5>' +
+            '<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>' +
+            '<div class="modal-body" id="ncm-convert-body"><p class="text-muted">Building preview&hellip;</p></div>' +
+            '<div class="modal-footer">' +
+            '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>' +
+            '<button type="button" class="btn btn-primary" id="ncm-convert-apply" disabled>Apply conversion</button>' +
+            '</div></div></div>';
+        document.body.appendChild(host);
+    }
+    const body = host.querySelector('#ncm-convert-body');
+    const applyBtn = host.querySelector('#ncm-convert-apply');
+    applyBtn.disabled = true;
+    body.innerHTML = '<p class="text-muted">Building preview&hellip;</p>';
+    const modal = new bootstrap.Modal(host);
+    modal.show();
+
+    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    csrfFetch('/admin/convert/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ page })
+    }).then(r => r.json()).then(data => {
+        if (!data.success) {
+            body.innerHTML = '<div class="alert alert-danger">' + esc(data.error || 'Preview failed') + '</div>';
+            return;
+        }
+        if (!data.changed) {
+            body.innerHTML = '<div class="alert alert-success">This page is already NCM-normalized (v' + esc(data.ncmVersion) + '). Nothing to change.</div>';
+            return;
+        }
+        let html = '<p>The page will be rewritten to ngdp Compatible Markdown (v' + esc(data.ncmVersion) + '). Review the result:</p>';
+        if (data.warnings && data.warnings.length) {
+            html += '<div class="alert alert-warning"><strong>' + data.warnings.length + ' warning(s):</strong><ul class="mb-0">' +
+                data.warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul></div>';
+        }
+        html += '<pre class="border rounded p-2" style="max-height:50vh;overflow:auto;white-space:pre-wrap;">' + esc(data.proposed) + '</pre>';
+        if (window.location.pathname.startsWith('/edit/')) {
+            html += '<div class="alert alert-info mb-0">Applying converts the <em>saved</em> page — unsaved editor changes are not included, and the editor reloads afterwards.</div>';
+        }
+        body.innerHTML = html;
+        applyBtn.disabled = false;
+        applyBtn.onclick = () => {
+            applyBtn.disabled = true;
+            applyBtn.textContent = 'Applying…';
+            csrfFetch('/admin/convert/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ page })
+            }).then(r => r.json()).then(result => {
+                if (result.success) {
+                    window.location.reload();
+                } else {
+                    applyBtn.textContent = 'Apply conversion';
+                    body.insertAdjacentHTML('afterbegin',
+                        '<div class="alert alert-danger">' + esc(result.error || 'Conversion failed') + '</div>');
+                }
+            }).catch(() => {
+                applyBtn.textContent = 'Apply conversion';
+                body.insertAdjacentHTML('afterbegin', '<div class="alert alert-danger">Conversion request failed.</div>');
+            });
+        };
+    }).catch(() => {
+        body.innerHTML = '<div class="alert alert-danger">Preview request failed.</div>';
+    });
 }
 
 function showUploadAttachment(pageName) {
