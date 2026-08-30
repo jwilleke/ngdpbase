@@ -862,7 +862,10 @@ class VersioningFileProvider extends FileSystemProvider {
     const limit = typeof options.limit === 'number' && options.limit > 0 ? options.limit : 50;
     const since = options.since ? new Date(options.since) : null;
     const principals = options.principals ?? [];
-    const includeAll = options.includeAll === true;
+    // #1116: the bypass is DERIVED from a fact the caller supplies, never
+    // accepted as a flag. `includeAll: true` used to return every private
+    // page to whoever passed it, with nothing asking who was calling.
+    const includeAll = principals.includes('admin');
 
     const entries: RecentChangeEntry[] = [];
     for (const idx of Object.values(this.pageIndex.pages)) {

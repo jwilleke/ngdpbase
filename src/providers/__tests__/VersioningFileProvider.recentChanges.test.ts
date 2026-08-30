@@ -224,7 +224,10 @@ describe('VersioningFileProvider.getRecentChanges', () => {
       expect(result.map(e => e.title)).toEqual(['EditorOnly']);
     });
 
-    test('includeAll bypasses the visibility filter (admin caller)', async () => {
+    test('an admin principal bypasses the visibility filter (#1116)', async () => {
+      // The caller supplies FACTS (its principals); the provider draws the
+      // conclusion. The old `includeAll` boolean was the conclusion handed
+      // over, and any caller could pass it.
       const p = makeProvider();
       p.pageIndex = {
         version: '1', lastUpdated: '', pageCount: 2,
@@ -233,8 +236,22 @@ describe('VersioningFileProvider.getRecentChanges', () => {
           priv2: baseEntry({ uuid: 'priv2', title: 'Bobs', isPrivate: true, creator: 'bob' })
         }
       };
-      const result = await p.getRecentChanges({ principals: ['admin'], includeAll: true });
+      const result = await p.getRecentChanges({ principals: ['admin'] });
       expect(result.map(e => e.title).sort()).toEqual(['Alices', 'Bobs']);
+    });
+
+    test('a stray includeAll from a legacy caller is ignored (#1116)', async () => {
+      const p = makeProvider();
+      p.pageIndex = {
+        version: '1', lastUpdated: '', pageCount: 1,
+        pages: {
+          priv1: baseEntry({ uuid: 'priv1', title: 'Alices', isPrivate: true, creator: 'alice' })
+        }
+      };
+      const result = await p.getRecentChanges(
+        { principals: ['mallory'], includeAll: true }
+      );
+      expect(result).toEqual([]);
     });
   });
 
@@ -327,11 +344,11 @@ describe('VersioningFileProvider.getRecentChanges', () => {
       expect(await p.getRecentChanges({ principals: ['anonymous'] })).toEqual([]);
     });
 
-    test('includeAll still bypasses the filter for admin callers', async () => {
+    test('an admin principal still bypasses the filter (#1116)', async () => {
       const p = withMetadata({ audience: ['jim'] });
       p.pageIndex = indexWith({ isPrivate: undefined });
 
-      expect(await p.getRecentChanges({ principals: ['anonymous'], includeAll: true }))
+      expect(await p.getRecentChanges({ principals: ['admin'] }))
         .toHaveLength(1);
     });
   });

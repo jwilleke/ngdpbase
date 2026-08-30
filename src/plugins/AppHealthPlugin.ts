@@ -5,7 +5,7 @@
  * index. Composes the same sources existing plugins use:
  *   - PageManager.getAllPages()                  (existing page set)
  *   - context.linkGraph                          (target → referrers; same as UndefinedPagesPlugin)
- *   - PageManager.getRecentChanges({includeAll}) (index-backed lastModified, #635)
+ *   - PageManager.getRecentChanges({principals}) (index-backed lastModified, #635/#1116)
  *
  * Checks:
  *   - orphans  : existing pages with no inbound page-link
@@ -47,7 +47,7 @@ interface RecentChange {
 
 interface PageManager {
   getAllPages(): Promise<string[]>;
-  getRecentChanges?(options?: { includeAll?: boolean; limit?: number }): Promise<RecentChange[]>;
+  getRecentChanges?(options?: { principals?: string[]; limit?: number }): Promise<RecentChange[]>;
 }
 
 type LinkGraph = Record<string, string[]>;
@@ -161,12 +161,21 @@ const AppHealthPlugin: SimplePlugin = {
           staleSkipped = true;
         } else {
           const cutoff = Date.now() - staleDays * 86_400_000;
-          // getRecentChanges defaults to limit=50 and sorts newest-first;
-          // `includeAll` only widens the privacy filter, NOT the count. An
+          // getRecentChanges defaults to limit=50 and sorts newest-first; an
           // explicit large limit is required or the stale check only ever
           // sees the 50 freshest pages (→ structurally always ~0 stale).
+          //
+          // #1116: the stale list is narrowed to the VIEWER's principals. The
+          // plugin renders inside any page its viewer can reach, so the old
+          // `includeAll: true` listed private page titles to whoever loaded
+          // the page. An admin viewing sees everything; others see their own.
+          const userContext = (context as { userContext?: { username?: string; roles?: string[] } }).userContext;
+          const principals = [
+            ...(userContext?.roles ?? []),
+            ...(userContext?.username ? [userContext.username] : [])
+          ];
           const changes = await pageManager.getRecentChanges({
-            includeAll: true,
+            principals,
             limit: Number.MAX_SAFE_INTEGER
           });
           results.stale = changes

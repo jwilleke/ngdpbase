@@ -1427,8 +1427,8 @@ class PageManager extends BaseManager implements CatalogSource {
    * Return pages most recently modified, sorted descending by lastModified (#635).
    *
    * Delegates to the provider's in-memory state (pageIndex / pageCache) — no
-   * direct disk I/O. Honors private-page visibility based on `options.principals`
-   * unless `options.includeAll` is set (admin caller).
+   * direct disk I/O. Honors private-page visibility based on `options.principals`;
+   * the provider derives the admin bypass from an `admin` principal (#1116).
    *
    * Used by RecentChangesPlugin and any other consumer that needs a "recent edits"
    * feed. New code should prefer this over enumerating getAllPages().

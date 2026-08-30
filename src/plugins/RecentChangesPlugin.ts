@@ -20,7 +20,6 @@
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
 import { escapeHtml, formatDateTime, formatRelativeTime } from '../utils/pluginFormatters.js';
-import WikiContext from '../context/WikiContext.js';
 
 interface RecentChangesParams extends PluginParams {
   since?: string | number;
@@ -139,22 +138,20 @@ const RecentChangesPlugin: SimplePlugin = {
       cutoffDate.setDate(cutoffDate.getDate() - since);
       cutoffDate.setHours(0, 0, 0, 0);
 
-      // #635: build principals + admin flag from userContext to drive provider-side
-      // visibility filter. Anonymous (no userContext) → empty principals → only
-      // public pages returned. Admin → includeAll bypass.
+      // #635/#1116: principals are FACTS about the caller — the provider
+      // derives the admin bypass from them. Anonymous (no userContext) →
+      // empty principals → only public pages returned.
       const userContext = context.userContext as {
         username?: string;
         roles?: string[];
       } | undefined;
-      const isAdmin = WikiContext.userHasRole(userContext, 'admin');
       const username = userContext?.username;
       const roles = userContext?.roles ?? [];
       const principals = [...roles, ...(username ? [username] : [])];
 
       const recentChanges = await pageManager.getRecentChanges({
         since: cutoffDate,
-        principals,
-        includeAll: isAdmin
+        principals
       });
 
       if (recentChanges.length === 0) {

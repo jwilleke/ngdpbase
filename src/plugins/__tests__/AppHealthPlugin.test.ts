@@ -124,3 +124,46 @@ describe('AppHealthPlugin', () => {
     expect((html.match(/<li>/g) || []).length).toBe(3); // but only max rendered
   });
 });
+
+describe('#1116 stale check supplies viewer facts, not an includeAll conclusion', () => {
+  function makeSpyContext(userContext?: { username?: string; roles?: string[] }) {
+    const calls: Array<Record<string, unknown>> = [];
+    return {
+      calls,
+      ctx: {
+        engine: {
+          getManager: (name: string) =>
+            name === 'PageManager'
+              ? {
+                getAllPages: async () => ['A'],
+                getRecentChanges: async (opts: Record<string, unknown>) => {
+                  calls.push(opts);
+                  return [];
+                }
+              }
+              : null
+        },
+        pageName: 'TestPage',
+        linkGraph: {},
+        ...(userContext ? { userContext } : {})
+      }
+    };
+  }
+
+  it('passes the viewer principals and never includeAll', async () => {
+    // The plugin renders inside a page any viewer can reach, so the stale
+    // list must be narrowed to what THAT viewer may see. includeAll: true
+    // here listed private page titles to whoever loaded the page.
+    const { ctx, calls } = makeSpyContext({ username: 'alice', roles: ['user'] });
+    await AppHealthPlugin.execute!(ctx, { checks: 'stale' });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].principals).toEqual(['user', 'alice']);
+    expect('includeAll' in calls[0]).toBe(false);
+  });
+
+  it('anonymous viewer: empty principals', async () => {
+    const { ctx, calls } = makeSpyContext();
+    await AppHealthPlugin.execute!(ctx, { checks: 'stale' });
+    expect(calls[0].principals).toEqual([]);
+  });
+});

@@ -83,10 +83,13 @@ export interface RecentChangesOptions {
    * Caller principals (typically `[...userContext.roles, userContext.username]`).
    * Used to evaluate audience visibility for private pages. If omitted (anonymous),
    * private pages are excluded.
+   *
+   * #1116: this is the ONLY visibility input. A caller supplies facts about who
+   * is asking, never the conclusion — the provider derives the admin bypass
+   * from an `admin` principal itself. The old `includeAll` boolean was the
+   * conclusion handed over, and any caller could pass `true`.
    */
   principals?: string[];
-  /** Bypass the visibility filter entirely (admin caller has already authorised). */
-  includeAll?: boolean;
 }
 
 /**
@@ -283,7 +286,8 @@ export interface PageProvider extends BaseProvider {
    *
    * Visibility (#635): private pages are filtered out unless one of the caller's
    * principals is the page creator OR appears in the page's frontmatter audience.
-   * Pass `includeAll: true` to bypass (admin caller).
+   * An `admin` principal bypasses the filter — derived here, never passed as a
+   * flag (#1116).
    *
    * Source-of-truth: providers MUST read from in-memory state (e.g., pageIndex /
    * pageCache) — direct disk reads were what motivated this API.

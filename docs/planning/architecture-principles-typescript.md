@@ -124,7 +124,7 @@ The whole architecture, stated without reference to records, wikis, or any parti
 7. __Roles collect permissions.__ Nothing more — a flat list, additive only.
 8. __Capability and scope are separate.__ A role says *what* may be done; the assignment says *over which subjects*. Neither is ever encoded in the other's name.
 9. __Evaluation is tiered, and the resource's own attributes beat global policy.__ That is how "everything except" is expressed without deny entries.
-10. __Decisions come in two forms__: one item, or a filter over many. Both are part of the contract, because a list endpoint that improvises its own check is a hole.
+10. __Decisions come in two forms__: one item, or a filter over many. Both are part of the contract, because a list endpoint that improvises its own check is a hole. The mechanism ([#1116](https://github.com/jwilleke/ngdpbase/issues/1116)): a caller supplies __facts about who is asking__ (its principals), never __the conclusion__ (an `includeAll`-style bypass flag) — the provider derives the bypass from the facts, so a caller cannot be wrong about it. First applied to `getRecentChanges` after the flag shape leaked private titles through a plugin any viewer could reach.
 11. __Access without an account is a principal, not a bypass.__ A share token resolves to a subject and goes through the same evaluator.
 12. __Every one of these is an invariant, so every one needs a check that fails.__ A rule enforced only by documentation decays silently, while the tests stay green.
 

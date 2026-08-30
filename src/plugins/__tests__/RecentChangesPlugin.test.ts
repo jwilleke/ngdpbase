@@ -155,17 +155,16 @@ describe('RecentChangesPlugin', () => {
   });
 
   describe('visibility — principals + admin forwarding', () => {
-    test('anonymous request: principals empty, includeAll false', async () => {
+    test('anonymous request: principals empty', async () => {
       const pm = makePageManager([]);
       const context = { engine: makeEngine(pm), pageName: 'X', linkGraph: {} };
       await RecentChangesPlugin.execute!(context, {});
       expect(pm.getRecentChanges).toHaveBeenCalledWith(expect.objectContaining({
-        principals: [],
-        includeAll: false
+        principals: []
       }));
     });
 
-    test('authenticated non-admin: principals = roles + username, includeAll false', async () => {
+    test('authenticated non-admin: principals = roles + username', async () => {
       const pm = makePageManager([]);
       const context = {
         engine: makeEngine(pm),
@@ -175,12 +174,14 @@ describe('RecentChangesPlugin', () => {
       };
       await RecentChangesPlugin.execute!(context, {});
       expect(pm.getRecentChanges).toHaveBeenCalledWith(expect.objectContaining({
-        principals: ['user', 'editor', 'alice'],
-        includeAll: false
+        principals: ['user', 'editor', 'alice']
       }));
     });
 
-    test('admin user: includeAll true (bypass visibility filter)', async () => {
+    test('admin user: supplies facts only — no includeAll conclusion (#1116)', async () => {
+      // The provider derives the bypass from the admin principal. The plugin
+      // no longer decides; a caller that cannot be wrong beats one that must
+      // be right.
       const pm = makePageManager([]);
       const context = {
         engine: makeEngine(pm),
@@ -189,9 +190,9 @@ describe('RecentChangesPlugin', () => {
         userContext: { username: 'root', roles: ['admin'] }
       };
       await RecentChangesPlugin.execute!(context, {});
-      expect(pm.getRecentChanges).toHaveBeenCalledWith(expect.objectContaining({
-        includeAll: true
-      }));
+      const call = pm.getRecentChanges.mock.calls[0][0];
+      expect(call.principals).toEqual(['admin', 'root']);
+      expect('includeAll' in call).toBe(false);
     });
 
     test('cutoff date forwarded as `since`', async () => {

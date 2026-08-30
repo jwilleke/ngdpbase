@@ -887,7 +887,8 @@ class FileSystemProvider extends BasePageProvider {
     const limit = typeof options.limit === 'number' && options.limit > 0 ? options.limit : 50;
     const since = options.since ? new Date(options.since) : null;
     const principals = options.principals ?? [];
-    const includeAll = options.includeAll === true;
+    // #1116: derived from the caller's principals, never accepted as a flag.
+    const includeAll = principals.includes('admin');
 
     const entries: RecentChangeEntry[] = [];
     for (const info of this.pageCache.values()) {
