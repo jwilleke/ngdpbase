@@ -20,7 +20,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import fse from 'fs-extra';
 import matter from 'gray-matter';
-import { normalizeExistingPageToNcm, localizeNcmImages, extractFootnoteDefs, ensureFootnotesPlugin } from '../converters/ncm/index.js';
+import { normalizeExistingPageToNcm, localizeNcmImages } from '../converters/ncm/index.js';
 import type { NcmImageDeps } from '../converters/ncm/index.js';
 import { createPatch } from 'diff';
 import { exec } from 'child_process';
@@ -8916,13 +8916,26 @@ ${panes}
         });
       }
 
+      // #1126: the ingest path adopts the #1125 footnote transfer — after the
+      // stale check (a refused save must not have written sidecar records),
+      // before the write. Definitions land in the footnote list; the body
+      // keeps its refs.
+      const fn = await this.transferPageFootnotes(
+        ncm.content,
+        ncmDoc.data.uuid as string | undefined,
+        currentUser.username ?? 'unknown',
+        false
+      );
+      const finalDoc = fn.warnings.length > 0 ? matter(fn.content) : ncmDoc;
+      ncmWarnings.push(...fn.warnings);
+
       const wikiContext = this.createWikiContext(req, {
         context: WikiContext.CONTEXT.EDIT,
         pageName,
-        content: ncmDoc.content,
+        content: finalDoc.content,
         response: res
       });
-      await pageManager.savePageWithContext(wikiContext, ncmDoc.data);
+      await pageManager.savePageWithContext(wikiContext, finalDoc.data);
 
       // Incremental, in-band index update (mirrors createPageFromTemplate).
       const saved = await pageManager.getPage(pageName);
@@ -13249,34 +13262,16 @@ ${panes}
     username: string,
     dryRun: boolean
   ): Promise<{ content: string; warnings: string[] }> {
+    // #1126: FootnoteManager.transferFromContent is THE implementation —
+    // convert, ingest, and import all delegate there so the funnel cannot
+    // drift per-path.
     const footnoteManager = this.engine.getManager('FootnoteManager') as
-      | { isEnabled?: () => boolean; importFootnote?: (uuid: string, id: string, d: { display: string; url: string; note: string }, by: string) => Promise<boolean> }
+      | { isEnabled?: () => boolean; transferFromContent?: (uuid: string, content: string, by: string, dryRun: boolean) => Promise<{ content: string; warnings: string[] }> }
       | null;
-    if (!pageUuid || !footnoteManager?.isEnabled?.() || !footnoteManager.importFootnote) {
+    if (!pageUuid || !footnoteManager?.isEnabled?.() || !footnoteManager.transferFromContent) {
       return { content, warnings: [] };
     }
-    const extracted = extractFootnoteDefs(content);
-    if (extracted.defs.length === 0) return { content, warnings: [] };
-
-    const warnings: string[] = [];
-    const kept: string[] = [];
-    for (const def of extracted.defs) {
-      if (dryRun) {
-        warnings.push(`footnote-transferred: [^${def.id}] → footnote list`);
-        continue;
-      }
-      const ok = await footnoteManager.importFootnote(pageUuid, def.id, def, username);
-      if (ok) {
-        warnings.push(`footnote-transferred: [^${def.id}] → footnote list`);
-      } else {
-        warnings.push(`footnote-skipped-exists: [^${def.id}] already in the footnote list; body definition kept`);
-        kept.push(`[^${def.id}]: ${def.display && def.url ? `[${def.display}](${def.url})` : def.url || def.note}`);
-      }
-    }
-    const body = kept.length > 0
-      ? `${extracted.content.replace(/\s*$/, '')}\n\n${kept.join('\n')}\n`
-      : extracted.content;
-    return { content: ensureFootnotesPlugin(body), warnings };
+    return footnoteManager.transferFromContent(pageUuid, content, username, dryRun);
   }
 
   /**

@@ -136,6 +136,45 @@ export default class FootnoteManager extends BaseManager {
     return true;
   }
 
+  /**
+   * #1125/#1126: transfer `[^id]: text` definitions from a body into this
+   * sidecar, returning the rewritten body. THE one implementation — the
+   * convert route, agent ingest, and ImportManager all delegate here, so the
+   * funnel cannot drift per-path. dryRun reports and rewrites without
+   * writing. A colliding id keeps its body definition and warns.
+   */
+  async transferFromContent(
+    pageUuid: string,
+    content: string,
+    createdBy: string,
+    dryRun: boolean
+  ): Promise<{ content: string; warnings: string[] }> {
+    if (!this.enabled) return { content, warnings: [] };
+    const { extractFootnoteDefs, ensureFootnotesPlugin } = await import('../converters/ncm/footnotes.js');
+    const extracted = extractFootnoteDefs(content);
+    if (extracted.defs.length === 0) return { content, warnings: [] };
+
+    const warnings: string[] = [];
+    const kept: string[] = [];
+    for (const def of extracted.defs) {
+      if (dryRun) {
+        warnings.push(`footnote-transferred: [^${def.id}] → footnote list`);
+        continue;
+      }
+      const ok = await this.importFootnote(pageUuid, def.id, def, createdBy);
+      if (ok) {
+        warnings.push(`footnote-transferred: [^${def.id}] → footnote list`);
+      } else {
+        warnings.push(`footnote-skipped-exists: [^${def.id}] already in the footnote list; body definition kept`);
+        kept.push(`[^${def.id}]: ${def.display && def.url ? `[${def.display}](${def.url})` : def.url || def.note}`);
+      }
+    }
+    const body = kept.length > 0
+      ? `${extracted.content.replace(/\s*$/, '')}\n\n${kept.join('\n')}\n`
+      : extracted.content;
+    return { content: ensureFootnotesPlugin(body), warnings };
+  }
+
   async updateFootnote(
     pageUuid: string,
     id: string,

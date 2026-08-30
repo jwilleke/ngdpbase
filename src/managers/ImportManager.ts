@@ -732,6 +732,29 @@ class ImportManager extends BaseManager {
     }
     conversionResult.content = rewritten;
 
+    // #1126: the import path adopts the #1125 footnote transfer — body
+    // definitions become sidecar footnote-list records via the ONE
+    // implementation in FootnoteManager, the same one convert and ingest
+    // use. Dry runs report without writing; a page without a uuid (or a
+    // disabled FootnoteManager) is left untouched.
+    {
+      const targetUuid = overwriteExistingUuid ?? pageUuid;
+      const footnoteManager = this.engine.getManager('FootnoteManager') as
+        | { isEnabled?: () => boolean; transferFromContent?: (uuid: string, content: string, by: string, dryRun: boolean) => Promise<{ content: string; warnings: string[] }> }
+        | null;
+      if (targetUuid && footnoteManager?.isEnabled?.() && footnoteManager.transferFromContent) {
+        const fn = await footnoteManager.transferFromContent(
+          targetUuid, conversionResult.content, 'import', options.dryRun === true
+        );
+        if (fn.warnings.length > 0) {
+          conversionResult.content = fn.content;
+          for (const w of fn.warnings) {
+            conversionResult.warnings.push({ kind: 'converter-note', detail: w });
+          }
+        }
+      }
+    }
+
     // Build frontmatter if we have metadata
     let finalContent = conversionResult.content;
     if (Object.keys(conversionResult.metadata).length > 0 || options.generateUUIDs !== false) {

@@ -303,4 +303,39 @@ describe('FootnoteManager', () => {
     });
   });
 
+
+  // #1126: the ONE transfer implementation all funnel paths delegate to.
+  describe('transferFromContent (#1126)', () => {
+    test('moves definitions to the sidecar and rewrites the body', async () => {
+      const src = 'A claim[^1].\n\n[^1]: Supporting note.\n';
+      const out = await fm.transferFromContent('uuid-t', src, 'importer', false);
+      expect(out.warnings).toEqual(['footnote-transferred: [^1] → footnote list']);
+      expect(out.content).not.toContain('[^1]:');
+      expect(out.content).toContain('[{FootnotesPlugin}]');
+      const all = await fm.getFootnotes('uuid-t');
+      expect(all[0]).toMatchObject({ id: '1', note: 'Supporting note.', createdBy: 'importer' });
+    });
+
+    test('dry run reports and rewrites but writes nothing', async () => {
+      const out = await fm.transferFromContent('uuid-d', 'x[^1]\n\n[^1]: note\n', 'importer', true);
+      expect(out.warnings).toHaveLength(1);
+      expect(out.content).not.toContain('[^1]:');
+      expect(await fm.getFootnotes('uuid-d')).toEqual([]);
+    });
+
+    test('a colliding id keeps its body definition and warns', async () => {
+      await fm.importFootnote('uuid-c', '1', { display: '', url: '', note: 'original' }, 'jim');
+      const out = await fm.transferFromContent('uuid-c', 'x[^1]\n\n[^1]: other\n', 'importer', false);
+      expect(out.warnings[0]).toMatch(/^footnote-skipped-exists/);
+      expect(out.content).toContain('[^1]: other');
+      expect((await fm.getFootnotes('uuid-c'))[0].note).toBe('original');
+    });
+
+    test('no definitions: byte-identical content, no warnings', async () => {
+      const src = 'plain body\n';
+      const out = await fm.transferFromContent('uuid-p', src, 'importer', false);
+      expect(out).toEqual({ content: src, warnings: [] });
+    });
+  });
+
 });

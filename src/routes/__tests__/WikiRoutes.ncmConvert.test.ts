@@ -98,6 +98,10 @@ describe('#1127 convert-to-NCM is gated on the page edit ACL', () => {
 
 describe('#1125 convert transfers footnote definitions to the sidecar list', () => {
   function makeFootnoteRoutes() {
+    // #1126: the route delegates to FootnoteManager.transferFromContent —
+    // the ONE implementation. This mock reproduces its contract on top of an
+    // importFootnote spy so the assertions below still pin per-definition
+    // behaviour (ids preserved, caller as author, collision keeps body def).
     const importFootnote = vi.fn().mockResolvedValue(true);
     const savePageWithContext = vi.fn().mockResolvedValue(undefined);
     const pageManager = {
@@ -111,7 +115,26 @@ describe('#1125 convert transfers footnote definitions to the sidecar list', () 
       getManager: vi.fn((name: string) => {
         if (name === 'PageManager') return pageManager;
         if (name === 'ACLManager') return { checkPagePermissionWithContext: vi.fn().mockResolvedValue(true) };
-        if (name === 'FootnoteManager') return { isEnabled: () => true, importFootnote };
+        if (name === 'FootnoteManager') {
+          return {
+            isEnabled: () => true,
+            async transferFromContent(uuid: string, content: string, by: string, dryRun: boolean) {
+              const { extractFootnoteDefs, ensureFootnotesPlugin } = await import('../../converters/ncm/footnotes');
+              const ex = extractFootnoteDefs(content);
+              if (ex.defs.length === 0) return { content, warnings: [] };
+              const warnings: string[] = [];
+              const kept: string[] = [];
+              for (const def of ex.defs) {
+                if (dryRun) { warnings.push(`footnote-transferred: [^${def.id}] → footnote list`); continue; }
+                const ok = await importFootnote(uuid, def.id, def, by);
+                if (ok) warnings.push(`footnote-transferred: [^${def.id}] → footnote list`);
+                else { warnings.push(`footnote-skipped-exists: [^${def.id}] already in the footnote list; body definition kept`); kept.push(`[^${def.id}]: ${def.url || def.note}`); }
+              }
+              const body = kept.length ? `${ex.content.replace(/\s*$/, '')}\n\n${kept.join('\n')}\n` : ex.content;
+              return { content: ensureFootnotesPlugin(body), warnings };
+            }
+          };
+        }
         if (name === 'ConfigurationManager') return { getProperty: (_k: string, d: unknown) => d };
         return null;
       })
