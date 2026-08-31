@@ -39,6 +39,8 @@ import { writeRunSummary, type ImportRunSummary } from '../utils/importRunSummar
 import JSPWikiConverter from '../converters/JSPWikiConverter.js';
 import HtmlConverter from '../converters/HtmlConverter.js';
 import DocxConverter from '../converters/DocxConverter.js';
+import { guardedFetch } from '../http/guardedFetch.js';
+import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import MarkdownConverter from '../converters/MarkdownConverter.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type ValidationManager from './ValidationManager.js';
@@ -949,31 +951,44 @@ class ImportManager extends BaseManager {
       throw new Error(`Invalid URL: ${url}`);
     }
 
-    if (!parsedUrl.protocol.startsWith('http')) {
+    // #1133: an exact allow-list, not startsWith('http') — which accepts
+    // `httpfoo:` and happened to be safe only because fetch rejects unknown
+    // schemes. guardedFetch checks this too; keeping it here preserves the
+    // specific error an operator sees for a mistyped scheme.
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
       throw new Error('Only HTTP and HTTPS URLs are supported');
     }
 
     // Fetch the page
     logger.info(`[ImportManager] Fetching URL: ${url}`);
-    const response = await fetch(url, {
+    const egressConfig = this.engine?.getManager?.<ConfigurationManager>('ConfigurationManager');
+    const egress = resolveEgressPolicy((key, fallback) => egressConfig?.getProperty?.(key, fallback));
+    const timeoutMs = (egressConfig?.getProperty?.('ngdpbase.fetch-timeout-ms', 30000) as number) || 30000;
+
+    // #1133: admin-system gates this, but an admin who may edit a wiki has not
+    // thereby been granted the right to read the host's network position — and
+    // the fetched HTML is converted and written as a page, so it is a full-read
+    // path. The guard judges the resolved address on every redirect hop.
+    const response = await guardedFetch(url, {
+      policy: egress.policy,
       headers: {
         'User-Agent': 'ngdpbase/1.0 (URL Import)',
         'Accept': 'text/html,application/xhtml+xml'
       },
-      redirect: 'follow',
-      signal: AbortSignal.timeout(30000)
+      timeoutMs
     });
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch URL: HTTP ${response.status} ${response.statusText}`);
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`Failed to fetch URL: HTTP ${response.status}`);
     }
 
-    const contentType = response.headers.get('content-type') || '';
+    const contentTypeHeader = response.headers['content-type'];
+    const contentType = (Array.isArray(contentTypeHeader) ? contentTypeHeader[0] : contentTypeHeader) || '';
     if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
       throw new Error(`URL did not return HTML content (got ${contentType})`);
     }
 
-    const html = await response.text();
+    const html = response.body.toString('utf8');
 
     // Get the HTML converter
     const converter = this.converterRegistry.get('html');

@@ -24,6 +24,7 @@ import { runReadinessChecks, buildReadinessReport } from './utils/healthChecks.j
 import { resolveListenPort } from './utils/resolveListenPort.js';
 
 import logger from './utils/logger.js';
+import { resolveEgressPolicy } from './http/egressPolicy.js';
 import WikiEngine from './WikiEngine.js';
 import type { WikiEngine as IWikiEngine } from './types/WikiEngine.js';
 import WikiRoutes from './routes/WikiRoutes.js';
@@ -286,6 +287,29 @@ void (async (): Promise<void> => {
     engine.app = app; // expose Express app to add-ons before initialization (#359)
     await engine.initialize();
     engineRef = engine;
+
+    // #1133: reconcile the outbound CIDR lists HERE, at boot. Deferring it to
+    // the first fetch would surface a contradictory configuration as one
+    // dropped image with a `fetch` warning — indistinguishable from the remote
+    // host being down. The offending entry is dropped on every profile; the
+    // profile decides only whether the instance also refuses to start, the
+    // same shape as ngdpbase.audit.on-failure (#1118, #1137).
+    const egressCm = engine.getManager<import('./managers/ConfigurationManager.js').default>('ConfigurationManager');
+    const egress = resolveEgressPolicy((key, fallback) => egressCm?.getProperty?.(key, fallback));
+    if (egress.conflicts.length > 0) {
+      for (const conflict of egress.conflicts) {
+        logger.warn(`⚠️  [egress] ${conflict}`);
+      }
+      if (egress.fatal) {
+        throw new Error(
+          'Outbound egress configuration is contradictory and ngdpbase.security.profile is not \'baseline\'. ' +
+          'Fix ngdpbase.security.egress.allowed-ranges / denied-ranges, or set the profile to \'baseline\' ' +
+          'to start with the offending entries dropped.'
+        );
+      }
+      logger.warn('[egress] the offending entries were dropped; the boundary is still enforced');
+    }
+
     console.log('✅ ngdpbase Engine initialized successfully.');
   } catch (error) {
     console.error('🔥🔥🔥 FATAL: Failed to initialize ngdpbase Engine.');

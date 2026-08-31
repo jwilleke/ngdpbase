@@ -21,6 +21,8 @@ const __dirname = path.dirname(__filename);
 import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { normalizeExistingPageToNcm, localizeNcmImages } from '../converters/ncm/index.js';
+import { guardedFetch } from '../http/guardedFetch.js';
+import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import type { NcmImageDeps } from '../converters/ncm/index.js';
 import { createPatch } from 'diff';
 import { exec } from 'child_process';
@@ -13089,15 +13091,24 @@ ${panes}
     const fetchTimeoutMs = (cm?.getProperty?.('ngdpbase.fetch-timeout-ms', 30000) as number) || 30000;
     const attachmentManager = this.engine.getManager('AttachmentManager');
 
+    // #1133: the URL comes from an <img src> in page content and the gate is
+    // the page's own edit ACL (#1127), so this fetch is a capability the editor
+    // does not otherwise have — the ability to make the server issue a request
+    // from inside the network. guardedFetch judges the address actually
+    // resolved, on every redirect hop; a bare fetch with redirect:'follow'
+    // could be sent to 169.254.169.254 by a two-line page edit.
+    const egress = resolveEgressPolicy((key, fallback) => cm?.getProperty?.(key, fallback));
+
     const deps: NcmImageDeps = {
       fetchBytes: async (url: string, timeoutMs: number): Promise<Buffer> => {
-        const r = await fetch(url, {
+        const r = await guardedFetch(url, {
+          policy: egress.policy,
           headers: { 'User-Agent': 'ngdpbase/1.0 (NCM image)' },
-          redirect: 'follow',
-          signal: AbortSignal.timeout(timeoutMs)
+          timeoutMs,
+          maxBytes
         });
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return Buffer.from(await r.arrayBuffer());
+        if (r.status < 200 || r.status >= 300) throw new Error(`HTTP ${r.status}`);
+        return r.body;
       },
       storeAttachment: async ({ bytes, mime, sourceUrl }): Promise<string> => {
         const ext = (mime.split('/')[1] || 'bin').toLowerCase();
