@@ -42,6 +42,19 @@ export interface FormerTitleSource {
   formerTitles?: unknown;
 }
 
+/**
+ * A frontmatter title as a trimmed string, or '' when it is not one.
+ *
+ * #1141: `(value ?? '').trim()` guards null and undefined but not a WRONG
+ * TYPE, and YAML reads `title: 2024` as a number. One such page threw inside
+ * `buildFormerTitleIndex`, which runs on the miss path of every page view — so
+ * a single malformed page made EVERY non-existent page return HTTP 500 instead
+ * of the create-page flow.
+ */
+function asTitle(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 /** Coerce an unknown frontmatter value into a clean list of titles. */
 function normalizeList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -72,8 +85,8 @@ export function computeFormerTitles(
   newTitle: string | undefined | null
 ): string[] | undefined {
   const held = normalizeList(existing);
-  const from = (previousTitle ?? '').trim();
-  const to = (newTitle ?? '').trim();
+  const from = asTitle(previousTitle);
+  const to = asTitle(newTitle);
 
   // Not a rename — leave whatever is held untouched.
   if (!from || !to || from === to) {
@@ -110,12 +123,12 @@ export function buildFormerTitleIndex(
   const live = new Set<string>();
 
   for (const page of pages) {
-    const title = (page?.title ?? '').trim();
+    const title = asTitle(page?.title);
     if (title) live.add(title.toLowerCase());
   }
 
   for (const page of pages) {
-    const title = (page?.title ?? '').trim();
+    const title = asTitle(page?.title);
     if (!title) continue;
 
     for (const former of normalizeList(page.formerTitles)) {

@@ -96,4 +96,41 @@ describe('buildFormerTitleIndex()', () => {
     expect(index.get('one')).toBe('Current');
     expect(index.get('two')).toBe('Current');
   });
+
+  /**
+   * #1141 — `(page?.title ?? '').trim()` guards null and undefined but not a
+   * WRONG TYPE, and YAML frontmatter reads `title: 2024` as a number. One such
+   * page threw here, and because this index is built on the miss path of every
+   * page view, it made EVERY non-existent page return HTTP 500 rather than the
+   * create-page flow. A malformed page must be skipped, never fatal to the
+   * whole index.
+   */
+  describe('a page with a malformed title (#1141)', () => {
+    const badTitles: unknown[] = [2024, true, { a: 1 }, ['x'], null, undefined];
+
+    test.each(badTitles)('does not throw when a title is %p', (bad) => {
+      expect(() =>
+        buildFormerTitleIndex([{ title: bad, formerTitles: ['Old'] } as never])
+      ).not.toThrow();
+    });
+
+    test('skips the malformed page but still indexes the good ones', () => {
+      const index = buildFormerTitleIndex([
+        { title: 2024, formerTitles: ['Ignored'] } as never,
+        { title: 'Good', formerTitles: ['Old Name'] }
+      ]);
+      expect(index.get('old name')).toBe('Good');
+      expect(index.has('ignored')).toBe(false);
+    });
+
+    test('a malformed title does not claim the live-title slot', () => {
+      // If the bad page were coerced to '' or 'undefined' it could mark an
+      // unrelated key ambiguous and silently break a real redirect.
+      const index = buildFormerTitleIndex([
+        { title: undefined, formerTitles: [] } as never,
+        { title: 'Real', formerTitles: ['Old Name'] }
+      ]);
+      expect(index.get('old name')).toBe('Real');
+    });
+  });
 });
