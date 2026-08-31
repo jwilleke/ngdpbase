@@ -47,6 +47,22 @@ LABEL org.opencontainers.image.source="https://github.com/jwilleke/ngdpbase"
 
 WORKDIR /app
 
+# Take whatever Alpine has already fixed, rather than waiting on the base image
+# to republish (#1143).
+#
+# Trivy raised 20 alerts against v4.12.1 — 10 OpenSSL CVEs across libcrypto3 and
+# libssl3, all fixed in 3.5.8-r0. `node:24-alpine` still ships 3.5.7-r0, so a
+# rebuild with --pull does NOT clear them; the fix exists in Alpine's repo and
+# nothing was reaching for it.
+#
+# Deliberately a blanket upgrade rather than pinning the two packages. This
+# Dockerfile already carries the lesson from #859/#956 — that chasing a
+# vendored tree's lag "means living with whatever CVEs it carries, on someone
+# else's release schedule". Naming individual packages here would be the same
+# trap in a new place: it fixes this CVE set and silently misses the next one.
+# The smoke test (#1142) covers the risk that an upgrade breaks first boot.
+RUN apk upgrade --no-cache
+
 # Install runtime dependencies only (for bcrypt native bindings)
 # Note: g++ is needed at runtime for node-gyp if bcrypt needs recompilation
 RUN apk add --no-cache libstdc++
