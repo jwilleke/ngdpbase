@@ -61,7 +61,7 @@ The rest of this document is the evidence behind that table, and the proposal be
 
 ## Not every deployment needs the same posture
 
-A home wiki and a records system should not be forced into the same failure policy. But *"is this secure?"* is the wrong question to put in a configuration file, for two reasons worth stating before the shape.
+A home wiki and a records system should not be forced into the same failure policy. But *"is this secure?"* is the wrong question to put in a configuration file, for two reasons that are specific to auditing and worth keeping here.
 
 __A flag that gates a mechanism creates two code paths, and the weak one is what everybody runs.__ If tamper evidence is skipped when security is off, the chain code is exercised only on the rare hardened instance — so the path compliance depends on is the least tested. That is how security modes rot.
 
@@ -80,32 +80,21 @@ Most of the plan costs nothing, and the split falls out:
 | Critical events durable before the action | Latency on login and mint | __Yes__ |
 | `page.view` auditing | Volume and noise | __Yes__ |
 
-So the mechanism is always present; what varies is __how hard the system fails__ and __how much it records__. Three knobs, not a security switch.
+So the mechanism is always present; what varies is __how hard the system fails__ and __how much it records__. Three knobs, not a security switch — and that split is exactly what rule 2 in the profile document generalises.
 
-### Precedent, including one instructive failure
+The mechanism that answers this — `ngdpbase.security.profile`, its levels, the rules that keep it
+honest, and what each level defaults — is now [security-profile.md](./security-profile.md). It moved
+there when it stopped being an audit concern: network egress became its second consumer in
+[#1133](https://github.com/jwilleke/ngdpbase/issues/1133), and session policy, registration and rate
+limiting are the same shape. Tracked by [#1137](https://github.com/jwilleke/ngdpbase/issues/1137).
 
-Named profiles over individually-settable keys is well-trodden: __Kubernetes Pod Security Standards__ (`privileged` / `baseline` / `restricted`), __CIS Benchmarks__ Level 1 and Level 2 — explicitly divided by functional impact rather than by whether security exists — and __NIST SP 800-53__ LOW / MODERATE / HIGH control baselines. __SLSA__ contributes a different idea worth stealing: each level is defined by what you can __demonstrate__, and you publish which one you meet.
-
-The cautionary case is __NIST SP 800-63__. Its 2013 edition had a single Level of Assurance, LOA 1–4. The 2017 revision deleted it in favour of three independent axes — IAL, AAL and FAL — because the components do not move together, and one dial forced deployments to over-implement one property to obtain another.
-
-That applies directly here. Our three knobs are independent: a home instance might want tamper evidence with no read auditing and no refuse-to-boot; a regulated one might want refuse-to-boot and still no read auditing. A single scale cannot express either.
-
-### The shape
+The audit-specific keys it defaults:
 
 ```text
-ngdpbase.security.profile: "baseline" | "hardened"     # selects defaults only
 ngdpbase.audit.on-failure: "continue" | "refuse-boot"
-ngdpbase.audit.critical-durability: "async" | "sync"
-ngdpbase.audit.reads: "off" | "sampled" | "full"
+ngdpbase.audit.retentiondays: 90
+ngdpbase.audit.read-events: true | false
 ```
-
-Three rules keep it honest:
-
-- __The profile is a preset, never a gate.__ It sets defaults for keys that remain individually settable, so *"baseline, but refuse-to-boot"* is expressible. Yes, two profile values is a boolean wearing better manners — that is fine, because the expressiveness lives in the keys beneath it, which is exactly the 800-63 lesson.
-- __No profile disables a mechanism.__ Integrity, the registry and capability reporting are unconditional. A profile changes failure policy and volume only.
-- __The instance publishes its effective posture__, not its profile name. A home wiki says *"I guarantee tamper evidence and completeness; I do not guarantee critical durability or read auditing"* — a true and useful statement rather than a lesser one.
-
-Naming avoids `strict` and `secure` deliberately: both imply the alternative is insecure, which is what makes an operator pick the wrong one for the wrong reason. `baseline` and `hardened` follow the Kubernetes convention.
 
 ## Why "provable" is the operative word
 
