@@ -2,7 +2,7 @@
   "ngdpbase.application-name": "ngdp-instance",
   "ngdpbase.favicon-path": "/favicon.svg",
   "ngdpbase.application.category": "Digital Platform",
-  "ngdpbase.version": "4.11.1",
+  "ngdpbase.version": "4.12.0",
   "ngdpbase.github.repo": "jwilleke/ngdpbase",
   "ngdpbase.application.base-url": "http://localhost:3000",
   "ngdpbase.encoding": "UTF-8",
@@ -346,7 +346,6 @@
   "_comment_audit_provider_database": "DatabaseAuditProvider settings (future)",
   "_comment_audit_scaffolds": "#1118 — DatabaseAuditProvider and CloudAuditProvider are SCAFFOLDS. Their source is a list of TODOs and both refuse at initialize(). Their configuration keys were removed rather than left here: a populated connectionstring reads as a working feature, and selecting one previously produced an instance that silently audited nowhere. Restore these keys in the same change that implements the provider, not before.",
   "_comment_audit_provider_cloud": "CloudAuditProvider settings (future)",
-
   "_comment_markup": "MarkupParser and Handler system configuration",
   "_comment_markup_render_tags": "Fenced code block language tags the system recognises. Tags not in this list are flagged as unknown on page save. 'wiki' is intentionally absent — it has no special meaning here.",
   "ngdpbase.markup.fenced-code-tags": [
