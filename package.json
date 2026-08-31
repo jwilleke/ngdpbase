@@ -110,6 +110,7 @@
     "gray-matter": "^4.0.3",
     "heic-decode": "^2.1.0",
     "husky": "^9.1.7",
+    "ipaddr.js": "^1.9.1",
     "jose": "^6.2.3",
     "linkedom": "^0.18.12",
     "lunr": "^2.3.9",
