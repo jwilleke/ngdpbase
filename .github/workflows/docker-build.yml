@@ -109,23 +109,83 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # #1142: this used to start the container with NO password and assert it
+      # came up, on the reasoning that a fresh headless install must boot
+      # unattended on the shipped defaults (#1033, #1035).
+      #
+      # #1087 deliberately reversed that. A headless install resolving the
+      # well-known `admin123` from this repository now REFUSES to start, because
+      # it previously failed open onto a published credential while the docs
+      # claimed it failed closed. The old assertion therefore tested for exactly
+      # the behaviour that was removed on purpose, and failed because the
+      # removal worked — silently, since this workflow only runs on tags, so
+      # v4.12.0 was the first tag to reveal it and published a half release:
+      # `4.12.0` and `latest` pushed, `4.12.0-devtools` never built.
+      #
+      # Both halves are asserted now, which is stronger than either alone.
+      - name: Smoke test — an unconfigured headless install must REFUSE to boot
+        run: |
+          docker rm -f ngdpbase-smoke-refuse 2>/dev/null || true
+          docker run -d --name ngdpbase-smoke-refuse \
+            -e HEADLESS_INSTALL=true \
+            -e NODE_ENV=production \
+            ${{ steps.img.outputs.ref }}
+
+          # It should exit almost immediately. Give it room, then require that
+          # it is gone AND that it said why.
+          for i in $(seq 1 12); do
+            RUNNING=$(docker inspect --format='{{.State.Running}}' ngdpbase-smoke-refuse 2>/dev/null || echo "false")
+            [ "$RUNNING" = "false" ] && break
+            echo "  attempt $i/12: still running"
+            sleep 5
+          done
+
+          if [ "$(docker inspect --format='{{.State.Running}}' ngdpbase-smoke-refuse 2>/dev/null)" = "true" ]; then
+            echo "FAILED: a headless install with no admin password came up. #1087's guard is not"
+            echo "        working in this image — it would create admin/admin123, a credential"
+            echo "        published in this repository."
+            docker logs ngdpbase-smoke-refuse
+            docker rm -f ngdpbase-smoke-refuse 2>/dev/null || true
+            exit 1
+          fi
+
+          if ! docker logs ngdpbase-smoke-refuse 2>&1 | grep -q "Refusing to create the bootstrap admin account"; then
+            echo "FAILED: the container stopped, but not for #1087's reason. Something else is"
+            echo "        wrong with first boot; the refusal message is absent."
+            docker logs ngdpbase-smoke-refuse
+            docker rm -f ngdpbase-smoke-refuse 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "Refused to bootstrap on the shipped password, as #1087 requires."
+          docker rm -f ngdpbase-smoke-refuse 2>/dev/null || true
+
       - name: Smoke test — start container
         run: |
-          # Deliberately NO NGDPBASE_ADMIN_PASSWORD. A fresh container with an
-          # empty volume must come up unattended on the shipped defaults, and
-          # this is the only check that proves it.
+          # A configured headless install — the way a real unattended deploy is
+          # set up — must come up. This is the original first-boot check from
+          # #1033 / #1035, kept intact.
           #
-          # v4.8.0 briefly removed the default admin password, which made
-          # exactly this case refuse to boot and failed every release build
-          # from then on. Supplying the variable here would have made CI green
-          # while real first-run installs stayed broken — so it is left out on
-          # purpose. If this step starts failing, a change has broken
-          # first-boot, which is the signal wanted (#1033, #1035).
+          # The config file is required: #1087's guard compares the RESOLVED
+          # password rather than reading the variable, so exporting
+          # NGDPBASE_ADMIN_PASSWORD alone still resolves to the shipped default
+          # and is still refused.
+          mkdir -p "$RUNNER_TEMP/smoke-data/config"
+          cat > "$RUNNER_TEMP/smoke-data/config/app-custom-config.json" <<'JSON'
+          {
+            "ngdpbase.user.security.defaultpassword": "$NGDPBASE_ADMIN_PASSWORD"
+          }
+          JSON
+
+          SMOKE_PW="ci-smoke-$(openssl rand -hex 12)"
+
           docker run -d \
             --name ngdpbase-smoke \
             -p 3000:3000 \
             -e HEADLESS_INSTALL=true \
             -e NODE_ENV=production \
+            -e NGDPBASE_ADMIN_PASSWORD="$SMOKE_PW" \
+            -v "$RUNNER_TEMP/smoke-data:/app/data" \
             ${{ steps.img.outputs.ref }}
 
       - name: Smoke test — wait for healthy
@@ -177,9 +237,11 @@ jobs:
         if: failure()
         run: docker logs ngdpbase-smoke 2>&1 || true
 
-      - name: Smoke test — stop container
+      - name: Smoke test — stop containers
         if: always()
-        run: docker rm -f ngdpbase-smoke 2>/dev/null || true
+        run: |
+          docker rm -f ngdpbase-smoke 2>/dev/null || true
+          docker rm -f ngdpbase-smoke-refuse 2>/dev/null || true
 
       # #1001: assert the runtime image really has no npm. #956 removed it and
       # nothing checked, so a later edit could put it back unnoticed — and the
