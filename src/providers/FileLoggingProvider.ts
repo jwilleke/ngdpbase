@@ -57,9 +57,54 @@ class FileLoggingProvider extends BaseLoggingProvider {
       format.printf((info) => {
         const ts = typeof info.timestamp === 'string' ? info.timestamp : JSON.stringify(info.timestamp);
         const msg = typeof info.message === 'string' ? info.message : JSON.stringify(info.message);
-        return `${ts} [${info.level}]: ${msg}`;
+        // #1141: render the metadata too. This printf used to emit only
+        // timestamp/level/message, so the second argument of every
+        // `logger.error(msg, { error, stack })` call in the codebase was
+        // dropped — a 500 on every missing page logged as the bare line
+        // `[error]: [VIEW] Error viewing page`, with the cause nowhere on
+        // disk. Redaction runs before this (see redactSecretsFormat above),
+        // so what arrives here has already been stripped of secrets.
+        const meta = FileLoggingProvider.renderMeta(info);
+        return meta ? `${ts} [${info.level}]: ${msg} ${meta}` : `${ts} [${info.level}]: ${msg}`;
       })
     );
+  }
+
+  /**
+   * Render whatever a caller passed as the second argument to `logger.*`.
+   *
+   * Winston merges that object onto `info` alongside its own keys, so the
+   * three it owns are excluded, as are its symbol-keyed internals (`level`,
+   * `message`, `splat`) — those are winston's plumbing and putting them in the
+   * line would be noise at best.
+   *
+   * A `stack` is emitted on its own lines because a one-line stack is
+   * unreadable, and reading the stack is the entire reason this exists.
+   *
+   * @param info - The winston info object for one log record
+   * @returns The rendered metadata, or an empty string when there is none
+   */
+  private static renderMeta(info: Record<string, unknown>): string {
+    const own = new Set(['timestamp', 'level', 'message']);
+    const parts: string[] = [];
+    let stack: string | undefined;
+
+    for (const key of Object.keys(info)) {
+      if (own.has(key)) continue;
+      const value = info[key];
+      if (value === undefined) continue;
+      if (key === 'stack' && typeof value === 'string') {
+        stack = value;
+        continue;
+      }
+      parts.push(`${key}=${typeof value === 'string' ? value : JSON.stringify(value)}`);
+    }
+
+    const inline = parts.length > 0 ? parts.join(' ') : '';
+    if (stack) {
+      return inline ? `${inline}\n${stack}` : stack;
+    }
+    return inline;
   }
 
   getProviderInfo(): LoggingProviderInfo {
