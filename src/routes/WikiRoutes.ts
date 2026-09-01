@@ -1578,20 +1578,44 @@ class WikiRoutes {
    * GET /api/check-updates
    * Compare running version against latest GitHub release.
    * Returns { currentVersion, latestVersion, updateAvailable, releaseUrl }
+   *
+   * #1140 — gated on the same permission pair as the admin dashboard, because
+   * the dashboard's update card is the only caller. Anonymously it let a
+   * stranger make this instance call out to GitHub, and told them the
+   * configured repository and the running version while doing it.
    */
-  async checkForUpdates(_req: Request, res: Response): Promise<void> {
+  async checkForUpdates(req: Request, res: Response): Promise<void> {
     try {
+      const wikiContext = this.createWikiContext(req);
+      if (
+        !wikiContext.userContext?.isAuthenticated ||
+        !(await this.hasAdminViewAccess(wikiContext))
+      ) {
+        res.status(403).json({
+          error: 'This account cannot check for updates',
+          reason: "Requires the 'admin-read' or 'admin-system' permission — the check reveals the configured repository and the running version, and makes the instance call out to GitHub"
+        });
+        return;
+      }
+
       const configManager = this.engine.getManager('ConfigurationManager');
       const currentVersion = configManager.getProperty('ngdpbase.version', '0.0.0');
       const githubRepo = configManager.getProperty('ngdpbase.github.repo', 'jwilleke/ngdpbase');
+      // Same key and same fallback as the other two outbound call sites.
+      const fetchTimeoutMs =
+        (configManager.getProperty('ngdpbase.fetch-timeout-ms', 30000) as number) || 30000;
 
+      // One complete URL string, deliberately. Passing an { origin, path } pair
+      // to a client that re-parses the path is CVE-2022-35949, and `githubRepo`
+      // is interpolated into the path here.
       const apiUrl = `https://api.github.com/repos/${githubRepo}/releases/latest`;
       let latestVersion: string | null = null;
       let releaseUrl: string | null = null;
 
       try {
         const resp = await fetch(apiUrl, {
-          headers: { 'User-Agent': 'ngdpbase-update-check', 'Accept': 'application/vnd.github+json' }
+          headers: { 'User-Agent': 'ngdpbase-update-check', 'Accept': 'application/vnd.github+json' },
+          signal: AbortSignal.timeout(fetchTimeoutMs)
         });
         if (resp.ok) {
           const data = await resp.json() as { tag_name?: string; html_url?: string };

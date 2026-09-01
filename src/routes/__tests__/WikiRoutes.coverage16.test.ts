@@ -850,6 +850,48 @@ describe('WikiRoutes — coverage batch 16', () => {
       expect(res.status).toBe(200);
       expect(res.body.latestVersion).toBeNull();
     });
+
+    // #1140 — the route was reachable anonymously and its fetch had no deadline.
+    test('refuses an anonymous caller without making an outbound request', async () => {
+      mockUserContext = null;
+      const fetchSpy = vi.fn();
+      vi.stubGlobal('fetch', fetchSpy);
+      const res = await request(app).get('/api/check-updates');
+      expect(res.status).toBe(403);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    test('refuses a signed-in caller holding neither admin-read nor admin-system', async () => {
+      mockUserContext = { ...editorUser };
+      mockUserManager.hasPermission.mockResolvedValue(false);
+      const fetchSpy = vi.fn();
+      vi.stubGlobal('fetch', fetchSpy);
+      const res = await request(app).get('/api/check-updates');
+      expect(res.status).toBe(403);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    test('gives the fetch a deadline read from ngdpbase.fetch-timeout-ms', async () => {
+      const fetchSpy = vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ tag_name: 'v1.0.0', html_url: 'https://example.test/r' })
+      });
+      vi.stubGlobal('fetch', fetchSpy);
+      const res = await request(app).get('/api/check-updates');
+      expect(res.status).toBe(200);
+      expect(mockConfigManager.getProperty).toHaveBeenCalledWith('ngdpbase.fetch-timeout-ms', 30000);
+      const opts = fetchSpy.mock.calls[0]?.[1] as { signal?: unknown };
+      expect(opts?.signal).toBeInstanceOf(AbortSignal);
+    });
+
+    test('an aborted fetch degrades to the current version rather than 500', async () => {
+      const abort = new DOMException('The operation was aborted.', 'TimeoutError');
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abort));
+      const res = await request(app).get('/api/check-updates');
+      expect(res.status).toBe(200);
+      expect(res.body.currentVersion).toBe('1.0.0');
+      expect(res.body.latestVersion).toBeNull();
+    });
   });
 
   // ── userKeywordCreate ─────────────────────────────────────────────────────────
