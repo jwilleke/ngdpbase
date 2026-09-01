@@ -116,6 +116,20 @@ export interface WikiEngine {
   shutdown(): Promise<void>;
 
   /**
+   * Record a configuration value that cannot be used (#1152).
+   *
+   * Recorded rather than thrown so `initialize()` finishes and the admin
+   * screens exist — the instance then serves maintenance mode with a route to
+   * the repair, instead of exiting and leaving the filesystem as the only way
+   * back. Only for values an administrator can fix through the admin UI; a
+   * failure of the machinery needed to serve that UI is fatal and still throws.
+   */
+  blockConfiguration(reason: string): void;
+
+  /** Configuration values that could not be used, in the order found (#1152). */
+  getBlockingConditions(): readonly string[];
+
+  /**
    * Get all registered manager names
    * @returns Array of manager names
    */

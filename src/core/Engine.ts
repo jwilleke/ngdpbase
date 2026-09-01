@@ -223,6 +223,32 @@ class Engine {
    * @async
    * @returns {Promise<void>}
    */
+  /**
+   * Configuration values that could not be used (#1152).
+   *
+   * Recorded rather than thrown, and that distinction is the whole mechanism.
+   * A manager that throws aborts `initialize()` partway, so the routes and
+   * admin screens are never registered — and the operator is left with a dead
+   * process and a repair path that requires filesystem access. A manager that
+   * RECORDS lets initialisation finish, after which `app.ts` puts the instance
+   * into maintenance mode with `/admin` and `/login` reachable.
+   *
+   * Only for values an administrator can repair through the admin UI. A
+   * failure of the machinery needed to SERVE that UI is fatal and still
+   * throws — see D10 of docs/security-posture.md.
+   */
+  private blockingConditions: string[] = [];
+
+  /** Record a configuration value that cannot be used (#1152). */
+  blockConfiguration(reason: string): void {
+    this.blockingConditions.push(reason);
+  }
+
+  /** Configuration values that could not be used, in the order found. */
+  getBlockingConditions(): readonly string[] {
+    return [...this.blockingConditions];
+  }
+
   async shutdown(): Promise<void> {
     // Cleanup managers
     for (const [, manager] of this.managers) {

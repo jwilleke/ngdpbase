@@ -26,6 +26,7 @@ import { resolveListenPort } from './utils/resolveListenPort.js';
 import logger from './utils/logger.js';
 import { resolveEgressPolicy } from './http/egressPolicy.js';
 import { resolveMaintenanceState } from './utils/maintenanceState.js';
+import { gateDecision, describeBlocked, type StartupState } from './utils/startupState.js';
 import WikiEngine from './WikiEngine.js';
 import type { WikiEngine as IWikiEngine } from './types/WikiEngine.js';
 import WikiRoutes from './routes/WikiRoutes.js';
@@ -174,7 +175,11 @@ function readConfigForPort(): Record<string, unknown> | null {
 void (async (): Promise<void> => {
   const app = express();
   let engine: IWikiEngine;
-  let engineReady = false;
+  // #1152: a boolean could not distinguish "still indexing" from "the engine
+  // finished and a configuration value is unusable", and the gate must treat
+  // them differently — the second one needs /admin reachable.
+  let startupState: StartupState = 'starting';
+  let blockedReasons: string[] = [];
 
   // 1. Setup View Engine and static files first so we can serve the maintenance page
   app.set('views', path.join(projectRoot, 'views'));
@@ -220,6 +225,18 @@ void (async (): Promise<void> => {
   // dependencies, but cached pages and the admin UI still serve without them,
   // and pulling the pod would turn a partial outage into a total one.
   app.get('/health/readiness', async (_req: Request, res: Response): Promise<void> => {
+    // #1152: readiness answers "can this instance serve traffic". A
+    // configuration-blocked one cannot, and it would otherwise pass every
+    // check below — engineRef is set and storage is fine. Reporting ready
+    // while serving nobody is the defect #1079 removed.
+    if (startupState === 'configuration-blocked') {
+      res.status(503).json({
+        status: 'not_ready',
+        checks: { configuration: { ok: false, detail: blockedReasons } }
+      });
+      return;
+    }
+
     const engineForCheck = engineRef;
     const results = engineForCheck
       ? await runReadinessChecks([
@@ -252,20 +269,18 @@ void (async (): Promise<void> => {
 
   // 2. Initialization gate middleware — serves maintenance page while engine starts
   app.use((req: Request, res: Response, next: NextFunction): void => {
-    if (engineReady) { next(); return; }
+    if (gateDecision(startupState, req.path) === 'serve') { next(); return; }
 
-    if (req.path.startsWith('/css') || req.path.startsWith('/js') ||
-        req.path.startsWith('/images') || req.path.startsWith('/themes') ||
-        req.path.startsWith('/addons') ||
-        req.path === '/favicon.ico' || req.path === '/favicon.svg') {
-      next(); return;
-    }
-
+    const blocked = startupState === 'configuration-blocked';
     res.status(503).render('maintenance', {
-      message: 'The system is starting up. This may take a moment while pages are indexed.',
+      message: blocked
+        ? describeBlocked(blockedReasons)
+        : 'The system is starting up. This may take a moment while pages are indexed.',
       estimatedDuration: null,
       notifications: [],
-      allowAdmins: false,
+      // Signals to the page that an administrator can sign in and repair this,
+      // which is the difference between the two states that reach here.
+      allowAdmins: blocked,
       isAdmin: false
     });
   });
@@ -307,17 +322,37 @@ void (async (): Promise<void> => {
       logger.warn('[egress] the boundary is still enforced; overlaps resolved with the deny winning');
     }
     if (egress.malformed.length > 0) {
-      // Louder, because it is the case that can fail OPEN: an operator wrote a
-      // deny rule, it did not parse, and nothing about the running instance
-      // looks wrong. #1152 makes this block serving rather than only warn.
+      // The case that can fail OPEN: an operator wrote a deny rule, it did not
+      // parse, and nothing about the running instance looks wrong. #1152 makes
+      // it block serving rather than only warn, because a restriction somebody
+      // wrote and believes is in force must not silently not be.
+      engine.blockConfiguration(
+        `${egress.malformed.length} outbound range(s) do not parse as CIDR and are NOT in force: ` +
+        `${egress.malformed.join(', ')}. A malformed deny rule means the restriction you wrote is not applied. ` +
+        'Fix ngdpbase.security.egress.denied-ranges / allowed-ranges.'
+      );
+    }
+
+    // #1152: a configuration value an administrator can repair does not kill
+    // the process. The engine finished, so the admin screens work; the
+    // instance serves them and refuses everything else until the value is
+    // fixed.
+    blockedReasons = [...engine.getBlockingConditions()];
+    if (blockedReasons.length > 0) {
+      startupState = 'configuration-blocked';
+      logger.error(`🚨 ${describeBlocked(blockedReasons)}`);
       logger.error(
-        `🚨 [egress] ${egress.malformed.length} range(s) do not parse as CIDR and are NOT in force: ` +
-        `${egress.malformed.join(', ')}. A malformed deny rule means the restriction you wrote is not applied.`
+        '[startup] The instance is NOT serving content. Sign in at /admin to repair the configuration, then restart.'
       );
     }
 
     console.log('✅ ngdpbase Engine initialized successfully.');
   } catch (error) {
+    // Still fatal: reaching here means the machinery needed to SERVE the
+    // repair UI is itself unavailable — ConfigurationManager, the user and
+    // session layer, or the data directory. A process that stays up pretending
+    // otherwise is worse than one that stops, because there is no way out to
+    // offer (D10).
     console.error('🔥🔥🔥 FATAL: Failed to initialize ngdpbase Engine.');
     console.error(error);
     process.exit(1);
@@ -813,7 +848,11 @@ void (async (): Promise<void> => {
   wikiRoutes.registerRoutes(app);
 
   // 8. Mark engine as ready
-  engineReady = true;
+  // #1152: a configuration-blocked instance never becomes ready. It is
+  // serving the maintenance page and the repair screens, and nothing else.
+  if (startupState === 'starting') {
+    startupState = 'ready';
+  }
 
   // #1090: the same resolution app.listen used, so the banner and base URL
   // report the port actually bound. This used to be an independent expression

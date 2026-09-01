@@ -29,7 +29,12 @@ function makeConfigManager(overrides: Record<string, unknown> = {}) {
 
 function makeEngine(configOverrides: Record<string, unknown> = {}): WikiEngine {
   const cm = makeConfigManager(configOverrides);
+  // #1152: refuse-boot records a blocking condition rather than throwing, so
+  // the engine finishes initialising and the repair screens exist.
+  const blocking: string[] = [];
   return {
+    blockConfiguration: vi.fn((reason: string) => { blocking.push(reason); }),
+    getBlockingConditions: () => [...blocking],
     getManager: vi.fn((name: string) => {
       if (name === 'ConfigurationManager') return cm;
       // #1116: audit queries verify their caller against UserManager. The
@@ -295,9 +300,18 @@ describe('AuditManager', () => {
 describe('#1118 a failed audit provider is never silent', () => {
   const BROKEN = { 'ngdpbase.audit.provider': 'databaseauditprovider' };
 
-  test('refuse-boot: initialize rejects, naming the provider and the cause', async () => {
-    const am = new AuditManager(makeEngine({ ...BROKEN, 'ngdpbase.audit.on-failure': 'refuse-boot' }));
-    await expect(am.initialize()).rejects.toThrow(/DatabaseAuditProvider/);
+  test('refuse-boot: records a blocking condition naming the provider and the cause', async () => {
+    // #1152: it used to reject, which aborted initialize() partway — so the
+    // admin screens an operator needed to fix the provider were never
+    // registered, and the only route back was the filesystem. The guarantee is
+    // unchanged (the instance serves nobody); the delivery is maintenance mode.
+    const engine = makeEngine({ ...BROKEN, 'ngdpbase.audit.on-failure': 'refuse-boot' });
+    const am = new AuditManager(engine);
+    await expect(am.initialize()).resolves.not.toThrow();
+
+    const reasons = (engine as unknown as { getBlockingConditions: () => string[] }).getBlockingConditions();
+    expect(reasons.join(' ')).toMatch(/DatabaseAuditProvider/);
+    expect(reasons.join(' ')).toMatch(/refuse-boot/);
   });
 
   test('continue: boots, but the instance is marked degraded', async () => {

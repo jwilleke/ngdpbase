@@ -385,9 +385,16 @@ class AuditManager extends BaseManager {
     const fail = async (reason: string): Promise<void> => {
       const configured = this.providerClass ?? 'unknown';
       if (onFailure === 'refuse-boot') {
-        // Name the provider AND the cause: an operator reading a boot failure
-        // needs both to act on it.
-        throw new Error(
+        // #1152: recorded, not thrown. The guarantee is unchanged — an
+        // instance whose auditing is broken serves nobody — but it is
+        // delivered by maintenance mode rather than a dead process, so the
+        // provider can be fixed through the admin UI instead of over SSH.
+        // Throwing here aborted initialize() partway, so the very screens an
+        // operator needed were never registered.
+        //
+        // The value keeps its name (D14): engineReady stays false, so the boot
+        // genuinely does not complete. The process stays alive to say why.
+        this.engine.blockConfiguration(
           `Audit provider ${configured} could not be used: ${reason}. ` +
           'Auditing is configured but not working, and ngdpbase.audit.on-failure=refuse-boot. ' +
           'Fix the provider, choose another, or set ngdpbase.audit.provider=nullauditprovider to run without auditing deliberately.'
