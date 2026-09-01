@@ -116,7 +116,12 @@ export const UNGATED_REQUIREMENTS: Record<string, AuditRequirement> = {
   // #1155 — a subsystem stopped working. `standard`: the record matters, but
   // refusing to degrade because the record could not be written would take an
   // instance down over a feature that was already broken.
-  'manager.state-change': { eventType: 'manager.state-change', tier: 'standard', note: 'a manager configured and not working was previously visible only as a startup log line' }
+  'manager.state-change': { eventType: 'manager.state-change', tier: 'standard', note: 'a manager configured and not working was previously visible only as a startup log line' },
+
+  // #1156 — the security posture as it stood at boot. `critical`: this is the
+  // only record of a change made while the instance was not running, so losing
+  // it to a crash would lose the one thing that could have reported the edit.
+  'posture.recorded': { eventType: 'posture.recorded', tier: 'critical', note: 'closes the hole where app-custom-config.json is edited directly and nothing observes it' }
 };
 
 /** Every event type this system undertakes to emit. */

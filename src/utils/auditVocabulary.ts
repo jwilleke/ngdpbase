@@ -117,6 +117,13 @@ export const AUDIT_EVENT_TYPES: Record<string, AuditEventTypeSpec> = {
   // all. Same reasoning as `security.event`.
   'manager.state-change': { description: 'A manager changed state — degraded, disabled, failed or recovered', severity: 'medium', emitted: true },
 
+  // ── security posture ─────────────────────────────────────────────────────
+  //
+  // #1156. Recorded at every start, and compared against the previous start.
+  // A difference means the configuration changed while nothing was watching —
+  // edited on disk, or while the process was stopped.
+  'posture.recorded':   { description: 'Security posture at startup, compared against the previous start', severity: 'medium', emitted: true },
+
   // ── administration ───────────────────────────────────────────────────────
   'admin.page.raw-edit':             { description: 'Page edited through the admin raw editor', severity: 'medium', emitted: true },
   'admin.sessions.revoke':           { description: 'Session revoked by an admin', severity: 'medium', emitted: true },

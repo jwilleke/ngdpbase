@@ -27,6 +27,8 @@ import type { AuditReport } from '../providers/BaseAuditProvider.js';
 import { assessPreviousRun, buildLifecycleAuditEvent, type LifecycleRecord, type PreviousRun } from '../utils/auditLifecycle.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { resolveTlsConfig } from '../utils/tlsConfig.js';
+import { resolvePosture } from '../utils/securityPosture.js';
+import { flattenPosture, diffPostures, describePostureDiff, type FlatPosture } from '../utils/postureRecord.js';
 
 /**
  * Base audit event structure
@@ -763,6 +765,72 @@ class AuditManager extends BaseManager {
     }
 
     await this.emitLifecycle('start', previousRun);
+    await this.recordPosture();
+  }
+
+  /**
+   * Record the security posture, and compare it against the previous start
+   * (#1156, D19).
+   *
+   * `config.change` audits what goes through `setProperty()`. This closes the
+   * two holes that leaves: an `app-custom-config.json` edited directly on disk
+   * emits nothing, and the state an instance STARTED in was never stated.
+   * Comparing consecutive boots surfaces an edit nothing observed.
+   *
+   * Emitted after `system.start`, deliberately: the start record establishes
+   * that this run began, and the posture record says what it began with.
+   */
+  private async recordPosture(): Promise<void> {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const current = flattenPosture(
+      resolvePosture((key, fallback) => configManager?.getProperty?.(key, fallback))
+    );
+
+    // An instance with no posture configured has nothing to record. Emitting an
+    // empty one every boot would be noise that teaches a reader to skip it.
+    if (Object.keys(current).length === 0) return;
+
+    const previousRecord = await this.lastLifecycleRecord('posture.recorded');
+    const previous = (previousRecord as { metadata?: { posture?: FlatPosture } } | null)
+      ?.metadata?.posture ?? null;
+
+    const diff = diffPostures(previous, current);
+    const description = describePostureDiff(diff);
+
+    const drifted = diff.comparable
+      && (diff.changed.length > 0 || diff.added.length > 0 || diff.removed.length > 0);
+
+    if (drifted) {
+      // Say it in the application log too. A change nothing observed is exactly
+      // what an operator wants told to them, not filed away.
+      logger.warn(`⚠️  ${description}`);
+    } else {
+      logger.info(`📋 ${description}`);
+    }
+
+    try {
+      await recordAuditEvent(this as unknown as AuditEventSink, {
+        eventType: 'posture.recorded',
+        user: 'system',
+        ipAddress: undefined,
+        action: 'posture.recorded',
+        result: 'success',
+        // A drift found at boot is what a reader scanning by severity is
+        // looking for; an unchanged posture is not.
+        severity: drifted ? 'high' : 'low',
+        metadata: {
+          posture: current,
+          comparedWithPrevious: diff.comparable,
+          ...(drifted
+            ? { changed: diff.changed, added: diff.added, removed: diff.removed }
+            : {})
+        }
+      });
+    } catch (err) {
+      logger.error(
+        `[audit] could not record the security posture: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
   }
 
   /** Record that this process is stopping (#1149). */
