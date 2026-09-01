@@ -28,7 +28,7 @@ This is a deliberate reversal of the preset model in the planning document, and 
 
 Rule 3 of the planning document — *the instance publishes what it demonstrates, not the label it selected* — is satisfied structurally under D2 rather than needing a mechanism, because there is no label. What the operator sees is the settings themselves.
 
-__Issues:__ Tracked by [#1144](https://github.com/jwilleke/ngdpbase/issues/1144), which still describes the preset model this replaces and needs rewriting to match.
+__Issues:__ Tracked by [#1144](https://github.com/jwilleke/ngdpbase/issues/1144), rewritten on 2026-09-01 to ask for the removal this decision implies rather than the preset it replaced.
 
 ### D3 — The posture is a view over security-related settings
 
@@ -391,4 +391,4 @@ Not decisions — settled things that must not be lost when this document is rea
 
 These are being worked one at a time; each is recorded above as it is settled.
 
-- Rewrite [#1144](https://github.com/jwilleke/ngdpbase/issues/1144), which still describes the preset model D2 replaced. Every other decision now names its issue, and the epic carries seven sub-issues
+*None.* Every decision above names the issue that carries it, and the epic carries seven sub-issues.
