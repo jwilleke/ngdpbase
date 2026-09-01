@@ -1,6 +1,7 @@
 import logger from '../utils/logger.js';
 import { WikiPage, PageFrontmatter, PageInfo, PageSaveOptions, PageListOptions } from '../types/index.js';
 import { VersionHistoryEntry, VersionContent, VersionDiff } from '../types/index.js';
+import BaseProvider from './BaseProvider.js';
 
 /**
  * WikiEngine interface (simplified)
@@ -49,7 +50,7 @@ interface ProviderInfo {
  *   }
  * }
  */
-abstract class BasePageProvider {
+abstract class BasePageProvider extends BaseProvider {
   /** Reference to the wiki engine */
   protected engine: WikiEngine;
 
@@ -64,6 +65,7 @@ abstract class BasePageProvider {
    * @throws {Error} If engine is not provided
    */
   constructor(engine: WikiEngine) {
+    super();
     if (!engine) {
       throw new Error('BasePageProvider requires an engine instance');
     }

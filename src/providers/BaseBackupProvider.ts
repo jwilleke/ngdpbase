@@ -20,6 +20,7 @@
  */
 
 import type { WikiEngine } from '../types/WikiEngine.js';
+import BaseProvider from './BaseProvider.js';
 
 /** Metadata for a stored backup object */
 export interface BackupObjectInfo {
@@ -38,11 +39,13 @@ export interface BackupProviderInfo {
   features: string[];
 }
 
-abstract class BaseBackupProvider {
+abstract class BaseBackupProvider extends BaseProvider {
   protected engine: WikiEngine;
   protected initialized: boolean;
 
   constructor(engine: WikiEngine) {
+
+    super();
     this.engine = engine;
     this.initialized = false;
   }

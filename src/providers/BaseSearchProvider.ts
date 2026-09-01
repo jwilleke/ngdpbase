@@ -19,6 +19,7 @@
  */
 
 import type { WikiEngine } from '../types/WikiEngine.js';
+import BaseProvider from './BaseProvider.js';
 
 /**
  * Provider information
@@ -191,7 +192,7 @@ export interface BackupData {
  *
  * @abstract
  */
-abstract class BaseSearchProvider {
+abstract class BaseSearchProvider extends BaseProvider {
   /** Reference to the wiki engine */
   protected engine: WikiEngine;
 
@@ -204,6 +205,7 @@ abstract class BaseSearchProvider {
    * @param engine - Reference to the WikiEngine instance
    */
   constructor(engine: WikiEngine) {
+    super();
     this.engine = engine;
     this.initialized = false;
   }

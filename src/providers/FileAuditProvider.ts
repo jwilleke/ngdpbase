@@ -6,7 +6,7 @@ import fs from 'fs-extra';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger.js';
 import { AuditEvent } from '../types/index.js';
-import type { AuditReport } from './BaseAuditProvider.js';
+import type { ProviderDurability } from './BaseProvider.js';
 
 /**
  * Extended audit event with additional fields used by FileAuditProvider
@@ -676,30 +676,26 @@ class FileAuditProvider extends BaseAuditProvider {
    * @returns {Promise<void>}
    */
   /**
-   * What this provider does with a record between accepting it and having it
-   * on disk (#1148).
+   * What this provider does with a record before it is on disk (#1148).
    *
    * It buffers. `appendEvent` queues in memory, a timer flushes on
    * `ngdpbase.audit.flushinterval`, and an early flush is forced at
-   * `ngdpbase.audit.maxqueuesize`. The write itself is `fs.appendFile` with no
-   * fsync, so even a flushed record sits in the OS page cache.
+   * `ngdpbase.audit.maxqueuesize`. The write is `fs.appendFile` with no fsync,
+   * so even a flushed record sits in the OS page cache.
    *
    * Reported rather than judged: an operator who can see a 30-second window
-   * decides whether that is acceptable for their deployment. The previous
-   * `durable: true` decided it for them, wrongly.
+   * decides whether that is acceptable for their deployment. The `durable:
+   * true` this replaces decided it for them, wrongly.
    */
-  override getGuarantees(): AuditReport {
+  override getDurability(): ProviderDurability | null {
     // Before initialize() the provider has not read its configuration, so it
-    // does not yet know its own buffering and says nothing rather than
-    // reporting the shipped numbers as though they were in force.
-    if (!this.config) return super.getGuarantees();
+    // does not know its own buffering and says nothing rather than reporting
+    // the shipped numbers as though they were in force.
+    if (!this.config) return null;
     return {
-      ...super.getGuarantees(),
-      durability: {
-        bufferedForMs: this.config.flushInterval,
-        bufferedRecords: this.config.maxQueueSize,
-        fsync: false
-      }
+      bufferedForMs: this.config.flushInterval,
+      bufferedRecords: this.config.maxQueueSize,
+      fsync: false
     };
   }
 

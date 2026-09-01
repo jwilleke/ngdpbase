@@ -2,6 +2,7 @@ import logger from '../utils/logger.js';
 import { AttachmentMetadata, AttachmentProvider } from '../types/index.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import { ProviderInfo } from './BasePageProvider.js';
+import BaseProvider from './BaseProvider.js';
 
 /**
  * File information for attachment uploads
@@ -56,7 +57,7 @@ interface AttachmentResult {
  * @see {@link BasicAttachmentProvider} for filesystem implementation
  * @see {@link AttachmentManager} for usage
  */
-abstract class BaseAttachmentProvider implements AttachmentProvider {
+abstract class BaseAttachmentProvider extends BaseProvider implements AttachmentProvider {
   /** Reference to the wiki engine */
   public engine: WikiEngine;
 
@@ -71,6 +72,7 @@ abstract class BaseAttachmentProvider implements AttachmentProvider {
    * @throws {Error} If engine is not provided
    */
   constructor(engine: WikiEngine) {
+    super();
     if (!engine) {
       throw new Error('BaseAttachmentProvider requires an engine instance');
     }

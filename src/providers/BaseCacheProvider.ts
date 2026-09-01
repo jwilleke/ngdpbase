@@ -1,4 +1,5 @@
 import type { WikiEngine } from '../types/WikiEngine.js';
+import BaseProvider from './BaseProvider.js';
 
 /**
  * Cache statistics structure
@@ -60,7 +61,7 @@ export interface BackupData {
  * @see {@link RedisCacheProvider} for Redis implementation
  * @see {@link CacheManager} for usage
  */
-abstract class BaseCacheProvider {
+abstract class BaseCacheProvider extends BaseProvider {
   /**
    * Reference to the wiki engine instance
    */
@@ -78,6 +79,7 @@ abstract class BaseCacheProvider {
    * @param {WikiEngine} engine - The wiki engine instance
    */
   constructor(engine: WikiEngine) {
+    super();
     this.engine = engine;
     this.initialized = false;
   }

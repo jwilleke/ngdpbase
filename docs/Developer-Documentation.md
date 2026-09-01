@@ -32,7 +32,7 @@ Workflow:
 | ---------- | --- | --- | ------------- |
 | [Managers](#managers) | 40 | 41 | Core system managers |
 | [Plugins](#plugins) | 32 | 36 | JSPWiki-style content plugins |
-| [Providers](#providers) | 35 | 36 | Storage and service providers |
+| [Providers](#providers) | 36 | 37 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
 | [Testing](#testing) | n/a | 3 | Testing guides and strategies |
 | [API](#api-reference) | n/a | Auto-gen | TypeDoc generated API reference |
@@ -161,6 +161,7 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | BaseLoggingProvider | ✅ [doc](providers/BaseLoggingProvider.md) | Abstract base class for logging providers — engine-free winston transport/format factory (#169) |
 | BaseMediaProvider | ✅ [doc](providers/BaseMediaProvider.md) | Abstract base class for asset/media providers — defines the AssetService-facing interface |
 | BasePageProvider | ✅ [doc](providers/BasePageProvider.md) | Abstract interface for page storage providers — the canonical extension surface for new page backends |
+| BaseProvider | ✅ [doc](providers/BaseProvider.md) | Root class every provider base inherits from — carries the durability contract and nothing else |
 | BaseSearchProvider | ✅ [doc](providers/BaseSearchProvider.md) | Abstract interface for search providers — extension surface for new search engines (Lunr, Elasticsearch, vector, etc.) |
 | BaseUserProvider | ✅ [doc](providers/BaseUserProvider.md) | Abstract user/session storage provider — extension surface for user backends (file, LDAP, IdP, etc.) |
 | BasicAttachmentProvider | 📘 [doc](providers/BasicAttachmentProvider.md) + [guide](providers/BasicAttachmentProvider-Complete-Guide.md) | File-system attachment storage with SHA-256-content-addressed dedup and per-page listings |
@@ -320,7 +321,7 @@ __Managers:__ 40/40 with quick-reference docs (100%); 18 with Complete Guides.
 
 __Plugins:__ 32/32 with quick-reference docs (100%).
 
-__Providers:__ 35/35 with quick-reference docs (100%); 5 with Complete Guides.
+__Providers:__ 36/36 with quick-reference docs (100%); 5 with Complete Guides.
 <!-- AUTO:doc-status END -->
 
 See [issue #178](https://github.com/jwilleke/ngdpbase/issues/178) for the doc-coverage tracking issue and [#660](https://github.com/jwilleke/ngdpbase/issues/660) for the discoverability problem this index addresses.

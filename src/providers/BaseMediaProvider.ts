@@ -21,6 +21,7 @@ import type {
   ExifCameraData,
   Place
 } from '../types/Schema.js';
+import BaseProvider from './BaseProvider.js';
 
 /**
  * Represents a single media item in the index.
@@ -98,7 +99,7 @@ export interface ScanResult {
  * Implement this class to add support for a new media storage backend
  * (filesystem, S3, etc.). MediaManager always interacts through this interface.
  */
-abstract class BaseMediaProvider implements AssetProvider {
+abstract class BaseMediaProvider extends BaseProvider implements AssetProvider {
   /**
    * Lifecycle method called once after construction to load persisted state.
    * Default implementation is a no-op; override to load an index from disk.

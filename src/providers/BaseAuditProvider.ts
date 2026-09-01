@@ -2,6 +2,7 @@ import { AuditEvent } from '../types/index.js';
 import logger from '../utils/logger.js';
 import { stampRecord, GENESIS_HASH, CHAIN_RESTART_EVENT } from '../utils/auditChain.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
+import BaseProvider, { type ProviderDurability } from './BaseProvider.js';
 
 /**
  * Provider information
@@ -152,36 +153,18 @@ export interface AuditBackupData {
  *   }
  * }
  */
-/**
- * What a provider does with a record between accepting it and having it on
- * disk (#1148).
- *
- * Facts rather than a claim. Durability on a single node means write, fsync,
- * then acknowledge — and even that trusts a disk controller's cache, while a
- * failed disk takes the log with it. So a provider reports the window in which
- * a record can still be lost and the reader draws the conclusion.
- */
-export interface AuditDurability {
-  /** Milliseconds a record may sit in memory before being written. 0 = never buffered. */
-  bufferedForMs: number;
-  /** Records held before an early write is forced. 0 = no bound. */
-  bufferedRecords: number;
-  /** Whether a write is flushed to disk before being reported as stored. */
-  fsync: boolean;
-}
-
 /** What a provider reports about itself. */
 export interface AuditReport {
   /** Alteration of a stored record is detectable. Deletion of the tail is not — see #1138. */
   tamperEvident: boolean;
   /** How records reach disk, or null when the provider has not stated it. */
-  durability: AuditDurability | null;
+  durability: ProviderDurability | null;
   queryable: boolean;
   /** Whether the chain head is held off this machine. See #1138. */
   offBox: boolean;
 }
 
-abstract class BaseAuditProvider {
+abstract class BaseAuditProvider extends BaseProvider {
   /** Reference to the wiki engine */
   protected engine: WikiEngine;
 
@@ -196,6 +179,7 @@ abstract class BaseAuditProvider {
    * @throws {Error} If engine is not provided
    */
   constructor(engine: WikiEngine) {
+    super();
     if (!engine) {
       throw new Error('BaseAuditProvider requires an engine instance');
     }
@@ -254,11 +238,10 @@ abstract class BaseAuditProvider {
       // it did not have — FileAuditProvider buffers in memory and appends
       // without fsync.
       //
-      // A provider that has not stated its durability claims nothing. Silence
-      // rather than a default, because a subclass that buffers and forgets to
-      // say so must not inherit an assertion that it writes immediately —
-      // which is the shape of the bug this replaces.
-      durability: null,
+      // Inherited from BaseProvider, so a provider states its durability once
+      // and every reporting surface sees the same answer. Null means the
+      // provider has not stated it — silence rather than a default.
+      durability: this.getDurability(),
       queryable: true,
       offBox: false
     };

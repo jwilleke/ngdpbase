@@ -1,6 +1,7 @@
 import logger from '../utils/logger.js';
 import { User, UserUpdateData, UserSession } from '../types/index.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
+import BaseProvider from './BaseProvider.js';
 
 /**
  * Provider information
@@ -38,7 +39,7 @@ interface BackupData {
  * @see {@link FileUserProvider} for filesystem implementation
  * @see {@link UserManager} for usage
  */
-abstract class BaseUserProvider {
+abstract class BaseUserProvider extends BaseProvider {
   /** Reference to the wiki engine */
   protected engine: WikiEngine;
 
@@ -53,6 +54,7 @@ abstract class BaseUserProvider {
    * @throws {Error} If engine is not provided
    */
   constructor(engine: WikiEngine) {
+    super();
     if (!engine) {
       throw new Error('BaseUserProvider requires an engine instance');
     }

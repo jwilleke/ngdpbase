@@ -23,6 +23,7 @@
 
 import type Transport from 'winston-transport';
 import type { Logform } from 'winston';
+import BaseProvider from './BaseProvider.js';
 
 /**
  * Logger configuration passed to a provider when (re)building transports.
@@ -47,7 +48,7 @@ export interface LoggingProviderInfo {
   features: string[];
 }
 
-abstract class BaseLoggingProvider {
+abstract class BaseLoggingProvider extends BaseProvider {
   /**
    * Build the winston transports for the given configuration.
    *
