@@ -24,6 +24,8 @@ import { canonicalEventTypeOf, legacyTypesFor } from '../utils/auditVocabulary.j
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { AuditReport } from '../providers/BaseAuditProvider.js';
+import { assessPreviousRun, buildLifecycleAuditEvent, type LifecycleRecord, type PreviousRun } from '../utils/auditLifecycle.js';
+import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 
 /**
  * Base audit event structure
@@ -247,6 +249,13 @@ class AuditManager extends BaseManager {
 
     // Load and initialize provider
     await this.loadProvider();
+
+    // #1149: record that this process started, and what it can establish
+    // about how the previous one ended. Emitted here rather than from app.ts
+    // because it must go through the provider that has just been loaded, and
+    // because an instance whose auditing is off should not emit it at all —
+    // the null provider makes that decision for us.
+    await this.recordStart();
 
     // #1118: one line saying what auditing this instance actually does.
     const posture = this.getAuditPosture();
@@ -713,12 +722,92 @@ class AuditManager extends BaseManager {
   }
 
   /**
+   * The most recent record of a lifecycle phase, or null (#1149).
+   *
+   * A provider that cannot be searched returns null rather than throwing: an
+   * instance must still boot when its audit history is unreadable, and
+   * `assessPreviousRun` already treats missing evidence as `none` or `unknown`
+   * rather than inventing a verdict.
+   */
+  private async lastLifecycleRecord(eventType: string): Promise<LifecycleRecord | null> {
+    try {
+      const found = await this.provider?.searchAuditLogs({ eventType }, { limit: 1 });
+      // Results are timestamp-descending, so the first is the most recent.
+      return (found?.results?.[0] as LifecycleRecord | undefined) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Record that this process started, and what became of the previous one
+   * (#1149).
+   *
+   * The assessment is read BEFORE the new start is written, or the record
+   * being written would be the one it found.
+   */
+  private async recordStart(): Promise<void> {
+    const [lastStart, lastShutdown] = await Promise.all([
+      this.lastLifecycleRecord('system.start'),
+      this.lastLifecycleRecord('system.shutdown')
+    ]);
+    const previousRun = assessPreviousRun(lastStart, lastShutdown);
+
+    if (previousRun === 'unclean') {
+      // Say it in the application log too. An operator investigating a restart
+      // should not have to read the audit log to learn that records from the
+      // previous run may be missing (#1148).
+      logger.warn(
+        '⚠️  The previous run ended without recording a shutdown. Audit records buffered at that ' +
+        'moment may be missing — see ngdpbase.audit.flushinterval.'
+      );
+    }
+
+    await this.emitLifecycle('start', previousRun);
+  }
+
+  /** Record that this process is stopping (#1149). */
+  private async recordShutdown(): Promise<void> {
+    await this.emitLifecycle('shutdown');
+  }
+
+  private async emitLifecycle(phase: 'start' | 'shutdown', previousRun?: PreviousRun): Promise<void> {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const version = (configManager?.getProperty('ngdpbase.version', 'unknown') as string) ?? 'unknown';
+
+    try {
+      // The manager IS the sink here, unlike every other producer, which
+      // reaches it through the engine. Same shape, one hop shorter.
+      await recordAuditEvent(this as unknown as AuditEventSink, buildLifecycleAuditEvent({
+        phase,
+        version,
+        pid: process.pid,
+        previousRun
+      }));
+    } catch (err) {
+      // Declared critical, so recordAuditEvent rethrows on failure. A lifecycle
+      // record is worth shouting about and is not worth refusing to boot or
+      // refusing to stop over — an instance that will not shut down because it
+      // could not log the shutdown is worse than the missing record.
+      logger.error(
+        `[audit] could not record system.${phase}: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
+
+  /**
    * Shutdown the audit manager
    *
    * @returns {Promise<void>}
    */
   async shutdown(): Promise<void> {
     logger.info('📋 AuditManager shutting down...');
+
+    // #1149: before the provider closes, not after. This record is what lets
+    // the NEXT boot say the previous run ended cleanly — written afterwards it
+    // would have nowhere to go, and a clean shutdown would be indistinguishable
+    // from a crash.
+    await this.recordShutdown();
 
     if (this.provider) {
       await this.provider.close();

@@ -93,6 +93,14 @@ export const AUDIT_EVENT_TYPES: Record<string, AuditEventTypeSpec> = {
   'share.access':       { description: 'Share link used', severity: 'low', emitted: true },
   'share.revoke':       { description: 'Share link revoked', severity: 'medium', emitted: true },
 
+  // ── process lifecycle ────────────────────────────────────────────────────
+  //
+  // #1149. The pair is the point: a `system.start` whose predecessor recorded
+  // no `system.shutdown` is how the log states that the previous run died and
+  // its buffered records may be missing (#1148). Neither is interesting alone.
+  'system.start':       { description: 'Instance started — reports whether the previous run ended cleanly', severity: 'low', emitted: true },
+  'system.shutdown':    { description: 'Instance shut down cleanly', severity: 'low', emitted: true },
+
   // ── administration ───────────────────────────────────────────────────────
   'admin.page.raw-edit':             { description: 'Page edited through the admin raw editor', severity: 'medium', emitted: true },
   'admin.sessions.revoke':           { description: 'Session revoked by an admin', severity: 'medium', emitted: true },

@@ -96,7 +96,15 @@ export const AUDIT_REQUIREMENTS: Record<string, AuditRequirement> = {
  */
 export const UNGATED_REQUIREMENTS: Record<string, AuditRequirement> = {
   'token.mint':   { eventType: 'token.mint',   tier: 'critical', note: 'a credential nobody knows exists is the worst case' },
-  'token.revoke': { eventType: 'token.revoke', tier: 'critical' }
+  'token.revoke': { eventType: 'token.revoke', tier: 'critical' },
+
+  // #1149 — process lifecycle. Critical on both sides, and for the same
+  // reason: a `system.start` with no `system.shutdown` before it is how the
+  // log says the previous run died and its buffered records may be missing
+  // (#1148). Written on a timer instead, either could be the record lost to
+  // the very crash it exists to report.
+  'system.start':    { eventType: 'system.start',    tier: 'critical', note: 'states whether the previous run ended cleanly; an unclean one means records may be missing' },
+  'system.shutdown': { eventType: 'system.shutdown', tier: 'critical', note: 'its absence before the next start is the signal — so it must not be the record that is lost' }
 };
 
 /** Every event type this system undertakes to emit. */

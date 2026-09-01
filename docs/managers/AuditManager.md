@@ -496,6 +496,8 @@ twelve emitted types were listed nowhere (#1115).
 | `authorization.allow` | Access granted | low |
 | `policy.evaluate` | Security policy evaluated | low |
 | `security.event` | Security violation detected | high |
+| `system.start` | Instance started — reports whether the previous run ended cleanly | low |
+| `system.shutdown` | Instance shut down cleanly | low |
 | `share.create` | Share link created | medium |
 | `share.access` | Share link used | low |
 | `share.revoke` | Share link revoked | medium |
