@@ -244,6 +244,20 @@ These are pages rendered by ngdpbase, so the content rules in `CLAUDE.md` apply 
 
 An operator comparing the three needs them side by side, so the natural form is one page presenting all three with a table of the differences, rather than three pages an operator has to hold in their head at once.
 
+### D18 — The Security Posture section requires `admin-system`, to view as well as to edit
+
+Both halves take `admin-system`. Nothing less renders the section.
+
+This departs from the usual admin-screen pattern deliberately. Most screens gate viewing on `hasAdminViewAccess()` — `admin-read` OR `admin-system` (`WikiRoutes.ts:7624`) — and reserve `admin-system` for changes. The posture view is treated instead like the carve-outs at `getActiveSessionDetails()` and the admin user list, which require `user-read` rather than `admin-read` because of what they disclose.
+
+__What it discloses is the reason.__ The section is a map of the instance's defences: egress ranges, throttle thresholds, session flags, whether sanitisation is on, audit retention. A reader who can see `auth.throttle.max-attempts` and `lock-minutes` knows how to pace a password-guessing attempt without tripping the lock, and `filters.security.enabled` tells them whether render-time sanitisation is running at all. That is not a read-only view of administration; it is operational intelligence about the instance.
+
+The concrete case this closes: the `demo-admin` role holds `admin-read` and exists so a public demo instance can expose every admin screen to visitors. Under the usual pattern it would publish the instance's security configuration to anonymous users. Under D18 it does not see the section at all.
+
+No new permission is introduced — `admin-system` already exists and already means system administration, so the permission catalogue in `config/app-default-config.json` is untouched.
+
+__A non-administrator asks for a report.__ Anyone with a legitimate need to know what the instance guarantees is served by the effective-posture report ([#1146](https://github.com/jwilleke/ngdpbase/issues/1146)), which is a different artefact with a different audience: it states what the instance demonstrates rather than listing the settings that produce it. Whether that report is exposed to non-administrators, and under what gate, is deliberately left to that issue.
+
 ### What `ngdpbase.security.profile` does today
 
 Established from the code, because the decision above depends on it. The key ships as `"baseline"` (`app-default-config.json:334`) and has two documented values, `baseline` and `hardened`. It gates no mechanism. It has two live consumers:
@@ -257,7 +271,6 @@ __The first consumer is inert in a stock install.__ `app-default-config.json:339
 
 These are being worked one at a time; each is recorded above as it is settled.
 
-- Which permission gates the Security Posture section (D5). It renders the instance's security settings, so it is not obviously `admin-read`; the nearest precedent is `getActiveSessionDetails()`, gated on `user-read` rather than an admin role because of what it discloses
 - Where D6's "the value the running process is using" comes from. Comparing it against configuration needs a boot-time snapshot of each ingredient, and nothing captures one today
 - What the [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) report is called, now that D1 gives "posture" to the settings themselves and `AuditManager.getAuditPosture()` uses the same word for what auditing currently does
 - How this work is split into issues: D9 to D13 describe a startup-failure gate that none of [#1144](https://github.com/jwilleke/ngdpbase/issues/1144), [#1145](https://github.com/jwilleke/ngdpbase/issues/1145) or [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) covers, and D9 depends on [#1147](https://github.com/jwilleke/ngdpbase/issues/1147) landing first
