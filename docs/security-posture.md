@@ -12,7 +12,7 @@ The set of security-related settings an instance is running is its __security po
 
 Consequence to resolve: `AuditManager.getAuditPosture()` already uses the word for what auditing currently *does* (provider, degraded, reason). That usage is compatible — it reports actual state, which is what a posture is under D2 — but the naming should be reconciled when [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) generalises it.
 
-__Issues:__ Tracked by [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) — the report's name is that issue's to settle (D21 records what it may not be).
+__Issues:__ [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) __landed 2026-09-01__ as recommendation content. No general report was built: D2 and [#1145](https://github.com/jwilleke/ngdpbase/issues/1145) satisfy rule 3 structurally, so the name D21 rejected never needed a replacement.
 
 ### D2 — There is one posture: the active one
 
@@ -42,7 +42,7 @@ Each item is an ordinary key with its own shipped default, read by live code. Th
 
 An item is always a key that already exists. This is what makes rule 5 of the planning document — *never declare a control whose mechanism does not exist* — a check rather than an aspiration: every item must name a key present in `config/app-default-config.json`, verifiable at boot instead of by review.
 
-__Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145) — the subsystems whose settings the view presents.
+__Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145) — __landed 2026-09-01__.
 
 ### D4 — Items are addable and removable
 
@@ -50,13 +50,13 @@ The set is not fixed. An operator adds a key to their posture or removes one, so
 
 Removing an item removes it from the __view__, never from the configuration. The key keeps whatever value it has; it simply stops being presented as part of the posture. This is the reason removal is safe here and would not have been under a preset model, where dropping an item silently changed the effective value.
 
-__Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145).
+__Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145) — __landed 2026-09-01__.
 
 ### D5 — The posture is edited in the admin dashboard
 
 A collapsible __Security Posture__ section on the admin dashboard lists the active posture's items with their current values, and lets an operator add or remove items.
 
-__Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145).
+__Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145) — __landed 2026-09-01__.
 
 ### D6 — Restart requirements are per item, and the UI must say so
 
@@ -79,7 +79,7 @@ A comparison between the running process and the configuration was considered an
 
 This is the same failure shape as [#1147](https://github.com/jwilleke/ngdpbase/issues/1147), where the maintenance-mode toggle and the config key disagree about what is in force. A posture view whose values do not match the running system would be that bug with a wider blast radius, so the per-item marking is not polish — it is the feature working.
 
-__Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145).
+__Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145) — __landed 2026-09-01__.
 
 ### D7 — `ngdpbase.security.profile` is removed
 
@@ -235,7 +235,7 @@ Two things this survey turned up that the view will make visible, and both are t
 - __`ngdpbase.filters.security.enabled` ships `false`__ (`SecurityFilter.ts:177`, where it sets `renderFiltering`), while every sub-flag beneath it — `prevent-xss`, `sanitize-html`, `strip-dangerous-content` — ships `true`. Rendered as a list, that reads as a row of controls switched on underneath a master switch that is off.
 - __`auth.required-factors` ships `["password"]`__, which is where the absence of MFA ([#421](https://github.com/jwilleke/ngdpbase/issues/421), [#448](https://github.com/jwilleke/ngdpbase/issues/448)) becomes a visible fact rather than a gap somebody has to know about.
 
-__Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145). Two of the ingredients it surveys have their own issues: MFA's absence is [#421](https://github.com/jwilleke/ngdpbase/issues/421) and [#448](https://github.com/jwilleke/ngdpbase/issues/448).
+__Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145) — __landed 2026-09-01__. Two of the ingredients it surveys have their own issues: MFA's absence is [#421](https://github.com/jwilleke/ngdpbase/issues/421) and [#448](https://github.com/jwilleke/ngdpbase/issues/448).
 
 ### D16 — The posture object names its ingredients; values stay where they are
 
@@ -261,7 +261,7 @@ __Removal is safe here in a way it would not have been under a preset.__ Removin
 
 The group label travels with the ingredient rather than being hardcoded in the template, so the admin section's sections come from configuration and a new ingredient can arrive without a view change.
 
-__Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145).
+__Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145) — __landed 2026-09-01__.
 
 ### D17 — The recommendations ship as required pages, carrying an accountability disclaimer
 
@@ -280,7 +280,7 @@ These are pages rendered by ngdpbase, so the content rules in `CLAUDE.md` apply 
 
 An operator comparing the three needs them side by side, so the natural form is one page presenting all three with a table of the differences, rather than three pages an operator has to hold in their head at once.
 
-__Issues:__ Tracked by [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) — the recommendation pages and the posture report are the two things an operator reads.
+__Issues:__ Tracked by [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) — __landed 2026-09-01__ as the Security Posture Recommendations required page.
 
 ### D18 — The Security Posture section requires `admin-system`, to view as well as to edit
 
@@ -296,7 +296,7 @@ No new permission is introduced — `admin-system` already exists and already me
 
 __A non-administrator asks for a report.__ Anyone with a legitimate need to know what the instance guarantees is served by the effective-posture report ([#1146](https://github.com/jwilleke/ngdpbase/issues/1146)), which is a different artefact with a different audience: it states what the instance demonstrates rather than listing the settings that produce it. Whether that report is exposed to non-administrators, and under what gate, is deliberately left to that issue.
 
-__Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145); the report's own gating is left to [#1146](https://github.com/jwilleke/ngdpbase/issues/1146).
+__Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145) — __landed 2026-09-01__.
 
 ### D19 — Changing the posture is an audited event
 
@@ -377,7 +377,7 @@ It belongs in the recommendation pages (D17) because of what it does and does no
 
 This is exactly the shape of advice D17's pages exist for: an operator hardening choice with a stated benefit and a stated limit, owned by the operator rather than asserted by the software.
 
-__Issues:__ Operator advice for the [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) recommendation pages. The truncation limit it names is [#1138](https://github.com/jwilleke/ngdpbase/issues/1138).
+__Issues:__ Carried by [#1146](https://github.com/jwilleke/ngdpbase/issues/1146)'s recommendation page — __landed 2026-09-01__. The truncation limit it names is [#1138](https://github.com/jwilleke/ngdpbase/issues/1138).
 
 ## Deferred to implementation
 
