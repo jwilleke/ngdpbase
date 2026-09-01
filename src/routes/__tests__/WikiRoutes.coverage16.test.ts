@@ -857,6 +857,93 @@ describe('WikiRoutes — coverage batch 16', () => {
     });
   });
 
+  // ── adminPostureIngredient ────────────────────────────────────────────────────
+
+  describe('POST /admin/configuration/posture (#1159)', () => {
+    const postureOf = (call: unknown[]) => call[1] as Record<string, unknown>;
+
+    test('adding writes one entry and leaves the rest alone', async () => {
+      mockConfigManager.getProperty.mockImplementation((key: string, def: unknown) =>
+        key === 'ngdpbase.security.posture' ? { 'existing.key': { group: 'Audit' } } : def
+      );
+      const res = await request(app)
+        .post('/admin/configuration/posture')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ action: 'add', key: 'ngdpbase.session.secure', group: 'Session' });
+      expect(res.status).toBe(302);
+      const written = postureOf(mockConfigManager.setProperty.mock.calls[0]);
+      expect(written['ngdpbase.session.secure']).toEqual({ group: 'Session', restart: false });
+      // The merge is per entry; a map that replaced wholesale would silently
+      // drop every other ingredient.
+      expect(written['existing.key']).toEqual({ group: 'Audit' });
+    });
+
+    test('removing writes an explicit null, not a delete', async () => {
+      // The shipped posture lives in app-default-config.json, and a merge
+      // cannot express a deletion any other way.
+      mockConfigManager.getProperty.mockImplementation((key: string, def: unknown) =>
+        key === 'ngdpbase.security.posture' ? { 'ngdpbase.session.secure': { group: 'Session' } } : def
+      );
+      await request(app)
+        .post('/admin/configuration/posture')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ action: 'remove', key: 'ngdpbase.session.secure' });
+      expect(postureOf(mockConfigManager.setProperty.mock.calls[0])['ngdpbase.session.secure']).toBeNull();
+    });
+
+    test('a secret key is REFUSED, not added and masked', async () => {
+      // resolvePosture() masks defensively, but offering to add a secret
+      // invites the mistake.
+      mockConfigManager.getProperty.mockImplementation((key: string, def: unknown) =>
+        key === 'ngdpbase.config.secret-keys' ? ['ngdpbase.session.secret'] : def
+      );
+      const res = await request(app)
+        .post('/admin/configuration/posture')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ action: 'add', key: 'ngdpbase.session.secret' });
+      expect(res.headers.location).toMatch(/error=/);
+      expect(mockConfigManager.setProperty).not.toHaveBeenCalled();
+    });
+
+    test('an unknown key is added with a warning rather than refused', async () => {
+      // A typo should be visible at once, but an addon may legitimately
+      // contribute a key this instance does not ship.
+      const res = await request(app)
+        .post('/admin/configuration/posture')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ action: 'add', key: 'ngdpbase.not.a.real.key' });
+      expect(mockConfigManager.setProperty).toHaveBeenCalled();
+      expect(decodeURIComponent(res.headers.location)).toMatch(/check the spelling/i);
+    });
+
+    test('an empty key changes nothing', async () => {
+      const res = await request(app)
+        .post('/admin/configuration/posture')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ action: 'add', key: '   ' });
+      expect(mockConfigManager.setProperty).not.toHaveBeenCalled();
+      expect(res.headers.location).toMatch(/error=/);
+    });
+
+    test('admin-read is refused — this needs admin-system (D18)', async () => {
+      mockUserManager.hasPermission.mockResolvedValue(false);
+      const res = await request(app)
+        .post('/admin/configuration/posture')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ action: 'add', key: 'ngdpbase.session.secure' });
+      expect(res.status).toBe(403);
+      expect(mockConfigManager.setProperty).not.toHaveBeenCalled();
+    });
+
+    test('the change carries the actor, so the audit record names who did it', async () => {
+      await request(app)
+        .post('/admin/configuration/posture')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ action: 'add', key: 'ngdpbase.session.secure' });
+      expect(mockConfigManager.setProperty.mock.calls[0][2]).toBe('adminuser');
+    });
+  });
+
   // ── checkForUpdates ───────────────────────────────────────────────────────────
 
   describe('GET /api/check-updates (checkForUpdates)', () => {

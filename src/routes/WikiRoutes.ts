@@ -111,7 +111,7 @@ import { safeRedirect } from '../utils/safeRedirect.js';
 import { generateCsrfToken } from '../middleware/csrf.js';
 import { LoginThrottle } from '../utils/LoginThrottle.js';
 import { resolveMaintenanceState, MAINTENANCE_ENABLED_KEY } from '../utils/maintenanceState.js';
-import { resolvePosture } from '../utils/securityPosture.js';
+import { resolvePosture, POSTURE_KEY } from '../utils/securityPosture.js';
 
 /**
  * Ceiling on how many referring pages one rename may rewrite (#1094).
@@ -9488,19 +9488,6 @@ ${panes}
           getAuditPosture?: () => { provider: string; configured: string; degraded: boolean; reason: string | null };
         } | null)?.getAuditPosture?.() ?? null,
 
-        // #1145: the security posture — which settings make up what this
-        // instance guarantees, shown as one subject. Gated on admin-system for
-        // VIEWING as well as editing (D18), unlike other admin screens: the
-        // section is a map of the instance's defences, and a reader who can
-        // see auth.throttle.max-attempts and lock-minutes knows how to pace a
-        // password-guessing attempt without tripping the lock. demo-admin
-        // holds admin-read and exists so a public demo can expose every admin
-        // screen to visitors.
-        securityPosture: (await wikiContext.hasPermission('admin-system'))
-          ? resolvePosture((key, fallback) =>
-            this.engine.getManager('ConfigurationManager')?.getProperty?.(key, fallback))
-          : null,
-
         // #1155: every OTHER manager that is configured, wanted and not
         // working. Thirteen could reach that state and only auditing said so,
         // so a bad backup directory meant backups silently never ran while
@@ -10471,6 +10458,18 @@ ${panes}
         // value masked with no reveal control, and adminRevealSecret refuses
         // them server-side even if they forge the request.
         canRevealSecrets: await wikiContext.hasPermission('admin-system'),
+
+        // #1162 moved the Security Posture here from the dashboard, where an
+        // operator deciding what to change is already looking.
+        //
+        // Gated SEPARATELY from the page (D18). This screen admits admin-read,
+        // and the posture must not: it is a map of the instance's defences —
+        // egress ranges, throttle thresholds, whether sanitisation is on — and
+        // demo-admin holds admin-read precisely so a public demo can expose
+        // every admin screen to visitors.
+        securityPosture: (await wikiContext.hasPermission('admin-system'))
+          ? resolvePosture((key, fallback) => configManager?.getProperty?.(key, fallback))
+          : null,
         csrfToken: req.session.csrfToken
       };
 
@@ -10478,6 +10477,79 @@ ${panes}
     } catch (err: unknown) {
       logger.error('Error loading admin configuration:', err);
       res.status(500).send('Error loading configuration management');
+    }
+  }
+
+  /**
+   * Add or remove a security-posture ingredient (#1159).
+   *
+   * D4: the set is not fixed — an operator decides what is security-relevant
+   * for their deployment. Until now the only way to do it was hand-editing
+   * app-custom-config.json.
+   *
+   * Written through setProperty(), so the change is audited like any other
+   * (#1150) rather than needing its own trail.
+   */
+  async adminPostureIngredient(req: Request, res: Response) {
+    const back = (params: string) => res.redirect(`/admin/configuration?${params}#security-posture`);
+    try {
+      const wikiContext = this.createWikiContext(req);
+
+      // #1159: admin-system, matching the section itself (D18). Not the page's
+      // gate, which admits admin-read.
+      if (
+        !wikiContext.userContext?.isAuthenticated ||
+        !(await wikiContext.hasPermission('admin-system'))
+      ) {
+        return res.status(403).send('Access denied');
+      }
+
+      const body = req.body as { key?: string; group?: string; action?: string };
+      const key = typeof body.key === 'string' ? body.key.trim() : '';
+      const action = body.action === 'remove' ? 'remove' : 'add';
+      if (key === '') {
+        return back('error=' + encodeURIComponent('No configuration key was given.'));
+      }
+
+      const configManager = this.engine.getManager('ConfigurationManager');
+      const posture = { ...(configManager?.getProperty?.(POSTURE_KEY, {}) as Record<string, unknown>) };
+
+      if (action === 'remove') {
+        // An explicit null, not a delete: the shipped posture lives in
+        // app-default-config.json and a merge cannot express a deletion any
+        // other way. Removing changes NO value — the key keeps what it is set
+        // to and the code keeps reading it (D4).
+        posture[key] = null;
+        await configManager.setProperty(POSTURE_KEY, posture, wikiContext.userContext?.username);
+        return back('success=' + encodeURIComponent(
+          `"${key}" removed from the posture view. Its value is unchanged — nothing was turned off.`
+        ));
+      }
+
+      // Refusing rather than masking: resolvePosture() masks a secret
+      // defensively, but OFFERING to add one invites the mistake.
+      if (this.getSecretConfigKeys().has(key)) {
+        return back('error=' + encodeURIComponent(
+          `"${key}" holds a secret and cannot be added to the posture — its value would never be shown anyway.`
+        ));
+      }
+
+      const group = typeof body.group === 'string' && body.group.trim() !== ''
+        ? body.group.trim()
+        : 'Other';
+      posture[key] = { group, restart: false };
+      await configManager.setProperty(POSTURE_KEY, posture, wikiContext.userContext?.username);
+
+      // A WARNING, not a refusal. A typo should be visible at once, but an
+      // addon may legitimately contribute a key this instance does not ship.
+      const unknown = configManager?.getProperty?.(key, undefined) === undefined;
+      return back('success=' + encodeURIComponent(
+        `"${key}" added to the posture view under ${group}.` +
+        (unknown ? ' NOTE: nothing on this instance currently defines that key — check the spelling.' : '')
+      ));
+    } catch (err: unknown) {
+      logger.error('Error updating the security posture', { error: getErrorMessage(err) });
+      return back('error=' + encodeURIComponent('Failed to update the security posture.'));
     }
   }
 
@@ -14154,6 +14226,9 @@ ${panes}
     );
     app.post('/admin/configuration', (req: Request, res: Response) =>
       this.adminUpdateConfiguration(req, res)
+    );
+    app.post('/admin/configuration/posture', (req: Request, res: Response) =>
+      void this.adminPostureIngredient(req, res)
     );
     app.post('/admin/configuration/reset', (req: Request, res: Response) =>
       this.adminResetConfiguration(req, res)

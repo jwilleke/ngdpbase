@@ -15,6 +15,112 @@
         </div>
     <% } %>
 
+    <%# #1145 / #1159 / #1162 — the security posture: the settings that decide
+        what this instance guarantees, gathered as one subject instead of
+        scattered through five hundred keys. Moved here from the dashboard by
+        #1162, where an operator deciding what to change is already looking.
+
+        Rendered only when securityPosture is present. It is resolved server-
+        side ONLY for admin-system (D18), separately from this page's own gate,
+        which admits admin-read — the section is a map of the instance's
+        defences, and demo-admin exists so a public demo can expose every admin
+        screen to visitors. %>
+    <% if (typeof securityPosture !== 'undefined' && securityPosture && securityPosture.length > 0) { %>
+        <details class="card mb-4" id="security-posture">
+            <summary class="card-header" style="cursor: pointer;">
+                <i class="fas fa-shield-halved me-2" aria-hidden="true"></i>
+                <strong>Security Posture</strong>
+                <span class="text-muted small ms-2">
+                    what this instance is set to &mdash;
+                    <%= securityPosture.reduce(function (n, g) { return n + g.items.length; }, 0) %> settings
+                </span>
+            </summary>
+            <div class="card-body">
+                <p class="small text-muted">
+                    These are ordinary configuration keys, gathered here because together they decide what this
+                    instance guarantees. Changing one here is the same as changing it anywhere else, and every
+                    change is recorded in the audit log.
+                </p>
+
+                <% securityPosture.forEach(function (group) { %>
+                    <h6 class="mt-3"><%= group.group %></h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Setting</th>
+                                    <th scope="col">Value</th>
+                                    <th scope="col">Takes effect</th>
+                                    <th scope="col" class="text-end">In view</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% group.items.forEach(function (item) { %>
+                                    <tr>
+                                        <td><code class="small"><%= item.key %></code></td>
+                                        <td class="small">
+                                            <% if (item.secret) { %>
+                                                <span class="text-muted"><em>set, not shown</em></span>
+                                            <% } else { %>
+                                                <code><%= JSON.stringify(item.value) %></code>
+                                            <% } %>
+                                        </td>
+                                        <td class="small">
+                                            <% if (item.restart) { %>
+                                                <span class="text-muted">after a restart</span>
+                                            <% } else { %>
+                                                <span class="text-muted">immediately</span>
+                                            <% } %>
+                                        </td>
+                                        <td class="text-end">
+                                            <%# Removing changes NO value — the key keeps what it is set
+                                                to and the code keeps reading it. Said on the button so an
+                                                operator does not read "remove" as "turn off". %>
+                                            <form method="POST" action="/admin/configuration/posture" class="d-inline">
+                                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                                <input type="hidden" name="action" value="remove">
+                                                <input type="hidden" name="key" value="<%= item.key %>">
+                                                <button type="submit" class="btn btn-sm btn-outline-secondary"<%- lockedUnless('admin-system') %>
+                                                        title="Stop showing this setting here. Its value does not change.">
+                                                    Stop watching
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                <% }); %>
+                            </tbody>
+                        </table>
+                    </div>
+                <% }); %>
+
+                <hr>
+                <form method="POST" action="/admin/configuration/posture" class="row g-2 align-items-end">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <input type="hidden" name="action" value="add">
+                    <div class="col-md-6">
+                        <label class="form-label small mb-0" for="posture-key">Watch another setting</label>
+                        <input type="text" class="form-control form-control-sm" id="posture-key" name="key"
+                               placeholder="ngdpbase.some.setting" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small mb-0" for="posture-group">Group</label>
+                        <input type="text" class="form-control form-control-sm" id="posture-group" name="group"
+                               placeholder="Other">
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-sm btn-primary w-100"<%- lockedUnless('admin-system') %>>Add</button>
+                    </div>
+                    <div class="col-12">
+                        <p class="form-text small mb-0">
+                            Adding a setting here only decides what is shown. It does not change any value,
+                            and it does not turn anything on.
+                        </p>
+                    </div>
+                </form>
+            </div>
+        </details>
+    <% } %>
+
     <div class="row">
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center mb-4">
