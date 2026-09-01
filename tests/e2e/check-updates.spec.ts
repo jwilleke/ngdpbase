@@ -18,6 +18,15 @@ test.describe('#1140 — /api/check-updates is gated', () => {
     expect(body).toHaveProperty('updateAvailable');
   });
 
+  test('the dashboard indicator still renders for an admin', async ({ page }) => {
+    // The on-load script does `if (!resp.ok) return`, so a broken gate shows up
+    // as an EMPTY element rather than an error — indistinguishable by eye from
+    // "GitHub was unreachable". Assert the rendered text instead.
+    await page.goto('/admin');
+    const indicator = page.locator('#update-check-result');
+    await expect(indicator).toContainText(/Up to date|available/, { timeout: 15000 });
+  });
+
   test('an anonymous caller is refused and learns nothing about the instance', async ({ browser }) => {
     const anon = await browser.newContext({ storageState: { cookies: [], origins: [] } });
     try {
