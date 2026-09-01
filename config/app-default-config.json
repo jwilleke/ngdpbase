@@ -364,6 +364,14 @@
       "group": "Session and cookie",
       "restart": true
     },
+    "ngdpbase.server.tls.cert-file": {
+      "group": "Transport",
+      "restart": true
+    },
+    "ngdpbase.server.tls.key-file": {
+      "group": "Transport",
+      "restart": true
+    },
     "ngdpbase.auth.password.enabled": {
       "group": "Identity and registration",
       "restart": false
