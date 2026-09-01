@@ -26,7 +26,7 @@ import { resolveListenPort } from './utils/resolveListenPort.js';
 import logger from './utils/logger.js';
 import { resolveEgressPolicy } from './http/egressPolicy.js';
 import { resolveMaintenanceState } from './utils/maintenanceState.js';
-import { gateDecision, describeBlocked, type StartupState } from './utils/startupState.js';
+import { gateDecision, describeBlocked } from './utils/startupState.js';
 import WikiEngine from './WikiEngine.js';
 import type { WikiEngine as IWikiEngine } from './types/WikiEngine.js';
 import WikiRoutes from './routes/WikiRoutes.js';
@@ -175,10 +175,11 @@ function readConfigForPort(): Record<string, unknown> | null {
 void (async (): Promise<void> => {
   const app = express();
   let engine: IWikiEngine;
-  // #1152: a boolean could not distinguish "still indexing" from "the engine
-  // finished and a configuration value is unusable", and the gate must treat
-  // them differently — the second one needs /admin reachable.
-  let startupState: StartupState = 'starting';
+  let engineReady = false;
+  // #1152: the second, independent fact the gate needs. Not a third readiness
+  // value — the engine either finished or it did not — but whether it finished
+  // and a configuration value turned out to be unusable, which is what decides
+  // if /admin is reachable.
   let blockedReasons: string[] = [];
 
   // 1. Setup View Engine and static files first so we can serve the maintenance page
@@ -229,7 +230,7 @@ void (async (): Promise<void> => {
     // configuration-blocked one cannot, and it would otherwise pass every
     // check below — engineRef is set and storage is fine. Reporting ready
     // while serving nobody is the defect #1079 removed.
-    if (startupState === 'configuration-blocked') {
+    if (blockedReasons.length > 0) {
       res.status(503).json({
         status: 'not_ready',
         checks: { configuration: { ok: false, detail: blockedReasons } }
@@ -269,9 +270,9 @@ void (async (): Promise<void> => {
 
   // 2. Initialization gate middleware — serves maintenance page while engine starts
   app.use((req: Request, res: Response, next: NextFunction): void => {
-    if (gateDecision(startupState, req.path) === 'serve') { next(); return; }
+    const blocked = blockedReasons.length > 0;
+    if (gateDecision(engineReady, blocked, req.path) === 'serve') { next(); return; }
 
-    const blocked = startupState === 'configuration-blocked';
     res.status(503).render('maintenance', {
       message: blocked
         ? describeBlocked(blockedReasons)
@@ -339,7 +340,6 @@ void (async (): Promise<void> => {
     // fixed.
     blockedReasons = [...engine.getBlockingConditions()];
     if (blockedReasons.length > 0) {
-      startupState = 'configuration-blocked';
       logger.error(`🚨 ${describeBlocked(blockedReasons)}`);
       logger.error(
         '[startup] The instance is NOT serving content. Sign in at /admin to repair the configuration, then restart.'
@@ -848,10 +848,10 @@ void (async (): Promise<void> => {
   wikiRoutes.registerRoutes(app);
 
   // 8. Mark engine as ready
-  // #1152: a configuration-blocked instance never becomes ready. It is
-  // serving the maintenance page and the repair screens, and nothing else.
-  if (startupState === 'starting') {
-    startupState = 'ready';
+  // #1152: an instance with an unusable configuration value never becomes
+  // ready. It serves the maintenance page and the repair screens, nothing else.
+  if (blockedReasons.length === 0) {
+    engineReady = true;
   }
 
   // #1090: the same resolution app.listen used, so the banner and base URL

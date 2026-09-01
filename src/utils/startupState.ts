@@ -1,5 +1,5 @@
 /**
- * Startup state, and what the gate does in each one (#1152).
+ * What the initialisation gate serves, and when (#1152).
  *
  * `app.ts` used to treat every initialisation failure the same way:
  * `process.exit(1)`. A mistyped CIDR and an unreadable data directory produced
@@ -16,20 +16,6 @@
  * See D9 to D13 of docs/security-posture.md.
  */
 
-export type StartupState =
-  /** The engine is still initialising. Nothing but static assets is served. */
-  | 'starting'
-  /**
-   * The engine finished and a configuration VALUE is unusable.
-   *
-   * Content is refused, but the admin and login screens are served, because
-   * they work and they are the only way to repair the value without
-   * filesystem access.
-   */
-  | 'configuration-blocked'
-  /** Serving normally. */
-  | 'ready';
-
 /**
  * Paths served in every state, so the maintenance page can render itself.
  *
@@ -42,8 +28,8 @@ export const STARTUP_BYPASS_PATHS = ['/css', '/js', '/images', '/themes', '/addo
 const BYPASS_FILES = ['/favicon.ico', '/favicon.svg'];
 
 /**
- * Paths served when the instance is configuration-blocked but NOT while it is
- * merely starting.
+ * Paths served when the engine finished and a configuration value is unusable,
+ * but NOT while the engine is merely starting.
  *
  * The difference is whether the screens work. While the engine is initialising
  * the managers behind `/admin` are not up, so letting a request through fails
@@ -65,16 +51,29 @@ function isUnder(path: string, prefix: string): boolean {
 
 export type GateDecision = 'serve' | 'block';
 
-/** What the initialisation gate should do with a request. */
-export function gateDecision(state: StartupState, path: string): GateDecision {
-  if (state === 'ready') return 'serve';
+/**
+ * What the initialisation gate should do with a request.
+ *
+ * The server either is `engineReady` or it is not. What decides the third
+ * behaviour is not a third readiness value but a second, independent fact:
+ * whether the engine finished and a configuration value is unusable. Both are
+ * passed in, so the impossible combination — ready AND blocked — simply never
+ * arises at the call site rather than being modelled away.
+ */
+export function gateDecision(
+  engineReady: boolean,
+  blocked: boolean,
+  path: string
+): GateDecision {
+  if (engineReady) return 'serve';
 
   if (BYPASS_FILES.includes(path)) return 'serve';
   if (STARTUP_BYPASS_PATHS.some((prefix) => isUnder(path, prefix))) return 'serve';
 
-  if (state === 'configuration-blocked' && REPAIR_PATHS.some((prefix) => isUnder(path, prefix))) {
-    return 'serve';
-  }
+  // Blocked means the engine FINISHED and a value is wrong, so these screens
+  // work and are the only repair path without filesystem access. While merely
+  // starting they stay closed, because the managers behind them are not up.
+  if (blocked && REPAIR_PATHS.some((prefix) => isUnder(path, prefix))) return 'serve';
 
   return 'block';
 }
@@ -87,9 +86,13 @@ export function gateDecision(state: StartupState, path: string): GateDecision {
  */
 export function describeBlocked(reasons: readonly string[]): string {
   if (reasons.length === 0) {
-    // A page that says the configuration is broken and cannot say what is
-    // worse than no page at all.
-    return 'The configuration could not be used, and no reason was recorded. This is a bug — please report it.';
+    // Blocked with no reason is an internal inconsistency: nothing sets the
+    // blocked state without recording why. Say "unknown" rather than render an
+    // empty page — and note that the repair path stays OPEN in this case, so
+    // an operator can still sign in and look, which is the recoverable answer.
+    return 'The instance is not serving because its configuration could not be used. '
+      + 'The reason is UNKNOWN, which is itself a bug — nothing should block the instance without recording why. '
+      + 'Please report it, and check the startup log.';
   }
   const list = reasons.map((r) => `• ${r}`).join('\n');
   return `The instance is not serving because its configuration could not be used:\n${list}`;
