@@ -474,3 +474,117 @@ describe('#1116 audit queries refuse without an admin-system caller', () => {
     await expect(am.searchAuditLogs({}, {}, { username: 'root' })).rejects.toThrow(/admin-system/);
   });
 });
+
+describe('#1156 the posture is recorded at boot and compared with the previous boot', () => {
+  /**
+   * The pure diff is covered in postureRecord.test.ts. THIS covers the part
+   * that was untested: that AuditManager actually emits it. Deleting the
+   * recordPosture() call used to leave every test green, which is the repo's
+   * standing bar failing — so each of these must go red if the call goes.
+   */
+  const POSTURE = {
+    'ngdpbase.security.posture': {
+      'ngdpbase.session.secure': { group: 'Session and cookie', restart: true },
+      'ngdpbase.auth.throttle.max-attempts': { group: 'Login throttling', restart: false }
+    },
+    'ngdpbase.session.secure': false,
+    'ngdpbase.auth.throttle.max-attempts': 10
+  };
+
+  /** Capture what the manager writes, with a controllable previous record. */
+  function harness(config: Record<string, unknown>, previous: Record<string, unknown> | null) {
+    const engine = makeEngine(config);
+    const am = new AuditManager(engine);
+    const written: Array<Record<string, unknown>> = [];
+    (am as unknown as { provider: unknown }).provider = {
+      initialize: vi.fn().mockResolvedValue(undefined),
+      logAuditEvent: vi.fn((e: Record<string, unknown>) => { written.push(e); return Promise.resolve('id'); }),
+      searchAuditLogs: vi.fn((filters: { eventType?: string }) => Promise.resolve({
+        results: filters.eventType === 'posture.recorded' && previous ? [previous] : [],
+        total: 0, limit: 1, offset: 0, hasMore: false
+      })),
+      flush: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      isHealthy: vi.fn().mockResolvedValue(true),
+      getAuditStats: vi.fn(), exportAuditLogs: vi.fn(),
+      getProviderInfo: vi.fn().mockReturnValue({ name: 'Mock', version: '1', description: '', features: [] })
+    };
+    return { am, written };
+  }
+
+  const record = (written: Array<Record<string, unknown>>) =>
+    written.find((e) => e.eventType === 'posture.recorded');
+
+  test('a boot emits the posture', async () => {
+    const { am, written } = harness(POSTURE, null);
+    await (am as unknown as { recordPosture: () => Promise<void> }).recordPosture();
+    expect(record(written)).toBeDefined();
+  });
+
+  test('with no previous record it does not claim the posture is unchanged', async () => {
+    const { am, written } = harness(POSTURE, null);
+    await (am as unknown as { recordPosture: () => Promise<void> }).recordPosture();
+    const meta = record(written)?.metadata as { comparedWithPrevious?: boolean };
+    expect(meta.comparedWithPrevious).toBe(false);
+  });
+
+  test('an unchanged posture is low severity and reports no drift', async () => {
+    const previous = { metadata: { posture: { 'ngdpbase.session.secure': false, 'ngdpbase.auth.throttle.max-attempts': 10 } } };
+    const { am, written } = harness(POSTURE, previous);
+    await (am as unknown as { recordPosture: () => Promise<void> }).recordPosture();
+    const e = record(written);
+    expect(e?.severity).toBe('low');
+    expect(e?.metadata).not.toHaveProperty('changed');
+  });
+
+  test('a value changed while the instance was down is HIGH and names both values', async () => {
+    // The case the whole decision exists for: nothing observed the edit.
+    const previous = { metadata: { posture: { 'ngdpbase.session.secure': false, 'ngdpbase.auth.throttle.max-attempts': 10 } } };
+    const { am, written } = harness(
+      { ...POSTURE, 'ngdpbase.auth.throttle.max-attempts': 999 },
+      previous
+    );
+    await (am as unknown as { recordPosture: () => Promise<void> }).recordPosture();
+    const e = record(written);
+    expect(e?.severity).toBe('high');
+    expect(JSON.stringify(e?.metadata)).toContain('999');
+  });
+
+  test('a secret ingredient never reaches the emitted record', async () => {
+    const { am, written } = harness({
+      'ngdpbase.security.posture': { 'ngdpbase.session.secret': { group: 'Session and cookie' } },
+      'ngdpbase.config.secret-keys': ['ngdpbase.session.secret'],
+      'ngdpbase.session.secret': 'the-actual-secret-value'
+    }, null);
+    await (am as unknown as { recordPosture: () => Promise<void> }).recordPosture();
+    expect(JSON.stringify(written)).not.toContain('the-actual-secret-value');
+    expect(JSON.stringify(record(written)?.metadata)).toContain('[secret]');
+  });
+
+  test('initialize() emits it — not just the method in isolation', async () => {
+    // Found by sabotage: removing `await this.recordPosture()` from the boot
+    // path left every other test in this block green, because they invoke the
+    // method directly. A record nothing calls is a record nobody gets.
+    const engine = makeEngine({ ...POSTURE, 'ngdpbase.audit.provider': 'nullauditprovider' });
+    const am = new AuditManager(engine);
+    const written: Array<Record<string, unknown>> = [];
+    await am.initialize();
+    (am as unknown as { provider: unknown }).provider = {
+      logAuditEvent: vi.fn((e: Record<string, unknown>) => { written.push(e); return Promise.resolve('id'); }),
+      searchAuditLogs: vi.fn().mockResolvedValue({ results: [], total: 0, limit: 1, offset: 0, hasMore: false }),
+      flush: vi.fn().mockResolvedValue(undefined),
+      getProviderInfo: vi.fn().mockReturnValue({ name: 'Mock', version: '1', description: '', features: [] })
+    };
+    // Re-run the boot path with an observable provider in place.
+    await (am as unknown as { recordStart: () => Promise<void> }).recordStart();
+    expect(written.some((e) => e.eventType === 'posture.recorded')).toBe(true);
+  });
+
+  test('an instance with no posture configured emits nothing', async () => {
+    // Emitting an empty record every boot would be noise that teaches a reader
+    // to skip the event.
+    const { am, written } = harness({}, null);
+    await (am as unknown as { recordPosture: () => Promise<void> }).recordPosture();
+    expect(record(written)).toBeUndefined();
+  });
+});
