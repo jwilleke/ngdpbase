@@ -227,6 +227,23 @@ __Removal is safe here in a way it would not have been under a preset.__ Removin
 
 The group label travels with the ingredient rather than being hardcoded in the template, so the admin section's sections come from configuration and a new ingredient can arrive without a view change.
 
+### D17 — The recommendations ship as required pages, carrying an accountability disclaimer
+
+The `baseline`, `hardened` and `regulated` value sets are published as __required pages__ — content rendered inside the running instance — not as a file in `docs/`.
+
+That puts them where they are used. An operator deciding what their deployment needs is reading their own instance, one click from the admin section that edits the posture (D5); a markdown file in the repository is somewhere they may never look. It also means the recommendations travel with the product rather than with the source.
+
+__Every page carries a prominent disclaimer that the operator alone is accountable and responsible for their configuration decisions.__ This is not boilerplate — it is D2 made visible in the product. The whole reason presets were rejected is that software asserting a security posture on an operator's behalf misplaces the accountability, and a page headed "hardened" would quietly reintroduce exactly that if it read as an instruction rather than as advice. The recommendations describe what a deployment shape typically needs; the operator decides what theirs needs, and owns the outcome.
+
+These are pages rendered by ngdpbase, so the content rules in `CLAUDE.md` apply without exception:
+
+- The word "wiki" appears nowhere; the application is named with `[{$applicationname}]`.
+- Links between the pages use the page-linking syntax (`[Page Title]`), never a constructed `/view/` URL.
+- Anything the configuration system can supply is pulled in rather than hardcoded.
+- Each file follows the existing shape: a UUID filename, and frontmatter carrying `title`, `uuid`, `system-category`, `user-keywords`, `slug`, `lastModified` and `author`.
+
+An operator comparing the three needs them side by side, so the natural form is one page presenting all three with a table of the differences, rather than three pages an operator has to hold in their head at once.
+
 ### What `ngdpbase.security.profile` does today
 
 Established from the code, because the decision above depends on it. The key ships as `"baseline"` (`app-default-config.json:334`) and has two documented values, `baseline` and `hardened`. It gates no mechanism. It has two live consumers:
@@ -242,6 +259,5 @@ These are being worked one at a time; each is recorded above as it is settled.
 
 - Which permission gates the Security Posture section (D5). It renders the instance's security settings, so it is not obviously `admin-read`; the nearest precedent is `getActiveSessionDetails()`, gated on `user-read` rather than an admin role because of what it discloses
 - Where D6's "the value the running process is using" comes from. Comparing it against configuration needs a boot-time snapshot of each ingredient, and nothing captures one today
-- Whether the recommended `baseline` / `hardened` / `regulated` value sets live in this document or their own
 - What the [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) report is called, now that D1 gives "posture" to the settings themselves and `AuditManager.getAuditPosture()` uses the same word for what auditing currently does
 - How this work is split into issues: D9 to D13 describe a startup-failure gate that none of [#1144](https://github.com/jwilleke/ngdpbase/issues/1144), [#1145](https://github.com/jwilleke/ngdpbase/issues/1145) or [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) covers, and D9 depends on [#1147](https://github.com/jwilleke/ngdpbase/issues/1147) landing first
