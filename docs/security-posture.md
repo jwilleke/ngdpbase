@@ -12,6 +12,8 @@ The set of security-related settings an instance is running is its __security po
 
 Consequence to resolve: `AuditManager.getAuditPosture()` already uses the word for what auditing currently *does* (provider, degraded, reason). That usage is compatible — it reports actual state, which is what a posture is under D2 — but the naming should be reconciled when [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) generalises it.
 
+__Issues:__ Tracked by [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) — the report's name is that issue's to settle (D21 records what it may not be).
+
 ### D2 — There is one posture: the active one
 
 An instance has __one security posture__, and it is the settings it is actually running. There is no catalogue of selectable posture objects and no preset layer.
@@ -26,6 +28,8 @@ This is a deliberate reversal of the preset model in the planning document, and 
 
 Rule 3 of the planning document — *the instance publishes what it demonstrates, not the label it selected* — is satisfied structurally under D2 rather than needing a mechanism, because there is no label. What the operator sees is the settings themselves.
 
+__Issues:__ Tracked by [#1144](https://github.com/jwilleke/ngdpbase/issues/1144), which still describes the preset model this replaces and needs rewriting to match.
+
 ### D3 — The posture is a view over security-related settings
 
 The posture is a __curated set of existing configuration keys__, surfaced together because they determine the instance's security properties:
@@ -38,15 +42,21 @@ Each item is an ordinary key with its own shipped default, read by live code. Th
 
 An item is always a key that already exists. This is what makes rule 5 of the planning document — *never declare a control whose mechanism does not exist* — a check rather than an aspiration: every item must name a key present in `config/app-default-config.json`, verifiable at boot instead of by review.
 
+__Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145) — the subsystems whose settings the view presents.
+
 ### D4 — Items are addable and removable
 
 The set is not fixed. An operator adds a key to their posture or removes one, so the view reflects what they consider security-relevant for their deployment.
 
 Removing an item removes it from the __view__, never from the configuration. The key keeps whatever value it has; it simply stops being presented as part of the posture. This is the reason removal is safe here and would not have been under a preset model, where dropping an item silently changed the effective value.
 
+__Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145).
+
 ### D5 — The posture is edited in the admin dashboard
 
 A collapsible __Security Posture__ section on the admin dashboard lists the active posture's items with their current values, and lets an operator add or remove items.
+
+__Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145).
 
 ### D6 — Restart requirements are per item, and the UI must say so
 
@@ -69,6 +79,8 @@ A comparison between the running process and the configuration was considered an
 
 This is the same failure shape as [#1147](https://github.com/jwilleke/ngdpbase/issues/1147), where the maintenance-mode toggle and the config key disagree about what is in force. A posture view whose values do not match the running system would be that bug with a wider blast radius, so the per-item marking is not polish — it is the feature working.
 
+__Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145).
+
 ### D7 — `ngdpbase.security.profile` is removed
 
 With one active posture (D2) there is nothing for a profile value to select, so `baseline` and `hardened` are meaningless __as configuration values__ and the key goes.
@@ -81,6 +93,8 @@ Its two consumers, recorded below, are handled differently because only one of t
 
 - __The auditing default and its divergence warning are deleted__ (`AuditManager.ts:364-382`). `ngdpbase.audit.on-failure` keeps its shipped `continue` and is set explicitly by an operator who wants `refuse-boot`. Nothing is lost: as recorded below, the preset half was already unreachable in a stock install, and an operator who had set the key explicitly keeps exactly the value they set.
 - __The egress conflict behaviour is not a preset and is re-homed, not deleted.__ It decided whether a contradictory CIDR configuration stops the boot. D8 answers it: nothing stops the boot, because the firewall convention resolves every case except a malformed range, which D9 handles.
+
+__Issues:__ Tracked by [#1144](https://github.com/jwilleke/ngdpbase/issues/1144). Its second consumer is [#1133](https://github.com/jwilleke/ngdpbase/issues/1133)'s egress reconciliation — see D8.
 
 ### D8 — Egress conflicts resolve by firewall convention, and none of them is fatal
 
@@ -95,6 +109,8 @@ The three cases it does flag are the ones longest prefix cannot decide, and two 
 | A range does not parse as CIDR | No prefix to compare. See D9. |
 
 __No case refuses to start the instance.__ That was the profile looking for a job, and it is not the convention: `iptables` rejects a bad rule and keeps the chain, and the Kubernetes API server rejects an invalid NetworkPolicy while the other policies keep applying. Neither takes the workload down.
+
+__Issues:__ Tracked by [#1144](https://github.com/jwilleke/ngdpbase/issues/1144); the behaviour being re-homed came from [#1133](https://github.com/jwilleke/ngdpbase/issues/1133). The malformed-CIDR case it defers to D9 is [#1152](https://github.com/jwilleke/ngdpbase/issues/1152).
 
 ### D9 — A fatal configuration entry boots into maintenance mode, not a dead process
 
@@ -115,6 +131,8 @@ What this requires, established from the code rather than assumed:
 - __The initialisation gate at `app.ts:253` is the wrong mechanism__ — its bypass list has no `/admin` or `/login`, so it locks out the very person who would fix the problem. The admin maintenance middleware at `app.ts:713` already has the right shape: it passes `/admin`, `/login` and `/logout` through and serves everyone else the maintenance page.
 - __This depends on [#1147](https://github.com/jwilleke/ngdpbase/issues/1147).__ Maintenance mode currently has two sources of truth and its toggle does not survive a restart. Adding a third trigger to a mechanism with an open P1 defect would build on the defect, so #1147 lands first.
 
+__Issues:__ Tracked by [#1152](https://github.com/jwilleke/ngdpbase/issues/1152). Unblocked by [#1147](https://github.com/jwilleke/ngdpbase/issues/1147), which gave maintenance mode one source of truth — this could not build on a mechanism with two. __Landed 2026-09-01.__
+
 ### D10 — Startup failures are gated into survivable and fatal
 
 `app.ts:317` currently treats every initialisation failure the same way: `process.exit(1)`. A mistyped CIDR and an unreadable data directory produce the identical outcome, which is a process that is gone and an operator with no route back except the filesystem. A gate replaces it.
@@ -128,6 +146,8 @@ The distinction is not severity. A malformed deny rule is serious — D9 keeps t
 
 __Most of this already exists.__ `app.listen()` runs at `app.ts:279`, *before* engine initialisation, and the gate at `app.ts:253` serves the maintenance page while `engineReady` is false. A serving-but-not-ready instance is already the architecture; `process.exit(1)` discards it. What is missing is a survivable-failure state that keeps the process alive, and an `/admin` and `/login` bypass on that gate so the repair path is reachable — the admin maintenance middleware at `app.ts:713` already has the bypass shape to copy.
 
+__Issues:__ Tracked by [#1152](https://github.com/jwilleke/ngdpbase/issues/1152).
+
 ### D11 — `audit.on-failure: refuse-boot` folds into the survivable path
 
 An audit provider that is configured and cannot be used is the same shape as a malformed CIDR: an operator's mistake, repairable through the admin UI. It takes the D10 survivable path.
@@ -139,6 +159,8 @@ __The value name was reviewed and kept__ — see D14. `engineReady = false` mean
 __Orchestration is preserved by readiness, not by exiting.__ The concern with folding this in was that an operator setting `refuse-boot` may mean *the process must not exist*, as a signal to a supervisor. The health split at `app.ts:209` and `app.ts:221` already answers that: liveness deliberately checks nothing and reports a wedged process only, while readiness returns 503 to pull an instance out of rotation without terminating it. A configuration-blocked instance reports not-ready, and an orchestrator withholds traffic exactly as it would from a dead one.
 
 It is also strictly better than exiting under a supervisor. A process that exits on a bad config value restarts, fails identically, and restarts again — `CrashLoopBackOff` under Kubernetes, an endless respawn under pm2 — and the operator never gets a running instance to repair it with. Nothing about that loop reaches the admin UI.
+
+__Issues:__ Tracked by [#1152](https://github.com/jwilleke/ngdpbase/issues/1152).
 
 ### D12 — Configuration-blocked is `engineReady = false`
 
@@ -155,6 +177,8 @@ __Why not-ready is right on its own terms.__ Readiness answers "can this instanc
 
 The repair UI is served by the instance at its own address, which is all ngdpbase controls. Whatever sits in front of it decides what it routes there, and that is the deployment's business — see D13.
 
+__Issues:__ Tracked by [#1152](https://github.com/jwilleke/ngdpbase/issues/1152). Depends on [#1147](https://github.com/jwilleke/ngdpbase/issues/1147) — __landed 2026-09-01__.
+
 ### D13 — Deployment methodology does not influence the design
 
 The design is decided on its own merits. How an instance happens to be deployed is not an input to it.
@@ -164,6 +188,8 @@ ngdpbase accommodates __bare-metal__ and __Docker container__ deployments. It do
 This rule was written because the reasoning above had already broken it: D12's choice of not-ready was being argued from what a Kubernetes Service does with an unready pod, which is an argument about someone's cluster rather than about ngdpbase. The correct justification is that a blocked instance cannot serve, so reporting ready would be untrue. That holds identically on bare metal, in Docker, and anywhere else.
 
 The corollary is that a deployment-specific limitation is not a reason to weaken a correct behaviour. If a topology cannot reach an instance that is honestly reporting not-ready, that is solved in that topology's own configuration, not by making the instance lie.
+
+__Issues:__ A standing design rule rather than a unit of work. No issue.
 
 ### D14 — `refuse-boot` keeps its name
 
@@ -175,6 +201,8 @@ Two pieces of __wording__ do become wrong when D11 lands, and they are the thing
 
 - `views/admin-dashboard.ejs:31` tells the operator to set `refuse-boot` "to make this fatal instead". Under D11 it is not fatal, it is blocking.
 - `config/app-default-config.json:338` says `refuse-boot` "names the provider and the cause and refuses to start". It still names both, and it does refuse to start serving, but "refuses to start" reads as the process exiting.
+
+__Issues:__ Settled here; the wording corrections it names are carried by [#1152](https://github.com/jwilleke/ngdpbase/issues/1152).
 
 ### D15 — The ingredients of the shipped posture
 
@@ -205,6 +233,8 @@ Two things this survey turned up that the view will make visible, and both are t
 - __`ngdpbase.filters.security.enabled` ships `false`__ (`SecurityFilter.ts:177`, where it sets `renderFiltering`), while every sub-flag beneath it — `prevent-xss`, `sanitize-html`, `strip-dangerous-content` — ships `true`. Rendered as a list, that reads as a row of controls switched on underneath a master switch that is off.
 - __`auth.required-factors` ships `["password"]`__, which is where the absence of MFA ([#421](https://github.com/jwilleke/ngdpbase/issues/421), [#448](https://github.com/jwilleke/ngdpbase/issues/448)) becomes a visible fact rather than a gap somebody has to know about.
 
+__Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145). Two of the ingredients it surveys have their own issues: MFA's absence is [#421](https://github.com/jwilleke/ngdpbase/issues/421) and [#448](https://github.com/jwilleke/ngdpbase/issues/448).
+
 ### D16 — The posture object names its ingredients; values stay where they are
 
 `ngdpbase.security.posture` lists __which keys__ are in the active posture. Each ingredient's value continues to live at its own flat key, where the code already reads it.
@@ -229,6 +259,8 @@ __Removal is safe here in a way it would not have been under a preset.__ Removin
 
 The group label travels with the ingredient rather than being hardcoded in the template, so the admin section's sections come from configuration and a new ingredient can arrive without a view change.
 
+__Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145).
+
 ### D17 — The recommendations ship as required pages, carrying an accountability disclaimer
 
 The `baseline`, `hardened` and `regulated` value sets are published as __required pages__ — content rendered inside the running instance — not as a file in `docs/`.
@@ -246,6 +278,8 @@ These are pages rendered by ngdpbase, so the content rules in `CLAUDE.md` apply 
 
 An operator comparing the three needs them side by side, so the natural form is one page presenting all three with a table of the differences, rather than three pages an operator has to hold in their head at once.
 
+__Issues:__ Tracked by [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) — the recommendation pages and the posture report are the two things an operator reads.
+
 ### D18 — The Security Posture section requires `admin-system`, to view as well as to edit
 
 Both halves take `admin-system`. Nothing less renders the section.
@@ -259,6 +293,8 @@ The concrete case this closes: the `demo-admin` role holds `admin-read` and exis
 No new permission is introduced — `admin-system` already exists and already means system administration, so the permission catalogue in `config/app-default-config.json` is untouched.
 
 __A non-administrator asks for a report.__ Anyone with a legitimate need to know what the instance guarantees is served by the effective-posture report ([#1146](https://github.com/jwilleke/ngdpbase/issues/1146)), which is a different artefact with a different audience: it states what the instance demonstrates rather than listing the settings that produce it. Whether that report is exposed to non-administrators, and under what gate, is deliberately left to that issue.
+
+__Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145); the report's own gating is left to [#1146](https://github.com/jwilleke/ngdpbase/issues/1146).
 
 ### D19 — Changing the posture is an audited event
 
@@ -287,6 +323,8 @@ __The previous posture is read back from the audit log, not from a side file.__ 
 
 The wider gap — that no administrative configuration change is audited — is larger than this epic and belongs in its own issue.
 
+__Issues:__ Tracked by [#1148](https://github.com/jwilleke/ngdpbase/issues/1148) (durability reported, not asserted — __landed__), [#1149](https://github.com/jwilleke/ngdpbase/issues/1149) (lifecycle events — __landed__) and [#1150](https://github.com/jwilleke/ngdpbase/issues/1150) (configuration changes audited — __landed__). Its strongest claim depends on [#1138](https://github.com/jwilleke/ngdpbase/issues/1138), which anchors the chain head off-box.
+
 ### D20 — The instance never scores itself against a recommended posture
 
 Nothing compares an instance's settings to `baseline`, `hardened` or `regulated` and reports how far off it is. No drift warning, no compliance percentage, no red badge for a setting that differs from a recommendation.
@@ -298,6 +336,8 @@ The recommendation pages (D17) remain, and are the right form for this: advice a
 __What replaces it is stronger, not weaker.__ The instance states what it is set to (D5), and every change to that is audited (D19). An assessor gets the current configuration and its full history of changes — facts, with no interpretation layered on top — rather than a score against a benchmark whose provenance nobody can defend.
 
 An optional comparison could be added later as a __log-only__ check, with no bearing on the UI and no editing behaviour attached to it. It is not part of this work.
+
+__Issues:__ A rejection rather than a unit of work. No issue.
 
 ### What `ngdpbase.security.profile` does today
 
@@ -320,6 +360,8 @@ So the report states what is measurable — the flush interval, whether the crit
 
 The concrete name is left to #1146, where the report is built. The constraint recorded here is what it may not be, and why.
 
+__Issues:__ Settled by [#1148](https://github.com/jwilleke/ngdpbase/issues/1148), which supplied the evidence. The report's actual name is [#1146](https://github.com/jwilleke/ngdpbase/issues/1146)'s.
+
 ### D22 — Audit storage hardening is operator advice, not new configuration
 
 Pointing the audit log at its own volume needs no new key. `ngdpbase.audit.provider.file.logdirectory` already exists (`app-default-config.json:341`, read at `FileAuditProvider.ts:104`) and is separate from `ngdpbase.logging.dir`, so the two can already diverge although both default to `${FAST_STORAGE}/logs`.
@@ -332,6 +374,8 @@ It belongs in the recommendation pages (D17) because of what it does and does no
 - __It does not survive the machine.__ A separate local disk is the same host, and anyone who can delete records on one path can delete them on the other.
 
 This is exactly the shape of advice D17's pages exist for: an operator hardening choice with a stated benefit and a stated limit, owned by the operator rather than asserted by the software.
+
+__Issues:__ Operator advice for the [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) recommendation pages. The truncation limit it names is [#1138](https://github.com/jwilleke/ngdpbase/issues/1138).
 
 ## Deferred to implementation
 
@@ -347,4 +391,4 @@ Not decisions — settled things that must not be lost when this document is rea
 
 These are being worked one at a time; each is recorded above as it is settled.
 
-- How the remaining work is split into issues. The audit half is filed (#1148, #1149, #1150, all sub-issues of the epic). Still unshaped: D9 to D13's startup-failure gate has no issue at all, [#1144](https://github.com/jwilleke/ngdpbase/issues/1144) still describes the preset model D2 replaced, and [#1147](https://github.com/jwilleke/ngdpbase/issues/1147) is a prerequisite of D9 that is not recorded as one
+- Rewrite [#1144](https://github.com/jwilleke/ngdpbase/issues/1144), which still describes the preset model D2 replaced. Every other decision now names its issue, and the epic carries seven sub-issues
