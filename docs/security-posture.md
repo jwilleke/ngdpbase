@@ -308,11 +308,36 @@ Established from the code, because the decision above depends on it. The key shi
 
 __The first consumer is inert in a stock install.__ `app-default-config.json:339` ships `"ngdpbase.audit.on-failure": "continue"`, so the `configured ||` branch always takes the shipped value and the profile's default is never reached. It applies only if an operator explicitly empties the key. The divergence warning at `AuditManager.ts:375` is therefore the half that actually runs: a `hardened` instance that never touched `on-failure` warns at every boot, and the preset it is warning about never applied. That is worth knowing before deciding what to remove — the auditing preset has almost nothing to regress, while the egress consumer has real behaviour.
 
+### D21 — The report is not called `guarantees`
+
+The [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) report states __facts about what the running system does__. It is not called `guarantees`, and neither is any field generalised from `AuditManager.getAuditPosture()`.
+
+The word was rejected on evidence rather than taste: one of the four existing booleans cannot support it. `BaseAuditProvider.getGuarantees()` returns `durable: this.chainEnabled()`, and `chainEnabled()` is `return true` unconditionally — so every storing provider claims durability. `FileAuditProvider` queues records in memory, flushes on a 30-second timer or at 1000 records, and appends without `fsync`. An unclean exit loses everything in that window, silently: the chain resumes from the last written record at boot, verification passes, and nothing shows anything is absent. Filed as [#1148](https://github.com/jwilleke/ngdpbase/issues/1148).
+
+__And no single-node instance can honestly promise durability anyway.__ It means write, `fsync`, then acknowledge — and even that trusts a controller cache, while a failed disk takes the log with it. Generalising `guarantees` across every subsystem would have propagated a word the strongest subsystem cannot live up to.
+
+So the report states what is measurable — the flush interval, whether the critical tier is written synchronously, which provider is active and whether it is degraded — and the reader draws the conclusion. That is D20's principle applied to the report: state facts, do not score.
+
+The concrete name is left to #1146, where the report is built. The constraint recorded here is what it may not be, and why.
+
+### D22 — Audit storage hardening is operator advice, not new configuration
+
+Pointing the audit log at its own volume needs no new key. `ngdpbase.audit.provider.file.logdirectory` already exists (`app-default-config.json:341`, read at `FileAuditProvider.ts:104`) and is separate from `ngdpbase.logging.dir`, so the two can already diverge although both default to `${FAST_STORAGE}/logs`.
+
+It belongs in the recommendation pages (D17) because of what it does and does not buy:
+
+- __It isolates failure.__ A full or failed content volume does not stop auditing.
+- __It enables separation of duties.__ A separate path can carry different ownership and mount options — on Linux, an append-only attribute lets the process add records while preventing it from truncating or rewriting them, which is the only meaningful local mitigation of the truncation gap in [#1138](https://github.com/jwilleke/ngdpbase/issues/1138).
+- __It does not make the log durable.__ The gap is the in-memory queue, not the file's location; a different disk takes the same buffered writes at the same moment and loses the same events.
+- __It does not survive the machine.__ A separate local disk is the same host, and anyone who can delete records on one path can delete them on the other.
+
+This is exactly the shape of advice D17's pages exist for: an operator hardening choice with a stated benefit and a stated limit, owned by the operator rather than asserted by the software.
+
 ## Deferred to implementation
 
 Not decisions — settled things that must not be lost when this document is read for its decisions.
 
-- __File the wider audit gap as its own issue.__ `auditRegistry.ts` marks `admin-system` as `exempt: 'not-implemented'`, so no administrative configuration change is audited anywhere. D19 covers the posture only.
+- __Three audit issues are filed and linked to the epic__ and D19 depends on them: [#1148](https://github.com/jwilleke/ngdpbase/issues/1148) (`durable` asserted but not delivered), [#1149](https://github.com/jwilleke/ngdpbase/issues/1149) (`system.start` / `system.shutdown`, so an unclean exit is detectable) and [#1150](https://github.com/jwilleke/ngdpbase/issues/1150) (no administrative configuration change is audited anywhere).
 - __Check the `CHAIN_RESTART_EVENT` interaction__ ([#1124](https://github.com/jwilleke/ngdpbase/issues/1124)) when implementing D19. A boot-time posture record and a declared chain discontinuity can land at the same moment, and their order matters.
 - __Correct two pieces of wording when D11 lands.__ `views/admin-dashboard.ejs:31` says setting `refuse-boot` makes the failure "fatal instead"; `config/app-default-config.json:338` says it "refuses to start". Both describe a process that exits.
 - __Rewrite [#1144](https://github.com/jwilleke/ngdpbase/issues/1144) and `docs/planning/security-profile.md`__, which both still describe the preset model D2 replaced.
@@ -322,5 +347,4 @@ Not decisions — settled things that must not be lost when this document is rea
 
 These are being worked one at a time; each is recorded above as it is settled.
 
-- What the [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) report is called, now that D1 gives "posture" to the settings themselves and `AuditManager.getAuditPosture()` uses the same word for what auditing currently does
-- How this work is split into issues: D9 to D13 describe a startup-failure gate that none of [#1144](https://github.com/jwilleke/ngdpbase/issues/1144), [#1145](https://github.com/jwilleke/ngdpbase/issues/1145) or [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) covers, and D9 depends on [#1147](https://github.com/jwilleke/ngdpbase/issues/1147) landing first
+- How the remaining work is split into issues. The audit half is filed (#1148, #1149, #1150, all sub-issues of the epic). Still unshaped: D9 to D13's startup-failure gate has no issue at all, [#1144](https://github.com/jwilleke/ngdpbase/issues/1144) still describes the preset model D2 replaced, and [#1147](https://github.com/jwilleke/ngdpbase/issues/1147) is a prerequisite of D9 that is not recorded as one
