@@ -498,6 +498,7 @@ twelve emitted types were listed nowhere (#1115).
 | `security.event` | Security violation detected | high |
 | `system.start` | Instance started — reports whether the previous run ended cleanly | low |
 | `system.shutdown` | Instance shut down cleanly | low |
+| `config.change` | Configuration changed by an administrator | medium |
 | `share.create` | Share link created | medium |
 | `share.access` | Share link used | low |
 | `share.revoke` | Share link revoked | medium |

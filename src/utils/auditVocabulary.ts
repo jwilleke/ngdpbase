@@ -101,6 +101,14 @@ export const AUDIT_EVENT_TYPES: Record<string, AuditEventTypeSpec> = {
   'system.start':       { description: 'Instance started — reports whether the previous run ended cleanly', severity: 'low', emitted: true },
   'system.shutdown':    { description: 'Instance shut down cleanly', severity: 'low', emitted: true },
 
+  // ── configuration ────────────────────────────────────────────────────────
+  //
+  // #1150. One type for every key rather than a type per subsystem: the set of
+  // keys is open, and a vocabulary that must be edited before a new setting
+  // can be audited would be edited late or not at all — the same reasoning as
+  // `security.event` above.
+  'config.change':      { description: 'Configuration changed by an administrator', severity: 'medium', emitted: true },
+
   // ── administration ───────────────────────────────────────────────────────
   'admin.page.raw-edit':             { description: 'Page edited through the admin raw editor', severity: 'medium', emitted: true },
   'admin.sessions.revoke':           { description: 'Session revoked by an admin', severity: 'medium', emitted: true },

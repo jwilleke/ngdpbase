@@ -210,7 +210,7 @@ interface IConfigManager {
   getProperty(key: string, defaultValue: string): string;
   getProperty(key: string, defaultValue: null): unknown;
   getProperty(key: string, defaultValue?: unknown): unknown;
-  setProperty(key: string, value: unknown): Promise<void> | void;
+  setProperty(key: string, value: unknown, actor?: string): Promise<void> | void;
   getCustomProperty(key: string): unknown;
   getCustomProperties(): unknown;
   getDefaultProperties(): unknown;
@@ -9522,7 +9522,7 @@ ${panes}
         (key, fallback) => configManager?.getProperty?.(key, fallback)
       );
       const enabled = !current.enabled;
-      await configManager.setProperty(MAINTENANCE_ENABLED_KEY, enabled);
+      await configManager.setProperty(MAINTENANCE_ENABLED_KEY, enabled, currentUser.username);
 
       // Shape kept for the notification payload below, which takes the
       // maintenance settings as an object.
@@ -10588,7 +10588,7 @@ ${panes}
       if (typeof value === 'string') {
         try { parsedValue = JSON.parse(value); } catch { /* keep as string */ }
       }
-      await configManager.setProperty(property, parsedValue);
+      await configManager.setProperty(property, parsedValue, this.createWikiContext(req).userContext?.username);
 
       // Return JSON for AJAX requests, redirect for regular form submissions
       const wantsJson = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest';

@@ -104,7 +104,14 @@ export const UNGATED_REQUIREMENTS: Record<string, AuditRequirement> = {
   // (#1148). Written on a timer instead, either could be the record lost to
   // the very crash it exists to report.
   'system.start':    { eventType: 'system.start',    tier: 'critical', note: 'states whether the previous run ended cleanly; an unclean one means records may be missing' },
-  'system.shutdown': { eventType: 'system.shutdown', tier: 'critical', note: 'its absence before the next start is the signal — so it must not be the record that is lost' }
+  'system.shutdown': { eventType: 'system.shutdown', tier: 'critical', note: 'its absence before the next start is the signal — so it must not be the record that is lost' },
+
+  // #1150 — administrative configuration changes. `standard` rather than
+  // `critical` deliberately: a change refused because its record could not be
+  // written would leave an operator unable to repair a broken audit
+  // configuration through the admin UI, and that deadlock costs more than the
+  // missing record.
+  'config.change': { eventType: 'config.change', tier: 'standard', note: 'an admin can weaken any control from a web form; the change must leave a trace' }
 };
 
 /** Every event type this system undertakes to emit. */

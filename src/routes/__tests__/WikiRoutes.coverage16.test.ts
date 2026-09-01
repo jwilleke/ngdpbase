@@ -822,9 +822,12 @@ describe('WikiRoutes — coverage batch 16', () => {
         .set('x-csrf-token', 'test-csrf-token')
         .send({});
       expect(res.status).toBe(302);
+      // #1150: the actor travels with the change, so the audit record can say
+      // who closed the instance rather than attributing it to the system.
       expect(mockConfigManager.setProperty).toHaveBeenCalledWith(
         'ngdpbase.features.maintenance.enabled',
-        true
+        true,
+        'adminuser'
       );
     });
 
@@ -838,7 +841,8 @@ describe('WikiRoutes — coverage batch 16', () => {
         .send({});
       expect(mockConfigManager.setProperty).toHaveBeenCalledWith(
         'ngdpbase.features.maintenance.enabled',
-        false
+        false,
+        'adminuser'
       );
     });
 

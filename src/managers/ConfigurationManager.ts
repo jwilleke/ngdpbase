@@ -11,6 +11,11 @@ import { WikiConfig } from '../types/Config.js';
 import logger from '../utils/logger.js';
 import BaseManager, { BackupData } from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
+import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
+import { buildConfigChangeAuditEvent, isSecretKey } from '../utils/auditConfigChange.js';
+
+/** The config key naming which other keys hold secrets (#1030). */
+const SECRET_KEYS_KEY = 'ngdpbase.config.secret-keys';
 import {
   NPM_ADDON_PREFIX,
   splitAddonsPath,
@@ -855,10 +860,14 @@ class ConfigurationManager extends BaseManager {
    * @example
    * await configManager.setProperty('ngdpbase.application-name', 'My Custom Wiki');
    */
-  async setProperty(key: string, value: unknown): Promise<void> {
+  async setProperty(key: string, value: unknown, actor?: string): Promise<void> {
     if (!this.customConfig) {
       this.customConfig = {};
     }
+
+    // #1150: captured before the write, or the record would compare the new
+    // value with itself.
+    const before = this.customConfig[key];
 
     this.customConfig[key] = value;
     if (this.mergedConfig) {
@@ -867,6 +876,45 @@ class ConfigurationManager extends BaseManager {
 
     // Save to custom config file
     await this.saveCustomConfiguration();
+
+    await this.recordConfigChange(key, before, value, actor);
+  }
+
+  /**
+   * Record a configuration change in the audit log (#1150).
+   *
+   * Emitted here rather than from the routes because this is the single write
+   * path — every deliberate change goes through it, and a producer that has to
+   * remember to call something is exactly what the #1120 registry exists to
+   * stop. The migration code inside this class writes `customConfig` directly
+   * and so is correctly not audited: it is not a decision anybody made.
+   *
+   * Deliberately AFTER the save rather than before. A change refused because
+   * its audit record could not be written would leave an operator unable to
+   * repair a broken audit configuration through the admin UI — a deadlock that
+   * costs more than the missing record. `standard` tier for the same reason:
+   * the drop is counted and surfaced by recordAuditEvent, not fatal.
+   */
+  private async recordConfigChange(
+    key: string,
+    before: unknown,
+    after: unknown,
+    actor?: string
+  ): Promise<void> {
+    // Lazily resolved: AuditManager reads configuration, so holding a
+    // reference here would invert the boot order. Absent during early boot,
+    // which recordAuditEvent already treats as a configuration state rather
+    // than a failure.
+    const sink = this.engine?.getManager?.('AuditManager') as AuditEventSink | null;
+    if (!sink) return;
+
+    await recordAuditEvent(sink, buildConfigChangeAuditEvent({
+      key,
+      before,
+      after,
+      actor,
+      secret: isSecretKey(key, this.getProperty(SECRET_KEYS_KEY, []))
+    }));
   }
 
   /**
