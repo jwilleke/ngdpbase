@@ -9485,7 +9485,16 @@ ${panes}
         // events are being recorded at all, and the instance did not say so".
         auditPosture: (this.engine.getManager('AuditManager') as {
           getAuditPosture?: () => { provider: string; configured: string; degraded: boolean; reason: string | null };
-        } | null)?.getAuditPosture?.() ?? null
+        } | null)?.getAuditPosture?.() ?? null,
+
+        // #1155: every OTHER manager that is configured, wanted and not
+        // working. Thirteen could reach that state and only auditing said so,
+        // so a bad backup directory meant backups silently never ran while
+        // this page looked entirely healthy. Excludes `disabled`, which is a
+        // deliberate choice rather than a fault.
+        degradedManagers: (this.engine as unknown as {
+          getDegradedManagers?: () => Array<{ manager: string; state: string; reason?: string; configKey?: string }>;
+        }).getDegradedManagers?.() ?? []
       };
 
       res.render('admin-dashboard', templateData);

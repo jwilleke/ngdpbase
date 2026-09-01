@@ -34,6 +34,33 @@
         </div>
     <% } %>
 
+    <%# #1155 — a manager that is configured, wanted and NOT working. Thirteen
+        managers could reach this state and only auditing reported it, so a bad
+        backup directory meant backups silently never ran while this page
+        looked healthy. Deliberately DISABLED managers are excluded upstream: a
+        banner that warns about features somebody switched off is one nobody
+        reads, and the real warning goes with it. Not dismissible, for the same
+        reason as the audit banner above. %>
+    <% if (typeof degradedManagers !== 'undefined' && degradedManagers && degradedManagers.length > 0) { %>
+        <div class="alert alert-warning d-flex align-items-start" role="alert">
+            <i class="fas fa-triangle-exclamation me-2 mt-1" aria-hidden="true"></i>
+            <div>
+                <strong><%= degradedManagers.length %> subsystem<%= degradedManagers.length === 1 ? ' is' : 's are' %> not working.</strong>
+                Configured and wanted, but unavailable &mdash; the features they provide are silently doing nothing.
+                <ul class="small text-muted mt-1 mb-0">
+                    <% degradedManagers.forEach(function (m) { %>
+                        <li>
+                            <strong><%= m.manager %></strong> (<%= m.state %>)<% if (m.reason) { %> &mdash; <%= m.reason %><% } %>
+                            <% if (m.configKey) { %>
+                                <br><span>Configuration key: <code><%= m.configKey %></code></span>
+                            <% } %>
+                        </li>
+                    <% }); %>
+                </ul>
+            </div>
+        </div>
+    <% } %>
+
     <%# #1109 — audit writes are fire-and-forget: a failed log must not fail the
         write it describes, so the log goes incomplete rather than the request
         breaking. That trade is deliberate, but it is invisible unless shown
