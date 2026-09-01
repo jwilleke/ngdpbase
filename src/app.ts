@@ -464,7 +464,12 @@ void (async (): Promise<void> => {
   // Resolved with the cookie flag, before the session middleware is built.
   const sessionSecurity = resolveSessionSecurity(
     configManager.getCustomProperties(),
-    process.env.NODE_ENV
+    process.env.NODE_ENV,
+    // #1160: whether THIS server terminates TLS. The derivation of `trust
+    // proxy` from `secure` assumed TLS was terminated upstream; with native
+    // TLS there is no proxy, and trusting a forwarded header nothing sets is
+    // worse than not trusting it.
+    { nativeTls: scheme === 'https' }
   );
   if (sessionSecurity.trustProxy !== false) {
     app.set('trust proxy', sessionSecurity.trustProxy);

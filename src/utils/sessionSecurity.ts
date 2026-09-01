@@ -26,6 +26,22 @@
  * `ngdpbase.server.trust-proxy` to false, so a plain getProperty() read cannot
  * tell "operator asked for false" from "nobody has said anything" — hence
  * reading getCustomProperties() rather than the merged view.
+ *
+ * ## #1160 — native TLS breaks the assumption
+ *
+ * All of the above assumed `secure: true` meant TLS terminated UPSTREAM, so a
+ * proxy existed whose `X-Forwarded-Proto` Express had to be told to read. #1153
+ * made the server able to terminate TLS itself, and then there is no proxy —
+ * and trusting a forwarded header that nothing sets is worse than not trusting
+ * it. With `trust proxy` on and nothing in front, a caller can assert their own
+ * address and scheme, which the login throttle counts by and the audit log
+ * records.
+ *
+ * So the derivation now asks what is actually true rather than inferring from
+ * `secure` alone. The same applies to the misconfiguration warning: `secure`
+ * with `trust-proxy` explicitly false is the CORRECT configuration under native
+ * TLS, and warning about it would train an operator to ignore a warning that is
+ * load-bearing in the upstream case.
  */
 
 /** Config keys this resolution reads, spelled once. */
@@ -34,6 +50,17 @@ const TRUST_PROXY_KEY = 'ngdpbase.server.trust-proxy';
 
 /** Express's accepted `trust proxy` values: off, hop count, or a subnet list. */
 export type TrustProxyValue = boolean | number | string;
+
+/** What the resolution needs to know about the transport (#1160). */
+export interface SessionSecurityContext {
+  /**
+   * True when this server terminates TLS itself (#1153).
+   *
+   * Defaults to false so every existing caller keeps its pre-#1160 behaviour
+   * rather than silently changing what it resolves.
+   */
+  nativeTls?: boolean;
+}
 
 export interface SessionSecurity {
   /** Value for the session cookie's `secure` flag. */
@@ -72,9 +99,11 @@ export interface SessionSecurity {
  */
 export function resolveSessionSecurity(
   customProperties: Record<string, unknown> | null | undefined,
-  nodeEnv: string | undefined
+  nodeEnv: string | undefined,
+  context: SessionSecurityContext = {}
 ): SessionSecurity {
   const custom = customProperties ?? {};
+  const nativeTls = context.nativeTls === true;
 
   const customSecure = custom[SECURE_KEY];
   const secure = typeof customSecure === 'boolean'
@@ -93,14 +122,24 @@ export function resolveSessionSecurity(
       secure,
       trustProxy,
       trustProxyDerived: false,
-      misconfigured: secure && trustProxy === false
+      // #1160: under native TLS this combination is CORRECT, not suspicious —
+      // the server is the TLS endpoint and there is no proxy whose headers to
+      // read. Warning about it would train an operator to ignore a warning
+      // that is load-bearing when TLS really is terminated upstream.
+      misconfigured: secure && trustProxy === false && !nativeTls
     };
   }
 
+  // #1160: only derive when something in FRONT is terminating TLS. With native
+  // TLS there is no proxy, and trusting a forwarded header that nothing sets
+  // lets a caller assert their own address and scheme — which the login
+  // throttle counts by and the audit log records.
+  const derive = secure && !nativeTls;
+
   return {
     secure,
-    trustProxy: secure ? true : false,
-    trustProxyDerived: secure,
+    trustProxy: derive ? true : false,
+    trustProxyDerived: derive,
     misconfigured: false
   };
 }

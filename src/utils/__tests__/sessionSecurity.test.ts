@@ -109,3 +109,70 @@ describe('resolveSessionSecurity', () => {
     expect(resolveSessionSecurity(undefined, 'production').trustProxy).toBe(true);
   });
 });
+
+describe('#1160 native TLS removes the reason to derive trust proxy', () => {
+  /**
+   * The derivation exists because `secure: true` implied TLS terminated
+   * UPSTREAM — a proxy whose X-Forwarded-Proto Express must be told to read.
+   * #1153 made the server able to terminate TLS itself, and then there is no
+   * proxy, and trusting a forwarded header that nothing sets is worse than not
+   * trusting it: a caller can assert their own address and scheme, which the
+   * login throttle counts by and the audit log records.
+   */
+  test('with native TLS, secure does NOT derive trust proxy', () => {
+    const r = resolveSessionSecurity({ 'ngdpbase.session.secure': true }, 'production', { nativeTls: true });
+    expect(r.secure).toBe(true);
+    expect(r.trustProxy).toBe(false);
+    expect(r.trustProxyDerived).toBe(false);
+  });
+
+  test('without native TLS the derivation is unchanged', () => {
+    // The #1046 case, which must keep working: behind terminated TLS, secure
+    // without trust proxy means no session cookie reaches the browser and
+    // nobody can sign in.
+    const r = resolveSessionSecurity({ 'ngdpbase.session.secure': true }, 'production', { nativeTls: false });
+    expect(r.trustProxy).toBe(true);
+    expect(r.trustProxyDerived).toBe(true);
+  });
+
+  test('an explicit trust proxy still wins, native TLS or not', () => {
+    for (const nativeTls of [true, false]) {
+      const r = resolveSessionSecurity(
+        { 'ngdpbase.session.secure': true, 'ngdpbase.server.trust-proxy': 2 },
+        'production',
+        { nativeTls }
+      );
+      expect(r.trustProxy).toBe(2);
+      expect(r.trustProxyDerived).toBe(false);
+    }
+  });
+
+  test('secure with trust-proxy explicitly false is NOT misconfigured under native TLS', () => {
+    // It is the correct configuration: the server is the TLS endpoint. Warning
+    // about it would train an operator to ignore the warning, and the warning
+    // is load-bearing in the upstream-TLS case.
+    const r = resolveSessionSecurity(
+      { 'ngdpbase.session.secure': true, 'ngdpbase.server.trust-proxy': false },
+      'production',
+      { nativeTls: true }
+    );
+    expect(r.misconfigured).toBe(false);
+  });
+
+  test('secure with trust-proxy explicitly false IS misconfigured without native TLS', () => {
+    const r = resolveSessionSecurity(
+      { 'ngdpbase.session.secure': true, 'ngdpbase.server.trust-proxy': false },
+      'production',
+      { nativeTls: false }
+    );
+    expect(r.misconfigured).toBe(true);
+  });
+
+  test('omitting the option keeps the pre-#1160 behaviour', () => {
+    // Every existing caller and test passes two arguments. Defaulting to "no
+    // native TLS" keeps them correct rather than silently changing what they
+    // assert.
+    const r = resolveSessionSecurity({ 'ngdpbase.session.secure': true }, 'production');
+    expect(r.trustProxy).toBe(true);
+  });
+});
