@@ -308,6 +308,16 @@ Established from the code, because the decision above depends on it. The key shi
 
 __The first consumer is inert in a stock install.__ `app-default-config.json:339` ships `"ngdpbase.audit.on-failure": "continue"`, so the `configured ||` branch always takes the shipped value and the profile's default is never reached. It applies only if an operator explicitly empties the key. The divergence warning at `AuditManager.ts:375` is therefore the half that actually runs: a `hardened` instance that never touched `on-failure` warns at every boot, and the preset it is warning about never applied. That is worth knowing before deciding what to remove — the auditing preset has almost nothing to regress, while the egress consumer has real behaviour.
 
+## Deferred to implementation
+
+Not decisions — settled things that must not be lost when this document is read for its decisions.
+
+- __File the wider audit gap as its own issue.__ `auditRegistry.ts` marks `admin-system` as `exempt: 'not-implemented'`, so no administrative configuration change is audited anywhere. D19 covers the posture only.
+- __Check the `CHAIN_RESTART_EVENT` interaction__ ([#1124](https://github.com/jwilleke/ngdpbase/issues/1124)) when implementing D19. A boot-time posture record and a declared chain discontinuity can land at the same moment, and their order matters.
+- __Correct two pieces of wording when D11 lands.__ `views/admin-dashboard.ejs:31` says setting `refuse-boot` makes the failure "fatal instead"; `config/app-default-config.json:338` says it "refuses to start". Both describe a process that exits.
+- __Rewrite [#1144](https://github.com/jwilleke/ngdpbase/issues/1144) and `docs/planning/security-profile.md`__, which both still describe the preset model D2 replaced.
+- __Gating of the [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) report__ is deliberately that issue's decision, not this document's (D18).
+
 ## Open decisions
 
 These are being worked one at a time; each is recorded above as it is settled.
