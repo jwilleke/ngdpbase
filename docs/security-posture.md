@@ -63,11 +63,9 @@ Both kinds exist among the settings a posture would cover:
 
 So the honest answer is neither "yes" nor "no": a posture is a mix, and an operator who changes `session.secure` and sees the dashboard report the new value has been told something untrue until they restart.
 
-__The admin UI detects the pending restart and says so.__ It compares the value the running process is using against the value now in configuration, and reports the difference, so an item shows as restart-pending because it actually is rather than because someone annotated it that way.
+__The ingredient declares whether it needs a restart.__ The posture entry carries a `restart` flag beside its `group` (D16), and the section marks those items when their value is changed.
 
-__Correction to an earlier claim in this decision.__ It said an ingredient whose consumer reads per request would never diverge and so would never show the marker, without anyone declaring which kind it is. That is wrong if the running value comes from a snapshot taken at boot: a live-reading consumer picks the new value up immediately, while the boot snapshot still holds the old one, and the comparison would report a restart-pending that is not pending. The two sides of the comparison are not symmetric — see the open decision on where the running value comes from.
-
-The __configured__ side is unambiguous: it is what `ConfigurationManager.getProperty()` returns from the merged default and custom configuration. There is one posture and one configured value per ingredient. Only the running side needs a source.
+A comparison between the running process and the configuration was considered and rejected as over-built. It needs either a boot snapshot, which reports a false restart-pending for the ingredients whose consumers re-read live — `LoginThrottle.ts:73` and `SimpleRateLimiter.ts:47` both replace their options at runtime for exactly that reason — or every consumer publishing the value it applied, which is instrumentation in every subsystem to produce a flag that a maintainer can simply write down. If a consumer later changes when it reads, the flag is updated in the same commit.
 
 This is the same failure shape as [#1147](https://github.com/jwilleke/ngdpbase/issues/1147), where the maintenance-mode toggle and the config key disagree about what is in force. A posture view whose values do not match the running system would be that bug with a wider blast radius, so the per-item marking is not polish — it is the feature working.
 
@@ -275,7 +273,21 @@ Two properties follow from the rest of this document:
 - __A value change and an ingredient add or remove are different events.__ Removing an ingredient changes no value (D4, D16) and is a change to the view; changing a value alters what the instance does. Recording both as "posture changed" would lose the distinction that matters when reading the log back.
 - __Secrets never appear in the record.__ D15 excludes them as ingredients, but an audit entry naming a key and its before and after values would reintroduce the disclosure by another route if that list ever grows. `src/utils/redactSecrets.ts` applies here as it does to the view.
 
+__A change log alone does not answer "what is it running".__ Auditing only deltas leaves two holes: an `app-custom-config.json` edited directly on disk emits nothing, and neither does the state an instance started in. So the posture is also recorded __at boot__, as a statement of fact rather than a comparison — after which the log answers what the instance was running at any point, whether or not every change passed through the UI.
+
 The wider gap — that no administrative configuration change is audited — is larger than this epic and belongs in its own issue.
+
+### D20 — The instance never scores itself against a recommended posture
+
+Nothing compares an instance's settings to `baseline`, `hardened` or `regulated` and reports how far off it is. No drift warning, no compliance percentage, no red badge for a setting that differs from a recommendation.
+
+The reason is that the thing it would compare against does not exist. There is no authoritative value set for a regulated deployment; consultants in this space err toward caution, and no two auditors agree on the same instance. A number this project invented, rendered as a deviation, would be the software asserting a judgment it cannot support — D2's objection to preset labels, one level further down.
+
+The recommendation pages (D17) remain, and are the right form for this: advice an operator reads and applies, carrying the disclaimer that the decision and its consequences are theirs.
+
+__What replaces it is stronger, not weaker.__ The instance states what it is set to (D5), and every change to that is audited (D19). An assessor gets the current configuration and its full history of changes — facts, with no interpretation layered on top — rather than a score against a benchmark whose provenance nobody can defend.
+
+An optional comparison could be added later as a __log-only__ check, with no bearing on the UI and no editing behaviour attached to it. It is not part of this work.
 
 ### What `ngdpbase.security.profile` does today
 
@@ -290,6 +302,5 @@ __The first consumer is inert in a stock install.__ `app-default-config.json:339
 
 These are being worked one at a time; each is recorded above as it is settled.
 
-- Where D6's __running__ value comes from. A boot-time snapshot is the cheap option but reports a false restart-pending for ingredients whose consumers re-read live — `LoginThrottle.ts:73` and `SimpleRateLimiter.ts:47` both replace their options at runtime precisely so operator changes need no restart. The accurate option is each consumer publishing the value it actually applied, which is correct by construction but touches every consumer
 - What the [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) report is called, now that D1 gives "posture" to the settings themselves and `AuditManager.getAuditPosture()` uses the same word for what auditing currently does
 - How this work is split into issues: D9 to D13 describe a startup-failure gate that none of [#1144](https://github.com/jwilleke/ngdpbase/issues/1144), [#1145](https://github.com/jwilleke/ngdpbase/issues/1145) or [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) covers, and D9 depends on [#1147](https://github.com/jwilleke/ngdpbase/issues/1147) landing first
