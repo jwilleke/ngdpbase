@@ -810,6 +810,49 @@ describe('WikiRoutes — coverage batch 16', () => {
     });
   });
 
+  // ── adminToggleMaintenance ────────────────────────────────────────────────────
+
+  describe('POST /admin/maintenance/toggle (#1147)', () => {
+    test('persists the documented key so the state survives a restart', async () => {
+      // The defect: the handler mutated engine.config.features.maintenance and
+      // never saved, so a restart during maintenance brought the instance back
+      // live with nobody told.
+      const res = await request(app)
+        .post('/admin/maintenance/toggle')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({});
+      expect(res.status).toBe(302);
+      expect(mockConfigManager.setProperty).toHaveBeenCalledWith(
+        'ngdpbase.features.maintenance.enabled',
+        true
+      );
+    });
+
+    test('toggles off again from the persisted value, not from memory', async () => {
+      mockConfigManager.getProperty.mockImplementation((key: string, def: unknown) =>
+        key === 'ngdpbase.features.maintenance.enabled' ? true : def
+      );
+      await request(app)
+        .post('/admin/maintenance/toggle')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({});
+      expect(mockConfigManager.setProperty).toHaveBeenCalledWith(
+        'ngdpbase.features.maintenance.enabled',
+        false
+      );
+    });
+
+    test('refuses a caller without admin-system', async () => {
+      mockUserManager.hasPermission.mockResolvedValue(false);
+      const res = await request(app)
+        .post('/admin/maintenance/toggle')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({});
+      expect(res.status).toBe(403);
+      expect(mockConfigManager.setProperty).not.toHaveBeenCalled();
+    });
+  });
+
   // ── checkForUpdates ───────────────────────────────────────────────────────────
 
   describe('GET /api/check-updates (checkForUpdates)', () => {

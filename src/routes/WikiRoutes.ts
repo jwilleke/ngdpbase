@@ -110,6 +110,7 @@ import { ApiContext, ApiError } from '../context/ApiContext.js';
 import { safeRedirect } from '../utils/safeRedirect.js';
 import { generateCsrfToken } from '../middleware/csrf.js';
 import { LoginThrottle } from '../utils/LoginThrottle.js';
+import { resolveMaintenanceState, MAINTENANCE_ENABLED_KEY } from '../utils/maintenanceState.js';
 
 /**
  * Ceiling on how many referring pages one rename may rewrite (#1094).
@@ -9461,8 +9462,12 @@ ${panes}
         requiredPagesSyncNeeded,
         notifications: notifications,
         totalNotificationCount: totalNotificationCount,
-        maintenanceMode:
-          this.engine.config?.features?.maintenance?.enabled || false,
+        // #1147: read through the shared resolver, so the dashboard's toggle
+        // state matches what the gate and ACLManager are actually enforcing.
+        maintenanceMode: resolveMaintenanceState(
+          (key, fallback) =>
+            this.engine.getManager('ConfigurationManager')?.getProperty?.(key, fallback)
+        ).enabled,
         csrfToken: req.session.csrfToken,
         successMessage: req.query.success || null,
         errorMessage: req.query.error || null,
@@ -9505,27 +9510,30 @@ ${panes}
         return res.status(403).send('Access denied');
       }
 
-      // Toggle maintenance mode in config
-      const config = this.engine.config ?? {};
-      const currentMode = config.features?.maintenance?.enabled || false;
+      // #1147: the toggle used to mutate `engine.config.features.maintenance`,
+      // an in-memory object nothing persisted — so a restart during
+      // maintenance brought the instance back live with nobody told, which is
+      // most likely exactly when an operator is mid-migration. It now writes
+      // the documented key through ConfigurationManager, which saves to
+      // app-custom-config.json, and reads through the same resolver as the
+      // gate and ACLManager.
+      const configManager = this.engine.getManager('ConfigurationManager');
+      const current = resolveMaintenanceState(
+        (key, fallback) => configManager?.getProperty?.(key, fallback)
+      );
+      const enabled = !current.enabled;
+      await configManager.setProperty(MAINTENANCE_ENABLED_KEY, enabled);
 
-      // Ensure nested config structure exists before writing
-      if (!config.features) {
-        config.features = {};
-      }
-      if (!config.features.maintenance) {
-        config.features.maintenance = { enabled: false, allowAdmins: true };
-      }
-      config.features.maintenance.enabled = !currentMode;
+      // Shape kept for the notification payload below, which takes the
+      // maintenance settings as an object.
+      const maintenance = { ...current, enabled };
 
       // Log the maintenance mode change
       logger.info(
-        `Maintenance mode ${
-          config.features.maintenance.enabled ? 'ENABLED' : 'DISABLED'
-        } by ${currentUser.username}`,
+        `Maintenance mode ${enabled ? 'ENABLED' : 'DISABLED'} by ${currentUser.username}`,
         {
           action: 'maintenance_mode_toggle',
-          newState: config.features.maintenance.enabled,
+          newState: enabled,
           user: currentUser.username,
           userIP: req.ip || req.connection.remoteAddress,
           userAgent: req.get('User-Agent'),
@@ -9539,14 +9547,14 @@ ${panes}
           'NotificationManager'
         );
         await notificationManager.createMaintenanceNotification(
-          config.features.maintenance.enabled,
+          enabled,
           currentUser.username ?? '',
-          config.features.maintenance
+          maintenance
         );
 
         logger.info('Maintenance notification created for mode change', {
           action: 'maintenance_notification_created',
-          mode: config.features.maintenance.enabled ? 'enabled' : 'disabled',
+          mode: enabled ? 'enabled' : 'disabled',
           triggeredBy: currentUser.username,
           timestamp: new Date().toISOString()
         });
@@ -9554,19 +9562,17 @@ ${panes}
         logger.error('Failed to create maintenance notification', {
           action: 'maintenance_notification_failed',
           error: getErrorMessage(notificationError),
-          mode: config.features.maintenance.enabled ? 'enabled' : 'disabled',
+          mode: enabled ? 'enabled' : 'disabled',
           triggeredBy: currentUser.username,
           timestamp: new Date().toISOString()
         });
       }
 
       // Create detailed success message
-      const action = config.features.maintenance.enabled
-        ? 'ENABLED'
-        : 'DISABLED';
+      const action = enabled ? 'ENABLED' : 'DISABLED';
       const message =
         `Maintenance mode has been ${action.toLowerCase()}. ` +
-        (config.features.maintenance.enabled
+        (enabled
           ? 'Regular users will see a maintenance page until it is disabled.'
           : 'The system is now fully accessible to all users.');
 

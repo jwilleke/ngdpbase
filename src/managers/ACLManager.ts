@@ -8,6 +8,7 @@ import type PolicyEvaluator from './PolicyEvaluator.js';
 import type NotificationManager from './NotificationManager.js';
 import type { PageFrontmatter } from '../types/Page.js';
 import { decideFrontmatterAccess } from '../utils/frontmatterAccess.js';
+import { resolveMaintenanceState } from '../utils/maintenanceState.js';
 
 /**
  * Minimal WikiContext interface for type safety
@@ -818,10 +819,20 @@ class ACLManager extends BaseManager {
     const contextConfig: ContextConfig = {
       enabled: contextAwareEnabled,
       timeZone: configManager.getProperty('ngdpbase.access-control.context-aware.time-zone', 'UTC') as string,
-      maintenanceMode: {
-        enabled: configManager.getProperty('ngdpbase.features.maintenance.enabled', false) as boolean,
-        allowAdmins: configManager.getProperty('ngdpbase.features.maintenance.allow-admins', true) as boolean
-      }
+      // #1147: resolved through the shared helper, the same one the gate
+      // middleware uses, so the ACL evaluator and the gate cannot disagree
+      // about whether the instance is in maintenance.
+      maintenanceMode: (() => {
+        const state = resolveMaintenanceState((key, fallback) => configManager.getProperty(key, fallback));
+        return {
+          enabled: state.enabled,
+          allowAdmins: state.allowAdmins,
+          // allowAdmins was previously read and then ignored: checkMaintenanceMode
+          // consults allowedRoles, which nothing set, so it always let the admin
+          // role through even when the operator had turned that off.
+          allowedRoles: state.allowAdmins ? ['admin'] : []
+        };
+      })()
     };
 
     // Skip context restrictions for anonymous users on public wiki

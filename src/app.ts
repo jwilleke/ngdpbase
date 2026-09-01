@@ -25,6 +25,7 @@ import { resolveListenPort } from './utils/resolveListenPort.js';
 
 import logger from './utils/logger.js';
 import { resolveEgressPolicy } from './http/egressPolicy.js';
+import { resolveMaintenanceState } from './utils/maintenanceState.js';
 import WikiEngine from './WikiEngine.js';
 import type { WikiEngine as IWikiEngine } from './types/WikiEngine.js';
 import WikiRoutes from './routes/WikiRoutes.js';
@@ -703,17 +704,22 @@ void (async (): Promise<void> => {
   }
 
   // 6. Admin-triggered maintenance mode middleware
-  interface MaintenanceConfig {
-    enabled?: boolean;
-    allowAdmins?: boolean;
-    message?: string;
-    estimatedDuration?: string | null;
-  }
-
+  //
+  // #1147: this read `engine.config.features.maintenance` — an in-memory
+  // object that configuration never populated, so the documented
+  // `ngdpbase.features.maintenance.enabled` key did not gate the site and only
+  // the admin toggle (which mutated that object and never persisted it) could
+  // turn maintenance on. It now resolves through the same helper as
+  // ACLManager, which is what makes one switch mean one state.
+  //
+  // Resolved per request rather than captured here, so the toggle takes effect
+  // immediately and closing or reopening an instance needs no restart.
   app.use((req: Request, res: Response, next: NextFunction): void => {
-    const maintenanceCfg = (engine.config as unknown as { features?: { maintenance?: MaintenanceConfig } })
-      ?.features?.maintenance;
-    if (!maintenanceCfg?.enabled) { next(); return; }
+    const maintenanceCm = engine.getManager<import('./managers/ConfigurationManager.js').default>('ConfigurationManager');
+    const maintenance = resolveMaintenanceState(
+      (key, fallback) => maintenanceCm?.getProperty?.(key, fallback)
+    );
+    if (!maintenance.enabled) { next(); return; }
 
     if (req.path.startsWith('/css') || req.path.startsWith('/js') ||
         req.path.startsWith('/images') || req.path === '/favicon.ico' ||
@@ -722,17 +728,16 @@ void (async (): Promise<void> => {
       next(); return;
     }
 
-    const allowAdmins = maintenanceCfg.allowAdmins !== false;
     const isAdmin = WikiContext.userHasRole(req.userContext, 'admin');
-    if (allowAdmins && isAdmin) {
+    if (maintenance.allowAdmins && isAdmin) {
       next(); return;
     }
 
     res.status(503).render('maintenance', {
-      message: maintenanceCfg.message ?? 'The system is currently under maintenance.',
-      estimatedDuration: maintenanceCfg.estimatedDuration ?? null,
+      message: maintenance.message,
+      estimatedDuration: maintenance.estimatedDuration,
       notifications: [],
-      allowAdmins,
+      allowAdmins: maintenance.allowAdmins,
       isAdmin
     });
   });
