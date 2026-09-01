@@ -111,7 +111,12 @@ export const UNGATED_REQUIREMENTS: Record<string, AuditRequirement> = {
   // written would leave an operator unable to repair a broken audit
   // configuration through the admin UI, and that deadlock costs more than the
   // missing record.
-  'config.change': { eventType: 'config.change', tier: 'standard', note: 'an admin can weaken any control from a web form; the change must leave a trace' }
+  'config.change': { eventType: 'config.change', tier: 'standard', note: 'an admin can weaken any control from a web form; the change must leave a trace' },
+
+  // #1155 — a subsystem stopped working. `standard`: the record matters, but
+  // refusing to degrade because the record could not be written would take an
+  // instance down over a feature that was already broken.
+  'manager.state-change': { eventType: 'manager.state-change', tier: 'standard', note: 'a manager configured and not working was previously visible only as a startup log line' }
 };
 
 /** Every event type this system undertakes to emit. */

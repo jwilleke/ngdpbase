@@ -239,6 +239,32 @@ class Engine {
    */
   private blockingConditions: string[] = [];
 
+  /**
+   * Every manager that is not `ready`, with its reason (#1155).
+   *
+   * Thirteen managers could end up degraded and exactly one reported it
+   * anywhere a person could see. This is the collection point that makes the
+   * other twelve reachable — by the admin dashboard, by the effective-posture
+   * report (#1146), and by anything else that needs to know what the instance
+   * is actually doing rather than what it was configured to do.
+   */
+  getDegradedManagers(): Array<{ manager: string } & import('../managers/BaseManager.js').ManagerStatus> {
+    const out: Array<{ manager: string } & import('../managers/BaseManager.js').ManagerStatus> = [];
+    for (const [name, manager] of this.managers) {
+      const withStatus = manager as unknown as {
+        getManagerStatus?: () => import('../managers/BaseManager.js').ManagerStatus;
+      };
+      const status = withStatus.getManagerStatus?.();
+      // `disabled` is deliberate and is not a problem — including it would make
+      // the report warn about features somebody switched off, and a report like
+      // that is one nobody reads.
+      if (status && (status.state === 'degraded' || status.state === 'failed')) {
+        out.push({ manager: name, ...status });
+      }
+    }
+    return out;
+  }
+
   /** Record a configuration value that cannot be used (#1152). */
   blockConfiguration(reason: string): void {
     this.blockingConditions.push(reason);

@@ -19,6 +19,7 @@ import logger from '../utils/logger.js';
 import { checkConfiguredPath, type PathPreflightResult } from '../utils/PathPreflight.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type { ManagerFetchOptions } from '../utils/managerUtils.js';
+import { recordAuditEvent } from '../utils/auditEvents.js';
 
 /**
  * Backup data structure returned by backup() method
@@ -52,6 +53,37 @@ export interface BackupData {
  * Provides common functionality for initialization, lifecycle management,
  * and backup/restore operations.
  */
+/**
+ * What a manager is doing, uniformly (#1155).
+ *
+ * Managers already degraded — `preflightConfiguredPath()` existed and 11 of
+ * them called it — but each did so in its own way: a log line, a private flag,
+ * an early return. Thirteen could end up degraded and exactly ONE reported it
+ * anywhere a person could see. So an operator who mistyped
+ * `ngdpbase.backup.directory` got backups that silently never ran, an instance
+ * answering 302, a readiness probe saying ok, and a dashboard saying nothing.
+ *
+ * Four values rather than a boolean, because an operator's response differs:
+ *
+ * - `ready`    — working
+ * - `degraded` — configured, wanted, and NOT working. The invisible one
+ * - `disabled` — deliberately off; not a problem and must not read as one
+ * - `failed`   — could not initialise at all
+ *
+ * `disabled` versus `degraded` is what decides whether the report is worth
+ * reading. A report that warns about features somebody switched off is one
+ * nobody reads, and then the real warning is missed with it.
+ */
+export type ManagerState = 'ready' | 'degraded' | 'disabled' | 'failed';
+
+export interface ManagerStatus {
+  state: ManagerState;
+  /** What is wrong, in one line an operator can act on. Absent when ready. */
+  reason?: string;
+  /** The config key at fault, when there is one, so the admin UI can link to it. */
+  configKey?: string;
+}
+
 abstract class BaseManager {
   /** Reference to the wiki engine */
   protected engine: WikiEngine;
@@ -61,6 +93,9 @@ abstract class BaseManager {
 
   /** Configuration passed during initialization */
   protected config?: Record<string, unknown>;
+
+  /** What this manager is doing (#1155). Ready until something says otherwise. */
+  private status: ManagerStatus = { state: 'ready' };
 
   /**
    * Short description of what this manager does.
@@ -179,8 +214,98 @@ abstract class BaseManager {
         `⚠️  ${this.constructor.name}: ${result.message} ` +
         `(config key: ${configKey}).`
       );
+      // #1155: recorded, not only logged. This is the common entry point every
+      // degrading manager already goes through, so setting the state here is
+      // what makes twelve invisible degradations visible without each caller
+      // remembering to say so.
+      this.markDegraded(result.message ?? 'the configured path could not be used', configKey);
     }
     return result;
+  }
+
+  /**
+   * What this manager is doing (#1155).
+   *
+   * Not `getStatus()`: that name is already taken by `AddonsManager` and
+   * `BackgroundJobManager` for entirely different things, and a base-class
+   * method silently overridden by two subclasses would be worse than a longer
+   * name.
+   */
+  getManagerStatus(): ManagerStatus {
+    return { ...this.status };
+  }
+
+  /**
+   * Record that this manager is configured, wanted, and not working.
+   *
+   * @returns true when this is a TRANSITION — a state or reason that differs
+   *   from the current one. Only a transition is an event: a manager that
+   *   starts degraded and stays degraded must not re-emit on every boot, or
+   *   the signal is buried in its own noise.
+   */
+  protected markDegraded(reason: string, configKey?: string): boolean {
+    return this.transition({ state: 'degraded', reason, configKey });
+  }
+
+  /** Record that this manager is deliberately off. Not a problem (#1155). */
+  protected markDisabled(reason: string): boolean {
+    return this.transition({ state: 'disabled', reason });
+  }
+
+  /** Record that this manager could not initialise at all (#1155). */
+  protected markFailed(reason: string, configKey?: string): boolean {
+    return this.transition({ state: 'failed', reason, configKey });
+  }
+
+  /**
+   * Record that this manager is working.
+   *
+   * Clears the reason rather than leaving a stale one behind — a recovered
+   * manager still carrying "the directory is not writable" is a worse lie than
+   * no reason at all.
+   */
+  protected markReady(): boolean {
+    return this.transition({ state: 'ready' });
+  }
+
+  /**
+   * Apply a state and audit it if it CHANGED.
+   *
+   * Only a transition is an event. A manager that starts degraded and stays
+   * degraded must not re-emit on every boot, or the signal is buried in its
+   * own noise — and the at-boot picture is already carried by #1149's
+   * `system.start` record.
+   *
+   * Emitted from here rather than each manager, per the #1120 rule: a producer
+   * that has to remember to call something can be correct, but can never be
+   * PROVABLE.
+   */
+  private transition(next: ManagerStatus): boolean {
+    const changed = this.status.state !== next.state || this.status.reason !== next.reason;
+    this.status = next;
+    if (!changed) return false;
+
+    // Fire-and-forget. Refusing to degrade because the record could not be
+    // written would take an instance down over a feature that is already
+    // broken, which is the wrong way round.
+    void recordAuditEvent(
+      this.engine?.getManager?.('AuditManager'),
+      {
+        eventType: 'manager.state-change',
+        user: 'system',
+        ipAddress: undefined,
+        action: 'manager.state-change',
+        result: 'success',
+        severity: next.state === 'degraded' || next.state === 'failed' ? 'high' : 'low',
+        metadata: {
+          manager: this.constructor.name,
+          state: next.state,
+          ...(next.reason ? { reason: next.reason } : {}),
+          ...(next.configKey ? { configKey: next.configKey } : {})
+        }
+      }
+    );
+    return true;
   }
 
   /**

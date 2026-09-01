@@ -109,6 +109,14 @@ export const AUDIT_EVENT_TYPES: Record<string, AuditEventTypeSpec> = {
   // `security.event` above.
   'config.change':      { description: 'Configuration changed by an administrator', severity: 'medium', emitted: true },
 
+  // ── subsystem state ──────────────────────────────────────────────────────
+  //
+  // #1155. One type carrying the manager and the new state, rather than a type
+  // per manager: the set of managers is open, and a vocabulary that must be
+  // edited before a new one can report itself would be edited late or not at
+  // all. Same reasoning as `security.event`.
+  'manager.state-change': { description: 'A manager changed state — degraded, disabled, failed or recovered', severity: 'medium', emitted: true },
+
   // ── administration ───────────────────────────────────────────────────────
   'admin.page.raw-edit':             { description: 'Page edited through the admin raw editor', severity: 'medium', emitted: true },
   'admin.sessions.revoke':           { description: 'Session revoked by an admin', severity: 'medium', emitted: true },
