@@ -369,27 +369,18 @@ class AuditManager extends BaseManager {
 
   private async loadProvider(): Promise<void> {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    // #1118: refuse-boot is the hardened default, continue the baseline one.
-    // The profile is a preset — an explicit on-failure key always wins.
-    const profile = configManager?.getProperty('ngdpbase.security.profile', 'baseline') as string;
-    // The shipped config carries a real value rather than an empty string, so
-    // the effective policy is visible in the file instead of inferred from a
-    // profile. An empty value is still tolerated — it is how an operator
-    // clears a key — and falls back to the profile's default.
-    const configured = (configManager?.getProperty('ngdpbase.audit.on-failure', '') as string ?? '').trim();
-    const onFailure = configured || (profile === 'hardened' ? 'refuse-boot' : 'continue');
-
-    // #1118: the profile is a DECLARED INTENT and the keys are the reality.
-    // Warn when they disagree rather than silently letting one win — the whole
-    // class of bug this file has been fixing is a declaration and an
-    // implementation diverging with nothing checking.
-    if (profile === 'hardened' && onFailure !== 'refuse-boot') {
-      logger.warn(
-        `⚠️  ngdpbase.security.profile=hardened but ngdpbase.audit.on-failure=${onFailure}. ` +
-        'A hardened deployment normally refuses to start when auditing is configured and not working. ' +
-        'Set on-failure=refuse-boot, or set profile=baseline if this is deliberate.'
-      );
-    }
+    // #1144: the profile preset and its divergence warning are gone. There is
+    // one security posture — the settings the instance is actually running —
+    // so this key is read from configuration and nothing else, and the shipped
+    // 'continue' is the effective policy until an operator changes it.
+    //
+    // Nothing is lost. The preset half was already unreachable in a stock
+    // install: app-default-config.json ships a real value here, so the
+    // `configured ||` fallback never reached the profile's default. Only the
+    // warning ran, and it warned about a preset that had not applied.
+    const onFailure =
+      ((configManager?.getProperty('ngdpbase.audit.on-failure', 'continue') as string) ?? 'continue').trim()
+      || 'continue';
 
     const fail = async (reason: string): Promise<void> => {
       const configured = this.providerClass ?? 'unknown';

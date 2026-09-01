@@ -300,11 +300,6 @@ describe('#1118 a failed audit provider is never silent', () => {
     await expect(am.initialize()).rejects.toThrow(/DatabaseAuditProvider/);
   });
 
-  test('refuse-boot is the hardened default', async () => {
-    const am = new AuditManager(makeEngine({ ...BROKEN, 'ngdpbase.security.profile': 'hardened' }));
-    await expect(am.initialize()).rejects.toThrow();
-  });
-
   test('continue: boots, but the instance is marked degraded', async () => {
     const am = new AuditManager(makeEngine({ ...BROKEN, 'ngdpbase.audit.on-failure': 'continue' }));
     await am.initialize();
@@ -312,8 +307,10 @@ describe('#1118 a failed audit provider is never silent', () => {
     expect(am.degradedReason()).toMatch(/DatabaseAuditProvider/);
   });
 
-  test('continue is the baseline default', async () => {
-    const am = new AuditManager(makeEngine({ ...BROKEN, 'ngdpbase.security.profile': 'baseline' }));
+  test('continue is the shipped default when nothing sets the key', async () => {
+    // #1144: no profile supplies this any more. The shipped value IS the
+    // effective policy.
+    const am = new AuditManager(makeEngine({ ...BROKEN }));
     await am.initialize();
     expect(am.isDegraded()).toBe(true);
   });
@@ -362,57 +359,49 @@ describe('#1118 a failed audit provider is never silent', () => {
  * replaces, and the same declaration-versus-reality check this codebase has
  * needed everywhere else.
  */
-describe('#1118 profile and keys are checked against each other', () => {
-  test('an explicit key is honoured over the profile', async () => {
+describe('#1144 the on-failure key stands alone', () => {
+  // #1118 made the profile a DECLARED INTENT checked against the keys. #1144
+  // removed the profile entirely: there is one security posture, the settings
+  // the instance is actually running, so this key is read from configuration
+  // and nothing else.
+  //
+  // Nothing was lost in the removal. The preset half was already unreachable
+  // in a stock install — app-default-config.json ships a real value here, so
+  // the fallback never reached the profile's default. Only the divergence
+  // WARNING ran, and it warned about a preset that had not applied.
+  test('an explicit key is honoured', async () => {
     const am = new AuditManager(makeEngine({
       'ngdpbase.audit.provider': 'databaseauditprovider',
-      'ngdpbase.security.profile': 'hardened',
       'ngdpbase.audit.on-failure': 'continue'
     }));
     await am.initialize();
     expect(am.isDegraded()).toBe(true);
   });
 
-  test('a hardened profile with a lax key warns rather than silently choosing', async () => {
-    const warn = vi.spyOn(logger, 'warn');
+  test('a cleared key falls back to continue, not to a preset', async () => {
+    // Empty is how an operator clears a key. With no profile to consult, the
+    // shipped default is the only remaining answer — and it is the safe one,
+    // since the alternative would be refusing to boot on a blank value.
     const am = new AuditManager(makeEngine({
-      'ngdpbase.security.profile': 'hardened',
+      'ngdpbase.audit.provider': 'databaseauditprovider',
+      'ngdpbase.audit.on-failure': '   '
+    }));
+    await am.initialize();
+    expect(am.isDegraded()).toBe(true);
+  });
+
+  test('no profile warning is emitted any more', async () => {
+    const warn = vi.spyOn(logger, 'warn');
+    warn.mockClear();
+    const am = new AuditManager(makeEngine({
       'ngdpbase.audit.on-failure': 'continue',
       'ngdpbase.audit.provider': 'nullauditprovider'
     }));
     await am.initialize();
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('profile=hardened'));
-  });
-
-  test('a cleared key still falls back to the profile', async () => {
-    // Empty is how an operator clears a key, as opposed to how the shipped
-    // config expresses a default — which it no longer does.
-    const am = new AuditManager(makeEngine({
-      'ngdpbase.audit.provider': 'databaseauditprovider',
-      'ngdpbase.security.profile': 'hardened',
-      'ngdpbase.audit.on-failure': '   '
-    }));
-    await expect(am.initialize()).rejects.toThrow(/DatabaseAuditProvider/);
-  });
-
-  test('matching profile and key produce no warning', async () => {
-    const warn = vi.spyOn(logger, 'warn');
-    warn.mockClear();
-    const am = new AuditManager(makeEngine({
-      'ngdpbase.security.profile': 'hardened',
-      'ngdpbase.audit.on-failure': 'refuse-boot',
-      'ngdpbase.audit.provider': 'nullauditprovider'
-    }));
-    await am.initialize();
-    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('profile=hardened'));
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('profile='));
   });
 });
 
-// #1116: the audit list was the counterexample to the list-gate rule — the
-// manager applied no authorization of its own, safe only because one
-// admin-system check gated the whole page at the route. A resource whose
-// list cannot be narrowed must refuse instead of returning everything, and
-// the refusal must live inside the door.
 describe('#1116 audit queries refuse without an admin-system caller', () => {
   function makeEngineWithUsers(grants: Record<string, boolean>, configOverrides: Record<string, unknown> = {}) {
     const cm = makeConfigManager(configOverrides);

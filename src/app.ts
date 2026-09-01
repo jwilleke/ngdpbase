@@ -292,23 +292,28 @@ void (async (): Promise<void> => {
     // #1133: reconcile the outbound CIDR lists HERE, at boot. Deferring it to
     // the first fetch would surface a contradictory configuration as one
     // dropped image with a `fetch` warning — indistinguishable from the remote
-    // host being down. The offending entry is dropped on every profile; the
-    // profile decides only whether the instance also refuses to start, the
-    // same shape as ngdpbase.audit.on-failure (#1118, #1137).
+    // host being down.
+    //
+    // #1144: nothing here stops the boot any more. Contradictions resolve by
+    // firewall convention (D8) and are reported; a malformed range, the one
+    // case with no safe silent resolution, is surfaced for #1152 to turn into
+    // a maintenance boot with a route to the fix.
     const egressCm = engine.getManager<import('./managers/ConfigurationManager.js').default>('ConfigurationManager');
     const egress = resolveEgressPolicy((key, fallback) => egressCm?.getProperty?.(key, fallback));
     if (egress.conflicts.length > 0) {
       for (const conflict of egress.conflicts) {
         logger.warn(`⚠️  [egress] ${conflict}`);
       }
-      if (egress.fatal) {
-        throw new Error(
-          'Outbound egress configuration is contradictory and ngdpbase.security.profile is not \'baseline\'. ' +
-          'Fix ngdpbase.security.egress.allowed-ranges / denied-ranges, or set the profile to \'baseline\' ' +
-          'to start with the offending entries dropped.'
-        );
-      }
-      logger.warn('[egress] the offending entries were dropped; the boundary is still enforced');
+      logger.warn('[egress] the boundary is still enforced; overlaps resolved with the deny winning');
+    }
+    if (egress.malformed.length > 0) {
+      // Louder, because it is the case that can fail OPEN: an operator wrote a
+      // deny rule, it did not parse, and nothing about the running instance
+      // looks wrong. #1152 makes this block serving rather than only warn.
+      logger.error(
+        `🚨 [egress] ${egress.malformed.length} range(s) do not parse as CIDR and are NOT in force: ` +
+        `${egress.malformed.join(', ')}. A malformed deny rule means the restriction you wrote is not applied.`
+      );
     }
 
     console.log('✅ ngdpbase Engine initialized successfully.');

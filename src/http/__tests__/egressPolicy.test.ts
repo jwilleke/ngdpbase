@@ -1,8 +1,8 @@
 /**
  * #1133 — turning configuration into the policy the guard enforces.
  *
- * The profile selects defaults and never gates the mechanism (#1137): the
- * guard is always installed, and the profile only decides how a contradictory
+ * The guard is always installed. #1144 removed the profile, so nothing here
+ * decides whether a contradictory
  * configuration is treated. A `baseline` home instance warns and denies; a
  * `hardened` one refuses to boot, reusing the pattern already established by
  * `ngdpbase.audit.on-failure`.
@@ -23,7 +23,7 @@ describe('resolveEgressPolicy — reading configuration', () => {
     const r = resolveEgressPolicy(reader({}));
     expect(r.policy).toEqual({ deniedRanges: [], allowedRanges: [] });
     expect(r.conflicts).toEqual([]);
-    expect(r.fatal).toBe(false);
+    expect(r.malformed).toEqual([]);
   });
 
   it('passes configured ranges through', () => {
@@ -76,40 +76,23 @@ describe('resolveEgressPolicy — contradictions', () => {
   });
 });
 
-describe('resolveEgressPolicy — the profile decides the failure policy, not the mechanism', () => {
-  it('warns but continues on baseline', () => {
+describe('resolveEgressPolicy — a contradiction never widens access (#1144)', () => {
+  // The profile used to decide whether a contradiction stopped the boot. #1144
+  // removed it: nothing here is fatal, and the resolutions are the firewall
+  // convention (D8). The behaviour that mattered — the offending entry never
+  // taking effect — is unchanged and pinned below.
+  it('drops the offending allow entry rather than honouring it', () => {
     const r = resolveEgressPolicy(reader({
-      'ngdpbase.security.profile': 'baseline',
-      'ngdpbase.security.egress.allowed-ranges': ['0.0.0.0/0']
-    }));
-    expect(r.conflicts).not.toEqual([]);
-    expect(r.fatal).toBe(false);
-  });
-
-  it('is fatal on hardened', () => {
-    const r = resolveEgressPolicy(reader({
-      'ngdpbase.security.profile': 'hardened',
-      'ngdpbase.security.egress.allowed-ranges': ['0.0.0.0/0']
-    }));
-    expect(r.fatal).toBe(true);
-  });
-
-  it('is not fatal on hardened when the configuration is coherent', () => {
-    const r = resolveEgressPolicy(reader({
-      'ngdpbase.security.profile': 'hardened',
-      'ngdpbase.security.egress.allowed-ranges': ['192.168.68.0/24']
-    }));
-    expect(r.conflicts).toEqual([]);
-    expect(r.fatal).toBe(false);
-  });
-
-  // The offending entry is dropped either way. A contradiction must never
-  // widen access on the profile that chose to keep running.
-  it('drops the offending allow entry on baseline rather than honouring it', () => {
-    const r = resolveEgressPolicy(reader({
-      'ngdpbase.security.profile': 'baseline',
       'ngdpbase.security.egress.allowed-ranges': ['0.0.0.0/0', '192.168.68.0/24']
     }));
     expect(r.policy.allowedRanges).toEqual(['192.168.68.0/24']);
+  });
+
+  it('reports the contradiction without stopping anything', () => {
+    const r = resolveEgressPolicy(reader({
+      'ngdpbase.security.egress.allowed-ranges': ['0.0.0.0/0']
+    }));
+    expect(r.conflicts).not.toEqual([]);
+    expect(r.malformed).toEqual([]);
   });
 });

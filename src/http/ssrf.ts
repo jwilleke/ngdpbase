@@ -279,11 +279,26 @@ export function validateUrl(
  * An overlap between the lists is the normal case and not a conflict: the
  * allow-list exists to narrow the deny-list. Only these are contradictions.
  */
+export interface ReconciledPolicy {
+  /** Every contradiction, human-readable. */
+  conflicts: string[];
+  /** Ranges that do not parse as CIDR. No safe silent resolution — see #1152. */
+  malformed: string[];
+  /** Ranges present verbatim in both lists. A prefix-length tie; the deny wins. */
+  duplicates: string[];
+}
+
 export function reconcilePolicy(
   deniedRanges: readonly string[],
   allowedRanges: readonly string[]
-): { conflicts: string[] } {
+): ReconciledPolicy {
   const conflicts: string[] = [];
+  // #1144: the three flagged cases are not equivalent, and a caller that can
+  // only see message strings cannot tell them apart. `malformed` has no safe
+  // silent resolution — dropping a malformed DENY fails open — while the other
+  // two resolve by convention (D8).
+  const malformed: string[] = [];
+  const duplicates: string[] = [];
 
   for (const [label, ranges] of [['denied-ranges', deniedRanges], ['allowed-ranges', allowedRanges]] as const) {
     for (const range of ranges) {
@@ -291,6 +306,7 @@ export function reconcilePolicy(
         ipaddr.parseCIDR(range);
       } catch {
         conflicts.push(`${label}: '${range}' is not a valid CIDR range`);
+        malformed.push(range);
       }
     }
   }
@@ -315,11 +331,12 @@ export function reconcilePolicy(
   const deniedSet = new Set(deniedRanges);
   for (const range of allowedRanges) {
     if (deniedSet.has(range)) {
-      conflicts.push(`'${range}' appears verbatim in both denied-ranges and allowed-ranges; no intent can be read from that`);
+      conflicts.push(`'${range}' appears verbatim in both denied-ranges and allowed-ranges — the deny wins`);
+      duplicates.push(range);
     }
   }
 
-  return { conflicts };
+  return { conflicts, malformed, duplicates };
 }
 
 /** Do two CIDRs overlap at all? True when either network address falls inside the other. */

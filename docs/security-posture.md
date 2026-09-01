@@ -28,7 +28,7 @@ This is a deliberate reversal of the preset model in the planning document, and 
 
 Rule 3 of the planning document — *the instance publishes what it demonstrates, not the label it selected* — is satisfied structurally under D2 rather than needing a mechanism, because there is no label. What the operator sees is the settings themselves.
 
-__Issues:__ Tracked by [#1144](https://github.com/jwilleke/ngdpbase/issues/1144), rewritten on 2026-09-01 to ask for the removal this decision implies rather than the preset it replaced.
+__Issues:__ Tracked by [#1144](https://github.com/jwilleke/ngdpbase/issues/1144) — __landed 2026-09-01__. `ngdpbase.security.profile` is gone from the shipped config and has no consumers left.
 
 ### D3 — The posture is a view over security-related settings
 
@@ -94,7 +94,7 @@ Its two consumers, recorded below, are handled differently because only one of t
 - __The auditing default and its divergence warning are deleted__ (`AuditManager.ts:364-382`). `ngdpbase.audit.on-failure` keeps its shipped `continue` and is set explicitly by an operator who wants `refuse-boot`. Nothing is lost: as recorded below, the preset half was already unreachable in a stock install, and an operator who had set the key explicitly keeps exactly the value they set.
 - __The egress conflict behaviour is not a preset and is re-homed, not deleted.__ It decided whether a contradictory CIDR configuration stops the boot. D8 answers it: nothing stops the boot, because the firewall convention resolves every case except a malformed range, which D9 handles.
 
-__Issues:__ Tracked by [#1144](https://github.com/jwilleke/ngdpbase/issues/1144). Its second consumer is [#1133](https://github.com/jwilleke/ngdpbase/issues/1133)'s egress reconciliation — see D8.
+__Issues:__ Tracked by [#1144](https://github.com/jwilleke/ngdpbase/issues/1144) — __landed 2026-09-01__. Its second consumer, [#1133](https://github.com/jwilleke/ngdpbase/issues/1133)'s egress reconciliation, was re-homed rather than deleted — see D8.
 
 ### D8 — Egress conflicts resolve by firewall convention, and none of them is fatal
 
@@ -106,11 +106,13 @@ The three cases it does flag are the ones longest prefix cannot decide, and two 
 |---|---|
 | An allow entry intersects the mechanism (loopback, link-local, multicast, Teredo) | Unsatisfiable at any prefix length — the mechanism is absolute. Drop the entry, log it. |
 | A range appears verbatim in both lists | A prefix-length tie. __Deny wins__, the default-deny bias every firewall applies. Log it. |
+
+The tie break was a behaviour __change__, not just a re-homing. Previously a range in both lists was dropped from __both__, so the operator's stricter statement was discarded along with the looser one and the range fell back to the built-in defaults. Now the deny survives.
 | A range does not parse as CIDR | No prefix to compare. See D9. |
 
 __No case refuses to start the instance.__ That was the profile looking for a job, and it is not the convention: `iptables` rejects a bad rule and keeps the chain, and the Kubernetes API server rejects an invalid NetworkPolicy while the other policies keep applying. Neither takes the workload down.
 
-__Issues:__ Tracked by [#1144](https://github.com/jwilleke/ngdpbase/issues/1144); the behaviour being re-homed came from [#1133](https://github.com/jwilleke/ngdpbase/issues/1133). The malformed-CIDR case it defers to D9 is [#1152](https://github.com/jwilleke/ngdpbase/issues/1152).
+__Issues:__ Tracked by [#1144](https://github.com/jwilleke/ngdpbase/issues/1144) — __landed 2026-09-01__; the behaviour re-homed came from [#1133](https://github.com/jwilleke/ngdpbase/issues/1133). The malformed-CIDR case it defers to D9 is [#1152](https://github.com/jwilleke/ngdpbase/issues/1152), which is now the only thing standing between a malformed deny rule and it silently not applying.
 
 ### D9 — A fatal configuration entry boots into maintenance mode, not a dead process
 
