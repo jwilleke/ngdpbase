@@ -1,4 +1,5 @@
 import BaseAuditProvider, { WikiEngine, AuditFilters, AuditSearchResults, AuditStats } from './BaseAuditProvider.js';
+import type { AuditReport } from './BaseAuditProvider.js';
 
 /**
  * NullAuditProvider - No-op audit provider
@@ -18,8 +19,11 @@ class NullAuditProvider extends BaseAuditProvider {
   }
 
   /** Nothing is stored, so nothing is guaranteed (#1119). */
-  override getGuarantees(): { tamperEvident: boolean; durable: boolean; queryable: boolean; offBox: boolean } {
-    return { tamperEvident: false, durable: false, queryable: false, offBox: false };
+  override getGuarantees(): AuditReport {
+    // Nothing is stored, so durability does not apply rather than being false:
+    // there is no window in which a record could be lost because no record is
+    // ever held (#1148).
+    return { tamperEvident: false, durability: null, queryable: false, offBox: false };
   }
 
   constructor(engine: WikiEngine) {

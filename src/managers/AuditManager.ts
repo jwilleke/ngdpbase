@@ -23,6 +23,7 @@ import logger from '../utils/logger.js';
 import { canonicalEventTypeOf, legacyTypesFor } from '../utils/auditVocabulary.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
+import type { AuditReport } from '../providers/BaseAuditProvider.js';
 
 /**
  * Base audit event structure
@@ -303,10 +304,10 @@ class AuditManager extends BaseManager {
     configured: string;
     degraded: boolean;
     reason: string | null;
-    guarantees: { tamperEvident: boolean; durable: boolean; queryable: boolean; offBox: boolean } | null;
+    guarantees: AuditReport | null;
     } {
     const withGuarantees = this.provider as unknown as {
-      getGuarantees?: () => { tamperEvident: boolean; durable: boolean; queryable: boolean; offBox: boolean };
+      getGuarantees?: () => AuditReport;
     } | null;
     return {
       provider: this.provider?.getProviderInfo().name ?? 'none',

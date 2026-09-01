@@ -88,7 +88,10 @@ describe('#1119 the base stamps, the subclass only stores', () => {
     const p = new UnchainedProvider(engine);
     await p.logAuditEvent(event(1));
     expect(p.written[0].seq).toBeUndefined();
-    expect(p.getGuarantees()).toMatchObject({ tamperEvident: false, durable: false });
+    // #1148: `durable` is gone. Chaining made records' alteration detectable
+    // and never had anything to do with surviving a crash, so deriving one
+    // from the other claimed durability no provider delivered.
+    expect(p.getGuarantees()).toMatchObject({ tamperEvident: false, durability: null });
   });
 
   it('a storing provider reports tamper evidence without having to say so', async () => {
