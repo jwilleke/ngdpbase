@@ -111,6 +111,7 @@ import { safeRedirect } from '../utils/safeRedirect.js';
 import { generateCsrfToken } from '../middleware/csrf.js';
 import { LoginThrottle } from '../utils/LoginThrottle.js';
 import { resolveMaintenanceState, MAINTENANCE_ENABLED_KEY } from '../utils/maintenanceState.js';
+import { resolvePosture } from '../utils/securityPosture.js';
 
 /**
  * Ceiling on how many referring pages one rename may rewrite (#1094).
@@ -9486,6 +9487,19 @@ ${panes}
         auditPosture: (this.engine.getManager('AuditManager') as {
           getAuditPosture?: () => { provider: string; configured: string; degraded: boolean; reason: string | null };
         } | null)?.getAuditPosture?.() ?? null,
+
+        // #1145: the security posture — which settings make up what this
+        // instance guarantees, shown as one subject. Gated on admin-system for
+        // VIEWING as well as editing (D18), unlike other admin screens: the
+        // section is a map of the instance's defences, and a reader who can
+        // see auth.throttle.max-attempts and lock-minutes knows how to pace a
+        // password-guessing attempt without tripping the lock. demo-admin
+        // holds admin-read and exists so a public demo can expose every admin
+        // screen to visitors.
+        securityPosture: (await wikiContext.hasPermission('admin-system'))
+          ? resolvePosture((key, fallback) =>
+            this.engine.getManager('ConfigurationManager')?.getProperty?.(key, fallback))
+          : null,
 
         // #1155: every OTHER manager that is configured, wanted and not
         // working. Thirteen could reach that state and only auditing said so,

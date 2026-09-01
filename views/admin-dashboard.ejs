@@ -34,6 +34,64 @@
         </div>
     <% } %>
 
+    <%# #1145 — the security posture: the settings that determine what this
+        instance guarantees, shown as one subject instead of scattered through
+        five hundred config keys. Collapsed by default — it is a reference, not
+        an alert, and the banners above are the things that need attention.
+        Rendered only for admin-system (D18): this is a map of the instance's
+        defences, and admin-read exists to let a public demo expose every admin
+        screen to visitors. %>
+    <% if (typeof securityPosture !== 'undefined' && securityPosture && securityPosture.length > 0) { %>
+        <details class="card mb-3">
+            <summary class="card-header" style="cursor: pointer;">
+                <i class="fas fa-shield-halved me-2" aria-hidden="true"></i>
+                <strong>Security Posture</strong>
+                <span class="text-muted small ms-2">
+                    what this instance is set to &mdash;
+                    <%= securityPosture.reduce(function (n, g) { return n + g.items.length; }, 0) %> settings
+                </span>
+            </summary>
+            <div class="card-body">
+                <p class="small text-muted">
+                    These are ordinary configuration keys, gathered here because together they decide what this
+                    instance guarantees. Changing one here is the same as changing it anywhere else, and every
+                    change is recorded in the audit log.
+                </p>
+                <% securityPosture.forEach(function (group) { %>
+                    <h6 class="mt-3"><%= group.group %></h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead>
+                                <tr><th scope="col">Setting</th><th scope="col">Value</th><th scope="col">Takes effect</th></tr>
+                            </thead>
+                            <tbody>
+                                <% group.items.forEach(function (item) { %>
+                                    <tr>
+                                        <td><code class="small"><%= item.key %></code></td>
+                                        <td class="small">
+                                            <% if (item.secret) { %>
+                                                <span class="text-muted"><em>set, not shown</em></span>
+                                            <% } else { %>
+                                                <code><%= JSON.stringify(item.value) %></code>
+                                            <% } %>
+                                        </td>
+                                        <td class="small">
+                                            <% if (item.restart) { %>
+                                                <span class="text-muted">after a restart</span>
+                                            <% } else { %>
+                                                <span class="text-muted">immediately</span>
+                                            <% } %>
+                                        </td>
+                                    </tr>
+                                <% }); %>
+                            </tbody>
+                        </table>
+                    </div>
+                <% }); %>
+            </div>
+        </details>
+    <% } %>
+
     <%# #1155 — a manager that is configured, wanted and NOT working. Thirteen
         managers could reach this state and only auditing reported it, so a bad
         backup directory meant backups silently never ran while this page

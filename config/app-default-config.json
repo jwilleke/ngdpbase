@@ -332,6 +332,173 @@
   "ngdpbase.audit.read-events": false,
   "_comment_security_egress": "#1133 — the outbound address boundary. Two CIDR lists, IPv4 and IPv6, evaluated against the address the server actually resolved and connected to, on every redirect hop. NOT a URL list: a URL check cannot be the boundary, because a redirect sends the request somewhere the original URL never named and a name can resolve differently between validation and connection. Loopback, link-local (which covers 169.254.169.254), multicast and Teredo are the MECHANISM and are refused on every profile — no allow entry reaches them, because an editor on your LAN can already reach the LAN but cannot reach 127.0.0.1 on the server. RFC1918, CGNAT and IPv6 unique-local are POLICY: denied by default and openable here, so a home instance can permit its own segment with '192.168.68.0/24' without also permitting 10.0.0.0/8 and in-cluster space. Overlap between the lists is normal and resolves by LONGEST PREFIX — the routing convention, used because the values are routes — with explicit entries beating the built-in defaults at equal length. The lists are reconciled at boot and NOTHING stops the boot (#1144): an allow entry reaching the mechanism is unsatisfiable and dropped, and a range appearing verbatim in both is a prefix-length tie the DENY wins — the operator's stricter statement survives. A range that does not parse as CIDR is the one case with no safe silent resolution, because a malformed deny rule means the restriction was never applied; it is reported loudly and #1152 will make it block serving.",
   "ngdpbase.security.egress.denied-ranges": [],
+  "_comment_security_posture": "#1145 \u2014 the security posture: which settings make up what this instance guarantees, presented as one subject. A VIEW, not a resolution layer \u2014 every entry is an ordinary key with its own shipped default, read by live code, and the posture changes no value on its own. That is also why removing an entry is safe: the key keeps whatever it is set to and the code keeps reading it, it only stops being displayed. A MAP keyed by the ingredient rather than groups holding arrays, because a plain array is replaced wholesale on merge and an operator adding one entry would silently drop the rest; a map merges per entry, and an entry set to null removes a shipped one. 'restart' says whether a change takes effect only after a restart, which is written down rather than compared against the running process: a boot snapshot misreports the settings whose consumers re-read live (LoginThrottle, SimpleRateLimiter), and instrumenting every subsystem to derive a flag a maintainer can simply state is the wrong trade. Keys named in ngdpbase.config.secret-keys are reported as set but never rendered. See docs/security-posture.md.",
+  "ngdpbase.security.posture": {
+    "ngdpbase.security.egress.allowed-ranges": {
+      "group": "Egress boundary",
+      "restart": true
+    },
+    "ngdpbase.security.egress.denied-ranges": {
+      "group": "Egress boundary",
+      "restart": true
+    },
+    "ngdpbase.session.secure": {
+      "group": "Session and cookie",
+      "restart": true
+    },
+    "ngdpbase.session.http-only": {
+      "group": "Session and cookie",
+      "restart": true
+    },
+    "ngdpbase.session.max-age": {
+      "group": "Session and cookie",
+      "restart": true
+    },
+    "ngdpbase.server.trust-proxy": {
+      "group": "Session and cookie",
+      "restart": true
+    },
+    "ngdpbase.auth.password.enabled": {
+      "group": "Identity and registration",
+      "restart": false
+    },
+    "ngdpbase.auth.required-factors": {
+      "group": "Identity and registration",
+      "restart": false
+    },
+    "ngdpbase.application.registration": {
+      "group": "Identity and registration",
+      "restart": false
+    },
+    "ngdpbase.application.registration.password": {
+      "group": "Identity and registration",
+      "restart": false
+    },
+    "ngdpbase.auth.user.default-external": {
+      "group": "Identity and registration",
+      "restart": false
+    },
+    "ngdpbase.auth.magic-link.auto-provision": {
+      "group": "Identity and registration",
+      "restart": false
+    },
+    "ngdpbase.auth.magic-link.ttl-minutes": {
+      "group": "Identity and registration",
+      "restart": false
+    },
+    "ngdpbase.auth.google-oidc.auto-provision": {
+      "group": "Identity and registration",
+      "restart": false
+    },
+    "ngdpbase.auth.throttle.enabled": {
+      "group": "Login throttling",
+      "restart": false
+    },
+    "ngdpbase.auth.throttle.max-attempts": {
+      "group": "Login throttling",
+      "restart": false
+    },
+    "ngdpbase.auth.throttle.window-minutes": {
+      "group": "Login throttling",
+      "restart": false
+    },
+    "ngdpbase.auth.throttle.lock-minutes": {
+      "group": "Login throttling",
+      "restart": false
+    },
+    "ngdpbase.auth.throttle.max-lock-minutes": {
+      "group": "Login throttling",
+      "restart": false
+    },
+    "ngdpbase.auth.agent-token.enabled": {
+      "group": "Agent tokens",
+      "restart": true
+    },
+    "ngdpbase.auth.agent-token.max-per-user": {
+      "group": "Agent tokens",
+      "restart": false
+    },
+    "ngdpbase.auth.agent-token.max-ttl-hours": {
+      "group": "Agent tokens",
+      "restart": false
+    },
+    "ngdpbase.auth.agent-token.default-ttl-hours": {
+      "group": "Agent tokens",
+      "restart": false
+    },
+    "ngdpbase.auth.agent-token.retention-days": {
+      "group": "Agent tokens",
+      "restart": false
+    },
+    "ngdpbase.audit.enabled": {
+      "group": "Audit",
+      "restart": true
+    },
+    "ngdpbase.audit.provider": {
+      "group": "Audit",
+      "restart": true
+    },
+    "ngdpbase.audit.on-failure": {
+      "group": "Audit",
+      "restart": true
+    },
+    "ngdpbase.audit.read-events": {
+      "group": "Audit",
+      "restart": false
+    },
+    "ngdpbase.audit.retentiondays": {
+      "group": "Audit",
+      "restart": false
+    },
+    "ngdpbase.filters.security.enabled": {
+      "group": "Content sanitisation",
+      "restart": true
+    },
+    "ngdpbase.filters.security.prevent-xss": {
+      "group": "Content sanitisation",
+      "restart": true
+    },
+    "ngdpbase.filters.security.prevent-csrf": {
+      "group": "Content sanitisation",
+      "restart": true
+    },
+    "ngdpbase.filters.security.sanitize-html": {
+      "group": "Content sanitisation",
+      "restart": true
+    },
+    "ngdpbase.filters.security.strip-dangerous-content": {
+      "group": "Content sanitisation",
+      "restart": true
+    },
+    "ngdpbase.filters.security.allowed-tags": {
+      "group": "Content sanitisation",
+      "restart": true
+    },
+    "ngdpbase.filters.security.allowed-attributes": {
+      "group": "Content sanitisation",
+      "restart": true
+    },
+    "ngdpbase.style.security.allow-inline-css": {
+      "group": "Content sanitisation",
+      "restart": true
+    },
+    "ngdpbase.style.security.allowed-properties": {
+      "group": "Content sanitisation",
+      "restart": true
+    },
+    "ngdpbase.mail.rate-limit.enabled": {
+      "group": "Rate limiting",
+      "restart": false
+    },
+    "ngdpbase.mail.rate-limit.max-submissions": {
+      "group": "Rate limiting",
+      "restart": false
+    },
+    "ngdpbase.mail.rate-limit.window-minutes": {
+      "group": "Rate limiting",
+      "restart": false
+    }
+  },
   "ngdpbase.security.egress.allowed-ranges": [],
   "_comment_audit_on_failure": "#1118 — what happens when auditing is configured but the provider cannot be used. 'refuse-boot' names the provider and the cause and refuses to start; 'continue' falls back to the inert provider and marks the instance DEGRADED, reported by AuditManager.getAuditPosture() and shown as a banner on the admin dashboard. The value here IS the effective policy — #1144 removed the profile preset that could otherwise have supplied a different default, so nothing is inferred. Set 'refuse-boot' for an internet-facing deployment; docs/security-posture.md carries the recommended value sets. NOTE this is NOT the same as turning auditing off: an operator who wants no auditing sets ngdpbase.audit.enabled false or selects nullauditprovider, which is a decision on the record and is not degraded.",
   "ngdpbase.audit.on-failure": "continue",
