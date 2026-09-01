@@ -7,6 +7,16 @@ import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger.js';
 import { AuditEvent } from '../types/index.js';
 import type { ProviderDurability } from './BaseProvider.js';
+import type { AuditReport } from './BaseAuditProvider.js';
+import { buildWitness, shouldPublish, type ChainWitness } from '../utils/auditHeadWitness.js';
+
+export const WITNESS_DESTINATION_KEY = 'ngdpbase.audit.chain-witness.destination';
+export const WITNESS_INTERVAL_KEY = 'ngdpbase.audit.chain-witness.interval-minutes';
+
+/** A config value is `unknown`; anything that is not a string is not a path. */
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
 
 /**
  * Extended audit event with additional fields used by FileAuditProvider
@@ -72,6 +82,10 @@ class FileAuditProvider extends BaseAuditProvider {
   private auditQueue: ExtendedAuditEvent[];
   private isProcessing: boolean;
   private flushTimer: NodeJS.Timeout | null;
+
+  /** #1138: when the chain head was last published, and what was published. */
+  private witnessPublishedAtMs: number | null = null;
+  private witnessLast: ChainWitness | null = null;
   private config: FileAuditConfig | null;
 
   constructor(engine: WikiEngine) {
@@ -550,6 +564,10 @@ class FileAuditProvider extends BaseAuditProvider {
       const auditLogPath = path.join(this.config.logDirectory, this.config.auditFileName);
       await fs.appendFile(auditLogPath, logLines);
 
+      // #1138: after the write, never before — a head published ahead of the
+      // records it names would report truncation on the next verification.
+      await this.publishChainHead();
+
       // Add to in-memory logs for search
       this.auditLogs.push(...eventsToFlush);
 
@@ -687,6 +705,83 @@ class FileAuditProvider extends BaseAuditProvider {
    * decides whether that is acceptable for their deployment. The `durable:
    * true` this replaces decided it for them, wrongly.
    */
+  /**
+   * Publish the chain head to the configured destination (#1138).
+   *
+   * The chain cannot detect truncation of its own tail — removing records from
+   * the end breaks no link — and it cannot be fixed locally, because an
+   * attacker who owns the machine owns anything the machine wrote locally. So
+   * the head goes to wherever the operator points it, and this code takes no
+   * view on whether that is genuinely off-box (D13): it reports the
+   * destination and never claims what the destination is (D21).
+   *
+   * Failure to publish is logged and swallowed. An instance that refuses to
+   * serve because it could not write a witness would be trading a working
+   * system for a detection property, which is the wrong way round — and the
+   * absence of a fresh witness is itself visible in getGuarantees().
+   */
+  private async publishChainHead(): Promise<void> {
+    const cm = this.engine?.getManager?.('ConfigurationManager') as {
+      getProperty?: (k: string, d: unknown) => unknown;
+    } | null;
+    const destination = asString(cm?.getProperty?.(WITNESS_DESTINATION_KEY, ''));
+    if (destination === '') return;
+
+    const intervalMinutes = Number(cm?.getProperty?.(WITNESS_INTERVAL_KEY, 60) ?? 60);
+    const intervalMs = intervalMinutes * 60_000;
+    const now = Date.now();
+    if (!shouldPublish(this.witnessPublishedAtMs, now, intervalMs)) return;
+    // Nothing to witness yet — publishing a genesis head would assert that an
+    // empty log is complete.
+    if (this.chainSeq <= 0) return;
+
+    const instance = asString(cm?.getProperty?.('ngdpbase.applicationname', 'ngdpbase')) || 'ngdpbase';
+    const witness = buildWitness({
+      seq: this.chainSeq,
+      hash: this.chainPrevHash,
+      instance,
+      at: new Date(now)
+    });
+
+    try {
+      await fs.ensureDir(path.dirname(destination));
+      // Appended, never overwritten: a witness store that can be rewritten
+      // reproduces the original problem one hop away, and the history of heads
+      // is itself the evidence.
+      await fs.appendFile(destination, `${JSON.stringify(witness)}\n`, 'utf8');
+      this.witnessPublishedAtMs = now;
+      this.witnessLast = witness;
+    } catch (err) {
+      logger.error(
+        `[FileAuditProvider] Could not publish the audit chain head to "${destination}": ` +
+        `${err instanceof Error ? err.message : String(err)}. Truncation of the log tail is undetectable ` +
+        'while no witness is being written.'
+      );
+    }
+  }
+
+  /**
+   * Report where the chain head is published, or null when nothing publishes
+   * it (#1138). Facts, not a claim — see the note on AuditReport.headWitness.
+   */
+  override getGuarantees(): AuditReport {
+    const cm = this.engine?.getManager?.('ConfigurationManager') as {
+      getProperty?: (k: string, d: unknown) => unknown;
+    } | null;
+    const destination = asString(cm?.getProperty?.(WITNESS_DESTINATION_KEY, ''));
+    return {
+      ...super.getGuarantees(),
+      headWitness: destination === ''
+        ? null
+        : {
+          destination,
+          intervalMinutes: Number(cm?.getProperty?.(WITNESS_INTERVAL_KEY, 60) ?? 60),
+          lastPublishedAt: this.witnessLast?.publishedAt ?? null,
+          lastSeq: this.witnessLast?.seq ?? null
+        }
+    };
+  }
+
   override getDurability(): ProviderDurability | null {
     // Before initialize() the provider has not read its configuration, so it
     // does not know its own buffering and says nothing rather than reporting

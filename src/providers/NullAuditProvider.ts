@@ -23,7 +23,7 @@ class NullAuditProvider extends BaseAuditProvider {
     // Nothing is stored, so durability does not apply rather than being false:
     // there is no window in which a record could be lost because no record is
     // ever held (#1148).
-    return { tamperEvident: false, durability: null, queryable: false, offBox: false };
+    return { tamperEvident: false, durability: null, queryable: false, headWitness: null };
   }
 
   constructor(engine: WikiEngine) {

@@ -160,8 +160,24 @@ export interface AuditReport {
   /** How records reach disk, or null when the provider has not stated it. */
   durability: ProviderDurability | null;
   queryable: boolean;
-  /** Whether the chain head is held off this machine. See #1138. */
-  offBox: boolean;
+  /**
+   * Where and when the chain head was last published, or null when nothing
+   * publishes it (#1138).
+   *
+   * NOT a boolean. The old `offBox: boolean` was hardcoded `false`, and making
+   * it `true` would have been a claim nothing on this machine can establish —
+   * no code here can verify that a path leaves the box. So this reports the
+   * facts and the reader judges, exactly as `durability` does after #1148.
+   *
+   * Without a witness, truncation of the tail is undetectable: removing records
+   * from the end breaks no link.
+   */
+  headWitness: {
+    destination: string;
+    intervalMinutes: number;
+    lastPublishedAt: string | null;
+    lastSeq: number | null;
+  } | null;
 }
 
 abstract class BaseAuditProvider extends BaseProvider {
@@ -243,7 +259,7 @@ abstract class BaseAuditProvider extends BaseProvider {
       // provider has not stated it — silence rather than a default.
       durability: this.getDurability(),
       queryable: true,
-      offBox: false
+      headWitness: null
     };
   }
 
