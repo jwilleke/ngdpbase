@@ -133,7 +133,7 @@ What this requires, established from the code rather than assumed:
 - __The initialisation gate at `app.ts:253` is the wrong mechanism__ — its bypass list has no `/admin` or `/login`, so it locks out the very person who would fix the problem. The admin maintenance middleware at `app.ts:713` already has the right shape: it passes `/admin`, `/login` and `/logout` through and serves everyone else the maintenance page.
 - __This depends on [#1147](https://github.com/jwilleke/ngdpbase/issues/1147).__ Maintenance mode currently has two sources of truth and its toggle does not survive a restart. Adding a third trigger to a mechanism with an open P1 defect would build on the defect, so #1147 lands first.
 
-__Issues:__ Tracked by [#1152](https://github.com/jwilleke/ngdpbase/issues/1152). Unblocked by [#1147](https://github.com/jwilleke/ngdpbase/issues/1147), which gave maintenance mode one source of truth — this could not build on a mechanism with two. __Landed 2026-09-01.__
+__Issues:__ Tracked by [#1152](https://github.com/jwilleke/ngdpbase/issues/1152) — __landed 2026-09-01__, on top of [#1147](https://github.com/jwilleke/ngdpbase/issues/1147).
 
 ### D10 — Startup failures are gated into survivable and fatal
 
@@ -148,7 +148,7 @@ The distinction is not severity. A malformed deny rule is serious — D9 keeps t
 
 __Most of this already exists.__ `app.listen()` runs at `app.ts:279`, *before* engine initialisation, and the gate at `app.ts:253` serves the maintenance page while `engineReady` is false. A serving-but-not-ready instance is already the architecture; `process.exit(1)` discards it. What is missing is a survivable-failure state that keeps the process alive, and an `/admin` and `/login` bypass on that gate so the repair path is reachable — the admin maintenance middleware at `app.ts:713` already has the bypass shape to copy.
 
-__Issues:__ Tracked by [#1152](https://github.com/jwilleke/ngdpbase/issues/1152).
+__Issues:__ Tracked by [#1152](https://github.com/jwilleke/ngdpbase/issues/1152) — __landed 2026-09-01__.
 
 ### D11 — `audit.on-failure: refuse-boot` folds into the survivable path
 
@@ -162,7 +162,7 @@ __Orchestration is preserved by readiness, not by exiting.__ The concern with fo
 
 It is also strictly better than exiting under a supervisor. A process that exits on a bad config value restarts, fails identically, and restarts again — `CrashLoopBackOff` under Kubernetes, an endless respawn under pm2 — and the operator never gets a running instance to repair it with. Nothing about that loop reaches the admin UI.
 
-__Issues:__ Tracked by [#1152](https://github.com/jwilleke/ngdpbase/issues/1152).
+__Issues:__ Tracked by [#1152](https://github.com/jwilleke/ngdpbase/issues/1152) — __landed 2026-09-01__.
 
 ### D12 — Configuration-blocked is `engineReady = false`
 
@@ -179,7 +179,7 @@ __Why not-ready is right on its own terms.__ Readiness answers "can this instanc
 
 The repair UI is served by the instance at its own address, which is all ngdpbase controls. Whatever sits in front of it decides what it routes there, and that is the deployment's business — see D13.
 
-__Issues:__ Tracked by [#1152](https://github.com/jwilleke/ngdpbase/issues/1152). Depends on [#1147](https://github.com/jwilleke/ngdpbase/issues/1147) — __landed 2026-09-01__.
+__Issues:__ Tracked by [#1152](https://github.com/jwilleke/ngdpbase/issues/1152) — __landed 2026-09-01__. Depends on [#1147](https://github.com/jwilleke/ngdpbase/issues/1147) — __landed 2026-09-01__.
 
 ### D13 — Deployment methodology does not influence the design
 
@@ -204,7 +204,7 @@ Two pieces of __wording__ do become wrong when D11 lands, and they are the thing
 - `views/admin-dashboard.ejs:31` tells the operator to set `refuse-boot` "to make this fatal instead". Under D11 it is not fatal, it is blocking.
 - `config/app-default-config.json:338` says `refuse-boot` "names the provider and the cause and refuses to start". It still names both, and it does refuse to start serving, but "refuses to start" reads as the process exiting.
 
-__Issues:__ Settled here; the wording corrections it names are carried by [#1152](https://github.com/jwilleke/ngdpbase/issues/1152).
+__Issues:__ Settled here. The wording corrections it names are carried by [#1152](https://github.com/jwilleke/ngdpbase/issues/1152) and are still outstanding — `views/admin-dashboard.ejs:31` and `config/app-default-config.json:338` both still describe a process that exits.
 
 ### D15 — The ingredients of the shipped posture
 
