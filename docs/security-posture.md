@@ -273,7 +273,11 @@ Two properties follow from the rest of this document:
 - __A value change and an ingredient add or remove are different events.__ Removing an ingredient changes no value (D4, D16) and is a change to the view; changing a value alters what the instance does. Recording both as "posture changed" would lose the distinction that matters when reading the log back.
 - __Secrets never appear in the record.__ D15 excludes them as ingredients, but an audit entry naming a key and its before and after values would reintroduce the disclosure by another route if that list ever grows. `src/utils/redactSecrets.ts` applies here as it does to the view.
 
-__A change log alone does not answer "what is it running".__ Auditing only deltas leaves two holes: an `app-custom-config.json` edited directly on disk emits nothing, and neither does the state an instance started in. So the posture is also recorded __at boot__, as a statement of fact rather than a comparison — after which the log answers what the instance was running at any point, whether or not every change passed through the UI.
+__The posture is recorded at boot, and compared against the previous boot.__ Auditing only the changes made through the UI leaves two holes: an `app-custom-config.json` edited directly on disk emits nothing, and neither does the state an instance started in. Recording the posture at every start closes the second; comparing that record against the one from the previous start closes the first, because a change made on disk, or while the process was stopped, shows up as a difference between two consecutive boots even though nothing observed the edit itself.
+
+This is not the self-scoring D20 rejects. The comparison is against __this instance's own previous state__, which is a fact it holds, rather than against a recommended value set nobody can define.
+
+__The previous posture is read back from the audit log, not from a side file.__ Every storing provider reports `queryable: true` and is tamper-evident when the chain is on (`BaseAuditProvider.ts:219`), so the comparison inherits the integrity the log already has and there is one place the history lives. `NullAuditProvider` guarantees nothing and is not queryable — so an instance deliberately running without auditing has nothing to compare and records nothing, which is the correct outcome rather than a gap: that operator chose no audit trail, and the choice is itself on the record.
 
 The wider gap — that no administrative configuration change is audited — is larger than this epic and belongs in its own issue.
 
