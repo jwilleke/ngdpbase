@@ -137,6 +137,12 @@ class MetricsManager extends BaseManager {
     } catch (err) {
       logger.error('[MetricsManager] Failed to initialize metrics:', err);
       this.enabled = false;
+      // #1155: configured, wanted, and not working — which is exactly the
+      // state that used to be visible only as this log line.
+      this.markDegraded(
+        `Metrics were configured but could not start: ${err instanceof Error ? err.message : String(err)}`,
+        'ngdpbase.metrics.enabled'
+      );
     }
   }
 
