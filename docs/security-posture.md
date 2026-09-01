@@ -78,7 +78,7 @@ It is not renamed either. `ngdpbase.security.posture` (D15, D16) is a different 
 Its two consumers, recorded below, are handled differently because only one of them was a preset:
 
 - __The auditing default and its divergence warning are deleted__ (`AuditManager.ts:364-382`). `ngdpbase.audit.on-failure` keeps its shipped `continue` and is set explicitly by an operator who wants `refuse-boot`. Nothing is lost: as recorded below, the preset half was already unreachable in a stock install, and an operator who had set the key explicitly keeps exactly the value they set.
-- __The egress conflict behaviour is not a preset and must be re-homed, not deleted.__ It decides whether a contradictory CIDR configuration stops the boot — a policy question that still needs an answer once the profile is gone. See the open decision below.
+- __The egress conflict behaviour is not a preset and is re-homed, not deleted.__ It decided whether a contradictory CIDR configuration stops the boot. D8 answers it: nothing stops the boot, because the firewall convention resolves every case except a malformed range, which D9 handles.
 
 ### D8 — Egress conflicts resolve by firewall convention, and none of them is fatal
 
@@ -132,7 +132,7 @@ An audit provider that is configured and cannot be used is the same shape as a m
 
 The guarantee is unchanged — an instance whose auditing is broken serves nobody — but it is delivered by maintenance mode instead of by a dead process, so the provider can be fixed without filesystem access. `AuditManager.loadProvider()` stops throwing into the fatal catch and raises a survivable configuration failure instead.
 
-__The value name no longer describes what happens__, since the instance does boot. Renaming it is an open decision below.
+__The value name was reviewed and kept__ — see D14. `engineReady = false` means the boot did not complete, so `refuse-boot` still describes what happens.
 
 __Orchestration is preserved by readiness, not by exiting.__ The concern with folding this in was that an operator setting `refuse-boot` may mean *the process must not exist*, as a signal to a supervisor. The health split at `app.ts:209` and `app.ts:221` already answers that: liveness deliberately checks nothing and reports a wedged process only, while readiness returns 503 to pull an instance out of rotation without terminating it. A configuration-blocked instance reports not-ready, and an orchestrator withholds traffic exactly as it would from a dead one.
 
@@ -240,6 +240,8 @@ __The first consumer is inert in a stock install.__ `app-default-config.json:339
 
 These are being worked one at a time; each is recorded above as it is settled.
 
+- Which permission gates the Security Posture section (D5). It renders the instance's security settings, so it is not obviously `admin-read`; the nearest precedent is `getActiveSessionDetails()`, gated on `user-read` rather than an admin role because of what it discloses
+- Where D6's "the value the running process is using" comes from. Comparing it against configuration needs a boot-time snapshot of each ingredient, and nothing captures one today
 - Whether the recommended `baseline` / `hardened` / `regulated` value sets live in this document or their own
 - What the [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) report is called, now that D1 gives "posture" to the settings themselves and `AuditManager.getAuditPosture()` uses the same word for what auditing currently does
 - How this work is split into issues: D9 to D13 describe a startup-failure gate that none of [#1144](https://github.com/jwilleke/ngdpbase/issues/1144), [#1145](https://github.com/jwilleke/ngdpbase/issues/1145) or [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) covers, and D9 depends on [#1147](https://github.com/jwilleke/ngdpbase/issues/1147) landing first
