@@ -75,6 +75,13 @@ export interface LifecycleEventInput {
   pid: number;
   /** Required on a start, meaningless on a shutdown. */
   previousRun?: PreviousRun;
+  /**
+   * The transport the instance actually bound (#1153).
+   *
+   * "This instance is serving HTTP" is a security fact, and the log had no
+   * record of it — only the version and pid.
+   */
+  scheme?: 'http' | 'https';
 }
 
 /**
@@ -86,10 +93,11 @@ export interface LifecycleEventInput {
  * past.
  */
 export function buildLifecycleAuditEvent(input: LifecycleEventInput): AuditEvent {
-  const { phase, version, pid, previousRun } = input;
+  const { phase, version, pid, previousRun, scheme } = input;
   const unclean = phase === 'start' && previousRun === 'unclean';
 
   const metadata: Record<string, unknown> = { version, pid };
+  if (scheme) metadata.scheme = scheme;
   if (phase === 'start') {
     metadata.previousRun = previousRun ?? 'unknown';
     // The load-bearing field. #1148 means an unclean exit loses whatever was

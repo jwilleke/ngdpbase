@@ -181,10 +181,17 @@ ENV HEADLESS_INSTALL=true
 # Health check
 # Accepts both 200 (OK) and 302 (Redirect) as healthy responses
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    # #1079: was `/` accepting 200 OR 302 — so an instance that redirected
+    # #1153: tries HTTP, then HTTPS. An instance serving TLS answers nothing on
+# http://, so a probe hardcoded to one scheme would report unhealthy forever
+# and the container would restart in a loop. Probing both avoids teaching the
+# healthcheck to read app-custom-config.json, whose location varies.
+# rejectUnauthorized is off deliberately: this asks whether the process is
+# alive, not whether its certificate satisfies a public trust store — a
+# self-signed certificate is a normal choice here.
+# #1079: was `/` accepting 200 OR 302 — so an instance that redirected
 # everything, including a misconfigured one, reported healthy. /health/liveness
 # returns 200 and nothing else.
-CMD node -e "require('http').get('http://localhost:3000/health/liveness', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
+CMD node -e "const p='/health/liveness';const t=(m,u,n)=>require(m).get(u,{rejectUnauthorized:false},r=>r.statusCode===200?process.exit(0):n()).on('error',n);t('http','http://localhost:3000'+p,()=>t('https','https://localhost:3000'+p,()=>process.exit(1)))"
 
 # Volume mounts for persistent data
 VOLUME ["/app/data"]

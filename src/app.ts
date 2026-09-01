@@ -26,6 +26,8 @@ import { resolveListenPort } from './utils/resolveListenPort.js';
 import logger from './utils/logger.js';
 import { resolveEgressPolicy } from './http/egressPolicy.js';
 import { resolveMaintenanceState } from './utils/maintenanceState.js';
+import { resolveTlsConfig } from './utils/tlsConfig.js';
+import https from 'https';
 import { gateDecision, describeBlocked } from './utils/startupState.js';
 import WikiEngine from './WikiEngine.js';
 import type { WikiEngine as IWikiEngine } from './types/WikiEngine.js';
@@ -181,6 +183,9 @@ void (async (): Promise<void> => {
   // and a configuration value turned out to be unusable, which is what decides
   // if /admin is reachable.
   let blockedReasons: string[] = [];
+  // #1153: collected before the engine exists, so it cannot go through
+  // engine.blockConfiguration() at the point it is found.
+  let tlsBlockedReasons: string[] = [];
 
   // 1. Setup View Engine and static files first so we can serve the maintenance page
   app.set('views', path.join(projectRoot, 'views'));
@@ -293,9 +298,40 @@ void (async (): Promise<void> => {
   // was not listening on.
   const defaultPort = resolveListenPort(process.env, readConfigForPort());
 
-  app.listen(defaultPort, () => {
-    console.log(`🚀 Server listening on port ${defaultPort} (initializing engine...)`);
-  });
+  // #1153: serve TLS ourselves when a certificate and key are configured. A
+  // BROKEN configuration does not silently become HTTP — that is a transport
+  // downgrade, where the operator configured TLS, believes traffic is
+  // encrypted, and it is in the clear. It takes the #1152 survivable-failure
+  // path instead, so the instance boots into maintenance mode naming the bad
+  // file with /admin reachable.
+  const tlsConfig = resolveTlsConfig((key, fallback) => readConfigForPort()?.[key] ?? fallback);
+  let scheme: 'http' | 'https' = 'http';
+
+  if (tlsConfig.mode === 'blocked') {
+    tlsBlockedReasons = tlsConfig.reasons;
+  } else if (tlsConfig.mode === 'https') {
+    scheme = 'https';
+    if (tlsConfig.expired) {
+      // Deliberately still serving. Falling back would downgrade the transport
+      // over a certificate that is merely stale, and blocking would take down
+      // an instance whose operator may be mid-renewal — while a stale
+      // certificate is already loudly visible to every client.
+      logger.error(
+        `🚨 The configured TLS certificate EXPIRED on ${tlsConfig.expiresAt}. ` +
+        'Browsers will refuse to connect. Serving HTTPS anyway rather than downgrading to plain HTTP.'
+      );
+    }
+  }
+
+  if (scheme === 'https' && tlsConfig.mode === 'https') {
+    https.createServer({ cert: tlsConfig.cert, key: tlsConfig.key }, app).listen(defaultPort, () => {
+      console.log(`🚀 Server listening on port ${defaultPort} over HTTPS (initializing engine...)`);
+    });
+  } else {
+    app.listen(defaultPort, () => {
+      console.log(`🚀 Server listening on port ${defaultPort} over HTTP (initializing engine...)`);
+    });
+  }
 
   // 4. Initialize the WikiEngine
   try {
@@ -338,6 +374,7 @@ void (async (): Promise<void> => {
     // the process. The engine finished, so the admin screens work; the
     // instance serves them and refuses everything else until the value is
     // fixed.
+    for (const reason of tlsBlockedReasons) engine.blockConfiguration(reason);
     blockedReasons = [...engine.getBlockingConditions()];
     if (blockedReasons.length > 0) {
       logger.error(`🚨 ${describeBlocked(blockedReasons)}`);

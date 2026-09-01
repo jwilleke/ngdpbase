@@ -26,6 +26,7 @@ import type ConfigurationManager from './ConfigurationManager.js';
 import type { AuditReport } from '../providers/BaseAuditProvider.js';
 import { assessPreviousRun, buildLifecycleAuditEvent, type LifecycleRecord, type PreviousRun } from '../utils/auditLifecycle.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
+import { resolveTlsConfig } from '../utils/tlsConfig.js';
 
 /**
  * Base audit event structure
@@ -776,11 +777,18 @@ class AuditManager extends BaseManager {
     try {
       // The manager IS the sink here, unlike every other producer, which
       // reaches it through the engine. Same shape, one hop shorter.
+      // #1153: the transport this instance actually bound. Resolved from the
+      // same configuration app.ts used rather than threaded through, so the two
+      // cannot disagree. "This instance is serving HTTP" is a security fact and
+      // the log had no record of it.
+      const tls = resolveTlsConfig((key, fallback) => configManager?.getProperty?.(key, fallback));
+
       await recordAuditEvent(this as unknown as AuditEventSink, buildLifecycleAuditEvent({
         phase,
         version,
         pid: process.pid,
-        previousRun
+        previousRun,
+        scheme: tls.mode === 'https' ? 'https' : 'http'
       }));
     } catch (err) {
       // Declared critical, so recordAuditEvent rethrows on failure. A lifecycle
