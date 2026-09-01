@@ -28,7 +28,8 @@
                 <strong>discarded</strong>. Actions on this instance are not being recorded.
                 <div class="small text-muted mt-1">
                     <%= auditPosture.reason %> &mdash; now running <code><%= auditPosture.provider %></code>.
-                    Set <code>ngdpbase.audit.on-failure</code> to <code>refuse-boot</code> to make this fatal instead.
+                    Set <code>ngdpbase.audit.on-failure</code> to <code>refuse-boot</code> to stop the instance
+                    serving instead. It stays running so you can sign in here and repair the provider.
                 </div>
             </div>
         </div>

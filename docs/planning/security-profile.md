@@ -1,13 +1,32 @@
-# Security profile — deployment posture as a preset
+# Security profile — SUPERSEDED exploratory design
 
-`ngdpbase.security.profile` names __where an instance sits and what data is on it__, and selects
-defaults for keys that stay individually settable. It is not a security switch, and it never gates a
-mechanism.
+> __This design was reversed on 2026-09-01 and is kept as a record, not as guidance.__
+>
+> The design in force is [security-posture.md](../security-posture.md). Where the two disagree, that
+> document wins. `ngdpbase.security.profile` __no longer exists__ — it was removed by
+> [#1144](https://github.com/jwilleke/ngdpbase/issues/1144) — so nothing below describes how this software behaves.
+>
+> __What changed:__ a posture is no longer a named preset that supplies values. There is __one__
+> posture — the settings the instance is actually running — and `baseline`, `hardened` and
+> `regulated` are __documented recommendations__ rather than configuration values. A preset is a
+> second source of truth for every key it touches, and accountability for what a deployment is set
+> to belongs to the operator, not the software.
+>
+> __Why this file still exists.__ Its rejected alternatives are the reasoning behind decisions that
+> still stand — why regime-named profiles were refused, why numbered levels were refused, why a
+> profile may never default a key whose mechanism does not exist. A decision record without its
+> rejected options invites the same ground being re-litigated, so this is kept rather than deleted.
+> Read it as history.
 
-This design started inside [Security-auditing.md](./Security-auditing.md) because auditing was its
-first consumer. It is here now because it stopped being an audit concern: network egress adopted it
-in [#1133](https://github.com/jwilleke/ngdpbase/issues/1133), and session policy, registration and
-rate limiting are the same shape. Tracked by [#1137](https://github.com/jwilleke/ngdpbase/issues/1137).
+## The idea that was explored
+
+`ngdpbase.security.profile` would have named __where an instance sits and what data is on it__, and
+selected defaults for keys that stayed individually settable. It was not a security switch and never
+gated a mechanism.
+
+The design started inside [Security-auditing.md](./Security-auditing.md) because auditing was its
+first consumer, and moved here when it stopped being an audit concern: network egress adopted it in
+[#1133](https://github.com/jwilleke/ngdpbase/issues/1133), and session policy, registration and rate limiting were the same shape.
 
 ## The problem it solves
 
@@ -186,15 +205,18 @@ That is why the levels here are __deployment shapes rather than assurance points
 expressiveness lives in the keys beneath them. A third level is legitimate because `regulated`
 describes a context somebody actually runs — not because it is "more secure" than `hardened`.
 
-## Where this stands
+## Where this ended
 
-- `ngdpbase.security.profile` ships with `baseline` and `hardened`
-  ([#1118](https://github.com/jwilleke/ngdpbase/issues/1118))
-- Two consumers: `AuditManager` defaults `audit.on-failure`; the egress boundary reads the profile
-  for its CIDR policy ([#1133](https://github.com/jwilleke/ngdpbase/issues/1133))
-- `regulated` is __not__ implemented
-- Effective-posture reporting exists in part — `AuditManager.ts:306` exposes `tamperEvident`,
-  `durable`, `queryable`, `offBox`
+- `ngdpbase.security.profile` was __removed__ ([#1144](https://github.com/jwilleke/ngdpbase/issues/1144)). It had two consumers: `AuditManager`
+  defaulting `audit.on-failure`, and the egress boundary reading it for CIDR conflict policy
+  ([#1133](https://github.com/jwilleke/ngdpbase/issues/1133)). The first was already unreachable in a stock install; the second was re-homed
+  to the firewall convention rather than deleted.
+- `regulated` was never implemented as a value, and no longer would be — there are no profile values.
+- The settings themselves became the posture, shown on the admin dashboard ([#1145](https://github.com/jwilleke/ngdpbase/issues/1145)), and
+  the three names became recommendation content inside the instance ([#1146](https://github.com/jwilleke/ngdpbase/issues/1146)).
+- `AuditManager`'s reporting shape changed twice on evidence: `durable` was replaced by facts because
+  it was derived from an unrelated property ([#1148](https://github.com/jwilleke/ngdpbase/issues/1148)), and `offBox` by facts because nothing
+  on the machine can verify that a path leaves it ([#1138](https://github.com/jwilleke/ngdpbase/issues/1138)).
 
 ## Related
 
