@@ -27,7 +27,9 @@ import logger from './utils/logger.js';
 import { resolveEgressPolicy } from './http/egressPolicy.js';
 import { resolveMaintenanceState } from './utils/maintenanceState.js';
 import { resolveTlsConfig } from './utils/tlsConfig.js';
+import { createHttpsRedirectServer, routeSocket } from './utils/httpsRedirect.js';
 import https from 'https';
+import net from 'net';
 import { gateDecision, describeBlocked } from './utils/startupState.js';
 import WikiEngine from './WikiEngine.js';
 import type { WikiEngine as IWikiEngine } from './types/WikiEngine.js';
@@ -168,6 +170,32 @@ function readConfigForPort(): Record<string, unknown> | null {
     }
 
     return merged;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Which keys the operator set themselves, as opposed to inheriting (#1163).
+ *
+ * `readConfigForPort()` returns the two files merged, which cannot answer
+ * "did they configure this or is it the shipped default?" — and for the base
+ * URL that difference decides whether a redirect is safe to issue. The shipped
+ * value is `http://localhost:3000`; sending every visitor there would be worse
+ * than the handshake error the redirect replaces.
+ *
+ * `ConfigurationManager.isBaseUrlExplicit()` (#642) makes the same distinction
+ * for consumers that emit absolute URLs. This is the pre-engine equivalent,
+ * needed because the socket is bound before the manager exists.
+ */
+function readCustomConfigKeys(): Set<string> | null {
+  try {
+    const instanceDataFolder =
+      process.env.FAST_STORAGE || process.env.INSTANCE_DATA_FOLDER || './data';
+    const customConfigFile = process.env.INSTANCE_CONFIG_FILE || 'app-custom-config.json';
+    const customPath = path.join(instanceDataFolder, 'config', customConfigFile);
+    if (!fs.existsSync(customPath)) return new Set();
+    return new Set(Object.keys(fs.readJsonSync(customPath) as Record<string, unknown>));
   } catch {
     return null;
   }
@@ -324,8 +352,38 @@ void (async (): Promise<void> => {
   }
 
   if (scheme === 'https' && tlsConfig.mode === 'https') {
-    https.createServer({ cert: tlsConfig.cert, key: tlsConfig.key }, app).listen(defaultPort, () => {
-      console.log(`🚀 Server listening on port ${defaultPort} over HTTPS (initializing engine...)`);
+    const httpsServer = https.createServer({ cert: tlsConfig.cert, key: tlsConfig.key }, app);
+
+    // #1163: a TLS listener owns the whole port, so an http:// request to it
+    // gets a handshake error rather than anything a visitor can act on. Route
+    // by the first byte instead — 0x16 is a TLS handshake, anything else is
+    // plaintext and gets a 301 to the https URL. No new configuration: TLS
+    // being configured IS the enable condition.
+    const redirectServer = createHttpsRedirectServer({
+      configuredBaseUrl: () => {
+        // Explicit only. The shipped default is http://localhost:3000, and
+        // redirecting every visitor to localhost would be worse than the
+        // handshake error this replaces (#642 draws the same distinction).
+        const cfg = readConfigForPort();
+        const custom = readCustomConfigKeys();
+        const explicit = process.env.NGDPBASE_BASE_URL
+          || (custom?.has('ngdpbase.application.base-url')
+            ? (cfg?.['ngdpbase.application.base-url'] as string | undefined)
+            : undefined);
+        return explicit ?? null;
+      },
+      onRedirect: (from, to) => logger.debug(`[https-redirect] ${from} -> ${to}`)
+    });
+
+    net.createServer((socket) => routeSocket(socket, {
+      tls: httpsServer,
+      plain: redirectServer,
+      onError: (err) => logger.debug(`[https-redirect] socket error before routing: ${err.message}`)
+    })).listen(defaultPort, () => {
+      console.log(
+        `🚀 Server listening on port ${defaultPort} over HTTPS (initializing engine...)`
+      );
+      console.log('🔁 Plain HTTP on this port is redirected to HTTPS (#1163)');
     });
   } else {
     app.listen(defaultPort, () => {
