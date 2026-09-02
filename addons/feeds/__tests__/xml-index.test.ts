@@ -7,6 +7,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { xmlIndexAdapter, extractItemUrls } from '../src/adapters/xml-index';
 import type { FeedSourceConfig } from '../src/types';
 
+// #1133 — the adapters go through `guardedFetch` now. Mocking the module is
+// the seam, because production deliberately has no injectable transport
+// parameter: one way to reach the network was the point.
+vi.mock('../../../src/http/guardedFetch.js', () => ({ guardedFetch: vi.fn() }));
+import { guardedFetch } from '../../../src/http/guardedFetch.js';
+import type { EgressPolicy } from '../../../src/http/ssrf.js';
+
+const mockGuardedFetch = vi.mocked(guardedFetch);
+const POLICY = {} as EgressPolicy;
+
+
 const INDEX_URL = 'https://ospo.test/vaac/messages.html';
 const base: FeedSourceConfig = {
   sourceId: 'vaac', adapter: 'xml-index', url: INDEX_URL, type: 'Event',
@@ -26,12 +37,28 @@ const advisoryXml = (id: string, area: string) =>
   `<?xml version="1.0"?><advisory><id>${id}</id><volcano>${area}</volcano></advisory>`;
 
 /** Route fetch by URL: index HTML, then per-item XML. */
-const stubRouted = (map: Record<string, string>, okFor?: (u: string) => boolean) =>
-  vi.stubGlobal('fetch', vi.fn(async (u: string) => {
+/**
+ * Route responses by URL — xml-index fetches an index, then each item it names.
+ *
+ * That two-phase shape is the reason this adapter mattered most (#1133): the
+ * SECOND fetch targets a URL extracted from a document the first fetch
+ * returned, so a remote document chooses the address. Scripting per-URL keeps
+ * that visible in the test rather than collapsing both phases into one stub.
+ */
+const stubRouted = (map: Record<string, string>, okFor?: (u: string) => boolean): EgressPolicy => {
+  mockGuardedFetch.mockImplementation((u: string) => {
     const body = map[u];
     const ok = okFor ? okFor(u) : body !== undefined;
-    return { ok, status: ok ? 200 : 404, statusText: 'x', text: async () => body ?? '' };
-  }));
+    return Promise.resolve({
+      status: ok ? 200 : 404,
+      headers: {},
+      body: Buffer.from(body ?? ''),
+      finalUrl: u,
+      chain: [u]
+    });
+  });
+  return POLICY;
+};
 
 describe('extractItemUrls (#912)', () => {
   it('matches linkPattern, resolves relative → absolute, dedupes, keeps order', () => {
@@ -56,36 +83,36 @@ describe('xmlIndexAdapter (#912)', () => {
   const u2 = 'https://ospo.test/vaac/xml_files/FVXX20_20260722_1310.xml';
 
   it('fetch() two-phases: index → item docs, tagging each with __itemUrl', async () => {
-    stubRouted({
+    const policy = stubRouted({
       [INDEX_URL]: INDEX_HTML,
       [u1]: advisoryXml('A1', 'Etna'),
       [u2]: advisoryXml('A2', 'Kilauea')
     });
-    const records = await xmlIndexAdapter.fetch(base);
+    const records = await xmlIndexAdapter.fetch(base, policy);
     expect(records).toHaveLength(2);
     expect(records[0]).toMatchObject({ id: 'A1', volcano: 'Etna', __itemUrl: u1 });
   });
 
   it('fetch() skips a failed item without failing the whole poll', async () => {
-    stubRouted({
+    const policy = stubRouted({
       [INDEX_URL]: INDEX_HTML,
       [u1]: advisoryXml('A1', 'Etna')
       // u2 missing → not ok → skipped
     });
-    const records = await xmlIndexAdapter.fetch(base);
+    const records = await xmlIndexAdapter.fetch(base, policy);
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({ id: 'A1' });
   });
 
   it('fetch() throws when the index itself is non-ok', async () => {
-    stubRouted({}, () => false);
-    await expect(xmlIndexAdapter.fetch(base)).rejects.toThrow(/404|HTTP/);
+    const policy = stubRouted({}, () => false);
+    await expect(xmlIndexAdapter.fetch(base, policy)).rejects.toThrow(/404|HTTP/);
   });
 
   it('fetch() throws when linkPattern is missing', async () => {
-    stubRouted({ [INDEX_URL]: INDEX_HTML });
+    const policy = stubRouted({ [INDEX_URL]: INDEX_HTML });
     const { linkPattern: _omit, ...noPattern } = base;
-    await expect(xmlIndexAdapter.fetch(noPattern)).rejects.toThrow(/linkPattern/);
+    await expect(xmlIndexAdapter.fetch(noPattern, policy)).rejects.toThrow(/linkPattern/);
   });
 
   it('parse() lifts item fields (minus __itemUrl) and falls back to __itemUrl for id', () => {

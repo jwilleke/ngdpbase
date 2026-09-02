@@ -1,3 +1,6 @@
+import { guardedFetch } from '../../../../src/http/guardedFetch.js';
+import type { EgressPolicy } from '../../../../src/http/ssrf.js';
+import { isOk, reason } from './http.js';
 /**
  * rest-json adapter (#685 slice 8) — zero dependency (native fetch + JSON.parse).
  *
@@ -16,12 +19,12 @@ import { buildRecord, pickItemsArray } from './buildRecord.js';
 export const restJsonAdapter: SourceAdapter = {
   name: 'rest-json',
 
-  async fetch(cfg: FeedSourceConfig): Promise<RawRecord[]> {
-    const res = await fetch(cfg.url);
-    if (!res.ok) {
-      throw new Error(`feed '${cfg.sourceId}': HTTP ${res.status} ${res.statusText} from ${cfg.url}`);
+  async fetch(cfg: FeedSourceConfig, policy: EgressPolicy): Promise<RawRecord[]> {
+    const res = await guardedFetch(cfg.url, { policy });
+    if (!isOk(res)) {
+      throw new Error(`feed '${cfg.sourceId}': HTTP ${res.status} ${reason(res)} from ${cfg.url}`);
     }
-    const data: unknown = await res.json();
+    const data: unknown = JSON.parse(res.body.toString('utf8'));
     const arr = cfg.itemsPath ? getByPath(data, cfg.itemsPath) : pickItemsArray(data);
     return Array.isArray(arr) ? (arr as RawRecord[]) : [];
   },

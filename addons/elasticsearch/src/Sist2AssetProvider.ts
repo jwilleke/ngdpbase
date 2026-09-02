@@ -1,3 +1,5 @@
+import { guardedFetch } from '../../../src/http/guardedFetch.js';
+import { resolveEgressPolicy, type ConfigReader } from '../../../src/http/egressPolicy.js';
 /**
  * Sist2AssetProvider — read-only AssetProvider backed by a sist2 Elasticsearch index.
  *
@@ -54,6 +56,21 @@ export class Sist2AssetProvider implements AssetProvider {
     private readonly esIndex: string,
     private readonly sist2Url: string,
     private readonly indexIds: number[],
+    /**
+     * How to read the egress policy (#1133).
+     *
+     * __Mandatory and positional, ahead of the optional parameters__, so it
+     * cannot be omitted. This provider called the global `fetch` against
+     * `sist2Url` — an operator-supplied address — with no egress policy, no
+     * guarded DNS, and no redirect re-check. `check-http-boundary` reported
+     * nothing because its scan root was `src`; #1139 widened it and these two
+     * call sites were the first thing it found that no grep had.
+     *
+     * A reader rather than a resolved policy, so it is read per call: this
+     * provider lives for the life of the process, and a policy captured at
+     * construction would ignore an operator tightening it.
+     */
+    private readonly readConfig: ConfigReader,
     /**
      * Principal → allowed path prefixes map. Keys are role names or usernames
      * (consistent with the page audience/access principal model).
@@ -308,9 +325,10 @@ export class Sist2AssetProvider implements AssetProvider {
 
   async getThumbnail(id: string, _size: string): Promise<Buffer | null> {
     try {
-      const res = await fetch(`${this.sist2Url}/t/${id}`);
-      if (!res.ok) return null;
-      return Buffer.from(await res.arrayBuffer());
+      const { policy } = resolveEgressPolicy(this.readConfig);
+      const res = await guardedFetch(`${this.sist2Url}/t/${id}`, { policy });
+      if (res.status < 200 || res.status >= 300) return null;
+      return res.body;
     } catch {
       return null;
     }
@@ -360,7 +378,9 @@ export class Sist2AssetProvider implements AssetProvider {
 
     let sist2Ok = false;
     try {
-      sist2Ok = (await fetch(`${this.sist2Url}/i`)).ok;
+      const { policy } = resolveEgressPolicy(this.readConfig);
+      const probe = await guardedFetch(`${this.sist2Url}/i`, { policy });
+      sist2Ok = probe.status >= 200 && probe.status < 300;
     } catch {
       sist2Ok = false;
     }

@@ -8,11 +8,38 @@ import { restJsonAdapter } from '../src/adapters/restjson';
 import { buildRecord, pickItemsArray } from '../src/adapters/buildRecord';
 import type { FeedSourceConfig } from '../src/types';
 
+// #1133 — the adapters go through `guardedFetch` with an egress policy now.
+// They used to call the global `fetch`, so these tests stubbed that; a global
+// stub would now pass while testing nothing. Mocking the module is the seam,
+// because production deliberately has no injectable transport parameter —
+// one way to reach the network was the point.
+vi.mock('../../../src/http/guardedFetch.js', () => ({ guardedFetch: vi.fn() }));
+import { guardedFetch } from '../../../src/http/guardedFetch.js';
+import type { EgressPolicy } from '../../../src/http/ssrf.js';
+
+const mockGuardedFetch = vi.mocked(guardedFetch);
+
+/** Any object: `guardedFetch` is mocked, so the policy is never inspected here. */
+const POLICY = {} as EgressPolicy;
+
+/** Script the next guardedFetch response. */
+const stubFetch = (body: unknown, ok = true, status = 200): EgressPolicy => {
+  mockGuardedFetch.mockResolvedValue({
+    status: ok ? status : status,
+    headers: {},
+    // The old stubs returned `json: async () => body` for JSON feeds and
+    // `text: async () => body` for the rest; guardedFetch hands back bytes, so
+    // an object body is serialised here rather than at every call site.
+    body: Buffer.from(typeof body === 'string' ? body : JSON.stringify(body)),
+    finalUrl: 'https://x.test/',
+    chain: ['https://x.test/']
+  });
+  return POLICY;
+};
+
+
 const base: FeedSourceConfig = { sourceId: 'api', adapter: 'rest-json', url: 'https://x.test/api', type: 'Event' };
 
-afterEach(() => vi.unstubAllGlobals());
-const stubFetch = (body: unknown, ok = true, status = 200) =>
-  vi.stubGlobal('fetch', vi.fn(async () => ({ ok, status, statusText: 'x', json: async () => body })));
 
 describe('pickItemsArray (#685)', () => {
   it('returns the body when it is an array', () => {
@@ -47,24 +74,24 @@ describe('buildRecord (#685, shared)', () => {
 
 describe('restJsonAdapter (#685)', () => {
   it('fetch() returns a bare array', async () => {
-    stubFetch([{ id: 1 }, { id: 2 }]);
-    expect(await restJsonAdapter.fetch(base)).toHaveLength(2);
+    const policy = stubFetch([{ id: 1 }, { id: 2 }]);
+    expect(await restJsonAdapter.fetch(base, policy)).toHaveLength(2);
   });
   it('fetch() unwraps an envelope', async () => {
-    stubFetch({ results: [{ id: 1 }] });
-    expect(await restJsonAdapter.fetch(base)).toEqual([{ id: 1 }]);
+    const policy = stubFetch({ results: [{ id: 1 }] });
+    expect(await restJsonAdapter.fetch(base, policy)).toEqual([{ id: 1 }]);
   });
   it('fetch() honours itemsPath dot-path', async () => {
-    stubFetch({ data: { events: [{ id: 'a' }] } });
-    expect(await restJsonAdapter.fetch({ ...base, itemsPath: 'data.events' })).toEqual([{ id: 'a' }]);
+    const policy = stubFetch({ data: { events: [{ id: 'a' }] } });
+    expect(await restJsonAdapter.fetch({ ...base, itemsPath: 'data.events' }, policy)).toEqual([{ id: 'a' }]);
   });
   it('fetch() throws on non-ok', async () => {
-    stubFetch({}, false, 500);
-    await expect(restJsonAdapter.fetch(base)).rejects.toThrow(/500/);
+    const policy = stubFetch({}, false, 500);
+    await expect(restJsonAdapter.fetch(base, policy)).rejects.toThrow(/500/);
   });
   it('fetch() returns [] when no array found', async () => {
-    stubFetch({ a: 1 });
-    expect(await restJsonAdapter.fetch(base)).toEqual([]);
+    const policy = stubFetch({ a: 1 });
+    expect(await restJsonAdapter.fetch(base, policy)).toEqual([]);
   });
   it('parse() lifts the item fields as properties', () => {
     const r = restJsonAdapter.parse({ id: 'u1', title: 'Quake', mag: 5 }, base);

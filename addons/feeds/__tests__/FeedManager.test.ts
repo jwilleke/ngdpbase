@@ -19,6 +19,32 @@ import MarqueePlugin from '../../../src/plugins/MarqueePlugin';
 import type { SourceAdapter } from '../src/adapters/types';
 import type { FeedSourceConfig } from '../src/types';
 
+// #1133 — the adapters go through `guardedFetch` now. Mocking the module is
+// the seam, because production deliberately has no injectable transport
+// parameter: one way to reach the network was the point.
+vi.mock('../../../src/http/guardedFetch.js', () => ({ guardedFetch: vi.fn() }));
+import { guardedFetch } from '../../../src/http/guardedFetch.js';
+import type { EgressPolicy } from '../../../src/http/ssrf.js';
+
+const mockGuardedFetch = vi.mocked(guardedFetch);
+const POLICY = {} as EgressPolicy;
+
+/** Script the next guardedFetch response. */
+const stubFetch = (body: unknown, ok = true, status = 200): EgressPolicy => {
+  mockGuardedFetch.mockResolvedValue({
+    status: ok ? status : status,
+    headers: {},
+    // The old stubs returned `json: async () => body` for JSON feeds and
+    // `text: async () => body` for the rest; guardedFetch hands back bytes, so
+    // an object body is serialised here rather than at every call site.
+    body: Buffer.from(typeof body === 'string' ? body : JSON.stringify(body)),
+    finalUrl: 'https://x.test/',
+    chain: ['https://x.test/']
+  });
+  return POLICY;
+};
+
+
 // Temp store dir — os.tmpdir, NEVER ./data (live-data-destruction rule).
 const TMP = mkdtempSync(path.join(os.tmpdir(), 'feeds-test-'));
 afterAll(() => rmSync(TMP, { recursive: true, force: true }));
@@ -31,6 +57,12 @@ const quakeCfg: FeedSourceConfig = {
 const feature = (id: string, mag: number, place: string, time: number) => ({
   type: 'Feature', id, properties: { mag, place, time }, geometry: { type: 'Point', coordinates: [1, 2, 10] }
 });
+
+
+// #1133 — FeedManager resolves the egress policy per ingest and hands it to
+// the adapter. It holds a ConfigReader, not a transport; these tests pass a
+// reader that sets nothing, so the shipped egress defaults apply.
+const NO_EGRESS_CONFIG = (_key: string, fallback?: unknown): unknown => fallback;
 
 describe('parseSourceConfigs (#685)', () => {
   it('parses a valid source and stamps the key as sourceId', () => {
@@ -99,19 +131,19 @@ describe('geojsonAdapter.parse (#685)', () => {
     expect(geojsonAdapter.parse({ properties: {} }, quakeCfg)).toBeNull();
   });
 
-  it('fetch() reads a FeatureCollection (stubbed global fetch)', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => ({
-      ok: true, json: async () => ({ type: 'FeatureCollection', features: [feature('a', 1, 'x', 1)] })
-    })));
-    const raw = await geojsonAdapter.fetch(quakeCfg);
+  it('fetch() reads a FeatureCollection through guardedFetch', async () => {
+    // Was `vi.stubGlobal('fetch', ...)`. The adapter no longer calls the
+    // global, so that stub would now pass while testing nothing (#1133).
+    const policy = stubFetch(JSON.stringify({
+      type: 'FeatureCollection', features: [feature('a', 1, 'x', 1)]
+    }));
+    const raw = await geojsonAdapter.fetch(quakeCfg, policy);
     expect(raw).toHaveLength(1);
-    vi.unstubAllGlobals();
   });
 
   it('fetch() throws on non-ok HTTP', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 503, statusText: 'down', json: async () => ({}) })));
-    await expect(geojsonAdapter.fetch(quakeCfg)).rejects.toThrow(/503/);
-    vi.unstubAllGlobals();
+    const policy = stubFetch('{}', false, 503);
+    await expect(geojsonAdapter.fetch(quakeCfg, policy)).rejects.toThrow(/503/);
   });
 });
 
@@ -167,7 +199,7 @@ describe('recordToArticle (#685)', () => {
 
 describe('FeedManager (#685)', () => {
   it('builds one source per config and registers each with the catalog', () => {
-    const fm = new FeedManager(parseSourceConfigs({ a: { adapter: 'geojson', url: 'u', type: 'Event' } }), TMP);
+    const fm = new FeedManager(parseSourceConfigs({ a: { adapter: 'geojson', url: 'u', type: 'Event' } }), TMP, NO_EGRESS_CONFIG);
     const registered: string[] = [];
     expect(fm.registerSources({ registerSource: (s: FeedCatalogSource) => registered.push(s.sourceId) })).toBe(1);
     expect(registered).toEqual(['a']);
@@ -182,6 +214,7 @@ describe('FeedManager (#685)', () => {
     const fm = new FeedManager(
       [{ ...quakeCfg, sourceId: 'q1' }],
       TMP,
+      NO_EGRESS_CONFIG,
       () => fakeAdapter
     );
     const result = await fm.ingest('q1');
@@ -197,12 +230,12 @@ describe('FeedManager (#685)', () => {
   });
 
   it('ingest() throws on unknown source', async () => {
-    const fm = new FeedManager([], TMP);
+    const fm = new FeedManager([], TMP, NO_EGRESS_CONFIG);
     await expect(fm.ingest('nope')).rejects.toThrow(/unknown source/);
   });
 
   it('ingest() throws on unknown adapter', async () => {
-    const fm = new FeedManager([{ ...quakeCfg, sourceId: 'q2', adapter: 'nonesuch' }], TMP, () => null);
+    const fm = new FeedManager([{ ...quakeCfg, sourceId: 'q2', adapter: 'nonesuch' }], TMP, NO_EGRESS_CONFIG, () => null);
     await expect(fm.ingest('q2')).rejects.toThrow(/unknown adapter/);
   });
 });
@@ -220,7 +253,7 @@ describe('FeedManager.toMarqueeText (#685 slice 5 — inline consumer)', () => {
   };
 
   async function ingestedManager() {
-    const fm = new FeedManager([{ ...quakeCfg, sourceId: 'mq' }], TMP, () => multiAdapter);
+    const fm = new FeedManager([{ ...quakeCfg, sourceId: 'mq' }], TMP, NO_EGRESS_CONFIG, () => multiAdapter);
     await fm.ingest('mq');
     return fm;
   }
@@ -244,7 +277,7 @@ describe('FeedManager.toMarqueeText (#685 slice 5 — inline consumer)', () => {
   it('end-to-end: MarqueePlugin fetch= renders feed data with NO new plugin', async () => {
     const fm = await ingestedManager();
     const ctx = { engine: { getManager: (n: string) => (n === 'FeedManager' ? fm : undefined) } };
-    const out = await MarqueePlugin.execute(ctx as never, { fetch: 'FeedManager.toMarqueeText(source=mq,max=2)' });
+    const out = await MarqueePlugin.execute(ctx, { fetch: 'FeedManager.toMarqueeText(source=mq,max=2)' });
     expect(out).toContain('Charlie');
     expect(out).toContain('Bravo');
     expect(out).not.toContain('Alpha'); // max=2

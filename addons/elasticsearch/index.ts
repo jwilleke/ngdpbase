@@ -84,7 +84,16 @@ const elasticsearchAddon = {
       : null;
 
     const client = new Client({ node: esUrl });
-    provider = new Sist2AssetProvider(client, esIndex, sist2Url, indexIds, pathAccess, hiddenPaths);
+    // #1133 — the provider's only route to sist2, through the instance's
+    // egress policy. Positional and required; there is no ungated path.
+    const configManager = engine.getManager<{ getProperty?: (k: string, f?: unknown) => unknown }>(
+      'ConfigurationManager'
+    );
+    provider = new Sist2AssetProvider(
+      client, esIndex, sist2Url, indexIds,
+      (key: string, fallback?: unknown) => configManager?.getProperty?.(key, fallback) ?? fallback,
+      pathAccess, hiddenPaths
+    );
     storedConfig = { esUrl, esIndex, sist2Url, indexIds, hiddenPaths };
 
     const assetManager = engine.getManager<AssetManager>('AssetManager');

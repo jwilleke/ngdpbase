@@ -7,11 +7,38 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { csvAdapter, parseCsv, preambleSuspicion } from '../src/adapters/csv';
 import type { FeedSourceConfig } from '../src/types';
 
+// #1133 — the adapters go through `guardedFetch` with an egress policy now.
+// They used to call the global `fetch`, so these tests stubbed that; a global
+// stub would now pass while testing nothing. Mocking the module is the seam,
+// because production deliberately has no injectable transport parameter —
+// one way to reach the network was the point.
+vi.mock('../../../src/http/guardedFetch.js', () => ({ guardedFetch: vi.fn() }));
+import { guardedFetch } from '../../../src/http/guardedFetch.js';
+import type { EgressPolicy } from '../../../src/http/ssrf.js';
+
+const mockGuardedFetch = vi.mocked(guardedFetch);
+
+/** Any object: `guardedFetch` is mocked, so the policy is never inspected here. */
+const POLICY = {} as EgressPolicy;
+
+/** Script the next guardedFetch response. */
+const stubFetch = (body: unknown, ok = true, status = 200): EgressPolicy => {
+  mockGuardedFetch.mockResolvedValue({
+    status: ok ? status : status,
+    headers: {},
+    // The old stubs returned `json: async () => body` for JSON feeds and
+    // `text: async () => body` for the rest; guardedFetch hands back bytes, so
+    // an object body is serialised here rather than at every call site.
+    body: Buffer.from(typeof body === 'string' ? body : JSON.stringify(body)),
+    finalUrl: 'https://x.test/',
+    chain: ['https://x.test/']
+  });
+  return POLICY;
+};
+
+
 const base: FeedSourceConfig = { sourceId: 'firms', adapter: 'csv', url: 'https://x.test/csv', type: 'Event' };
 
-afterEach(() => vi.unstubAllGlobals());
-const stubFetch = (body: string, ok = true, status = 200) =>
-  vi.stubGlobal('fetch', vi.fn(async () => ({ ok, status, statusText: 'x', text: async () => body })));
 
 // A trimmed FIRMS VIIRS response (two rows).
 const FIRMS = 'latitude,longitude,bright_ti4,acq_date,confidence\n64.4314,144.83386,330.28,2026-07-22,n\n-1.2,50.5,301.1,2026-07-22,h\n';
@@ -111,15 +138,15 @@ describe('preambleSuspicion (#1102)', () => {
 
 describe('csvAdapter (#911)', () => {
   it('fetch() parses the CSV body into RawRecords', async () => {
-    stubFetch(FIRMS);
-    const rows = await csvAdapter.fetch(base);
+    const policy = stubFetch(FIRMS);
+    const rows = await csvAdapter.fetch(base, policy);
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({ latitude: '64.4314', confidence: 'n' });
   });
 
   it('fetch() throws on non-ok', async () => {
-    stubFetch('', false, 503);
-    await expect(csvAdapter.fetch(base)).rejects.toThrow(/503/);
+    const policy = stubFetch('', false, 503);
+    await expect(csvAdapter.fetch(base, policy)).rejects.toThrow(/503/);
   });
 
   it('parse() lifts columns as properties and synthesizes a stable id when none', () => {
@@ -139,8 +166,8 @@ describe('csvAdapter (#911)', () => {
 
   it('fetch() warns when the parse looks like it hit an unskipped preamble', async () => {
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    stubFetch(PREAMBLE);
-    await csvAdapter.fetch(base);
+    const policy = stubFetch(PREAMBLE);
+    await csvAdapter.fetch(base, policy);
     expect(spy).toHaveBeenCalledTimes(1);
     const msg = String(spy.mock.calls[0][0]);
     expect(msg).toContain("feed 'firms'");
@@ -150,8 +177,8 @@ describe('csvAdapter (#911)', () => {
 
   it('fetch() does not warn once skipLines is set correctly', async () => {
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    stubFetch(PREAMBLE);
-    const rows = await csvAdapter.fetch({ ...base, skipLines: 1 });
+    const policy = stubFetch(PREAMBLE);
+    const rows = await csvAdapter.fetch({ ...base, skipLines: 1 }, policy);
     expect(spy).not.toHaveBeenCalled();
     expect(Object.keys(rows[0])).toEqual(['ObservationDate', 'NFDRType', 'AvgERC']);
     spy.mockRestore();
@@ -159,8 +186,8 @@ describe('csvAdapter (#911)', () => {
 
   it('fetch() does not warn for an ordinary multi-column feed', async () => {
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    stubFetch(FIRMS);
-    await csvAdapter.fetch(base);
+    const policy = stubFetch(FIRMS);
+    await csvAdapter.fetch(base, policy);
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
   });

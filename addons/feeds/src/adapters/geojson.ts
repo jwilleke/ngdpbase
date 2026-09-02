@@ -1,3 +1,6 @@
+import { guardedFetch } from '../../../../src/http/guardedFetch.js';
+import type { EgressPolicy } from '../../../../src/http/ssrf.js';
+import { isOk, reason } from './http.js';
 /**
  * GeoJSON adapter (#685 slice 4) — zero dependency (native fetch + JSON.parse).
  *
@@ -17,12 +20,12 @@ import { buildRecord } from './buildRecord.js';
 export const geojsonAdapter: SourceAdapter = {
   name: 'geojson',
 
-  async fetch(cfg: FeedSourceConfig): Promise<RawRecord[]> {
-    const res = await fetch(cfg.url);
-    if (!res.ok) {
-      throw new Error(`feed '${cfg.sourceId}': HTTP ${res.status} ${res.statusText} from ${cfg.url}`);
+  async fetch(cfg: FeedSourceConfig, policy: EgressPolicy): Promise<RawRecord[]> {
+    const res = await guardedFetch(cfg.url, { policy });
+    if (!isOk(res)) {
+      throw new Error(`feed '${cfg.sourceId}': HTTP ${res.status} ${reason(res)} from ${cfg.url}`);
     }
-    const data: unknown = await res.json();
+    const data: unknown = JSON.parse(res.body.toString('utf8'));
     if (data && typeof data === 'object' && Array.isArray((data as { features?: unknown }).features)) {
       return (data as { features: RawRecord[] }).features;
     }

@@ -1,3 +1,6 @@
+import { guardedFetch } from '../../../../src/http/guardedFetch.js';
+import type { EgressPolicy } from '../../../../src/http/ssrf.js';
+import { isOk, reason } from './http.js';
 /**
  * xml adapter (#685 slice 8) — dependency: fast-xml-parser (itself zero-dep).
  *
@@ -44,12 +47,12 @@ export function coerceItems(located: unknown): RawRecord[] {
 export const xmlAdapter: SourceAdapter = {
   name: 'xml',
 
-  async fetch(cfg: FeedSourceConfig): Promise<RawRecord[]> {
-    const res = await fetch(cfg.url);
-    if (!res.ok) {
-      throw new Error(`feed '${cfg.sourceId}': HTTP ${res.status} ${res.statusText} from ${cfg.url}`);
+  async fetch(cfg: FeedSourceConfig, policy: EgressPolicy): Promise<RawRecord[]> {
+    const res = await guardedFetch(cfg.url, { policy });
+    if (!isOk(res)) {
+      throw new Error(`feed '${cfg.sourceId}': HTTP ${res.status} ${reason(res)} from ${cfg.url}`);
     }
-    const doc: unknown = xmlParser.parse(await res.text());
+    const doc: unknown = xmlParser.parse(res.body.toString('utf8'));
     if (cfg.itemsPath) return coerceItems(getByPath(doc, cfg.itemsPath));
     // No itemsPath: unwrap the (single) document root, then envelope-detect.
     const root = doc && typeof doc === 'object' && !Array.isArray(doc)

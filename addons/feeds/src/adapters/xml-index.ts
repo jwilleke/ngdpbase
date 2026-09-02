@@ -1,3 +1,6 @@
+import { guardedFetch } from '../../../../src/http/guardedFetch.js';
+import type { EgressPolicy } from '../../../../src/http/ssrf.js';
+import { isOk, reason } from './http.js';
 /**
  * xml-index adapter (#912) — dependency: fast-xml-parser (shared with the xml
  * adapter). For "index page + N item documents, no combined feed" sources
@@ -59,25 +62,25 @@ function warn(msg: string): void {
 export const xmlIndexAdapter: SourceAdapter = {
   name: 'xml-index',
 
-  async fetch(cfg: FeedSourceConfig): Promise<RawRecord[]> {
+  async fetch(cfg: FeedSourceConfig, policy: EgressPolicy): Promise<RawRecord[]> {
     if (!cfg.linkPattern) {
       throw new Error(`feed '${cfg.sourceId}': xml-index adapter requires 'linkPattern'`);
     }
     // Phase 1 — index.
-    const idxRes = await fetch(cfg.url);
-    if (!idxRes.ok) {
-      throw new Error(`feed '${cfg.sourceId}': HTTP ${idxRes.status} ${idxRes.statusText} from ${cfg.url}`);
+    const idxRes = await guardedFetch(cfg.url, { policy });
+    if (!isOk(idxRes)) {
+      throw new Error(`feed '${cfg.sourceId}': HTTP ${idxRes.status} ${reason(idxRes)} from ${cfg.url}`);
     }
     const maxItems = cfg.maxItems && cfg.maxItems > 0 ? cfg.maxItems : DEFAULT_MAX_ITEMS;
-    const urls = extractItemUrls(await idxRes.text(), cfg.url, cfg.linkPattern, maxItems);
+    const urls = extractItemUrls(idxRes.body.toString('utf8'), cfg.url, cfg.linkPattern, maxItems);
 
     // Phase 2 — each item document (sequential; skip failures).
     const records: RawRecord[] = [];
     for (const url of urls) {
       try {
-        const res = await fetch(url);
-        if (!res.ok) { warn(`feed '${cfg.sourceId}': item HTTP ${res.status} from ${url} — skipped`); continue; }
-        const doc: unknown = xmlParser.parse(await res.text());
+        const res = await guardedFetch(url, { policy });
+        if (!isOk(res)) { warn(`feed '${cfg.sourceId}': item HTTP ${res.status} from ${url} — skipped`); continue; }
+        const doc: unknown = xmlParser.parse(res.body.toString('utf8'));
         let items: RawRecord[];
         if (cfg.itemsPath) {
           items = coerceItems(getByPath(doc, cfg.itemsPath));

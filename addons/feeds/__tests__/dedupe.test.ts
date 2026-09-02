@@ -35,6 +35,12 @@ const rec = (id: string, volcano: string | undefined, occurredAt?: string): Norm
 
 const ids = (r: NormalizedRecord[]) => r.map(x => x.sourceRecordId);
 
+
+// #1133 — FeedManager resolves the egress policy per ingest and hands it to
+// the adapter. It holds a ConfigReader, not a transport; these tests pass a
+// reader that sets nothing, so the shipped egress defaults apply.
+const NO_EGRESS_CONFIG = (_key: string, fallback?: unknown): unknown => fallback;
+
 describe('shapeRecords — pass-through (#989)', () => {
   it('returns the input untouched when neither key is configured', () => {
     const input = [rec('a', 'Rainier', hoursAgo(1)), rec('b', 'Rainier', hoursAgo(2))];
@@ -254,6 +260,7 @@ describe('FeedManager.ingest — shaping is applied before the store (#989)', ()
     const fm = new FeedManager(
       [{ sourceId: 'vaac-1', adapter: 'stub', url: 'u', type: 'Advisory', dedupeBy: 'volcanoName' }],
       TMP,
+      NO_EGRESS_CONFIG,
       () => adapter
     );
 

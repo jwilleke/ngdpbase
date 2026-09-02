@@ -53,7 +53,13 @@ const feedsAddon = {
       ? config.dataPath
       : path.join(configManager?.getInstanceDataFolder?.() ?? './data', 'feeds');
 
-    feedManager = new FeedManager(sourceConfigs, baseDir);
+    // #1133 — how the adapters reach the egress policy. Positional and
+    // required, because an adapter that was handed none must not compile.
+    feedManager = new FeedManager(
+      sourceConfigs,
+      baseDir,
+      (key: string, fallback?: unknown) => configManager?.getProperty?.(key, fallback) ?? fallback
+    );
 
     // Reachable for the fetch='FeedManager.toMarqueeText(...)' consumer convention (slice 5).
     engine.registerManager('FeedManager', feedManager);

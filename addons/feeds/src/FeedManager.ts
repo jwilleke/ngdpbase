@@ -1,3 +1,4 @@
+import { resolveEgressPolicy, type ConfigReader } from '../../../src/http/egressPolicy.js';
 /**
  * FeedManager — the feeds addon's runtime (#685).
  *
@@ -40,9 +41,22 @@ export class FeedManager {
   private readonly feeds: Map<string, FeedEntry> = new Map();
   private scheduler: FeedScheduler | null = null;
 
+  /**
+   * @param readConfig  How to read the egress policy (#1133). __Mandatory and
+   *                    positional__, before the optional resolver, so it cannot
+   *                    be forgotten. Until #1139 widened the boundary check to
+   *                    `addons/`, the adapters called the global `fetch` on
+   *                    operator-supplied URLs with no egress policy at all.
+   *
+   *                    Held as a reader rather than a resolved policy so the
+   *                    policy is read per ingest: this object lives for the
+   *                    life of the process, and a policy captured at
+   *                    construction would ignore an operator tightening it.
+   */
   constructor(
     sourceConfigs: FeedSourceConfig[],
     baseDir: string,
+    private readonly readConfig: ConfigReader,
     private readonly resolveAdapter: AdapterResolver = getAdapter
   ) {
     for (const config of sourceConfigs) {
@@ -117,7 +131,8 @@ export class FeedManager {
     const adapter = this.resolveAdapter(entry.config.adapter);
     if (!adapter) throw new Error(`feeds: unknown adapter '${entry.config.adapter}' for source '${sourceId}'`);
 
-    const raw = await adapter.fetch(entry.config);
+    const { policy } = resolveEgressPolicy(this.readConfig);
+    const raw = await adapter.fetch(entry.config, policy);
     const normalized = raw
       .map(r => adapter.parse(r, entry.config))
       .filter((r): r is NonNullable<typeof r> => r !== null);

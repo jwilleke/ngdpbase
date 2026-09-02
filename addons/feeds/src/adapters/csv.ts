@@ -1,3 +1,6 @@
+import { guardedFetch } from '../../../../src/http/guardedFetch.js';
+import type { EgressPolicy } from '../../../../src/http/ssrf.js';
+import { isOk, reason } from './http.js';
 /**
  * csv adapter (#685 slice 4+, #911) — zero dependency (native fetch + a small
  * RFC 4180 parser). Needed for sources that only publish CSV, e.g. NASA FIRMS
@@ -128,12 +131,12 @@ function stableRowId(raw: RawRecord): string {
 export const csvAdapter: SourceAdapter = {
   name: 'csv',
 
-  async fetch(cfg: FeedSourceConfig): Promise<RawRecord[]> {
-    const res = await fetch(cfg.url);
-    if (!res.ok) {
-      throw new Error(`feed '${cfg.sourceId}': HTTP ${res.status} ${res.statusText} from ${cfg.url}`);
+  async fetch(cfg: FeedSourceConfig, policy: EgressPolicy): Promise<RawRecord[]> {
+    const res = await guardedFetch(cfg.url, { policy });
+    if (!isOk(res)) {
+      throw new Error(`feed '${cfg.sourceId}': HTTP ${res.status} ${reason(res)} from ${cfg.url}`);
     }
-    const rows = parseCsv(await res.text(), cfg.delimiter, cfg.skipLines) as RawRecord[];
+    const rows = parseCsv(res.body.toString('utf8'), cfg.delimiter, cfg.skipLines) as RawRecord[];
 
     // Once per poll, not per record. Fires whether or not skipLines is set: if
     // it is set and the result still looks like prose, the value is wrong and

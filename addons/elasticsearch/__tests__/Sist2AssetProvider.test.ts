@@ -8,6 +8,7 @@
 
 import { Sist2AssetProvider } from '../src/Sist2AssetProvider';
 import type { Client } from '@elastic/elasticsearch';
+import { guardedFetch } from '../../../src/http/guardedFetch.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -66,11 +67,28 @@ function makeSearchResponse(docs, total) {
 }
 
 // ---------------------------------------------------------------------------
-// Mock global fetch
+// The outbound boundary (#1133)
 // ---------------------------------------------------------------------------
+//
+// This used to assign `global.fetch`. The provider now goes through
+// `guardedFetch` with an egress policy, so a global stub would pass while
+// testing nothing. Mocking the module is the seam; production deliberately has
+// no injectable transport parameter, because one way to reach the network was
+// the point.
 
-const mockFetch = vi.fn();
-global.fetch = mockFetch;
+vi.mock('../../../src/http/guardedFetch.js', () => ({ guardedFetch: vi.fn() }));
+
+const mockFetch = vi.mocked(guardedFetch);
+
+/** The config reader the provider holds; sets nothing, so egress defaults apply. */
+const NO_EGRESS_CONFIG = (_key: string, fallback?: unknown): unknown => fallback;
+
+/** Script a guardedFetch response in the shape the provider reads. */
+const respondWith = (status: number, body = '') =>
+  mockFetch.mockResolvedValue({
+    status, headers: {}, body: Buffer.from(body),
+    finalUrl: 'http://sist2:4090/', chain: ['http://sist2:4090/']
+  });
 
 beforeEach(() => {
   mockFetch.mockReset();
@@ -85,7 +103,7 @@ describe('search()', () => {
     const client = makeClient({
       search: vi.fn().mockResolvedValue(makeSearchResponse([makeSist2Doc()], 1))
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     await provider.search({});
 
@@ -97,7 +115,7 @@ describe('search()', () => {
     const client = makeClient({
       search: vi.fn().mockResolvedValue(makeSearchResponse([makeSist2Doc()], 1))
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     await provider.search({ query: 'family photo' });
 
@@ -113,7 +131,7 @@ describe('search()', () => {
     const client = makeClient({
       search: vi.fn().mockResolvedValue(makeSearchResponse([], 0))
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     await provider.search({ mimeCategory: 'image' });
 
@@ -125,7 +143,7 @@ describe('search()', () => {
     const client = makeClient({
       search: vi.fn().mockResolvedValue(makeSearchResponse([], 0))
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     await provider.search({ mimeCategory: 'document' });
 
@@ -139,7 +157,7 @@ describe('search()', () => {
     const client = makeClient({
       search: vi.fn().mockResolvedValue(makeSearchResponse([], 0))
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     await provider.search({ year: 2023 });
 
@@ -156,7 +174,7 @@ describe('search()', () => {
     const client = makeClient({
       search: vi.fn().mockResolvedValue(makeSearchResponse([], 0))
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [1776001547]);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [1776001547], NO_EGRESS_CONFIG);
 
     await provider.search({});
 
@@ -168,7 +186,7 @@ describe('search()', () => {
     const client = makeClient({
       search: vi.fn().mockResolvedValue(makeSearchResponse([], 0))
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     await provider.search({});
 
@@ -182,7 +200,7 @@ describe('search()', () => {
     const client = makeClient({
       search: vi.fn().mockResolvedValue(makeSearchResponse([], 0))
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     await provider.search({ pageSize: 10, offset: 20 });
 
@@ -196,7 +214,7 @@ describe('search()', () => {
     const client = makeClient({
       search: vi.fn().mockResolvedValue(makeSearchResponse([doc], 1))
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     const page = await provider.search({});
 
@@ -222,7 +240,7 @@ describe('search()', () => {
     const client = makeClient({
       search: vi.fn().mockResolvedValue(makeSearchResponse([], 0))
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     await provider.search({ query: 'jpg' });
 
@@ -235,7 +253,7 @@ describe('search()', () => {
     const client = makeClient({
       search: vi.fn().mockResolvedValue(makeSearchResponse([], 0))
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [1, 2]);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [1, 2], NO_EGRESS_CONFIG);
 
     await provider.search({ query: 'jpg', mimeCategory: 'image', year: 2024, extension: 'jpg' });
 
@@ -248,7 +266,7 @@ describe('search()', () => {
     const client = makeClient({
       search: vi.fn().mockResolvedValue(makeSearchResponse([doc], 1))
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     const page = await provider.search({});
 
@@ -269,7 +287,7 @@ describe('search()', () => {
     const client = makeClient({
       search: vi.fn().mockRejectedValue(new Error('search_phase_execution_exception'))
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     // One broken provider must not take down the merged asset search.
     const page = await provider.search({ query: 'jpg' });
@@ -281,8 +299,8 @@ describe('search()', () => {
     const client = makeClient({
       search: vi.fn().mockRejectedValue(new Error('Fielddata is disabled on [extension]'))
     });
-    mockFetch.mockResolvedValue({ ok: true });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+    respondWith(200);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     // Dependencies are fine — index exists, sist2 answers — so the pre-existing
     // checks alone would report green, exactly as they did during the outage.
@@ -302,8 +320,8 @@ describe('search()', () => {
       .mockRejectedValueOnce(new Error('transient cluster blip'))
       .mockResolvedValueOnce(makeSearchResponse([doc], 1));
     const client = makeClient({ search });
-    mockFetch.mockResolvedValue({ ok: true });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+    respondWith(200);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     await provider.search({ query: 'jpg' });
     await expect(provider.healthCheckDetailed()).resolves.toMatchObject({ healthy: false });
@@ -330,7 +348,7 @@ describe('getById()', () => {
         _source: doc
       })
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     const record = await provider.getById('69dba20b.00001234');
 
@@ -344,7 +362,7 @@ describe('getById()', () => {
     const client = makeClient({
       get: vi.fn().mockRejectedValue({ statusCode: 404 })
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     const record = await provider.getById('nonexistent');
     expect(record).toBeNull();
@@ -354,7 +372,7 @@ describe('getById()', () => {
     const client = makeClient({
       get: vi.fn().mockRejectedValue({ statusCode: 500, message: 'ES error' })
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     await expect(provider.getById('bad')).rejects.toMatchObject({ statusCode: 500 });
   });
@@ -367,21 +385,25 @@ describe('getById()', () => {
 describe('getThumbnail()', () => {
   test('returns Buffer on 200', async () => {
     const imageBytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
+    respondWith(200, imageBytes.toString('binary'));
     mockFetch.mockResolvedValue({
-      ok: true,
-      arrayBuffer: async () => imageBytes.buffer
+      status: 200, headers: {}, body: imageBytes,
+      finalUrl: 'http://sist2:4090/', chain: ['http://sist2:4090/']
     });
-    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     const buf = await provider.getThumbnail('69dba20b.00001234', 'sm');
 
     expect(buf).toBeInstanceOf(Buffer);
-    expect(mockFetch).toHaveBeenCalledWith('http://sist2:4090/t/69dba20b.00001234');
+    expect(mockFetch).toHaveBeenCalledWith(
+      'http://sist2:4090/t/69dba20b.00001234',
+      expect.objectContaining({ policy: expect.anything() })
+    );
   });
 
   test('returns null when sist2 returns non-200 (thumbnail not generated)', async () => {
-    mockFetch.mockResolvedValue({ ok: false, status: 404 });
-    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://sist2:4090', []);
+    respondWith(404);
+    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     const buf = await provider.getThumbnail('69dba20b.00001234', 'sm');
     expect(buf).toBeNull();
@@ -389,7 +411,7 @@ describe('getThumbnail()', () => {
 
   test('returns null on network error', async () => {
     mockFetch.mockRejectedValue(new Error('ECONNREFUSED'));
-    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     const buf = await provider.getThumbnail('69dba20b.00001234', 'sm');
     expect(buf).toBeNull();
@@ -408,8 +430,8 @@ describe('healthCheck() — #998', () => {
   // feature into a confidently healthy one.
 
   test('healthy when the index exists and sist2 responds', async () => {
-    mockFetch.mockResolvedValue({ ok: true });
-    const provider = new Sist2AssetProvider(makeClient(), 'elasticsearch-nas', 'http://sist2:4090', []);
+    respondWith(200);
+    const provider = new Sist2AssetProvider(makeClient(), 'elasticsearch-nas', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     const result = await provider.healthCheckDetailed();
     expect(result.healthy).toBe(true);
@@ -419,9 +441,9 @@ describe('healthCheck() — #998', () => {
 
   test('UNHEALTHY when the configured index does not exist', async () => {
     // The exact jimstest failure: cluster up, sist2 up, index absent.
-    mockFetch.mockResolvedValue({ ok: true });
+    respondWith(200);
     const client = makeClient({ indices: { exists: vi.fn().mockResolvedValue(false) } });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     const result = await provider.healthCheckDetailed();
     expect(result.healthy).toBe(false);
@@ -435,7 +457,7 @@ describe('healthCheck() — #998', () => {
     const client = makeClient({
       indices: { exists: vi.fn().mockRejectedValue(new Error('ECONNREFUSED')) }
     });
-    const provider = new Sist2AssetProvider(client, 'elasticsearch-nas', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(client, 'elasticsearch-nas', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     const result = await provider.healthCheckDetailed();
     expect(result.healthy).toBe(false);
@@ -443,8 +465,8 @@ describe('healthCheck() — #998', () => {
   });
 
   test('reports sist2 down while noting search still works', async () => {
-    mockFetch.mockResolvedValue({ ok: false, status: 503 });
-    const provider = new Sist2AssetProvider(makeClient(), 'elasticsearch-nas', 'http://sist2:4090', []);
+    respondWith(503);
+    const provider = new Sist2AssetProvider(makeClient(), 'elasticsearch-nas', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     const result = await provider.healthCheckDetailed();
     expect(result.healthy).toBe(false);
@@ -454,7 +476,7 @@ describe('healthCheck() — #998', () => {
 
   test('returns false on a sist2 network error', async () => {
     mockFetch.mockRejectedValue(new Error('ECONNREFUSED'));
-    const provider = new Sist2AssetProvider(makeClient(), 'elasticsearch-nas', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(makeClient(), 'elasticsearch-nas', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
 
     expect(await provider.healthCheck()).toBe(false);
   });
@@ -470,7 +492,7 @@ describe('AssetRecord field mapping', () => {
     const client = makeClient({
       get: vi.fn().mockResolvedValue({ found: true, _id: 'test-id', _source: doc })
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', []);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
     // Access private method via cast
     return provider._hitToRecord('test-id', doc);
   }
@@ -589,11 +611,11 @@ describe('_resolveAllowedPaths()', () => {
   };
 
   function makeProvider(pa = pathAccess) {
-    return new Sist2AssetProvider(makeClient(), 'sist2', 'http://sist2:4090', [], pa);
+    return new Sist2AssetProvider(makeClient(), 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG, pa);
   }
 
   test('null pathAccess → null (unrestricted)', () => {
-    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://sist2:4090', [], null);
+    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG, null);
     expect(provider._resolveAllowedPaths(['editor'], '')).toBeNull();
   });
 
@@ -669,7 +691,7 @@ describe('search() path access control', () => {
     const client = makeClient({
       search: vi.fn().mockResolvedValue(makeSearchResponse([], 0))
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], null);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG, null);
 
     await provider.search({ userRoles: ['editor'], username: 'alice' });
 
@@ -682,7 +704,7 @@ describe('search() path access control', () => {
     const client = makeClient({
       search: vi.fn().mockResolvedValue(makeSearchResponse([], 0))
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], pathAccess);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG, pathAccess);
 
     await provider.search({ userRoles: ['admin'], username: 'alice' });
 
@@ -695,7 +717,7 @@ describe('search() path access control', () => {
     const client = makeClient({
       search: vi.fn().mockResolvedValue(makeSearchResponse([], 0))
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], pathAccess);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG, pathAccess);
 
     await provider.search({ userRoles: ['editor'], username: 'alice' });
 
@@ -711,7 +733,7 @@ describe('search() path access control', () => {
     const client = makeClient({
       search: vi.fn().mockResolvedValue(makeSearchResponse([], 0))
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], pathAccess);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG, pathAccess);
 
     await provider.search({ userRoles: ['editor'], username: 'jim' });
 
@@ -728,7 +750,7 @@ describe('search() path access control', () => {
     const client = makeClient({
       search: vi.fn().mockResolvedValue(makeSearchResponse([], 0))
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], pathAccess);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG, pathAccess);
 
     await provider.search({});
 
@@ -741,7 +763,7 @@ describe('search() path access control', () => {
     const client = makeClient({
       search: vi.fn().mockResolvedValue(makeSearchResponse([], 0))
     });
-    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], pathAccess);
+    const provider = new Sist2AssetProvider(client, 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG, pathAccess);
 
     await provider.search({ userRoles: ['contributor'], username: 'alice' });
 

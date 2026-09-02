@@ -45,8 +45,22 @@ const REPO = path.resolve(__dirname, '..');
 /** The boundary itself. Everything here is allowed to open the network. */
 const BOUNDARY = 'src/http';
 
-/** Scanned in full. `scripts/` is excluded: build and test tooling is not the app. */
-const SCAN_ROOT = 'src';
+/**
+ * Scanned in full. `scripts/` is excluded: build and test tooling is not the app.
+ *
+ * __`addons/` is scanned too (#1139).__ Restricting this to `src` was the
+ * defect, not an omission in passing: addon code is loaded into the ngdpbase
+ * process and opens sockets from it, so the invariant applies identically. The
+ * feeds addon made six raw `fetch()` calls on operator-supplied URLs from July
+ * onward while this check printed `No network access originates outside
+ * src/http/.` on every run — a guard reporting green over a scope that never
+ * included the code.
+ *
+ * The header above argues that no PATH may be exempted, because allow-list rot
+ * is what this exists to prevent. A scan root that omits half the process is
+ * the same rot, arriving one level up.
+ */
+const SCAN_ROOTS = ['src', 'addons'];
 
 /**
  * Client symbols on `http` / `https` / `net`.
@@ -123,6 +137,21 @@ function importedSymbols(line: string): string[] {
   return [];
 }
 
+/**
+ * A METHOD or signature named `fetch`, rather than a call to the global one.
+ *
+ * `SourceAdapter` declares `fetch(cfg): Promise<RawRecord[]>` and every adapter
+ * implements `async fetch(cfg) { ... }`. Reporting those as outbound calls
+ * roughly doubles the finding count with noise, and a check whose output is
+ * half noise is one people learn to skim — which is how the real sixteen would
+ * have been lost among them.
+ *
+ * Matched at the start of a line and requiring a `:` return type or an opening
+ * brace after the parameter list, so an actual call (`await fetch(url)`,
+ * `const r = fetch(url)`) is never excluded by it.
+ */
+const DECLARES_FETCH = /^\s*(?:(?:public|private|protected|static|readonly|async)\s+)*fetch\s*\([^)]*\)\s*(?::|\{|;)/;
+
 export function checkFile(relPath: string, source: string): Violation[] {
   const violations: Violation[] = [];
   const rawLines = source.split('\n');
@@ -185,6 +214,7 @@ export function checkFile(relPath: string, source: string): Violation[] {
 
     if (/(?<![.\w$])fetch\s*\(/.test(line)) {
       if (isInsideTemplateLiteral(rawLines, i)) return; // browser code emitted into a page
+      if (DECLARES_FETCH.test(line)) return;            // a METHOD named fetch, not a call to one
       report('fetch', `calls fetch(). Global fetch is not used in this codebase — route it through ${BOUNDARY}/guardedFetch so the egress policy applies.`);
     }
   });
@@ -206,9 +236,8 @@ function walk(dir: string, acc: string[] = []): string[] {
 }
 
 export function run(): Violation[] {
-  const root = path.join(REPO, SCAN_ROOT);
   const boundary = path.join(REPO, BOUNDARY);
-  return walk(root)
+  return SCAN_ROOTS.flatMap((r) => walk(path.join(REPO, r)))
     .filter((f) => !f.startsWith(boundary + path.sep))
     .flatMap((f) => checkFile(path.relative(REPO, f), readFileSync(f, 'utf8')));
 }
@@ -219,7 +248,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   console.log('==============================');
   const violations = run();
   if (violations.length === 0) {
-    console.log(`No network access originates outside ${BOUNDARY}/.`);
+    console.log(`No network access originates outside ${BOUNDARY}/ (scanned: ${SCAN_ROOTS.join(', ')}).`);
     process.exit(0);
   }
   for (const v of violations) {
