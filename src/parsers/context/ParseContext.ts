@@ -7,6 +7,8 @@
  * Related Issue: #55 - Core Infrastructure and Phase System
  */
 
+import { ANONYMOUS_SUBJECT, type PermissionSubject } from '../../managers/UserManager.js';
+
 /**
  * User context interface
  */
@@ -188,20 +190,19 @@ function pageContextToWikiContextLike(pc: PageContext, engine: WikiEngine, conte
     },
     hasPermission: async (action: string): Promise<boolean> => {
       const userManager = engine.getManager<{
-        hasPermission(
-          u: string | { username: string; roles: string[]; isAuthenticated: boolean },
-          a: string
-        ): Promise<boolean>;
+        hasPermission(subject: PermissionSubject, a: string): Promise<boolean>;
           }>('UserManager');
       if (!userManager) return false;
       const username = userContext?.username ?? userContext?.userName ?? '';
-      if (userContext && Array.isArray(userContext.roles) && typeof username === 'string' && username) {
-        return userManager.hasPermission(
-          { username, roles: userContext.roles, isAuthenticated: Boolean(userContext.isAuthenticated ?? userContext.authenticated) },
-          action
-        );
+      // #1173: forward the caller's context, do not rebuild one. The rebuilt
+      // three-field object dropped `viaToken`, so an agent token's scope
+      // ceiling had nothing to find and the check resolved against the token
+      // OWNER's live roles — the #1164 defect, reached through a context class
+      // and invisible to a guard that only scans src/routes/.
+      if (userContext && typeof username === 'string' && username) {
+        return userManager.hasPermission(userContext, action);
       }
-      return userManager.hasPermission(typeof username === 'string' ? username : '', action);
+      return userManager.hasPermission(ANONYMOUS_SUBJECT, action);
     },
     canAccess: async (action: string): Promise<boolean> => {
       const aclManager = engine.getManager<{

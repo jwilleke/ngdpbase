@@ -28,6 +28,8 @@
 import type { Request } from 'express';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type UserManager from '../managers/UserManager.js';
+import type { AgentTokenGrant } from '../managers/UserManager.js';
+import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 
 // ── ApiError ────────────────────────────────────────────────────────────────
 
@@ -66,13 +68,26 @@ export class ApiContext {
   /** Caller's assigned roles (always an array, never undefined) */
   readonly roles: string[];
 
+  /**
+   * The agent token this request arrived with, when it did (#1173).
+   *
+   * Absent before this: `from()` copied five fields off `req.userContext` and
+   * `viaToken` was not one of them, so every `ctx.hasPermission()` — including
+   * every addon API route using `requirePermission()` — resolved against the
+   * token OWNER's live roles with the token's scope ceiling unable to run. The
+   * same defect #1164 fixed in route code, reached through a context class
+   * instead, and invisible to a check that only scans `src/routes/`.
+   */
+  readonly viaToken?: AgentTokenGrant;
+
   private constructor(
     engine: WikiEngine,
     isAuthenticated: boolean,
     username: string | null,
     displayName: string | null,
     email: string | null,
-    roles: string[]
+    roles: string[],
+    viaToken?: AgentTokenGrant
   ) {
     this.engine = engine;
     this.isAuthenticated = isAuthenticated;
@@ -80,6 +95,7 @@ export class ApiContext {
     this.displayName = displayName;
     this.email = email;
     this.roles = roles;
+    this.viaToken = viaToken;
   }
 
   /**
@@ -104,7 +120,8 @@ export class ApiContext {
       (uc.username) ?? null,
       (uc.displayName) ?? null,
       (uc.email) ?? null,
-      Array.isArray(uc.roles) ? (uc.roles) : []
+      Array.isArray(uc.roles) ? (uc.roles) : [],
+      (uc as { viaToken?: AgentTokenGrant }).viaToken
     );
   }
 
@@ -166,12 +183,20 @@ export class ApiContext {
     // for authenticated callers; we trust that shape here.
     if (this.username) {
       return userManager.hasPermission(
-        { username: this.username, roles: this.roles, isAuthenticated: this.isAuthenticated },
+        {
+          username: this.username,
+          roles: this.roles,
+          isAuthenticated: this.isAuthenticated,
+          // #1173: carried, not dropped. Without this the subject is rebuilt
+          // from three fields and the ceiling has no token to find.
+          ...(this.viaToken ? { viaToken: this.viaToken } : {})
+        },
         permission
       );
     }
-    // Anonymous (no username): preserve existing string-path behavior.
-    return userManager.hasPermission('', permission);
+    // Anonymous: a named subject rather than an empty string, so there is one
+    // code path into hasPermission (#1173).
+    return userManager.hasPermission(ANONYMOUS_SUBJECT, permission);
   }
 
   /**

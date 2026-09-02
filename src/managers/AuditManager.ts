@@ -628,9 +628,14 @@ class AuditManager extends BaseManager {
   private async assertQueryCallerAllowed(caller?: AuditQueryCaller): Promise<void> {
     const username = caller?.username;
     if (username) {
+      // #1173: `userHoldsPermission`, not `hasPermission`. This is a LOOKUP —
+      // the caller supplies a username as a fact and the decision is derived
+      // here — not the authorisation of a request, so there is no token to cap.
+      // The two questions now have two names, and the dangerous one cannot be
+      // reached with a bare string at all.
       const userManager = this.engine.getManager('UserManager') as
-        { hasPermission?: (username: string, permission: string) => Promise<boolean> } | null;
-      if (userManager?.hasPermission && await userManager.hasPermission(username, 'admin-system')) {
+        { userHoldsPermission?: (username: string, permission: string) => Promise<boolean> } | null;
+      if (userManager?.userHoldsPermission && await userManager.userHoldsPermission(username, 'admin-system')) {
         return;
       }
     }

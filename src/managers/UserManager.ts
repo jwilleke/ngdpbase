@@ -720,7 +720,7 @@ class UserManager extends BaseManager {
    * @returns True if user has permission via policies
    */
   async hasPermission(
-    usernameOrContext: string | PermissionSubject,
+    subject: PermissionSubject,
     action: string
   ): Promise<boolean> {
     const policyEvaluator = this.engine?.getManager<PolicyEvaluator>('PolicyEvaluator');
@@ -739,8 +739,8 @@ class UserManager extends BaseManager {
     //
     // Only applies when the caller passed a resolved context carrying a token;
     // an ordinary session request is unaffected.
-    if (typeof usernameOrContext === 'object' && usernameOrContext !== null) {
-      const viaToken = usernameOrContext.viaToken;
+    {
+      const viaToken = subject.viaToken;
       if (viaToken && !viaToken.scopes.includes(action)) {
         logger.info(
           `[UserManager] token ${viaToken.id} ("${viaToken.name}") lacks scope '${action}' ` +
@@ -752,48 +752,19 @@ class UserManager extends BaseManager {
 
     let userContext: UserContext;
 
-    // Fast path: caller already has a resolved userContext — trust it.
-    if (typeof usernameOrContext === 'object' && usernameOrContext !== null) {
+    // #1173: one path. There is no username-string branch any more — see
+    // `userHoldsPermission` for the question that legitimately takes a name.
+    {
       // #1164: the subject's fields are optional now, because a real
       // UserContext declares them optional. Defaulting here rather than
       // widening UserContext keeps the resolved shape unchanged for everything
       // downstream, and an absent username resolves anonymous — which is what
       // the string path already does with '' or undefined.
       userContext = {
-        username: usernameOrContext.username ?? 'Anonymous',
-        roles: usernameOrContext.roles ?? ['anonymous', 'All'],
-        isAuthenticated: usernameOrContext.isAuthenticated ?? false
+        username: subject.username ?? 'Anonymous',
+        roles: subject.roles ?? ['anonymous', 'All'],
+        isAuthenticated: subject.isAuthenticated ?? false
       };
-    } else {
-      // String path: build the context from scratch (existing behavior).
-      const username = usernameOrContext;
-      if (!this.provider) {
-        return false;
-      }
-      if (!username || username === 'anonymous') {
-        userContext = {
-          username: 'Anonymous',
-          roles: ['anonymous', 'All'],
-          isAuthenticated: false
-        };
-      } else if (username === 'asserted') {
-        userContext = {
-          username: 'Asserted',
-          roles: ['reader', 'All'],
-          isAuthenticated: false
-        };
-      } else {
-        const user = await this.provider.getUser(username);
-        if (!user || !user.isActive) {
-          return false;
-        }
-        const baseRoles = await this.resolveUserRoles(username);
-        userContext = {
-          username: user.username,
-          roles: [...baseRoles, 'Authenticated', 'All'],
-          isAuthenticated: true
-        };
-      }
     }
 
     // Evaluate using policies - use generic page resource for permission checks
@@ -1251,6 +1222,49 @@ class UserManager extends BaseManager {
   updateRolePermissions(_roleName: string, _updates: unknown): never {
     logger.warn('[DEPRECATED] updateRolePermissions() is deprecated.');
     throw new Error('updateRolePermissions() is deprecated. Use config files and policies');
+  }
+
+  /**
+   * Does this NAMED USER hold a permission? (#1173)
+   *
+   * A different question from {@link hasPermission}, and that is why it has a
+   * different name. This one __inspects a user__ — "does bob hold
+   * `admin-system`?" — where there is no request, no token, and nothing to cap.
+   * `hasPermission` __authorises a request__, so it must be handed the subject
+   * the request carries or an agent token's scope ceiling has nothing to read.
+   *
+   * They shared a name and one of them took a bare string, which is how #1164
+   * happened seventeen times: route code reached for the convenient overload
+   * and silently lost the token. Splitting them means the dangerous question
+   * cannot be asked by accident — a route authorising a request has no reason
+   * to call this, and calling it does not compile in place of the other.
+   *
+   * Resolves roles live from the provider, so the answer is current rather than
+   * a replay of whatever the caller happened to hold.
+   */
+  async userHoldsPermission(username: string, action: string): Promise<boolean> {
+    if (!this.provider) return false;
+
+    if (!username || username === 'anonymous') {
+      return this.hasPermission(
+        { username: 'Anonymous', roles: ['anonymous', 'All'], isAuthenticated: false },
+        action
+      );
+    }
+    if (username === 'asserted') {
+      return this.hasPermission(
+        { username: 'Asserted', roles: ['reader', 'All'], isAuthenticated: false },
+        action
+      );
+    }
+
+    const user = await this.provider.getUser(username);
+    if (!user || !user.isActive) return false;
+    const baseRoles = await this.resolveUserRoles(username);
+    return this.hasPermission(
+      { username: user.username, roles: [...baseRoles, 'Authenticated', 'All'], isAuthenticated: true },
+      action
+    );
   }
 
   /**

@@ -42,7 +42,7 @@ function makeEngine(configOverrides: Record<string, unknown> = {}): WikiEngine {
       // exercising the delegation they were written for.
       if (name === 'UserManager') {
         return {
-          hasPermission: vi.fn(async (username: string, permission: string) =>
+          userHoldsPermission: vi.fn(async (username: string, permission: string) =>
             username === 'root' && permission === 'admin-system')
         };
       }
@@ -421,7 +421,7 @@ describe('#1116 audit queries refuse without an admin-system caller', () => {
   function makeEngineWithUsers(grants: Record<string, boolean>, configOverrides: Record<string, unknown> = {}) {
     const cm = makeConfigManager(configOverrides);
     const um = {
-      hasPermission: vi.fn(async (username: string, permission: string) =>
+      userHoldsPermission: vi.fn(async (username: string, permission: string) =>
         permission === 'admin-system' && grants[username] === true)
     };
     return {

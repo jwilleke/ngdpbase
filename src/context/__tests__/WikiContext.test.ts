@@ -297,7 +297,7 @@ describe('WikiContext', () => {
       expect(result).toBe(true);
     });
 
-    test('passes empty string username when userContext is null', async () => {
+    test('passes a named anonymous subject when userContext is null (#1173)', async () => {
       const userManagerMock = {
         hasPermission: vi.fn().mockResolvedValue(false)
       };
@@ -311,7 +311,12 @@ describe('WikiContext', () => {
 
       const result = await ctx.hasPermission('admin-system');
 
-      expect(userManagerMock.hasPermission).toHaveBeenCalledWith('', 'admin-system');
+      // #1173: a named anonymous subject, not the username form — that form is
+      // gone because it could not carry an agent token for the ceiling to read.
+      expect(userManagerMock.hasPermission).toHaveBeenCalledWith(
+        expect.objectContaining({ username: 'Anonymous', isAuthenticated: false }),
+        'admin-system'
+      );
       expect(result).toBe(false);
     });
 

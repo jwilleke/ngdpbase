@@ -371,14 +371,20 @@ describe('UserManager', () => {
       expect(result).toBe(true);
     });
 
-    test('hasPermission(username, action) still works (back-compat string path) (#637)', async () => {
+    test('userHoldsPermission(username, action) looks the user up (#1173)', async () => {
+      // This asserted `hasPermission('jane', …)` — the username overload. That
+      // form is gone: it could not carry an agent token, so the scope ceiling
+      // had nothing to read, which is how #1164 reached seventeen call sites.
+      //
+      // The question it was really asking — "does this NAMED USER hold this
+      // permission?" — is legitimate and survives under its own name, where no
+      // request and no token are involved and nothing can be dropped.
       installPolicyEvaluator(true);
       const mockUser = { username: 'jane', roles: ['admin'], isActive: true };
       userManager.provider.getUser = vi.fn().mockResolvedValue(mockUser);
 
-      const result = await userManager.hasPermission('jane', 'admin-system');
+      const result = await userManager.userHoldsPermission('jane', 'admin-system');
 
-      // String path: must look up the user
       expect(userManager.provider.getUser).toHaveBeenCalledWith('jane');
       expect(result).toBe(true);
     });

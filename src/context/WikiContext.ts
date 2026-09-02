@@ -9,6 +9,7 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import type { Request, Response } from 'express';
+import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import Showdown from 'showdown';
 import logger from '../utils/logger.js';
 import { guardShowdownInput } from '../utils/showdownGuard.js';
@@ -411,8 +412,9 @@ class WikiContext {
     // #637: pass the already-resolved userContext when we have one, so
     // UserManager.hasPermission can skip provider.getUser + resolveUserRoles.
     const promise = this.userContext
-      ? userManager.hasPermission(this.userContext as { username: string; roles: string[]; isAuthenticated: boolean }, action)
-      : userManager.hasPermission('', action);
+      ? userManager.hasPermission(this.userContext, action)
+      // #1173: a named anonymous subject, so there is one code path in.
+      : userManager.hasPermission(ANONYMOUS_SUBJECT, action);
     this._permissionCache.set(action, promise);
     return promise;
   }

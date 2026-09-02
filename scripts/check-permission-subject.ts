@@ -36,11 +36,18 @@ const REPO = path.resolve(__dirname, '..');
 /**
  * Where a permission check is authorising a REQUEST, and a token may be present.
  *
- * `src/managers/` is not scanned: a manager may legitimately be asked "does
- * user X hold Y?" about somebody who is not the caller, where there is no token
- * to consider. That question is a lookup, not an authorisation.
+ * __The context classes are scanned too, as of #1173.__ Restricting this to
+ * `src/routes` was a real gap: `ApiContext` and `ParseContext` each rebuilt a
+ * three-field subject and dropped `viaToken`, so every addon API route using
+ * `ctx.requirePermission()` bypassed the ceiling — the #1164 defect, one layer
+ * further in, invisible to a guard that only looked at routes.
+ *
+ * `src/managers/` is still not scanned: a manager may legitimately be asked
+ * "does user X hold Y?" about somebody who is not the caller, where there is no
+ * token to consider. That question is `userHoldsPermission`, a lookup rather
+ * than an authorisation, and it takes a name by design.
  */
-const SCAN_DIRS = ['src/routes'];
+const SCAN_DIRS = ['src/routes', 'src/context', 'src/parsers/context'];
 
 export interface Violation {
   file: string;
@@ -93,7 +100,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   console.log('===========================');
   const violations = run();
   if (violations.length === 0) {
-    console.log('No permission subject is rebuilt in route code.');
+    console.log(`No permission subject is rebuilt in ${SCAN_DIRS.join(', ')}.`);
     process.exit(0);
   }
   for (const v of violations) console.error(`  ${v.file}:${v.line}  ${v.detail}`);

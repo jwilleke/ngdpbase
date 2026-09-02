@@ -196,11 +196,17 @@ describe('ApiContext#hasPermission()', () => {
     expect(result).toBe(true);
   });
 
-  test('passes empty string username when caller is anonymous', async () => {
+  test('passes a named anonymous subject, not an empty string (#1173)', async () => {
+    // The empty string was the username-form of the call, and that form is
+    // gone: it could not carry an agent token, so the scope ceiling had
+    // nothing to read. One code path in, always a subject.
     const engine = makeEngineWithUserManager(false);
     const ctx = ApiContext.from(makeReq({ userContext: undefined }), engine);
     const result = await ctx.hasPermission('admin-system');
-    expect(engine._hasPermission).toHaveBeenCalledWith('', 'admin-system');
+    expect(engine._hasPermission).toHaveBeenCalledWith(
+      expect.objectContaining({ username: 'Anonymous', isAuthenticated: false }),
+      'admin-system'
+    );
     expect(result).toBe(false);
   });
 
