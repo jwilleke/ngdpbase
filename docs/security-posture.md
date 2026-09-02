@@ -20,6 +20,8 @@ An instance has __one security posture__, and it is the settings it is actually 
 
 `baseline`, `hardened` and `regulated` are __documented recommendations__ — value sets this project publishes as advice for a deployment shape. They are prose and tables, not configuration objects. An operator reads the one matching their situation and is accountable for setting their instance to their own requirements.
 
+The comparison is against the last booted security posture to detect and audit changes to the security-posture.
+
 This is a deliberate reversal of the preset model in the planning document, and the simpler thing is the better thing here:
 
 - A preset that supplies values invisibly is a second source of truth for every key it touches. The settings are then partly explicit and partly implied by a label, and telling which is which requires knowing the preset.
