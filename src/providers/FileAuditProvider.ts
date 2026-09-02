@@ -811,7 +811,12 @@ class FileAuditProvider extends BaseAuditProvider {
     // empty log is complete.
     if (this.chainSeq <= 0) return;
 
-    const instance = asString(cm?.getProperty?.('ngdpbase.applicationname', 'ngdpbase')) || 'ngdpbase';
+    // The key is `application-name`, hyphenated, as every other reader spells
+    // it (WikiEngine.ts:409, MetricsManager.ts:82, and the Config type). #1138
+    // asked for `applicationname`, which matches nothing, so every instance
+    // silently published `ngdpbase` — and this field exists precisely so one
+    // witness store can hold heads from several instances.
+    const instance = asString(cm?.getProperty?.('ngdpbase.application-name', 'ngdpbase')) || 'ngdpbase';
     const witness = buildWitness({
       seq: this.chainSeq,
       hash: this.chainPrevHash,

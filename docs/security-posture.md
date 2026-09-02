@@ -381,9 +381,49 @@ It belongs in the recommendation pages (D17) because of what it does and does no
 - __It does not make the log durable.__ The gap is the in-memory queue, not the file's location; a different disk takes the same buffered writes at the same moment and loses the same events.
 - __It does not survive the machine.__ A separate local disk is the same host, and anyone who can delete records on one path can delete them on the other.
 
-This is exactly the shape of advice D17's pages exist for: an operator hardening choice with a stated benefit and a stated limit, owned by the operator rather than asserted by the software.
+This is exactly the shape of advice D17's pages exist for: an operator hardening choice with a stated benefit and a stated limit, owned by the operator rather than asserted by the software. D23 records the same shape for the witness destination itself.
 
 __Issues:__ Carried by [#1146](https://github.com/jwilleke/ngdpbase/issues/1146)'s recommendation page — __landed 2026-09-01__. The truncation limit it names is [#1138](https://github.com/jwilleke/ngdpbase/issues/1138).
+
+### D23 — Configuring the witness: what it is, and what it is not
+
+[#1138](https://github.com/jwilleke/ngdpbase/issues/1138) built the mechanism; this records how it is set up and, more importantly, the ways it can look like it is working when it is not. Written after configuring it on a live instance, where three of them turned up in the first ten minutes.
+
+__The setting.__ `ngdpbase.audit.chain-witness.destination` is a __file path__, not a directory. The provider appends one JSON line per publication and never rewrites the file:
+
+```json
+{"seq":1977,"hash":"7225256d52…","instance":"jimstest","publishedAt":"2026-09-02T08:27:08.940Z"}
+```
+
+A sequence number and a hash — a fingerprint, not content. Publishing more would put audit *data* wherever the witness lives, which is a far larger trust decision than publishing a fingerprint of it. Appending rather than overwriting is deliberate: a witness store that can be rewritten reproduces the original problem one hop away, and the history of heads is itself the evidence.
+
+__`interval-minutes` is the security parameter, not a performance knob.__ The gap between publications is exactly the window an attacker can truncate within: publish hourly and the last hour of records can be removed with nothing to notice. It defaults to 60. A zero or negative value publishes on every flush rather than never, so a misconfiguration fails toward more evidence.
+
+__A configuration-file edit needs a restart.__ `ConfigurationManager` loads `app-custom-config.json` at boot and has no file watcher, so editing the file on disk changes nothing until the instance restarts. Setting it through the admin UI instead calls `setProperty`, which updates the running configuration and the file together.
+
+#### The five ways it can be wrong while looking right
+
+__1. The destination is on the same machine as the log.__ This is the one that matters most and the easiest to get wrong, because `${FAST_STORAGE}` is right there in every other path in the file. A witness on the same volume as `audit.log` is deletable by anyone who can delete the log, so it converts the verifier's honest `unknown` into a confident `intact` backed by nothing — __strictly worse than no witness at all__. The destination must be on different hardware.
+
+__2. The mount is absent and the path quietly becomes local.__ If the destination is a network mount, ask what happens when it is not mounted. On macOS this fails safe: `/Volumes` is root-owned, so `ensureDir` gets `EACCES`, the provider logs that truncation is undetectable while no witness is being written, and carries on. That is the correct behaviour and it should be verified rather than assumed on any given host — a platform where the mount point *is* writable would silently create a local directory and start writing an on-box "off-box" witness, which is failure mode 1 arriving by accident.
+
+__3. The instance name is wrong, so one store cannot hold several instances.__ Found on a live instance immediately after configuring it: every witness line said `"instance":"ngdpbase"` on an instance named `jimstest`. The publisher read `ngdpbase.applicationname`, which is spelled `ngdpbase.application-name` everywhere else in the codebase, so the lookup always missed and always took the fallback. Fixed and regression-tested. The general lesson is the one this document keeps arriving at: a field that is never read back is a field nothing checks, and the first read is where it fails.
+
+__4. The credentials to reach the witness are on the audited box.__ A read-write network share reached with credentials stored on the machine is deletable by whoever owns the machine. This defeats a careless truncation — someone who trims the log and does not think about the remote copy — and not a thorough one. It is a real improvement over `unknown` and it is not the strong form.
+
+The strong form is a destination the instance can __add to but not remove from__: an append-only share, a write-once store, or a filesystem with snapshots the instance cannot delete. That is an operator hardening decision, so per D17 it belongs in the recommendation pages rather than in a key this project defines.
+
+__5. The verifier resolves the witness path from the configuration it can see.__ Not a fifth way to be wrong so much as a way to think you are. Running `scripts/verify-audit-chain.ts` from a source checkout reads *that* checkout's configuration, where the destination is empty — so it reports `VERIFIED, BUT UNWITNESSED` for a log whose instance is publishing perfectly well. Pass the witness explicitly when verifying an instance from outside it:
+
+```bash
+npx tsx scripts/verify-audit-chain.ts /path/to/audit.log --witness /path/to/audit-witness.jsonl
+```
+
+which answers with the statement the whole mechanism exists to make: *the log is consistent with the published head, truncation would have been detected.* An assessor holding their own copy of a head uses `--head <hash>` instead, which is the strongest form because the value never passed through the audited machine's configuration at all.
+
+__What the software says about all of this: nothing.__ Consistent with D13 and D21, the code takes no view on whether a destination is genuinely off-box and never claims that it is — nothing running on the machine can verify that a path leaves it, and asserting so would repeat the `durable: true` defect [#1148](https://github.com/jwilleke/ngdpbase/issues/1148) removed. It reports where it published and when. The operator states what that destination actually is, and owns the claim.
+
+__Issues:__ Mechanism by [#1138](https://github.com/jwilleke/ngdpbase/issues/1138) — __landed 2026-09-01__; the verifier that reads it is [#1161](https://github.com/jwilleke/ngdpbase/issues/1161). The instance-name defect in failure mode 3 was fixed on 2026-09-02.
 
 ## Deferred to implementation
 

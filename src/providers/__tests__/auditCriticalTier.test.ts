@@ -246,6 +246,32 @@ describe('#1158 — the critical tier is durable before the action completes', (
     }
   });
 
+  test('the published witness names the instance, not the product', async () => {
+    // #1138 read `ngdpbase.applicationname`; every other reader in the codebase
+    // spells it `ngdpbase.application-name`, so the lookup matched nothing and
+    // every instance published the fallback `ngdpbase`. Found on jimstest,
+    // whose witness line said "ngdpbase" while the instance is called
+    // "jimstest". The field exists so ONE store can hold heads from SEVERAL
+    // instances, which it cannot do if they all claim the same name.
+    const witnessFile = path.join(dir, 'witness.jsonl');
+    const p = makeProvider({
+      'ngdpbase.application-name': 'jimstest',
+      'ngdpbase.audit.chain-witness.destination': witnessFile
+    });
+    await p.initialize();
+
+    await p.logAuditEvent(event('token.mint'));
+
+    const lines = (await fs.readFile(witnessFile, 'utf8')).split('\n').filter(Boolean);
+    expect(lines).toHaveLength(1);
+    const witness = JSON.parse(lines[0]) as Record<string, unknown>;
+    expect(witness.instance).toBe('jimstest');
+    expect(witness.seq).toBe(1);
+    expect(typeof witness.hash).toBe('string');
+
+    await p.close();
+  });
+
   test('durability names the tier it covers rather than rounding to a boolean', async () => {
     // D21: state facts, do not score. `fsync: true` would promise durability
     // for the buffered standard events that do not have it; a bare false hides
