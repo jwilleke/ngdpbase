@@ -19,8 +19,21 @@ export interface JobDefinition {
   id: string;
   /** Human-readable name shown in UI and notifications */
   displayName: string;
-  /** The work to perform. Resolves with a JobResult. */
-  run: (reportProgress: ReportProgress) => Promise<JobResult>;
+  /**
+   * The work to perform. Resolves with a JobResult.
+   *
+   * __`ctx` is mandatory (#631).__ Without it the actor this manager captured
+   * at `enqueue` reached the audit record and stopped there: `job.started`
+   * named who asked for a reindex while the reindex itself ran as nobody. That
+   * is the exact shape P1 in docs/security-posture.md warns about — a
+   * parameter that cannot carry provenance guarantees provenance is lost — and
+   * it was true of this signature for the whole first version of #631.
+   *
+   * A handler that needs to make a permission decision or write a record uses
+   * this; one that does neither still receives it, because a handler which can
+   * quietly grow into taking an action must not be able to do so anonymously.
+   */
+  run: (reportProgress: ReportProgress, ctx: JobContext) => Promise<JobResult>;
 }
 
 /**
@@ -186,7 +199,7 @@ class BackgroundJobManager extends BaseManager {
     };
 
     try {
-      const result = await def.run(reportProgress);
+      const result = await def.run(reportProgress, run.requestedBy);
       const durationMs = Date.now() - startMs;
       run.completedAt = new Date();
       run.result = result;

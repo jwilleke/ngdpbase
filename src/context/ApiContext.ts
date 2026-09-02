@@ -121,7 +121,7 @@ export class ApiContext {
       (uc.displayName) ?? null,
       (uc.email) ?? null,
       Array.isArray(uc.roles) ? (uc.roles) : [],
-      (uc as { viaToken?: AgentTokenGrant }).viaToken
+      uc.viaToken
     );
   }
 

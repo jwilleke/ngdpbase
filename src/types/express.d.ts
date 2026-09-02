@@ -21,6 +21,26 @@ declare module 'express-session' {
 declare global {
   namespace Express {
     interface Request {
+      /**
+       * The identity this request carries, written by the session and bearer
+       * middleware in `app.ts`.
+       *
+       * __`viaToken` is declared here deliberately (#1164, #1173).__ It was
+       * absent while `app.ts` wrote it and every route read it, so the type
+       * described a user with no delegation. `ApiContext.from()` copied "the
+       * fields" — the fields the TYPE named — and the token was gone before
+       * any permission check ran. Reaching it required a cast, and a cast is
+       * what a wrong type feels like from the inside.
+       *
+       * A token is a __delegation from this user__, not a separate actor: it
+       * carries the permissions they delegated, and authority is still the
+       * user's, resolved live. So it belongs on the identity, beside them.
+       *
+       * The `[key: string]: unknown` index signature below is why none of this
+       * was a compile error — it permits any field, so omitting one is always
+       * legal. Removing it is what would make a dropped field fail the build;
+       * that is a larger change and is not made here.
+       */
       userContext?: {
         username?: string;
         email?: string;
@@ -30,6 +50,8 @@ declare global {
         authenticated?: boolean;
         isSystem?: boolean;
         permissions?: string[];
+        /** The agent token this request arrived with, when it did. */
+        viaToken?: { id: string; name: string; scopes: string[] };
         [key: string]: unknown;
       };
       sessionID?: string;
