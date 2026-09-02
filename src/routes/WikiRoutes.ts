@@ -1614,18 +1614,35 @@ class WikiRoutes {
       let latestVersion: string | null = null;
       let releaseUrl: string | null = null;
 
+      // #1139: through the egress boundary like the other two outbound call
+      // sites, not around it. This was the one bare `fetch` left in `src/`, and
+      // it is the shape the boundary exists for even though the host is fixed:
+      // `githubRepo` is operator-configurable and interpolated into the URL, so
+      // "it only ever calls GitHub" is a property of the configuration rather
+      // than of this code. guardedFetch judges the address actually resolved,
+      // on every redirect hop.
       try {
-        const resp = await fetch(apiUrl, {
+        // Inside the try deliberately. The route is registered as
+        // `void this.checkForUpdates(...)`, so anything that rejects here
+        // becomes an unhandled rejection rather than a response — and this
+        // check has always been best-effort, so a configuration problem in the
+        // egress lists must degrade to "no update information" exactly as an
+        // unreachable GitHub does.
+        const egress = resolveEgressPolicy((key, fallback) => configManager.getProperty(key, fallback));
+        const resp = await guardedFetch(apiUrl, {
+          policy: egress.policy,
           headers: { 'User-Agent': 'ngdpbase-update-check', 'Accept': 'application/vnd.github+json' },
-          signal: AbortSignal.timeout(fetchTimeoutMs)
+          timeoutMs: fetchTimeoutMs
         });
-        if (resp.ok) {
-          const data = await resp.json() as { tag_name?: string; html_url?: string };
+        if (resp.status >= 200 && resp.status < 300) {
+          const data = JSON.parse(resp.body.toString('utf8')) as { tag_name?: string; html_url?: string };
           latestVersion = (data.tag_name ?? '').replace(/^v/, '');
           releaseUrl = data.html_url ?? null;
         }
       } catch {
-        // GitHub unreachable — return current version only
+        // GitHub unreachable, or the egress policy denied it — return current
+        // version only. Unchanged behaviour: this check has always been
+        // best-effort and must never fail the admin screen it feeds.
       }
 
       const semverGt = (a: string, b: string): boolean => {

@@ -19,3 +19,12 @@ npm run docs:index:check --silent
 # middleware rejects those with an opaque text/plain 403). Genuine
 # server-side fetches can opt out with `// csrf-guard-ignore`. Cheap.
 npm run lint:csrf --silent
+
+# Outbound HTTP boundary (#1139) — fails the commit if anything outside
+# src/http/ opens a path to the network: a bare fetch(), an HTTP client
+# library, a client symbol or call on http/https/net, or any use of dns.
+# #1133 was an SSRF found because nothing declared where network access was
+# allowed to originate; src/http/ closed that, and this keeps it closed.
+# Matched on the symbol, never the path — listening (createServer) is inbound
+# and allowed, so no file is ever exempt. Cheap.
+npm run lint:http --silent

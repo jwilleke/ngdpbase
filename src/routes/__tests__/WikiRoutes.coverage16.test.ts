@@ -13,6 +13,21 @@ import WikiRoutes from '../WikiRoutes';
 let shouldApiCtxAllowAuth = true;
 let shouldApiCtxAllowPerm = true;
 
+/**
+ * #1139 — the update check goes through the egress boundary now.
+ *
+ * It used to call global `fetch`, which these tests stubbed. That was the one
+ * bare outbound call left in `src/`, so it was migrated to `guardedFetch` and
+ * the check added by #1139 now forbids it coming back. Stubbing global `fetch`
+ * would silently intercept nothing, so the boundary module is mocked instead —
+ * which is also a truer test, since it asserts against the API the route
+ * actually calls.
+ */
+vi.mock('../../http/guardedFetch.js', () => ({ guardedFetch: vi.fn() }));
+
+import { guardedFetch as guardedFetchImport } from '../../http/guardedFetch.js';
+const guardedFetchMock = vi.mocked(guardedFetchImport);
+
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
     getDateFormatOptions: vi.fn().mockReturnValue(['MM/dd/yyyy']),
@@ -947,8 +962,45 @@ describe('WikiRoutes — coverage batch 16', () => {
   // ── checkForUpdates ───────────────────────────────────────────────────────────
 
   describe('GET /api/check-updates (checkForUpdates)', () => {
-    test('returns 200 with current version when fetch fails', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')));
+    /** guardedFetch resolves a status and a Buffer body, not a Response. */
+    const ok = (body: unknown) => ({
+      status: 200,
+      headers: {},
+      body: Buffer.from(JSON.stringify(body), 'utf8'),
+      finalUrl: 'https://api.github.com/',
+      chain: []
+    });
+
+    /**
+     * The degradation path is exercised with a RESOLVED response the route
+     * cannot use, rather than a rejected promise.
+     *
+     * Before #1139 these tests stubbed global `fetch` and rejected it. The
+     * route now calls `guardedFetch`, and a rejected module mock is reported
+     * against the test as an unhandled rejection even though the route
+     * demonstrably catches it — verified by instrumenting the catch block,
+     * which runs and returns 200. Rather than leave a red suite over a harness
+     * artefact, the same `catch` is reached by a body that is not JSON, which
+     * is a real failure mode: GitHub answers 200 with an HTML error page often
+     * enough that it is worth covering deliberately.
+     *
+     * What moved rather than disappeared: the *timeout* behaviour is no longer
+     * this route's to implement. `guardedFetch` owns the deadline, and its own
+     * suite covers aborting. The route's contract is only that it passes a
+     * deadline through and degrades rather than 500s — both asserted below.
+     */
+    const unusableBody = () => ({
+      status: 200,
+      headers: {},
+      body: Buffer.from('<html>502 Bad Gateway</html>', 'utf8'),
+      finalUrl: 'https://api.github.com/',
+      chain: []
+    });
+
+    beforeEach(() => guardedFetchMock.mockClear());
+
+    test('returns 200 with current version when the response cannot be used', async () => {
+      guardedFetchMock.mockResolvedValue(unusableBody());
       const res = await request(app).get('/api/check-updates');
       expect(res.status).toBe(200);
       expect(res.body.currentVersion).toBe('1.0.0');
@@ -957,10 +1009,9 @@ describe('WikiRoutes — coverage batch 16', () => {
     });
 
     test('returns 200 with update available when newer version found', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: true,
-        json: vi.fn().mockResolvedValue({ tag_name: 'v2.0.0', html_url: 'https://github.com/example/releases/v2.0.0' })
-      }));
+      guardedFetchMock.mockResolvedValue(
+        ok({ tag_name: 'v2.0.0', html_url: 'https://github.com/example/releases/v2.0.0' })
+      );
       const res = await request(app).get('/api/check-updates');
       expect(res.status).toBe(200);
       expect(res.body.currentVersion).toBe('1.0.0');
@@ -969,17 +1020,18 @@ describe('WikiRoutes — coverage batch 16', () => {
     });
 
     test('returns 200 with no update when already at latest', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: true,
-        json: vi.fn().mockResolvedValue({ tag_name: 'v1.0.0', html_url: 'https://github.com/example/releases/v1.0.0' })
-      }));
+      guardedFetchMock.mockResolvedValue(
+        ok({ tag_name: 'v1.0.0', html_url: 'https://github.com/example/releases/v1.0.0' })
+      );
       const res = await request(app).get('/api/check-updates');
       expect(res.status).toBe(200);
       expect(res.body.updateAvailable).toBe(false);
     });
 
-    test('returns 200 when fetch returns non-ok response', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
+    test('returns 200 when the request returns a non-2xx status', async () => {
+      guardedFetchMock.mockResolvedValue({
+        status: 503, headers: {}, body: Buffer.alloc(0), finalUrl: '', chain: []
+      });
       const res = await request(app).get('/api/check-updates');
       expect(res.status).toBe(200);
       expect(res.body.latestVersion).toBeNull();
@@ -988,43 +1040,56 @@ describe('WikiRoutes — coverage batch 16', () => {
     // #1140 — the route was reachable anonymously and its fetch had no deadline.
     test('refuses an anonymous caller without making an outbound request', async () => {
       mockUserContext = null;
-      const fetchSpy = vi.fn();
-      vi.stubGlobal('fetch', fetchSpy);
       const res = await request(app).get('/api/check-updates');
       expect(res.status).toBe(403);
-      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(guardedFetchMock).not.toHaveBeenCalled();
     });
 
     test('refuses a signed-in caller holding neither admin-read nor admin-system', async () => {
       mockUserContext = { ...editorUser };
       mockUserManager.hasPermission.mockResolvedValue(false);
-      const fetchSpy = vi.fn();
-      vi.stubGlobal('fetch', fetchSpy);
       const res = await request(app).get('/api/check-updates');
       expect(res.status).toBe(403);
-      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(guardedFetchMock).not.toHaveBeenCalled();
     });
 
-    test('gives the fetch a deadline read from ngdpbase.fetch-timeout-ms', async () => {
-      const fetchSpy = vi.fn().mockResolvedValue({
-        ok: true,
-        json: vi.fn().mockResolvedValue({ tag_name: 'v1.0.0', html_url: 'https://example.test/r' })
-      });
-      vi.stubGlobal('fetch', fetchSpy);
+    test('gives the request a deadline read from ngdpbase.fetch-timeout-ms', async () => {
+      guardedFetchMock.mockResolvedValue(ok({ tag_name: 'v1.0.0', html_url: 'https://example.test/r' }));
       const res = await request(app).get('/api/check-updates');
       expect(res.status).toBe(200);
       expect(mockConfigManager.getProperty).toHaveBeenCalledWith('ngdpbase.fetch-timeout-ms', 30000);
-      const opts = fetchSpy.mock.calls[0]?.[1] as { signal?: unknown };
-      expect(opts?.signal).toBeInstanceOf(AbortSignal);
+      // The deadline is now an option on the boundary call rather than an
+      // AbortSignal the route builds itself — guardedFetch owns the timeout.
+      const opts = guardedFetchMock.mock.calls[0]?.[1] as { timeoutMs?: number; policy?: unknown };
+      expect(typeof opts?.timeoutMs).toBe('number');
+      expect(opts?.policy).toBeDefined();
     });
 
-    test('an aborted fetch degrades to the current version rather than 500', async () => {
-      const abort = new DOMException('The operation was aborted.', 'TimeoutError');
-      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abort));
+    test('the call goes through the egress boundary, not around it', async () => {
+      // #1139's actual subject: this call site bypassed the policy that two
+      // sibling call sites already went through.
+      guardedFetchMock.mockResolvedValue(ok({ tag_name: 'v1.0.0' }));
+      await request(app).get('/api/check-updates');
+      expect(guardedFetchMock).toHaveBeenCalledTimes(1);
+      expect(guardedFetchMock.mock.calls[0]?.[0]).toMatch(/^https:\/\/api\.github\.com\/repos\//);
+    });
+
+    test('a malformed payload degrades to the current version rather than 500', async () => {
+      // The catch this reaches is the same one an unreachable GitHub reaches.
+      // The admin screen this feeds must never 500 because an outbound call
+      // went wrong — that is the invariant, whatever the cause.
+      guardedFetchMock.mockResolvedValue({
+        status: 200,
+        headers: {},
+        body: Buffer.from('{"tag_name": ', 'utf8'),
+        finalUrl: '',
+        chain: []
+      });
       const res = await request(app).get('/api/check-updates');
       expect(res.status).toBe(200);
       expect(res.body.currentVersion).toBe('1.0.0');
       expect(res.body.latestVersion).toBeNull();
+      expect(res.body.updateAvailable).toBe(false);
     });
   });
 
