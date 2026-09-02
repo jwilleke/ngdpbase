@@ -8,7 +8,6 @@
 import { WikiPage, PageFrontmatter, PageInfo, PageSaveOptions, PageSearchResult, PageListOptions } from './Page.js';
 import { VersionManifest, VersionContent, VersionDiff, VersionHistoryEntry } from './Version.js';
 import { User, UserUpdateData, UserSession } from './User.js';
-import { WikiEngine } from './WikiEngine.js';
 
 /**
  * Provider information returned by getProviderInfo()
@@ -33,11 +32,19 @@ export interface ProviderInfo {
  * All providers must implement this interface.
  */
 export interface BaseProvider {
-  /** Reference to WikiEngine */
-  engine: WikiEngine;
-
-  /** Whether provider has been initialized */
-  initialized: boolean;
+  // #1151: `engine` and `initialized` are deliberately NOT here.
+  //
+  // They were, declared public, which is what forced the class fields to stay
+  // public — a consumer contract dictating a provider's internals by accident.
+  // Nothing outside a provider reads either: no `provider.engine` and no
+  // `provider.initialized` exists anywhere in `src/`, verified before the
+  // change. So they are the provider's own state, held `protected` on the
+  // class, and this interface describes only what a caller may actually use.
+  //
+  // Note this interface and the `BaseProvider` CLASS in
+  // `src/providers/BaseProvider.ts` are different things that share a name —
+  // this one is the structural contract, that one is the root of the class
+  // hierarchy. Worth knowing before assuming a change to one touches the other.
 
   /**
    * Initialize the provider

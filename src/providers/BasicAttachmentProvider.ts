@@ -1,4 +1,5 @@
 import BaseAttachmentProvider, { FileInfo, User, AttachmentResult } from './BaseAttachmentProvider.js';
+import type { ProviderInfo } from '../types/Provider.js';
 import { AttachmentMetadata } from '../types/index.js';
 import type { AssetProvider, AssetRecord, AssetQuery, AssetPage, AssetInput, AssetMetadata, AssetMetadataPatch } from '../types/Asset.js';
 import type { CreativeWork, DigitalDocument } from '../types/Schema.js';
@@ -103,16 +104,6 @@ interface BackupData extends Record<string, unknown> {
   metadataFile: string;
   storageDirectory: string;
   attachments: Array<[string, SchemaCreativeWork]>;
-}
-
-/**
- * Provider information
- */
-interface ProviderInfo {
-  name: string;
-  version: string;
-  description: string;
-  features: string[];
 }
 
 /**

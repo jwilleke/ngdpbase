@@ -1,4 +1,5 @@
 import logger from '../utils/logger.js';
+import type { ProviderInfo } from '../types/Provider.js';
 import { WikiPage, PageFrontmatter, PageInfo, PageSaveOptions, PageListOptions } from '../types/index.js';
 import { VersionHistoryEntry, VersionContent, VersionDiff } from '../types/index.js';
 import BaseProvider from './BaseProvider.js';
@@ -9,16 +10,6 @@ import BaseProvider from './BaseProvider.js';
  */
 interface WikiEngine {
   getManager<T = unknown>(name: string): T | undefined;
-}
-
-/**
- * Provider information
- */
-interface ProviderInfo {
-  name: string;
-  version: string;
-  description: string;
-  features: string[];
 }
 
 /**
@@ -55,7 +46,7 @@ abstract class BasePageProvider extends BaseProvider {
   protected engine: WikiEngine;
 
   /** Whether provider has been initialized */
-  public initialized: boolean;
+  protected initialized: boolean;
 
   /**
    * Create a new page provider

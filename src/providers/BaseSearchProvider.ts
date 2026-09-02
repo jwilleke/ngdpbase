@@ -19,17 +19,8 @@
  */
 
 import type { WikiEngine } from '../types/WikiEngine.js';
+import type { ProviderInfo } from '../types/Provider.js';
 import BaseProvider from './BaseProvider.js';
-
-/**
- * Provider information
- */
-interface ProviderInfo {
-  name: string;
-  version: string;
-  description: string;
-  features: string[];
-}
 
 /**
  * Search result structure

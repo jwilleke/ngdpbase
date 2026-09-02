@@ -59,10 +59,10 @@ interface AttachmentResult {
  */
 abstract class BaseAttachmentProvider extends BaseProvider implements AttachmentProvider {
   /** Reference to the wiki engine */
-  public engine: WikiEngine;
+  protected engine: WikiEngine;
 
   /** Whether provider has been initialized */
-  public initialized: boolean;
+  protected initialized: boolean;
 
   /**
    * Create a new attachment provider

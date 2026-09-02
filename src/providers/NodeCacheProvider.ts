@@ -1,4 +1,5 @@
-import BaseCacheProvider, { CacheStats, ProviderInfo, BackupData } from './BaseCacheProvider.js';
+import BaseCacheProvider, { CacheStats, BackupData } from './BaseCacheProvider.js';
+import type { ProviderInfo } from '../types/Provider.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import NodeCache from 'node-cache';

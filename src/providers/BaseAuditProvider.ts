@@ -1,18 +1,9 @@
 import { AuditEvent } from '../types/index.js';
+import type { ProviderInfo } from '../types/Provider.js';
 import logger from '../utils/logger.js';
 import { stampRecord, GENESIS_HASH, CHAIN_RESTART_EVENT } from '../utils/auditChain.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import BaseProvider, { type ProviderDurability } from './BaseProvider.js';
-
-/**
- * Provider information
- */
-interface ProviderInfo {
-  name: string;
-  version: string;
-  description: string;
-  features: string[];
-}
 
 /**
  * Audit search filters
@@ -185,7 +176,7 @@ abstract class BaseAuditProvider extends BaseProvider {
   protected engine: WikiEngine;
 
   /** Whether provider has been initialized */
-  public initialized: boolean;
+  protected initialized: boolean;
 
   /**
    * Create a new audit provider

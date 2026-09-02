@@ -1,4 +1,5 @@
 import type { WikiEngine } from '../types/WikiEngine.js';
+import type { ProviderInfo } from '../types/Provider.js';
 import BaseProvider from './BaseProvider.js';
 
 /**
@@ -21,16 +22,6 @@ export interface CacheStats {
   deletes: number;
   /** Cache hit rate percentage */
   hitRate: number;
-}
-
-/**
- * Provider information
- */
-export interface ProviderInfo {
-  name: string;
-  version: string;
-  description: string;
-  features: string[];
 }
 
 /**

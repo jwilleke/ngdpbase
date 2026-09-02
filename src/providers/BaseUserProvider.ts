@@ -1,17 +1,8 @@
 import logger from '../utils/logger.js';
+import type { ProviderInfo } from '../types/Provider.js';
 import { User, UserUpdateData, UserSession } from '../types/index.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import BaseProvider from './BaseProvider.js';
-
-/**
- * Provider information
- */
-interface ProviderInfo {
-  name: string;
-  version: string;
-  description: string;
-  features: string[];
-}
 
 /**
  * Backup data structure
@@ -44,7 +35,7 @@ abstract class BaseUserProvider extends BaseProvider {
   protected engine: WikiEngine;
 
   /** Whether provider has been initialized */
-  public initialized: boolean;
+  protected initialized: boolean;
 
   /**
    * Create a new user provider

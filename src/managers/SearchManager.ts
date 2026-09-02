@@ -1,4 +1,5 @@
 import BaseManager, { BackupData } from './BaseManager.js';
+import type { ProviderInfo } from '../types/Provider.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import logger from '../utils/logger.js';
 import { WikiEngine } from '../types/WikiEngine.js';
@@ -72,16 +73,6 @@ interface PageData {
   metadata?: Record<string, unknown>;
   category?: string;
   userKeywords?: string[];
-  [key: string]: unknown;
-}
-
-/**
- * Provider information
- */
-interface ProviderInfo {
-  name: string;
-  version?: string;
-  features?: string[];
   [key: string]: unknown;
 }
 

@@ -19,6 +19,7 @@
  * await auditManager.logAccess('admin', 'Main', 'view', 'granted');
  */
 import BaseManager from './BaseManager.js';
+import type { ProviderInfo } from '../types/Provider.js';
 import logger from '../utils/logger.js';
 import { canonicalEventTypeOf, legacyTypesFor } from '../utils/auditVocabulary.js';
 import { WikiEngine } from '../types/WikiEngine.js';
@@ -156,16 +157,6 @@ interface AuditStats {
   eventsByUser: Record<string, number>;
   recentActivity: AuditEvent[];
   securityIncidents: number;
-}
-
-/**
- * Provider information
- */
-interface ProviderInfo {
-  name: string;
-  version?: string;
-  features?: string[];
-  [key: string]: unknown;
 }
 
 /**
