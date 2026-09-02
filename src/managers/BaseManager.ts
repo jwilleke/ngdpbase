@@ -16,7 +16,7 @@
  */
 
 import logger from '../utils/logger.js';
-import { checkConfiguredPath, type PathPreflightResult } from '../utils/PathPreflight.js';
+import { checkConfiguredPath, type PathPreflightResult, type PathPreflightOptions } from '../utils/PathPreflight.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type { ManagerFetchOptions } from '../utils/managerUtils.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
@@ -234,9 +234,14 @@ abstract class BaseManager {
    */
   protected preflightConfiguredPath(
     configKey: string,
-    path: string | null | undefined
+    path: string | null | undefined,
+    options: PathPreflightOptions = {}
   ): PathPreflightResult {
-    const result = checkConfiguredPath(path);
+    // `options` carries only test seams (see PathPreflight). It is threaded
+    // through so the degraded-state path can be exercised on any platform:
+    // the underlying check runs on darwin alone, so on Linux CI this branch
+    // was unreachable and the test asserting it failed on every run.
+    const result = checkConfiguredPath(path, options);
     if (!result.ok) {
       logger.warn(
         `⚠️  ${this.constructor.name}: ${result.message} ` +

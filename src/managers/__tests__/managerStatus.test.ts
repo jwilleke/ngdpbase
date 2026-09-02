@@ -1,4 +1,18 @@
 import BaseManager from '../BaseManager';
+import type { PathPreflightOptions } from '../../utils/PathPreflight';
+
+/**
+ * Force the darwin branch of `checkConfiguredPath`, with the mount absent.
+ *
+ * Without this the degraded assertion below could only pass on macOS: the
+ * check runs on darwin alone, so on Linux CI it returned ok, the state stayed
+ * `ready`, and the Test Suite was red on EVERY run. A permanently-red check is
+ * one nobody reads, which is worse than the gap it was reporting.
+ */
+const AS_DARWIN_UNMOUNTED: PathPreflightOptions = {
+  platform: 'darwin',
+  isDirectory: () => false
+};
 
 /**
  * #1155 — 13 managers can end up degraded and exactly one said so.
@@ -9,8 +23,8 @@ import BaseManager from '../BaseManager';
  * instance answered 302, readiness said ok, and the dashboard said nothing.
  */
 class Probe extends BaseManager {
-  runPreflight(key: string, path: string | null): void {
-    this.preflightConfiguredPath(key, path);
+  runPreflight(key: string, path: string | null, options?: PathPreflightOptions): void {
+    this.preflightConfiguredPath(key, path, options);
   }
   goDisabled(reason: string): void { this.markDisabled(reason); }
   goReady(): void { this.markReady(); }
@@ -31,7 +45,11 @@ describe('#1155 — a manager states which it is', () => {
     // not caught at all — which is worth knowing, because it means this state
     // is set less often than "11 managers call preflight" suggests.
     const m = new Probe(engine());
-    m.runPreflight('ngdpbase.backup.directory', '/Volumes/definitely-not-mounted/backups');
+    m.runPreflight(
+      'ngdpbase.backup.directory',
+      '/Volumes/definitely-not-mounted/backups',
+      AS_DARWIN_UNMOUNTED
+    );
     const status = m.getManagerStatus();
     expect(status.state).toBe('degraded');
     expect(status.configKey).toBe('ngdpbase.backup.directory');
