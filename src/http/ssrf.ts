@@ -66,8 +66,10 @@ const MECHANISM_DENIED: readonly string[] = [
 /**
  * Tier 2 — policy. Denied by default, and an allow-list entry may override it.
  *
- * This is the tier a `baseline` home deployment opens to reach its own NAS or
- * another host on the same segment.
+ * This is the tier a home deployment typically opens to reach its own NAS or
+ * another host on the same segment — what the `baseline` recommendation
+ * describes, and which the operator opens themselves by setting the allow-list.
+ * Nothing here reads a posture name.
  */
 const DEFAULT_POLICY_DENIED: readonly string[] = [
   '10.0.0.0/8',       // RFC1918

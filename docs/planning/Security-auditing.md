@@ -63,7 +63,7 @@ The rest of this document is the evidence behind that table, and the proposal be
 
 A home wiki and a records system should not be forced into the same failure policy. But *"is this secure?"* is the wrong question to put in a configuration file, for two reasons that are specific to auditing and worth keeping here.
 
-__A flag that gates a mechanism creates two code paths, and the weak one is what everybody runs.__ If tamper evidence is skipped when security is off, the chain code is exercised only on the rare hardened instance — so the path compliance depends on is the least tested. That is how security modes rot.
+__A flag that gates a mechanism creates two code paths, and the weak one is what everybody runs.__ If tamper evidence is skipped when security is off, the chain code is exercised only on the rare strict instance — so the path compliance depends on is the least tested. That is how security modes rot.
 
 __It also decides something retroactively.__ Flip an instance from lax to strict a year in and its history is unverifiable: records written without hashes cannot be chained after the fact. The flag would have quietly decided, months earlier, that this instance can never be assessed.
 
@@ -80,15 +80,13 @@ Most of the plan costs nothing, and the split falls out:
 | Critical events durable before the action | Latency on login and mint | __Yes__ |
 | `page.view` auditing | Volume and noise | __Yes__ |
 
-So the mechanism is always present; what varies is __how hard the system fails__ and __how much it records__. Three knobs, not a security switch — and that split is exactly what rule 2 in the profile document generalises.
+So the mechanism is always present; what varies is __how hard the system fails__ and __how much it records__. Three knobs, not a security switch.
 
-The mechanism that answers this — `ngdpbase.security.profile`, its levels, the rules that keep it
-honest, and what each level defaults — is now [security-profile.md](./security-profile.md). It moved
-there when it stopped being an audit concern: network egress became its second consumer in
-[#1133](https://github.com/jwilleke/ngdpbase/issues/1133), and session policy, registration and rate
-limiting are the same shape. Tracked by [#1137](https://github.com/jwilleke/ngdpbase/issues/1137).
+__Nothing selects those knobs on the operator's behalf.__ An earlier design answered this with `ngdpbase.security.profile` — a preset naming a level and defaulting the keys beneath it. That design was reversed on 2026-09-01 and the key was removed ([#1144](https://github.com/jwilleke/ngdpbase/issues/1144)). The design in force is [security-posture.md](../security-posture.md); the superseded one is kept as a record at [security-profile.md](./security-profile.md), and where they disagree the former wins.
 
-The audit-specific keys it defaults:
+What replaced it: an instance has __one__ posture, which is the settings it is actually running, and it publishes them rather than a label. `baseline`, `hardened` and `regulated` remain as __documented recommendations__ — prose and tables published as required pages ([#1146](https://github.com/jwilleke/ngdpbase/issues/1146)) describing what a deployment shape typically needs. They are not configuration objects, they default nothing, and the operator is accountable for setting their own instance. Tracked by [#1137](https://github.com/jwilleke/ngdpbase/issues/1137).
+
+The audit-specific keys an operator sets, each authoritative on its own:
 
 ```text
 ngdpbase.audit.on-failure: "continue" | "refuse-boot"

@@ -291,11 +291,12 @@ describe('AuditManager', () => {
  * Falling back to inert is right for mail, where somebody notices an unsent
  * message. It is wrong for audit, where the degradation is unobservable.
  *
- * The posture split (docs/planning/Security-auditing.md): refuse-boot is the
- * hardened default, continue is baseline — and continue must mark the instance
- * DEGRADED rather than carrying on quietly. It is not about whether the
- * instance keeps running; it is that an instance running without audit must
- * know and say so.
+ * The split (docs/security-posture.md): `ngdpbase.audit.on-failure` ships
+ * `continue` and an operator sets `refuse-boot` explicitly — nothing defaults it
+ * from a posture label, since #1144 removed the preset. Whichever is set,
+ * continue must mark the instance DEGRADED rather than carrying on quietly. It
+ * is not about whether the instance keeps running; it is that an instance
+ * running without audit must know and say so.
  */
 describe('#1118 a failed audit provider is never silent', () => {
   const BROKEN = { 'ngdpbase.audit.provider': 'databaseauditprovider' };

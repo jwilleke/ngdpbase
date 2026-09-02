@@ -34,6 +34,27 @@ describe('#1157 — nothing describes the removed model or a fatal refuse-boot',
     expect(raw).not.toContain('ngdpbase.security.profile');
   });
 
+  test('the configuration guide says there is no preset layer', () => {
+    // It used to teach the opposite — that a key like ngdpbase.security.profile
+    // "names a posture, declares intent" while the individual keys stay
+    // authoritative. That is the preset model, described to the one audience
+    // most likely to copy it into a new key.
+    const doc = read('docs', 'managers', 'ConfigurationManager.md');
+    expect(doc).toMatch(/no preset layer/i);
+    expect(doc).toMatch(/documented recommendations/i);
+    expect(doc).not.toMatch(/names a posture, it declares/i);
+  });
+
+  test('the auditing document does not send a reader to the superseded design', () => {
+    // It pointed at security-profile.md as the live mechanism and promised
+    // "the audit-specific keys it defaults" — a preset defaulting keys, in the
+    // present tense, two documents away from the one that reversed it.
+    const doc = read('docs', 'planning', 'Security-auditing.md');
+    expect(doc).toMatch(/security-posture\.md/);
+    expect(doc).toMatch(/documented recommendations/i);
+    expect(doc).not.toMatch(/keys it defaults/i);
+  });
+
   test('the superseded planning document says so at the top', () => {
     // Kept rather than deleted: its rejected alternatives are the reasoning
     // behind decisions that stand. But docs/planning/ is where a contributor

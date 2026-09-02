@@ -1,11 +1,13 @@
 /**
  * #1133 — turning configuration into the policy the guard enforces.
  *
- * The guard is always installed. #1144 removed the profile, so nothing here
- * decides whether a contradictory
- * configuration is treated. A `baseline` home instance warns and denies; a
- * `hardened` one refuses to boot, reusing the pattern already established by
- * `ngdpbase.audit.on-failure`.
+ * The guard is always installed. #1144 removed `ngdpbase.security.profile`, so
+ * nothing selects how a contradictory configuration is treated — there is no
+ * preset left to read. Every case resolves the same way for every instance, by
+ * the firewall convention D8 chose: longest prefix match, deny wins a tie, an
+ * entry that intersects the mechanism is dropped and logged. `baseline` and
+ * `hardened` are documented recommendations an operator reads and applies; they
+ * are not values this code branches on.
  *
  * Reconciliation happens at BOOT. Discovering a contradiction during some
  * later image fetch surfaces as one dropped image with a `fetch` warning —
