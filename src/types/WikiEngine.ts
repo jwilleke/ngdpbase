@@ -64,8 +64,8 @@ export interface WikiEngine {
   /** Engine start time */
   startTime?: number;
 
-  /** Current context (request-scoped) */
-  context?: unknown;
+  // No `context` slot. Request state is never stored on the engine — a
+  // WikiContext is created per request and passed into manager calls (#1132).
 
   /**
    * Express application instance — available for add-ons to mount routes and

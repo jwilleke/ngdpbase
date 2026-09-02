@@ -42,7 +42,7 @@ async function testBulkImport() {
 
   // Initialize engine
   console.log('Initializing WikiEngine...');
-  const engine = new WikiEngine({}, null);
+  const engine = new WikiEngine({});
   await engine.initialize({});
   console.log('WikiEngine initialized.\n');
 

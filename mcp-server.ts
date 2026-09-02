@@ -275,7 +275,7 @@ interface PageManagerType {
  * Initialize WikiEngine instance
  */
 async function initializeWikiEngine(): Promise<WikiEngine> {
-  const engine = new WikiEngine({} as WikiConfig, null);
+  const engine = new WikiEngine({} as WikiConfig);
   await engine.initialize({} as WikiConfig);
   return engine;
 }

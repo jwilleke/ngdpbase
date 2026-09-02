@@ -2,7 +2,6 @@ import Engine from './core/Engine.js';
 import logger, { reconfigureLogger, setLoggingProvider, resolveLoggingProvider } from './utils/logger.js';
 import { refreshRedactedSecrets } from './utils/redactSecrets.js';
 import type { WikiConfig } from './types/Config.js';
-import type WikiContext from './context/WikiContext.js';
 
 // Managers
 import ConfigurationManager from './managers/ConfigurationManager.js';
@@ -59,17 +58,15 @@ import FilterManager from './managers/FilterManager.js';
  * @extends Engine
  * @implements IWikiEngine
  *
- * @property {WikiContext|null} context - Currently active WikiContext for request scope
  * @property {WikiConfig|null} config - Configuration object (inherited from Engine)
  * @property {number} startTime - Timestamp when the engine was started
  *
+ * The engine holds no request state. A WikiContext is per-request and is passed
+ * into manager calls; see {@link ApiContext.from} for the per-request shape.
+ *
  * @see {@link Engine} for base functionality
- * @see {@link WikiContext} for request-scoped context
  */
 class WikiEngine extends Engine {
-  /** Currently active WikiContext for request scope */
-  public context: WikiContext | null;
-
   /** Timestamp when the engine was started */
   public readonly startTime: number;
 
@@ -78,46 +75,11 @@ class WikiEngine extends Engine {
    *
    * @constructor
    * @param {WikiConfig} [config={}] - Initial configuration object (not used in constructor)
-   * @param {WikiContext|null} [context=null] - Initial WikiContext (optional)
    */
-  constructor(config: WikiConfig = {} as WikiConfig, context: WikiContext | null = null) {
+  constructor(config: WikiConfig = {} as WikiConfig) {
     super();
     this.config = config;
-    this.context = context;
     this.startTime = Date.now(); // Track when the engine was started
-  }
-
-  /**
-   * Sets the currently active WikiContext for the engine
-   *
-   * The WikiContext encapsulates request-specific information including
-   * the current user, page, and rendering context.
-   *
-   * @param {WikiContext} context - The WikiContext to set as active
-   * @returns {WikiEngine} The engine instance for method chaining
-   *
-   * @example
-   * const context = new WikiContext(engine, { pageName: 'Main' });
-   * engine.setContext(context).getPageManager().getPage('Main');
-   */
-  setContext(context: WikiContext): WikiEngine {
-    this.context = context;
-    return this;
-  }
-
-  /**
-   * Gets the currently active WikiContext
-   *
-   * @returns {WikiContext|null} The active context or null if none set
-   *
-   * @example
-   * const context = engine.getContext();
-   * if (context) {
-   *   console.log('Current page:', context.pageName);
-   * }
-   */
-  getContext(): WikiContext | null {
-    return this.context;
   }
 
   /**
