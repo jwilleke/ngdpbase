@@ -505,7 +505,19 @@ class AttachmentHandler extends BaseSyntaxHandler {
         }
 
         // Generate thumbnail if it doesn't exist
-        const thumbnailUrl = await this.createThumbnail(metadata.path, thumbnailFilename, primarySize, attachmentManager);
+        const thumbnailUrl = await this.createThumbnail(
+          metadata.path, thumbnailFilename, primarySize, attachmentManager,
+          // #1179: forward whoever this render is for. This used to be
+          // `{ user: { username: 'system' } }` — a fabricated principal with no
+          // `isAuthenticated`, so `checkPermission` denied it, `uploadAttachment`
+          // threw, and `createThumbnail`'s catch turned that into a logged error
+          // and a null. Thumbnails were not being generated on this path at all.
+          //
+          // Forwarding the viewer means a viewer without `asset-upload` still
+          // gets no thumbnail — correct, and the narrower half of #1136:
+          // rendering must not confer write powers the reader does not have.
+          context.wikiContext?.userContext
+        );
         return thumbnailUrl;
       }
 
@@ -529,7 +541,8 @@ class AttachmentHandler extends BaseSyntaxHandler {
     sourcePath: string,
     thumbnailFilename: string,
     size: string,
-    attachmentManager: AttachmentManager
+    attachmentManager: AttachmentManager,
+    userContext: unknown
   ): Promise<string | null> {
     try {
       // Parse size (e.g., '150x150' -> width: 150, height: 150)
@@ -579,7 +592,8 @@ class AttachmentHandler extends BaseSyntaxHandler {
         },
         {
           pageName: '_thumbnails', // System page for thumbnails
-          context: { user: { username: 'system' } }
+          // #1179: the render's own identity, forwarded, never rebuilt.
+          context: userContext
         }
       );
 

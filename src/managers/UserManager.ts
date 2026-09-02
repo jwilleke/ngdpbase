@@ -97,6 +97,18 @@ export const ANONYMOUS_SUBJECT: PermissionSubject = {
 };
 
 /**
+ * The subject for an asserted-but-unverified reader.
+ *
+ * Named for the same reason as {@link ANONYMOUS_SUBJECT}: a constant cannot be
+ * built slightly differently at a second call site, and a literal can.
+ */
+export const ASSERTED_SUBJECT: PermissionSubject = {
+  username: 'Asserted',
+  roles: ['reader', 'All'],
+  isAuthenticated: false
+};
+
+/**
  * Who a permission check is about.
  *
  * __Forward the context you were given; do not rebuild one.__ `viaToken` is
@@ -1246,20 +1258,24 @@ class UserManager extends BaseManager {
     if (!this.provider) return false;
 
     if (!username || username === 'anonymous') {
-      return this.hasPermission(
-        { username: 'Anonymous', roles: ['anonymous', 'All'], isAuthenticated: false },
-        action
-      );
+      // The named constant, not a copy of it — ANONYMOUS_SUBJECT exists so this
+      // literal never appears anywhere (#1164).
+      return this.hasPermission(ANONYMOUS_SUBJECT, action);
     }
     if (username === 'asserted') {
-      return this.hasPermission(
-        { username: 'Asserted', roles: ['reader', 'All'], isAuthenticated: false },
-        action
-      );
+      return this.hasPermission(ASSERTED_SUBJECT, action);
     }
 
     const user = await this.provider.getUser(username);
     if (!user || !user.isActive) return false;
+    // permission-subject-ignore: THE sanctioned construction site.
+    //
+    // This is the one place a subject is legitimately built rather than
+    // forwarded, and it is what makes the exception safe: the roles come from
+    // `resolveUserRoles` — resolved live from the provider a line above — not
+    // from a caller, and there is no request and therefore no token to drop.
+    // Every other construction asserts roles it was handed, which is the
+    // defect (#1179).
     const baseRoles = await this.resolveUserRoles(username);
     return this.hasPermission(
       { username: user.username, roles: [...baseRoles, 'Authenticated', 'All'], isAuthenticated: true },

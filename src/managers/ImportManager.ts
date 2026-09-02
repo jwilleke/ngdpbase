@@ -46,6 +46,7 @@ import type ConfigurationManager from './ConfigurationManager.js';
 import type ValidationManager from './ValidationManager.js';
 import type PageManager from './PageManager.js';
 import type AttachmentManager from './AttachmentManager.js';
+import type { PermissionSubject } from './UserManager.js';
 import type RenderingManager from './RenderingManager.js';
 import type SearchManager from './SearchManager.js';
 import type CacheManager from './CacheManager.js';
@@ -111,6 +112,31 @@ export interface ImportOptions {
    * Reserved for non-request code paths (#685 ingestion, background jobs).
    */
   actorIsSystem?: boolean;
+
+  /**
+   * The identity that initiated this run, forwarded rather than flattened
+   * (#1164, #1179).
+   *
+   * `actor` above is a USERNAME STRING, and a string cannot carry a
+   * delegation. `importPageAttachments` needed a context to authorise an
+   * upload, could not get one from a string, and __fabricated__ one:
+   *
+   *     context: { username: author, name: author, isAuthenticated: true,
+   *                roles: ['admin'] }
+   *
+   * where `author` came from the imported file's own `attachment.properties`.
+   * `UserManager.hasPermission` trusts supplied roles verbatim — it does not
+   * re-resolve them — so that object authorised as an admin, attributed the
+   * write to a name taken from imported content, and carried no `viaToken`,
+   * so an admin's agent token doing an import escaped its scope ceiling.
+   *
+   * That is P1 twice over: a parameter that could not carry provenance, and a
+   * synthetic admin principal invented to fill the gap it left.
+   *
+   * Optional because non-request callers have none yet. Absent, the upload's
+   * permission check denies — the safe direction.
+   */
+  actorContext?: PermissionSubject;
 
   /**
    * What to do when a file's title matches an existing page (#874).
@@ -1220,7 +1246,11 @@ class ImportManager extends BaseManager {
         const latestFile = versionedFiles[0];
         const latestFilePath = path.join(versionDir, latestFile);
 
-        // Read author from attachment.properties if available
+        // Read author from attachment.properties if available.
+        //
+        // METADATA, not an identity (#1179). This used to become the
+        // authorising context above; it describes who authored the file in the
+        // source system and says nothing about what this import may do.
         let author = 'import';
         const propsPath = path.join(versionDir, 'attachment.properties');
         if (await fs.pathExists(propsPath)) {
@@ -1254,12 +1284,10 @@ class ImportManager extends BaseManager {
         const uploadOptions = {
           pageName,
           description: originalFilename,
-          context: {
-            username: author,
-            name: author,
-            isAuthenticated: true,
-            roles: ['admin']
-          }
+          // #1179: forward the initiator's identity. Never rebuild one, and
+          // never invent roles — `author` is read from the imported file, so
+          // trusting it was trusting the input.
+          context: options.actorContext
         };
 
         const uploaded = await attachmentManager?.uploadAttachment(fileBuffer, fileInfo, uploadOptions);
@@ -1267,7 +1295,14 @@ class ImportManager extends BaseManager {
         if (uploaded?.identifier) {
           stats.idsByFilename[originalFilename] = uploaded.identifier;
         }
-        logger.info(`[ImportManager] Imported attachment: ${originalFilename} for page "${pageName}"`);
+        // The source system's author is logged, not stored as an identity and
+        // not written into the description — no metadata field exists for it,
+        // and inventing one would change stored data. Recording it here keeps
+        // the provenance without either.
+        logger.info(
+          `[ImportManager] Imported attachment: ${originalFilename} for page "${pageName}"` +
+          `${author && author !== 'import' ? ` (source author: ${author})` : ''}`
+        );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         stats.errors.push(`${originalFilename}: ${message}`);
