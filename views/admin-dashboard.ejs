@@ -95,7 +95,139 @@
         </div>
     </div>
 
-    <!-- Row 1: Three management panels -->
+    <!-- Row 1: Page Management & Media Management (#1162) — the two most used, first -->
+    <div class="row mt-4">
+
+        <!-- Page Management -->
+        <div class="col-lg-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="fas fa-file-alt"></i> Page Management
+                        <a href="/view/page-management" class="ms-1 text-muted" title="Documentation" target="_blank"><i class="fas fa-question-circle fa-sm"></i></a>
+                    </h5>
+                    <% if (typeof requiredPagesSyncNeeded !== 'undefined' && requiredPagesSyncNeeded > 0) { %>
+                        <span class="badge bg-warning text-dark">
+                            <i class="fas fa-exclamation-triangle me-1"></i><%= requiredPagesSyncNeeded %> need attention
+                        </span>
+                    <% } %>
+                </div>
+                <div class="card-body">
+                    <% if (currentUser.roles.includes('admin')) { %>
+                    <div class="d-flex flex-wrap gap-2 mb-3">
+                        <span class="d-inline-flex align-items-center gap-1">
+                            <button class="btn btn-outline-primary btn-sm" onclick="reindexPages()">
+                                <i class="fas fa-sync"></i> Reindex Pages
+                            </button>
+                            <a href="/view/reindex-pages" class="text-muted small" title="Documentation" target="_blank"><i class="fas fa-question-circle"></i></a>
+                        </span>
+
+                        <span class="d-inline-flex align-items-center gap-1">
+                            <button class="btn btn-warning btn-sm" onclick="rebuildPages()">
+                                <i class="fas fa-database"></i> Rebuild Pages
+                            </button>
+                            <a href="/view/rebuild-pages" class="text-muted small" title="Documentation" target="_blank"><i class="fas fa-question-circle"></i></a>
+                        </span>
+
+                        <span class="d-inline-flex align-items-center gap-1">
+                            <a href="/admin/import" class="btn btn-info btn-sm">
+                                <i class="fas fa-file-import"></i> Import Pages
+                            </a>
+                            <a href="/view/import-pages" class="text-muted small" title="Documentation" target="_blank"><i class="fas fa-question-circle"></i></a>
+                        </span>
+
+                        <span class="d-inline-flex align-items-center gap-1">
+                            <a href="/admin/convert" class="btn btn-outline-info btn-sm">
+                                <i class="fas fa-wand-magic-sparkles"></i> Convert to NCM
+                            </a>
+                        </span>
+
+                        <span class="d-inline-flex align-items-center gap-1">
+                            <%# #969 — trash is where a mis-deleted page is recovered; it has to be findable %>
+                            <a href="/admin/trash" class="btn btn-outline-secondary btn-sm">
+                                <i class="fas fa-trash-alt me-1"></i> Trash
+                            </a>
+                        </span>
+
+                        <span class="d-inline-flex align-items-center gap-1">
+                            <a href="/admin/required-pages" class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-lock me-1"></i> Required Pages
+                                <% if (typeof requiredPagesSyncNeeded !== 'undefined' && requiredPagesSyncNeeded > 0) { %>
+                                    <span class="badge bg-warning text-dark ms-1"><%= requiredPagesSyncNeeded %></span>
+                                <% } %>
+                            </a>
+                            <a href="/view/required-pages" class="text-muted small" title="Documentation" target="_blank"><i class="fas fa-question-circle"></i></a>
+                        </span>
+                    </div>
+                    <% if (requiredPages && requiredPages.length > 0) { %>
+                        <details>
+                            <summary class="text-muted" style="cursor: pointer;">
+                                <small><i class="fas fa-list me-1"></i>View <%= requiredPages.length %> installed required pages</small>
+                            </summary>
+                            <div class="d-flex flex-wrap gap-2 mt-2">
+                            <% requiredPages.forEach(page => { %>
+                                <a href="/edit/<%= encodeURIComponent(page.name) %>" class="btn btn-outline-secondary btn-sm">
+                                    <i class="fas fa-edit"></i> <%= page.name %>
+                                    <% if (page.userModified) { %>
+                                        <span class="badge bg-warning text-dark ms-1" title="Modified by admin">modified</span>
+                                    <% } %>
+                                </a>
+                            <% }); %>
+                            </div>
+                        </details>
+                    <% } %>
+                    <% } else { %>
+                        <p class="text-muted">Admin role required for these tools.</p>
+                    <% } %>
+                </div>
+            </div>
+        </div>
+
+        <!-- Media Management — only shown when MediaManager is enabled -->
+        <% if (capabilities && capabilities.media) { %>
+        <div class="col-lg-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-photo-video"></i> Media Management
+                        <a href="/view/media-management" class="ms-1 text-muted" title="Documentation" target="_blank"><i class="fas fa-question-circle fa-sm"></i></a>
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <% if (currentUser.roles.includes('admin')) { %>
+                    <div class="d-flex flex-wrap gap-2">
+                        <span class="d-inline-flex align-items-center gap-1">
+                            <button id="dashboard-rescan-btn" class="btn btn-outline-secondary btn-sm" onclick="dashboardMediaRescan()">
+                                <i class="fas fa-sync"></i> Reindex Media
+                            </button>
+                            <a href="/view/media-management#reindex-vs-rebuild" class="text-muted small" title="Reindex vs Rebuild — what's the difference?" target="_blank"><i class="fas fa-question-circle"></i></a>
+                        </span>
+
+                        <span class="d-inline-flex align-items-center gap-1">
+                            <button id="dashboard-rebuild-btn" class="btn btn-warning btn-sm" onclick="dashboardMediaRebuild()">
+                                <i class="fas fa-database"></i> Rebuild Media
+                            </button>
+                            <a href="/view/media-management#reindex-vs-rebuild" class="text-muted small" title="Reindex vs Rebuild — what's the difference?" target="_blank"><i class="fas fa-question-circle"></i></a>
+                        </span>
+
+                        <span class="d-inline-flex align-items-center gap-1">
+                            <a href="/admin/media" class="btn btn-secondary btn-sm">
+                                <i class="fas fa-photo-video"></i> Media Manager
+                            </a>
+                        </span>
+                    </div>
+                    <div id="dashboard-media-status" class="mt-2" style="display:none;"></div>
+                    <% } else { %>
+                        <p class="text-muted">Admin role required for these tools.</p>
+                    <% } %>
+                </div>
+            </div>
+        </div>
+        <% } %>
+
+    </div>
+
+    <!-- Row 2: Three management panels -->
     <div class="row mt-4">
 
         <!-- User Management -->
@@ -277,7 +409,7 @@
 
     </div>
 
-    <!-- Row 2: Add-ons -->
+    <!-- Row 3: Add-ons, and the per-addon cards inside it (#1162) -->
     <div class="row">
         <div class="col-12 mb-4">
             <div class="card">
@@ -306,6 +438,36 @@
                             <a href="/admin/addons" class="btn btn-sm btn-outline-primary">
                                 <i class="fas fa-puzzle-piece"></i> Manage Add-ons
                             </a>
+
+                            <!--
+                              #1162: the per-addon cards live INSIDE this section.
+                              They were a sibling row, so the dashboard listed "Add-ons"
+                              and then, separately and without saying so, the add-ons.
+                              Registered via AddonsManager.registerDashboardCard, so this
+                              renders whatever is installed — Forms, Calendar,
+                              Elasticsearch, Journal — rather than a hardcoded list.
+                            -->
+                            <% if (typeof addonCards !== 'undefined' && addonCards && addonCards.length > 0) { %>
+                            <div class="row mt-3">
+                              <% addonCards.forEach(function(card) { %>
+                              <div class="col-lg-4 col-md-6 mb-3">
+                                <div class="card h-100">
+                                  <div class="card-header py-2">
+                                    <h6 class="mb-0"><i class="<%= card.icon %> me-2"></i><%= card.title %></h6>
+                                  </div>
+                                  <div class="card-body">
+                                    <% if (card.statusDetails && card.statusDetails.message) { %>
+                                      <p class="text-muted small mb-3"><%= card.statusDetails.message %></p>
+                                    <% } %>
+                                    <a href="<%= card.adminUrl %>" class="btn btn-sm btn-outline-primary">
+                                      <i class="fas fa-cog me-1"></i>Manage <%= card.title %>
+                                    </a>
+                                  </div>
+                                </div>
+                              </div>
+                              <% }) %>
+                            </div>
+                            <% } %>
                         </div>
                     </details>
                 </div>
@@ -313,45 +475,34 @@
         </div>
     </div>
 
-    <!-- Row 2b: Per-addon cards (registered via AddonsManager.registerDashboardCard) -->
-    <% if (typeof addonCards !== 'undefined' && addonCards && addonCards.length > 0) { %>
-    <div class="row">
-      <% addonCards.forEach(function(card) { %>
-      <div class="col-lg-4 col-md-6 mb-4">
-        <div class="card h-100">
-          <div class="card-header">
-            <h5 class="mb-0"><i class="<%= card.icon %> me-2"></i><%= card.title %></h5>
-          </div>
-          <div class="card-body">
-            <% if (card.statusDetails && card.statusDetails.message) { %>
-              <p class="text-muted small mb-3"><%= card.statusDetails.message %></p>
-            <% } %>
-            <a href="<%= card.adminUrl %>" class="btn btn-sm btn-outline-primary">
-              <i class="fas fa-cog me-1"></i>Manage <%= card.title %>
-            </a>
-          </div>
-        </div>
-      </div>
-      <% }) %>
-    </div>
-    <% } %>
-
-    <!-- Row 2b2: Share Manager (#842) — core feature surfaced with the add-on cards -->
+    <!-- Row 4: Share Manager (#842) — collapsible, matching Agent API Tokens (#1162) -->
     <% if (typeof shareSummary !== 'undefined' && shareSummary) { %>
     <div class="row">
-      <div class="col-lg-4 col-md-6 mb-4">
-        <div class="card h-100">
-          <div class="card-header">
-            <h5 class="mb-0"><i class="fas fa-share-nodes me-2"></i>Share Manager</h5>
-          </div>
-          <div class="card-body">
-            <p class="text-muted small mb-3"><%= shareSummary.active %> active of <%= shareSummary.total %> share link<%= shareSummary.total !== 1 ? 's' : '' %> (revoked and expired included in total)</p>
-            <a href="/shares" class="btn btn-sm btn-outline-primary">
-              <i class="fas fa-cog me-1"></i>Manage Share Links
-            </a>
-          </div>
+        <div class="col-12 mb-4">
+            <div class="card">
+                <div class="card-body py-2">
+                    <details id="share-manager-admin">
+                        <summary class="d-flex align-items-center gap-2" style="cursor: pointer;">
+                            <i class="fas fa-share-nodes"></i>
+                            <strong>Share Manager</strong>
+                            <span class="text-muted small">
+                                revoked and expired included in the total
+                            </span>
+                            <span class="badge bg-secondary ms-auto"><%= shareSummary.active %> active of <%= shareSummary.total %></span>
+                        </summary>
+                        <div class="mt-3">
+                            <p class="text-muted small mb-2">
+                                Every share link on this instance. A share link is a capability: holding the URL
+                                is the permission, so revoking one is the only way to take that access back.
+                            </p>
+                            <a href="/shares" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-cog me-1"></i>Manage Share Links
+                            </a>
+                        </div>
+                    </details>
+                </div>
+            </div>
         </div>
-      </div>
     </div>
     <% } %>
 
@@ -441,137 +592,8 @@
         </div>
     </div>
 
-    <!-- Row 3: Page Management & Media Management -->
+    <!-- Metrics — only shown when MetricsManager is enabled -->
     <div class="row">
-
-        <!-- Page Management -->
-        <div class="col-lg-6 mb-4">
-            <div class="card h-100">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">
-                        <i class="fas fa-file-alt"></i> Page Management
-                        <a href="/view/page-management" class="ms-1 text-muted" title="Documentation" target="_blank"><i class="fas fa-question-circle fa-sm"></i></a>
-                    </h5>
-                    <% if (typeof requiredPagesSyncNeeded !== 'undefined' && requiredPagesSyncNeeded > 0) { %>
-                        <span class="badge bg-warning text-dark">
-                            <i class="fas fa-exclamation-triangle me-1"></i><%= requiredPagesSyncNeeded %> need attention
-                        </span>
-                    <% } %>
-                </div>
-                <div class="card-body">
-                    <% if (currentUser.roles.includes('admin')) { %>
-                    <div class="d-flex flex-wrap gap-2 mb-3">
-                        <span class="d-inline-flex align-items-center gap-1">
-                            <button class="btn btn-outline-primary btn-sm" onclick="reindexPages()">
-                                <i class="fas fa-sync"></i> Reindex Pages
-                            </button>
-                            <a href="/view/reindex-pages" class="text-muted small" title="Documentation" target="_blank"><i class="fas fa-question-circle"></i></a>
-                        </span>
-
-                        <span class="d-inline-flex align-items-center gap-1">
-                            <button class="btn btn-warning btn-sm" onclick="rebuildPages()">
-                                <i class="fas fa-database"></i> Rebuild Pages
-                            </button>
-                            <a href="/view/rebuild-pages" class="text-muted small" title="Documentation" target="_blank"><i class="fas fa-question-circle"></i></a>
-                        </span>
-
-                        <span class="d-inline-flex align-items-center gap-1">
-                            <a href="/admin/import" class="btn btn-info btn-sm">
-                                <i class="fas fa-file-import"></i> Import Pages
-                            </a>
-                            <a href="/view/import-pages" class="text-muted small" title="Documentation" target="_blank"><i class="fas fa-question-circle"></i></a>
-                        </span>
-
-                        <span class="d-inline-flex align-items-center gap-1">
-                            <a href="/admin/convert" class="btn btn-outline-info btn-sm">
-                                <i class="fas fa-wand-magic-sparkles"></i> Convert to NCM
-                            </a>
-                        </span>
-
-                        <span class="d-inline-flex align-items-center gap-1">
-                            <%# #969 — trash is where a mis-deleted page is recovered; it has to be findable %>
-                            <a href="/admin/trash" class="btn btn-outline-secondary btn-sm">
-                                <i class="fas fa-trash-alt me-1"></i> Trash
-                            </a>
-                        </span>
-
-                        <span class="d-inline-flex align-items-center gap-1">
-                            <a href="/admin/required-pages" class="btn btn-outline-primary btn-sm">
-                                <i class="fas fa-lock me-1"></i> Required Pages
-                                <% if (typeof requiredPagesSyncNeeded !== 'undefined' && requiredPagesSyncNeeded > 0) { %>
-                                    <span class="badge bg-warning text-dark ms-1"><%= requiredPagesSyncNeeded %></span>
-                                <% } %>
-                            </a>
-                            <a href="/view/required-pages" class="text-muted small" title="Documentation" target="_blank"><i class="fas fa-question-circle"></i></a>
-                        </span>
-                    </div>
-                    <% if (requiredPages && requiredPages.length > 0) { %>
-                        <details>
-                            <summary class="text-muted" style="cursor: pointer;">
-                                <small><i class="fas fa-list me-1"></i>View <%= requiredPages.length %> installed required pages</small>
-                            </summary>
-                            <div class="d-flex flex-wrap gap-2 mt-2">
-                            <% requiredPages.forEach(page => { %>
-                                <a href="/edit/<%= encodeURIComponent(page.name) %>" class="btn btn-outline-secondary btn-sm">
-                                    <i class="fas fa-edit"></i> <%= page.name %>
-                                    <% if (page.userModified) { %>
-                                        <span class="badge bg-warning text-dark ms-1" title="Modified by admin">modified</span>
-                                    <% } %>
-                                </a>
-                            <% }); %>
-                            </div>
-                        </details>
-                    <% } %>
-                    <% } else { %>
-                        <p class="text-muted">Admin role required for these tools.</p>
-                    <% } %>
-                </div>
-            </div>
-        </div>
-
-        <!-- Media Management — only shown when MediaManager is enabled -->
-        <% if (capabilities && capabilities.media) { %>
-        <div class="col-lg-6 mb-4">
-            <div class="card h-100">
-                <div class="card-header">
-                    <h5 class="mb-0">
-                        <i class="fas fa-photo-video"></i> Media Management
-                        <a href="/view/media-management" class="ms-1 text-muted" title="Documentation" target="_blank"><i class="fas fa-question-circle fa-sm"></i></a>
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <% if (currentUser.roles.includes('admin')) { %>
-                    <div class="d-flex flex-wrap gap-2">
-                        <span class="d-inline-flex align-items-center gap-1">
-                            <button id="dashboard-rescan-btn" class="btn btn-outline-secondary btn-sm" onclick="dashboardMediaRescan()">
-                                <i class="fas fa-sync"></i> Reindex Media
-                            </button>
-                            <a href="/view/media-management#reindex-vs-rebuild" class="text-muted small" title="Reindex vs Rebuild — what's the difference?" target="_blank"><i class="fas fa-question-circle"></i></a>
-                        </span>
-
-                        <span class="d-inline-flex align-items-center gap-1">
-                            <button id="dashboard-rebuild-btn" class="btn btn-warning btn-sm" onclick="dashboardMediaRebuild()">
-                                <i class="fas fa-database"></i> Rebuild Media
-                            </button>
-                            <a href="/view/media-management#reindex-vs-rebuild" class="text-muted small" title="Reindex vs Rebuild — what's the difference?" target="_blank"><i class="fas fa-question-circle"></i></a>
-                        </span>
-
-                        <span class="d-inline-flex align-items-center gap-1">
-                            <a href="/admin/media" class="btn btn-secondary btn-sm">
-                                <i class="fas fa-photo-video"></i> Media Manager
-                            </a>
-                        </span>
-                    </div>
-                    <div id="dashboard-media-status" class="mt-2" style="display:none;"></div>
-                    <% } else { %>
-                        <p class="text-muted">Admin role required for these tools.</p>
-                    <% } %>
-                </div>
-            </div>
-        </div>
-        <% } %>
-
-        <!-- Metrics — only shown when MetricsManager is enabled -->
         <% if (capabilities && capabilities.metrics) { %>
         <div class="col-lg-6 mb-4">
             <div class="card h-100">
