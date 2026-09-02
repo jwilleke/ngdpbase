@@ -1199,15 +1199,45 @@ class UserManager extends BaseManager {
     throw new Error('updateRolePermissions() is deprecated. Use config files and policies');
   }
 
+  /**
+   * Who is making this request.
+   *
+   * __This returned Anonymous for every authenticated user, always (#1165).__
+   * It read `req.session.user.isAuthenticated`, and nothing in the codebase
+   * ever writes `req.session.user` — every login path writes the flat
+   * `req.session.username` + `req.session.isAuthenticated`
+   * (`WikiRoutes.ts:6786`, `:7002`, `:7081`, `app.ts:657`), which is also what
+   * the session middleware reads. `session.user` is a declared field with no
+   * writer, so the condition was never true.
+   *
+   * It went unnoticed because the one hot caller guards against it:
+   * `getCommonTemplateData` uses `req.userContext || getCurrentUser(req)`, so
+   * every rendered page took the first branch and looked correct. The audit
+   * routes call this directly, which is why they were the ones to break —
+   * `AuditManager` refused the query as 'Anonymous' on a request the route had
+   * just authorised as an admin.
+   *
+   * __`req.userContext` is preferred over the session now__, rather than only
+   * repairing the field name. It is the identity the middleware already
+   * resolved and validated, enriched with roles from RoleManager, and it is
+   * what the policy engine authorises against — so this method and every
+   * permission check now answer from the same place instead of two. It is also
+   * the only identity a bearer-token request has (#818): those carry no
+   * session at all, so the session path alone would still have said Anonymous.
+   */
   async getCurrentUser(req: Request): Promise<UserContext> {
+    const fromRequest = (req as RequestWithUser).userContext;
+    if (fromRequest?.isAuthenticated) {
+      return fromRequest as UserContext;
+    }
+
     if (!this.provider) {
       return this.getAnonymousUser();
     }
 
     const reqWithUser = req as RequestWithUser;
-    if (reqWithUser.session?.user && reqWithUser.session.user.isAuthenticated) {
-      const userFromSession = reqWithUser.session.user;
-      const freshUser = await this.provider.getUser(userFromSession.username);
+    if (reqWithUser.session?.username && reqWithUser.session.isAuthenticated) {
+      const freshUser = await this.provider.getUser(reqWithUser.session.username);
       if (!freshUser || !freshUser.isActive) {
         return this.getAnonymousUser();
       }

@@ -22,6 +22,7 @@ import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { normalizeExistingPageToNcm, localizeNcmImages } from '../converters/ncm/index.js';
 import { guardedFetch } from '../http/guardedFetch.js';
+import { AuditQueryForbiddenError } from '../managers/AuditManager.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import type { NcmImageDeps } from '../converters/ncm/index.js';
 import { createPatch } from 'diff';
@@ -15010,8 +15011,21 @@ ${panes}
         currentUser
       });
     } catch (err: unknown) {
+      // #1165: an authorization refusal is not a server fault. Telling them
+      // apart is why AuditQueryForbiddenError is a type — this catch rendered
+      // both as the same plain-text 500, which is what hid the identity bug.
+      if (err instanceof AuditQueryForbiddenError) {
+        logger.warn(`Audit log access refused: ${err.message}`);
+        return await this.renderError(
+          req, res, 403, 'Access Denied',
+          'You do not have permission to query the audit log.'
+        );
+      }
       logger.error('Error loading audit logs:', err);
-      return res.status(500).send('Error loading audit logs');
+      return await this.renderError(
+        req, res, 500, 'Audit Logs Unavailable',
+        'The audit log could not be read. The error has been logged.'
+      );
     }
   }
 
@@ -15039,6 +15053,10 @@ ${panes}
         { username: currentUser.username }
       ));
     } catch (err: unknown) {
+      if (err instanceof AuditQueryForbiddenError) {
+        logger.warn(`Audit log access refused: ${err.message}`);
+        return res.status(403).json({ error: 'You do not have permission to query the audit log.' });
+      }
       logger.error('Error retrieving audit logs:', err);
       return res.status(500).json({ error: 'Error retrieving audit logs' });
     }
@@ -15072,6 +15090,10 @@ ${panes}
       }
       return res.json(details);
     } catch (err: unknown) {
+      if (err instanceof AuditQueryForbiddenError) {
+        logger.warn(`Audit log access refused: ${err.message}`);
+        return res.status(403).json({ error: 'You do not have permission to query the audit log.' });
+      }
       logger.error('Error retrieving audit log details:', err);
       return res.status(500).json({ error: 'Error retrieving audit log details' });
     }
@@ -15101,8 +15123,12 @@ ${panes}
       res.setHeader('Content-Disposition', `attachment; filename="audit-log-${stamp}.${format}"`);
       return res.send(data);
     } catch (err: unknown) {
+      if (err instanceof AuditQueryForbiddenError) {
+        logger.warn(`Audit log export refused: ${err.message}`);
+        return res.status(403).json({ error: 'You do not have permission to export the audit log.' });
+      }
       logger.error('Error exporting audit logs:', err);
-      return res.status(500).send('Error exporting audit logs');
+      return res.status(500).json({ error: 'Error exporting audit logs' });
     }
   }
 
