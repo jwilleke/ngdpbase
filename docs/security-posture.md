@@ -6,6 +6,40 @@ Where a decision has an operational half — how to configure it, how to verify 
 
 This file records __decisions and their reasons__. The exploratory design that preceded it lives in [planning/security-profile.md](./planning/security-profile.md); where the two disagree, this file wins and the older document is to be corrected. Tracked by [#1137](https://github.com/jwilleke/ngdpbase/issues/1137).
 
+## Guiding Principles
+
+Standing rules that inform the decisions below rather than being decisions themselves. A decision answers "what did we choose here"; a principle answers "what shape should the next choice take".
+
+### P1 — Every security-relevant call carries a context
+
+__Any entry point that makes an authorization decision, writes an audit record, or acts on someone's behalf takes a context — mandatory and positional. Below that line, pure computation takes data.__
+
+__Why the line is drawn there.__ Every permission and attribution defect found on 2026-09-02 traced to the same shape: a call that could not carry provenance, so provenance was lost.
+
+| Where | The call | What was lost |
+| --- | --- | --- |
+| [#1164](https://github.com/jwilleke/ngdpbase/issues/1164) | `hasPermission(username: string, …)` | the parameter had nowhere to put `viaToken`, so the agent-token scope ceiling was __structurally unable to run__ — 17 route sites |
+| [#1173](https://github.com/jwilleke/ngdpbase/issues/1173) | `ApiContext.from()`, `ParseContext` | both rebuilt a three-field subject and dropped `viaToken`, so every addon API route using `ctx.requirePermission()` bypassed the ceiling |
+| [#631](https://github.com/jwilleke/ngdpbase/issues/631) | `enqueue(jobId)` | no actor at all — `WikiRoutes` logged `Page reindex requested by: jim` on one line and threw the name away on the next |
+
+One cause, three surfaces, found three different ways. __A parameter that cannot carry provenance guarantees provenance is lost__, and no amount of care at call sites repairs that: #1164 was reported as twelve sites, the compiler found seventeen, and `AttachmentManager` bypassed the ceiling while passing an object.
+
+This is the two-code-paths rule from [planning/Security-auditing.md](./planning/Security-auditing.md) in its general form — *"a flag that gates a mechanism creates two code paths, and the weak one is what everybody runs."* An optional actor parameter is that flag, and the weak path is the one where it is omitted.
+
+__Mandatory and positional, not an optional `opts` bag.__ Optional is what makes omission the easy path, and a default actor is a decision made by nobody. Note the specific hazard: a permissive system principal — `roles: ['system', 'All']` — introduced to satisfy a mandatory parameter would be a new bypass of exactly the kind this principle exists to prevent, holding rights no token could be minted with and passing the ceiling cleanly because it carries no `viaToken`. `jobContextFromSystem(reason)` resists that by requiring a stated reason rather than supplying a role.
+
+__Why the rule is scoped rather than universal.__ "Every call" would include pure computation — a formatter, a record builder, a path normalizer — where the context is a parameter nothing reads. A parameter nothing reads is one that gets passed `null` or a placeholder, and once it is routinely fake the word "mandatory" stops carrying information and reviewers stop looking at it. The rule would then have recreated the two-code-paths problem inside its own fix. Scoping it to calls that decide, record, or act keeps every site meaningful.
+
+__Forward the context you were given; never rebuild one from its fields.__ A reconstructed `{ username, roles, isAuthenticated }` type-checks perfectly and silently carries no token — the #1173 defect. `scripts/check-permission-subject.ts` rejects inline subject literals for that reason, and per the scoping lesson in [#1177](https://github.com/jwilleke/ngdpbase/issues/1177) it is scoped to where the property must hold rather than to where the last bug was found.
+
+__Identity and provenance travel; authority does not.__ A context carries who acted and from what origin. It does not carry resolved roles, because a job enqueued at 09:00 and running at 09:12 must not authorise against 09:00's roles. Same reasoning `app.ts` gives for agent tokens: roles are resolved live per request, and a token never carries a snapshot.
+
+__The one exception is a lookup, and it has its own name.__ Asking "does this named user hold this permission?" involves no request and no token to drop. That is `UserManager.userHoldsPermission(username, action)` — deliberately distinct from `hasPermission`, so route code cannot reach it by accident.
+
+__What this rules out.__ Ambient propagation — a process-global request slot, or `AsyncLocalStorage`. The global form was removed as dead surface in [#1132](https://github.com/jwilleke/ngdpbase/issues/1132). `AsyncLocalStorage` is a sounder implementation of the same idea and is still refused here, because it shares the property that made the global wrong: the call site does not show what identity it runs under, so a missing context is invisible at review rather than a compile error. Threading costs more churn and is worth it.
+
+Tracked by [#1179](https://github.com/jwilleke/ngdpbase/issues/1179).
+
 ## Decisions
 
 ### D1 — "Security posture" is the official term

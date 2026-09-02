@@ -65,6 +65,8 @@ A home wiki and a records system should not be forced into the same failure poli
 
 __A flag that gates a mechanism creates two code paths, and the weak one is what everybody runs.__ If tamper evidence is skipped when security is off, the chain code is exercised only on the rare strict instance — so the path compliance depends on is the least tested. That is how security modes rot.
 
+This rule generalises beyond flags. An __optional actor parameter__ is the same shape: the weak path is the one where it is omitted, and it is the one that runs. See [P1 in the security posture record](../security-posture.md#p1--every-security-relevant-call-carries-a-context).
+
 __It also decides something retroactively.__ Flip an instance from lax to strict a year in and its history is unverifiable: records written without hashes cannot be chained after the fact. The flag would have quietly decided, months earlier, that this instance can never be assessed.
 
 ### Sort the work by what it actually costs
