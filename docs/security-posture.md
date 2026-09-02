@@ -2,6 +2,8 @@
 
 The decision record for how an ngdpbase instance declares and inspects its security-related settings.
 
+Where a decision has an operational half — how to configure it, how to verify it, how it fails — that lives beside it and is linked from the decision: transport and TLS are in [platform/ngdpbase-and-TLS.md](./platform/ngdpbase-and-TLS.md).
+
 This file records __decisions and their reasons__. The exploratory design that preceded it lives in [planning/security-profile.md](./planning/security-profile.md); where the two disagree, this file wins and the older document is to be corrected. Tracked by [#1137](https://github.com/jwilleke/ngdpbase/issues/1137).
 
 ## Decisions
@@ -76,6 +78,8 @@ Both kinds exist among the settings a posture would cover:
 So the honest answer is neither "yes" nor "no": a posture is a mix, and an operator who changes `session.secure` and sees the dashboard report the new value has been told something untrue until they restart.
 
 __The ingredient declares whether it needs a restart.__ The posture entry carries a `restart` flag beside its `group` (D16), and the section marks those items when their value is changed.
+
+The TLS keys are the same shape and are read at boot for the same reason — see [platform/ngdpbase-and-TLS.md](./platform/ngdpbase-and-TLS.md) for the transport side of this.
 
 A comparison between the running process and the configuration was considered and rejected as over-built. It needs either a boot snapshot, which reports a false restart-pending for the ingredients whose consumers re-read live — `LoginThrottle.ts:73` and `SimpleRateLimiter.ts:47` both replace their options at runtime for exactly that reason — or every consumer publishing the value it applied, which is instrumentation in every subsystem to produce a flag that a maintainer can simply write down. If a consumer later changes when it reads, the flag is updated in the same commit.
 
@@ -193,6 +197,8 @@ This rule was written because the reasoning above had already broken it: D12's c
 
 The corollary is that a deployment-specific limitation is not a reason to weaken a correct behaviour. If a topology cannot reach an instance that is honestly reporting not-ready, that is solved in that topology's own configuration, not by making the instance lie.
 
+The live consequence: an instance either terminates TLS itself or sits behind something that does, and __no key names which__. It cannot — nothing on the machine can verify what sits in front of it. Both shapes, and what changes between them, are in [platform/ngdpbase-and-TLS.md](./platform/ngdpbase-and-TLS.md).
+
 __Issues:__ A standing design rule rather than a unit of work. No issue.
 
 ### D14 — `refuse-boot` keeps its name
@@ -230,7 +236,7 @@ What remains, grouped as the admin section would group them:
 | Content sanitisation | `filters.security.enabled`, `.prevent-xss`, `.prevent-csrf`, `.sanitize-html`, `.strip-dangerous-content`, `.block-on-save`, `.allowed-tags`, `.allowed-attributes`, `style.security.allow-inline-css`, `style.security.allowed-properties` |
 | Rate limiting | `mail.rate-limit.enabled`, `.max-submissions`, `.window-minutes` |
 
-`server.trust-proxy` is in the session group deliberately: `resolveSessionSecurity()` reads the two together, and `app.ts:398` already warns when `session.secure` is on while `trust-proxy` is explicitly false. An ingredient list that showed one without the other would hide half of a known interaction.
+`server.trust-proxy` is in the session group deliberately: `resolveSessionSecurity()` reads the two together, and `app.ts:398` already warns when `session.secure` is on while `trust-proxy` is explicitly false. An ingredient list that showed one without the other would hide half of a known interaction. The full interaction — including why `trust-proxy` should be __unset__ on an instance that terminates its own TLS, and why the warning is suppressed there — is in [platform/ngdpbase-and-TLS.md](./platform/ngdpbase-and-TLS.md).
 
 Two things this survey turned up that the view will make visible, and both are the point of having it:
 
