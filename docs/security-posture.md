@@ -108,9 +108,9 @@ The three cases it does flag are the ones longest prefix cannot decide, and two 
 |---|---|
 | An allow entry intersects the mechanism (loopback, link-local, multicast, Teredo) | Unsatisfiable at any prefix length — the mechanism is absolute. Drop the entry, log it. |
 | A range appears verbatim in both lists | A prefix-length tie. __Deny wins__, the default-deny bias every firewall applies. Log it. |
+| A range does not parse as CIDR | No prefix to compare. See D9. |
 
 The tie break was a behaviour __change__, not just a re-homing. Previously a range in both lists was dropped from __both__, so the operator's stricter statement was discarded along with the looser one and the range fell back to the built-in defaults. Now the deny survives.
-| A range does not parse as CIDR | No prefix to compare. See D9. |
 
 __No case refuses to start the instance.__ That was the profile looking for a job, and it is not the convention: `iptables` rejects a bad rule and keeps the chain, and the Kubernetes API server rejects an invalid NetworkPolicy while the other policies keep applying. Neither takes the workload down.
 
@@ -206,7 +206,7 @@ Two pieces of __wording__ do become wrong when D11 lands, and they are the thing
 - `views/admin-dashboard.ejs:31` tells the operator to set `refuse-boot` "to make this fatal instead". Under D11 it is not fatal, it is blocking.
 - `config/app-default-config.json:338` says `refuse-boot` "names the provider and the cause and refuses to start". It still names both, and it does refuse to start serving, but "refuses to start" reads as the process exiting.
 
-__Issues:__ Settled here. The wording corrections it names are carried by [#1152](https://github.com/jwilleke/ngdpbase/issues/1152) and are still outstanding — `views/admin-dashboard.ejs:31` and `config/app-default-config.json:338` both still describe a process that exits.
+__Issues:__ Settled here. The two wording corrections it names __landed 2026-09-01__ with [#1157](https://github.com/jwilleke/ngdpbase/issues/1157): the dashboard now says setting `refuse-boot` stops the instance serving and that it stays running to be repaired, and the config comment says it is blocking, not fatal. `postureDocsConsistency.test.ts` holds both, so the old wording cannot come back unnoticed.
 
 ### D15 — The ingredients of the shipped posture
 
@@ -364,9 +364,11 @@ __And no single-node instance can honestly promise durability anyway.__ It means
 
 So the report states what is measurable — the flush interval, whether the critical tier is written synchronously, which provider is active and whether it is degraded — and the reader draws the conclusion. That is D20's principle applied to the report: state facts, do not score.
 
+__As of [#1158](https://github.com/jwilleke/ngdpbase/issues/1158) the critical tier IS written synchronously__, so that fact now reads the other way. `getDurability()` reports `fsync: false` — `standard` and `volume` events are still buffered — alongside `fsyncedClasses`, which names the event types that are written through and `fsync`ed before the action completes. Naming them rather than flipping the boolean is the same discipline: `fsync: true` would promise durability for the buffered tiers that do not have it, and a bare `false` would hide a guarantee the critical path genuinely provides. A partial guarantee has to be stateable, or it rounds to a claim that is wrong in one direction or the other.
+
 The concrete name is left to #1146, where the report is built. The constraint recorded here is what it may not be, and why.
 
-__Issues:__ Settled by [#1148](https://github.com/jwilleke/ngdpbase/issues/1148), which supplied the evidence. The report's actual name is [#1146](https://github.com/jwilleke/ngdpbase/issues/1146)'s.
+__Issues:__ Settled by [#1148](https://github.com/jwilleke/ngdpbase/issues/1148), which supplied the evidence, and [#1158](https://github.com/jwilleke/ngdpbase/issues/1158) — __landed 2026-09-02__ — which made the critical tier durable so the report has a stronger fact to state. The report's actual name is [#1146](https://github.com/jwilleke/ngdpbase/issues/1146)'s.
 
 ### D22 — Audit storage hardening is operator advice, not new configuration
 
@@ -389,7 +391,7 @@ Not decisions — settled things that must not be lost when this document is rea
 
 - __Three audit issues are filed and linked to the epic__ and D19 depends on them: [#1148](https://github.com/jwilleke/ngdpbase/issues/1148) (`durable` asserted but not delivered), [#1149](https://github.com/jwilleke/ngdpbase/issues/1149) (`system.start` / `system.shutdown`, so an unclean exit is detectable) and [#1150](https://github.com/jwilleke/ngdpbase/issues/1150) (no administrative configuration change is audited anywhere).
 - __Check the `CHAIN_RESTART_EVENT` interaction__ ([#1124](https://github.com/jwilleke/ngdpbase/issues/1124)) when implementing D19. A boot-time posture record and a declared chain discontinuity can land at the same moment, and their order matters.
-- __Correct two pieces of wording when D11 lands.__ `views/admin-dashboard.ejs:31` says setting `refuse-boot` makes the failure "fatal instead"; `config/app-default-config.json:338` says it "refuses to start". Both describe a process that exits.
+- ~~__Correct two pieces of wording when D11 lands.__ `views/admin-dashboard.ejs:31` says setting `refuse-boot` makes the failure "fatal instead"; `config/app-default-config.json:338` says it "refuses to start". Both describe a process that exits.~~ __Done__ — both corrected by [#1157](https://github.com/jwilleke/ngdpbase/issues/1157) and guarded by `postureDocsConsistency.test.ts`.
 - ~~__Rewrite [#1144](https://github.com/jwilleke/ngdpbase/issues/1144) and `docs/planning/security-profile.md`__, which both still describe the preset model D2 replaced.~~ __Done.__ [#1144](https://github.com/jwilleke/ngdpbase/issues/1144) was rewritten on 2026-09-01 and `security-profile.md` carries a superseded banner. The sweep was completed on 2026-09-02: `docs/managers/ConfigurationManager.md`, `docs/planning/Security-auditing.md` and three code comments also described the recommendations as configuration, and were corrected.
 - __Gating of the [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) report__ is deliberately that issue's decision, not this document's (D18).
 
@@ -397,4 +399,4 @@ Not decisions — settled things that must not be lost when this document is rea
 
 These are being worked one at a time; each is recorded above as it is settled.
 
-*None.* Every decision above names the issue that carries it, and the epic carries seven sub-issues.
+*None.* Every decision above names the issue that carries it. [#1137](https://github.com/jwilleke/ngdpbase/issues/1137) closed on 2026-09-02 with all twelve of its sub-issues completed and all twelve of its acceptance criteria met; further posture work is filed fresh against this document.

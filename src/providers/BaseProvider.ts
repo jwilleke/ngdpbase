@@ -32,8 +32,20 @@ export interface ProviderDurability {
   bufferedForMs: number;
   /** Records held before an early write is forced. 0 = no bound. */
   bufferedRecords: number;
-  /** Whether a write is flushed to disk before being reported as stored. */
+  /** Whether EVERY write is flushed to the device before being reported as stored. */
   fsync: boolean;
+  /**
+   * Classes of write that ARE unbuffered and fsynced even when `fsync` is
+   * false, named in the provider's own vocabulary — for auditing, the tier
+   * (#1158).
+   *
+   * A partial guarantee needs somewhere to be stated, or it rounds to a claim
+   * that is wrong in one direction or the other: `fsync: true` would promise
+   * durability for buffered `standard` events that do not have it, and a bare
+   * `fsync: false` hides a guarantee the critical path genuinely provides.
+   * Absent when the whole answer is `fsync`.
+   */
+  fsyncedClasses?: readonly string[];
 }
 
 abstract class BaseProvider {

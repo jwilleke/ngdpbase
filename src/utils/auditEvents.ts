@@ -24,7 +24,7 @@
  */
 
 import logger from './logger.js';
-import { AUDIT_REQUIREMENTS, UNGATED_REQUIREMENTS } from './auditRegistry.js';
+import { isCriticalEventType } from './auditRegistry.js';
 
 /** Agent-token identity attached to a request that authenticated with one. */
 export interface AuditViaToken {
@@ -304,18 +304,6 @@ function shouldShout(count: number): boolean {
 }
 
 /**
- * Is this event type declared critical (#1121)?
- *
- * The tier comes from the #1120 registry, so "which events must be durable" is
- * data rather than a judgement remade at each call site — and adding a critical
- * event does not mean remembering to change a call.
- */
-function isCritical(eventType: string): boolean {
-  return [...Object.values(AUDIT_REQUIREMENTS), ...Object.values(UNGATED_REQUIREMENTS)]
-    .some((r) => r.eventType === eventType && r.tier === 'critical');
-}
-
-/**
  * Record an audit event, honouring its tier (#1121).
  *
  * __Standard__ events are fire-and-forget with a caught error, per the #1109
@@ -339,7 +327,7 @@ export async function recordAuditEvent(
   // auditing being off is already visible through #1118's posture.
   if (!sink?.logAuditEvent) return;
 
-  const critical = isCritical(event.eventType);
+  const critical = isCriticalEventType(event.eventType);
 
   if (critical && !sink.flushAuditQueue) {
     const message =

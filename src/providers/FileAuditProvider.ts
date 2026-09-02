@@ -3,12 +3,14 @@ import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import path from 'path';
 import fs from 'fs-extra';
+import fsp from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger.js';
 import { AuditEvent } from '../types/index.js';
 import type { ProviderDurability } from './BaseProvider.js';
 import type { AuditReport } from './BaseAuditProvider.js';
 import { buildWitness, shouldPublish, type ChainWitness } from '../utils/auditHeadWitness.js';
+import { isCriticalEventType, criticalEventTypes } from '../utils/auditRegistry.js';
 
 export const WITNESS_DESTINATION_KEY = 'ngdpbase.audit.chain-witness.destination';
 export const WITNESS_INTERVAL_KEY = 'ngdpbase.audit.chain-witness.interval-minutes';
@@ -80,7 +82,13 @@ class FileAuditProvider extends BaseAuditProvider {
 
   private auditLogs: ExtendedAuditEvent[];
   private auditQueue: ExtendedAuditEvent[];
-  private isProcessing: boolean;
+
+  /**
+   * Serializes flush batches (#1158). Every `flush()` chains onto this, so a
+   * caller awaiting durability waits for its own batch rather than being told
+   * "someone else is flushing" and resolving with its record still in memory.
+   */
+  private flushChain: Promise<void> = Promise.resolve();
   private flushTimer: NodeJS.Timeout | null;
 
   /** #1138: when the chain head was last published, and what was published. */
@@ -92,7 +100,6 @@ class FileAuditProvider extends BaseAuditProvider {
     super(engine);
     this.auditLogs = [];
     this.auditQueue = [];
-    this.isProcessing = false;
     this.flushTimer = null;
     this.config = null;
   }
@@ -154,7 +161,10 @@ class FileAuditProvider extends BaseAuditProvider {
 
     // Set up periodic flush
     this.flushTimer = setInterval(() => {
-      void this.flush();
+      // #1158: flush now rejects on a failed write so a critical caller learns
+      // about it. The timer is the fire-and-forget path and must not turn that
+      // into an unhandled rejection — doFlush has already logged and re-queued.
+      void this.flush().catch(() => { /* logged and re-queued in doFlush */ });
     }, this.config.flushInterval);
 
     // Load existing audit logs
@@ -344,10 +354,30 @@ class FileAuditProvider extends BaseAuditProvider {
   }
 
   /**
-   * Queue an already-stamped record for the next flush (#1119).
+   * Queue an already-stamped record for the next flush (#1119), or write it
+   * through to the device now if its tier demands that (#1158).
    *
    * The base has applied seq, prevHash and hash by this point; this only
    * decides when the bytes reach disk.
+   *
+   * __The critical tier is written and fsynced before this resolves.__ The
+   * registry defines `critical` as *"the action must not complete unless the
+   * record does"*, and a 30-second timer flushing into the page cache does not
+   * deliver that: `page.delete`, `token.mint`, `token.revoke`, the lifecycle
+   * events and `posture.recorded` could all be lost by an unclean exit while
+   * the action they describe had already happened. A credential that exists
+   * with nothing saying so is the case the tier was written for.
+   *
+   * __It goes through the queue rather than around it__, even though the issue
+   * described bypassing. The records are hash-chained, so the file must hold
+   * them in sequence order; a critical record written directly while earlier
+   * standard records were still queued would land out of order and break
+   * verification at that point. Flushing the queue *including* this record
+   * keeps the chain intact and still returns only once the bytes are down.
+   *
+   * `standard` and `volume` are deliberately untouched — making every event
+   * synchronous would charge `page.view` at volume for a guarantee the #1109
+   * decision says it does not need.
    */
   async writeEvent(record: Record<string, unknown>): Promise<string> {
     const event = record as unknown as ExtendedAuditEvent;
@@ -355,8 +385,10 @@ class FileAuditProvider extends BaseAuditProvider {
     // Add to in-memory queue
     this.auditQueue.push(event);
 
-    // Flush if queue is getting large
-    if (this.config && this.auditQueue.length >= this.config.maxQueueSize) {
+    if (isCriticalEventType(String(event.eventType ?? ''))) {
+      await this.flush({ fsync: true });
+    } else if (this.config && this.auditQueue.length >= this.config.maxQueueSize) {
+      // Flush if queue is getting large
       await this.flush();
     }
 
@@ -546,23 +578,51 @@ class FileAuditProvider extends BaseAuditProvider {
    * Flush pending audit events to storage
    * @returns {Promise<void>}
    */
-  async flush(): Promise<void> {
-    if (this.auditQueue.length === 0 || this.isProcessing || !this.config) {
+  async flush(options: { fsync?: boolean } = {}): Promise<void> {
+    // #1158: serialize rather than bail out when a flush is already running.
+    //
+    // This used to `return` on `isProcessing`, which is a correctness hole on
+    // the critical path: a caller that needs its record durable before it
+    // returns would resolve while the record was still sitting in the queue,
+    // having been told nothing went wrong. Chaining makes every caller wait for
+    // its OWN turn, so `await flush()` means "my record is written".
+    const next = this.flushChain
+      .catch(() => { /* a failed batch must not poison the next one */ })
+      .then(() => this.doFlush(options));
+    this.flushChain = next.catch(() => { /* settled; the caller below sees the error */ });
+    return next;
+  }
+
+  /** One flush batch. Never call directly — {@link flush} serializes these. */
+  private async doFlush(options: { fsync?: boolean } = {}): Promise<void> {
+    if (this.auditQueue.length === 0 || !this.config) {
       return;
     }
 
-    this.isProcessing = true;
+    const eventsToFlush = [...this.auditQueue];
+    this.auditQueue = [];
 
     try {
-      const eventsToFlush = [...this.auditQueue];
-      this.auditQueue = [];
-
       // Convert to log format
       const logLines = eventsToFlush.map(event => JSON.stringify(event)).join('\n') + '\n';
 
       // Append to audit log file
       const auditLogPath = path.join(this.config.logDirectory, this.config.auditFileName);
-      await fs.appendFile(auditLogPath, logLines);
+      if (options.fsync) {
+        // #1158: `fs.appendFile` resolves once the bytes are in the OS page
+        // cache, which a power loss or kernel panic discards. The critical tier
+        // means "the action must not complete unless the record does", so the
+        // handle is held open long enough to force the data to the device.
+        const handle = await fsp.open(auditLogPath, 'a');
+        try {
+          await handle.write(logLines);
+          await handle.sync();
+        } finally {
+          await handle.close();
+        }
+      } else {
+        await fs.appendFile(auditLogPath, logLines);
+      }
 
       // #1138: after the write, never before — a head published ahead of the
       // records it names would report truncation on the next verification.
@@ -584,10 +644,17 @@ class FileAuditProvider extends BaseAuditProvider {
 
     } catch (error) {
       logger.error('[FileAuditProvider] Failed to flush audit queue:', error);
-      // Re-queue failed events
-      this.auditQueue.unshift(...this.auditQueue);
-    } finally {
-      this.isProcessing = false;
+      // Re-queue the events that failed, ahead of anything that arrived while
+      // the write was in flight, so the chain order is preserved on retry.
+      //
+      // #1158: this said `unshift(...this.auditQueue)` — the queue onto itself.
+      // `eventsToFlush` had already been cleared out of it, so a failed write
+      // DISCARDED the batch (and duplicated whatever had arrived since). The
+      // records the critical tier exists to protect were the ones being lost.
+      this.auditQueue.unshift(...eventsToFlush);
+      // A caller that asked for durability has to learn the write failed;
+      // swallowing it here is what let `recordAuditEvent` report success.
+      throw error;
     }
   }
 
@@ -696,14 +763,23 @@ class FileAuditProvider extends BaseAuditProvider {
   /**
    * What this provider does with a record before it is on disk (#1148).
    *
-   * It buffers. `appendEvent` queues in memory, a timer flushes on
-   * `ngdpbase.audit.flushinterval`, and an early flush is forced at
-   * `ngdpbase.audit.maxqueuesize`. The write is `fs.appendFile` with no fsync,
-   * so even a flushed record sits in the OS page cache.
+   * It buffers, except on the critical tier. `writeEvent` queues in memory, a
+   * timer flushes on `ngdpbase.audit.flushinterval`, and an early flush is
+   * forced at `ngdpbase.audit.maxqueuesize`. That write is `fs.appendFile` with
+   * no fsync, so even a flushed `standard` or `volume` record sits in the OS
+   * page cache.
    *
-   * Reported rather than judged: an operator who can see a 30-second window
-   * decides whether that is acceptable for their deployment. The `durable:
-   * true` this replaces decided it for them, wrongly.
+   * A `critical` event does not wait for any of that: it is written and
+   * `fsync`ed before `writeEvent` resolves (#1158), which is what makes the
+   * tier's own definition — *the action must not complete unless the record
+   * does* — true rather than declared.
+   *
+   * Reported rather than judged: an operator who can see a 30-second window on
+   * one tier and none on the other decides whether that is acceptable for their
+   * deployment. The `durable: true` this replaces decided it for them, wrongly.
+   *
+   * The bound is still the machine. `fsync` trusts a disk controller's cache,
+   * and a failed disk takes the log with it — off-box is #1138.
    */
   /**
    * Publish the chain head to the configured destination (#1138).
@@ -790,13 +866,24 @@ class FileAuditProvider extends BaseAuditProvider {
     return {
       bufferedForMs: this.config.flushInterval,
       bufferedRecords: this.config.maxQueueSize,
-      fsync: false
+      // Still false, and deliberately: `standard` and `volume` events are
+      // buffered exactly as before, so claiming fsync outright would be the
+      // #1148 defect in the other direction.
+      fsync: false,
+      // #1158: the critical tier IS written through and fsynced before the
+      // action completes. Named rather than folded into the boolean so the
+      // report states which events have the guarantee instead of rounding.
+      fsyncedClasses: criticalEventTypes()
     };
   }
 
   async close(): Promise<void> {
-    // Flush any remaining events
-    await this.flush();
+    // Flush any remaining events, durably: this is the last chance the records
+    // get, and a shutdown that leaves them in the page cache is exactly the
+    // unclean-exit case #1149's system.shutdown event exists to make visible.
+    // Failure is logged and re-queued by doFlush; close must still complete, or
+    // a failing disk would leave the timer running and the provider half-shut.
+    await this.flush({ fsync: true }).catch(() => { /* logged in doFlush */ });
 
     // Clear flush timer
     if (this.flushTimer) {

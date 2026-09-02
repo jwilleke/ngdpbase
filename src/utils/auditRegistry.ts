@@ -132,6 +132,34 @@ export function requiredEventTypes(): string[] {
     .sort();
 }
 
+/**
+ * Is this event type declared `critical` (#1121, #1158)?
+ *
+ * The tier comes from this registry, so "which events must be durable" is data
+ * rather than a judgement remade at each call site — and adding a critical
+ * event does not mean remembering to change a call.
+ *
+ * Lives here rather than beside a caller because two layers need the same
+ * answer and must not be able to disagree: `recordAuditEvent` decides whether a
+ * failure rejects the action, and `FileAuditProvider.writeEvent` decides
+ * whether the record is fsynced before the write resolves. A tier that meant
+ * one thing to the caller and another to the writer would be the #1148 defect
+ * again — a declared guarantee the code does not implement.
+ */
+export function isCriticalEventType(eventType: string): boolean {
+  return [...Object.values(AUDIT_REQUIREMENTS), ...Object.values(UNGATED_REQUIREMENTS)]
+    .some((r) => r.eventType === eventType && r.tier === 'critical');
+}
+
+/** Every event type declared `critical`, for reporting what the tier covers. */
+export function criticalEventTypes(): string[] {
+  return [...new Set(
+    [...Object.values(AUDIT_REQUIREMENTS), ...Object.values(UNGATED_REQUIREMENTS)]
+      .filter((r) => r.tier === 'critical' && r.eventType !== null)
+      .map((r) => r.eventType as string)
+  )].sort();
+}
+
 /** Permissions with no audit event, and why. The honest half of the answer. */
 export function exemptions(): Array<{ permission: string; exempt: AuditExemption; note?: string }> {
   return Object.entries(AUDIT_REQUIREMENTS)
