@@ -123,6 +123,13 @@ export const AUDIT_EVENT_TYPES: Record<string, AuditEventTypeSpec> = {
   // A difference means the configuration changed while nothing was watching —
   // edited on disk, or while the process was stopped.
   'posture.recorded':   { description: 'Security posture at startup, compared against the previous start', severity: 'medium', emitted: true },
+  // #631 — background work. `enqueue` carried no actor, so a reindex reached
+  // this log with nobody attached. These carry the origin and the delegating
+  // token, so "the system did this" and "alice's agent did this" differ.
+  'job.started':   { description: 'A background job started, and who asked for it', severity: 'low', emitted: true },
+  'job.completed': { description: 'A background job finished successfully', severity: 'low', emitted: true },
+  'job.failed':    { description: 'A background job failed', severity: 'medium', emitted: true },
+
 
   // ── administration ───────────────────────────────────────────────────────
   'admin.page.raw-edit':             { description: 'Page edited through the admin raw editor', severity: 'medium', emitted: true },

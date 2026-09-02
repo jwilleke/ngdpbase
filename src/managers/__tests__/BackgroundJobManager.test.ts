@@ -4,6 +4,14 @@
  * @jest-environment node
  */
 import BackgroundJobManager from '../BackgroundJobManager';
+import { jobContextFromRequest } from '../../context/JobContext';
+
+/**
+ * #631: enqueue now requires a JobContext. These tests are about job mechanics,
+ * not provenance — provenance has its own suite in backgroundJobProvenance.test.ts —
+ * so one shared requester keeps them testing what they were written to test.
+ */
+const TEST_REQUESTER = jobContextFromRequest({ username: 'tester' });
 import type { WikiEngine } from '../../types/WikiEngine';
 
 function makeEngine(notificationManager?: unknown): WikiEngine {
@@ -47,13 +55,13 @@ describe('BackgroundJobManager', () => {
   describe('enqueue()', () => {
     test('throws for unknown jobId', async () => {
       const mgr = await makeManager();
-      await expect(mgr.enqueue('unknown.job')).rejects.toThrow("unknown job 'unknown.job'");
+      await expect(mgr.enqueue('unknown.job', TEST_REQUESTER)).rejects.toThrow("unknown job 'unknown.job'");
     });
 
     test('returns a runId string for registered job', async () => {
       const mgr = await makeManager();
       mgr.registerJob({ id: 'quick.job', displayName: 'Quick', run: async () => ({ success: true }) });
-      const runId = await mgr.enqueue('quick.job');
+      const runId = await mgr.enqueue('quick.job', TEST_REQUESTER);
       expect(typeof runId).toBe('string');
       expect(runId.length).toBeGreaterThan(0);
     });
@@ -64,8 +72,8 @@ describe('BackgroundJobManager', () => {
       const slowJob = new Promise<void>(r => { resolveFn = r; });
       mgr.registerJob({ id: 'slow.job', displayName: 'Slow', run: () => slowJob.then(() => ({ success: true })) });
 
-      const runId1 = await mgr.enqueue('slow.job');
-      const runId2 = await mgr.enqueue('slow.job');
+      const runId1 = await mgr.enqueue('slow.job', TEST_REQUESTER);
+      const runId2 = await mgr.enqueue('slow.job', TEST_REQUESTER);
       expect(runId1).toBe(runId2);
       resolveFn();
     });
@@ -73,12 +81,12 @@ describe('BackgroundJobManager', () => {
     test('creates a new run when previous run has completed', async () => {
       const mgr = await makeManager();
       mgr.registerJob({ id: 'fast.job', displayName: 'Fast', run: async () => ({ success: true }) });
-      const runId1 = await mgr.enqueue('fast.job');
+      const runId1 = await mgr.enqueue('fast.job', TEST_REQUESTER);
 
       // Wait for job to complete
       await new Promise(r => setTimeout(r, 50));
 
-      const runId2 = await mgr.enqueue('fast.job');
+      const runId2 = await mgr.enqueue('fast.job', TEST_REQUESTER);
       expect(runId2).not.toBe(runId1);
     });
   });
@@ -92,7 +100,7 @@ describe('BackgroundJobManager', () => {
     test('returns run object for known runId', async () => {
       const mgr = await makeManager();
       mgr.registerJob({ id: 'status.job', displayName: 'Status Test', run: async () => ({ success: true }) });
-      const runId = await mgr.enqueue('status.job');
+      const runId = await mgr.enqueue('status.job', TEST_REQUESTER);
       const status = mgr.getStatus(runId);
       expect(status).not.toBeNull();
       expect(status!.runId).toBe(runId);
@@ -102,7 +110,7 @@ describe('BackgroundJobManager', () => {
     test('run transitions to completed status', async () => {
       const mgr = await makeManager();
       mgr.registerJob({ id: 'complete.job', displayName: 'Complete Job', run: async () => ({ success: true, summary: 'done' }) });
-      const runId = await mgr.enqueue('complete.job');
+      const runId = await mgr.enqueue('complete.job', TEST_REQUESTER);
 
       await new Promise(r => setTimeout(r, 50));
       const status = mgr.getStatus(runId);
@@ -113,7 +121,7 @@ describe('BackgroundJobManager', () => {
     test('run transitions to failed status on error result', async () => {
       const mgr = await makeManager();
       mgr.registerJob({ id: 'fail.result', displayName: 'Fail Result', run: async () => ({ success: false, error: 'something went wrong' }) });
-      const runId = await mgr.enqueue('fail.result');
+      const runId = await mgr.enqueue('fail.result', TEST_REQUESTER);
 
       await new Promise(r => setTimeout(r, 50));
       const status = mgr.getStatus(runId);
@@ -124,7 +132,7 @@ describe('BackgroundJobManager', () => {
     test('run transitions to failed status when job throws', async () => {
       const mgr = await makeManager();
       mgr.registerJob({ id: 'throw.job', displayName: 'Throw Job', run: async () => { throw new Error('crash'); } });
-      const runId = await mgr.enqueue('throw.job');
+      const runId = await mgr.enqueue('throw.job', TEST_REQUESTER);
 
       await new Promise(r => setTimeout(r, 50));
       const status = mgr.getStatus(runId);
@@ -142,7 +150,7 @@ describe('BackgroundJobManager', () => {
           return { success: true };
         }
       });
-      await mgr.enqueue('progress.job');
+      await mgr.enqueue('progress.job', TEST_REQUESTER);
       await new Promise(r => setTimeout(r, 50));
     });
   });
@@ -158,7 +166,7 @@ describe('BackgroundJobManager', () => {
       let resolveFn!: () => void;
       const slowJob = new Promise<void>(r => { resolveFn = r; });
       mgr.registerJob({ id: 'active.job', displayName: 'Active Job', run: () => slowJob.then(() => ({ success: true })) });
-      await mgr.enqueue('active.job');
+      await mgr.enqueue('active.job', TEST_REQUESTER);
 
       const active = mgr.getActiveJobs();
       expect(active.length).toBe(1);
@@ -194,7 +202,7 @@ describe('BackgroundJobManager', () => {
       let resolveFn!: () => void;
       const slowJob = new Promise<void>(r => { resolveFn = r; });
       mgr.registerJob({ id: 'shutdown.job', displayName: 'Shutdown Job', run: () => slowJob.then(() => ({ success: true })) });
-      await mgr.enqueue('shutdown.job');
+      await mgr.enqueue('shutdown.job', TEST_REQUESTER);
 
       await expect(mgr.shutdown()).resolves.not.toThrow();
       resolveFn();
@@ -206,7 +214,7 @@ describe('BackgroundJobManager', () => {
       const addNotification = vi.fn().mockResolvedValue('notif-id');
       const mgr = await makeManager({ addNotification });
       mgr.registerJob({ id: 'notify.job', displayName: 'Notify', run: async () => ({ success: true, summary: 'all good' }) });
-      await mgr.enqueue('notify.job');
+      await mgr.enqueue('notify.job', TEST_REQUESTER);
 
       await new Promise(r => setTimeout(r, 50));
       expect(addNotification).toHaveBeenCalledWith(
@@ -218,7 +226,7 @@ describe('BackgroundJobManager', () => {
       const addNotification = vi.fn().mockResolvedValue('notif-id');
       const mgr = await makeManager({ addNotification });
       mgr.registerJob({ id: 'fail.notify', displayName: 'Fail Notify', run: async () => ({ success: false, error: 'oops' }) });
-      await mgr.enqueue('fail.notify');
+      await mgr.enqueue('fail.notify', TEST_REQUESTER);
 
       await new Promise(r => setTimeout(r, 50));
       expect(addNotification).toHaveBeenCalledWith(
@@ -229,7 +237,7 @@ describe('BackgroundJobManager', () => {
     test('tolerates missing NotificationManager gracefully', async () => {
       const mgr = await makeManager(); // no notification manager
       mgr.registerJob({ id: 'no.notif', displayName: 'No Notif', run: async () => ({ success: true }) });
-      const runId = await mgr.enqueue('no.notif');
+      const runId = await mgr.enqueue('no.notif', TEST_REQUESTER);
 
       await new Promise(r => setTimeout(r, 50));
       expect(mgr.getStatus(runId)?.status).toBe('completed');

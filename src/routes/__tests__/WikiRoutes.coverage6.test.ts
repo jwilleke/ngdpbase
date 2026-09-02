@@ -630,7 +630,13 @@ describe('WikiRoutes — coverage batch 6', () => {
         .set('x-csrf-token', 'test-csrf-token');
       expect(res.status).toBe(202);
       expect(res.body).toEqual({ runId: 'run-abc-123' });
-      expect(enqueue).toHaveBeenCalledWith('attachments.rebuild');
+      expect(enqueue).toHaveBeenCalledWith(
+        'attachments.rebuild',
+        // #631: enqueue now carries who asked and from where, so the audit
+        // log can attribute background work. Asserted loosely — the exact
+        // shape is pinned by jobContext.test.ts.
+        expect.objectContaining({ origin: 'request' })
+      );
     });
   });
 

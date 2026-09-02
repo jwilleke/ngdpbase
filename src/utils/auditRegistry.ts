@@ -118,6 +118,13 @@ export const UNGATED_REQUIREMENTS: Record<string, AuditRequirement> = {
   // instance down over a feature that was already broken.
   'manager.state-change': { eventType: 'manager.state-change', tier: 'standard', note: 'a manager configured and not working was previously visible only as a startup log line' },
 
+  // #631 — background jobs. `enqueue` carried no actor, so a reindex reached the
+  // log with nobody attached while Security-auditing.md marked Attribution
+  // "already met". `standard`: losing the record must not refuse the job.
+  'job.started':   { eventType: 'job.started',   tier: 'standard', note: 'who asked for background work, and from what origin' },
+  'job.completed': { eventType: 'job.completed', tier: 'standard' },
+  'job.failed':    { eventType: 'job.failed',    tier: 'standard' },
+
   // #1156 — the security posture as it stood at boot. `critical`: this is the
   // only record of a change made while the instance was not running, so losing
   // it to a crash would lose the one thing that could have reported the edit.

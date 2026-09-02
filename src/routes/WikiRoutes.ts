@@ -24,6 +24,7 @@ import { normalizeExistingPageToNcm, localizeNcmImages } from '../converters/ncm
 import { guardedFetch } from '../http/guardedFetch.js';
 import { AuditQueryForbiddenError } from '../managers/AuditManager.js';
 import { ANONYMOUS_SUBJECT, type PermissionSubject } from '../managers/UserManager.js';
+import { jobContextFromRequest } from '../context/JobContext.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import type { NcmImageDeps } from '../converters/ncm/index.js';
 import { createPatch } from 'diff';
@@ -11272,7 +11273,7 @@ ${panes}
       logger.info(`Page reindex requested by: ${currentUser.username}`);
 
       const jobManager = this.engine.getManager('BackgroundJobManager');
-      const runId = await jobManager.enqueue('pages.reindex');
+      const runId = await jobManager.enqueue('pages.reindex', jobContextFromRequest(req.userContext));
       return res.status(202).json({ runId });
     } catch (err: unknown) {
       logger.error('Error enqueueing reindex job:', err);
@@ -17963,7 +17964,7 @@ ${description}
         return res.status(503).json({ error: 'Media manager not enabled' });
       }
       const jobManager = this.engine.getManager('BackgroundJobManager');
-      const runId = await jobManager.enqueue('media.rescan');
+      const runId = await jobManager.enqueue('media.rescan', jobContextFromRequest(req.userContext));
       return res.status(202).json({ runId });
     } catch (err: unknown) {
       logger.error('[media] Error enqueueing rescan job:', err);
@@ -18042,7 +18043,7 @@ ${description}
         return res.status(503).json({ error: 'Media manager not enabled' });
       }
       const jobManager = this.engine.getManager('BackgroundJobManager');
-      const runId = await jobManager.enqueue('media.rebuild');
+      const runId = await jobManager.enqueue('media.rebuild', jobContextFromRequest(req.userContext));
       return res.status(202).json({ runId });
     } catch (err: unknown) {
       logger.error('[media] Error enqueueing rebuild job:', err);
@@ -18067,7 +18068,7 @@ ${description}
         return res.status(503).json({ error: 'Attachment manager not enabled' });
       }
       const jobManager = this.engine.getManager('BackgroundJobManager');
-      const runId = await jobManager.enqueue('attachments.rebuild');
+      const runId = await jobManager.enqueue('attachments.rebuild', jobContextFromRequest(req.userContext));
       return res.status(202).json({ runId });
     } catch (err: unknown) {
       logger.error('[attachments] Error enqueueing rebuild job:', err);
@@ -18088,7 +18089,7 @@ ${description}
       }
       const { jobId } = req.params;
       const jobManager = this.engine.getManager('BackgroundJobManager');
-      const runId = await jobManager.enqueue(jobId);
+      const runId = await jobManager.enqueue(jobId, jobContextFromRequest(req.userContext));
       return res.status(202).json({ runId });
     } catch (err: unknown) {
       const msg = getErrorMessage(err);

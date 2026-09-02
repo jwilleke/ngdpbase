@@ -2,6 +2,8 @@ import { randomUUID } from 'crypto';
 import BaseManager from './BaseManager.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
+import { describeJobContext, type JobContext } from '../context/JobContext.js';
+import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 
 /**
  * Callback supplied to job run functions so they can push live progress
@@ -38,6 +40,8 @@ export interface JobRun {
   runId: string;
   jobId: string;
   displayName: string;
+  /** Who asked for this work, and from where (#631). */
+  requestedBy: JobContext;
   status: 'pending' | 'running' | 'completed' | 'failed';
   /** Live progress message set by the job via reportProgress(); cleared on completion */
   progress?: string;
@@ -92,14 +96,28 @@ class BackgroundJobManager extends BaseManager {
    * Enqueue a job by ID. Returns the runId immediately.
    * If the job is already pending/running, returns the existing runId.
    *
+   * __`requestedBy` is mandatory, and positional rather than an option (#631).__
+   * This took a job id alone, so the identity of whoever triggered the work was
+   * discarded here — the route logged the username on the line above and threw
+   * it away on this one. Every defect this codebase has removed lately came
+   * from forgetting being safe; an optional context would be that shape again,
+   * and the first job added without one would go unattributed with nothing
+   * going red. Omitting it is now a compile error.
+   *
+   * Build it with `jobContextFromRequest(req.userContext)` when a person asked,
+   * or `jobContextFromSystem(reason)` when nothing did.
+   *
    * @throws Error if jobId is not registered
    */
-  async enqueue(jobId: string): Promise<string> {
+  async enqueue(jobId: string, requestedBy: JobContext): Promise<string> {
     const existingRunId = this.activeByJobId.get(jobId);
     if (existingRunId) {
       const existing = this.runs.get(existingRunId);
       if (existing && (existing.status === 'pending' || existing.status === 'running')) {
-        logger.info(`[BackgroundJobManager] Job '${jobId}' already active (${existingRunId}) — returning existing runId`);
+        logger.info(
+          `[BackgroundJobManager] Job '${jobId}' already active (${existingRunId}) — ` +
+          `returning existing runId (also requested by ${describeJobContext(requestedBy)})`
+        );
         return existingRunId;
       }
     }
@@ -114,6 +132,7 @@ class BackgroundJobManager extends BaseManager {
       runId,
       jobId,
       displayName: def.displayName,
+      requestedBy,
       status: 'pending',
       startedAt: new Date()
     };
@@ -156,7 +175,11 @@ class BackgroundJobManager extends BaseManager {
   private async executeJob(def: JobDefinition, run: JobRun): Promise<void> {
     run.status = 'running';
     const startMs = Date.now();
-    logger.info(`[BackgroundJobManager] job.started { jobId: "${def.id}", runId: "${run.runId}", displayName: "${def.displayName}" }`);
+    logger.info(
+      `[BackgroundJobManager] job.started { jobId: "${def.id}", runId: "${run.runId}", ` +
+      `displayName: "${def.displayName}", requestedBy: "${describeJobContext(run.requestedBy)}" }`
+    );
+    await this.recordJobEvent(run, 'started');
 
     const reportProgress: ReportProgress = (message: string) => {
       run.progress = message;
@@ -172,10 +195,12 @@ class BackgroundJobManager extends BaseManager {
       if (result.success) {
         run.status = 'completed';
         logger.info(`[BackgroundJobManager] job.completed { jobId: "${def.id}", runId: "${run.runId}", durationMs: ${durationMs}, summary: "${result.summary ?? ''}" }`);
+        await this.recordJobEvent(run, 'completed', result.summary);
         await this.sendNotification('info', `${def.displayName} complete`, result.summary ?? 'Job completed successfully');
       } else {
         run.status = 'failed';
         logger.warn(`[BackgroundJobManager] job.failed { jobId: "${def.id}", runId: "${run.runId}", durationMs: ${durationMs}, error: "${result.error ?? ''}" }`);
+        await this.recordJobEvent(run, 'failed', result.error);
         await this.sendNotification('error', `${def.displayName} failed`, result.error ?? 'Job failed');
       }
     } catch (err: unknown) {
@@ -189,6 +214,50 @@ class BackgroundJobManager extends BaseManager {
     } finally {
       this.activeByJobId.delete(def.id);
     }
+  }
+
+  /**
+   * Record who asked for this work, and how it ended (#631).
+   *
+   * Lazily resolved, following ConfigurationManager: AuditManager reads
+   * configuration, so holding a reference would invert the boot order, and it
+   * is absent during early boot — which `recordAuditEvent` already treats as a
+   * configuration state rather than a failure.
+   *
+   * `standard` tier deliberately. A reindex must not be refused because its
+   * audit record could not be written; the drop is counted and surfaced by
+   * `recordAuditEvent` rather than being fatal.
+   */
+  private async recordJobEvent(
+    run: JobRun,
+    outcome: 'started' | 'completed' | 'failed',
+    detail?: string
+  ): Promise<void> {
+    const sink = this.engine?.getManager?.('AuditManager') as AuditEventSink | null;
+    if (!sink) return;
+
+    const by = run.requestedBy;
+    await recordAuditEvent(sink, {
+      eventType: `job.${outcome}`,
+      user: by.username,
+      ipAddress: undefined,
+      action: `job-${outcome}`,
+      result: 'success',
+      severity: outcome === 'failed' ? 'medium' : 'low',
+      metadata: {
+        jobId: run.jobId,
+        runId: run.runId,
+        displayName: run.displayName,
+        // The provenance this issue exists for: who asked, from where, and
+        // whether a delegated token was involved.
+        origin: by.origin,
+        requestedAt: by.requestedAt,
+        reason: by.reason ?? null,
+        viaTokenId: by.viaToken?.id ?? null,
+        viaTokenName: by.viaToken?.name ?? null,
+        detail: detail ?? null
+      }
+    });
   }
 
   private async sendNotification(
