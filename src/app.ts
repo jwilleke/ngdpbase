@@ -25,6 +25,7 @@ import { resolveListenPort } from './utils/resolveListenPort.js';
 
 import logger from './utils/logger.js';
 import { resolveEgressPolicy } from './http/egressPolicy.js';
+import { tokenGateRefusal } from './security/tokenRouteMap.js';
 import { resolveMaintenanceState } from './utils/maintenanceState.js';
 import { resolveTlsConfig } from './utils/tlsConfig.js';
 import { createHttpsRedirectServer, routeSocket } from './utils/httpsRedirect.js';
@@ -803,6 +804,33 @@ void (async (): Promise<void> => {
           };
           (req as Request & { bearerAuth?: boolean }).bearerAuth = true;
           logger.info(`[bearer:${matchedProvider}] Authenticated API request as: ${result.username}`);
+
+          // #1173 Part A — the edge gate. Every token-bearing request passes
+          // here, and this is the only place that knows the token before a
+          // route handler runs, so the reach decision belongs here rather than
+          // in a layer of its own.
+          //
+          // The scope ceiling in hasPermission answers "may this token DO
+          // this", and only when a handler asks. This answers "may it reach
+          // this at all", which is a different question: POST /api/tokens
+          // checks isAuthenticated and never calls hasPermission, so the
+          // ceiling has nothing to run inside of and a page-read token could
+          // mint a page-delete one.
+          //
+          // Deliberately NOT applied to session requests — the guard is inside
+          // the `result.viaToken` branch, so a browser is unaffected by
+          // construction rather than by a check somebody has to maintain.
+          if (result.viaToken) {
+            const refusal = tokenGateRefusal(req.method, req.path, result.viaToken.scopes);
+            if (refusal) {
+              logger.warn(
+                `[bearer:gate] token ${result.viaToken.id} ("${result.viaToken.name}") refused — ` +
+                `${refusal.reason}: ${refusal.message}`
+              );
+              res.status(403).json(refusal);
+              return;
+            }
+          }
         }
       }
 

@@ -60,7 +60,7 @@ HTTP status: `201` on create, `200` on update.
 | --- | --- |
 | `400` | missing `pageName`/`markdown`, invalid characters in `pageName` (`/ \ # ? % " < > \| *`), bad `category`, or >5 keywords |
 | `401` | not authenticated |
-| `403` | authenticated but lacks `page-create` (new) / `page-edit` (existing) |
+| `403` | authenticated but lacks `page-create` (new) / `page-edit` (existing), or the agent token was refused by the edge gate — see [What an agent token may reach](#what-an-agent-token-may-reach) |
 | `500` | save/normalization failure |
 
 ## Authentication (Authentik OAuth bearer)
@@ -128,8 +128,38 @@ For agent-driven use there's a repo command at `.claude/commands/ingest-page.md`
 
 It reads config from the environment (never hardcoded): `NGDPBASE_INGEST_URL`, `AUTHENTIK_TOKEN_URL`, `NGDPBASE_CLIENT_ID`, `NGDPBASE_CLIENT_SECRET`. The credentials live in the SOPS secret `apps/production/jimsmcp/ngdpbase-ingest-creds.sops.yaml` (mj-infra-flux) — see the command file for the export snippet.
 
+## What an agent token may reach
+
+An agent token is refused at the edge unless the surface it is calling is named as token-reachable. This is separate from, and runs before, the permission check the handler makes (#1173).
+
+__Reachable today:__
+
+| Method | Path | Scope required (any one) |
+| --- | --- | --- |
+| `POST` | `/api/page/ingest` | `page-create`, `page-edit` |
+| `GET` | `/api/page-source/:page` | `page-read` |
+| `GET` | `/api/page-metadata/:page` | `page-read` |
+
+Everything else in the API is refused to a token, including `/api/tokens`, every `/api/admin/*` surface, sessions, comments, and footnotes. __Absence is the default, not a judgement__ — a route is unreachable by a token until someone names it in `src/security/tokenRouteMap.ts`, so a route added later cannot become token-reachable by being forgotten about.
+
+A refusal names which kind it is, because the two need different fixes:
+
+```json
+{ "success": false, "error": "Forbidden", "reason": "out-of-scope",
+  "message": "POST /api/page/ingest requires one of [page-create, page-edit]" }
+```
+
+- `out-of-scope` — the surface is open to tokens; __this__ token lacks the scope. Mint one with the right scope.
+- `unmapped` — the surface is not open to tokens at all. No token will reach it; use a session, or open an issue asking for it to be mapped.
+- `malformed-path` — the request path could not be normalized safely (traversal, an encoded separator, a control character). Not a scope problem.
+
+__Session requests are unaffected.__ The gate applies only where a token is present, so a browser never encounters it.
+
+__Both checks still run.__ Passing the gate does not authorize the request — the handler still asks whether the token's owner holds the permission, and the token is still capped at its own scopes. The gate limits *reach*; the permission check decides *action*.
+
 ## See also
 
 - [AuthentikBearerAuthProvider](providers/AuthentikBearerAuthProvider.md) — token verification
 - [NGDP-Compatible Markdown](NGDP-Compatible-Markdown.md) — the stored format
 - [MCP Server](MCP-SERVER.md) — the stdio alternative
+- `src/security/tokenRouteMap.ts` — the reachable-surface map and its matcher
