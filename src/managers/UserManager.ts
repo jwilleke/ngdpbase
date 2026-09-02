@@ -64,6 +64,55 @@ interface SessionWithUser {
 /**
  * Express request with user context (using type intersection to avoid extends conflict)
  */
+/**
+ * The agent token a request arrived with (#946).
+ *
+ * Declared rather than reached by a cast (#1164). `hasPermission` used to read
+ * `viaToken` off a parameter typed `{ username; roles; isAuthenticated }` — a
+ * field the declared type did not mention. That is not a detail: the type
+ * described a three-field object, so satisfying it by BUILDING one was the
+ * obvious thing to do, and any object built that way silently carries no token
+ * for the ceiling to find. `AttachmentManager` did exactly that and bypassed
+ * the ceiling on the path that looked safe.
+ */
+export interface AgentTokenGrant {
+  id: string;
+  name: string;
+  scopes: string[];
+}
+
+/**
+ * The subject for a check about nobody in particular (#1164).
+ *
+ * There is one honest reason to hand `hasPermission` a subject you built:
+ * asking what an ANONYMOUS visitor may do, where there is no user and no token
+ * by definition. Naming it once keeps that case explicit and keeps
+ * `check-permission-subject.ts` free to reject every inline literal — an
+ * escape hatch nobody can reach by accident.
+ */
+export const ANONYMOUS_SUBJECT: PermissionSubject = {
+  username: 'Anonymous',
+  roles: ['anonymous', 'All'],
+  isAuthenticated: false
+};
+
+/**
+ * Who a permission check is about.
+ *
+ * __Forward the context you were given; do not rebuild one.__ `viaToken` is
+ * optional because an ordinary session request has none — which means the type
+ * cannot force you to carry it. Rebuilding a subject from parts therefore still
+ * compiles, and still drops the ceiling. What stops that is
+ * `scripts/check-permission-subject.ts`, not the compiler.
+ */
+export interface PermissionSubject {
+  username?: string;
+  roles?: string[];
+  isAuthenticated?: boolean;
+  /** Present only when the request authenticated with an agent token. */
+  viaToken?: AgentTokenGrant;
+}
+
 type RequestWithUser = Request & {
   user?: SessionUser;
   session?: SessionWithUser;
@@ -671,7 +720,7 @@ class UserManager extends BaseManager {
    * @returns True if user has permission via policies
    */
   async hasPermission(
-    usernameOrContext: string | { username: string; roles: string[]; isAuthenticated: boolean },
+    usernameOrContext: string | PermissionSubject,
     action: string
   ): Promise<boolean> {
     const policyEvaluator = this.engine?.getManager<PolicyEvaluator>('PolicyEvaluator');
@@ -691,7 +740,7 @@ class UserManager extends BaseManager {
     // Only applies when the caller passed a resolved context carrying a token;
     // an ordinary session request is unaffected.
     if (typeof usernameOrContext === 'object' && usernameOrContext !== null) {
-      const viaToken = (usernameOrContext as { viaToken?: { id: string; name: string; scopes: string[] } }).viaToken;
+      const viaToken = usernameOrContext.viaToken;
       if (viaToken && !viaToken.scopes.includes(action)) {
         logger.info(
           `[UserManager] token ${viaToken.id} ("${viaToken.name}") lacks scope '${action}' ` +
@@ -705,10 +754,15 @@ class UserManager extends BaseManager {
 
     // Fast path: caller already has a resolved userContext — trust it.
     if (typeof usernameOrContext === 'object' && usernameOrContext !== null) {
+      // #1164: the subject's fields are optional now, because a real
+      // UserContext declares them optional. Defaulting here rather than
+      // widening UserContext keeps the resolved shape unchanged for everything
+      // downstream, and an absent username resolves anonymous — which is what
+      // the string path already does with '' or undefined.
       userContext = {
-        username: usernameOrContext.username,
-        roles: usernameOrContext.roles,
-        isAuthenticated: usernameOrContext.isAuthenticated
+        username: usernameOrContext.username ?? 'Anonymous',
+        roles: usernameOrContext.roles ?? ['anonymous', 'All'],
+        isAuthenticated: usernameOrContext.isAuthenticated ?? false
       };
     } else {
       // String path: build the context from scratch (existing behavior).
@@ -1278,7 +1332,8 @@ class UserManager extends BaseManager {
         res.status(401).json({ error: 'Unauthorized' });
         return;
       }
-      Promise.all(requiredPermissions.map((p) => this.hasPermission(user.username, p)))
+      // #1164: forward the request's context so an agent token is still capped.
+      Promise.all(requiredPermissions.map((p) => this.hasPermission(user, p)))
         .then((results) => {
           if (!results.every(Boolean)) {
             res.status(403).json({ error: 'Forbidden' });

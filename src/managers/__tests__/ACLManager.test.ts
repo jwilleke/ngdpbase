@@ -602,26 +602,30 @@ describe('ACLManager', () => {
     test('maps "view" action to page:read permission', async () => {
       mockUserManager.hasPermission.mockResolvedValue(true);
       const result = await aclManager.checkDefaultPermission('view', { username: 'user1', roles: [] });
-      expect(mockUserManager.hasPermission).toHaveBeenCalledWith('user1', 'page:read');
+      expect(mockUserManager.hasPermission).toHaveBeenCalledWith(
+        expect.objectContaining({ username: 'user1' }), 'page:read');
       expect(result).toBe(true);
     });
 
     test('maps "edit" action to page:edit permission', async () => {
       mockUserManager.hasPermission.mockResolvedValue(false);
       await aclManager.checkDefaultPermission('edit', { username: 'user1', roles: [] });
-      expect(mockUserManager.hasPermission).toHaveBeenCalledWith('user1', 'page:edit');
+      expect(mockUserManager.hasPermission).toHaveBeenCalledWith(
+        expect.objectContaining({ username: 'user1' }), 'page:edit');
     });
 
     test('uses anonymous when user is null', async () => {
       mockUserManager.hasPermission.mockResolvedValue(false);
       await aclManager.checkDefaultPermission('view', null);
-      expect(mockUserManager.hasPermission).toHaveBeenCalledWith('anonymous', 'page:read');
+      expect(mockUserManager.hasPermission).toHaveBeenCalledWith(
+        expect.objectContaining({ username: 'anonymous' }), 'page:read');
     });
 
     test('falls back to page:<action> for unknown actions', async () => {
       mockUserManager.hasPermission.mockResolvedValue(true);
       await aclManager.checkDefaultPermission('upload', { username: 'user1', roles: [] });
-      expect(mockUserManager.hasPermission).toHaveBeenCalledWith('user1', 'page:upload');
+      expect(mockUserManager.hasPermission).toHaveBeenCalledWith(
+        expect.objectContaining({ username: 'user1' }), 'page:upload');
     });
   });
 
@@ -1057,7 +1061,8 @@ describe('ACLManager', () => {
       mockUserManager.hasPermission.mockResolvedValue(true);
       const result = await aclManager.performStandardACLCheck('TestPage', 'view', { username: 'user1', roles: [] }, '');
       expect(result).toBe(true);
-      expect(mockUserManager.hasPermission).toHaveBeenCalledWith('user1', 'admin:system');
+      expect(mockUserManager.hasPermission).toHaveBeenCalledWith(
+        expect.objectContaining({ username: 'user1' }), 'admin:system');
     });
 
     test('allows when ACL has All principal', async () => {
@@ -1090,7 +1095,8 @@ describe('ACLManager', () => {
         .mockResolvedValueOnce(true);  // page:read check
       const result = await aclManager.performStandardACLCheck('admin-settings', 'view', { username: 'u', roles: [] }, '');
       expect(result).toBe(true);
-      expect(mockUserManager.hasPermission).toHaveBeenCalledWith('u', 'page:read');
+      expect(mockUserManager.hasPermission).toHaveBeenCalledWith(
+        expect.objectContaining({ username: 'u' }), 'page:read');
     });
 
     test('calls checkDefaultPermission for non-view actions with no ACL', async () => {
@@ -1099,7 +1105,8 @@ describe('ACLManager', () => {
         .mockResolvedValueOnce(true);  // page:edit
       const result = await aclManager.performStandardACLCheck('TestPage', 'edit', { username: 'u', roles: [] }, '');
       expect(result).toBe(true);
-      expect(mockUserManager.hasPermission).toHaveBeenCalledWith('u', 'page:edit');
+      expect(mockUserManager.hasPermission).toHaveBeenCalledWith(
+        expect.objectContaining({ username: 'u' }), 'page:edit');
     });
   });
 

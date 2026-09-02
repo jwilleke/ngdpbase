@@ -552,9 +552,13 @@ describe('AttachmentManager permission enforcement (#1059)', () => {
     await expect(mgr.deleteAttachment('abc', authed)).rejects.toThrow('Permission denied');
   });
 
-  test('a context without roles resolves permissions by username (string path)', async () => {
+  test('a context without roles is still forwarded whole, not reduced to a username', async () => {
+    // #1164: this asserted the STRING path — the branch that dropped the
+    // agent-token ceiling. Both branches are gone; the caller's context is
+    // forwarded whatever it contains, so a token always reaches the ceiling.
     const { mgr, userManager } = makePermEngine(async () => true);
     await mgr.deleteAttachment('abc', { username: 'jim', isAuthenticated: true });
-    expect(userManager.hasPermission).toHaveBeenCalledWith('jim', 'asset-delete');
+    expect(userManager.hasPermission).toHaveBeenCalledWith(
+      expect.objectContaining({ username: 'jim' }), 'asset-delete');
   });
 });

@@ -1,4 +1,5 @@
 import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
+import type { PermissionSubject } from './UserManager.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
@@ -424,25 +425,27 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     }
 
     const userManager = this.engine.getManager<{
-      hasPermission(
-        usernameOrContext: string | { username: string; roles: string[]; isAuthenticated: boolean },
-        action: string
-      ): Promise<boolean>;
+      // #1164: the context form only. The inline string|object type here was a
+      // second copy of the signature that let this file drop the token ceiling.
+      hasPermission(subject: PermissionSubject, action: string): Promise<boolean>;
         }>('UserManager');
     if (!userManager) {
       logger.warn(`📎 Permission denied for ${permission}: UserManager unavailable`);
       return false;
     }
 
-    // Pass the resolved context when the caller supplied roles; otherwise let
-    // UserManager resolve them from the username (the string path expands
-    // anonymous/asserted roles itself).
-    const allowed = userContext.roles
-      ? await userManager.hasPermission(
-        { username: userContext.username ?? '', roles: userContext.roles, isAuthenticated: true },
-        permission
-      )
-      : await userManager.hasPermission(userContext.username ?? '', permission);
+    // #1164: forward the context, never rebuild one.
+    //
+    // Both branches here used to drop the agent-token ceiling, and the first
+    // one is the instructive half: it passed an OBJECT, so it looked like the
+    // safe path and satisfied the declared type exactly — but the object was
+    // BUILT from three fields, so it carried no `viaToken` for the ceiling to
+    // find. The comment was about role resolution; nobody was thinking about
+    // tokens, and nothing made the omission visible.
+    //
+    // Forwarding the caller's own context keeps the role fast-path (roles ride
+    // along when present) and carries the token when there is one.
+    const allowed = await userManager.hasPermission(userContext, permission);
     if (!allowed) {
       logger.warn(`📎 Permission denied: ${userContext.username} lacks ${permission}`);
     }

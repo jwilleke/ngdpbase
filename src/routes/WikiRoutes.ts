@@ -23,6 +23,7 @@ import matter from 'gray-matter';
 import { normalizeExistingPageToNcm, localizeNcmImages } from '../converters/ncm/index.js';
 import { guardedFetch } from '../http/guardedFetch.js';
 import { AuditQueryForbiddenError } from '../managers/AuditManager.js';
+import { ANONYMOUS_SUBJECT, type PermissionSubject } from '../managers/UserManager.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import type { NcmImageDeps } from '../converters/ncm/index.js';
 import { createPatch } from 'diff';
@@ -193,7 +194,20 @@ interface IUserManager {
   createUser(data: unknown): Promise<unknown>;
   updateUser(username: string, data: unknown): Promise<unknown>;
   deleteUser(username: string): Promise<unknown>;
-  hasPermission(username: string | undefined, permission: string): Promise<boolean>;
+  /**
+   * #1164: takes the CONTEXT, never a username string.
+   *
+   * This interface previously declared `hasPermission(username: string | undefined, …)`,
+   * so route code could not pass a context even if it wanted to — the contract
+   * offered only the form that drops the agent-token ceiling. Twelve call sites
+   * used it, five of them the sole `admin-system` gate on an admin write.
+   *
+   * Narrowing it here makes the bypass a COMPILE ERROR in route code rather
+   * than something a reviewer has to notice. `UserManager` still accepts a
+   * string for genuine "does user X hold Y" lookups (AuditManager, ACLManager);
+   * routes are authorising a request and must forward what the request carries.
+   */
+  hasPermission(subject: PermissionSubject, permission: string): Promise<boolean>;
   hasRole(username: string, roleName: string): Promise<boolean>;
   resolveUserRoles(username: string): Promise<string[]>;
   getUserPermissions(username: string): Promise<string[]>;
@@ -904,8 +918,8 @@ class WikiRoutes {
     // so a role holding `admin-read` could open /admin by typing the URL but
     // was never shown the link. Ask the same question the route asks.
     const canViewAdmin = userContext?.isAuthenticated
-      ? (await userManager.hasPermission(userContext.username, 'admin-read'))
-        || (await userManager.hasPermission(userContext.username, 'admin-system'))
+      ? (await userManager.hasPermission(userContext, 'admin-read'))
+        || (await userManager.hasPermission(userContext, 'admin-system'))
       : false;
 
     // #1034: admin templates need to know what the caller may actually DO, not
@@ -921,7 +935,7 @@ class WikiRoutes {
     if (userContext?.isAuthenticated) {
       for (const permission of adminPermissions) {
         grantedPermissions[permission] = await userManager.hasPermission(
-          userContext.username,
+          userContext,
           permission
         );
       }
@@ -3141,7 +3155,7 @@ ${panes}
       }
 
       const hasPermission = await userManager.hasPermission(
-        currentUser.username,
+        currentUser,
         'page-create'
       );
       logger.debug('[CREATE-DEBUG] hasPermission result:', hasPermission);
@@ -3522,7 +3536,7 @@ ${panes}
         if (
           !currentUser ||
           !(await userManager.hasPermission(
-            currentUser.username,
+            currentUser,
             'admin-system'
           ))
         ) {
@@ -3582,7 +3596,7 @@ ${panes}
           if (
             !currentUser ||
             !(await userManager.hasPermission(
-              currentUser.username,
+              currentUser,
               'page-create'
             ))
           ) {
@@ -4035,7 +4049,7 @@ ${panes}
         if (
           !currentUser ||
           !(await userManager.hasPermission(
-            currentUser.username,
+            currentUser,
             'admin-system'
           ))
         ) {
@@ -4053,7 +4067,7 @@ ${panes}
           if (
             !currentUser ||
             !(await userManager.hasPermission(
-              currentUser.username,
+              currentUser,
               'page-create'
             ))
           ) {
@@ -4552,7 +4566,7 @@ ${panes}
     // Required pages stay admin-only, matching the form route.
     if (await this.isRequiredPage(pageName)) {
       const userManager = this.engine.getManager('UserManager');
-      const isAdmin = await userManager?.hasPermission(req.userContext.username, 'admin-system');
+      const isAdmin = await userManager?.hasPermission(req.userContext, 'admin-system');
       if (!isAdmin) {
         res.status(403).json({ error: 'Access denied', message: 'Only administrators can modify this page' });
         return null;
@@ -5216,7 +5230,7 @@ ${panes}
         if (
           !currentUser ||
           !(await userManager.hasPermission(
-            currentUser.username,
+            currentUser,
             'admin-system'
           ))
         ) {
@@ -7143,7 +7157,7 @@ ${panes}
         hasSessionCookie: !!sessionId,
         permissions: currentUser
           ? userManager.getUserPermissions(currentUser.username ?? '')
-          : (await userManager.hasPermission(undefined, 'page-read'))
+          : (await userManager.hasPermission(ANONYMOUS_SUBJECT, 'page-read'))
             ? ['anonymous permissions']
             : []
       };
@@ -13777,7 +13791,7 @@ ${panes}
       const userManager = this.engine.getManager('UserManager');
       if (
         !userContext?.isAuthenticated ||
-        !(await userManager.hasPermission(userContext.username, 'admin-system'))
+        !(await userManager.hasPermission(userContext, 'admin-system'))
       ) {
         return res.status(403).json({
           error: 'This account cannot make that change',
@@ -13831,7 +13845,7 @@ ${panes}
       const userManager = this.engine.getManager('UserManager');
       if (
         !userContext?.isAuthenticated ||
-        !(await userManager.hasPermission(userContext.username, 'admin-system'))
+        !(await userManager.hasPermission(userContext, 'admin-system'))
       ) {
         return res.status(403).json({
           error: 'This account cannot make that change',
@@ -13880,7 +13894,7 @@ ${panes}
       const userManager = this.engine.getManager('UserManager');
       if (
         !userContext?.isAuthenticated ||
-        !(await userManager.hasPermission(userContext.username, 'admin-system'))
+        !(await userManager.hasPermission(userContext, 'admin-system'))
       ) {
         return res.status(403).json({
           error: 'This account cannot make that change',
@@ -13927,7 +13941,7 @@ ${panes}
 
       if (
         !userContext?.isAuthenticated ||
-        !(await userManager.hasPermission(userContext.username, 'admin-system'))
+        !(await userManager.hasPermission(userContext, 'admin-system'))
       ) {
         return await this.renderError(
           req,
@@ -13967,7 +13981,7 @@ ${panes}
 
       if (
         !userContext?.isAuthenticated ||
-        !(await userManager.hasPermission(userContext.username, 'admin-system'))
+        !(await userManager.hasPermission(userContext, 'admin-system'))
       ) {
         return res.status(403).json({
           error: 'This account cannot make that change',
@@ -15681,7 +15695,7 @@ ${panes}
     }
 
     const userManager = this.engine.getManager('UserManager');
-    const isAdmin = await userManager?.hasPermission(req.userContext.username, 'admin-system');
+    const isAdmin = await userManager?.hasPermission(req.userContext, 'admin-system');
     if (!isAdmin) {
       res.status(403).json({ error: 'Access denied', message: 'Administrator access required' });
       return null;

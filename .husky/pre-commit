@@ -28,3 +28,10 @@ npm run lint:csrf --silent
 # Matched on the symbol, never the path — listening (createServer) is inbound
 # and allowed, so no file is ever exempt. Cheap.
 npm run lint:http --silent
+
+# Permission subjects (#1164) — route code must FORWARD the context a request
+# carries, never rebuild one from parts. A rebuilt subject drops `viaToken` and
+# with it the agent-token scope ceiling, which is how a read-only token reached
+# admin writes. The string form is already a compile error in route code; this
+# covers the rebuild the compiler cannot see. Cheap.
+npm run lint:permission-subject --silent

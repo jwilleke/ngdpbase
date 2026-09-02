@@ -687,7 +687,7 @@ class ACLManager extends BaseManager {
     }
 
     // If user has admin:system permission, always allow
-    if (user?.username && (await userManager.hasPermission(user.username, 'admin:system'))) {
+    if (user?.username && (await userManager.hasPermission(user, 'admin:system'))) {
       return true;
     }
 
@@ -792,7 +792,8 @@ class ACLManager extends BaseManager {
     const permission = permissionMap[action.toLowerCase()] || `page:${action.toLowerCase()}`;
     const username = user?.username ?? 'anonymous';
 
-    const result = await userManager.hasPermission(username, permission);
+    // #1164: the context carries the agent token; `username` alone does not.
+    const result = await userManager.hasPermission(user ?? { username }, permission);
 
     return result;
   }
