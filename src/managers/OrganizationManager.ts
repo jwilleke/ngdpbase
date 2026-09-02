@@ -1,6 +1,6 @@
 import path from 'path';
 import { promises as fs } from 'fs';
-import BaseManager from './BaseManager.js';
+import BaseManager, { type ManagerStats } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import { filenameFromOrg } from '../utils/orgFilename.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -305,6 +305,12 @@ class OrganizationManager extends BaseManager {
     const org = await this.requireProvider().getByFile(filename);
     this.byFileCache.set(filename, org);
     return org;
+  }
+
+  /** #1006: how many organizations this instance holds. Count only. */
+  async getManagerStats(): Promise<ManagerStats> {
+    const n = (await this.list()).length;
+    return { ...(await super.getManagerStats()), count: n, summary: `${n} organization(s)` };
   }
 
   async list(): Promise<Organization[]> {

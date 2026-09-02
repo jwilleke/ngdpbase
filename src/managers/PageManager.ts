@@ -1,7 +1,7 @@
 import path from 'path';
 import fse from 'fs-extra';
 import matter from 'gray-matter';
-import BaseManager, { BackupData } from './BaseManager.js';
+import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import { PageProvider, ProviderInfo, RecentChangesOptions, RecentChangeEntry, GetPagesByCreatorOptions, PagesScanOptions } from '../types/Provider.js';
@@ -1382,6 +1382,17 @@ class PageManager extends BaseManager implements CatalogSource {
    * Prefer this for new code that only needs page names.
    * Use getAllPageInfo() when you need uuid/slug/author etc.
    */
+  /**
+   * #1006: how many pages this instance holds.
+   *
+   * Names, not pages: `getAllPageNames()` reads the index, where
+   * `getAllPages()` would load every page's content to count them.
+   */
+  async getManagerStats(): Promise<ManagerStats> {
+    const n = (await this.getAllPageNames()).length;
+    return { ...(await super.getManagerStats()), count: n, summary: `${n} page(s)` };
+  }
+
   async getAllPageNames(): Promise<string[]> {
     return this.getAllPages();
   }

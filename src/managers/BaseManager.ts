@@ -76,6 +76,34 @@ export interface BackupData {
  */
 export type ManagerState = 'ready' | 'degraded' | 'disabled' | 'failed';
 
+/**
+ * What a manager holds, in one shape (#1006).
+ *
+ * Three managers already answered versions of this question in three different
+ * shapes — `AddonsManager.getStatus()`, `BackgroundJobManager.getStatus()`,
+ * `CatalogManager.getSourceInfo()` — so every admin surface rendered a bespoke
+ * view per manager, and a manager added later was invisible until somebody
+ * wrote another one. That is the drift #762 found from the other direction:
+ * three managers existed for weeks without appearing in any inventory, because
+ * nothing forced the question.
+ */
+export interface ManagerStats {
+  /**
+   * How many items this manager holds.
+   *
+   * __Omitted, not zero__, when the manager holds no countable collection.
+   * `RenderingManager` and `VariableManager` hold behaviour and configuration;
+   * reporting `0` for them would read as "empty" rather than "not applicable".
+   */
+  count?: number;
+  /** Most recent write, ISO 8601. Omitted when the manager does not track it. */
+  lastModified?: string;
+  /** Whether the manager considers itself operational. Derived from #1155's state. */
+  healthy: boolean;
+  /** One short line for an admin row. __Never item contents.__ */
+  summary?: string;
+}
+
 export interface ManagerStatus {
   state: ManagerState;
   /** What is wrong, in one line an operator can act on. Absent when ready. */
@@ -406,6 +434,74 @@ abstract class BaseManager {
    */
   async toMarqueeText(_options: ManagerFetchOptions = {}): Promise<string> {
     return '';
+  }
+
+  /**
+   * What this manager holds (#1006).
+   *
+   * __Counts and health only — never item contents.__ That is the whole safety
+   * property, and it is why this is not the `getAll()` the question originally
+   * asked for. `AgentTokenManager` holds bearer credentials, `UserManager`
+   * holds users, `ShareManager` holds capability tokens; a generic enumeration
+   * on the base class means the first generic caller — an admin dump panel, a
+   * search indexer, a debug route — reaches all of it by default. A count
+   * cannot leak what it counts.
+   *
+   * Optional by override, with a safe default, exactly like `backup()` and
+   * `toMarqueeText()` above. A manager holding no countable collection omits
+   * `count` rather than reporting `0`, because "nothing to count" and "none"
+   * are different answers and an admin row that shows `0` for
+   * `RenderingManager` is noise.
+   *
+   * __Never throws.__ A broken manager reports `healthy: false`; it does not
+   * take down the page rendering every other manager. The base wraps nothing,
+   * so an override that can fail must catch its own errors — see the note on
+   * `safeGetManagerStats()`.
+   *
+   * __Named `getManagerStats`, not `getStats`.__ Two managers already have a
+   * `getStats()` returning their own domain shape — `FilterManager` (pipeline
+   * statistics, #615) and `NotificationManager` (`NotificationStats`, read by
+   * a live route). Both are correct for what they do, and taking the name from
+   * them would either break those callers or leave `getStats()` meaning two
+   * different things depending on the manager, which is the exact confusion
+   * this contract exists to remove. A generic caller needs a name that means
+   * one thing everywhere.
+   *
+   * @example
+   * async getManagerStats(): Promise<ManagerStats> {
+   *   const active = this.list('').filter((r) => !r.revokedAt);
+   *   return { ...await super.getManagerStats(), count: active.length };
+   * }
+   */
+  async getManagerStats(): Promise<ManagerStats> {
+    return {
+      // #1155 already answers "is this manager working", with four states and
+      // a reason. Re-deriving health from `isInitialized()` here would put a
+      // second, weaker source of truth next to it — a manager could be
+      // initialised and degraded, and the two answers would disagree with
+      // nothing to reconcile them. So this is the SAME fact, narrowed for a
+      // one-line admin row; a caller wanting why asks getManagerStatus().
+      healthy: this.getManagerStatus().state === 'ready'
+    };
+  }
+
+  /**
+   * `getManagerStats()` that cannot break the page it is rendered on.
+   *
+   * The contract says an override must not throw, and saying so does not make
+   * it true — an override reads a store, and a store can fail. This is what an
+   * admin surface iterating every manager should call: one manager throwing
+   * becomes one unhealthy row rather than a 500 for all of them.
+   */
+  async safeGetManagerStats(): Promise<ManagerStats> {
+    try {
+      return await this.getManagerStats();
+    } catch (err) {
+      return {
+        healthy: false,
+        summary: `stats unavailable: ${err instanceof Error ? err.message : String(err)}`
+      };
+    }
   }
 }
 

@@ -31,7 +31,7 @@ import fs from 'fs';
 import path from 'path';
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
-import BaseManager from './BaseManager.js';
+import BaseManager, { type ManagerStats } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
@@ -175,6 +175,25 @@ export default class ShareManager extends BaseManager {
    * only those created by `owner`. Includes revoked and expired records;
    * callers surface status from expiresAt/revokedAt.
    */
+  /**
+   * #1006: active links, and how many of the total that is.
+   *
+   * Counts only. This manager holds capability tokens — a share link IS the
+   * credential — so the count is the most that may ever appear here.
+   */
+  async getManagerStats(): Promise<ManagerStats> {
+    const all = this.list();
+    const now = Date.now();
+    const active = all.filter(
+      (r) => !r.revokedAt && !(r.expiresAt && now > Date.parse(r.expiresAt))
+    ).length;
+    return {
+      ...(await super.getManagerStats()),
+      count: active,
+      summary: `${active} active of ${all.length}`
+    };
+  }
+
   list(owner?: string): ShareRecord[] {
     if (!this.enabled) return [];
     const all = [...this.byId.values()];

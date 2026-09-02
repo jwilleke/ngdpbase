@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import BaseManager from './BaseManager.js';
+import BaseManager, { type ManagerStats } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
@@ -109,6 +109,12 @@ class PersonManager extends BaseManager {
     const person = await this.requireProvider().getByIdentifier(identifier);
     this.byIdentifierCache.set(identifier, person);
     return person;
+  }
+
+  /** #1006: how many people this instance holds. Count only, never records. */
+  async getManagerStats(): Promise<ManagerStats> {
+    const n = (await this.list()).length;
+    return { ...(await super.getManagerStats()), count: n, summary: `${n} person record(s)` };
   }
 
   async list(): Promise<Person[]> {

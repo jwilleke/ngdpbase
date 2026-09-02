@@ -60,7 +60,7 @@
 import { randomBytes, createHash, timingSafeEqual } from 'crypto';
 import { promises as fs } from 'fs';
 import path from 'path';
-import BaseManager from './BaseManager.js';
+import BaseManager, { type ManagerStats } from './BaseManager.js';
 import type { BackupData } from './BaseManager.js';
 import { buildTokenAuditEvent, recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { writeFileAtomic } from '../utils/atomicWrite.js';
@@ -537,6 +537,20 @@ class AgentTokenManager extends BaseManager {
   }
 
   /** Every live token, for admin oversight (#946 open question 1). */
+  /**
+   * #1006: how many live tokens exist. Never which, and never their values.
+   *
+   * This manager is the reason the contract is counts-only rather than the
+   * `getAll()` originally asked for: it holds bearer credentials, and a
+   * generic enumeration on the base class would hand them to the first
+   * generic caller. `listAll()` returns `AgentTokenPublic`, which already
+   * excludes the secret — this reports its LENGTH and not its contents.
+   */
+  async getManagerStats(): Promise<ManagerStats> {
+    const live = this.listAll().length;
+    return { ...(await super.getManagerStats()), count: live, summary: `${live} live token(s)` };
+  }
+
   listAll(now: number = Date.now()): AgentTokenPublic[] {
     return Array.from(this.tokens.values())
       .filter(t => this.isLive(t, now))

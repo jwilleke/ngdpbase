@@ -15,7 +15,7 @@
 
 import path from 'path';
 import fs from 'fs-extra';
-import BaseManager, { type BackupData } from './BaseManager.js';
+import BaseManager, { type BackupData, type ManagerStats } from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { CatalogProvider, CatalogTerm } from '../types/Catalog.js';
@@ -530,6 +530,21 @@ class CatalogManager extends BaseManager {
   }
 
   /** Diagnostics — list registered sources for admin UIs / dashboards. */
+  /**
+   * #1006: registered catalog sources, wrapping the existing getSourceInfo().
+   *
+   * This is the shape #780's bespoke source list becomes one row of, which is
+   * the point of the contract: a manager stops needing its own admin page.
+   */
+  async getManagerStats(): Promise<ManagerStats> {
+    const sources = this.getSourceInfo();
+    return {
+      ...(await super.getManagerStats()),
+      count: sources.length,
+      summary: `${sources.length} registered source(s)`
+    };
+  }
+
   getSourceInfo(): Array<{ sourceId: string; types: readonly SchemaType[]; currentSchemaVersion: number }> {
     return [...this.sources.values()].map(s => ({
       sourceId: s.sourceId,

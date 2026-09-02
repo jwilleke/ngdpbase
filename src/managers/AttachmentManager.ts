@@ -1,4 +1,4 @@
-import BaseManager, { BackupData } from './BaseManager.js';
+import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
@@ -640,6 +640,12 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    *
    * @returns {Promise<AttachmentMetadata[]>}
    */
+  /** #1006: how many attachments this instance holds. Count only, never metadata. */
+  async getManagerStats(): Promise<ManagerStats> {
+    const n = (await this.getAllAttachments()).length;
+    return { ...(await super.getManagerStats()), count: n, summary: `${n} attachment(s)` };
+  }
+
   async getAllAttachments(): Promise<AttachmentMetadata[]> {
     if (!this.attachmentProvider) {
       return [];
