@@ -35,6 +35,8 @@ import type AddonsManager from '../../dist/src/managers/AddonsManager.js';
 import type { AddonStatusDetails } from '../../dist/src/managers/AddonsManager.js';
 import type AssetManager from '../../dist/src/managers/AssetManager.js';
 import { Sist2AssetProvider } from './src/Sist2AssetProvider.js';
+import { validateUrl } from '../../dist/src/http/ssrf.js';
+import { resolveEgressPolicy } from '../../dist/src/http/egressPolicy.js';
 import logger from '../../dist/src/utils/logger.js';
 import adminRoutes from './routes/admin.js';
 
@@ -43,7 +45,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let provider: Sist2AssetProvider | null = null;
-let storedConfig: { esUrl: string; esIndex: string; sist2Url: string; indexIds: number[]; hiddenPaths: string[] | null } | null = null;
+let storedConfig: { esUrl: string; esIndex: string; sist2Url: string | null; indexIds: number[]; hiddenPaths: string[] | null } | null = null;
 
 const elasticsearchAddon = {
   name: 'elasticsearch',
@@ -59,7 +61,13 @@ const elasticsearchAddon = {
   async register(engine: WikiEngine, config: Record<string, unknown>): Promise<void> {
     const esUrl    = typeof config['es-url']    === 'string' ? config['es-url']    : 'http://localhost:9200';
     const esIndex  = typeof config['es-index']  === 'string' ? config['es-index']  : 'sist2';
-    const sist2Url = typeof config['sist2-url'] === 'string' ? config['sist2-url'] : 'http://localhost:4090';
+    // #1186: NO default. The one that shipped, http://localhost:4090, is
+    // loopback — refused by the egress guard unconditionally, and not
+    // something allowed-ranges can open — so it silently produced no
+    // thumbnails on every install that left it alone. Unset means sist2
+    // features are off and the health check says so.
+    const rawSist2 = config['sist2-url'];
+    const sist2Url = typeof rawSist2 === 'string' && rawSist2.trim() !== '' ? rawSist2.trim() : null;
     const rawIds   = Array.isArray(config['index-ids']) ? config['index-ids'] : [];
     const indexIds = rawIds.map(Number).filter((n) => !isNaN(n));
 
@@ -89,12 +97,26 @@ const elasticsearchAddon = {
     const configManager = engine.getManager<{ getProperty?: (k: string, f?: unknown) => unknown }>(
       'ConfigurationManager'
     );
-    provider = new Sist2AssetProvider(
-      client, esIndex, sist2Url, indexIds,
-      (key: string, fallback?: unknown) => configManager?.getProperty?.(key, fallback) ?? fallback,
-      pathAccess, hiddenPaths
-    );
+    const readConfig = (key: string, fallback?: unknown): unknown =>
+      configManager?.getProperty?.(key, fallback) ?? fallback;
+    provider = new Sist2AssetProvider(client, esIndex, sist2Url, indexIds, readConfig, pathAccess, hiddenPaths);
     storedConfig = { esUrl, esIndex, sist2Url, indexIds, hiddenPaths };
+
+    // #1186: say it once at boot, not only on the admin page. A refused
+    // address is a configuration the guard will never permit; "unreachable"
+    // at health time would send the operator to check the sist2 host.
+    if (sist2Url === null) {
+      logger.info('[elasticsearch addon] sist2-url not configured — search only; thumbnails and file serving are off');
+    } else {
+      const verdict = validateUrl(sist2Url, resolveEgressPolicy(readConfig).policy);
+      if (!verdict.ok) {
+        logger.error(
+          `[elasticsearch addon] sist2-url ${sist2Url} is refused by the egress policy (${verdict.reason}). ` +
+          'Loopback and link-local can never be opened; a LAN address needs its prefix in ' +
+          'ngdpbase.security.egress.allowed-ranges. Thumbnails and file serving will not work. (#1186)'
+        );
+      }
+    }
 
     const assetManager = engine.getManager<AssetManager>('AssetManager');
     if (assetManager) {

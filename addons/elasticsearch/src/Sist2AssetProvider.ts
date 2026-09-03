@@ -1,5 +1,6 @@
 import { guardedFetch } from '../../../dist/src/http/guardedFetch.js';
 import { resolveEgressPolicy, type ConfigReader } from '../../../dist/src/http/egressPolicy.js';
+import { validateUrl } from '../../../dist/src/http/ssrf.js';
 /**
  * Sist2AssetProvider — read-only AssetProvider backed by a sist2 Elasticsearch index.
  *
@@ -49,12 +50,26 @@ const DOCUMENT_MIMES: string[] = [
 export class Sist2AssetProvider implements AssetProvider {
   readonly id = 'sist2';
   readonly displayName = 'External Asset Index';
-  readonly capabilities: ProviderCapability[] = ['search', 'thumbnail'];
+  /**
+   * `thumbnail` only when a sist2 address is configured (#1186). AssetManager
+   * reads this to decide what to offer; advertising thumbnails the provider
+   * cannot serve is the split-brain this issue described.
+   */
+  readonly capabilities: ProviderCapability[];
 
   constructor(
     private readonly esClient: Client,
     private readonly esIndex: string,
-    private readonly sist2Url: string,
+    /**
+     * The sist2 HTTP address, or null when `sist2-url` is not configured
+     * (#1186). There is NO default: the one this addon shipped,
+     * `http://localhost:4090`, is loopback, which the egress guard refuses
+     * unconditionally and `allowed-ranges` cannot open — so the default was a
+     * value that could never work, failing silently as null thumbnails. Null
+     * means thumbnails and file serving are off and health says so; search
+     * is unaffected either way.
+     */
+    private readonly sist2Url: string | null,
     private readonly indexIds: number[],
     /**
      * How to read the egress policy (#1133).
@@ -87,7 +102,9 @@ export class Sist2AssetProvider implements AssetProvider {
      * Supports simple prefix patterns (e.g. "Backup/", ".snapshot/", "@eaDir/").
      */
     private readonly hiddenPaths: string[] | null = null
-  ) {}
+  ) {
+    this.capabilities = this.sist2Url ? ['search', 'thumbnail'] : ['search'];
+  }
 
   /**
    * Last error thrown by an Elasticsearch search, or null if the most recent
@@ -324,6 +341,8 @@ export class Sist2AssetProvider implements AssetProvider {
   // ---------------------------------------------------------------------------
 
   async getThumbnail(id: string, _size: string): Promise<Buffer | null> {
+    // #1186: not configured is not a failed fetch. No request is made.
+    if (!this.sist2Url) return null;
     try {
       const { policy } = resolveEgressPolicy(this.readConfig);
       const res = await guardedFetch(`${this.sist2Url}/t/${id}`, { policy });
@@ -376,9 +395,35 @@ export class Sist2AssetProvider implements AssetProvider {
       };
     }
 
+    // #1186: three distinct sist2 states, each named. "Unreachable" used to
+    // cover all of them, and the one it hid was a URL the guard refuses by
+    // design — which no amount of checking the sist2 host would fix.
+    if (!this.sist2Url) {
+      // A deliberate configuration, not a fault: search is complete without
+      // sist2. Healthy, and the message says what is off.
+      return {
+        healthy: true,
+        message: `Index '${this.esIndex}' is present. sist2-url is not configured — search works; `
+          + 'thumbnails and file serving are off. Set ngdpbase.addons.elasticsearch.sist2-url to enable them.'
+      };
+    }
+
+    const { policy } = resolveEgressPolicy(this.readConfig);
+    const verdict = validateUrl(this.sist2Url, policy);
+    if (!verdict.ok) {
+      // The guard will never let this through, so a probe would only report
+      // "unreachable" and send the operator to check the sist2 host.
+      return {
+        healthy: false,
+        message: `sist2-url ${this.sist2Url} is refused by the egress policy (${verdict.reason}). `
+          + 'Loopback, link-local and .local/.internal names can never be opened; a LAN address needs its '
+          + 'prefix in ngdpbase.security.egress.allowed-ranges (docs/security-posture.md, "Allowed ranges"). '
+          + 'Search works; thumbnails and file serving will not.'
+      };
+    }
+
     let sist2Ok = false;
     try {
-      const { policy } = resolveEgressPolicy(this.readConfig);
       const probe = await guardedFetch(`${this.sist2Url}/i`, { policy });
       sist2Ok = probe.status >= 200 && probe.status < 300;
     } catch {

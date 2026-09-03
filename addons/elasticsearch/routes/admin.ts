@@ -15,7 +15,7 @@ import type { Sist2AssetProvider } from '../src/Sist2AssetProvider.js';
 export interface ElasticsearchAdminConfig {
   esUrl: string;
   esIndex: string;
-  sist2Url: string;
+  sist2Url: string | null;
   indexIds: number[];
   hiddenPaths: string[] | null;
 }
@@ -36,10 +36,12 @@ export default function adminRoutes(
         ctx.requireRole('admin');
 
         const p = getProvider();
-        const healthy = p ? await p.healthCheck() : false;
-        const message = p
-          ? (healthy ? 'sist2 reachable' : 'sist2 unreachable — check es-url / sist2-url config')
-          : 'Provider not initialised';
+        // #1186: the detailed check names WHICH state sist2 is in — not
+        // configured, refused by the egress policy, or unreachable — where
+        // the old line blamed "es-url / sist2-url config" for all of them.
+        const detail = p ? await p.healthCheckDetailed() : { healthy: false, message: 'Provider not initialised' };
+        const healthy = detail.healthy;
+        const message = detail.message;
 
         res.render('admin-elasticsearch', {
           currentUser: req.userContext,

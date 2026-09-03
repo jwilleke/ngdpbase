@@ -45,7 +45,7 @@
           </tr>
           <tr>
             <th class="ps-3">sist2-url</th>
-            <td><code><%= config.sist2Url %></code></td>
+            <td><% if (config.sist2Url) { %><code><%= config.sist2Url %></code><% } else { %><em>not configured — thumbnails and file serving off</em><% } %></td>
           </tr>
           <tr>
             <th class="ps-3">index-ids</th>

@@ -772,3 +772,81 @@ describe('search() path access control', () => {
     expect(hasBoolShould).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// #1186 — no loopback default; three named sist2 states
+// ---------------------------------------------------------------------------
+//
+// The addon shipped `sist2-url` as http://localhost:4090. Loopback is tier-1
+// in the egress guard: refused unconditionally, and not something
+// allowed-ranges can open. Every install that left the default alone got null
+// thumbnails and a health line saying "unreachable", which sent the operator
+// to check a sist2 host that was never going to be asked. Now there is no
+// default, and the health check distinguishes not-configured / refused /
+// unreachable — because they have three different fixes.
+
+describe('#1186 — sist2-url states', () => {
+  const LAN_ALLOWED = (key: string, fallback?: unknown): unknown =>
+    key === 'ngdpbase.security.egress.allowed-ranges' ? ['192.168.68.0/24'] : fallback;
+
+  test('not configured: search-only capabilities, no thumbnail request, healthy with the reason', async () => {
+    const provider = new Sist2AssetProvider(makeClient(), 'sist2', null, [], NO_EGRESS_CONFIG);
+
+    expect(provider.capabilities).toEqual(['search']);
+    await expect(provider.getThumbnail('69dba20b.00001234', 'sm')).resolves.toBeNull();
+    expect(mockFetch).not.toHaveBeenCalled();
+
+    const health = await provider.healthCheckDetailed();
+    expect(health.healthy).toBe(true);
+    expect(health.message).toContain('sist2-url is not configured');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test('configured: thumbnail capability advertised', () => {
+    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://sist2:4090', [], NO_EGRESS_CONFIG);
+    expect(provider.capabilities).toEqual(['search', 'thumbnail']);
+  });
+
+  test('the old default, http://localhost:4090, is named as REFUSED — not "unreachable" — and never probed', async () => {
+    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://localhost:4090', [], NO_EGRESS_CONFIG);
+
+    const health = await provider.healthCheckDetailed();
+    expect(health.healthy).toBe(false);
+    expect(health.message).toContain('refused by the egress policy');
+    expect(health.message).toContain('allowed-ranges');
+    expect(health.message).not.toContain('unreachable');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test('127.0.0.1 is refused the same way — allowed-ranges cannot open loopback', async () => {
+    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://127.0.0.1:4090', [], LAN_ALLOWED);
+    const health = await provider.healthCheckDetailed();
+    expect(health.healthy).toBe(false);
+    expect(health.message).toContain('refused by the egress policy');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test('a LAN address under the shipped empty allowed-ranges is refused, and the message says where to open it', async () => {
+    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://192.168.68.71:4090', [], NO_EGRESS_CONFIG);
+    const health = await provider.healthCheckDetailed();
+    expect(health.healthy).toBe(false);
+    expect(health.message).toContain('192.168.68.71');
+    expect(health.message).toContain('ngdpbase.security.egress.allowed-ranges');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test('the same LAN address with its prefix allowed is probed and reports healthy', async () => {
+    respondWith(200);
+    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://192.168.68.71:4090', [], LAN_ALLOWED);
+    await expect(provider.healthCheckDetailed()).resolves.toMatchObject({ healthy: true });
+    expect(mockFetch).toHaveBeenCalledWith('http://192.168.68.71:4090/i', expect.objectContaining({ policy: expect.anything() }));
+  });
+
+  test('an allowed address that does not answer is still "unreachable" — the third state', async () => {
+    mockFetch.mockRejectedValue(new Error('ECONNREFUSED'));
+    const provider = new Sist2AssetProvider(makeClient(), 'sist2', 'http://192.168.68.71:4090', [], LAN_ALLOWED);
+    const health = await provider.healthCheckDetailed();
+    expect(health.healthy).toBe(false);
+    expect(health.message).toContain('unreachable');
+  });
+});
