@@ -26,7 +26,7 @@ One cause, three surfaces, found three different ways. __A parameter that cannot
 
 This is the two-code-paths rule from [planning/Security-auditing.md](./planning/Security-auditing.md) in its general form — *"a flag that gates a mechanism creates two code paths, and the weak one is what everybody runs."* An optional actor parameter is that flag, and the weak path is the one where it is omitted.
 
-__Mandatory and positional, not an optional `opts` bag.__ Optional is what makes omission the easy path, and a default actor is a decision made by nobody. Note the specific hazard: a permissive system principal — `roles: ['system', 'All']` — introduced to satisfy a mandatory parameter would be a new bypass of exactly the kind this principle exists to prevent, holding rights no token could be minted with and passing the ceiling cleanly because it carries no `viaToken`. `jobContextFromSystem(reason)` resists that by requiring a stated reason rather than supplying a role.
+__Mandatory and positional, not an optional `opts` bag.__ Optional is what makes omission the easy path, and a default actor is a decision made by nobody. Note the specific hazard: a permissive system principal — `roles: ['system', 'All']` — introduced to satisfy a mandatory parameter would be a new bypass of exactly the kind this principle exists to prevent, holding rights no token could be minted with and passing the ceiling cleanly because it carries no `viaToken`. `jobContextFromSystem(reason)` resists that by requiring a stated reason rather than supplying a role. The system principal that [#631](https://github.com/jwilleke/ngdpbase/issues/631) then settled on (option 1, 2026-09-03) holds the `system` role __alone__ — no `All` — and what that role may do is one short policy, `system-tasks`, with no `admin-*` or `user-*` action in it. The hazard was never the word `system` in a roles array; it was a grant nobody had to name. The role follows the origin of the work, never a username, so no person can become the principal by choosing a name.
 
 __Why the rule is scoped rather than universal.__ "Every call" would include pure computation — a formatter, a record builder, a path normalizer — where the context is a parameter nothing reads. A parameter nothing reads is one that gets passed `null` or a placeholder, and once it is routinely fake the word "mandatory" stops carrying information and reviewers stop looking at it. The rule would then have recreated the two-code-paths problem inside its own fix. Scoping it to calls that decide, record, or act keeps every site meaningful.
 
@@ -39,6 +39,29 @@ __The one exception is a lookup, and it has its own name.__ Asking "does this na
 __What this rules out.__ Ambient propagation — a process-global request slot, or `AsyncLocalStorage`. The global form was removed as dead surface in [#1132](https://github.com/jwilleke/ngdpbase/issues/1132). `AsyncLocalStorage` is a sounder implementation of the same idea and is still refused here, because it shares the property that made the global wrong: the call site does not show what identity it runs under, so a missing context is invisible at review rather than a compile error. Threading costs more churn and is worth it.
 
 Tracked by [#1179](https://github.com/jwilleke/ngdpbase/issues/1179).
+
+### P2 — Allow and deny are permissions, not authentication or roles
+
+__The only allow/deny for a request is `hasPermission` (capability) or `canAccess` (this page). `isAuthenticated` classifies the failure. `hasRole` is a membership lookup about a named user, never authority of this context.__
+
+P1 says identity and provenance travel and authority does not: a context carries who acted and from what origin; it does not carry a snapshot of roles, and a token never does. This principle is that half applied to the door. If the door reads `isAuthenticated` or `hasRole`, the ceiling P1 exists to carry has nothing to enforce.
+
+__A role on the delegator is not authority of the delegate.__ A token (or any other delegated credential) is not the user. It is a slice of permission the user handed to something else. The owner can still hold `admin`; this request only holds `page-read`. `hasRole('admin')` on that request answers a question about the person, not about this acting credential. `hasPermission` already refuses scopes the token does not have (`UserManager.ts`, the `viaToken.scopes` ceiling). `hasRole` never looks at `viaToken` — it reads `userContext.roles`, which are the owner's. That is the ceiling in reverse.
+
+Display is the same defect. Showing an Admin link because the owner has the role, on a request that only has `page-read`, authorizes the UI from the wrong principal.
+
+| Check | What it answers | Valid as allow/deny? |
+| --- | --- | --- |
+| `isAuthenticated` | A session exists | No. Identity is not authority. [#1178](https://github.com/jwilleke/ngdpbase/issues/1178): a `page-read` token is authenticated and could mint `page-delete`. Honest use: 401 vs 403, and login vs register chrome. |
+| `hasRole('admin')` | The named user carries that string | No, for this request. Roles are membership, resolved live. A role check skips PolicyEvaluator, deny policies, and the token ceiling. Honest use: `UserManager.hasRole(username, role)` as a lookup about somebody else, the same shape as `userHoldsPermission`. |
+| `hasPermission('admin-system')` | May this principal do this action, now | Yes. Policies, inactive users, `All` / `Authenticated` expansion, and the token ceiling meet here. |
+| `canAccess('edit')` | May they do it on this page | Yes. Same door, plus ACL / audience. |
+
+Anonymous access is a permission too (`page-read` held by `anonymous` / `All`), not “skip the check because nobody is logged in.”
+
+__What this rules out.__ `requireAuthenticated()` or `if (!currentUser.isAuthenticated)` as the allow. `hasRole('admin')` / `requireRole('admin')` as a route or plugin gate, including “cheap” chrome. `WikiContext.userHasRole` on a request that carries `viaToken`. Any path that would have been `hasRole('admin')` and is now a mutation — those are already being moved to a permission ([#1034](https://github.com/jwilleke/ngdpbase/issues/1034)) because a role name is invisible to the evaluator and to the ceiling.
+
+This is the direction, not the state of the routes. `hasPermission` implements it; `hasRole` / `requireRole` and the remaining `isAuthenticated` gates do not.
 
 ## Decisions
 
