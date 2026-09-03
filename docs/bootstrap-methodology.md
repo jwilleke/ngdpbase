@@ -255,11 +255,13 @@ Both storage variables default to `./data`, so a single-drive setup can leave th
 
 Three files can carry an environment variable, and they are not interchangeable. `.env` never leaves the machine it is on: a value added there reaches jimstest and nothing else. The Docker image does travel — geohazardwatch is built `FROM` it, and Renovate, `auto-tag.yml`, `publish-image.yml` and Flux carry every release to the pods without a hand touching them — so a value the image carries is the only kind that propagates on its own. Decide by what the value is:
 
-| Kind of value | `.env.example` | `docker/Dockerfile` `ENV` | Deployment `env:` block |
+| Kind of value | `.env.example` | `docker/Dockerfile` `ENV` | The deployment's environment |
 |---|---|---|---|
 | Same for every container and not secret — `HEADLESS_INSTALL`, `NGDPBASE_SYSTEM_USER` | yes | __yes__ | only to override |
-| Differs per instance — `NGDPBASE_BASE_URL`, `NGDPBASE_HOSTNAME`, `FAST_STORAGE`, `PORT` | yes | no | yes |
-| Secret — `NGDPBASE_SESSION_SECRET`, `NGDPBASE_ADMIN_PASSWORD`, an SMTP password | yes, as a commented placeholder | __never__ — the image is public on GHCR | yes, by `secretKeyRef` |
+| Differs per instance — `NGDPBASE_BASE_URL`, `NGDPBASE_HOSTNAME`, `FAST_STORAGE`, `PORT` | yes | no | yes: `docker/k8s/configmap-env.yaml` |
+| Secret — `NGDPBASE_SESSION_SECRET`, `NGDPBASE_ADMIN_PASSWORD`, an SMTP password | yes, as a commented placeholder | __never__ — the image is public on GHCR | yes: `docker/k8s/secrets.yaml` |
+
+"The deployment's environment" is whatever the launcher hands the container. The shapes this repo ships and documents: `docker/docker-compose.yml`'s `environment:` block for compose, and for Kubernetes the two flat bags in `docker/k8s/` — `configmap-env.yaml` for non-secrets and `secrets.yaml` for secrets, both injected with `envFrom:` — per [`docker/HEADLESS-DEPLOYMENT-NOTES.md` §10](../docker/HEADLESS-DEPLOYMENT-NOTES.md). Each is a flat key=value bag, the same shape as `.env`, so a new per-instance variable is one line in the ConfigMap or Secret and a roll of the deployment. An inline `env:` entry on the Deployment is the per-pod override, not the home.
 
 `.env.example` documents every variable the app reads, so the first column is always yes. The Dockerfile carries only the values that are safe and identical everywhere; as of [#631](https://github.com/jwilleke/ngdpbase/issues/631) that is four lines. The lesson behind this table: #631 made a value a hard boot requirement and put it only in `.env`, which is per-instance by design — so the first release carrying it would have refused to boot on every pod. Baking it into the image put it back on the path that propagates.
 
