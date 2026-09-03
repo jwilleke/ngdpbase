@@ -148,9 +148,13 @@ function importedSymbols(line: string): string[] {
  *
  * Matched at the start of a line and requiring a `:` return type or an opening
  * brace after the parameter list, so an actual call (`await fetch(url)`,
- * `const r = fetch(url)`) is never excluded by it.
+ * `const r = fetch(url)`) is never excluded by it. A trailing `;` is NOT a
+ * declaration marker: it was in this alternation once, and it also matched
+ * the fire-and-forget statement `fetch(url);` — a raw call the check exists
+ * to catch, kept green (#1185). Every signature in the tree carries a return
+ * type, so the `:` already covers `fetch(cfg): Promise<...>;`.
  */
-const DECLARES_FETCH = /^\s*(?:(?:public|private|protected|static|readonly|async)\s+)*fetch\s*\([^)]*\)\s*(?::|\{|;)/;
+const DECLARES_FETCH = /^\s*(?:(?:public|private|protected|static|readonly|async)\s+)*fetch\s*\([^)]*\)\s*(?::|\{)/;
 
 export function checkFile(relPath: string, source: string): Violation[] {
   const violations: Violation[] = [];

@@ -100,6 +100,34 @@ describe('#1139 — inbound is not the risk, and is not flagged', () => {
   });
 });
 
+describe('#1185 — a statement fetch(url); is a call, not a declaration', () => {
+  // The declaration exemption skipped `fetch(...)` when followed by `:`, `{`
+  // OR `;`. The `;` also matched a fire-and-forget statement, so a raw
+  // `fetch(url);` in src/ or addons/ kept CI green — the exact hole the check
+  // exists to close. Nothing in the tree ever needed the `;`.
+  test('fetch(url); is a violation', () => {
+    const v = at('fetch(url);');
+    expect(v.map((x) => x.rule)).toEqual(['fetch']);
+  });
+
+  test('fetch(cfg.url); is a violation', () => {
+    expect(at('fetch(cfg.url);').map((x) => x.rule)).toEqual(['fetch']);
+  });
+
+  test('void fetch(url); is a violation', () => {
+    expect(at('void fetch(url);').map((x) => x.rule)).toEqual(['fetch']);
+  });
+
+  test('an interface signature with a return type is still a declaration', () => {
+    expect(at('  fetch(cfg: SourceConfig, policy: EgressPolicy): Promise<RawRecord[]>;')).toEqual([]);
+  });
+
+  test('a one-line async method declaration is still a declaration', () => {
+    expect(at('  async fetch(cfg: SourceConfig, policy: EgressPolicy): Promise<RawRecord[]> {')).toEqual([]);
+    expect(at('  async fetch(cfg, policy) {')).toEqual([]);
+  });
+});
+
 describe('#1139 — the plugin template-literal trap', () => {
   // CommentsPlugin and FootnotesPlugin emit browser JavaScript inside template
   // strings. It runs in the VISITOR'S browser against a relative URL and never
