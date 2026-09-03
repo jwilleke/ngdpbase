@@ -76,7 +76,7 @@ These environment variables override the corresponding config file properties at
 | `NGDPBASE_PORT`             | `ngdpbase.server.port`        | `3000`      |
 | `NGDPBASE_SESSION_SECRET`   | `ngdpbase.session.secret`     | generated into `<FAST_STORAGE>/.env` on first boot if unset (#1194) |
 | `NGDPBASE_APP_NAME`         | `ngdpbase.application-name`    | `ngdpbase`   |
-| `NGDPBASE_SYSTEM_USER`      | `ngdpbase.system.principal`    | __none — boot refuses if unset__ ([#631](https://github.com/jwilleke/ngdpbase/issues/631)) |
+| `NGDPBASE_SYSTEM_USER`      | `ngdpbase.system.principal`    | __none — boot refuses if unset__ ([#631](https://github.com/jwilleke/ngdpbase/issues/631)); the Docker image bakes `system` as `ENV`, override with `-e` |
 
 `NGDPBASE_SYSTEM_USER` names the __system principal__: the identity the server acts under at boot and from timers (retention purges, scheduled reindexes, page seeding), and the actor those actions carry in the audit log. It is a name, not an account — no login, no password, and `createUser` refuses to register it. It holds the roles listed in `ngdpbase.system.roles` (`["admin"]` as shipped), evaluated by policy exactly as a request would be. The config key ships as the bare env-ref `$NGDPBASE_SYSTEM_USER`, and a bare ref throws when the variable is unset, so an instance with no named principal does not come up: `app.ts` reads the key once at boot and the failure is a startup message naming the variable. `.env` is not reachable from the admin UI, so the name cannot be changed through a form.
 

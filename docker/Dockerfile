@@ -177,6 +177,13 @@ EXPOSE 3000
 ENV NODE_ENV=production
 ENV INSTANCE_DATA_FOLDER=/app/data
 ENV HEADLESS_INSTALL=true
+# #631: the system principal — the name the server acts under at boot and
+# from timers. The app refuses to boot without one (ngdpbase.system.principal
+# ships as the bare env-ref $NGDPBASE_SYSTEM_USER). Baked here so every image
+# built FROM this one — geohazardwatch included — comes up without a manifest
+# change; a deployment overrides it with its own -e / env: value. It is a
+# name, not a credential.
+ENV NGDPBASE_SYSTEM_USER=system
 
 # Health check
 # Accepts both 200 (OK) and 302 (Redirect) as healthy responses

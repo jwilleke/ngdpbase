@@ -149,6 +149,8 @@ This replaced a hardcoded map inside `getProperty` that nothing outside could se
 
 It is a name, not an account: no login, no password, no user record. Pick one that reads as the machine, not a person.
 
+__In the Docker image the name is baked.__ `docker/Dockerfile` sets `ENV NGDPBASE_SYSTEM_USER=system` beside `HEADLESS_INSTALL=true`, so every container built from the image — and every image built `FROM` it, geohazardwatch included — comes up without a manifest change, and a deployment overrides it with its own `env:` value. The refusal therefore applies to direct installs; a container always has a name, and that name is a choice made in the image rather than a fallback the code invented.
+
 ### Env references inside config values
 
 Any config value may reference an environment variable. Resolution happens __at lookup time__, per `getProperty()` call — not at config load — so a test that mutates `process.env` mid-run sees the new value on the next read (`ConfigurationManager.resolveEnvRef()`).

@@ -167,6 +167,7 @@ These control which config files and data directories are used:
 | Environment Variable | Description | Default |
 | --- | --- | --- |
 | `HEADLESS_INSTALL` | Skip interactive wizard; auto-configure with defaults | `true` (in Docker image) |
+| `NGDPBASE_SYSTEM_USER` | Name of the system principal — the actor for boot-time and timer work ([#631](https://github.com/jwilleke/ngdpbase/issues/631)). Required; a direct install refuses to boot without it | `system` (in Docker image) |
 
 ### Usage Examples
 

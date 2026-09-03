@@ -185,9 +185,10 @@ jobs:
             -e HEADLESS_INSTALL=true \
             -e NODE_ENV=production \
             -e NGDPBASE_ADMIN_PASSWORD="$SMOKE_PW" \
-            -e NGDPBASE_SYSTEM_USER=ci-system \
             -v "$RUNNER_TEMP/smoke-data:/app/data" \
             ${{ steps.img.outputs.ref }}
+          # #631: NGDPBASE_SYSTEM_USER is deliberately NOT passed. The image
+          # bakes it as ENV, and this container proves the baked value boots.
 
       - name: Smoke test — wait for healthy
         run: |
