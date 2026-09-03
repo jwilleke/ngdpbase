@@ -61,7 +61,9 @@ Anonymous access is a permission too (`page-read` held by `anonymous` / `All`), 
 
 __What this rules out.__ `requireAuthenticated()` or `if (!currentUser.isAuthenticated)` as the allow. `hasRole('admin')` / `requireRole('admin')` as a route or plugin gate, including “cheap” chrome. `WikiContext.userHasRole` on a request that carries `viaToken`. Any path that would have been `hasRole('admin')` and is now a mutation — those are already being moved to a permission ([#1034](https://github.com/jwilleke/ngdpbase/issues/1034)) because a role name is invisible to the evaluator and to the ceiling.
 
-This is the direction, not the state of the routes. `hasPermission` implements it; `hasRole` / `requireRole` and the remaining `isAuthenticated` gates do not.
+This is the direction, not the state of the routes. `hasPermission` implements it; `hasRole` / `requireRole` and the remaining `isAuthenticated` gates do not. The first two gates removed under this principle were `AttachmentManager.checkPermission` and `UserManager.requirePermissions` (2026-09-03, with [#631](https://github.com/jwilleke/ngdpbase/issues/631)'s system principal, which the attachment gate had been refusing before policy was asked).
+
+Tracked by [#1198](https://github.com/jwilleke/ngdpbase/issues/1198), which carries the count of gates still standing.
 
 ## Decisions
 
