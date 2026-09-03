@@ -216,6 +216,7 @@ System design and architectural patterns:
 | [CacheManager Complete Guide](managers/CacheManager-Complete-Guide.md) | Caching strategy — both CacheManager regions and provider-level structural caches |
 | [Access-Control](architecture/Access-Control.md) | Operational guide for `hasRole` / `hasPermission` / `canAccess` / `getPrincipals` |
 | [Page-Metadata](architecture/Page-Metadata.md) | Page frontmatter structure |
+| [Audit posture](audit-posture.md) | Inventory of implemented audit capabilities — chain, registry, durability, witness, verification |
 
 ### Core Concepts
 

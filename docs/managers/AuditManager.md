@@ -12,6 +12,8 @@ code: src/managers/AuditManager.ts
 
 The `AuditManager` is responsible for audit trail logging and compliance monitoring in ngdpbase. It provides a centralized system for tracking security events, access decisions, policy evaluations, and user actions. The AuditManager uses a __provider pattern__ to support multiple audit storage backends, making it flexible for different deployment scenarios from single-instance development to enterprise cloud deployments.
 
+What auditing actually implements — the hash chain, the event registry, critical-event durability, the off-box witness, and how to verify a log — is inventoried in [Audit posture](../audit-posture.md). This page is the manager API.
+
 __Key Features:__
 
 - __Pluggable Storage Backends:__ File-based, database, cloud logging services

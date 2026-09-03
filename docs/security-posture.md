@@ -46,7 +46,7 @@ Tracked by [#1179](https://github.com/jwilleke/ngdpbase/issues/1179).
 
 The set of security-related settings an instance is running is its __security posture__. That is the name used in documentation, the admin UI, issues and commit messages.
 
-Consequence to resolve: `AuditManager.getAuditPosture()` already uses the word for what auditing currently *does* (provider, degraded, reason). That usage is compatible — it reports actual state, which is what a posture is under D2 — but the naming should be reconciled when [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) generalises it.
+Consequence to resolve: `AuditManager.getAuditPosture()` already uses the word for what auditing currently *does* (provider, degraded, reason). That usage is compatible — it reports actual state, which is what a posture is under D2 — but the naming should be reconciled when [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) generalises it. The operational inventory of those capabilities is [audit-posture.md](./audit-posture.md).
 
 __Issues:__ [#1146](https://github.com/jwilleke/ngdpbase/issues/1146) __landed 2026-09-01__ as recommendation content. No general report was built: D2 and [#1145](https://github.com/jwilleke/ngdpbase/issues/1145) satisfy rule 3 structurally, so the name D21 rejected never needed a replacement.
 
