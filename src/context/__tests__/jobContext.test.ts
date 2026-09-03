@@ -13,6 +13,11 @@
  * - authority does NOT — resolved roles are absent, because a job runs later
  *   and must not authorise against roles as they were when the button was
  *   pressed (the same reasoning `app.ts` gives for agent tokens).
+ *
+ * The system principal is a NAME from `.env` (`NGDPBASE_SYSTEM_USER`), passed
+ * in by whoever builds a boot or schedule context. This module never knows the
+ * name itself — a hardcoded `'System'` would be a second source of truth for a
+ * value the environment owns.
  */
 import {
   jobContextFromRequest,
@@ -20,11 +25,12 @@ import {
   jobContextFromSchedule,
   toPermissionSubject,
   describeJobContext,
-  SYSTEM_USERNAME
+  ANONYMOUS_USERNAME
 } from '../JobContext';
 
 const at = new Date('2026-09-02T10:00:00.000Z');
 const token = { id: 'tok-1', name: 'reader', scopes: ['page-read'] };
+const SYSTEM = 'svc-ngdpbase';
 
 describe('#631 — derived from the request that triggered the work', () => {
   test('carries the username and marks the origin', () => {
@@ -58,33 +64,46 @@ describe('#631 — derived from the request that triggered the work', () => {
     expect('roles' in ctx).toBe(false);
   });
 
-  test('an absent identity becomes System rather than undefined', () => {
-    expect(jobContextFromRequest(null, at).username).toBe(SYSTEM_USERNAME);
-    expect(jobContextFromRequest(undefined, at).username).toBe(SYSTEM_USERNAME);
+  test('an absent identity becomes Anonymous — NEVER the system principal', () => {
+    // This used to default to 'System'. Harmless while 'System' named nobody;
+    // under #631 the principal is a configured name that resolves to admin, so
+    // a route that enqueued work without a userContext would have run it as
+    // the system principal — a bypass reached by forgetting an argument.
+    expect(jobContextFromRequest(null, at).username).toBe(ANONYMOUS_USERNAME);
+    expect(jobContextFromRequest(undefined, at).username).toBe(ANONYMOUS_USERNAME);
+    expect(ANONYMOUS_USERNAME).toBe('Anonymous');
   });
 });
 
 describe('#631 — standing on its own, with no request', () => {
-  test('a system context names itself and says why', () => {
+  test('a system context names the configured principal and says why', () => {
     // This is the constructor #1173 needs: once it exists, EVERY caller has a
     // context to pass, so `hasPermission`'s username-string overload has no
     // remaining justification.
-    const ctx = jobContextFromSystem('nightly retention', at);
-    expect(ctx.username).toBe(SYSTEM_USERNAME);
+    const ctx = jobContextFromSystem(SYSTEM, 'nightly retention', at);
+    expect(ctx.username).toBe(SYSTEM);
     expect(ctx.origin).toBe('boot');
     expect(ctx.reason).toBe('nightly retention');
   });
 
   test('a scheduled context differs only in origin', () => {
-    const ctx = jobContextFromSchedule('hourly reindex', at);
+    const ctx = jobContextFromSchedule(SYSTEM, 'hourly reindex', at);
+    expect(ctx.username).toBe(SYSTEM);
     expect(ctx.origin).toBe('schedule');
     expect(ctx.reason).toBe('hourly reindex');
+  });
+
+  test('the name is whatever the caller was given — nothing here invents one', () => {
+    // No default: a hardcoded name would be a second source of truth for a
+    // value .env owns, and would silently name nobody once an operator picked
+    // a different one.
+    expect(jobContextFromSystem('other-name', 'because').username).toBe('other-name');
   });
 
   test('reason is required by the signature, not optional', () => {
     // An ownerless action that cannot say why it happened is what an assessor
     // asks about. Compile-time, so this asserts the runtime half only.
-    expect(jobContextFromSystem('because').reason).toBeTruthy();
+    expect(jobContextFromSystem(SYSTEM, 'because').reason).toBeTruthy();
   });
 });
 
@@ -93,6 +112,7 @@ describe('#631 — asking a permission question later', () => {
     const subject = toPermissionSubject(jobContextFromRequest({ username: 'jim' }, at));
     expect(subject.username).toBe('jim');
     expect(subject.roles).toBeUndefined();
+    expect(subject.isAuthenticated).toBe(true);
   });
 
   test('the subject still carries the token, so the ceiling applies', () => {
@@ -105,34 +125,18 @@ describe('#631 — asking a permission question later', () => {
     expect(subject.viaToken).toEqual(token);
   });
 
-  // #631 option 1 / #1198: the system principal is a subject policy can name.
-  // It used to be `isAuthenticated: false` with no roles, which meant every
-  // `isAuthenticated` gate refused it before policy was asked, and policy —
-  // had it been asked — would have seen anonymous. A principal that cannot act
-  // is not a principal; it is a placeholder that fails closed by accident.
-  test('a system subject holds the system role and nothing else', () => {
-    const subject = toPermissionSubject(jobContextFromSystem('boot'));
-    expect(subject.username).toBe(SYSTEM_USERNAME);
-    expect(subject.roles).toEqual(['system']);
-    expect(subject.isAuthenticated).toBe(true);
-  });
-
-  test('the system subject does NOT hold All — it gets only what a policy names for it', () => {
-    expect(toPermissionSubject(jobContextFromSchedule('retention')).roles).not.toContain('All');
-  });
-
-  test('the system role follows the ORIGIN, never the username', () => {
-    // A person who registers as "System" and triggers a job is still that
-    // person: roles are absent so they resolve to the real user record, and the
-    // system role is not among them.
-    const subject = toPermissionSubject(jobContextFromRequest({ username: SYSTEM_USERNAME }, at));
-    expect(subject.roles).toBeUndefined();
-  });
-
-  test('a request-origin subject is authenticated and resolves fresh', () => {
-    const subject = toPermissionSubject(jobContextFromRequest({ username: 'jim' }, at));
-    expect(subject.isAuthenticated).toBe(true);
-    expect(subject.roles).toBeUndefined();
+  test('a system subject carries the name and NO roles — authority is resolved at the decision', () => {
+    // The principal's roles live in the catalog (ngdpbase.system.roles) and are
+    // read by UserManager when the question is asked. Nothing rides along in
+    // the context for a caller to widen, and a person who registered the same
+    // name cannot exist (the name is reserved in createUser).
+    for (const ctx of [jobContextFromSystem(SYSTEM, 'boot', at), jobContextFromSchedule(SYSTEM, 'retention', at)]) {
+      const subject = toPermissionSubject(ctx);
+      expect(subject.username).toBe(SYSTEM);
+      expect(subject.roles).toBeUndefined();
+      expect(subject.isAuthenticated).toBe(true);
+      expect('viaToken' in subject).toBe(false);
+    }
   });
 });
 
@@ -143,7 +147,7 @@ describe('#631 — the audit line', () => {
   });
 
   test('a system job says why instead', () => {
-    expect(describeJobContext(jobContextFromSystem('retention pass', at)))
-      .toBe('System (boot) — retention pass');
+    expect(describeJobContext(jobContextFromSystem(SYSTEM, 'retention pass', at)))
+      .toBe('svc-ngdpbase (boot) — retention pass');
   });
 });

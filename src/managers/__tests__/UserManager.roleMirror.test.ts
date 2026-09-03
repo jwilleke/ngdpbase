@@ -54,7 +54,11 @@ const makeConfigManager = () => ({
       'ngdpbase.user.sessionExpiration': 3600000,
       'ngdpbase.user.defaultTimezone': 'UTC',
       'ngdpbase.directories.users': './users',
-      'ngdpbase.roles.definitions': makeRoleCatalog()
+      'ngdpbase.roles.definitions': makeRoleCatalog(),
+      // #631: createUser checks the reserved system-principal name; a booted
+      // instance always has this key (app.ts refuses to start without it).
+      'ngdpbase.system.principal': 'svc-ngdpbase',
+      'ngdpbase.system.roles': ['admin']
     };
     return key in config ? config[key] : defaultValue;
   })

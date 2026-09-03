@@ -29,7 +29,7 @@
  * becoming asynchronous.
  */
 
-import { SYSTEM_SUBJECT, type PermissionSubject, type AgentTokenGrant } from '../managers/UserManager.js';
+import type { PermissionSubject, AgentTokenGrant } from '../managers/UserManager.js';
 
 /**
  * Where the work came from.
@@ -65,8 +65,17 @@ export interface RequestIdentity {
   viaToken?: AgentTokenGrant;
 }
 
-/** The username used when no person is behind the work. */
-export const SYSTEM_USERNAME = 'System';
+/**
+ * The username a request-origin job carries when the request had no identity.
+ *
+ * Anonymous, and deliberately NOT the system principal. This used to default
+ * to `'System'`, which was harmless while `'System'` named nobody. Under #631
+ * the principal is a configured name that resolves to the `admin` role, so a
+ * route that enqueued work without a `userContext` would have run that work
+ * as the system principal — a bypass reached by forgetting an argument. A
+ * missing identity is a visitor; nothing more.
+ */
+export const ANONYMOUS_USERNAME = 'Anonymous';
 
 /**
  * Derive a job context from the request that triggered the work.
@@ -80,7 +89,7 @@ export function jobContextFromRequest(
   now: Date = new Date()
 ): JobContext {
   return {
-    username: identity?.username ?? SYSTEM_USERNAME,
+    username: identity?.username ?? ANONYMOUS_USERNAME,
     origin: 'request',
     ...(identity?.viaToken ? { viaToken: identity.viaToken } : {}),
     requestedAt: now.toISOString()
@@ -90,15 +99,22 @@ export function jobContextFromRequest(
 /**
  * A job with no person behind it — boot, a schedule, a retention pass.
  *
+ * `systemPrincipal` is the name configured in `.env` as `NGDPBASE_SYSTEM_USER`
+ * (#631), read through `UserManager.systemPrincipalName()`. It is a mandatory
+ * positional argument rather than a constant here because this module is flat
+ * and engine-free by design, and a hardcoded `'System'` would be a second
+ * source of truth for a value the environment owns — one that silently names
+ * nobody the moment an operator picks a different name.
+ *
  * `reason` is required rather than optional. An ownerless action that cannot
  * say why it happened is the thing an assessor asks about, and a default would
  * be filled in by nobody. This is the constructor #1173 needs in order to
  * delete the `hasPermission` string overload: once it exists, every caller has
  * a context to pass, including code that runs with no request at all.
  */
-export function jobContextFromSystem(reason: string, now: Date = new Date()): JobContext {
+export function jobContextFromSystem(systemPrincipal: string, reason: string, now: Date = new Date()): JobContext {
   return {
-    username: SYSTEM_USERNAME,
+    username: systemPrincipal,
     origin: 'boot',
     requestedAt: now.toISOString(),
     reason
@@ -106,30 +122,26 @@ export function jobContextFromSystem(reason: string, now: Date = new Date()): Jo
 }
 
 /** As {@link jobContextFromSystem}, for work started by a timer rather than at boot. */
-export function jobContextFromSchedule(reason: string, now: Date = new Date()): JobContext {
-  return { ...jobContextFromSystem(reason, now), origin: 'schedule' };
+export function jobContextFromSchedule(systemPrincipal: string, reason: string, now: Date = new Date()): JobContext {
+  return { ...jobContextFromSystem(systemPrincipal, reason, now), origin: 'schedule' };
 }
 
 /**
  * The subject for a permission check made *by* this job.
  *
- * Request origin: `roles` is deliberately absent, and `UserManager.hasPermission`
+ * `roles` is deliberately absent for EVERY origin, and `UserManager.hasPermission`
  * resolves them from the username at decision time — which is what makes the
- * answer current rather than a replay of enqueue time. `viaToken` IS carried,
- * so a job triggered through a delegated token is still held to that token's
- * scopes.
+ * answer current rather than a replay of enqueue time. For a request-origin
+ * job that is the requester's current roles. For a boot or schedule job the
+ * username is the system principal named in `.env` (#631), and it resolves to
+ * the roles `ngdpbase.system.roles` declares for it — `admin` by default —
+ * through the same policy door as everyone else (P2). No roles ride along in
+ * the context, so there is nothing here for a caller to widen.
  *
- * Boot and schedule origin: the system principal, {@link SYSTEM_SUBJECT} —
- * the `system` role and nothing else (#631, option 1). The role follows the
- * ORIGIN, never the username, so a person cannot become the system principal
- * by choosing a name. What it may do is the `system-tasks` policy, and it is
- * authenticated because policy — not an `isAuthenticated` gate — is what
- * decides allow or deny (#1198).
+ * `viaToken` IS carried, so a job triggered through a delegated token is still
+ * held to that token's scopes.
  */
 export function toPermissionSubject(ctx: JobContext): PermissionSubject {
-  if (ctx.origin !== 'request') {
-    return { ...SYSTEM_SUBJECT, ...(ctx.viaToken ? { viaToken: ctx.viaToken } : {}) };
-  }
   return {
     username: ctx.username,
     isAuthenticated: true,

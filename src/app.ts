@@ -605,6 +605,18 @@ void (async (): Promise<void> => {
     logger.info(`🔐 Session secret: from ${sessionSecretOrigin.path} (the environment had it blank)`);
   }
 
+  // #631: the system principal is named in .env and nowhere else. The config
+  // key ships as the bare env-ref `$NGDPBASE_SYSTEM_USER`, and a bare ref
+  // THROWS when the variable is unset — so this read IS the refusal: an
+  // instance with no named principal does not come up. Read here, once, at
+  // boot, so the failure is a startup message naming the variable rather than
+  // the first background job dying months later.
+  const systemPrincipal = configManager.getProperty<unknown>('ngdpbase.system.principal', '');
+  if (typeof systemPrincipal !== 'string' || systemPrincipal.trim() === '') {
+    throw new Error('ngdpbase.system.principal resolved empty. Set NGDPBASE_SYSTEM_USER in .env and restart (#631).');
+  }
+  logger.info(`🔐 System principal: ${systemPrincipal.trim()} (NGDPBASE_SYSTEM_USER)`);
+
   app.use(session({
     store: new FileStore({
       path: sessionPath,

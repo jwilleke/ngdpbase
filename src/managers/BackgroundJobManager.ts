@@ -118,7 +118,8 @@ class BackgroundJobManager extends BaseManager {
    * going red. Omitting it is now a compile error.
    *
    * Build it with `jobContextFromRequest(req.userContext)` when a person asked,
-   * or `jobContextFromSystem(reason)` when nothing did.
+   * or `jobContextFromSystem(userManager.systemPrincipalName(), reason)` when
+   * nothing did (#631: the principal is a name from .env, never a constant).
    *
    * @throws Error if jobId is not registered
    */

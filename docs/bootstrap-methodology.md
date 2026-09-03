@@ -12,6 +12,8 @@ Three layers, in the order they run:
 
 Nothing in the codebase __writes__ a `.env`, with one exception: when `NGDPBASE_SESSION_SECRET` is absent at boot, `bootstrap-env.ts` generates one and appends it to `<FAST_STORAGE>/.env` ([#1194](https://github.com/jwilleke/ngdpbase/issues/1194), below). Everything else you create by hand from `.env.example`.
 
+Two variables are __required__ and are never generated. `NGDPBASE_ADMIN_PASSWORD` on a fresh install (read only when the user store is empty), and `NGDPBASE_SYSTEM_USER` on every boot: the name of the system principal ([#631](https://github.com/jwilleke/ngdpbase/issues/631), below). An instance without it refuses to start.
+
 ### What `bootstrap-env.ts` is, and is not
 
 It is the __environment__ bootstrap: layer 1 only. Its job is to populate `process.env` from two `.env` files in a defined precedence, before anything else evaluates, and then to guarantee one variable — `NGDPBASE_SESSION_SECRET` — is set, generating it if nothing supplied it. It is the single mechanism for both, and the first thing that runs in any ngdpbase process.
@@ -116,7 +118,7 @@ __If you add an entry point that reads instance data, import `bootstrap-env` fir
 
 ### Environment-owned keys
 
-Six keys are __owned by the environment__, declared in `ngdpbase.config.env-keys` and existing for Docker/Traefik/k8s deployments where editing a config file is awkward — or impossible, as in a fresh headless boot onto an empty volume:
+Seven keys are __owned by the environment__, declared in `ngdpbase.config.env-keys` and existing for Docker/Traefik/k8s deployments where editing a config file is awkward — or impossible, as in a fresh headless boot onto an empty volume:
 
 | Env var | Config key |
 |---|---|
@@ -126,8 +128,9 @@ Six keys are __owned by the environment__, declared in `ngdpbase.config.env-keys
 | `NGDPBASE_PORT` | `ngdpbase.server.port` |
 | `NGDPBASE_SESSION_SECRET` | `ngdpbase.session.secret` |
 | `NGDPBASE_APP_NAME` | `ngdpbase.application-name` |
+| `NGDPBASE_SYSTEM_USER` | `ngdpbase.system.principal` |
 
-The governing rule is __a key is owned by exactly one layer, never both__. These six are the environment's, so:
+The governing rule is __a key is owned by exactly one layer, never both__. These seven are the environment's, so:
 
 - They are __always read-only__ on `/admin/configuration`, whether or not the variable is currently set — shown with an `Environment` badge naming the variable. A write is refused with a `409`.
 - The value shipped in `app-default-config.json` for such a key is a __boot fallback__, not a setting. It exists so a fresh install comes up. For `ngdpbase.session.secret` the shipped value is never used at all: the guarantee above sets the variable before configuration is read.
@@ -136,6 +139,15 @@ The governing rule is __a key is owned by exactly one layer, never both__. These
 `ngdpbase.application.base-url` is the one asymmetry: it may equally be set in `app-custom-config.json` — the install wizard writes it there — so its UI copy names both routes. It is listed because `docker-compose-traefik.yml` composes it at deploy time and `InstallService` names the variable as the alternative for headless installs, so the environment must remain a valid source.
 
 This replaced a hardcoded map inside `getProperty` that nothing outside could see, which is how the admin screen came to accept and persist edits that could never take effect ([#1089](https://github.com/jwilleke/ngdpbase/issues/1089), `a1c0d38c`).
+
+### The system principal
+
+`NGDPBASE_SYSTEM_USER` names the identity the server acts under when no person is behind the work — boot-time seeding, retention purges, scheduled reindexes — and is the actor those actions carry in the audit log ([#631](https://github.com/jwilleke/ngdpbase/issues/631)). The decision splits identity from authority:
+
+- __Identity lives in `.env`.__ `ngdpbase.system.principal` ships as the bare env-ref `$NGDPBASE_SYSTEM_USER`. A bare ref throws when the variable is unset (the table below), and `app.ts` reads the key once at boot, so an instance with no named principal refuses to start with a message naming the variable. `.env` is not reachable from `/admin/configuration`, so the name cannot be changed through a form. The name is __reserved__: `UserManager.createUser` refuses it with the same reason as a taken username, so no person can hold it.
+- __Authority lives in the role catalog.__ `ngdpbase.system.roles` ships as `["admin"]`. When a background job asks a permission question, the name resolves to those roles at that moment (`UserManager.systemSubject()`) and policy answers — the same door as any request, per P2 in [security-posture.md](./security-posture.md). No roles are carried in a job context, so there is nothing for a caller to widen; and a request that enqueues work with no identity runs it as `Anonymous`, never as the principal.
+
+It is a name, not an account: no login, no password, no user record. Pick one that reads as the machine, not a person.
 
 ### Env references inside config values
 

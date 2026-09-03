@@ -76,6 +76,9 @@ These environment variables override the corresponding config file properties at
 | `NGDPBASE_PORT`             | `ngdpbase.server.port`        | `3000`      |
 | `NGDPBASE_SESSION_SECRET`   | `ngdpbase.session.secret`     | generated into `<FAST_STORAGE>/.env` on first boot if unset (#1194) |
 | `NGDPBASE_APP_NAME`         | `ngdpbase.application-name`    | `ngdpbase`   |
+| `NGDPBASE_SYSTEM_USER`      | `ngdpbase.system.principal`    | __none — boot refuses if unset__ ([#631](https://github.com/jwilleke/ngdpbase/issues/631)) |
+
+`NGDPBASE_SYSTEM_USER` names the __system principal__: the identity the server acts under at boot and from timers (retention purges, scheduled reindexes, page seeding), and the actor those actions carry in the audit log. It is a name, not an account — no login, no password, and `createUser` refuses to register it. It holds the roles listed in `ngdpbase.system.roles` (`["admin"]` as shipped), evaluated by policy exactly as a request would be. The config key ships as the bare env-ref `$NGDPBASE_SYSTEM_USER`, and a bare ref throws when the variable is unset, so an instance with no named principal does not come up: `app.ts` reads the key once at boot and the failure is a startup message naming the variable. `.env` is not reachable from the admin UI, so the name cannot be changed through a form.
 
 ### Instance Management Variables
 
@@ -218,6 +221,7 @@ After the engine is ready, the remaining middleware is registered:
 - JSON/URL-encoded body parsing, cookie parser
 - __Installation check middleware__: If `INSTANCE_DATA_FOLDER/.install-complete` is missing → redirect to `/install`. If `HEADLESS_INSTALL=true` → auto-configure without the wizard.
 - __Session setup__: Storage path and options from ConfigurationManager (`ngdpbase.session.storagedir`, `ngdpbase.session.secret`, `ngdpbase.session.max-age`)
+- __System principal check__ ([#631](https://github.com/jwilleke/ngdpbase/issues/631)): `ngdpbase.system.principal` is read once. It ships as `$NGDPBASE_SYSTEM_USER`, so an unset variable throws here and the boot stops with a message naming it. On success one line is logged: `System principal: <name> (NGDPBASE_SYSTEM_USER)`.
 - __User context middleware__: Attaches user info from session to each request
 - __Admin maintenance mode middleware__: When `engine.config.features.maintenance.enabled` is true, returns 503 to non-admin users (allows admin/login/logout routes through so admins can disable it)
 

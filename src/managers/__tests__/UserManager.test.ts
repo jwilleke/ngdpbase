@@ -19,7 +19,11 @@ const mockConfigurationManager = {
       'ngdpbase.user.passwordSalt': 'test-salt',
       'ngdpbase.user.sessionExpiration': 3600000,
       'ngdpbase.user.defaultTimezone': 'UTC',
-      'ngdpbase.directories.users': './users'
+      'ngdpbase.directories.users': './users',
+      // #631: always present in a booted instance — app.ts refuses to start
+      // without it — so the mock carries it too.
+      'ngdpbase.system.principal': 'svc-ngdpbase',
+      'ngdpbase.system.roles': ['admin']
     };
     return config[key] !== undefined ? config[key] : defaultValue;
   })
@@ -49,7 +53,11 @@ describe('UserManager', () => {
         'ngdpbase.user.passwordSalt': 'test-salt',
         'ngdpbase.user.sessionExpiration': 3600000,
         'ngdpbase.user.defaultTimezone': 'UTC',
-        'ngdpbase.directories.users': './users'
+        'ngdpbase.directories.users': './users',
+        // #631: always present in a booted instance — app.ts refuses to start
+        // without it — so the mock carries it too.
+        'ngdpbase.system.principal': 'svc-ngdpbase',
+        'ngdpbase.system.roles': ['admin']
       };
       return config[key] !== undefined ? config[key] : defaultValue;
     });
@@ -464,20 +472,77 @@ describe('UserManager', () => {
       );
     });
 
-    test('the SYSTEM subject reaches policy as itself: role system, no All, authenticated (#631)', async () => {
-      const policyEvaluator = installPolicyEvaluator(true);
+    // ─── #631: the system principal — a NAME from .env, roles from the catalog ─
+
+    function installSystemPrincipal(policyAllowed: boolean, name = 'svc-ngdpbase', roles: unknown = ['admin']) {
+      const policyEvaluator = installPolicyEvaluator(policyAllowed);
+      const base = mockConfigurationManager.getProperty.getMockImplementation();
+      mockConfigurationManager.getProperty.mockImplementation((key, fallback) => {
+        if (key === 'ngdpbase.system.principal') return name;
+        if (key === 'ngdpbase.system.roles') return roles;
+        return base ? base(key, fallback) : fallback;
+      });
+      return policyEvaluator;
+    }
+
+    test('a roles-absent subject naming the system principal resolves to the CATALOG roles, not a user record (#631)', async () => {
+      const policyEvaluator = installSystemPrincipal(true);
       userManager.provider.getUser = vi.fn();
       userManager.resolveUserRoles = vi.fn();
 
-      const { SYSTEM_SUBJECT } = await import('../UserManager');
-      await userManager.hasPermission(SYSTEM_SUBJECT, 'page-create');
+      await userManager.hasPermission({ username: 'svc-ngdpbase', isAuthenticated: true }, 'page-create');
 
       expect(userManager.provider.getUser).not.toHaveBeenCalled();
+      expect(userManager.resolveUserRoles).not.toHaveBeenCalled();
       expect(policyEvaluator.evaluateAccess).toHaveBeenCalledWith(
         expect.objectContaining({
-          userContext: expect.objectContaining({ username: 'System', roles: ['system'], isAuthenticated: true })
+          userContext: expect.objectContaining({
+            username: 'svc-ngdpbase', roles: ['admin', 'Authenticated', 'All'], isAuthenticated: true
+          })
         })
       );
+    });
+
+    test('the name matches case-insensitively, like the user store (#631)', async () => {
+      const policyEvaluator = installSystemPrincipal(true);
+      userManager.provider.getUser = vi.fn();
+      await userManager.hasPermission({ username: 'SVC-NGDPBASE', isAuthenticated: true }, 'page-read');
+      expect(userManager.provider.getUser).not.toHaveBeenCalled();
+      expect(policyEvaluator.evaluateAccess.mock.calls[0][0].userContext.roles).toContain('admin');
+    });
+
+    test('ngdpbase.system.roles is read, not assumed — a narrower list is honoured (#631)', async () => {
+      const policyEvaluator = installSystemPrincipal(true, 'svc-ngdpbase', ['editor']);
+      await userManager.hasPermission({ username: 'svc-ngdpbase', isAuthenticated: true }, 'page-edit');
+      const roles = policyEvaluator.evaluateAccess.mock.calls[0][0].userContext.roles;
+      expect(roles).toEqual(['editor', 'Authenticated', 'All']);
+      expect(roles).not.toContain('admin');
+    });
+
+    test('a subject that ASSERTS roles is never rerouted to the system principal, whatever its name (#631)', async () => {
+      // The fast path trusts supplied roles verbatim (#637) and does not
+      // consult the name. A request-bound context carrying the principal's
+      // name with its own roles gets its own roles — the store cannot hold
+      // such a user anyway, because createUser reserves the name.
+      const policyEvaluator = installSystemPrincipal(true);
+      await userManager.hasPermission({ username: 'svc-ngdpbase', roles: ['reader'], isAuthenticated: true }, 'page-read');
+      expect(policyEvaluator.evaluateAccess.mock.calls[0][0].userContext.roles).toEqual(['reader']);
+    });
+
+    test('systemPrincipalName() refuses an empty name rather than acting as nobody (#631)', () => {
+      installSystemPrincipal(true, '');
+      expect(() => userManager.systemPrincipalName()).toThrow(/NGDPBASE_SYSTEM_USER/);
+    });
+
+    test('createUser() refuses the system principal name, with the same reason as a taken name (#631)', async () => {
+      installSystemPrincipal(true);
+      userManager.provider = {
+        userExists: vi.fn().mockResolvedValue(false),
+        createUser: vi.fn()
+      };
+      await expect(userManager.createUser({ username: 'Svc-NgdpBase', password: 'x', email: 'a@b.c' }))
+        .rejects.toMatchObject({ reason: 'username-taken' });
+      expect(userManager.provider.createUser).not.toHaveBeenCalled();
     });
   });
 

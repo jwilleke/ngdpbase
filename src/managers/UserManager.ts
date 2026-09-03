@@ -108,29 +108,10 @@ export const ASSERTED_SUBJECT: PermissionSubject = {
   isAuthenticated: false
 };
 
-/** The role the system principal holds. A policy subject, never a gate (#631, #1198). */
-export const SYSTEM_ROLE = 'system';
-
-/**
- * The server acting for itself: boot tasks and timers (#631, option 1).
- *
- * The role comes from the ORIGIN of the work, never from a username, so no
- * person can become this subject by choosing a name. It holds exactly one
- * role and deliberately not `All`: `All` is the everyone-subject of
- * `default-view-for-all`, and the system principal should hold nothing a
- * policy did not name for it. What `system` may do is the `system-tasks`
- * policy in the catalog — a short list, with no `admin-*` or `user-*` in it,
- * which is what keeps this from being the permissive principal
- * `docs/security-posture.md` warns against.
- *
- * A named constant for the same reason as {@link ANONYMOUS_SUBJECT}: the
- * guard rejects every inline literal, and this is the one sanctioned shape.
- */
-export const SYSTEM_SUBJECT: PermissionSubject = { // permission-subject-ignore: the named system principal (#631)
-  username: 'System',
-  roles: [SYSTEM_ROLE],
-  isAuthenticated: true
-};
+/** Config key naming the system principal. Ships as `$NGDPBASE_SYSTEM_USER` — env-owned, bare form (#631). */
+export const SYSTEM_PRINCIPAL_KEY = 'ngdpbase.system.principal';
+/** Config key listing the roles the system principal holds. Ships as `["admin"]` (#631). */
+export const SYSTEM_ROLES_KEY = 'ngdpbase.system.roles';
 
 /**
  * Who a permission check is about.
@@ -830,6 +811,9 @@ class UserManager extends BaseManager {
    * visitor holds, which is the safe answer for someone who no longer exists.
    */
   private async resolveSubjectNow(username: string | undefined): Promise<UserContext> {
+    if (username && this.isSystemPrincipal(username)) {
+      return this.systemSubject();
+    }
     const user = username && this.provider ? await this.provider.getUser(username) : null;
     if (!user || !user.isActive) {
       // permission-subject-ignore: the anonymous subject, copied so the constant is never mutated.
@@ -838,6 +822,47 @@ class UserManager extends BaseManager {
     const baseRoles = await this.resolveUserRoles(user.username);
     // permission-subject-ignore: THE resolution site — roles come from the store, now, not from a caller.
     return { username: user.username, roles: [...baseRoles, 'Authenticated', 'All'], isAuthenticated: true };
+  }
+
+  /**
+   * The name of the system principal — the server acting for itself at boot
+   * and from timers (#631).
+   *
+   * Owned by the environment: `ngdpbase.system.principal` ships as the bare
+   * env-ref `$NGDPBASE_SYSTEM_USER`, which THROWS when the variable is unset,
+   * so an instance with no named principal refuses to boot rather than
+   * acting as a default nobody chose. `.env` is not reachable from the admin
+   * UI, so the identity cannot be renamed through a form.
+   */
+  systemPrincipalName(): string {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const name = configManager?.getProperty(SYSTEM_PRINCIPAL_KEY, '');
+    if (typeof name !== 'string' || name.trim() === '') {
+      throw new Error(`${SYSTEM_PRINCIPAL_KEY} is empty. Set NGDPBASE_SYSTEM_USER in .env (#631).`);
+    }
+    return name.trim();
+  }
+
+  /** Whether `username` names the system principal. Case-insensitive, like the user store. */
+  isSystemPrincipal(username: string): boolean {
+    return username.trim().toLowerCase() === this.systemPrincipalName().toLowerCase();
+  }
+
+  /**
+   * The system principal as a permission subject (#631).
+   *
+   * Identity from `.env`; authority from the role catalog — `ngdpbase.system.roles`,
+   * `["admin"]` by default — evaluated by policy through the same door as any
+   * request (P2). Nothing here is a grant: the roles are read, not asserted,
+   * which is why this is the sanctioned construction rather than a literal.
+   * The name is reserved in {@link createUser}, so no person can hold it.
+   */
+  systemSubject(): UserContext {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const declared = configManager?.getProperty(SYSTEM_ROLES_KEY, ['admin']);
+    const roles = Array.isArray(declared) ? declared.filter((r): r is string => typeof r === 'string') : ['admin'];
+    // permission-subject-ignore: the system principal — name from .env, roles from the catalog (#631).
+    return { username: this.systemPrincipalName(), roles: [...roles, 'Authenticated', 'All'], isAuthenticated: true };
   }
 
   /**
@@ -1022,6 +1047,14 @@ class UserManager extends BaseManager {
     }
 
     const { username, email, displayName, password, roles = ['reader'], isExternal = false, isActive = true, acceptLanguage, profileLocked = false } = userData;
+
+    if (this.isSystemPrincipal(username)) {
+      // #631: the system principal is an identity named in .env, not an
+      // account. Letting a person register under that name would hand them
+      // its roles the first time a job resolved the name. Same reason code as
+      // a taken username so the registration form cannot tell the two apart.
+      throw new UserCreateError('username-taken', `Username is reserved for the system principal: "${username}"`);
+    }
 
     if (await this.provider.userExists(username)) {
       // #1086: this used to append `getAllUsernames()` to the message, and

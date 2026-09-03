@@ -45,8 +45,12 @@
     "ngdpbase.server.host": "NGDPBASE_HOST",
     "ngdpbase.hostname": "NGDPBASE_HOSTNAME",
     "ngdpbase.application-name": "NGDPBASE_APP_NAME",
-    "ngdpbase.application.base-url": "NGDPBASE_BASE_URL"
+    "ngdpbase.application.base-url": "NGDPBASE_BASE_URL",
+    "ngdpbase.system.principal": "NGDPBASE_SYSTEM_USER"
   },
+  "_comment_system_principal": "#631 — the system principal: the server acting for itself at boot and from timers. IDENTITY is owned by the environment: the value below is the bare env-ref $NGDPBASE_SYSTEM_USER, which THROWS when the variable is unset, so an instance with no named principal refuses to boot rather than acting as a default nobody chose. .env is not reachable from the admin UI, so the name cannot be changed through a form. The name is reserved in the user store: no person can register it. AUTHORITY comes from ngdpbase.system.roles through policy — the same door as any request — and ships as [\"admin\"]. No roles are ever carried in a job context; the name resolves to these roles at the moment of each permission decision (UserManager.systemSubject).",
+  "ngdpbase.system.principal": "$NGDPBASE_SYSTEM_USER",
+  "ngdpbase.system.roles": ["admin"],
   "ngdpbase.session.secret": "ngdpbase-session-secret-change-in-production",
   "ngdpbase.session.max-age": 86400000,
   "ngdpbase.session.secure": false,

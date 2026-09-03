@@ -59,7 +59,7 @@ describe('#631 — provenance reaches the run record and the audit log', () => {
 
   test('a completed job records its outcome', async () => {
     const { m, events } = makeManager();
-    await m.enqueue('test.job', jobContextFromSystem('scheduled sweep'));
+    await m.enqueue('test.job', jobContextFromSystem('svc-ngdpbase', 'scheduled sweep'));
     await settle();
     const done = events.find((e) => e.eventType === 'job.completed');
     expect(done).toBeDefined();
@@ -71,7 +71,7 @@ describe('#631 — provenance reaches the run record and the audit log', () => {
     // a configuration state, not a failure — the job must still run.
     const m = new BackgroundJobManager({ getManager: () => null });
     m.registerJob({ id: 'j', displayName: 'J', run: () => Promise.resolve({ success: true }) });
-    const runId = await m.enqueue('j', jobContextFromSystem('boot'));
+    const runId = await m.enqueue('j', jobContextFromSystem('svc-ngdpbase', 'boot'));
     await settle();
     expect(m.getStatus(runId)?.status).toBe('completed');
   });
