@@ -185,6 +185,7 @@ jobs:
             -e HEADLESS_INSTALL=true \
             -e NODE_ENV=production \
             -e NGDPBASE_ADMIN_PASSWORD="$SMOKE_PW" \
+            -e NGDPBASE_SYSTEM_USER=ci-system \
             -v "$RUNNER_TEMP/smoke-data:/app/data" \
             ${{ steps.img.outputs.ref }}
 
