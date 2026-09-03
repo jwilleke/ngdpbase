@@ -15,6 +15,17 @@ Read this first. If a question is "where does this value go so that instance X g
 
 Two of these are what this project calls an __implementation__ of ngdpbase — an instance that is ngdpbase plus domain addons, under its own name — and they are built two different ways. The Fairways is method 1 with an addons directory from a second repository. geohazardwatch is method 4 deployed by method 3. That difference decides which files reach them, so it is worth being exact about.
 
+## Known implementations
+
+| Implementation | Repository | Method | Shape |
+|---|---|---|---|
+| The Fairways | [jwilleke/fairways-gen2-website](https://github.com/jwilleke/fairways-gen2-website) | __1. Direct install__ | The repository holds only the `fairways` addon and the content-migration tools. ngdpbase itself is a separate clone, `fairways-base`, built on the host and run by PM2 on port 2121; its `app-custom-config.json` points `addons-path` at this repository's `addons/`. Environment is `fairways-base/.env`; nothing arrives from the ngdpbase image. Upgrades are a `git pull` and rebuild of the base clone, by hand. |
+| geohazardwatch | [jwilleke/geohazardwatch](https://github.com/jwilleke/geohazardwatch) | __4. Downstream image__, deployed by __3. Kubernetes__ | The repository holds its addons and a Dockerfile `FROM ghcr.io/jwilleke/ngdpbase:${NGDPBASE_VERSION}`. Renovate bumps that version, `auto-tag.yml` and `publish-image.yml` publish `ghcr.io/jwilleke/geohazardwatch:<tag>`, and `mj-infra-flux` deploys it on deby. Environment is the ngdpbase image `ENV` plus the Deployment's `env:` block; configuration is `app-custom-config.json` on the persistent volume. Upgrades arrive without hands. |
+| ngdpbase-demo | this repository, stock | __3. Kubernetes__ | The published ngdpbase image with no downstream layer, deployed on deby from `mj-infra-flux`. The reference for what method 3 looks like with nothing added. |
+| jimstest | this repository | __1. Direct install__ | The development instance: this checkout, run by PM2 from `./server.sh`, with `FAST_STORAGE` and `SLOW_STORAGE` on separate drives. Every release is built and restarted here first. |
+
+The two implementations differ in exactly the way the inheritance table below predicts. A required environment variable reaches geohazardwatch through the image on the next base bump; it reaches The Fairways only when someone adds the line to `fairways-base/.env`. Configuration is per instance in both.
+
 ## What each method inherits from this repository
 
 | Reaches the instance | 1. Direct | 2. Container | 3. Kubernetes | 4. Downstream image |
