@@ -2,6 +2,8 @@
 
 Complete implementation of JSPWiki-style first-run installation wizard for ngdpbase (Issue #153).
 
+This page covers the wizard and headless install that every method runs through. Which method an instance is — direct install, container, Kubernetes, downstream image — and what each inherits is [Implementation.md](./Implementation.md), the lead document.
+
 Status: ✅ IMPLEMENTED - READY FOR BROWSER TESTING
 Last Updated: 2026-01-25
 Created: 2025-11-25

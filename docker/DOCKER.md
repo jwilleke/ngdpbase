@@ -2,6 +2,8 @@
 
 This guide explains how to run ngdpbase in Docker with proper ConfigurationManager awareness.
 
+It is the detail for method 2 in [docs/installation/Implementation.md](../docs/installation/Implementation.md), the lead document on the four ways to run ngdpbase.
+
 ## Table of Contents
 
 - [Pre-built Image from GHCR](#pre-built-image-from-ghcr)

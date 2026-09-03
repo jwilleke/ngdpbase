@@ -6,6 +6,8 @@ Welcome to the comprehensive documentation for ngdpbase, a file-based wiki appli
 
 This documentation is organized into several key areas to help you understand, develop, and maintain ngdpbase.
 
+Running it? Start at [Implementation](installation/Implementation.md) — the lead document on the four ways an instance is implemented (direct install, container, Kubernetes, downstream image) and what each inherits from this repository.
+
 ## 🏗️ Architecture & Design
 
 ### [Project Structure](architecture/PROJECT-STRUCTURE.md)

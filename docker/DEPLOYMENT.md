@@ -2,6 +2,8 @@
 
 Guide for deploying ngdpbase to various environments.
 
+Start with [docs/installation/Implementation.md](../docs/installation/Implementation.md), the lead document: it names the four implementation methods and what each inherits from this repository. This guide is the detail for the container-based ones.
+
 > __For headless / containerized deploys__ (Docker, Kubernetes), also read [`HEADLESS-DEPLOYMENT-NOTES.md`](./HEADLESS-DEPLOYMENT-NOTES.md). It captures gotchas — anchor Organization JSON-LD, theme/front-page/page-provider config, addons-path array form, Alpine `ndots:5` DNS, `npm ci --omit=dev` + husky, addon UUID validation — that aren't obvious from the default config alone.
 
 ## Published Image

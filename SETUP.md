@@ -2,6 +2,8 @@
 
 Quick setup instructions for getting ngdpbase running locally or in production.
 
+This page is the __direct install__ — a clone of the repository, built and run on the host. It is one of four implementation methods; [docs/installation/Implementation.md](docs/installation/Implementation.md) is the lead document and names the others (container, Kubernetes, downstream image) and what each inherits.
+
 ## Prerequisites
 
 - __Node.js v24+__ - [Download](https://nodejs.org/) (Node 18 EOL April 2025; Node 20 EOL April 2026)

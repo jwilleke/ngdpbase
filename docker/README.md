@@ -2,6 +2,8 @@
 
 This directory contains all Docker-related files for deploying ngdpbase in containers.
 
+Containers are methods 2, 3 and 4 of the four implementation methods; [docs/installation/Implementation.md](../docs/installation/Implementation.md) is the lead document and says what a container inherits from the image that a direct install does not.
+
 ## Pre-built Image
 
 Pull and run the pre-built image from GitHub Container Registry — no cloning or building required:

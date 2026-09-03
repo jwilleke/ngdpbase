@@ -275,6 +275,7 @@ Instance separation is environment-driven rather than first-class: give each ins
 
 ## Related
 
+- [`docs/installation/Implementation.md`](./installation/Implementation.md) — the lead document: the four implementation methods and what each inherits
 - [`SETUP.md`](../SETUP.md) — first-time setup walkthrough
 - [`docs/SEMVER.md`](./SEMVER.md) — release and version bumping
 - `config/app-default-config.json` — every shipped key, with `_comment_*` entries explaining the non-obvious ones

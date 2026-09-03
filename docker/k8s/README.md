@@ -1,6 +1,6 @@
 # ngdpbase Kubernetes Deployment
 
-Deploy ngdpbase to Kubernetes.
+Deploy ngdpbase to Kubernetes. This is method 3 in [docs/installation/Implementation.md](../../docs/installation/Implementation.md), the lead document on the four ways to run ngdpbase; a downstream image with its own addons (method 4) is deployed the same way.
 
 > __Before you deploy:__ read [`../HEADLESS-DEPLOYMENT-NOTES.md`](../HEADLESS-DEPLOYMENT-NOTES.md) — it captures real gotchas hit during a production rollout (anchor Organization, theme/front-page/page-provider config, Alpine `ndots:5` DNS, husky `prepare` script, addon UUID validation). The "Recommended deploy order" at the bottom is the short version of this README plus those gotchas.
 

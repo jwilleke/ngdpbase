@@ -39,6 +39,8 @@ A file-based wiki application built with __Node.js__, __Express__, __TypeScript_
 
 ## Getting Started
 
+There are four ways to run ngdpbase — a direct install from a clone, a container from the published image, Kubernetes, or a downstream image with your own addons. [docs/installation/Implementation.md](docs/installation/Implementation.md) is the lead document: it says what each method inherits from this repository and where its environment and configuration live. The steps below are the direct install.
+
 ### For Users
 
 1. Install dependencies:
@@ -277,6 +279,7 @@ Then restart the server (see [Configuration](#configuration) section above).
 
 ## Documentation
 
+- [docs/installation/Implementation.md](docs/installation/Implementation.md) - The four ways to run ngdpbase and what each inherits; the lead installation document.
 - [CHANGELOG.md](CHANGELOG.md) - Version history and detailed change notes.
 - [RELEASES.md](RELEASES.md) - Publishing contract for downstream consumers (geohazardwatch, mj-infra-flux, etc.) — what ngdpbase publishes, when, and where.
 - [CONTRIBUTING.md](CONTRIBUTING.md) - How to contribute to the project.
