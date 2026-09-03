@@ -12,6 +12,20 @@ What auditing on this instance can actually do, as implemented in code.
 
 This is an inventory, not a plan and not a recommendation. The living contracts are `src/utils/auditRegistry.ts` (what must be recorded) and `src/utils/auditVocabulary.ts` (the event names). The manager API is [AuditManager](managers/AuditManager.md). Decisions about security-related *settings* live in [security-posture.md](security-posture.md). The design that produced this work is [planning/Security-auditing.md](planning/Security-auditing.md).
 
+## Guiding principle
+
+__Auditing is a contract, not a courtesy.__ A security-relevant action is declared in `auditRegistry.ts`, named in `auditVocabulary.ts`, and emitted through `recordAuditEvent` (or the manager door that calls it). CI proves the three agree. Remembering to log is not a design: it can be correct and can never be proven.
+
+If you add or change an action that is gated by a permission, or that mints a credential, destroys something, or changes what someone may do:
+
+- Declare the event type (or an exemption with a reason) in the registry in the same change as the emitter. An omitted row is a bug; `not-implemented` is the honest form of "not yet."
+- Use a `{target}.{action}` name from the vocabulary. Do not invent a string at the call site, in a filter dropdown, or in a comment.
+- Forward the request context you were given. Do not rebuild `{ username }` and drop `viaToken` — that is [P1](security-posture.md#p1--every-security-relevant-call-carries-a-context).
+- If the type is `critical`, the action must not complete when the record cannot be written. Do not catch-and-continue a critical failure.
+- Do not append to the log file, skip the chain, or restart it from application code. A silent repair is worse than a visible break.
+
+A flag that turns the mechanism off creates two code paths, and the weak one is what everybody runs. The chain, the registry, and the vocabulary are always on. What an operator chooses is how hard failure is (`on-failure`) and how much is recorded (`read-events`), not whether integrity exists.
+
 ## What the report answers
 
 `AuditManager.getAuditPosture()` is the runtime report of what auditing is doing *right now*. It is facts about the active provider, not a label:
@@ -185,6 +199,35 @@ Ask the running instance rather than inferring from config: `AuditManager.getAud
 
 These are decisions in the registry, not forgotten call sites. They are still gaps in what an assessor can be shown.
 
+### Checking this yourself
+
+```bash
+npm run audit:coverage     # the report
+npm run lint:audit         # the same check, exits 1 on an unambiguous gap
+```
+
+`scripts/audit-coverage.ts` compares the three lists that had no way of being compared by hand: the __vocabulary__ (names that may be used), the __registry__ (what must be recorded, and at what tier), and the __emitters__ (what the source actually sends). It walks `src/` and `addons/`, and resolves interpolated names — emitters build them as `` `page.${op}` ``, so a plain text search reports `page.create` as unemitted while it fires on every page save.
+
+It fails the build only on the unambiguous directions: a required event nobody emits, a name outside the vocabulary, or an emitter it cannot account for. It does __not__ fail on an emitted event that carries no registry requirement, because closing those needs a tier decision per event ([#1184](https://github.com/jwilleke/ngdpbase/issues/1184)) and a check that fails before the decision exists is one people switch off.
+
+#### Results on 2026-09-03
+
+| | |
+| --- | --- |
+| Vocabulary declares | 32 |
+| Registry requires | 17 |
+| Source emits | 32 |
+
+Every name is emitted, nothing is emitted under an unpermitted name, and nothing declared required lacks an emitter. What the report shows is the middle row: __fifteen event types are emitted with no stated requirement__, so they have no tier, and `isCriticalEventType()` answers `false` for each — not as a decision, but because they are not present to be graded:
+
+`authentication.success` · `authentication.failed` · `authentication.logout` · `authorization.allow` · `authorization.deny` · `security.event` · `share.create` · `share.access` · `share.revoke` · `admin.page.raw-edit` · `admin.sessions.revoke` · `admin.sessions.clear-anonymous` · `audit.chain-restart` · `page.link-rewrite` · `policy.evaluate`
+
+`UNGATED_REQUIREMENTS` exists for exactly this — events with no permission behind them — and its own comment names the case: *"A failed login has no permission behind it, because nobody is authenticated yet, and it is exactly what an assessor asks for."* `authentication.failed` is not in the list that comment introduces.
+
+__Addons emit nothing.__ The report covers `addons/` and finds zero audit events there, while four of the five write user data — form submissions (`FormsDataManager.saveSubmission`), journal entries, calendar events, feed records. Not a registry gap, because nothing declares those actions at all; a coverage gap, and the same shape as [#1177](https://github.com/jwilleke/ngdpbase/issues/1177), where addon code was held to a weaker standard by default rather than by decision.
+
+### Permissions with no audit event
+
 Eight permissions exist and are gated, but have no audit event. The registry marks them `exempt: 'not-implemented'` so the gap is a decision, not a missing row (`src/utils/auditRegistry.ts`):
 
 | Permission | Why it is listed |
@@ -212,3 +255,4 @@ Also not implemented:
 - [FileAuditProvider](providers/FileAuditProvider.md), [NullAuditProvider](providers/NullAuditProvider.md), [BaseAuditProvider](providers/BaseAuditProvider.md)
 - [security-posture.md](security-posture.md) — the instance's security settings, including the audit knobs as ingredients
 - [planning/Security-auditing.md](planning/Security-auditing.md) — the nine falsifiable statements this inventory implements
+- `scripts/audit-coverage.ts` — the vocabulary/registry/emitter report behind the counts above
