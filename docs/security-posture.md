@@ -154,6 +154,38 @@ __No case refuses to start the instance.__ That was the profile looking for a jo
 
 __Issues:__ Tracked by [#1144](https://github.com/jwilleke/ngdpbase/issues/1144) — __landed 2026-09-01__; the behaviour re-homed came from [#1133](https://github.com/jwilleke/ngdpbase/issues/1133). The malformed-CIDR case it defers to D9 is [#1152](https://github.com/jwilleke/ngdpbase/issues/1152), which is now the only thing standing between a malformed deny rule and it silently not applying.
 
+What an empty list does, and when to set a value, is [Allowed ranges](#allowed-ranges).
+
+### Allowed ranges
+
+Operational half of D8 and [#1133](https://github.com/jwilleke/ngdpbase/issues/1133). `ngdpbase.security.egress.allowed-ranges` is a CIDR list, not a URL list. Empty is the shipped default, and it is the right setting for an instance that only fetches the public internet.
+
+With `allowed-ranges: []` (what ships):
+
+| Destination | Result |
+| --- | --- |
+| Public internet (`https://example.com`, a public feed, a CDN) | Allowed |
+| RFC1918 / CGNAT / IPv6 unique-local (`10/8`, `192.168/16`, `fd00::/8`, …) | Refused |
+| Loopback, link-local (incl. `169.254.169.254`), multicast, Teredo | Always refused — an allow entry cannot open these |
+
+Set the key only when this process must reach __private infrastructure__: a LAN sist2, an internal Elasticsearch, a NAS. Then put the __narrowest prefix that is actually needed__, not `0.0.0.0/0` and not all of `10.0.0.0/8`.
+
+A home instance on `192.168.68.0/24` that must reach sist2 or Elasticsearch on that segment:
+
+```json
+"ngdpbase.security.egress.allowed-ranges": ["192.168.68.0/24"]
+```
+
+That is the example the config comment already uses. It belongs in __this instance's__ custom config, not in shipped `app-default-config.json`. It lets this process fetch `http://192.168.68.71:4090` and `:9200`. It still refuses `localhost` / `127.0.0.1`, link-local, and every other private range.
+
+Bounds:
+
+- `/24` opens the whole segment, not only `.71`. If nothing else on that LAN should be reachable from the app, `192.168.68.71/32` is tighter.
+- The key is `restart: true` — change it, then `./server.sh restart`.
+- IPv6 unique-local is still denied unless you add that prefix too.
+- Do not set a dummy or overly broad list “to have a value.” That weakens the default-deny.
+- Do not set it hoping to allow `http://localhost:…` — that hostname and address are mechanism, not policy ([#1186](https://github.com/jwilleke/ngdpbase/issues/1186)).
+
 ### D9 — A fatal configuration entry boots into maintenance mode, not a dead process
 
 A malformed CIDR is the one case with no safe silent resolution. Dropping a malformed __allow__ entry fails closed and is harmless. Dropping a malformed __deny__ entry fails __open__: the operator wrote a restriction, it silently did not apply, and nothing looks wrong.
