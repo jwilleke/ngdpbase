@@ -415,6 +415,108 @@ describe('UserManager', () => {
         })
       );
     });
+
+    // ─── #631: a subject WITHOUT roles is resolved NOW, not defaulted ────────
+    //
+    // `toPermissionSubject` drops roles on purpose so a job enqueued at 09:00
+    // and running at 09:12 authorises against 09:12's roles. Its docblock said
+    // hasPermission would resolve them; hasPermission substituted anonymous.
+
+    test('hasPermission(subject without roles) resolves the user\'s CURRENT roles (#631)', async () => {
+      const policyEvaluator = installPolicyEvaluator(true);
+      userManager.provider.getUser = vi.fn().mockResolvedValue({ username: 'jim', isActive: true });
+      userManager.resolveUserRoles = vi.fn().mockResolvedValue(['editor']);
+
+      await userManager.hasPermission({ username: 'jim', isAuthenticated: true }, 'page-edit');
+
+      expect(userManager.resolveUserRoles).toHaveBeenCalledWith('jim');
+      expect(policyEvaluator.evaluateAccess).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userContext: expect.objectContaining({ username: 'jim', roles: ['editor', 'Authenticated', 'All'], isAuthenticated: true })
+        })
+      );
+    });
+
+    test('a demoted user\'s job asks with the DEMOTED roles — nothing from enqueue time survives (#631)', async () => {
+      const policyEvaluator = installPolicyEvaluator(true);
+      userManager.provider.getUser = vi.fn().mockResolvedValue({ username: 'jim', isActive: true });
+      userManager.resolveUserRoles = vi.fn().mockResolvedValue([]);
+
+      await userManager.hasPermission({ username: 'jim', isAuthenticated: true }, 'admin-system');
+
+      const seen = policyEvaluator.evaluateAccess.mock.calls[0][0].userContext.roles;
+      expect(seen).not.toContain('admin');
+      expect(seen).toEqual(['Authenticated', 'All']);
+    });
+
+    test('a subject without roles for a user who no longer exists resolves ANONYMOUS (#631)', async () => {
+      const policyEvaluator = installPolicyEvaluator(false);
+      userManager.provider.getUser = vi.fn().mockResolvedValue(null);
+      userManager.resolveUserRoles = vi.fn();
+
+      await userManager.hasPermission({ username: 'ghost', isAuthenticated: true }, 'page-edit');
+
+      expect(userManager.resolveUserRoles).not.toHaveBeenCalled();
+      expect(policyEvaluator.evaluateAccess).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userContext: expect.objectContaining({ username: 'Anonymous', roles: ['anonymous', 'All'], isAuthenticated: false })
+        })
+      );
+    });
+
+    test('the SYSTEM subject reaches policy as itself: role system, no All, authenticated (#631)', async () => {
+      const policyEvaluator = installPolicyEvaluator(true);
+      userManager.provider.getUser = vi.fn();
+      userManager.resolveUserRoles = vi.fn();
+
+      const { SYSTEM_SUBJECT } = await import('../UserManager');
+      await userManager.hasPermission(SYSTEM_SUBJECT, 'page-create');
+
+      expect(userManager.provider.getUser).not.toHaveBeenCalled();
+      expect(policyEvaluator.evaluateAccess).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userContext: expect.objectContaining({ username: 'System', roles: ['system'], isAuthenticated: true })
+        })
+      );
+    });
+  });
+
+  // ─── #1198: requirePermissions asks policy, never an isAuthenticated gate ──
+  describe('requirePermissions() (#1198)', () => {
+    function installPolicyEvaluator(allowed: boolean) {
+      const policyEvaluator = { evaluateAccess: vi.fn().mockResolvedValue({ allowed }) };
+      mockEngine.getManager = vi.fn((name) => {
+        if (name === 'ConfigurationManager') return mockConfigurationManager;
+        if (name === 'PolicyEvaluator') return policyEvaluator;
+        return null;
+      });
+      return policyEvaluator;
+    }
+    const call = (user: unknown) =>
+      new Promise<{ status?: number; next: boolean }>((resolve) => {
+        const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+        res.json.mockImplementation(() => resolve({ status: res.status.mock.calls[0]?.[0], next: false }));
+        userManager.requirePermissions(['page-edit'])({ user }, res, () => resolve({ next: true }));
+      });
+
+    test('an anonymous request is asked of POLICY, and a denial answers 401', async () => {
+      const policyEvaluator = installPolicyEvaluator(false);
+      const out = await call(undefined);
+      expect(policyEvaluator.evaluateAccess).toHaveBeenCalled();
+      expect(out).toEqual({ status: 401, next: false });
+    });
+
+    test('an authenticated request policy refuses answers 403', async () => {
+      installPolicyEvaluator(false);
+      const out = await call({ username: 'jim', roles: ['reader', 'All'], isAuthenticated: true });
+      expect(out).toEqual({ status: 403, next: false });
+    });
+
+    test('an anonymous request policy ALLOWS proceeds — the refusal moved to policy, it did not vanish', async () => {
+      installPolicyEvaluator(true);
+      const out = await call(undefined);
+      expect(out).toEqual({ next: true });
+    });
   });
 
   describe('Password Management', () => {

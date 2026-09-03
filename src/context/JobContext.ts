@@ -29,7 +29,7 @@
  * becoming asynchronous.
  */
 
-import type { PermissionSubject, AgentTokenGrant } from '../managers/UserManager.js';
+import { SYSTEM_SUBJECT, type PermissionSubject, type AgentTokenGrant } from '../managers/UserManager.js';
 
 /**
  * Where the work came from.
@@ -113,17 +113,26 @@ export function jobContextFromSchedule(reason: string, now: Date = new Date()): 
 /**
  * The subject for a permission check made *by* this job.
  *
- * `roles` is deliberately absent: `UserManager.hasPermission` resolves them
- * from the username when a subject arrives without them, which is what makes
- * the answer current rather than a replay of enqueue time.
+ * Request origin: `roles` is deliberately absent, and `UserManager.hasPermission`
+ * resolves them from the username at decision time — which is what makes the
+ * answer current rather than a replay of enqueue time. `viaToken` IS carried,
+ * so a job triggered through a delegated token is still held to that token's
+ * scopes.
  *
- * `viaToken` IS carried, so a job triggered through a delegated token is still
- * held to that token's scopes.
+ * Boot and schedule origin: the system principal, {@link SYSTEM_SUBJECT} —
+ * the `system` role and nothing else (#631, option 1). The role follows the
+ * ORIGIN, never the username, so a person cannot become the system principal
+ * by choosing a name. What it may do is the `system-tasks` policy, and it is
+ * authenticated because policy — not an `isAuthenticated` gate — is what
+ * decides allow or deny (#1198).
  */
 export function toPermissionSubject(ctx: JobContext): PermissionSubject {
+  if (ctx.origin !== 'request') {
+    return { ...SYSTEM_SUBJECT, ...(ctx.viaToken ? { viaToken: ctx.viaToken } : {}) };
+  }
   return {
     username: ctx.username,
-    isAuthenticated: ctx.origin === 'request',
+    isAuthenticated: true,
     ...(ctx.viaToken ? { viaToken: ctx.viaToken } : {})
   };
 }

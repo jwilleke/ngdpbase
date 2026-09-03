@@ -105,8 +105,34 @@ describe('#631 — asking a permission question later', () => {
     expect(subject.viaToken).toEqual(token);
   });
 
-  test('a system subject is not marked authenticated', () => {
-    expect(toPermissionSubject(jobContextFromSystem('boot')).isAuthenticated).toBe(false);
+  // #631 option 1 / #1198: the system principal is a subject policy can name.
+  // It used to be `isAuthenticated: false` with no roles, which meant every
+  // `isAuthenticated` gate refused it before policy was asked, and policy —
+  // had it been asked — would have seen anonymous. A principal that cannot act
+  // is not a principal; it is a placeholder that fails closed by accident.
+  test('a system subject holds the system role and nothing else', () => {
+    const subject = toPermissionSubject(jobContextFromSystem('boot'));
+    expect(subject.username).toBe(SYSTEM_USERNAME);
+    expect(subject.roles).toEqual(['system']);
+    expect(subject.isAuthenticated).toBe(true);
+  });
+
+  test('the system subject does NOT hold All — it gets only what a policy names for it', () => {
+    expect(toPermissionSubject(jobContextFromSchedule('retention')).roles).not.toContain('All');
+  });
+
+  test('the system role follows the ORIGIN, never the username', () => {
+    // A person who registers as "System" and triggers a job is still that
+    // person: roles are absent so they resolve to the real user record, and the
+    // system role is not among them.
+    const subject = toPermissionSubject(jobContextFromRequest({ username: SYSTEM_USERNAME }, at));
+    expect(subject.roles).toBeUndefined();
+  });
+
+  test('a request-origin subject is authenticated and resolves fresh', () => {
+    const subject = toPermissionSubject(jobContextFromRequest({ username: 'jim' }, at));
+    expect(subject.isAuthenticated).toBe(true);
+    expect(subject.roles).toBeUndefined();
   });
 });
 

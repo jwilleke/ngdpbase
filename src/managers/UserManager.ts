@@ -108,6 +108,30 @@ export const ASSERTED_SUBJECT: PermissionSubject = {
   isAuthenticated: false
 };
 
+/** The role the system principal holds. A policy subject, never a gate (#631, #1198). */
+export const SYSTEM_ROLE = 'system';
+
+/**
+ * The server acting for itself: boot tasks and timers (#631, option 1).
+ *
+ * The role comes from the ORIGIN of the work, never from a username, so no
+ * person can become this subject by choosing a name. It holds exactly one
+ * role and deliberately not `All`: `All` is the everyone-subject of
+ * `default-view-for-all`, and the system principal should hold nothing a
+ * policy did not name for it. What `system` may do is the `system-tasks`
+ * policy in the catalog — a short list, with no `admin-*` or `user-*` in it,
+ * which is what keeps this from being the permissive principal
+ * `docs/security-posture.md` warns against.
+ *
+ * A named constant for the same reason as {@link ANONYMOUS_SUBJECT}: the
+ * guard rejects every inline literal, and this is the one sanctioned shape.
+ */
+export const SYSTEM_SUBJECT: PermissionSubject = { // permission-subject-ignore: the named system principal (#631)
+  username: 'System',
+  roles: [SYSTEM_ROLE],
+  isAuthenticated: true
+};
+
 /**
  * Who a permission check is about.
  *
@@ -766,16 +790,25 @@ class UserManager extends BaseManager {
 
     // #1173: one path. There is no username-string branch any more — see
     // `userHoldsPermission` for the question that legitimately takes a name.
-    {
+    if (subject.roles) {
       // #1164: the subject's fields are optional now, because a real
       // UserContext declares them optional. Defaulting here rather than
       // widening UserContext keeps the resolved shape unchanged for everything
       // downstream, and an absent username resolves anonymous.
       userContext = {
         username: subject.username ?? 'Anonymous',
-        roles: subject.roles ?? ['anonymous', 'All'],
+        roles: subject.roles,
         isAuthenticated: subject.isAuthenticated ?? false
       };
+    } else {
+      // #631: a subject WITHOUT roles is asking to be resolved NOW. That is
+      // the shape `toPermissionSubject` hands over for a request-origin job:
+      // it carries who asked and drops the roles they held at enqueue time,
+      // so a reindex enqueued at 09:00 and running at 09:12 authorises
+      // against 09:12's roles. Until this branch existed the docblock there
+      // promised fresh resolution and this method quietly substituted
+      // anonymous — hidden only because no job asked a permission question.
+      userContext = await this.resolveSubjectNow(subject.username);
     }
 
     // Evaluate using policies - use generic page resource for permission checks
@@ -786,6 +819,25 @@ class UserManager extends BaseManager {
     }) as { allowed: boolean };
 
     return result.allowed;
+  }
+
+  /**
+   * Resolve a named user's CURRENT roles for a permission decision (#631).
+   *
+   * Used when a subject arrives without roles — a background job asking
+   * "what may my requester do, now?". An unknown, inactive or absent user
+   * resolves to the anonymous subject: the job then holds exactly what a
+   * visitor holds, which is the safe answer for someone who no longer exists.
+   */
+  private async resolveSubjectNow(username: string | undefined): Promise<UserContext> {
+    const user = username && this.provider ? await this.provider.getUser(username) : null;
+    if (!user || !user.isActive) {
+      // permission-subject-ignore: the anonymous subject, copied so the constant is never mutated.
+      return { username: 'Anonymous', roles: [...(ANONYMOUS_SUBJECT.roles ?? [])], isAuthenticated: false };
+    }
+    const baseRoles = await this.resolveUserRoles(user.username);
+    // permission-subject-ignore: THE resolution site — roles come from the store, now, not from a caller.
+    return { username: user.username, roles: [...baseRoles, 'Authenticated', 'All'], isAuthenticated: true };
   }
 
   /**
@@ -1356,16 +1408,19 @@ class UserManager extends BaseManager {
   requirePermissions(requiredPermissions: string[] = []) {
     return (req: Request, res: Response, next: NextFunction): void => {
       const reqWithUser = req as RequestWithUser;
-      const user = reqWithUser.user;
-      if (!user || !user.isAuthenticated) {
-        res.status(401).json({ error: 'Unauthorized' });
-        return;
-      }
+      // #1198: no `isAuthenticated` gate ahead of policy. Allow or deny is
+      // policy's answer and nobody else's; the anonymous role's policy already
+      // says what a visitor may do. What stays is the HTTP distinction AFTER
+      // the denial — 401 tells an anonymous caller to log in, 403 tells an
+      // authenticated one it is not allowed — a status choice, not a second
+      // decision.
+      const user: PermissionSubject = reqWithUser.user ?? ANONYMOUS_SUBJECT;
       // #1164: forward the request's context so an agent token is still capped.
       Promise.all(requiredPermissions.map((p) => this.hasPermission(user, p)))
         .then((results) => {
           if (!results.every(Boolean)) {
-            res.status(403).json({ error: 'Forbidden' });
+            if (user.isAuthenticated) res.status(403).json({ error: 'Forbidden' });
+            else res.status(401).json({ error: 'Unauthorized' });
           } else {
             next();
           }

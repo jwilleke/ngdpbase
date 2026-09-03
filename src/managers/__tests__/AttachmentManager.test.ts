@@ -541,9 +541,28 @@ describe('AttachmentManager permission enforcement (#1059)', () => {
     ).rejects.toThrow('Permission denied');
   });
 
-  test('unauthenticated caller is denied without consulting UserManager', async () => {
-    const { mgr, userManager } = makePermEngine(async () => true);
+  // #1198: allow or deny is policy's answer, never an `isAuthenticated` gate's.
+  // The previous test here asserted the opposite — "denied WITHOUT consulting
+  // UserManager" — which locked in the gate that refused the system principal
+  // (#631) and silently nulled #1181's thumbnails before policy was asked.
+  test('an unauthenticated caller is refused by POLICY, which is consulted', async () => {
+    const { mgr, userManager } = makePermEngine(async () => false);
     await expect(mgr.deleteAttachment('abc', { username: 'guest', isAuthenticated: false })).rejects.toThrow('Permission denied');
+    expect(userManager.hasPermission).toHaveBeenCalledWith(
+      expect.objectContaining({ username: 'guest', isAuthenticated: false }),
+      'asset-delete'
+    );
+  });
+
+  test('an unauthenticated caller the policy allows is allowed — the refusal moved, it did not vanish', async () => {
+    const { mgr, userManager } = makePermEngine(async () => true);
+    await expect(mgr.deleteAttachment('abc', { username: 'guest', isAuthenticated: false })).resolves.toBe(true);
+    expect(userManager.hasPermission).toHaveBeenCalled();
+  });
+
+  test('a MISSING context still fails closed — that is #1179, not an authentication gate', async () => {
+    const { mgr, userManager } = makePermEngine(async () => true);
+    await expect(mgr.deleteAttachment('abc', undefined)).rejects.toThrow('Permission denied');
     expect(userManager.hasPermission).not.toHaveBeenCalled();
   });
 

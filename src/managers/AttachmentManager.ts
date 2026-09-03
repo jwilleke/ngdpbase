@@ -426,9 +426,14 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * @private
    */
   private async checkPermission(permission: string, userContext?: UserContext): Promise<boolean> {
-    // Check if user is authenticated
-    if (!userContext || !userContext.isAuthenticated) {
-      logger.warn(`📎 Permission denied for ${permission}: User not authenticated`);
+    // #1198: no `isAuthenticated` gate ahead of policy. This one refused the
+    // system principal (#631) and turned #1181's thumbnail path into a silent
+    // null — before policy was ever asked. Allow or deny is policy's answer;
+    // the anonymous role's policy says what an unauthenticated subject may
+    // do. A MISSING context still fails closed: that is "nothing runs
+    // without a context" (#1179), not an authentication check.
+    if (!userContext) {
+      logger.warn(`📎 Permission denied for ${permission}: no context supplied`);
       return false;
     }
 
