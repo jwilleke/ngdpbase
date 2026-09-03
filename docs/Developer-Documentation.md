@@ -216,7 +216,9 @@ System design and architectural patterns:
 | [CacheManager Complete Guide](managers/CacheManager-Complete-Guide.md) | Caching strategy — both CacheManager regions and provider-level structural caches |
 | [Access-Control](architecture/Access-Control.md) | Operational guide for `hasRole` / `hasPermission` / `canAccess` / `getPrincipals` |
 | [Page-Metadata](architecture/Page-Metadata.md) | Page frontmatter structure |
+| [Security posture](security-posture.md) | The decision record for security-related settings — guiding principles P1 (every call carries a context) and P2 (allow/deny is a permission), decisions D1 onward |
 | [Audit posture](audit-posture.md) | Inventory of implemented audit capabilities — chain, registry, durability, witness, verification |
+| [Architecture principles (TypeScript)](planning/architecture-principles-typescript.md) | The principles the codebase is held to — store boundaries, managers as the write door, provenance, and the migration tool as a witness |
 
 ### Core Concepts
 
@@ -263,6 +265,8 @@ npm run docs:html   # Generate HTML
 
 ### Installation & Setup
 
+- [Implementation](installation/Implementation.md) — __Lead document.__ The four ways an instance is implemented and what each inherits from this repository
+- [bootstrap-methodology](bootstrap-methodology.md) — The three boot layers, `.env` precedence, and where a new environment variable goes
 - [installation-system](installation/installation-system.md) — Installation wizard details
 - [install-complete marker](installation/install-complete.md) — `.install-complete` marker lifecycle
 - [startup-process](installation/startup-process.md) — Startup sequence documentation
