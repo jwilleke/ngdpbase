@@ -61,9 +61,24 @@ async function tokensUsable(request): Promise<boolean> {
     });
     // 403 means CSRF rejected it, i.e. bearer auth did not happen. Any other
     // answer (201 mint, or a 4xx from the route's own rules) means it did.
-    const ok = probe.status() !== 403;
+    //
+    // #1182 — one 403 is NOT a CSRF rejection. The edge gate (#1173 Part A)
+    // refuses `POST /api/tokens` to any token, deliberately: a token minting
+    // further tokens is delegation widening. That refusal is 403 with a JSON
+    // body naming the reason, and it is POSITIVE evidence — the gate runs only
+    // inside the bearer middleware's `viaToken` branch, so reaching it proves
+    // the token authenticated.
+    //
+    // Reading only the status made this probe answer "tokens unusable" the
+    // moment the gate shipped, which skipped all six tests in this file while
+    // the run reported `6 skipped / 90 passed`. A guard that silently disables
+    // its own suite is worse than no guard, and this file covers the two
+    // routes that regression broke.
+    const probeBodyEarly = await probe.json().catch(() => null) as { reason?: string } | null;
+    const refusedByGate = probe.status() === 403 && typeof probeBodyEarly?.reason === 'string';
+    const ok = probe.status() !== 403 || refusedByGate;
 
-    const probeBody = await probe.json().catch(() => ({}));
+    const probeBody = (probeBodyEarly ?? {}) as { record?: { id?: string } };
     if (probeBody?.record?.id) {
       await request.delete(`/api/tokens/${probeBody.record.id}`, { headers: await sessionHeaders(request) }).catch(() => {});
     }

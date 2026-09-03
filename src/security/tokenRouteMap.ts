@@ -84,8 +84,78 @@ export const TOKEN_ROUTE_MAP: readonly TokenRoute[] = Object.freeze([
     pattern: '/api/page-metadata/:page',
     scopes: ['page-read'],
     note: 'frontmatter and provenance for the page being ingested'
+  },
+  {
+    method: 'DELETE',
+    pattern: '/api/page/:identifier',
+    scopes: ['page-delete'],
+    note: 'built for tokens by #946; `page-delete` is mintable, so refusing it here refused a capability the system grants'
+  },
+  {
+    method: 'POST',
+    pattern: '/api/page/:identifier/rename',
+    scopes: ['page-rename'],
+    note: 'built for tokens by #946; `page-rename` is mintable'
   }
 ]);
+
+/**
+ * Mintable scopes with NO token-reachable route, and why (#1182).
+ *
+ * The first version of this map held three entries chosen from recall, and
+ * refused `page-delete` and `page-rename` — both mintable, both built for
+ * tokens by #946. A token minted with `page-delete` could not delete anything.
+ *
+ * The map being minimal was not the defect. The defect was that "minimal" was
+ * never checked against what the system actually issues: `AgentTokenManager`
+ * mints any scope that is not `admin-*`, so every one of those is a capability
+ * the operator was offered. A scope that is grantable and unreachable is a
+ * promise the product does not keep, and it should be a stated decision rather
+ * than an omission nobody notices.
+ *
+ * `scopeCoverage()` asserts every mintable scope appears in one list or the
+ * other, so adding a permission without deciding this fails the build.
+ *
+ * These are listed as unreachable pending a decision, not as forbidden. There
+ * is no evidence any of them was ever token-reachable, and widening the token
+ * surface is not something to do while fixing a regression.
+ */
+export const UNREACHABLE_SCOPES: Record<string, string> = Object.freeze({
+  'page-export': 'no export route is exposed to tokens; bulk extraction wants its own decision',
+  'asset-read': 'attachment reads are unmapped pending a decision — see #1182',
+  'asset-upload': 'attachment upload by token is unmapped pending a decision',
+  'asset-delete': 'attachment destruction by token is unmapped pending a decision',
+  'asset-edit': 'EXIF/IPTC edits change provenance; unmapped pending a decision',
+  'search-page': 'search is unmapped pending a decision',
+  'search-user': 'enumerating people is disclosive; unmapped pending a decision',
+  'user-read': 'user records are unmapped pending a decision',
+  'user-create': 'account lifecycle by token is unmapped pending a decision',
+  'user-edit': 'includes role changes; unmapped pending a decision',
+  'user-delete': 'account destruction by token is unmapped pending a decision'
+});
+
+/**
+ * Every mintable scope, split into reachable and deliberately-not.
+ *
+ * Takes the permission list rather than reading `UserManager`, so the check is
+ * a pure function its test can drive with a known set.
+ */
+export function scopeCoverage(
+  mintableScopes: readonly string[],
+  map: readonly TokenRoute[] = TOKEN_ROUTE_MAP,
+  unreachable: Record<string, string> = UNREACHABLE_SCOPES
+): { reachable: string[]; declaredUnreachable: string[]; undecided: string[] } {
+  const routed = new Set(map.flatMap((r) => r.scopes));
+  const reachable: string[] = [];
+  const declaredUnreachable: string[] = [];
+  const undecided: string[] = [];
+  for (const scope of mintableScopes) {
+    if (routed.has(scope)) reachable.push(scope);
+    else if (scope in unreachable) declaredUnreachable.push(scope);
+    else undecided.push(scope);
+  }
+  return { reachable, declaredUnreachable, undecided };
+}
 
 /** Why a request was refused, for the log and the response. */
 export type GateRefusal = 'unmapped' | 'out-of-scope' | 'malformed-path';
