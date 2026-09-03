@@ -1100,11 +1100,20 @@ class ConfigurationManager extends BaseManager {
   }
 
   /**
-   * Get session secret
+   * Get session secret.
+   *
+   * #1194: no literal fallback. `ngdpbase.session.secret` is env-owned and
+   * `src/bootstrap-env.ts` guarantees `NGDPBASE_SESSION_SECRET` is set (or
+   * exits) before this class loads, so the env-keys path in getProperty()
+   * always answers. The shipped config value is a public string and must
+   * never be what this returns; an empty string is the honest answer if the
+   * guarantee is somehow broken. `app.ts` does not call this — it reads
+   * `resolveSessionSecret(process.env)` directly — and nothing else does.
+   *
    * @returns {string} Session secret
    */
   getSessionSecret(): string {
-    return this.getProperty('ngdpbase.session.secret', 'ngdpbase-session-secret-change-in-production') as string;
+    return (this.getProperty('ngdpbase.session.secret', '') as string) ?? '';
   }
 
   /**

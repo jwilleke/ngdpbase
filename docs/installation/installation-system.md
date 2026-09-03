@@ -146,7 +146,7 @@ These override the corresponding config file properties at runtime:
 | `NGDPBASE_HOSTNAME` | `ngdpbase.hostname` | Server hostname | (from config) |
 | `NGDPBASE_HOST` | `ngdpbase.server.host` | Server bind address | `localhost` |
 | `NGDPBASE_PORT` | `ngdpbase.server.port` | Server port | `3000` |
-| `NGDPBASE_SESSION_SECRET` | `ngdpbase.session.secret` | Session encryption key | (from config) |
+| `NGDPBASE_SESSION_SECRET` | `ngdpbase.session.secret` | Session cookie signing key | generated into `<FAST_STORAGE>/.env` on first boot if unset (#1194) |
 | `NGDPBASE_APP_NAME` | `ngdpbase.application-name` | Application display name | `ngdpbase` |
 
 These overrides are implemented in `src/managers/ConfigurationManager.ts:173-180`.

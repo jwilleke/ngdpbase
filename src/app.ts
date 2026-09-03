@@ -11,7 +11,7 @@
 // ES imports are hoisted, so this is the only reliable way to populate the
 // environment before any other module's top-level code runs. See that file's
 // header for why containers need it and how precedence works.
-import './bootstrap-env.js';
+import { sessionSecretOrigin } from './bootstrap-env.js';
 
 import path from 'path';
 import express, { Request, Response, NextFunction } from 'express';
@@ -40,6 +40,7 @@ import InstallRoutes from './routes/InstallRoutes.js';
 import InstallService from './services/InstallService.js';
 import { ThemeManager } from './managers/ThemeManager.js';
 import { resolveSessionSecurity } from './utils/sessionSecurity.js';
+import { resolveSessionSecret } from './utils/sessionSecret.js';
 import type PageManager from './managers/PageManager.js';
 
 // Project root — reliable because PM2/server.sh always run from the project directory.
@@ -595,6 +596,14 @@ void (async (): Promise<void> => {
     `🔐 Session cookie: secure=${sessionSecure} httpOnly=${sessionHttpOnly} sameSite=lax ` +
     `trustProxy=${JSON.stringify(sessionSecurity.trustProxy)}`
   );
+  if (sessionSecretOrigin.kind === 'generated') {
+    logger.warn(
+      '🔐 Session secret was not set. Generated one and wrote NGDPBASE_SESSION_SECRET to ' +
+      `${sessionSecretOrigin.path} (#1194). Sessions survive restarts as long as that file does.`
+    );
+  } else if (sessionSecretOrigin.kind === 'instance-env-file') {
+    logger.info(`🔐 Session secret: from ${sessionSecretOrigin.path} (the environment had it blank)`);
+  }
 
   app.use(session({
     store: new FileStore({
@@ -603,7 +612,12 @@ void (async (): Promise<void> => {
       retries: 0,
       reapInterval: 3600
     }),
-    secret: configManager.getProperty('ngdpbase.session.secret', 'ngdpbase-session-secret-change-in-production'),
+    // #1194: the ONLY reader of the session secret. bootstrap-env.ts made
+    // NGDPBASE_SESSION_SECRET true (from the environment, the instance .env,
+    // or by generating and backfilling it) or exited; this re-check is the
+    // guard against a later import clearing it. Never the config key, whose
+    // shipped value is a public literal.
+    secret: resolveSessionSecret(process.env),
     resave: false,
     saveUninitialized: false,
     cookie: {

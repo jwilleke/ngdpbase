@@ -74,7 +74,7 @@ These environment variables override the corresponding config file properties at
 | `NGDPBASE_HOSTNAME`         | `ngdpbase.hostname`           | (from config) |
 | `NGDPBASE_HOST`             | `ngdpbase.server.host`        | `localhost` |
 | `NGDPBASE_PORT`             | `ngdpbase.server.port`        | `3000`      |
-| `NGDPBASE_SESSION_SECRET`   | `ngdpbase.session.secret`     | (from config) |
+| `NGDPBASE_SESSION_SECRET`   | `ngdpbase.session.secret`     | generated into `<FAST_STORAGE>/.env` on first boot if unset (#1194) |
 | `NGDPBASE_APP_NAME`         | `ngdpbase.application-name`    | `ngdpbase`   |
 
 ### Instance Management Variables

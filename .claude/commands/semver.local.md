@@ -57,6 +57,12 @@ for i in $(seq 1 18); do
   [ "$S" = "unhealthy" ] && { docker logs ngdpbase-release-smoke; break; }
   sleep 5
 done
+
+# #1194 — no NGDPBASE_SESSION_SECRET was passed, so the instance must have
+# generated one into the mounted volume's .env. Must print a line; must not be
+# the shipped literal.
+grep '^NGDPBASE_SESSION_SECRET=' "$SM/.env" | sed 's/=.*/=<set>/'
+grep -q 'ngdpbase-session-secret-change-in-production' "$SM/.env" && echo "FAILED: shipped literal"
 ```
 
 Then clean up whatever the outcome:

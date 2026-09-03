@@ -253,7 +253,7 @@ docker run -d \
 | `HEADLESS_INSTALL` | Enable headless mode | `false` |
 | `NGDPBASE_APP_NAME` | Application display name | `ngdpbase` |
 | `NGDPBASE_BASE_URL` | Base URL for the wiki | (empty) |
-| `NGDPBASE_SESSION_SECRET` | Session encryption key | (from config) |
+| `NGDPBASE_SESSION_SECRET` | Session cookie signing key | generated into `<data volume>/.env` on first boot if unset (#1194) |
 | `NGDPBASE_HOST` | Server bind address | `localhost` |
 | `NGDPBASE_PORT` | Server port | `3000` |
 | `INSTANCE_DATA_FOLDER` | Data directory path | `./data` |

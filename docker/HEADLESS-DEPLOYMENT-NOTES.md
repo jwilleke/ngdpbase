@@ -185,7 +185,7 @@ See `docs/platform/addon-development-guide.md` UUID requirements section for the
 
 __Symptom.__ Logged-in users get bumped to anonymous after every pod restart. Browser still holds a session cookie, but the server treats them as Anonymous.
 
-__Root cause.__ Without `NGDPBASE_SESSION_SECRET` set, `ngdpbase` generates a random secret on each pod start. Existing cookies' HMAC signatures stop validating against the new secret.
+__Root cause.__ Without `NGDPBASE_SESSION_SECRET` set, `ngdpbase` generates a random secret on first boot and writes it to `<data volume>/.env` ([#1194](https://github.com/jwilleke/ngdpbase/issues/1194)). On a persistent volume that file survives and so do the sessions. On an ephemeral volume (`emptyDir`, or a fresh volume per pod) the file is gone at the next start, a new secret is generated, and existing cookies' HMAC signatures stop validating against it. (Before #1194 the fallback was worse: the literal shipped in `app-default-config.json`, the same on every install.)
 
 The exact env-var name matters — `ConfigurationManager.ts` reads `process.env.NGDPBASE_SESSION_SECRET`. A misnamed `SESSION_SECRET` is silently ignored and looks like the bug above on every restart.
 

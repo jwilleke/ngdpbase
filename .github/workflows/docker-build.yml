@@ -211,6 +211,25 @@ jobs:
             sleep 5
           done
 
+      - name: Smoke test — the session secret was generated into the data volume
+        run: |
+          # #1194: NGDPBASE_SESSION_SECRET was deliberately NOT passed above.
+          # The instance must have generated one and backfilled the per-instance
+          # .env on the mounted volume, so the second boot signs cookies with
+          # the same value — and never with the literal in app-default-config.
+          if ! grep -q '^NGDPBASE_SESSION_SECRET=.\+' "$RUNNER_TEMP/smoke-data/.env" 2>/dev/null; then
+            echo "FAILED: healthy, but no NGDPBASE_SESSION_SECRET line was written to the"
+            echo "        data volume's .env. #1194's backfill is not working in this image."
+            ls -la "$RUNNER_TEMP/smoke-data" || true
+            docker logs ngdpbase-smoke
+            exit 1
+          fi
+          if grep -q 'ngdpbase-session-secret-change-in-production' "$RUNNER_TEMP/smoke-data/.env"; then
+            echo "FAILED: the backfilled secret is the shipped public literal."
+            exit 1
+          fi
+          echo "Session secret generated and persisted on the data volume, as #1194 requires."
+
       - name: Smoke test — HTTP checks
         run: |
           BASE=http://localhost:3000

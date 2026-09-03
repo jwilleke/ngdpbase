@@ -10,11 +10,11 @@ Three layers, in the order they run:
 2. __Configuration__ — `ConfigurationManager` merges shipped defaults with instance overrides, then resolves `$VAR` references against that environment at every lookup.
 3. __Install__ — a `.install-complete` marker gates the setup wizard; `HEADLESS_INSTALL=true` skips it.
 
-Nothing in the codebase ever __writes__ a `.env`. You create it by hand from `.env.example`.
+Nothing in the codebase __writes__ a `.env`, with one exception: when `NGDPBASE_SESSION_SECRET` is absent at boot, `bootstrap-env.ts` generates one and appends it to `<FAST_STORAGE>/.env` ([#1194](https://github.com/jwilleke/ngdpbase/issues/1194), below). Everything else you create by hand from `.env.example`.
 
 ### What `bootstrap-env.ts` is, and is not
 
-It is the __environment__ bootstrap: layer 1 only. Roughly twenty lines of code whose entire job is to populate `process.env` from two `.env` files in a defined precedence, before anything else evaluates. It is the single mechanism for that, and the first thing that runs in any ngdpbase process.
+It is the __environment__ bootstrap: layer 1 only. Its job is to populate `process.env` from two `.env` files in a defined precedence, before anything else evaluates, and then to guarantee one variable — `NGDPBASE_SESSION_SECRET` — is set, generating it if nothing supplied it. It is the single mechanism for both, and the first thing that runs in any ngdpbase process.
 
 It is __not__ the whole bootstrap, and importing it does not make a script behave like the app:
 
@@ -65,7 +65,23 @@ if [ -f "$_FAST/.env" ]; then set -a; source "$_FAST/.env"; set +a; fi
 
 Sourcing order is reversed relative to `bootstrap-env.ts`, but the __precedence is identical__: shell assignment overwrites (so last wins), `dotenv` does not (so first wins). Both end with the instance file beating the root file, and both are then beaten by anything already exported.
 
-When launched via `server.sh`, both files are already in the ambient environment by the time node starts, so `bootstrap-env.ts` finds nothing to conflict with and is effectively a no-op. It earns its keep in containers.
+When launched via `server.sh`, both files are already in the ambient environment by the time node starts, so the file-loading half of `bootstrap-env.ts` finds nothing to conflict with. The session-secret guarantee below still runs. The file loading earns its keep in containers.
+
+### The session secret guarantee
+
+`ngdpbase.session.secret` is the key express-session signs the session cookie with; whoever holds it can forge a signed-in session. It ships in `app-default-config.json` as the literal `ngdpbase-session-secret-change-in-production`, and until [#1194](https://github.com/jwilleke/ngdpbase/issues/1194) the code fell back to that same literal — so an instance that set neither `NGDPBASE_SESSION_SECRET` nor a config override signed every session with a string anyone can read. Two live instances were found doing so, and nothing said so.
+
+The rule now: __`NGDPBASE_SESSION_SECRET` MUST be defined in `.env`__, and `bootstrap-env.ts` makes that true rather than waiting for a human. After the two `.env` files load, `ensureSessionSecret()` (`src/utils/sessionSecret.ts`) runs:
+
+1. Set and not a placeholder — used as-is, nothing written. A Kubernetes deployment injecting it from a Secret never touches the volume.
+2. Blank in the environment but present in `<FAST_STORAGE>/.env` — that line is used. This covers a launcher that passed the variable empty (compose `${VAR:-}`, `docker run -e VAR=`), which `dotenv` then refuses to override; without this step every such boot would generate again and sign everyone out.
+3. Otherwise a 32-byte random value is generated, appended as one line to `<FAST_STORAGE>/.env` (the file is created `0600` if new), and set in `process.env`. `app.ts` logs one `warn` line on that boot naming the file. Silent thereafter.
+
+Two cases refuse to start, before the logger exists, with the reason on stderr: a __placeholder__ value (the shipped literal, `change-me-in-production`, and the example values older docs carried) — rewriting a line the operator wrote would be more invasive than telling them — and a __failed append__ (read-only volume, permissions), because the rule cannot be made true.
+
+`app.ts` reads the secret from `process.env` alone (`resolveSessionSecret`), never from the config key. The shipped config value is therefore never what signs a cookie. Rotating the variable signs every user out and nothing else; the sessions themselves live in `<FAST_STORAGE>/sessions` and are reaped by TTL.
+
+The repo-root `.env` is never written. It is shared by every instance launched from the checkout, and the per-instance file is the documented home for machine-specific secrets.
 
 ### Every entry point loads it
 
@@ -114,8 +130,8 @@ Six keys are __owned by the environment__, declared in `ngdpbase.config.env-keys
 The governing rule is __a key is owned by exactly one layer, never both__. These six are the environment's, so:
 
 - They are __always read-only__ on `/admin/configuration`, whether or not the variable is currently set — shown with an `Environment` badge naming the variable. A write is refused with a `409`.
-- The value shipped in `app-default-config.json` for such a key is a __boot fallback__, not a setting. It exists so a fresh install comes up.
-- To change one: set the variable in `.env` and restart. Nothing here writes `.env`, by design.
+- The value shipped in `app-default-config.json` for such a key is a __boot fallback__, not a setting. It exists so a fresh install comes up. For `ngdpbase.session.secret` the shipped value is never used at all: the guarantee above sets the variable before configuration is read.
+- To change one: set the variable in `.env` and restart. Nothing here writes `.env`, by design — except the session-secret backfill, which writes exactly one line, once, and only when the variable is absent.
 
 `ngdpbase.application.base-url` is the one asymmetry: it may equally be set in `app-custom-config.json` — the install wizard writes it there — so its UI copy names both routes. It is listed because `docker-compose-traefik.yml` composes it at deploy time and `InstallService` names the variable as the alternative for headless installs, so the environment must remain a valid source.
 
@@ -189,7 +205,7 @@ Until `#1087` this was documentation without implementation: the comment claimed
 
 ## Setting `.env` values
 
-__By hand.__ Nothing in `src/`, `scripts/`, `server.sh`, or `docker/` writes a `.env` file; the only writes anywhere in the tree are test fixtures in `src/__tests__/bootstrap-env.test.ts`.
+__By hand__, with one exception. The only production write to a `.env` anywhere in `src/`, `scripts/`, `server.sh`, or `docker/` is the session-secret backfill in `bootstrap-env.ts` ([#1194](https://github.com/jwilleke/ngdpbase/issues/1194)): one appended line to `<FAST_STORAGE>/.env`, only when `NGDPBASE_SESSION_SECRET` is absent. Everything else is yours to set. (Test fixtures in `src/__tests__/bootstrap-env.test.ts` also write, to scratch paths.)
 
 `.env` is gitignored (`.gitignore:68-71` ignores `.env` and `.env.*` while keeping `!.env.example`). Copy the template and fill it in:
 
@@ -215,6 +231,7 @@ That split is what lets an instance config be committed or managed by GitOps whi
 | `PORT` | Listen port, default 3000 |
 | `NODE_ENV` | `production` turns on secure session cookies by default |
 | `NGDPBASE_ADMIN_PASSWORD` | Only used when the config key points at it (see above) |
+| `NGDPBASE_SESSION_SECRET` | Signs the session cookie. Generated into `<FAST_STORAGE>/.env` on first boot if absent; set it yourself only to manage it. Placeholders are refused |
 | `HEADLESS_INSTALL` | `true` skips the setup wizard |
 
 Both storage variables default to `./data`, so a single-drive setup can leave them alone or point both at the same path.
@@ -225,7 +242,7 @@ Instance separation is environment-driven rather than first-class: give each ins
 
 ## Container deployments
 
-`docker/docker-compose.yml` passes `NODE_ENV`, `INSTANCE_DATA_FOLDER`, `INSTANCE_CONFIG_FILE`, and `EXTERNAL_PORT` through the `environment:` block, mounts `../data` at `/app/data`, and mounts `../required-pages` read-only. Because `bootstrap-env.ts` runs regardless of launcher, a `.env` placed on the mounted data volume is picked up — which is the whole reason that module exists.
+`docker/docker-compose.yml` passes `NODE_ENV`, `INSTANCE_DATA_FOLDER`, `INSTANCE_CONFIG_FILE`, and `EXTERNAL_PORT` through the `environment:` block, mounts `../data` at `/app/data`, and mounts `../required-pages` read-only. Because `bootstrap-env.ts` runs regardless of launcher, a `.env` placed on the mounted data volume is picked up — which is the whole reason that module exists. The same holds for the session secret: a container started without `NGDPBASE_SESSION_SECRET` generates one into the volume's `.env`, so it survives restarts as long as the volume does. On an ephemeral volume it is regenerated each start and every user is signed out — the symptom in `docker/HEADLESS-DEPLOYMENT-NOTES.md` §8 — never an insecure one.
 
 ## Related
 
@@ -237,3 +254,4 @@ Instance separation is environment-driven rather than first-class: give each ins
 - [#1088](https://github.com/jwilleke/ngdpbase/issues/1088) — resolved in `3d8ef679`: `bootstrap-env` consolidated across every entry point
 - [#1089](https://github.com/jwilleke/ngdpbase/issues/1089) — resolved in `a1c0d38c`: environment-owned keys declared and read-only in the admin UI
 - [#1090](https://github.com/jwilleke/ngdpbase/issues/1090) — resolved in `a47f6932`: `ngdpbase.server.port` now binds the port
+- [#1194](https://github.com/jwilleke/ngdpbase/issues/1194) — the session secret is guaranteed at boot: generated and backfilled into `<FAST_STORAGE>/.env` when absent, never the shipped literal

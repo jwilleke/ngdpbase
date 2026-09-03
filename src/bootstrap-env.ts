@@ -37,7 +37,13 @@
 
 import path from 'path';
 import fs from 'fs';
+import { randomBytes } from 'crypto';
 import dotenv from 'dotenv';
+import {
+  ensureSessionSecret,
+  SESSION_SECRET_ENV,
+  type SessionSecretOrigin
+} from './utils/sessionSecret.js';
 
 const rootEnvPath = path.join(process.cwd(), '.env');
 
@@ -65,3 +71,38 @@ dotenv.config({
 });
 
 dotenv.config({ path: rootEnvPath, quiet: true });
+
+/**
+ * #1194: `NGDPBASE_SESSION_SECRET` MUST be defined in `.env`. If none of the
+ * three sources above supplied it, generate one and backfill the per-instance
+ * file, so the rule is true from the second boot on and the first boot never
+ * runs on the literal shipped in app-default-config.json.
+ *
+ * This is the one place ngdpbase writes a `.env`. The `env-keys` comment in
+ * app-default-config.json records the exception. A placeholder value, or a
+ * file that cannot be appended to, refuses boot here — before the logger
+ * exists, so the message goes to stderr.
+ */
+export let sessionSecretOrigin: SessionSecretOrigin;
+try {
+  const result = ensureSessionSecret(process.env, resolveInstanceDataDir(), {
+    readFile: (p) => {
+      try {
+        return fs.readFileSync(p, 'utf8');
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+        throw err;
+      }
+    },
+    appendFile: (p, line, mode) => {
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.appendFileSync(p, line, { mode });
+    },
+    randomSecret: () => randomBytes(32).toString('base64')
+  });
+  process.env[SESSION_SECRET_ENV] = result.secret;
+  sessionSecretOrigin = result.origin;
+} catch (err) {
+  console.error('🔥🔥🔥 FATAL: ' + (err as Error).message);
+  process.exit(1);
+}
