@@ -184,6 +184,25 @@ async register(engine, config) {
 
 ## 4. Using the Engine
 
+### Importing host code — through `dist/`, never `src/`
+
+The host compiles to `dist/`. A bundled addon compiles __in place__ (its `tsconfig.json` has `rootDir` and `outDir` of `../..`), so its `.js` sits beside its `.ts`. Any value you import from the host must therefore be a path that exists at runtime:
+
+```typescript
+// Right — resolves in Node and in vitest (CI builds before it tests)
+import logger from '../../dist/src/utils/logger.js';
+import { guardedFetch } from '../../../dist/src/http/guardedFetch.js';
+
+// Wrong — see below
+import { guardedFetch } from '../../../src/http/guardedFetch.js';
+```
+
+The wrong form is worse than a missing file. Because the addon's `rootDir` spans the repository, importing `src/http/guardedFetch.js` pulls the host's `.ts` into __your__ compilation and emits `src/http/guardedFetch.js` next to it. On your machine the import then works. The container image copies `dist/` and `addons/` but not `src/`, so there Node throws `ERR_MODULE_NOT_FOUND` on the addon's first line and `AddonsManager` skips the addon with one log line. That is how v4.13.0 shipped with `elasticsearch` and `feeds` dead while every test was green ([#1192](https://github.com/jwilleke/ngdpbase/issues/1192)).
+
+`import type` from either place is fine — it is erased at compile and seeks no file — but `dist/` has the `.d.ts` files too, so there is no reason to point at `src/`.
+
+Two gates enforce this: `npm run lint:addons` fails on any addon value import that resolves under `src/` (and on any compiled `.js` found under `src/`), and `npm run check:addon-load` imports every `addons/*/index.js` in a child Node process after the build.
+
 ### Access a Manager
 
 ```javascript
@@ -595,8 +614,8 @@ router.get('/feed.ics', async (req, res) => {
 ```typescript
 // routes/api.ts
 import express from 'express';
-import { ApiContext, ApiError } from '../../../src/context/ApiContext';
-import type { WikiEngine } from '../../../src/types/WikiEngine';
+import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
+import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 
 export default function apiRoutes(engine: WikiEngine, _config: Record<string, unknown>) {
   const router = express.Router();
@@ -731,6 +750,7 @@ Keep core PRs self-contained — no add-on-specific code in the core repo.
 - [ ] `status()` returns `{ healthy: bool, message: string }` for admin health display
 - [ ] `shutdown()` closes any open connections or file handles
 - [ ] Dependencies declared in `dependencies[]` if your add-on relies on another
+- [ ] Host code is imported through `dist/…`, never `src/…` — `npm run lint:addons` and `npm run check:addon-load` are green
 - [ ] Seed pages in `pages/` use real UUID v4 filenames and matching `uuid` frontmatter
 - [ ] `pages/left-menu-content.md` and `pages/footer-content.md` present if the add-on owns the UI chrome
 - [ ] If shipping a theme: `theme/theme.json` present (sentinel) and `domainDefaults` sets `ngdpbase.theme.active`

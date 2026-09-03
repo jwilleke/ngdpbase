@@ -8,7 +8,7 @@
 
 import { Sist2AssetProvider } from '../src/Sist2AssetProvider';
 import type { Client } from '@elastic/elasticsearch';
-import { guardedFetch } from '../../../src/http/guardedFetch.js';
+import { guardedFetch } from '../../../dist/src/http/guardedFetch.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -76,7 +76,7 @@ function makeSearchResponse(docs, total) {
 // no injectable transport parameter, because one way to reach the network was
 // the point.
 
-vi.mock('../../../src/http/guardedFetch.js', () => ({ guardedFetch: vi.fn() }));
+vi.mock('../../../dist/src/http/guardedFetch.js', () => ({ guardedFetch: vi.fn() }));
 
 const mockFetch = vi.mocked(guardedFetch);
 

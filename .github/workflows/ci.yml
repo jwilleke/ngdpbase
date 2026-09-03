@@ -39,6 +39,11 @@ jobs:
       - name: Build TypeScript
         run: npm run build
 
+      # #1192: every bundled addon must load with NODE's resolver, not vitest's.
+      # Two addons shipped dead in v4.13.0 while every other gate was green.
+      - name: Addons load in Node
+        run: npm run check:addon-load
+
       # --- #1093 diagnostics -------------------------------------------------
       # The Test Suite job goes red in roughly 1 run in 7 with a Vitest file
       # "missing" from node_modules, while every test passes. The stack says

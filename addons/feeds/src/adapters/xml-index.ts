@@ -1,5 +1,5 @@
-import { guardedFetch } from '../../../../src/http/guardedFetch.js';
-import type { EgressPolicy } from '../../../../src/http/ssrf.js';
+import { guardedFetch } from '../../../../dist/src/http/guardedFetch.js';
+import type { EgressPolicy } from '../../../../dist/src/http/ssrf.js';
 import { isOk, reason } from './http.js';
 /**
  * xml-index adapter (#912) — dependency: fast-xml-parser (shared with the xml

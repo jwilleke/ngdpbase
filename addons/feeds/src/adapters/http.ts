@@ -13,7 +13,7 @@
  * `guardedFetch`, and one way is the point.
  */
 
-import type { GuardedResponse } from '../../../../src/http/guardedFetch.js';
+import type { GuardedResponse } from '../../../../dist/src/http/guardedFetch.js';
 
 /** 2xx, and only 2xx — the `res.ok` these call sites were written against. */
 export function isOk(res: GuardedResponse): boolean {

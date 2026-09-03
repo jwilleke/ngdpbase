@@ -12,9 +12,9 @@ import type { FeedSourceConfig } from '../src/types';
 // stub would now pass while testing nothing. Mocking the module is the seam,
 // because production deliberately has no injectable transport parameter —
 // one way to reach the network was the point.
-vi.mock('../../../src/http/guardedFetch.js', () => ({ guardedFetch: vi.fn() }));
-import { guardedFetch } from '../../../src/http/guardedFetch.js';
-import type { EgressPolicy } from '../../../src/http/ssrf.js';
+vi.mock('../../../dist/src/http/guardedFetch.js', () => ({ guardedFetch: vi.fn() }));
+import { guardedFetch } from '../../../dist/src/http/guardedFetch.js';
+import type { EgressPolicy } from '../../../dist/src/http/ssrf.js';
 
 const mockGuardedFetch = vi.mocked(guardedFetch);
 

@@ -63,6 +63,10 @@ done
 # the shipped literal.
 grep '^NGDPBASE_SESSION_SECRET=' "$SM/.env" | sed 's/=.*/=<set>/'
 grep -q 'ngdpbase-session-secret-change-in-production' "$SM/.env" && echo "FAILED: shipped literal"
+
+# #1192 — every bundled addon must have loaded IN THE IMAGE. AddonsManager
+# logs and continues on a dead addon, so the container is healthy either way.
+docker logs ngdpbase-release-smoke 2>&1 | grep "Failed to load add-on" && echo "FAILED: addon did not load"
 ```
 
 Then clean up whatever the outcome:

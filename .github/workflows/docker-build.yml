@@ -230,6 +230,19 @@ jobs:
           fi
           echo "Session secret generated and persisted on the data volume, as #1194 requires."
 
+      - name: Smoke test — every bundled addon loaded
+        run: |
+          # #1192: AddonsManager catches a failed addon and CONTINUES — correct,
+          # one bad addon must not take the instance down — so two dead addons
+          # in v4.13.0 were a log line and a healthy container. The image is the
+          # one environment where the addon/host path is real; read its log.
+          if docker logs ngdpbase-smoke 2>&1 | grep -q "Failed to load add-on"; then
+            echo "FAILED: an addon did not load in the image:"
+            docker logs ngdpbase-smoke 2>&1 | grep -A3 "Failed to load add-on"
+            exit 1
+          fi
+          echo "No 'Failed to load add-on' in the container log."
+
       - name: Smoke test — HTTP checks
         run: |
           BASE=http://localhost:3000

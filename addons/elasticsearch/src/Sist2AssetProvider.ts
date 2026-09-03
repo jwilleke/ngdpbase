@@ -1,5 +1,5 @@
-import { guardedFetch } from '../../../src/http/guardedFetch.js';
-import { resolveEgressPolicy, type ConfigReader } from '../../../src/http/egressPolicy.js';
+import { guardedFetch } from '../../../dist/src/http/guardedFetch.js';
+import { resolveEgressPolicy, type ConfigReader } from '../../../dist/src/http/egressPolicy.js';
 /**
  * Sist2AssetProvider — read-only AssetProvider backed by a sist2 Elasticsearch index.
  *

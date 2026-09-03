@@ -1,4 +1,4 @@
-import type { EgressPolicy } from '../../../../src/http/ssrf.js';
+import type { EgressPolicy } from '../../../../dist/src/http/ssrf.js';
 /**
  * SourceAdapter contract (#685 slice 4).
  *

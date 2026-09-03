@@ -15,16 +15,16 @@ import { RecordStore } from '../src/RecordStore';
 import { getByPath } from '../src/adapters/dotpath';
 import { geojsonAdapter } from '../src/adapters/geojson';
 import { recordToArticle } from '../src/normalize';
-import MarqueePlugin from '../../../src/plugins/MarqueePlugin';
+import MarqueePlugin from '../../../dist/src/plugins/MarqueePlugin';
 import type { SourceAdapter } from '../src/adapters/types';
 import type { FeedSourceConfig } from '../src/types';
 
 // #1133 — the adapters go through `guardedFetch` now. Mocking the module is
 // the seam, because production deliberately has no injectable transport
 // parameter: one way to reach the network was the point.
-vi.mock('../../../src/http/guardedFetch.js', () => ({ guardedFetch: vi.fn() }));
-import { guardedFetch } from '../../../src/http/guardedFetch.js';
-import type { EgressPolicy } from '../../../src/http/ssrf.js';
+vi.mock('../../../dist/src/http/guardedFetch.js', () => ({ guardedFetch: vi.fn() }));
+import { guardedFetch } from '../../../dist/src/http/guardedFetch.js';
+import type { EgressPolicy } from '../../../dist/src/http/ssrf.js';
 
 const mockGuardedFetch = vi.mocked(guardedFetch);
 const POLICY = {} as EgressPolicy;

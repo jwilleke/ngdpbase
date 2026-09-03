@@ -1,4 +1,4 @@
-import { resolveEgressPolicy, type ConfigReader } from '../../../src/http/egressPolicy.js';
+import { resolveEgressPolicy, type ConfigReader } from '../../../dist/src/http/egressPolicy.js';
 /**
  * FeedManager — the feeds addon's runtime (#685).
  *
