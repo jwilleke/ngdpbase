@@ -710,26 +710,26 @@ class UserManager extends BaseManager {
   }
 
   /**
-   * Check if user has permission using policy-based access control.
+   * Authorise a request: may THIS subject perform `action`?
    *
-   * #637: accepts either a username string OR a pre-resolved UserContext-shaped
-   * object. The fast path (passing a UserContext) skips `provider.getUser` and
-   * `resolveUserRoles` — both of which the session middleware already did once
-   * per request when building `req.userContext`. Callers that already have
-   * `req.userContext` (WikiContext, ApiContext, ParseContext) should pass it
-   * through to avoid the redundant work.
+   * Takes a `PermissionSubject` — the request's own identity, forwarded from
+   * `req.userContext` (WikiContext, ApiContext, ParseContext) or a
+   * `JobContext` for work with no request (#631). Roles arrive already
+   * resolved; the session middleware did that once per request.
    *
-   * The string path is preserved for callers without a context (background
-   * jobs, CLI tools, tests).
+   * #1173 Part B: the username-string overload this method once accepted is
+   * gone. A string cannot carry `viaToken`, so the agent-token ceiling below
+   * had nothing to read and every string-form call resolved against the
+   * owner's full roles. There is one path now, and the type makes the other
+   * impossible. Callers with no subject to hand over have one of two
+   * legitimate shapes: `ANONYMOUS_SUBJECT` / `ASSERTED_SUBJECT`, or the
+   * separate question `userHoldsPermission()` — "does the named user hold
+   * this?" — which is a lookup about somebody else, not an authorisation.
    *
-   * Anonymous/asserted role-expansion happens here only on the string path.
-   * UserContext callers are responsible for the correct role array — the
-   * session middleware handles this for HTTP requests.
-   *
-   * @param usernameOrContext - Username string, or a UserContext-shaped object
-   *                            with `roles` already resolved.
+   * @param subject - The identity being authorised, with `roles` resolved and
+   *                  `viaToken` present when a bearer token authenticated it.
    * @param action - Action/permission to check (e.g., 'page-create', 'user-read')
-   * @returns True if user has permission via policies
+   * @returns True if the subject may perform the action under current policy
    */
   async hasPermission(
     subject: PermissionSubject,
@@ -770,8 +770,7 @@ class UserManager extends BaseManager {
       // #1164: the subject's fields are optional now, because a real
       // UserContext declares them optional. Defaulting here rather than
       // widening UserContext keeps the resolved shape unchanged for everything
-      // downstream, and an absent username resolves anonymous — which is what
-      // the string path already does with '' or undefined.
+      // downstream, and an absent username resolves anonymous.
       userContext = {
         username: subject.username ?? 'Anonymous',
         roles: subject.roles ?? ['anonymous', 'All'],
