@@ -1,6 +1,14 @@
 import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
 import type { PermissionSubject } from './UserManager.js';
 import logger from '../utils/logger.js';
+
+/**
+ * Marks an error as "the audit record could not be written", not "the action
+ * failed" (#1183). A caller refusing a destructive action needs to say which.
+ */
+export const AUDIT_WRITE_FAILED = 'EAUDITWRITE';
+import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
+import { buildAttachmentAuditEvent } from '../utils/auditEvents.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PageManager from './PageManager.js';
@@ -516,6 +524,17 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     const attachmentMetadata = await this.attachmentProvider.storeAttachment(fileBuffer, fileInfo, metadata, user);
 
     logger.info(`📎 Uploaded attachment: ${fileInfo.originalName} (${attachmentMetadata.identifier})${isPrivatePage ? ` [private page: ${pageName ?? ''}, creator: ${pageCreator ?? 'unknown'}]` : ''}`);
+
+    // #1183 — at the door. Four write paths (NCM localization, bulk import,
+    // thumbnail render, media browser) produced no record while this lived in
+    // WikiRoutes. `standard` tier, so a failed record is logged, not fatal.
+    await this.recordAttachmentEvent('upload', options.context, {
+      attachmentId: String(attachmentMetadata.identifier ?? ''),
+      filename: fileInfo.originalName,
+      pageName: pageName ?? null,
+      sizeBytes: fileInfo.size ?? null
+    }, options.wikiContext);
+
     return attachmentMetadata;
   }
 
@@ -664,7 +683,11 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * @param {UserContext} context - WikiContext with user information
    * @returns {Promise<boolean>} Success status
    */
-  async deleteAttachment(attachmentId: string, context?: UserContext): Promise<boolean> {
+  async deleteAttachment(
+    attachmentId: string,
+    context?: UserContext,
+    wikiContext?: { request?: { ip?: string } | null }
+  ): Promise<boolean> {
     if (!this.attachmentProvider) {
       throw new Error('Attachment provider not initialized');
     }
@@ -675,7 +698,93 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       throw new Error('Permission denied: You do not have permission to delete attachments');
     }
 
+    // #1183 — recorded HERE, at the door, not at the caller.
+    //
+    // `attachment.delete` is declared `tier: 'critical'` with note 'destruction'
+    // in auditRegistry. The emit used to live in WikiRoutes, so only the two
+    // routes that remembered to call the helper produced a record — and
+    // `adminDeleteAttachmentFromBrowser` destroyed attachments silently.
+    // Every caller passes through here, so recording here covers all of them
+    // and a new caller cannot be added without one.
+    //
+    // AWAITED and not caught: critical means the action must not complete when
+    // the record cannot be written (#1158).
+    // #1080: read the filename BEFORE the delete — afterwards it is gone, and
+    // a record naming only an opaque id does not answer "what was lost?".
+    // Best-effort: a metadata read failure must not block the delete, so the
+    // record degrades to the id alone.
+    let filename = attachmentId;
+    let sizeBytes: number | null = null;
+    try {
+      const meta = await this.getAttachmentMetadata(attachmentId);
+      if (typeof meta?.filename === 'string') filename = meta.filename;
+      if (typeof meta?.size === 'number') sizeBytes = meta.size;
+    } catch {
+      // keep the id-only fallback
+    }
+    await this.recordAttachmentEvent('delete', context, { attachmentId, filename, sizeBytes }, wikiContext);
+
     return await this.attachmentProvider.deleteAttachment(attachmentId);
+  }
+
+  /**
+   * Emit an attachment audit event from the manager that owns the resource.
+   *
+   * `docs/audit-posture.md` states the rule this implements: an action is
+   * "emitted through `recordAuditEvent` (or the manager door that calls it)".
+   * The door is here. Placing it at a route means every future caller has to
+   * remember, which is the thing #1120 exists to end — being audited must not
+   * depend on a producer recalling a method.
+   *
+   * `critical` decides whether a failure to record stops the action.
+   */
+  private async recordAttachmentEvent(
+    op: 'upload' | 'delete',
+    context: UserContext | undefined,
+    detail: { attachmentId: string; filename: string; pageName?: string | null; sizeBytes?: number | null },
+    wikiContext?: { request?: { ip?: string } | null }
+  ): Promise<void> {
+    // Lazily resolved, matching ConfigurationManager: absent during early boot,
+    // which recordAuditEvent treats as a configuration state, not a failure.
+    const sink = this.engine?.getManager?.('AuditManager') as AuditEventSink | null;
+    if (!sink) return;
+
+    const event = buildAttachmentAuditEvent({
+      op,
+      username: context?.username,
+      // From the WikiContext the caller already carries (#1183). The manager
+      // does not see the Express request, so moving the emit to this door
+      // would otherwise have dropped the IP that the two previously audited
+      // routes recorded. Absent for in-engine callers that have no request —
+      // honest, rather than invented.
+      ipAddress: wikiContext?.request?.ip,
+      attachmentId: detail.attachmentId,
+      filename: detail.filename,
+      pageName: detail.pageName,
+      sizeBytes: detail.sizeBytes,
+      // Forwarded, never rebuilt — the delegation rides on the caller's
+      // context (P1). Without it a token-driven upload records as its owner
+      // with no sign a token was involved.
+      viaToken: (context as { viaToken?: { id: string; name: string; scopes: string[] } } | undefined)?.viaToken
+    });
+
+    if (op === 'delete') {
+      // critical: rethrows, tagged so a caller can tell an unwritable RECORD
+      // from a failed DELETE. Without the tag the route reported every delete
+      // failure as an audit failure, which sends an operator to the wrong
+      // subsystem.
+      try {
+        await recordAuditEvent(sink, event);
+      } catch (err) {
+        const tagged = err instanceof Error ? err : new Error(String(err));
+        (tagged as Error & { code?: string }).code = AUDIT_WRITE_FAILED;
+        throw tagged;
+      }
+    } else {
+      await recordAuditEvent(sink, event, (err) =>
+        logger.warn(`Audit log failed for attachment.${op} of '${detail.filename}':`, err)
+      );
+    }
   }
 
   /**

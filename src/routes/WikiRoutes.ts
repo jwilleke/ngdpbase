@@ -52,7 +52,6 @@ import {
   evaluateDeviceBinding
 } from '../utils/magicLinkDeviceState.js';
 import {
-  buildAttachmentAuditEvent,
   buildPageViewAuditEvent,
   recordAuditEvent,
   type AuditEventSink,
@@ -92,6 +91,7 @@ import type AddonsManager from '../managers/AddonsManager.js';
 import type AssetManager from '../managers/AssetManager.js';
 import type AssetService from '../managers/AssetService.js';
 import type AttachmentManager from '../managers/AttachmentManager.js';
+import { AUDIT_WRITE_FAILED } from '../managers/AttachmentManager.js';
 import type AuthManager from '../managers/AuthManager.js';
 import type BackgroundJobManager from '../managers/BackgroundJobManager.js';
 import type BackupManager from '../managers/BackupManager.js';
@@ -5010,52 +5010,17 @@ ${panes}
   }
 
   /**
-   * Record an attachment delete, durably, before the file is destroyed (#1121).
+   * #1183 — the attachment audit helpers moved to `AttachmentManager`.
    *
-   * Unlike {@link auditAttachment} this AWAITS and rethrows: attachment.delete
-   * is declared critical in the audit registry, so the caller must be able to
-   * abandon the delete when the record cannot be written.
+   * They lived here, so only the two routes that remembered to call them
+   * produced a record: the NCM-localization upload, the bulk-import upload,
+   * the thumbnail upload and the media-browser delete were all silent, the
+   * last of those a `tier: 'critical'` destruction.
+   *
+   * `docs/audit-posture.md` already states the rule — an action is emitted
+   * "through `recordAuditEvent` (or the manager door that calls it)". Every
+   * caller passes through the manager; not all of them pass through here.
    */
-  private async auditAttachmentCritical(
-    req: Request,
-    attachmentId: string,
-    filename: string,
-    sizeBytes: number | null
-  ): Promise<void> {
-    const event = buildAttachmentAuditEvent({
-      op: 'delete',
-      username: req.userContext?.username,
-      ipAddress: req.ip,
-      attachmentId,
-      filename,
-      sizeBytes,
-      viaToken: WikiRoutes.viaTokenOf(req)
-    });
-    await recordAuditEvent(this.auditSink(), event);
-  }
-
-  /** Record an attachment upload / delete in the audit log (#1080). */
-  private auditAttachment(
-    req: Request,
-    op: 'upload' | 'delete',
-    attachmentId: string,
-    filename: string,
-    extra?: { pageName?: string | null; sizeBytes?: number | null }
-  ): void {
-    const event = buildAttachmentAuditEvent({
-      op,
-      username: req.userContext?.username,
-      ipAddress: req.ip,
-      attachmentId,
-      filename,
-      pageName: extra?.pageName,
-      sizeBytes: extra?.sizeBytes,
-      viaToken: WikiRoutes.viaTokenOf(req)
-    });
-    void recordAuditEvent(this.auditSink(), event, (err) =>
-      logger.warn(`Audit log failed for attachment.${op} of '${filename}':`, err)
-    );
-  }
 
   /**
    * Record a magic-link redemption in the audit log (#1022).
@@ -5676,11 +5641,10 @@ ${panes}
         attachedToPage = attachNote === undefined;
       }
 
-      // #1080: the bytes are stored by this point, so audit after the fact.
-      this.auditAttachment(req, 'upload', attachment.identifier, req.file.originalname, {
-        pageName: attachedToPage ? pageName : null,
-        sizeBytes: req.file.size
-      });
+      // #1080/#1183: the record is written by AttachmentManager after the
+      // bytes are stored — at the door, so the NCM-localization, bulk-import
+      // and thumbnail paths are covered too. They were silent while it
+      // emitted here.
 
       return res.json({
         success: true,
@@ -6194,19 +6158,8 @@ ${panes}
         });
       }
 
-      // #1080: read the filename BEFORE the delete — afterwards it is gone,
-      // and an audit line naming only an opaque id does not answer "what was
-      // lost?". Best-effort: a metadata read failure must not block the
-      // delete, so the audit record degrades to the id alone.
-      let deletedFilename = attachmentId;
-      let deletedSize: number | null = null;
-      try {
-        const meta = await attachmentManager.getAttachmentMetadata(attachmentId);
-        if (typeof meta?.filename === 'string') deletedFilename = meta.filename;
-        if (typeof meta?.size === 'number') deletedSize = meta.size;
-      } catch {
-        // fall through with the id as the filename
-      }
+      // #1183: the filename/size pre-read moved into AttachmentManager, so
+      // every caller's record names what was lost, not only this route's.
 
       // #1121: attachment.delete is CRITICAL, so the record is written and
       // flushed BEFORE the file is destroyed. Auditing afterwards means a
@@ -6217,22 +6170,26 @@ ${panes}
       // strictly better: it is a discrepancy someone can investigate, against
       // destruction nobody can reconstruct. The unexpected case is logged
       // below rather than left to be inferred.
+      // #1183: the record is written by AttachmentManager — the door every
+      // caller passes through. It lived here, so four other write paths
+      // produced no record at all, including a media-browser delete of the
+      // same `critical` tier. The ordering guarantee is unchanged: the manager
+      // records BEFORE the provider destroys anything and rethrows on failure,
+      // so a delete whose record cannot be written still does not happen.
+      let deleted: boolean;
       try {
-        await this.auditAttachmentCritical(req, attachmentId, deletedFilename, deletedSize);
-      } catch (auditErr) {
-        logger.error(`[attachments] Refusing to delete ${attachmentId}: its audit record could not be written`, auditErr);
+        deleted = await attachmentManager.deleteAttachment(attachmentId, currentUser, wikiContext);
+      } catch (delErr) {
+        // Only an unwritable RECORD becomes a 503 with that message; anything
+        // else is a delete failure and belongs to the outer catch, which says
+        // so honestly rather than blaming the audit subsystem.
+        if ((delErr as { code?: string })?.code !== AUDIT_WRITE_FAILED) throw delErr;
+        logger.error(`[attachments] Refusing to delete ${attachmentId}: its audit record could not be written`, delErr);
         return res.status(503).json({
           success: false,
           error: 'Attachment not deleted — the audit record could not be written'
         });
       }
-
-      // Delete via AttachmentManager (handles permission checks)
-      // Pass full userContext for PolicyManager
-      const deleted = await attachmentManager.deleteAttachment(
-        attachmentId,
-        currentUser
-      );
 
       if (!deleted) {
         // The audit says it was deleted and it was not. Say so loudly rather

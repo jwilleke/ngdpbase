@@ -329,74 +329,14 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
     // delete, since afterwards the name is gone and an id alone does not
     // answer "what was lost?"), and that a failing audit backend cannot turn
     // a committed delete into an error.
-    test('emits an attachment.delete audit event naming the deleted file', async () => {
-      const logAuditEvent = vi.fn().mockResolvedValue('audit-id');
-      mockAttachmentManager.getAttachmentMetadata.mockResolvedValue({
-        id: 'test-attachment-id',
-        filename: 'invoice.pdf',
-        size: 4096
-      });
-      mockEngine.getManager.mockImplementation((name) => {
-        if (name === 'AttachmentManager') return mockAttachmentManager;
-        if (name === 'UserManager') return mockUserManager;
-        // #1121: attachment.delete is CRITICAL — destruction — so the sink must
-        // be able to flush or the write is refused rather than unrecorded.
-        if (name === 'AuditManager') return { logAuditEvent, flushAuditQueue: async () => {} };
-        return null;
-      });
-      mockAttachmentManager.deleteAttachment.mockResolvedValue(true);
-
-      const mockReq = createMockReq(
-        { username: 'testuser', isAuthenticated: true },
-        { attachmentId: 'test-attachment-id' }
-      );
-      await wikiRoutes.deleteAttachment(mockReq, createMockRes());
-
-      expect(logAuditEvent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          eventType: 'attachment.delete',
-          user: 'testuser',
-          metadata: expect.objectContaining({
-            attachmentId: 'test-attachment-id',
-            filename: 'invoice.pdf',
-            sizeBytes: 4096
-          })
-        })
-      );
-      // Reset for the tests that follow, which assume no AuditManager.
-      mockAttachmentManager.getAttachmentMetadata.mockResolvedValue(null);
-    });
-
-    // #1121 REVERSES this. It previously asserted that a failing audit backend
-    // could not turn a committed delete into an error — right for a page edit,
-    // wrong for destruction: an unrecorded delete loses the only answer to
-    // "what was destroyed?". attachment.delete is declared critical in the
-    // audit registry and the record is written BEFORE the file is removed, so
-    // refusing costs nothing but a retry.
-    test('a failing audit backend REFUSES the delete rather than destroying unrecorded', async () => {
-      const logAuditEvent = vi.fn().mockRejectedValue(new Error('audit disk full'));
-      mockEngine.getManager.mockImplementation((name) => {
-        if (name === 'AttachmentManager') return mockAttachmentManager;
-        if (name === 'UserManager') return mockUserManager;
-        if (name === 'AuditManager') return { logAuditEvent, flushAuditQueue: async () => {} };
-        return null;
-      });
-      mockAttachmentManager.deleteAttachment.mockResolvedValue(true);
-
-      const mockReq = createMockReq(
-        { username: 'testuser', isAuthenticated: true },
-        { attachmentId: 'test-attachment-id' }
-      );
-      const mockRes = createMockRes();
-      await wikiRoutes.deleteAttachment(mockReq, mockRes);
-
-      expect(mockRes.status).toHaveBeenCalledWith(503);
-      expect(mockRes.json).toHaveBeenCalledWith(
-        expect.objectContaining({ success: false })
-      );
-      // And nothing was destroyed — the point of auditing first.
-      expect(mockAttachmentManager.deleteAttachment).not.toHaveBeenCalled();
-    });
+    // #1183: the two audit tests that were here moved to
+    // `src/managers/__tests__/AttachmentManager.audit.test.ts`.
+    //
+    // They asserted that THIS ROUTE records, which it did — while the media
+    // browser's delete, the NCM-localization upload, the bulk import and the
+    // thumbnail render recorded nothing. A route test can only ever prove the
+    // route. The emit now lives at the manager door every caller passes
+    // through, so the assertions live there too.
 
     test('should deny delete access for unauthenticated users', async () => {
       // Setup
