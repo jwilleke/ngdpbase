@@ -705,7 +705,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
 
     // #1183 — recorded HERE, at the door, not at the caller.
     //
-    // `attachment.delete` is declared `tier: 'critical'` with note 'destruction'
+    // `asset-delete` is declared `tier: 'critical'` with note 'destruction'
     // in auditRegistry. The emit used to live in WikiRoutes, so only the two
     // routes that remembered to call the helper produced a record — and
     // `adminDeleteAttachmentFromBrowser` destroyed attachments silently.

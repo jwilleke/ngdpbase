@@ -11,7 +11,7 @@ import {
 
 /**
  * #1080 — page create/edit/rename and attachment upload/delete produced no
- * audit events at all. Only page.delete, admin raw-edit, sessions, and shares
+ * audit events at all. Only page-delete, admin raw-edit, sessions, and shares
  * were logged, so "who changed this page, when, and through what?" was only
  * answerable from a version manifest — per-page, and only under the
  * versioning provider.
@@ -29,9 +29,9 @@ describe('buildPageMutationAuditEvent', () => {
     uuid: 'uuid-1'
   };
 
-  it('builds a page.create event', () => {
+  it('builds a page-create event', () => {
     const event = buildPageMutationAuditEvent({ ...base, op: 'create' });
-    expect(event.eventType).toBe('page.create');
+    expect(event.eventType).toBe('page-create');
     expect(event.action).toBe('page-create');
     expect(event.user).toBe('alice');
     expect(event.ipAddress).toBe('10.0.0.1');
@@ -40,13 +40,13 @@ describe('buildPageMutationAuditEvent', () => {
     expect(event.metadata.uuid).toBe('uuid-1');
   });
 
-  it('builds a page.edit event', () => {
+  it('builds a page-edit event', () => {
     const event = buildPageMutationAuditEvent({ ...base, op: 'edit' });
-    expect(event.eventType).toBe('page.edit');
+    expect(event.eventType).toBe('page-edit');
     expect(event.action).toBe('page-edit');
   });
 
-  it('builds a page.rename event carrying both titles', () => {
+  it('builds a page-rename event carrying both titles', () => {
     // #1082 reads exactly these two fields to resolve a link that points at a
     // page's former title, so they are load-bearing rather than descriptive.
     const event = buildPageMutationAuditEvent({
@@ -55,7 +55,7 @@ describe('buildPageMutationAuditEvent', () => {
       pageName: 'New Title',
       fromPageName: 'Old Title'
     });
-    expect(event.eventType).toBe('page.rename');
+    expect(event.eventType).toBe('page-rename');
     expect(event.action).toBe('page-rename');
     expect(event.metadata.fromPageName).toBe('Old Title');
     expect(event.metadata.pageName).toBe('New Title');
@@ -98,20 +98,20 @@ describe('buildAttachmentAuditEvent', () => {
     filename: 'photo.jpg'
   };
 
-  it('builds an attachment.upload event', () => {
+  it('builds an asset-upload event', () => {
     const event = buildAttachmentAuditEvent({ ...base, op: 'upload', pageName: 'Trip', sizeBytes: 2048 });
-    expect(event.eventType).toBe('attachment.upload');
-    expect(event.action).toBe('attachment-upload');
+    expect(event.eventType).toBe('asset-upload');
+    expect(event.action).toBe('asset-upload');
     expect(event.metadata.attachmentId).toBe('att-1');
     expect(event.metadata.filename).toBe('photo.jpg');
     expect(event.metadata.pageName).toBe('Trip');
     expect(event.metadata.sizeBytes).toBe(2048);
   });
 
-  it('builds an attachment.delete event', () => {
+  it('builds an asset-delete event', () => {
     const event = buildAttachmentAuditEvent({ ...base, op: 'delete' });
-    expect(event.eventType).toBe('attachment.delete');
-    expect(event.action).toBe('attachment-delete');
+    expect(event.eventType).toBe('asset-delete');
+    expect(event.action).toBe('asset-delete');
   });
 
   it('rates a delete more severe than an upload — a delete is the one that loses data', () => {
@@ -121,7 +121,7 @@ describe('buildAttachmentAuditEvent', () => {
     expect(remove.severity).toBe('medium');
   });
 
-  it('raises a token-driven delete to high, matching page.delete', () => {
+  it('raises a token-driven delete to high, matching page-delete', () => {
     const event = buildAttachmentAuditEvent({
       ...base,
       op: 'delete',
@@ -192,7 +192,7 @@ describe('buildTokenAuditEvent() — #1111', () => {
     const e = buildTokenAuditEvent({
       ...base, op: 'mint', scopes: ['page-read', 'page-edit'], expiresAt: '2026-09-01T00:00:00.000Z', name: 'ci'
     });
-    expect(e.eventType).toBe('token.mint');
+    expect(e.eventType).toBe('token-mint');
     expect(e.action).toBe('token-mint');
     expect(e.result).toBe('success');
     expect(e.metadata).toMatchObject({
@@ -203,7 +203,7 @@ describe('buildTokenAuditEvent() — #1111', () => {
 
   it('a revoke records who did it, which is the question afterwards', () => {
     const e = buildTokenAuditEvent({ ...base, op: 'revoke', username: 'admin', revokedBy: 'admin' });
-    expect(e.eventType).toBe('token.revoke');
+    expect(e.eventType).toBe('token-revoke');
     expect(e.metadata).toMatchObject({ id: 'tok_1', owner: 'alice', revokedBy: 'admin' });
   });
 
@@ -281,7 +281,7 @@ describe('dropped audit events are counted — #1109', () => {
   it('records what was lost and when, not just how many', async () => {
     await recordAuditEvent({ logAuditEvent: async () => { throw new Error('ENOSPC'); } }, event());
     const stats = getAuditDropStats();
-    expect(stats.lastEventType).toBe('page.edit');
+    expect(stats.lastEventType).toBe('page-edit');
     expect(stats.lastError).toMatch(/ENOSPC/);
     expect(stats.lastAt).toBeTruthy();
   });
@@ -307,7 +307,7 @@ describe('dropped audit events are counted — #1109', () => {
  *
  * The #1109 decision was fire-and-forget for everything: losing the log is bad,
  * refusing a page save because the log failed is worse. That is right for
- * page.view and wrong for token.mint, where the record IS the only evidence the
+ * page-read and wrong for token-mint, where the record IS the only evidence the
  * credential exists.
  *
  * The tier lives in the #1120 registry, so "which events must be durable" is
@@ -394,11 +394,11 @@ describe('buildPageViewAuditEvent (#1129)', () => {
     uuid: 'uuid-1'
   };
 
-  it('builds a page.view event carrying who saw what', async () => {
+  it('builds a page-read event carrying who saw what', async () => {
     const { buildPageViewAuditEvent } = await import('../auditEvents');
     const event = buildPageViewAuditEvent(base);
-    expect(event.eventType).toBe('page.view');
-    expect(event.action).toBe('page-view');
+    expect(event.eventType).toBe('page-read');
+    expect(event.action).toBe('page-read');
     expect(event.user).toBe('jim');
     expect(event.severity).toBe('low');
     expect(event.metadata).toMatchObject({ pageName: 'Lab Results', uuid: 'uuid-1', viaTokenId: null, viaTokenName: null });

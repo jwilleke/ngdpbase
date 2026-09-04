@@ -3,7 +3,7 @@
  *
  * Every other assertion about the critical tier runs in-process, so all of
  * them are ultimately a statement about what this process can see. The claim
- * being made is stronger than that: a `token.mint` record must survive the
+ * being made is stronger than that: a `token-mint` record must survive the
  * process dying without ever unwinding — no `close()`, no flush timer, no
  * `finally`, no exit handler.
  *
@@ -29,6 +29,8 @@ import path from 'path';
 import { execFileSync } from 'child_process';
 
 const DIST = path.join(process.cwd(), 'dist', 'src', 'providers', 'FileAuditProvider.js');
+const DIST_REGISTRY = path.join(process.cwd(), 'dist', 'src', 'utils', 'auditRegistry.js');
+const SHIPPED_CONFIG = path.join(process.cwd(), 'config', 'app-default-config.json');
 const built = fs.existsSync(DIST);
 
 let dir: string;
@@ -51,7 +53,15 @@ afterEach(async () => {
  */
 function childScript(logDir: string): string {
   return `
+import { readFileSync } from 'fs';
 import FileAuditProvider from ${JSON.stringify(DIST)};
+import { bindAuditEvents, AUDIT_EVENTS_KEY } from ${JSON.stringify(DIST_REGISTRY)};
+
+// #1200: the tier comes from configuration, bound at boot by AuditManager.
+// This child has no AuditManager, so it binds the shipped map itself — the
+// same thing vitest.setup.ts does for in-process tests.
+const shipped = JSON.parse(readFileSync(${JSON.stringify(SHIPPED_CONFIG)}, 'utf8'));
+bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? shipped[key] : d));
 
 const config = {
   'ngdpbase.audit.provider.file.auditfilename': 'audit.log',
@@ -70,9 +80,9 @@ const engine = {
 const provider = new FileAuditProvider(engine);
 await provider.initialize();
 await provider.logAuditEvent({
-  eventType: 'token.mint',
+  eventType: 'token-mint',
   user: 'jim',
-  action: 'token.mint',
+  action: 'token-mint',
   result: 'success',
   severity: 'low',
   metadata: { id: 'tok-killed' }
@@ -85,7 +95,7 @@ process.kill(process.pid, 'SIGKILL');
 }
 
 describe.skipIf(!built)('#1158 — a critical record survives an unclean exit', () => {
-  test('SIGKILL immediately after token.mint leaves the record on disk', () => {
+  test('SIGKILL immediately after token-mint leaves the record on disk', () => {
     const script = path.join(dir, 'mint-and-die.mjs');
     fs.writeFileSync(script, childScript(dir));
 
@@ -115,7 +125,7 @@ describe.skipIf(!built)('#1158 — a critical record survives an unclean exit', 
       .split('\n').filter(Boolean)
       .map((l) => JSON.parse(l) as Record<string, unknown>);
 
-    expect(records.map((r) => r.eventType)).toEqual(['token.mint']);
+    expect(records.map((r) => r.eventType)).toEqual(['token-mint']);
     expect(records[0].seq).toBe(1);
     // The chain stamp survived with it — a record without its hash would be
     // unverifiable, which is no better than a missing one.

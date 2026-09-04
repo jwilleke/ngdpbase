@@ -5,8 +5,8 @@
  * event is unemitted when it is emitted. I produced exactly that twice while
  * writing it:
  *
- * 1. Matching only `eventType: '…'` missed `authentication.success`,
- *    `share.create` and `authorization.allow`, which are written as a ternary,
+ * 1. Matching only `eventType: '…'` missed `authentication-success`,
+ *    `share-create` and `authorization-allow`, which are written as a ternary,
  *    as a call argument, and on a continuation line. All three are live; the
  *    report called them absent.
  * 2. Widening to "any vocabulary name appearing as a literal" then made the
@@ -21,8 +21,8 @@ describe('#1184 — the three lists are read correctly', () => {
   test('the vocabulary parses to a plausible set', () => {
     const v = vocabularyTypes();
     expect(v.length).toBeGreaterThan(25);
-    expect(v).toContain('authentication.failed');
-    expect(v).toContain('page.delete');
+    expect(v).toContain('authentication-failed');
+    expect(v).toContain('page-delete');
   });
 
   test('the registry is the vocabulary minus what is switched off (#1200)', () => {
@@ -33,16 +33,16 @@ describe('#1184 — the three lists are read correctly', () => {
     const v = vocabularyTypes();
     expect(r.size).toBeGreaterThan(30);
     expect(r.size).toBeLessThanOrEqual(v.length);
-    expect(r.get('page.delete')).toBe('critical');
-    expect(r.has('asset.read')).toBe(false);
-    expect(v).toContain('asset.read');
+    expect(r.get('page-delete')).toBe('critical');
+    expect(r.has('asset-read')).toBe(false);
+    expect(v).toContain('asset-read');
   });
 
   test('interpolated emitters are expanded, not missed', () => {
-    // `eventType: `page.${op}`` — a literal search reports page.create as
+    // `eventType: `page.${op}`` — a literal search reports page-create as
     // unemitted while it fires on every page save.
     const { resolved } = emittedTypes(vocabularyTypes());
-    for (const t of ['page.create', 'page.edit', 'page.rename', 'attachment.upload', 'attachment.delete']) {
+    for (const t of ['page-create', 'page-edit', 'page-rename', 'asset-upload', 'asset-delete']) {
       expect(resolved).toContain(t);
     }
   });
@@ -50,7 +50,7 @@ describe('#1184 — the three lists are read correctly', () => {
   test('ternary and call-argument emitters are found', () => {
     // The three the first version of this script got wrong.
     const { resolved } = emittedTypes(vocabularyTypes());
-    for (const t of ['authentication.success', 'authorization.allow', 'share.create']) {
+    for (const t of ['authentication-success', 'authorization-allow', 'share-create']) {
       expect(resolved).toContain(t);
     }
   });

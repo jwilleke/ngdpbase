@@ -73,7 +73,7 @@ describe('#1122 the audit log rotates', () => {
     const p = makeProvider();
     await p.initialize();
     for (let i = 0; i < 12; i++) {
-      await p.logAuditEvent({ eventType: 'page.edit', user: `u${i}` });
+      await p.logAuditEvent({ eventType: 'page-edit', user: `u${i}` });
       await p.flush();
     }
     expect((await archives()).length).toBeGreaterThan(0);
@@ -83,7 +83,7 @@ describe('#1122 the audit log rotates', () => {
     const p = makeProvider();
     await p.initialize();
     for (let i = 0; i < 40; i++) {
-      await p.logAuditEvent({ eventType: 'page.edit', user: `u${i}` });
+      await p.logAuditEvent({ eventType: 'page-edit', user: `u${i}` });
       await p.flush();
     }
     expect((await archives()).length).toBeLessThanOrEqual(2);
@@ -95,7 +95,7 @@ describe('#1122 the audit log rotates', () => {
     const p = makeProvider({ 'ngdpbase.audit.provider.file.maxfiles': 10 });
     await p.initialize();
     for (let i = 0; i < 20; i++) {
-      await p.logAuditEvent({ eventType: 'page.edit', user: `u${i}` });
+      await p.logAuditEvent({ eventType: 'page-edit', user: `u${i}` });
       await p.flush();
     }
 
@@ -113,7 +113,7 @@ describe('#1122 the audit log rotates', () => {
     const first = makeProvider({ 'ngdpbase.audit.provider.file.maxfiles': 10 });
     await first.initialize();
     for (let i = 0; i < 12; i++) {
-      await first.logAuditEvent({ eventType: 'page.edit', user: `u${i}` });
+      await first.logAuditEvent({ eventType: 'page-edit', user: `u${i}` });
       await first.flush();
     }
     // Max across every file rather than guessing which one the last record
@@ -129,7 +129,7 @@ describe('#1122 the audit log rotates', () => {
 
     const second = makeProvider({ 'ngdpbase.audit.provider.file.maxfiles': 10 });
     await second.initialize();
-    await second.logAuditEvent({ eventType: 'page.edit', user: 'after-restart' });
+    await second.logAuditEvent({ eventType: 'page-edit', user: 'after-restart' });
     await second.flush();
 
     expect(await seqOf()).toBe(lastSeq + 1);
@@ -138,7 +138,7 @@ describe('#1122 the audit log rotates', () => {
   test('rotation is not attempted when the log is small', async () => {
     const p = makeProvider({ 'ngdpbase.audit.provider.file.maxfilesize': '10MB' });
     await p.initialize();
-    await p.logAuditEvent({ eventType: 'page.edit', user: 'a' });
+    await p.logAuditEvent({ eventType: 'page-edit', user: 'a' });
     await p.flush();
     expect(await archives()).toEqual([]);
   });
@@ -149,7 +149,7 @@ describe('#1122 retention applies to archives', () => {
     const p = makeProvider({ 'ngdpbase.audit.retentiondays': 1 });
     await p.initialize();
     for (let i = 0; i < 12; i++) {
-      await p.logAuditEvent({ eventType: 'page.edit', user: `u${i}` });
+      await p.logAuditEvent({ eventType: 'page-edit', user: `u${i}` });
       await p.flush();
     }
     const before = await archives();
@@ -168,7 +168,7 @@ describe('#1122 retention applies to archives', () => {
     const p = makeProvider({ 'ngdpbase.audit.retentiondays': 90 });
     await p.initialize();
     for (let i = 0; i < 12; i++) {
-      await p.logAuditEvent({ eventType: 'page.edit', user: `u${i}` });
+      await p.logAuditEvent({ eventType: 'page-edit', user: `u${i}` });
       await p.flush();
     }
     const before = await archives();
@@ -181,7 +181,7 @@ describe('#1122 retention applies to archives', () => {
     // discarding the previous archive in the process.
     const p = makeProvider({ 'ngdpbase.audit.retentiondays': 0 });
     await p.initialize();
-    await p.logAuditEvent({ eventType: 'page.edit', user: 'a' });
+    await p.logAuditEvent({ eventType: 'page-edit', user: 'a' });
     await p.flush();
     await p.cleanup();
     expect(await fs.pathExists(path.join(dir, 'audit.log'))).toBe(true);

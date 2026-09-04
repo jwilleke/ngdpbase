@@ -48,8 +48,8 @@ Mint and revoke emit audit events through `AuditManager` ([#1111](https://github
 
 | Event | `action` | Carries |
 |---|---|---|
-| `token.mint` | `token-mint` | `id`, `owner`, `name`, `scopes`, `expiresAt` |
-| `token.revoke` | `token-revoke` | `id`, `owner`, `name`, `revokedBy` |
+| `token-mint` | `token-mint` | `id`, `owner`, `name`, `scopes`, `expiresAt` |
+| `token-revoke` | `token-revoke` | `id`, `owner`, `name`, `revokedBy` |
 
 Both also carry `viaTokenId` / `viaTokenName`, as explicit nulls for a human action so a query can filter on the field existing rather than treating "absent" and "not a token" as the same thing.
 

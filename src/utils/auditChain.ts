@@ -19,6 +19,7 @@
  * something other than the code that wrote it, or the verification is a
  * circular argument.
  */
+import { AUDIT_EVENT } from './auditEventNames.js';
 import { createHash } from 'crypto';
 
 /** `prevHash` of the first record in a chain. */
@@ -132,7 +133,7 @@ export function verifyChain(
 }
 
 /** Event type of a record that declares a deliberate chain discontinuity (#1124). */
-export const CHAIN_RESTART_EVENT = 'audit.chain-restart';
+export const CHAIN_RESTART_EVENT = AUDIT_EVENT.AUDIT_CHAIN_RESTART;
 
 /** One contiguous chain within a log. */
 export interface ChainSegment {

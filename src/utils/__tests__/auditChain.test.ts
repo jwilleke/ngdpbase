@@ -10,7 +10,7 @@
  */
 import { hashRecord, stampRecord, verifyChain, verifyLog, GENESIS_HASH, CHAIN_RESTART_EVENT } from '../auditChain';
 
-const rec = (n: number) => ({ id: `e${n}`, eventType: 'page.edit', user: 'alice', timestamp: `2026-01-0${n}T00:00:00.000Z` });
+const rec = (n: number) => ({ id: `e${n}`, eventType: 'page-edit', user: 'alice', timestamp: `2026-01-0${n}T00:00:00.000Z` });
 
 /** Build a valid chain of n records. */
 function chainOf(n: number) {

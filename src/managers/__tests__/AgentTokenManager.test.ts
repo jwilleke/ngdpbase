@@ -595,7 +595,7 @@ describe('#1111 the token lifecycle is audited', () => {
             getResolvedDataPath: () => tmpDir
           };
         }
-        // #1121: token.mint and token.revoke are CRITICAL, so the sink must be
+        // #1121: token-mint and token-revoke are CRITICAL, so the sink must be
         // able to flush or the write is refused rather than silently unrecorded.
         if (name === 'AuditManager') return { logAuditEvent, flushAuditQueue: async () => {} };
         return null;
@@ -610,7 +610,7 @@ describe('#1111 the token lifecycle is audited', () => {
     await m.initialize();
     const { record } = await m.mint('alice', 'ci', ['page-read']);
 
-    const minted = events.filter((e) => e.eventType === 'token.mint');
+    const minted = events.filter((e) => e.eventType === 'token-mint');
     expect(minted).toHaveLength(1);
     expect(minted[0].metadata).toMatchObject({
       id: record.id, owner: 'alice', name: 'ci', scopes: ['page-read']
@@ -624,7 +624,7 @@ describe('#1111 the token lifecycle is audited', () => {
     const { record } = await m.mint('alice', 'ci', ['page-read']);
     await m.revoke(record.id, 'admin');
 
-    const revoked = events.filter((e) => e.eventType === 'token.revoke');
+    const revoked = events.filter((e) => e.eventType === 'token-revoke');
     expect(revoked).toHaveLength(1);
     expect(revoked[0].metadata).toMatchObject({ id: record.id, owner: 'alice', revokedBy: 'admin' });
   });
@@ -634,7 +634,7 @@ describe('#1111 the token lifecycle is audited', () => {
     const m = new AgentTokenManager(engine);
     await m.initialize();
     expect(await m.revoke('tok_missing', 'admin')).toBe(false);
-    expect(events.filter((e) => e.eventType === 'token.revoke')).toHaveLength(0);
+    expect(events.filter((e) => e.eventType === 'token-revoke')).toHaveLength(0);
   });
 
   test('a failing audit sink FAILS the mint (#1121 reverses #1111)', async () => {
@@ -643,7 +643,7 @@ describe('#1111 the token lifecycle is audited', () => {
     // for a credential. An unrecorded mint is a live token nobody knows exists,
     // which is worse than a mint that visibly failed and can be retried.
     //
-    // token.mint is declared CRITICAL in the #1120 registry, and the audit is
+    // token-mint is declared CRITICAL in the #1120 registry, and the audit is
     // written before the token is persisted, so a refusal leaves nothing behind.
     const engine = {
       getManager: (name: string) => {

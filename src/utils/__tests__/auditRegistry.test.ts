@@ -43,13 +43,12 @@ function sourceFiles(dir = SRC, acc: string[] = []): string[] {
   return acc;
 }
 
-const allSource = sourceFiles().map((f) => fs.readFileSync(f, 'utf8')).join('\n');
+const allSource = sourceFiles().filter((f) => !f.endsWith('auditEventNames.ts')).map((f) => fs.readFileSync(f, 'utf8')).join('\n');
 
-/** Matches a literal `'page.edit'` or a template family `` `page.${op}` ``. */
+/** Emitted means an `AUDIT_EVENT.KEY` reference somewhere in src/ resolves to this name (#1201). */
 function isEmitted(eventType: string): boolean {
-  if (allSource.includes(`'${eventType}'`)) return true;
-  const family = eventType.split('.')[0];
-  return new RegExp('`' + family + '\\.\\$\\{').test(allSource);
+  const key = eventType.toUpperCase().replace(/-/g, '_');
+  return new RegExp('AUDIT_EVENT\\.' + key + '\\b').test(allSource);
 }
 
 const bindShipped = () => bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? shipped[key] : d));
@@ -77,15 +76,15 @@ describe('#1200 the registry is configuration', () => {
 
   it('a switched-off event is a decision on the record, with a reason', () => {
     const off = disabledEventTypes();
-    expect(off.map((e) => e.eventType)).toContain('asset.read');
+    expect(off.map((e) => e.eventType)).toContain('asset-read');
     for (const e of off) expect(e.description).toBeTruthy();
-    expect(requiredEventTypes()).not.toContain('asset.read');
-    expect(isAuditEventEnabled('asset.read')).toBe(false);
+    expect(requiredEventTypes()).not.toContain('asset-read');
+    expect(isAuditEventEnabled('asset-read')).toBe(false);
   });
 
   it('the critical tier is the one configuration declares', () => {
-    expect(isCriticalEventType('token.mint')).toBe(true);
-    expect(isCriticalEventType('page.edit')).toBe(false);
+    expect(isCriticalEventType('token-mint')).toBe(true);
+    expect(isCriticalEventType('page-edit')).toBe(false);
     expect(criticalEventTypes()).toEqual(
       Object.entries(shippedEvents).filter(([, d]) => d.tier === 'critical' && d.enabled !== false).map(([n]) => n).sort()
     );
@@ -96,16 +95,16 @@ describe('#1200 configuration is authoritative', () => {
   it('a custom configuration lowering a tier is honoured', () => {
     // The operator may narrow what the system claims to audit; that is the
     // point, not the objection. The narrowing is itself audited elsewhere.
-    const custom = { ...shippedEvents, 'page.delete': { ...shippedEvents['page.delete'], tier: 'standard' } };
+    const custom = { ...shippedEvents, 'page-delete': { ...shippedEvents['page-delete'], tier: 'standard' } };
     bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? custom : d));
-    expect(isCriticalEventType('page.delete')).toBe(false);
-    expect(isCriticalEventType('token.mint')).toBe(true);
+    expect(isCriticalEventType('page-delete')).toBe(false);
+    expect(isCriticalEventType('token-mint')).toBe(true);
   });
 
   it('a custom configuration removing an entry with null removes it', () => {
-    const custom = { ...shippedEvents, 'share.access': null };
+    const custom = { ...shippedEvents, 'share-access': null };
     bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? custom : d));
-    expect(auditEventTypes()).not.toContain('share.access');
+    expect(auditEventTypes()).not.toContain('share-access');
   });
 });
 
@@ -113,17 +112,17 @@ describe('#1200 nothing fails silently', () => {
   it('an unbound registry says so once and treats everything as standard', () => {
     bindAuditEvents(null);
     vi.mocked(logger.warn).mockClear();
-    expect(isCriticalEventType('token.mint')).toBe(false);
-    expect(isCriticalEventType('page.delete')).toBe(false);
+    expect(isCriticalEventType('token-mint')).toBe(false);
+    expect(isCriticalEventType('page-delete')).toBe(false);
     const said = vi.mocked(logger.warn).mock.calls.filter(([m]) => String(m).includes('not bound'));
     expect(said).toHaveLength(1);
   });
 
   it('an emitted name configuration does not declare is said once', () => {
     vi.mocked(logger.warn).mockClear();
-    expect(isCriticalEventType('addon.sneaky')).toBe(false);
-    expect(isCriticalEventType('addon.sneaky')).toBe(false);
-    const said = vi.mocked(logger.warn).mock.calls.filter(([m]) => String(m).includes("'addon.sneaky'"));
+    expect(isCriticalEventType('addon-sneaky')).toBe(false);
+    expect(isCriticalEventType('addon-sneaky')).toBe(false);
+    const said = vi.mocked(logger.warn).mock.calls.filter(([m]) => String(m).includes("'addon-sneaky'"));
     expect(said).toHaveLength(1);
   });
 });

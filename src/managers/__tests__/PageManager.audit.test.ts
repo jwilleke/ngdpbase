@@ -60,16 +60,16 @@ function context(pageName: string, content = 'body', username: string | undefine
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
 describe('PageManager.savePageWithContext() audit emission (#1121)', () => {
-  test('a new page emits page.create', async () => {
+  test('a new page emits page-create', async () => {
     const { manager, events } = makeManager();
     await manager.savePageWithContext(context('Brand New'), { title: 'Brand New' });
     await settle();
 
     expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ eventType: 'page.create', user: 'jim' });
+    expect(events[0]).toMatchObject({ eventType: 'page-create', user: 'jim' });
   });
 
-  test('an existing page emits page.edit', async () => {
+  test('an existing page emits page-edit', async () => {
     const { manager, events } = makeManager([
       { title: 'Existing', content: 'old', metadata: { title: 'Existing', author: 'jim' } }
     ]);
@@ -77,10 +77,10 @@ describe('PageManager.savePageWithContext() audit emission (#1121)', () => {
     await settle();
 
     expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ eventType: 'page.edit' });
+    expect(events[0]).toMatchObject({ eventType: 'page-edit' });
   });
 
-  test('a changed title emits page.rename naming both titles', async () => {
+  test('a changed title emits page-rename naming both titles', async () => {
     const { manager, events } = makeManager([
       { title: 'Old Name', content: 'old', metadata: { title: 'Old Name', author: 'jim' } }
     ]);
@@ -89,7 +89,7 @@ describe('PageManager.savePageWithContext() audit emission (#1121)', () => {
 
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
-      eventType: 'page.rename',
+      eventType: 'page-rename',
       metadata: expect.objectContaining({ pageName: 'New Name', fromPageName: 'Old Name' })
     });
   });
@@ -102,7 +102,7 @@ describe('PageManager.savePageWithContext() audit emission (#1121)', () => {
     ]);
     await manager.savePageWithContext(context('Old Name'), { title: 'New Name' }, {});
     await settle();
-    expect(events[0]).toMatchObject({ eventType: 'page.rename' });
+    expect(events[0]).toMatchObject({ eventType: 'page-rename' });
   });
 
   test('a caller may declare link-rewrite, which the manager cannot infer', async () => {
@@ -117,7 +117,7 @@ describe('PageManager.savePageWithContext() audit emission (#1121)', () => {
     await settle();
 
     expect(events[0]).toMatchObject({
-      eventType: 'page.link-rewrite',
+      eventType: 'page-link-rewrite',
       metadata: expect.objectContaining({ rewriteFrom: 'Old', rewriteTo: 'New' })
     });
   });

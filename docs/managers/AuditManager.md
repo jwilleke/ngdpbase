@@ -306,7 +306,7 @@ const auditManager = engine.getManager('AuditManager');
 
 // Log a page edit
 await auditManager.logAuditEvent({
-  eventType: 'page.edit',
+  eventType: 'page-edit',
   user: 'john.doe',
   userId: 'user-123',
   sessionId: 'session-456',
@@ -324,7 +324,7 @@ await auditManager.logAuditEvent({
 
 // Log an access denied event
 await auditManager.logAuditEvent({
-  eventType: 'authorization.deny',
+  eventType: 'authorization-deny',
   user: 'jane.smith',
   resource: '/view/PrivatePage',
   action: 'edit',
@@ -341,7 +341,7 @@ await auditManager.logAuditEvent({
 
 // Log a security incident
 await auditManager.logAuditEvent({
-  eventType: 'security.event',   // the specific kind goes in metadata.securityEventType
+  eventType: 'security-event',   // the specific kind goes in metadata.securityEventType
   user: 'attacker',
   ipAddress: '192.168.1.200',
   resource: '/admin/users',
@@ -371,7 +371,7 @@ console.log('Recent events:', userLogs.results);
 
 // Search by event type
 const authFailures = await auditManager.searchAuditLogs({
-  eventType: 'authentication.failed',
+  eventType: 'authentication-failed',
   severity: 'high',
   startDate: '2025-01-01',
   endDate: '2025-01-31'
@@ -386,7 +386,7 @@ const deniedAccess = await auditManager.searchAuditLogs({
 
 // Complex search with multiple filters
 const complexSearch = await auditManager.searchAuditLogs({
-  eventType: 'page.edit',
+  eventType: 'page-edit',
   result: 'allow',
   severity: 'medium',
   startDate: '2025-01-01',
@@ -435,7 +435,7 @@ await fs.writeFile('./exports/audit-january.json', jsonExport);
 
 // Export to CSV
 const csvExport = await auditManager.exportAuditLogs({
-  eventType: 'page.edit',
+  eventType: 'page-edit',
   result: 'allow'
 }, 'csv');
 
@@ -470,91 +470,80 @@ if (!isHealthy) {
 
 ### Event Types
 
-The vocabulary is `{target}.{action}`, mirroring the permission registry's
-`{target}-{action}`. Dotted, so a prefix means something: `page.` is everything
-that happened to pages, `token.` is everything a credential did.
+The vocabulary is `{target}-{action}`, the same convention as the permission
+registry: target first, hyphen separated, URL-safe. Where an event is the action
+a permission authorizes, the two share the slug — `page-read` authorizes,
+`page-read` records — and the containing map says which is meant (#1201).
 
 __This table is generated from `ngdpbase.audit.events` in
 `config/app-default-config.json` and checked against it by
-`auditVocabulary.test.ts`.__ Editing one without the other fails CI. Before that
-check existed, 14 of the 19 types listed here were emitted by nothing and twelve
-emitted types were listed nowhere (#1115). Since #1200 the map is the registry as
-well: the tier is the durability the record is held to (`critical` — the action
-does not complete unless the record does; `standard` — fire-and-forget, counted;
-`volume` — high-frequency reads), and `Recorded` is the `enabled` switch. An
-operator's `app-custom-config.json` may change either; configuration is
-authoritative, and the change is itself audited.
+`auditVocabulary.test.ts`.__ Editing one without the other fails CI. The code
+lists the same names once in `src/utils/auditEventNames.ts`, typed, and
+`auditEventNames.test.ts` holds the two equal. The tier is the durability the
+record is held to (`critical` — the action does not complete unless the record
+does; `standard` — fire-and-forget, counted; `volume` — high-frequency reads),
+and `Recorded` is the `enabled` switch. An operator's `app-custom-config.json`
+may change either; configuration is authoritative, and the change is itself
+audited.
 
 | Event Type | Description | Tier | Recorded |
 | ----- | ----- | ----- | ----- |
-| `page.create` | Page created | standard | yes |
-| `page.edit` | Page edited | standard | yes |
-| `page.rename` | Page renamed | standard | yes |
-| `page.delete` | Page deleted; destruction, so the record must outlive the page | critical | yes |
-| `page.view` | Page viewed; emitted only when ngdpbase.audit.read-events is on (#1129) | volume | yes |
-| `page.link-rewrite` | Inbound links rewritten after a rename | standard | yes |
-| `attachment.upload` | File uploaded | standard | yes |
-| `attachment.delete` | File deleted; destruction | critical | yes |
-| `token.mint` | Agent token minted; a credential nobody knows exists is the worst case | critical | yes |
-| `token.revoke` | Agent token revoked | critical | yes |
-| `authentication.success` | Sign-in succeeded | standard | yes |
-| `authentication.failed` | Sign-in failed | standard | yes |
-| `authentication.logout` | User signed out | standard | yes |
-| `authorization.deny` | Access denied | standard | yes |
-| `authorization.allow` | Access granted; emitter exists, nothing in production calls it | standard | yes |
-| `policy.evaluate` | Security policy evaluated; emitter exists, nothing in production calls it | standard | yes |
-| `security.event` | Security violation detected; the kind is in metadata.securityEventType | standard | yes |
-| `share.create` | Share link created | standard | yes |
-| `share.access` | Share link used; batched counts | standard | yes |
-| `share.revoke` | Share link revoked | standard | yes |
-| `system.start` | Instance started; reports whether the previous run ended cleanly | critical | yes |
-| `system.shutdown` | Instance shut down cleanly; its absence before the next start is the signal | critical | yes |
-| `config.change` | Configuration changed by an administrator; standard so a broken audit configuration can still be repaired from the UI | standard | yes |
-| `manager.state-change` | A manager changed state: degraded, disabled, failed or recovered | standard | yes |
-| `posture.recorded` | Security posture at startup, compared against the previous start | critical | yes |
-| `job.started` | A background job started, and who asked for it | standard | yes |
-| `job.completed` | A background job finished successfully | standard | yes |
-| `job.failed` | A background job failed | standard | yes |
-| `admin.page.raw-edit` | Page edited through the admin raw editor | standard | yes |
-| `admin.sessions.revoke` | Session revoked by an admin | standard | yes |
-| `admin.sessions.clear-anonymous` | Anonymous sessions cleared | standard | yes |
-| `audit.chain-restart` | Hash chain restarted, with the reason | standard | yes |
-| `asset.read` | Attachment read; not recorded, read volume | volume | no |
-| `search.page` | Page search; not recorded, read volume | volume | no |
-| `user.read` | User profile read; not recorded, read volume | volume | no |
-| `admin.read` | Admin dashboard read; not recorded, read volume | volume | no |
+| `page-create` | Page created | standard | yes |
+| `page-edit` | Page edited | standard | yes |
+| `page-rename` | Page renamed | standard | yes |
+| `page-delete` | Page deleted; destruction, so the record must outlive the page | critical | yes |
+| `page-read` | Page read; emitted only when ngdpbase.audit.read-events is on (#1129) | volume | yes |
+| `page-link-rewrite` | Inbound links rewritten after a rename | standard | yes |
+| `asset-upload` | File uploaded | standard | yes |
+| `asset-delete` | File deleted; destruction | critical | yes |
+| `token-mint` | Agent token minted; a credential nobody knows exists is the worst case | critical | yes |
+| `token-revoke` | Agent token revoked | critical | yes |
+| `authentication-success` | Sign-in succeeded | standard | yes |
+| `authentication-failed` | Sign-in failed | standard | yes |
+| `authentication-logout` | User signed out | standard | yes |
+| `authorization-deny` | Access denied | standard | yes |
+| `authorization-allow` | Access granted; emitter exists, nothing in production calls it | standard | yes |
+| `policy-evaluate` | Security policy evaluated; emitter exists, nothing in production calls it | standard | yes |
+| `security-event` | Security violation detected; the kind is in metadata.securityEventType | standard | yes |
+| `share-create` | Share link created | standard | yes |
+| `share-access` | Share link used; batched counts | standard | yes |
+| `share-revoke` | Share link revoked | standard | yes |
+| `system-start` | Instance started; reports whether the previous run ended cleanly | critical | yes |
+| `system-shutdown` | Instance shut down cleanly; its absence before the next start is the signal | critical | yes |
+| `config-change` | Configuration changed by an administrator; standard so a broken audit configuration can still be repaired from the UI | standard | yes |
+| `manager-state-change` | A manager changed state: degraded, disabled, failed or recovered | standard | yes |
+| `posture-recorded` | Security posture at startup, compared against the previous start | critical | yes |
+| `job-started` | A background job started, and who asked for it | standard | yes |
+| `job-completed` | A background job finished successfully | standard | yes |
+| `job-failed` | A background job failed | standard | yes |
+| `page-raw-edit` | Page edited through the admin raw editor | standard | yes |
+| `session-revoke` | Session revoked by an administrator | standard | yes |
+| `session-clear-anonymous` | Anonymous sessions cleared | standard | yes |
+| `audit-chain-restart` | Hash chain restarted, with the reason | standard | yes |
+| `asset-read` | Attachment read; not recorded, read volume | volume | no |
+| `search-page` | Page search; not recorded, read volume | volume | no |
+| `user-read` | User profile read; not recorded, read volume | volume | no |
+| `admin-read` | Admin dashboard read; not recorded, read volume | volume | no |
 
 #### Retired names
 
-Six bare snake_case names were retired in the #1115 rename. Records already on
-disk keep the name they were written with, so `AuditManager.searchAuditLogs()`
-maps them forward on read and history stays filterable under the new
-vocabulary — a filter for `security.event` returns the pre-cutover
-`security_event` rows too.
-
-| Retired | Maps to |
-| ----- | ----- |
-| `access_decision` | `authorization.deny` or `authorization.allow`, by `result` |
-| `authentication` | `authentication.failed` / `.logout` / `.success`, by `result` |
-| `policy_evaluation` | `policy.evaluate` |
-| `security_event` | `security.event` |
-| `share_access` | `share.access` |
-| `share_create` | `share.create` |
-| `share_revoke` | `share.revoke` |
-
-Two of those mappings are result-aware on purpose. A legacy `authentication`
-row is a success, a failure or a logout depending on its `result`, and
-flattening all three to one name would lose exactly the distinction an operator
-is filtering for.
+Two earlier conventions are retired: the bare snake_case names (`access_decision`,
+`authentication`, `policy_evaluation`, `security_event`, `share_access`,
+`share_create`, `share_revoke`, retired by #1115) and the dotted names
+(`page-delete`, `token-mint`, `session-revoke`, retired by #1201). Records
+already on disk keep the name they were written with and are __not__ mapped
+forward: a filter for `security-event` does not return `security-event` rows.
+The #1115 resolver that mapped the snake_case names is gone with #1201, on the
+decision that the trail was days old and may die.
 
 #### What is deliberately not recorded
 
-`authorization.allow` has an emitter but nothing reaches it: `ACLManager`
+`authorization-allow` has an emitter but nothing reaches it: `ACLManager`
 records denials only. An allow fires on every page view, which is the
 read-volume `auditRegistry` exempts `page-read` for and that #334 was filed
 about. A denial is rare and is the half a security assessment asks about.
 
-`page.view` is in the vocabulary but gated (#1129): the emitter exists
+`page-read` is in the vocabulary but gated (#1129): the emitter exists
 unconditionally, and `ngdpbase.audit.read-events` decides at runtime whether it
 fires. Off — the default — a wiki does not drown its log in reads; on, a
 PHR-style deployment gets access accounting, recorded at the moment view access
@@ -583,7 +572,7 @@ path for the remaining read-volume exemptions when their turn comes.
   id: 'uuid-string',                    // Auto-generated UUID
   timestamp: '2025-01-15T10:30:00.000Z', // ISO 8601 timestamp
   level: 'info',                         // Log level (debug, info, warn, error)
-  eventType: 'page.edit',                // Type of event (see Event Types)
+  eventType: 'page-edit',                // Type of event (see Event Types)
   user: 'john.doe',                      // Username or identifier
   userId: 'user-123',                    // Internal user ID
   sessionId: 'session-456',              // Session identifier
@@ -634,7 +623,7 @@ Log an audit event to the configured provider.
 
 ```javascript
 const eventId = await auditManager.logAuditEvent({
-  eventType: 'page.edit',
+  eventType: 'page-edit',
   user: 'john.doe',
   resource: '/view/HomePage',
   action: 'read',
@@ -655,7 +644,7 @@ Search audit logs with filters and options.
 
 ```javascript
 const results = await auditManager.searchAuditLogs(
-  { user: 'john.doe', eventType: 'page.edit' },
+  { user: 'john.doe', eventType: 'page-edit' },
   { limit: 50, sortOrder: 'desc' }
 );
 ```
@@ -796,7 +785,7 @@ class AuthorizationManager {
 
     // Log the authorization decision
     await auditManager.logAuditEvent({
-      eventType: decision.allow ? 'authorization.allow' : 'authorization.deny',
+      eventType: decision.allow ? 'authorization-allow' : 'authorization-deny',
       user: user.username,
       userId: user.id,
       resource: resource,
@@ -832,7 +821,7 @@ class PageManager {
 
       // Log successful page save
       await auditManager.logAuditEvent({
-        eventType: 'page.edit',
+        eventType: 'page-edit',
         user: user.username,
         resource: `/view/${pageId}`,
         resourceType: 'page',
@@ -850,7 +839,7 @@ class PageManager {
     } catch (error) {
       // Log failed page save
       await auditManager.logAuditEvent({
-        eventType: 'page.edit',
+        eventType: 'page-edit',
         user: user.username,
         resource: `/view/${pageId}`,
         action: 'edit',
@@ -876,7 +865,7 @@ class AttachmentManager {
 
     // Log attachment upload
     await auditManager.logAuditEvent({
-      eventType: 'attachment.upload',
+      eventType: 'asset-upload',
       user: user.username,
       userId: user.id,
       sessionId: sessionId,
@@ -936,7 +925,7 @@ __Good Event:__
 
 ```javascript
 {
-  eventType: 'authorization.deny',
+  eventType: 'authorization-deny',
   user: 'john.doe',
   resource: '/view/PrivatePage',
   action: 'edit',

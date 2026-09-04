@@ -20,6 +20,7 @@ import { checkConfiguredPath, type PathPreflightResult, type PathPreflightOption
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type { ManagerFetchOptions } from '../utils/managerUtils.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
+import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 
 /**
  * Backup data structure returned by backup() method
@@ -307,7 +308,7 @@ abstract class BaseManager {
    * Only a transition is an event. A manager that starts degraded and stays
    * degraded must not re-emit on every boot, or the signal is buried in its
    * own noise — and the at-boot picture is already carried by #1149's
-   * `system.start` record.
+   * `system-start` record.
    *
    * Emitted from here rather than each manager, per the #1120 rule: a producer
    * that has to remember to call something can be correct, but can never be
@@ -324,10 +325,10 @@ abstract class BaseManager {
     void recordAuditEvent(
       this.engine?.getManager?.('AuditManager'),
       {
-        eventType: 'manager.state-change',
+        eventType: AUDIT_EVENT.MANAGER_STATE_CHANGE,
         user: 'system',
         ipAddress: undefined,
-        action: 'manager.state-change',
+        action: 'manager-state-change',
         result: 'success',
         severity: next.state === 'degraded' || next.state === 'failed' ? 'high' : 'low',
         metadata: {

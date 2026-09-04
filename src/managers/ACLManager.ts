@@ -1,6 +1,7 @@
 import BaseManager from './BaseManager.js';
 import { promises as fs } from 'fs';
 import logger from '../utils/logger.js';
+import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type UserManager from './UserManager.js';
@@ -1139,7 +1140,7 @@ class ACLManager extends BaseManager {
    *
    * Best-effort and never awaited by the decision path: the answer to "may
    * this user do this" must not depend on the audit backend being healthy, and
-   * a slow sink must not delay a page render. `authorization.deny` is standard
+   * a slow sink must not delay a page render. `authorization-deny` is standard
    * tier for that reason — the critical tier is destruction and credentials.
    */
   private async auditDenial(
@@ -1155,7 +1156,7 @@ class ACLManager extends BaseManager {
       if (!auditManager?.logAuditEvent) return;
 
       await auditManager.logAuditEvent({
-        eventType: 'authorization.deny',
+        eventType: AUDIT_EVENT.AUTHORIZATION_DENY,
         user: username,
         action: action ?? 'unknown',
         resource: pageName ?? '',
@@ -1165,7 +1166,7 @@ class ACLManager extends BaseManager {
         severity: 'medium'
       });
     } catch (err) {
-      logger.warn(`Audit log failed for authorization.deny of '${pageName}':`, err);
+      logger.warn(`Audit log failed for authorization-deny of '${pageName}':`, err);
     }
   }
 

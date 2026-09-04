@@ -1,5 +1,5 @@
 /**
- * #1129 — page.view is a deployment posture, not a default.
+ * #1129 — page-read is a deployment posture, not a default.
  *
  * On a wiki, auditing every page view is volume without value. On a PHR-style
  * deployment, who looked at what is the single most important audit question.
@@ -42,7 +42,7 @@ function makeRoutes(readEvents: boolean) {
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
-describe('#1129 page.view emission follows the read-events gate', () => {
+describe('#1129 page-read emission follows the read-events gate', () => {
   test('off by default: the gate closed means no record', async () => {
     const { routes, audit } = makeRoutes(false);
     routes.auditPageView(makeReq(), 'Lab Results', 'uuid-1');
@@ -56,7 +56,7 @@ describe('#1129 page.view emission follows the read-events gate', () => {
     await settle();
     expect(audit.logAuditEvent).toHaveBeenCalledOnce();
     const event = audit.logAuditEvent.mock.calls[0][0] as Record<string, unknown>;
-    expect(event.eventType).toBe('page.view');
+    expect(event.eventType).toBe('page-read');
     expect(event.user).toBe('jim');
     expect(event.metadata).toMatchObject({ pageName: 'Lab Results', uuid: 'uuid-1' });
   });

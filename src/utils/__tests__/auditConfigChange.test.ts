@@ -61,7 +61,7 @@ describe('#1150 — buildConfigChangeAuditEvent', () => {
     const event = buildConfigChangeAuditEvent({
       key: 'ngdpbase.session.secure', before: false, after: true, actor: 'jim', secret: false
     });
-    expect(event.eventType).toBe('config.change');
+    expect(event.eventType).toBe('config-change');
     expect(event.user).toBe('jim');
     expect(event.metadata.key).toBe('ngdpbase.session.secure');
     expect(event.metadata.before).toBe(false);

@@ -4,7 +4,7 @@
  * `AuditManager` was already mature — file provider with rotation, 90-day
  * retention, search, stats, export, and an admin UI — but almost nothing
  * called it. Outside the manager the only `logAuditEvent` call sites were
- * `page.delete`, admin raw-edit, two session operations, and share
+ * `page-delete`, admin raw-edit, two session operations, and share
  * issue/revoke. Ordinary page create, edit, and rename, and every attachment
  * upload and delete, produced no audit record at all.
  *
@@ -18,13 +18,14 @@
  *
  * These are pure builders so the event *shape* can be tested without an
  * engine, a request, or a manager. The shape is the contract: `#1082` reads
- * `page.rename`'s `fromPageName`/`pageName` pair to resolve a link that
+ * `page-rename`'s `fromPageName`/`pageName` pair to resolve a link that
  * points at a page's former title, so those two fields are load-bearing
  * rather than descriptive.
  */
 
 import logger from './logger.js';
 import { isCriticalEventType } from './auditRegistry.js';
+import { AUDIT_EVENT, type AuditEventName } from './auditEventNames.js';
 
 /** Agent-token identity attached to a request that authenticated with one. */
 export interface AuditViaToken {
@@ -53,7 +54,7 @@ export interface AuditEventSink {
 export type AuditSeverity = 'low' | 'medium' | 'high';
 
 export interface AuditEvent {
-  eventType: string;
+  eventType: AuditEventName;
   user: string;
   ipAddress: string | undefined;
   action: string;
@@ -72,6 +73,23 @@ export interface AuditEvent {
 export type PageMutationOp = 'create' | 'edit' | 'rename' | 'link-rewrite';
 export type AttachmentOp = 'upload' | 'delete';
 export type TokenOp = 'mint' | 'revoke';
+
+// #1201: the builders look the name up rather than interpolating it, so the
+// compiler — not a grep — knows which names each family can produce.
+const PAGE_EVENT: Record<PageMutationOp, AuditEventName> = {
+  create: AUDIT_EVENT.PAGE_CREATE,
+  edit: AUDIT_EVENT.PAGE_EDIT,
+  rename: AUDIT_EVENT.PAGE_RENAME,
+  'link-rewrite': AUDIT_EVENT.PAGE_LINK_REWRITE
+};
+const ASSET_EVENT: Record<AttachmentOp, AuditEventName> = {
+  upload: AUDIT_EVENT.ASSET_UPLOAD,
+  delete: AUDIT_EVENT.ASSET_DELETE
+};
+const TOKEN_EVENT: Record<TokenOp, AuditEventName> = {
+  mint: AUDIT_EVENT.TOKEN_MINT,
+  revoke: AUDIT_EVENT.TOKEN_REVOKE
+};
 
 interface CommonInput {
   username: string | undefined;
@@ -133,7 +151,7 @@ function tokenMetadata(viaToken: AuditViaToken | null | undefined): Record<strin
  * Build the audit event for a page create, edit, rename, or link rewrite.
  *
  * `result` is always `success`: these are recorded *after* the write lands,
- * unlike `page.delete`, which logs `attempted` before unlinking so that a
+ * unlike `page-delete`, which logs `attempted` before unlinking so that a
  * crash mid-delete still leaves a trace. A create or edit has the page file
  * and its version history as its own record, so recording the attempt buys
  * nothing the file does not already say.
@@ -161,13 +179,13 @@ export function buildPageMutationAuditEvent(input: PageMutationInput): AuditEven
   }
 
   return {
-    eventType: `page.${op}`,
+    eventType: PAGE_EVENT[op],
     user: username ?? 'unknown',
     ipAddress,
     action: `page-${op}`,
     result: 'success',
     // A token write is worth surfacing above ordinary editing traffic, but an
-    // edit is not a delete — `page.delete` reserves `high` for tokens.
+    // edit is not a delete — `page-delete` reserves `high` for tokens.
     severity: viaToken ? 'medium' : 'low',
     metadata
   };
@@ -189,10 +207,10 @@ export interface PageViewInput extends CommonInput {
 export function buildPageViewAuditEvent(input: PageViewInput): AuditEvent {
   const { username, ipAddress, pageName, uuid, viaToken } = input;
   return {
-    eventType: 'page.view',
+    eventType: AUDIT_EVENT.PAGE_READ,
     user: username ?? 'unknown',
     ipAddress,
-    action: 'page-view',
+    action: 'page-read',
     result: 'success',
     // Same convention as the mutations: an unattended (token-driven) read is
     // the one a reviewer is scanning for.
@@ -209,7 +227,7 @@ export function buildPageViewAuditEvent(input: PageViewInput): AuditEvent {
  * Build the audit event for an attachment upload or delete.
  *
  * A delete outranks an upload because it is the one that loses data, and a
- * token-driven delete matches `page.delete`'s `high` for the same reason:
+ * token-driven delete matches `page-delete`'s `high` for the same reason:
  * unattended destruction is the case someone reviewing the log is looking for.
  */
 export function buildAttachmentAuditEvent(input: AttachmentInput): AuditEvent {
@@ -228,10 +246,10 @@ export function buildAttachmentAuditEvent(input: AttachmentInput): AuditEvent {
     : (viaToken ? 'medium' : 'low');
 
   return {
-    eventType: `attachment.${op}`,
+    eventType: ASSET_EVENT[op],
     user: username ?? 'unknown',
     ipAddress,
-    action: `attachment-${op}`,
+    action: `asset-${op}`,
     result: 'success',
     severity,
     metadata
@@ -379,7 +397,7 @@ export async function recordAuditEvent(
  * survivable; an unaudited mint is a credential nobody knows exists.
  *
  * `scopes` and `expiresAt` appear on a mint only, and `revokedBy` on a revoke
- * only — the same rule `page.rename` follows for `fromPageName`. A field
+ * only — the same rule `page-rename` follows for `fromPageName`. A field
  * present on every event is useless as a filter.
  */
 export function buildTokenAuditEvent(input: TokenInput): AuditEvent {
@@ -402,7 +420,7 @@ export function buildTokenAuditEvent(input: TokenInput): AuditEvent {
   }
 
   return {
-    eventType: `token.${op}`,
+    eventType: TOKEN_EVENT[op],
     user: username ?? 'unknown',
     ipAddress,
     action: `token-${op}`,

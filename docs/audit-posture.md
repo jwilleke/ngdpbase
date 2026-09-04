@@ -48,7 +48,7 @@ Turning auditing off (`ngdpbase.audit.enabled: false` or `provider: nullauditpro
 
 `ngdpbase.audit.events` is one map keyed by event. Events are actions taken; permissions are authority; neither registry carries the other's fields, so a permission that gates several recorded actions and a recorded action with no permission (failed login, process start) sit in the same map. A type not declared there must not be emitted; a declared type that is not switched off must have an emitter. `auditVocabulary.test.ts`, `auditRegistry.test.ts` and `npm run lint:audit` fail CI on either divergence. The table an operator sees is [AuditManager — Event Types](managers/AuditManager.md#event-types); that table is pinned to the map by the same test.
 
-An event switched off (`enabled: false`) is a decision on the record with its reason in the description: `asset.read`, `search.page`, `user.read`, `admin.read` today. The eight gated actions that still have no emitter at all (`page-export`, `asset-edit`, `search-user`, `user-create`, `user-edit`, `user-delete`, `admin-roles`, `admin-system`) are [#1204](https://github.com/jwilleke/ngdpbase/issues/1204).
+An event switched off (`enabled: false`) is a decision on the record with its reason in the description: `asset-read`, `search-page`, `user-read`, `admin-read` today. The eight gated actions that still have no emitter at all (`page-export`, `asset-edit`, `search-user`, `user-create`, `user-edit`, `user-delete`, `admin-roles`, `admin-system`) are [#1204](https://github.com/jwilleke/ngdpbase/issues/1204).
 
 ### Tiers
 
@@ -60,9 +60,9 @@ Declared per event in configuration, not chosen at the call site (`isCriticalEve
 | `standard` | Fire-and-forget | Buffered in memory; losses counted and surfaced |
 | `volume` | High-frequency reads | Emitter exists; fires only when the named config key is true |
 
-Critical types today: `page.delete`, `attachment.delete`, `token.mint`, `token.revoke`, `system.start`, `system.shutdown`, `posture.recorded`.
+Critical types today: `page-delete`, `asset-delete`, `token-mint`, `token-revoke`, `system-start`, `system-shutdown`, `posture-recorded`.
 
-`page.view` is the volume event. It is gated by `ngdpbase.audit.read-events` (default `false`). The emitter is unconditional; the key only decides whether it fires.
+`page-read` is the volume event. It is gated by `ngdpbase.audit.read-events` (default `false`). The emitter is unconditional; the key only decides whether it fires.
 
 ### What is recorded in production
 
@@ -73,17 +73,17 @@ Families with live emitters:
 - Agent tokens: mint, revoke
 - Authentication: success, failed, logout
 - Authorization: deny (allows are not written; see below)
-- Security: `security.event` with the kind in `metadata.securityEventType`
+- Security: `security-event` with the kind in `metadata.securityEventType`
 - Shares: create, access, revoke
-- Process: `system.start` (and whether the previous run ended cleanly), `system.shutdown`
-- Configuration: `config.change` for admin `setProperty()` writes
-- Subsystems: `manager.state-change`
-- Security settings at boot: `posture.recorded`, compared with the previous start
+- Process: `system-start` (and whether the previous run ended cleanly), `system-shutdown`
+- Configuration: `config-change` for admin `setProperty()` writes
+- Subsystems: `manager-state-change`
+- Security settings at boot: `posture-recorded`, compared with the previous start
 - Background jobs: started, completed, failed (with actor and origin)
 - Administration: raw page edit, session revoke, clear-anonymous-sessions
-- The trail itself: `audit.chain-restart`
+- The trail itself: `audit-chain-restart`
 
-`authorization.allow` and `policy.evaluate` have emitters on `AuditManager` (`logAccessDecision`, `logPolicyEvaluation`). Nothing in production calls them: `ACLManager` records denials only, and no caller reaches `logPolicyEvaluation`. They stay in the vocabulary because the methods exist and history may contain the names.
+`authorization-allow` and `policy-evaluate` have emitters on `AuditManager` (`logAccessDecision`, `logPolicyEvaluation`). Nothing in production calls them: `ACLManager` records denials only, and no caller reaches `logPolicyEvaluation`. They stay in the vocabulary because the methods exist and history may contain the names.
 
 Attribution on a record: `user`, `ipAddress`, `viaTokenId`, `viaTokenName`. A request that authenticated with an agent token is distinguishable from the same username acting in a browser session.
 
@@ -103,7 +103,7 @@ Truncation of the tail is a different check. Removing records from the end break
 
 `FileAuditProvider` continues the chain across file rotation ([#1122](https://github.com/jwilleke/ngdpbase/issues/1122)).
 
-A broken chain is not repaired automatically. `npm run audit:restart-chain` writes an `audit.chain-restart` marker as an ordinary record (`seq` 1, genesis predecessor) naming who authorised it and why. The abandoned segment stays in the file and stays unverifiable. A restart without a reason is refused.
+A broken chain is not repaired automatically. `npm run audit:restart-chain` writes an `audit-chain-restart` marker as an ordinary record (`seq` 1, genesis predecessor) naming who authorised it and why. The abandoned segment stays in the file and stays unverifiable. A restart without a reason is refused.
 
 ### Truncation detection (witness)
 
@@ -126,7 +126,7 @@ A page or attachment delete whose audit record cannot be written is refused (HTT
 
 Non-critical losses increment a counter, log on an escalating schedule, and surface on the admin dashboard. They never fail the action.
 
-On clean shutdown the file provider flushes with fsync. `system.shutdown` is itself critical, so its absence before the next `system.start` is how the log states the previous run died and buffered records may be missing.
+On clean shutdown the file provider flushes with fsync. `system-shutdown` is itself critical, so its absence before the next `system-start` is how the log states the previous run died and buffered records may be missing.
 
 ## Reviewability
 
@@ -163,7 +163,7 @@ The mechanism (chain, registry, vocabulary, parity tests, guarantees report) is 
 | `ngdpbase.audit.enabled` | `true` | Off loads `NullAuditProvider` deliberately |
 | `ngdpbase.audit.provider` | `fileauditprovider` | Active backend |
 | `ngdpbase.audit.on-failure` | `continue` | Degrade vs maintenance-mode refuse |
-| `ngdpbase.audit.read-events` | `false` | Whether `page.view` is written |
+| `ngdpbase.audit.read-events` | `false` | Whether `page-read` is written |
 | `ngdpbase.audit.retentiondays` | `90` | File-provider archive expiry |
 | `ngdpbase.audit.chain-witness.destination` | `""` | Path to append chain-head fingerprints |
 | `ngdpbase.audit.chain-witness.interval-minutes` | `60` | Maximum truncation window while a witness is configured |
@@ -206,7 +206,7 @@ npm run audit:coverage     # the report
 npm run lint:audit         # the same check, exits 1 on an unambiguous gap
 ```
 
-`scripts/audit-coverage.ts` compares the three lists that had no way of being compared by hand: the __vocabulary__ (names that may be used), the __registry__ (what must be recorded, and at what tier), and the __emitters__ (what the source actually sends). It walks `src/` and `addons/`, and resolves interpolated names — emitters build them as `` `page.${op}` ``, so a plain text search reports `page.create` as unemitted while it fires on every page save.
+`scripts/audit-coverage.ts` compares the three lists that had no way of being compared by hand: the __vocabulary__ (names that may be used), the __registry__ (what must be recorded, and at what tier), and the __emitters__ (what the source actually sends). It walks `src/` and `addons/`, and resolves interpolated names — emitters build them as `` `page.${op}` ``, so a plain text search reports `page-create` as unemitted while it fires on every page save.
 
 It fails the build only on the unambiguous directions: a required event nobody emits, a name outside the vocabulary, or an emitter it cannot account for. It does __not__ fail on an emitted event that carries no registry requirement, because closing those needs a tier decision per event ([#1184](https://github.com/jwilleke/ngdpbase/issues/1184)) and a check that fails before the decision exists is one people switch off.
 
@@ -220,9 +220,9 @@ It fails the build only on the unambiguous directions: a required event nobody e
 
 Every name is emitted, nothing is emitted under an unpermitted name, and nothing declared required lacks an emitter. What the report shows is the middle row: __fifteen event types are emitted with no stated requirement__, so they have no tier, and `isCriticalEventType()` answers `false` for each — not as a decision, but because they are not present to be graded:
 
-`authentication.success` · `authentication.failed` · `authentication.logout` · `authorization.allow` · `authorization.deny` · `security.event` · `share.create` · `share.access` · `share.revoke` · `admin.page.raw-edit` · `admin.sessions.revoke` · `admin.sessions.clear-anonymous` · `audit.chain-restart` · `page.link-rewrite` · `policy.evaluate`
+`authentication-success` · `authentication-failed` · `authentication-logout` · `authorization-allow` · `authorization-deny` · `security-event` · `share-create` · `share-access` · `share-revoke` · `page-raw-edit` · `session-revoke` · `session-clear-anonymous` · `audit-chain-restart` · `page-link-rewrite` · `policy-evaluate`
 
-`UNGATED_REQUIREMENTS` exists for exactly this — events with no permission behind them — and its own comment names the case: *"A failed login has no permission behind it, because nobody is authenticated yet, and it is exactly what an assessor asks for."* `authentication.failed` is not in the list that comment introduces.
+`UNGATED_REQUIREMENTS` exists for exactly this — events with no permission behind them — and its own comment names the case: *"A failed login has no permission behind it, because nobody is authenticated yet, and it is exactly what an assessor asks for."* `authentication-failed` is not in the list that comment introduces.
 
 __Addons emit nothing.__ The report covers `addons/` and finds zero audit events there, while four of the five write user data — form submissions (`FormsDataManager.saveSubmission`), journal entries, calendar events, feed records. Not a registry gap, because nothing declares those actions at all; a coverage gap, and the same shape as [#1177](https://github.com/jwilleke/ngdpbase/issues/1177), where addon code was held to a weaker standard by default rather than by decision.
 
@@ -238,7 +238,7 @@ Eight permissions exist and are gated, but have no audit event. The registry mar
 | `user-create` | Account lifecycle |
 | `user-edit` | Includes role changes, which change what someone may do |
 | `user-delete` | Destruction of an account and its attribution |
-| `admin-system` | The permission itself is uncovered; `admin.page.raw-edit` and `admin.sessions.*` do exist |
+| `admin-system` | The permission itself is uncovered; `page-raw-edit` and `admin.sessions.*` do exist |
 | `admin-roles` | Changing a role changes everyone holding it |
 
 Read-volume exemptions (not recorded, on purpose): `asset-read`, `search-page`, `user-read`, `admin-read`.
@@ -247,7 +247,7 @@ Also not implemented:
 
 - Database and cloud backends (stubs that fail closed, as above)
 - Per-record retention proof
-- Production emission of `authorization.allow` and `policy.evaluate`
+- Production emission of `authorization-allow` and `policy-evaluate`
 
 ## Audit planning
 
@@ -278,35 +278,9 @@ Nothing about recording fails silently:
 - An emitter for a disabled event returns `not-enabled` rather than returning nothing. A caller can tell "recorded" from "switched off" from "no sink".
 - An event that is `enabled` and has no emitter fails hard. `npm run lint:audit` fails the build, and at boot the emitters register their names with `AuditManager`, so a configuration that enables a name nothing registered is a fatal configuration entry and the instance boots into maintenance mode ([security-posture.md](security-posture.md) D9, D10).
 
-### Naming: `{target}-{action}`, hyphens only
+### Naming: `{target}-{action}`, hyphens only — landed in [#1201](https://github.com/jwilleke/ngdpbase/issues/1201)
 
-One convention for permissions and events: target first, hyphen separated, URL-safe. Where an event is the action a permission authorizes, the two share the slug — `page-read` authorizes, `page-read` records — and the containing map says which is meant. Events with no permission keep the same shape.
-
-| Today | New |
-| --- | --- |
-| `page.create` / `page.edit` / `page.rename` / `page.delete` | `page-create` / `page-edit` / `page-rename` / `page-delete` |
-| `page.view` | `page-read` |
-| `page.link-rewrite` | `page-link-rewrite` |
-| `attachment.upload` / `attachment.delete` | `asset-upload` / `asset-delete` |
-| `token.mint` / `token.revoke` | `token-mint` / `token-revoke` |
-| `authentication.success` / `.failed` / `.logout` | `authentication-success` / `authentication-failed` / `authentication-logout` |
-| `authorization.allow` / `authorization.deny` | `authorization-allow` / `authorization-deny` |
-| `policy.evaluate` | `policy-evaluate` |
-| `security.event` | `security-event` |
-| `share.create` / `share.access` / `share.revoke` | `share-create` / `share-access` / `share-revoke` |
-| `system.start` / `system.shutdown` | `system-start` / `system-shutdown` |
-| `config.change` | `config-change` |
-| `manager.state-change` | `manager-state-change` |
-| `posture.recorded` | `posture-recorded` |
-| `job.started` / `job.completed` / `job.failed` | `job-started` / `job-completed` / `job-failed` |
-| `admin.page.raw-edit` | `page-raw-edit` |
-| `admin.sessions.revoke` | `session-revoke` |
-| `admin.sessions.clear-anonymous` | `session-clear-anonymous` |
-| `audit.chain-restart` | `audit-chain-restart` |
-
-Three rows change more than punctuation. `admin.*` loses its prefix because the target is the page or the session, and that an admin did it is the record's `user` field. `attachment.*` becomes `asset-*` to match the permission.
-
-Records already on disk under dotted or underscored names are not mapped forward. The legacy resolver in `auditVocabulary.ts` goes with the file. The operator's decision: the trail is days old and may die.
+Every event is `{target}-{action}`, sharing the permission's slug where the action is the one the permission authorizes; the table is [AuditManager — Event Types](managers/AuditManager.md#event-types). The code lists the names once in `src/utils/auditEventNames.ts`, typed, so an emitter cannot compile with a name configuration does not declare. Records on disk under dotted names are not mapped forward.
 
 ### Tiers for the fifteen undeclared events
 

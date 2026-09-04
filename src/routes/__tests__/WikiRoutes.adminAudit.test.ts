@@ -52,7 +52,7 @@ function makeRoutes(audit: unknown, hasPermission = true) {
 }
 
 const stats = { totalEvents: 3, eventsByType: {}, eventsByResult: { allow: 2, deny: 1 }, eventsBySeverity: {}, eventsByUser: {}, recentActivity: [], securityIncidents: 1 };
-const page = { results: [{ id: 'e1', eventType: 'token.mint', user: 'alice' }], total: 1, limit: 50, offset: 0, hasMore: false };
+const page = { results: [{ id: 'e1', eventType: 'token-mint', user: 'alice' }], total: 1, limit: 50, offset: 0, hasMore: false };
 
 const workingAudit = () => ({
   getAuditStats: vi.fn().mockResolvedValue(stats),
@@ -75,12 +75,12 @@ describe('#1113 admin audit routes', () => {
   test('query parameters become filters, and all three endpoints read them the same way', async () => {
     const audit = workingAudit();
     const routes = makeRoutes(audit);
-    const query = { user: 'alice', eventType: 'token.mint', severity: 'high' };
+    const query = { user: 'alice', eventType: 'token-mint', severity: 'high' };
 
     await routes.adminAuditLogsApi(makeReq(query), makeRes());
     await routes.adminAuditExport(makeReq(query), makeRes());
 
-    const expected = { user: 'alice', eventType: 'token.mint', severity: 'high' };
+    const expected = { user: 'alice', eventType: 'token-mint', severity: 'high' };
     expect(audit.searchAuditLogs).toHaveBeenCalledWith(expected, expect.anything(), expect.objectContaining({ username: expect.any(String) }));
     expect(audit.exportAuditLogs).toHaveBeenCalledWith(expected, 'json', expect.objectContaining({ username: expect.any(String) }));
   });

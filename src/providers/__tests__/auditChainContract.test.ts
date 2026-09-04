@@ -40,7 +40,7 @@ class UnchainedProvider extends MemoryProvider {
 }
 
 const engine = { getManager: vi.fn(() => null) } as never;
-const event = (n: number) => ({ id: `e${n}`, eventType: 'page.edit', user: 'alice' }) as never;
+const event = (n: number) => ({ id: `e${n}`, eventType: 'page-edit', user: 'alice' }) as never;
 
 describe('#1119 the base stamps, the subclass only stores', () => {
   it('a subclass that implements only storage still produces a verifiable chain', async () => {
@@ -122,7 +122,7 @@ describe('#1124 chain restart', () => {
     await p.restartChain('records predate the #1119 fix', 'jim');
 
     const marker = p.written[3];
-    expect(marker.eventType).toBe('audit.chain-restart');
+    expect(marker.eventType).toBe('audit-chain-restart');
     expect(marker.seq).toBe(1);
     expect(marker.prevHash).toBe(GENESIS_HASH);
     expect((marker.metadata as Record<string, unknown>).previousHash).toBe(abandoned);

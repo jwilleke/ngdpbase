@@ -45,7 +45,7 @@ describe('#631 — provenance reaches the run record and the audit log', () => {
     await m.enqueue('test.job', jobContextFromRequest({ username: 'jim', viaToken: token }));
     await settle();
 
-    const started = events.find((e) => e.eventType === 'job.started');
+    const started = events.find((e) => e.eventType === 'job-started');
     expect(started).toBeDefined();
     expect(started?.user).toBe('jim');
     const meta = started?.metadata as Record<string, unknown>;
@@ -61,7 +61,7 @@ describe('#631 — provenance reaches the run record and the audit log', () => {
     const { m, events } = makeManager();
     await m.enqueue('test.job', jobContextFromSystem('svc-ngdpbase', 'scheduled sweep'));
     await settle();
-    const done = events.find((e) => e.eventType === 'job.completed');
+    const done = events.find((e) => e.eventType === 'job-completed');
     expect(done).toBeDefined();
     expect((done?.metadata as Record<string, unknown>).reason).toBe('scheduled sweep');
   });

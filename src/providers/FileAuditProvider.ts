@@ -363,8 +363,8 @@ class FileAuditProvider extends BaseAuditProvider {
    * __The critical tier is written and fsynced before this resolves.__ The
    * registry defines `critical` as *"the action must not complete unless the
    * record does"*, and a 30-second timer flushing into the page cache does not
-   * deliver that: `page.delete`, `token.mint`, `token.revoke`, the lifecycle
-   * events and `posture.recorded` could all be lost by an unclean exit while
+   * deliver that: `page-delete`, `token-mint`, `token-revoke`, the lifecycle
+   * events and `posture-recorded` could all be lost by an unclean exit while
    * the action they describe had already happened. A credential that exists
    * with nothing saying so is the case the tier was written for.
    *
@@ -376,7 +376,7 @@ class FileAuditProvider extends BaseAuditProvider {
    * keeps the chain intact and still returns only once the bytes are down.
    *
    * `standard` and `volume` are deliberately untouched — making every event
-   * synchronous would charge `page.view` at volume for a guarantee the #1109
+   * synchronous would charge `page-read` at volume for a guarantee the #1109
    * decision says it does not need.
    */
   async writeEvent(record: Record<string, unknown>): Promise<string> {
@@ -885,7 +885,7 @@ class FileAuditProvider extends BaseAuditProvider {
   async close(): Promise<void> {
     // Flush any remaining events, durably: this is the last chance the records
     // get, and a shutdown that leaves them in the page cache is exactly the
-    // unclean-exit case #1149's system.shutdown event exists to make visible.
+    // unclean-exit case #1149's system-shutdown event exists to make visible.
     // Failure is logged and re-queued by doFlush; close must still complete, or
     // a failing disk would leave the timer running and the provider half-shut.
     await this.flush({ fsync: true }).catch(() => { /* logged in doFlush */ });

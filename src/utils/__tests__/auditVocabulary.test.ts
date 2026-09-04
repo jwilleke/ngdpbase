@@ -14,14 +14,9 @@
  */
 import fs from 'fs';
 import path from 'path';
-import {
-  auditEventDeclarations,
-  auditEventTypes,
-  canonicalEventTypeOf,
-  legacyTypesFor,
-  LEGACY_EVENT_TYPES
-} from '../auditVocabulary';
+import { auditEventDeclarations, auditEventTypes } from '../auditVocabulary';
 import { requiredEventTypes } from '../auditRegistry';
+import { AUDIT_EVENT, AUDIT_EVENT_NAME_PATTERN } from '../auditEventNames';
 
 const SRC = path.join(process.cwd(), 'src');
 const DOCS = path.join(process.cwd(), 'docs', 'managers', 'AuditManager.md');
@@ -41,40 +36,39 @@ function sourceFiles(dir = SRC, acc: string[] = []): string[] {
 
 // #1200: the vocabulary is `ngdpbase.audit.events` in configuration; the two
 // reader modules name nothing and emit nothing.
-const files = sourceFiles().filter((f) => !f.endsWith('auditVocabulary.ts') && !f.endsWith('auditRegistry.ts'));
+const files = sourceFiles().filter((f) => !f.endsWith('auditVocabulary.ts') && !f.endsWith('auditRegistry.ts') && !f.endsWith('auditEventNames.ts'));
 const allSource = files.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
 
-/** Event type literals assigned to an `eventType` field anywhere in src/. */
-function emittedLiterals(): Set<string> {
+/** Names an emitter can send: every `AUDIT_EVENT.KEY` reference in src/, resolved through the module. */
+function emittedNames(): Set<string> {
   const found = new Set<string>();
+  for (const m of allSource.matchAll(/AUDIT_EVENT\.([A-Z_]+)/g)) {
+    const name = (AUDIT_EVENT as Record<string, string>)[m[1]];
+    if (name) found.add(name);
+  }
+  // A raw literal in eventType position bypasses the module; count it so the
+  // vocabulary check can still see it.
   for (const m of allSource.matchAll(/eventType:\s*'([^']+)'/g)) found.add(m[1]);
-  // ShareManager routes its events through a helper taking the type positionally.
-  for (const m of allSource.matchAll(/this\.audit\('([^']+)'/g)) found.add(m[1]);
   return found;
 }
 
 describe('the audit vocabulary is one set, not three (#1115)', () => {
   test('every emitted event type is in the vocabulary', () => {
-    const undocumented = [...emittedLiterals()]
+    const undocumented = [...emittedNames()]
       .filter((t) => t !== 'test')
       .filter((t) => !(t in auditEventDeclarations()));
 
     expect(undocumented).toEqual([]);
   });
 
-  test('nothing emits a retired snake_case name any more', () => {
-    const stillEmitted = [...emittedLiterals()].filter((t) => LEGACY_EVENT_TYPES.includes(t));
-    expect(stillEmitted).toEqual([]);
+  test('nothing emits a dotted or snake_case name any more (#1201)', () => {
+    const offConvention = [...emittedNames()].filter((t) => t !== 'test' && !AUDIT_EVENT_NAME_PATTERN.test(t));
+    expect(offConvention).toEqual([]);
   });
 
   test('every declared and enabled type has an emitter', () => {
-    const missing = requiredEventTypes()
-      .filter((eventType) => {
-        if (allSource.includes(`'${eventType}'`)) return false;
-        // Builders construct a family from one template: `page.${op}`.
-        const family = eventType.split('.')[0];
-        return !new RegExp('`' + family + '\\.\\$\\{').test(allSource);
-      });
+    const emitted = emittedNames();
+    const missing = requiredEventTypes().filter((eventType) => !emitted.has(eventType));
 
     expect(missing).toEqual([]);
   });
@@ -89,8 +83,8 @@ describe('the audit vocabulary is one set, not three (#1115)', () => {
     expect(unexplained).toEqual([]);
   });
 
-  test('every type follows the {target}.{action} convention', () => {
-    const offenders = auditEventTypes().filter((t) => !/^[a-z]+(\.[a-z][a-z-]*)+$/.test(t));
+  test('every type follows the {target}-{action} convention (#1201)', () => {
+    const offenders = auditEventTypes().filter((t) => !AUDIT_EVENT_NAME_PATTERN.test(t));
     expect(offenders).toEqual([]);
   });
 
@@ -104,50 +98,5 @@ describe('the audit vocabulary is one set, not three (#1115)', () => {
     const fictionInDocs = [...documented].filter((t) => !vocabulary.has(t));
 
     expect({ missingFromDocs, fictionInDocs }).toEqual({ missingFromDocs: [], fictionInDocs: [] });
-  });
-});
-
-describe('history stays readable after the rename (#1115)', () => {
-  test('a legacy record maps forward to its canonical name', () => {
-    expect(canonicalEventTypeOf({ eventType: 'security_event' })).toBe('security.event');
-    expect(canonicalEventTypeOf({ eventType: 'share_access' })).toBe('share.access');
-    expect(canonicalEventTypeOf({ eventType: 'share_revoke' })).toBe('share.revoke');
-  });
-
-  test('a legacy authentication row keeps its outcome', () => {
-    // Flattening all three to one name would lose exactly the distinction an
-    // operator is filtering for.
-    expect(canonicalEventTypeOf({ eventType: 'authentication', result: 'failure' })).toBe('authentication.failed');
-    expect(canonicalEventTypeOf({ eventType: 'authentication', result: 'logout' })).toBe('authentication.logout');
-    expect(canonicalEventTypeOf({ eventType: 'authentication', result: 'success' })).toBe('authentication.success');
-  });
-
-  test('a legacy access_decision row keeps allow versus deny', () => {
-    expect(canonicalEventTypeOf({ eventType: 'access_decision', result: 'deny' })).toBe('authorization.deny');
-    expect(canonicalEventTypeOf({ eventType: 'access_decision', result: 'allow' })).toBe('authorization.allow');
-  });
-
-  test('an already-canonical name is returned unchanged', () => {
-    expect(canonicalEventTypeOf({ eventType: 'page.edit' })).toBe('page.edit');
-  });
-
-  test('an unknown type is surfaced as itself, not guessed at', () => {
-    // Silently renaming something we do not understand is how a log stops
-    // being evidence.
-    expect(canonicalEventTypeOf({ eventType: 'addon.something' })).toBe('addon.something');
-    expect(canonicalEventTypeOf({})).toBe('');
-  });
-
-  test('a filter widens to the legacy names that can produce it', () => {
-    expect(legacyTypesFor('security.event')).toEqual(['security_event']);
-    expect(legacyTypesFor('authentication.failed')).toEqual(['authentication']);
-    expect(legacyTypesFor('authorization.deny')).toEqual(['access_decision']);
-  });
-
-  test('a canonical type with no history under another name widens to nothing', () => {
-    // The read path uses this to avoid dropping the provider-side filter and
-    // reading the whole log on every query.
-    expect(legacyTypesFor('page.edit')).toEqual([]);
-    expect(legacyTypesFor('token.mint')).toEqual([]);
   });
 });

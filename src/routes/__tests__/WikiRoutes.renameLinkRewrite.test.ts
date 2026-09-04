@@ -109,7 +109,7 @@ describe('WikiRoutes.rewriteInboundLinksAfterRename()', () => {
     // own title did not change. So the route must declare the op and name the
     // rename that caused it.
     //
-    // That the declaration becomes a page.link-rewrite record is proven in
+    // That the declaration becomes a page-link-rewrite record is proven in
     // PageManager.audit.test.ts, against the real manager rather than a double.
     it('declares the link-rewrite op and the rename that caused it', async () => {
       pages.set('Alpha', page('Alpha', '[Old Title]'));

@@ -78,7 +78,7 @@ describe('#1156 — diffPostures', () => {
   test('a secret that stayed a secret is not a change', () => {
     // Both boots record '[secret]', so a rotated secret is invisible here —
     // which is correct: the value must not be recorded, so its change cannot
-    // be. config.change covers the act of setting it.
+    // be. config-change covers the act of setting it.
     const d = diffPostures({ s: '[secret]' }, { s: '[secret]' });
     expect(d.changed).toEqual([]);
   });
@@ -109,7 +109,7 @@ describe('#1156 — describePostureDiff', () => {
 
   test('a change found at boot says nothing observed the edit', () => {
     // The operator needs to know WHY this is being reported at startup rather
-    // than as a config.change: because nothing saw it happen.
+    // than as a config-change: because nothing saw it happen.
     const text = describePostureDiff(diffPostures({ 'k.a': true }, { 'k.a': false }));
     expect(text).toMatch(/outside the application|not observed|while the instance was not running/i);
   });

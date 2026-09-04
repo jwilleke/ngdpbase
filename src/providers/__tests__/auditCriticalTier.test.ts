@@ -2,8 +2,8 @@
  * #1158 — the critical tier did not mean what the registry says it means.
  *
  * `auditRegistry.ts` defines `critical` as *"the action must not complete
- * unless the record does"*, and `page.delete`, `token.mint`, `token.revoke`,
- * the lifecycle events and `posture.recorded` all carry it. What actually
+ * unless the record does"*, and `page-delete`, `token-mint`, `token-revoke`,
+ * the lifecycle events and `posture-recorded` all carry it. What actually
  * happened was: queue in memory, flush on a 30-second timer, `fs.appendFile`
  * with no fsync. A credential could be minted and the record naming it lost to
  * an unclean exit, which is the case #1111 called the worst one.
@@ -77,35 +77,35 @@ afterEach(async () => {
 
 describe('#1158 — the critical tier is durable before the action completes', () => {
   test('the registry still declares the events this depends on', () => {
-    // Guards the fixtures: if `token.mint` stopped being critical, every
+    // Guards the fixtures: if `token-mint` stopped being critical, every
     // assertion below would pass for the wrong reason.
-    expect(isCriticalEventType('token.mint')).toBe(true);
-    expect(isCriticalEventType('page.delete')).toBe(true);
-    expect(isCriticalEventType('page.edit')).toBe(false);
-    expect(criticalEventTypes()).toContain('token.mint');
+    expect(isCriticalEventType('token-mint')).toBe(true);
+    expect(isCriticalEventType('page-delete')).toBe(true);
+    expect(isCriticalEventType('page-edit')).toBe(false);
+    expect(criticalEventTypes()).toContain('token-mint');
   });
 
   test('a critical record is readable on disk once the write resolves', async () => {
     const p = makeProvider();
     await p.initialize();
 
-    await p.logAuditEvent(event('token.mint'));
+    await p.logAuditEvent(event('token-mint'));
 
     // No flush() call, no timer — if this passes, writeEvent put it there.
     const records = await onDisk();
-    expect(records.map((r) => r.eventType)).toEqual(['token.mint']);
+    expect(records.map((r) => r.eventType)).toEqual(['token-mint']);
 
     await p.close();
   });
 
   test('a standard record is still buffered when the write resolves', async () => {
     // The other half of the guarantee. Making everything synchronous would
-    // charge page.view at volume for durability the #1109 decision says it
+    // charge page-read at volume for durability the #1109 decision says it
     // does not need, so this asserts the tier is a real distinction.
     const p = makeProvider();
     await p.initialize();
 
-    await p.logAuditEvent(event('page.edit'));
+    await p.logAuditEvent(event('page-edit'));
 
     expect(await onDisk()).toEqual([]);
 
@@ -120,14 +120,14 @@ describe('#1158 — the critical tier is durable before the action completes', (
     const p = makeProvider();
     await p.initialize();
 
-    await p.logAuditEvent(event('page.edit'));
-    await p.logAuditEvent(event('page.rename'));
+    await p.logAuditEvent(event('page-edit'));
+    await p.logAuditEvent(event('page-rename'));
     expect(await onDisk()).toEqual([]);
 
-    await p.logAuditEvent(event('token.mint'));
+    await p.logAuditEvent(event('token-mint'));
 
     const records = await onDisk();
-    expect(records.map((r) => r.eventType)).toEqual(['page.edit', 'page.rename', 'token.mint']);
+    expect(records.map((r) => r.eventType)).toEqual(['page-edit', 'page-rename', 'token-mint']);
     expect(records.map((r) => r.seq)).toEqual([1, 2, 3]);
     expect(verifyChain(records as never).ok).toBe(true);
 
@@ -142,14 +142,14 @@ describe('#1158 — the critical tier is durable before the action completes', (
     const p = makeProvider();
     await p.initialize();
 
-    await p.logAuditEvent(event('page.edit'));
+    await p.logAuditEvent(event('page-edit'));
 
     // Start a flush and do NOT await it, so a batch is genuinely in flight.
     const inFlight = p.flush();
-    await p.logAuditEvent(event('token.mint'));
+    await p.logAuditEvent(event('token-mint'));
 
     const records = await onDisk();
-    expect(records.map((r) => r.eventType)).toContain('token.mint');
+    expect(records.map((r) => r.eventType)).toContain('token-mint');
 
     await inFlight;
     await p.close();
@@ -163,7 +163,7 @@ describe('#1158 — the critical tier is durable before the action completes', (
     const p = makeProvider();
     await p.initialize();
 
-    await p.logAuditEvent(event('page.edit'));
+    await p.logAuditEvent(event('page-edit'));
 
     // Make the append fail by replacing the log directory with a file, so the
     // path the provider writes to cannot be created.
@@ -177,7 +177,7 @@ describe('#1158 — the critical tier is durable before the action completes', (
     await fs.ensureDir(dir);
     await p.flush();
 
-    expect((await onDisk()).map((r) => r.eventType)).toEqual(['page.edit']);
+    expect((await onDisk()).map((r) => r.eventType)).toEqual(['page-edit']);
   });
 
   test('a critical write reports its failure rather than resolving', async () => {
@@ -190,7 +190,7 @@ describe('#1158 — the critical tier is durable before the action completes', (
     await fs.remove(dir);
     await fs.writeFile(dir, 'not a directory');
 
-    await expect(p.logAuditEvent(event('token.mint') as never)).rejects.toThrow();
+    await expect(p.logAuditEvent(event('token-mint') as never)).rejects.toThrow();
   });
 
   test('the critical write is forced to the device, not just to the page cache', async () => {
@@ -216,7 +216,7 @@ describe('#1158 — the critical tier is durable before the action completes', (
     });
 
     try {
-      await p.logAuditEvent(event('token.mint'));
+      await p.logAuditEvent(event('token-mint'));
 
       expect(openSpy).toHaveBeenCalled();
       expect(opened).toHaveLength(1);
@@ -230,14 +230,14 @@ describe('#1158 — the critical tier is durable before the action completes', (
   test('a standard write does not pay for an fsync it was not promised', async () => {
     // The cost side of the tier. 0.13 ms/write plain against 8.62 ms with
     // fsync on this repo's storage (see atomicWrite.ts), so making every event
-    // synchronous would charge page.view at volume for a guarantee the #1109
+    // synchronous would charge page-read at volume for a guarantee the #1109
     // decision says it does not need.
     const p = makeProvider();
     await p.initialize();
 
     const openSpy = vi.spyOn(fsp, 'open');
     try {
-      await p.logAuditEvent(event('page.edit'));
+      await p.logAuditEvent(event('page-edit'));
       await p.flush();
       expect(openSpy).not.toHaveBeenCalled();
     } finally {
@@ -260,7 +260,7 @@ describe('#1158 — the critical tier is durable before the action completes', (
     });
     await p.initialize();
 
-    await p.logAuditEvent(event('token.mint'));
+    await p.logAuditEvent(event('token-mint'));
 
     const lines = (await fs.readFile(witnessFile, 'utf8')).split('\n').filter(Boolean);
     expect(lines).toHaveLength(1);
@@ -282,9 +282,9 @@ describe('#1158 — the critical tier is durable before the action completes', (
     const durability = p.getDurability();
     expect(durability).not.toBeNull();
     expect(durability?.fsync).toBe(false);
-    expect(durability?.fsyncedClasses).toContain('token.mint');
-    expect(durability?.fsyncedClasses).toContain('page.delete');
-    expect(durability?.fsyncedClasses).not.toContain('page.edit');
+    expect(durability?.fsyncedClasses).toContain('token-mint');
+    expect(durability?.fsyncedClasses).toContain('page-delete');
+    expect(durability?.fsyncedClasses).not.toContain('page-edit');
     expect(durability?.bufferedForMs).toBe(NEVER);
 
     await p.close();
@@ -294,11 +294,11 @@ describe('#1158 — the critical tier is durable before the action completes', (
     const p = makeProvider();
     await p.initialize();
 
-    await p.logAuditEvent(event('page.edit'));
+    await p.logAuditEvent(event('page-edit'));
     expect(await onDisk()).toEqual([]);
 
     await p.close();
 
-    expect((await onDisk()).map((r) => r.eventType)).toEqual(['page.edit']);
+    expect((await onDisk()).map((r) => r.eventType)).toEqual(['page-edit']);
   });
 });

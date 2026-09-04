@@ -55,7 +55,7 @@ describe('#1149 — assessPreviousRun', () => {
 describe('#1149 — buildLifecycleAuditEvent', () => {
   test('a shutdown event names itself and carries the run', () => {
     const event = buildLifecycleAuditEvent({ phase: 'shutdown', version: '4.12.2', pid: 4242 });
-    expect(event.eventType).toBe('system.shutdown');
+    expect(event.eventType).toBe('system-shutdown');
     expect(event.user).toBe('system');
     expect(event.result).toBe('success');
     expect(event.metadata.version).toBe('4.12.2');
@@ -66,7 +66,7 @@ describe('#1149 — buildLifecycleAuditEvent', () => {
     const event = buildLifecycleAuditEvent({
       phase: 'start', version: '4.12.2', pid: 1, previousRun: 'unclean'
     });
-    expect(event.eventType).toBe('system.start');
+    expect(event.eventType).toBe('system-start');
     expect(event.metadata.previousRun).toBe('unclean');
   });
 

@@ -2,7 +2,7 @@
  * Record the security posture at boot and compare it against the previous boot
  * (#1156, D19 of docs/security-posture.md).
  *
- * `config.change` (#1150) audits every change made through `setProperty()`,
+ * `config-change` (#1150) audits every change made through `setProperty()`,
  * which leaves two holes:
  *
  * - An `app-custom-config.json` edited __directly on disk__ never passes
@@ -112,7 +112,7 @@ export function diffPostures(previous: FlatPosture | null, current: FlatPosture)
  *
  * A difference found here says explicitly that nothing observed the edit —
  * otherwise the obvious question is why it is being reported at boot rather
- * than as a `config.change`, and the answer is the whole point.
+ * than as a `config-change`, and the answer is the whole point.
  */
 export function describePostureDiff(diff: PostureDiff): string {
   if (!diff.comparable) {

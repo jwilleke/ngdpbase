@@ -8,13 +8,14 @@
  * The log does not lie about the records it holds — it simply cannot say that
  * records are missing.
  *
- * A `system.start` with no `system.shutdown` before it says exactly that. It
+ * A `system-start` with no `system-shutdown` before it says exactly that. It
  * cannot recover the lost records; it marks the window in which records may be
  * absent, which is the difference between an audit trail with a known gap and
  * one that quietly appears complete.
  */
 
 import type { AuditEvent, AuditSeverity } from './auditEvents.js';
+import { AUDIT_EVENT } from './auditEventNames.js';
 
 /** What the previous run's ending can be established to be. */
 export type PreviousRun =
@@ -87,8 +88,8 @@ export interface LifecycleEventInput {
 /**
  * Build the audit event for a process starting or stopping.
  *
- * `previousRun` appears on a start only, following the rule `page.rename` and
- * `token.mint` already use: a field present on every event is useless as a
+ * `previousRun` appears on a start only, following the rule `page-rename` and
+ * `token-mint` already use: a field present on every event is useless as a
  * filter. A shutdown is a statement about itself and makes no claim about the
  * past.
  */
@@ -110,10 +111,10 @@ export function buildLifecycleAuditEvent(input: LifecycleEventInput): AuditEvent
   const severity: AuditSeverity = unclean ? 'high' : 'low';
 
   return {
-    eventType: phase === 'start' ? 'system.start' : 'system.shutdown',
+    eventType: phase === 'start' ? AUDIT_EVENT.SYSTEM_START : AUDIT_EVENT.SYSTEM_SHUTDOWN,
     user: 'system',
     ipAddress: undefined,
-    action: phase === 'start' ? 'system.start' : 'system.shutdown',
+    action: phase === 'start' ? 'system-start' : 'system-shutdown',
     result: 'success',
     severity,
     metadata

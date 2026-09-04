@@ -6,7 +6,7 @@
  * tests could only prove that *that route* recorded — and four other write
  * paths (NCM image localization, bulk import, thumbnail render, the media
  * browser's delete) produced no record at all. The last of those is
- * `attachment.delete`, declared `tier: 'critical'` with note `'destruction'`.
+ * `asset-delete`, declared `tier: 'critical'` with note `'destruction'`.
  *
  * `docs/audit-posture.md` already states the rule these assert:
  *
@@ -49,7 +49,7 @@ function makeManager(engine: never, provider: Record<string, unknown>) {
 const CTX = { username: 'testuser', isAuthenticated: true, roles: ['admin'] };
 const WITH_IP = { request: { ip: '203.0.113.7' } };
 
-describe('#1183 — attachment.delete is recorded at the door', () => {
+describe('#1183 — asset-delete is recorded at the door', () => {
   test('records, naming the file that was destroyed', async () => {
     const sink: Recorded[] = [];
     const m = makeManager(makeEngine(sink), {
@@ -61,7 +61,7 @@ describe('#1183 — attachment.delete is recorded at the door', () => {
 
     expect(sink).toHaveLength(1);
     expect(sink[0]).toMatchObject({
-      eventType: 'attachment.delete',
+      eventType: 'asset-delete',
       user: 'testuser',
       metadata: { attachmentId: 'att-1', filename: 'invoice.pdf', sizeBytes: 4096 }
     });
@@ -109,7 +109,7 @@ describe('#1183 — attachment.delete is recorded at the door', () => {
   });
 });
 
-describe('#1183 — attachment.upload is recorded at the door', () => {
+describe('#1183 — asset-upload is recorded at the door', () => {
   const FILE = { originalName: 'photo.jpg', mimeType: 'image/jpeg', size: 2048 };
 
   function uploadManager(sink: Recorded[], opts: { auditFails?: boolean; noAudit?: boolean } = {}) {
@@ -126,7 +126,7 @@ describe('#1183 — attachment.upload is recorded at the door', () => {
 
     expect(sink).toHaveLength(1);
     expect(sink[0]).toMatchObject({
-      eventType: 'attachment.upload',
+      eventType: 'asset-upload',
       user: 'testuser',
       metadata: { attachmentId: 'att-9', filename: 'photo.jpg', pageName: 'Welcome', sizeBytes: 2048 }
     });

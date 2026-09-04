@@ -4,6 +4,13 @@ import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import { describeJobContext, type JobContext } from '../context/JobContext.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
+import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
+
+const JOB_EVENT: Record<'started' | 'completed' | 'failed', AuditEventName> = {
+  started: AUDIT_EVENT.JOB_STARTED,
+  completed: AUDIT_EVENT.JOB_COMPLETED,
+  failed: AUDIT_EVENT.JOB_FAILED
+};
 
 /**
  * Callback supplied to job run functions so they can push live progress
@@ -23,7 +30,7 @@ export interface JobDefinition {
    * The work to perform. Resolves with a JobResult.
    *
    * __`ctx` is mandatory (#631).__ Without it the actor this manager captured
-   * at `enqueue` reached the audit record and stopped there: `job.started`
+   * at `enqueue` reached the audit record and stopped there: `job-started`
    * named who asked for a reindex while the reindex itself ran as nobody. That
    * is the exact shape P1 in docs/security-posture.md warns about — a
    * parameter that cannot carry provenance guarantees provenance is lost — and
@@ -190,7 +197,7 @@ class BackgroundJobManager extends BaseManager {
     run.status = 'running';
     const startMs = Date.now();
     logger.info(
-      `[BackgroundJobManager] job.started { jobId: "${def.id}", runId: "${run.runId}", ` +
+      `[BackgroundJobManager] job-started { jobId: "${def.id}", runId: "${run.runId}", ` +
       `displayName: "${def.displayName}", requestedBy: "${describeJobContext(run.requestedBy)}" }`
     );
     await this.recordJobEvent(run, 'started');
@@ -208,12 +215,12 @@ class BackgroundJobManager extends BaseManager {
 
       if (result.success) {
         run.status = 'completed';
-        logger.info(`[BackgroundJobManager] job.completed { jobId: "${def.id}", runId: "${run.runId}", durationMs: ${durationMs}, summary: "${result.summary ?? ''}" }`);
+        logger.info(`[BackgroundJobManager] job-completed { jobId: "${def.id}", runId: "${run.runId}", durationMs: ${durationMs}, summary: "${result.summary ?? ''}" }`);
         await this.recordJobEvent(run, 'completed', result.summary);
         await this.sendNotification('info', `${def.displayName} complete`, result.summary ?? 'Job completed successfully');
       } else {
         run.status = 'failed';
-        logger.warn(`[BackgroundJobManager] job.failed { jobId: "${def.id}", runId: "${run.runId}", durationMs: ${durationMs}, error: "${result.error ?? ''}" }`);
+        logger.warn(`[BackgroundJobManager] job-failed { jobId: "${def.id}", runId: "${run.runId}", durationMs: ${durationMs}, error: "${result.error ?? ''}" }`);
         await this.recordJobEvent(run, 'failed', result.error);
         await this.sendNotification('error', `${def.displayName} failed`, result.error ?? 'Job failed');
       }
@@ -223,7 +230,7 @@ class BackgroundJobManager extends BaseManager {
       run.status = 'failed';
       run.result = { success: false, error: message };
       run.completedAt = new Date();
-      logger.error(`[BackgroundJobManager] job.failed { jobId: "${def.id}", runId: "${run.runId}", durationMs: ${durationMs} }`, err);
+      logger.error(`[BackgroundJobManager] job-failed { jobId: "${def.id}", runId: "${run.runId}", durationMs: ${durationMs} }`, err);
       await this.sendNotification('error', `${def.displayName} failed`, message);
     } finally {
       this.activeByJobId.delete(def.id);
@@ -252,7 +259,7 @@ class BackgroundJobManager extends BaseManager {
 
     const by = run.requestedBy;
     await recordAuditEvent(sink, {
-      eventType: `job.${outcome}`,
+      eventType: JOB_EVENT[outcome],
       user: by.username,
       ipAddress: undefined,
       action: `job-${outcome}`,

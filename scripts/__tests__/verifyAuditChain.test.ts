@@ -18,7 +18,7 @@ function buildChain(count: number): { lines: string[]; head: { seq: number; hash
   let prev = GENESIS_HASH;
   let last = { seq: 0, hash: GENESIS_HASH };
   for (let i = 1; i <= count; i++) {
-    const stamped = stampRecord({ eventType: 'page.edit', user: 'x' }, i, prev);
+    const stamped = stampRecord({ eventType: 'page-edit', user: 'x' }, i, prev);
     prev = stamped.hash as string;
     last = { seq: i, hash: prev };
     lines.push(JSON.stringify(stamped));

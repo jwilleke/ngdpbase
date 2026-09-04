@@ -13,6 +13,7 @@
  */
 
 import type { AuditEvent } from './auditEvents.js';
+import { AUDIT_EVENT } from './auditEventNames.js';
 
 /**
  * Longest JSON representation of a value kept in a record.
@@ -111,12 +112,12 @@ export function buildConfigChangeAuditEvent(input: ConfigChangeInput): AuditEven
   }
 
   return {
-    eventType: 'config.change',
+    eventType: AUDIT_EVENT.CONFIG_CHANGE,
     // Not guessed. A change no request drove is the system's, and saying so is
     // more useful than attributing it to whoever happens to be an admin.
     user: actor ?? 'system',
     ipAddress: undefined,
-    action: 'config.change',
+    action: 'config-change',
     result: 'success',
     severity: 'medium',
     metadata

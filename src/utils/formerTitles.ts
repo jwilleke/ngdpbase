@@ -18,7 +18,7 @@
  * describes, no retention window to expire, and it survives backup/restore,
  * export/import and a full index rebuild — because it *is* the data rather than
  * a cache of it. This replaced an earlier design that rehydrated from
- * `page.rename` audit events, which carry a 90-day retention: a page renamed and
+ * `page-rename` audit events, which carry a 90-day retention: a page renamed and
  * then left alone would have had its old URL start failing again months later,
  * silently.
  *

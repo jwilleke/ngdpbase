@@ -501,7 +501,7 @@ describe('#1156 the posture is recorded at boot and compared with the previous b
       initialize: vi.fn().mockResolvedValue(undefined),
       logAuditEvent: vi.fn((e: Record<string, unknown>) => { written.push(e); return Promise.resolve('id'); }),
       searchAuditLogs: vi.fn((filters: { eventType?: string }) => Promise.resolve({
-        results: filters.eventType === 'posture.recorded' && previous ? [previous] : [],
+        results: filters.eventType === 'posture-recorded' && previous ? [previous] : [],
         total: 0, limit: 1, offset: 0, hasMore: false
       })),
       flush: vi.fn().mockResolvedValue(undefined),
@@ -514,7 +514,7 @@ describe('#1156 the posture is recorded at boot and compared with the previous b
   }
 
   const record = (written: Array<Record<string, unknown>>) =>
-    written.find((e) => e.eventType === 'posture.recorded');
+    written.find((e) => e.eventType === 'posture-recorded');
 
   test('a boot emits the posture', async () => {
     const { am, written } = harness(POSTURE, null);
@@ -578,7 +578,7 @@ describe('#1156 the posture is recorded at boot and compared with the previous b
     };
     // Re-run the boot path with an observable provider in place.
     await (am as unknown as { recordStart: () => Promise<void> }).recordStart();
-    expect(written.some((e) => e.eventType === 'posture.recorded')).toBe(true);
+    expect(written.some((e) => e.eventType === 'posture-recorded')).toBe(true);
   });
 
   test('an instance with no posture configured emits nothing', async () => {

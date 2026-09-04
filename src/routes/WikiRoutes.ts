@@ -33,6 +33,7 @@ import { Request, Response, Application } from 'express';
 import SchemaGenerator from '../utils/SchemaGenerator.js';
 import { pageSourceHash, evaluateSeededAddonPage } from '../utils/addonPageSync.js';
 import logger from '../utils/logger.js';
+import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
 import { extractSection, spliceSection } from '../utils/SectionUtils.js';
 import { shuffleArray } from '../utils/pluginFormatters.js';
@@ -1395,7 +1396,7 @@ class WikiRoutes {
         } | null;
         if (auditManager?.logAuditEvent) {
           await auditManager.logAuditEvent({
-            eventType: 'admin.sessions.clear-anonymous',
+            eventType: AUDIT_EVENT.SESSION_CLEAR_ANONYMOUS,
             user: wikiContext.userContext.username ?? 'unknown',
             sessionId: excludeSid ?? undefined,
             ipAddress: req.ip,
@@ -1499,7 +1500,7 @@ class WikiRoutes {
         } | null;
         if (auditManager?.logAuditEvent) {
           await auditManager.logAuditEvent({
-            eventType: 'admin.sessions.revoke',
+            eventType: AUDIT_EVENT.SESSION_REVOKE,
             user: wikiContext.userContext.username ?? 'unknown',
             sessionId: callerId ?? undefined,
             ipAddress: req.ip,
@@ -4369,7 +4370,7 @@ ${panes}
         const rawAfter = pageManager.getRawPageContent ? await pageManager.getRawPageContent(pageName) : null;
         if (auditManager?.logAuditEvent) {
           await auditManager.logAuditEvent({
-            eventType: 'admin.page.raw-edit',
+            eventType: AUDIT_EVENT.PAGE_RAW_EDIT,
             user: wikiContext.userContext.username ?? 'unknown',
             ipAddress: req.ip,
             action: 'admin-raw-edit',
@@ -4611,7 +4612,7 @@ ${panes}
       try {
         await this.auditPageDelete(req, wikiContext, pageName, uuid);
       } catch (auditErr) {
-        // #1121: page.delete is critical. Destroying a page with no record of
+        // #1121: page-delete is critical. Destroying a page with no record of
         // what was destroyed is the one outcome an audit log exists to prevent.
         logger.error(`[pages] Refusing to delete '${pageName}': its audit record could not be written`, auditErr);
         return res.status(503).json({ error: 'Page not deleted — the audit record could not be written', pageName });
@@ -5005,7 +5006,7 @@ ${panes}
       viaToken: WikiRoutes.viaTokenOf(req)
     });
     void recordAuditEvent(this.auditSink(), event, (err) =>
-      logger.warn(`Audit log failed for page.view of '${pageName}':`, err)
+      logger.warn(`Audit log failed for page-read of '${pageName}':`, err)
     );
   }
 
@@ -5046,7 +5047,7 @@ ${panes}
    * Record a sign-in outcome in the audit trail (#1115).
    *
    * Goes through AuditManager.logAuthentication, which names the event from the
-   * result — authentication.success / .failed / .logout — so the three
+   * result — authentication-success / .failed / .logout — so the three
    * outcomes are three filterable types rather than one type plus a field.
    *
    * Best-effort: never throws. A logging failure must not cost a valid login,
@@ -5142,7 +5143,7 @@ ${panes}
     const viaToken = WikiRoutes.viaTokenOf(req);
 
     await recordAuditEvent(this.auditSink(), {
-      eventType: 'page.delete',
+      eventType: AUDIT_EVENT.PAGE_DELETE,
       user: wikiContext.userContext?.username ?? 'unknown',
       ipAddress: req.ip,
       action: 'page-delete',
@@ -6161,7 +6162,7 @@ ${panes}
       // #1183: the filename/size pre-read moved into AttachmentManager, so
       // every caller's record names what was lost, not only this route's.
 
-      // #1121: attachment.delete is CRITICAL, so the record is written and
+      // #1121: asset-delete is CRITICAL, so the record is written and
       // flushed BEFORE the file is destroyed. Auditing afterwards means a
       // failed audit leaves data destroyed with no trace of what was lost,
       // which is the one outcome an audit log exists to prevent.

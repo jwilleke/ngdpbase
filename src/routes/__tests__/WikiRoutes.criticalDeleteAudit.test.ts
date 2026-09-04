@@ -1,7 +1,7 @@
 /**
  * #1121 — a delete whose audit record cannot be written must not happen.
  *
- * page.delete and attachment.delete are declared critical in the #1120
+ * page-delete and asset-delete are declared critical in the #1120
  * registry. Destruction with no record of what was destroyed is the one
  * outcome an audit log exists to prevent, and unlike a page edit it cannot be
  * reconstructed afterwards.
@@ -57,7 +57,7 @@ describe('#1121 a delete refuses when its audit record cannot be written', () =>
     await routes.auditPageDelete(makeReq(), { userContext: user }, 'Secret Page', 'uuid-1');
 
     const event = audit.logAuditEvent.mock.calls[0][0] as Record<string, unknown>;
-    expect(event.eventType).toBe('page.delete');
+    expect(event.eventType).toBe('page-delete');
     // The name and uuid are the whole point: after the delete they are gone,
     // and an investigator cannot ask "what was that?" of an id alone.
     expect(event.metadata).toMatchObject({ pageName: 'Secret Page', uuid: 'uuid-1' });

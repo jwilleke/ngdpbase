@@ -8,7 +8,7 @@
  * - revoke(): revokedAt set + persisted + audited; idempotence
  * - list(): owner filter, admin all, newest-first sort
  * - persistence: reload across instances, corrupt/incomplete files skipped
- * - recordAccess()/shutdown(): aggregated share.access audit rows, never per-view
+ * - recordAccess()/shutdown(): aggregated share-access audit rows, never per-view
  * - resolveScope(): keyword evaluation with every decision-1/3 exclusion
  *
  * Teardown removes ONLY the per-test mkdtemp directory (repo test-safety rule).
@@ -173,9 +173,9 @@ describe('ShareManager', () => {
       await expect(off.issue({ kind: 'keyword', keyword: 'k' }, null, 'u')).rejects.toThrow(/disabled/);
     });
 
-    test('audits share.create', async () => {
+    test('audits share-create', async () => {
       const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, '24h', 'alice');
-      const evt = auditEvents.find(e => e.eventType === 'share.create');
+      const evt = auditEvents.find(e => e.eventType === 'share-create');
       expect(evt).toBeTruthy();
       expect(evt?.resource).toBe(rec.id);
       expect(evt?.user).toBe('alice');
@@ -228,7 +228,7 @@ describe('ShareManager', () => {
       const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, 'alice');
       expect(await sm.revoke(rec.id, 'bob')).toBe(true);
       expect(typeof readShareFile(rec.id).revokedAt).toBe('string');
-      expect(auditEvents.some(e => e.eventType === 'share.revoke' && e.user === 'bob')).toBe(true);
+      expect(auditEvents.some(e => e.eventType === 'share-revoke' && e.user === 'bob')).toBe(true);
       expect(await sm.revoke(rec.id, 'bob')).toBe(false);
     });
 
@@ -263,13 +263,13 @@ describe('ShareManager', () => {
   });
 
   describe('recordAccess() / shutdown() aggregation (decision 5)', () => {
-    test('aggregates hits into ONE share.access audit row on shutdown', async () => {
+    test('aggregates hits into ONE share-access audit row on shutdown', async () => {
       const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, 'u');
       for (let i = 0; i < 5; i++) sm.recordAccess(rec.token);
-      expect(auditEvents.filter(e => e.eventType === 'share.access')).toHaveLength(0);
+      expect(auditEvents.filter(e => e.eventType === 'share-access')).toHaveLength(0);
 
       await sm.shutdown();
-      const rows = auditEvents.filter(e => e.eventType === 'share.access');
+      const rows = auditEvents.filter(e => e.eventType === 'share-access');
       expect(rows).toHaveLength(1);
       expect((rows[0]?.metadata as { count: number }).count).toBe(5);
       expect(rows[0]?.resource).toBe(rec.id);
@@ -278,7 +278,7 @@ describe('ShareManager', () => {
     test('unknown token is a no-op', async () => {
       sm.recordAccess('f'.repeat(64));
       await sm.shutdown();
-      expect(auditEvents.filter(e => e.eventType === 'share.access')).toHaveLength(0);
+      expect(auditEvents.filter(e => e.eventType === 'share-access')).toHaveLength(0);
     });
   });
 

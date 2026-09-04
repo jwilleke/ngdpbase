@@ -40,8 +40,8 @@ export class AuditQueryForbiddenError extends Error {
 import BaseManager from './BaseManager.js';
 import type { ProviderInfo } from '../types/Provider.js';
 import logger from '../utils/logger.js';
-import { canonicalEventTypeOf, legacyTypesFor } from '../utils/auditVocabulary.js';
 import { bindAuditEvents } from '../utils/auditRegistry.js';
+import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { AuditReport } from '../providers/BaseAuditProvider.js';
@@ -55,7 +55,7 @@ import { flattenPosture, diffPostures, describePostureDiff, type FlatPosture } f
  * Base audit event structure
  */
 interface AuditEvent {
-  eventType: string;
+  eventType: AuditEventName;
   user: string;
   userId?: string;
   sessionId?: string;
@@ -507,7 +507,7 @@ class AuditManager extends BaseManager {
       // #1115: `{target}.{action}`, and result-aware. An allow and a deny are
       // different events to anyone filtering, so they get different names
       // rather than one name plus a field nobody remembers to check.
-      eventType: result === 'deny' ? 'authorization.deny' : 'authorization.allow',
+      eventType: result === 'deny' ? AUDIT_EVENT.AUTHORIZATION_DENY : AUDIT_EVENT.AUTHORIZATION_ALLOW,
       user: context.user?.username || 'anonymous',
       userId: context.user?.id,
       sessionId: context.sessionId,
@@ -544,7 +544,7 @@ class AuditManager extends BaseManager {
    */
   async logPolicyEvaluation(context: AccessContext, policies: PolicyInfo[], finalResult: string, duration: number): Promise<string> {
     const auditEvent: AuditEvent = {
-      eventType: 'policy.evaluate',   // #1115
+      eventType: AUDIT_EVENT.POLICY_EVALUATE,
       user: context.user?.username || 'anonymous',
       resource: context.resource,
       action: context.action,
@@ -573,11 +573,11 @@ class AuditManager extends BaseManager {
   async logAuthentication(context: AuthenticationContext, result: string, reason: string): Promise<string> {
     const auditEvent: AuditEvent = {
       // #1115: three outcomes, three names. `authentication` with a result
-      // field meant the docs said authentication.failed and the code said
+      // field meant the docs said authentication-failed and the code said
       // something else, for the same event.
-      eventType: result === 'failure' ? 'authentication.failed'
-        : result === 'logout' ? 'authentication.logout'
-          : 'authentication.success',
+      eventType: result === 'failure' ? AUDIT_EVENT.AUTHENTICATION_FAILED
+        : result === 'logout' ? AUDIT_EVENT.AUTHENTICATION_LOGOUT
+          : AUDIT_EVENT.AUTHENTICATION_SUCCESS,
       user: context.username || 'unknown',
       ipAddress: context.ipAddress,
       userAgent: context.userAgent,
@@ -604,7 +604,7 @@ class AuditManager extends BaseManager {
    */
   async logSecurityEvent(context: SecurityContext, eventType: string, severity: 'low' | 'medium' | 'high' | 'critical', description: string): Promise<string> {
     const auditEvent: AuditEvent = {
-      eventType: 'security.event',   // #1115: the specific kind is in metadata.securityEventType
+      eventType: AUDIT_EVENT.SECURITY_EVENT,   // the specific kind is in metadata.securityEventType
       user: context.user?.username || 'system',
       ipAddress: context.ipAddress,
       userAgent: context.userAgent,
@@ -665,29 +665,11 @@ class AuditManager extends BaseManager {
       throw new Error('Audit provider not initialized');
     }
 
-    // #1115: records keep the name they were written with, so reading has to
-    // map the retired names forward. Without this the rename would split the
-    // log at its cutover date — an operator filtering `security.event` would
-    // see nothing before the deploy and could not tell that from a quiet
-    // period, which is the exact failure this issue is about.
-    const requested = filters.eventType;
-    const legacy = requested ? legacyTypesFor(requested) : [];
-
-    // Only widen when the requested type actually has history under another
-    // name. Dropping the filter unconditionally would make every query read
-    // the whole log.
-    const providerFilters = legacy.length > 0 ? { ...filters, eventType: undefined } : filters;
-    const found = await this.provider.searchAuditLogs(providerFilters, options);
-
-    const canonicalised = (found.results ?? []).map((record) => {
-      const canonical = canonicalEventTypeOf(record);
-      return canonical && canonical !== record.eventType ? { ...record, eventType: canonical } : record;
-    });
-
-    if (legacy.length === 0) return { ...found, results: canonicalised };
-
-    const matched = canonicalised.filter((record) => record.eventType === requested);
-    return { ...found, results: matched, total: matched.length };
+    // #1201: records are read under the name they were written with. The
+    // #1115 legacy resolver mapped retired snake_case names forward; the
+    // hyphen rename retired the dotted names without a mapping, on the
+    // operator's decision that the trail was days old and may die.
+    return await this.provider.searchAuditLogs(filters, options);
   }
 
   /**
@@ -752,7 +734,7 @@ class AuditManager extends BaseManager {
    * `assessPreviousRun` already treats missing evidence as `none` or `unknown`
    * rather than inventing a verdict.
    */
-  private async lastLifecycleRecord(eventType: string): Promise<LifecycleRecord | null> {
+  private async lastLifecycleRecord(eventType: AuditEventName): Promise<LifecycleRecord | null> {
     try {
       const found = await this.provider?.searchAuditLogs({ eventType }, { limit: 1 });
       // Results are timestamp-descending, so the first is the most recent.
@@ -771,8 +753,8 @@ class AuditManager extends BaseManager {
    */
   private async recordStart(): Promise<void> {
     const [lastStart, lastShutdown] = await Promise.all([
-      this.lastLifecycleRecord('system.start'),
-      this.lastLifecycleRecord('system.shutdown')
+      this.lastLifecycleRecord(AUDIT_EVENT.SYSTEM_START),
+      this.lastLifecycleRecord(AUDIT_EVENT.SYSTEM_SHUTDOWN)
     ]);
     const previousRun = assessPreviousRun(lastStart, lastShutdown);
 
@@ -794,12 +776,12 @@ class AuditManager extends BaseManager {
    * Record the security posture, and compare it against the previous start
    * (#1156, D19).
    *
-   * `config.change` audits what goes through `setProperty()`. This closes the
+   * `config-change` audits what goes through `setProperty()`. This closes the
    * two holes that leaves: an `app-custom-config.json` edited directly on disk
    * emits nothing, and the state an instance STARTED in was never stated.
    * Comparing consecutive boots surfaces an edit nothing observed.
    *
-   * Emitted after `system.start`, deliberately: the start record establishes
+   * Emitted after `system-start`, deliberately: the start record establishes
    * that this run began, and the posture record says what it began with.
    */
   private async recordPosture(): Promise<void> {
@@ -812,7 +794,7 @@ class AuditManager extends BaseManager {
     // empty one every boot would be noise that teaches a reader to skip it.
     if (Object.keys(current).length === 0) return;
 
-    const previousRecord = await this.lastLifecycleRecord('posture.recorded');
+    const previousRecord = await this.lastLifecycleRecord(AUDIT_EVENT.POSTURE_RECORDED);
     const previous = (previousRecord as { metadata?: { posture?: FlatPosture } } | null)
       ?.metadata?.posture ?? null;
 
@@ -832,10 +814,10 @@ class AuditManager extends BaseManager {
 
     try {
       await recordAuditEvent(this as unknown as AuditEventSink, {
-        eventType: 'posture.recorded',
+        eventType: AUDIT_EVENT.POSTURE_RECORDED,
         user: 'system',
         ipAddress: undefined,
-        action: 'posture.recorded',
+        action: 'posture-recorded',
         result: 'success',
         // A drift found at boot is what a reader scanning by severity is
         // looking for; an unchanged posture is not.

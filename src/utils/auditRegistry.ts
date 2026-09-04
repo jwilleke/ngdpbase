@@ -9,8 +9,8 @@
  * argument that an operator who could edit them could narrow what the system
  * claims to audit. The operator's decision on 2026-09-04 is that this is the
  * point: configuration is authoritative, and narrowing is on the record —
- * an admin UI edit emits `config.change`, and a disk edit is reported by
- * `posture.recorded` at the next boot. See docs/audit-posture.md.
+ * an admin UI edit emits `config-change`, and a disk edit is reported by
+ * `posture-recorded` at the next boot. See docs/audit-posture.md.
  *
  * Events are actions taken; permissions are authority. The map is keyed by
  * event, so one permission may gate several recorded actions and a recorded

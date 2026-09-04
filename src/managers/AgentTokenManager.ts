@@ -470,7 +470,7 @@ class AgentTokenManager extends BaseManager {
       revokedBy: null
     };
 
-    // #1121: token.mint is CRITICAL, so the audit is written and flushed BEFORE
+    // #1121: token-mint is CRITICAL, so the audit is written and flushed BEFORE
     // the token is persisted, and a failure aborts the mint.
     //
     // Ordering is the whole point. Persisting first and auditing after would
@@ -491,7 +491,7 @@ class AgentTokenManager extends BaseManager {
         scopes: record.scopes,
         expiresAt: record.expiresAt
       }),
-      (err) => logger.warn(`[AgentTokenManager] Audit log failed for token.mint of ${id}:`, err)
+      (err) => logger.warn(`[AgentTokenManager] Audit log failed for token-mint of ${id}:`, err)
     );
 
     this.tokens.set(id, record);
@@ -585,7 +585,7 @@ class AgentTokenManager extends BaseManager {
         name: record.name,
         revokedBy: byUsername
       }),
-      (err) => logger.warn(`[AgentTokenManager] Audit log failed for token.revoke of ${id}:`, err)
+      (err) => logger.warn(`[AgentTokenManager] Audit log failed for token-revoke of ${id}:`, err)
     );
 
     await this.persist();
@@ -598,7 +598,7 @@ class AgentTokenManager extends BaseManager {
    * Drop expired/revoked records past the retention window.
    *
    * The audit log is unaffected — and since #1111 that is true rather than
-   * aspirational: `token.mint` and `token.revoke` events outlive the records
+   * aspirational: `token-mint` and `token-revoke` events outlive the records
    * here, so purging loses the credential and keeps the history of it. Before
    * that, this comment claimed an audit trail that did not exist, which made
    * `retention-days` load-bearing by accident.

@@ -10,17 +10,16 @@
  *
  * The parity tests (#1115) prove *emitted ⊆ vocabulary* and *registry-declared
  * has an emitter*. Nothing proved __registry ⊇ emitted__, which is how fifteen
- * event types — `authentication.failed` among them — came to be named,
+ * event types — `authentication-failed` among them — came to be named,
  * emitted, and documented while the contract that says what must be recorded
  * never mentioned them. An event outside the registry has no tier, so
  * `isCriticalEventType()` answers `false` for it: not as a decision, but
  * because it is not there to be graded.
  *
- * __Interpolated event types are the reason this is a script and not a grep.__
- * Emitters build names as `` `page.${op}` ``, so a literal search reports
- * `page.create` as unemitted while it is emitted on every page save — a false
- * negative I produced by hand before writing this. The op unions in
- * `auditEvents.ts` are read and expanded.
+ * Since #1201 every emitter references `AUDIT_EVENT.KEY` from one module, so
+ * the emitted set is the set of references, resolved through that module. A
+ * raw literal or an interpolated template in `eventType:` position is reported
+ * rather than dropped.
  *
  * Run: `npm run audit:coverage` (report) — `--check` exits 1 on a gap.
  */
@@ -59,86 +58,30 @@ export function registryTypes(): Map<string, string> {
 }
 
 /**
- * Names the source actually emits, expanding `${op}` interpolations.
- *
- * Conservative on purpose: an emitter this cannot resolve is reported as
- * `unresolved` rather than silently dropped, because a name nobody can account
- * for is the thing worth looking at.
+ * Names the source actually emits (#1201): every `AUDIT_EVENT.KEY` reference
+ * outside the names module, resolved through it, plus any raw literal in an
+ * `eventType:` position — a raw literal bypasses the module and is exactly
+ * what the off-vocabulary check exists to catch.
  */
-export function emittedTypes(names: string[]): { resolved: string[]; unresolved: string[] } {
-  const events = read('src/utils/auditEvents.ts');
-
-  // `export type PageMutationOp = 'create' | 'edit' | …` → what a `${op}` expands to
-  const unions = new Map<string, string[]>();
-  for (const m of events.matchAll(/export type (\w+) =\s*((?:'[a-z-]+'\s*\|?\s*)+);/g)) {
-    unions.set(m[1], [...m[2].matchAll(/'([a-z-]+)'/g)].map((x) => x[1]));
-  }
-  const opUnionFor = (prefix: string): string[] => {
-    const named: Record<string, string> = {
-      page: 'PageMutationOp', attachment: 'AttachmentOp', token: 'TokenOp'
-    };
-    const t = named[prefix];
-    if (t && unions.has(t)) return unions.get(t) as string[];
-    if (prefix === 'job') return ['started', 'completed', 'failed'];
-    return [];
-  };
+export function emittedTypes(_names: string[]): { resolved: string[]; unresolved: string[] } {
+  const module = read('src/utils/auditEventNames.ts');
+  const byKey = new Map<string, string>();
+  for (const m of module.matchAll(/^\s*([A-Z_]+):\s*'([a-z-]+)',?$/gm)) byKey.set(m[1], m[2]);
 
   const resolved = new Set<string>();
   const unresolved = new Set<string>();
 
   for (const file of walk(path.join(REPO, 'src')).concat(walk(path.join(REPO, 'addons')))) {
     const rel = path.relative(REPO, file);
-    // The registry reads names; it emits none.
-    if (rel.endsWith('auditVocabulary.ts') || rel.endsWith('auditRegistry.ts')) continue;
+    if (rel.endsWith('auditEventNames.ts') || rel.endsWith('auditVocabulary.ts') || rel.endsWith('auditRegistry.ts')) continue;
     const src = stripComments(readFileSync(file, 'utf8'));
 
-    // A vocabulary name appearing as a string literal anywhere in emitting code.
-    //
-    // Deliberately looser than matching `eventType:` — the first version of
-    // this script did that and reported `authentication.success`,
-    // `share.create` and `authorization.allow` as unemitted while all three
-    // are live. They are written as a ternary
-    // (`eventType: deny ? 'authorization.deny' : 'authorization.allow'`), as a
-    // call argument (`this.audit('share.create', …)`), and on a continuation
-    // line. A false negative here is the one failure this script exists to
-    // prevent, so it matches the NAME rather than the syntax around it.
-    for (const n of names) {
-      if (src.includes(`'${n}'`) || src.includes(`"${n}"`) || src.includes(`\`${n}\``)) resolved.add(n);
+    for (const m of src.matchAll(/AUDIT_EVENT\.([A-Z_]+)/g)) {
+      const name = byKey.get(m[1]);
+      if (name) resolved.add(name); else unresolved.add(`AUDIT_EVENT.${m[1]}`);
     }
-
-    // Literal `eventType:` assignments, INCLUDING names the vocabulary does
-    // not know. The name-matching loop above can only ever find names already
-    // in the vocabulary, so without this `offVocabulary` could never populate
-    // — a check that cannot fail. Found by sabotage: emitting
-    // `authentication.sneaky` produced no finding.
-    // The whole `eventType:` EXPRESSION, not just a literal directly after the
-    // colon — it is often a ternary spanning three lines:
-    //
-    //     eventType: isFailure
-    //       ? 'authentication.failed'
-    //       : 'authentication.success',
-    //
-    // Taking every name in the expression catches both arms. Bounded to the
-    // expression so a nearby job id like `media.rebuild` is not swept in — an
-    // earlier version matched any `: 'x.y'` line and reported exactly that.
-    const lines = src.split('\n');
-    lines.forEach((line, i) => {
-      const at = line.indexOf('eventType:');
-      if (at === -1) return;
-      const expr = [line.slice(at), lines[i + 1] ?? '', lines[i + 2] ?? '']
-        .join('\n')
-        .split(/,\s*$/m)[0];
-      for (const m of expr.matchAll(/'([a-z][a-z.-]*\.[a-z][a-z.-]*)'/g)) resolved.add(m[1]);
-    });
-
-    // Interpolated forms, which no literal search can see.
-    for (const m of src.matchAll(/eventType:\s*`([^`]+)`/g)) {
-      const im = /^([a-z]+)\.\$\{(\w+)\}$/.exec(m[1]);
-      if (!im) { unresolved.add(m[1]); continue; }
-      const ops = opUnionFor(im[1]);
-      if (ops.length === 0) { unresolved.add(m[1]); continue; }
-      for (const op of ops) resolved.add(`${im[1]}.${op}`);
-    }
+    for (const m of src.matchAll(/eventType:\s*'([^']+)'/g)) resolved.add(m[1]);
+    for (const m of src.matchAll(/eventType:\s*`([^`]+)`/g)) unresolved.add(m[1]);
   }
   return { resolved: [...resolved].sort(), unresolved: [...unresolved].sort() };
 }

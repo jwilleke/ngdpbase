@@ -33,6 +33,7 @@ import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import BaseManager, { type ManagerStats } from './BaseManager.js';
 import logger from '../utils/logger.js';
+import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type AuditManager from './AuditManager.js';
@@ -132,7 +133,7 @@ export default class ShareManager extends BaseManager {
     this.byToken.set(record.token, record);
     this.byId.set(record.id, record);
 
-    await this.audit('share.create', createdBy, record);
+    await this.audit(AUDIT_EVENT.SHARE_CREATE, createdBy, record);
     logger.info(`[ShareManager] Share ${record.id} created by ${createdBy} (${record.scope.kind}: ${record.scope.keyword}, expires ${record.expiresAt ?? 'never'})`);
     return record;
   }
@@ -165,7 +166,7 @@ export default class ShareManager extends BaseManager {
     record.revokedAt = new Date().toISOString();
     this.persist(record);
 
-    await this.audit('share.revoke', revokedBy, record);
+    await this.audit(AUDIT_EVENT.SHARE_REVOKE, revokedBy, record);
     logger.info(`[ShareManager] Share ${id} revoked by ${revokedBy}`);
     return true;
   }
@@ -347,7 +348,7 @@ export default class ShareManager extends BaseManager {
 
   /**
    * Flush aggregated access counts (one share, or all when `id` omitted) to
-   * the log and audit trail as a single `share.access` row each (decision 5).
+   * the log and audit trail as a single `share-access` row each (decision 5).
    */
   private async flushAccessCounts(id?: string): Promise<void> {
     const ids = id !== undefined ? [id] : [...this.accessCounts.keys()];
@@ -361,7 +362,7 @@ export default class ShareManager extends BaseManager {
         const auditManager = this.engine.getManager<AuditManager>('AuditManager');
         if (!auditManager) continue;
         await auditManager.logAuditEvent({
-          eventType: 'share.access',
+          eventType: AUDIT_EVENT.SHARE_ACCESS,
           user: 'anonymous',
           resource: shareId,
           resourceType: 'share',
@@ -370,13 +371,13 @@ export default class ShareManager extends BaseManager {
           metadata: { count: entry.count, since }
         });
       } catch (err) {
-        logger.warn(`[ShareManager] Audit logging failed for share.access ${shareId}: ${String(err)}`);
+        logger.warn(`[ShareManager] Audit logging failed for share-access ${shareId}: ${String(err)}`);
       }
     }
   }
 
   /** Audit create/revoke (decision 5). Never throws — shares work without audit. */
-  private async audit(eventType: string, user: string, record: ShareRecord): Promise<void> {
+  private async audit(eventType: AuditEventName, user: string, record: ShareRecord): Promise<void> {
     try {
       const auditManager = this.engine.getManager<AuditManager>('AuditManager');
       if (!auditManager) return;
@@ -385,7 +386,7 @@ export default class ShareManager extends BaseManager {
         user,
         resource: record.id,
         resourceType: 'share',
-        action: eventType === 'share.create' ? 'create' : 'revoke',
+        action: eventType === AUDIT_EVENT.SHARE_CREATE ? 'create' : 'revoke',
         result: 'success',
         metadata: {
           scope: record.scope,
