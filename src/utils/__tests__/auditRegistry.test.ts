@@ -1,16 +1,33 @@
 /**
- * #1120 — the required audit set is derived from the permission registry, and
- * emission is proven by test rather than by grepping.
+ * #1200 — the audit event registry is configuration, and the code agrees with it.
  *
- * These are the "check that fails" this project applies to every other
- * invariant. Without them the registry is another document that drifts, which
- * is the defect #1104, #1106, #1113 and #1115 all share.
+ * #1120 derived the required set from the permission registry and proved
+ * emission by test rather than by grepping. #1200 moves the declarations into
+ * `ngdpbase.audit.events`; these are the same "check that fails", re-pointed:
+ * every declared-and-enabled event has an emitter, every declaration carries
+ * a tier and a description, a custom configuration is honoured, and an
+ * unbound or undeclared lookup is never silent.
  */
 import fs from 'fs';
 import path from 'path';
-import { AUDIT_REQUIREMENTS, UNGATED_REQUIREMENTS, requiredEventTypes, exemptions } from '../auditRegistry';
+import {
+  AUDIT_EVENTS_KEY,
+  auditEventDeclarations,
+  auditEventTypes,
+  bindAuditEvents,
+  criticalEventTypes,
+  disabledEventTypes,
+  isAuditEventEnabled,
+  isCriticalEventType,
+  requiredEventTypes
+} from '../auditRegistry';
+import logger from '../logger';
 
 const SRC = path.join(process.cwd(), 'src');
+const shipped = JSON.parse(
+  fs.readFileSync(path.join(process.cwd(), 'config', 'app-default-config.json'), 'utf8')
+) as Record<string, unknown>;
+const shippedEvents = shipped[AUDIT_EVENTS_KEY] as Record<string, { tier: string; enabled?: boolean; description: string }>;
 
 /** Every .ts file under src/, excluding tests — the places an event could be emitted. */
 function sourceFiles(dir = SRC, acc: string[] = []): string[] {
@@ -28,93 +45,85 @@ function sourceFiles(dir = SRC, acc: string[] = []): string[] {
 
 const allSource = sourceFiles().map((f) => fs.readFileSync(f, 'utf8')).join('\n');
 
-/**
- * Is this event type emitted anywhere?
- *
- * Matches a literal `'page.edit'` or a template family `` `page.${op}` `` —
- * builders construct several types from one template, so a literal-only search
- * would report false gaps.
- */
+/** Matches a literal `'page.edit'` or a template family `` `page.${op}` ``. */
 function isEmitted(eventType: string): boolean {
   if (allSource.includes(`'${eventType}'`)) return true;
   const family = eventType.split('.')[0];
   return new RegExp('`' + family + '\\.\\$\\{').test(allSource);
 }
 
-/** Permissions the system actually registers, read from UserManager. */
-function registeredPermissions(): string[] {
-  const src = fs.readFileSync(path.join(SRC, 'managers', 'UserManager.ts'), 'utf8');
-  return [...src.matchAll(/this\.permissions\.set\('([a-z-]+)'/g)].map((m) => m[1]).sort();
-}
+const bindShipped = () => bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? shipped[key] : d));
 
-describe('#1120 every permission has a declared audit decision', () => {
-  it.each(registeredPermissions())('%s is declared', (permission) => {
-    // The check that fails: adding a permission without deciding whether it is
-    // audited breaks CI, rather than being noticed a year later by an assessor.
-    expect(AUDIT_REQUIREMENTS[permission]).toBeDefined();
+beforeEach(bindShipped);
+afterEach(bindShipped);
+
+describe('#1200 the registry is configuration', () => {
+  it('ships a map with every event the code emits', () => {
+    expect(Object.keys(shippedEvents).length).toBeGreaterThan(30);
+    expect(auditEventTypes()).toEqual(Object.keys(shippedEvents).sort());
   });
 
-  it('declares nothing that is not a real permission', () => {
-    // A stale entry is as misleading as a missing one — it inflates the claim.
-    const real = new Set(registeredPermissions());
-    const stale = Object.keys(AUDIT_REQUIREMENTS)
-      .filter((p) => !real.has(p) && p !== 'admin-read');
-    expect(stale).toEqual([]);
+  it.each(Object.keys(shippedEvents))('%s declares a tier and a description', (eventType) => {
+    const d = auditEventDeclarations()[eventType];
+    expect(['critical', 'standard', 'volume']).toContain(d.tier);
+    expect(d.description).toBeTruthy();
   });
 
-  it('every exemption carries a reason', () => {
-    // "Not audited" is a decision. Without a reason it is indistinguishable
-    // from an oversight, which is the whole thing this registry exists to fix.
-    for (const e of exemptions()) {
-      expect(e.exempt, `${e.permission} has no exemption category`).toBeTruthy();
-      if (e.exempt === 'not-implemented') {
-        expect(e.note, `${e.permission} is a known gap and needs a note`).toBeTruthy();
-      }
-    }
-  });
-});
-
-describe('#1120 every required event type is actually emitted', () => {
   it.each(requiredEventTypes())('%s has an emitter in src/', (eventType) => {
-    // Proves the other half: a declared requirement with no producer is a
-    // claim the system does not meet.
+    // A declared, enabled requirement with no producer is a claim the system
+    // does not meet.
     expect(isEmitted(eventType)).toBe(true);
   });
 
-  it('the ungated set covers what has no permission behind it', () => {
-    // The permission registry is a floor, not a ceiling. Credential lifecycle
-    // has no permission of its own and is exactly what an assessor asks for.
-    expect(Object.keys(UNGATED_REQUIREMENTS)).toContain('token.mint');
+  it('a switched-off event is a decision on the record, with a reason', () => {
+    const off = disabledEventTypes();
+    expect(off.map((e) => e.eventType)).toContain('asset.read');
+    for (const e of off) expect(e.description).toBeTruthy();
+    expect(requiredEventTypes()).not.toContain('asset.read');
+    expect(isAuditEventEnabled('asset.read')).toBe(false);
+  });
+
+  it('the critical tier is the one configuration declares', () => {
+    expect(isCriticalEventType('token.mint')).toBe(true);
+    expect(isCriticalEventType('page.edit')).toBe(false);
+    expect(criticalEventTypes()).toEqual(
+      Object.entries(shippedEvents).filter(([, d]) => d.tier === 'critical' && d.enabled !== false).map(([n]) => n).sort()
+    );
   });
 });
 
-describe('#1120 the gap is countable', () => {
-  it('reports how much of the permission surface is audited', () => {
-    const total = Object.keys(AUDIT_REQUIREMENTS).length;
-    const audited = Object.values(AUDIT_REQUIREMENTS).filter((r) => r.eventType !== null).length;
-    const gaps = exemptions().filter((e) => e.exempt === 'not-implemented');
+describe('#1200 configuration is authoritative', () => {
+  it('a custom configuration lowering a tier is honoured', () => {
+    // The operator may narrow what the system claims to audit; that is the
+    // point, not the objection. The narrowing is itself audited elsewhere.
+    const custom = { ...shippedEvents, 'page.delete': { ...shippedEvents['page.delete'], tier: 'standard' } };
+    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? custom : d));
+    expect(isCriticalEventType('page.delete')).toBe(false);
+    expect(isCriticalEventType('token.mint')).toBe(true);
+  });
 
-    // Not an assertion about the number — that would fail every time the
-    // number improved. This makes the figure visible in CI output, which is
-    // what "provable completeness" means in practice.
-    console.log(`[#1120] ${audited}/${total} permissions audited; ${gaps.length} known gaps: ${gaps.map((g) => g.permission).join(', ')}`);
-    expect(audited).toBeGreaterThan(0);
+  it('a custom configuration removing an entry with null removes it', () => {
+    const custom = { ...shippedEvents, 'share.access': null };
+    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? custom : d));
+    expect(auditEventTypes()).not.toContain('share.access');
   });
 });
 
-describe('#1129 page-read is gated, not exempt', () => {
-  it('declares page.view behind the read-events config gate', () => {
-    const r = AUDIT_REQUIREMENTS['page-read'];
-    expect(r.eventType).toBe('page.view');
-    expect(r.tier).toBe('volume');
-    expect(r.gatedBy).toBe('ngdpbase.audit.read-events');
-    // The gate is a contract term: the reason must survive next to it.
-    expect(r.note).toBeTruthy();
+describe('#1200 nothing fails silently', () => {
+  it('an unbound registry says so once and treats everything as standard', () => {
+    bindAuditEvents(null);
+    vi.mocked(logger.warn).mockClear();
+    expect(isCriticalEventType('token.mint')).toBe(false);
+    expect(isCriticalEventType('page.delete')).toBe(false);
+    const said = vi.mocked(logger.warn).mock.calls.filter(([m]) => String(m).includes('not bound'));
+    expect(said).toHaveLength(1);
   });
 
-  it('a gated requirement is not an exemption', () => {
-    // Exemptions answer "why is this not audited". A gated event IS audited —
-    // conditionally — so it must not appear in the honest-absence list.
-    expect(exemptions().map((e) => e.permission)).not.toContain('page-read');
+  it('an emitted name configuration does not declare is said once', () => {
+    vi.mocked(logger.warn).mockClear();
+    expect(isCriticalEventType('addon.sneaky')).toBe(false);
+    expect(isCriticalEventType('addon.sneaky')).toBe(false);
+    const said = vi.mocked(logger.warn).mock.calls.filter(([m]) => String(m).includes("'addon.sneaky'"));
+    expect(said).toHaveLength(1);
   });
 });

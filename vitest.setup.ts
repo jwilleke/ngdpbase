@@ -193,3 +193,23 @@ process.env.LOG_LEVEL = 'error';
 // VITEST_WORKER_ID gives each parallel worker its own isolated directory.
 process.env.FAST_STORAGE = `/tmp/ngdpbase-test-${process.env.VITEST_WORKER_ID ?? '0'}`;
 process.env.SLOW_STORAGE = process.env.FAST_STORAGE;
+
+// #1200: the audit event registry is `ngdpbase.audit.events` in configuration,
+// bound by AuditManager.initialize at boot. Tests have no boot, so bind the
+// shipped defaults here — the one honest direct read of the file — or every
+// tier-dependent assertion (critical fsync, reject-on-failure) would see an
+// unbound registry and pass or fail for the wrong reason.
+import { readFileSync } from 'fs';
+import * as auditRegistry from './src/utils/auditRegistry';
+
+// This file sits outside the TypeScript project eslint resolves, so the import
+// is typed here by hand rather than left as `any`.
+type AuditEventsSource = (key: string, defaultValue?: unknown) => unknown;
+const { bindAuditEvents, AUDIT_EVENTS_KEY } = auditRegistry as {
+  bindAuditEvents: (source: AuditEventsSource | null) => void;
+  AUDIT_EVENTS_KEY: string;
+};
+const shippedConfig = JSON.parse(readFileSync('./config/app-default-config.json', 'utf8')) as Record<string, unknown>;
+bindAuditEvents((key: string, defaultValue?: unknown): unknown =>
+  key === AUDIT_EVENTS_KEY ? shippedConfig[key] : defaultValue
+);

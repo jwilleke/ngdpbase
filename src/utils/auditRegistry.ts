@@ -1,175 +1,156 @@
 /**
- * What must be audited, declared as data (#1120).
+ * The audit event registry, read from configuration (#1200, epic #1208).
  *
- * Before this, being audited depended on a producer remembering to call a
- * method. That can be correct; it can never be PROVABLE, because you cannot
- * demonstrate the absence of a forgotten call site. Authorization denials were
- * audited at ten call sites and nobody could state that without grepping.
+ * `ngdpbase.audit.events` in `config/app-default-config.json` names every
+ * recorded action, its durability tier, and whether it fires. This module is
+ * a reader over that map: nothing here declares an event.
  *
- * `{target}-{action}` permissions already ARE the definition of a
- * security-relevant action — that is what a permission is — so the required set
- * is derived from the permission registry rather than invented beside it.
+ * Until #1200 the declarations lived in this file, deliberately, on the
+ * argument that an operator who could edit them could narrow what the system
+ * claims to audit. The operator's decision on 2026-09-04 is that this is the
+ * point: configuration is authoritative, and narrowing is on the record —
+ * an admin UI edit emits `config.change`, and a disk edit is reported by
+ * `posture.recorded` at the next boot. See docs/audit-posture.md.
  *
- * This lives in code, not configuration, deliberately. It is a CONTRACT, not a
- * setting: an operator who could edit it could quietly narrow what the system
- * claims to audit, and the claim is the thing being assessed.
+ * Events are actions taken; permissions are authority. The map is keyed by
+ * event, so one permission may gate several recorded actions and a recorded
+ * action may have no permission at all, and neither registry carries the
+ * other's fields.
  *
- * See docs/planning/Security-auditing.md.
+ * What stays in code is the emitters. `scripts/audit-coverage.ts` proves the
+ * map and the emitters agree.
  */
 
+import logger from './logger.js';
+
+export const AUDIT_EVENTS_KEY = 'ngdpbase.audit.events';
+
 /**
- * How durable an event must be (#1121 will enforce this; declaring it here is
- * what makes that possible without revisiting every call site).
+ * How durable an event must be (#1121, #1158).
  *
  * - `critical` — the action must not complete unless the record does
- * - `standard` — fire-and-forget, counted and surfaced (today's behaviour)
- * - `volume`   — high-frequency reads; sampled or off
+ * - `standard` — fire-and-forget, counted and surfaced
+ * - `volume`   — high-frequency reads; off unless a posture turns them on
  */
 export type AuditTier = 'critical' | 'standard' | 'volume';
 
-/** Why a permission has no audit event. Absence must be a decision, not an oversight. */
-export type AuditExemption =
-  | 'read-volume'      // auditing every read is a volume decision, not an oversight
-  | 'not-implemented'; // should be audited and is not — a gap, counted as one
-
-export interface AuditRequirement {
-  /** The event type that must be emitted, or null when exempt. */
-  eventType: string | null;
-  tier?: AuditTier;
-  exempt?: AuditExemption;
+/** One entry of `ngdpbase.audit.events`. */
+export interface AuditEventDeclaration {
+  tier: AuditTier;
+  /** Whether the emitter fires. Omitted means true; `false` is a decision on the record. */
+  enabled?: boolean;
+  /** One line, shown in the admin filter and the documented table. */
+  description: string;
   /**
-   * Config key that switches emission at runtime (#1129). The emitter must
-   * exist unconditionally — the parity tests hold that — but it fires only
-   * when the named key is true. This is still contract, not configuration:
-   * the registry declares WHAT is emitted when the gate is open; the operator
-   * only chooses the posture, never the vocabulary.
+   * Config key that switches emission at runtime (#1129). The emitter exists
+   * unconditionally; it fires only when the named key is true. Retires into
+   * `enabled` under #1203.
    */
   gatedBy?: string;
-  /** Why, in one line. Required for an exemption so the reasoning survives. */
-  note?: string;
 }
 
-/**
- * Permission → the audit event it must produce.
- *
- * Every permission in the registry appears here. An entry with `eventType:
- * null` is an explicit decision with a reason attached, which is the difference
- * between "we decided not to" and "nobody noticed".
- */
-export const AUDIT_REQUIREMENTS: Record<string, AuditRequirement> = {
-  // ---- pages -------------------------------------------------------------
-  'page-create': { eventType: 'page.create', tier: 'standard' },
-  'page-edit':   { eventType: 'page.edit',   tier: 'standard' },
-  'page-rename': { eventType: 'page.rename', tier: 'standard' },
-  'page-delete': { eventType: 'page.delete', tier: 'critical', note: 'destruction; the record must outlive the page' },
-  'page-read':   { eventType: 'page.view', tier: 'volume', gatedBy: 'ngdpbase.audit.read-events', note: 'noise on a wiki, the point for a PHR — a posture, decided per deployment (#1129)' },
-  'page-export': { eventType: null, exempt: 'not-implemented', note: 'bulk extraction of content and worth recording' },
+/** The shape of `ConfigurationManager.getProperty`, so this module needs no manager import. */
+export type AuditEventsSource = (key: string, defaultValue?: unknown) => unknown;
 
-  // ---- assets ------------------------------------------------------------
-  'asset-upload': { eventType: 'attachment.upload', tier: 'standard' },
-  'asset-delete': { eventType: 'attachment.delete', tier: 'critical', note: 'destruction' },
-  'asset-edit':   { eventType: null, exempt: 'not-implemented', note: 'EXIF/IPTC edits change provenance metadata' },
-  'asset-read':   { eventType: null, exempt: 'read-volume' },
-
-  // ---- search ------------------------------------------------------------
-  'search-page': { eventType: null, exempt: 'read-volume' },
-  'search-user': { eventType: null, exempt: 'not-implemented', note: 'enumerating people is disclosive in a way searching pages is not' },
-
-  // ---- users -------------------------------------------------------------
-  'user-create': { eventType: null, exempt: 'not-implemented', note: 'account lifecycle is squarely in scope' },
-  'user-edit':   { eventType: null, exempt: 'not-implemented', note: 'includes role changes, which alter what somebody may do' },
-  'user-delete': { eventType: null, exempt: 'not-implemented', note: 'destruction of an account and its attribution' },
-  'user-read':   { eventType: null, exempt: 'read-volume' },
-
-  // ---- administration ----------------------------------------------------
-  'admin-system': { eventType: null, exempt: 'not-implemented', note: 'admin.page.raw-edit and admin.sessions.* exist; the permission itself is not covered' },
-  'admin-roles':  { eventType: null, exempt: 'not-implemented', note: 'changing a role changes everyone holding it' },
-  'admin-read':   { eventType: null, exempt: 'read-volume', note: 'declared in config but never registered in UserManager — see #1120' }
-};
+let boundSource: AuditEventsSource | null = null;
+let warnedUnbound = false;
+const warnedUndeclared = new Set<string>();
 
 /**
- * Events required by something other than a permission (#1120).
+ * Bind the live configuration. `AuditManager.initialize` calls this before it
+ * loads a provider, so every tier consulted from then on is the operator's.
  *
- * The permission registry is a FLOOR, not a ceiling: it defines what is GATED,
- * not what is SENSITIVE. A failed login has no permission behind it, because
- * nobody is authenticated yet, and it is exactly what an assessor asks for.
+ * There is no fallback to the shipped file: reading
+ * `config/app-default-config.json` here would be a second reader over the
+ * configuration store, and a value could then come from the file when the live
+ * configuration says otherwise. Tests bind from the shipped file themselves
+ * (`vitest.setup.ts`), which is the one honest direct read.
  */
-export const UNGATED_REQUIREMENTS: Record<string, AuditRequirement> = {
-  'token.mint':   { eventType: 'token.mint',   tier: 'critical', note: 'a credential nobody knows exists is the worst case' },
-  'token.revoke': { eventType: 'token.revoke', tier: 'critical' },
+export function bindAuditEvents(source: AuditEventsSource | null): void {
+  boundSource = source;
+  warnedUnbound = false;
+}
 
-  // #1149 — process lifecycle. Critical on both sides, and for the same
-  // reason: a `system.start` with no `system.shutdown` before it is how the
-  // log says the previous run died and its buffered records may be missing
-  // (#1148). Written on a timer instead, either could be the record lost to
-  // the very crash it exists to report.
-  'system.start':    { eventType: 'system.start',    tier: 'critical', note: 'states whether the previous run ended cleanly; an unclean one means records may be missing' },
-  'system.shutdown': { eventType: 'system.shutdown', tier: 'critical', note: 'its absence before the next start is the signal — so it must not be the record that is lost' },
+function asDeclarations(value: unknown): Record<string, AuditEventDeclaration> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const out: Record<string, AuditEventDeclaration> = {};
+  for (const [name, entry] of Object.entries(value as Record<string, unknown>)) {
+    // A custom config removes a shipped entry by setting it to null.
+    if (!entry || typeof entry !== 'object') continue;
+    out[name] = entry as AuditEventDeclaration;
+  }
+  return out;
+}
 
-  // #1150 — administrative configuration changes. `standard` rather than
-  // `critical` deliberately: a change refused because its record could not be
-  // written would leave an operator unable to repair a broken audit
-  // configuration through the admin UI, and that deadlock costs more than the
-  // missing record.
-  'config.change': { eventType: 'config.change', tier: 'standard', note: 'an admin can weaken any control from a web form; the change must leave a trace' },
+/** Every declared event, from the bound configuration. Empty, and said once, before binding. */
+export function auditEventDeclarations(): Record<string, AuditEventDeclaration> {
+  if (!boundSource) {
+    if (!warnedUnbound) {
+      warnedUnbound = true;
+      logger.warn(`[audit] ${AUDIT_EVENTS_KEY} is not bound yet; every event is treated as standard tier until AuditManager initialises`);
+    }
+    return {};
+  }
+  return asDeclarations(boundSource(AUDIT_EVENTS_KEY, {}));
+}
 
-  // #1155 — a subsystem stopped working. `standard`: the record matters, but
-  // refusing to degrade because the record could not be written would take an
-  // instance down over a feature that was already broken.
-  'manager.state-change': { eventType: 'manager.state-change', tier: 'standard', note: 'a manager configured and not working was previously visible only as a startup log line' },
+/** The declaration for one event, or null when configuration does not name it. */
+export function auditEventDeclaration(eventType: string): AuditEventDeclaration | null {
+  const d = auditEventDeclarations()[eventType];
+  if (d) return d;
+  // Never silent: an emitter producing a name configuration does not declare
+  // is treated as `standard` and said once, so the gap is visible in the log
+  // rather than in an assessor's report.
+  if (eventType && !warnedUndeclared.has(eventType)) {
+    warnedUndeclared.add(eventType);
+    logger.warn(`[audit] '${eventType}' is emitted but not declared in ${AUDIT_EVENTS_KEY}; treated as standard tier`);
+  }
+  return null;
+}
 
-  // #631 — background jobs. `enqueue` carried no actor, so a reindex reached the
-  // log with nobody attached while Security-auditing.md marked Attribution
-  // "already met". `standard`: losing the record must not refuse the job.
-  'job.started':   { eventType: 'job.started',   tier: 'standard', note: 'who asked for background work, and from what origin' },
-  'job.completed': { eventType: 'job.completed', tier: 'standard' },
-  'job.failed':    { eventType: 'job.failed',    tier: 'standard' },
+/** Every declared event type, sorted. */
+export function auditEventTypes(): string[] {
+  return Object.keys(auditEventDeclarations()).sort();
+}
 
-  // #1156 — the security posture as it stood at boot. `critical`: this is the
-  // only record of a change made while the instance was not running, so losing
-  // it to a crash would lose the one thing that could have reported the edit.
-  'posture.recorded': { eventType: 'posture.recorded', tier: 'critical', note: 'closes the hole where app-custom-config.json is edited directly and nothing observes it' }
-};
-
-/** Every event type this system undertakes to emit. */
+/** Every event type this system undertakes to emit: declared and not switched off. */
 export function requiredEventTypes(): string[] {
-  return [...Object.values(AUDIT_REQUIREMENTS), ...Object.values(UNGATED_REQUIREMENTS)]
-    .map((r) => r.eventType)
-    .filter((t): t is string => t !== null)
+  return Object.entries(auditEventDeclarations())
+    .filter(([, d]) => d.enabled !== false)
+    .map(([name]) => name)
     .sort();
+}
+
+/** Is this event switched on? An undeclared event is not switched off. */
+export function isAuditEventEnabled(eventType: string): boolean {
+  return auditEventDeclaration(eventType)?.enabled !== false;
 }
 
 /**
  * Is this event type declared `critical` (#1121, #1158)?
  *
- * The tier comes from this registry, so "which events must be durable" is data
- * rather than a judgement remade at each call site — and adding a critical
- * event does not mean remembering to change a call.
- *
- * Lives here rather than beside a caller because two layers need the same
- * answer and must not be able to disagree: `recordAuditEvent` decides whether a
- * failure rejects the action, and `FileAuditProvider.writeEvent` decides
- * whether the record is fsynced before the write resolves. A tier that meant
- * one thing to the caller and another to the writer would be the #1148 defect
- * again — a declared guarantee the code does not implement.
+ * Two layers need the same answer and must not be able to disagree:
+ * `recordAuditEvent` decides whether a failure rejects the action, and
+ * `FileAuditProvider.writeEvent` decides whether the record is fsynced before
+ * the write resolves. A tier that meant one thing to the caller and another to
+ * the writer would be the #1148 defect again.
  */
 export function isCriticalEventType(eventType: string): boolean {
-  return [...Object.values(AUDIT_REQUIREMENTS), ...Object.values(UNGATED_REQUIREMENTS)]
-    .some((r) => r.eventType === eventType && r.tier === 'critical');
+  return auditEventDeclaration(eventType)?.tier === 'critical';
 }
 
 /** Every event type declared `critical`, for reporting what the tier covers. */
 export function criticalEventTypes(): string[] {
-  return [...new Set(
-    [...Object.values(AUDIT_REQUIREMENTS), ...Object.values(UNGATED_REQUIREMENTS)]
-      .filter((r) => r.tier === 'critical' && r.eventType !== null)
-      .map((r) => r.eventType as string)
-  )].sort();
+  return Object.entries(auditEventDeclarations())
+    .filter(([, d]) => d.tier === 'critical' && d.enabled !== false)
+    .map(([name]) => name)
+    .sort();
 }
 
-/** Permissions with no audit event, and why. The honest half of the answer. */
-export function exemptions(): Array<{ permission: string; exempt: AuditExemption; note?: string }> {
-  return Object.entries(AUDIT_REQUIREMENTS)
-    .filter(([, r]) => r.eventType === null)
-    .map(([permission, r]) => ({ permission, exempt: r.exempt as AuditExemption, note: r.note }));
+/** Events declared and switched off, with the reason. The honest half of the answer. */
+export function disabledEventTypes(): Array<{ eventType: string; description: string }> {
+  return Object.entries(auditEventDeclarations())
+    .filter(([, d]) => d.enabled === false)
+    .map(([eventType, d]) => ({ eventType, description: d.description }))
+    .sort((a, b) => a.eventType.localeCompare(b.eventType));
 }

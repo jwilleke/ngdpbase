@@ -210,7 +210,7 @@ Present in this repo:
 - Structured-data invariant test, docs-coverage and docs-index checks, a CSRF client-fetch guard, an outbound HTTP-boundary lint, and a permission-subject lint (forward the context; do not rebuild one), all wired into the pre-commit hook
 - A static invariant test asserting that every view calling a shared template helper is rendered by a route that supplies it
 - A registry-drift test ([#1058](https://github.com/jwilleke/ngdpbase/issues/1058), closed) — every permission in config is checked somewhere, and every permission checked in code exists in config. One documented exception: `page-export` is declared and not the gate (export is gated on read until a bulk surface exists). Zero unknown orphans, zero unregistered checks
-- `npm run lint:audit` — vocabulary, registry and emitters must agree on the unambiguous directions (a required event nobody emits, a name outside the vocabulary). It does *not* fail on an emitted event with no registry requirement; that decision is [#1184](https://github.com/jwilleke/ngdpbase/issues/1184)
+- `npm run lint:audit` — `ngdpbase.audit.events` and the emitters must agree: a declared, enabled event nobody emits, or an emitted name nothing declares, is red. Failing on the second direction is [#1206](https://github.com/jwilleke/ngdpbase/issues/1206); today it is reported
 - `npm run lint:addons` — addon load and boundary checks. Not the same as holding addons to every `src/` invariant; that gap is [#1177](https://github.com/jwilleke/ngdpbase/issues/1177)
 
 Worth adding wherever this core is used:
@@ -272,7 +272,6 @@ Gaps that are *settings* or *audit completeness* belong in [security-posture.md]
 ### Authorization (rules 6–10)
 
 - __`UserManager` is 1,907 lines__ carrying password hashing, permission resolution, middleware and page creation, with three role methods left as `never` after a split to `RoleManager`. It is the example of a single path being read as a single class.
-- __The audit registry still lives in code.__ `src/utils/auditRegistry.ts` and `src/utils/auditVocabulary.ts` declare the events and tiers; the decision that `ngdpbase.audit.events` in configuration is authoritative is recorded in [audit-posture.md](audit-posture.md#audit-planning) and built under [#1184](https://github.com/jwilleke/ngdpbase/issues/1184).
 - __Allow and deny still come from `isAuthenticated` and role names in places.__ The only honest allow is `hasPermission` / `canAccess`. `isAuthenticated` classifies the failure; `hasRole` is a membership lookup. Remaining gates are [security-posture.md](security-posture.md) P2 / [#1198](https://github.com/jwilleke/ngdpbase/issues/1198).
 - __Listing is not the same evaluator.__ `PolicyEvaluator` has no `filter()`. `PageManager.getAllPages()` returns every title; callers note that the list is unfiltered and that titles of unreadable pages leak. Rule 10 is unimplemented.
 

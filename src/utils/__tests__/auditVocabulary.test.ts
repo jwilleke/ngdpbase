@@ -15,12 +15,13 @@
 import fs from 'fs';
 import path from 'path';
 import {
-  AUDIT_EVENT_TYPES,
+  auditEventDeclarations,
   auditEventTypes,
   canonicalEventTypeOf,
   legacyTypesFor,
   LEGACY_EVENT_TYPES
 } from '../auditVocabulary';
+import { requiredEventTypes } from '../auditRegistry';
 
 const SRC = path.join(process.cwd(), 'src');
 const DOCS = path.join(process.cwd(), 'docs', 'managers', 'AuditManager.md');
@@ -38,7 +39,9 @@ function sourceFiles(dir = SRC, acc: string[] = []): string[] {
   return acc;
 }
 
-const files = sourceFiles().filter((f) => !f.endsWith('auditVocabulary.ts'));
+// #1200: the vocabulary is `ngdpbase.audit.events` in configuration; the two
+// reader modules name nothing and emit nothing.
+const files = sourceFiles().filter((f) => !f.endsWith('auditVocabulary.ts') && !f.endsWith('auditRegistry.ts'));
 const allSource = files.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
 
 /** Event type literals assigned to an `eventType` field anywhere in src/. */
@@ -54,7 +57,7 @@ describe('the audit vocabulary is one set, not three (#1115)', () => {
   test('every emitted event type is in the vocabulary', () => {
     const undocumented = [...emittedLiterals()]
       .filter((t) => t !== 'test')
-      .filter((t) => !(t in AUDIT_EVENT_TYPES));
+      .filter((t) => !(t in auditEventDeclarations()));
 
     expect(undocumented).toEqual([]);
   });
@@ -64,10 +67,8 @@ describe('the audit vocabulary is one set, not three (#1115)', () => {
     expect(stillEmitted).toEqual([]);
   });
 
-  test('every type declared as emitted has an emitter', () => {
-    const missing = Object.entries(AUDIT_EVENT_TYPES)
-      .filter(([, spec]) => spec.emitted)
-      .map(([eventType]) => eventType)
+  test('every declared and enabled type has an emitter', () => {
+    const missing = requiredEventTypes()
       .filter((eventType) => {
         if (allSource.includes(`'${eventType}'`)) return false;
         // Builders construct a family from one template: `page.${op}`.
@@ -78,9 +79,11 @@ describe('the audit vocabulary is one set, not three (#1115)', () => {
     expect(missing).toEqual([]);
   });
 
-  test('a type declared unemitted must say why', () => {
-    const unexplained = Object.entries(AUDIT_EVENT_TYPES)
-      .filter(([, spec]) => !spec.emitted && !spec.note)
+  test('a type switched off must say why', () => {
+    // #1200: `enabled: false` is a decision on the record, and the record
+    // needs its reason.
+    const unexplained = Object.entries(auditEventDeclarations())
+      .filter(([, d]) => d.enabled === false && !d.description)
       .map(([eventType]) => eventType);
 
     expect(unexplained).toEqual([]);

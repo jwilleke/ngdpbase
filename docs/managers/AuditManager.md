@@ -474,45 +474,55 @@ The vocabulary is `{target}.{action}`, mirroring the permission registry's
 `{target}-{action}`. Dotted, so a prefix means something: `page.` is everything
 that happened to pages, `token.` is everything a credential did.
 
-__This table is generated from `src/utils/auditVocabulary.ts` and checked against
-it by `auditVocabulary.test.ts`.__ Editing one without the other fails CI. Before
-that check existed, 14 of the 19 types listed here were emitted by nothing and
-twelve emitted types were listed nowhere (#1115).
+__This table is generated from `ngdpbase.audit.events` in
+`config/app-default-config.json` and checked against it by
+`auditVocabulary.test.ts`.__ Editing one without the other fails CI. Before that
+check existed, 14 of the 19 types listed here were emitted by nothing and twelve
+emitted types were listed nowhere (#1115). Since #1200 the map is the registry as
+well: the tier is the durability the record is held to (`critical` — the action
+does not complete unless the record does; `standard` — fire-and-forget, counted;
+`volume` — high-frequency reads), and `Recorded` is the `enabled` switch. An
+operator's `app-custom-config.json` may change either; configuration is
+authoritative, and the change is itself audited.
 
-| Event Type | Description | Typical Severity |
-| ----- | ----- | ----- |
-| `page.create` | Page created | low |
-| `page.edit` | Page edited | low |
-| `page.rename` | Page renamed | low |
-| `page.delete` | Page deleted | medium |
-| `page.view` | Page viewed — emitted only when `ngdpbase.audit.read-events` is on (#1129) | low |
-| `page.link-rewrite` | Inbound links rewritten after a rename | low |
-| `attachment.upload` | File uploaded | low |
-| `attachment.delete` | File deleted | medium |
-| `token.mint` | Agent token minted | medium |
-| `token.revoke` | Agent token revoked | medium |
-| `authentication.success` | Sign-in succeeded | low |
-| `authentication.failed` | Sign-in failed | medium |
-| `authentication.logout` | User signed out | low |
-| `authorization.deny` | Access denied | medium |
-| `authorization.allow` | Access granted | low |
-| `policy.evaluate` | Security policy evaluated | low |
-| `security.event` | Security violation detected | high |
-| `system.start` | Instance started — reports whether the previous run ended cleanly | low |
-| `system.shutdown` | Instance shut down cleanly | low |
-| `config.change` | Configuration changed by an administrator | medium |
-| `manager.state-change` | A manager changed state — degraded, disabled, failed or recovered | medium |
-| `posture.recorded` | Security posture at startup, compared against the previous start | medium |
-| `job.started` | A background job started, and who asked for it | low |
-| `job.completed` | A background job finished successfully | low |
-| `job.failed` | A background job failed | medium |
-| `share.create` | Share link created | medium |
-| `share.access` | Share link used | low |
-| `share.revoke` | Share link revoked | medium |
-| `admin.page.raw-edit` | Page edited through the admin raw editor | medium |
-| `admin.sessions.revoke` | Session revoked by an admin | medium |
-| `admin.sessions.clear-anonymous` | Anonymous sessions cleared | low |
-| `audit.chain-restart` | Hash chain restarted, with the reason | high |
+| Event Type | Description | Tier | Recorded |
+| ----- | ----- | ----- | ----- |
+| `page.create` | Page created | standard | yes |
+| `page.edit` | Page edited | standard | yes |
+| `page.rename` | Page renamed | standard | yes |
+| `page.delete` | Page deleted; destruction, so the record must outlive the page | critical | yes |
+| `page.view` | Page viewed; emitted only when ngdpbase.audit.read-events is on (#1129) | volume | yes |
+| `page.link-rewrite` | Inbound links rewritten after a rename | standard | yes |
+| `attachment.upload` | File uploaded | standard | yes |
+| `attachment.delete` | File deleted; destruction | critical | yes |
+| `token.mint` | Agent token minted; a credential nobody knows exists is the worst case | critical | yes |
+| `token.revoke` | Agent token revoked | critical | yes |
+| `authentication.success` | Sign-in succeeded | standard | yes |
+| `authentication.failed` | Sign-in failed | standard | yes |
+| `authentication.logout` | User signed out | standard | yes |
+| `authorization.deny` | Access denied | standard | yes |
+| `authorization.allow` | Access granted; emitter exists, nothing in production calls it | standard | yes |
+| `policy.evaluate` | Security policy evaluated; emitter exists, nothing in production calls it | standard | yes |
+| `security.event` | Security violation detected; the kind is in metadata.securityEventType | standard | yes |
+| `share.create` | Share link created | standard | yes |
+| `share.access` | Share link used; batched counts | standard | yes |
+| `share.revoke` | Share link revoked | standard | yes |
+| `system.start` | Instance started; reports whether the previous run ended cleanly | critical | yes |
+| `system.shutdown` | Instance shut down cleanly; its absence before the next start is the signal | critical | yes |
+| `config.change` | Configuration changed by an administrator; standard so a broken audit configuration can still be repaired from the UI | standard | yes |
+| `manager.state-change` | A manager changed state: degraded, disabled, failed or recovered | standard | yes |
+| `posture.recorded` | Security posture at startup, compared against the previous start | critical | yes |
+| `job.started` | A background job started, and who asked for it | standard | yes |
+| `job.completed` | A background job finished successfully | standard | yes |
+| `job.failed` | A background job failed | standard | yes |
+| `admin.page.raw-edit` | Page edited through the admin raw editor | standard | yes |
+| `admin.sessions.revoke` | Session revoked by an admin | standard | yes |
+| `admin.sessions.clear-anonymous` | Anonymous sessions cleared | standard | yes |
+| `audit.chain-restart` | Hash chain restarted, with the reason | standard | yes |
+| `asset.read` | Attachment read; not recorded, read volume | volume | no |
+| `search.page` | Page search; not recorded, read volume | volume | no |
+| `user.read` | User profile read; not recorded, read volume | volume | no |
+| `admin.read` | Admin dashboard read; not recorded, read volume | volume | no |
 
 #### Retired names
 

@@ -4,8 +4,8 @@
  *
  * Three lists exist and none of them was comparable to the others by hand:
  *
- * - __vocabulary__ (`auditVocabulary.ts`) — the names that may be used
- * - __registry__ (`auditRegistry.ts`) — what MUST be recorded, and at what tier
+ * - __vocabulary__ — the names configuration declares (`ngdpbase.audit.events`, #1200)
+ * - __registry__ — the subset configuration requires: declared and not switched off, with a tier
  * - __emitters__ — what the source actually builds and sends
  *
  * The parity tests (#1115) prove *emitted ⊆ vocabulary* and *registry-declared
@@ -35,26 +35,25 @@ const REPO = path.resolve(__dirname, '..');
 
 const read = (rel: string): string => readFileSync(path.join(REPO, rel), 'utf8');
 
-/** Names the vocabulary permits. */
-export function vocabularyTypes(): string[] {
-  const src = read('src/utils/auditVocabulary.ts');
-  const body = src.slice(src.indexOf('AUDIT_EVENT_TYPES'));
-  return [...new Set(
-    [...body.matchAll(/^\s*'([a-z][a-z.-]*\.[a-z][a-z.-]*)':\s*\{/gm)].map((m) => m[1])
-  )].sort();
+/** The map, read from the shipped defaults (#1200: configuration is the registry). */
+function auditEvents(): Record<string, { tier?: string; enabled?: boolean }> {
+  const parsed = JSON.parse(read('config/app-default-config.json')) as Record<string, unknown>;
+  const map = parsed['ngdpbase.audit.events'];
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return {};
+  return map as Record<string, { tier?: string; enabled?: boolean }>;
 }
 
-/** Names the registry declares must be recorded, with their tier. */
+/** Names configuration declares. */
+export function vocabularyTypes(): string[] {
+  return Object.keys(auditEvents()).sort();
+}
+
+/** Names configuration requires — declared and not switched off — with their tier. */
 export function registryTypes(): Map<string, string> {
-  const src = read('src/utils/auditRegistry.ts');
   const out = new Map<string, string>();
-  // Match the whole `{ … }` entry, then read both fields from it. A lazy
-  // `[^}]*?` before an optional tier group matches minimally and skips the
-  // tier — reporting `page.delete` as `unspecified` when it is `critical`.
-  // A report that cannot read tiers cannot answer the question it exists for.
-  for (const m of src.matchAll(/\{[^{}]*eventType:\s*'([^']+)'[^{}]*\}/g)) {
-    const tier = /tier:\s*'([a-z]+)'/.exec(m[0])?.[1] ?? 'unspecified';
-    out.set(m[1], tier);
+  for (const [name, d] of Object.entries(auditEvents())) {
+    if (d.enabled === false) continue;
+    out.set(name, d.tier ?? 'unspecified');
   }
   return out;
 }
@@ -89,7 +88,7 @@ export function emittedTypes(names: string[]): { resolved: string[]; unresolved:
 
   for (const file of walk(path.join(REPO, 'src')).concat(walk(path.join(REPO, 'addons')))) {
     const rel = path.relative(REPO, file);
-    // The vocabulary and the registry NAME every type; they do not emit any.
+    // The registry reads names; it emits none.
     if (rel.endsWith('auditVocabulary.ts') || rel.endsWith('auditRegistry.ts')) continue;
     const src = stripComments(readFileSync(file, 'utf8'));
 
@@ -174,7 +173,7 @@ export interface Coverage {
   registry: Map<string, string>;
   emitted: string[];
   unresolvedEmitters: string[];
-  /** Emitted and named, but the registry states no requirement — the #1184 gap. */
+  /** Emitted, but configuration states no decision for it — the #1184 gap. */
   undeclared: string[];
   /** Declared as required, but nothing emits it. */
   unemitted: string[];
@@ -193,7 +192,7 @@ export function coverage(): Coverage {
     registry,
     emitted,
     unresolvedEmitters: unresolved,
-    undeclared: vocabulary.filter((t) => !registry.has(t)),
+    undeclared: emitted.filter((t) => !vocabSet.has(t)),
     unemitted: [...registry.keys()].filter((t) => !emitted.includes(t)).sort(),
     offVocabulary: emitted.filter((t) => !vocabSet.has(t))
   };
@@ -210,11 +209,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   console.log(`  source emits        : ${c.emitted.length}`);
   console.log('');
 
-  console.log(`NAMED AND EMITTED, NO REGISTRY REQUIREMENT (${c.undeclared.length})`);
+  console.log(`EMITTED, NO DECLARATION IN ngdpbase.audit.events (${c.undeclared.length})`);
   console.log('  These have no tier, so isCriticalEventType() answers false by absence.');
-  for (const t of c.undeclared) {
-    console.log(`   ${c.emitted.includes(t) ? '●' : '○'} ${t}${c.emitted.includes(t) ? '' : '   (not emitted either)'}`);
-  }
+  for (const t of c.undeclared) console.log(`   ${t}`);
 
   if (c.unemitted.length) {
     console.log(`\nREQUIRED BUT NOT EMITTED (${c.unemitted.length})`);

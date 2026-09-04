@@ -10,16 +10,16 @@ relatedModules: [AuditManager, FileAuditProvider, BaseAuditProvider, NullAuditPr
 
 What auditing on this instance can actually do, as implemented in code.
 
-This is an inventory, not a plan and not a recommendation — except [Audit planning](#audit-planning), which records decisions taken and not yet built. The living contracts are `src/utils/auditRegistry.ts` (what must be recorded) and `src/utils/auditVocabulary.ts` (the event names). The manager API is [AuditManager](managers/AuditManager.md). Decisions about security-related *settings* live in [security-posture.md](security-posture.md). The design that produced this work is [planning/Security-auditing.md](planning/Security-auditing.md).
+This is an inventory, not a plan and not a recommendation — except [Audit planning](#audit-planning), which records decisions taken and not yet built. The living contract is `ngdpbase.audit.events` in `config/app-default-config.json` (every event, its tier, and whether it fires); `src/utils/auditRegistry.ts` reads it. The manager API is [AuditManager](managers/AuditManager.md). Decisions about security-related *settings* live in [security-posture.md](security-posture.md). The design that produced this work is [planning/Security-auditing.md](planning/Security-auditing.md).
 
 ## Guiding principle
 
-__Auditing is a contract, not a courtesy.__ A security-relevant action is declared in `auditRegistry.ts`, named in `auditVocabulary.ts`, and emitted through `recordAuditEvent` (or the manager door that calls it). CI proves the three agree. Remembering to log is not a design: it can be correct and can never be proven.
+__Auditing is a contract, not a courtesy.__ A security-relevant action is declared in `ngdpbase.audit.events` and emitted through `recordAuditEvent` (or the manager door that calls it). CI proves configuration and emitters agree. Configuration is authoritative: an operator may change a tier or switch an event off, and that change is itself audited. Remembering to log is not a design: it can be correct and can never be proven.
 
 If you add or change an action that is gated by a permission, or that mints a credential, destroys something, or changes what someone may do:
 
-- Declare the event type (or an exemption with a reason) in the registry in the same change as the emitter. An omitted row is a bug; `not-implemented` is the honest form of "not yet."
-- Use a `{target}.{action}` name from the vocabulary. Do not invent a string at the call site, in a filter dropdown, or in a comment.
+- Declare the event in `ngdpbase.audit.events` in the same change as the emitter, with its tier and a description. An emitted name with no declaration fails `npm run lint:audit`.
+- Use a `{target}.{action}` name from that map. Do not invent a string at the call site, in a filter dropdown, or in a comment.
 - Forward the request context you were given. Do not rebuild `{ username }` and drop `viaToken` — that is [P1](security-posture.md#p1--every-security-relevant-call-carries-a-context).
 - If the type is `critical`, the action must not complete when the record cannot be written. Do not catch-and-continue a critical failure.
 - Do not append to the log file, skip the chain, or restart it from application code. A silent repair is worse than a visible break.
@@ -46,13 +46,13 @@ Turning auditing off (`ngdpbase.audit.enabled: false` or `provider: nullauditpro
 
 ## Completeness
 
-Every permission in the permission registry has a declared audit requirement in `src/utils/auditRegistry.ts`. Absence is a named exemption (`read-volume` or `not-implemented`), not a missing row. Events that are not gated by a permission (failed login, token mint, process start) live in `UNGATED_REQUIREMENTS` in the same file.
+`ngdpbase.audit.events` is one map keyed by event. Events are actions taken; permissions are authority; neither registry carries the other's fields, so a permission that gates several recorded actions and a recorded action with no permission (failed login, process start) sit in the same map. A type not declared there must not be emitted; a declared type that is not switched off must have an emitter. `auditVocabulary.test.ts`, `auditRegistry.test.ts` and `npm run lint:audit` fail CI on either divergence. The table an operator sees is [AuditManager — Event Types](managers/AuditManager.md#event-types); that table is pinned to the map by the same test.
 
-`src/utils/auditVocabulary.ts` is the event-name contract. A type not listed there must not be emitted; a type listed as `emitted: true` must have an emitter. `auditVocabulary.test.ts` and `auditRegistry.test.ts` fail CI on either divergence. The table an operator sees is [AuditManager — Event Types](managers/AuditManager.md#event-types); that table is pinned to the vocabulary by the same test.
+An event switched off (`enabled: false`) is a decision on the record with its reason in the description: `asset.read`, `search.page`, `user.read`, `admin.read` today. The eight gated actions that still have no emitter at all (`page-export`, `asset-edit`, `search-user`, `user-create`, `user-edit`, `user-delete`, `admin-roles`, `admin-system`) are [#1204](https://github.com/jwilleke/ngdpbase/issues/1204).
 
 ### Tiers
 
-Declared per event, not chosen at the call site (`isCriticalEventType()`):
+Declared per event in configuration, not chosen at the call site (`isCriticalEventType()` reads the map bound by `AuditManager.initialize`):
 
 | Tier | Meaning | Implemented behaviour |
 | --- | --- | --- |
@@ -253,13 +253,9 @@ Also not implemented:
 
 Decisions taken with the operator on 2026-09-04 under [#1184](https://github.com/jwilleke/ngdpbase/issues/1184). None is built yet; everything above this heading describes the code as it is. When a decision lands, its row here is replaced by the inventory entry that describes it.
 
-### Configuration is authoritative
+### Configuration is authoritative — landed in [#1200](https://github.com/jwilleke/ngdpbase/issues/1200)
 
-`ngdpbase.audit.events` in `config/app-default-config.json` is the audit registry and the audit vocabulary. `src/utils/auditRegistry.ts` and `src/utils/auditVocabulary.ts` stop declaring and become readers over the active configuration. `isCriticalEventType()`, the admin filter dropdown, the documented event table and `requiredEventTypes()` all answer from configuration.
-
-This reverses the "lives in code, not configuration" note in `auditRegistry.ts` from [#1120](https://github.com/jwilleke/ngdpbase/issues/1120). The reason given there — that an operator who could edit it could narrow what the system claims to audit — is the point, not the objection: configuration being authoritative is a key property of ngdpbase. Narrowing is not quiet. An admin UI edit records `config-change`, and a disk edit is reported by `posture-recorded` at the next boot, because `ngdpbase.audit.events` is a posture ingredient (below).
-
-The only audit facts left in code are the emitters. The coverage check proves configuration and emitters agree.
+`ngdpbase.audit.events` is the registry and the vocabulary; `auditRegistry.ts` and `auditVocabulary.ts` are readers. The reasoning is in [Guiding principle](#guiding-principle) and [Completeness](#completeness) above. What remains of the decision is the naming rule, the tiers, and the emitters, below.
 
 ### Events are actions; permissions are authority
 

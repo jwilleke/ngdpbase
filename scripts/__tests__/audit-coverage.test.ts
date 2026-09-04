@@ -25,13 +25,17 @@ describe('#1184 — the three lists are read correctly', () => {
     expect(v).toContain('page.delete');
   });
 
-  test('the registry parses, and is SMALLER than the vocabulary', () => {
-    // The gap this report exists to show. If these ever match, #1184 is done
-    // and this expectation should be updated deliberately rather than deleted.
+  test('the registry is the vocabulary minus what is switched off (#1200)', () => {
+    // Before #1200 the registry was smaller than the vocabulary by fifteen —
+    // the #1184 gap. Now both come from `ngdpbase.audit.events`, and the only
+    // difference is the entries an operator switched off.
     const r = registryTypes();
-    expect(r.size).toBeGreaterThan(10);
-    expect(r.size).toBeLessThan(vocabularyTypes().length);
+    const v = vocabularyTypes();
+    expect(r.size).toBeGreaterThan(30);
+    expect(r.size).toBeLessThanOrEqual(v.length);
     expect(r.get('page.delete')).toBe('critical');
+    expect(r.has('asset.read')).toBe(false);
+    expect(v).toContain('asset.read');
   });
 
   test('interpolated emitters are expanded, not missed', () => {
@@ -53,12 +57,14 @@ describe('#1184 — the three lists are read correctly', () => {
 });
 
 describe('#1184 — what the report concludes about this tree', () => {
-  test('every vocabulary name is actually emitted', () => {
+  test('every required name is actually emitted', () => {
     // If this fails, a name exists that nothing produces — worth knowing, and
-    // a different problem from the registry gap.
+    // a different problem from the registry gap. A name switched off in
+    // configuration (#1200: `enabled: false`) may have no emitter; that is a
+    // decision on the record, not a gap.
     const c = coverage();
     const named = new Set(c.emitted);
-    expect(c.vocabulary.filter((t) => !named.has(t))).toEqual([]);
+    expect([...c.registry.keys()].filter((t) => !named.has(t))).toEqual([]);
   });
 
   test('nothing is emitted under a name the vocabulary does not permit', () => {
@@ -75,13 +81,11 @@ describe('#1184 — what the report concludes about this tree', () => {
     expect(coverage().unresolvedEmitters).toEqual([]);
   });
 
-  test('the registry gap is real and reported, not zero', () => {
-    // The finding itself. Fifteen types are emitted with no stated
-    // requirement, so isCriticalEventType() answers false by absence.
-    // When #1184 closes this, the assertion below should go to 0 as a
-    // deliberate edit — which is the point of pinning it.
+  test('every emitted name has a declaration (#1184 closed by #1200)', () => {
+    // The finding #1184 opened with: fifteen types emitted with no stated
+    // requirement. Configuration now declares every one, so this is pinned at
+    // zero — a new emitter without a declaration is what this catches.
     const c = coverage();
-    expect(c.undeclared.length).toBeGreaterThan(0);
-    expect(c.undeclared).toContain('authentication.failed');
+    expect(c.undeclared).toEqual([]);
   });
 });

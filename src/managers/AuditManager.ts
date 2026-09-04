@@ -41,6 +41,7 @@ import BaseManager from './BaseManager.js';
 import type { ProviderInfo } from '../types/Provider.js';
 import logger from '../utils/logger.js';
 import { canonicalEventTypeOf, legacyTypesFor } from '../utils/auditVocabulary.js';
+import { bindAuditEvents } from '../utils/auditRegistry.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { AuditReport } from '../providers/BaseAuditProvider.js';
@@ -238,6 +239,12 @@ class AuditManager extends BaseManager {
     if (!configManager) {
       throw new Error('AuditManager requires ConfigurationManager');
     }
+
+    // #1200: the event registry is `ngdpbase.audit.events`. Bound here, before
+    // any provider loads, so every tier consulted from now on — by
+    // recordAuditEvent and by the provider's fsync decision — is the
+    // operator's configuration rather than the shipped defaults.
+    bindAuditEvents((key, defaultValue) => configManager.getProperty(key, defaultValue));
 
     // Check if audit is enabled (ALL LOWERCASE)
     const auditEnabled = configManager.getProperty('ngdpbase.audit.enabled', true) as boolean;
