@@ -197,6 +197,27 @@ describe('verifyLog() — explained breaks (#1124)', () => {
     expect(r.segments[1].verdict.ok).toBe(true);
   });
 
+  it('a marker written under the retired name still starts a segment (#1201 regression)', () => {
+    // Records on disk keep the name they were written with. The first verify
+    // after the rename reported jimstest's log broken at seq 1, because the
+    // marker on disk says `audit.chain-restart` and the recogniser had only the
+    // new name. Sabotage: drop RETIRED_CHAIN_RESTART_EVENT from isRestart().
+    const intact = chainOf(2);
+    const oldMarker = stampRecord(
+      { eventType: 'audit.chain-restart', id: 'r-old', metadata: { previousSeq: 2, previousHash: intact[1].hash, reason: 'pre-rename', actor: 'operator' } },
+      1,
+      GENESIS_HASH
+    );
+    const next = stampRecord({ id: 'n2', user: 'alice' }, 2, oldMarker.hash as string);
+
+    const r = verifyLog([...intact, oldMarker, next]);
+    expect(r.segments).toHaveLength(2);
+    expect(r.segments[0].verdict.ok).toBe(true);
+    expect(r.segments[1].restart).toBeDefined();
+    expect(r.segments[1].verdict.ok).toBe(true);
+    expect(r.ok).toBe(true);
+  });
+
   it('a break with NO restart marker is still unexplained', () => {
     // The whole guarantee: a marker is the only way to move on, so an attacker
     // must leave a record saying they broke it.

@@ -153,9 +153,22 @@ export interface LogVerdict {
   segments: ChainSegment[];
 }
 
-/** Is this a chain-restart marker? */
+/**
+ * The marker's name before #1201 renamed every event to `{target}-{action}`.
+ *
+ * Records on disk keep the name they were written with, and #1201 maps none
+ * of them forward — except this one, and only here. A restart marker is
+ * structure, not vocabulary: it is the record that says "the chain begins
+ * again at this point, deliberately". If the verifier stops recognising the
+ * markers already in a log, every record after each of them reads as a break,
+ * which is what happened on the first verify after the rename.
+ */
+const RETIRED_CHAIN_RESTART_EVENT = 'audit.chain-restart';
+
+/** Is this a chain-restart marker (under its current or its retired name)? */
 function isRestart(record: Record<string, unknown>): boolean {
-  return record.eventType === CHAIN_RESTART_EVENT && record.seq === 1 && record.prevHash === GENESIS_HASH;
+  return (record.eventType === CHAIN_RESTART_EVENT || record.eventType === RETIRED_CHAIN_RESTART_EVENT)
+    && record.seq === 1 && record.prevHash === GENESIS_HASH;
 }
 
 /**
