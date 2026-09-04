@@ -34,9 +34,9 @@ import { randomUUID } from 'crypto';
 import BaseManager, { type ManagerStats } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
+import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import type AuditManager from './AuditManager.js';
 import type MediaManager from './MediaManager.js';
 import type SearchManager from './SearchManager.js';
 import type PageManager from './PageManager.js';
@@ -129,11 +129,17 @@ export default class ShareManager extends BaseManager {
       expiresAt: ttl === null ? null : new Date(now + TTL_MS[ttl]).toISOString()
     };
 
+    // #1202: share-create is CRITICAL — a share is an anonymous-access
+    // credential, the same shape as token-mint — so the record is written and
+    // flushed BEFORE the share exists, and a failure refuses the share. The
+    // ordering follows AgentTokenManager.mint: persisting first would leave a
+    // live credential the caller believes was never created.
+    await this.audit(AUDIT_EVENT.SHARE_CREATE, createdBy, record);
+
     this.persist(record);
     this.byToken.set(record.token, record);
     this.byId.set(record.id, record);
 
-    await this.audit(AUDIT_EVENT.SHARE_CREATE, createdBy, record);
     logger.info(`[ShareManager] Share ${record.id} created by ${createdBy} (${record.scope.kind}: ${record.scope.keyword}, expires ${record.expiresAt ?? 'never'})`);
     return record;
   }
@@ -163,10 +169,15 @@ export default class ShareManager extends BaseManager {
     const record = this.byId.get(id);
     if (!record || record.revokedAt) return false;
 
-    record.revokedAt = new Date().toISOString();
+    // #1202: share-revoke is CRITICAL, paired with token-revoke. Recorded and
+    // flushed before the share is marked revoked; if the record cannot be
+    // written the share stays live and the caller sees the refusal.
+    const revokedAt = new Date().toISOString();
+    await this.audit(AUDIT_EVENT.SHARE_REVOKE, revokedBy, { ...record, revokedAt });
+
+    record.revokedAt = revokedAt;
     this.persist(record);
 
-    await this.audit(AUDIT_EVENT.SHARE_REVOKE, revokedBy, record);
     logger.info(`[ShareManager] Share ${id} revoked by ${revokedBy}`);
     return true;
   }
@@ -358,45 +369,56 @@ export default class ShareManager extends BaseManager {
       this.accessCounts.delete(shareId);
       const since = new Date(entry.since).toISOString();
       logger.info(`[ShareManager] Share ${shareId}: ${entry.count} anonymous access hit(s) since ${since}`);
-      try {
-        const auditManager = this.engine.getManager<AuditManager>('AuditManager');
-        if (!auditManager) continue;
-        await auditManager.logAuditEvent({
+      const sink = this.engine.getManager('AuditManager') as AuditEventSink | null;
+      await recordAuditEvent(
+        sink,
+        {
           eventType: AUDIT_EVENT.SHARE_ACCESS,
           user: 'anonymous',
+          ipAddress: undefined,
           resource: shareId,
           resourceType: 'share',
           action: 'view',
           result: 'success',
+          severity: 'low',
           metadata: { count: entry.count, since }
-        });
-      } catch (err) {
-        logger.warn(`[ShareManager] Audit logging failed for share-access ${shareId}: ${String(err)}`);
-      }
+        },
+        (err) => logger.warn(`[ShareManager] Audit logging failed for share-access ${shareId}: ${String(err)}`)
+      );
     }
   }
 
   /** Audit create/revoke (decision 5). Never throws — shares work without audit. */
+  /**
+   * Record a share event through `recordAuditEvent`, which honours the tier
+   * configuration declares (#1202): a `critical` event is flushed and a failure
+   * rejects, so the caller abandons the action; a `standard` one is
+   * fire-and-forget with the error counted. No catch here — swallowing the
+   * rejection is exactly what made the old `critical` claim a promise the code
+   * did not keep.
+   */
   private async audit(eventType: AuditEventName, user: string, record: ShareRecord): Promise<void> {
-    try {
-      const auditManager = this.engine.getManager<AuditManager>('AuditManager');
-      if (!auditManager) return;
-      await auditManager.logAuditEvent({
+    const sink = this.engine.getManager('AuditManager') as AuditEventSink | null;
+    await recordAuditEvent(
+      sink,
+      {
         eventType,
         user,
+        ipAddress: undefined,
         resource: record.id,
         resourceType: 'share',
         action: eventType === AUDIT_EVENT.SHARE_CREATE ? 'create' : 'revoke',
         result: 'success',
+        severity: 'medium',
         metadata: {
           scope: record.scope,
           expiresAt: record.expiresAt,
-          createdBy: record.createdBy
+          createdBy: record.createdBy,
+          ...(record.revokedAt ? { revokedAt: record.revokedAt } : {})
         }
-      });
-    } catch (err) {
-      logger.warn(`[ShareManager] Audit logging failed for ${eventType} ${record.id}: ${String(err)}`);
-    }
+      },
+      (err) => logger.warn(`[ShareManager] Audit logging failed for ${eventType} ${record.id}: ${String(err)}`)
+    );
   }
 
   async shutdown(): Promise<void> {

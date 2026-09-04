@@ -147,6 +147,31 @@ describe('#1124 chain restart', () => {
     await expect(p.restartChain('why', 'jim')).rejects.toThrow(/does not chain/i);
   });
 
+  it('a marker that cannot be written leaves the head where it was (#1202)', async () => {
+    // The marker is the action, and it is critical: it cannot half-complete.
+    // Before #1202 the head moved BEFORE the write, so a failed marker left
+    // the process chaining from a hash that never landed. Sabotage: move the
+    // two head assignments back above `writeEvent` and this goes red.
+    class FailingOnce extends MemoryProvider {
+      failNext = false;
+      override writeEvent(record: Rec): Promise<string> {
+        if (this.failNext) { this.failNext = false; return Promise.reject(new Error('disk full')); }
+        return super.writeEvent(record);
+      }
+    }
+    const p = new FailingOnce(engine);
+    await p.logAuditEvent(event(1));
+    const head = p.written[0].hash as string;
+
+    p.failNext = true;
+    await expect(p.restartChain('why', 'jim')).rejects.toThrow(/disk full/);
+
+    await p.logAuditEvent(event(2));
+    expect(p.written).toHaveLength(2);
+    expect(p.written[1].seq).toBe(2);
+    expect(p.written[1].prevHash).toBe(head);
+  });
+
   it('records a null previous head rather than inventing one', async () => {
     // When the abandoned chain cannot be read, admitting ignorance beats an
     // unverifiable claim about what came before.

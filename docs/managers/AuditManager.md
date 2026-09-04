@@ -505,9 +505,9 @@ audited.
 | `authorization-allow` | Access granted; emitter exists, nothing in production calls it | standard | yes |
 | `policy-evaluate` | Security policy evaluated; emitter exists, nothing in production calls it | standard | yes |
 | `security-event` | Security violation detected; the kind is in metadata.securityEventType | standard | yes |
-| `share-create` | Share link created | standard | yes |
+| `share-create` | Share link created; mints an anonymous-access credential, the same shape as token-mint | critical | yes |
 | `share-access` | Share link used; batched counts | standard | yes |
-| `share-revoke` | Share link revoked | standard | yes |
+| `share-revoke` | Share link revoked; pairs with token-revoke | critical | yes |
 | `system-start` | Instance started; reports whether the previous run ended cleanly | critical | yes |
 | `system-shutdown` | Instance shut down cleanly; its absence before the next start is the signal | critical | yes |
 | `config-change` | Configuration changed by an administrator; standard so a broken audit configuration can still be repaired from the UI | standard | yes |
@@ -519,7 +519,7 @@ audited.
 | `page-raw-edit` | Page edited through the admin raw editor | standard | yes |
 | `session-revoke` | Session revoked by an administrator | standard | yes |
 | `session-clear-anonymous` | Anonymous sessions cleared | standard | yes |
-| `audit-chain-restart` | Hash chain restarted, with the reason | standard | yes |
+| `audit-chain-restart` | Hash chain restarted, with the reason; the marker is the action and cannot half-complete | critical | yes |
 | `asset-read` | Attachment read; not recorded, read volume | volume | no |
 | `search-page` | Page search; not recorded, read volume | volume | no |
 | `user-read` | User profile read; not recorded, read volume | volume | no |

@@ -61,6 +61,9 @@ export interface AuditEvent {
   result: 'success';
   severity: AuditSeverity;
   metadata: Record<string, unknown>;
+  /** What the action was about, where there is a single subject (a share id, a page). */
+  resource?: string;
+  resourceType?: string;
 }
 
 /**

@@ -34,7 +34,10 @@ const mockAuditManager = {
   logAuditEvent: vi.fn(async (e: Record<string, unknown>) => {
     auditEvents.push(e);
     return 'evt';
-  })
+  }),
+  // #1202: share-create and share-revoke are critical, and recordAuditEvent
+  // refuses a critical event on a sink that cannot flush.
+  flushAuditQueue: vi.fn(async () => undefined)
 };
 
 type MediaLike = {
@@ -381,6 +384,47 @@ describe('ShareManager', () => {
       await bare.initialize();
       const r = await bare.resolveScope(scope);
       expect(r).toEqual({ media: [], pages: [] });
+    });
+  });
+
+  describe('#1202 share-create and share-revoke are critical', () => {
+    // The action must not complete unless the record does. Sabotage: put the
+    // persist back above the audit in issue(), or wrap audit() in try/catch,
+    // and these go red.
+    test('a share whose audit record cannot be written is refused and does not exist', async () => {
+      mockAuditManager.logAuditEvent.mockRejectedValueOnce(new Error('disk full'));
+
+      await expect(sm.issue({ kind: 'keyword', keyword: 'trip' }, '24h', 'alice')).rejects.toThrow(/disk full/);
+
+      expect(sm.list()).toHaveLength(0);
+      // Nothing persisted anywhere under the data folder.
+      const files = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true })
+        .flatMap((e) => (e.isDirectory() ? files(path.join(dir, e.name)) : [path.join(dir, e.name)]));
+      expect(files(tmpDir)).toHaveLength(0);
+    });
+
+    test('a revoke whose audit record cannot be written leaves the share live', async () => {
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'trip' }, '24h', 'alice');
+      mockAuditManager.logAuditEvent.mockRejectedValueOnce(new Error('disk full'));
+
+      await expect(sm.revoke(rec.id, 'bob')).rejects.toThrow(/disk full/);
+
+      expect(sm.validate(rec.token)).not.toBeNull();
+      expect(sm.get(rec.id)?.revokedAt).toBeUndefined();
+    });
+
+    test('the record is written before the share exists', async () => {
+      let sharesAtAuditTime = -1;
+      mockAuditManager.logAuditEvent.mockImplementationOnce(async (e: Record<string, unknown>) => {
+        sharesAtAuditTime = sm.list().length;
+        auditEvents.push(e);
+        return 'evt';
+      });
+
+      await sm.issue({ kind: 'keyword', keyword: 'trip' }, '24h', 'alice');
+
+      expect(sharesAtAuditTime).toBe(0);
+      expect(sm.list()).toHaveLength(1);
     });
   });
 });

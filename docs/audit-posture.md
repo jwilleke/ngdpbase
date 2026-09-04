@@ -60,7 +60,7 @@ Declared per event in configuration, not chosen at the call site (`isCriticalEve
 | `standard` | Fire-and-forget | Buffered in memory; losses counted and surfaced |
 | `volume` | High-frequency reads | Emitter exists; fires only when the named config key is true |
 
-Critical types today: `page-delete`, `asset-delete`, `token-mint`, `token-revoke`, `system-start`, `system-shutdown`, `posture-recorded`.
+Critical types today: `page-delete`, `asset-delete`, `token-mint`, `token-revoke`, `share-create`, `share-revoke`, `system-start`, `system-shutdown`, `posture-recorded`, `audit-chain-restart`.
 
 `page-read` is the volume event. It is gated by `ngdpbase.audit.read-events` (default `false`). The emitter is unconditional; the key only decides whether it fires.
 
@@ -282,24 +282,9 @@ Nothing about recording fails silently:
 
 Every event is `{target}-{action}`, sharing the permission's slug where the action is the one the permission authorizes; the table is [AuditManager — Event Types](managers/AuditManager.md#event-types). The code lists the names once in `src/utils/auditEventNames.ts`, typed, so an emitter cannot compile with a name configuration does not declare. Records on disk under dotted names are not mapped forward.
 
-### Tiers for the fifteen undeclared events
+### Tiers for the fifteen undeclared events — landed in [#1202](https://github.com/jwilleke/ngdpbase/issues/1202)
 
-| Event (new name) | Tier | Reason |
-| --- | --- | --- |
-| `share-create` | critical | Mints an anonymous-access credential; the same shape as `token-mint` |
-| `share-revoke` | critical | Pairs with `token-revoke`, already critical |
-| `audit-chain-restart` | critical | The marker is the action; it cannot half-complete |
-| `authentication-failed` | standard | `critical` means "refuse the action when the record fails", and a failed login is already refused |
-| `authentication-success` | standard | `critical` would refuse every login when the audit volume is full; the same reasoning as `config-change` |
-| `authentication-logout` | standard | |
-| `authorization-deny` | standard | Recorded at ten sites; must not block a render |
-| `authorization-allow`, `policy-evaluate` | standard | Emitters exist and nothing calls them; declared so history has a tier |
-| `security-event` | standard | Fired from filters inside the render pipeline |
-| `share-access` | standard | Batched counts; closer to volume |
-| `page-raw-edit`, `page-link-rewrite` | standard | Page writes; `page-edit` is standard |
-| `session-revoke`, `session-clear-anonymous` | standard | Reversible; the user signs in again |
-
-A `critical` row is a promise the emitter has to keep. Today all fifteen call `AuditManager.logAuditEvent` directly inside a catch-and-continue block, so the action completes whether or not the record was written. The three critical rows rework their emitters to go through `recordAuditEvent`, which flushes and rejects on failure, so the caller abandons the action. The twelve standard rows describe what the code does now.
+`share-create`, `share-revoke` and `audit-chain-restart` are `critical`; the other twelve are `standard`. The tiers are in the [event table](managers/AuditManager.md#event-types). The three critical emitters now keep the promise: `ShareManager` records through `recordAuditEvent` before the share exists or is revoked (the `token-mint` ordering), and `restartChain` writes the marker before it moves the chain head. A record that cannot be written refuses the action.
 
 ### `ngdpbase.audit.read-events` retires
 

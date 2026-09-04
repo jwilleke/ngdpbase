@@ -389,6 +389,13 @@ abstract class BaseAuditProvider extends BaseProvider {
 
     const marker = stampRecord(prepared, 1, GENESIS_HASH);
 
+    // #1202: the marker is the action, and it is `critical` — it cannot
+    // half-complete. The head moves only once the marker is on disk. Moving it
+    // first, as this used to, meant a failed write left the process chaining
+    // from a hash that never landed: every later record broken, and the log
+    // saying nothing about why.
+    const id = await this.writeEvent(marker);
+
     this.chainSeq = 1;
     this.chainPrevHash = marker.hash as string;
 
@@ -398,7 +405,7 @@ abstract class BaseAuditProvider extends BaseProvider {
       'The abandoned records remain in the log and remain unverifiable.'
     );
 
-    return this.writeEvent(marker);
+    return id;
   }
 
   /**
