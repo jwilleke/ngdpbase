@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import fs from 'fs';
+import path from 'path';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { AUDIT_EVENTS_KEY, bindAuditEvents } from '../auditRegistry';
 import {
   buildPageMutationAuditEvent,
   buildAttachmentAuditEvent,
@@ -409,5 +412,29 @@ describe('buildPageViewAuditEvent (#1129)', () => {
     const event = buildPageViewAuditEvent({ ...base, viaToken: { id: 't1', name: 'agent' } });
     expect(event.severity).toBe('medium');
     expect(event.metadata).toMatchObject({ viaTokenId: 't1', viaTokenName: 'agent' });
+  });
+
+});
+
+const shippedEvents = (JSON.parse(fs.readFileSync(path.join(process.cwd(), 'config', 'app-default-config.json'), 'utf8')) as Record<string, unknown>)[AUDIT_EVENTS_KEY] as Record<string, unknown>;
+
+describe('#1203 recordAuditEvent honours the enabled switch', () => {
+  const sink = { logAuditEvent: vi.fn(async () => 'id'), flushAuditQueue: vi.fn(async () => undefined) };
+  const event = { eventType: 'page-edit' as const, user: 'jim', ipAddress: undefined, action: 'page-edit', result: 'success' as const, severity: 'low' as const, metadata: {} };
+
+  afterEach(() => {
+    sink.logAuditEvent.mockClear();
+    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? shippedEvents : d));
+  });
+
+  it('an event switched off never reaches the sink', async () => {
+    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? { ...shippedEvents, 'page-edit': { tier: 'standard', enabled: false, description: 'off' } } : d));
+    await recordAuditEvent(sink, event);
+    expect(sink.logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it('an event switched on reaches the sink', async () => {
+    await recordAuditEvent(sink, event);
+    expect(sink.logAuditEvent).toHaveBeenCalledOnce();
   });
 });

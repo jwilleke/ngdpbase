@@ -95,6 +95,17 @@ describe('AuditManager', () => {
       expect(am).toBeDefined();
     });
 
+    test('#1203: says where the retired read-events key went, only when it is still set', async () => {
+      vi.mocked(logger.warn).mockClear();
+      await makeInitializedManager();
+      expect(vi.mocked(logger.warn).mock.calls.filter(([m]) => String(m).includes('read-events'))).toHaveLength(0);
+
+      await makeInitializedManager({ 'ngdpbase.audit.read-events': false });
+      const said = vi.mocked(logger.warn).mock.calls.filter(([m]) => String(m).includes('read-events is retired'));
+      expect(said).toHaveLength(1);
+      expect(String(said[0][0])).toContain('ngdpbase.audit.events["page-read"].enabled');
+    });
+
     test('throws when ConfigurationManager unavailable', async () => {
       const engine = { getManager: vi.fn(() => null) } as unknown as WikiEngine;
       const am = new AuditManager(engine);

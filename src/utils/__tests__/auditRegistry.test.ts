@@ -125,4 +125,24 @@ describe('#1200 nothing fails silently', () => {
     const said = vi.mocked(logger.warn).mock.calls.filter(([m]) => String(m).includes("'addon-sneaky'"));
     expect(said).toHaveLength(1);
   });
+
+});
+
+describe('#1203 the read switch lives on the event, and the map is a posture ingredient', () => {
+  it('the retired key is gone from the shipped configuration', () => {
+    expect('ngdpbase.audit.read-events' in shipped).toBe(false);
+  });
+
+  it('page-read ships switched off', () => {
+    expect(shippedEvents['page-read'].enabled).toBe(false);
+    expect(isAuditEventEnabled('page-read')).toBe(false);
+  });
+
+  it('ngdpbase.audit.events is declared in the security posture, and the retired key is not', () => {
+    // So a tier or switch change is reported by posture-recorded at the next
+    // boot: narrowing what is recorded is on the record.
+    const posture = shipped['ngdpbase.security.posture'] as Record<string, { group?: string; restart?: boolean }>;
+    expect(posture[AUDIT_EVENTS_KEY]).toEqual({ group: 'Audit', restart: false });
+    expect('ngdpbase.audit.read-events' in posture).toBe(false);
+  });
 });

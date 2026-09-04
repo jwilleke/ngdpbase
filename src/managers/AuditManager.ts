@@ -246,6 +246,20 @@ class AuditManager extends BaseManager {
     // operator's configuration rather than the shipped defaults.
     bindAuditEvents((key, defaultValue) => configManager.getProperty(key, defaultValue));
 
+    // #1203: the per-event switch replaced the one-off key. A custom
+    // configuration still setting it is silently ignored otherwise, which is
+    // the failure this project does not allow — say where the setting went.
+    // A sentinel rather than `undefined`: `getProperty(key, undefined)` falls
+    // into the parameter default and answers `null`, which read as "set" on
+    // every boot the first time this shipped.
+    const unset = Symbol('unset');
+    if (configManager.getProperty('ngdpbase.audit.read-events', unset) !== unset) {
+      logger.warn(
+        '[audit] ngdpbase.audit.read-events is retired and ignored (#1203). ' +
+        'Set ngdpbase.audit.events["page-read"].enabled in app-custom-config.json instead.'
+      );
+    }
+
     // Check if audit is enabled (ALL LOWERCASE)
     const auditEnabled = configManager.getProperty('ngdpbase.audit.enabled', true) as boolean;
     if (!auditEnabled) {

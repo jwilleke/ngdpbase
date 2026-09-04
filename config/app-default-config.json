@@ -338,15 +338,13 @@
   "ngdpbase.audit.chain-witness.destination": "",
   "ngdpbase.audit.chain-witness.interval-minutes": 60,
   "ngdpbase.audit.retentiondays": 90,
-  "_comment_audit_read_events": "#1129 — audit read access (page-read). A deployment posture: off, a wiki does not drown its log in reads; on, a records-style deployment (PHR) gets access accounting — who looked at what. Gates emission only; the event type is declared unconditionally in the registry (src/utils/auditRegistry.ts).",
-  "ngdpbase.audit.read-events": false,
   "_comment_audit_events": "#1200/#1201 (epic #1208) — the audit event registry and vocabulary, keyed by event. Names are {target}-{action}, hyphens only, matching the permission slug where the action is the one the permission authorizes; the code lists the same names once in src/utils/auditEventNames.ts and a test holds the two equal. Events are actions taken; permissions are authority; neither carries the other's fields. tier: critical (the action must not complete unless the record does), standard (fire-and-forget, counted), volume (high-frequency reads). enabled: whether the emitter fires; omitted means true; false is a decision on the record. description: one line, shown in the admin filter and the documented table. A map, not an array, so app-custom-config.json overrides one entry and null removes one. Configuration is authoritative: code emits what this names and enforces the tier it declares; npm run lint:audit fails when the two disagree. See docs/audit-posture.md.",
   "ngdpbase.audit.events": {
     "page-create": { "tier": "standard", "description": "Page created" },
     "page-edit": { "tier": "standard", "description": "Page edited" },
     "page-rename": { "tier": "standard", "description": "Page renamed" },
     "page-delete": { "tier": "critical", "description": "Page deleted; destruction, so the record must outlive the page" },
-    "page-read": { "tier": "volume", "gatedBy": "ngdpbase.audit.read-events", "description": "Page read; emitted only when ngdpbase.audit.read-events is on (#1129)" },
+    "page-read": { "tier": "volume", "enabled": false, "description": "Page read; off by default so a general-purpose deployment does not drown its log in reads. On, a records-style deployment gets who looked at what (#1129)" },
     "page-link-rewrite": { "tier": "standard", "description": "Inbound links rewritten after a rename" },
     "asset-upload": { "tier": "standard", "description": "File uploaded" },
     "asset-delete": { "tier": "critical", "description": "File deleted; destruction" },
@@ -499,7 +497,7 @@
       "group": "Audit",
       "restart": true
     },
-    "ngdpbase.audit.read-events": {
+    "ngdpbase.audit.events": {
       "group": "Audit",
       "restart": false
     },

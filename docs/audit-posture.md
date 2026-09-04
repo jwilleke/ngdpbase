@@ -24,7 +24,7 @@ If you add or change an action that is gated by a permission, or that mints a cr
 - If the type is `critical`, the action must not complete when the record cannot be written. Do not catch-and-continue a critical failure.
 - Do not append to the log file, skip the chain, or restart it from application code. A silent repair is worse than a visible break.
 
-A flag that turns the mechanism off creates two code paths, and the weak one is what everybody runs. The chain, the registry, and the vocabulary are always on. What an operator chooses is how hard failure is (`on-failure`) and how much is recorded (`read-events`), not whether integrity exists.
+A flag that turns the mechanism off creates two code paths, and the weak one is what everybody runs. The chain, the registry, and the vocabulary are always on. What an operator chooses is how hard failure is (`on-failure`) and how much is recorded (`enabled` per event in `ngdpbase.audit.events`), not whether integrity exists.
 
 ## What the report answers
 
@@ -62,7 +62,7 @@ Declared per event in configuration, not chosen at the call site (`isCriticalEve
 
 Critical types today: `page-delete`, `asset-delete`, `token-mint`, `token-revoke`, `share-create`, `share-revoke`, `system-start`, `system-shutdown`, `posture-recorded`, `audit-chain-restart`.
 
-`page-read` is the volume event. It is gated by `ngdpbase.audit.read-events` (default `false`). The emitter is unconditional; the key only decides whether it fires.
+`page-read` is the volume event. It ships `enabled: false` in `ngdpbase.audit.events` (#1203). The emitter is unconditional; `recordAuditEvent` honours the switch.
 
 ### What is recorded in production
 
@@ -163,7 +163,7 @@ The mechanism (chain, registry, vocabulary, parity tests, guarantees report) is 
 | `ngdpbase.audit.enabled` | `true` | Off loads `NullAuditProvider` deliberately |
 | `ngdpbase.audit.provider` | `fileauditprovider` | Active backend |
 | `ngdpbase.audit.on-failure` | `continue` | Degrade vs maintenance-mode refuse |
-| `ngdpbase.audit.read-events` | `false` | Whether `page-read` is written |
+| `ngdpbase.audit.events` | the map | Every event's tier and `enabled` switch; `page-read` ships off |
 | `ngdpbase.audit.retentiondays` | `90` | File-provider archive expiry |
 | `ngdpbase.audit.chain-witness.destination` | `""` | Path to append chain-head fingerprints |
 | `ngdpbase.audit.chain-witness.interval-minutes` | `60` | Maximum truncation window while a witness is configured |
@@ -286,9 +286,9 @@ Every event is `{target}-{action}`, sharing the permission's slug where the acti
 
 `share-create`, `share-revoke` and `audit-chain-restart` are `critical`; the other twelve are `standard`. The tiers are in the [event table](managers/AuditManager.md#event-types). The three critical emitters now keep the promise: `ShareManager` records through `recordAuditEvent` before the share exists or is revoked (the `token-mint` ordering), and `restartChain` writes the marker before it moves the chain head. A record that cannot be written refuses the action.
 
-### `ngdpbase.audit.read-events` retires
+### `ngdpbase.audit.read-events` retires — landed in [#1203](https://github.com/jwilleke/ngdpbase/issues/1203)
 
-The switch, its comment, and its posture pointer all go. The value becomes `enabled` on the `page-read` event. The posture map gains one row, `ngdpbase.audit.events` under group Audit with `restart: false`, in place of the `read-events` row, so any tier or switch change is reported by `posture-recorded`.
+The switch, its comment, and its posture pointer are gone. `page-read` ships `enabled: false`, `recordAuditEvent` honours the switch for every event, and `ngdpbase.audit.events` is a posture ingredient (group Audit, no restart), so a tier or switch change is reported by `posture-recorded` at the next boot. A custom configuration still setting the old key gets one boot warning naming the new location.
 
 ### What the coverage check proves after this
 

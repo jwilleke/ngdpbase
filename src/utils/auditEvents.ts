@@ -24,7 +24,7 @@
  */
 
 import logger from './logger.js';
-import { isCriticalEventType } from './auditRegistry.js';
+import { isAuditEventEnabled, isCriticalEventType } from './auditRegistry.js';
 import { AUDIT_EVENT, type AuditEventName } from './auditEventNames.js';
 
 /** Agent-token identity attached to a request that authenticated with one. */
@@ -202,10 +202,11 @@ export interface PageViewInput extends CommonInput {
 /**
  * Build the audit event for a page view (#1129).
  *
- * Emission is a deployment posture: the route emits only when
- * `ngdpbase.audit.read-events` is on. Off (the default), a wiki does not drown
- * its log in reads; on, a records-style deployment gets the access accounting
- * — who looked at what — that read auditing exists for.
+ * Emission is a deployment posture: `page-read` ships `enabled: false` in
+ * `ngdpbase.audit.events` (#1203), and `recordAuditEvent` honours the switch.
+ * Off, a general-purpose deployment does not drown its log in reads; on, a
+ * records-style deployment gets the access accounting — who looked at what —
+ * that read auditing exists for.
  */
 export function buildPageViewAuditEvent(input: PageViewInput): AuditEvent {
   const { username, ipAddress, pageName, uuid, viaToken } = input;
@@ -342,6 +343,12 @@ export async function recordAuditEvent(
   event: AuditEvent,
   onError?: (err: unknown) => void
 ): Promise<void> {
+  // #1203: `enabled: false` on the event in `ngdpbase.audit.events` is a
+  // decision on the record. The emitter still exists and still calls this;
+  // the switch is honoured here, once, rather than at every call site. (#1205
+  // makes this a returned result rather than a silent return.)
+  if (!isAuditEventEnabled(event.eventType)) return;
+
   // An absent sink is a configuration state, not a failure. Counting it would
   // make the number meaningless on any instance that never enabled auditing —
   // and it must not turn every critical action into an error either, since

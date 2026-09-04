@@ -323,7 +323,7 @@ What remains, grouped as the admin section would group them:
 | Identity and registration | `auth.password.enabled`, `auth.required-factors`, `application.registration`, `application.registration.password`, `auth.user.default-external`, `auth.magic-link.auto-provision`, `auth.magic-link.ttl-minutes`, `auth.google-oidc.auto-provision` |
 | Login throttling | `auth.throttle.enabled`, `.max-attempts`, `.window-minutes`, `.lock-minutes`, `.max-lock-minutes` |
 | Agent tokens | `auth.agent-token.enabled`, `.max-per-user`, `.max-ttl-hours`, `.default-ttl-hours`, `.retention-days` |
-| Audit | `audit.enabled`, `audit.provider`, `audit.on-failure`, `audit.read-events`, `audit.retentiondays` |
+| Audit | `audit.enabled`, `audit.provider`, `audit.on-failure`, `audit.events`, `audit.retentiondays` |
 | Content sanitisation | `filters.security.enabled`, `.prevent-xss`, `.prevent-csrf`, `.sanitize-html`, `.strip-dangerous-content`, `.block-on-save`, `.allowed-tags`, `.allowed-attributes`, `style.security.allow-inline-css`, `style.security.allowed-properties` |
 | Rate limiting | `mail.rate-limit.enabled`, `.max-submissions`, `.window-minutes` |
 

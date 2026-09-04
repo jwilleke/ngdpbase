@@ -4985,19 +4985,19 @@ ${panes}
   /**
    * Record a page view — when the deployment asks for it (#1129).
    *
-   * `ngdpbase.audit.read-events` is the posture switch: off (the default) a
-   * wiki does not drown its audit log in reads; on, a records-style deployment
-   * gets access accounting — who looked at what — which is the single most
-   * important audit question for that posture. Fire-and-forget: a read already
-   * happened and a slow audit backend must not delay the render.
+   * `page-read` ships `enabled: false` in `ngdpbase.audit.events` (#1203) and
+   * `recordAuditEvent` honours the switch, so this emits unconditionally. Off,
+   * a general-purpose deployment does not drown its audit log in reads; on, a
+   * records-style deployment gets access accounting — who looked at what —
+   * which is the single most important audit question for that posture.
+   * Fire-and-forget: a read already happened and a slow audit backend must not
+   * delay the render.
    *
    * Emitted from the route because the route is the door for an HTTP view:
    * PageManager.getPage cannot tell a user viewing a page from the dozens of
    * internal reads (ACL checks, conflict checks, indexing) that call it.
    */
   private auditPageView(req: Request, pageName: string, uuid: string | null | undefined): void {
-    const configManager = this.engine.getManager('ConfigurationManager');
-    if (configManager?.getProperty('ngdpbase.audit.read-events', false) !== true) return;
     const event = buildPageViewAuditEvent({
       username: req.userContext?.username,
       ipAddress: req.ip,

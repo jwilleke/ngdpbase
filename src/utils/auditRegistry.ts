@@ -41,12 +41,6 @@ export interface AuditEventDeclaration {
   enabled?: boolean;
   /** One line, shown in the admin filter and the documented table. */
   description: string;
-  /**
-   * Config key that switches emission at runtime (#1129). The emitter exists
-   * unconditionally; it fires only when the named key is true. Retires into
-   * `enabled` under #1203.
-   */
-  gatedBy?: string;
 }
 
 /** The shape of `ConfigurationManager.getProperty`, so this module needs no manager import. */
