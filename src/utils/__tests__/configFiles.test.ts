@@ -80,12 +80,12 @@ describe('#1214 merging', () => {
 
 describe('#1214 the pre-engine read agrees with the manager', () => {
   test('a one-entry override of ngdpbase.audit.events keeps the other entries', async () => {
-    writeCustom({ 'ngdpbase.audit.events': { 'page-delete': { tier: 'standard', description: 'lowered' } } });
+    writeCustom({ 'ngdpbase.audit.events': { 'page-delete': { 'on-failure': 'continue', description: 'lowered' } } });
 
     const pre = loadMergedConfigSync({ FAST_STORAGE: dataDir });
-    const preEvents = pre?.merged['ngdpbase.audit.events'] as Record<string, { tier: string }>;
-    expect(preEvents['page-delete'].tier).toBe('standard');
-    expect(preEvents['token-mint'].tier).toBe('critical');
+    const preEvents = pre?.merged['ngdpbase.audit.events'] as Record<string, { 'on-failure': string }>;
+    expect(preEvents['page-delete']['on-failure']).toBe('continue');
+    expect(preEvents['token-mint']['on-failure']).toBe('refuse');
     expect(Object.keys(preEvents).length).toBeGreaterThan(30);
     expect(pre?.customKeys.has('ngdpbase.audit.events')).toBe(true);
 

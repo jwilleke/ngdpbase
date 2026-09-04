@@ -197,7 +197,7 @@ process.env.SLOW_STORAGE = process.env.FAST_STORAGE;
 // #1200: the audit event registry is `ngdpbase.audit.events` in configuration,
 // bound by AuditManager.initialize at boot. Tests have no boot, so bind the
 // shipped defaults here — the one honest direct read of the file — or every
-// tier-dependent assertion (critical fsync, reject-on-failure) would see an
+// rule-dependent assertion (fsync, reject-on-failure) would see an
 // unbound registry and pass or fail for the wrong reason.
 import { readFileSync } from 'fs';
 import * as auditRegistry from './src/utils/auditRegistry';

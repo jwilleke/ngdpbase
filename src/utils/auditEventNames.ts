@@ -1,7 +1,7 @@
 /**
  * Every audit event name, once, in code (#1201, epic #1208).
  *
- * Configuration owns which names exist and what tier each carries
+ * Configuration owns which names exist and what on-failure rule each carries
  * (`ngdpbase.audit.events`, read by auditRegistry.ts). Code owns which name
  * each action emits, and that half used to be thirty scattered string literals
  * typed as `string`, so a typo compiled and a rename meant editing every site.

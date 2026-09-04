@@ -733,7 +733,7 @@ class ConfigurationManager extends BaseManager {
    * Deliberately AFTER the save rather than before. A change refused because
    * its audit record could not be written would leave an operator unable to
    * repair a broken audit configuration through the admin UI — a deadlock that
-   * costs more than the missing record. `standard` tier for the same reason:
+   * costs more than the missing record. on-failure: continue for the same reason:
    * the drop is counted and surfaced by recordAuditEvent, not fatal.
    */
   private async recordConfigChange(

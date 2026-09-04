@@ -533,7 +533,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
 
     // #1183 — at the door. Four write paths (NCM localization, bulk import,
     // thumbnail render, media browser) produced no record while this lived in
-    // WikiRoutes. `standard` tier, so a failed record is logged, not fatal.
+    // WikiRoutes. on-failure: continue, so a failed record is logged, not fatal.
     await this.recordAttachmentEvent('upload', options.context, {
       attachmentId: String(attachmentMetadata.identifier ?? ''),
       filename: fileInfo.originalName,
@@ -706,7 +706,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
 
     // #1183 — recorded HERE, at the door, not at the caller.
     //
-    // `asset-delete` is declared `tier: 'critical'` with note 'destruction'
+    // `asset-delete` is declared on-failure: refuse with description 'destruction'
     // in auditRegistry. The emit used to live in WikiRoutes, so only the two
     // routes that remembered to call the helper produced a record — and
     // `adminDeleteAttachmentFromBrowser` destroyed attachments silently.

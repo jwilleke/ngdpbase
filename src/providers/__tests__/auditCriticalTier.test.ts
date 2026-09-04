@@ -1,5 +1,5 @@
 /**
- * #1158 — the critical tier did not mean what the registry says it means.
+ * #1158 — the refuse-on-failure rule (then called the critical tier) did not mean what the registry says it means.
  *
  * `auditRegistry.ts` defines `critical` as *"the action must not complete
  * unless the record does"*, and `page-delete`, `token-mint`, `token-revoke`,
@@ -22,7 +22,7 @@ import path from 'path';
 import fsp from 'fs/promises';
 import FileAuditProvider from '../FileAuditProvider';
 import { verifyChain } from '../../utils/auditChain';
-import { criticalEventTypes, isCriticalEventType } from '../../utils/auditRegistry';
+import { refuseOnFailureEventTypes, refusesOnFailure } from '../../utils/auditRegistry';
 
 let dir: string;
 
@@ -75,14 +75,14 @@ afterEach(async () => {
   await fs.remove(dir);
 });
 
-describe('#1158 — the critical tier is durable before the action completes', () => {
+describe('#1158 — a refuse-on-failure event is durable before the action completes', () => {
   test('the registry still declares the events this depends on', () => {
     // Guards the fixtures: if `token-mint` stopped being critical, every
     // assertion below would pass for the wrong reason.
-    expect(isCriticalEventType('token-mint')).toBe(true);
-    expect(isCriticalEventType('page-delete')).toBe(true);
-    expect(isCriticalEventType('page-edit')).toBe(false);
-    expect(criticalEventTypes()).toContain('token-mint');
+    expect(refusesOnFailure('token-mint')).toBe(true);
+    expect(refusesOnFailure('page-delete')).toBe(true);
+    expect(refusesOnFailure('page-edit')).toBe(false);
+    expect(refuseOnFailureEventTypes()).toContain('token-mint');
   });
 
   test('a critical record is readable on disk once the write resolves', async () => {
@@ -101,7 +101,7 @@ describe('#1158 — the critical tier is durable before the action completes', (
   test('a standard record is still buffered when the write resolves', async () => {
     // The other half of the guarantee. Making everything synchronous would
     // charge page-read at volume for durability the #1109 decision says it
-    // does not need, so this asserts the tier is a real distinction.
+    // does not need, so this asserts the rule is a real distinction.
     const p = makeProvider();
     await p.initialize();
 
@@ -158,7 +158,7 @@ describe('#1158 — the critical tier is durable before the action completes', (
   test('a failed write re-queues the batch instead of discarding it', async () => {
     // The catch said `unshift(...this.auditQueue)` — the queue onto itself,
     // after eventsToFlush had been cleared out of it. A failed write silently
-    // dropped the batch, and the records the critical tier exists to protect
+    // dropped the batch, and the records the refuse rule exists to protect
     // were the ones being lost.
     const p = makeProvider();
     await p.initialize();
@@ -228,7 +228,7 @@ describe('#1158 — the critical tier is durable before the action completes', (
   });
 
   test('a standard write does not pay for an fsync it was not promised', async () => {
-    // The cost side of the tier. 0.13 ms/write plain against 8.62 ms with
+    // The cost side of the rule. 0.13 ms/write plain against 8.62 ms with
     // fsync on this repo's storage (see atomicWrite.ts), so making every event
     // synchronous would charge page-read at volume for a guarantee the #1109
     // decision says it does not need.
@@ -272,7 +272,7 @@ describe('#1158 — the critical tier is durable before the action completes', (
     await p.close();
   });
 
-  test('durability names the tier it covers rather than rounding to a boolean', async () => {
+  test('durability names the events it covers rather than rounding to a boolean', async () => {
     // D21: state facts, do not score. `fsync: true` would promise durability
     // for the buffered standard events that do not have it; a bare false hides
     // a guarantee the critical path genuinely provides.

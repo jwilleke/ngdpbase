@@ -354,7 +354,7 @@ class BackupManager extends BaseManager {
       logger.info(`📁 Backup saved to: ${backupPath}`);
 
       // #1215: a full copy of the instance now exists somewhere; say who asked
-      // and where it went. Standard tier: the backup is already written and a
+      // and where it went. on-failure: continue — the backup is already written and a
       // slow sink must not fail it.
       await recordAuditEvent(this.engine.getManager('AuditManager'), {
         eventType: AUDIT_EVENT.BACKUP_CREATE,

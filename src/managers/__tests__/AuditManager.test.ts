@@ -113,19 +113,26 @@ describe('AuditManager', () => {
       const events = shipped['ngdpbase.audit.events'] as Record<string, unknown>;
 
       // Enabled and unknown: blocked, with the name in the reason.
-      let engine = makeEngine({ 'ngdpbase.audit.provider': 'nullauditprovider', 'ngdpbase.audit.events': { ...events, 'widget-frobnicate': { tier: 'standard', description: 'nothing emits this' } } });
+      let engine = makeEngine({ 'ngdpbase.audit.provider': 'nullauditprovider', 'ngdpbase.audit.events': { ...events, 'widget-frobnicate': { 'on-failure': 'continue', description: 'nothing emits this' } } });
       await new AuditManager(engine).initialize();
       expect(engine.getBlockingConditions().join('\n')).toMatch(/enables 'widget-frobnicate', which nothing in this build emits/);
 
       // Switched off and unknown: a decision on the record, not a fault.
-      engine = makeEngine({ 'ngdpbase.audit.provider': 'nullauditprovider', 'ngdpbase.audit.events': { ...events, 'widget-frobnicate': { tier: 'standard', enabled: false, description: 'not yet' } } });
+      engine = makeEngine({ 'ngdpbase.audit.provider': 'nullauditprovider', 'ngdpbase.audit.events': { ...events, 'widget-frobnicate': { 'on-failure': 'continue', enabled: false, description: 'not yet' } } });
       await new AuditManager(engine).initialize();
       expect(engine.getBlockingConditions()).toEqual([]);
 
       // Off-convention: blocked.
-      engine = makeEngine({ 'ngdpbase.audit.provider': 'nullauditprovider', 'ngdpbase.audit.events': { ...events, 'page.delete': { tier: 'critical', description: 'old name' } } });
+      engine = makeEngine({ 'ngdpbase.audit.provider': 'nullauditprovider', 'ngdpbase.audit.events': { ...events, 'page.delete': { 'on-failure': 'refuse', description: 'old name' } } });
       await new AuditManager(engine).initialize();
       expect(engine.getBlockingConditions().join('\n')).toMatch(/'page.delete', which is not a \{target\}-\{action\} name/);
+
+      // #1218: the field used to be `tier`. A custom entry still carrying it is
+      // refused with the mapping in the message, not silently treated as
+      // continue.
+      engine = makeEngine({ 'ngdpbase.audit.provider': 'nullauditprovider', 'ngdpbase.audit.events': { ...events, 'page-delete': { tier: 'critical', description: 'old field' } } });
+      await new AuditManager(engine).initialize();
+      expect(engine.getBlockingConditions().join('\n')).toMatch(/'page-delete'\] must declare on-failure: refuse \| continue \(the field was called tier before #1218/);
 
       // The shipped map: nothing blocked.
       engine = makeEngine({ 'ngdpbase.audit.provider': 'nullauditprovider' });

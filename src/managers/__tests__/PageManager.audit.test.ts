@@ -158,7 +158,7 @@ describe('PageManager.savePageWithContext() audit emission (#1121)', () => {
   test('a failing audit sink does not fail the save', async () => {
     // page.* is NOT declared critical in the audit registry: a page edit that
     // is already on disk must not be reported to the user as failed. The
-    // critical tier — where the action refuses rather than proceed unrecorded —
+    // refuse-on-failure rule — where the action refuses rather than proceed unrecorded —
     // is deletes and token mint/revoke.
     const { provider } = makeManager();
     const broken = new PageManager({

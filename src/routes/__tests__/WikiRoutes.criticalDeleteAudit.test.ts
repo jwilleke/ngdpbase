@@ -39,7 +39,7 @@ describe('#1121 a delete refuses when its audit record cannot be written', () =>
 
     await expect(
       routes.auditPageDelete(makeReq(), { userContext: user }, 'Secret Page', 'uuid-1')
-    ).rejects.toThrow(/critical/i);
+    ).rejects.toThrow(/on-failure: refuse/i);
   });
 
   test('a working sink resolves, and the record names what is about to be destroyed', async () => {

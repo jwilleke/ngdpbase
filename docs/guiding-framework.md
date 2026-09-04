@@ -44,7 +44,7 @@ A manager is justified by being the only door to a resource — not by having al
 4. Configuration binds capabilities to providers; providers supply behaviour. Config selects and parameterises. It never expresses logic.
 5. A capability that is not configured is never loaded.
 6. Every action on a resource is a named permission, declared as data in one registry, formatted `{target}-{action}`.
-   Every recorded action is a named audit event, declared as data in a second registry, same format. Permissions are authority; events are actions taken. Both registries are configuration, and configuration is authoritative: code emits what the event registry names and enforces the tier it declares. An operator narrowing what is recorded is a decision on the record, not a quiet edit — the change is itself audited.
+   Every recorded action is a named audit event, declared as data in a second registry, same format. Permissions are authority; events are actions taken. Both registries are configuration, and configuration is authoritative: code emits what the event registry names and honours the on-failure rule it declares. An operator narrowing what is recorded is a decision on the record, not a quiet edit — the change is itself audited.
 7. Roles collect permissions. A flat list, unordered, additive only.
 8. Capability and scope are separate. A role says what may be done; the assignment says over which subjects. Neither is encoded in the other's name.
 9. Evaluation is tiered, and the resource's own attributes beat global policy.
@@ -211,7 +211,7 @@ Present in this repo:
 - A static invariant test asserting that every view calling a shared template helper is rendered by a route that supplies it
 - A registry-drift test ([#1058](https://github.com/jwilleke/ngdpbase/issues/1058), closed) — every permission in config is checked somewhere, and every permission checked in code exists in config. One documented exception: `page-export` is declared and not the gate (export is gated on read until a bulk surface exists). Zero unknown orphans, zero unregistered checks
 - `npm run lint:audit` — `ngdpbase.audit.events` and the emitters must agree in every direction: an emitted name with no declaration, a declared and enabled name nobody emits, a name outside `{target}-{action}`, or an emitter the script cannot resolve is red ([#1206](https://github.com/jwilleke/ngdpbase/issues/1206))
-- `npm run docs:audit:check` — the audit event table and the coverage results in the docs are generated from `ngdpbase.audit.events`; a tier or description changed in configuration without regenerating is red ([#1207](https://github.com/jwilleke/ngdpbase/issues/1207))
+- `npm run docs:audit:check` — the audit event table and the coverage results in the docs are generated from `ngdpbase.audit.events`; an on-failure rule or description changed in configuration without regenerating is red ([#1207](https://github.com/jwilleke/ngdpbase/issues/1207))
 - `npm run lint:addons` — addon load and boundary checks. Not the same as holding addons to every `src/` invariant; that gap is [#1177](https://github.com/jwilleke/ngdpbase/issues/1177)
 
 Worth adding wherever this core is used:

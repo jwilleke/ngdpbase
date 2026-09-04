@@ -5,15 +5,15 @@
  * Three lists exist and none of them was comparable to the others by hand:
  *
  * - __vocabulary__ — the names configuration declares (`ngdpbase.audit.events`, #1200)
- * - __registry__ — the subset configuration requires: declared and not switched off, with a tier
+ * - __registry__ — the subset configuration requires: declared and not switched off, with an on-failure rule
  * - __emitters__ — what the source actually builds and sends
  *
  * The parity tests (#1115) prove *emitted ⊆ vocabulary* and *registry-declared
  * has an emitter*. Nothing proved __registry ⊇ emitted__, which is how fifteen
  * event types — `authentication-failed` among them — came to be named,
  * emitted, and documented while the contract that says what must be recorded
- * never mentioned them. An event outside the registry has no tier, so
- * `isCriticalEventType()` answers `false` for it: not as a decision, but
+ * never mentioned them. An event outside the registry has no on-failure rule,
+ * so `refusesOnFailure()` answers `false` for it: not as a decision, but
  * because it is not there to be graded.
  *
  * Since #1201 every emitter references `AUDIT_EVENT.KEY` from one module, so
@@ -35,11 +35,11 @@ const REPO = path.resolve(__dirname, '..');
 const read = (rel: string): string => readFileSync(path.join(REPO, rel), 'utf8');
 
 /** The map, read from the shipped defaults (#1200: configuration is the registry). */
-function auditEvents(): Record<string, { tier?: string; enabled?: boolean }> {
+function auditEvents(): Record<string, { 'on-failure'?: string; enabled?: boolean }> {
   const parsed = JSON.parse(read('config/app-default-config.json')) as Record<string, unknown>;
   const map = parsed['ngdpbase.audit.events'];
   if (!map || typeof map !== 'object' || Array.isArray(map)) return {};
-  return map as Record<string, { tier?: string; enabled?: boolean }>;
+  return map as Record<string, { 'on-failure'?: string; enabled?: boolean }>;
 }
 
 /** Names configuration declares. */
@@ -47,12 +47,12 @@ export function vocabularyTypes(): string[] {
   return Object.keys(auditEvents()).sort();
 }
 
-/** Names configuration requires — declared and not switched off — with their tier. */
+/** Names configuration requires — declared and not switched off — with their on-failure rule. */
 export function registryTypes(): Map<string, string> {
   const out = new Map<string, string>();
   for (const [name, d] of Object.entries(auditEvents())) {
     if (d.enabled === false) continue;
-    out.set(name, d.tier ?? 'unspecified');
+    out.set(name, d['on-failure'] ?? 'unspecified');
   }
   return out;
 }
@@ -159,7 +159,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   console.log('');
 
   console.log(`EMITTED, NO DECLARATION IN ngdpbase.audit.events (${c.undeclared.length})`);
-  console.log('  These have no tier, so isCriticalEventType() answers false by absence.');
+  console.log('  These have no on-failure rule, so refusesOnFailure() answers false by absence.');
   for (const t of c.undeclared) console.log(`   ${t}`);
 
   if (c.offConvention.length) {
@@ -176,7 +176,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   if (c.unemitted.length) {
     console.log(`\nREQUIRED BUT NOT EMITTED (${c.unemitted.length})`);
     console.log('  A stated requirement with no emitter is the worse direction.');
-    for (const t of c.unemitted) console.log(`   ${t}   tier=${c.registry.get(t)}`);
+    for (const t of c.unemitted) console.log(`   ${t}   on-failure=${c.registry.get(t)}`);
   }
 
   if (c.offVocabulary.length) {

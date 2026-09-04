@@ -479,62 +479,62 @@ __This table is generated from `ngdpbase.audit.events` in
 `config/app-default-config.json` by `npm run docs:audit` (#1207) and checked by
 `npm run docs:audit:check` and `auditVocabulary.test.ts`.__ Editing it by hand fails CI. The code
 lists the same names once in `src/utils/auditEventNames.ts`, typed, and
-`auditEventNames.test.ts` holds the two equal. The tier is the durability the
-record is held to (`critical` — the action does not complete unless the record
-does; `standard` — fire-and-forget, counted; `volume` — high-frequency reads),
-and `Recorded` is the `enabled` switch. An operator's `app-custom-config.json`
+`auditEventNames.test.ts` holds the two equal. `On failure` is what happens when the
+record cannot be written (`refuse` — the action does not complete unless the
+record does; `continue` — the action proceeds and the loss is counted), and
+`Recorded` is the `enabled` switch. Importance is `severity` on each record. An operator's `app-custom-config.json`
 may change either; configuration is authoritative, and the change is itself
 audited.
 
 <!-- AUTO:audit-events BEGIN -->
-| Event Type | Description | Tier | Recorded |
+| Event Type | Description | On failure | Recorded |
 | ----- | ----- | ----- | ----- |
-| `page-create` | Page created | standard | yes |
-| `page-edit` | Page edited | standard | yes |
-| `page-rename` | Page renamed | standard | yes |
-| `page-delete` | Page deleted; destruction, so the record must outlive the page | critical | yes |
-| `page-read` | Page read; off by default so a general-purpose deployment does not drown its log in reads. On, a records-style deployment gets who looked at what (#1129) | volume | no |
-| `page-link-rewrite` | Inbound links rewritten after a rename | standard | yes |
-| `asset-upload` | File uploaded | standard | yes |
-| `asset-delete` | File deleted; destruction | critical | yes |
-| `token-mint` | Agent token minted; a credential nobody knows exists is the worst case | critical | yes |
-| `token-revoke` | Agent token revoked | critical | yes |
-| `authentication-success` | Sign-in succeeded | standard | yes |
-| `authentication-failed` | Sign-in failed | standard | yes |
-| `authentication-logout` | User signed out | standard | yes |
-| `authorization-deny` | Access denied | standard | yes |
-| `authorization-allow` | Access granted; emitter exists, nothing in production calls it | standard | yes |
-| `policy-evaluate` | Security policy evaluated; emitter exists, nothing in production calls it | standard | yes |
-| `security-event` | Security violation detected; the kind is in metadata.securityEventType | standard | yes |
-| `share-create` | Share link created; mints an anonymous-access credential, the same shape as token-mint | critical | yes |
-| `share-access` | Share link used; batched counts | standard | yes |
-| `share-revoke` | Share link revoked; pairs with token-revoke | critical | yes |
-| `system-start` | Instance started; reports whether the previous run ended cleanly | critical | yes |
-| `system-shutdown` | Instance shut down cleanly; its absence before the next start is the signal | critical | yes |
-| `config-change` | Configuration changed by an administrator; standard so a broken audit configuration can still be repaired from the UI | standard | yes |
-| `manager-state-change` | A manager changed state: degraded, disabled, failed or recovered | standard | yes |
-| `posture-recorded` | Security posture at startup, compared against the previous start | critical | yes |
-| `job-started` | A background job started, and who asked for it | standard | yes |
-| `job-completed` | A background job finished successfully | standard | yes |
-| `job-failed` | A background job failed | standard | yes |
-| `page-raw-edit` | Page edited through the admin raw editor | standard | yes |
-| `session-revoke` | Session revoked by an administrator | standard | yes |
-| `session-clear-anonymous` | Anonymous sessions cleared | standard | yes |
-| `user-create` | Account created; by an administrator, by self-registration, or provisioned by an identity provider | standard | yes |
-| `user-edit` | Account changed in a way that alters what it may do or who holds it: roles, password, active, external, email, profile lock. Preference edits are not recorded | standard | yes |
-| `user-delete` | Account deleted; destruction of an identity and its attribution, recorded before the delete | critical | yes |
-| `search-user` | People searched for; enumerating people is disclosive in a way searching pages is not. Off by default as read volume | volume | no |
-| `page-export` | Page exported to a file; bulk extraction of content, gated on read until a bulk surface exists | standard | yes |
-| `asset-edit` | Attachment metadata edited; EXIF/IPTC and catalog fields change provenance | standard | yes |
-| `config-reset` | Every custom configuration value discarded; recorded before the reset, which cannot proceed without it | critical | yes |
-| `backup-create` | A full backup written; where it went and who asked | standard | yes |
-| `secret-reveal` | A masked configuration value shown to an administrator; the key is recorded, never the value | standard | yes |
-| `audit-export` | The audit trail exported to a file; who took a copy, in what format, with what filter | standard | yes |
-| `audit-chain-restart` | Hash chain restarted, with the reason; the marker is the action and cannot half-complete | critical | yes |
-| `asset-read` | Attachment read; not recorded, read volume | volume | no |
-| `search-page` | Page search; not recorded, read volume | volume | no |
-| `user-read` | User profile read; not recorded, read volume | volume | no |
-| `admin-read` | Admin dashboard read; not recorded, read volume | volume | no |
+| `page-create` | Page created | continue | yes |
+| `page-edit` | Page edited | continue | yes |
+| `page-rename` | Page renamed | continue | yes |
+| `page-delete` | Page deleted; destruction, so the record must outlive the page | refuse | yes |
+| `page-read` | Page read; off by default so a general-purpose deployment does not drown its log in reads. On, a records-style deployment gets who looked at what (#1129) | continue | no |
+| `page-link-rewrite` | Inbound links rewritten after a rename | continue | yes |
+| `asset-upload` | File uploaded | continue | yes |
+| `asset-delete` | File deleted; destruction | refuse | yes |
+| `token-mint` | Agent token minted; a credential nobody knows exists is the worst case | refuse | yes |
+| `token-revoke` | Agent token revoked | refuse | yes |
+| `authentication-success` | Sign-in succeeded | continue | yes |
+| `authentication-failed` | Sign-in failed | continue | yes |
+| `authentication-logout` | User signed out | continue | yes |
+| `authorization-deny` | Access denied | continue | yes |
+| `authorization-allow` | Access granted; emitter exists, nothing in production calls it | continue | yes |
+| `policy-evaluate` | Security policy evaluated; emitter exists, nothing in production calls it | continue | yes |
+| `security-event` | Security violation detected; the kind is in metadata.securityEventType | continue | yes |
+| `share-create` | Share link created; mints an anonymous-access credential, the same shape as token-mint | refuse | yes |
+| `share-access` | Share link used; batched counts | continue | yes |
+| `share-revoke` | Share link revoked; pairs with token-revoke | refuse | yes |
+| `system-start` | Instance started; reports whether the previous run ended cleanly | refuse | yes |
+| `system-shutdown` | Instance shut down cleanly; its absence before the next start is the signal | refuse | yes |
+| `config-change` | Configuration changed by an administrator; standard so a broken audit configuration can still be repaired from the UI | continue | yes |
+| `manager-state-change` | A manager changed state: degraded, disabled, failed or recovered | continue | yes |
+| `posture-recorded` | Security posture at startup, compared against the previous start | refuse | yes |
+| `job-started` | A background job started, and who asked for it | continue | yes |
+| `job-completed` | A background job finished successfully | continue | yes |
+| `job-failed` | A background job failed | continue | yes |
+| `page-raw-edit` | Page edited through the admin raw editor | continue | yes |
+| `session-revoke` | Session revoked by an administrator | continue | yes |
+| `session-clear-anonymous` | Anonymous sessions cleared | continue | yes |
+| `user-create` | Account created; by an administrator, by self-registration, or provisioned by an identity provider | continue | yes |
+| `user-edit` | Account changed in a way that alters what it may do or who holds it: roles, password, active, external, email, profile lock. Preference edits are not recorded | continue | yes |
+| `user-delete` | Account deleted; destruction of an identity and its attribution, recorded before the delete | refuse | yes |
+| `search-user` | People searched for; enumerating people is disclosive in a way searching pages is not. Off by default as read volume | continue | no |
+| `page-export` | Page exported to a file; bulk extraction of content, gated on read until a bulk surface exists | continue | yes |
+| `asset-edit` | Attachment metadata edited; EXIF/IPTC and catalog fields change provenance | continue | yes |
+| `config-reset` | Every custom configuration value discarded; recorded before the reset, which cannot proceed without it | refuse | yes |
+| `backup-create` | A full backup written; where it went and who asked | continue | yes |
+| `secret-reveal` | A masked configuration value shown to an administrator; the key is recorded, never the value | continue | yes |
+| `audit-export` | The audit trail exported to a file; who took a copy, in what format, with what filter | continue | yes |
+| `audit-chain-restart` | Hash chain restarted, with the reason; the marker is the action and cannot half-complete | refuse | yes |
+| `asset-read` | Attachment read; not recorded, read volume | continue | no |
+| `search-page` | Page search; not recorded, read volume | continue | no |
+| `user-read` | User profile read; not recorded, read volume | continue | no |
+| `admin-read` | Admin dashboard read; not recorded, read volume | continue | no |
 <!-- AUTO:audit-events END -->
 
 #### Retired names

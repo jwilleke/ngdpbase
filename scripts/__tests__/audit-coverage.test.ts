@@ -33,7 +33,7 @@ describe('#1184 — the three lists are read correctly', () => {
     const v = vocabularyTypes();
     expect(r.size).toBeGreaterThan(30);
     expect(r.size).toBeLessThanOrEqual(v.length);
-    expect(r.get('page-delete')).toBe('critical');
+    expect(r.get('page-delete')).toBe('refuse');
     expect(r.has('asset-read')).toBe(false);
     expect(v).toContain('asset-read');
   });

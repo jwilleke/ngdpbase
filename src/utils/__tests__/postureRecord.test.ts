@@ -115,10 +115,10 @@ describe('#1156 — describePostureDiff', () => {
   });
 
   test('a changed map names the keys that changed, not both maps (#1204)', () => {
-    const before = { 'ngdpbase.audit.events': { 'page-delete': { tier: 'critical' }, 'page-edit': { tier: 'standard' } } };
-    const after = { 'ngdpbase.audit.events': { 'page-delete': { tier: 'standard' }, 'page-edit': { tier: 'standard' }, 'user-create': { tier: 'standard' } } };
+    const before = { 'ngdpbase.audit.events': { 'page-delete': { 'on-failure': 'refuse' }, 'page-edit': { 'on-failure': 'continue' } } };
+    const after = { 'ngdpbase.audit.events': { 'page-delete': { 'on-failure': 'continue' }, 'page-edit': { 'on-failure': 'continue' }, 'user-create': { 'on-failure': 'continue' } } };
     const text = describePostureDiff(diffPostures(before, after));
-    expect(text).toContain('page-delete: {"tier":"critical"} → {"tier":"standard"}');
+    expect(text).toContain('page-delete: {"on-failure":"refuse"} → {"on-failure":"continue"}');
     expect(text).toContain('+user-create');
     expect(text).not.toContain('page-edit');
   });

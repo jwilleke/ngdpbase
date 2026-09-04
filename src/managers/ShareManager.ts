@@ -390,9 +390,9 @@ export default class ShareManager extends BaseManager {
 
   /** Audit create/revoke (decision 5). Never throws — shares work without audit. */
   /**
-   * Record a share event through `recordAuditEvent`, which honours the tier
-   * configuration declares (#1202): a `critical` event is flushed and a failure
-   * rejects, so the caller abandons the action; a `standard` one is
+   * Record a share event through `recordAuditEvent`, which honours the on-failure rule
+   * configuration declares (#1202): a `refuse` event is flushed and a failure
+   * rejects, so the caller abandons the action; a `continue` one is
    * fire-and-forget with the error counted. No catch here — swallowing the
    * rejection is exactly what made the old `critical` claim a promise the code
    * did not keep.

@@ -6,13 +6,13 @@ import fs from 'fs';
 import path from 'path';
 import { eventsTable, coverageSection, generate } from '../generate-audit-docs';
 
-const events = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'config', 'app-default-config.json'), 'utf8'))['ngdpbase.audit.events'] as Record<string, { tier: string; enabled?: boolean; description: string }>;
+const events = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'config', 'app-default-config.json'), 'utf8'))['ngdpbase.audit.events'] as Record<string, { 'on-failure': string; enabled?: boolean; description: string }>;
 
 describe('#1207 audit docs come from configuration', () => {
-  test('the event table lists every configured event with its tier and switch', () => {
+  test('the event table lists every configured event with its on-failure rule and switch', () => {
     const table = eventsTable(events);
     for (const [name, d] of Object.entries(events)) {
-      expect(table).toContain(`| \`${name}\` | ${d.description} | ${d.tier} | ${d.enabled === false ? 'no' : 'yes'} |`);
+      expect(table).toContain(`| \`${name}\` | ${d.description} | ${d['on-failure']} | ${d.enabled === false ? 'no' : 'yes'} |`);
     }
   });
 
@@ -29,8 +29,8 @@ describe('#1207 audit docs come from configuration', () => {
     }
   });
 
-  test('a tier edited in configuration without regenerating would differ (sabotage, in memory)', () => {
-    const edited = { ...events, 'page-delete': { ...events['page-delete'], tier: 'standard' } };
+  test('an on-failure rule edited in configuration without regenerating would differ (sabotage, in memory)', () => {
+    const edited = { ...events, 'page-delete': { ...events['page-delete'], 'on-failure': 'continue' } };
     expect(eventsTable(edited)).not.toBe(eventsTable(events));
   });
 });

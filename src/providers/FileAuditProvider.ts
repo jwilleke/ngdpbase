@@ -10,7 +10,7 @@ import { AuditEvent } from '../types/index.js';
 import type { ProviderDurability } from './BaseProvider.js';
 import type { AuditReport } from './BaseAuditProvider.js';
 import { buildWitness, shouldPublish, type ChainWitness } from '../utils/auditHeadWitness.js';
-import { isCriticalEventType, criticalEventTypes } from '../utils/auditRegistry.js';
+import { refusesOnFailure, refuseOnFailureEventTypes } from '../utils/auditRegistry.js';
 
 export const WITNESS_DESTINATION_KEY = 'ngdpbase.audit.chain-witness.destination';
 export const WITNESS_INTERVAL_KEY = 'ngdpbase.audit.chain-witness.interval-minutes';
@@ -355,18 +355,18 @@ class FileAuditProvider extends BaseAuditProvider {
 
   /**
    * Queue an already-stamped record for the next flush (#1119), or write it
-   * through to the device now if its tier demands that (#1158).
+   * through to the device now if its on-failure rule demands that (#1158).
    *
    * The base has applied seq, prevHash and hash by this point; this only
    * decides when the bytes reach disk.
    *
-   * __The critical tier is written and fsynced before this resolves.__ The
+   * __An on-failure: refuse event is written and fsynced before this resolves.__ The
    * registry defines `critical` as *"the action must not complete unless the
    * record does"*, and a 30-second timer flushing into the page cache does not
    * deliver that: `page-delete`, `token-mint`, `token-revoke`, the lifecycle
    * events and `posture-recorded` could all be lost by an unclean exit while
    * the action they describe had already happened. A credential that exists
-   * with nothing saying so is the case the tier was written for.
+   * with nothing saying so is the case the rule was written for.
    *
    * __It goes through the queue rather than around it__, even though the issue
    * described bypassing. The records are hash-chained, so the file must hold
@@ -385,7 +385,7 @@ class FileAuditProvider extends BaseAuditProvider {
     // Add to in-memory queue
     this.auditQueue.push(event);
 
-    if (isCriticalEventType(String(event.eventType ?? ''))) {
+    if (refusesOnFailure(String(event.eventType ?? ''))) {
       await this.flush({ fsync: true });
     } else if (this.config && this.auditQueue.length >= this.config.maxQueueSize) {
       // Flush if queue is getting large
@@ -650,7 +650,7 @@ class FileAuditProvider extends BaseAuditProvider {
       // #1158: this said `unshift(...this.auditQueue)` — the queue onto itself.
       // `eventsToFlush` had already been cleared out of it, so a failed write
       // DISCARDED the batch (and duplicated whatever had arrived since). The
-      // records the critical tier exists to protect were the ones being lost.
+      // records the refuse-on-failure rule exists to protect were the ones being lost.
       this.auditQueue.unshift(...eventsToFlush);
       // A caller that asked for durability has to learn the write failed;
       // swallowing it here is what let `recordAuditEvent` report success.
@@ -763,7 +763,7 @@ class FileAuditProvider extends BaseAuditProvider {
   /**
    * What this provider does with a record before it is on disk (#1148).
    *
-   * It buffers, except on the critical tier. `writeEvent` queues in memory, a
+   * It buffers, except on the refuse-on-failure rule. `writeEvent` queues in memory, a
    * timer flushes on `ngdpbase.audit.flushinterval`, and an early flush is
    * forced at `ngdpbase.audit.maxqueuesize`. That write is `fs.appendFile` with
    * no fsync, so even a flushed `standard` or `volume` record sits in the OS
@@ -771,11 +771,11 @@ class FileAuditProvider extends BaseAuditProvider {
    *
    * A `critical` event does not wait for any of that: it is written and
    * `fsync`ed before `writeEvent` resolves (#1158), which is what makes the
-   * tier's own definition — *the action must not complete unless the record
+   * rule's own definition — *the action must not complete unless the record
    * does* — true rather than declared.
    *
    * Reported rather than judged: an operator who can see a 30-second window on
-   * one tier and none on the other decides whether that is acceptable for their
+   * one rule and none on the other decides whether that is acceptable for their
    * deployment. The `durable: true` this replaces decided it for them, wrongly.
    *
    * The bound is still the machine. `fsync` trusts a disk controller's cache,
@@ -875,10 +875,10 @@ class FileAuditProvider extends BaseAuditProvider {
       // buffered exactly as before, so claiming fsync outright would be the
       // #1148 defect in the other direction.
       fsync: false,
-      // #1158: the critical tier IS written through and fsynced before the
+      // #1158: the refuse-on-failure rule IS written through and fsynced before the
       // action completes. Named rather than folded into the boolean so the
       // report states which events have the guarantee instead of rounding.
-      fsyncedClasses: criticalEventTypes()
+      fsyncedClasses: refuseOnFailureEventTypes()
     };
   }
 

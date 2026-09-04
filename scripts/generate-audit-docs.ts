@@ -6,7 +6,7 @@
  * the markers stays hand-written:
  *
  *   docs/managers/AuditManager.md   <!-- AUTO:audit-events BEGIN --> … END
- *     the event table: every entry of `ngdpbase.audit.events`, its tier,
+ *     the event table: every entry of `ngdpbase.audit.events`, its on-failure rule,
  *     and whether it is recorded
  *
  *   docs/audit-posture.md           <!-- AUTO:audit-coverage BEGIN --> … END
@@ -15,7 +15,7 @@
  *
  * Counts restated by hand drift — the posture document said "17 of 32" for a
  * day after the registry moved into configuration. The parity test already
- * pins the table's names to the map; this pins the whole region, so a tier
+ * pins the table's names to the map; this pins the whole region, so an on-failure
  * or description edit in configuration cannot leave the docs behind.
  *
  *   --check     Do not write; exit 1 if the generated output differs from
@@ -36,7 +36,7 @@ const CONFIG = path.join(REPO, 'config', 'app-default-config.json');
 const EVENTS_DOC = path.join(REPO, 'docs', 'managers', 'AuditManager.md');
 const POSTURE_DOC = path.join(REPO, 'docs', 'audit-posture.md');
 
-interface Declaration { tier: string; enabled?: boolean; description: string }
+interface Declaration { 'on-failure': string; enabled?: boolean; description: string }
 
 function declarations(): Record<string, Declaration> {
   const cfg = JSON.parse(readFileSync(CONFIG, 'utf8')) as Record<string, unknown>;
@@ -46,16 +46,16 @@ function declarations(): Record<string, Declaration> {
 /** The event table, as the manager document shows it. */
 export function eventsTable(events: Record<string, Declaration> = declarations()): string {
   const rows = Object.entries(events).map(([name, d]) =>
-    `| \`${name}\` | ${d.description} | ${d.tier} | ${d.enabled === false ? 'no' : 'yes'} |`
+    `| \`${name}\` | ${d.description} | ${d['on-failure']} | ${d.enabled === false ? 'no' : 'yes'} |`
   );
-  return ['| Event Type | Description | Tier | Recorded |', '| ----- | ----- | ----- | ----- |', ...rows].join('\n');
+  return ['| Event Type | Description | On failure | Recorded |', '| ----- | ----- | ----- | ----- |', ...rows].join('\n');
 }
 
 /** What the coverage report concludes, as the posture document shows it. */
 export function coverageSection(events: Record<string, Declaration> = declarations()): string {
   const c = coverage();
   const off = Object.entries(events).filter(([, d]) => d.enabled === false).map(([n]) => n).sort();
-  const critical = Object.entries(events).filter(([, d]) => d.tier === 'critical' && d.enabled !== false).map(([n]) => n).sort();
+  const critical = Object.entries(events).filter(([, d]) => d['on-failure'] === 'refuse' && d.enabled !== false).map(([n]) => n).sort();
   const gaps = c.undeclared.length + c.unemitted.length + c.offVocabulary.length + c.unresolvedEmitters.length + c.offConvention.length;
 
   const lines = [
@@ -69,7 +69,7 @@ export function coverageSection(events: Record<string, Declaration> = declaratio
     `| Required (declared and switched on) | ${c.registry.size} |`,
     `| Emitted by the source | ${c.emitted.length} |`,
     `| Switched off | ${off.length} |`,
-    `| Critical tier | ${critical.length} |`,
+    `| Refuse on failure | ${critical.length} |`,
     `| Gaps | ${gaps} |`,
     '',
     gaps === 0
@@ -78,7 +78,7 @@ export function coverageSection(events: Record<string, Declaration> = declaratio
     '',
     `Switched off, on purpose, with the reason in each description: ${off.map((n) => `\`${n}\``).join(' · ')}.`,
     '',
-    `Critical — the action does not complete unless the record does: ${critical.map((n) => `\`${n}\``).join(' · ')}.`
+    `Refuse on failure — the action does not complete unless the record does: ${critical.map((n) => `\`${n}\``).join(' · ')}.`
   ];
   return lines.join('\n');
 }

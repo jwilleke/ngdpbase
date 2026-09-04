@@ -10,15 +10,15 @@ relatedModules: [AuditManager, FileAuditProvider, BaseAuditProvider, NullAuditPr
 
 What auditing on this instance can actually do, as implemented in code.
 
-This is an inventory, not a plan and not a recommendation — except [Audit planning](#audit-planning), which records decisions taken and not yet built. The living contract is `ngdpbase.audit.events` in `config/app-default-config.json` (every event, its tier, and whether it fires); `src/utils/auditRegistry.ts` reads it. The manager API is [AuditManager](managers/AuditManager.md). Decisions about security-related *settings* live in [security-posture.md](security-posture.md). The design that produced this work is [planning/Security-auditing.md](planning/Security-auditing.md).
+This is an inventory, not a plan and not a recommendation — except [Audit planning](#audit-planning), which records decisions taken and not yet built. The living contract is `ngdpbase.audit.events` in `config/app-default-config.json` (every event, what happens when its record cannot be written, and whether it fires); `src/utils/auditRegistry.ts` reads it. The manager API is [AuditManager](managers/AuditManager.md). Decisions about security-related *settings* live in [security-posture.md](security-posture.md). The design that produced this work is [planning/Security-auditing.md](planning/Security-auditing.md).
 
 ## Guiding principle
 
-__Auditing is a contract, not a courtesy.__ A security-relevant action is declared in `ngdpbase.audit.events` and emitted through `recordAuditEvent` (or the manager door that calls it). CI proves configuration and emitters agree. Configuration is authoritative: an operator may change a tier or switch an event off, and that change is itself audited. Remembering to log is not a design: it can be correct and can never be proven.
+__Auditing is a contract, not a courtesy.__ A security-relevant action is declared in `ngdpbase.audit.events` and emitted through `recordAuditEvent` (or the manager door that calls it). CI proves configuration and emitters agree. Configuration is authoritative: an operator may change an on-failure rule or switch an event off, and that change is itself audited. Remembering to log is not a design: it can be correct and can never be proven.
 
 If you add or change an action that is gated by a permission, or that mints a credential, destroys something, or changes what someone may do:
 
-- Declare the event in `ngdpbase.audit.events` in the same change as the emitter, with its tier and a description. An emitted name with no declaration fails `npm run lint:audit`.
+- Declare the event in `ngdpbase.audit.events` in the same change as the emitter, with its on-failure rule and a description. An emitted name with no declaration fails `npm run lint:audit`.
 - Use a `{target}.{action}` name from that map. Do not invent a string at the call site, in a filter dropdown, or in a comment.
 - Forward the request context you were given. Do not rebuild `{ username }` and drop `viaToken` — that is [P1](security-posture.md#p1--every-security-relevant-call-carries-a-context).
 - Emit through `recordAuditEvent` and read its outcome if the caller cares. If the type is `critical`, the action must not complete when the record cannot be written. Do not catch-and-continue a critical failure.
@@ -50,19 +50,20 @@ Turning auditing off (`ngdpbase.audit.enabled: false` or `provider: nullauditpro
 
 An event switched off (`enabled: false`) is a decision on the record with its reason in the description: `asset-read`, `search-page`, `user-read`, `admin-read` today. The gated actions that had no emitter got them in [#1204](https://github.com/jwilleke/ngdpbase/issues/1204); the two permissions still without one, and why, are under [Permissions with no audit event](#permissions-with-no-audit-event).
 
-### Tiers
+### On failure
 
-Declared per event in configuration, not chosen at the call site (`isCriticalEventType()` reads the map bound by `AuditManager.initialize`):
+What happens when the record cannot be written — the disk full, the file unwritable, the fsync failing, the provider degraded to the null one, the process dying between append and sync. Declared per event in configuration as `on-failure`, not chosen at the call site (`refusesOnFailure()` reads the map bound by `AuditManager.initialize`):
 
-| Tier | Meaning | Implemented behaviour |
+| `on-failure` | Meaning | Implemented behaviour |
 | --- | --- | --- |
-| `critical` | The action must not complete unless the record does | `recordAuditEvent` flushes, then rejects on failure. `FileAuditProvider` fsyncs these classes before the write resolves |
-| `standard` | Fire-and-forget | Buffered in memory; losses counted and surfaced |
-| `volume` | High-frequency reads | Emitter exists; fires only when the named config key is true |
+| `refuse` | The action must not complete unless the record does | `recordAuditEvent` flushes, then rejects on failure, so the caller abandons the action. `FileAuditProvider` fsyncs these before the write resolves |
+| `continue` | The action proceeds; the lost record is counted and surfaced | Buffered in memory; losses counted and shown on the dashboard |
 
-Critical types today: `page-delete`, `asset-delete`, `token-mint`, `token-revoke`, `share-create`, `share-revoke`, `system-start`, `system-shutdown`, `posture-recorded`, `user-delete`, `audit-chain-restart`.
+This is failure handling, not importance. How important an event is lives on each record as `severity` (`low` … `critical`), set by the emitter. `authentication-failed` is high severity and `continue`, because the login is already refused; `system-start` is low severity and `refuse`, because the record must land before anything else does. Until [#1218](https://github.com/jwilleke/ngdpbase/issues/1218) the field was called `on-failure rule` with values `critical` / `standard` / `volume`, which read as an importance scale it never was; `volume` was `continue` with `enabled: false`.
 
-`page-read` is the volume event. It ships `enabled: false` in `ngdpbase.audit.events` (#1203). The emitter is unconditional; `recordAuditEvent` honours the switch.
+Refuse on failure today: `page-delete`, `asset-delete`, `token-mint`, `token-revoke`, `share-create`, `share-revoke`, `user-delete`, `config-reset`, `system-start`, `system-shutdown`, `posture-recorded`, `audit-chain-restart`.
+
+`page-read` is the read-volume event. It ships `enabled: false` in `ngdpbase.audit.events` (#1203). The emitter is unconditional; `recordAuditEvent` honours the switch.
 
 ### What is recorded in production
 
@@ -165,7 +166,7 @@ The mechanism (chain, registry, vocabulary, parity tests, guarantees report) is 
 | `ngdpbase.audit.enabled` | `true` | Off loads `NullAuditProvider` deliberately |
 | `ngdpbase.audit.provider` | `fileauditprovider` | Active backend |
 | `ngdpbase.audit.on-failure` | `continue` | Degrade vs maintenance-mode refuse |
-| `ngdpbase.audit.events` | the map | Every event's tier and `enabled` switch; `page-read` ships off |
+| `ngdpbase.audit.events` | the map | Every event's on-failure rule and `enabled` switch; `page-read` ships off |
 | `ngdpbase.audit.retentiondays` | `90` | File-provider archive expiry |
 | `ngdpbase.audit.chain-witness.destination` | `""` | Path to append chain-head fingerprints |
 | `ngdpbase.audit.chain-witness.interval-minutes` | `60` | Maximum truncation window while a witness is configured |
@@ -209,7 +210,7 @@ npm run lint:audit         # the same check, exits 1 on any gap
 npm run docs:audit:check   # the generated sections below match configuration
 ```
 
-`scripts/audit-coverage.ts` compares the three lists that had no way of being compared by hand: the __vocabulary__ (names that may be used), the __registry__ (what must be recorded, and at what tier), and the __emitters__ (what the source actually sends). It walks `src/` and `addons/`, and resolves interpolated names — emitters build them as `` `page.${op}` ``, so a plain text search reports `page-create` as unemitted while it fires on every page save.
+`scripts/audit-coverage.ts` compares the three lists that had no way of being compared by hand: the __vocabulary__ (names that may be used), the __registry__ (what must be recorded, and at what on-failure rule), and the __emitters__ (what the source actually sends). It walks `src/` and `addons/`, and resolves interpolated names — emitters build them as `` `page.${op}` ``, so a plain text search reports `page-create` as unemitted while it fires on every page save.
 
 It fails the build on every direction (#1206): an emitted name with no declaration, a declared and enabled name nobody emits, a name outside `{target}-{action}`, and an emitter it cannot account for. Events switched off are reported, not failed: they are decisions on the record.
 
@@ -224,14 +225,14 @@ Generated by `npm run docs:audit` from `ngdpbase.audit.events` and `npm run audi
 | Required (declared and switched on) | 40 |
 | Emitted by the source | 42 |
 | Switched off | 6 |
-| Critical tier | 12 |
+| Refuse on failure | 12 |
 | Gaps | 0 |
 
 Every required event has an emitter, every emitted name is declared, and every name is `{target}-{action}`.
 
 Switched off, on purpose, with the reason in each description: `admin-read` · `asset-read` · `page-read` · `search-page` · `search-user` · `user-read`.
 
-Critical — the action does not complete unless the record does: `asset-delete` · `audit-chain-restart` · `config-reset` · `page-delete` · `posture-recorded` · `share-create` · `share-revoke` · `system-shutdown` · `system-start` · `token-mint` · `token-revoke` · `user-delete`.
+Refuse on failure — the action does not complete unless the record does: `asset-delete` · `audit-chain-restart` · `config-reset` · `page-delete` · `posture-recorded` · `share-create` · `share-revoke` · `system-shutdown` · `system-start` · `token-mint` · `token-revoke` · `user-delete`.
 <!-- AUTO:audit-coverage END -->
 
 __Addons emit nothing.__ The report covers `addons/` and finds zero audit events there, while four of the five write user data — form submissions (`FormsDataManager.saveSubmission`), journal entries, calendar events, feed records. Not a registry gap, because nothing declares those actions at all; a coverage gap, and the same shape as [#1177](https://github.com/jwilleke/ngdpbase/issues/1177), where addon code was held to a weaker standard by default rather than by decision.
@@ -271,7 +272,7 @@ Fields per event:
 
 | Field | Meaning |
 | --- | --- |
-| `tier` | `critical`, `standard` or `volume`, as the tiers table above defines them |
+| `on-failure rule` | `critical`, `standard` or `volume`, as the tiers table above defines them |
 | `enabled` | Whether the emitter fires. Defaults to `true`. `false` is a decision on the record |
 | `description` | One line, shown in the documented table and the admin filter |
 
@@ -292,7 +293,7 @@ Every event is `{target}-{action}`, sharing the permission's slug where the acti
 
 ### `ngdpbase.audit.read-events` retires — landed in [#1203](https://github.com/jwilleke/ngdpbase/issues/1203)
 
-The switch, its comment, and its posture pointer are gone. `page-read` ships `enabled: false`, `recordAuditEvent` honours the switch for every event, and `ngdpbase.audit.events` is a posture ingredient (group Audit, no restart), so a tier or switch change is reported by `posture-recorded` at the next boot. A custom configuration still setting the old key gets one boot warning naming the new location.
+The switch, its comment, and its posture pointer are gone. `page-read` ships `enabled: false`, `recordAuditEvent` honours the switch for every event, and `ngdpbase.audit.events` is a posture ingredient (group Audit, no restart), so a on-failure rule or switch change is reported by `posture-recorded` at the next boot. A custom configuration still setting the old key gets one boot warning naming the new location.
 
 ### What the coverage check proves — landed in [#1206](https://github.com/jwilleke/ngdpbase/issues/1206)
 

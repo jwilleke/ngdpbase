@@ -241,7 +241,7 @@ class AuditManager extends BaseManager {
     }
 
     // #1200: the event registry is `ngdpbase.audit.events`. Bound here, before
-    // any provider loads, so every tier consulted from now on — by
+    // any provider loads, so every on-failure rule consulted from now on — by
     // recordAuditEvent and by the provider's fsync decision — is the
     // operator's configuration rather than the shipped defaults.
     bindAuditEvents((key, defaultValue) => configManager.getProperty(key, defaultValue));
@@ -254,6 +254,17 @@ class AuditManager extends BaseManager {
     // mode (security-posture.md D9, D10) with the name in the reason.
     const known = new Set<string>(auditEventNames());
     for (const [name, d] of Object.entries(auditEventDeclarations())) {
+      // #1218: `tier` was renamed to `on-failure`. A custom configuration still
+      // carrying the old field would be silently ignored otherwise — and a
+      // value outside refuse | continue means nobody decided.
+      const rule = (d as unknown as Record<string, unknown>)['on-failure'];
+      if ('tier' in (d as unknown as Record<string, unknown>) || (rule !== 'refuse' && rule !== 'continue')) {
+        this.engine.blockConfiguration(
+          `ngdpbase.audit.events['${name}'] must declare on-failure: refuse | continue` +
+          ('tier' in (d as unknown as Record<string, unknown>) ? ' (the field was called tier before #1218; critical is refuse, standard and volume are continue)' : '') +
+          '. Fix it in app-custom-config.json.'
+        );
+      }
       if (d.enabled === false) continue;
       if (!AUDIT_EVENT_NAME_PATTERN.test(name)) {
         this.engine.blockConfiguration(
@@ -531,7 +542,7 @@ class AuditManager extends BaseManager {
 
   /**
    * The one door for the helpers below (#1205): through `recordAuditEvent`,
-   * so the `enabled` switch, the tier, and the outcome are the same as for
+   * so the `enabled` switch, the on-failure rule, and the outcome are the same as for
    * every other emitter. Calling `logAuditEvent` directly skipped all three.
    */
   private async record(auditEvent: AuditEvent): Promise<AuditRecordOutcome> {

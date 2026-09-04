@@ -476,7 +476,7 @@ class AgentTokenManager extends BaseManager {
     // Ordering is the whole point. Persisting first and auditing after would
     // mean a failed audit throws while the credential is already on disk — a
     // live token the caller believes was never created, which is precisely the
-    // failure this tier exists to prevent. Audit-first inverts the residual
+    // failure this rule exists to prevent. Audit-first inverts the residual
     // risk to an audit record for a token that does not exist: a puzzle rather
     // than a vulnerability.
     await recordAuditEvent(

@@ -313,7 +313,7 @@ describe('dropped audit events are counted — #1109', () => {
  * page-read and wrong for token-mint, where the record IS the only evidence the
  * credential exists.
  *
- * The tier lives in the #1120 registry, so "which events must be durable" is
+ * The on-failure rule lives in the registry, so "which events must be durable" is
  * data rather than a judgement remade at each call site.
  */
 describe('#1121 tiered durability', () => {
@@ -432,7 +432,7 @@ describe('#1203 recordAuditEvent honours the enabled switch', () => {
   });
 
   it('an event switched off never reaches the sink, and says not-enabled (#1205)', async () => {
-    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? { ...shippedEvents, 'page-edit': { tier: 'standard', enabled: false, description: 'off' } } : d));
+    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? { ...shippedEvents, 'page-edit': { 'on-failure': 'continue', enabled: false, description: 'off' } } : d));
     await expect(recordAuditEvent(sink, event)).resolves.toBe('not-enabled');
     expect(sink.logAuditEvent).not.toHaveBeenCalled();
   });

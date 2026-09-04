@@ -656,7 +656,7 @@ describe('#1111 the token lifecycle is audited', () => {
     } as never;
     const m = new AgentTokenManager(engine);
     await m.initialize();
-    await expect(m.mint('alice', 'ci', ['page-read'])).rejects.toThrow(/critical/i);
+    await expect(m.mint('alice', 'ci', ['page-read'])).rejects.toThrow(/on-failure: refuse/i);
 
     // And nothing was left behind — the point of auditing before persisting.
     expect(m.listAll()).toHaveLength(0);

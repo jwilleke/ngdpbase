@@ -5,7 +5,7 @@
  * emission by test rather than by grepping. #1200 moves the declarations into
  * `ngdpbase.audit.events`; these are the same "check that fails", re-pointed:
  * every declared-and-enabled event has an emitter, every declaration carries
- * a tier and a description, a custom configuration is honoured, and an
+ * an on-failure rule and a description, a custom configuration is honoured, and an
  * unbound or undeclared lookup is never silent.
  */
 import fs from 'fs';
@@ -15,10 +15,10 @@ import {
   auditEventDeclarations,
   auditEventTypes,
   bindAuditEvents,
-  criticalEventTypes,
+  refuseOnFailureEventTypes,
   disabledEventTypes,
   isAuditEventEnabled,
-  isCriticalEventType,
+  refusesOnFailure,
   requiredEventTypes
 } from '../auditRegistry';
 import logger from '../logger';
@@ -27,7 +27,7 @@ const SRC = path.join(process.cwd(), 'src');
 const shipped = JSON.parse(
   fs.readFileSync(path.join(process.cwd(), 'config', 'app-default-config.json'), 'utf8')
 ) as Record<string, unknown>;
-const shippedEvents = shipped[AUDIT_EVENTS_KEY] as Record<string, { tier: string; enabled?: boolean; description: string }>;
+const shippedEvents = shipped[AUDIT_EVENTS_KEY] as Record<string, { 'on-failure': string; enabled?: boolean; description: string }>;
 
 /** Every .ts file under src/, excluding tests — the places an event could be emitted. */
 function sourceFiles(dir = SRC, acc: string[] = []): string[] {
@@ -62,9 +62,9 @@ describe('#1200 the registry is configuration', () => {
     expect(auditEventTypes()).toEqual(Object.keys(shippedEvents).sort());
   });
 
-  it.each(Object.keys(shippedEvents))('%s declares a tier and a description', (eventType) => {
+  it.each(Object.keys(shippedEvents))('%s declares an on-failure rule and a description', (eventType) => {
     const d = auditEventDeclarations()[eventType];
-    expect(['critical', 'standard', 'volume']).toContain(d.tier);
+    expect(['refuse', 'continue']).toContain(d['on-failure']);
     expect(d.description).toBeTruthy();
   });
 
@@ -82,23 +82,23 @@ describe('#1200 the registry is configuration', () => {
     expect(isAuditEventEnabled('asset-read')).toBe(false);
   });
 
-  it('the critical tier is the one configuration declares', () => {
-    expect(isCriticalEventType('token-mint')).toBe(true);
-    expect(isCriticalEventType('page-edit')).toBe(false);
-    expect(criticalEventTypes()).toEqual(
-      Object.entries(shippedEvents).filter(([, d]) => d.tier === 'critical' && d.enabled !== false).map(([n]) => n).sort()
+  it('the refuse-on-failure set is the one configuration declares', () => {
+    expect(refusesOnFailure('token-mint')).toBe(true);
+    expect(refusesOnFailure('page-edit')).toBe(false);
+    expect(refuseOnFailureEventTypes()).toEqual(
+      Object.entries(shippedEvents).filter(([, d]) => d['on-failure'] === 'refuse' && d.enabled !== false).map(([n]) => n).sort()
     );
   });
 });
 
 describe('#1200 configuration is authoritative', () => {
-  it('a custom configuration lowering a tier is honoured', () => {
+  it('a custom configuration relaxing refuse to continue is honoured', () => {
     // The operator may narrow what the system claims to audit; that is the
     // point, not the objection. The narrowing is itself audited elsewhere.
-    const custom = { ...shippedEvents, 'page-delete': { ...shippedEvents['page-delete'], tier: 'standard' } };
+    const custom = { ...shippedEvents, 'page-delete': { ...shippedEvents['page-delete'], 'on-failure': 'continue' } };
     bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? custom : d));
-    expect(isCriticalEventType('page-delete')).toBe(false);
-    expect(isCriticalEventType('token-mint')).toBe(true);
+    expect(refusesOnFailure('page-delete')).toBe(false);
+    expect(refusesOnFailure('token-mint')).toBe(true);
   });
 
   it('a custom configuration removing an entry with null removes it', () => {
@@ -109,19 +109,19 @@ describe('#1200 configuration is authoritative', () => {
 });
 
 describe('#1200 nothing fails silently', () => {
-  it('an unbound registry says so once and treats everything as standard', () => {
+  it('an unbound registry says so once and treats everything as continue', () => {
     bindAuditEvents(null);
     vi.mocked(logger.warn).mockClear();
-    expect(isCriticalEventType('token-mint')).toBe(false);
-    expect(isCriticalEventType('page-delete')).toBe(false);
+    expect(refusesOnFailure('token-mint')).toBe(false);
+    expect(refusesOnFailure('page-delete')).toBe(false);
     const said = vi.mocked(logger.warn).mock.calls.filter(([m]) => String(m).includes('not bound'));
     expect(said).toHaveLength(1);
   });
 
   it('an emitted name configuration does not declare is said once', () => {
     vi.mocked(logger.warn).mockClear();
-    expect(isCriticalEventType('addon-sneaky')).toBe(false);
-    expect(isCriticalEventType('addon-sneaky')).toBe(false);
+    expect(refusesOnFailure('addon-sneaky')).toBe(false);
+    expect(refusesOnFailure('addon-sneaky')).toBe(false);
     const said = vi.mocked(logger.warn).mock.calls.filter(([m]) => String(m).includes("'addon-sneaky'"));
     expect(said).toHaveLength(1);
   });
@@ -139,7 +139,7 @@ describe('#1203 the read switch lives on the event, and the map is a posture ing
   });
 
   it('ngdpbase.audit.events is declared in the security posture, and the retired key is not', () => {
-    // So a tier or switch change is reported by posture-recorded at the next
+    // So an on-failure or switch change is reported by posture-recorded at the next
     // boot: narrowing what is recorded is on the record.
     const posture = shipped['ngdpbase.security.posture'] as Record<string, { group?: string; restart?: boolean }>;
     expect(posture[AUDIT_EVENTS_KEY]).toEqual({ group: 'Audit', restart: false });

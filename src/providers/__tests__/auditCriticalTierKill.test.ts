@@ -1,7 +1,7 @@
 /**
  * #1158 — the unclean-exit case, proved with an actual unclean exit.
  *
- * Every other assertion about the critical tier runs in-process, so all of
+ * Every other assertion about the refuse-on-failure rule runs in-process, so all of
  * them are ultimately a statement about what this process can see. The claim
  * being made is stronger than that: a `token-mint` record must survive the
  * process dying without ever unwinding — no `close()`, no flush timer, no
@@ -57,7 +57,7 @@ import { readFileSync } from 'fs';
 import FileAuditProvider from ${JSON.stringify(DIST)};
 import { bindAuditEvents, AUDIT_EVENTS_KEY } from ${JSON.stringify(DIST_REGISTRY)};
 
-// #1200: the tier comes from configuration, bound at boot by AuditManager.
+// #1200: the on-failure rule comes from configuration, bound at boot by AuditManager.
 // This child has no AuditManager, so it binds the shipped map itself — the
 // same thing vitest.setup.ts does for in-process tests.
 const shipped = JSON.parse(readFileSync(${JSON.stringify(SHIPPED_CONFIG)}, 'utf8'));

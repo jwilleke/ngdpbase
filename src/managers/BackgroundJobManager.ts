@@ -245,7 +245,7 @@ class BackgroundJobManager extends BaseManager {
    * is absent during early boot — which `recordAuditEvent` already treats as a
    * configuration state rather than a failure.
    *
-   * `standard` tier deliberately. A reindex must not be refused because its
+   * on-failure: continue deliberately. A reindex must not be refused because its
    * audit record could not be written; the drop is counted and surfaced by
    * `recordAuditEvent` rather than being fatal.
    */

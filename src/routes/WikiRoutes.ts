@@ -1391,8 +1391,8 @@ class WikiRoutes {
       const excludeSid = typeof req.sessionID === 'string' ? req.sessionID : null;
       const result = await sweepAnonymousSessions(sessionDir, excludeSid);
 
-      // #1205: through recordAuditEvent — the enabled switch, the tier and the
-      // outcome are the same door every emitter uses. Standard tier: the
+      // #1205: through recordAuditEvent — the enabled switch, the on-failure rule and the
+      // outcome are the same door every emitter uses. on-failure: continue — the
       // sessions are already cleared and a slow sink must not fail the action.
       await recordAuditEvent(this.auditSink(), {
         eventType: AUDIT_EVENT.SESSION_CLEAR_ANONYMOUS,
@@ -4996,7 +4996,7 @@ ${panes}
    * They lived here, so only the two routes that remembered to call them
    * produced a record: the NCM-localization upload, the bulk-import upload,
    * the thumbnail upload and the media-browser delete were all silent, the
-   * last of those a `tier: 'critical'` destruction.
+   * last of those an on-failure: refuse destruction.
    *
    * `docs/audit-posture.md` already states the rule — an action is emitted
    * "through `recordAuditEvent` (or the manager door that calls it)". Every
@@ -5103,7 +5103,7 @@ ${panes}
    * the delete succeeded and the process died first.
    *
    * What changed: this used to call `logAuditEvent` directly and swallow any
-   * failure, so it never saw the tier, never reached the drop counter, and a
+   * failure, so it never saw the rule, never reached the drop counter, and a
    * failed write let the delete proceed unrecorded. It now goes through
    * `recordAuditEvent`, which flushes a critical event and REJECTS on failure —
    * and the rejection propagates, so the caller can abandon the delete.
@@ -6154,7 +6154,7 @@ ${panes}
       // #1183: the record is written by AttachmentManager — the door every
       // caller passes through. It lived here, so four other write paths
       // produced no record at all, including a media-browser delete of the
-      // same `critical` tier. The ordering guarantee is unchanged: the manager
+      // same on-failure: refuse rule. The ordering guarantee is unchanged: the manager
       // records BEFORE the provider destroys anything and rethrows on failure,
       // so a delete whose record cannot be written still does not happen.
       let deleted: boolean;

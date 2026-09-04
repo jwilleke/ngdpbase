@@ -3,7 +3,7 @@
  *
  * Configuration owns which names exist; code lists the ones it may emit. A
  * name on one side only is the drift this pins: an emitter using a name no
- * tier was decided for, or a decision about a name nothing can send.
+ * on-failure rule was decided for, or a decision about a name nothing can send.
  */
 import fs from 'fs';
 import path from 'path';

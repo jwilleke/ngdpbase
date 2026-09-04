@@ -6,7 +6,7 @@
  * tests could only prove that *that route* recorded — and four other write
  * paths (NCM image localization, bulk import, thumbnail render, the media
  * browser's delete) produced no record at all. The last of those is
- * `asset-delete`, declared `tier: 'critical'` with note `'destruction'`.
+ * `asset-delete`, declared on-failure: refuse with description 'destruction'.
  *
  * `docs/audit-posture.md` already states the rule these assert:
  *
@@ -149,7 +149,7 @@ describe('#1183 — asset-upload is recorded at the door', () => {
     expect(sink[0].user).toBe('testuser');
   });
 
-  test('upload is `standard` tier: a failing audit backend does NOT fail the upload', async () => {
+  test('upload is on-failure: continue — a failing audit backend does NOT fail the upload', async () => {
     // The inverse of delete, and deliberately so — losing the record must not
     // refuse a write that is not destruction.
     const m = uploadManager([], { auditFails: true });

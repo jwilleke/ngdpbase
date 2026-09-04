@@ -2,7 +2,7 @@
  * The audit event registry, read from configuration (#1200, epic #1208).
  *
  * `ngdpbase.audit.events` in `config/app-default-config.json` names every
- * recorded action, its durability tier, and whether it fires. This module is
+ * recorded action, what happens when its record cannot be written, and whether it fires. This module is
  * a reader over that map: nothing here declares an event.
  *
  * Until #1200 the declarations lived in this file, deliberately, on the
@@ -26,17 +26,22 @@ import logger from './logger.js';
 export const AUDIT_EVENTS_KEY = 'ngdpbase.audit.events';
 
 /**
- * How durable an event must be (#1121, #1158).
+ * What happens when the record cannot be written (#1121, #1158, #1218).
  *
- * - `critical` — the action must not complete unless the record does
- * - `standard` — fire-and-forget, counted and surfaced
- * - `volume`   — high-frequency reads; off unless a posture turns them on
+ * - `refuse`   — the action must not complete unless the record does; the
+ *                write is flushed to the device before the action proceeds
+ * - `continue` — the action proceeds; the lost record is counted and surfaced
+ *
+ * This is failure handling, not importance. How important an event is lives
+ * on each record as `severity`. Until #1218 this field was called `tier` with
+ * values `critical` / `standard` / `volume`, which read as an importance
+ * scale that it never was; `volume` was `continue` plus `enabled: false`.
  */
-export type AuditTier = 'critical' | 'standard' | 'volume';
+export type AuditOnFailure = 'refuse' | 'continue';
 
 /** One entry of `ngdpbase.audit.events`. */
 export interface AuditEventDeclaration {
-  tier: AuditTier;
+  'on-failure': AuditOnFailure;
   /** Whether the emitter fires. Omitted means true; `false` is a decision on the record. */
   enabled?: boolean;
   /** One line, shown in the admin filter and the documented table. */
@@ -81,7 +86,7 @@ export function auditEventDeclarations(): Record<string, AuditEventDeclaration> 
   if (!boundSource) {
     if (!warnedUnbound) {
       warnedUnbound = true;
-      logger.warn(`[audit] ${AUDIT_EVENTS_KEY} is not bound yet; every event is treated as standard tier until AuditManager initialises`);
+      logger.warn(`[audit] ${AUDIT_EVENTS_KEY} is not bound yet; every event is treated as on-failure: continue until AuditManager initialises`);
     }
     return {};
   }
@@ -97,7 +102,7 @@ export function auditEventDeclaration(eventType: string): AuditEventDeclaration 
   // rather than in an assessor's report.
   if (eventType && !warnedUndeclared.has(eventType)) {
     warnedUndeclared.add(eventType);
-    logger.warn(`[audit] '${eventType}' is emitted but not declared in ${AUDIT_EVENTS_KEY}; treated as standard tier`);
+    logger.warn(`[audit] '${eventType}' is emitted but not declared in ${AUDIT_EVENTS_KEY}; treated as on-failure: continue`);
   }
   return null;
 }
@@ -121,22 +126,23 @@ export function isAuditEventEnabled(eventType: string): boolean {
 }
 
 /**
- * Is this event type declared `critical` (#1121, #1158)?
+ * Does this event refuse the action when its record cannot be written
+ * (#1121, #1158)?
  *
  * Two layers need the same answer and must not be able to disagree:
  * `recordAuditEvent` decides whether a failure rejects the action, and
  * `FileAuditProvider.writeEvent` decides whether the record is fsynced before
- * the write resolves. A tier that meant one thing to the caller and another to
+ * the write resolves. A rule that meant one thing to the caller and another to
  * the writer would be the #1148 defect again.
  */
-export function isCriticalEventType(eventType: string): boolean {
-  return auditEventDeclaration(eventType)?.tier === 'critical';
+export function refusesOnFailure(eventType: string): boolean {
+  return auditEventDeclaration(eventType)?.['on-failure'] === 'refuse';
 }
 
-/** Every event type declared `critical`, for reporting what the tier covers. */
-export function criticalEventTypes(): string[] {
+/** Every event type that refuses on failure, for reporting what the rule covers. */
+export function refuseOnFailureEventTypes(): string[] {
   return Object.entries(auditEventDeclarations())
-    .filter(([, d]) => d.tier === 'critical' && d.enabled !== false)
+    .filter(([, d]) => d['on-failure'] === 'refuse' && d.enabled !== false)
     .map(([name]) => name)
     .sort();
 }

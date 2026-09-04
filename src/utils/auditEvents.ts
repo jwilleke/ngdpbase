@@ -24,7 +24,7 @@
  */
 
 import logger from './logger.js';
-import { isAuditEventEnabled, isCriticalEventType } from './auditRegistry.js';
+import { isAuditEventEnabled, refusesOnFailure } from './auditRegistry.js';
 import { AUDIT_EVENT, type AuditEventName } from './auditEventNames.js';
 
 /** Agent-token identity attached to a request that authenticated with one. */
@@ -331,7 +331,7 @@ function shouldShout(count: number): boolean {
 }
 
 /**
- * Record an audit event, honouring its tier (#1121).
+ * Record an audit event, honouring its on-failure rule (#1121, #1218).
  *
  * __Standard__ events are fire-and-forget with a caught error, per the #1109
  * decision: losing the log is bad, but refusing a page save because the log
@@ -347,13 +347,13 @@ function shouldShout(count: number): boolean {
  * What became of a record (#1205). Never silent: a caller can tell "recorded"
  * from "switched off in configuration" from "no sink on this instance".
  *
- * - `recorded`    — the sink accepted it (and, for a critical event, flushed it)
+ * - `recorded`    — the sink accepted it (and, for a refuse-on-failure event, flushed it)
  * - `not-enabled` — `enabled: false` in `ngdpbase.audit.events`; a decision on the record
  * - `no-sink`     — auditing is off or not yet initialised; visible through #1118's posture
- * - `dropped`     — the sink failed on a standard event; counted in the drop statistics
+ * - `dropped`     — the sink failed on a continue-on-failure event; counted in the drop statistics
  *
- * A critical event that cannot be recorded does not return: it throws, so the
- * caller abandons the action.
+ * An event declared on-failure: refuse that cannot be recorded does not
+ * return: it throws, so the caller abandons the action.
  */
 export type AuditRecordOutcome = 'recorded' | 'not-enabled' | 'no-sink' | 'dropped';
 
@@ -373,11 +373,11 @@ export async function recordAuditEvent(
   // auditing being off is already visible through #1118's posture.
   if (!sink?.logAuditEvent) return 'no-sink';
 
-  const critical = isCriticalEventType(event.eventType);
+  const critical = refusesOnFailure(event.eventType);
 
   if (critical && !sink.flushAuditQueue) {
     const message =
-      `Audit sink cannot guarantee durability for ${event.eventType}, which is declared critical. ` +
+      `Audit sink cannot guarantee durability for ${event.eventType}, which is declared on-failure: refuse. ` +
       'The action was refused rather than completed without a record.';
     logger.error(`[audit] ${message}`);
     throw new Error(message);
@@ -404,7 +404,7 @@ export async function recordAuditEvent(
     // abandon the action rather than complete it unrecorded.
     if (critical) {
       throw new Error(
-        `Audit write failed for ${event.eventType}, which is declared critical: ${dropStats.lastError}`
+        `Audit write failed for ${event.eventType}, which is declared on-failure: refuse: ${dropStats.lastError}`
       );
     }
     return 'dropped';
