@@ -42,7 +42,9 @@ import type SearchManager from './SearchManager.js';
 import type PageManager from './PageManager.js';
 import type { PageFrontmatter } from '../types/Page.js';
 import type { MediaItem } from '../providers/BaseMediaProvider.js';
-import type { ShareRecord, ShareScope, ShareTtl, SharePageEntry } from '../types/Share.js';
+import { DEFAULT_SHARE_ACTIONS, resourcesForScope, type ShareRecord, type ShareResource, type ShareScope, type ShareTtl, type SharePageEntry } from '../types/Share.js';
+import type { PermissionSubject } from './UserManager.js';
+import type UserManager from './UserManager.js';
 
 /** Reserved keyword excluding content from every share (decision 1). */
 export const OWNER_ONLY_KEYWORD = 'owner-only';
@@ -110,13 +112,39 @@ export default class ShareManager extends BaseManager {
   // ---------------------------------------------------------------------------
 
   /**
-   * Issue a new share. Caller (route layer) is responsible for the
-   * role check — decision 2: admin and editor only.
+   * Issue a new share: a delegation by `issuer` of `actions` over `resources`
+   * (#1221, epic #1225).
+   *
+   * The route asks policy for `share-manage` before calling this (#1224).
+   * Here the delegation rule is enforced: __nobody delegates what they do not
+   * hold.__ Every action the share would carry is checked against the
+   * issuer's live authority through `UserManager.hasPermission`, with the
+   * issuer's own context (P1) so a token-bound issuer is bounded by the token
+   * ceiling too. A share asking for an action the issuer lacks is refused
+   * outright rather than trimmed silently — trimming would issue a credential
+   * the issuer did not describe.
    */
-  async issue(scope: ShareScope, ttl: ShareTtl, createdBy: string): Promise<ShareRecord> {
+  async issue(
+    scope: ShareScope,
+    ttl: ShareTtl,
+    issuer: PermissionSubject,
+    options: { actions?: readonly string[]; resources?: readonly ShareResource[] } = {}
+  ): Promise<ShareRecord> {
     if (!this.enabled) throw new Error('ShareManager: shares are disabled');
     if (ttl !== null && !(ttl in TTL_MS)) {
       throw new Error(`ShareManager: invalid ttl '${String(ttl)}'`);
+    }
+    if (!issuer.username) throw new Error('ShareManager: a share needs an issuer');
+
+    const actions = [...new Set(options.actions ?? DEFAULT_SHARE_ACTIONS)];
+    const resources = [...(options.resources ?? resourcesForScope(scope))];
+
+    const userManager = this.engine.getManager<UserManager>('UserManager');
+    if (!userManager) throw new Error('ShareManager: cannot verify the issuer without UserManager');
+    for (const action of actions) {
+      if (!(await userManager.hasPermission(issuer, action))) {
+        throw new Error(`ShareManager: ${issuer.username} does not hold '${action}' and cannot delegate it`);
+      }
     }
 
     const now = Date.now();
@@ -124,7 +152,9 @@ export default class ShareManager extends BaseManager {
       id: randomUUID(),
       token: crypto.randomBytes(32).toString('hex'),
       scope,
-      createdBy,
+      actions,
+      resources,
+      createdBy: issuer.username,
       createdAt: new Date(now).toISOString(),
       expiresAt: ttl === null ? null : new Date(now + TTL_MS[ttl]).toISOString()
     };
@@ -134,13 +164,13 @@ export default class ShareManager extends BaseManager {
     // flushed BEFORE the share exists, and a failure refuses the share. The
     // ordering follows AgentTokenManager.mint: persisting first would leave a
     // live credential the caller believes was never created.
-    await this.audit(AUDIT_EVENT.SHARE_CREATE, createdBy, record);
+    await this.audit(AUDIT_EVENT.SHARE_CREATE, issuer.username, record);
 
     this.persist(record);
     this.byToken.set(record.token, record);
     this.byId.set(record.id, record);
 
-    logger.info(`[ShareManager] Share ${record.id} created by ${createdBy} (${record.scope.kind}: ${record.scope.keyword}, expires ${record.expiresAt ?? 'never'})`);
+    logger.info(`[ShareManager] Share ${record.id} created by ${issuer.username} (${record.scope.kind}: ${record.scope.keyword}; ${actions.join(', ')}; expires ${record.expiresAt ?? 'never'})`);
     return record;
   }
 
@@ -349,6 +379,13 @@ export default class ShareManager extends BaseManager {
         const raw = fs.readFileSync(path.join(this.sharesDir, file), 'utf-8');
         const record = JSON.parse(raw) as ShareRecord;
         if (!record.id || !record.token || !record.scope) continue;
+        // #1221: a record written before shares carried what they delegate is
+        // read as the read-only delegation it always was, and written back
+        // once so the file says so too.
+        let upgraded = false;
+        if (!Array.isArray(record.actions)) { record.actions = [...DEFAULT_SHARE_ACTIONS]; upgraded = true; }
+        if (!Array.isArray(record.resources)) { record.resources = resourcesForScope(record.scope); upgraded = true; }
+        if (upgraded) this.persist(record);
         this.byToken.set(record.token, record);
         this.byId.set(record.id, record);
       } catch {
@@ -412,6 +449,8 @@ export default class ShareManager extends BaseManager {
         severity: 'medium',
         metadata: {
           scope: record.scope,
+          actions: [...record.actions],
+          resources: [...record.resources],
           expiresAt: record.expiresAt,
           createdBy: record.createdBy,
           ...(record.revokedAt ? { revokedAt: record.revokedAt } : {})

@@ -25,6 +25,30 @@ export type ShareTtl = '24h' | '7d' | '30d' | null;
  * `id` is the management handle (list/revoke); `token` is the anonymous
  * capability and never appears in management URLs.
  */
+/**
+ * What a share delegates, in the policy resource shape (#1221, epic #1225).
+ * A share is a delegation by the user who issues it: `actions` it may perform
+ * and `resources` it may perform them on, never more than the issuer held at
+ * the time. #1222 evaluates them; this is the record.
+ */
+export interface ShareResource {
+  /** Resource type the evaluator knows: `page`, `media`, … */
+  type: string;
+  /** Match pattern. `keyword:<name>` means "everything carrying this keyword". */
+  pattern: string;
+}
+
+/** What a share delegates when the issuer asks for nothing more: read-only. */
+export const DEFAULT_SHARE_ACTIONS: readonly string[] = ['page-read', 'asset-read'];
+
+/** The resources a scope names, in the shape the evaluator matches. */
+export function resourcesForScope(scope: ShareScope): ShareResource[] {
+  return [
+    { type: 'page', pattern: `keyword:${scope.keyword}` },
+    { type: 'media', pattern: `keyword:${scope.keyword}` }
+  ];
+}
+
 export interface ShareRecord {
   /** Management identifier (UUID v4). */
   id: string;
@@ -32,7 +56,11 @@ export interface ShareRecord {
   token: string;
   /** Typed scope object (decision 6). */
   scope: ShareScope;
-  /** Username of the creating user. */
+  /** Permissions delegated — a subset of what the issuer held when issuing (#1221). */
+  actions: string[];
+  /** What the delegation covers, in the policy resource shape (#1221). */
+  resources: ShareResource[];
+  /** Username of the issuing user — the delegator whose live authority bounds the share (#1222). */
   createdBy: string;
   /** ISO 8601 creation timestamp. */
   createdAt: string;

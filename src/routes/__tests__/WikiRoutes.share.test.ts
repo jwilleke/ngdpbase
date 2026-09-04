@@ -70,12 +70,14 @@ const mockShareManager = {
   validate: vi.fn((token: string) => (shareState.validToken !== null && token === shareState.validToken ? SCOPE : null)),
   resolveScope: vi.fn(async () => ({ media: shareState.media, pages: shareState.pages })),
   recordAccess: vi.fn(),
-  issue: vi.fn(async (scope: unknown, ttl: unknown, createdBy: string) => ({
+  issue: vi.fn(async (scope: unknown, ttl: unknown, issuer: { username?: string }) => ({
     id: 'new-share-id',
     token: 'b'.repeat(64),
     scope,
     ttl,
-    createdBy,
+    actions: ['page-read', 'asset-read'],
+    resources: [],
+    createdBy: issuer.username,
     createdAt: '2026-07-17T00:00:00.000Z',
     expiresAt: null
   })),
@@ -530,7 +532,8 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
         .send({ ...csrfTestBodyField(), keyword: 'trip', ttl: '7d' });
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe('/shares?created=new-share-id');
-      expect(mockShareManager.issue).toHaveBeenCalledWith({ kind: 'keyword', keyword: 'trip' }, '7d', 'ed');
+      // #1221: the issuer is the request's context, forwarded, not a username.
+      expect(mockShareManager.issue).toHaveBeenCalledWith({ kind: 'keyword', keyword: 'trip' }, '7d', expect.objectContaining({ username: 'ed', roles: ['editor'] }));
     });
 
     test('ttl "never" maps to null (until cancelled)', async () => {
@@ -539,7 +542,7 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
         .post('/shares/create')
         .type('form')
         .send({ ...csrfTestBodyField(), keyword: 'trip', ttl: 'never' });
-      expect(mockShareManager.issue).toHaveBeenCalledWith({ kind: 'keyword', keyword: 'trip' }, null, 'ed');
+      expect(mockShareManager.issue).toHaveBeenCalledWith({ kind: 'keyword', keyword: 'trip' }, null, expect.objectContaining({ username: 'ed' }));
     });
 
     test('rejected without a CSRF token', async () => {

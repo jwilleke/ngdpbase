@@ -17801,10 +17801,12 @@ ${description}
       }
       const ttl = ttlRaw === 'never' ? null : (ttlRaw as '24h' | '7d' | '30d');
 
+      // #1221: the issuer is the context, forwarded — its roles, and its token
+      // ceiling if any, bound what the share may delegate.
       const record = await shareManager.issue(
         { kind: 'keyword', keyword },
         ttl,
-        wikiContext.userContext?.username ?? 'unknown'
+        wikiContext.userContext ?? {}
       );
       return res.redirect(`/shares?created=${encodeURIComponent(record.id)}`);
     } catch (err: unknown) {

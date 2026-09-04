@@ -64,11 +64,24 @@ const mockPageManager = {
   getPageMetadata: vi.fn(async (name: string) => pageMetas[name] ?? null)
 };
 
+// #1221: issuing checks every delegated action against the issuer's live
+// authority. This stand-in answers as the shipped policies do for the roles
+// the tests use; `page-delete` is what an editor may not delegate.
+const mockUserManager = {
+  hasPermission: vi.fn(async (subject: { roles?: string[] }, action: string) => {
+    const roles = subject.roles ?? [];
+    if (action === 'page-read' || action === 'asset-read') return true;
+    if (action === 'page-delete') return roles.includes('admin');
+    return roles.includes('admin') || roles.includes('editor');
+  })
+};
+
 const mockEngine = {
   getManager: vi.fn((name: string) => {
     const managers: Record<string, unknown> = {
       ConfigurationManager: mockConfigManager,
       AuditManager: mockAuditManager,
+      UserManager: mockUserManager,
       MediaManager: mockMediaManager,
       SearchManager: mockSearchManager,
       PageManager: mockPageManager
@@ -80,6 +93,9 @@ const mockEngine = {
 function readShareFile(id: string): ShareRecord {
   return JSON.parse(fs.readFileSync(path.join(tmpDir, `${id}.json`), 'utf-8')) as ShareRecord;
 }
+
+/** An editor issuing a share: the roles the shipped policy grants the read-only defaults to. */
+const ISSUER = (username: string, roles: string[] = ['editor']) => ({ username, roles, isAuthenticated: true });
 
 describe('ShareManager', () => {
   let sm: ShareManager;
@@ -140,7 +156,7 @@ describe('ShareManager', () => {
 
   describe('issue()', () => {
     test('returns a record with 64-char hex token and persists it', async () => {
-      const rec = await sm.issue({ kind: 'keyword', keyword: 'trip' }, '7d', 'alice');
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'trip' }, '7d', ISSUER('alice'));
       expect(rec.token).toMatch(/^[0-9a-f]{64}$/);
       expect(rec.createdBy).toBe('alice');
       expect(readShareFile(rec.id).token).toBe(rec.token);
@@ -152,20 +168,20 @@ describe('ShareManager', () => {
       ['30d', 30 * 24 * 60 * 60 * 1000]
     ] as const)('ttl %s maps to expiresAt offset', async (ttl, ms) => {
       const before = Date.now();
-      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, ttl, 'u');
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, ttl, ISSUER('u'));
       const delta = Date.parse(rec.expiresAt as string) - before;
       expect(delta).toBeGreaterThanOrEqual(ms - 5000);
       expect(delta).toBeLessThanOrEqual(ms + 5000);
     });
 
     test('ttl null means until cancelled (expiresAt null)', async () => {
-      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, 'u');
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, ISSUER('u'));
       expect(rec.expiresAt).toBeNull();
     });
 
     test('rejects an invalid ttl', async () => {
       await expect(
-        sm.issue({ kind: 'keyword', keyword: 'k' }, '2h', 'u')
+        sm.issue({ kind: 'keyword', keyword: 'k' }, '2h', ISSUER('u'))
       ).rejects.toThrow(/invalid ttl/);
     });
 
@@ -173,11 +189,11 @@ describe('ShareManager', () => {
       shareEnabled = false;
       const off = new ShareManager(mockEngine);
       await off.initialize();
-      await expect(off.issue({ kind: 'keyword', keyword: 'k' }, null, 'u')).rejects.toThrow(/disabled/);
+      await expect(off.issue({ kind: 'keyword', keyword: 'k' }, null, ISSUER('u'))).rejects.toThrow(/disabled/);
     });
 
     test('audits share-create', async () => {
-      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, '24h', 'alice');
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, '24h', ISSUER('alice'));
       const evt = auditEvents.find(e => e.eventType === 'share-create');
       expect(evt).toBeTruthy();
       expect(evt?.resource).toBe(rec.id);
@@ -187,7 +203,7 @@ describe('ShareManager', () => {
 
   describe('validate()', () => {
     test('returns scope for a live token', async () => {
-      const rec = await sm.issue({ kind: 'keyword', keyword: 'trip' }, '24h', 'u');
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'trip' }, '24h', ISSUER('u'));
       expect(sm.validate(rec.token)).toEqual({ kind: 'keyword', keyword: 'trip' });
     });
 
@@ -197,7 +213,7 @@ describe('ShareManager', () => {
     });
 
     test('null for revoked token', async () => {
-      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, 'u');
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, ISSUER('u'));
       await sm.revoke(rec.id, 'u');
       expect(sm.validate(rec.token)).toBeNull();
     });
@@ -218,7 +234,7 @@ describe('ShareManager', () => {
     });
 
     test('null when disabled', async () => {
-      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, 'u');
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, ISSUER('u'));
       shareEnabled = false;
       const off = new ShareManager(mockEngine);
       await off.initialize();
@@ -228,7 +244,7 @@ describe('ShareManager', () => {
 
   describe('revoke()', () => {
     test('sets revokedAt, persists it, audits, and is idempotent', async () => {
-      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, 'alice');
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, ISSUER('alice'));
       expect(await sm.revoke(rec.id, 'bob')).toBe(true);
       expect(typeof readShareFile(rec.id).revokedAt).toBe('string');
       expect(auditEvents.some(e => e.eventType === 'share-revoke' && e.user === 'bob')).toBe(true);
@@ -242,8 +258,8 @@ describe('ShareManager', () => {
 
   describe('list() / get()', () => {
     test('filters by owner and sorts newest first', async () => {
-      const a = await sm.issue({ kind: 'keyword', keyword: 'a' }, null, 'alice');
-      const b = await sm.issue({ kind: 'keyword', keyword: 'b' }, null, 'bob');
+      const a = await sm.issue({ kind: 'keyword', keyword: 'a' }, null, ISSUER('alice'));
+      const b = await sm.issue({ kind: 'keyword', keyword: 'b' }, null, ISSUER('bob'));
       // Force distinct createdAt ordering
       const bFile = readShareFile(b.id);
       bFile.createdAt = '2030-01-01T00:00:00.000Z';
@@ -259,7 +275,7 @@ describe('ShareManager', () => {
     });
 
     test('includes revoked records (retained for audit)', async () => {
-      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, 'u');
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, ISSUER('u'));
       await sm.revoke(rec.id, 'u');
       expect(sm.list('u')).toHaveLength(1);
     });
@@ -267,7 +283,7 @@ describe('ShareManager', () => {
 
   describe('recordAccess() / shutdown() aggregation (decision 5)', () => {
     test('aggregates hits into ONE share-access audit row on shutdown', async () => {
-      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, 'u');
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, ISSUER('u'));
       for (let i = 0; i < 5; i++) sm.recordAccess(rec.token);
       expect(auditEvents.filter(e => e.eventType === 'share-access')).toHaveLength(0);
 
@@ -394,7 +410,7 @@ describe('ShareManager', () => {
     test('a share whose audit record cannot be written is refused and does not exist', async () => {
       mockAuditManager.logAuditEvent.mockRejectedValueOnce(new Error('disk full'));
 
-      await expect(sm.issue({ kind: 'keyword', keyword: 'trip' }, '24h', 'alice')).rejects.toThrow(/disk full/);
+      await expect(sm.issue({ kind: 'keyword', keyword: 'trip' }, '24h', ISSUER('alice'))).rejects.toThrow(/disk full/);
 
       expect(sm.list()).toHaveLength(0);
       // Nothing persisted anywhere under the data folder.
@@ -404,7 +420,7 @@ describe('ShareManager', () => {
     });
 
     test('a revoke whose audit record cannot be written leaves the share live', async () => {
-      const rec = await sm.issue({ kind: 'keyword', keyword: 'trip' }, '24h', 'alice');
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'trip' }, '24h', ISSUER('alice'));
       mockAuditManager.logAuditEvent.mockRejectedValueOnce(new Error('disk full'));
 
       await expect(sm.revoke(rec.id, 'bob')).rejects.toThrow(/disk full/);
@@ -421,10 +437,57 @@ describe('ShareManager', () => {
         return 'evt';
       });
 
-      await sm.issue({ kind: 'keyword', keyword: 'trip' }, '24h', 'alice');
+      await sm.issue({ kind: 'keyword', keyword: 'trip' }, '24h', ISSUER('alice'));
 
       expect(sharesAtAuditTime).toBe(0);
       expect(sm.list()).toHaveLength(1);
+    });
+  });
+
+  describe('#1221 a share says what it delegates, never more than the issuer holds', () => {
+    test('the defaults are read-only over the keyword, on the record and in the audit', async () => {
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'trip' }, '7d', ISSUER('alice'));
+      expect(rec.actions).toEqual(['page-read', 'asset-read']);
+      expect(rec.resources).toEqual([{ type: 'page', pattern: 'keyword:trip' }, { type: 'media', pattern: 'keyword:trip' }]);
+      expect(rec.createdBy).toBe('alice');
+      const evt = auditEvents.find((e) => e.eventType === 'share-create') as { metadata: Record<string, unknown> };
+      expect(evt.metadata.actions).toEqual(['page-read', 'asset-read']);
+      expect(evt.metadata.resources).toEqual(rec.resources);
+    });
+
+    test('an action the issuer does not hold is refused, not trimmed', async () => {
+      // Sabotage: filter the unheld actions out instead of throwing, and this
+      // goes red — a share the issuer did not describe must not exist.
+      await expect(sm.issue({ kind: 'keyword', keyword: 'trip' }, '7d', ISSUER('ed'), { actions: ['page-read', 'page-delete'] }))
+        .rejects.toThrow(/does not hold 'page-delete'/);
+      expect(sm.list()).toEqual([]);
+      expect(auditEvents.find((e) => e.eventType === 'share-create')).toBeUndefined();
+    });
+
+    test('an issuer who holds the action may delegate it', async () => {
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'trip' }, '7d', ISSUER('root', ['admin']), { actions: ['page-read', 'page-delete'] });
+      expect(rec.actions).toEqual(['page-read', 'page-delete']);
+    });
+
+    test('a share needs an issuer', async () => {
+      await expect(sm.issue({ kind: 'keyword', keyword: 'trip' }, '7d', {})).rejects.toThrow(/needs an issuer/);
+    });
+
+    test('a record written before #1221 loads as the read-only delegation it was, and the file is upgraded', async () => {
+      const old = { id: 'old-1', token: 'c'.repeat(64), scope: { kind: 'keyword', keyword: 'trip' }, createdBy: 'alice', createdAt: '2026-08-01T00:00:00.000Z', expiresAt: null };
+      // Write where the manager reads: its own resolved directory.
+      const dir = (sm as unknown as { sharesDir: string }).sharesDir;
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'old-1.json'), JSON.stringify(old));
+
+      const sm2 = new ShareManager(mockEngine);
+      await sm2.initialize();
+
+      const loaded = sm2.get('old-1');
+      expect(loaded?.actions).toEqual(['page-read', 'asset-read']);
+      expect(loaded?.resources).toEqual([{ type: 'page', pattern: 'keyword:trip' }, { type: 'media', pattern: 'keyword:trip' }]);
+      const onDisk = JSON.parse(fs.readFileSync(path.join(dir, 'old-1.json'), 'utf8')) as { actions?: string[] };
+      expect(onDisk.actions).toEqual(['page-read', 'asset-read']);
     });
   });
 });
