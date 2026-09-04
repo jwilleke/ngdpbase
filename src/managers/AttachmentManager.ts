@@ -8,6 +8,7 @@ import logger from '../utils/logger.js';
  */
 export const AUDIT_WRITE_FAILED = 'EAUDITWRITE';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
+import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { buildAttachmentAuditEvent } from '../utils/auditEvents.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
@@ -792,6 +793,22 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     }
   }
 
+  /** #1204: an attachment's metadata changed; field NAMES only, at the door both edit paths pass through. */
+  private async recordAssetEdit(attachmentId: string, fields: string[], context?: UserContext): Promise<void> {
+    const sink = this.engine.getManager('AuditManager') as AuditEventSink | null;
+    await recordAuditEvent(sink, {
+      eventType: AUDIT_EVENT.ASSET_EDIT,
+      user: context?.username ?? 'unknown',
+      ipAddress: undefined,
+      action: 'asset-edit',
+      result: 'success',
+      severity: 'low',
+      resource: attachmentId,
+      resourceType: 'attachment',
+      metadata: { attachmentId, fields, ...(context ? {} : { actorMissing: true }) }
+    }, (err) => logger.warn(`[AttachmentManager] Audit record failed for asset-edit of ${attachmentId}:`, err));
+  }
+
   /**
    * Update attachment metadata
    *
@@ -820,7 +837,9 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       };
     }
 
-    return await this.attachmentProvider.updateAttachmentMetadata(attachmentId, updates);
+    const ok = await this.attachmentProvider.updateAttachmentMetadata(attachmentId, updates);
+    if (ok) await this.recordAssetEdit(attachmentId, Object.keys(updates), context);
+    return ok;
   }
 
   /**
@@ -879,7 +898,9 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       throw new Error('Attachment provider does not support metadata editing');
     }
 
-    return provider.updateMetadata(attachmentId, patch);
+    const updated = await provider.updateMetadata(attachmentId, patch);
+    if (updated) await this.recordAssetEdit(attachmentId, Object.keys(patch), context);
+    return updated;
   }
 
   /**

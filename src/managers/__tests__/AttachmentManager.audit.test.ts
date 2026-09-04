@@ -187,3 +187,29 @@ describe('#1183 — the delegation reaches the record', () => {
     expect(sink[0].metadata).toMatchObject({ viaTokenId: 'tok-1' });
   });
 });
+
+describe('#1204 — asset-edit is recorded at the door', () => {
+  test('a metadata edit records the field names and the editor', async () => {
+    const sink: Recorded[] = [];
+    const m = makeManager(makeEngine(sink), {
+      updateAttachmentMetadata: () => Promise.resolve(true)
+    });
+
+    await m.updateAttachmentMetadata('att-9', { description: 'Q3 invoice', tags: ['finance'] }, CTX);
+
+    expect(sink).toHaveLength(1);
+    expect(sink[0]).toMatchObject({
+      eventType: 'asset-edit',
+      user: 'testuser',
+      metadata: { attachmentId: 'att-9', fields: ['description', 'tags'] }
+    });
+    expect(JSON.stringify(sink[0])).not.toContain('Q3 invoice');
+  });
+
+  test('a refused edit records nothing', async () => {
+    const sink: Recorded[] = [];
+    const m = makeManager(makeEngine(sink), { updateAttachmentMetadata: () => Promise.resolve(false) });
+    await m.updateAttachmentMetadata('att-9', { description: 'x' }, CTX);
+    expect(sink).toEqual([]);
+  });
+});

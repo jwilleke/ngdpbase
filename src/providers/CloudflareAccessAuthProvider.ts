@@ -153,7 +153,7 @@ export class CloudflareAccessAuthProvider implements AuthProvider {
         roles,
         isExternal: true,
         isActive: true
-      });
+      }, { username: 'system', provider: 'cloudflare-access' }); // #1204: provisioned, not registered
       logger.info(`[CloudflareAccessAuthProvider] JIT-provisioned user: ${username} (${email}) with roles=[${roles.join(', ')}]`);
       return { username };
     } catch (err) {

@@ -22,6 +22,24 @@ import type { Role as OrganizationRoleRecord } from '../types/Role.js';
 import type { Request, Response, NextFunction } from 'express';
 import { assertHeadlessBootstrapPassword } from '../utils/headlessAdminPassword.js';
 import { UserCreateError } from '../utils/userCreateError.js';
+import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
+import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+
+/**
+ * Who is acting on an account (#1204). Optional for now: making it positional
+ * and mandatory is #1179's structural change. When it is absent the record
+ * says so (`user: 'unknown'`, `actorMissing: true`) rather than inventing an
+ * identity (#1181).
+ */
+export interface AuditActor {
+  username?: string;
+  ipAddress?: string;
+  /** The identity provider that provisioned the account, when one did. */
+  provider?: string;
+}
+
+/** Account fields whose change alters what the account may do or who holds it. Preferences are not among them. */
+const SENSITIVE_USER_FIELDS = ['password', 'roles', 'isActive', 'isExternal', 'email', 'profileLocked', 'username'] as const;
 
 /**
  * Catalog entry shape under `ngdpbase.roles.definitions[<name>]`. Snapshot
@@ -1036,12 +1054,28 @@ class UserManager extends BaseManager {
     }
   }
 
+  private auditSink(): AuditEventSink | null {
+    return this.engine.getManager('AuditManager') as AuditEventSink | null;
+  }
+
+  /** Build the actor half of an account event (#1204). */
+  private static actorFields(actor: AuditActor | undefined): { user: string; ipAddress: string | undefined; actorMeta: Record<string, unknown> } {
+    return {
+      user: actor?.username ?? 'unknown',
+      ipAddress: actor?.ipAddress,
+      actorMeta: {
+        ...(actor ? {} : { actorMissing: true }),
+        ...(actor?.provider ? { provider: actor.provider } : {})
+      }
+    };
+  }
+
   /**
    * Create new user
    * @param {UserCreateInput} userData - User data
    * @returns {Promise<Omit<User, 'password'>>} Created user (without password)
    */
-  async createUser(userData: UserCreateInput): Promise<Omit<User, 'password'>> {
+  async createUser(userData: UserCreateInput, actor?: AuditActor): Promise<Omit<User, 'password'>> {
     if (!this.provider) {
       throw new Error('Provider not initialized');
     }
@@ -1113,6 +1147,23 @@ class UserManager extends BaseManager {
 
     logger.info(`👤 Created user: ${username} (${isExternal ? 'External' : 'Local'})`);
 
+    // #1204: recorded at the door, so an admin form, self-registration and an
+    // identity provider's auto-provisioning all leave the same record.
+    {
+      const { user: who, ipAddress, actorMeta } = UserManager.actorFields(actor);
+      await recordAuditEvent(this.auditSink(), {
+        eventType: AUDIT_EVENT.USER_CREATE,
+        user: who,
+        ipAddress,
+        action: 'user-create',
+        result: 'success',
+        severity: 'medium',
+        resource: username,
+        resourceType: 'user',
+        metadata: { username, roles: [...roles], isExternal, selfRegistration: actor?.username === username, ...actorMeta }
+      }, (err) => logger.warn(`[UserManager] Audit record failed for user-create of ${username}:`, err));
+    }
+
     try {
       const pageCreated = await this.createUserPage(user);
       if (pageCreated) {
@@ -1130,7 +1181,7 @@ class UserManager extends BaseManager {
   /**
    * Update user
    */
-  async updateUser(username: string, updates: UserUpdateInput): Promise<User> {
+  async updateUser(username: string, updates: UserUpdateInput, actor?: AuditActor): Promise<User> {
     if (!this.provider) {
       throw new Error('Provider not initialized');
     }
@@ -1164,13 +1215,40 @@ class UserManager extends BaseManager {
     }
 
     logger.info(`👤 Updated user: ${username}`);
+
+    // #1204: only a change that alters what the account may do or who holds
+    // it is recorded. Preferences, last-login and login-count updates arrive
+    // through the same method on every sign-in and every theme toggle; a
+    // record for each would bury the ones that matter. Field NAMES only —
+    // never a password or an email value.
+    const changed = SENSITIVE_USER_FIELDS.filter((f) => f in updates && (updates as Record<string, unknown>)[f] !== undefined);
+    if (changed.length > 0) {
+      const { user: who, ipAddress, actorMeta } = UserManager.actorFields(actor);
+      await recordAuditEvent(this.auditSink(), {
+        eventType: AUDIT_EVENT.USER_EDIT,
+        user: who,
+        ipAddress,
+        action: 'user-edit',
+        result: 'success',
+        severity: changed.includes('roles') || changed.includes('isActive') ? 'high' : 'medium',
+        resource: username,
+        resourceType: 'user',
+        metadata: {
+          username,
+          fields: changed,
+          ...(incomingRoles ? { roles: { from: oldRoles, to: [...incomingRoles] } } : {}),
+          selfEdit: actor?.username === username,
+          ...actorMeta
+        }
+      }, (err) => logger.warn(`[UserManager] Audit record failed for user-edit of ${username}:`, err));
+    }
     return user;
   }
 
   /**
    * Delete user
    */
-  async deleteUser(username: string): Promise<boolean> {
+  async deleteUser(username: string, actor?: AuditActor): Promise<boolean> {
     if (!this.provider) {
       throw new Error('Provider not initialized');
     }
@@ -1181,6 +1259,25 @@ class UserManager extends BaseManager {
     }
     if (user.isSystem) {
       throw new Error('Cannot delete system user');
+    }
+
+    // #1204: user-delete is CRITICAL — destruction of an identity and its
+    // attribution — so the record is written and flushed BEFORE the delete,
+    // and a failure refuses it (the token-mint / share-create ordering).
+    {
+      const { user: who, ipAddress, actorMeta } = UserManager.actorFields(actor);
+      const roles = await this.resolveUserRoles(username);
+      await recordAuditEvent(this.auditSink(), {
+        eventType: AUDIT_EVENT.USER_DELETE,
+        user: who,
+        ipAddress,
+        action: 'user-delete',
+        result: 'success',
+        severity: 'high',
+        resource: username,
+        resourceType: 'user',
+        metadata: { username, roles, isExternal: user.isExternal === true, ...actorMeta }
+      }, (err) => logger.warn(`[UserManager] Audit record failed for user-delete of ${username}:`, err));
     }
 
     await this.provider.deleteUser(username);
@@ -1266,7 +1363,8 @@ class UserManager extends BaseManager {
    */
   async searchUsers(
     query: string,
-    options: { role?: string; limit?: number; activeOnly?: boolean } = {}
+    options: { role?: string; limit?: number; activeOnly?: boolean } = {},
+    actor?: AuditActor
   ): Promise<Omit<User, 'password'>[]> {
     const all = await this.getUsers();
     const q = query.trim().toLowerCase();
@@ -1289,6 +1387,21 @@ class UserManager extends BaseManager {
       if (role && !(await this.hasRole(u.username, role))) continue;
       results.push(u);
       if (limit > 0 && results.length >= limit) break;
+    }
+    // #1204: search-user ships switched off (read volume); recordAuditEvent
+    // honours the switch. Enumerating people is disclosive, so a deployment
+    // that wants it on can have it without a code change.
+    {
+      const { user: who, ipAddress, actorMeta } = UserManager.actorFields(actor);
+      await recordAuditEvent(this.auditSink(), {
+        eventType: AUDIT_EVENT.SEARCH_USER,
+        user: who,
+        ipAddress,
+        action: 'search-user',
+        result: 'success',
+        severity: 'low',
+        metadata: { query: q, role: role ?? null, results: results.length, ...actorMeta }
+      }, (err) => logger.warn('[UserManager] Audit record failed for search-user:', err));
     }
     return results;
   }
@@ -1496,7 +1609,7 @@ class UserManager extends BaseManager {
     return roles.includes(roleName);
   }
 
-  async assignRole(username: string, roleName: string): Promise<boolean> {
+  async assignRole(username: string, roleName: string, actor?: AuditActor): Promise<boolean> {
     if (!this.provider) {
       throw new Error('Provider not initialized');
     }
@@ -1511,10 +1624,27 @@ class UserManager extends BaseManager {
     // so we can call unconditionally.
     await this.syncRoleAdd(username, roleName);
     logger.info(`👤 Assigned role '${roleName}' to user '${username}'`);
+    await this.recordRoleChange(username, 'assign', roleName, actor);
     return true;
   }
 
-  async removeRole(username: string, roleName: string): Promise<boolean> {
+  /** #1204: a role assigned or removed is a user-edit; what the account may do changed. */
+  private async recordRoleChange(username: string, op: 'assign' | 'remove', roleName: string, actor: AuditActor | undefined): Promise<void> {
+    const { user: who, ipAddress, actorMeta } = UserManager.actorFields(actor);
+    await recordAuditEvent(this.auditSink(), {
+      eventType: AUDIT_EVENT.USER_EDIT,
+      user: who,
+      ipAddress,
+      action: 'user-edit',
+      result: 'success',
+      severity: 'high',
+      resource: username,
+      resourceType: 'user',
+      metadata: { username, fields: ['roles'], role: { [op]: roleName }, ...actorMeta }
+    }, (err) => logger.warn(`[UserManager] Audit record failed for user-edit (${op} ${roleName}) of ${username}:`, err));
+  }
+
+  async removeRole(username: string, roleName: string, actor?: AuditActor): Promise<boolean> {
     if (!this.provider) {
       throw new Error('Provider not initialized');
     }
@@ -1524,6 +1654,7 @@ class UserManager extends BaseManager {
     }
     await this.syncRoleRemove(username, roleName);
     logger.info(`👤 Removed role '${roleName}' from user '${username}'`);
+    await this.recordRoleChange(username, 'remove', roleName, actor);
     return true;
   }
 

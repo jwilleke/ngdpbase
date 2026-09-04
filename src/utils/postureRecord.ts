@@ -107,6 +107,31 @@ export function diffPostures(previous: FlatPosture | null, current: FlatPosture)
   return { comparable: true, changed, added: added.sort(), removed: removed.sort() };
 }
 
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/**
+ * One value's change, readable. A scalar is shown before and after. A map
+ * (`ngdpbase.audit.events` is 36 entries) is described by the keys that
+ * changed, added or went — dumping both maps made the boot line several
+ * kilobytes for a one-key edit, which is a line nobody reads.
+ */
+function describeValueChange(from: unknown, to: unknown): string {
+  if (!isPlainObject(from) || !isPlainObject(to)) {
+    return `${JSON.stringify(from)} → ${JSON.stringify(to)}`;
+  }
+  const bits: string[] = [];
+  for (const key of Object.keys(to)) {
+    if (!(key in from)) bits.push(`+${key}`);
+    else if (JSON.stringify(from[key]) !== JSON.stringify(to[key])) {
+      bits.push(`${key}: ${JSON.stringify(from[key])} → ${JSON.stringify(to[key])}`);
+    }
+  }
+  for (const key of Object.keys(from)) if (!(key in to)) bits.push(`-${key}`);
+  return bits.length > 0 ? bits.join(', ') : 'reordered';
+}
+
 /**
  * The line an operator reads at startup.
  *
@@ -125,7 +150,7 @@ export function describePostureDiff(diff: PostureDiff): string {
 
   const parts: string[] = [];
   for (const c of diff.changed) {
-    parts.push(`${c.key}: ${JSON.stringify(c.from)} → ${JSON.stringify(c.to)}`);
+    parts.push(`${c.key}: ${describeValueChange(c.from, c.to)}`);
   }
   if (diff.added.length > 0) parts.push(`added to the view: ${diff.added.join(', ')}`);
   if (diff.removed.length > 0) parts.push(`removed from the view: ${diff.removed.join(', ')}`);

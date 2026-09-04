@@ -224,7 +224,7 @@ export class GoogleOIDCProvider implements AuthProvider {
         roles: this.config.defaultRoles,
         isExternal: true,
         isActive: true
-      });
+      }, { username: 'system', provider: 'google-oidc' }); // #1204: provisioned, not registered
       logger.info(`[GoogleOIDCProvider] Auto-provisioned new user: ${username} (${email})`);
       return { username };
     } catch (err) {

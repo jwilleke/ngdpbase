@@ -48,7 +48,7 @@ Turning auditing off (`ngdpbase.audit.enabled: false` or `provider: nullauditpro
 
 `ngdpbase.audit.events` is one map keyed by event. Events are actions taken; permissions are authority; neither registry carries the other's fields, so a permission that gates several recorded actions and a recorded action with no permission (failed login, process start) sit in the same map. A type not declared there must not be emitted; a declared type that is not switched off must have an emitter. `auditVocabulary.test.ts`, `auditRegistry.test.ts` and `npm run lint:audit` fail CI on either divergence. The table an operator sees is [AuditManager — Event Types](managers/AuditManager.md#event-types); that table is pinned to the map by the same test.
 
-An event switched off (`enabled: false`) is a decision on the record with its reason in the description: `asset-read`, `search-page`, `user-read`, `admin-read` today. The eight gated actions that still have no emitter at all (`page-export`, `asset-edit`, `search-user`, `user-create`, `user-edit`, `user-delete`, `admin-roles`, `admin-system`) are [#1204](https://github.com/jwilleke/ngdpbase/issues/1204).
+An event switched off (`enabled: false`) is a decision on the record with its reason in the description: `asset-read`, `search-page`, `user-read`, `admin-read` today. The gated actions that had no emitter got them in [#1204](https://github.com/jwilleke/ngdpbase/issues/1204); the two permissions still without one, and why, are under [Permissions with no audit event](#permissions-with-no-audit-event).
 
 ### Tiers
 
@@ -60,7 +60,7 @@ Declared per event in configuration, not chosen at the call site (`isCriticalEve
 | `standard` | Fire-and-forget | Buffered in memory; losses counted and surfaced |
 | `volume` | High-frequency reads | Emitter exists; fires only when the named config key is true |
 
-Critical types today: `page-delete`, `asset-delete`, `token-mint`, `token-revoke`, `share-create`, `share-revoke`, `system-start`, `system-shutdown`, `posture-recorded`, `audit-chain-restart`.
+Critical types today: `page-delete`, `asset-delete`, `token-mint`, `token-revoke`, `share-create`, `share-revoke`, `system-start`, `system-shutdown`, `posture-recorded`, `user-delete`, `audit-chain-restart`.
 
 `page-read` is the volume event. It ships `enabled: false` in `ngdpbase.audit.events` (#1203). The emitter is unconditional; `recordAuditEvent` honours the switch.
 
@@ -68,8 +68,9 @@ Critical types today: `page-delete`, `asset-delete`, `token-mint`, `token-revoke
 
 Families with live emitters:
 
-- Pages: create, edit, rename, delete, optional view, inbound-link rewrite after rename
-- Attachments: upload, delete
+- Pages: create, edit, rename, delete, export, optional read, inbound-link rewrite after rename
+- Attachments: upload, delete, metadata edit
+- Accounts: create, edit (roles, password, active, external, email, profile lock), delete; people search switched off by default
 - Agent tokens: mint, revoke
 - Authentication: success, failed, logout
 - Authorization: deny (allows are not written; see below)
@@ -228,20 +229,14 @@ __Addons emit nothing.__ The report covers `addons/` and finds zero audit events
 
 ### Permissions with no audit event
 
-Eight permissions exist and are gated, but have no audit event. The registry marks them `exempt: 'not-implemented'` so the gap is a decision, not a missing row (`src/utils/auditRegistry.ts`):
+Since [#1204](https://github.com/jwilleke/ngdpbase/issues/1204) every gated action that is an action has an emitter. Two permissions remain without one, for reasons that are not gaps:
 
-| Permission | Why it is listed |
+| Permission | Why |
 | --- | --- |
-| `page-export` | Bulk extraction of content |
-| `asset-edit` | EXIF/IPTC edits change provenance metadata |
-| `search-user` | Enumerating people is more disclosive than searching pages |
-| `user-create` | Account lifecycle |
-| `user-edit` | Includes role changes, which change what someone may do |
-| `user-delete` | Destruction of an account and its attribution |
-| `admin-system` | The permission itself is uncovered; `page-raw-edit` and `admin.sessions.*` do exist |
-| `admin-roles` | Changing a role changes everyone holding it |
+| `admin-roles` | Roles are configuration. The three admin role routes call methods deprecated to `never`; a role change is an edit to `ngdpbase.roles.definitions`, recorded as `config-change` through the admin UI or reported by `posture-recorded` after a disk edit. The dead routes are [#1210](https://github.com/jwilleke/ngdpbase/issues/1210)'s. |
+| `admin-system` | A permission over some forty admin routes, not one action. The recorded ones are `config-change`, `page-raw-edit`, `session-revoke`, `session-clear-anonymous`; the unrecorded ones (policy create/delete, backup, restore, configuration reset, addon toggle, import, reindex, cache clears, keyword consolidation) are surveyed and decided in [#1215](https://github.com/jwilleke/ngdpbase/issues/1215). |
 
-Read-volume exemptions (not recorded, on purpose): `asset-read`, `search-page`, `user-read`, `admin-read`.
+Switched off, on purpose: `asset-read`, `search-page`, `user-read`, `admin-read`, `page-read`, `search-user`. Each has `enabled: false` in `ngdpbase.audit.events` with the reason in its description.
 
 Also not implemented:
 
@@ -271,7 +266,7 @@ Fields per event:
 | `enabled` | Whether the emitter fires. Defaults to `true`. `false` is a decision on the record |
 | `description` | One line, shown in the documented table and the admin filter |
 
-The two exemption categories dissolve. `read-volume` becomes an event with `enabled: false` (`asset-read`, `search-page`, `user-read`, `admin-read`), the same shape `page-read` has today. `not-implemented` goes away: the eight actions that are gated and unrecorded (`page-export`, `asset-edit`, `search-user`, `user-create`, `user-edit`, `user-delete`, `admin-roles`, and `admin-system` itself) get emitters, and configuration decides whether each fires.
+The two exemption categories dissolve. `read-volume` becomes an event with `enabled: false` (`asset-read`, `search-page`, `user-read`, `admin-read`), the same shape `page-read` has today. `not-implemented` is gone: the gated, unrecorded actions got emitters in [#1204](https://github.com/jwilleke/ngdpbase/issues/1204) (`user-create`, `user-edit`, `user-delete`, `search-user`, `page-export`, `asset-edit`), and configuration decides whether each fires. `admin-roles` and `admin-system` are permissions over configuration and over many routes respectively; see [Permissions with no audit event](#permissions-with-no-audit-event).
 
 Nothing about recording fails silently — landed in [#1205](https://github.com/jwilleke/ngdpbase/issues/1205):
 

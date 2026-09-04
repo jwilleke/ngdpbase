@@ -299,7 +299,7 @@ describe('GoogleOIDCProvider', () => {
         email: 'user@example.com',
         isExternal: true,
         roles: ['occupant']
-      }));
+      }), { username: 'system', provider: 'google-oidc' }); // #1204: provisioned, not registered
     });
 
     test('derives de-duped username when base is taken', async () => {
@@ -363,7 +363,8 @@ describe('GoogleOIDCProvider', () => {
 
       await provider.verify({ token: 'code', state: capturedNonce });
       expect(userManager.createUser).toHaveBeenCalledWith(
-        expect.objectContaining({ email: 'user@example.com' })
+        expect.objectContaining({ email: 'user@example.com' }),
+        { username: 'system', provider: 'google-oidc' } // #1204
       );
     });
   });

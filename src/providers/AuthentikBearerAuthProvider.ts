@@ -157,7 +157,7 @@ export class AuthentikBearerAuthProvider implements AuthProvider {
         roles,
         isExternal: true,
         isActive: true
-      });
+      }, { username: 'system', provider: 'authentik-bearer' }); // #1204: provisioned, not registered
       logger.info(`[AuthentikBearerAuthProvider] JIT-provisioned user: ${username} (${email}) with roles=[${roles.join(', ')}]`);
       return { username };
     } catch (err) {

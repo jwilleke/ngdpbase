@@ -193,9 +193,11 @@ interface IUserManager {
   getCurrentUser(req: Request): Promise<UserContext>;
   getUser(username: string): Promise<UserContext | null>;
   getUsers(): Promise<UserContext[]>;
-  createUser(data: unknown): Promise<unknown>;
-  updateUser(username: string, data: unknown): Promise<unknown>;
-  deleteUser(username: string): Promise<unknown>;
+  // #1204: the actor is recorded at the manager door. Optional until #1179
+  // makes the context positional and mandatory.
+  createUser(data: unknown, actor?: { username?: string; ipAddress?: string }): Promise<unknown>;
+  updateUser(username: string, data: unknown, actor?: { username?: string; ipAddress?: string }): Promise<unknown>;
+  deleteUser(username: string, actor?: { username?: string; ipAddress?: string }): Promise<unknown>;
   /**
    * #1164: takes the CONTEXT, never a username string.
    *
@@ -6319,6 +6321,22 @@ ${panes}
       const html = await exportManager.exportPageToHtml(pageName);
       const filePath = await exportManager.saveExport(html, pageName, 'html');
 
+      // #1204: page-export is bulk extraction, gated on read until a bulk
+      // surface exists. Recorded here because ExportManager cannot tell an
+      // HTTP download from an internal render — the same reason page-read is
+      // recorded at the route.
+      await recordAuditEvent(this.auditSink(), {
+        eventType: AUDIT_EVENT.PAGE_EXPORT,
+        user: req.userContext?.username ?? 'anonymous',
+        ipAddress: req.ip,
+        action: 'page-export',
+        result: 'success',
+        severity: WikiRoutes.viaTokenOf(req) ? 'medium' : 'low',
+        resource: pageName,
+        resourceType: 'page',
+        metadata: { pageName, format: 'html', ...(WikiRoutes.viaTokenOf(req) ? { viaToken: WikiRoutes.viaTokenOf(req) } : {}) }
+      }, (err) => logger.warn(`Audit log failed for page-export of '${pageName}':`, err));
+
       const filename = path.basename(filePath);
 
       // Send file as download
@@ -6346,6 +6364,22 @@ ${panes}
 
       const markdown = await exportManager.exportToMarkdown(pageName);
       const filePath = await exportManager.saveExport(markdown, pageName, 'md');
+
+      // #1204: page-export is bulk extraction, gated on read until a bulk
+      // surface exists. Recorded here because ExportManager cannot tell an
+      // HTTP download from an internal render — the same reason page-read is
+      // recorded at the route.
+      await recordAuditEvent(this.auditSink(), {
+        eventType: AUDIT_EVENT.PAGE_EXPORT,
+        user: req.userContext?.username ?? 'anonymous',
+        ipAddress: req.ip,
+        action: 'page-export',
+        result: 'success',
+        severity: WikiRoutes.viaTokenOf(req) ? 'medium' : 'low',
+        resource: pageName,
+        resourceType: 'page',
+        metadata: { pageName, format: 'md', ...(WikiRoutes.viaTokenOf(req) ? { viaToken: WikiRoutes.viaTokenOf(req) } : {}) }
+      }, (err) => logger.warn(`Audit log failed for page-export of '${pageName}':`, err));
 
       const filename = path.basename(filePath);
 
@@ -7689,7 +7723,7 @@ ${panes}
         roles: ['reader'], // Default role
         isExternal: false, // Local user
         acceptLanguage: req.headers['accept-language'] // Pass browser locale
-      });
+      }, { username, ipAddress: req.ip }); // #1204: self-registration; the new account is the actor
 
       logger.debug(`👤 User registered: ${username}`);
       res.redirect('/login?success=Registration successful');
@@ -8230,7 +8264,7 @@ ${panes}
         );
       }
 
-      await userManager.updateUser(currentUser.username ?? '', updates);
+      await userManager.updateUser(currentUser.username ?? '', updates, { username: currentUser.username, ipAddress: req.ip });
 
       // Rename profile page if requested
       const oldPageName = (originalProfilePage as string || '').trim();
@@ -9921,7 +9955,7 @@ ${panes}
         password,
         roles: Array.isArray(roles) ? roles : [roles],
         acceptLanguage: req.headers['accept-language'] // Pass browser locale
-      });
+      }, { username: currentUser?.username, ipAddress: req.ip });
 
       if (success) {
         return res.redirect('/admin/users?success=User created successfully');
@@ -9968,7 +10002,7 @@ ${panes}
         return res.status(400).json({ success: false, message: 'Admin users cannot be marked as external OAuth accounts.' });
       }
 
-      const success = await userManager.updateUser(username, updates);
+      const success = await userManager.updateUser(username, updates, { username: currentUser?.username, ipAddress: req.ip });
 
       if (success) {
         return res.json({ success: true, message: 'User updated successfully' });
@@ -10000,7 +10034,7 @@ ${panes}
       }
 
       const username = req.params.username;
-      const success = await userManager.deleteUser(username);
+      const success = await userManager.deleteUser(username, { username: currentUser?.username, ipAddress: req.ip });
 
       if (success) {
         return res.json({ success: true, message: 'User deleted successfully' });

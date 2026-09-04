@@ -519,6 +519,12 @@ audited.
 | `page-raw-edit` | Page edited through the admin raw editor | standard | yes |
 | `session-revoke` | Session revoked by an administrator | standard | yes |
 | `session-clear-anonymous` | Anonymous sessions cleared | standard | yes |
+| `user-create` | Account created; by an administrator, by self-registration, or provisioned by an identity provider | standard | yes |
+| `user-edit` | Account changed in a way that alters what it may do or who holds it: roles, password, active, external, email, profile lock. Preference edits are not recorded | standard | yes |
+| `user-delete` | Account deleted; destruction of an identity and its attribution, recorded before the delete | critical | yes |
+| `search-user` | People searched for; enumerating people is disclosive in a way searching pages is not. Off by default as read volume | volume | no |
+| `page-export` | Page exported to a file; bulk extraction of content, gated on read until a bulk surface exists | standard | yes |
+| `asset-edit` | Attachment metadata edited; EXIF/IPTC and catalog fields change provenance | standard | yes |
 | `audit-chain-restart` | Hash chain restarted, with the reason; the marker is the action and cannot half-complete | critical | yes |
 | `asset-read` | Attachment read; not recorded, read volume | volume | no |
 | `search-page` | Page search; not recorded, read volume | volume | no |

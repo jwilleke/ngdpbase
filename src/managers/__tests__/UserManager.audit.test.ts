@@ -1,0 +1,146 @@
+/**
+ * #1204 — account lifecycle is recorded at the door.
+ *
+ * user-create, user-edit and user-delete had registry rows marked
+ * `not-implemented`. The emitters now live in UserManager, so an admin form,
+ * self-registration and an identity provider's auto-provisioning all leave the
+ * same record. user-delete is critical: recorded and flushed BEFORE the
+ * delete, refused when the record cannot be written. Sabotage: move the
+ * recordAuditEvent call in deleteUser below provider.deleteUser, or wrap it in
+ * try/catch, and the refusal test goes red.
+ */
+import UserManager from '../UserManager';
+import type { WikiEngine } from '../../types/WikiEngine';
+
+interface Recorded { eventType: string; user: string; ipAddress?: string; metadata: Record<string, unknown> }
+
+function makeManager(opts: { auditFails?: boolean } = {}) {
+  const sink: Recorded[] = [];
+  const users = new Map<string, Record<string, unknown>>();
+  const logAuditEvent = opts.auditFails
+    ? vi.fn().mockRejectedValue(new Error('audit disk full'))
+    : vi.fn().mockImplementation((e: Recorded) => { sink.push(e); return Promise.resolve('id'); });
+  const provider = {
+    userExists: vi.fn(async (name: string) => users.has(name)),
+    createUser: vi.fn(async (u: Record<string, unknown>) => { users.set(u.username as string, { ...u }); }),
+    getUser: vi.fn(async (name: string) => users.get(name) ?? null),
+    updateUser: vi.fn(async (name: string, u: Record<string, unknown>) => { users.set(name, { ...u }); }),
+    deleteUser: vi.fn(async (name: string) => { users.delete(name); })
+  };
+  const engine = {
+    getManager: vi.fn((name: string) => {
+      if (name === 'AuditManager') return { logAuditEvent, flushAuditQueue: () => Promise.resolve() };
+      if (name === 'ConfigurationManager') return { getProperty: (k: string, d: unknown) => (k === 'ngdpbase.system.principal' ? 'system' : d) };
+      return null;
+    })
+  } as unknown as WikiEngine;
+  const um = new UserManager(engine);
+  (um as unknown as { provider: unknown }).provider = provider;
+  // The Person/Role sync and the user page are other managers' business and
+  // are stubbed. Role membership lives in RoleManager, not on the record, so
+  // the stubs keep it in a map the way RoleManager would.
+  const rolesByUser = new Map<string, string[]>();
+  (um as unknown as { resolveUserRoles: (n: string) => Promise<string[]> }).resolveUserRoles =
+    async (n: string) => rolesByUser.get(n) ?? ((users.get(n)?.roles as string[] | undefined) ?? []);
+  (um as unknown as { applyRoleDiff: (n: string, o: string[], nw: string[]) => Promise<void> }).applyRoleDiff =
+    async (n: string, _o: string[], nw: string[]) => { rolesByUser.set(n, [...nw]); };
+  (um as unknown as { syncPersonOnCreate: () => Promise<void> }).syncPersonOnCreate = async () => undefined;
+  (um as unknown as { syncPersonOnUpdate: () => Promise<void> }).syncPersonOnUpdate = async () => undefined;
+  (um as unknown as { syncRolesAllRemovedOnDelete: () => Promise<void> }).syncRolesAllRemovedOnDelete = async () => undefined;
+  (um as unknown as { syncPersonOnDelete: () => Promise<void> }).syncPersonOnDelete = async () => undefined;
+  (um as unknown as { createUserPage: () => Promise<boolean> }).createUserPage = async () => false;
+  (um as unknown as { checkDisplayNamePageConflict: () => Promise<void> }).checkDisplayNamePageConflict = async () => undefined;
+  (um as unknown as { hasRole: () => Promise<boolean> }).hasRole = async () => true;
+  return { um, sink, users, provider };
+}
+
+const ADMIN = { username: 'root', ipAddress: '203.0.113.7' };
+
+describe('#1204 user-create', () => {
+  test('an admin creating an account is recorded with the admin as actor', async () => {
+    const { um, sink } = makeManager();
+    await um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567', roles: ['reader'] }, ADMIN);
+    expect(sink.map((e) => e.eventType)).toEqual(['user-create']);
+    expect(sink[0]).toMatchObject({ user: 'root', ipAddress: '203.0.113.7', metadata: { username: 'alice', roles: ['reader'], selfRegistration: false } });
+    expect(sink[0].metadata.actorMissing).toBeUndefined();
+  });
+
+  test('self-registration names the new account as the actor', async () => {
+    const { um, sink } = makeManager();
+    await um.createUser({ username: 'bob', email: 'b@x', displayName: 'Bob', password: 'pw-1234567' }, { username: 'bob', ipAddress: '10.0.0.9' });
+    expect(sink[0]).toMatchObject({ user: 'bob', metadata: { selfRegistration: true } });
+  });
+
+  test('a provisioned account names the provider, not a person', async () => {
+    const { um, sink } = makeManager();
+    await um.createUser({ username: 'carol', email: 'c@x', displayName: 'Carol', isExternal: true }, { username: 'system', provider: 'google-oidc' });
+    expect(sink[0]).toMatchObject({ user: 'system', metadata: { provider: 'google-oidc', isExternal: true } });
+  });
+
+  test('no actor is said, not invented (#1181)', async () => {
+    const { um, sink } = makeManager();
+    await um.createUser({ username: 'dave', email: 'd@x', displayName: 'Dave', password: 'pw-1234567' });
+    expect(sink[0]).toMatchObject({ user: 'unknown', metadata: { actorMissing: true } });
+  });
+});
+
+describe('#1204 user-edit', () => {
+  test('a preference change is not recorded', async () => {
+    const { um, sink } = makeManager();
+    await um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567' }, ADMIN);
+    sink.length = 0;
+    await um.updateUser('alice', { preferences: { theme: 'dark' } }, { username: 'alice' });
+    expect(sink).toEqual([]);
+  });
+
+  test('a password or role change is recorded by field name, never by value', async () => {
+    const { um, sink } = makeManager();
+    await um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567', roles: ['reader'] }, ADMIN);
+    sink.length = 0;
+    await um.updateUser('alice', { password: 'new-secret-99', roles: ['editor'] }, ADMIN);
+    expect(sink.map((e) => e.eventType)).toEqual(['user-edit']);
+    expect(sink[0].metadata).toMatchObject({ username: 'alice', fields: ['password', 'roles'], roles: { from: ['reader'], to: ['editor'] } });
+    expect(JSON.stringify(sink[0])).not.toContain('new-secret-99');
+  });
+
+  test('assigning a role is a user-edit', async () => {
+    const { um, sink } = makeManager();
+    (um as unknown as { roles: Map<string, unknown> }).roles.set('editor', { name: 'editor' });
+    (um as unknown as { syncRoleAdd: () => Promise<void> }).syncRoleAdd = async () => undefined;
+    await um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567' }, ADMIN);
+    sink.length = 0;
+    await um.assignRole('alice', 'editor', ADMIN);
+    expect(sink[0]).toMatchObject({ eventType: 'user-edit', user: 'root', metadata: { fields: ['roles'], role: { assign: 'editor' } } });
+  });
+});
+
+describe('#1204 user-delete is critical', () => {
+  test('recorded before the delete, with the roles the account held', async () => {
+    const { um, sink, provider, users } = makeManager();
+    await um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567', roles: ['editor'] }, ADMIN);
+    sink.length = 0;
+    let existedAtRecordTime: boolean | null = null;
+    provider.deleteUser.mockImplementationOnce(async (name: string) => { existedAtRecordTime = sink.length === 1; users.delete(name); });
+    await um.deleteUser('alice', ADMIN);
+    expect(sink[0]).toMatchObject({ eventType: 'user-delete', user: 'root', metadata: { username: 'alice', roles: ['editor'] } });
+    expect(existedAtRecordTime).toBe(true);
+  });
+
+  test('a delete whose record cannot be written is refused and the account survives', async () => {
+    const { um, users, provider } = makeManager({ auditFails: true });
+    users.set('alice', { username: 'alice', roles: ['reader'] });
+    await expect(um.deleteUser('alice', ADMIN)).rejects.toThrow(/audit disk full/);
+    expect(users.has('alice')).toBe(true);
+    expect(provider.deleteUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('#1204 search-user ships switched off', () => {
+  test('a search records nothing under the shipped configuration', async () => {
+    const { um, sink, users } = makeManager();
+    users.set('alice', { username: 'alice', displayName: 'Alice', isActive: true });
+    (um as unknown as { getUsers: () => Promise<unknown[]> }).getUsers = async () => [...users.values()];
+    await um.searchUsers('ali', {}, ADMIN);
+    expect(sink).toEqual([]);
+  });
+});

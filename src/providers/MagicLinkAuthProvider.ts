@@ -276,7 +276,7 @@ export class MagicLinkAuthProvider implements AuthProvider {
         roles: [role],
         isExternal: true,
         isActive: true
-      });
+      }, { username: 'system', provider: 'magic-link' }); // #1204: provisioned, not registered
     } catch (err) {
       logger.error(`[MagicLinkAuthProvider] Failed to provision ${entry.email}:`, err);
       return false;
