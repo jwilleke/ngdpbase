@@ -90,3 +90,22 @@ describe('#1198 the attachment browser asks for asset-upload', () => {
     expect(res.status).not.toHaveBeenCalledWith(403);
   });
 });
+
+describe('#1224 share management asks for share-manage', () => {
+  const shareManager = { isEnabled: () => true, list: () => [] };
+
+  test('refused by policy: 403, and the permission asked is share-manage', async () => {
+    const { routes, asked } = makeRoutes([], { ShareManager: shareManager });
+    const res = createMockRes();
+    await routes.sharesList(createMockReq(editor, { get: vi.fn().mockReturnValue('') }), res);
+    expect(asked).toContain('share-manage');
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  test('granted by policy: the list renders, regardless of role name', async () => {
+    const { routes } = makeRoutes(['share-manage'], { ShareManager: shareManager });
+    const res = createMockRes();
+    await routes.sharesList(createMockReq(editor, { get: vi.fn().mockReturnValue('') }), res);
+    expect(res.status).not.toHaveBeenCalledWith(403);
+  });
+});

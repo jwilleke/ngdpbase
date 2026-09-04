@@ -1473,6 +1473,11 @@
       "icon": "trash",
       "color": "#dc3545"
     },
+    "share-manage": {
+      "description": "Create, list and revoke your own share links — hand out anonymous read access to content you may read (#1224)",
+      "icon": "share-alt",
+      "color": "#20c997"
+    },
     "asset-edit": {
       "description": "Edit asset metadata (EXIF/IPTC/XMP)",
       "icon": "pen",
@@ -1543,6 +1548,7 @@
         "asset-read",
         "asset-upload",
         "asset-delete",
+        "share-manage",
         "asset-edit",
         "search-page",
         "search-user",
@@ -1587,6 +1593,7 @@
         "asset-read",
         "asset-upload",
         "asset-delete",
+        "share-manage",
         "search-page"
       ]
     },
@@ -1698,6 +1705,7 @@
         "asset-read",
         "asset-upload",
         "asset-delete",
+        "share-manage",
         "asset-edit",
         "search-page",
         "search-user",
@@ -1793,6 +1801,7 @@
         "asset-read",
         "asset-upload",
         "asset-delete",
+        "share-manage",
         "search-page"
       ]
     },

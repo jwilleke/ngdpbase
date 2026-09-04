@@ -19,9 +19,9 @@ Share links shown on `/shares` are built from `ngdpbase.application.base-url` (f
 
 | Action | Who | Route |
 | --- | --- | --- |
-| Create a share | `admin`, `editor` roles (decision 2) | `POST /shares/create` (CSRF-protected) |
-| List shares | Editors: own. Admins: all. | `GET /shares` |
-| Revoke | Creator or admin | `POST /shares/:id/revoke` (CSRF-protected) |
+| Create a share | policy grants `share-manage` (shipped to `admin` and `editor`; #1224) | `POST /shares/create` (CSRF-protected) |
+| List shares | `share-manage`: own. `admin-system`: all. | `GET /shares` |
+| Revoke | Creator (`share-manage`) or `admin-system` | `POST /shares/:id/revoke` (CSRF-protected) |
 | View shared content | Anyone holding the token | `GET /share/:token[...]` (anonymous) |
 
 ## Hard exclusions (safe by construction)
