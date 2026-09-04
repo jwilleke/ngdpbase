@@ -21,7 +21,7 @@ If you add or change an action that is gated by a permission, or that mints a cr
 - Declare the event in `ngdpbase.audit.events` in the same change as the emitter, with its tier and a description. An emitted name with no declaration fails `npm run lint:audit`.
 - Use a `{target}.{action}` name from that map. Do not invent a string at the call site, in a filter dropdown, or in a comment.
 - Forward the request context you were given. Do not rebuild `{ username }` and drop `viaToken` — that is [P1](security-posture.md#p1--every-security-relevant-call-carries-a-context).
-- If the type is `critical`, the action must not complete when the record cannot be written. Do not catch-and-continue a critical failure.
+- Emit through `recordAuditEvent` and read its outcome if the caller cares. If the type is `critical`, the action must not complete when the record cannot be written. Do not catch-and-continue a critical failure.
 - Do not append to the log file, skip the chain, or restart it from application code. A silent repair is worse than a visible break.
 
 A flag that turns the mechanism off creates two code paths, and the weak one is what everybody runs. The chain, the registry, and the vocabulary are always on. What an operator chooses is how hard failure is (`on-failure`) and how much is recorded (`enabled` per event in `ngdpbase.audit.events`), not whether integrity exists.
@@ -273,10 +273,10 @@ Fields per event:
 
 The two exemption categories dissolve. `read-volume` becomes an event with `enabled: false` (`asset-read`, `search-page`, `user-read`, `admin-read`), the same shape `page-read` has today. `not-implemented` goes away: the eight actions that are gated and unrecorded (`page-export`, `asset-edit`, `search-user`, `user-create`, `user-edit`, `user-delete`, `admin-roles`, and `admin-system` itself) get emitters, and configuration decides whether each fires.
 
-Nothing about recording fails silently:
+Nothing about recording fails silently — landed in [#1205](https://github.com/jwilleke/ngdpbase/issues/1205):
 
-- An emitter for a disabled event returns `not-enabled` rather than returning nothing. A caller can tell "recorded" from "switched off" from "no sink".
-- An event that is `enabled` and has no emitter fails hard. `npm run lint:audit` fails the build, and at boot the emitters register their names with `AuditManager`, so a configuration that enables a name nothing registered is a fatal configuration entry and the instance boots into maintenance mode ([security-posture.md](security-posture.md) D9, D10).
+- `recordAuditEvent` returns what became of the record: `recorded`, `not-enabled` (switched off in configuration), `no-sink` (auditing off or not yet initialised), or `dropped` (a standard event the sink refused; counted). A critical event that cannot be recorded throws instead. Every emitter, including the `AuditManager` helpers and the admin routes, goes through that one door.
+- An event that is `enabled` and has no emitter fails hard. `npm run lint:audit` fails the build; at boot `AuditManager` compares the enabled names against what this build lists in `src/utils/auditEventNames.ts` (every name there has an emitter, which the lint holds), and a name outside it — or outside the `{target}-{action}` convention — is a fatal configuration entry: the instance boots into maintenance mode with the name in the reason ([security-posture.md](security-posture.md) D9, D10).
 
 ### Naming: `{target}-{action}`, hyphens only — landed in [#1201](https://github.com/jwilleke/ngdpbase/issues/1201)
 

@@ -156,26 +156,26 @@ describe('recordAuditEvent', () => {
     expect(sink.logAuditEvent).toHaveBeenCalledWith(event);
   });
 
-  it('swallows a sink rejection — auditing must never fail the mutation it describes', async () => {
+  it('reports a sink rejection as dropped — auditing must never fail the mutation it describes (#1205)', async () => {
     // The write has already happened by the time this runs. Throwing here
     // would turn a committed save into a 500 and invite a destructive retry.
     sink.logAuditEvent.mockRejectedValue(new Error('disk full'));
     const event = buildPageMutationAuditEvent({
       username: 'alice', ipAddress: '1.1.1.1', pageName: 'P', uuid: 'u', op: 'edit'
     });
-    await expect(recordAuditEvent(sink, event)).resolves.toBeUndefined();
+    await expect(recordAuditEvent(sink, event)).resolves.toBe('dropped');
   });
 
-  it('is a no-op when no audit manager is configured', async () => {
+  it('says no-sink when no audit manager is configured (#1205)', async () => {
     await expect(recordAuditEvent(null, buildPageMutationAuditEvent({
       username: 'a', ipAddress: '1', pageName: 'P', uuid: 'u', op: 'edit'
-    }))).resolves.toBeUndefined();
+    }))).resolves.toBe('no-sink');
   });
 
-  it('is a no-op when the manager exposes no logAuditEvent', async () => {
+  it('says no-sink when the manager exposes no logAuditEvent (#1205)', async () => {
     await expect(recordAuditEvent({}, buildPageMutationAuditEvent({
       username: 'a', ipAddress: '1', pageName: 'P', uuid: 'u', op: 'edit'
-    }))).resolves.toBeUndefined();
+    }))).resolves.toBe('no-sink');
   });
 });
 
@@ -330,7 +330,7 @@ describe('#1121 tiered durability', () => {
       { logAuditEvent: async () => { throw new Error('sink down'); } },
       standard(),
       onError
-    )).resolves.toBeUndefined();
+    )).resolves.toBe('dropped');
     expect(onError).toHaveBeenCalledOnce();
   });
 
@@ -374,7 +374,7 @@ describe('#1121 tiered durability', () => {
   it('an absent sink does not fail a critical action', async () => {
     // Auditing switched off is a configuration decision, already visible via
     // #1118's posture. It must not turn every mint into an error.
-    await expect(recordAuditEvent(null, critical())).resolves.toBeUndefined();
+    await expect(recordAuditEvent(null, critical())).resolves.toBe('no-sink');
   });
 
   it('counts a critical loss too', async () => {
@@ -427,9 +427,13 @@ describe('#1203 recordAuditEvent honours the enabled switch', () => {
     bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? shippedEvents : d));
   });
 
-  it('an event switched off never reaches the sink', async () => {
+  it('a recorded event says so (#1205)', async () => {
+    await expect(recordAuditEvent(sink, event)).resolves.toBe('recorded');
+  });
+
+  it('an event switched off never reaches the sink, and says not-enabled (#1205)', async () => {
     bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? { ...shippedEvents, 'page-edit': { tier: 'standard', enabled: false, description: 'off' } } : d));
-    await recordAuditEvent(sink, event);
+    await expect(recordAuditEvent(sink, event)).resolves.toBe('not-enabled');
     expect(sink.logAuditEvent).not.toHaveBeenCalled();
   });
 

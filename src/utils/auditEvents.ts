@@ -58,12 +58,17 @@ export interface AuditEvent {
   user: string;
   ipAddress: string | undefined;
   action: string;
-  result: 'success';
+  /** How it went. Mutations record `success`; decisions record `allow` / `deny`; sign-in records `failure` / `logout`. */
+  result: 'success' | 'failure' | 'allow' | 'deny' | 'error' | 'logout';
   severity: AuditSeverity;
   metadata: Record<string, unknown>;
   /** What the action was about, where there is a single subject (a share id, a page). */
   resource?: string;
   resourceType?: string;
+  /** Why, for a decision or a refusal. */
+  reason?: string;
+  /** The session the action ran in, where one is known. */
+  sessionId?: string;
 }
 
 /**
@@ -338,22 +343,35 @@ function shouldShout(count: number): boolean {
  * abandon the action. "Durable before the action completes" is not satisfied by
  * a queue that flushes on a timer, because the process can die in between.
  */
+/**
+ * What became of a record (#1205). Never silent: a caller can tell "recorded"
+ * from "switched off in configuration" from "no sink on this instance".
+ *
+ * - `recorded`    — the sink accepted it (and, for a critical event, flushed it)
+ * - `not-enabled` — `enabled: false` in `ngdpbase.audit.events`; a decision on the record
+ * - `no-sink`     — auditing is off or not yet initialised; visible through #1118's posture
+ * - `dropped`     — the sink failed on a standard event; counted in the drop statistics
+ *
+ * A critical event that cannot be recorded does not return: it throws, so the
+ * caller abandons the action.
+ */
+export type AuditRecordOutcome = 'recorded' | 'not-enabled' | 'no-sink' | 'dropped';
+
 export async function recordAuditEvent(
   sink: AuditEventSink | null | undefined,
   event: AuditEvent,
   onError?: (err: unknown) => void
-): Promise<void> {
+): Promise<AuditRecordOutcome> {
   // #1203: `enabled: false` on the event in `ngdpbase.audit.events` is a
   // decision on the record. The emitter still exists and still calls this;
-  // the switch is honoured here, once, rather than at every call site. (#1205
-  // makes this a returned result rather than a silent return.)
-  if (!isAuditEventEnabled(event.eventType)) return;
+  // the switch is honoured here, once, rather than at every call site.
+  if (!isAuditEventEnabled(event.eventType)) return 'not-enabled';
 
   // An absent sink is a configuration state, not a failure. Counting it would
   // make the number meaningless on any instance that never enabled auditing —
   // and it must not turn every critical action into an error either, since
   // auditing being off is already visible through #1118's posture.
-  if (!sink?.logAuditEvent) return;
+  if (!sink?.logAuditEvent) return 'no-sink';
 
   const critical = isCriticalEventType(event.eventType);
 
@@ -368,6 +386,7 @@ export async function recordAuditEvent(
   try {
     await sink.logAuditEvent(event as unknown as Record<string, unknown>);
     if (critical) await sink.flushAuditQueue?.();
+    return 'recorded';
   } catch (err) {
     dropStats.dropped += 1;
     dropStats.lastEventType = event.eventType;
@@ -388,6 +407,7 @@ export async function recordAuditEvent(
         `Audit write failed for ${event.eventType}, which is declared critical: ${dropStats.lastError}`
       );
     }
+    return 'dropped';
   }
 }
 

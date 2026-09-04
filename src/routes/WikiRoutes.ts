@@ -1389,26 +1389,19 @@ class WikiRoutes {
       const excludeSid = typeof req.sessionID === 'string' ? req.sessionID : null;
       const result = await sweepAnonymousSessions(sessionDir, excludeSid);
 
-      // Audit log (best-effort — don't fail the action if the audit subsystem is down)
-      try {
-        const auditManager = this.engine.getManager('AuditManager') as {
-          logAuditEvent?: (event: Record<string, unknown>) => Promise<string>;
-        } | null;
-        if (auditManager?.logAuditEvent) {
-          await auditManager.logAuditEvent({
-            eventType: AUDIT_EVENT.SESSION_CLEAR_ANONYMOUS,
-            user: wikiContext.userContext.username ?? 'unknown',
-            sessionId: excludeSid ?? undefined,
-            ipAddress: req.ip,
-            action: 'clear-anonymous-sessions',
-            result: 'success',
-            severity: 'medium',
-            metadata: result
-          });
-        }
-      } catch (auditErr) {
-        logger.warn('Audit log failed for clear-anonymous-sessions:', auditErr);
-      }
+      // #1205: through recordAuditEvent — the enabled switch, the tier and the
+      // outcome are the same door every emitter uses. Standard tier: the
+      // sessions are already cleared and a slow sink must not fail the action.
+      await recordAuditEvent(this.auditSink(), {
+        eventType: AUDIT_EVENT.SESSION_CLEAR_ANONYMOUS,
+        user: wikiContext.userContext.username ?? 'unknown',
+        sessionId: excludeSid ?? undefined,
+        ipAddress: req.ip,
+        action: 'clear-anonymous-sessions',
+        result: 'success',
+        severity: 'medium',
+        metadata: result
+      }, (auditErr) => logger.warn('Audit log failed for clear-anonymous-sessions:', auditErr));
       logger.info(`[AUDIT] admin ${wikiContext.userContext.username ?? 'unknown'} cleared anonymous sessions: ${result.removed} removed, ${result.kept} kept, ${result.orphansRemoved} orphans`);
 
       res.json({ ok: true, ...result });
@@ -1493,31 +1486,22 @@ class WikiRoutes {
           : resolve());
       });
 
-      // Audit log — best-effort, don't fail the revoke if the audit subsystem is down
-      try {
-        const auditManager = this.engine.getManager('AuditManager') as {
-          logAuditEvent?: (event: Record<string, unknown>) => Promise<string>;
-        } | null;
-        if (auditManager?.logAuditEvent) {
-          await auditManager.logAuditEvent({
-            eventType: AUDIT_EVENT.SESSION_REVOKE,
-            user: wikiContext.userContext.username ?? 'unknown',
-            sessionId: callerId ?? undefined,
-            ipAddress: req.ip,
-            action: 'revoke-session',
-            result: 'success',
-            severity: 'medium',
-            metadata: {
-              targetId,
-              targetUsername: targetMeta.username ?? null,
-              targetIp: targetMeta.ip ?? null,
-              selfRevoke: !!(callerId && targetId === callerId)
-            }
-          });
+      // #1205: through recordAuditEvent (see clear-anonymous above).
+      await recordAuditEvent(this.auditSink(), {
+        eventType: AUDIT_EVENT.SESSION_REVOKE,
+        user: wikiContext.userContext.username ?? 'unknown',
+        sessionId: callerId ?? undefined,
+        ipAddress: req.ip,
+        action: 'revoke-session',
+        result: 'success',
+        severity: 'medium',
+        metadata: {
+          targetId,
+          targetUsername: targetMeta.username ?? null,
+          targetIp: targetMeta.ip ?? null,
+          selfRevoke: !!(callerId && targetId === callerId)
         }
-      } catch (auditErr) {
-        logger.warn('Audit log failed for revoke-session:', auditErr);
-      }
+      }, (auditErr) => logger.warn('Audit log failed for revoke-session:', auditErr));
       logger.info(`[AUDIT] admin ${wikiContext.userContext.username ?? 'unknown'} revoked session ${targetId} (user=${targetMeta.username ?? 'anon'}, ip=${targetMeta.ip ?? 'unknown'})`);
 
       res.json({
@@ -4363,30 +4347,22 @@ ${panes}
       await pageManager.saveRawPageWithAdminOverride(pageName, rawContent);
 
       // Audit log — best-effort; don't fail the save if audit is down.
-      try {
-        const auditManager = this.engine.getManager('AuditManager') as {
-          logAuditEvent?: (event: Record<string, unknown>) => Promise<string>;
-        } | null;
-        const rawAfter = pageManager.getRawPageContent ? await pageManager.getRawPageContent(pageName) : null;
-        if (auditManager?.logAuditEvent) {
-          await auditManager.logAuditEvent({
-            eventType: AUDIT_EVENT.PAGE_RAW_EDIT,
-            user: wikiContext.userContext.username ?? 'unknown',
-            ipAddress: req.ip,
-            action: 'admin-raw-edit',
-            result: 'success',
-            severity: 'medium',
-            metadata: {
-              pageName,
-              filePath: rawAfter?.filePath ?? null,
-              bytes: rawContent.length,
-              adminOverride: true
-            }
-          });
+      // #1205: through recordAuditEvent (see clear-anonymous above).
+      const rawAfter = pageManager.getRawPageContent ? await pageManager.getRawPageContent(pageName) : null;
+      await recordAuditEvent(this.auditSink(), {
+        eventType: AUDIT_EVENT.PAGE_RAW_EDIT,
+        user: wikiContext.userContext.username ?? 'unknown',
+        ipAddress: req.ip,
+        action: 'admin-raw-edit',
+        result: 'success',
+        severity: 'medium',
+        metadata: {
+          pageName,
+          filePath: rawAfter?.filePath ?? null,
+          bytes: rawContent.length,
+          adminOverride: true
         }
-      } catch (auditErr) {
-        logger.warn('Audit log failed for admin-raw-edit:', auditErr);
-      }
+      }, (auditErr) => logger.warn('Audit log failed for admin-raw-edit:', auditErr));
       logger.info(`[AUDIT] admin ${wikiContext.userContext.username ?? 'unknown'} performed raw edit on '${pageName}' (${rawContent.length} bytes)`);
 
       res.redirect(`/view/${encodeURIComponent(pageName)}`);

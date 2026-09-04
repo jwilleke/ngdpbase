@@ -2,6 +2,7 @@ import BaseManager from './BaseManager.js';
 import { promises as fs } from 'fs';
 import logger from '../utils/logger.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type UserManager from './UserManager.js';
@@ -1149,25 +1150,26 @@ class ACLManager extends BaseManager {
     action: string | undefined,
     reason: string | undefined
   ): Promise<void> {
-    try {
-      const auditManager = this.engine?.getManager?.('AuditManager') as {
-        logAuditEvent?: (event: Record<string, unknown>) => Promise<string>;
-      } | null;
-      if (!auditManager?.logAuditEvent) return;
-
-      await auditManager.logAuditEvent({
+    // #1205: through recordAuditEvent, so the enabled switch, the tier and the
+    // outcome are the same door every emitter uses. Standard tier: a slow
+    // sink must not delay a page render, and the drop is counted, not hidden.
+    const sink = this.engine?.getManager?.('AuditManager') as AuditEventSink | null;
+    await recordAuditEvent(
+      sink,
+      {
         eventType: AUDIT_EVENT.AUTHORIZATION_DENY,
         user: username,
+        ipAddress: undefined,
         action: action ?? 'unknown',
         resource: pageName ?? '',
         resourceType: 'page',
         result: 'deny',
         reason: reason || 'not permitted',
-        severity: 'medium'
-      });
-    } catch (err) {
-      logger.warn(`Audit log failed for authorization-deny of '${pageName}':`, err);
-    }
+        severity: 'medium',
+        metadata: {}
+      },
+      (err) => logger.warn(`Audit log failed for authorization-deny of '${pageName}':`, err)
+    );
   }
 
   /**

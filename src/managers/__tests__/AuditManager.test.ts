@@ -16,6 +16,8 @@
  * @jest-environment node
  */
 
+import fs from 'fs';
+import path from 'path';
 import AuditManager from '../AuditManager';
 import logger from '../../utils/logger';
 import type { WikiEngine } from '../../types/WikiEngine';
@@ -104,6 +106,31 @@ describe('AuditManager', () => {
       const said = vi.mocked(logger.warn).mock.calls.filter(([m]) => String(m).includes('read-events is retired'));
       expect(said).toHaveLength(1);
       expect(String(said[0][0])).toContain('ngdpbase.audit.events["page-read"].enabled');
+    });
+
+    test('#1205: an enabled event this build cannot emit is a fatal configuration entry', async () => {
+      const shipped = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'config', 'app-default-config.json'), 'utf8')) as Record<string, unknown>;
+      const events = shipped['ngdpbase.audit.events'] as Record<string, unknown>;
+
+      // Enabled and unknown: blocked, with the name in the reason.
+      let engine = makeEngine({ 'ngdpbase.audit.provider': 'nullauditprovider', 'ngdpbase.audit.events': { ...events, 'widget-frobnicate': { tier: 'standard', description: 'nothing emits this' } } });
+      await new AuditManager(engine).initialize();
+      expect(engine.getBlockingConditions().join('\n')).toMatch(/enables 'widget-frobnicate', which nothing in this build emits/);
+
+      // Switched off and unknown: a decision on the record, not a fault.
+      engine = makeEngine({ 'ngdpbase.audit.provider': 'nullauditprovider', 'ngdpbase.audit.events': { ...events, 'widget-frobnicate': { tier: 'standard', enabled: false, description: 'not yet' } } });
+      await new AuditManager(engine).initialize();
+      expect(engine.getBlockingConditions()).toEqual([]);
+
+      // Off-convention: blocked.
+      engine = makeEngine({ 'ngdpbase.audit.provider': 'nullauditprovider', 'ngdpbase.audit.events': { ...events, 'page.delete': { tier: 'critical', description: 'old name' } } });
+      await new AuditManager(engine).initialize();
+      expect(engine.getBlockingConditions().join('\n')).toMatch(/'page.delete', which is not a \{target\}-\{action\} name/);
+
+      // The shipped map: nothing blocked.
+      engine = makeEngine({ 'ngdpbase.audit.provider': 'nullauditprovider' });
+      await new AuditManager(engine).initialize();
+      expect(engine.getBlockingConditions()).toEqual([]);
     });
 
     test('throws when ConfigurationManager unavailable', async () => {

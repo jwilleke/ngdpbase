@@ -40,13 +40,13 @@ export class AuditQueryForbiddenError extends Error {
 import BaseManager from './BaseManager.js';
 import type { ProviderInfo } from '../types/Provider.js';
 import logger from '../utils/logger.js';
-import { bindAuditEvents } from '../utils/auditRegistry.js';
-import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
+import { auditEventDeclarations, bindAuditEvents } from '../utils/auditRegistry.js';
+import { AUDIT_EVENT, AUDIT_EVENT_NAME_PATTERN, auditEventNames, type AuditEventName } from '../utils/auditEventNames.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { AuditReport } from '../providers/BaseAuditProvider.js';
 import { assessPreviousRun, buildLifecycleAuditEvent, type LifecycleRecord, type PreviousRun } from '../utils/auditLifecycle.js';
-import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
+import { recordAuditEvent, type AuditEventSink, type AuditRecordOutcome } from '../utils/auditEvents.js';
 import { resolveTlsConfig } from '../utils/tlsConfig.js';
 import { resolvePosture } from '../utils/securityPosture.js';
 import { flattenPosture, diffPostures, describePostureDiff, type FlatPosture } from '../utils/postureRecord.js';
@@ -245,6 +245,28 @@ class AuditManager extends BaseManager {
     // recordAuditEvent and by the provider's fsync decision — is the
     // operator's configuration rather than the shipped defaults.
     bindAuditEvents((key, defaultValue) => configManager.getProperty(key, defaultValue));
+
+    // #1205: an enabled event the build cannot emit is a fatal configuration
+    // entry. `auditEventNames.ts` is what this build registers — every name in
+    // it has an emitter (lint:audit holds that) — so a custom configuration
+    // enabling a name outside it would claim a record nothing can write.
+    // Never silent, and not survivable: the instance boots into maintenance
+    // mode (security-posture.md D9, D10) with the name in the reason.
+    const known = new Set<string>(auditEventNames());
+    for (const [name, d] of Object.entries(auditEventDeclarations())) {
+      if (d.enabled === false) continue;
+      if (!AUDIT_EVENT_NAME_PATTERN.test(name)) {
+        this.engine.blockConfiguration(
+          `ngdpbase.audit.events declares '${name}', which is not a {target}-{action} name. ` +
+          'Rename it or remove it from app-custom-config.json.'
+        );
+      } else if (!known.has(name)) {
+        this.engine.blockConfiguration(
+          `ngdpbase.audit.events enables '${name}', which nothing in this build emits. ` +
+          'Set enabled: false on it, or remove it from app-custom-config.json, until an emitter exists.'
+        );
+      }
+    }
 
     // #1203: the per-event switch replaced the one-off key. A custom
     // configuration still setting it is silently ignored otherwise, which is
@@ -508,15 +530,28 @@ class AuditManager extends BaseManager {
   }
 
   /**
+   * The one door for the helpers below (#1205): through `recordAuditEvent`,
+   * so the `enabled` switch, the tier, and the outcome are the same as for
+   * every other emitter. Calling `logAuditEvent` directly skipped all three.
+   */
+  private async record(auditEvent: AuditEvent): Promise<AuditRecordOutcome> {
+    return recordAuditEvent(
+      this as unknown as AuditEventSink,
+      auditEvent as unknown as Parameters<typeof recordAuditEvent>[1],
+      (err) => logger.warn(`[AuditManager] Audit record failed for ${auditEvent.eventType}:`, err)
+    );
+  }
+
+  /**
    * Log access control decision
    *
    * @param {AccessContext} context - Access context
    * @param {string} result - 'allow', 'deny', 'error'
    * @param {string} reason - Reason for the decision
    * @param {PolicyInfo | null} policy - Policy that made the decision
-   * @returns {Promise<string>} Event ID
+   * @returns What became of the record (#1205)
    */
-  async logAccessDecision(context: AccessContext, result: string, reason: string, policy: PolicyInfo | null = null): Promise<string> {
+  async logAccessDecision(context: AccessContext, result: string, reason: string, policy: PolicyInfo | null = null): Promise<AuditRecordOutcome> {
     const auditEvent: AuditEvent = {
       // #1115: `{target}.{action}`, and result-aware. An allow and a deny are
       // different events to anyone filtering, so they get different names
@@ -544,7 +579,7 @@ class AuditManager extends BaseManager {
       severity: result === 'deny' ? 'medium' : 'low'
     };
 
-    return await this.logAuditEvent(auditEvent);
+    return await this.record(auditEvent);
   }
 
   /**
@@ -554,9 +589,9 @@ class AuditManager extends BaseManager {
    * @param {PolicyInfo[]} policies - Policies evaluated
    * @param {string} finalResult - Final result
    * @param {number} duration - Evaluation duration in ms
-   * @returns {Promise<string>} Event ID
+   * @returns What became of the record (#1205)
    */
-  async logPolicyEvaluation(context: AccessContext, policies: PolicyInfo[], finalResult: string, duration: number): Promise<string> {
+  async logPolicyEvaluation(context: AccessContext, policies: PolicyInfo[], finalResult: string, duration: number): Promise<AuditRecordOutcome> {
     const auditEvent: AuditEvent = {
       eventType: AUDIT_EVENT.POLICY_EVALUATE,
       user: context.user?.username || 'anonymous',
@@ -573,7 +608,7 @@ class AuditManager extends BaseManager {
       severity: duration > 1000 ? 'medium' : 'low' // Flag slow evaluations
     };
 
-    return await this.logAuditEvent(auditEvent);
+    return await this.record(auditEvent);
   }
 
   /**
@@ -582,9 +617,9 @@ class AuditManager extends BaseManager {
    * @param {AuthenticationContext} context - Authentication context
    * @param {string} result - 'success', 'failure', 'logout'
    * @param {string} reason - Reason for result
-   * @returns {Promise<string>} Event ID
+   * @returns What became of the record (#1205)
    */
-  async logAuthentication(context: AuthenticationContext, result: string, reason: string): Promise<string> {
+  async logAuthentication(context: AuthenticationContext, result: string, reason: string): Promise<AuditRecordOutcome> {
     const auditEvent: AuditEvent = {
       // #1115: three outcomes, three names. `authentication` with a result
       // field meant the docs said authentication-failed and the code said
@@ -604,7 +639,7 @@ class AuditManager extends BaseManager {
       }
     };
 
-    return await this.logAuditEvent(auditEvent);
+    return await this.record(auditEvent);
   }
 
   /**
@@ -614,9 +649,9 @@ class AuditManager extends BaseManager {
    * @param {string} eventType - Type of security event
    * @param {string} severity - 'low', 'medium', 'high', 'critical'
    * @param {string} description - Event description
-   * @returns {Promise<string>} Event ID
+   * @returns What became of the record (#1205)
    */
-  async logSecurityEvent(context: SecurityContext, eventType: string, severity: 'low' | 'medium' | 'high' | 'critical', description: string): Promise<string> {
+  async logSecurityEvent(context: SecurityContext, eventType: string, severity: 'low' | 'medium' | 'high' | 'critical', description: string): Promise<AuditRecordOutcome> {
     const auditEvent: AuditEvent = {
       eventType: AUDIT_EVENT.SECURITY_EVENT,   // the specific kind is in metadata.securityEventType
       user: context.user?.username || 'system',
@@ -631,7 +666,7 @@ class AuditManager extends BaseManager {
       }
     };
 
-    return await this.logAuditEvent(auditEvent);
+    return await this.record(auditEvent);
   }
 
   /**
