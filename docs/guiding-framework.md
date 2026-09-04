@@ -274,7 +274,7 @@ Gaps that are *settings* or *audit completeness* belong in [security-posture.md]
 
 - __`UserManager` is 1,907 lines__ carrying password hashing, permission resolution, middleware and page creation, with three role methods left as `never` after a split to `RoleManager`. It is the example of a single path being read as a single class.
 - __Allow and deny still come from `isAuthenticated` and role names in places.__ The only honest allow is `hasPermission` / `canAccess`. `isAuthenticated` classifies the failure; `hasRole` is a membership lookup. `src/routes` is clean and held so by a static test; addon routes, a few plugins and services, and the `isAuthenticated` pre-checks remain — [security-posture.md](security-posture.md) P2 / [#1198](https://github.com/jwilleke/ngdpbase/issues/1198).
-- __Listing is not the same evaluator.__ `PolicyEvaluator` has no `filter()`. `PageManager.getAllPages()` returns every title; callers note that the list is unfiltered and that titles of unreadable pages leak. Rule 10 is unimplemented.
+- __Listing is not the same evaluator.__ `PolicyEvaluator` has no `filter()`. `PageManager.getAllPages()` returns every title; callers note that the list is unfiltered and that titles of unreadable pages leak. Rule 10 is unimplemented. Filed as a disclosure bug: [#1219](https://github.com/jwilleke/ngdpbase/issues/1219).
 
 ### Backup (contracts)
 
